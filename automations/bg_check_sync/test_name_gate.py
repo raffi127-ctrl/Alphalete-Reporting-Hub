@@ -332,6 +332,12 @@ class AskPlacementTests(unittest.TestCase):
         for _name, uid in name_gate.DECIDERS:
             self.assertIn(uid, parent)
 
+    def test_the_parent_says_it_needs_their_approval(self):
+        """A tag alone reads as FYI — anybody clicks and thinks it's done."""
+        parent = name_gate.render_parent(2)
+        self.assertIn("Needs approval from", parent)
+        self.assertIn("won't change a name", parent)
+
     def test_dry_run_posts_nothing_and_records_nothing(self):
         state = {}
         self.assertEqual(

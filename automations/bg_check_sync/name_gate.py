@@ -365,10 +365,14 @@ def render_parent(n: int, start_week: Optional[str] = None) -> str:
            f"{n} names don't match their background check"
     if start_week:
         head += f" — starting {start_week}"
+    # SAY WHO CAN ANSWER, UP FRONT. The tags alone read as "FYI" — anybody
+    # could click and think it was handled. Naming them as the approvers is the
+    # difference between a mention and an instruction (Megan 2026-08-26).
     return (f"*{head}*\n"
             f"✅ = same person → I'll fix the checklist + OwnerVille\n"
             f"❌ = different person → I'll leave it alone\n"
-            f"{tags}")
+            f"Needs approval from {tags} — reactions from anyone else won't "
+            f"change a name.")
 
 
 def render_line(p: Proposal) -> str:
