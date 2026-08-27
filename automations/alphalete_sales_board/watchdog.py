@@ -31,7 +31,16 @@ from automations.alphalete_sales_board import config as C
 
 STALE_MINUTES = 20          # 4 missed ticks
 COOLDOWN_HOURS = 2
-RAF_SLACK_ID = "U04M4TFEBHR"
+
+# WHERE THIS GOES: #claudecorrections-and-requests, the channel every other
+# report's failures land in, with Megan @-mentioned. The first version DM'd Raf
+# -- lifted wholesale from bg_check_sync's watchdog, whose owner IS Raf. He
+# never asked for this report and would have got its alerts (Megan caught it,
+# 2026-08-26). A DM also hides the fault from everyone else working the
+# channel; a post in the corrections channel is where somebody is already
+# looking. [[project_corrections_slack_channel]]
+CHANNEL = "C0BK5PRG259"     # #claudecorrections-and-requests
+MEGAN = "U04G5HJBGFN"       # Megan Hidalgo
 _LAST_ALERT = Path.home() / ".config" / "recruiting-report" / "alphalete_sales_board_watchdog.txt"
 
 
@@ -80,17 +89,18 @@ def main(argv=None) -> int:
         return 0
 
     age_txt = "never today" if age == float("inf") else "%.0f minutes ago" % age
-    msg = (":warning: *Alphalete Sales Board sweep has gone quiet* — last run "
+    msg = ("<@%s> :warning: *Alphalete Sales Board sweep has gone quiet* — last run "
            "%s, during selling hours. The board is not updating and the chats "
            "will get nothing. Check the agent is loaded: `lucy rerun "
            "list_agents --machine \"Lucy 1\"`, then `lucy rerun "
            "install_alphalete_sales_board_agent --machine \"Lucy 1\"` to "
            "reload it. Catch the day up with `lucy rerun alphalete_sales_board "
            "--apply --send` (SaraPlus is cumulative, so nothing is lost)."
-           % age_txt)
+           % (MEGAN, age_txt))
 
     if args.dry_run:
-        print("[watchdog] STALE (%s) — would DM Raf:\n%s" % (age_txt, msg))
+        print("[watchdog] STALE (%s) — would post to #claudecorrections:\n%s"
+              % (age_txt, msg))
         return 0
     if _cooldown_active(now):
         print("[watchdog] stale (%s) but already alerted inside the cooldown" % age_txt)
@@ -98,8 +108,7 @@ def main(argv=None) -> int:
     try:
         from automations.shared import slack_metrics_post as smp
         client = smp._client()
-        ch = client.conversations_open(users=RAF_SLACK_ID)["channel"]["id"]
-        client.chat_postMessage(channel=ch, text=msg)
+        client.chat_postMessage(channel=CHANNEL, text=msg)
         _LAST_ALERT.parent.mkdir(parents=True, exist_ok=True)
         _LAST_ALERT.write_text(now.isoformat())
         print("[watchdog] ALERTED — sweep stale (%s)" % age_txt)

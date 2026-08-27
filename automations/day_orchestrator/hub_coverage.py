@@ -99,6 +99,14 @@ _NOT_A_REPORT = frozenset({
     "day_orchestrator", "card_scheduler", "session_holder", "keep_awake",
     "mini_control", "board_probe", "orchestrator_schedule_guard", "lucy2_digest",
     "bg_check_watchdog", "due_diligence_watch", "harvest_proof_1pm", "proof_order_log",
+    # Same shape as bg_check_watchdog: a 20-minute liveness probe for the
+    # Alphalete Sales Board sweep. It has no output anyone reads and nothing to
+    # run from the Hub -- it exists to say when the SWEEP stopped, and the sweep
+    # has the card. install_agent self-registered one the moment it was
+    # installed, which put a scheduled-looking card on the Hub for a thing
+    # nobody runs (Megan 2026-08-26: "we don't need a hub card if this isn't
+    # ongoing - it should alert in the alert channel").
+    "alphalete_sales_board_watchdog",
     # auto-registered sub-step / dupe stubs of a real card (never published)
     "applicant_morning", "applicant_evening", "appstream_morning", "leaders_call_mon",
     "weather_6am", "texas_de_brazil_745", "new_start_followup_sat",
