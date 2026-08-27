@@ -8,21 +8,21 @@ down the side, the ad-week's seven days across, and each cell = how many
 NAMES that ad produced that day. Weekly Pull (processed emails), the total
 names, Account/City and the week's name list ride alongside.
 
-* Visible tab **Ad Sales Board** — layout lifted from the live Sales Board
-  mirror: row 1 dark control strip (**B1 manager**, **D1 Org/Captainship**),
-  row 2 navy AD SALES BOARD banner, row 3 blue WE strip (**B3 week picker**
-  in the cream cell + computed week label), row 4 navy bordered header
-  `# | AD | Account | City | Pull | Names | Mon..Sun` with real dates, rows 5+
-  the bordered grid spilled by one FILTER at B5 — everything centered, banner
-  merged across the board. The week name LIST is deliberately not shown
-  (Carlos 2026-08-26: "i dont need all the names on the right") — it stays on
-  the data tab, col J. TOTAL row grey; amber row = names that matched no ad.
-  Day headers compute their dates from the picked week via the data tab's AB1
-  helper; the WE strip label reads "Week Ending m/d" (the Sunday).
+* Visible tab **Ad Sales Board** — ONE STACKED SCROLL of every week for the
+  picked manager, newest first (Carlos 2026-08-27: "no dropdown i just have to
+  scroll down"): row 1 dark control strip (**B1 manager**, **D1
+  Org/Captainship** — the only pickers), row 2 navy banner, row 3 a scroll
+  hint, row 4 static navy header `# | Account | City | AD | Pull | Names |
+  Mon..Sun`, rows 5+ one FILTER spill at A5. Every week block opens with a
+  blue **WEEK ENDING m/d** band row (written into the data by the job), ads
+  carry a per-week rank (#), TOTAL closes the block grey, amber row = names
+  that matched no ad. Everything centered; the week name LIST stays on the
+  data tab col J, deliberately not shown.
 * Hidden tab **Ad Sales Data** — the only thing the job writes. Columns
-  A..R: Manager, Week, Account, Inbox, Ad Title, City, Pull, To Call List,
-  # Names, Names, Week Start (ISO — the freeze/sort key), then L..R = names
-  per day (Mon..Sun). TOTAL rows carry the label in the Ad Title column (the
+  A..S: Manager, Week, Account, Inbox, Ad Title, City, Pull, To Call List,
+  # Names, Names, Week Start (ISO — the freeze/sort key), L..R = names per
+  day (Mon..Sun), S = the ad's rank in its week. Each block's first row is
+  the WEEK ENDING band (marker text in the Ad Title column). TOTAL rows carry the label in the Ad Title column (the
   board's first visible column). Blank counts mean "no name feed" (the
   captainship-only offices); zeros mean "an ad that produced nobody".
 
@@ -31,8 +31,8 @@ names, Account/City and the week's name list ride alongside.
 **Monday → Sunday** (`weeks.py`) — Carlos's call the first evening ("weeks are
 monday - sunday"), matching the fleet's WE convention; the original Wed→Tue cut
 lived for a few hours and its rows were dropped with `run.py --reset` before
-the year was re-pulled on Monday anchors. The job stamps the B3 picker to the
-CURRENT week every morning (sales-board style; Monday it rolls by itself). The
+the year was re-pulled on Monday anchors. There is no week picker any more —
+the board shows every week stacked, newest on top. The
 week LABEL ("Aug 24 – 30, 2026") is the join key across runs; never change its
 format OR anchor day without rewriting the data tab.
 
