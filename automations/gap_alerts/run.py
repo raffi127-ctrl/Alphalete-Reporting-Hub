@@ -283,22 +283,55 @@ def to_pdf(panel_paths, out_pdf: Path) -> Path:
 
     WHY A PDF AT ALL: Messages renders a tall narrow image inline as a sliver
     you cannot read (Raf, 2026-08-27). A PDF opens full-screen and zooms.
+
     WHY SLICED: a single 700x2900 page would open zoomed-to-fit and be just as
     unreadable — it would only move the squinting from Messages into Preview.
+
+    TWO THINGS COPIED FROM owner_chat_texts.pdf_build, which has been sending
+    Raf a tracker PDF every morning since 2026-08-23 — both learned the hard
+    way there, and both would bite exactly the same way here:
+
+    * **PyMuPDF, not PIL.** PIL's PDF writer re-encodes every page through its
+      JPEG codec — lossy, on an image whose entire value is small text and
+      colour-coded count badges — and not every Pillow build even carries that
+      codec (Megan's laptop does not). fitz embeds the PNGs losslessly.
+    * **EVERY page gets the SAME width.** PDF viewers pick one zoom for the
+      whole document and fit the WIDEST page, so mixing the roster screenshot's
+      width with the narrower gap card would shrink the gap card to a fraction
+      of the screen. Raf's exact complaint about the other PDF was "pretty
+      zoomed out"; this is what caused it.
     """
+    import fitz
     from PIL import Image
-    pages = []
-    for p in panel_paths:
+
+    PAGE_W = 800.0
+    tmp_dir = out_pdf.parent / "_pdf_pages"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    slices = []
+    for i, p in enumerate(panel_paths):
         p = Path(p)
         if not p.exists():
             continue
         im = Image.open(p).convert("RGB")
-        pages += _pages_for(im, C.PDF_MAX_ASPECT, C.PDF_SLICE_OVERLAP_PX)
-    if not pages:
+        for j, piece in enumerate(_pages_for(im, C.PDF_MAX_ASPECT,
+                                             C.PDF_SLICE_OVERLAP_PX)):
+            sp = tmp_dir / ("page_%02d_%02d.png" % (i, j))
+            piece.save(sp)          # PNG all the way to fitz — never re-encoded
+            slices.append(sp)
+    if not slices:
         raise RuntimeError("no panels to put in the PDF")
+
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
-    pages[0].save(out_pdf, "PDF", resolution=144.0, save_all=True,
-                  append_images=pages[1:])
+    doc = fitz.open()
+    for sp in slices:
+        pix = fitz.Pixmap(str(sp))
+        page = doc.new_page(width=PAGE_W,
+                            height=PAGE_W * pix.height / pix.width)
+        page.insert_image(page.rect, pixmap=pix)
+        pix = None
+    doc.save(str(out_pdf), deflate=True)
+    doc.close()
     return out_pdf
 
 
