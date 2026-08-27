@@ -137,7 +137,8 @@ def _run_stage(name: str, work):
 
 def run(live: bool = False, limit: int = None, max_actions: int = None,
         batch_only: bool = False, oat_only: bool = False,
-        batch_limit: int = 0, office: str = None) -> int:
+        batch_limit: int = 0, office: str = None,
+        recheck_nophone: bool = False) -> int:
     """Run the unified pipeline: LEFTOVERS (OAT) then BATCH (Resume Pushing), each in
     its OWN fresh warm CDP session (see _run_stage for why — batch needs a clean
     console→v2 start, not a mid-run hop).
@@ -147,6 +148,11 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
     batch Indeed-Turnstile wedge still counts as reached=True (it got to the batch
     page). Office-11580 Cloudflare re-challenges during login are retried per stage."""
     _use_office(office or offices.DEFAULT_OFFICE)
+    if recheck_nophone:
+        # Drop today's "already checked, no number" cache so this walk re-reads
+        # those resumes. For use right after a fix to the resume READ itself —
+        # otherwise the cache pins yesterday's wrong verdict until midnight.
+        oat.reset_nophone_cache()
     mode = "LIVE" if live else "DRY-RUN"
     rp._LOG_BUFFER.clear()
     rp._log(f"[push] Applicant Push — office {OFFICE_ID} ({OFFICE_HINT}) — {mode} "
@@ -236,6 +242,11 @@ def main(argv=None) -> int:
                    help="Cap OAT live mutations this run (controlled test)")
     p.add_argument("--batch-limit", type=int, default=0,
                    help="Send only the first N batch rows (small live test)")
+    p.add_argument("--recheck-nophone", action="store_true",
+                   help="Re-read the resumes of applicants already flagged "
+                        "no-number TODAY (archives the day's cache first). Use "
+                        "after fixing the resume read itself; normally the cache "
+                        "is what stops us reopening dead-end resumes q5min.")
     p.add_argument("--office", default=offices.DEFAULT_OFFICE,
                    choices=sorted(offices.OFFICES),
                    help="Which ApplicantStream office to work this run "
@@ -250,7 +261,8 @@ def main(argv=None) -> int:
         return 2
     return run(live=live, limit=args.limit, max_actions=args.max_actions,
                batch_only=args.batch_only, oat_only=args.oat_only,
-               batch_limit=args.batch_limit, office=args.office)
+               batch_limit=args.batch_limit, office=args.office,
+               recheck_nophone=args.recheck_nophone)
 
 
 if __name__ == "__main__":

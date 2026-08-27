@@ -1438,6 +1438,40 @@ def reset_activity() -> int:
     return 0
 
 
+def reset_nophone_cache() -> int:
+    """Archive TODAY's no-number caches for the active office so the next walk
+    re-reads those resumes instead of skipping them.
+
+    Needed whenever the reason a read failed gets fixed mid-day. The cache is
+    deliberately sticky — it exists so we stop reopening the same dead-end resumes
+    every five minutes — but that stickiness also pins in place any applicant who
+    was written off for a reason that is no longer true. That is exactly what the
+    2026-08-27 frame-blind read did: 24 of Atef's and 19 of Carlos's applicants
+    were cached as "checked, no number" off a read that never opened the frame the
+    number was in, and without this they would sit until the date-keyed cache
+    rolled at midnight.
+
+    Files are RENAMED to .bak, never deleted, and the in-process caches are
+    dropped so a walk in this same process reloads from disk."""
+    import shutil
+    global _NOPHONE_CHECKED, _NOPHONE_BLOCKED
+    stamp = dt.datetime.now().strftime("%H%M%S")
+    moved = []
+    for path in (_nophone_checked_path(), _nophone_blocked_path()):
+        path = str(path)
+        if os.path.exists(path):
+            try:
+                shutil.move(path, f"{path}.{stamp}.bak")
+                moved.append(os.path.basename(path))
+            except Exception as e:  # noqa: BLE001
+                _log(f"[recheck] could not archive {path}: {type(e).__name__}")
+    _NOPHONE_CHECKED = None
+    _NOPHONE_BLOCKED = None
+    _log(f"[recheck] cleared {len(moved)} no-number cache file(s) for office "
+         f"{config.OFFICE_ID} -> {moved}; this walk re-reads those resumes")
+    return len(moved)
+
+
 def _flush_queues() -> None:
     _flush_csv(config.NO_PHONE_FLAG_CSV,
                ["flagged_date", "first_name", "last_name", "email", "job_board",
