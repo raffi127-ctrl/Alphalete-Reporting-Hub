@@ -166,6 +166,10 @@ def settle_name_gate(sh, *, dry_run: bool, do_post: bool) -> int:
     """
     try:
         state = name_gate.load_state()
+        # Catch up anything answered before questions started being struck
+        # through, so the only plain line left in a thread is an open one.
+        if name_gate.strike_backlog(state, dry_run=not do_post) and do_post:
+            name_gate.save_state(state)
         approved, rejected, needs_auth = name_gate.collect_decisions(state)
         if needs_auth:
             # Somebody reacted whose vote doesn't count. Say so in the thread —
@@ -181,7 +185,7 @@ def settle_name_gate(sh, *, dry_run: bool, do_post: bool) -> int:
             return 0
         applied = name_gate.apply_renames(sh, approved, state, dry_run=dry_run)
         name_gate.record_rejections(rejected, state, dry_run=dry_run)
-        name_gate.confirm(applied, rejected, dry_run=not do_post)
+        name_gate.mark_settled(applied, rejected, dry_run=not do_post)
         if not dry_run:
             name_gate.save_state(state)
         for entry in rejected:

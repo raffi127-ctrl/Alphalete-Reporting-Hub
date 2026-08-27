@@ -524,6 +524,59 @@ class OutsiderReactionTests(unittest.TestCase):
         self.assertEqual(needs, [])
 
 
+class SettledLineTests(unittest.TestCase):
+    """Megan: "luke gets lost in all of that" — an answered question that still
+    looks like a question is what buries the open one."""
+
+    ENTRY = {"channel": "C1", "reply_ts": "2.0", "sheet_first": "Adriana",
+             "sheet_last": "Ruiz", "legal_first": "Jordan", "legal_last": "Ruiz"}
+
+    def _capture(self, applied, rejected):
+        sent = []
+        class _Cli:
+            def chat_update(self, channel, ts, text):
+                sent.append((ts, text))
+        orig = name_gate._client
+        name_gate._client = lambda: _Cli()
+        try:
+            name_gate.mark_settled(applied, rejected, dry_run=False)
+        finally:
+            name_gate._client = orig
+        return sent
+
+    def test_a_rejected_question_is_struck_through(self):
+        sent = self._capture([], [dict(self.ENTRY)])
+        self.assertEqual(len(sent), 1)
+        self.assertIn("~Adriana Ruiz → Jordan Ruiz~", sent[0][1])
+        self.assertTrue(sent[0][1].startswith("❌"))
+
+    def test_an_approved_question_says_what_was_fixed(self):
+        sent = self._capture([dict(self.ENTRY)], [])
+        self.assertIn("checklist and in OwnerVille", sent[0][1])
+        self.assertTrue(sent[0][1].startswith("✅"))
+
+    def test_the_backlog_is_struck_once_and_remembered(self):
+        state = {"pid1": {**self.ENTRY, "status": "rejected"}}
+        sent = []
+        class _Cli:
+            def chat_update(self, channel, ts, text):
+                sent.append(ts)
+        orig = name_gate._client
+        name_gate._client = lambda: _Cli()
+        try:
+            first = name_gate.strike_backlog(state, dry_run=False)
+            second = name_gate.strike_backlog(state, dry_run=False)
+        finally:
+            name_gate._client = orig
+        self.assertEqual((first, second), (1, 0))
+        self.assertEqual(len(sent), 1)
+        self.assertTrue(state["pid1"]["struck"])
+
+    def test_a_pending_question_is_left_alone(self):
+        state = {"pid1": {**self.ENTRY, "status": "pending"}}
+        self.assertEqual(name_gate.strike_backlog(state, dry_run=True), 0)
+
+
 class _FakeWS:
     def __init__(self, row_vals):
         self.row_vals = row_vals

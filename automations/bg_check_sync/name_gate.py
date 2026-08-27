@@ -734,26 +734,61 @@ def record_rejections(rejected: list[dict], state: dict, *, dry_run: bool = True
         }}
 
 
-def confirm(applied: list[dict], rejected: list[dict], *, dry_run: bool = True,
-            channel: Optional[str] = None) -> None:
-    """Reply in each thread with what actually happened — including the
-    OwnerVille edit we cannot make ourselves yet."""
+def mark_settled(applied: list, rejected: list, *, dry_run: bool = True) -> None:
+    """Strike through a question once it has been answered.
+
+    Megan 2026-08-26, looking at one open question sitting under an answered
+    one: "luke gets lost in all of that." An answered question that still looks
+    like a question is the noise — not the words in it. So the answer is written
+    ONTO the question and struck through, which leaves exactly one un-struck
+    line in the thread: the one still waiting on somebody.
+
+    This replaces the separate confirmation replies. Those said the same thing
+    one message lower down and doubled the length of the thread to do it.
+    """
     cli = None if dry_run else _client()
-    for entry in applied:
-        legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
-        old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
-        text = f"✅ *{old}* is now *{legal}* — checklist and OwnerVille."
-        if entry.get("skipped"):
-            text += f"\nNot touched: {', '.join(entry['skipped'])}."
-        _reply(cli, entry, text, dry_run)
-    for entry in rejected:
+    for entry, outcome in ([(e, "yes") for e in applied]
+                           + [(e, "no") for e in rejected]):
+        if not entry.get("reply_ts"):
+            continue
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
         legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
-        # Still says the thing that matters — that a real check is sitting
-        # there belonging to nobody on the checklist — but in one line.
-        text = (f"❌ *{old}* left as is. *{legal}*'s check isn't anyone on the "
-                f"checklist.")
-        _reply(cli, entry, text, dry_run)
+        if outcome == "yes":
+            text = f"✅ ~{old} → {legal}~ — fixed on the checklist and in OwnerVille"
+        else:
+            text = (f"❌ ~{old} → {legal}~ — different people; {legal}'s check "
+                    f"isn't anyone on the checklist")
+        if dry_run:
+            print(f"[name-gate] (dry-run) would strike through {old}:\n  {text}")
+            continue
+        try:
+            cli.chat_update(channel=entry["channel"], ts=entry["reply_ts"],
+                            text=text)
+            entry["struck"] = True
+        except Exception as e:  # noqa: BLE001
+            print(f"[name-gate] couldn't strike through {old}: {e}")
+
+
+def strike_backlog(state: dict, *, dry_run: bool = True) -> int:
+    """Strike through questions answered before this existed.
+
+    One-time catch-up, and cheap insurance afterwards: a settled question whose
+    line still reads like a question is the thing that buried the open one.
+    """
+    applied = [{**e, "pid": pid} for pid, e in state.items()
+               if isinstance(e, dict) and e.get("status") == "applied"
+               and not e.get("struck") and e.get("reply_ts")]
+    rejected = [{**e, "pid": pid} for pid, e in state.items()
+                if isinstance(e, dict) and e.get("status") == "rejected"
+                and not e.get("struck") and e.get("reply_ts")]
+    if not (applied or rejected):
+        return 0
+    mark_settled(applied, rejected, dry_run=dry_run)
+    if not dry_run:
+        for entry in applied + rejected:
+            if entry.get("struck"):
+                state.setdefault(entry["pid"], {})["struck"] = True
+    return len(applied) + len(rejected)
 
 
 def _reply(cli, entry: dict, text: str, dry_run: bool) -> None:
