@@ -149,10 +149,17 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
 
 # --- delivery ---------------------------------------------------------------
 def text_group(group: str, body: str, *, dry_run: bool = True, log=print) -> Dict:
-    """One iMessage group. Resolved by NAME every time -- never a stored id."""
+    """One iMessage group. Resolved by NAME every time -- never a stored id.
+
+    send_TEXT_to_group, not send_to_group: the latter is for the disposition
+    posts where the image IS the content, and it deliberately refuses an
+    image-less send ("a bare title would read as a broken send"). A leaderboard
+    is pure text, so it wants the text-only twin -- which the first live send
+    found out the hard way, 2026-08-26.
+    """
     from automations.b2b_dispositions import text_post
     log("%s -> %s (%d chars)" % ("PREVIEW" if dry_run else "TEXT", group, len(body)))
-    return text_post.send_to_group(group, body, [], dry_run=dry_run)
+    return text_post.send_text_to_group(group, body, dry_run=dry_run)
 
 
 def slack(text: str, *, dry_run: bool = True, log=print) -> None:

@@ -81,6 +81,16 @@ SLACK_CHANNEL = "C068PH3RFSM"          # #alphalete-sales
 # is the right thing for it to mean.
 GROUP_PARTNERS = "Alphalete Partners"   # the 7-person partners chat
 GROUP_LVL1 = "Alphalete lvl 1"          # the 29-person reps chat
+GROUP_A_TEAM = "Alphalete A-Team Chat"  # the 20-person A-Team chat
+
+# WHO GETS WHAT.
+#   every sweep that finds a sale -> the Partners chat (they watch it fill in)
+#   once a day, end of selling    -> the reps AND the A-Team. Confirmed in the
+#     field 2026-08-26: "Yea 8 on weekdays and 4 on Saturday" — the A-Team chat
+#     has been getting that same alert all along, so leaving it out would have
+#     quietly dropped 20 people the day the old system was switched off.
+LIVE_GROUPS = [GROUP_PARTNERS]
+END_OF_DAY_GROUPS = [GROUP_LVL1, GROUP_A_TEAM]
 
 WEEKLY_GOAL = 80
 

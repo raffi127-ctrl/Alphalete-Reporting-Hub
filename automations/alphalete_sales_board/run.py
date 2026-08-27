@@ -273,7 +273,8 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
         wtd = week_to_date(grid, day) if apply_writes else None
         body = N.leaderboard(today, [] if baseline else list(gained), wtd, missing)
         if gained or (baseline and today):
-            N.text_group(C.GROUP_PARTNERS, body, dry_run=not send, log=_log)
+            for group in C.LIVE_GROUPS:
+                N.text_group(group, body, dry_run=not send, log=_log)
         if not baseline:
             for rep, delta in sorted(gained.items()):
                 N.slack(N.hype(rep, delta, day), dry_run=not send, log=_log)
@@ -283,7 +284,13 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
 
     if C.lvl1_due() and not S.lvl1_sent(data, day):
         body = N.leaderboard(today, [], week_to_date(grid, day), missing)
-        N.text_group(C.GROUP_LVL1, body, dry_run=not send, log=_log)
+        # One resolve+send per room. A group that can't be resolved must not
+        # cost the others their scoreboard, so each is attempted on its own.
+        for group in C.END_OF_DAY_GROUPS:
+            try:
+                N.text_group(group, body, dry_run=not send, log=_log)
+            except Exception as e:  # noqa: BLE001
+                _log("  %s FAILED: %s: %s" % (group, type(e).__name__, str(e)[:160]))
         if send:
             data = S.mark_lvl1_sent(data, day)
 
