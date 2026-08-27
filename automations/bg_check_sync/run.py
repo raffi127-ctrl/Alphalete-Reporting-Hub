@@ -432,7 +432,12 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
     if do_slack:
         hour12 = now.hour % 12 or 12
         updated_str = f"{now:%b} {now.day}, {hour12}:{now.minute:02d} {now:%p}"
-        body = slack_post.render(week, slack_people, needs_confirm, updated_str)
+        # Rows claiming an outcome no Sterling email backs — the same list the
+        # [flags] lines carry, put where somebody will see it.
+        unbacked = [(name, next((st for n, st in slack_people if n == name), ""))
+                    for name, why in flags if "no result email matched" in why]
+        body = slack_post.render(week, slack_people, needs_confirm, updated_str,
+                                 unbacked=unbacked)
         slack_post.post_or_update(week, body, dry_run=not do_post,
                                   repost=repost, today=now.date().isoformat())
 
