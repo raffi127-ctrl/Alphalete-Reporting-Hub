@@ -75,7 +75,8 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date) -> str:
 
 
 def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
-                week_to_date: Optional[int] = None) -> str:
+                week_to_date: Optional[int] = None,
+                missing: Sequence[Dict] = ()) -> str:
     """The scoreboard both chats get.
 
         Rep Name 3 (2 Int, 1 DTV) :fire:
@@ -99,7 +100,20 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
             line += " :fire:"
         lines.append(line)
 
-    totals = {k: sum(int(m.get(k, 0)) for _r, m in rows)
+    # A rep with no board row still SOLD. They are listed, they are counted in
+    # the totals, and they are marked -- because the alternative is a message
+    # whose total quietly disagrees with the day (Megan 2026-08-26). The mark is
+    # what gets them a roster row tomorrow.
+    for item in missing:
+        m = item.get("metrics") or {}
+        parts = ["%d %s" % (int(m[k]), METRIC_LABEL[k])
+                 for k in ("Int", "Int Up", "DTV", "NL") if int(m.get(k, 0))]
+        lines.append(":warning: %s %d (%s) - NOT ON THE BOARD"
+                     % (item.get("sara_name", "?"), rep_total(m), ", ".join(parts)))
+
+    counted = rows + [(i.get("sara_name", "?"), i.get("metrics") or {})
+                      for i in missing]
+    totals = {k: sum(int(m.get(k, 0)) for _r, m in counted)
               for k in ("Int", "Int Up", "DTV", "NL")}
     lines.append("")
     lines.append("INT: %d" % totals["Int"])
@@ -109,6 +123,14 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
     lines.append(":trophy: TOTALS: %d" % sum(totals[k] for k in COUNTED))
     if week_to_date is not None:
         lines.append("GOAL FOR THE WEEK: %d/%d" % (week_to_date, C.WEEKLY_GOAL))
+    if missing:
+        names = ", ".join(str(i.get("sara_name", "?")) for i in missing)
+        lines.append("")
+        lines.append(":warning: %s %s sales in SaraPlus but no row on this "
+                     "week's board - the counts above include %s, the board "
+                     "does not." % (names,
+                                    "has" if len(missing) == 1 else "have",
+                                    "them" if len(missing) > 1 else "them"))
     return "\n".join(lines)
 
 

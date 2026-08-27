@@ -97,23 +97,40 @@ def match_name(sara_name: str, board_names: List[str]) -> Tuple[Optional[str], s
                   "roster, or map the spelling in config.NAME_MAP" % sara_name)
 
 
-def calculate(agents: List[Dict], board_names: List[str]) -> Tuple[List[Dict], List[str]]:
-    """([{board_name, sara_name, metrics}], [unmatched notes]).
+def calculate(agents: List[Dict], board_names: List[str]
+              ) -> Tuple[List[Dict], List[str], List[Dict]]:
+    """([{board_name, sara_name, metrics}], [notes], [missing]).
+
+    `missing` is every rep who SOLD today and has no row on the board. They are
+    returned with their numbers, not just named in a note, because the text
+    update has to say so (Megan 2026-08-26): a sale that lands on nobody's row
+    is invisible to everyone reading the board, and the person who can fix it
+    is in the chat, not in the log.
 
     Reps whose whole day is zero are dropped: they have nothing to write and
     nothing to celebrate, and carrying them would make every sweep's log read
     as if 60 rows were about to change."""
-    out, notes = [], []
+    out, notes, excluded, missing = [], [], [], []
     for a in agents:
         m = metrics_for(a)
         if not any(m.values()):
             continue
+        why = C.EXCLUDE_REPS.get(str(a.get("name", "")).strip().upper())
+        if why:
+            # Named, counted, and NOT reported as a problem -- see EXCLUDE_REPS.
+            excluded.append("%s (%s)" % (a.get("name", ""), why))
+            continue
         board_name, note = match_name(a.get("name", ""), board_names)
         if not board_name:
             notes.append(note)
+            missing.append({"sara_name": a.get("name", ""), "metrics": m,
+                            "reason": note})
             continue
         if note:
             notes.append(note)
         out.append({"board_name": board_name, "sara_name": a.get("name", ""),
                     "metrics": m})
-    return out, notes
+    if excluded:
+        notes.append("skipped %d rep(s) who are deliberately off the board: %s"
+                     % (len(excluded), "; ".join(excluded)))
+    return out, notes, missing

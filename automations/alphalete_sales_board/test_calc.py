@@ -40,7 +40,7 @@ def test_ambiguous_last_name_refuses():
 
 
 def test_unmatched_is_reported_not_dropped():
-    rows, notes = calc.calculate(
+    rows, notes, _missing = calc.calculate(
         [{"name": "BRAND NEW", "internet_sales": 1, "internet_upgrades": 0,
           "aia_sales": 0, "wireless_lines_sold": 0, "dtv_streaming": 0}],
         ["Someone Else"])
@@ -48,8 +48,31 @@ def test_unmatched_is_reported_not_dropped():
     assert notes and "BRAND NEW" in notes[0], notes
 
 
+def test_excluded_rep_is_skipped_without_being_called_a_problem():
+    # Joshua Mascorro sells in SaraPlus and is deliberately not on the board.
+    # He must not come back as "add them to the roster" 150 times a day.
+    rows, notes, _missing = calc.calculate(
+        [{"name": "JOSHUA MASCORRO", "internet_sales": 2, "internet_upgrades": 0,
+          "aia_sales": 0, "wireless_lines_sold": 1, "dtv_streaming": 0}],
+        ["Someone Else"])
+    assert rows == [], rows
+    assert len(notes) == 1, notes
+    assert "deliberately off the board" in notes[0], notes
+    assert "add them to the roster" not in notes[0].lower(), notes
+
+
+def test_a_genuinely_missing_rep_still_gets_flagged():
+    # The exclusion must not quiet anybody else.
+    rows, notes, _missing = calc.calculate(
+        [{"name": "ANTONIO DAVIS", "internet_sales": 1, "internet_upgrades": 0,
+          "aia_sales": 0, "wireless_lines_sold": 0, "dtv_streaming": 0}],
+        ["Someone Else"])
+    assert rows == [], rows
+    assert any("ANTONIO DAVIS" in n and "roster" in n for n in notes), notes
+
+
 def test_zero_reps_are_skipped():
-    rows, _ = calc.calculate(
+    rows, _n, _m = calc.calculate(
         [{"name": "SOMEONE ELSE", "internet_sales": 0, "internet_upgrades": 0,
           "aia_sales": 0, "wireless_lines_sold": 0, "dtv_streaming": 0}],
         ["Someone Else"])
@@ -88,6 +111,32 @@ def test_remember_never_moves_a_number_down():
     assert data[day.isoformat()]["Jane Doe"]["Int"] == 3, data
     # ...so the short export can't re-announce the sale on the next sweep
     assert S.deltas(data, day, {"Jane Doe": {"Int": 3, "Int Up": 0, "DTV": 0, "NL": 0}}) == {}
+
+
+def test_a_missing_rep_is_named_in_the_text_and_counted():
+    # Megan 2026-08-26: "if someone gets a sale and is missing from the board
+    # the text update should say that". Listing them but leaving them out of
+    # TOTALS would under-report the day, which is the same failure in reverse.
+    rows, _n, missing = calc.calculate(
+        [{"name": "ANTONIO DAVIS", "internet_sales": 1, "internet_upgrades": 0,
+          "aia_sales": 0, "wireless_lines_sold": 2, "dtv_streaming": 0}],
+        ["Someone Else"])
+    assert rows == [] and len(missing) == 1, (rows, missing)
+    text = N.leaderboard({"Jane Doe": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0}},
+                         [], None, missing)
+    assert "ANTONIO DAVIS 3 (1 Int, 2 NL) - NOT ON THE BOARD" in text, text
+    assert ":trophy: TOTALS: 4" in text, text          # 1 + (1 Int + 2 NL)
+    assert "no row on this week's board" in text, text
+
+
+def test_an_excluded_rep_never_reaches_the_text():
+    rows, _n, missing = calc.calculate(
+        [{"name": "JOSHUA MASCORRO", "internet_sales": 3, "internet_upgrades": 0,
+          "aia_sales": 0, "wireless_lines_sold": 0, "dtv_streaming": 0}],
+        ["Someone Else"])
+    assert rows == [] and missing == [], (rows, missing)
+    text = N.leaderboard({}, [], None, missing)
+    assert "MASCORRO" not in text.upper(), text
 
 
 def test_hype_tiers():

@@ -207,7 +207,7 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
     names = fill.board_names(grid)
     _log("board tab %r: %d reps on the roster" % (ws.title, len(names)))
 
-    rows, notes = calc.calculate(agents, names)
+    rows, notes, missing = calc.calculate(agents, names)
     for n in notes:
         _log("  note: %s" % n)
 
@@ -231,9 +231,9 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
     _log("new this sweep: %d rep(s) with sales, %d with credit checks"
          % (len(gained), len(rec_gained)))
 
-    if gained or rec_gained:
+    if gained or rec_gained or missing:
         wtd = week_to_date(grid, day) if apply_writes else None
-        body = N.leaderboard(today, list(gained), wtd)
+        body = N.leaderboard(today, list(gained), wtd, missing)
         if gained:
             N.text_group(C.GROUP_PARTNERS, body, dry_run=not send, log=_log)
             for rep, delta in sorted(gained.items()):
@@ -243,7 +243,7 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
                     dry_run=not send, log=_log)
 
     if C.lvl1_due() and not S.lvl1_sent(data, day):
-        body = N.leaderboard(today, [], week_to_date(grid, day))
+        body = N.leaderboard(today, [], week_to_date(grid, day), missing)
         N.text_group(C.GROUP_LVL1, body, dry_run=not send, log=_log)
         if send:
             data = S.mark_lvl1_sent(data, day)

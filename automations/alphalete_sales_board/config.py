@@ -41,6 +41,16 @@ PROFILE_DIR = REPO_ROOT / "automations" / "uploaded" / ".saraplus_profile"
 # terminated_reps reads. Tabs are 'Sales Board WE <m>.<d>' (the week's SUNDAY).
 SPREADSHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"
 
+# People who sell in SaraPlus but deliberately DO NOT sit on the sales board.
+# Without this list they are reported as unmatched on every single sweep -- 150
+# log lines a day saying "add them to the roster" about somebody nobody intends
+# to add, which is how a real missing rep stops being noticed. Keyed the way
+# SaraPlus writes them (upper case); the value is the reason, so the next person
+# reading this knows it was a decision and not an oversight.
+EXCLUDE_REPS = {
+    "JOSHUA MASCORRO": "sales manager, not on the board roster (Megan 2026-08-26)",
+}
+
 # SaraPlus spelling -> the name as col C carries it. Only rows where the LETTERS
 # differ belong here; parentheticals like '(Wk3)' are stripped before matching.
 NAME_MAP: Dict[str, str] = {
