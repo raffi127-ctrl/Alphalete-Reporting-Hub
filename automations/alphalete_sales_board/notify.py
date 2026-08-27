@@ -99,7 +99,9 @@ def _line(name: str, m: Dict[str, int]) -> str:
 
 def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
                 week_to_date: Optional[int] = None,
-                missing: Sequence[Dict] = ()) -> str:
+                missing: Sequence[Dict] = (),
+                goal: Optional[int] = None,
+                flag_missing: bool = True) -> str:
     """The scoreboard both chats get.
 
     OUR layout -- full names, the breakdown always shown, the weekly goal --
@@ -111,6 +113,16 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
     # Score only, and Python's stable sort keeps SaraPlus's order inside a tie,
     # so the bottom of the board doesn't reshuffle every time somebody scores.
     rows = [(rep, m) for rep, m in today.items() if rep_total(m) > 0]
+    # WHO SEES THE ROSTER PROBLEM (Megan 2026-08-26): only the partners. A rep
+    # with no board row still appears in the players' chats and still counts --
+    # his sale is his sale -- he just appears as an ordinary line, because
+    # "wasn't on the board, added" is admin, and admin in the players' chat is
+    # noise they can do nothing about. Dropping him instead would have been the
+    # other failure: a scoreboard whose total is quietly short one rep.
+    if not flag_missing:
+        rows += [(i.get("sara_name", "?"), i.get("metrics") or {})
+                 for i in missing]
+        missing = ()
     rows.sort(key=lambda kv: -rep_total(kv[1]))
 
     lines = []
@@ -120,8 +132,6 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
             line += " " + FIRE
         lines.append(line)
 
-    # A rep who sold with no board row still shows -- marked, and counted,
-    # because a total that quietly drops a sale is what this prevents.
     for item in missing:
         lines.append("%s %s - %s" % (
             _line(item.get("sara_name", "?"), item.get("metrics") or {}),
@@ -137,8 +147,9 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
     lines.append("DTV: %d" % totals["DTV"])
     lines.append("NL's: %d" % totals["NL"])
     lines.append("%s TOTALS: %d" % (TROPHY, sum(totals[k] for k in COUNTED)))
-    if week_to_date is not None:
-        lines.append("GOAL FOR THE WEEK: %d/%d" % (week_to_date, C.WEEKLY_GOAL))
+    # No goal on the board -> no goal line. Better silent than invented.
+    if week_to_date is not None and goal:
+        lines.append("GOAL FOR THE WEEK: %d/%d" % (week_to_date, goal))
     if missing:
         who = ", ".join(short_name(i.get("sara_name", "?")) for i in missing)
         lines.append("")

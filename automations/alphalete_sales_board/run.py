@@ -177,9 +177,9 @@ def _clear_failures() -> None:
 
 # --- week to date -----------------------------------------------------------
 def week_to_date(grid, upto: dt.date) -> int:
-    """Org total Mon..`upto` off the board itself -- Int + DTV + NL, upgrades
-    out, which is how the board's own Apps formula counts. Read from the sheet
-    rather than accumulated locally so a hand correction is reflected."""
+    """Org total Mon..`upto` off the board itself -- Int + Int Up + DTV + NL,
+    the board's own 'Total Units'. Read from the sheet rather than accumulated
+    locally so a hand correction is reflected."""
     blocks = B.day_blocks(grid)
     last = B.last_rep_row(grid)
     days = [(upto - dt.timedelta(days=upto.weekday() - i)).strftime("%A")
@@ -187,7 +187,11 @@ def week_to_date(grid, upto: dt.date) -> int:
     total = 0
     for day_name in days:
         cols = blocks.get(day_name) or {}
-        for metric in ("Int", "DTV", "NL"):
+        # Upgrades INCLUDED, because the board's own week rows count them:
+        # 'WE 6/2 - 6/8' reads Total Units 213 against INT 128 + INT UP 42 +
+        # DTV 8 + NL 36. Leaving them out made the goal line disagree with the
+        # TOTALS line directly above it (2026-08-26).
+        for metric in ("Int", "Int Up", "DTV", "NL"):
             col = cols.get(metric)
             if not col:
                 continue
@@ -271,7 +275,8 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
 
     if gained or rec_gained or missing:
         wtd = week_to_date(grid, day) if apply_writes else None
-        body = N.leaderboard(today, [] if baseline else list(gained), wtd, missing)
+        body = N.leaderboard(today, [] if baseline else list(gained), wtd, missing,
+                             goal=fill.board_goal(grid))
         if gained or (baseline and today):
             for group in C.LIVE_GROUPS:
                 N.text_group(group, body, dry_run=not send, log=_log)
@@ -283,9 +288,11 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
                         dry_run=not send, log=_log)
 
     if C.lvl1_due() and not S.lvl1_sent(data, day):
-        body = N.leaderboard(today, [], week_to_date(grid, day), missing)
         # One resolve+send per room. A group that can't be resolved must not
         # cost the others their scoreboard, so each is attempted on its own.
+        # flag_missing=False: the players see the sales, not the paperwork.
+        body = N.leaderboard(today, [], week_to_date(grid, day), missing,
+                             goal=fill.board_goal(grid), flag_missing=False)
         for group in C.END_OF_DAY_GROUPS:
             try:
                 N.text_group(group, body, dry_run=not send, log=_log)

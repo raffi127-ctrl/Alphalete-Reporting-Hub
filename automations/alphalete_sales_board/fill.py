@@ -174,3 +174,24 @@ def add_rep(worksheet, grid, name: str) -> Tuple[Optional[int], str]:
                       % worksheet.title)
     worksheet.update_acell("%s%d" % ("C", row), name)
     return row, ""
+
+
+def board_goal(grid) -> Optional[int]:
+    """The week's goal, read off the board -- the row labelled 'Goal' in col C,
+    value in the cell beside it (350 as of 2026-08-26).
+
+    NOT a constant. The first version carried WEEKLY_GOAL = 80, copied from the
+    example message in the porting brief, and posted "GOAL FOR THE WEEK:
+    106/80" to the Partners chat -- a target already beaten by Tuesday, which
+    tells a reader nothing except that the number is made up. The board has
+    carried the real one all along. [[feedback_no_hardcoded_columns]]
+    """
+    last = len(grid)
+    for r in range(1, last + 1):
+        if B.cell(grid, r, 3).strip().lower() == "goal":
+            raw = B.cell(grid, r, 4).strip().replace(",", "")
+            try:
+                return int(float(raw))
+            except ValueError:
+                return None
+    return None

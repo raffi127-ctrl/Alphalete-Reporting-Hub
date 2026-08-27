@@ -139,6 +139,30 @@ def test_an_excluded_rep_never_reaches_the_text():
     assert "MASCORRO" not in text.upper(), text
 
 
+def test_players_chats_see_the_sales_not_the_paperwork():
+    # Megan 2026-08-26: a rep being added, or having no row to add, posts in
+    # the partner chat only. He still COUNTS in the players' scoreboard --
+    # dropping him would leave their total quietly short.
+    today = {"Jane Doe": {"Int": 2, "Int Up": 0, "DTV": 0, "NL": 0}}
+    miss = [{"sara_name": "HANK TRAN",
+             "metrics": {"Int": 3, "Int Up": 0, "DTV": 0, "NL": 0},
+             "status": "wasn't on the board - added, numbers fill next sweep"}]
+    partners = N.leaderboard(today, [], 100, miss, goal=350)
+    players = N.leaderboard(today, [], 100, miss, goal=350, flag_missing=False)
+    assert "wasn't on the board" in partners, partners
+    assert "no row on this week's board" in partners, partners
+    assert "board" not in players.lower(), players
+    assert "HANK TRAN 3 (3 Int)" in players, players       # present, unmarked
+    for text in (partners, players):
+        assert "TOTALS: 5" in text, text                   # identical totals
+
+
+def test_goal_line_is_omitted_when_the_board_has_no_goal():
+    today = {"Jane Doe": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0}}
+    assert "GOAL" not in N.leaderboard(today, [], 100, goal=None)
+    assert "GOAL FOR THE WEEK: 100/350" in N.leaderboard(today, [], 100, goal=350)
+
+
 def test_hype_tiers():
     assert N.tier({"Int": 1, "NL": 5}) == "super"
     assert N.tier({"Int": 1, "NL": 2}) == "large"
@@ -164,7 +188,7 @@ def test_leaderboard_matches_the_live_post():
     assert lines[1] == "Rex Ryan 2 (2 Int)", lines[1]
     assert "Upgrades: 1" in text, text
     assert "\U0001F3C6 TOTALS: 6" in text, text       # 4 + 2, upgrades counted
-    assert "GOAL FOR THE WEEK" in N.leaderboard(today, [], 42), "our layout keeps the goal"
+    assert "GOAL FOR THE WEEK" in N.leaderboard(today, [], 42, goal=350)
 
 
 def test_ties_keep_saraplus_order():
