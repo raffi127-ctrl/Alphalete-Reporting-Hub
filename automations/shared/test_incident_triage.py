@@ -69,6 +69,72 @@ class Buckets(unittest.TestCase):
         v = _classify(tail="", hour=12)
         self.assertEqual(v.bucket, tri.NEEDS_YOU)
 
+    def test_the_word_held_in_normal_output_is_not_a_hold(self):
+        """2026-08-27: the recruiter-retention fill prints 'same week (counts
+        held)' on every ordinary run, and a REAL failure underneath it went out
+        as 'Waiting on the source. Nothing for you to do.'"""
+        v = _classify(tail="low-performer chart: 2 recruiter(s) <=50% — "
+                           "same week (counts held) | "
+                           "traceback: connection reset")
+        self.assertNotEqual(v.bucket, tri.WAITING)
+
+    def test_the_orchestrators_own_hold_wording_still_waits(self):
+        v = _classify(tail="exit 75 — ran, held with a note (see orch.log)")
+        self.assertEqual(v.bucket, tri.WAITING)
+
+
+class NobodyIsComingBackForIt(unittest.TestCase):
+    """:pending: and the purple circle both say 'it gets picked up on its own'.
+    Only tableau failures are retried, and only a report with a readiness probe
+    is re-checked — for the rest that sentence ends the day with an empty tab."""
+
+    def _with(self, cfg, **kw):
+        with mock.patch.object(tri, "_reports", return_value=cfg):
+            return _classify(**kw)
+
+    def test_appstream_report_that_nothing_retries_is_yours(self):
+        v = self._with({"recruiter_retention_daily": {
+                            "source_type": "appstream", "data_sources": []}},
+                       key="failure-recruiter_retention_daily",
+                       tail="appstream session expired")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("lucy rerun recruiter_retention_daily", tri.line_for(v))
+
+    def test_tableau_report_is_still_lucys(self):
+        v = self._with({"b2b_metrics": {"source_type": "tableau",
+                                        "data_sources": []}},
+                       key="failure-b2b_metrics", tail="connection reset")
+        self.assertEqual(v.bucket, tri.LUCY)
+
+    def test_a_readiness_probe_counts_as_automatic(self):
+        v = self._with({"org_sales_board": {"source_type": "sheets",
+                                            "data_sources": ["box_order_log"]}},
+                       key="failure-org_sales_board", tail="no board posted")
+        self.assertEqual(v.bucket, tri.WAITING)
+
+    def test_a_dropped_part_still_gets_the_parts_retry(self):
+        """`drop-` = it ran and missed a part (INCOMPLETE). The orchestrator
+        does press 'retry failed only' on those, so the promise is true."""
+        v = self._with({"aya_metrics": {"source_type": "ownerville",
+                                        "data_sources": [],
+                                        "verify": {"type": "manifest"}}},
+                       key="drop-aya_metrics", tail="connection reset")
+        self.assertEqual(v.bucket, tri.LUCY)
+
+    def test_the_same_report_FAILING_outright_is_yours(self):
+        """A terminal FAILED report is never touched by the parts retry."""
+        v = self._with({"aya_metrics": {"source_type": "ownerville",
+                                        "data_sources": [],
+                                        "verify": {"type": "manifest"}}},
+                       key="failure-aya_metrics", tail="connection reset")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+
+    def test_an_id_thats_not_a_report_is_left_alone(self):
+        """A `drop-` key can name a SOURCE. Inventing a rerun command for it is
+        worse than the promise we're removing."""
+        v = self._with({}, key="drop-box-order-log", tail="connection reset")
+        self.assertEqual(v.bucket, tri.LUCY)
+
 
 class TheLine(unittest.TestCase):
     """Megan 2026-08-26: simple, clear, no fluff. Enforced, not just intended."""

@@ -21,17 +21,18 @@ from automations.box_order_log.run import PENDING_LINE
 
 
 def sale(rep, status, *, sale_date=None, accepted=None, history=(),
-         business="Some LLC", contract="1"):
+         business="Some LLC", contract="1", sub_status=""):
     """One collapsed Sale, only the fields these two surfaces read."""
     return clean.Sale(
         key=(contract, contract),
         fields={"Rep Name": rep, "Business Name": business,
                 "Contract ID": contract},
-        status=status, sub_status="", level=status,
+        status=status, sub_status=sub_status, level=status,
         sale_date=sale_date, accepted_date=accepted,
         week_ending=accepted or sale_date,
         history=tuple(history) or (status,), secondary="",
         is_cancel=status in payout.CANCEL_STATUSES,
+        sub_statuses=(sub_status,) if sub_status else (),
     )
 
 
@@ -124,6 +125,24 @@ class PendingWorklist(unittest.TestCase):
         not_yellow, yellow = work["sections"]
         self.assertEqual({s.key[0] for s in yellow["rows"]}, {"1", "2", "3"})
         self.assertEqual({s.key[0] for s in not_yellow["rows"]}, {"4", "5"})
+
+    def test_rejected_by_supplier_alone_is_still_a_sale(self):
+        """Carlos, 2026-08-27: "if they got all the way to 'rejected by
+        supplier', that means it was a sale at some point." Those rows carry
+        ONE status, so the TPV gate — which reads the levels a deal passed
+        through — dropped them. The sub-status is the only evidence left."""
+        rejected_by_supplier = sale("Ana", "Rejected", contract="1",
+                                    sub_status="Rejected By Supplier")
+        rescinded = sale("Ana", "Rejected", contract="2",
+                         sub_status="Customer Rescinded")
+        self.assertTrue(clean._reached_tpv(rejected_by_supplier))
+        self.assertFalse(clean._reached_tpv(rescinded))
+        # Case and spacing come from Tableau; don't let them decide this.
+        self.assertTrue(clean._reached_tpv(
+            sale("Ana", "Rejected", contract="3",
+                 sub_status="  rejected  by supplier ")))
+        # Kept as a DEAD sale — it belongs on the log, never on the worklist.
+        self.assertFalse(pending.is_pending(rejected_by_supplier))
 
     def test_skip_yellow_drops_the_yellow_half_from_the_image(self):
         """Carlos, 2026-08-26: "can we have it so the screenshot doesn't show

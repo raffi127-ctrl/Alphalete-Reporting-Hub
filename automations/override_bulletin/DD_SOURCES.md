@@ -168,7 +168,9 @@ What it moved on WE 8.23.26, checked before and after:
   unchanged and **stops saying "partial"** — Milan was the one member with no
   2026 figure, which had been understating nothing but flagging every week.
 - **Tracked Separately drops from 4 rows to 3** (Karrington Moody, Justin Fermin,
-  Marcos Barbosa stay).
+  Marcos Barbosa stay — and all three still do: Marcos came out from under
+  Colten's org later the same day, but his DD row and that line stayed put, see
+  *OUT 2026-08-27 — Marcos Barbosa* below).
 - **ORG. TOTAL DD and Rafael's line do not move.** Rafael is
   `headline − row_week(Carlos) − row_week(Colten)` and `row_week` counts only
   members backed by a real DD row; Milan was a MANUAL amount, so he was never in
@@ -177,6 +179,69 @@ What it moved on WE 8.23.26, checked before and after:
   **Colten's First Gen from 9 to 8** and his Total Org down by one. Nobody else's
   card changes. `dd_search.py` `TARGETS` still names Milan — that is the one-shot
   diagnostic, not a live report, and it stays as the record of the July question.
+
+### OUT 2026-08-27 — Marcos Barbosa comes out from under Colten's org
+
+Eve, 2026-08-27, hours after the Milan Godbolt removal above: *"hay que sacar a
+Marcos Barbosa de debajo de colten's org… y de la org sales board - capitania de
+colten y sus reportes, tambien de la distro."* Same shape as Milan, with **one
+difference that matters**: Marcos has a REAL DD row, so money moved.
+
+| Where | Was | Now |
+|---|---|---|
+| `Lucy Org Tree` **row 86**, PODIUM ORG LISTS | `Colten Wright \| Marcos Barbosa \| $1,475 manual \| Adoption? YES` | RETIRED — B:D and F blanked, leader kept in A, reason in E. Same convention as rows 87 and 122 |
+| `Lucy Org Tree` **D64**, PODIUM LEADERS | Colten `Expected ICDs` = 13 | 12 |
+| `Lucy Org Tree` **row 43**, the Org Tree mirror | `NO DD ROW` | RETIRED note in E |
+| `Org Tree` **C29** (gid 2106936862) | `Marcos Barbosa`, a Gen-3 node under Colten | cleared, then the blank row deleted |
+| `Org DDs Ongoing Report` **row 138** | his `ICD (Special Cases)` row, ORG = Colten | **UNTOUCHED — deliberately** |
+
+**Why the DD row stays.** That block is his weekly history and the bulletin only
+ever renders it under *Tracked Separately*, which prints `# / ICD / weeks /
+Total 2026` — the `why` string carrying "Colten" never reaches the page
+(`dd_build._tracked`). What put him *inside Colten's org* was the podium list row,
+not the DD row, so retiring row 86 is the whole removal. Tracked Separately still
+shows 3 names; the $1,475 in C86 was already DEAD money (a real row beats a manual
+one in `by_key` since 2026-08-06).
+
+What it moved on WE 8.23.26, measured before and after with `dd_data.load()`:
+
+- **Colten Wright $385,583.15 → $385,147.15** (−$436, his 8.23.26 special-case
+  figure). His podium list goes 13 → 12 and his `adoptions` list loses him.
+- **Rafael Hidalgo $247,851.50 → $248,287.50** (+$436), and this is CORRECT, not
+  a leak. Rafael's line is `headline − row_week(Carlos) − row_week(Colten)`, and
+  a special row counts inside `row_week` on purpose (Eve, 2026-08-06). Take
+  Marcos off Colten's list and there is $436 less to subtract. The `direct`
+  cross-check still balances, because `adopt_gap` falls by the same $436 —
+  `direct == week + adopt_gap` holds on both sides of the edit.
+- **ORG. TOTAL DD does not move** ($958,129.03): the headline never contained the
+  special rows.
+- The companion **"Up and Coming RCs and NCs"**: clearing his `Org Tree` node
+  takes **Colten from 8 / 17 to 7 / 16** (First Gen / Total Org). **Rafael stays
+  9 / 48** — the tab paints Marcos with the Adoptions red, and the root already
+  dropped him. Carlos unchanged at 10 / 22.
+
+**The rest of the removal, outside this file.** Three board rows (leaderboard
+`COLTEN'S CAPTAIN TEAM`, the `ATT NDS - All Units` daily block, the `COLTEN
+CAPTAINSHIP` delta box) via `org_sales_board/roster_remove.py`; **four rows on
+`Churn - Colten Wright (NDS)`**, one per period block
+(`output/remove_marcos_colten_churn.py` + snapshot) — that is where he differs
+from Milan, whose churn tab never had him; the pin in
+`shared/captainship_pins.NOT_ON_TEAM["Colten"]` so the NDS captain filter cannot
+walk him back in; and the distro, out of both
+`captainship_drafts/config.RECIPIENTS["colten"]` and the live
+`Colten's Captainship` Contacts group. His card was on **no other live group**,
+so that was the last report he received.
+
+**This week's bulletin had already gone out** (`review_gate --check`: "already
+sent this week"), so the figures above land on the NEXT send. The
+`output/preview-up-and-coming-RCs-NCs-WE-8.23.png` preview built at 12:56 that
+day is stale — `rcs_ncs_build --png` was re-run after the edit.
+
+**Still under Colten elsewhere, on purpose** (not asked for): the §2 screenshot of
+Tableau in the NDS draft, until SmartCircle drops him from the filter; and
+`recruiting_report/dd_roster.json` + `all-offices.json` (ICD 22284, Capital Vision
+Enterprise), which are not bulletin inputs.
+
 
 ### SETTLED 2026-08-27 — how Total Org is counted on the RCs/NCs board
 
@@ -227,6 +292,30 @@ WE 8.23.26, the figures this has to reproduce (they are the regression test):
 | Rafael | 9 | **48** | 50 under him − 3 adoptions + himself |
 | Colten | 8 | **17** | 16 under him, adoptions in, + himself |
 | Carlos | 10 | **22** | 21 under him + himself |
+
+### The `Lucy Org Tree` mirror block, and a header that parsed as people
+
+The top block of `Lucy Org Tree` (rows 5-57, "Tree Name / Reports To / Gen / DD
+Sheet Name / Match status") is a hand-kept mirror of the `Org Tree` tab. **Nothing
+in the code reads it** — it is there so a person can see, in one place, who is on
+the tree and whether they have a DD row. It drifts silently for exactly that
+reason. Brought back in step 2026-08-27:
+
+- **Raul Sosa Puerta and Carl Foss** were on the tree under Jairo and missing
+  here entirely; added at the end of the block, both `NO DD ROW`.
+- **Salik Malick** still said `NO DD ROW`. His row exists and is called **Salik
+  Waqar** — the ICD Aliases tab already resolved it, so only this block was
+  stale. Col D now carries the DD spelling.
+- The summary line under the block is recounted and dated.
+
+**And a real trap found on the way.** The Org Tree's first row is
+`Generation | 1 | 2 | 3 | 4`. `_parse_tree` skipped "Generation" (it is in
+`_LEGEND`) but not the column numbers, so `1`, `2`, `3` and `4` parsed as four
+people and built a `1 -> 2 -> 3 -> 4` chain of their own. **No published figure
+was ever wrong** — that chain's root has no parent, so it never sat inside
+anyone's org, and 48 / 17 / 22 are identical before and after. But it was one
+re-ordered row away from adopting a real Gen-1 name onto a header cell. A bare
+number is now never a person.
 
 ### The `Adoption?` column and the ORGANIC figure (Raf, 2026-07-24 14:36)
 On the bulletin thread, Eve asked whether Jairo could be added. Raf:

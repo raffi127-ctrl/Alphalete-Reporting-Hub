@@ -81,9 +81,16 @@ OWNER_CFG = [
 # b2b_metrics captures every section BEFORE posting any, so churn_tab_image
 # raising "no rep rows on 'LUCY CHURN'" for activation_by_rep took the whole
 # 08:49 rerun down and her thread got nothing, including the four churn boards
-# whose data had just landed. PROMOTE by running `--owner sabrina --dry-run` on
-# Lucy 2, confirming it reconciles, then deleting the key here.
-STAGED: set = {"sabrina"}
+# whose data had just landed.
+#
+# sabrina was promoted 2026-08-27 (Megan), the morning after she was staged:
+# `lucy rerun vantura_churn --owner sabrina --dry-run` on Lucy 2 closed exit 0
+# with her per-rep grid populated and no reconcile mismatch (this module fails
+# loudly on one), which is the gate this set exists to enforce. Promoted rather
+# than left on a daily hand-run because STAGED only skips `--owner both`: her
+# churn tab would be empty again at 04:00 tomorrow, and an empty tab does not
+# cost her two sections, it costs the whole thread.
+STAGED: set = set()
 
 
 def _activation_cfg():
@@ -129,22 +136,29 @@ def _activation_cfg():
                   "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
                   "CarlosTeamViewExpanded?:iid=1",
                   "Carlos Team View Expanded", "JAMIS GARAY"),
-        # SABRINA (alisei) — onboarded 2026-08-26. Same situation as Jamis: no
-        # Sabrina-scoped ACTIVATIONRATES saved view exists (her onboarding row
-        # has per_office_views {}), so this reuses the same all-team view and
-        # relies on the CODE-side owner filter. Added because a brand-new office
-        # with NO entry here doesn't fail loudly — activation_board_image falls
-        # back to Download->Image, which rendered BLANK on 8/27 and the section
-        # was dropped from her thread with only a warning in the log.
-        # UNVERIFIED until `--dump-rep-grid sabrina` on Lucy 2 confirms the
-        # export's "Owner & Office" really starts with this prefix; if it
-        # matches nothing, parse_rep_rates RAISES rather than posting the whole
-        # team, and the prefix is what needs correcting here.
+        # SABRINA (alisei) — onboarded 2026-08-26, activation cfg CORRECTED
+        # 2026-08-27. She is in ATEF's captainship (split off Carlos's on
+        # 2026-08-18: Atef + Sabrina Alicea + Dhyey Patel), so she rides ATEF's
+        # saved view, not Carlos's. This entry first shipped pointed at
+        # CarlosTeamViewExpanded on the assumption that an all-team view plus
+        # the code-side owner filter was enough (the reasoning copied from
+        # jamis, who IS on Carlos's team). It is not: `--dump-rep-grid sabrina`
+        # on Lucy 2 showed that view carries only Carlos's 10 offices —
+        # CARLOS HIDALGO, GEORGE HIPOLITO, JACKIE LEROY, JAMIS GARAY, JEFFREY
+        # STARR, JOEY RAMIREZ, JOSHUA MURPHY, JUSTIN WOOD, KINSEY GUENTHER,
+        # VINCENT SMITH — with no SABRINA ALICEA row to filter down to, so
+        # parse_rep_rates raised every morning and her E5/F5 + AE:AF went stale.
+        # VERIFIED on Lucy 2 2026-08-27 via `--dump-rep-grid atef`: AtefEXP2's
+        # 'Activation Office' exposes exactly ATEF CHOUDHURY / DHYEY PATEL /
+        # SABRINA ALICEA, her member reads 'SABRINA ALICEA\r [alisei, inc.]'
+        # (so this prefix matches), and her 23 reps sum to her office totals
+        # EXACTLY — 0-30 153/232 and 31-60 217/266, tol=0 — so reconcile_reps
+        # passes. Office totals keep coming from the bare all-ICD dashboard
+        # .csv, which always had her; only the per-rep grid needed this view.
         "sabrina": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                     "ATTTRACKER-B2B/ACTIVATIONRATES/"
-                    "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
-                    "CarlosTeamViewExpanded?:iid=1",
-                    "Carlos Team View Expanded", "SABRINA ALICEA"),
+                    "d30e7ebf-2f24-4c7f-9419-b2c713a50abb/AtefEXP2?:iid=1",
+                    "Atef EXP 2", "SABRINA ALICEA"),
     }
 
 

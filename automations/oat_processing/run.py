@@ -1438,6 +1438,40 @@ def reset_activity() -> int:
     return 0
 
 
+def reset_nophone_cache() -> int:
+    """Archive TODAY's no-number caches for the active office so the next walk
+    re-reads those resumes instead of skipping them.
+
+    Needed whenever the reason a read failed gets fixed mid-day. The cache is
+    deliberately sticky — it exists so we stop reopening the same dead-end resumes
+    every five minutes — but that stickiness also pins in place any applicant who
+    was written off for a reason that is no longer true. That is exactly what the
+    2026-08-27 frame-blind read did: 24 of Atef's and 19 of Carlos's applicants
+    were cached as "checked, no number" off a read that never opened the frame the
+    number was in, and without this they would sit until the date-keyed cache
+    rolled at midnight.
+
+    Files are RENAMED to .bak, never deleted, and the in-process caches are
+    dropped so a walk in this same process reloads from disk."""
+    import shutil
+    global _NOPHONE_CHECKED, _NOPHONE_BLOCKED
+    stamp = dt.datetime.now().strftime("%H%M%S")
+    moved = []
+    for path in (_nophone_checked_path(), _nophone_blocked_path()):
+        path = str(path)
+        if os.path.exists(path):
+            try:
+                shutil.move(path, f"{path}.{stamp}.bak")
+                moved.append(os.path.basename(path))
+            except Exception as e:  # noqa: BLE001
+                _log(f"[recheck] could not archive {path}: {type(e).__name__}")
+    _NOPHONE_CHECKED = None
+    _NOPHONE_BLOCKED = None
+    _log(f"[recheck] cleared {len(moved)} no-number cache file(s) for office "
+         f"{config.OFFICE_ID} -> {moved}; this walk re-reads those resumes")
+    return len(moved)
+
+
 def _flush_queues() -> None:
     _flush_csv(config.NO_PHONE_FLAG_CSV,
                ["flagged_date", "first_name", "last_name", "email", "job_board",
@@ -1623,16 +1657,55 @@ def lookup_resume_phone(page):
         for _i in range(12):
             try:
                 title = (newpg.title() or "").lower()
-                body = newpg.evaluate("() => (document.body.innerText || '')")
+                # READ THE FRAMES TOO, not just the top document. Indeed's resume
+                # viewer renders the resume itself in a nested frame; the TOP page
+                # holds only the viewer chrome ("<Name>'s Resume", "View candidate",
+                # nav, footer). That chrome is real text and comfortably over the
+                # blocked-read length floor, so a frame-blind read looked like a
+                # page that loaded fine and simply had no number on it — and every
+                # such applicant was written off for the day as "no phone on
+                # resume" while a human opening the same link saw the number in the
+                # header immediately (Megan 2026-08-27: Carlos Nevarez, office
+                # 23467, "(303) 710-6301 ... his number is right there"). It was not
+                # rare: 24 of Atef's and 19 of Carlos's applicants sat in that state
+                # that morning alone. _view_resume_href already walks page.frames to
+                # FIND this link — only the reader was frame-blind.
+                #
+                # Top document FIRST so a resume whose number is in the main
+                # document keeps resolving exactly as it did before; frames are
+                # only consulted when that finds nothing. Ordering matters beyond
+                # compatibility: résumés list former employers' phone numbers in the
+                # work history, and the applicant's own number is in the header, so
+                # first-match-nearest-the-top is what keeps us texting the candidate
+                # rather than one of their old bosses.
+                texts = []
+                try:
+                    texts.append(newpg.evaluate(
+                        "() => (document.body.innerText || '')") or "")
+                except Exception:  # noqa: BLE001
+                    texts.append("")
+                for _fr in newpg.frames:
+                    try:
+                        t = _fr.evaluate("() => (document.body.innerText || '')")
+                    except Exception:  # noqa: BLE001
+                        continue    # cross-origin / detached frame — skip, not fatal
+                    if t and t not in texts:
+                        texts.append(t)
+                # `body` stays the ALL-FRAMES text: it is what the challenge check
+                # and _blocked_reason below judge, and judging those on the chrome
+                # alone is the same blindness one level down.
+                body = "\n".join(texts)
             except Exception:  # noqa: BLE001
-                title, body = "", ""
+                title, body, texts = "", "", []
             challenged = ("just a moment" in title or "just a moment" in body.lower()
                           or "verify you are human" in body.lower())
             if not challenged and body:
-                for m in _PHONE_RE.finditer(body):
-                    digits = re.sub(r"\D", "", m.group(0))
-                    if 10 <= len(digits) <= 11:     # a real US number
-                        return m.group(0).strip(), f"from resume ({newpg.url[:50]})"
+                for _t in texts:
+                    for m in _PHONE_RE.finditer(_t):
+                        digits = re.sub(r"\D", "", m.group(0))
+                        if 10 <= len(digits) <= 11:     # a real US number
+                            return (m.group(0).strip(),
+                                    f"from resume ({newpg.url[:50]})")
             newpg.wait_for_timeout(1000)
         # The poll ran out. Two VERY different endings look identical from here, and
         # calling both "no phone" is what burned 90 applicants on 2026-08-25:

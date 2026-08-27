@@ -170,7 +170,16 @@ _WAITING_ON: Sequence[Tuple[str, str]] = (
     ("source not ready", "The data it needs hasn't been posted yet."),
     ("no new emails", "No email has come in for it yet."),
     ("nothing to do", "There was nothing for it to do today."),
-    ("held", "It ran, but held back one part it wasn't sure about."),
+    # The ORCHESTRATOR'S OWN wording for a deliberate hold (run.py: exit 75 ->
+    # "ran, held with a note"), not the bare word. `held` alone matched three
+    # unrelated things that all print it in normal output — a lock that "has
+    # held" a profile, tableau_patchright's "the profile was held by an ORPHAN
+    # Chrome" (the case that most needs a person), and, on 2026-08-27, the
+    # recruiter-retention fill's routine success line "same week (counts held)".
+    # Any of those painted a real failure purple and told the channel there was
+    # nothing to do. Match the phrase the hold path actually writes.
+    ("ran, held with a note",
+     "It ran, but held back one part it wasn't sure about."),
 )
 
 # INCIDENTS THAT ARE NOTICES, NOT WORK (Megan 2026-08-26). A `drop-tableau-stale-`
@@ -243,6 +252,60 @@ def _log_tail(rid: str, day: dt.date, n: int = 80) -> str:
         return "\n".join(p.read_text(errors="replace").splitlines()[-n:]).lower()
     except Exception:  # noqa: BLE001 — no log is itself a signal; caller decides
         return ""
+
+
+# THE TWO AUTOMATIC PATHS, READ FROM schedule_config RATHER THAN ASSUMED.
+#
+# Both the :pending: line and the :large_purple_circle: line promise the reader
+# that something will pick the report up on its own. For most of the schedule
+# that is simply not true, and saying it costs a whole morning of fill:
+#
+#   * a failed run is re-attempted ONLY when `source_type == "tableau"`
+#     (day_orchestrator/run.py: `if r.source_type == "tableau" and
+#     rs.attempts < MAX_RUN_RETRIES`). An appstream/sheets/email report that
+#     fails is TERMINAL on attempt one — nothing re-runs it, ever.
+#   * a report held before it ran is re-checked every pass, but only if it has
+#     a readiness probe to re-check, i.e. a non-empty `data_sources`.
+#
+# With neither, "Lucy runs it automatically when it lands" is a false all-clear:
+# the day just ends with the tab unfilled. Found 2026-08-27 on
+# recruiter_retention_daily (source_type appstream, data_sources []), which the
+# channel told two people to ignore at 10:15.
+_CFG_PATH = REPO_ROOT / "automations" / "day_orchestrator" / "schedule_config.json"
+_CFG_CACHE: Optional[dict] = None
+
+
+def _reports() -> dict:
+    global _CFG_CACHE
+    if _CFG_CACHE is None:
+        try:
+            _CFG_CACHE = json.loads(
+                _CFG_PATH.read_text(encoding="utf-8")).get("reports") or {}
+        except Exception:  # noqa: BLE001 — unreadable config: claim nothing
+            _CFG_CACHE = {}
+    return _CFG_CACHE
+
+
+def reruns_itself(rid: str, *, partial: bool = False) -> bool:
+    """Will anything re-run `rid` today without a person asking?
+
+    `partial` is the `drop-` case — the report ran and MISSED a part, so it is
+    INCOMPLETE rather than FAILED, and a third automatic path opens:
+    `_retry_incomplete_parts` presses the Hub's "retry failed only" button for
+    any manifest-verified report (twice, after everything else has run). That
+    one never touches a terminal FAILED report, which is why it is not credited
+    to a `failure-` key.
+
+    Unknown ids (a `drop-` key naming a source, a manifest id) answer True: this
+    only ever DOWNGRADES a promise, and inventing work for an id we can't even
+    find in the schedule is the more expensive mistake.
+    """
+    r = _reports().get(rid)
+    if not isinstance(r, dict):
+        return True
+    if r.get("source_type") == "tableau" or r.get("data_sources"):
+        return True
+    return partial and (r.get("verify") or {}).get("type") == "manifest"
 
 
 def _match(tail: str, table: Sequence[Tuple[str, str]]) -> Optional[str]:
@@ -324,14 +387,30 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     # 5) Before the backstop: waiting on a source, or mid-retry.
     reason = _match(tail, _WAITING_ON)
     if reason:
-        return Verdict(key, WAITING, reason)
+        return _if_it_reruns(key, rid, WAITING, reason)
     reason = _match(tail, _TRANSIENT)
     if reason:
-        return Verdict(key, LUCY, reason)
+        return _if_it_reruns(key, rid, LUCY, reason)
 
     # 6) No log, no signature, still early. The loop has budget left, so let it
     #    spend it — this becomes NEEDS_YOU on its own at noon via (4).
-    return Verdict(key, LUCY, "It failed and the reason isn't in the log.")
+    return _if_it_reruns(key, rid, LUCY,
+                         "It failed and the reason isn't in the log.")
+
+
+def _if_it_reruns(key: str, rid: str, bucket: str, reason: str) -> Verdict:
+    """`bucket` if something will re-run it on its own; otherwise it is a
+    person's — and the line says the one command that fixes it.
+
+    The bucket is not downgraded to spite the loop: it is downgraded because the
+    stock :pending:/:large_purple_circle: wording tells the reader to walk away,
+    and for a report the orchestrator never retries, walking away IS the outage.
+    """
+    if reruns_itself(rid, partial=key.startswith("drop-")):
+        return Verdict(key, bucket, reason)
+    return Verdict(key, NEEDS_YOU, reason,
+                   line=("*Needs one of you.* {} Nothing re-runs it on its "
+                         "own — `lucy rerun {}`.".format(reason, rid)))
 
 
 # --------------------------------------------------------------- the line ----

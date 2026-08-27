@@ -301,12 +301,17 @@ def main(argv=None):
                         k = ad_key(tgt["inbox"], tgt["title"], tgt["city"],
                                    agnostic)
                         applied[(k, slot)] = applied.get((k, slot), 0) + n
+                    carried = sum(1 for s in recv.values()
+                                  if any(x != "" for x in s))
                     for (k, slot), n in applied.items():
                         recv.setdefault(k, [""] * 7)[slot] = n
-                    if missed:
-                        print("     (day pieces with no weekly ad row: %d "
-                              "received dropped for %s)" % (missed, label),
-                              flush=True)
+                    if applied or carried or missed:
+                        # Name the manager and the week: a bare "N dropped"
+                        # line cannot be traced back to an office, which cost
+                        # an hour on 2026-08-27.
+                        print("     [recv] %-22s %-22s carried=%d applied=%d "
+                              "dropped=%d" % (name[:22], label, carried,
+                                              len(applied), missed), flush=True)
                     wk_names = names.in_window(call_rows, name, start, end=start + dt.timedelta(days=6))
                     fresh[(name, label)] = rows_for(name, label, start, ads,
                                                     wk_names, recv)

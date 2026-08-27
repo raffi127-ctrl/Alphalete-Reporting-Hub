@@ -182,11 +182,6 @@ class TestResolveDoesNotReply(unittest.TestCase):
         self.client.chat_postMessage.assert_not_called()
 
 
-if __name__ == "__main__":
-    sys.exit(0 if unittest.main(exit=False, verbosity=2).result.wasSuccessful()
-             else 1)
-
-
 class ExcludedReps(unittest.TestCase):
     """A rep pinned out of a captainship is never offered for that captainship.
 
@@ -209,3 +204,57 @@ class ExcludedReps(unittest.TestCase):
 
     def test_a_real_new_rep_still_gets_through(self):
         self.assertFalse(captain_gate._excluded("Carlos", "Jackie Leroy"))
+
+    def test_marcos_barbosa_cannot_come_back_to_coltens_board(self):
+        """2026-08-27: Marcos Barbosa came off Colten's captainship (and out
+        from under Colten's org in the bulletins) the same day his three Org
+        Sales Board rows were deleted. SmartCircle has NOT dropped him from
+        Tableau's NDS captain filter, so the nightly scan still reads him as
+        Colten's team — without the pin the gate offers him to Evelyn the next
+        morning and one ✅ puts the rows straight back.
+
+        Every spelling the captain arrives as has to hold: the scan passes the
+        Tableau team name, the fills pass the slug.
+        """
+        for capt in ("Colten", "colten", "Colten's Team", "COLTEN"):
+            self.assertTrue(captain_gate._excluded(capt, "Marcos Barbosa"), capt)
+        self.assertTrue(captain_gate._excluded("Colten", "  marcos   barbosa "))
+        # He is still an ICD elsewhere — the pin is Colten's alone.
+        self.assertFalse(captain_gate._excluded("Jairo", "Marcos Barbosa"))
+
+
+class PinnedRepIsNeverProposed(unittest.TestCase):
+    """The pin is checked INSIDE propose(), the one door every report goes
+    through — so the guarantee is 'no report can offer him', not 'the reports we
+    remembered to patch'. Guarding this end-to-end and not just `_excluded`
+    keeps a future refactor of propose() from quietly dropping the filter.
+    """
+
+    def _propose(self, names, captain):
+        log = []
+        with mock.patch.multiple(
+                captain_gate, bank=mock.Mock(**{
+                    "KIND_CAPTAINSHIP": "captainship",
+                    "open_log.return_value": object(),
+                    "log_entries.return_value": [],
+                    "already_logged.return_value": False,
+                })):
+            out = captain_gate.propose(names, captain=captain,
+                                       source="Tableau captain filter",
+                                       ss=object(), dry_run=True,
+                                       logfn=log.append)
+        return out, " | ".join(log)
+
+    def test_marcos_is_not_offered_for_colten(self):
+        out, log = self._propose(["Marcos Barbosa"], "Colten")
+        self.assertEqual(out, [])
+        self.assertIn("pinned out of this captainship", log)
+
+    def test_someone_else_on_the_same_scan_is_still_offered(self):
+        out, _ = self._propose(["Marcos Barbosa", "Jackie Leroy"], "Colten")
+        self.assertEqual([e["name"] for e in out], ["Jackie Leroy"])
+
+
+if __name__ == "__main__":
+    sys.exit(0 if unittest.main(exit=False, verbosity=2).result.wasSuccessful()
+             else 1)

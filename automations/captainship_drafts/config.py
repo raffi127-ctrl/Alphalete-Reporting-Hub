@@ -573,7 +573,15 @@ RECIPIENTS: dict = {
         "josevelasquezlsm@gmail.com",
         "josephdelgadosc@gmail.com", "coastalcreativeconcepts@yahoo.com",
         "campas.kyle@gmail.com", "lajaviusbrown@yahoo.com",
-        "logan.waite24@gmail.com", "marcosbarbosa.entrepeneur@gmail.com",
+        "logan.waite24@gmail.com",
+        # OUT 2026-08-27 (Eve): Marcos Barbosa (marcosbarbosa.entrepeneur@gmail.com)
+        # comes off Colten's captainship — and out from under Colten's org in the
+        # bulletins the same day. His three board rows, his four rows on
+        # 'Churn - Colten Wright (NDS)' and his 'Lucy Org Tree' / 'Org Tree'
+        # entries all went with it, and Tableau is pinned in
+        # shared/captainship_pins under "Colten". Same reason as Milan below: he
+        # must leave this list AND the live "Colten's Captainship" group, because
+        # seed_groups REBUILDS that group from here.
         # OUT 2026-08-21 (Eve): Milan Godbolt (arisesolutions.milan@gmail.com)
         # comes off Colten's captainship. His three board rows went the same
         # day and Tableau is pinned in shared/captainship_pins under "Colten".

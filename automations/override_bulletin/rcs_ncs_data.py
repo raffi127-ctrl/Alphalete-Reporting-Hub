@@ -132,7 +132,14 @@ def _parse_tree(vals, adoptions=()):
     for row in vals:
         for ci, cell in enumerate((row + [""] * 5)[:5]):
             c = (cell or "").strip()
-            if not c or c.lower() in _LEGEND:
+            # The tab's first row is 'Generation | 1 | 2 | 3 | 4'. 'Generation'
+            # is in _LEGEND but the column numbers were not, so they parsed as
+            # four people and built a little 1->2->3->4 chain of their own.
+            # Harmless as the tab stands — that chain's root has no parent, so it
+            # never landed inside anyone's org — but it is one re-ordered row away
+            # from adopting a real Gen-1 name onto a header cell. A bare number is
+            # never a person.
+            if not c or c.lower() in _LEGEND or c.isdigit():
                 continue
             cody = "(1/2)" in c
             nm = c.replace("(1/2)", "").strip()
