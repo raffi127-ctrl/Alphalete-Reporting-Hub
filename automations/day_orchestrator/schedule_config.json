@@ -8359,6 +8359,52 @@
    "depends_on": [],
    "timeout_minutes": 5,
    "verify": null
+  },
+  "alphalete_sales_board_watchdog": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Runs itself every 20 minutes from the standalone com.alphalete.alphalete-sales-board-watchdog LaunchAgent on Lucy 1. It answers the one question the sweep's own alerting cannot: has the sweep STOPPED? run.py alerts when a sweep runs and FAILS; a sweep that never fires writes no log, publishes no Hub row and posts no incident, and that silence is identical to a quiet evening. Reads the age of today's sweep log and DMs Raf once (2h cooldown) when it exceeds 20 minutes during selling hours. Present here so `lucy rerun alphalete_sales_board_watchdog` can run it by hand; add --dry-run to preview the DM without sending.",
+   "machine": "Lucy 1",
+   "display_name": "Alphalete Sales Board watchdog (has the sweep stopped?)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.alphalete_sales_board.watchdog"
+   ],
+   "base_args": [
+    "--dry-run"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "install_alphalete_sales_board_watchdog": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Installs or refreshes the standalone com.alphalete.alphalete-sales-board-watchdog LaunchAgent (StartInterval 1200) on Lucy 1. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "machine": "Lucy 1",
+   "display_name": "Install Alphalete Sales Board watchdog (20-min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "alphalete-sales-board-watchdog"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
   }
  },
  "read_only_standalone": {
