@@ -3616,9 +3616,14 @@ AUTOMATED_REPORTS = [
         "id": "alphalete-sales-board",
         "name": "Alphalete Sales Board (SaraPlus sweep)",
         "creator": "Claude",
+        # Ops, not Metrics: this is an always-on background job (every 5 min,
+        # 10:00-21:30) like rc-autoread and sara-plus-issues, not a report that
+        # runs once and is read. The category is what puts it under the OPS
+        # divider; the amber pill is a SEPARATE per-card-id CSS rule in
+        # dashboard.py -- `color` here does not drive the tile.
         "emoji": "\U0001F4C8",
-        "color": "#1D4ED8",
-        "category": "\U0001F4CA Metrics",
+        "color": "#F59E0B",
+        "category": "\U0001F4F2 Ops",
         "description": (
             "Every 5 minutes of the selling day, reads SaraPlus for today's "
             "sales and fills the day's Int / Int Up / DTV / NL on the current "

@@ -8353,6 +8353,13 @@ else:  # st.session_state.view == "user"
             # (24/7 every 5 min, no status reported back) — orange OPS pill regardless
             # of run-status, matching the other always-on cards.
             "[class*='sara-plus-issues__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # Alphalete Sales Board — the SaraPlus sweep, every 5 min 10:00-21:30
+            # Mon-Fri (10:00-17:00 Sat). It publishes ONE Hub row on the first
+            # good sweep of the day, so the tile would read green on the days it
+            # works and plain white before ~10am — neither of which says what an
+            # always-on job is doing. Permanent orange OPS pill like the other
+            # background cards. (2026-08-26)
+            "[class*='alphalete-sales-board__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             # 2nd Round Interview Auditor — 24/7 bot (reps DM recordings anytime,
             # no run-status reported back) → permanent orange OPS pill like the
             # other always-on cards. (Megan 2026-07-28)
