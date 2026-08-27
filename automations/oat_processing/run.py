@@ -1010,6 +1010,15 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
         _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name} "
              f"[{a.cell_phone or a.phone or 'no-phone'}]{tail}")
         return "flag_retext"
+    # Already established today that no thread of theirs is reachable? Then the
+    # whole widget dance below can only end the same way — flag them and move on,
+    # which is what keeps a walk from spending its time re-deciding settled cases.
+    _key = _nophone_key(a)
+    if _key in _load_nothread():
+        _flag_retext(a, days)
+        _log(f"    ⚑ no reachable thread (settled earlier today) — skipping the "
+             f"re-text attempt: {a.first_name} {a.last_name}")
+        return "flag_retext"
     role = _role_from_position(a.position)
     phone = a.cell_phone or a.phone
     status, detail = retext_applicant(page, a.first_name, a.last_name, phone, role,
@@ -1021,6 +1030,13 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
             return "retext_removed"
         return "retext_sent"
     # couldn't uniquely reach them — flag for a human, don't guess/spam.
+    # Settle ONLY 'no_thread': structural (no fresh threads in AppStream, and the
+    # widget cannot see one older than this month), so today's answer is fixed.
+    # 'retext_err' is transient — a missed template or a lost race — and must be
+    # retried, or we repeat the 2026-08-25 resume-read mistake where a blip wrote
+    # 90 applicants off for the day.
+    if status == "no_thread":
+        _mark_nothread(_key)
     _flag_retext(a, days)
     _log(f"    ⚑ re-text fell back to FLAG ({status}: {detail}): "
          f"{a.first_name} {a.last_name}")
@@ -1184,6 +1200,58 @@ def _fill_phone_field(page, phone: str) -> bool:
     except Exception:  # noqa: BLE001
         pass
     return ok
+
+
+_NOTHREAD = None   # lazily-loaded set of applicants with no reachable SMS thread
+
+
+def _nothread_path():
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[2]
+    (root / "output").mkdir(parents=True, exist_ok=True)
+    return (root / "output" /
+            f"oat-nothread-{dt.date.today().isoformat()}{config.FILE_SUFFIX}.json")
+
+
+def _load_nothread() -> set:
+    """Applicants we ALREADY established today have no SMS thread the widget can
+    see. Their re-text is not worth re-attempting this day.
+
+    Why this exists (Megan 2026-08-27): "the walks should get shorter because
+    there should be less to process especially if you're recognizing what apps you
+    can now skip." The no-number cache only ever skipped the resume READ — a
+    flagged applicant still had the ENTIRE re-text attempt re-run every walk: open
+    the SMS widget, bind the thread, hunt the template, fail, flag. With ~11 of
+    them in one office that was the bulk of a walk, repeated every ten minutes, to
+    reach a conclusion we had already reached.
+
+    ONLY 'no_thread' is cached. That one is structural — AppStream cannot start a
+    fresh thread and the widget cannot see one older than this month, so the answer
+    cannot change today. A 'retext_err' (a missed template, a click that lost a
+    race) is TRANSIENT and must be retried, or we would repeat the mistake the
+    resume-read cache made on 2026-08-25, when a Cloudflare blip wrote 90
+    applicants off for the whole day."""
+    global _NOTHREAD
+    if _NOTHREAD is None:
+        try:
+            import json as _json
+            _NOTHREAD = set(_json.loads(_nothread_path().read_text()))
+            if _NOTHREAD:
+                _log(f"[oat] no-thread cache: {len(_NOTHREAD)} applicant(s) already "
+                     f"known unreachable today — their re-text is skipped")
+        except Exception:  # noqa: BLE001
+            _NOTHREAD = set()
+    return _NOTHREAD
+
+
+def _mark_nothread(key: str) -> None:
+    import json as _json
+    c = _load_nothread()
+    c.add(key)
+    try:
+        _nothread_path().write_text(_json.dumps(sorted(c)))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _persist_phone(page, phone: str) -> bool:
@@ -1591,10 +1659,11 @@ def reset_nophone_cache() -> int:
     Files are RENAMED to .bak, never deleted, and the in-process caches are
     dropped so a walk in this same process reloads from disk."""
     import shutil
-    global _NOPHONE_CHECKED, _NOPHONE_BLOCKED
+    global _NOPHONE_CHECKED, _NOPHONE_BLOCKED, _NOTHREAD
     stamp = dt.datetime.now().strftime("%H%M%S")
     moved = []
-    for path in (_nophone_checked_path(), _nophone_blocked_path()):
+    for path in (_nophone_checked_path(), _nophone_blocked_path(),
+                 _nothread_path()):
         path = str(path)
         if os.path.exists(path):
             try:
@@ -1604,6 +1673,7 @@ def reset_nophone_cache() -> int:
                 _log(f"[recheck] could not archive {path}: {type(e).__name__}")
     _NOPHONE_CHECKED = None
     _NOPHONE_BLOCKED = None
+    _NOTHREAD = None
     _log(f"[recheck] cleared {len(moved)} no-number cache file(s) for office "
          f"{config.OFFICE_ID} -> {moved}; this walk re-reads those resumes")
     return len(moved)
