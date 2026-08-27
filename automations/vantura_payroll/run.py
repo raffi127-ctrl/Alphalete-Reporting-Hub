@@ -747,9 +747,10 @@ def _kickoff_dm(week: dt.date, raw_range, summary, checks, *, send: bool, log=_l
 def _enrich_cols(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str,
                  log=_log) -> tuple[int, int]:
     """Backfill RAW L:N (Commission Type / Category / Tier) for a week that is
-    ALREADY loaded. Aligns export rows to RAW rows positionally, then verifies
-    EVERY row's (rep, amount) matches before writing — any divergence (late
-    Smart Circle posts, a different Tableau slice) fails loud, writes nothing."""
+    ALREADY loaded. Matches export rows to RAW rows by full content identity
+    (rep, amount, campaign, product, customer) — Tableau row order is NOT
+    stable across pulls. Any identity mismatch (late Smart Circle posts, a
+    different Tableau slice) fails loud and writes nothing."""
     from automations.recruiting_report.fill import open_by_key
     headers, data = _read_export(xlsx, log=log)
     cmap = _map_columns(headers, log=log)
@@ -785,20 +786,51 @@ def _enrich_cols(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str,
         except ValueError:
             return 0.0
 
-    got = raw.get(f"B{first_row}:H{last_row}", value_render_option="UNFORMATTED_VALUE")
-    for k, (xr, rr) in enumerate(zip(data, got)):
-        xrep = str(xr[cmap["B"]] if cmap["B"] < len(xr) else "").strip()
-        xamt = _money(xr[cmap["H"]] if cmap["H"] < len(xr) else 0)
-        rrep = str(rr[0] if rr else "").strip()
-        ramt = _money(rr[6] if len(rr) > 6 else 0)
-        if xrep.lower() != rrep.lower() or abs(xamt - ramt) > 0.005:
-            raise RuntimeError(
-                f"row {first_row + k} mismatch: export ({xrep!r}, {xamt}) vs "
-                f"RAW ({rrep!r}, {ramt}) — alignment broken; NOT writing.")
+    # Content-based matching — Tableau does NOT keep a stable row order across
+    # pulls, so positional alignment is wrong by construction. Key each row by
+    # its full identity (rep, amount, campaign, product, customer); rows with
+    # the same key are interchangeable, and they may only differ in L/M/N if
+    # every row in the key-group agrees (else it's ambiguous -> fail loud).
+    def _xkey(r):
+        def c(col):
+            i = cmap[col]
+            return str(r[i] if i < len(r) else "").strip().lower()
+        return (c("B"), round(_money(r[cmap["H"]] if cmap["H"] < len(r) else 0), 2),
+                c("J"), c("K"), c("G"))
 
-    lmn = [[str(r[cmap[c]] if cmap[c] < len(r) else "").strip()
-            for c in ("L", "M", "N")] for r in data]
-    log(f"enrich: {len(lmn)} rows verified rep+amount vs RAW "
+    from collections import defaultdict, Counter
+    groups = defaultdict(list)
+    for r in data:
+        lmn_val = tuple(str(r[cmap[c]] if cmap[c] < len(r) else "").strip()
+                        for c in ("L", "M", "N"))
+        groups[_xkey(r)].append(lmn_val)
+
+    got = raw.get(f"B{first_row}:K{last_row}", value_render_option="UNFORMATTED_VALUE")
+    def _rkey(rr):
+        rr = list(rr) + [""] * (10 - len(rr))
+        return (str(rr[0]).strip().lower(), round(_money(rr[6]), 2),
+                str(rr[8]).strip().lower(), str(rr[9]).strip().lower(),
+                str(rr[5]).strip().lower())
+
+    rkeys = [_rkey(rr) for rr in got]
+    rcount = Counter(rkeys)
+    xcount = Counter({k: len(v) for k, v in groups.items()})
+    diff = [(k, xcount[k], rcount[k]) for k in set(xcount) | set(rcount)
+            if xcount[k] != rcount[k]]
+    if diff:
+        lines = "; ".join(f"{k}: export {a} vs RAW {b}" for k, a, b in diff[:5])
+        raise RuntimeError(
+            f"{len(diff)} row-identity mismatch(es) between export and RAW "
+            f"{first_row}-{last_row} — late posts or a different slice; NOT "
+            f"writing. First: {lines}")
+    ambiguous = [k for k, v in groups.items() if len(set(v)) > 1]
+    if ambiguous:
+        raise RuntimeError(
+            f"{len(ambiguous)} duplicate row-group(s) carry DIFFERENT "
+            f"Type/Category/Tier — cannot assign safely: {ambiguous[:3]}")
+
+    lmn = [list(groups[k][0]) for k in rkeys]
+    log(f"enrich: {len(lmn)} rows content-matched vs RAW "
         f"{first_row}-{last_row}; would write L{first_row}:N{last_row}")
     from collections import Counter
     log("  Category counts: " + str(dict(Counter(r[1] or "<blank>" for r in lmn))))
