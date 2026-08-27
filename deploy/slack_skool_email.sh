@@ -65,6 +65,16 @@ echo "[$(date)] Slack/Skool email finished exit=$ST" >> "$LOG_FILE"
 if [ -n "$MODE" ]; then
     if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('slack_skool_email','Slack / Skool Email','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+
+    # Heartbeat for post_watch: touched ONLY on a clean real send. Its absence
+    # by the deadline is how anyone finds out the job never fired at all --
+    # a machine asleep, launchd unloaded, a plist that stopped parsing. None of
+    # those write an Activity row, and the ordinary didn't-run watcher builds
+    # its baseline FROM Activity rows, so a report that has never run is
+    # invisible to it. [[reference_never_run_reports_invisible]]
+    if [ "$ST" -eq 0 ]; then
+        touch "$LOG_DIR/.slack-skool-email-sent-$(date +%Y-%m-%d)"
+    fi
 fi
 
 exit 0

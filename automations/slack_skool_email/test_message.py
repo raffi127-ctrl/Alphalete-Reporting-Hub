@@ -259,3 +259,19 @@ def test_a_clean_week_says_nothing_extra():
     body = sp.build_thread("D2D OBCL 8.31", ["a@x.com"] * 52, [])
     assert "did NOT get it" not in body
     assert "<@" not in body              # no pointless ping on a clean run
+
+
+# --- somebody notices when it doesn't run -----------------------------------
+
+def test_a_post_watch_target_exists_and_is_sound():
+    """Without this, a Monday where the job never fires is SILENT: nothing
+    writes an Activity row, and the ordinary didn't-run watcher builds its
+    baseline from Activity rows — so a report that has never run is invisible
+    to it. The new starts would just arrive with nothing installed."""
+    from automations.day_orchestrator import post_watch as pw
+    t = [w for w in pw.WATCH_TARGETS if w.report_id == "slack_skool_email"]
+    assert t, "no post_watch target — a missed Monday would alert nobody"
+    t = t[0]
+    assert t.machine == "Lucy 1"
+    assert t.weekdays == [0]                      # Monday only
+    assert pw.config_problem(t) is None           # wrapper really writes it
