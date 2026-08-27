@@ -288,7 +288,8 @@ def _gate_email_sources(selected: list) -> tuple:
     return kept, dropped
 
 
-def _hold_stale_boards(today: dt.date, *, dry_run: bool) -> dict:
+def _hold_stale_boards(today: dt.date, *, dry_run: bool,
+                       orgs: list | None = None) -> dict:
     """Measure each tracker's Tableau extract and HOLD any board whose extract
     hasn't reached the latest completed reporting day. Returns {board_id: why}.
 
@@ -313,6 +314,21 @@ def _hold_stale_boards(today: dt.date, *, dry_run: bool) -> dict:
     # email-sourced boards have their own gates.
     candidates = [p["id"] for p in pages_mod.PAGES
                   if not p.get("late") and p.get("source") != "email"]
+    # …and only the ones THIS RUN's channels actually receive. An org-wide run is
+    # every board, so nothing changes there; a single-org run is that channel's
+    # subscription.
+    #
+    # WHY (Megan 2026-08-26): the 21:03 onboarding run for #alisei-b2b-sales —
+    # an office enrolled in exactly THREE boards — probed all nine and told the
+    # corrections channel that five were held, two of which (NDS, Order Tiered
+    # Bonus) that office does not get and would not have been posted either way.
+    # Gating a board nobody in this run subscribes to can only produce a false
+    # alarm, and it spends a Tableau pull to do it [[project_tableau_access_budget]].
+    if orgs:
+        subscribed = set()
+        for org in orgs:
+            subscribed.update(sp.tracker_ids_for(org, pages_mod.PAGES))
+        candidates = [b for b in candidates if b in subscribed]
     print("\n=== FRESHNESS GATE ===", flush=True)
     tgt = fr.target_day(today)
     print(f"  extracts must have data through "
@@ -815,7 +831,8 @@ def main(argv=None) -> int:
                     print(f"  ⚠ {title} is STILL behind — it will be reported in "
                           f"the thread, not sent", flush=True)
     elif not args.only:
-        held = _hold_stale_boards(today, dry_run=args.dry_run)
+        held = _hold_stale_boards(today, dry_run=args.dry_run,
+                                  orgs=_select_orgs(args.orgs))
 
     # The thread's own heads-up line: every channel's header says Tableau is
     # behind and that the updated boards land here on their own (Megan

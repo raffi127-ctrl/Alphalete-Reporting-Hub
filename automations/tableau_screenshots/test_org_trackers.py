@@ -180,5 +180,53 @@ class NothingOwedNoOpTest(unittest.TestCase):
         self.assertEqual(1 if posted_bad else 0, 0)
 
 
+class GateFollowsTheSubscriptionTest(unittest.TestCase):
+    """The freshness gate probes what THIS RUN's channels receive — no more.
+
+    WHAT HAPPENED (Megan 2026-08-26): "she only enrolled in 3 boards". The 21:03
+    onboarding run for #alisei-b2b-sales — subscribed to exactly
+    b2b_att_country / _cru / b2b_d2d_consolidated — measured all eight gated
+    boards and told #claudecorrections that FIVE were held, two of them (NDS,
+    Order Tiered Bonus) boards that office does not get and that this run was
+    never going to post. A board nobody in the run subscribes to can only
+    generate a false alarm, and it spends a Tableau pull to do it.
+    """
+
+    from automations.tableau_screenshots import run as tracker_run
+    from automations.tableau_screenshots import pages as _pg
+
+    def _gated(self, orgs):
+        """The candidate list _hold_stale_boards would measure for `orgs`."""
+        base = [p["id"] for p in self._pg.PAGES
+                if not p.get("late") and p.get("source") != "email"]
+        subscribed = set()
+        for org in orgs:
+            subscribed.update(sp.tracker_ids_for(org, self._pg.PAGES))
+        return [b for b in base if b in subscribed]
+
+    def test_a_single_office_run_only_gates_that_offices_boards(self):
+        gated = self._gated(["alisei"])
+        self.assertEqual(sorted(gated), sorted(sp.ORG_TRACKERS["alisei"]))
+        self.assertNotIn("nds", gated)
+        self.assertNotIn("order_tiered_bonus", gated)
+
+    def test_the_org_wide_run_still_gates_everything(self):
+        """--orgs all is the daily run; narrowing it would silently stop
+        checking boards that really do go out."""
+        everything = [p["id"] for p in self._pg.PAGES
+                      if not p.get("late") and p.get("source") != "email"]
+        self.assertEqual(sorted(self._gated(list(sp.ORGS))), sorted(everything))
+
+    def test_an_opt_in_board_is_gated_for_the_org_that_asked_for_it(self):
+        """Scoping must not become a way for a subscribed board to skip the
+        gate — domin8 really does receive Order Tiered Bonus."""
+        self.assertIn("order_tiered_bonus", self._gated(["domin8"]))
+
+    def test_alisei_is_still_a_three_board_office(self):
+        """If this changes, the run above should be re-read before its numbers
+        are quoted at anyone."""
+        self.assertEqual(3, len(sp.ORG_TRACKERS["alisei"]))
+
+
 if __name__ == "__main__":
     unittest.main()
