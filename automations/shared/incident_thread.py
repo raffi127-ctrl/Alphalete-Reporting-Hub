@@ -468,6 +468,32 @@ def _parent_still_open(client, channel: str, ts: str) -> Optional[bool]:
         return None
 
 
+def reactions_now(client, channel: str, ts: str) -> Optional[List[str]]:
+    """The reaction names ACTUALLY on this parent right now, or None if we
+    couldn't tell. One targeted history call, same shape as _parent_still_open.
+
+    WHY IT EXISTS (Megan 2026-08-27): reactions.add answering ok is not proof the
+    mark is on the post. failure-recruiter_retention_daily was graded `waiting`
+    at 08:15, the add raised nothing, the run logged nothing — and the post wore
+    no circle all morning, which is exactly the "which of these is mine?" answer
+    the whole reaction layer exists to give. _react cannot see that: its only
+    signal is the API's own ok. Anything that must be able to TRUST a mark reads
+    it back with this.
+
+    reactions.get would be the obvious call and is not available — the token has
+    reactions:write but not reactions:read, so the read goes through
+    conversations.history, which needs no extra scope."""
+    try:
+        r = client.conversations_history(channel=channel, latest=ts, oldest=ts,
+                                         inclusive=True, limit=1)
+        for m in r.get("messages") or []:
+            if m.get("ts") == ts:
+                return [x.get("name") for x in (m.get("reactions") or [])]
+        return None
+    except Exception:  # noqa: BLE001 — no read is "don't know", never "empty"
+        return None
+
+
 def _human(day: dt.date) -> str:
     # No %-d / %#d: this runs on macOS AND Windows (CLAUDE.md).
     return "{} {}".format(day.strftime("%a %b"), day.day)

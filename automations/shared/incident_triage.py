@@ -548,6 +548,28 @@ def _apply(client, channel: str, ts: str, bucket: str,
             inc._react(client, channel, ts, r, remove=True)
     if want not in existing:
         inc._react(client, channel, ts, want)
+
+    # THE MARK IS READ BACK, BECAUSE ok IS NOT PROOF (Megan 2026-08-27: "this
+    # failed and alerted but didn't color code emojis like we set up").
+    # failure-recruiter_retention_daily was graded `waiting` at 08:15, _react
+    # raised nothing, the log recorded nothing — and the post carried no circle
+    # for the rest of the day. _react's only signal is the API's own ok, so a
+    # mark that does not stick is invisible to everything: no error, no emoji,
+    # and (before the schedule change) no second pass to notice.
+    #
+    # A post with no circle is worse than a wrong one. A wrong circle is read
+    # and corrected; a missing one just quietly drops that incident out of the
+    # morning list, which is the one thing this module exists to prevent.
+    landed = inc.reactions_now(client, channel, ts)
+    if landed is None or want in landed:
+        return True
+    inc._react(client, channel, ts, want)            # one retry, then say so
+    landed = inc.reactions_now(client, channel, ts)
+    if landed is not None and want not in landed:
+        print("    ⚠ :{}: did NOT land on {} — Slack accepted the call and the "
+              "post is still wearing {}. This incident has no answer on it."
+              .format(want, ts, ", ".join(landed) or "nothing"))
+        return False
     return True
 
 

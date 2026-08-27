@@ -40,13 +40,35 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 8:15am machine local, all 7 days. After the 4am flow's main passes and
-         the 7:30 checkpoint email, and well before the noon backstop: triaging
-         mid flow would grade reports the orchestrator is still retrying. Seven
-         days because the flow runs seven days. -->
+    <!-- Machine local, all 7 days. Seven days because the flow runs seven days.
+
+         08:15 is the FIRST pass, not the only one: after the 4am flow's main
+         passes and the 7:30 checkpoint email, and before the noon backstop, so
+         it never grades a report the orchestrator is still actively retrying.
+
+         WHY IT REPEATS (Megan 2026-08-27, on an incident that alerted at 07:28
+         and wore no circle all day). One pass a day had two holes:
+
+           1. classify() flips everything still open to "needs one of you" once
+              the clock passes BACKSTOP_HOUR = 12, because past the backstop the
+              retry loop has stopped trying. Firing only at 08:15 made that rule
+              unreachable: nothing ever ran with now_hour >= 12, so an incident
+              graded "Lucy has this" at breakfast still said so at 5pm.
+           2. a mark that fails to land, or an incident that opens AFTER 08:15,
+              had no second pass to fix it. The channel simply carried no answer
+              until the next morning.
+
+         Every 2 hours through the working day closes both: the noon rule gets
+         real fires, and a missed mark self heals inside two hours. Repeating is
+         cheap and quiet by design, because the reaction is idempotent and the
+         thread line is posted once per STATE CHANGE, not once per pass. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>15</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

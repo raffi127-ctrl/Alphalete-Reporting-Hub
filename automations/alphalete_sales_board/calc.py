@@ -54,16 +54,25 @@ def metrics_for(agent: Dict) -> Dict[str, int]:
     }
 
 
-def match_name(sara_name: str, board_names: List[str]) -> Tuple[Optional[str], str]:
+def match_name(sara_name: str, board_names: List[str],
+               alias_map: Optional[Dict[str, str]] = None
+               ) -> Tuple[Optional[str], str]:
     """(board name, note). None when nothing matched or the match is ambiguous;
-    the note says which, in words a person can act on."""
-    mapped = C.NAME_MAP.get(str(sara_name or "").strip().upper())
+    the note says which, in words a person can act on.
+
+    `alias_map` is the live "Sales Text Aliases" tab (aliases.load()). It wins
+    over config.NAME_MAP, because it is the copy a person can edit without a
+    deploy -- which is the whole point of it.
+    """
+    key = str(sara_name or "").strip().upper()
+    mapped = (alias_map or {}).get(key) or C.NAME_MAP.get(key)
     if mapped:
         if any(_norm_name(b) == _norm_name(mapped) for b in board_names):
             return next(b for b in board_names
-                        if _norm_name(b) == _norm_name(mapped)), "name map"
-        return None, ("name map sends %r to %r, which is on no row of this "
-                      "week's board" % (sara_name, mapped))
+                        if _norm_name(b) == _norm_name(mapped)), ""
+        return None, ("an alias sends %r to %r, which is on no row of this "
+                      "week's board -- fix the Board Name in the %r tab"
+                      % (sara_name, mapped, "Sales Text Aliases"))
 
     want = _norm_name(sara_name)
     if not want:
@@ -97,7 +106,8 @@ def match_name(sara_name: str, board_names: List[str]) -> Tuple[Optional[str], s
                   "roster, or map the spelling in config.NAME_MAP" % sara_name)
 
 
-def calculate(agents: List[Dict], board_names: List[str]
+def calculate(agents: List[Dict], board_names: List[str],
+              alias_map: Optional[Dict[str, str]] = None
               ) -> Tuple[List[Dict], List[str], List[Dict]]:
     """([{board_name, sara_name, metrics}], [notes], [missing]).
 
@@ -120,7 +130,8 @@ def calculate(agents: List[Dict], board_names: List[str]
             # Named, counted, and NOT reported as a problem -- see EXCLUDE_REPS.
             excluded.append("%s (%s)" % (a.get("name", ""), why))
             continue
-        board_name, note = match_name(a.get("name", ""), board_names)
+        board_name, note = match_name(a.get("name", ""), board_names,
+                                      alias_map)
         if not board_name:
             notes.append(note)
             missing.append({"sara_name": a.get("name", ""), "metrics": m,

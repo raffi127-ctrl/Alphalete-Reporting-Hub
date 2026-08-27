@@ -224,8 +224,8 @@
     },
     "install_incident_triage_agent": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_incident_triage_agent` can install the com.alphalete.incident-triage LaunchAgent (8:15am daily, deploy/incident_triage.sh) on the mini. That pass SORTS the open incidents in #claudecorrections-and-requests and reacts: red circle = needs Megan or Eve personally, :pending: = Lucy is still retrying it, purple = waiting on a source. It NEVER re-runs a report and NEVER edits code, so the worst a bad fire can do is put one wrong emoji on a post. Mini only: Slack lets you remove your OWN reaction and nobody else's, so a circle added under a person's token could never be taken off again (same rule as incident_working). 8:15 is after the flow's main passes and the 7:30 checkpoint email, and well before the noon backstop -- triaging mid-flow would grade reports the orchestrator is still actively retrying.",
-      "display_name": "Install corrections-triage agent (8:15am)",
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_incident_triage_agent` can install the com.alphalete.incident-triage LaunchAgent (8:15am and then every 2h to 16:15, deploy/incident_triage.sh) on the mini. That pass SORTS the open incidents in #claudecorrections-and-requests and reacts: red circle = needs Megan or Eve personally, :pending: = Lucy is still retrying it, purple = waiting on a source. It NEVER re-runs a report and NEVER edits code, so the worst a bad fire can do is put one wrong emoji on a post. Mini only: Slack lets you remove your OWN reaction and nobody else's, so a circle added under a person's token could never be taken off again (same rule as incident_working). 8:15 is after the flow's main passes and the 7:30 checkpoint email, and well before the noon backstop -- triaging mid-flow would grade reports the orchestrator is still actively retrying. It REPEATS every 2h to 16:15 (Megan 2026-08-27): a single 8:15 pass made classify()'s noon backstop rule unreachable (nothing ever ran with now_hour >= 12) and left an incident opened after 8:15 -- or a mark that failed to land -- with no answer on it until the next morning. Re-running is quiet: the reaction is idempotent and the thread line goes in once per STATE CHANGE, not once per pass.",
+      "display_name": "Install corrections-triage agent (8:15am + every 2h)",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -4055,6 +4055,27 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 130
+    },
+    "applicant_push_recheck": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "standalone_watch": false,
+      "_off_scheduler_note": "UTILITY, not a report: archives today's 'already checked, no number' caches for the Applicant Push offices so the next LIVE walk re-reads those resumes. No browser, no session, no sends - it renames two JSON files and exits, which is the whole point: asked for through `applicant_push` the rerun guard refuses while a walk holds the Chrome profile, and the walks run nearly back-to-back all window (it lost that race ~10x on 2026-08-27). Own module = own command path = no guard collision. USE AFTER FIXING THE RESUME READ ITSELF; the cache is deliberately sticky otherwise - it is what stops us reopening dead-end resumes q5min. cadence.weekdays [] = never auto-run; standalone_watch false so the missed-run watcher never expects it. `lucy rerun applicant_push_recheck` (all offices) or add --office 23467.",
+      "display_name": "Applicant Push \u2014 clear the no-number cache",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.applicant_push.recheck"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
     },
     "install_applicant_push_agent": {
       "on_scheduler": true,
@@ -8367,7 +8388,7 @@
     },
     "gap_alerts": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Rep Gap Alerts runs ITSELF every 5 minutes of the selling day (Mon-Fri 13:30-20:30, Saturday 10:00-17:00, machine-local -- Saturday has its own START, not just its own end) from the standalone com.alphalete.gap-alerts LaunchAgent (StartInterval 300; deploy/gap_alerts_5min.sh exits in bash outside those hours). Present here so `lucy rerun gap_alerts` works and so a Hub play from ANY machine routes the run to LUCY 1. base_args are deliberately EMPTY = preview: a hand rerun renders the card and RESOLVES the iMessage group but texts nobody. The LaunchAgent is the only thing that passes --send.",
+      "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Rep Gap Alerts runs ITSELF every 10 minutes of the selling day (Mon-Fri 13:30-20:30, Saturday 10:00-17:00, machine-local -- Saturday has its own START, not just its own end) from the standalone com.alphalete.gap-alerts LaunchAgent. The agent ticks every 60 SECONDS (StartInterval 60) and deploy/gap_alerts_5min.sh decides which minutes count -- it proceeds only when the minute is a multiple of 10 (or the :01 after), and exits in bash on every other minute and outside those hours. It is that way round because StartInterval counts from when the previous run EXITS, so the old StartInterval 300 stretched to 9-minute gaps whenever a browser launch was slow. The script's filename still says 5min: the installed plist points at that exact path, and the cadence moved to 10 (Raf, 2026-08-27) in code alone. Present here so `lucy rerun gap_alerts` works and so a Hub play from ANY machine routes the run to LUCY 1. base_args are deliberately EMPTY = preview: a hand rerun renders the card and RESOLVES the iMessage group but texts nobody. The LaunchAgent is the only thing that passes --send.",
       "machine": "Lucy 1",
       "_machine_note": "Lucy 1 because that is the machine iMessage is set up on (Megan 2026-08-26) -- the 7-person 'Alphalete Partners' chat only exists in Lucy 1's Messages (alphaletereporting@, the account Megan added to the room on 8/26). Same constraint that pins alphalete_sales_board there. Load is fenced instead: own browser profile (automations/uploaded/.browser_profile_gap_alerts), headless, one JSON call per tick, pid lock, and nothing before 13:30 on a weekday -- long after the 4am batch's browser-heavy wave is through.",
       "display_name": "Rep Gap Alerts (15-min gaps -> Partners chat)",
@@ -8390,9 +8411,9 @@
     },
     "install_gap_alerts_agent": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_gap_alerts_agent --machine \"Lucy 1\"` can install or refresh the standalone com.alphalete.gap-alerts LaunchAgent (StartInterval 300) on Lucy 1. Every LaunchAgent in this repo needs one of these -- the one agent that had no install_* entry is how a fully-provisioned runner still ran nothing. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data. Re-run after any change to the plist.",
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_gap_alerts_agent --machine \"Lucy 1\"` can install or refresh the standalone com.alphalete.gap-alerts LaunchAgent (StartInterval 60 -- the wrapper, not the plist, sets the 10-minute cadence) on Lucy 1. Every LaunchAgent in this repo needs one of these -- the one agent that had no install_* entry is how a fully-provisioned runner still ran nothing. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data. Re-run after any change to the plist.",
       "machine": "Lucy 1",
-      "display_name": "Install Rep Gap Alerts agent (5-min)",
+      "display_name": "Install Rep Gap Alerts agent (10-min)",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -8457,7 +8478,30 @@
         "type": "not_configured"
       }
     },
-    "install_alphalete_sales_board_watchdog": {
+    "install_sales_text_reader": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Installs com.alphalete.sales-text-reader on Lucy 1 \u2014 the ONE privileged step of the Sales Text Updates reply loop, split out on purpose. Full Disk Access is granted to a BINARY and macOS applies it to the responsible process; Lucy 1's venv python3.9 is a bash wrapper, so the sweep stayed denied ('authorization denied') even after Python.app was granted, while Terminal read the same file fine. Rather than rewrite the interpreter all ~130 automations share, this agent runs deploy/sales_text_read_chat.py with the granted Python.app DIRECTLY. That script is stdlib-only, reads message text from ONE named chat, keeps only lines shaped like 'a=b', and writes them to a file. No Sheets, no Slack, no sending.",
+   "machine": "Lucy 1",
+   "display_name": "Install Sales Text reply reader (5-min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "sales-text-reader"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "install_alphalete_sales_board_watchdog": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Installs or refreshes the standalone com.alphalete.alphalete-sales-board-watchdog LaunchAgent (StartInterval 1200) on Lucy 1. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
       "machine": "Lucy 1",

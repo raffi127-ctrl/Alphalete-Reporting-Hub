@@ -3,8 +3,8 @@
 This is the BOTTOM HALF of Carlos's hourly B2B Dispositions post — the "Reps
 Over 15 Min Gap" card and nothing else (Megan 8/26: "we only want the bottom
 section showing only reps with gaps over 15 min"). No Today's Activity panel,
-no territory stats, no Slack: it goes to one iMessage group, every 5 minutes of
-the selling day.
+no territory stats, no Slack: it goes to one iMessage group, every 10 minutes of
+the selling day (Raf moved it off 5 minutes on 2026-08-27 — see TICK_MINUTES).
 
 Shaped as an OFFICE TABLE from the start even though Raf is the only row. The
 b2b_dispositions module is Carlos-shaped throughout and adding a second office
@@ -69,15 +69,15 @@ def office(key: str) -> Optional[Dict]:
 CARD_TITLE = "REPS OVER 15 MIN GAP"
 
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
-# Ticks every 5 minutes inside these windows (Megan 2026-08-26):
+# Ticks every 10 minutes inside these windows (Megan 2026-08-26):
 #     Mon–Fri  1:30pm – 8:30pm
 #     Saturday 10:00am – 5:00pm
 #     Sunday   off entirely
 #
 # Saturday has its OWN START, not just its own end — it is the one day the field
-# is out in the morning. Every other 5-minute job in this repo happens to share
-# one start time across the week, so this is the thing to notice when editing:
-# there are two windows here, not one window with a short Saturday.
+# is out in the morning. Every other short-interval job in this repo happens to
+# share one start time across the week, so this is the thing to notice when
+# editing: there are two windows here, not one window with a short Saturday.
 #
 # The END is load-bearing. Once the field stops knocking, EVERY rep reads
 # "inactive 90 min ago" and the card degenerates into the whole roster — a wall
@@ -90,13 +90,18 @@ SATURDAY_END_HHMM = (17, 0)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
 SATURDAY = 5
 
-TICK_MINUTES = 5
+# The cadence, in one place. The gate that actually enforces it is MINUTE % 10
+# in deploy/gap_alerts_5min.sh (whose filename is historic — see the note at the
+# top of that script). Was 5 from launch until 2026-08-27, when Raf asked for
+# 10: at 5 minutes the card was arriving faster than the room could act on it.
+# CHANGE BOTH, and keep MIN_SEND_GAP_MINUTES just under this.
+TICK_MINUTES = 10
 
 # A card is REFUSED if this office got one less than this many minutes ago.
 #
 # WHY IT EXISTS. The pid lock stops two ticks OVERLAPPING; it does nothing about
 # two ticks landing back to back, and the room reads two near-identical cards as
-# a broken alert. Three things cause that and none of them are the 5-minute
+# a broken alert. Three things cause that and none of them are the scheduled
 # cadence: a launchd StartInterval job fires the moment it is (re)loaded and
 # again after a wake, the Hub's "Text it now" button runs on top of whatever
 # launchd is already doing, and a `lucy rerun` does the same. It happened the
@@ -104,9 +109,10 @@ TICK_MINUTES = 5
 # hand-run at 20:12, and fired on its own at 20:14 — two cards, two minutes
 # apart, in front of everyone.
 #
-# 4, not 5: launchd drift means a legitimate tick can arrive at 4m50s, and a
-# guard that ate real ticks would be worse than the problem.
-MIN_SEND_GAP_MINUTES = 4
+# 9, not 10: launchd drift means a legitimate tick can arrive at 9m50s, and a
+# guard that ate real ticks would be worse than the problem. It tracks
+# TICK_MINUTES — if the cadence moves again, move this with it.
+MIN_SEND_GAP_MINUTES = 9
 
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_state.json"
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts.lock"

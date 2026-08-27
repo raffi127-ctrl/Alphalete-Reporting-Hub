@@ -3727,7 +3727,7 @@ AUTOMATED_REPORTS = [
         "color": "#B91C1C",
         "category": "\U0001F4CA Metrics",
         "description": (
-            "Every 5 minutes of the selling day, texts the "
+            "Every 10 minutes of the selling day, texts the "
             "\u201cReps Over 15 Min Gap\u201d card for Raf\u2019s office into "
             "the **Alphalete Partners** chat \u2014 who has gone quiet, how "
             "long, and when they last knocked. Nothing else: no activity "
@@ -3748,20 +3748,21 @@ AUTOMATED_REPORTS = [
             "OwnerVille\u2019s live gap widget never renders under the "
             "automation browser (only a hidden template loads).\n\n"
             "SORTED BY WHO HAS BEEN DARK LONGEST\n"
-            "Not alphabetically like the B2B card. On a five-minute tick the "
-            "rep who has been quiet two hours is the point of the message, and "
-            "a phone shows the top of a picture.\n\n"
+            "Not alphabetically like the B2B card. The rep who has been quiet "
+            "two hours is the point of the message, and a phone shows the top "
+            "of a picture.\n\n"
             "NEVER TWO CARDS BACK TO BACK\n"
-            "A card is refused if the chat got one less than **4 minutes** ago, "
-            "whoever asked for it. The 5-minute cadence is not the risk \u2014 "
+            "A card is refused if the chat got one less than **9 minutes** ago, "
+            "whoever asked for it. The scheduled cadence is not the risk \u2014 "
             "a launchd job fires the moment it is reloaded and again after a "
             "wake, and the button above runs on top of whatever the schedule is "
             "already doing. Two near-identical cards two minutes apart is how a "
             "room learns to stop reading them.\n\n"
             "IT WILL NOT TEXT AN EMPTY CARD\n"
             "Nobody over the threshold is good news, not news \u2014 and a "
-            "\u201cno reps over 15 min gap\u201d picture every five minutes "
-            "is how a room learns to mute the alert that matters.\n\n"
+            "\u201cno reps over 15 min gap\u201d picture arriving all "
+            "afternoon is how a room learns to mute the alert that "
+            "matters.\n\n"
             "THE DAY\n"
             "**\u2022** **Mon\u2013Fri 1:30pm \u2013 8:30pm**\n"
             "**\u2022** **Saturday 10:00am \u2013 5:00pm** \u2014 its own "
@@ -3779,7 +3780,7 @@ AUTOMATED_REPORTS = [
             "its own browser profile, headless, one JSON call a tick, a pid "
             "lock so a slow tick is skipped rather than stacked. The Hub pill is "
             "painted by the first good tick of "
-            "the day, not by all 96."
+            "the day, not by every one after it."
         ),
         "assignees": ["Lucy 1"],
         "run_machine": "Lucy 1",
@@ -3805,7 +3806,7 @@ AUTOMATED_REPORTS = [
             {
                 "label": "Text it now",
                 "icon": "\U0001F4E3",
-                "help": "One tick for real: renders the current gap card and texts it to the Alphalete Partners chat. Skips if nobody is over 15 minutes, or if the chat already got a card in the last 4 minutes.",
+                "help": "One tick for real: renders the current gap card and texts it to the Alphalete Partners chat. Skips if nobody is over 15 minutes, or if the chat already got a card in the last 9 minutes.",
                 "module": "automations.gap_alerts.run",
                 "args_fn": lambda: ["--send", "--force"],
             },

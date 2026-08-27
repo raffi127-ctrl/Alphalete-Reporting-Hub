@@ -198,6 +198,61 @@ class OneReactionOnly(unittest.TestCase):
         self.assertNotIn(("remove", "white_check_mark"), self.calls)
 
 
+class TheMarkIsReadBack(unittest.TestCase):
+    """reactions.add answering ok is not proof the circle is on the post.
+
+    The case this is here for (Megan 2026-08-27): an incident graded `waiting`
+    at 08:15, _react raised nothing, the log recorded nothing, and the post wore
+    no circle all day. A post with NO answer silently drops out of the morning
+    list, which is the one thing this module exists to prevent — so the mark is
+    read back, retried once, and said out loud if it still isn't there.
+    """
+
+    def setUp(self):
+        self.calls = []
+        self.p = mock.patch.object(
+            tri.inc, "_react",
+            lambda client, channel, ts, name, remove=False:
+                self.calls.append(("remove" if remove else "add", name)) or True)
+        self.p.start()
+        self.addCleanup(self.p.stop)
+
+    def _readback(self, *answers):
+        it = iter(answers)
+        return mock.patch.object(tri.inc, "reactions_now",
+                                 lambda *a, **k: next(it))
+
+    def test_a_mark_that_lands_is_not_retried(self):
+        with self._readback([tri.NEEDS_YOU_REACTION]):
+            ok = tri._apply(None, "C1", "1.0", tri.NEEDS_YOU, [], dry_run=False)
+        self.assertTrue(ok)
+        self.assertEqual(self.calls, [("add", tri.NEEDS_YOU_REACTION)])
+
+    def test_a_mark_that_vanishes_is_added_again(self):
+        with self._readback([], [tri.inc.WAITING_REACTION]):
+            ok = tri._apply(None, "C1", "1.0", tri.WAITING, [], dry_run=False)
+        self.assertTrue(ok)
+        self.assertEqual(self.calls, [("add", tri.inc.WAITING_REACTION)] * 2)
+
+    def test_a_mark_that_never_lands_is_reported_false(self):
+        with self._readback([], []):
+            ok = tri._apply(None, "C1", "1.0", tri.WAITING, [], dry_run=False)
+        self.assertFalse(ok)
+
+    def test_an_unreadable_post_is_trusted_not_hammered(self):
+        """None means 'couldn't tell', which must never become a retry loop."""
+        with self._readback(None):
+            ok = tri._apply(None, "C1", "1.0", tri.LUCY, [], dry_run=False)
+        self.assertTrue(ok)
+        self.assertEqual(self.calls, [("add", tri.inc.WORKING_REACTION)])
+
+    def test_dry_run_reads_nothing_back(self):
+        with mock.patch.object(tri.inc, "reactions_now",
+                               side_effect=AssertionError("read in dry run")):
+            self.assertTrue(
+                tri._apply(None, "C1", "1.0", tri.WAITING, [], dry_run=True))
+
+
 class WhatGetsGraded(unittest.TestCase):
     """The ✅ outranks the marker text — the bug the first dry run caught, where
     6 already-fixed posts were about to get a red circle."""

@@ -64,11 +64,14 @@ def _publish_outcome(status, headline, details, *, started_at=None, dry_run=Fals
 
 
 def ads_for_week(html):
-    """Merged ad rows for one office-week — the monthly parse, with the
-    "[Action required] New application for" wrapper stripped BEFORE the noise
-    filter sees it (parse.NOISE would junk those rows; they are real
-    applicants). Subjects live in table cells, so a plain text substitution on
-    the HTML reaches exactly them."""
+    """Merged ad rows for one office-week — the monthly parse.
+
+    The "[Action required] New application for" wrapper is stripped BEFORE the
+    noise filter sees it: parse.NOISE would junk those rows and they are real
+    applicants. `parse.load_table` does that per-subject since 2026-08-27, so
+    the substitution here is belt-and-braces — it stays because `rescued_total`
+    is counted off this same HTML, and because a plain text substitution on the
+    HTML reaches the table cells the subjects live in."""
     return parse.ads_for_month(names.WRAPPER.sub("", html))
 
 
@@ -189,6 +192,10 @@ def main(argv=None):
     ap.add_argument("--day", action="append",
                     help="one-day received pull(s) mm-dd-yyyy (fills that day's "
                          "AC..AI slot; default: yesterday, unless --anchor is used)")
+    ap.add_argument("--allow-shrink", action="store_true",
+                    help="accept a pull whose weekly total is LOWER than what "
+                         "is stored (normally rejected as a short pull — pass "
+                         "this only when a parser change really did lower it)")
     ap.add_argument("--heal-days", type=int, default=14,
                     help="re-pull any missing day this many days back when a "
                          "week's day counts fall short of its weekly total "
@@ -284,8 +291,16 @@ def main(argv=None):
     fresh, failures = {}, []      # fresh[(manager, label)] = data rows
     rescued_total = 0
     empty_days = []               # (manager, date) a day report would not read
+    # allow_form_login ONLY when a human asked for a headed run. AppStream put an
+    # interactive human-check on the login form in v2026.08.20.1, so unattended
+    # that path CANNOT complete — it just crashes with "console never rendered
+    # #searchMC after login", which reads like a site change and sends whoever
+    # picks it up hunting for the wrong thing. This report was the last one still
+    # passing True (2026-08-27); every other scheduled AppStream/Tableau report
+    # passes False (d793ea3). With False the run stops on the reuse failure and
+    # says the one thing that fixes it: re-seed the session.
     with appstream_direct_session(headless=not a.headed, verbose=False,
-                                  allow_form_login=True) as page:
+                                  allow_form_login=a.headed) as page:
         tok = fetch.token(page)
         for oid, name in targets:
             try:
@@ -426,8 +441,34 @@ def main(argv=None):
                          started_at=run_started, dry_run=a.dry_run)
         return 1
 
+    # SHRINK GUARD. Emails only accumulate, so a week's total can never fall.
+    # When a fresh pull comes back SMALLER than what is already stored, the
+    # pull is short — not the truth — and writing it destroys good data:
+    # 2026-08-27, Drew Tepper's finished Aug 17-23 week (746, reconciled
+    # against all seven of its days) was overwritten by a 416 pull, taking his
+    # day counts with it. Keep the stored block and say so.
+    stored_total = {}
+    for r in existing:
+        if len(r) > 10 and r[0] and r[4] == "TOTAL" and isinstance(r[6], (int, float)):
+            stored_total[(r[0], r[1])] = r[6]
+    shrunk = []
+    for key in list(fresh):
+        tr = [r for r in fresh[key] if r[4] == "TOTAL"]
+        was, now = stored_total.get(key), (tr[0][6] if tr else None)
+        if (was and isinstance(now, (int, float)) and now < was
+                and not a.allow_shrink):
+            shrunk.append((key[0], key[1], was, now))
+            del fresh[key]                 # keep what is already on the sheet
+    if shrunk:
+        print("\nSHORT PULLS REJECTED — kept the stored week instead (re-run "
+              "those offices, or pass --allow-shrink if a parser change really "
+              "did lower the counts):", flush=True)
+        for mgr, label, was, now in shrunk:
+            print("   %-24s %-22s stored=%-6d pulled=%-6d" % (mgr[:24], label, was, now),
+                  flush=True)
+
     # Freeze rule: rewrite only the (manager, week) pairs this run pulled.
-    # `existing` was read before the browser opened (the T..Z carry needed it).
+    # `existing` was read before the browser opened (the AC..AI carry needed it).
     pulled = set(fresh)
     keep = [r for r in existing
             if len(r) > 1 and r[0] and (r[0], r[1]) not in pulled]
@@ -509,9 +550,9 @@ def main(argv=None):
             print("   %-24s %s" % (mgr[:24], d.isoformat()), flush=True)
 
     if rescued_total:
-        print("\n%d '[Action required] New application for …' subjects were kept "
-              "as real ads this run — the MONTHLY Source Report - Indeed still "
-              "junk-filters these." % rescued_total, flush=True)
+        print("\n%d '[Action required] New application for …' subjects were "
+              "unwrapped and counted as real ads this run." % rescued_total,
+              flush=True)
     if failures:
         print("\nFAILED OFFICES (%d) — their weeks were left untouched:" % len(failures),
               flush=True)

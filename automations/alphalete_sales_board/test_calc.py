@@ -164,6 +164,31 @@ def test_no_goal_line_ever():
     assert "GOAL" not in N.leaderboard(today, [], 100, goal=350)
 
 
+def test_an_alias_resolves_the_kelvinton_case():
+    # The real one, 2026-08-26: SaraPlus "KELVINTON SCARBROUGH" vs the board's
+    # "Kelvinton ( BO ) Scarbough (Wk 3)" — a nickname, a missing 'r' and a
+    # week suffix. No rule should guess that; a person says so once.
+    board = ["Kelvinton ( BO ) Scarbough (Wk 3)", "Jane Doe"]
+    assert calc.match_name("KELVINTON SCARBROUGH", board)[0] is None
+    who, _ = calc.match_name("KELVINTON SCARBROUGH", board,
+                             {"KELVINTON SCARBROUGH": "Kelvinton ( BO ) Scarbough (Wk 3)"})
+    assert who == "Kelvinton ( BO ) Scarbough (Wk 3)", who
+
+
+def test_alias_beats_the_hardcoded_name_map():
+    board = ["Someone Entirely Else", "Nathaniel (Nate) Martinez"]
+    who, _ = calc.match_name("NATHANIEL MARTINEZ", board,
+                             {"NATHANIEL MARTINEZ": "Someone Entirely Else"})
+    assert who == "Someone Entirely Else", who
+
+
+def test_an_alias_pointing_nowhere_is_reported():
+    who, note = calc.match_name("KELVINTON SCARBROUGH", ["Jane Doe"],
+                                {"KELVINTON SCARBROUGH": "Ghost Rider"})
+    assert who is None
+    assert "Sales Text Aliases" in note and "Ghost Rider" in note, note
+
+
 def test_hype_tiers():
     assert N.tier({"Int": 1, "NL": 5}) == "super"
     assert N.tier({"Int": 1, "NL": 2}) == "large"

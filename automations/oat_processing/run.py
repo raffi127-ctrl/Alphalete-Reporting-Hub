@@ -602,6 +602,53 @@ def _xframe(page, selector):
     return None, None
 
 
+def _xframe_wait(page, selector, timeout_s: float = 12.0, poll_ms: int = 400,
+                 on_retry=None):
+    """_xframe, but WAIT for the selector instead of judging it on a single look.
+
+    The SMS template modal renders its list asynchronously, inside a frame. Looking
+    once after a fixed sleep is a race, and it is the race that abandoned 46
+    re-texts on 2026-08-27 ("FOR LUCY Select link not found") — every one of which
+    had ALREADY found the applicant's thread and only needed the template picked.
+    The skew gives it away: 39 of those were Atef's office and 7 Carlos's, and Atef
+    was added to this machine the day before, so every fixed sleep on Lucy 2 became
+    likelier to expire before the render finished.
+
+    `on_retry(n)` runs before each re-poll — used here to re-type the template
+    filter, since the search box itself can enter the DOM after our first look."""
+    import time as _t
+    deadline = _t.monotonic() + timeout_s
+    tries = 0
+    while True:
+        fr, loc = _xframe(page, selector)
+        if loc is not None:
+            return fr, loc, tries
+        if _t.monotonic() >= deadline:
+            return None, None, tries
+        tries += 1
+        if on_retry is not None:
+            try:
+                on_retry(tries)
+            except Exception:  # noqa: BLE001
+                pass
+        page.wait_for_timeout(poll_ms)
+
+
+# The 'Select' control on the FOR LUCY row. Kept broad on purpose: the ATS renders
+# it as a link, but a button/input variant costs nothing to also accept and is one
+# less way for this step to fail silently.
+_SELECT_TEMPLATE_XPATH = (
+    "xpath=//tr[.//*[normalize-space(.)='FOR LUCY']]//a[normalize-space(.)='Select']"
+    " | //tr[contains(.,'FOR LUCY')]//a[normalize-space(.)='Select']"
+    " | //tr[contains(.,'FOR LUCY')]//button[normalize-space(.)='Select']"
+    " | //tr[contains(.,'FOR LUCY')]//input[@type='button'][contains(@value,'Select')]"
+    " | //tr[contains(.,'FOR LUCY')]//input[@type='submit'][contains(@value,'Select')]"
+)
+
+_TEMPLATE_SEARCH_XPATH = ("xpath=//*[contains(normalize-space(.),'Loading SMS "
+                          "Template')]/following::input[@type='text'][1]")
+
+
 def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     """Send the 'FOR LUCY' re-engagement text to ONE applicant through the Bandwidth
     SMS widget, then report (status, detail). Choreography confirmed with Megan
@@ -710,22 +757,32 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         return "retext_err", "Load Template button not found"
     lt.click(timeout=4000, no_wait_after=True)
     page.wait_for_timeout(1600)
-    mf, msearch = _xframe(page,
-                          "xpath=//*[contains(normalize-space(.),'Loading SMS "
-                          "Template')]/following::input[@type='text'][1]")
-    if msearch is not None:
+    def _type_filter(_n=0):
+        """Type the template name into the modal's search box. Re-run on every
+        poll: the box can enter the DOM after our first look, and a filter typed
+        into a box that wasn't there yet is why the list stayed unfiltered."""
+        _, _ms = _xframe(page, _TEMPLATE_SEARCH_XPATH)
+        if _ms is None:
+            return
         try:
-            msearch.fill(_TEMPLATE_NAME, timeout=4000)
-            page.wait_for_timeout(800)
-        except Exception as e:  # noqa: BLE001
-            _log(f"    [retext] template search fill failed: {type(e).__name__}")
-    _, sel = _xframe(page,
-                     "xpath=//tr[.//*[normalize-space(.)='FOR LUCY']]"
-                     "//a[normalize-space(.)='Select']"
-                     " | //tr[contains(.,'FOR LUCY')]//a[normalize-space(.)='Select']")
+            if (_ms.input_value() or "").strip().upper() != _TEMPLATE_NAME:
+                _ms.fill(_TEMPLATE_NAME, timeout=2500)
+        except Exception:  # noqa: BLE001
+            pass
+
+    _type_filter()
+    # WAIT for the row rather than looking once after a fixed sleep — see
+    # _xframe_wait. 12s is far past a healthy render (well under a second) and
+    # still cheap against a walk, and it only costs that long on a pick that was
+    # going to be abandoned anyway.
+    _, sel, _tries = _xframe_wait(page, _SELECT_TEMPLATE_XPATH, timeout_s=12.0,
+                                  on_retry=_type_filter)
     if sel is None:
         _close_sms_panel(page)
         return "retext_err", "FOR LUCY Select link not found"
+    if _tries:
+        _log(f"    [retext] template row appeared after {_tries} extra poll(s) "
+             f"— a single look would have abandoned this re-text")
     sel.click(timeout=4000, no_wait_after=True)
     page.wait_for_timeout(1300)
 
@@ -1104,6 +1161,48 @@ def _fill_phone_field(page, phone: str) -> bool:
     return ok
 
 
+def _persist_phone(page, phone: str) -> bool:
+    """Write a recovered number onto the applicant's record with 'Save Applicant'.
+
+    WHY: when the ATS refuses the send ("correspondence with this phone number has
+    already occurred"), the number we just read off the resume is never saved, so
+    the record still shows a BLANK phone. Two costs. The next walk sees no phone,
+    re-opens the same resume and repeats the whole thing every ~10 minutes — that
+    is the loop Claudia Ceniceros sat in from 2026-08-21 to 08-27. And the human
+    who has to text these people by hand opens the record to find no number, so
+    they go pull it from Indeed themselves: exactly the work this bot exists to
+    remove. A fresh SMS thread would avoid the manual text entirely, but AppStream
+    cannot start one (Megan 2026-08-27, and she is asking the vendor for a 90-day
+    filter), so the manual text is the real destination and the number must be
+    sitting on the record when the human gets there.
+
+    Only called AFTER the send has been attempted and did not happen, so the 163
+    sends a day that do go straight through are untouched by this. Best-effort:
+    every failure path returns False and is logged, never raised — a number we
+    could not save is the status quo, while an exception here would cost the walk."""
+    try:
+        loc = page.locator("input[name='phone']").first
+        if loc.count() == 0:
+            return False        # not on the record any more — nothing to save onto
+        want = re.sub(r"\D", "", phone or "")
+        if len(want) == 11 and want.startswith("1"):
+            want = want[1:]
+        if len(want) != 10:
+            return False
+        if re.sub(r"\D", "", loc.input_value() or "") != want:
+            # The field lost the value (the ATS re-renders on refusal), so retype
+            # it — by keystroke, for the same reason _fill_phone_field does.
+            if not _fill_phone_field(page, phone):
+                return False
+        if not _click_first(page, ["Save Applicant", "Save applicant"]):
+            return False
+        page.wait_for_timeout(1800)
+        return True
+    except Exception as e:  # noqa: BLE001
+        _log(f"    could not save the number to the record: {type(e).__name__}")
+        return False
+
+
 _NOPHONE_CHECKED = None   # lazily-loaded set of applicant keys already read today
 _NOPHONE_SKIPS = 0        # count of resume re-reads SKIPPED this walk (cache hits)
 _NOPHONE_BLOCKED = None   # lazily-loaded {key: {"n": attempts, "last": iso}} retry state
@@ -1367,7 +1466,20 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                      f"btns={diag.get('btns')}")
             except Exception as e:  # noqa: BLE001
                 _log(f"    [phones] diag err: {type(e).__name__}")
-            return do_send_ai(page, a, live)
+            _outcome = do_send_ai(page, a, live)
+            # A send that landed needs nothing more; a REMOVED record must not be
+            # re-saved. Everything else leaves the applicant sitting in the queue
+            # with a number we know and the record still showing blank — so put it
+            # on the record, for the next walk and for the human who has to text
+            # them. A navigating click here is nothing new: sends, removes and
+            # re-texts all navigate, and the walk already carries on after them.
+            if _outcome not in ("sent", "sent_override", "removed", "retext_removed"):
+                if _persist_phone(page, phone):
+                    _log(f"    \U0001f4be saved {phone} to the record "
+                         f"(send was refused: {_outcome}) — no re-read next walk, "
+                         f"and the number is there for the manual text: "
+                         f"{a.first_name} {a.last_name}")
+            return _outcome
         if _is_blocked_detail(detail):
             n = _mark_nophone_blocked(key, detail[len(_BLOCKED_PREFIX):])
             if n >= _BLOCKED_MAX_ATTEMPTS:
@@ -2025,10 +2137,26 @@ def run_walk(page, live: bool = False, limit: int = None,
         if _nm:
             _days = (today - a.applied_date).days if a.applied_date else None
             _entry = {"name": _nm, "account": a.account or "", "days": _days}
-            if outcome == "flag_no_phone" or d.action.value == "flag_no_phone":
-                flagged_now["nophone"].append(_entry)
-            elif outcome == "flag_retext":
+            # OUTCOME first, action only as a fallback. `d.action` is where the
+            # applicant ENTERED the flow; `outcome` is where they ended up, and for
+            # this post only the ending matters — it tells a human what to DO.
+            # Most re-text fallbacks arrive via the no-phone path (no number on
+            # file, we read one off the resume, the ATS then refuses the send
+            # because that number was already contacted, and the SMS thread is too
+            # old for the widget to see). The old `or d.action.value ==
+            # "flag_no_phone"` clause claimed all of them for the no-phone bucket
+            # before the flag_retext branch could be reached, so "need a manual
+            # text" was **0 in all 37 snapshots on 2026-08-27** while the log
+            # recorded 103 re-text fallbacks in that office alone. Those people
+            # were shown to a human as "go pull their number from Indeed" — advice
+            # already carried out, and useless: their number is on file, what they
+            # need is a fresh message. Victor Renteria and Claudia Ceniceros were
+            # both in that state (Megan 8/27).
+            if outcome == "flag_retext":
                 flagged_now["retext"].append(_entry)
+            elif outcome == "flag_no_phone" or (
+                    not outcome and d.action.value == "flag_no_phone"):
+                flagged_now["nophone"].append(_entry)
 
         processed += 1
         # Throttle live mutations (a controlled test uses --max-actions 1).

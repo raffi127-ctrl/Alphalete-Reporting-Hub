@@ -3,9 +3,15 @@
 # "needs a person", "Lucy is retrying it" and "waiting on a source", and put the
 # one matching reaction on each post. launchd: com.alphalete.incident-triage.
 #
-# WHY 8:15: after the 4am flow's main passes and the 7:30 checkpoint email, and
-# well before the noon backstop. Triaging mid-flow would grade reports the
-# orchestrator is still actively retrying.
+# WHY 8:15 FIRST: after the 4am flow's main passes and the 7:30 checkpoint
+# email, and well before the noon backstop. Triaging mid-flow would grade
+# reports the orchestrator is still actively retrying.
+#
+# AND WHY IT REPEATS every 2h to 16:15 (Megan 2026-08-27): one pass a day left
+# classify()'s noon rule unreachable (nothing ever ran with now_hour >= 12), and
+# gave an incident that opened after 08:15 — or a mark that failed to land — no
+# second pass to fix it. Quiet by design: the reaction is idempotent and the
+# thread line is posted once per STATE CHANGE, not once per pass.
 #
 # WHAT IT CAN TOUCH: reactions on incident posts, plus one line in a thread when
 # an incident CHANGES state. Nothing else. It never re-runs a report, never edits

@@ -71,10 +71,25 @@ Applicants column undercounts by that much (37 of Carlos's 375 call-list names
 in the 8/19 week wore the wrapper). Fixing the monthly parser is a deliberate,
 separate decision because it shifts current-month numbers upward.
 
-## The empty-day trap (root cause of the 2026-08-27 gaps)
+## Why a day goes missing (the 2026-08-27 gaps)
 
-AppStream sometimes answers a SINGLE-DAY Source Report with a valid table that
-has no data rows. `parse` then yields no ads, nothing raises, and the run exits
+TWO mechanisms, and the second is the common one — I diagnosed the first and
+was wrong about which mattered, so both are written down here.
+
+**A. The join (dominant).** A day's counts are matched onto that week's merged
+ad rows by (inbox, base role). A ONE-DAY window merges fewer title variants
+than a SEVEN-DAY one, so `parse` can settle on a different shortest title —
+and therefore a different base role — for the same posting. Every piece for
+that office-day then fails to join and the day goes blank across every one of
+that office's ads, which is exactly the Jamis (Thu/Fri/Sat), Aya (Wed) and
+Jackie (Sun) shape. One backfill job alone dropped 48+102+62+48 counts across
+four office-weeks. The join now falls back to the inbox when that inbox runs
+exactly ONE ad that week (unambiguous), and otherwise still drops — guessing
+among several ads would put real numbers on the wrong row, and a silent wrong
+is worse than a visible gap — while naming the inbox and base in the log.
+
+**B. The empty day (real, but rarer).** AppStream sometimes answers a
+SINGLE-DAY Source Report with a valid table that `parse` then yields no ads, nothing raises, and the run exits
 0 — so a day that was never read looks exactly like a day nobody applied on. It
 hit about one office-day in thirty: Jamis lost Thu/Fri/Sat, Aya a Wednesday,
 Jackie a Sunday, each blank across every one of that office's ads. Nothing

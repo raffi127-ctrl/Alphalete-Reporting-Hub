@@ -32,11 +32,15 @@ CALL_LIST_RANGE = "'Call List'!A2:I"
 
 # Some applications arrive wrapped as "[Action required] New application for
 # <ad title>" — Indeed's forwarded-notification subject. It is a REAL applicant
-# whose ad title sits after the prefix, but parse.NOISE matches "action
-# required" (meant for Indeed's billing mail) and would throw the row away.
-# Strip the wrapper FIRST, everywhere a subject or Ad string is handled.
+# whose ad title sits after the prefix, but NOISE matched "action required"
+# (a rule meant for Indeed's billing mail) and threw the row away.
 # Found 2026-08-26: 37 of Carlos's 375 call-list names in one week wore it.
-WRAPPER = re.compile(r"\[action\s+required\]\s*new\s+application\s+for\s*[:\-]?\s*", re.I)
+#
+# The strip now lives in `parse` itself (2026-08-27), so the MONTHLY Source
+# Report gets it too — it had been dropping the same rows all along. This alias
+# stays so there is exactly ONE regex: two copies would drift, and the one that
+# drifted would silently start junking real applicants again.
+WRAPPER = parse.WRAPPER
 
 
 def strip_wrapper(text):

@@ -57,7 +57,8 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-from automations.alphalete_sales_board import calc, config as C, fill
+from automations.alphalete_sales_board import (aliases, apply_replies,
+                                               calc, config as C, fill)
 from automations.alphalete_sales_board import notify as N
 from automations.alphalete_sales_board import sara, state as S
 from automations.rep_sales_fill import board as B
@@ -231,7 +232,10 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
     names = fill.board_names(grid)
     _log("board tab %r: %d reps on the roster" % (ws.title, len(names)))
 
-    rows, notes, missing = calc.calculate(agents, names)
+    alias_map = aliases.load()
+    if alias_map:
+        _log("%d alias(es) from the %r tab" % (len(alias_map), aliases.TAB))
+    rows, notes, missing = calc.calculate(agents, names, alias_map)
     for n in notes:
         _log("  note: %s" % n)
 
@@ -272,16 +276,35 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
             continue
         clash = fill.near_matches(item["sara_name"], names)
         if clash:
-            item["status"] = ("NOT added - could be %s already on the board"
-                              % " or ".join(clash[:2]))
+            item["status"] = (
+                "NOT added - could be %s already on the board. Same person? "
+                "Add a row to the '%s' tab (SaraPlus Name | Board Name). "
+                "Different person? Type their name into a blank roster row."
+                % (" or ".join(clash[:2]), aliases.TAB))
             _log("  %s: %s" % (item["sara_name"], item["status"]))
             continue
-        row, note = fill.add_rep(ws, grid, name_case.titlecase_name(item["sara_name"]))
+        board_name = name_case.titlecase_name(item["sara_name"])
+        row, note = fill.add_rep(ws, grid, board_name)
         if row is None:
             item["status"] = note
         else:
             item["status"] = "wasn't on the board - added, numbers fill next sweep"
             _log("  added %s to row %d" % (item["sara_name"], row))
+            # Recorded so an alias confirmed later can take the row back if it
+            # turns out they were already on the board under another spelling.
+            S.save(S.record_added(S.load(), day, item["sara_name"], board_name, row))
+
+    # Chat replies ("Bo=Kelvinton"): alias them, take back the row we wrongly
+    # created for them, and answer in the room. Only rows WE recorded adding
+    # are ever cleared (Megan: "if you added it").
+    try:
+        apply_replies.remember_unmatched(day, [m["sara_name"] for m in missing])
+        for line in apply_replies.handle(ws, grid, names,
+                                         [m["sara_name"] for m in missing],
+                                         day, send=send, log=_log):
+            _log("  answered: %s" % line[:120])
+    except Exception as e:  # noqa: BLE001 — a chat reply must never fail a sweep
+        _log("reply handling skipped: %s: %s" % (type(e).__name__, str(e)[:160]))
 
     # --- what is NEW since the last sweep -----------------------------------
     data = S.load()

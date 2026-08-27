@@ -100,7 +100,11 @@ class FakeClient:
                                            and float(ts) == float(oldest))):
                 continue
             replies = sum(1 for t, _ in self.posts if t == ts)
-            msgs.append({"ts": ts, "text": text, "reply_count": replies})
+            msgs.append({"ts": ts, "text": text, "reply_count": replies,
+                         # The real API carries these, and reactions_now reads
+                         # a parent's marks back through exactly this call.
+                         "reactions": [{"name": n} for t, n in self.reactions
+                                       if t == ts]})
         return {"messages": list(reversed(msgs))}
 
     def conversations_replies(self, *, channel, ts, limit=200, **_kw):
@@ -1008,6 +1012,39 @@ class CloseStranded(unittest.TestCase):
                         dry_run=True)
         self.assertEqual(out["closed"], ["a"])
         self.assertEqual(self.c.updates, [])
+
+
+class ReadingAMarkBack(unittest.TestCase):
+    """reactions_now is the only way anything can DISBELIEVE reactions.add.
+
+    Megan 2026-08-27: an incident was graded, the add raised nothing, and the
+    post still wore no circle. _react cannot see that — its only signal is the
+    API's own ok — so callers that must trust a mark read it back here.
+    """
+
+    def setUp(self):
+        self.c = FakeClient()
+        self.c.chat_postMessage(channel="C1", text="parent")
+
+    def test_it_names_what_is_actually_on_the_post(self):
+        self.c.reactions_add(channel="C1", timestamp="1.0000",
+                             name="large_purple_circle")
+        self.assertEqual(inc.reactions_now(self.c, "C1", "1.0000"),
+                         ["large_purple_circle"])
+
+    def test_an_unmarked_post_is_empty_not_unknown(self):
+        self.assertEqual(inc.reactions_now(self.c, "C1", "1.0000"), [])
+
+    def test_a_missing_post_is_unknown(self):
+        self.assertIsNone(inc.reactions_now(self.c, "C1", "99.0000"))
+
+    def test_it_never_raises(self):
+        """It runs inside best-effort paths; a read that throws must not turn a
+        cosmetic problem into a crashed pass."""
+        class Broken:
+            def conversations_history(self, **_kw):
+                raise RuntimeError("ratelimited")
+        self.assertIsNone(inc.reactions_now(Broken(), "C1", "1.0000"))
 
 
 if __name__ == "__main__":  # pragma: no cover
