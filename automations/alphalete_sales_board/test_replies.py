@@ -30,6 +30,19 @@ def test_bo_is_found_inside_the_parentheses():
     assert R._score("bo", "Kelvinton ( BO ) Scarbough (Wk 3)") >= 0.9
 
 
+def test_both_names_on_one_row_is_a_confirmation_not_a_complaint():
+    # The first live test, 2026-08-27. Kelvinton's alias already existed, so
+    # nobody was "missing" and resolve() refused — the room got "I couldn't
+    # tell which is which" for a message that was perfectly clear.
+    assert R.same_person_already("Kelvinton", "Bo", BOARD) == BOARD[0]
+    assert R.same_person_already("Bo", "Kelvinton", BOARD) == BOARD[0]
+
+
+def test_two_different_people_are_not_the_same_row():
+    assert R.same_person_already("Kelvinton", "Jane", BOARD) is None
+    assert R.same_person_already("Nima", "Hayden", BOARD) is None
+
+
 def test_a_stray_line_resolves_to_nothing():
     who = R.resolve("lunch", "tacos", BOARD, PENDING)
     assert who[0] is None and "couldn't place" in who[2], who

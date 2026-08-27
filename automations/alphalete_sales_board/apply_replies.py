@@ -67,6 +67,19 @@ def handle(ws, grid, board_names: Sequence[str], pending_sara: Sequence[str],
     sent, still = [], []
     for item in items:
         left, right = item.get("left", ""), item.get("right", "")
+
+        # Both names on the SAME row = a confirmation of something already
+        # true, not a problem. Say so instead of complaining.
+        already = replies.same_person_already(left, right, board_names)
+        if already:
+            msg = ("Heard \U0001FAE1 — yes, %s and %s are the same person and "
+                   "he's already set up that way. His sales are going on his "
+                   "row." % (left, right))
+            log("  chat reply: %s / %s already resolve to %r" % (left, right, already))
+            sent.append(msg)
+            N.text_group(C.GROUP_PARTNERS, msg, dry_run=not send, log=log)
+            continue
+
         sara, board, why = replies.resolve(left, right, board_names, candidates)
         if not sara:
             msg = ("I couldn't tell which is which in “%s = %s” — %s"

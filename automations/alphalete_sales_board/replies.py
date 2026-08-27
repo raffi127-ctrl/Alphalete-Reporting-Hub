@@ -67,6 +67,24 @@ def _best(needle: str, names: Sequence[str]) -> Tuple[Optional[str], float]:
     return scored[0][1], scored[0][0]
 
 
+def same_person_already(left: str, right: str,
+                        board_names: Sequence[str]) -> Optional[str]:
+    """The board row BOTH names point at, if they point at the same one.
+
+    "Kelvinton=Bo" names one man twice: `Kelvinton ( BO ) Scarbough (Wk 3)`
+    carries both. Nobody is missing, so resolve() -- which requires one side to
+    be a rep the board LACKS -- refused it, and the room got "I couldn't tell
+    which is which" for a message that was perfectly clear (2026-08-27, the
+    first live test). Confirming something already true is a normal thing to
+    say, and the honest answer is "yes, got him", not a complaint.
+    """
+    l_name, l_score = _best(left, board_names)
+    r_name, r_score = _best(right, board_names)
+    if l_name and l_name == r_name and min(l_score, r_score) >= 0.55:
+        return l_name
+    return None
+
+
 def resolve(left: str, right: str, board_names: Sequence[str],
             pending: Sequence[str]) -> Tuple[Optional[str], Optional[str], str]:
     """(saraplus_name, board_name, note). Either order works.
