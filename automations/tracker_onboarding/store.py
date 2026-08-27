@@ -18,6 +18,17 @@ _HEADER = ["office_key", "config_json", "channel", "n_trackers",
            "submitted_at", "submitted_by"]
 
 
+# gspread raises WorksheetNotFound for "no tab by that name" and APIError for
+# everything else (429 rate limits, 403s, transient 5xx). Only the first means
+# "create it". Older gspread versions lack the symbol — fall back to a sentinel
+# that matches nothing, so a missing symbol can never widen the except.
+try:                                     # gspread >= 5
+    from gspread.exceptions import WorksheetNotFound as _WorksheetNotFound
+except Exception:                        # noqa: BLE001
+    class _WorksheetNotFound(Exception):
+        pass
+
+
 def _row_values(rec: TrackerRecord) -> list:
     channels = ", ".join(n for _, n in rec.channel_pairs() if n)
     return [rec.key, json.dumps(rec.to_json()), channels or rec.channel_name,
@@ -46,7 +57,7 @@ def _ws():
     ss = _CLIENT.open_by_key(MASTER_SHEET_ID)
     try:
         return ss.worksheet(ONBOARDING_TAB)
-    except Exception:
+    except _WorksheetNotFound:              # a 429 is not a missing tab
         ws = ss.add_worksheet(title=ONBOARDING_TAB, rows=200, cols=len(_HEADER))
         ws.append_row(_HEADER)
         return ws

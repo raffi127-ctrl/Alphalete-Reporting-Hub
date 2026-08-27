@@ -45,6 +45,17 @@ _LOCAL_REQUESTS = (Path(__file__).resolve().parents[2] / "output"
 _CLIENT = None
 
 
+# gspread raises WorksheetNotFound for "no tab by that name" and APIError for
+# everything else (429 rate limits, 403s, transient 5xx). Only the first means
+# "create it". Older gspread versions lack the symbol — fall back to a sentinel
+# that matches nothing, so a missing symbol can never widen the except.
+try:                                     # gspread >= 5
+    from gspread.exceptions import WorksheetNotFound as _WorksheetNotFound
+except Exception:                        # noqa: BLE001
+    class _WorksheetNotFound(Exception):
+        pass
+
+
 def set_client(gspread_client) -> None:
     global _CLIENT
     _CLIENT = gspread_client
@@ -64,7 +75,13 @@ def _ws():
     ss = _CLIENT.open_by_key(MASTER_SHEET_ID)
     try:
         return ss.worksheet(ONBOARDING_TAB)
-    except Exception:
+    except _WorksheetNotFound:
+        # ONLY a genuinely absent tab is created. A bare `except Exception` here
+        # turned a transient Sheets 429 ("Read requests per minute per user")
+        # into an attempt to CREATE a tab that already exists — which fails 400
+        # and blocked auto_commit's schedule self-heal on 2026-08-26. Worse, had
+        # the create ever landed, a second empty 'Office Onboarding' would shadow
+        # the real one. Anything that is not "no such worksheet" re-raises.
         ws = ss.add_worksheet(title=ONBOARDING_TAB, rows=200, cols=len(_HEADER))
         ws.append_row(_HEADER)
         return ws
@@ -127,7 +144,7 @@ def _requests_ws():
     ss = _CLIENT.open_by_key(MASTER_SHEET_ID)
     try:
         return ss.worksheet(REQUESTS_TAB)
-    except Exception:
+    except _WorksheetNotFound:              # see _ws() — never on a rate limit
         ws = ss.add_worksheet(title=REQUESTS_TAB, rows=200, cols=len(_REQ_HEADER))
         ws.append_row(_REQ_HEADER)
         return ws
