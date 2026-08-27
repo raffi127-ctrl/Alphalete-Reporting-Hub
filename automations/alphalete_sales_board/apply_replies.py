@@ -101,8 +101,12 @@ def handle(ws, grid, board_names: Sequence[str], pending_sara: Sequence[str],
         # The direction is not information the room needs: they know who he
         # is. What they need to know is that it landed and that there is one
         # row, not two.
+        # Megan's own words, 2026-08-26. She kept "next sweep" after I had
+        # taken it out as jargon -- the people in this chat have been reading
+        # sweep-by-sweep updates all day, so it is their word too, and it says
+        # WHEN more usefully than "in a few minutes" does.
         msg = ("Heard \U0001FAE1 — %s and %s are the same person. His sales "
-               "will show up on his row on the board in a few minutes.%s"
+               "will show up on his row on the board on next sweep.%s"
                % (left, right, note))
         log("  alias from chat: %s -> %s" % (sara, board))
         sent.append(msg)
