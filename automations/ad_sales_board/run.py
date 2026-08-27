@@ -284,8 +284,16 @@ def main(argv=None):
     fresh, failures = {}, []      # fresh[(manager, label)] = data rows
     rescued_total = 0
     empty_days = []               # (manager, date) a day report would not read
+    # allow_form_login ONLY when a human asked for a headed run. AppStream put an
+    # interactive human-check on the login form in v2026.08.20.1, so unattended
+    # that path CANNOT complete — it just crashes with "console never rendered
+    # #searchMC after login", which reads like a site change and sends whoever
+    # picks it up hunting for the wrong thing. This report was the last one still
+    # passing True (2026-08-27); every other scheduled AppStream/Tableau report
+    # passes False (d793ea3). With False the run stops on the reuse failure and
+    # says the one thing that fixes it: re-seed the session.
     with appstream_direct_session(headless=not a.headed, verbose=False,
-                                  allow_form_login=True) as page:
+                                  allow_form_login=a.headed) as page:
         tok = fetch.token(page)
         for oid, name in targets:
             try:
