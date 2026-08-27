@@ -33,6 +33,17 @@ __pycache__/
 # browser profile carrying a live OV login attempt, in a PUBLIC repo, one
 # `git add .` from being published.
 automations/uploaded/.ov_login_test/
+# The DEDICATED resume-extract Chrome profile + its cache (resume_pushing/run.py:
+# APPSTREAM_PROFILE_DIR.parent / ".extract_profile" / ".extractor_cache"). Same
+# story as .ov_login_test right above: siblings of .browser_profile, so the
+# wildcard misses them, and they are a REAL Chrome profile — Default/Extensions,
+# driven over CDP against AppStream/Indeed — so they carry live login state in a
+# PUBLIC repo. Found untracked on Lucy 2 as its only two "locally modified"
+# entries (2026-08-27). Regenerated on every run; nothing to commit, and an
+# untracked directory here is also what silently aborts a `git pull` the day
+# anything upstream lands at the same path.
+automations/uploaded/.extract_profile/
+automations/uploaded/.extractor_cache/
 # AppStream storage_state export — contains live SESSION cookies (auth). Sensitive;
 # never commit. Exported by output/_scratch_appstream_export_state.py.
 .appstream_storage_state*.json
