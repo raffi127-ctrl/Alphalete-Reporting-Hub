@@ -456,5 +456,66 @@ class TheAlertSaysWhatActuallyHappened(unittest.TestCase):
         self.assertIn("Contract ID", capped)
 
 
+class ARecoveredSourceClosesItsOwnThread(unittest.TestCase):
+    """Nothing used to close a stale-source incident. Ever.
+
+    WHAT THAT LOOKED LIKE (2026-08-26). `alert_stale` writes a PER-DAY state
+    file, so a source still behind tomorrow re-alerts — correct. But a source
+    that CATCHES UP has no path back: its thread stays open forever, and the
+    channel accumulates alerts nobody can tell apart from live ones.
+    drop-tableau-stale-atttracker2-1-d2d-fiberleadperformance-office-new-fiber-lead
+    sat open from 08-25 07:30 for exactly this reason, and closing it by hand was
+    the only option available.
+    """
+
+    def setUp(self):
+        from automations.shared import tableau_freshness as tf
+        from automations.shared import incident_thread as inc
+        self.tf = tf
+        self.resolved = []
+        real = inc.resolve_report
+        inc.resolve_report = lambda rid, **kw: (
+            self.resolved.append((rid, kw.get("note", ""))), True)[1]
+        self.addCleanup(setattr, inc, "resolve_report", real)
+
+    def test_a_source_that_caught_up_resolves_its_alert(self):
+        ok = self.tf.clear_stale("Workbook/View → Sheet", "Workbook/View → Sheet",
+                                 dt.date(2026, 8, 26), dt.date(2026, 8, 26))
+        self.assertTrue(ok)
+        self.assertEqual(1, len(self.resolved))
+        self.assertIn("2026-08-26", self.resolved[0][1])
+
+    def test_it_closes_under_the_same_id_the_alert_opened(self):
+        """alert_stale and alert_frozen both file under tableau-stale-<slug>;
+        closing under anything else leaves the thread open and posts an
+        all-clear into a thread nobody is reading."""
+        self.tf.clear_stale("ATTTRACKER2_1-D2D/FiberLeadPerformance",
+                            "label", None, dt.date(2026, 8, 26))
+        self.assertEqual(
+            "tableau-stale-" + self.tf._slug("ATTTRACKER2_1-D2D/FiberLeadPerformance"),
+            self.resolved[0][0])
+
+    def test_a_frozen_feed_that_moved_says_so_instead_of_naming_a_date(self):
+        self.tf.clear_stale("k", "label", None, dt.date(2026, 8, 26))
+        self.assertIn("Moving again", self.resolved[0][1])
+
+    def test_a_failure_to_close_never_reaches_the_caller(self):
+        """The run that earned the all-clear had GOOD data — it must not fail
+        because Slack was down."""
+        from automations.shared import incident_thread as inc
+
+        def boom(rid, **kw):
+            raise RuntimeError("slack down")
+        inc.resolve_report = boom
+        self.assertFalse(self.tf.clear_stale("k", "l", None, dt.date(2026, 8, 26)))
+
+    def test_check_export_clears_on_the_fresh_path(self):
+        """The wiring, not just the helper — this is what actually runs daily."""
+        import inspect
+        src = inspect.getsource(self.tf.check_export)
+        fresh = src.split('out["verdict"] = "fresh"')[1].split("return out")[0]
+        self.assertIn("clear_stale", fresh)
+
+
 if __name__ == "__main__":
     unittest.main()

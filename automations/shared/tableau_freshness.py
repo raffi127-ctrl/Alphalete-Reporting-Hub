@@ -379,6 +379,38 @@ def alert_stale(source_key: str, view_label: str, newest: Optional[dt.date],
         return False
 
 
+def clear_stale(source_key: str, view_label: str, newest: Optional[dt.date],
+                today: dt.date, *, dry_run: bool = False) -> bool:
+    """This source is serving current data again → close the thread it left open.
+
+    WHY THIS EXISTS (Megan 2026-08-26, "fix it"). `alert_stale` opened an
+    incident and NOTHING ever closed one. The state file it writes is per-DAY, so
+    a source that is still behind tomorrow correctly re-alerts — but a source
+    that CATCHES UP just leaves yesterday's thread sitting open forever. That is
+    precisely the "which of these is still real?" pile the incident threads were
+    built to prevent, and it is what left
+    drop-tableau-stale-atttracker2-1-d2d-fiberleadperformance-office-new-fiber-lead
+    open from 08-25 07:30 with nobody able to say whether it still mattered.
+
+    Cheap when there is nothing to close: resolve_report checks a local index
+    first and throttles the cross-machine channel scan. Best-effort throughout —
+    a report whose data is FINE must never fail because the all-clear didn't
+    post."""
+    try:
+        from automations.shared import incident_thread as _inc
+        return bool(_inc.resolve_report(
+            "tableau-stale-{}".format(_slug(source_key)),
+            what="*{}*".format(view_label),
+            note=(("Serving current data again — newest is now {}.".format(
+                       newest.isoformat()) if newest else
+                   "Moving again — its contents changed on this pull.")
+                  + " The pulls that hit it while it was behind understated "
+                    "reality; anything built on them is worth re-reading."),
+            day=today, dry_run=dry_run))
+    except Exception:  # noqa: BLE001 — an all-clear must never sink a good run
+        return False
+
+
 def alert_unconfirmed_filter(source_key: str, view_label: str,
                              problems: Sequence[str], today: dt.date,
                              report: str = "") -> bool:
@@ -729,6 +761,10 @@ def check_unchanged(path, source_key: str, view_label: str,
             return out              # never seen it change: not ours to judge
         if same < frozen_after:
             out["verdict"] = "moving"
+            # A feed that started moving again closes its own thread, same as a
+            # date-bearing source that caught up. alert_frozen files under the
+            # SAME `tableau-stale-<slug>` id, so one call clears either kind.
+            out["cleared"] = clear_stale(source_key, view_label, None, today)
             return out
         out["verdict"] = "frozen"
         _say("  ⚠ FROZEN FEED: {} — byte-identical for {} day(s) running, "
@@ -846,11 +882,17 @@ def check_export(path,
         out["behind"] = (today - newest).days
         if newest >= needs:
             out["verdict"] = "fresh"
+            # …and if this source had an open stale thread, it is over. Nothing
+            # else in the codebase closes one: alert_stale's state file is
+            # per-day, so a source that stays behind re-alerts correctly while a
+            # source that CATCHES UP strands its thread indefinitely.
+            out["cleared"] = clear_stale(label, label, newest, today)
             if verbose:
                 why = (", weekly source" if weekly else
                        ", no Sunday data" if sunday_quiet else "")
-                _say("  [freshness] {} — newest {} (ok{})".format(
-                    label, newest, why))
+                _say("  [freshness] {} — newest {} (ok{}){}".format(
+                    label, newest, why,
+                    " · closed its stale alert" if out["cleared"] else ""))
             return out
         out["verdict"] = "stale"
         _say("  ⚠ STALE PULL: {} — newest data {}, needs {} ({} day(s) "
