@@ -24,7 +24,10 @@ DOW=$(date +%u)     # 1=Mon .. 7=Sun
 HOUR=$(date +%H)
 HOUR=${HOUR#0}
 [ "$DOW" = "7" ] && exit 0                       # Sunday is not a selling day
-{ [ "$HOUR" -lt 7 ] || [ "$HOUR" -gt 21 ]; } && exit 0
+# Mirrors config.in_selling_window (10:00 start; Saturday ends early). Kept in
+# bash as well so an out-of-hours tick costs milliseconds, not a Python start.
+[ "$HOUR" -lt 10 ] && exit 0
+if [ "$DOW" = "6" ]; then [ "$HOUR" -gt 16 ] && exit 0; else [ "$HOUR" -gt 21 ] && exit 0; fi
 
 VENV_PY=".venv/bin/python"
 [ -x "$VENV_PY" ] || VENV_PY="python3"

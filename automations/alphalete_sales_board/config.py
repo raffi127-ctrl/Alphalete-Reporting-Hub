@@ -112,8 +112,18 @@ LVL1_WINDOW_MINUTES = 12
 # browser, so the sweep deliberately does not start until the wave is through.
 # SaraPlus is cumulative per day, so a late start loses nothing -- the first
 # sweep of the day reads the whole day so far.
-DAY_START_HHMM = (7, 0)
+# 10:00, not 07:00 (Megan 2026-08-26: "no one will be making sales at 7am").
+# The old 07:00 start bought nothing -- SaraPlus is cumulative within the day,
+# so the first sweep reads the whole morning at once no matter when it runs --
+# and cost 36 logins and 36 browser launches on Lucy 1 before anyone knocked a
+# door. Move this if the field starts earlier; nothing else depends on it.
+DAY_START_HHMM = (10, 0)
+
+# Selling stops earlier on Saturday, which is why the Saturday scoreboard goes
+# out at 4pm and the weekday one at 8pm. Sweeping until 21:30 on a Saturday was
+# ~65 passes after the day was already called.
 DAY_END_HHMM = (21, 30)
+SATURDAY_END_HHMM = (17, 0)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
 
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "alphalete_sales_board_state.json"
@@ -145,8 +155,8 @@ def in_selling_window(now: Optional[dt.datetime] = None) -> bool:
         return False
     start = now.replace(hour=DAY_START_HHMM[0], minute=DAY_START_HHMM[1],
                         second=0, microsecond=0)
-    end = now.replace(hour=DAY_END_HHMM[0], minute=DAY_END_HHMM[1],
-                      second=0, microsecond=0)
+    end_h, end_m = SATURDAY_END_HHMM if now.weekday() == 5 else DAY_END_HHMM
+    end = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
     return start <= now <= end
 
 
