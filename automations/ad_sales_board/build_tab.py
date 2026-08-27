@@ -41,33 +41,22 @@ CAPTION = {"red": 0.8, "green": 0.8, "blue": 0.8}
 BORDER = {"red": 0.7176471, "green": 0.7176471, "blue": 0.7176471}
 
 D = sheet.DATA_TAB
-# Spill: AD, Account, City on the LEFT (Carlos), then Pull, # Names, and the
-# 7 day counts Mon..Sun. The full name list stays on the data tab (col J) but
-# is deliberately NOT shown — "i dont need all the names on the right."
-B5 = ("=IFNA(FILTER({'%(d)s'!$E$2:$E,'%(d)s'!$C$2:$C,'%(d)s'!$F$2:$F,"
-      "'%(d)s'!$G$2:$G,'%(d)s'!$I$2:$I,'%(d)s'!$L$2:$R},"
-      "('%(d)s'!$A$2:$A=$B$1)*('%(d)s'!$B$2:$B=$B$3)))" % {"d": D})
-A5 = ('=ARRAYFORMULA(IF(($B$5:$B$600="")+($B$5:$B$600="TOTAL"),"",'
-      'ROW($B$5:$B$600)-4))')
-# Picked week's start date, resolved on the DATA tab (AB1) so every header
-# formula reads one cell instead of re-running the MATCH seven times.
-AB1 = ("=IFERROR(DATEVALUE(INDEX($K$2:$K,MATCH('%s'!$B$3,$B$2:$B,0))),\"\")"
-       % sheet.VIEW_TAB)
-WEEK_LABEL = ("=IF('%(d)s'!$AB$1=\"\",\"\",\" Week Ending \"&TEXT("
-              "'%(d)s'!$AB$1+6,\"m/d\"))" % {"d": D})
-DAY_FALLBACK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
-                "Saturday", "Sunday"]
-
-
-def day_header(i):
-    return ("=IF('%(d)s'!$AB$1=\"\",\"%(f)s\",TEXT('%(d)s'!$AB$1+%(i)d,\"dddd\")"
-            "&CHAR(10)&TEXT('%(d)s'!$AB$1+%(i)d,\"m/d\"))"
-            % {"d": D, "f": DAY_FALLBACK[i], "i": i})
-
+# ONE stacked scroll: every week of the picked manager, newest first — no week
+# dropdown (Carlos 2026-08-27: "no dropdown i just have to scroll down"). Each
+# block opens with a blue WEEK ENDING band row the job writes into the data;
+# the rank (#) comes from data col S. Spill columns:
+# rank | Account | City | AD/band | Pull | Names | Mon..Sun day counts.
+A5 = ("=IFNA(FILTER({'%(d)s'!$S$2:$S,'%(d)s'!$C$2:$C,'%(d)s'!$F$2:$F,"
+      "'%(d)s'!$E$2:$E,'%(d)s'!$G$2:$G,'%(d)s'!$I$2:$I,'%(d)s'!$L$2:$R},"
+      "'%(d)s'!$A$2:$A=$B$1))" % {"d": D})
+DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+        "Saturday", "Sunday"]
 
 CAPTION_TEXT = ("names per ad per DAY · Pull = processed emails that week · "
                 "names = sent to call list (org offices; Saturdays missing "
                 "upstream)")
+HINT_TEXT = ("ALL WEEKS — newest at the top, scroll down for history · blue "
+             "band = week ending · TOTAL closes each week")
 
 
 def _grid(sess):
@@ -147,7 +136,7 @@ def main(argv=None):
     _uf(sess, sheet.data_range("AA2"),
         [['=IF(\'%s\'!$D$1="Captainship",FILTER($Z$2:$Z$40,$Z$2:$Z$40<>""),'
           'FILTER($Y$2:$Y$40,$Y$2:$Y$40<>""))' % sheet.VIEW_TAB]])
-    _uf(sess, sheet.data_range("AB1"), [[AB1]])
+    sheet.put_values(sess, sheet.data_range("AB1"), [[""]])   # retired helper
 
     # --- visible tab: wipe everything visual, keep nothing -------------------
     n_cf = tabs[sheet.VIEW_TAB].get("n_cf", 0)
@@ -166,25 +155,20 @@ def main(argv=None):
     # which 400s while the freshly-created tab is still 8 columns wide.
     _batch(sess, [{"updateSheetProperties": {"properties": {
         "sheetId": view_id,
-        "gridProperties": {"rowCount": 1000, "columnCount": 14,
+        "gridProperties": {"rowCount": 2000, "columnCount": 14,
                            "frozenRowCount": 4, "frozenColumnCount": 0}},
         "fields": "gridProperties(rowCount,columnCount,frozenRowCount,"
                   "frozenColumnCount)"}}])
 
     # --- values --------------------------------------------------------------
-    from . import weeks as _wk
-    cur_label = _wk.windows_back(1)[0][0]       # the current week (Mon-Sun)
     sheet.put_values(sess, sheet.view_range("A1"),
                      [["VIEWING ▶", "Carlos Hidalgo", "GROUP ▶", "Org",
                        CAPTION_TEXT]])
     sheet.put_values(sess, sheet.view_range("A2"), [["AD SALES BOARD"]])
-    sheet.put_values(sess, sheet.view_range("A3"), [["WE", cur_label]])
-    _uf(sess, sheet.view_range("C3"), [[WEEK_LABEL]])
+    sheet.put_values(sess, sheet.view_range("A3"), [[HINT_TEXT]])
     sheet.put_values(sess, sheet.view_range("A4"),
-                     [["#", "AD", "Account", "City", "Pull", "Names"]])
-    _uf(sess, sheet.view_range("G4"), [[day_header(i) for i in range(7)]])
+                     [["#", "Account", "City", "AD", "Pull", "Names"] + DAYS])
     _uf(sess, sheet.view_range("A5"), [[A5]])
-    _uf(sess, sheet.view_range("B5"), [[B5]])
 
     # --- dress ---------------------------------------------------------------
     def fmt(r1, c1, r2, c2, cell, fields):
@@ -239,22 +223,14 @@ def main(argv=None):
                                     foregroundColor=WHITE)}},
             "userEnteredFormat(backgroundColor,horizontalAlignment,"
             "verticalAlignment,textFormat)"),
-        # row 3 — WE strip
+        # row 3 — scroll hint strip (no week picker any more)
         fmt(2, 0, 3, 14, {"userEnteredFormat": {
                 "backgroundColor": BLUE, "horizontalAlignment": "LEFT",
                 "verticalAlignment": "MIDDLE",
-                "textFormat": arial(bold=True, foregroundColor=WHITE)}},
+                "textFormat": arial(bold=True, fontSize=10,
+                                    foregroundColor=WHITE)}},
             "userEnteredFormat(backgroundColor,horizontalAlignment,"
             "verticalAlignment,textFormat)"),
-        fmt(2, 0, 3, 1, {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
-            "userEnteredFormat.horizontalAlignment"),
-        fmt(2, 1, 3, 2, {"userEnteredFormat": {
-                "backgroundColor": CREAM, "horizontalAlignment": "CENTER",
-                "textFormat": arial(bold=True, fontSize=11,
-                                    foregroundColor={"red": 0, "green": 0, "blue": 0}),
-                "numberFormat": {"type": "TEXT", "pattern": "@"}}},
-            "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat,"
-            "numberFormat)"),
         # row 4 — header
         fmt(3, 0, 4, 13, {"userEnteredFormat": {
                 "backgroundColor": NAVY, "horizontalAlignment": "CENTER",
@@ -264,21 +240,21 @@ def main(argv=None):
             "userEnteredFormat(backgroundColor,horizontalAlignment,"
             "verticalAlignment,wrapStrategy,textFormat)"),
         # grid body — EVERYTHING centered (Carlos: "center everything")
-        fmt(4, 0, 320, 13, {"userEnteredFormat": {
+        fmt(4, 0, 1500, 13, {"userEnteredFormat": {
                 "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
                 "wrapStrategy": "CLIP", "textFormat": arial()}},
             "userEnteredFormat(horizontalAlignment,verticalAlignment,"
             "wrapStrategy,textFormat)"),
-        fmt(4, 0, 320, 1, {"userEnteredFormat": {
+        fmt(4, 0, 1500, 1, {"userEnteredFormat": {
                 "textFormat": arial(foregroundColor={"red": 0.45, "green": 0.45,
                                                      "blue": 0.45})}},
             "userEnteredFormat.textFormat"),
-        fmt(4, 4, 320, 13, {"userEnteredFormat": {
+        fmt(4, 4, 1500, 13, {"userEnteredFormat": {
                 "numberFormat": {"type": "NUMBER", "pattern": "0"}}},
             "userEnteredFormat.numberFormat"),
         # borders over the whole board grid
         {"updateBorders": {
-            "range": {"sheetId": view_id, "startRowIndex": 3, "endRowIndex": 320,
+            "range": {"sheetId": view_id, "startRowIndex": 3, "endRowIndex": 1500,
                       "startColumnIndex": 0, "endColumnIndex": 13},
             "top": {"style": "SOLID", "color": BORDER},
             "bottom": {"style": "SOLID", "color": BORDER},
@@ -287,7 +263,7 @@ def main(argv=None):
             "innerHorizontal": {"style": "SOLID", "color": BORDER},
             "innerVertical": {"style": "SOLID", "color": BORDER}}},
         # column widths: # | AD | Account | City | Pull | Names | Mon..Sun
-        width(0, 1, 34), width(1, 2, 290), width(2, 3, 170), width(3, 4, 130),
+        width(0, 1, 34), width(1, 2, 170), width(2, 3, 130), width(3, 4, 290),
         width(4, 5, 64), width(5, 6, 64), width(6, 13, 86), width(13, 14, 40),
         # breathing room: taller header + airier data rows
         {"updateDimensionProperties": {
@@ -296,13 +272,14 @@ def main(argv=None):
             "properties": {"pixelSize": 40}, "fields": "pixelSize"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": view_id, "dimension": "ROWS",
-                      "startIndex": 4, "endIndex": 320},
+                      "startIndex": 4, "endIndex": 1500},
             "properties": {"pixelSize": 26}, "fields": "pixelSize"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": view_id, "dimension": "ROWS",
                       "startIndex": 1, "endIndex": 2},
             "properties": {"pixelSize": 34}, "fields": "pixelSize"}},
-        # dropdowns: manager B1, group D1, week B3
+        # dropdowns: manager B1, group D1 (the week dropdown is GONE — the
+        # board is one stacked scroll of every week)
         dv(0, 1, {"condition": {"type": "ONE_OF_RANGE", "values": [
                     {"userEnteredValue": "='%s'!$AA$2:$AA$40" % D}]},
                   "showCustomUi": True, "strict": False}),
@@ -310,28 +287,36 @@ def main(argv=None):
                     {"userEnteredValue": "Org"},
                     {"userEnteredValue": "Captainship"}]},
                   "showCustomUi": True, "strict": False}),
-        dv(2, 1, {"condition": {"type": "ONE_OF_RANGE", "values": [
-                    {"userEnteredValue": "='%s'!$X$2:$X$200" % D}]},
-                  "showCustomUi": True, "strict": False}),
-        # TOTAL row grey/bold; unmatched-names row amber
+        # WEEK ENDING band rows: blue, bold, white — each week's divider
         {"addConditionalFormatRule": {"index": 0, "rule": {
-            "ranges": [{"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 320,
+            "ranges": [{"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 1500,
                         "startColumnIndex": 0, "endColumnIndex": 13}],
             "booleanRule": {
                 "condition": {"type": "CUSTOM_FORMULA",
-                              "values": [{"userEnteredValue": '=$B5="TOTAL"'}]},
+                              "values": [{"userEnteredValue":
+                                          '=LEFT($D5,11)="WEEK ENDING"'}]},
+                "format": {"backgroundColor": BLUE,
+                           "textFormat": {"bold": True,
+                                          "foregroundColor": WHITE}}}}}},
+        # TOTAL row grey/bold; unmatched-names row amber
+        {"addConditionalFormatRule": {"index": 1, "rule": {
+            "ranges": [{"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 1500,
+                        "startColumnIndex": 0, "endColumnIndex": 13}],
+            "booleanRule": {
+                "condition": {"type": "CUSTOM_FORMULA",
+                              "values": [{"userEnteredValue": '=$D5="TOTAL"'}]},
                 "format": {"backgroundColor": GREY,
                            "textFormat": {"bold": True}}}}}},
         {"addConditionalFormatRule": {"index": 1, "rule": {
-            "ranges": [{"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 320,
+            "ranges": [{"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 1500,
                         "startColumnIndex": 0, "endColumnIndex": 13}],
             "booleanRule": {
                 "condition": {"type": "CUSTOM_FORMULA",
-                              "values": [{"userEnteredValue": '=LEFT($B5,1)="—"'}]},
+                              "values": [{"userEnteredValue": '=LEFT($D5,1)="—"'}]},
                 "format": {"backgroundColor": AMBER}}}}},
     ]
     _batch(sess, reqs)
-    print("visible tab dressed as a sales board; week cell seeded to %s" % cur_label)
+    print("visible tab dressed as a stacked sales board (all weeks, no dropdown)")
     print(json.dumps({"data_sheet_id": data_id, "view_sheet_id": view_id}))
     return 0
 
