@@ -269,6 +269,34 @@ def draft(tab_name: str = "") -> int:
     return 0
 
 
+def check_mailbox() -> int:
+    """Prove the Gmail token on THIS machine works and belongs to reception.
+    Sends nothing, drafts nothing, reads no roster.
+
+    The preview never touches Gmail, so a machine can pass a full dry run with
+    a token that is missing, expired, or authorized as the wrong account -- and
+    only find out at 8am Monday, when the thing it was supposed to do is mail
+    fifty-two people. This is the preflight that closes that gap.
+    """
+    from automations.slack_skool_email import gmail_reception as gm
+
+    try:
+        who = gm.assert_right_mailbox()
+    except Exception as exc:
+        print("Gmail is NOT ready on this machine:\n  {}".format(exc))
+        return 1
+    print("Gmail OK - this machine sends as {}".format(who))
+
+    try:
+        sent = gm.already_sent_today(config.SUBJECT_SEARCH)
+    except gm.GuardUnavailable as exc:
+        print("But the re-send guard can't run:\n  {}".format(exc))
+        return 1
+    print("Re-send guard OK - searched Sent mail, already sent today: {}"
+          .format(sent))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Email this week's new starts their Slack + Skool links.")
@@ -280,6 +308,9 @@ def main(argv=None) -> int:
                     help="post the summary to Slack after a real send")
     ap.add_argument("--force", action="store_true",
                     help="send even if one already went out today")
+    ap.add_argument("--check-mailbox", action="store_true",
+                    help="preflight: prove this machine's Gmail token works "
+                         "and is reception's. Sends nothing.")
     ap.add_argument("--no-fetch", action="store_true",
                     help="preview without opening Slack to read the invite "
                          "link (for a machine with no Slack session)")
@@ -287,6 +318,8 @@ def main(argv=None) -> int:
                     help="an explicit 'D2D OBCL <m.d>' tab (default: newest)")
     args = ap.parse_args(argv)
 
+    if args.check_mailbox:
+        return check_mailbox()
     if args.send and args.draft:
         ap.error("--send and --draft do different things; pick one")
     if args.send:
