@@ -166,7 +166,17 @@ def settle_name_gate(sh, *, dry_run: bool, do_post: bool) -> int:
     """
     try:
         state = name_gate.load_state()
-        approved, rejected = name_gate.collect_decisions(state)
+        approved, rejected, needs_auth = name_gate.collect_decisions(state)
+        if needs_auth:
+            # Somebody reacted whose vote doesn't count. Say so in the thread —
+            # a click that silently does nothing reads as "handled".
+            name_gate.say_still_needs_authorising(needs_auth, dry_run=not do_post)
+            if not dry_run:
+                for entry in needs_auth:
+                    stamp = entry.get("nudged_at")
+                    if stamp:
+                        state.setdefault(entry["pid"], {})["nudged_at"] = stamp
+                name_gate.save_state(state)
         if not (approved or rejected):
             return 0
         applied = name_gate.apply_renames(sh, approved, state, dry_run=dry_run)

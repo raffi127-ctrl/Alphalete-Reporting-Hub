@@ -369,7 +369,7 @@ class VoteTests(unittest.TestCase):
         thread = name_gate._thread_reactions
         name_gate._thread_reactions = lambda cli, ch, ts: {"2.0": rx}
         try:
-            approved, rejected = name_gate.collect_decisions(state)
+            approved, rejected, _needs = name_gate.collect_decisions(state)
         finally:
             name_gate._client = orig
             name_gate._thread_reactions = thread
@@ -464,6 +464,57 @@ class TintTests(unittest.TestCase):
         name_gate.tint_confirmed(_FakeSheet(ws), by_tab, state, dry_run=True)
         self.assertEqual(ws.formatted, [])
         self.assertEqual(state.get(name_gate.TINTED_KEY, {}), {})
+
+
+class OutsiderReactionTests(unittest.TestCase):
+    """Megan: "if someone not auth reacts to it you need to put in the channel
+    that it still needs confirmed by authorized people." """
+
+    ENTRY = {"status": "pending", "channel": "C1", "parent_ts": "1.0",
+             "reply_ts": "2.0", "sheet_first": "Adriana", "sheet_last": "Ruiz",
+             "legal_first": "Jordan", "legal_last": "Ruiz",
+             "key": "ruiz|adriana", "locations": [["D2D OBCL", 12]]}
+
+    def _collect(self, reactions):
+        state = {"pid1": dict(self.ENTRY)}
+        orig, thread = name_gate._client, name_gate._thread_reactions
+        name_gate._client = lambda: None
+        name_gate._thread_reactions = lambda cli, ch, ts: {"2.0": reactions}
+        try:
+            return name_gate.collect_decisions(state)
+        finally:
+            name_gate._client, name_gate._thread_reactions = orig, thread
+
+    def test_a_stranger_reacting_flags_it_as_still_open(self):
+        approved, rejected, needs = self._collect(
+            [{"name": "white_check_mark", "users": ["U0STRANGER"]}])
+        self.assertEqual((approved, rejected), ([], []))
+        self.assertEqual(needs[0]["reacted_by"], ["U0STRANGER"])
+
+    def test_an_authorised_reaction_alongside_it_decides_it(self):
+        approved, rejected, needs = self._collect(
+            [{"name": "white_check_mark", "users": ["U0STRANGER", "U0B9924FHCL"]}])
+        self.assertEqual(len(approved), 1)
+        self.assertEqual(needs, [])
+
+    def test_it_is_only_said_once(self):
+        approved, rejected, needs = self._collect(
+            [{"name": "x", "users": ["U0STRANGER"]}])
+        self.assertEqual(len(needs), 1)
+        state = {"pid1": {**self.ENTRY, "nudged_at": "2026-08-26T20:00:00"}}
+        orig, thread = name_gate._client, name_gate._thread_reactions
+        name_gate._client = lambda: None
+        name_gate._thread_reactions = lambda cli, ch, ts: {
+            "2.0": [{"name": "x", "users": ["U0STRANGER"]}]}
+        try:
+            self.assertEqual(name_gate.collect_decisions(state)[2], [])
+        finally:
+            name_gate._client, name_gate._thread_reactions = orig, thread
+
+    def test_an_unrelated_emoji_is_not_a_vote(self):
+        approved, rejected, needs = self._collect(
+            [{"name": "eyes", "users": ["U0STRANGER"]}])
+        self.assertEqual(needs, [])
 
 
 class _FakeWS:

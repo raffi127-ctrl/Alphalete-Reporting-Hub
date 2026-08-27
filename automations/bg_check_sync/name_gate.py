@@ -580,6 +580,23 @@ def _thread_reactions(cli, channel: str, parent_ts: str) -> dict:
     return out
 
 
+def _outsiders(reactions: list) -> list:
+    """Anyone who used ✅ or ❌ whose vote doesn't count.
+
+    They clicked in good faith and nothing happened — which reads exactly like
+    "handled" to the rest of the room (Megan 2026-08-26). Their click is worth a
+    line in the thread, not silence.
+    """
+    who: list = []
+    for r in reactions:
+        if r.get("name") not in (APPROVE_EMOJI, REJECT_EMOJI):
+            continue
+        for uid in (r.get("users") or []):
+            if uid not in DECIDER_IDS and uid not in who:
+                who.append(uid)
+    return who
+
+
 def _voted(reactions: list, emoji: str) -> Optional[str]:
     """The first decider who reacted with `emoji`, or None. Anyone else's
     reaction is ignored — this is onboarding's call to make."""
@@ -592,16 +609,21 @@ def _voted(reactions: list, emoji: str) -> Optional[str]:
     return None
 
 
-def collect_decisions(state: dict) -> tuple[list[dict], list[dict]]:
-    """Read every pending proposal's reactions. Returns (approved, rejected) as
-    the raw state entries, each stamped with pid/decided_by. ❌ wins over ✅: if
-    the room disagrees, the answer that touches nobody's name is the safe one."""
+def collect_decisions(state: dict) -> tuple[list[dict], list[dict], list[dict]]:
+    """Read every pending proposal's reactions.
+
+    Returns (approved, rejected, needs_auth) as raw state entries stamped with
+    pid. ❌ wins over ✅: if the room disagrees, the answer that touches nobody's
+    name is the safe one. `needs_auth` is the third case — somebody who doesn't
+    count has reacted, and nobody who does has — which stays pending but should
+    not stay quiet.
+    """
     pending = {pid: e for pid, e in state.items() if e.get("status") == "pending"}
     if not pending:
-        return [], []
+        return [], [], []
     cli = _client()
     threads: dict = {}
-    approved, rejected = [], []
+    approved, rejected, needs_auth = [], [], []
     for pid, entry in pending.items():
         ch, parent = entry.get("channel"), entry.get("parent_ts")
         if not (ch and parent and entry.get("reply_ts")):
@@ -616,7 +638,30 @@ def collect_decisions(state: dict) -> tuple[list[dict], list[dict]]:
             rejected.append({**entry, "pid": pid, "decided_by": no})
         elif yes:
             approved.append({**entry, "pid": pid, "decided_by": yes})
-    return approved, rejected
+        elif not entry.get("nudged_at"):
+            outsiders = _outsiders(reactions)
+            if outsiders:
+                needs_auth.append({**entry, "pid": pid, "reacted_by": outsiders})
+    return approved, rejected, needs_auth
+
+
+def say_still_needs_authorising(entries: list, *, dry_run: bool = True) -> None:
+    """Tell the thread that a reaction came in but the question is still open.
+
+    Said ONCE per question (`nudged_at`): the checkers run twice a day and would
+    otherwise repeat it until somebody authorised answers.
+    """
+    cli = None if dry_run else _client()
+    tags = " ".join(f"<@{uid}>" for _, uid in DECIDERS)
+    for entry in entries:
+        who = " ".join(f"<@{uid}>" for uid in entry.get("reacted_by", []))
+        old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
+        text = (f"{who} reacted on *{old}* — thank you, but that one isn't on "
+                f"the list I act on, so nothing has changed yet.\n"
+                f"Still needs a ✅ or ❌ from {tags}.")
+        _reply(cli, entry, text, dry_run)
+        if not dry_run:
+            entry["nudged_at"] = dt.datetime.now().isoformat(timespec="seconds")
 
 
 # --- do it ------------------------------------------------------------------
