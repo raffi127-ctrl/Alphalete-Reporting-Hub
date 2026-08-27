@@ -81,24 +81,77 @@ def session(verbose=False):
     return AuthorizedSession(creds)
 
 
+# Google answers a momentary 429 (quota shared with 2R / Call List / Apps, which
+# append into this same workbook all morning) or a 5xx server blip on calls that
+# succeed seconds later. Left unhandled, ONE of those sinks the whole run: on
+# 2026-08-27 the 4:00am pass died in preflight on a single 503 and told the
+# channel "this machine can't write the workbook", pointing the fix at
+# credentials that were never the problem. Retry the transient statuses HERE, at
+# the single HTTP chokepoint, so they never reach the report. 403/404 are NOT in
+# the list — a real permission fault still fails on the first answer.
+_RETRY_STATUS = (429, 500, 502, 503, 504)
+_RETRIES = 6                    # 1+2+4+8+16 ≈ 31s of blip ridden out
+_BACKOFF_CAP = 30.0
+
+
+def request(sess, method, url, **kw):
+    """One Sheets API call, retrying a transient 429/5xx or a dropped
+    connection. Returns the response; raises like raise_for_status() would."""
+    import time
+
+    import requests
+
+    last_exc = None
+    for attempt in range(_RETRIES):
+        try:
+            r = getattr(sess, method)(url, **kw)
+        except requests.exceptions.RequestException as e:   # connection reset/timeout
+            last_exc = e
+            if attempt == _RETRIES - 1:
+                raise
+            time.sleep(min(2 ** attempt, _BACKOFF_CAP))
+            continue
+        if r.status_code not in _RETRY_STATUS or attempt == _RETRIES - 1:
+            r.raise_for_status()
+            return r
+        print("  (sheets %d on %s - retry %d/%d)"
+              % (r.status_code, method.upper(), attempt + 1, _RETRIES - 1), flush=True)
+        time.sleep(min(2 ** attempt, _BACKOFF_CAP))
+    # Unreachable: the final attempt always returns or raises above.
+    raise last_exc or RuntimeError("sheets request exhausted its retries")
+
+
+def is_transient(exc):
+    """True when a Sheets failure is Google-side and temporary rather than an
+    identity problem. What separates 'wait and it works' from 'fix the
+    credential' — an abort message that gets this backwards costs an hour."""
+    code = getattr(getattr(exc, "response", None), "status_code", None)
+    if code is not None:
+        return code in _RETRY_STATUS          # a real HTTPError answers exactly
+    import requests
+    if isinstance(exc, requests.exceptions.RequestException):
+        return True                            # never got an answer at all
+    s = str(exc)
+    return any(w in s for w in ("Service Unavailable", "Internal Server Error",
+                                "Bad Gateway", "Gateway Timeout", "timed out"))
+
+
 def get_values(sess, rng):
-    r = sess.get("%s/%s/values/%s" % (API, SPREADSHEET_ID, rng),
-                 params={"valueRenderOption": "UNFORMATTED_VALUE"})
-    r.raise_for_status()
+    r = request(sess, "get", "%s/%s/values/%s" % (API, SPREADSHEET_ID, rng),
+                params={"valueRenderOption": "UNFORMATTED_VALUE"})
     return r.json().get("values", [])
 
 
 def put_values(sess, rng, values):
-    r = sess.put("%s/%s/values/%s" % (API, SPREADSHEET_ID, rng),
-                 params={"valueInputOption": "RAW"},
-                 json={"majorDimension": "ROWS", "values": values})
-    r.raise_for_status()
+    r = request(sess, "put", "%s/%s/values/%s" % (API, SPREADSHEET_ID, rng),
+                params={"valueInputOption": "RAW"},
+                json={"majorDimension": "ROWS", "values": values})
     return r.json()
 
 
 def clear(sess, rng):
-    r = sess.post("%s/%s/values/%s:clear" % (API, SPREADSHEET_ID, rng), json={})
-    r.raise_for_status()
+    request(sess, "post", "%s/%s/values/%s:clear" % (API, SPREADSHEET_ID, rng),
+            json={})
 
 
 def probe_write(sess):
@@ -106,16 +159,15 @@ def probe_write(sess):
 
     A read succeeds for anyone-with-the-link, so reading proves nothing. This
     rewrites one throwaway cell on the hidden data tab with what it already
-    contains — a real write that changes nothing. Raises on 403/404.
+    contains — a real write that changes nothing. Raises on 403/404; a
+    transient 429/5xx is retried by `request` and never gets here.
     """
     # Far below the data, but INSIDE the grid — a column past the sheet's
     # width answers 400 Bad Request, which would look like a permission fault.
     cell = data_range("X4999")
-    r = sess.get("%s/%s/values/%s" % (API, SPREADSHEET_ID, cell),
-                 params={"valueRenderOption": "UNFORMATTED_VALUE"})
-    r.raise_for_status()
+    r = request(sess, "get", "%s/%s/values/%s" % (API, SPREADSHEET_ID, cell),
+                params={"valueRenderOption": "UNFORMATTED_VALUE"})
     current = (r.json().get("values") or [[""]])[0]
-    w = sess.put("%s/%s/values/%s" % (API, SPREADSHEET_ID, cell),
-                 params={"valueInputOption": "RAW"},
-                 json={"majorDimension": "ROWS", "values": [current or [""]]})
-    w.raise_for_status()
+    request(sess, "put", "%s/%s/values/%s" % (API, SPREADSHEET_ID, cell),
+            params={"valueInputOption": "RAW"},
+            json={"majorDimension": "ROWS", "values": [current or [""]]})
