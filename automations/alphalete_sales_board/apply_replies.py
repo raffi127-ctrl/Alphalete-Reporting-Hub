@@ -85,8 +85,8 @@ def handle(ws, grid, board_names: Sequence[str], pending_sara: Sequence[str],
             ok, why2 = fill.remove_rep(ws, grid, added["row"],
                                        added["board_name"], day) if send else (
                 False, "preview: row %s left alone" % added["row"])
-            note = (" I've cleared the extra row I added for them." if ok
-                    else " (the extra row I added is still there: %s)" % why2)
+            note = (" I've also deleted the extra row I made for him." if ok
+                    else " I couldn't delete the extra row I made for him: %s" % why2)
             if ok and "EARLIER DAYS" in why2:
                 note += " " + why2[why2.index("EARLIER DAYS"):]
             if ok:
@@ -101,8 +101,8 @@ def handle(ws, grid, board_names: Sequence[str], pending_sara: Sequence[str],
         # The direction is not information the room needs: they know who he
         # is. What they need to know is that it landed and that there is one
         # row, not two.
-        msg = ("Heard \U0001FAE1 — %s and %s are the same person. Those sales "
-               "land on his existing row from the next sweep, not a new one.%s"
+        msg = ("Heard \U0001FAE1 — %s and %s are the same person. His sales "
+               "will show up on his row on the board in a few minutes.%s"
                % (left, right, note))
         log("  alias from chat: %s -> %s" % (sara, board))
         sent.append(msg)
