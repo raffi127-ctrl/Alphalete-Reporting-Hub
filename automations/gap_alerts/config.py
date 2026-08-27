@@ -155,20 +155,25 @@ TICK_MINUTES = 10
 
 # A card is REFUSED if this office got one less than this many minutes ago.
 #
-# WHY IT EXISTS. The pid lock stops two ticks OVERLAPPING; it does nothing about
-# two ticks landing back to back, and the room reads two near-identical cards as
-# a broken alert. Three things cause that and none of them are the scheduled
-# cadence: a launchd StartInterval job fires the moment it is (re)loaded and
-# again after a wake, the Hub's "Text it now" button runs on top of whatever
-# launchd is already doing, and a `lucy rerun` does the same. It happened the
-# first evening this went live (2026-08-26): the agent was installed at 20:09,
-# hand-run at 20:12, and fired on its own at 20:14 — two cards, two minutes
-# apart, in front of everyone.
+# WHY IT EXISTS. The pid lock stops two ticks OVERLAPPING; it does nothing
+# about two landing back to back, and the room reads two near-identical cards
+# as a broken alert. A launchd job fires the moment it is (re)loaded and again
+# after a wake, the Hub button runs on top of the schedule, and so does a
+# `lucy rerun`. All three happened the first evening this went live.
 #
-# 9, not 10: launchd drift means a legitimate tick can arrive at 9m50s, and a
-# guard that ate real ticks would be worse than the problem. It tracks
-# TICK_MINUTES — if the cadence moves again, move this with it.
-MIN_SEND_GAP_MINUTES = 9
+# MUST BE WELL UNDER (cadence - runtime), and that is the part that bit us.
+# It was set to 9 against a 10-minute cadence on the reasoning that "just under
+# a full tick" was safest — but the guard measures from when the card SENT,
+# while the cadence anchors on when the tick FIRES, and a run takes 1-4 minutes
+# in between. So each send landed ~1.5 min after its anchor, the next anchored
+# tick was only ~8.5 minutes later, and the guard ate it: every second tick
+# skipped, a real cadence of 20 minutes, and Raf watching an empty chat
+# (2026-08-27, "it's not posting? it's been over 10 min").
+#
+# 5 leaves room for the slowest run we have seen (3m52s) and still blocks what
+# it is for: the :01 catch-up minute after a :00 send, a reinstall fire, a
+# hand-run stacked on the schedule.
+MIN_SEND_GAP_MINUTES = 5
 
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_state.json"
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts.lock"
