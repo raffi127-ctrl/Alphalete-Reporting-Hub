@@ -60,6 +60,7 @@ AGENT_ROW = "5_Agent"
 AGENT_ROW_INTERNET = "6_Agent"
 
 GRID_TIMEOUT_MS = 90_000
+NAV_TIMEOUT_MS = 60_000
 
 
 class SaraError(RuntimeError):
@@ -110,7 +111,18 @@ def _login(page, email: str, password: str) -> str:
             "cause); nothing was written." % C.CREDS_PATH)
     if "DealerPages/" not in url:
         raise SaraError("logged in but landed somewhere unexpected: %s" % url)
-    return url.split("DealerPages/")[0] + "DealerPages/"
+    # The DEALER ROOT -- everything up to and including the session segment,
+    # e.g. https://www.saraplus.com/e/(S(<session>))/ -- and deliberately NOT
+    # .../DealerPages/. The Reporting Hub is a SIBLING of DealerPages, not a
+    # child of it: the live Analytics menu is
+    #     onclick="window.location.href='../Reports/ReportingHub.aspx'"
+    # and that '..' is the whole story. Building base as ".../DealerPages/"
+    # and appending "Reports/ReportingHub.aspx" gives
+    # .../DealerPages/Reports/ReportingHub.aspx, which SaraPlus serves as
+    # 404.aspx -- and a 404 then presents as a selector timeout on the Service
+    # dropdown, which reads like a changed control rather than a wrong url
+    # (2026-08-26; read off the nav by `run --probe`).
+    return url.split("DealerPages/")[0]
 
 
 def _set_telerik_date(page, field_id: str, day: dt.date) -> None:
@@ -165,6 +177,25 @@ def page_state(page) -> str:
         page.url, title, ", ".join(found) or "NONE of the expected landmarks")
 
 
+def _assert_on_hub(page, base_url: str) -> None:
+    """Fail with the URL, not 30s later with a missing selector.
+
+    SaraPlus answers a bad dealer path with 404.aspx, a real page -- so the
+    navigation "succeeds" and the first thing that notices is whichever control
+    we reach for next. Saying so here turns a puzzling selector timeout into
+    the sentence "we asked for the wrong url"."""
+    try:
+        title = page.title()
+    except Exception:  # noqa: BLE001
+        title = ""
+    if "404" in title or "404.aspx" in page.url:
+        raise SaraError(
+            "%s is a 404 for this dealer (landed on %s). The Reporting Hub sits "
+            "beside DealerPages/, not inside it -- check what the Analytics menu "
+            "points at with `run --probe`."
+            % (base_url + HUB_PATH, page.url))
+
+
 def _select_service(page, label: str) -> None:
     """Pick a value in the Telerik RadComboBox by its visible text."""
     try:
@@ -190,11 +221,48 @@ def _select_service(page, label: str) -> None:
     page.wait_for_timeout(500)
 
 
-def _run_report(page, base_url: str, day: dt.date, service: str,
-                grid: str) -> List[List[str]]:
+def _run_report(page, base_url: str, day: dt.date, service: str, grid: str,
+                attempts: int = 3, log=print) -> List[List[str]]:
+    """One report pass, RETRIED -- SaraPlus is intermittently slow.
+
+    Measured on the first night live: three sweeps died on
+    `wait_for_selector: Timeout 90000ms` and `click: Timeout 30000ms`. The grid
+    simply had not rendered; nothing was wrong with the login or the session.
+
+    A failed sweep posts NOTHING, so a sale then waits ~7 minutes for the next
+    tick. Retrying the pass re-navigates to a fresh hub page and asks again --
+    what a person would do -- and turns most of those into a sweep that lands on
+    time. Only a pass that fails every attempt fails the sweep, which is worth
+    failing on: that means SaraPlus is down, not slow.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            return _run_report_once(page, base_url, day, service, grid)
+        except Exception as e:  # noqa: BLE001 — retry ANY per-pass failure
+            if attempt == attempts:
+                raise SaraError("the %r report failed %d times; last error %s: %s"
+                                % (service, attempts, type(e).__name__, str(e)[:200]))
+            log("  %r pass attempt %d/%d failed (%s) — retrying"
+                % (service, attempt, attempts, type(e).__name__))
+            try:
+                page.wait_for_timeout(3000)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _run_report_once(page, base_url: str, day: dt.date, service: str,
+                     grid: str) -> List[List[str]]:
     """Set the day + service, submit, and return the grid's rows as cell text."""
-    page.goto(base_url + HUB_PATH, wait_until="networkidle")
+    # NOT networkidle. The ReportingHub is a Telerik page that keeps talking --
+    # timers, keep-alives, partial postbacks -- so "no network for 500ms" may
+    # never arrive and the navigation times out at 30s having actually loaded
+    # the page fine (2026-08-26, the failure right after the url was fixed).
+    # domcontentloaded plus an explicit wait for the control we need is both
+    # faster and a truer test: it waits for the THING, not for silence.
+    page.goto(base_url + HUB_PATH, wait_until="domcontentloaded",
+              timeout=NAV_TIMEOUT_MS)
     page.wait_for_timeout(2000)
+    _assert_on_hub(page, base_url)
     _set_telerik_date(page, FIELD_START, day)
     _set_telerik_date(page, FIELD_END, day)
     _select_service(page, service)
@@ -287,14 +355,14 @@ def scrape(day: Optional[dt.date] = None, *, headless: bool = True,
             base = _login(page, cr["email"], cr["password"])
             log("logged in: %s" % base)
 
-            att = parse_att(_run_report(page, base, day, "AT&T", GRID_ATT))
+            att = parse_att(_run_report(page, base, day, "AT&T", GRID_ATT, log=log))
             log("AT&T pass: %d reps" % len(att))
 
-            dtv = parse_dtv(_run_report(page, base, day, "All", GRID_ALL))
+            dtv = parse_dtv(_run_report(page, base, day, "All", GRID_ALL, log=log))
             log("All pass: DTV for %d reps" % len(dtv))
 
             records = parse_records(
-                _run_report(page, base, day, "AT&T Internet", GRID_INTERNET))
+                _run_report(page, base, day, "AT&T Internet", GRID_INTERNET, log=log))
             log("AT&T Internet pass: records for %d reps" % len(records))
         finally:
             ctx.close()
@@ -330,20 +398,27 @@ def probe(*, headless: bool = True, log=print) -> Dict:
             # What can this login actually REACH? Dumped from the landing page,
             # because "the hub 404s" and "this account has no reporting module"
             # look identical from the hub's side and need opposite fixes.
+            # EVERY link, unfiltered. The first version of this kept only
+            # hrefs containing ".aspx" and then grepped them for "report" --
+            # and reported "NONE", which I read as "this login has no
+            # reporting". It has: the menu is called ANALYTICS (Megan's
+            # screenshot, 2026-08-26). A keyword search only ever finds the
+            # word you guessed. Dump the nav and read it.
             links = page.evaluate(
-                r"""() => Array.from(document.querySelectorAll('a[href]'))
-                       .map(a => ((a.textContent || '').trim().replace(/\s+/g, ' ')
-                                  + ' -> ' + a.getAttribute('href')))
-                       .filter(t => /\.aspx/i.test(t))""")
+                r"""() => Array.from(document.querySelectorAll('a'))
+                       .map(a => ({
+                              text: (a.textContent || '').trim().replace(/\s+/g, ' '),
+                              href: a.getAttribute('href') || '',
+                              onclick: (a.getAttribute('onclick') || '').slice(0, 120)}))
+                       .filter(o => o.text || o.href)""")
             out["links"] = links
-            log("--- %d .aspx links on the landing page ---" % len(links))
-            for t in links[:40]:
-                log("   " + t[:150])
-            reporting = [t for t in links if "report" in t.lower()]
-            log("links mentioning 'report': %s"
-                % (", ".join(reporting[:10]) if reporting else "NONE"))
+            log("--- %d links on the landing page (ALL of them) ---" % len(links))
+            for o in links[:60]:
+                log("   %-28s -> %s%s" % (o["text"][:28], o["href"][:90],
+                                          ("  onclick=" + o["onclick"]) if o["onclick"] else ""))
 
-            page.goto(base + HUB_PATH, wait_until="networkidle")
+            page.goto(base + HUB_PATH, wait_until="domcontentloaded",
+                      timeout=NAV_TIMEOUT_MS)
             page.wait_for_timeout(3000)
             out["hub_state"] = page_state(page)
             log("ReportingHub: %s" % out["hub_state"])

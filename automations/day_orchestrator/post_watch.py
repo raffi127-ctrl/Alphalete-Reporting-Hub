@@ -104,6 +104,23 @@ def rerun_hint_for(watch_id: str) -> Optional[str]:
 #   6:15 — a no-show by then means the morning board ran on stale data.
 WATCH_TARGETS: List[WatchTarget] = [
     WatchTarget(
+        report_id="slack_skool_email",
+        display_name="Slack / Skool email (post watch)",
+        machine="Lucy 1",
+        deadline="08:25",
+        marker_glob="output/logs/.slack-skool-email-sent-{date}",
+        weekdays=[0],
+        note="the 8:00 Slack/Skool email left no sent-marker by 8:25 -- this "
+             "week's new starts may have walked in with no Slack, no Skool "
+             "and no TeleMapper. Check whether this week's D2D OBCL tab was "
+             "built: the run refuses a tab that isn't dated for today rather "
+             "than emailing LAST week's cohort",
+        rerun_hint="on Lucy 1: bash deploy/slack_skool_email.sh   "
+                   "(sends once; refuses if it already went today)",
+        wrapper="deploy/slack_skool_email.sh",
+        agent="slack-skool-email",
+    ),
+    WatchTarget(
         report_id="box_order_log",
         display_name="BOX Order Log (post watch)",
         machine="Lucy 2",

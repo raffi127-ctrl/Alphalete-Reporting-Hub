@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.slack-skool-email</string>
+
+    <!-- NOT INSTALLED YET. Arm it only once Megan has approved the copy, both
+         links are in slack-skool-creds.json on Lucy 1, and reception's Gmail
+         token is on that machine. The wrapper sends for real the moment this
+         loads, and there is no unsend.
+             lucy rerun install_slack_skool_email_agent  (machine "Lucy 1")
+         Note: no double hyphens anywhere in these comments on purpose. XML
+         forbids them inside a comment, and plutil accepts what plistlib will
+         not, so an unreadable plist shows up as a phantom Hub card instead of
+         an error. See reference_plist_double_hyphen. -->
+
+    <!-- Path is the laptop placeholder; on Lucy 1, install_agent.py rewrites
+         it to that machine's repo path. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/slack_skool_email.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Monday 8:00am machine LOCAL time (Lucy 1 is Central). Weekday 1 =
+         Monday: orientation day, and the dated tab is named for that Monday,
+         so the newest tab is always the week being emailed. It fires 30 min
+         after Blue Ink at 7:30, so the packet this email mentions is already
+         on its way when the email lands. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/slack-skool-email.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/slack-skool-email.launchd.err.log</string>
+</dict>
+</plist>

@@ -3614,11 +3614,21 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "alphalete-sales-board",
-        "name": "Alphalete Sales Board (SaraPlus sweep)",
+        # Named for what a person SEES it do: it texts the chats. "Alphalete
+        # Sales Board sweep" read like a board fill and nobody could place it
+        # when its alert appeared in #claudecorrections (Megan 2026-08-26).
+        # The card ID is unchanged — it keys the Ops pill CSS and the Hub
+        # Activity rows.
+        "name": "Sales Text Updates",
         "creator": "Claude",
+        # Ops, not Metrics: this is an always-on background job (every 5 min,
+        # 10:00-21:30) like rc-autoread and sara-plus-issues, not a report that
+        # runs once and is read. The category is what puts it under the OPS
+        # divider; the amber pill is a SEPARATE per-card-id CSS rule in
+        # dashboard.py -- `color` here does not drive the tile.
         "emoji": "\U0001F4C8",
-        "color": "#1D4ED8",
-        "category": "\U0001F4CA Metrics",
+        "color": "#F59E0B",
+        "category": "\U0001F4F2 Ops",
         "description": (
             "Every 5 minutes of the selling day, reads SaraPlus for today's "
             "sales and fills the day's Int / Int Up / DTV / NL on the current "
@@ -3699,6 +3709,105 @@ AUTOMATED_REPORTS = [
                 "help": "One full sweep: writes the board AND sends the leaderboard text plus the Slack hype for anything new since the last sweep.",
                 "module": "automations.alphalete_sales_board.run",
                 "args_fn": lambda: ["--apply", "--send", "--force"],
+            },
+        ],
+    },
+    {
+        "id": "gap-alerts",
+        "name": "Rep Gap Alerts (15-min gaps)",
+        "creator": "Claude",
+        "emoji": "\u23F1\uFE0F",
+        "color": "#B91C1C",
+        "category": "\U0001F4CA Metrics",
+        "description": (
+            "Every 5 minutes of the selling day, texts the "
+            "\u201cReps Over 15 Min Gap\u201d card for Raf\u2019s office into "
+            "the **Alphalete Partners** chat \u2014 who has gone quiet, how "
+            "long, and when they last knocked. Nothing else: no activity "
+            "panel, no Slack, no thread."
+        ),
+        "breakdown": (
+            "WHERE THE NUMBERS COME FROM\n"
+            "**\u2022** v2.ownerville.com \u2192 **Time Tracker (p=510)** "
+            "\u2192 its own JSON feed "
+            "(`report_timeTracker.cfc?method=getTimeTrackingData`), dated to "
+            "TODAY, campaign pinned to **RES AT&T** "
+            "(`invD2DClientId=3`).\n"
+            "**\u2022** A rep is on the card when **minutesSinceLastKnock > "
+            "15** \u2014 the same threshold Carlos\u2019s B2B card has used "
+            "since July, so both offices mean the same thing by "
+            "\u201cinactive\u201d.\n"
+            "**\u2022** The card is REDRAWN from that data, not screenshotted: "
+            "OwnerVille\u2019s live gap widget never renders under the "
+            "automation browser (only a hidden template loads).\n\n"
+            "SORTED BY WHO HAS BEEN DARK LONGEST\n"
+            "Not alphabetically like the B2B card. On a five-minute tick the "
+            "rep who has been quiet two hours is the point of the message, and "
+            "a phone shows the top of a picture.\n\n"
+            "NEVER TWO CARDS BACK TO BACK\n"
+            "A card is refused if the chat got one less than **4 minutes** ago, "
+            "whoever asked for it. The 5-minute cadence is not the risk \u2014 "
+            "a launchd job fires the moment it is reloaded and again after a "
+            "wake, and the button above runs on top of whatever the schedule is "
+            "already doing. Two near-identical cards two minutes apart is how a "
+            "room learns to stop reading them.\n\n"
+            "IT WILL NOT TEXT AN EMPTY CARD\n"
+            "Nobody over the threshold is good news, not news \u2014 and a "
+            "\u201cno reps over 15 min gap\u201d picture every five minutes "
+            "is how a room learns to mute the alert that matters.\n\n"
+            "THE DAY\n"
+            "**\u2022** **Mon\u2013Fri 1:30pm \u2013 8:30pm**\n"
+            "**\u2022** **Saturday 10:00am \u2013 5:00pm** \u2014 its own "
+            "START, not just its own end: Saturday is the one day the field is "
+            "out in the morning.\n"
+            "**\u2022** **Sunday** off entirely.\n"
+            "The end matters more than the start: once the field stops "
+            "knocking EVERY rep reads \u201cinactive 90 min ago\u201d and the "
+            "card degenerates into the whole roster.\n\n"
+            "RUNS ON LUCY 1\n"
+            "Because that is the machine iMessage is set up on \u2014 the "
+            "Partners chat exists only in its Messages. The room is resolved "
+            "by NAME on every send, never a stored chat id, so a failure reads "
+            "as \u201cLucy was removed from the chat\u201d. Load is fenced: "
+            "its own browser profile, headless, one JSON call a tick, a pid "
+            "lock so a slow tick is skipped rather than stacked. The Hub pill is "
+            "painted by the first good tick of "
+            "the day, not by all 96."
+        ),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "gap_alerts",
+        "schedule": {
+            "frequency": "daily",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Tick done \u2014 the gap card is current.",
+            "message_failed": "\u274C Tick failed. `lucy logtail gap-alerts` on Lucy 1 to see why.",
+        },
+        "actions": [
+            {
+                "label": "Preview (texts nobody)",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Pulls the Time Tracker, renders the card, and resolves the Alphalete Partners chat so you can see it is still reachable. Sends nothing.",
+                "module": "automations.gap_alerts.run",
+                "args_fn": lambda: ["--force"],
+            },
+            {
+                "label": "Text it now",
+                "icon": "\U0001F4E3",
+                "help": "One tick for real: renders the current gap card and texts it to the Alphalete Partners chat. Skips if nobody is over 15 minutes, or if the chat already got a card in the last 4 minutes.",
+                "module": "automations.gap_alerts.run",
+                "args_fn": lambda: ["--send", "--force"],
+            },
+            {
+                "label": "Show the raw rows",
+                "icon": "\U0001F50E",
+                "help": "READ-ONLY: dumps what the Time Tracker feed returns right now (name, minutes since last knock, last knock time). For when the card looks wrong or comes back empty.",
+                "module": "automations.gap_alerts.run",
+                "args_fn": lambda: ["--probe"],
             },
         ],
     },
@@ -4900,6 +5009,131 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "slack-skool-email",
+        "name": "Slack / Skool Email",
+        "creator": "Megan",
+        "emoji": "\U0001F4E7",
+        "color": "#0EA5E9",
+        # \U0001F3AF Recruiting, beside blueink-docs and headshot-bot: same
+        # workbook, same weekly new-start cohort, same Slack room.
+        "category": "\U0001F3AF Recruiting",
+        "description": (
+            "Emails this week's new starts their Slack and Skool join links "
+            "the morning of orientation \u2014 BCC, from "
+            "alphaletereception@gmail.com, with the Slack invite read live "
+            "out of Slack so nobody has to paste it."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Every **Monday 8:00am** on Lucy 1 it reads the newest dated "
+            "**`D2D OBCL <m.d>`** tab \u2014 every **chart** on it, and "
+            "Monday's has two \u2014 takes the **Email** column, and sends "
+            "ONE email from **alphaletereception@gmail.com** with everybody "
+            "in **BCC**. It tells them to install **Slack**, **Skool** and "
+            "**TeleMapper 3**, and that their **Blueink** packet is coming "
+            "separately.\n\n"
+            "This replaces what reception did by hand every Monday: open the "
+            "checklist, copy the email column, paste it into BCC, paste last "
+            "week's message, swap in a fresh Slack invite link, send.\n\n"
+            "THE SLACK LINK IS FETCHED, NOT PASTED\n"
+            "Slack caps an invite link at **30 days and 400 uses** and offers "
+            "no API for one, so a pasted link would be a weekly chore wearing "
+            "an automation's clothes. Instead the run opens Slack as **Lucy**, "
+            "reads the current invite link off the workspace menu, and uses "
+            "it \u2014 the same click a person makes. It **copies**, never "
+            "resets: resetting mints a new link and strands anyone midway "
+            "through joining.\n\n"
+            "WHO DOESN'T GET IT\n"
+            "Exactly who **Blue Ink** skips, read from the same module rather "
+            "than a second copy of the rule \u2014 anyone whose **Final "
+            "Status** says they quit, failed, were terminated, no-showed or "
+            "rescheduled; a failed or adverse-action **BG Status**; or a "
+            "declined **Friday Confirmation**. Someone who isn't starting "
+            "shouldn't be told *see you at orientation today*.\n\n"
+            "WHAT THE CHANNEL GETS\n"
+            "A one-line post in "
+            "**#11280-alphalete-marketing-inc-rafael-hidalgo**, detail in the "
+            "thread: how many were emailed and off which tab. If anyone was "
+            "**unreachable** \u2014 nobody excluded them, the sheet just has "
+            "no usable address \u2014 they are **named**, with their row, and "
+            "Tiff / Aimee / Alisson are tagged to fix it. A clean week says "
+            "nothing extra and pings nobody.\n\n"
+            "WHAT IT REFUSES TO DO\n"
+            "**\u2022** Send off a tab that isn't dated for **today**. The "
+            "run reads the NEWEST tab, which is right every week the lineup "
+            "gets built and catastrophic the week it doesn't \u2014 *newest* "
+            "would be LAST week's, and people who started a week ago would be "
+            "told orientation is today.\n"
+            "**\u2022** Send with a missing, wrong-service or expiring "
+            "link.\n"
+            "**\u2022** Send from the wrong mailbox \u2014 it verifies the "
+            "token really is reception's first.\n"
+            "**\u2022** Send twice in a day. It checks reception's own Sent "
+            "mail, so a hand-send at 7:50 stops the 8:00 run.\n"
+            "**\u2022** Mail an empty cohort.\n\n"
+            "WHY THERE'S NO BLUEINK LINK IN IT\n"
+            "A Blueink signing URL is bound to ONE signer's packet, so a link "
+            "that worked for everybody would let anyone sign as anyone. The "
+            "Slack and Skool links are identical for all recipients \u2014 "
+            "that is what makes a single BCC send legitimate.\n\n"
+            "NO IMAGES, NO ATTACHMENTS\n"
+            "Fifty-odd BCC recipients from a personal Gmail is already the "
+            "shape spam filters watch, and an unexpected attachment from an "
+            "address they've never seen reads as phishing to the people least "
+            "equipped to tell. The links sit on the words *Slack* and *Skool*; "
+            "the plain-text version spells the URLs out."),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=1430069873#gid=1430069873"),
+        "assignees": ["Lucy 1"],
+        # Its own Monday launchd timer (com.alphalete.slack-skool-email,
+        # installed 2026-08-26), so it self-reports rather than sitting in the
+        # due-today tallies -- same shape as blueink-docs.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],   # Monday
+            "time": "8:00 AM",
+            "time_label": "Raf's Office \u00b7 8:00am CST",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Slack + Skool links emailed to this week's new starts, summary posted to #11280.",
+            "message_failed": "\u274C Run failed \u2014 nothing was sent. Usual causes: this week's D2D OBCL tab hasn't been built yet, or the Slack session on Lucy 1 has expired (re-seed with `slack_invite --login` at that machine). The run says which.",
+        },
+        "actions": [
+            {
+                "label": "Preview",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Show who WOULD get it, who wouldn't and why, and the exact message. Sends nothing.",
+                "module": "automations.slack_skool_email.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Make A Draft",
+                "icon": "\U0001F4DD",
+                "help": "Sends nothing. Puts the finished email in reception's Gmail Drafts so a person can read it and press send.",
+                "module": "automations.slack_skool_email.run",
+                "args_fn": lambda: ["--draft"],
+            },
+            {
+                "label": "Check Gmail + Slack",
+                "icon": "\U0001FA7A",
+                "help": "Preflight. Proves this machine's Gmail token works and is reception's, and that the re-send guard can read Sent mail. Sends nothing.",
+                "module": "automations.slack_skool_email.run",
+                "args_fn": lambda: ["--check-mailbox"],
+            },
+            {
+                "label": "Send Now",
+                "icon": "\u25B6",
+                "help": "Email this week's new starts for real, then post the summary to Slack. Cannot be undone.",
+                "module": "automations.slack_skool_email.run",
+                "args_fn": lambda: ["--send", "--slack"],
+            },
+        ],
+    },
+    {
         "id": "blueink-docs",
         "name": "Blue Ink New Start Docs",
         "creator": "Megan",
@@ -5019,7 +5253,7 @@ AUTOMATED_REPORTS = [
         # nightly schedule_guard only self-heals jobs with <=2 launchd entries,
         # so a 3rd run would drop guard coverage (that caused the 7/20-22 stall).
         "daily_runs": 2,
-        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, then posts a weekly new-starts status thread to #11280-alphalete-marketing-inc-rafael-hidalgo.",
+        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, corrects each new start's name to the one Sterling ran their check under — on the checklist AND in their OwnerVille profile — and posts a weekly new-starts status thread to #11280-alphalete-marketing-inc-rafael-hidalgo.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Reads the **Sterling / First Advantage** BG-check emails (raffi127 "
@@ -5029,6 +5263,25 @@ AUTOMATED_REPORTS = [
             "**#11280-alphalete-marketing-inc-rafael-hidalgo**, grouping everyone into Passed / "
             "Taken-Pending / Failed / Unperformable / Invited-not-taken (one "
             "edited-in-place reply, so the thread never grows).\n\n"
+            "NAMES (added 2026-08-26)\n"
+            "Applicants type their **legal** name into Sterling; the recruiter "
+            "types what they were told onto the checklist. When those differ, "
+            "the result never matches the row and somebody ends up emailing "
+            "activations. So **Sterling's spelling wins** and gets written to "
+            "**both** places:\n"
+            "**•** the checklist (cols D/E), and\n"
+            "**•** their **OwnerVille profile** (Sales Reps → the profile page).\n"
+            "A name confirmed against a real check is **tinted green** on every "
+            "tab that person appears on.\n\n"
+            "WHEN IT ASKS INSTEAD\n"
+            "If the two names share only a surname (“Nikki” vs Shuminique), "
+            "identity is a guess — so it asks. It first checks **OwnerVille**: a "
+            "profile on the same **phone or email** already carrying Sterling's "
+            "name settles it with nobody involved. Only what OV can't prove is "
+            "posted in that week's BG thread for **Alisson / Tiff / Aimee** — "
+            "✅ same person (it fixes both systems on the next pass) or "
+            "❌ different person (it never asks again and flags it). No "
+            "reaction changes nothing.\n\n"
             "WHEN IT RUNS\n"
             "**11:30am / 4pm CST** on the mini. Monday 11:30 starts the "
             "new week's thread.\n\n"
@@ -5036,7 +5289,12 @@ AUTOMATED_REPORTS = [
             "**•** **Passed** only from an explicit “Score PASS” email; "
             "forward-only (never downgrades or overwrites a hand-set status).\n"
             "**•** A **“Passed but no matching email”** flag is usually a name "
-            "mismatch — compound surnames auto-match under `[fuzzy-match]`."
+            "mismatch — compound surnames auto-match under `[fuzzy-match]`.\n"
+            "**•** The OwnerVille form won't save without a **role** and the "
+            "**Over 18** box, so a blank one gets **Entry Level** / ticked — "
+            "never an answer somebody already gave.\n"
+            "**•** Names are corrected from the **next** start week onward; the "
+            "week in flight is left as the team hand-fixed it."
         ),
         # Deep-links to the D2D OBCL tab this run updates.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
@@ -5053,21 +5311,26 @@ AUTOMATED_REPORTS = [
             # Sortable START time; time_label shows the real cadence at a glance.
             "time": "11:30 AM",
             "time_label": "11:30am / 4pm CST",
-            "estimated_minutes": 1,
+            # Was 1 when this only read email. The OwnerVille pass drives a
+            # browser through the rep table for anybody it hasn't checked yet,
+            # so a run that meets a new cohort takes minutes; checked profiles
+            # are remembered and skipped after that.
+            "estimated_minutes": 5,
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ BG statuses synced to both D2D OBCL tabs and the weekly Slack thread updated.",
-            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #11280-alphalete-marketing-inc-rafael-hidalgo.",
+            "message_success": "✅ BG statuses synced to both D2D OBCL tabs, names matched to Sterling (checklist + OwnerVille), and the weekly Slack thread updated.",
+            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #11280-alphalete-marketing-inc-rafael-hidalgo. An OwnerVille session that won't open is reported per rep, never a failed run.",
         },
         "actions": [
             {
                 "label": "Run Now",
                 "icon": "▶",
                 "primary": True,
-                "help": "Re-read the BG emails, update both tabs, and refresh the Slack thread.",
+                "help": "Re-read the BG emails, update both tabs, match names to Sterling (checklist + OwnerVille), and refresh the Slack thread.",
                 "module": "automations.bg_check_sync.run",
-                "args_fn": lambda: ["--post", "--since-days", "30"],
+                "args_fn": lambda: ["--post", "--since-days", "30",
+                                    "--ov", "--ov-apply"],
             },
         ],
     },
@@ -5263,12 +5526,14 @@ AUTOMATED_REPORTS = [
     # (its wrapper publishes real success/failed to the Hub), so no forced pill.
     {
         "id": "applicant-push",
-        "name": "Applicant Push (Q 5 Min)",
+        # ~10 min, not 5, since 2026-08-26: the one q5min job now alternates
+        # Carlos's office and Atef's, one office per pass.
+        "name": "Applicant Push (Q 10 Min)",
         "creator": "Carlos",
         "emoji": "📲",
         "color": "#F59E0B",
         "category": "📲 Ops",
-        "description": "Carlos's ApplicantStream office (11580) applicant push, all in one (Resume Pushing + OAT merged): every 5 minutes it works the leftover applicant queue — sends the ones with a phone to the AI call list, removes duplicates, re-texts quiet applicants — and at noon & 4 PM posts a Slack to-do of who still needs a number pulled from Indeed.",
+        "description": "Carlos's ApplicantStream office (11580) applicant push, all in one (Resume Pushing + OAT merged): every ~10 minutes it works the leftover applicant queue — sends the ones with a phone to the AI call list, removes duplicates, re-texts quiet applicants — and at noon & 4 PM posts a Slack to-do of who still needs a number pulled from Indeed.",
         "breakdown": (
             "WHAT IT DOES\n"
             "One warm browser session for **Carlos's office (11580)** works the "
@@ -5291,7 +5556,11 @@ AUTOMATED_REPORTS = [
             "— **grouped by account**, with **how many days** each has been "
             "sitting (🚨 at 2+ days).\n\n"
             "WHEN IT RUNS\n"
-            "**Every 5 minutes, 7 AM–10 PM Central, every day**, on **Lucy 2**.\n\n"
+            "**Every ~10 minutes, 7 AM–10 PM Central, every day**, on "
+            "**Lucy 2**. The job wakes every 5 minutes and works **one office "
+            "per pass** — Carlos, then Atef (office 23467, added 2026-08-26), "
+            "then Carlos — so each office gets its own clean browser session "
+            "and neither can stall the other.\n\n"
             "HOW IT RUNS\n"
             "Drives a **real Google Chrome** on a copy of **Lucy 2's** everyday "
             "browser profile. It signs in with the **shared 'Raf – Captain' "
@@ -5344,6 +5613,92 @@ AUTOMATED_REPORTS = [
                 "help": "Preview pass — walks Carlos's queue and prints what it WOULD do. Nothing is sent, removed or re-texted; the live pass is the every-5-minutes agent.",
                 "module": "automations.applicant_push.run",
                 "args_fn": lambda: [],
+            },
+        ],
+    },
+    # ── Applicant Push — Atef's office (23467) ────────────────────────────
+    # The SAME module and flow as the card above, pointed at a second office
+    # (--office 23467). Carlos asked 2026-08-26 for Atef's resumes to be pushed
+    # on the same schedule as his. There is NO second LaunchAgent: the one q5min
+    # job alternates offices tick by tick, so each office gets a pass every
+    # ~10 min. Separate card so a wedge on one office never shows the other green.
+    {
+        "id": "applicant-push-atef",
+        "name": "Applicant Push — Atef (Q 10 Min)",
+        "creator": "Carlos",
+        "emoji": "📲",
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "description": "Atef's ApplicantStream office (23467, Domin8 Acquisitions) applicant push — the same flow as Carlos's, on the same schedule: it works the leftover applicant queue, sends the ones with a phone to the AI call list, removes duplicates, re-texts quiet applicants, and at noon & 4 PM posts a Slack to-do of who still needs a number pulled from Indeed.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "One warm browser session for **Atef's office (23467 — Domin8 "
+            "Acquisitions)** works the **One-App-at-a-time** leftover queue on "
+            "every pass:\n"
+            "**•** Fresh applicants **with a phone** → **sent to the AI call "
+            "list**.\n"
+            "**•** Duplicates / past-interviews / already-sent → **removed**.\n"
+            "**•** Quiet applicants (>1 week) whose text thread is still visible → "
+            "**re-texted** the FOR LUCY message, then removed.\n"
+            "**•** **No number on file** → it opens their resume to read one; if "
+            "it can't (Indeed blocks it), they're **flagged for a human to pull "
+            "the number from Indeed by hand** — each resume is read once, never "
+            "reopened.\n"
+            "**•** Quiet applicants whose thread is **too old to see** → flagged "
+            "for a **manual text**.\n\n"
+            "TWICE-A-DAY SLACK POST\n"
+            "At **noon and 4 PM** it posts to **Atef's own recruiting channel** "
+            "(#23467-domin8-acquisitions-inc-atef-choudhury, one thread per day) "
+            "the to-do list of who still needs a hand — **who needs a number "
+            "pulled from Indeed** and **who needs a manual text** — **grouped by "
+            "account**, with **how many days** each has been sitting (🚨 at 2+ "
+            "days). Atef's names never go to Carlos's channel.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every ~10 minutes, 7 AM–10 PM Central, every day**, on **Lucy 2** "
+            "— the same every-5-minutes job that runs Carlos's office, taking "
+            "**one office per pass** (Carlos, then Atef, then Carlos…). Carlos's "
+            "office is unaffected: it keeps its own browser profile, its own "
+            "files and its own card.\n\n"
+            "HOW IT RUNS\n"
+            "Drives a **real Google Chrome** on a copy of **Lucy 2's** everyday "
+            "browser profile. It signs in with the **shared 'Raf – Captain' "
+            "ApplicantStream login** (the same master session the rest of the "
+            "fleet uses — **no new login was needed for Atef**) and then "
+            "**switches into office 23467**, so everything it does happens inside "
+            "Atef's office and only there.\n"
+            "Sends, removes and re-texts are **irreversible**. The batch "
+            "resume-extract half is **on hold** — Indeed blocks the automated "
+            "resume pulls, so those numbers go on the twice-daily to-do list for "
+            "a human instead."
+        ),
+        # No Google Sheet — ApplicantStream action bot only.
+        "assignees": ["Lucy 2"],
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "applicant_push_atef",
+        "hide_schedule": True,
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "time_label": "7am–10pm CST",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Applicant Push (Atef) complete — the leftovers queue was worked (sent to the AI call list, removed, re-texted).",
+            "message_failed": "❌ Run failed. Check the log above (usually an expired AppStream session or Cloudflare on office 23467), then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run",
+                "icon": "▶",
+                # Same as Carlos's card: NO args beyond the office, and
+                # applicant_push.run defaults to dry-run — a safe PREVIEW, not a
+                # live pass. The live pass is the every-5-minutes agent.
+                "primary": True,
+                "help": "Preview pass — walks Atef's queue and prints what it WOULD do. Nothing is sent, removed or re-texted; the live pass is the scheduled agent.",
+                "module": "automations.applicant_push.run",
+                "args_fn": lambda: ["--office", "23467"],
             },
         ],
     },

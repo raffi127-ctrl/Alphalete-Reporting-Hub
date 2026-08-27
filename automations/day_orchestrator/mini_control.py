@@ -189,7 +189,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # here BECAUSE only the mini is Lucy, so they must not eat
                     # the report budget.
                     "incident_resolve", "incident_working", "incident_unmark",
-                    "incident_triage",
+                    "incident_triage", "incident_close_stranded",
                     "find_group"}
 # READ-ONLY diagnostics. They look at a log, the repo, or Slack and change
 # NOTHING, so like plumbing they don't burn the budget — the cap exists to bound
@@ -264,6 +264,18 @@ def _machine_profile(explicit: str | None = None) -> str:
     except Exception:
         pass
     return DEFAULT_MACHINE
+
+
+def _this_box() -> str:
+    """This machine's TRUE name — the .machine-profile marker when present, else
+    the hostname. Unlike _machine_profile() it never falls back to 'Lucy 1', so
+    it is the right thing to compare a push TARGET against. See the note in
+    _action_push_cred_file."""
+    try:
+        from automations.shared import hub_identity
+        return hub_identity.machine_name()
+    except Exception:  # noqa: BLE001
+        return _machine_profile()
 
 
 def _control_tab_for(machine: str) -> str:
@@ -2834,7 +2846,7 @@ def _action_push_slack_tokens(args: str) -> tuple[bool, str]:
     if not target:
         return False, ("push_slack_tokens needs the target machine name as "
                        "Args, e.g. 'Lucy 3'")
-    if target.lower() == _machine_profile().strip().lower():
+    if target.lower() == _this_box().strip().lower():
         return False, "target is THIS machine — nothing to push"
     base = Path.home() / ".config" / "recruiting-report"
     pushed, skipped = [], []
@@ -2922,6 +2934,32 @@ _CRED_FILES = {
     # so a second machine holding it widens nothing.
     "drive-token":
         lambda: Path.home() / ".config" / "recruiting-report" / "drive-token.json",
+    # --- Slack / Skool email (slack_skool_email) ---------------------------
+    # Three files, all born on the LAPTOP because each needs a human at a
+    # browser once, and all needed on Lucy 1, where the Monday 8am agent runs.
+    #
+    # The Slack session is the interesting one: it is what lets the run READ
+    # the current invite link out of Slack every Monday instead of somebody
+    # pasting it. Slack caps invite links at 30 days with no API, so fetching
+    # is the only way this report is ever hands-off -- and the fetch needs a
+    # signed-in session on the machine that sends. Seeding it means signing in
+    # by hand, so it is seeded wherever Megan happens to be and pushed here.
+    # Gitignored (live session cookies, PUBLIC repo), so `lucy update` will
+    # never carry it.
+    "slack-skool-session":
+        lambda: REPO_ROOT / "automations" / "slack_skool_email"
+                / ".slack_storage_state.json",
+    # The Skool join link (stable) and an optional manual Slack-link override
+    # for a week when Slack changes its markup.
+    "slack-skool-creds":
+        lambda: REPO_ROOT / "slack-skool-creds.json",
+    # Reception's OWN Gmail token -- a 4th Google identity. Gmail sends from
+    # whichever mailbox authorized the token, and this email must come from
+    # reception, the address new starts already reply to. Authorized on a
+    # machine with a browser, then pushed to the sender.
+    "gmail-token-alphaletereception":
+        lambda: Path.home() / ".config" / "recruiting-report"
+                / "gmail-token-alphaletereception.json",
 }
 
 
@@ -2937,7 +2975,17 @@ def _action_push_cred_file(args: str) -> tuple[bool, str]:
     key, target = parts[0], parts[1].strip().strip("'\"").strip()
     if key not in _CRED_FILES:
         return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
-    if target.lower() == _machine_profile().strip().lower():
+    # Compare against this box's TRUE identity, not _machine_profile(), which
+    # falls back to DEFAULT_MACHINE ("Lucy 1") when there is no .machine-profile
+    # marker. Megan's laptop has no marker, so every `push_cred_file … "Lucy 1"`
+    # typed there refused itself as a self-push — twice on 2026-08-26, once
+    # silently. hub_identity.machine_name() falls back to the HOSTNAME for
+    # exactly this reason ("so a non-runner machine isn't mislabeled 'Lucy 1'"),
+    # so a real runner still refuses to push to itself while the laptop can push
+    # to any of them. The marker itself must stay absent on the laptop: routing
+    # (_control_tab_for) reads the same fallback, and a marker there would send
+    # every bare `lucy rerun` to a tab no poller reads.
+    if target.lower() == _this_box().strip().lower():
         return False, "target is THIS machine — nothing to push"
     path = _CRED_FILES[key]()
     try:
@@ -4344,16 +4392,67 @@ def _action_incident_unmark(args: str) -> tuple[bool, str]:
     return True, f"{key}: in-progress mark cleared — nobody is shown on it now"
 
 
+def _action_incident_close_stranded(args: str) -> tuple[bool, str]:
+    """Finish the parent edit on threads that are CLOSED but still read `open`.
+
+      incident_close_stranded [--dry-run]
+
+    WHY IT HAS TO RUN HERE, and why it needed an action at all: chat.update only
+    touches your OWN posts. An incident opened by Lucy and fixed from a laptop
+    gets its reply and its ✅, and the marker edit is REFUSED — the thread is
+    genuinely closed, the parent says `open` forever, and every machine scanning
+    that channel still counts it as open. incident_thread.close_stranded has
+    existed for this since 2026-08-26 and even printed "run
+    `lucy incident_close_stranded`" when it hit posts it didn't own — but that
+    action was never registered, so the one instruction that finishes the job
+    pointed at a command that did not exist. It does now.
+
+    Narrow and idempotent, same as the underlying function: it only touches a
+    parent that ALREADY carries the ✅ (or already says RESOLVED). It never
+    posts, never replies, and never resolves anything that isn't resolved."""
+    dry = "--dry-run" in (args or "")
+    try:
+        from automations.shared import incident_thread as inc
+    except Exception as e:  # noqa: BLE001
+        return False, (f"couldn't import incident_thread "
+                       f"({type(e).__name__}: {str(e)[:90]})")
+    # Same long-lived-poller staleness as the other incident actions: this
+    # process caches channel history for its whole life.
+    inc._forget_history(inc.CHANNEL)
+    try:
+        out = inc.close_stranded(dry_run=dry)
+    except Exception as e:  # noqa: BLE001
+        return False, (f"close_stranded failed ({type(e).__name__}: "
+                       f"{str(e)[:100]})")
+    closed, theirs = out.get("closed") or [], out.get("not_ours") or []
+    what = "would close" if dry else "closed"
+    msg = f"{what} {len(closed)}"
+    if closed:
+        msg += ": " + ", ".join(closed[:6])
+    if theirs:
+        msg += (f" · {len(theirs)} belong to another machine, run it there: "
+                + ", ".join(theirs[:6]))
+    if not closed and not theirs:
+        msg = "nothing stranded — every closed thread's parent already reads resolved"
+    return True, msg
+
+
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
-    """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
-    the weekly thread in BOTH recruiting rooms as Lucy). Pass extra args to override,
-    e.g. `--dry-run` (no writes/post) or `--week 7/27/2026`."""
+    """Run bg_check_sync NOW on THIS machine. Default = LIVE: writes col K, posts
+    the weekly thread as Lucy, and corrects names to Sterling's spelling on the
+    checklist AND in OwnerVille. Pass extra args to override, e.g. `--dry-run`
+    (no writes/post), `--week 7/27/2026`, or `--ov-only "Name"` to touch exactly
+    one OwnerVille profile."""
     import shlex
     extra = shlex.split(args) if (args or "").strip() else []
     if not extra:
-        extra = ["--post", "--since-days", "30"]
+        extra = ["--post", "--since-days", "30", "--ov", "--ov-apply"]
+    # The OwnerVille pass drives a browser through the rep table, so a run that
+    # meets several new hires takes minutes rather than seconds. 300s was
+    # generous before that existed and would now be the thing that kills it
+    # half way through.
     ok, out = _run_cmd([sys.executable, "-m", "automations.bg_check_sync.run", *extra],
-                       timeout_s=300, log_name="bg-check-sync-run.log")
+                       timeout_s=900, log_name="bg-check-sync-run.log")
     lines = [ln for ln in (out or "").splitlines()
              if ("| roster" in ln or "[writes]" in ln or "[slack" in ln
                  or "[name-gate]" in ln
@@ -5676,6 +5775,7 @@ ACTIONS = {
     "incident_working": _action_incident_working,
     "incident_triage": _action_incident_triage,
     "incident_unmark": _action_incident_unmark,
+    "incident_close_stranded": _action_incident_close_stranded,
     "install_enrollment_pending": _action_install_enrollment_pending,
     "git_push_setup": _action_git_push_setup,
     "git_push_check": _action_git_push_check,

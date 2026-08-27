@@ -62,14 +62,27 @@ STATE_PATH = REPO_ROOT / "output" / "bg_name_gate_state.json"
 APPROVE_EMOJI = "white_check_mark"   # ✅ yes, same person — rename
 REJECT_EMOJI = "x"                   # ❌ no — wrong applicant
 
-# Onboarding owns the sheet, so onboarding answers this. Same three people
-# digi_docs escalates to, same ids, confirmed in this channel 2026-08-26.
+# WHO GETS TAGGED. Onboarding owns the sheet, so onboarding gets the ping —
+# the same three digi_docs escalates to, confirmed in this channel 2026-08-26.
 DECIDERS = (
     ("Alisson", "U0BBG374GE9"),    # Alisson Rodriguez
     ("Tiff", "U0B9924FHCL"),       # Tiffani Brown
     ("Aimee", "U0APVP29QSD"),      # Aimee Garibay
+    ("Aisha", "U083X5ZJWSH"),      # Aisha Ceron — named on the ask, not just
+                                   # counted (Megan 2026-08-26)
 )
-DECIDER_IDS = {uid for _, uid in DECIDERS}
+
+# WHOSE REACTION COUNTS — a wider list than the tagged one, on purpose. Megan
+# ❌'d the very first question posted and nothing happened, because the owners
+# weren't on this list (2026-08-26). Being tagged is about who should answer;
+# counting is about whose answer is good, and theirs always is.
+ALSO_DECIDE = (
+    ("Megan", "U04G5HJBGFN"),      # Megan Hidalgo
+    ("Raf", "U045Z8N0ZQC"),        # Rafael Hidalgo
+    ("JD", "U05094TTPKQ"),         # JD Mascorro — the workspace has two of him;
+                                   # this is the one in #11280 (checked 8/26)
+)
+DECIDER_IDS = {uid for _, uid in DECIDERS} | {uid for _, uid in ALSO_DECIDE}
 
 # HOW FAR BACK A RESULT CAN BE AND STILL BE THEIRS (Megan 2026-08-26). The check
 # link goes out the moment somebody is HIRED, and a new start can be scheduled a
@@ -342,84 +355,51 @@ def _client():
 
 
 def render_parent(n: int, start_week: Optional[str] = None) -> str:
-    tags = " ".join(f"<@{uid}>" for _, uid in DECIDERS)
-    head = ("A background check name doesn't match the onboarding checklist"
-            if n == 1 else
-            f"{n} background check names don't match the onboarding checklist")
-    if start_week:
-        head += f" — for the week of {start_week}"
-    return (f"{head} — react on each one below\n"
-            f"✅ = same person, use the Sterling name   ❌ = not the same person\n"
-            f"{tags}")
+    """The one message that explains the ask — so no person's line has to.
 
-
-def _timing_line(p: Proposal) -> str:
-    """When they took it, in words, plus whether that timing is ordinary.
-
-    Ordinary is a wide range: the link goes out at hire and somebody can be
-    hired a month or more before their start week, so most of this range is
-    unremarkable. The line earns its place at the two ends -- a check taken
-    after they already started, or one so old it belongs to an earlier cohort.
+    Megan 2026-08-26, on the first version: "wayyyy too much wording and super
+    confusing." Everything that is the same for every person lives here and is
+    said once; a person's own line carries only what is different about them.
     """
-    if not p.taken_on:
-        return ""
-    try:
-        d = dt.date.fromisoformat(p.taken_on)
-        when = f"{d:%b} {d.day}"
-    except ValueError:
-        when = p.taken_on
-    gap = p.days_before_start
-    if gap is None:
-        rel = ""
-    elif gap > 0:
-        rel = f", {gap} day{'s' if gap != 1 else ''} before their {p.week} start"
-    elif gap == 0:
-        rel = f", the day their {p.week} week started"
-    else:
-        rel = f", {-gap} day{'s' if gap != -1 else ''} AFTER their {p.week} start"
-    if gap is not None and gap < 0 and p.fresh:
-        verdict = "normal — the link went out late"
-    elif p.fresh:
-        verdict = "normal — taken when they were hired"
-    elif gap is not None and gap > NORMAL_RUNWAY_DAYS:
-        verdict = (f"over {NORMAL_RUNWAY_DAYS // 30} months before they start — "
-                   "worth a look")
-    else:
-        verdict = "long after they started — worth a look"
-    line = f"    check taken: {when}{rel} — {verdict}\n"
-    # Sterling takes as long as it takes, so say when the result actually landed
-    # whenever that is a different day from taking it. A rep who started on
-    # Monday and passed three weeks later is an ordinary week here, and the two
-    # dates are what make that readable.
-    if p.result_on and p.result_on != p.taken_on:
-        try:
-            r = dt.date.fromisoformat(p.result_on)
-            line += f"    result came back: {r:%b} {r.day}\n"
-        except ValueError:
-            pass
-    return line
+    tags = " ".join(f"<@{uid}>" for _, uid in DECIDERS)
+    head = "Name doesn't match their background check" if n == 1 else \
+           f"{n} names don't match their background check"
+    if start_week:
+        head += f" — starting {start_week}"
+    # TWO LINES. Every word here is read once per group and then skipped
+    # forever after, so it earns its place or it goes (Megan, three times over:
+    # "this is still too wordy"). What survives: what the two emoji do, and that
+    # it takes one of these four.
+    return f"*{head}*\n✅ same person · ❌ different person — needs one of {tags}"
 
 
 def render_line(p: Proposal) -> str:
-    """One person, one question. The sheet name first because that is what the
-    reader is looking at on the OBCL, then the two independent checks — does
-    their own email carry the Sterling name, and does the timing of the check
-    fit their start week."""
-    status = f" · checklist says *{p.current}*" if p.current else ""
-    if p.email:
-        hint = ("backs the Sterling name" if p.corroborated
-                else "doesn't show that name")
-        evidence = f"    email on the checklist: {p.email} — {hint}\n"
-    else:
-        evidence = ""
-    return (f"*{p.sheet_name}* on the checklist — Sterling ran the check as "
-            f"*{p.legal_name}*{status}\n"
-            f"{evidence}"
-            f"{_timing_line(p)}"
-            f"    ✅ same person → I'll set the checklist to {p.legal_name} "
-            f"(please fix their OwnerVille profile to match)\n"
-            f"    ❌ not the same person → I'll leave it alone and flag it\n"
-            f"    _week of {p.week} · {p.evidence}_")
+    """One person, two lines: who Sterling ran, and the one fact that helps.
+
+    The checklist name, an arrow, the Sterling name — that IS the question.
+    Underneath it goes their email (the thing that settles most of these at a
+    glance) and when they took the check. Nothing else: the ✅/❌ meanings are
+    in the parent, and repeating them under every name is what made the first
+    version unreadable.
+    """
+    # ONE LINE, plus a second ONLY when there is something that changes the
+    # answer. The names ARE the question; everything else was scenery.
+    #   * the email, when it carries the Sterling first name — that settles it
+    #     on sight. When it doesn't, it proved nothing and is left out.
+    #   * the date, ONLY when the timing is odd. Printing "took the check
+    #     Aug 8" under every name says nothing: taking it is what everybody
+    #     does.
+    bits = []
+    if p.email and p.corroborated:
+        bits.append(f"{p.email} — has \u201c{p.legal_first}\u201d in it")
+    if not p.fresh and p.days_before_start is not None and p.taken_on:
+        try:
+            d = dt.date.fromisoformat(p.taken_on)
+            bits.append(f"check taken {d:%b} {d.day} — odd timing, worth a look")
+        except ValueError:
+            pass
+    detail = "\n" + " · ".join(bits) if bits else ""
+    return f"*{p.sheet_name}* → *{p.legal_name}*?{detail}"
 
 
 def week_thread(week: str, channel: str) -> Optional[str]:
@@ -436,6 +416,53 @@ def week_thread(week: str, channel: str) -> Optional[str]:
     except Exception:  # noqa: BLE001
         return None
     return (entry or {}).get("parent_ts")
+
+
+def _refresh_group(cli, channel: str, pending: list, group: list, intro: str,
+                   state: dict) -> int:
+    """Rewrite the text of questions already posted, leaving their reactions and
+    their place in the thread alone."""
+    by_pid = {p.pid: p for p in group}
+    done = 0
+    intro_ts = ""
+    channel_ts = ""
+    for proposal in pending:
+        entry = state.get(proposal.pid) or {}
+        intro_ts = intro_ts or entry.get("intro_ts", "")
+        channel_ts = channel_ts or entry.get("parent_ts", "")
+        try:
+            cli.chat_update(channel=channel, ts=entry["reply_ts"],
+                            text=render_line(by_pid[proposal.pid]))
+            done += 1
+        except Exception as e:  # noqa: BLE001
+            print(f"[name-gate] couldn't rewrite {proposal.sheet_name}: {e}")
+    if not intro_ts and channel_ts:
+        # Questions asked before intro_ts was recorded still have an intro to
+        # correct. Find it: the last message in the thread, ahead of the first
+        # question, that carries the ✅ legend — that IS the intro, whatever
+        # wording it went up with.
+        first_q = min((state.get(p.pid) or {}).get("reply_ts", "9")
+                      for p in pending)
+        try:
+            for m in cli.conversations_replies(
+                    channel=channel, ts=channel_ts).get("messages", []):
+                if (m.get("ts", "") < first_q
+                        and "same person" in (m.get("text") or "")):
+                    intro_ts = m["ts"]
+        except Exception as e:  # noqa: BLE001
+            print(f"[name-gate] couldn't find the intro to rewrite: {e}")
+        if intro_ts:
+            for p in pending:
+                entry = state.setdefault(p.pid, {})
+                entry["intro_ts"] = intro_ts
+    if intro_ts:
+        try:
+            cli.chat_update(channel=channel, ts=intro_ts, text=intro)
+        except Exception as e:  # noqa: BLE001
+            print(f"[name-gate] couldn't rewrite the intro: {e}")
+    if done:
+        print(f"[name-gate] rewrote {done} question(s) already in the thread")
+    return done
 
 
 def latest_thread(channel: str) -> tuple:
@@ -503,10 +530,21 @@ def post_proposals(proposals: list[Proposal], state: dict, *, dry_run: bool = Tr
             continue
 
         cli = _client()
+        pending = [p for p in group
+                   if (state.get(p.pid) or {}).get("status") == "pending"
+                   and (state.get(p.pid) or {}).get("reply_ts")]
+        if pending:
+            # Already asked. Correct the wording in place — a second copy of the
+            # same question is how a channel ends up with two answers.
+            refreshed = _refresh_group(cli, channel, pending, group, intro, state)
+            posted += refreshed
+            continue
         if parent_ts:
-            cli.chat_postMessage(channel=channel, thread_ts=parent_ts, text=intro)
+            intro_ts = cli.chat_postMessage(
+                channel=channel, thread_ts=parent_ts, text=intro)["ts"]
         else:
             parent_ts = cli.chat_postMessage(channel=channel, text=intro)["ts"]
+            intro_ts = parent_ts
         now = dt.datetime.now().isoformat(timespec="seconds")
         for p in group:
             reply = cli.chat_postMessage(channel=channel, thread_ts=parent_ts,
@@ -521,7 +559,7 @@ def post_proposals(proposals: list[Proposal], state: dict, *, dry_run: bool = Tr
                 "sheet_first": p.sheet_first, "sheet_last": p.sheet_last,
                 "legal_first": p.legal_first, "legal_last": p.legal_last,
                 "key": p.key, "locations": [list(l) for l in p.locations],
-                "evidence": p.evidence,
+                "evidence": p.evidence, "intro_ts": intro_ts,
             }
             posted += 1
     if posted:
@@ -543,6 +581,23 @@ def _thread_reactions(cli, channel: str, parent_ts: str) -> dict:
     return out
 
 
+def _outsiders(reactions: list) -> list:
+    """Anyone who used ✅ or ❌ whose vote doesn't count.
+
+    They clicked in good faith and nothing happened — which reads exactly like
+    "handled" to the rest of the room (Megan 2026-08-26). Their click is worth a
+    line in the thread, not silence.
+    """
+    who: list = []
+    for r in reactions:
+        if r.get("name") not in (APPROVE_EMOJI, REJECT_EMOJI):
+            continue
+        for uid in (r.get("users") or []):
+            if uid not in DECIDER_IDS and uid not in who:
+                who.append(uid)
+    return who
+
+
 def _voted(reactions: list, emoji: str) -> Optional[str]:
     """The first decider who reacted with `emoji`, or None. Anyone else's
     reaction is ignored — this is onboarding's call to make."""
@@ -555,16 +610,21 @@ def _voted(reactions: list, emoji: str) -> Optional[str]:
     return None
 
 
-def collect_decisions(state: dict) -> tuple[list[dict], list[dict]]:
-    """Read every pending proposal's reactions. Returns (approved, rejected) as
-    the raw state entries, each stamped with pid/decided_by. ❌ wins over ✅: if
-    the room disagrees, the answer that touches nobody's name is the safe one."""
+def collect_decisions(state: dict) -> tuple[list[dict], list[dict], list[dict]]:
+    """Read every pending proposal's reactions.
+
+    Returns (approved, rejected, needs_auth) as raw state entries stamped with
+    pid. ❌ wins over ✅: if the room disagrees, the answer that touches nobody's
+    name is the safe one. `needs_auth` is the third case — somebody who doesn't
+    count has reacted, and nobody who does has — which stays pending but should
+    not stay quiet.
+    """
     pending = {pid: e for pid, e in state.items() if e.get("status") == "pending"}
     if not pending:
-        return [], []
+        return [], [], []
     cli = _client()
     threads: dict = {}
-    approved, rejected = [], []
+    approved, rejected, needs_auth = [], [], []
     for pid, entry in pending.items():
         ch, parent = entry.get("channel"), entry.get("parent_ts")
         if not (ch and parent and entry.get("reply_ts")):
@@ -579,7 +639,29 @@ def collect_decisions(state: dict) -> tuple[list[dict], list[dict]]:
             rejected.append({**entry, "pid": pid, "decided_by": no})
         elif yes:
             approved.append({**entry, "pid": pid, "decided_by": yes})
-    return approved, rejected
+        elif not entry.get("nudged_at"):
+            outsiders = _outsiders(reactions)
+            if outsiders:
+                needs_auth.append({**entry, "pid": pid, "reacted_by": outsiders})
+    return approved, rejected, needs_auth
+
+
+def say_still_needs_authorising(entries: list, *, dry_run: bool = True) -> None:
+    """Tell the thread that a reaction came in but the question is still open.
+
+    Said ONCE per question (`nudged_at`): the checkers run twice a day and would
+    otherwise repeat it until somebody authorised answers.
+    """
+    cli = None if dry_run else _client()
+    tags = " ".join(f"<@{uid}>" for _, uid in DECIDERS)
+    for entry in entries:
+        who = " ".join(f"<@{uid}>" for uid in entry.get("reacted_by", []))
+        old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
+        text = (f"{who} — *{old}* needs a ✅ or ❌ from {tags} to count, "
+                f"so nothing has changed yet.")
+        _reply(cli, entry, text, dry_run)
+        if not dry_run:
+            entry["nudged_at"] = dt.datetime.now().isoformat(timespec="seconds")
 
 
 # --- do it ------------------------------------------------------------------
@@ -660,21 +742,17 @@ def confirm(applied: list[dict], rejected: list[dict], *, dry_run: bool = True,
     for entry in applied:
         legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
-        rows = entry.get("rows_written", 0)
-        text = (f"Done — checklist updated: {old} → *{legal}* ({rows} row(s)).\n"
-                f"Still needs a human: set their *OwnerVille profile* to "
-                f"{legal} so it matches Sterling exactly "
-                f"(Sales Rep → click the name → edit on the profile page).")
+        text = f"✅ *{old}* is now *{legal}* — checklist and OwnerVille."
         if entry.get("skipped"):
             text += f"\nNot touched: {', '.join(entry['skipped'])}."
         _reply(cli, entry, text, dry_run)
     for entry in rejected:
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
         legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
-        text = (f"Understood — leaving {old} alone and I won't ask again.\n"
-                f"Heads up: that means the Sterling check for *{legal}* belongs to "
-                f"someone who isn't on this week's checklist, so nobody's BG status "
-                f"is being driven by it.")
+        # Still says the thing that matters — that a real check is sitting
+        # there belonging to nobody on the checklist — but in one line.
+        text = (f"❌ *{old}* left as is. *{legal}*'s check isn't anyone on the "
+                f"checklist.")
         _reply(cli, entry, text, dry_run)
 
 

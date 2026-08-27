@@ -26,6 +26,13 @@ __pycache__/
 # .appstream_storage_state_<name>.json) — a per-name list here would leak the
 # next account added. Also covers the .launchlock siblings.
 .appstream_profile*
+# The THROWAWAY ownerville login-test profile (tableau_patchright
+# --ownerville-form-login). A sibling of .browser_profile, so the wildcard above
+# does NOT catch it: it sat untracked on Lucy 1 as the runner's only "locally
+# modified" entry (2026-08-26). Same reason as .saraplus_profile below — a
+# browser profile carrying a live OV login attempt, in a PUBLIC repo, one
+# `git add .` from being published.
+automations/uploaded/.ov_login_test/
 # AppStream storage_state export — contains live SESSION cookies (auth). Sensitive;
 # never commit. Exported by output/_scratch_appstream_export_state.py.
 .appstream_storage_state*.json
@@ -124,3 +131,18 @@ automations/blueink_docs/.blueink_storage_state.json
 # commit. Wildcard so a _holder/_alt variant is covered too.
 .blueink_profile*
 automations/blueink_docs/.blueink_profile*
+
+# Slack storage_state + profile (slack_skool_email) — live SESSION cookies for
+# the AO workspace as a person who can invite people. The repo is PUBLIC:
+# committing this hands a stranger that Slack session, which is worse than the
+# invite link it exists to fetch. Same class as .blueink_storage_state.json
+# above. Seeded by `python -m automations.slack_skool_email.slack_invite
+# --login`; both spellings listed because the file is written next to the
+# module, not at the repo root.
+.slack_storage_state.json
+automations/slack_skool_email/.slack_storage_state.json
+.slack_profile*
+automations/slack_skool_email/.slack_profile*
+
+# The Slack + Skool links themselves live in slack-skool-creds.json, already
+# covered by the *-creds.json* rule at the top.

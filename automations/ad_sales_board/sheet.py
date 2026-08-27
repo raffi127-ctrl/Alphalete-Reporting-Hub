@@ -19,8 +19,8 @@ VIEW_TAB = "Ad Sales Board"
 
 DATA_HEADERS = ["Manager", "Week", "Account", "Inbox Email", "Ad Title", "City",
                 "Pull", "To Call List", "# Names", "Names", "Week Start",
-                "D1 Wed", "D2 Thu", "D3 Fri", "D4 Sat", "D5 Sun", "D6 Mon",
-                "D7 Tue"]
+                "D1 Mon", "D2 Tue", "D3 Wed", "D4 Thu", "D5 Fri", "D6 Sat",
+                "D7 Sun"]
 
 
 def data_range(a1):

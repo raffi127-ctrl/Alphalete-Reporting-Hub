@@ -1167,9 +1167,9 @@ def _write_walk_diag(start, end, cache_size, skips, counts) -> None:
         sh = _fill._client().open_by_key(
             "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
         try:
-            ws = sh.worksheet("OAT Walk Diag")
+            ws = sh.worksheet(config.WALK_DIAG_TAB)
         except Exception:  # noqa: BLE001
-            ws = sh.add_worksheet(title="OAT Walk Diag", rows=1000, cols=6)
+            ws = sh.add_worksheet(title=config.WALK_DIAG_TAB, rows=1000, cols=6)
             ws.append_row(["At", "Queue", "NoNumberCache", "ResumeReReadsSkipped",
                            "Outcomes"], value_input_option="RAW")
         cs = ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
@@ -1193,7 +1193,8 @@ def _nophone_checked_path():
     from pathlib import Path as _P
     root = _P(__file__).resolve().parents[2]
     (root / "output").mkdir(parents=True, exist_ok=True)
-    return root / "output" / f"oat-nophone-checked-{dt.date.today().isoformat()}.json"
+    return (root / "output" /
+            f"oat-nophone-checked-{dt.date.today().isoformat()}{config.FILE_SUFFIX}.json")
 
 
 def _load_nophone_checked() -> set:
@@ -1236,7 +1237,8 @@ def _nophone_blocked_path():
     from pathlib import Path as _P
     root = _P(__file__).resolve().parents[2]
     (root / "output").mkdir(parents=True, exist_ok=True)
-    return root / "output" / f"oat-nophone-blocked-{dt.date.today().isoformat()}.json"
+    return (root / "output" /
+            f"oat-nophone-blocked-{dt.date.today().isoformat()}{config.FILE_SUFFIX}.json")
 
 
 def _load_nophone_blocked() -> dict:
@@ -1413,7 +1415,7 @@ _ACTIVITY_ROWS: list = []
 
 def _activity_csv(today: dt.date = None) -> str:
     today = today or dt.date.today()
-    return f"output/oat-activity-{today.isoformat()}.csv"
+    return f"output/oat-activity-{today.isoformat()}{config.FILE_SUFFIX}.csv"
 
 
 def reset_activity() -> int:
@@ -2029,7 +2031,7 @@ def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool) -
     }
     try:
         os.makedirs("output", exist_ok=True)
-        path = f"output/oat-flagged-{today.isoformat()}.json"
+        path = f"output/oat-flagged-{today.isoformat()}{config.FILE_SUFFIX}.json"
         with open(path, "w") as fh:
             _json.dump(snap, fh)
         _log(f"[oat] flagged snapshot: {len(snap['nophone'])} need a number, "

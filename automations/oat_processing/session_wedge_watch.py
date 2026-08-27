@@ -1,6 +1,12 @@
-"""Office-11580 session-wedge alarm (Lucy 2).
+"""Applicant Push session-wedge alarm (Lucy 2).
 
-WHY: when office 11580's Cloudflare clearance goes stale, BOTH the primary sender
+Covers EVERY office the push works (Carlos 11580, Atef 23467 — see
+automations/applicant_push/offices.py). Each office writes its own daily log
+`applicant-push[-<office>]-<date>.log`, all of which this scans; the alert names
+the office the signature actually came from, read off that log's filename, so
+nobody clears Cloudflare on the wrong office.
+
+WHY: when an office's Cloudflare clearance goes stale, BOTH the primary sender
 (resume_pushing extractor) AND the OAT leftovers processing freeze at once — new
 Indeed applications pile into the "Process Emails" queue and nobody is told, so it
 silently climbs (Megan watched it reach 90). The automated browser can't clear
@@ -40,7 +46,18 @@ CHANNEL_CACHE = REPO_ROOT / "output" / ".corrections_channel_id"
 # One thread per wedge episode, the convention this channel runs on: repeats reply
 # under the open post instead of adding a near-identical message, and the ✅ goes on
 # automatically when a healthy walk is seen.
+# Per-office, so Carlos wedging and Atef wedging are two separate threads (and
+# one clearing does not ✅ the other). 11580 keeps the ORIGINAL key so an
+# episode already open on the day this ships is still found and closed.
 INCIDENT_KEY = "failure-oat-session-wedge"
+
+
+def _incident_key(office: str) -> str:
+    return INCIDENT_KEY if office == "11580" else "%s-%s" % (INCIDENT_KEY, office)
+
+
+def _state_path(office: str):
+    return STATE if office == "11580" else pathlib.Path(str(STATE) + "-" + office)
 
 # Only consider logs touched in the last window — an old stalled run isn't a live
 # wedge. Long enough to span the 5-min OAT cadence + a resume_pushing cycle.
@@ -174,16 +191,38 @@ def assess() -> tuple[str, str, str]:
     return "quiet", "", ""
 
 
-def _load_state() -> dict:
+def _office_of(log_name: str) -> str:
+    """Which office a log belongs to, from its filename. The per-office logs are
+    `applicant-push-<office>-<date>.log`; the unsuffixed `applicant-push-<date>.log`
+    (and the two retired single-office logs) are Carlos's 11580."""
+    # The office segment is followed by the DATE, so anchor on the date — without
+    # it, `applicant-push-2026-08-26.log` (Carlos's, no office segment) matched the
+    # YEAR and blamed a wedge on "office 2026".
+    m = re.search(r"applicant[-_]push-(\d{4,6})-\d{4}-\d{2}-\d{2}", log_name or "")
+    return m.group(1) if m else "11580"
+
+
+def _office_label(office: str) -> str:
     try:
-        return json.loads(STATE.read_text())
+        from automations.applicant_push import offices
+        o = offices.OFFICES.get(office)
+        if o:
+            return "office %s (%s)" % (o["office_id"], o["owner"])
+    except Exception:  # noqa: BLE001
+        pass
+    return "office %s" % office
+
+
+def _load_state(office: str = "11580") -> dict:
+    try:
+        return json.loads(_state_path(office).read_text())
     except Exception:  # noqa: BLE001
         return {}
 
 
-def _save_state(d: dict) -> None:
+def _save_state(d: dict, office: str = "11580") -> None:
     try:
-        STATE.write_text(json.dumps(d))
+        _state_path(office).write_text(json.dumps(d))
     except OSError:
         pass
 
@@ -200,7 +239,8 @@ def _channel() -> str:
     return CHANNEL
 
 
-def _post(title: str, body_lines: list[str], dry_run: bool) -> bool:
+def _post(title: str, body_lines: list[str], dry_run: bool,
+          office: str = "11580") -> bool:
     """Open (or follow up in) the wedge incident thread in #claudecorrections.
 
     Channel gets ONE emoji-free line, the detail goes in the thread — the standing
@@ -221,8 +261,9 @@ def _post(title: str, body_lines: list[str], dry_run: bool) -> bool:
     try:
         from automations.shared import incident_thread as _inc
         posted = _inc.open_or_followup(
-            key=INCIDENT_KEY, title=title, body=body_lines,
-            channel_line="*Applicant Push* — office 11580 session wedged on Lucy 2",
+            key=_incident_key(office), title=title, body=body_lines,
+            channel_line="*Applicant Push* — %s session wedged on Lucy 2"
+                         % _office_label(office),
             channel=ch, client=client)
         if posted:
             return True
@@ -242,8 +283,14 @@ def _post(title: str, body_lines: list[str], dry_run: bool) -> bool:
 def run(dry_run: bool = False, now: dt.datetime | None = None) -> int:
     now = now or dt.datetime.now()
     state, evidence, source = assess()
-    print(f"[wedge-watch] state={state} evidence={evidence!r} source={source}")
-    st = _load_state()
+    # The alert has to name the office that ACTUALLY wedged — the fix is "clear
+    # Cloudflare on office N by hand", and sending someone to the wrong office
+    # is worse than no alert. The source log's filename is the office.
+    office = _office_of(source)
+    label = _office_label(office)
+    print(f"[wedge-watch] state={state} evidence={evidence!r} source={source} "
+          f"office={office}")
+    st = _load_state(office)
 
     if state == "wedged":
         last = st.get("alerted_at")
@@ -256,60 +303,80 @@ def run(dry_run: bool = False, now: dt.datetime | None = None) -> int:
         if recent:
             print("[wedge-watch] wedge still open, alerted recently — no re-ping")
             return 0
-        title = ":rotating_light: *Office 11580 session wedged — Lucy 2*"
+        title = (":rotating_light: *%s session wedged — Lucy 2*"
+                 % (label[:1].upper() + label[1:]))
         body = [
             "Cloudflare clearance went stale, so the automated browser is frozen "
-            "on office 11580 — *both* pipelines are stalled:",
+            "on %s — *both* pipelines are stalled:" % label,
             "• *Resume Pushing* extractor — applications not getting auto-sent",
             "• *OAT 'One App at a time'* leftovers — not draining",
             "New Indeed apps keep arriving, so the Process Emails queue is climbing.",
             f"_signature:_ `{evidence}`  ({source})",
             "",
-            "*Fix (~1 min, one-time):* on the mini, open AppStream for office 11580 "
+            "*Fix (~1 min, one-time):* on the mini, open AppStream for %s "
             "in a headed window and clear the 'verify you are human' box once. "
-            "Both reports resume and drain on their own.",
+            "Both reports resume and drain on their own." % label,
             "_This alarm auto-clears once a healthy run is seen._",
         ]
-        if _post(title, body, dry_run):
+        if _post(title, body, dry_run, office=office):
             st["alerted_at"] = now.isoformat()
             st["episode_evidence"] = evidence
-            _save_state(st)
+            _save_state(st, office)
             print("[wedge-watch] ALERT posted")
         return 0
 
     if state == "healthy":
         if st.get("alerted_at"):
-            # Close the THREAD (✅ on the parent) rather than posting a loose
-            # all-clear the channel has to match up with the alert by eye. Free
-            # when nothing is open, and never raises.
+            # Close the THREAD — ✅ on the parent and the marker flipped to
+            # `resolved` — rather than posting a loose all-clear the channel has
+            # to match up with the alert by eye. ensure_closed asks the CHANNEL,
+            # not this machine's incident index, and — the part that actually
+            # bit us — a close it cannot complete is NOT paved over with a
+            # message. On 2026-08-26 the 18:21 episode was closed by hand from a
+            # laptop, so Lucy 2's index still said open at 19:12; resolve()
+            # correctly found the thread already closed and returned False, and
+            # the old fallback below turned that False into a fresh post. It
+            # went out through _post(), which stamps the WEDGE headline and an
+            # `open` marker on whatever it is handed — so the all-clear opened a
+            # brand-new incident reading "office 11580 session wedged" with
+            # "session recovered" 246ms under it and no ✅ on either. Megan: "if
+            # this corrected it should have a green check."
             closed = False
             try:
                 from automations.shared import incident_thread as _inc
-                closed = _inc.resolve_if_open(
-                    INCIDENT_KEY,
-                    what="*Applicant Push* — the office 11580 session",
+                closed = _inc.ensure_closed(
+                    _incident_key(office),
+                    what="*Applicant Push* — the %s session" % label,
                     detail="A healthy walk just processed cleanly; the queue is "
                            "draining again.",
                     channel=_channel(), dry_run=dry_run)
             except Exception as e:  # noqa: BLE001
                 print(f"[wedge-watch] couldn't close the thread "
                       f"({type(e).__name__}: {str(e)[:80]})")
+            # NO FALLBACK POST HERE, ON PURPOSE. The old one replied "session
+            # recovered" with no ✅ and no marker flip, which reads as fixed to a
+            # person and as still-open to every machine — worse than silence,
+            # because it also hid the failure. Losing one all-clear is cheap: we
+            # run again in five minutes. So on failure we KEEP the episode and
+            # retry, and only forget it once the thread really is closed.
             if not closed:
-                _post("Office 11580 session recovered — Lucy 2",
-                      ["A healthy run just processed cleanly — the wedge is cleared "
-                       "and the queue is draining again."], dry_run)
-            print("[wedge-watch] episode closed (all-clear posted)")
-        _save_state({})
+                print("[wedge-watch] couldn't close the incident thread — "
+                      "keeping the episode open, retrying next pass")
+                return 0
+            print("[wedge-watch] episode closed (✅ on the incident thread)")
+            if dry_run:
+                return 0
+        _save_state({}, office)
         return 0
 
     # quiet: no recent activity to judge — leave any open episode as-is.
-    print("[wedge-watch] no recent office-11580 activity — nothing to assess")
+    print("[wedge-watch] no recent Applicant Push activity — nothing to assess")
     return 0
 
 
 def main(argv=None) -> int:
     import argparse
-    ap = argparse.ArgumentParser(description="Office-11580 session-wedge alarm")
+    ap = argparse.ArgumentParser(description="Applicant Push session-wedge alarm")
     ap.add_argument("--dry-run", action="store_true",
                     help="assess + print the alert, post nothing")
     args = ap.parse_args(argv)

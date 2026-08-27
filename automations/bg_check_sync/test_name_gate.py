@@ -94,7 +94,6 @@ class ProposeTests(unittest.TestCase):
                       [event("Shuminique", "Valentine")])
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0].current, parse.PASSED)
-        self.assertIn("checklist says *Passed*", name_gate.render_line(out[0]))
 
     def test_result_from_a_different_cohort_is_ignored(self):
         """Far outside any hiring runway — somebody else's check entirely."""
@@ -114,6 +113,26 @@ class ProposeTests(unittest.TestCase):
         a = propose([person("Nikki", "Coleman")], [event("Shomanique", "Coleman")])
         b = propose([person("Nikki", "Coleman")], [event("Shomanique", "Coleman")])
         self.assertEqual(a[0].pid, b[0].pid)
+
+    def test_a_rejection_only_kills_that_pairing_not_the_person(self):
+        """Megan: "if I red x adriana and then she has one come through later
+        she shouldn't be skipped." A ❌ answers one question — this name is not
+        that name — and says nothing about the next result to arrive."""
+        adriana = person("Adriana", "Ruiz", email="adrianaruiz@icloud.com")
+        rejected = propose([adriana], [event("Jordan", "Ruiz")])[0]
+        state = {rejected.pid: {"status": "rejected"}}
+        # her own check lands later, under her real legal name
+        later = propose([adriana], [event("Adriana Marie", "Ruiz Torres")])
+        self.assertEqual(len(later), 1)
+        self.assertNotEqual(later[0].pid, rejected.pid)
+        self.assertEqual(name_gate.unanswered(later, state), later)
+
+    def test_the_same_pairing_is_never_asked_twice(self):
+        adriana = person("Adriana", "Ruiz")
+        first = propose([adriana], [event("Jordan", "Ruiz")])
+        state = {first[0].pid: {"status": "rejected"}}
+        again = propose([adriana], [event("Jordan", "Ruiz")])
+        self.assertEqual(name_gate.unanswered(again, state), [])
 
     def test_unanswered_skips_anything_already_asked(self):
         out = propose([person("Nikki", "Coleman")], [event("Shomanique", "Coleman")])
@@ -145,7 +164,8 @@ class EmailEvidenceTests(unittest.TestCase):
                       [event("Lanequa", "Simpson")])
         self.assertEqual(len(out), 1)
         self.assertFalse(out[0].corroborated)
-        self.assertIn("doesn't show that name", name_gate.render_line(out[0]))
+        line = name_gate.render_line(out[0])
+        self.assertNotIn("nikki.creative@zohomail.com", line)
 
     def test_corroborated_questions_come_first(self):
         out = propose(
@@ -176,8 +196,7 @@ class TimingTests(unittest.TestCase):
                       [event("Shuminique", "Valentine", date="2026-08-27")])
         self.assertTrue(out[0].fresh)
         self.assertEqual(out[0].days_before_start, 4)
-        self.assertIn("4 days before their 8/31/2026 start",
-                      name_gate.render_line(out[0]))
+        self.assertNotIn("check taken", name_gate.render_line(out[0]))
 
     def test_a_month_out_hire_is_normal_not_stale(self):
         """The link goes out at hire, and a start can be a month or more away."""
@@ -186,23 +205,21 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertTrue(out[0].fresh)
         self.assertEqual(out[0].days_before_start, 38)
-        self.assertIn("taken when they were hired", name_gate.render_line(out[0]))
+        self.assertNotIn("odd timing", name_gate.render_line(out[0]))
 
     def test_a_check_older_than_the_hiring_runway_is_called_out(self):
         out = propose([person("Juan", "Garcia")],
                       [event("Robert", "Garcia", date="2026-05-05")])
         self.assertEqual(len(out), 1)
         self.assertFalse(out[0].fresh)
-        self.assertIn("months before they start", name_gate.render_line(out[0]))
+        self.assertIn("odd timing", name_gate.render_line(out[0]))
 
     def test_a_check_taken_just_after_they_started_is_normal(self):
         """A link that went out late — ordinary, not suspicious."""
         out = propose([person("Nikki", "Valentine")],
                       [event("Shuminique", "Valentine", date="2026-09-05")])
-        line = name_gate.render_line(out[0])
-        self.assertIn("AFTER their", line)
-        self.assertIn("the link went out late", line)
         self.assertTrue(out[0].fresh)
+        self.assertNotIn("odd timing", name_gate.render_line(out[0]))
 
     def test_a_result_landing_after_they_start_is_kept_and_dated(self):
         """Sterling takes as long as it takes — taken before the start week,
@@ -215,16 +232,14 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0].taken_on, "2026-08-27")
         self.assertEqual(out[0].result_on, "2026-09-21")
-        line = name_gate.render_line(out[0])
-        self.assertIn("taken when they were hired", line)
-        self.assertIn("result came back: Sep 21", line)
+        self.assertNotIn("odd timing", name_gate.render_line(out[0]))
 
     def test_a_check_taken_months_after_they_started_is_called_out(self):
         out = propose([person("Nikki", "Valentine")],
                       [event("Shuminique", "Valentine", date="2026-10-20")])
         self.assertEqual(len(out), 1)
         self.assertFalse(out[0].fresh)
-        self.assertIn("long after they started", name_gate.render_line(out[0]))
+        self.assertIn("odd timing", name_gate.render_line(out[0]))
 
     def test_both_signals_outrank_one(self):
         """Two agreeing checks sort above one, and one above none."""
@@ -283,9 +298,46 @@ class AskPlacementTests(unittest.TestCase):
             slack_post._load_state = orig
 
     def test_the_intro_names_the_start_week_when_it_rides_elsewhere(self):
-        self.assertIn("for the week of 9/28/2026",
+        self.assertIn("starting 9/28/2026",
                       name_gate.render_parent(1, start_week="9/28/2026"))
-        self.assertNotIn("for the week of", name_gate.render_parent(1))
+        self.assertNotIn("starting", name_gate.render_parent(1))
+
+    def test_a_question_reads_as_two_lines(self):
+        """Megan on the first version: "wayyyy too much wording." The ✅/❌
+        meanings belong in the parent, said once."""
+        out = propose([person("Adriana", "Ruiz", email="adrianaruiz@icloud.com")],
+                      [event("Jordan", "Ruiz", date="2026-08-27")])
+        line = name_gate.render_line(out[0])
+        self.assertLessEqual(len(line.splitlines()), 2)
+        self.assertIn("*Adriana Ruiz* → *Jordan Ruiz*?", line)
+        self.assertNotIn("✅", line)
+        self.assertNotIn("❌", line)
+
+    def test_the_email_shows_only_when_it_proves_something(self):
+        """Megan: "we don't need the email if it doesn't do anything." """
+        backed = propose([person("Nikki", "Valentine",
+                                 email="Shuminiquevalentine@yahoo.com")],
+                         [event("Shuminique", "Valentine")])[0]
+        self.assertIn("has \u201cShuminique\u201d in it",
+                      name_gate.render_line(backed))
+        plain = propose([person("Adriana", "Ruiz", email="adrianaruiz@icloud.com")],
+                        [event("Jordan", "Ruiz")])[0]
+        line = name_gate.render_line(plain)
+        self.assertNotIn("adrianaruiz@icloud.com", line)
+        self.assertEqual(line, "*Adriana Ruiz* → *Jordan Ruiz*?")
+
+    def test_the_parent_carries_the_meanings_and_the_tags(self):
+        parent = name_gate.render_parent(2)
+        self.assertIn("✅ same person", parent)
+        self.assertIn("❌ different person", parent)
+        for _name, uid in name_gate.DECIDERS:
+            self.assertIn(uid, parent)
+
+    def test_the_parent_says_it_needs_their_approval(self):
+        """A tag alone reads as FYI — anybody clicks and thinks it's done."""
+        parent = name_gate.render_parent(2)
+        self.assertIn("needs one of", parent)
+        self.assertLessEqual(len(parent.splitlines()), 2)
 
     def test_dry_run_posts_nothing_and_records_nothing(self):
         state = {}
@@ -295,6 +347,13 @@ class AskPlacementTests(unittest.TestCase):
 
 
 class VoteTests(unittest.TestCase):
+
+    def test_an_owners_reaction_counts_even_though_they_arent_tagged(self):
+        """Megan ❌'d the first question ever posted and nothing happened."""
+        rx = [{"name": "x", "users": ["U04G5HJBGFN"]}]
+        self.assertEqual(name_gate._voted(rx, name_gate.REJECT_EMOJI),
+                         "U04G5HJBGFN")
+        self.assertNotIn("U04G5HJBGFN", [uid for _, uid in name_gate.DECIDERS])
 
     def test_only_deciders_count(self):
         rx = [{"name": "white_check_mark", "users": ["U0STRANGER"]}]
@@ -317,7 +376,7 @@ class VoteTests(unittest.TestCase):
         thread = name_gate._thread_reactions
         name_gate._thread_reactions = lambda cli, ch, ts: {"2.0": rx}
         try:
-            approved, rejected = name_gate.collect_decisions(state)
+            approved, rejected, _needs = name_gate.collect_decisions(state)
         finally:
             name_gate._client = orig
             name_gate._thread_reactions = thread
@@ -412,6 +471,57 @@ class TintTests(unittest.TestCase):
         name_gate.tint_confirmed(_FakeSheet(ws), by_tab, state, dry_run=True)
         self.assertEqual(ws.formatted, [])
         self.assertEqual(state.get(name_gate.TINTED_KEY, {}), {})
+
+
+class OutsiderReactionTests(unittest.TestCase):
+    """Megan: "if someone not auth reacts to it you need to put in the channel
+    that it still needs confirmed by authorized people." """
+
+    ENTRY = {"status": "pending", "channel": "C1", "parent_ts": "1.0",
+             "reply_ts": "2.0", "sheet_first": "Adriana", "sheet_last": "Ruiz",
+             "legal_first": "Jordan", "legal_last": "Ruiz",
+             "key": "ruiz|adriana", "locations": [["D2D OBCL", 12]]}
+
+    def _collect(self, reactions):
+        state = {"pid1": dict(self.ENTRY)}
+        orig, thread = name_gate._client, name_gate._thread_reactions
+        name_gate._client = lambda: None
+        name_gate._thread_reactions = lambda cli, ch, ts: {"2.0": reactions}
+        try:
+            return name_gate.collect_decisions(state)
+        finally:
+            name_gate._client, name_gate._thread_reactions = orig, thread
+
+    def test_a_stranger_reacting_flags_it_as_still_open(self):
+        approved, rejected, needs = self._collect(
+            [{"name": "white_check_mark", "users": ["U0STRANGER"]}])
+        self.assertEqual((approved, rejected), ([], []))
+        self.assertEqual(needs[0]["reacted_by"], ["U0STRANGER"])
+
+    def test_an_authorised_reaction_alongside_it_decides_it(self):
+        approved, rejected, needs = self._collect(
+            [{"name": "white_check_mark", "users": ["U0STRANGER", "U0B9924FHCL"]}])
+        self.assertEqual(len(approved), 1)
+        self.assertEqual(needs, [])
+
+    def test_it_is_only_said_once(self):
+        approved, rejected, needs = self._collect(
+            [{"name": "x", "users": ["U0STRANGER"]}])
+        self.assertEqual(len(needs), 1)
+        state = {"pid1": {**self.ENTRY, "nudged_at": "2026-08-26T20:00:00"}}
+        orig, thread = name_gate._client, name_gate._thread_reactions
+        name_gate._client = lambda: None
+        name_gate._thread_reactions = lambda cli, ch, ts: {
+            "2.0": [{"name": "x", "users": ["U0STRANGER"]}]}
+        try:
+            self.assertEqual(name_gate.collect_decisions(state)[2], [])
+        finally:
+            name_gate._client, name_gate._thread_reactions = orig, thread
+
+    def test_an_unrelated_emoji_is_not_a_vote(self):
+        approved, rejected, needs = self._collect(
+            [{"name": "eyes", "users": ["U0STRANGER"]}])
+        self.assertEqual(needs, [])
 
 
 class _FakeWS:

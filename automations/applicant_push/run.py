@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Applicant Push — run the batch send + the OAT leftovers cleanup on ONE warm
-real-Chrome/CDP AppStream session (office 11580, Carlos, Lucy 2).
+real-Chrome/CDP AppStream session, for ONE ApplicantStream office, on Lucy 2.
+
+Offices are declared in `offices.py` (11580 Carlos, 23467 Atef) and chosen with
+--office; the default is Carlos, so a call with no flag behaves as it always
+has. The scheduled agent rotates offices one per tick — it never runs two warm
+sessions at once.
 
 Flow:
-  1. Open ONE warm, logged-in real-Chrome/CDP page on office 11580
+  1. Open ONE warm, logged-in real-Chrome/CDP page on the chosen office
      (resume_pushing.warm_appstream_cdp_page — the extractor plugin's service
      worker only runs in real Chrome). It lands on the classic console.
   2. LEFTOVERS stage FIRST: oat_processing.run_walk(page) — walk the
@@ -37,6 +42,7 @@ re-texts are IRREVERSIBLE.
   --limit N       cap OAT applicants this run (default: OAT's MAX_PER_RUN)
   --max-actions N cap OAT live mutations this run (controlled test)
   --batch-limit N send only the first N batch rows (small live test)
+  --office ID     which office to work (default 11580 = Carlos)
 """
 from __future__ import annotations
 
@@ -48,10 +54,26 @@ import sys
 
 from automations.resume_pushing import run as rp
 from automations.oat_processing import run as oat
+from automations.applicant_push import offices
 
-OFFICE_ID = rp.OFFICE_ID
-OFFICE_HINT = rp.OFFICE_HINT
-DIAG_TAB = "Applicant Push Diag"
+# Set by _use_office(); the defaults are Carlos's office, so a caller that
+# never passes --office behaves exactly as before.
+OFFICE = offices.get(offices.DEFAULT_OFFICE)
+OFFICE_ID = OFFICE["office_id"]
+OFFICE_HINT = OFFICE["hint"]
+DIAG_TAB = OFFICE["push_diag_tab"]
+
+
+def _use_office(office_id: str) -> dict:
+    """Point this process (and resume_pushing + oat_processing under it) at one
+    office. ONE office per process — see offices.py for why the agent rotates
+    offices tick-by-tick instead of running two warm sessions at once."""
+    global OFFICE, OFFICE_ID, OFFICE_HINT, DIAG_TAB
+    OFFICE = offices.activate(office_id)
+    OFFICE_ID = OFFICE["office_id"]
+    OFFICE_HINT = OFFICE["hint"]
+    DIAG_TAB = OFFICE["push_diag_tab"]
+    return OFFICE
 
 
 def _batch_count_path(day: dt.date) -> str:
@@ -59,7 +81,9 @@ def _batch_count_path(day: dt.date) -> str:
     scorecard (oat_processing.summary) can show a 'batch sent' line alongside the
     OAT leftovers tallies. Lives beside the OAT activity CSV in output/."""
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(root, "output", f"applicant-push-batch-{day.isoformat()}.json")
+    return os.path.join(root, "output",
+                        f"applicant-push-batch-{day.isoformat()}"
+                        f"{OFFICE['suffix']}.json")
 
 
 def _record_batch_count(sent: int, reached: bool) -> None:
@@ -105,14 +129,15 @@ def _run_stage(name: str, work):
                         f"{attempt + 1}/{MAX_SESSION_ATTEMPTS} with a fresh profile")
                 continue
             rp._log(f"[push][STOP] {name}: no AppStream session after "
-                    f"{MAX_SESSION_ATTEMPTS} attempts ({e}) — stage skipped. Office "
-                    "11580 may need a human Cloudflare clear on Lucy 2.")
+                    f"{MAX_SESSION_ATTEMPTS} attempts ({e}) — stage skipped. "
+                    f"Office {OFFICE_ID} may need a human Cloudflare clear "
+                    "on Lucy 2.")
             return None
 
 
 def run(live: bool = False, limit: int = None, max_actions: int = None,
         batch_only: bool = False, oat_only: bool = False,
-        batch_limit: int = 0) -> int:
+        batch_limit: int = 0, office: str = None) -> int:
     """Run the unified pipeline: LEFTOVERS (OAT) then BATCH (Resume Pushing), each in
     its OWN fresh warm CDP session (see _run_stage for why — batch needs a clean
     console→v2 start, not a mid-run hop).
@@ -121,6 +146,7 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
     session or that wedges is logged and skipped, never fatal to the other stage. A
     batch Indeed-Turnstile wedge still counts as reached=True (it got to the batch
     page). Office-11580 Cloudflare re-challenges during login are retried per stage."""
+    _use_office(office or offices.DEFAULT_OFFICE)
     mode = "LIVE" if live else "DRY-RUN"
     rp._LOG_BUFFER.clear()
     rp._log(f"[push] Applicant Push — office {OFFICE_ID} ({OFFICE_HINT}) — {mode} "
@@ -192,8 +218,8 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
-        description="Applicant Push — batch send + OAT leftovers on one CDP session "
-                    "(office 11580, Lucy 2)")
+        description="Applicant Push — batch send + OAT leftovers on one CDP "
+                    "session, for one ApplicantStream office (Lucy 2)")
     p.add_argument("--live", action="store_true",
                    help="Perform batch Send-to-AI + OAT sends/removes/re-texts "
                         "(default is dry-run: read + classify + print only)")
@@ -210,6 +236,12 @@ def main(argv=None) -> int:
                    help="Cap OAT live mutations this run (controlled test)")
     p.add_argument("--batch-limit", type=int, default=0,
                    help="Send only the first N batch rows (small live test)")
+    p.add_argument("--office", default=offices.DEFAULT_OFFICE,
+                   choices=sorted(offices.OFFICES),
+                   help="Which ApplicantStream office to work this run "
+                        "(default %(default)s = Carlos). Each office has its own "
+                        "browser profile, day files and Slack settings — see "
+                        "automations/applicant_push/offices.py.")
     args = p.parse_args(argv)
 
     live = args.live and not args.dry_run
@@ -218,7 +250,7 @@ def main(argv=None) -> int:
         return 2
     return run(live=live, limit=args.limit, max_actions=args.max_actions,
                batch_only=args.batch_only, oat_only=args.oat_only,
-               batch_limit=args.batch_limit)
+               batch_limit=args.batch_limit, office=args.office)
 
 
 if __name__ == "__main__":

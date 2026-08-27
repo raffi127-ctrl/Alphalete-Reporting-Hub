@@ -166,7 +166,17 @@ def settle_name_gate(sh, *, dry_run: bool, do_post: bool) -> int:
     """
     try:
         state = name_gate.load_state()
-        approved, rejected = name_gate.collect_decisions(state)
+        approved, rejected, needs_auth = name_gate.collect_decisions(state)
+        if needs_auth:
+            # Somebody reacted whose vote doesn't count. Say so in the thread —
+            # a click that silently does nothing reads as "handled".
+            name_gate.say_still_needs_authorising(needs_auth, dry_run=not do_post)
+            if not dry_run:
+                for entry in needs_auth:
+                    stamp = entry.get("nudged_at")
+                    if stamp:
+                        state.setdefault(entry["pid"], {})["nudged_at"] = stamp
+                name_gate.save_state(state)
         if not (approved or rejected):
             return 0
         applied = name_gate.apply_renames(sh, approved, state, dry_run=dry_run)
@@ -185,7 +195,8 @@ def settle_name_gate(sh, *, dry_run: bool, do_post: bool) -> int:
 
 
 def ask_name_gate(roster, events, matched, monday, week, *, dry_run: bool,
-                  do_post: bool, claimed_ids=None, collect=None) -> int:
+                  do_post: bool, claimed_ids=None, collect=None,
+                  refresh: bool = False) -> int:
     """Phase B: anyone left unmatched who looks like a nickname.
 
     With `collect`, the proposals are set aside instead of posted — the OV pass
@@ -195,9 +206,12 @@ def ask_name_gate(roster, events, matched, monday, week, *, dry_run: bool,
     """
     try:
         state = name_gate.load_state()
-        fresh = name_gate.unanswered(
-            name_gate.propose(roster, events, matched, monday, week,
-                              claimed_ids=claimed_ids), state)
+        proposals = name_gate.propose(roster, events, matched, monday, week,
+                                      claimed_ids=claimed_ids)
+        # --refresh-asks: keep the ones already posted, so their wording can be
+        # corrected in place instead of asked again.
+        fresh = (proposals if refresh
+                 else name_gate.unanswered(proposals, state))
         if not fresh:
             return 0
         for p in fresh:
@@ -283,7 +297,13 @@ def ov_targets_for(roster, matched, state, out: list) -> None:
         if ev is None:
             continue
         name = f"{p.first} {p.last}".strip()
-        if name in seen or name in done:
+        legal = f"{name_case.titlecase_name(ev.first)} " \
+                f"{name_case.titlecase_name(ev.last)}".strip()
+        # Settled means "we checked this profile against THIS name". A later
+        # result under a different name is a different question and has to be
+        # asked again — skipping on the name alone would freeze somebody at
+        # whatever we happened to see first.
+        if name in seen or done.get(name) == legal:
             continue
         seen.add(name)
         # Title-case here, not at the write: Sterling shouts some names
@@ -298,7 +318,8 @@ def ov_targets_for(roster, matched, state, out: list) -> None:
 
 def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
                  do_slack=True, rolling_vals=None, claimed_ids=None,
-                 ov_targets=None, pending_asks=None, names_from=None):
+                 ov_targets=None, pending_asks=None, names_from=None,
+                 refresh_asks=False):
     """Update col K on both tabs for ONE week, and (if do_slack) post/edit its
     Slack thread. Returns a short summary dict. Empty weeks are skipped."""
     week = _fmt_week(monday)
@@ -331,7 +352,7 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
     if do_names:
         ask_name_gate(roster, events, matched, monday, week,
                       dry_run=dry_run, do_post=do_post, claimed_ids=claimed_ids,
-                      collect=pending_asks)
+                      collect=pending_asks, refresh=refresh_asks)
 
     decisions, slack_people, needs_confirm, flags = [], [], [], []
     for p in sorted(roster, key=lambda x: (x.last.lower(), x.first.lower())):
@@ -518,7 +539,7 @@ def _run(args) -> None:
                      repost=repost, now=now, do_slack=do_slack,
                      rolling_vals=rolling_vals, claimed_ids=claimed_ids,
                      ov_targets=ov_targets, pending_asks=pending_asks,
-                     names_from=names_from)
+                     names_from=names_from, refresh_asks=args.refresh_asks)
 
     if args.ov:
         try:
@@ -533,20 +554,34 @@ def _run(args) -> None:
         try:
             run_ov_pass(ov_targets or [], apply=args.ov_apply,
                         headless=not args.ov_headed,
-                        allow_login=args.ov_login)
+                        allow_login=args.ov_login, only=args.ov_only or "")
         except Exception as e:  # noqa: BLE001
             print(f"[ov-names] pass skipped: "
                   f"{type(e).__name__}: {str(e).splitlines()[0][:160]}")
 
 
 def run_ov_pass(targets: list, *, apply: bool, headless: bool,
-                allow_login: bool = False) -> None:
+                allow_login: bool = False, only: str = "") -> None:
     """The OwnerVille half: make each profile say what Sterling ran.
 
     Opt-in (`--ov`) and never part of the plain 3x/day pass — it drives a real
     browser through every campaign on View Progress, which is minutes of work
     and a profile lock the headless status sync has no reason to hold.
     """
+    if only:
+        # Scope a real OwnerVille edit to ONE person. The first time this writes
+        # to anybody's profile it should write to exactly the profile somebody
+        # is standing by to look at — the same reason report fills preview on
+        # one tab before they touch fifty-two.
+        want = only.strip().lower()
+        targets = [t for t in targets if want in t.sheet_name.lower()]
+        if not targets:
+            print(f"[ov-names] --ov-only {only!r} matched nobody this run")
+            return
+        if len(targets) > 1:
+            print(f"[ov-names] --ov-only {only!r} matched "
+                  f"{', '.join(t.sheet_name for t in targets)} — be more specific")
+            return
     if not targets:
         print("[ov-names] nothing to check")
         return
@@ -577,12 +612,18 @@ def main(argv=None) -> int:
     ap.add_argument("--since-days", type=int, default=30)
     ap.add_argument("--dry-run", action="store_true", help="no sheet writes")
     ap.add_argument("--post", action="store_true", help="actually post/edit Slack")
+    ap.add_argument("--refresh-asks", action="store_true",
+                    help="rewrite questions already posted in Slack (same "
+                         "messages, same reactions) instead of asking again")
     ap.add_argument("--names-from",
                     help="first start-week (M/D/YYYY) to correct names for; "
                          "earlier weeks are left alone (default: next Monday)")
     ap.add_argument("--ov", action="store_true",
                     help="also check OwnerVille profiles against Sterling "
                          "(browser; reports only unless --ov-apply)")
+    ap.add_argument("--ov-only",
+                    help="with --ov: check/edit ONE person's OwnerVille profile "
+                         "(match on their checklist name) — the preview switch")
     ap.add_argument("--ov-apply", action="store_true",
                     help="with --ov: actually edit the OwnerVille profile names")
     ap.add_argument("--ov-login", action="store_true",
@@ -593,7 +634,7 @@ def main(argv=None) -> int:
     ap.add_argument("--repost", action="store_true",
                     help="force a fresh repost of the thread (the Friday bump)")
     args = ap.parse_args(argv)
-    if args.ov_apply or args.ov_headed or args.ov_login:
+    if args.ov_apply or args.ov_headed or args.ov_login or args.ov_only:
         args.ov = True
     if args.ov_login:
         args.ov_headed = True      # somebody has to see the box to tick it

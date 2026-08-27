@@ -210,6 +210,56 @@ STEPS: list = [
                "Onboarding Quizzes is NOT automated — those six courses are "
                "the rep's own coursework and stay a human column."),
     ),
+    Step(
+        key="slack_skool_email",
+        label="Slack / Skool Email",
+        emoji="\U0001F4E7",
+        # The only step that fills NO column. It READS the Email column and
+        # writes nothing back -- there is no "we emailed them" box on the tab,
+        # and inventing one would be a column the recruiting team didn't ask
+        # for. The re-send guard lives in reception's Sent mail instead.
+        column="",
+        machine="Lucy 1",
+        when="Mon 8:00 AM",
+        does=("emails this week's new starts their Slack + Skool join links "
+              "from reception, everybody in BCC, the morning of orientation"),
+        card="slack-skool-email",
+        report_ids=("slack_skool_email",),
+        actions=(
+            Action("Preview", "\U0001F441",
+                   "Show who WOULD get it, who wouldn't and why, and the "
+                   "exact message. Sends nothing.",
+                   "automations.slack_skool_email.run", primary=True),
+            Action("Make A Draft", "\U0001F4DD",
+                   "Sends nothing. Puts the finished email in reception's "
+                   "Gmail Drafts so a person can read it and press send.",
+                   "automations.slack_skool_email.run", ("--draft",)),
+            Action("Send Now", "\u25B6",
+                   "Email this week's new starts for real, then post the "
+                   "summary to Slack. Cannot be undone.",
+                   "automations.slack_skool_email.run", ("--send", "--slack")),
+        ),
+        notes=("Sends from alphaletereception@gmail.com, not "
+               "alphaletereporting@ -- new starts already correspond with "
+               "reception and reply to it. That needs its own Gmail token, "
+               "scoped compose AND readonly (the read is the re-send guard).",
+               "Skips exactly who Blue Ink skips, by reading the same roster "
+               "module: someone who isn't starting shouldn't be told 'see you "
+               "at orientation today'.",
+               "The Slack invite link is READ OUT OF SLACK at send time, not "
+               "pasted -- Slack caps invite links at 30 days and 400 uses and "
+               "has no API for them, so fetching weekly is the only way this "
+               "is ever hands-off. It copies the current link, never resets "
+               "one.",
+               "Won't send off a tab that isn't dated for TODAY. The newest "
+               "tab on a Monday nobody built one is LAST week's, and those "
+               "people already started.",
+               "Won't send twice in a day: it checks reception's own Sent "
+               "mail, so a hand-send at 7:50 stops the 8:00 run.",
+               "Anyone with no usable email is NAMED in the Slack thread with "
+               "their row -- they are starting and would otherwise arrive "
+               "with nothing installed and no trace of being missed."),
+    ),
     # ---- NEXT STEP GOES HERE ----------------------------------------------
     # Add it as one Step(...) row and it picks up its section on the Hub card
     # and its buttons automatically — nothing else to edit.

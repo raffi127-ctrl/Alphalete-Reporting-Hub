@@ -274,6 +274,10 @@ _HUB_CARD = {
     # applicant_push: the unified batch + OAT-leftovers push (office 11580) that
     # supersedes resume_pushing + oat_processing on one warm CDP session.
     "applicant_push": "applicant-push",
+    # Same flow, second office (Atef, 23467 — added 2026-08-26). ONE launchd job
+    # alternates the two offices tick by tick, but each publishes to its OWN card
+    # so a wedge on one office never shows the other green (or red).
+    "applicant_push_atef": "applicant-push-atef",
     # applicant_sync_morning: the 4am phase of the SAME card as the 8pm evening
     # phase ("Applicant Tracker Sync", daily_runs 2 — orange after morning,
     # green after evening). Unmapped, resolve_card auto-created a SECOND library
@@ -302,6 +306,10 @@ _HUB_CARD = {
     "owner_chat_texts_trackers": "owner-chat-texts",
     "owner_chat_texts_board": "owner-chat-texts",
     "owner_chat_texts": "owner-chat-texts",
+    # gap_alerts self-reports via hub_activity under the card id, but a `lucy
+    # rerun gap_alerts` publishes under the SCHEDULE id — both have to land on
+    # the one card or the Hub grows a hyphen/underscore twin.
+    "gap_alerts": "gap-alerts",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 

@@ -1,6 +1,18 @@
 #!/bin/bash
-# Applicant Push (office 11580, Carlos) — every 10 min, 7:00 AM–10:00 PM CST,
-# EVERY DAY, on Lucy 2 via launchd (com.alphalete.applicant-push).
+# Applicant Push — every 5 min, 7:00 AM–10:00 PM CST, EVERY DAY, on Lucy 2 via
+# launchd (com.alphalete.applicant-push).
+#
+# TWO OFFICES, ONE PER TICK (2026-08-26, Carlos asked for Atef's to be pushed on
+# the same schedule as his): the tick alternates 11580 (Carlos) → 23467 (Atef) →
+# 11580 → … so each office gets a pass every ~10 minutes and every tick stays ONE
+# ~5-minute warm session. We do NOT do both offices inside one tick: the first
+# office's wedge would burn the hard time cap and starve the second, and we do NOT
+# run two warm AppStream sessions at once — a crossed session would send one
+# office's applicants out of the other's queue, which is irreversible. Offices are
+# declared in automations/applicant_push/offices.py (own Chrome profile, port,
+# day-files, Sheet tabs, Hub id each); adding a third is a row there + a ROTATION
+# entry, nothing here.
+#   bash deploy/applicant_push.sh --office 23467 --dry-run   # probe one office
 #
 # The UNIFIED recruiting push: one warm real-Chrome/CDP AppStream session runs
 # the BATCH stage (Resume Pushing — extract resumes + send-to-AI) then the
@@ -29,19 +41,100 @@ VENV_PY=".venv/bin/python3.14"
 LOG_DIR="output/logs"
 mkdir -p "$LOG_DIR"
 
-# One log file per day; every 10-min run appends to it.
-LOG_FILE="$LOG_DIR/applicant-push-$(date +%Y-%m-%d).log"
+# LOG_FILE is set AFTER the office is chosen (below) — each office writes its
+# own daily log so a wedge is attributable to one office, not to "the push".
 
 # A manual --dry-run bypasses the schedule gate (test any time, acts on nothing).
 DRYRUN=0
 for a in "$@"; do [ "$a" = "--dry-run" ] && DRYRUN=1; done
+
+# ---- WHICH OFFICE THIS TICK ----------------------------------------------
+# Round-robin across ROTATION, one office per tick, remembered in a marker file.
+# An explicit --office on the command line wins (manual probe of one office) and
+# does NOT disturb the rotation marker, so a hand-run can't make the agent skip an
+# office on its next tick.
+ROTATION="11580 23467"
+OFFICE=""
+_prev=""
+for a in "$@"; do
+  if [ "$_prev" = "--office" ]; then OFFICE="$a"; fi
+  case "$a" in --office=*) OFFICE="${a#--office=}" ;; esac
+  _prev="$a"
+done
+
+ROTATE_MARK="$LOG_DIR/.applicant-push-last-office"
+if [ -z "$OFFICE" ]; then
+  _last=$(cat "$ROTATE_MARK" 2>/dev/null || echo "")
+  # Take the office AFTER $_last in ROTATION; wrap to the first.
+  OFFICE=""
+  _take=0
+  for o in $ROTATION; do
+    if [ "$_take" -eq 1 ]; then OFFICE="$o"; break; fi
+    [ "$o" = "$_last" ] && _take=1
+  done
+  [ -z "$OFFICE" ] && OFFICE=$(echo $ROTATION | awk '{print $1}')
+  OFFICE_ARG="--office $OFFICE"
+else
+  # Explicit --office is already in "$@" — don't pass it twice.
+  OFFICE_ARG=""
+fi
+
+# Per-office names for EVERYTHING this wrapper writes or publishes. 11580 keeps
+# its original unsuffixed names so Carlos's live log, markers and Hub card stay
+# exactly where they are.
+case "$OFFICE" in
+  11580)
+    OFFICE_SLUG=""
+    OFFICE_LABEL="office 11580 (Carlos)"
+    HUB_ID="applicant_push"
+    HUB_NAME="Applicant Push"
+    POST_TODO=1
+    ;;
+  23467)
+    OFFICE_SLUG="-23467"
+    OFFICE_LABEL="office 23467 (Atef)"
+    HUB_ID="applicant_push_atef"
+    HUB_NAME="Applicant Push (Atef)"
+    # Atef's to-do post goes to HIS OWN private recruiting channel
+    # #23467-domin8-acquisitions-inc-atef-choudhury (C0B85KRS5FU) — never into
+    # Carlos's #alphaletegp-recruiting.
+    POST_TODO=1
+    ;;
+  *)
+    echo "[$(date)] unknown office '$OFFICE' — not in ROTATION; skipping" >&2
+    exit 1
+    ;;
+esac
+
+# One log file per office per day; every tick for that office appends to it.
+# The name keeps the "applicant-push-" stem so session_wedge_watch's log glob
+# picks up BOTH offices with no change.
+LOG_FILE="$LOG_DIR/applicant-push${OFFICE_SLUG}-$(date +%Y-%m-%d).log"
+
+# Namespace the OAT day-files + Sheet diag tab for this office (offices.py sets
+# these in-process too; exporting them also covers the summary post below, which
+# runs as its own process).
+case "$OFFICE" in
+  11580) : ;;   # defaults are Carlos's — leave every env var unset
+  23467)
+    export OAT_OFFICE_ID="23467"
+    export OAT_FILE_SUFFIX="-23467"
+    export OAT_WALK_DIAG_TAB="OAT Walk Diag 23467"
+    export OAT_OFFICE_LABEL="office 23467 · Atef Choudhury — Domin8 Acquisitions"
+    export OAT_OFFICE_SHORT="office 23467, Atef"
+    # #23467-domin8-acquisitions-inc-atef-choudhury (private; Lucy + the Lucy app
+    # were added 2026-08-26). The summary post runs as its own process, so it
+    # reads the channel from here, not from offices.py.
+    export OAT_SCORECARD_CHANNEL="C0B85KRS5FU"
+    ;;
+esac
 
 if [ "$DRYRUN" -eq 0 ]; then
   # ---- WINDOW GATE: only run 7:00 AM–10:00 PM CST (last run at 22:00) ----
   h=$((10#$(date +%H)))
   m=$((10#$(date +%M)))
   if ! { { [ "$h" -ge 7 ] && [ "$h" -le 21 ]; } || { [ "$h" -eq 22 ] && [ "$m" -eq 0 ]; }; }; then
-    echo "[$(date)] outside 7AM-10PM CST window (h=$h) — skipping" >> "$LOG_FILE"
+    echo "[$(date)] outside 7AM-10PM CST window (h=$h) — skipping $OFFICE_LABEL" >> "$LOG_FILE"
     exit 0
   fi
   # -------------------------------------------------------------------------
@@ -62,7 +155,7 @@ export PYTHONPATH="$(pwd)"
 # read (Megan's goal: process all apps except the un-readable + the un-textable).
 # (Drop --oat-only to re-enable batch; OAT_AUTOMATE_PHONE_LOOKUP defaults to on.)
 
-echo "[$(date)] Applicant Push starting (extra args: ${*:-none})" >> "$LOG_FILE"
+echo "[$(date)] Applicant Push starting — $OFFICE_LABEL (extra args: ${*:-none})" >> "$LOG_FILE"
 
 # The scheduled run is LIVE + leftovers-only. applicant_push.run defaults to DRY-RUN
 # unless --live is passed (safe default for manual use), so the wrapper INJECTS
@@ -82,7 +175,7 @@ ARGS="--live --oat-only"
 # session holder's or Tableau's profile) or it would hold the profile lock.
 MAX_RUN_S=${APPLICANT_PUSH_MAX_RUN_S:-1200}
 
-"$VENV_PY" -u -m automations.applicant_push.run $ARGS "$@" >> "$LOG_FILE" 2>&1 &
+"$VENV_PY" -u -m automations.applicant_push.run $ARGS $OFFICE_ARG "$@" >> "$LOG_FILE" 2>&1 &
 _RUN_PID=$!
 _waited=0
 while kill -0 "$_RUN_PID" 2>/dev/null && [ "$_waited" -lt "$MAX_RUN_S" ]; do
@@ -95,7 +188,10 @@ if kill -0 "$_RUN_PID" 2>/dev/null; then
   sleep 20
   kill -KILL "$_RUN_PID" 2>/dev/null
   wait "$_RUN_PID" 2>/dev/null
-  pkill -f rp_cdp_profile >/dev/null 2>&1
+  case "$OFFICE" in
+    11580) pkill -f rp_cdp_profile >/dev/null 2>&1 ;;
+    23467) pkill -f rp_cdp_23467   >/dev/null 2>&1 ;;
+  esac
   ST=124
 else
   wait "$_RUN_PID"
@@ -103,13 +199,19 @@ else
 fi
 # ------------------------------------------------------------------------------
 
-echo "[$(date)] Applicant Push finished exit=$ST" >> "$LOG_FILE"
+echo "[$(date)] Applicant Push finished — $OFFICE_LABEL exit=$ST" >> "$LOG_FILE"
 
-# ---- Daily 8pm post (Megan 2026-08-06): instead of the scorecard, post the
-# "N applicants need a number pulled from Indeed" report to #alphaletegp-recruiting
-# as Lucy — header + the names in-thread. These are the no-phone leftovers a human
-# must look up in Indeed by hand. Reads output/oat-activity-<date>.csv. Skipped on a
-# manual --dry-run. Best-effort: never fail the run.
+# Advance the rotation ONLY on a scheduled tick (an explicit --office is a
+# manual probe and must not make the agent skip an office next tick).
+[ -n "$OFFICE_ARG" ] && echo "$OFFICE" > "$ROTATE_MARK"
+
+# ---- Daily post (Megan 2026-08-06): instead of the scorecard, post the
+# "N applicants need a number pulled from Indeed" report as Lucy — header + the
+# names in-thread. These are the no-phone leftovers a human must look up in
+# Indeed by hand. Reads this office's own oat-activity CSV and posts to THIS
+# OFFICE'S OWN channel (Carlos → #alphaletegp-recruiting, Atef →
+# #23467-domin8-acquisitions-inc-atef-choudhury), set in the office case above.
+# Skipped on a manual --dry-run. Best-effort: never fail the run.
 case " $* " in
   *" --dry-run "*) : ;;
   *)
@@ -121,13 +223,15 @@ case " $* " in
     _SLOT=""
     [ "$h" -eq 12 ] && _SLOT="noon"
     [ "$h" -eq 16 ] && _SLOT="4pm"
-    if [ -n "$_SLOT" ]; then
-      _POST_MARK="$LOG_DIR/.applicant-push-posted-$_SLOT-$(date +%Y-%m-%d)"
+    if [ -n "$_SLOT" ] && [ "$POST_TODO" -eq 1 ]; then
+      _POST_MARK="$LOG_DIR/.applicant-push-posted${OFFICE_SLUG}-$_SLOT-$(date +%Y-%m-%d)"
       if [ ! -f "$_POST_MARK" ]; then
-        echo "[$(date)] posting the $_SLOT manual-to-do report (needs-number + needs-text)" >> "$LOG_FILE"
+        echo "[$(date)] posting the $_SLOT manual-to-do report for $OFFICE_LABEL (needs-number + needs-text)" >> "$LOG_FILE"
         "$VENV_PY" -u -m automations.oat_processing.summary --nophone >> "$LOG_FILE" 2>&1 \
           && touch "$_POST_MARK" || true
       fi
+    elif [ -n "$_SLOT" ]; then
+      echo "[$(date)] $_SLOT to-do post HELD for $OFFICE_LABEL — no Slack channel set for this office yet (see offices.py)" >> "$LOG_FILE"
     fi
     ;;
 esac
@@ -141,12 +245,14 @@ esac
 # only a streak of FAIL_STREAK bad passes publishes ONE FAILED row per outage; a
 # later clean pass publishes a recovery success). Success publishes once per day.
 FAIL_STREAK=3
-_PUB_STAMP="$LOG_DIR/.applicant-push-published-$(date +%Y-%m-%d)"
-_STREAK_FILE="$LOG_DIR/.applicant-push-failstreak-$(date +%Y-%m-%d)"
-_OUTAGE_FILE="$LOG_DIR/.applicant-push-outage-$(date +%Y-%m-%d)"
+_PUB_STAMP="$LOG_DIR/.applicant-push-published${OFFICE_SLUG}-$(date +%Y-%m-%d)"
+_STREAK_FILE="$LOG_DIR/.applicant-push-failstreak${OFFICE_SLUG}-$(date +%Y-%m-%d)"
+_OUTAGE_FILE="$LOG_DIR/.applicant-push-outage${OFFICE_SLUG}-$(date +%Y-%m-%d)"
 
+# Each office publishes to its OWN Hub card, so one office being wedged never
+# shows the other one red (or, worse, green).
 _publish() {   # $1 = success|failed
-  "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('applicant_push','Applicant Push','$1')" >> "$LOG_FILE" 2>&1
+  "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('$HUB_ID','$HUB_NAME','$1')" >> "$LOG_FILE" 2>&1
 }
 
 _NOTIFY=0
@@ -183,6 +289,6 @@ esac
 # (login/Cloudflare); a batch Indeed-Turnstile wedge alone does NOT fail the run
 # (the leftovers stage still runs), so a streak here means the whole session is down.
 if [ "$_NOTIFY" -eq 1 ]; then
-  osascript -e "display notification \"Applicant Push failed $FAIL_STREAK passes in a row (exit $ST) — AppStream login for office 11580 may have expired, or Cloudflare needs a human clear on Lucy 2\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
+  osascript -e "display notification \"$HUB_NAME failed $FAIL_STREAK passes in a row (exit $ST) — the AppStream session for $OFFICE_LABEL may have expired, or Cloudflare needs a human clear on Lucy 2\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
 fi
 exit 0

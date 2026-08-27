@@ -132,6 +132,52 @@ def main() -> int:
     results.append(_check("dry-run reports success without a Slack client",
                           w._post("title", ["body"], True), True))
 
+    # RECOVERY MUST CLOSE THE THREAD OR SAY NOTHING (Megan 2026-08-26).
+    # The old healthy branch fell back to a hand-rolled "recovered" post when the
+    # close didn't take. That fallback went through _post(), which stamps the
+    # WEDGE headline and an `open` marker on whatever it is handed — so the
+    # all-clear OPENED a fresh incident saying "office 11580 session wedged",
+    # with "session recovered" 246ms under it and no ✅ on either. The parent
+    # stayed open forever, because the same pass then cleared its state file and
+    # never tried again.
+    print("recovery path:")
+    # ensure_closed IS STUBBED IN BOTH CASES, and that is not optional. The
+    # first draft of this test stubbed only the success case and let the failure
+    # case "fail naturally" for want of a Slack client. On a laptop that HAS a
+    # token there is no such failure: the run reached the live channel and
+    # posted a real resolution into a real thread (2026-08-26 20:34). A test in
+    # this repo never gets to discover whether it can reach Slack.
+    import automations.shared.incident_thread as _inc
+    orig_state, orig_assess = w.STATE, w.assess
+    orig_post, orig_ensure = w._post, _inc.ensure_closed
+    posted = []
+    try:
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="wedge-st-"))
+        w.STATE = tmp / "state"
+        w.assess = lambda: ("healthy", "", "test.log")
+        w._post = lambda *a, **k: posted.append(a) or True
+
+        # 1. Close fails: post NOTHING, and KEEP the episode so the next pass —
+        #    five minutes away — tries again.
+        _inc.ensure_closed = lambda *a, **k: False
+        w._save_state({"alerted_at": "2026-08-26T19:12:00"})
+        w.run()
+        results.append(_check("failed close posts no message", posted, []))
+        results.append(_check("failed close keeps the episode for a retry",
+                              bool(w._load_state().get("alerted_at")), True))
+
+        # 2. Close succeeds: the episode is forgotten, and still nothing is
+        #    posted by the watcher — the ✅ and the reply are the thread's job.
+        _inc.ensure_closed = lambda *a, **k: True
+        w.run()
+        results.append(_check("closed episode is forgotten",
+                              w._load_state().get("alerted_at"), None))
+        results.append(_check("a successful close posts no message either",
+                              posted, []))
+    finally:
+        w.STATE, w.assess = orig_state, orig_assess
+        w._post, _inc.ensure_closed = orig_post, orig_ensure
+
     passed = sum(results)
     print(f"{passed}/{len(results)} passed")
     return 0 if passed == len(results) else 1

@@ -61,12 +61,14 @@ from automations.alphalete_sales_board import calc, config as C, fill
 from automations.alphalete_sales_board import notify as N
 from automations.alphalete_sales_board import sara, state as S
 from automations.rep_sales_fill import board as B
+from automations.shared import name_case
 
 HUB_CARD_ID = "alphalete-sales-board"
-HUB_CARD_NAME = "Alphalete Sales Board (SaraPlus sweep)"
+HUB_CARD_NAME = "Sales Text Updates"
 FAIL_STREAK = 3                     # ~15 minutes of failures before we speak
 ALERT_COOLDOWN_HOURS = 2
 CORRECTIONS_CHANNEL = "C0BK5PRG259"  # #claudecorrections-and-requests
+INCIDENT_KEY = "alphalete_sales_board"   # incident_thread key = the report id
 FAIL_PATH = Path.home() / ".config" / "recruiting-report" / "alphalete_sales_board_fails.json"
 
 
@@ -142,16 +144,23 @@ def _record_failure(err: str, *, dry_run: bool) -> None:
             pass
 
     if should_alert and not dry_run:
+        # Through incident_thread, NOT a bare chat_postMessage. The first
+        # version posted the alert directly, which meant it could never be
+        # closed: the ✅ is put on by the code when the report next runs clean,
+        # and only a post the machinery OPENED can be found again. The 20:00
+        # alert on the first night live sat open with its cause already fixed.
+        # [[project_corrections_slack_channel]]
         try:
-            from automations.shared import slack_metrics_post as smp
-            client = smp._client()
-            parent = ("Alphalete Sales Board sweep has failed %d passes in a "
-                      "row -- the board is not updating." % streak)
-            resp = client.chat_postMessage(channel=CORRECTIONS_CHANNEL, text=parent)
-            client.chat_postMessage(
-                channel=CORRECTIONS_CHANNEL, thread_ts=resp["ts"],
-                text=("```\n%s\n```\nRe-run once the cause is clear:\n"
-                      "`lucy rerun alphalete_sales_board`" % err[:1500]))
+            from automations.shared import incident_thread
+            incident_thread.open_or_followup(
+                key=INCIDENT_KEY,
+                title="%s has failed %d passes in a row" % (HUB_CARD_NAME, streak),
+                body=["The board is not updating and the chats are getting "
+                      "nothing."],
+                details=["```", err[:1500], "```"],
+                followup=["Re-run once the cause is clear: "
+                          "`lucy rerun alphalete_sales_board --apply --send`"],
+                label=HUB_CARD_NAME)
             data["alerted_at"] = dt.datetime.now().isoformat(timespec="seconds")
         except Exception as e:  # noqa: BLE001 — an alert must never crash the sweep
             _log("alert failed: %s: %s" % (type(e).__name__, str(e)[:120]))
@@ -171,14 +180,25 @@ def _clear_failures() -> None:
     data = _fails()
     if data.get("streak"):
         _log("recovered after %d failed pass(es)" % data["streak"])
+    # Free when nothing is open (a local index read, no Slack call), so it is
+    # safe on every clean sweep -- which is what puts the ✅ on the alert
+    # instead of leaving it open with the cause long fixed.
+    try:
+        from automations.shared import incident_thread
+        incident_thread.resolve_if_open(
+            INCIDENT_KEY, what="*%s*" % HUB_CARD_NAME,
+            detail="The sweep ran clean: the board is filling and the chats "
+                   "are getting the standings again.")
+    except Exception as e:  # noqa: BLE001 — closing must never break the run
+        _log("couldn't close the incident: %s: %s" % (type(e).__name__, str(e)[:120]))
     _write_fails({"streak": 0, "recovered_at": dt.datetime.now().isoformat(timespec="seconds")})
 
 
 # --- week to date -----------------------------------------------------------
 def week_to_date(grid, upto: dt.date) -> int:
-    """Org total Mon..`upto` off the board itself -- Int + DTV + NL, upgrades
-    out, which is how the board's own Apps formula counts. Read from the sheet
-    rather than accumulated locally so a hand correction is reflected."""
+    """Org total Mon..`upto` off the board itself -- Int + Int Up + DTV + NL,
+    the board's own 'Total Units'. Read from the sheet rather than accumulated
+    locally so a hand correction is reflected."""
     blocks = B.day_blocks(grid)
     last = B.last_rep_row(grid)
     days = [(upto - dt.timedelta(days=upto.weekday() - i)).strftime("%A")
@@ -186,7 +206,11 @@ def week_to_date(grid, upto: dt.date) -> int:
     total = 0
     for day_name in days:
         cols = blocks.get(day_name) or {}
-        for metric in ("Int", "DTV", "NL"):
+        # Upgrades INCLUDED, because the board's own week rows count them:
+        # 'WE 6/2 - 6/8' reads Total Units 213 against INT 128 + INT UP 42 +
+        # DTV 8 + NL 36. Leaving them out made the goal line disagree with the
+        # TOTALS line directly above it (2026-08-26).
+        for metric in ("Int", "Int Up", "DTV", "NL"):
             col = cols.get(metric)
             if not col:
                 continue
@@ -207,7 +231,7 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
     names = fill.board_names(grid)
     _log("board tab %r: %d reps on the roster" % (ws.title, len(names)))
 
-    rows, notes = calc.calculate(agents, names)
+    rows, notes, missing = calc.calculate(agents, names)
     for n in notes:
         _log("  note: %s" % n)
 
@@ -223,28 +247,89 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
         for u in updates[:15]:
             _log("    %s -> %r" % (u["range"], u["values"][0][0]))
 
+    # Who is on the board today that our pull can't explain? (See fill.
+    # board_only_reps.) Logged every sweep so a pattern is visible in one grep.
+    accounted = [r["board_name"] for r in rows] + [
+        n for n in names if any(a.get("name") and
+                                calc.match_name(a["name"], [n])[0] == n
+                                for a in agents)]
+    board_only = fill.board_only_reps(grid, day, accounted)
+    if board_only:
+        _log("COVERAGE: %d rep(s) have numbers on the board today that SaraPlus "
+             "did not give us: %s" % (len(board_only), ", ".join(board_only)))
+    else:
+        _log("COVERAGE: every rep with numbers on today's board is one we pulled")
+
+    # --- a rep who sold but has no row gets one, now -------------------------
+    # Megan 2026-08-26: say in the text that they weren't on the board, that
+    # they were added, and that their numbers land next sweep. Next sweep and
+    # not this one because the row has to exist before plan() can find it, and
+    # re-reading the whole tab to fill one rep would double every sweep's Sheets
+    # work for a case that happens a few times a week.
+    for item in missing:
+        if not apply_writes:
+            item["status"] = "would be added"
+            continue
+        clash = fill.near_matches(item["sara_name"], names)
+        if clash:
+            item["status"] = ("NOT added - could be %s already on the board"
+                              % " or ".join(clash[:2]))
+            _log("  %s: %s" % (item["sara_name"], item["status"]))
+            continue
+        row, note = fill.add_rep(ws, grid, name_case.titlecase_name(item["sara_name"]))
+        if row is None:
+            item["status"] = note
+        else:
+            item["status"] = "wasn't on the board - added, numbers fill next sweep"
+            _log("  added %s to row %d" % (item["sara_name"], row))
+
     # --- what is NEW since the last sweep -----------------------------------
     data = S.load()
     today = {r["board_name"]: r["metrics"] for r in rows}
     gained = S.deltas(data, day, today)
     rec_gained = S.record_deltas(data, day, records)
+
+    # BASELINE PASS. With no state for today, EVERY sale reads as new -- so the
+    # first sweep after a cutover, a state-file loss, or a mid-day start would
+    # fire one hype line per rep and one credit-check line per rep. On the day
+    # this shipped that was 11 + 31 = 42 Slack messages and a leaderboard with a
+    # flame beside every name, announcing as "just now" sales that happened
+    # hours ago. So the first sweep of a day SETTLES rather than celebrates: one
+    # leaderboard with the true picture, no flames, no per-sale hype, no credit
+    # -check pings. From the next sweep on, deltas mean what they say.
+    baseline = not (data.get(day.isoformat()) or {})
+    if baseline and (gained or rec_gained):
+        _log("BASELINE pass (no state for %s yet): sending the standings once, "
+             "with no per-sale hype for %d rep(s) and no credit-check pings for "
+             "%d" % (day.isoformat(), len(gained), len(rec_gained)))
     _log("new this sweep: %d rep(s) with sales, %d with credit checks"
          % (len(gained), len(rec_gained)))
 
-    if gained or rec_gained:
+    if gained or rec_gained or missing:
         wtd = week_to_date(grid, day) if apply_writes else None
-        body = N.leaderboard(today, list(gained), wtd)
-        if gained:
-            N.text_group(C.GROUP_PARTNERS, body, dry_run=not send, log=_log)
+        body = N.leaderboard(today, [] if baseline else list(gained), wtd, missing,
+                             goal=fill.board_goal(grid))
+        if gained or (baseline and today):
+            for group in C.LIVE_GROUPS:
+                N.text_group(group, body, dry_run=not send, log=_log)
+        if not baseline:
             for rep, delta in sorted(gained.items()):
                 N.slack(N.hype(rep, delta, day), dry_run=not send, log=_log)
-        for rep, up in sorted(rec_gained.items()):
-            N.slack(N.records_line(rep, records.get(rep, up), up),
-                    dry_run=not send, log=_log)
+            for rep, up in sorted(rec_gained.items()):
+                N.slack(N.records_line(rep, records.get(rep, up), up),
+                        dry_run=not send, log=_log)
 
     if C.lvl1_due() and not S.lvl1_sent(data, day):
-        body = N.leaderboard(today, [], week_to_date(grid, day))
-        N.text_group(C.GROUP_LVL1, body, dry_run=not send, log=_log)
+        # One resolve+send per room. A group that can't be resolved must not
+        # cost the others their scoreboard, so each is attempted on its own.
+        # flag_missing=False: the players see the sales, not the paperwork.
+        body = N.leaderboard(today, [], week_to_date(grid, day), missing,
+                             goal=fill.board_goal(grid), flag_missing=False)
+        for group in C.END_OF_DAY_GROUPS:
+            try:
+                N.text_group(group, body, dry_run=not send, log=_log)
+            except Exception as e:  # noqa: BLE001
+                _log("  %s FAILED: %s: %s" % (group, type(e).__name__, str(e)[:160]))
         if send:
             data = S.mark_lvl1_sent(data, day)
 

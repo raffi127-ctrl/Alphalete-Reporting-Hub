@@ -33,9 +33,17 @@ from typing import Dict, List, Optional, Sequence
 from automations.alphalete_sales_board import config as C
 
 METRIC_LABEL = {"Int": "Int", "Int Up": "Up", "DTV": "DTV", "NL": "NL"}
-# Int Up is left out of a rep's headline count for the same reason the board's
-# Apps formula leaves it out: an upgrade is not a new unit sold.
-COUNTED = ("Int", "DTV", "NL")
+
+# UPGRADES COUNT HERE. The board's Apps formula leaves Int Up out -- an upgrade
+# is not a new unit -- and I first carried that rule into the message, which was
+# wrong: the live post reads "Sydney A. 4 (2 Int, 1 IntUp, 1 DTV)" and
+# "INT: 19 / Upgrades: 2 / DTV: 2 / NL's: 0 / TOTALS: 23", i.e. 19+2+2+0.
+# The board counts units sold; this message counts everything a rep put up.
+# (Megan's screenshot of the live post, 2026-08-26.)
+COUNTED = ("Int", "Int Up", "DTV", "NL")
+
+FIRE = "\U0001F525"      # the real emoji, not ':fire:' -- iMessage shows text
+TROPHY = "\U0001F3C6"
 
 HYPE_REGULAR = (
     "{first} just put one on the board! :fire:",
@@ -74,50 +82,101 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date) -> str:
     return HYPE_REGULAR[idx].format(first=first)
 
 
+def short_name(name: str) -> str:
+    """'Jaylen (Ash) Walker (Wk 2)' -> 'Jaylen Walker' -- drop the board's week
+    and status suffixes, keep the whole name. We show full names; the other
+    system abbreviates to 'Jaylen W.' and Megan prefers ours (2026-08-26)."""
+    import re
+    return " ".join(re.sub(r"\(.*?\)", " ", str(name or "")).split()) or "?"
+
+
+def _line(name: str, m: Dict[str, int]) -> str:
+    parts = ["%d %s" % (int(m[k]), METRIC_LABEL[k])
+             for k in ("Int", "Int Up", "DTV", "NL") if int(m.get(k, 0))]
+    head = "%s %d" % (short_name(name), rep_total(m))
+    return "%s (%s)" % (head, ", ".join(parts)) if parts else head
+
+
 def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
-                week_to_date: Optional[int] = None) -> str:
+                week_to_date: Optional[int] = None,
+                missing: Sequence[Dict] = (),
+                goal: Optional[int] = None,
+                flag_missing: bool = True) -> str:
     """The scoreboard both chats get.
 
-        Rep Name 3 (2 Int, 1 DTV) :fire:
-        Rep Name 2 (1 Int, 1 NL)
+    OUR layout -- full names, the breakdown always shown, the weekly goal --
+    which Megan prefers to the other system's (2026-08-26). What was taken from
+    that system's live post is the ARITHMETIC, not the look: see COUNTED.
 
-        INT: 3
-        ...
-    Reps are ordered by today's count, then by name so the order is stable
-    between sweeps. `fired` are the reps whose count moved on THIS sweep --
-    they carry the flame, which is the only thing that changes sweep to sweep.
+    `fired` are the reps whose count moved on THIS sweep; they carry the flame.
     """
+    # Score only, and Python's stable sort keeps SaraPlus's order inside a tie,
+    # so the bottom of the board doesn't reshuffle every time somebody scores.
     rows = [(rep, m) for rep, m in today.items() if rep_total(m) > 0]
-    rows.sort(key=lambda kv: (-rep_total(kv[1]), kv[0].lower()))
+    # WHO SEES THE ROSTER PROBLEM (Megan 2026-08-26): only the partners. A rep
+    # with no board row still appears in the players' chats and still counts --
+    # his sale is his sale -- he just appears as an ordinary line, because
+    # "wasn't on the board, added" is admin, and admin in the players' chat is
+    # noise they can do nothing about. Dropping him instead would have been the
+    # other failure: a scoreboard whose total is quietly short one rep.
+    if not flag_missing:
+        rows += [(i.get("sara_name", "?"), i.get("metrics") or {})
+                 for i in missing]
+        missing = ()
+    rows.sort(key=lambda kv: -rep_total(kv[1]))
 
     lines = []
     for rep, m in rows:
-        parts = ["%d %s" % (int(m[k]), METRIC_LABEL[k])
-                 for k in ("Int", "Int Up", "DTV", "NL") if int(m.get(k, 0))]
-        line = "%s %d (%s)" % (rep, rep_total(m), ", ".join(parts))
+        line = _line(rep, m)
         if rep in set(fired):
-            line += " :fire:"
+            line += " " + FIRE
         lines.append(line)
 
-    totals = {k: sum(int(m.get(k, 0)) for _r, m in rows)
+    for item in missing:
+        lines.append("%s %s - %s" % (
+            _line(item.get("sara_name", "?"), item.get("metrics") or {}),
+            FIRE, item.get("status") or "not on the board"))
+
+    counted = rows + [(i.get("sara_name", "?"), i.get("metrics") or {})
+                      for i in missing]
+    totals = {k: sum(int(m.get(k, 0)) for _r, m in counted)
               for k in ("Int", "Int Up", "DTV", "NL")}
     lines.append("")
     lines.append("INT: %d" % totals["Int"])
     lines.append("Upgrades: %d" % totals["Int Up"])
     lines.append("DTV: %d" % totals["DTV"])
     lines.append("NL's: %d" % totals["NL"])
-    lines.append(":trophy: TOTALS: %d" % sum(totals[k] for k in COUNTED))
-    if week_to_date is not None:
-        lines.append("GOAL FOR THE WEEK: %d/%d" % (week_to_date, C.WEEKLY_GOAL))
+    lines.append("%s TOTALS: %d" % (TROPHY, sum(totals[k] for k in COUNTED)))
+    # NO GOAL LINE (Megan 2026-08-26, twice). There is no maintained source for
+    # one. The brief's example said 80; the board has a cell literally labelled
+    # "Goal" = 350, which is what I switched to -- and it is an annotation at
+    # the bottom of a WEEK-HISTORY table whose newest row is WE 7/28-8/3, four
+    # weeks stale, with an empty "New Goal" beside it where somebody meant to
+    # replace it. Reading it by label was right; treating it as this week's
+    # target was not. And the live post the field actually reads carries no goal
+    # line at all. `goal` stays in the signature so wiring a real source back in
+    # is one line -- but a number nobody recognises is worse than no number.
+    if missing:
+        who = ", ".join(short_name(i.get("sara_name", "?")) for i in missing)
+        lines.append("")
+        lines.append("%s %s sold with no row on this week's board - counted "
+                     "above, not on the board yet." % (FIRE, who))
     return "\n".join(lines)
 
 
 # --- delivery ---------------------------------------------------------------
 def text_group(group: str, body: str, *, dry_run: bool = True, log=print) -> Dict:
-    """One iMessage group. Resolved by NAME every time -- never a stored id."""
+    """One iMessage group. Resolved by NAME every time -- never a stored id.
+
+    send_TEXT_to_group, not send_to_group: the latter is for the disposition
+    posts where the image IS the content, and it deliberately refuses an
+    image-less send ("a bare title would read as a broken send"). A leaderboard
+    is pure text, so it wants the text-only twin -- which the first live send
+    found out the hard way, 2026-08-26.
+    """
     from automations.b2b_dispositions import text_post
     log("%s -> %s (%d chars)" % ("PREVIEW" if dry_run else "TEXT", group, len(body)))
-    return text_post.send_to_group(group, body, [], dry_run=dry_run)
+    return text_post.send_text_to_group(group, body, dry_run=dry_run)
 
 
 def slack(text: str, *, dry_run: bool = True, log=print) -> None:

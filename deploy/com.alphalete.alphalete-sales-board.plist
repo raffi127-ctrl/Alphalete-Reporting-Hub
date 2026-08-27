@@ -12,6 +12,7 @@
         <string>/bin/bash</string>
         <string>/Users/megan/1st Claude Folder/deploy/alphalete_sales_board_5min.sh</string>
         <string>--apply</string>
+        <string>--send</string>
     </array>
 
     <key>WorkingDirectory</key>

@@ -135,6 +135,30 @@ def needs_edit(ov_name: str, legal_first: str, legal_last: str) -> bool:
 REP_LIST_P = 20
 PROFILE_P = 21
 
+# Reading one cell of a DataTable should take milliseconds. The default 30s wait
+# is for an element that hasn't rendered yet, which is the wrong diagnosis here:
+# the table re-renders under the read and the row handle goes stale, so the wait
+# only delays a failure that a re-search fixes instantly. The mini's first live
+# pass lost Nathan Sanchez to exactly that (2026-08-26) — 30 seconds spent, one
+# rep silently skipped.
+ROW_READ_MS = 5000
+
+# The profile form refuses to submit unless a role is ticked, and these profiles
+# arrive with none. Megan 2026-08-26: "just choose entry level since it's always
+# a new start." Only ever applied when NOTHING is ticked — an existing role is
+# somebody's decision and this report does not touch it. Never Leader: that one
+# pops a confirm and deselects everything else.
+DEFAULT_ROLE = "Entry Level"
+
+# The other required box the form won't save without. Ticking it asserts the rep
+# is over 18, which is not something an automation should assert on its own —
+# but nobody reaches this code without a completed Sterling background check,
+# and Sterling vets age as part of running one (Megan 2026-08-26: "if someone
+# completes a BG check through sterling they vet that they are 18"). Same rule
+# as the role: only ever ticked when blank, never un-ticked, never touched when
+# somebody has already answered it.
+OVER_18_ID = "chk_over18"
+
 
 def session(*, headless: bool = True, verbose: bool = True,
             allow_login: bool = False):
@@ -179,11 +203,17 @@ def _columns(page) -> dict:
     return {h: i for i, h in enumerate(heads) if h}
 
 
-def _search_rows(page, term: str) -> list:
+def _search_rows(page, term: str, *, retry: bool = True) -> list:
     """Type `term` into the table's search box; return the rows that are real.
 
     DataTables answers an empty result with ONE row that says "No data available
     in table", so a row only counts if it carries a pid link.
+
+    ONE RETRY. The table re-renders after the search settles, and a read that
+    lands mid-render works on a row that no longer exists. Searching again is
+    the fix — the second pass reads a table that has stopped moving. Failing
+    twice is a refusal with the reason attached, never a rep quietly dropped
+    from the run.
     """
     box = page.locator("input[type='search']:visible").first
     box.wait_for(state="visible", timeout=20000)
@@ -191,23 +221,33 @@ def _search_rows(page, term: str) -> list:
     box.press_sequentially(term, delay=25)
     page.wait_for_timeout(1500)
     out = []
-    rows = page.locator("tbody tr")
-    for i in range(rows.count()):
-        row = rows.nth(i)
-        href = ""
-        anchors = row.locator("a")
-        for j in range(anchors.count()):
-            h = anchors.nth(j).get_attribute("href") or ""
-            if "pid=" in h:
-                href = h
-                break
-        if href:
-            out.append((row, href))
+    try:
+        rows = page.locator("tbody tr")
+        for i in range(rows.count()):
+            row = rows.nth(i)
+            href = ""
+            anchors = row.locator("a")
+            for j in range(anchors.count()):
+                h = anchors.nth(j).get_attribute("href", timeout=ROW_READ_MS) or ""
+                if "pid=" in h:
+                    href = h
+                    break
+            if href:
+                out.append((row, href))
+    except Exception as e:  # noqa: BLE001
+        if retry:
+            page.wait_for_timeout(2500)
+            return _search_rows(page, term, retry=False)
+        raise Refused(f"OwnerVille's rep table wouldn't hold still for "
+                      f"{term!r}: {type(e).__name__}")
     return out
 
 
 def _row_fields(page, row, cols: dict) -> dict:
-    cells = row.locator("td").all_inner_texts()
+    try:
+        cells = row.locator("td").all_inner_texts()
+    except Exception as e:  # noqa: BLE001
+        raise Refused(f"couldn't read an OwnerVille row: {type(e).__name__}")
 
     def cell(label: str) -> str:
         i = cols.get(label)
@@ -370,15 +410,146 @@ def _name_inputs(page) -> tuple:
     return first, last
 
 
+def _save_button(page):
+    """The profile form's Save Changes control.
+
+    A <button type="button"> with no inline onclick — the handler is bound in
+    JS, so the click has to land on this exact element rather than anything
+    else on the page reading "Save".
+    """
+    btn = page.locator("button:visible", has_text=re.compile(r"save changes", re.I)).first
+    if btn.count():
+        return btn
+    return page.locator("button:visible, input[type=submit]:visible").filter(
+        has_text=re.compile(r"save", re.I)).first
+
+
+def _mirror_confirm_email(page, *, verbose: bool = True) -> str:
+    """Copy Email into the blank Confirm Email box.
+
+    The profile form validates the pair on every save, and Confirm Email always
+    loads EMPTY, so a save that touches only the name still dies on "Email
+    addresses do not match" — no POST, no error anybody sees. Re-typing the
+    address that is already there satisfies the check and changes nothing: if
+    the two ever disagree we leave them alone and let the form say so.
+    """
+    email = page.locator("input[name='email']:visible").first
+    confirm = page.locator("#confirmEmail:visible, input[name='confirmEmail']:visible").first
+    if not (email.count() and confirm.count()):
+        return ""
+    current = (email.input_value() or "").strip()
+    existing = (confirm.input_value() or "").strip()
+    if current and not existing:
+        confirm.fill(current)
+        if verbose:
+            print(f"    confirm-email mirrored ({current})")
+    return current
+
+
+def _ensure_role(page, *, verbose: bool = True) -> str:
+    """Tick the default role if — and only if — the profile has none.
+
+    Returns what was ticked (or "" if the profile already had a role, which is
+    left exactly as it was).
+    """
+    state = page.evaluate("""() => {
+        const all = [...document.querySelectorAll('.repRolesCheckbox')];
+        return {checked: all.filter(c => c.checked).map(c => c.dataset.label || c.value),
+                boxes: all.map(c => ({id: c.id, label: (c.dataset.label || '').trim()}))};
+    }""")
+    if state.get("checked"):
+        return ""
+    want = DEFAULT_ROLE.lower()
+    box = next((b for b in state.get("boxes", [])
+                if (b.get("label") or "").lower() == want), None)
+    if not box or not box.get("id"):
+        raise Refused(f"no {DEFAULT_ROLE!r} role on this profile "
+                      f"(saw: {[b.get('label') for b in state.get('boxes', [])][:6]})")
+    box_id = box["id"]
+    label = page.locator(f"label[for='{box_id}']")
+    try:
+        if label.count():
+            label.first.click()
+        else:
+            page.locator(f"#{box_id}").check(force=True)
+    except Exception:  # noqa: BLE001
+        page.locator(f"#{box_id}").check(force=True)
+    page.wait_for_timeout(300)
+    if not page.evaluate(f"() => !!document.querySelector('#{box_id}')?.checked"):
+        raise Refused(f"couldn't tick the {DEFAULT_ROLE!r} role")
+    if verbose:
+        print(f"    ticked role: {DEFAULT_ROLE} (profile had none)")
+    return DEFAULT_ROLE
+
+
+def _ensure_over_18(page, *, verbose: bool = True) -> str:
+    """Tick the Over 18 attestation if it is blank. See OVER_18_ID."""
+    checked = page.evaluate(
+        f"() => {{ const b = document.querySelector('#{OVER_18_ID}');"
+        f" return b ? b.checked : null; }}")
+    if checked is None:
+        return ""                      # no such box on this form — nothing to do
+    if checked:
+        return ""
+    label = page.locator(f"label[for='{OVER_18_ID}']")
+    try:
+        if label.count():
+            label.first.click()
+        else:
+            page.locator(f"#{OVER_18_ID}").check(force=True)
+    except Exception:  # noqa: BLE001
+        page.locator(f"#{OVER_18_ID}").check(force=True)
+    page.wait_for_timeout(300)
+    if not page.evaluate(f"() => !!document.querySelector('#{OVER_18_ID}')?.checked"):
+        raise Refused("couldn't tick the Over 18 box")
+    if verbose:
+        print("    ticked: Over 18 (blank, and their Sterling check vets it)")
+    return "Over 18"
+
+
+def _complaints(page) -> list:
+    """What the form is visibly objecting to, right now.
+
+    VISIBLE only. Bootstrap ships its .invalid-feedback divs in the markup and
+    only shows them when a field goes invalid, so reading them all reports
+    errors the page never raised — that is how a first pass blamed "Email
+    addresses do not match" for a save whose only real problem was the role.
+    """
+    try:
+        return page.evaluate("""() => [...document.querySelectorAll(
+            '.invalid-feedback, .is-invalid, .invalid_roles')]
+            .filter(e => e.offsetParent !== null)
+            .map(e => (e.innerText||'').trim()).filter(Boolean).slice(0, 3)""")
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _read_name(page) -> str:
+    first_in, last_in = _name_inputs(page)
+    if first_in is None or last_in is None:
+        return ""
+    return f"{first_in.input_value()} {last_in.input_value()}".strip()
+
+
 def edit_profile_name(page, check: "OVCheck", *, apply: bool = False,
                       verbose: bool = True) -> "OVCheck":
-    """Set the profile's name to Sterling's. Reports before it writes."""
+    """Set the profile's name to Sterling's, and PROVE it took.
+
+    The proving is the point. The first live edit (Erica Glenn -> Erica Glenn
+    Jackson, 2026-08-26) reported success and changed nothing: the form posts
+    over JS, so a click that goes nowhere leaves the page looking exactly like a
+    click that worked. Reporting an edit that didn't happen is worse than
+    failing — it puts a name on the "done" list that is still wrong in
+    OwnerVille, which is the whole problem this was built to end. So the profile
+    is RELOADED and read back, and 'edited' is only ever said about a name the
+    site actually returns.
+    """
     first_in, last_in = _name_inputs(page)
     if first_in is None or last_in is None:
         found = ", ".join(n for n, el in (("first", first_in), ("last", last_in)) if el)
         raise Refused(f"{check.sheet_name}: profile page has no first/last name "
                       f"fields we recognise (found: {found or 'none'})")
-    current = f"{first_in.input_value()} {last_in.input_value()}".strip()
+    current = _read_name(page)
     if matches(current, check.legal_first, check.legal_last):
         check.action, check.reason = "match", f"OV already says {current}"
         return check
@@ -388,15 +559,63 @@ def edit_profile_name(page, check: "OVCheck", *, apply: bool = False,
         if verbose:
             print(f"    WOULD set {check.reason}")
         return check
-    first_in.fill(titlecase_name(check.legal_first))
-    last_in.fill(titlecase_name(check.legal_last))
-    from automations.headshots.ov_upload import _click_any
-    _click_any(page, "Save Changes", page=page)
-    page.wait_for_load_state("networkidle")
-    check.action = "edited"
-    if verbose:
-        print(f"    set {check.reason}")
-    return check
+
+    want_first = titlecase_name(check.legal_first)
+    want_last = titlecase_name(check.legal_last)
+    # A confirm() the automation never sees is auto-dismissed, which would
+    # cancel the save silently. Accept whatever the page asks.
+    seen_dialogs: list = []
+
+    def _accept(dialog):
+        seen_dialogs.append(dialog.message)
+        try:
+            dialog.accept()
+        except Exception:  # noqa: BLE001
+            pass
+
+    page.on("dialog", _accept)
+    try:
+        first_in.fill(want_first)
+        last_in.fill(want_last)
+        _mirror_confirm_email(page, verbose=verbose)
+        role_set = _ensure_role(page, verbose=verbose)
+        age_set = _ensure_over_18(page, verbose=verbose)
+        url = page.url
+        _save_button(page).click()
+        page.wait_for_timeout(2500)
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)
+        except Exception:  # noqa: BLE001
+            pass
+        # Whatever the form is complaining about has to be read HERE. The
+        # reload below is what proves the save, and it also wipes the message
+        # the page appended — read it after and every failure looks silent.
+        complaints = _complaints(page)
+        # Read it back from a FRESH load, not from the boxes we just typed into.
+        page.goto(url, wait_until="domcontentloaded")
+        page.wait_for_load_state("networkidle")
+        saved = _read_name(page)
+    finally:
+        try:
+            page.remove_listener("dialog", _accept)
+        except Exception:  # noqa: BLE001
+            pass
+
+    if matches(saved, check.legal_first, check.legal_last):
+        check.action = "edited"
+        extras = [f"{role_set} role" for _ in (1,) if role_set]
+        if age_set:
+            extras.append("Over 18")
+        if extras:
+            check.reason += f" (also ticked: {', '.join(extras)} — the form "
+            check.reason += "won't save without them)"
+        if verbose:
+            print(f"    set {check.reason}")
+        return check
+    note = "; ".join(list(dict.fromkeys(complaints)) + seen_dialogs[:1])
+    raise Refused(f"{check.sheet_name}: Save Changes didn't take — profile still "
+                  f"reads {saved or '(unreadable)'!r}"
+                  + (f" — the form said: {note}" if note else ""))
 
 
 def sync_names(people: list, *, apply: bool = False, headless: bool = True,

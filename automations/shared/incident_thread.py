@@ -1327,6 +1327,92 @@ def resolve_if_open(key: str, *, what: str, detail: str = "",
         return False
 
 
+def ensure_closed(key: str, *, what: str, detail: str = "",
+                  channel: str = CHANNEL, dry_run: bool = False,
+                  client=None) -> bool:
+    """"This recovered — make sure its thread actually reads closed."
+
+    resolve_if_open() answers the cheap question ("does MY index think something
+    is open?") and is right for a report that calls it on every clean run. It is
+    the WRONG question for a watcher that already knows an episode is open from
+    its own state file. What broke on 2026-08-26 (Megan):
+
+      18:21  the wedge alarm opens a post on Lucy 2
+      18:27  a laptop session closes it BY HAND — that ✅ and that index write
+             land on the laptop; Lucy 2 never sees either
+      19:12  a healthy pass on Lucy 2 reads its own index, still says open,
+             calls resolve() — which asks the channel, correctly finds the
+             thread already closed, and returns False
+
+    False was the right answer. The damage was what the caller did with it: it
+    fell back to posting a hand-rolled "recovered" line, and its post helper
+    stamped that line with the WEDGE headline and an `open` marker. So the
+    all-clear opened a brand-new incident — a parent reading "office 11580
+    session wedged", 246ms later a reply reading "session recovered", and no ✅
+    anywhere. Megan: "if this corrected it should have a green check."
+
+    Two lessons, both encoded here: ask the channel rather than the index, and
+    never let a failed close fall through to a message that only LOOKS like one.
+
+    So this asks the CHANNEL (find_live), never the index, and the answer means
+    what a caller needs it to mean:
+
+      True   the thread is closed — either we just closed it, or nothing was
+             open there to begin with (someone else already did). Nothing left
+             to do; a caller may safely forget the episode.
+      False  ONE case only: Slack could not be reached / would not take the
+             close. The episode is still open and the caller should keep its own
+             state so the next pass tries again.
+
+    Never post a hand-rolled all-clear on the False path. A reply with no ✅ and
+    no `resolved` marker reads as fixed to a person and as open to every machine,
+    and it hides the failure instead of retrying it.
+
+    Never raises."""
+    if not _valid(key):
+        return False
+    try:
+        client = client or _client()
+    except Exception as e:  # noqa: BLE001 — no client is the retry case
+        print("  ⚠ couldn't close incident {} (no Slack client: {}: {})".format(
+            key, type(e).__name__, str(e)[:60]), flush=True)
+        return False
+    try:
+        inc = find_live(key, channel=channel, client=client)
+    except Exception as e:  # noqa: BLE001
+        print("  ⚠ couldn't look up incident {} ({}: {})".format(
+            key, type(e).__name__, str(e)[:80]), flush=True)
+        return False
+    if not inc or not inc.get("ts"):
+        # Closed already, by another machine or by hand. Straighten this
+        # machine's belief so it stops trying, and say nothing in the channel.
+        if not dry_run and key in open_keys():
+            _mark_resolved_in_index(key)
+        print("[incident] {}: nothing open in the channel — already closed"
+              .format(key), flush=True)
+        return True
+    lines = [":white_check_mark: {} — RESOLVED. It just ran clean.".format(what)]
+    if detail:
+        lines.append(detail)
+    lines.append("_Closed. If it happens again it opens a fresh post, not "
+                 "this thread._")
+    if dry_run:
+        # Answer from the thread we just FOUND, not from resolve()'s dry-run
+        # branch: that one reports on the local index, which is the very thing
+        # this function exists not to trust — so it would print the resolution
+        # and then hand back False on exactly the machine that needed True.
+        print("[incident] DRY-RUN — would resolve {} (ts {}) → {}:\n{}\n".format(
+            key, inc["ts"], channel, "\n".join(lines)), flush=True)
+        return True
+    try:
+        return resolve(key=key, lines=lines, channel=channel,
+                       dry_run=dry_run, client=client)
+    except Exception as e:  # noqa: BLE001
+        print("  ⚠ couldn't close incident {} ({}: {})".format(
+            key, type(e).__name__, str(e)[:80]), flush=True)
+        return False
+
+
 def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
                  day: Optional[dt.date] = None, dry_run: bool = False,
                  scan: bool = True, client=None) -> bool:

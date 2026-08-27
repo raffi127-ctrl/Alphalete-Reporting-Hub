@@ -143,7 +143,7 @@ def attach(ads, name_rows, city_agnostic, week_start):
 
     Returns (names_for, days_for, unmatched_names, unmatched_days): names_for
     maps id(ad row) -> list of "First Last"; days_for maps the same key to a
-    7-slot count list, day 0 = week_start (Wednesday) — the board's day cells.
+    7-slot count list, day 0 = week_start (Monday) — the board's day cells.
     """
     by_base = {}
     for g in ads:

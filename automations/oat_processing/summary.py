@@ -26,15 +26,22 @@ import os
 import re
 from pathlib import Path
 
+from . import config
+
 CHANNEL_ID = os.environ.get("OAT_SCORECARD_CHANNEL", "C09L1S3MQ1E")  # #alphaletegp-recruiting
 PARENT_TEXT = "\U0001F4CB DAILY PUSH SCORECARD"
-OFFICE_LABEL = "office 11580 · Carlos Hidalgo — ATT Program"
+# Per-office (the push works more than one office now). Both are set by the
+# wrapper via env; the defaults are Carlos's office, unchanged.
+OFFICE_LABEL = os.environ.get(
+    "OAT_OFFICE_LABEL", "office 11580 · Carlos Hidalgo — ATT Program")
+OFFICE_SHORT = os.environ.get("OAT_OFFICE_SHORT", "office 11580, Carlos")
 
 SENT = ("sent", "sent_override")
 
 
 def _activity_path(date: dt.date) -> Path:
-    return Path("output") / f"oat-activity-{date.isoformat()}.csv"
+    return (Path("output") /
+            f"oat-activity-{date.isoformat()}{config.FILE_SUFFIX}.csv")
 
 
 def load_rows(date: dt.date) -> list:
@@ -245,7 +252,7 @@ def build_html(date: dt.date, t: dict, last_scan: str = "") -> str:
 {blocked_block}
   <div class="foot">
     <span>Posted by Lucy · Megan &amp; Carlos</span>
-    <span>office 11580 · generated {last_scan or dt.datetime.now().strftime('%-I:%M %p')} CST</span>
+    <span>{OFFICE_SHORT} · generated {last_scan or dt.datetime.now().strftime('%-I:%M %p')} CST</span>
   </div>
 </div></div>"""
 
@@ -279,7 +286,7 @@ def post_to_slack(pdf_path: str, date: dt.date, t: dict) -> dict:
     c = smp._client()
     # No counts breakdown in the header — the PDF carries the full picture
     # (Megan 2026-07-29).
-    summary = f"{date.strftime('%A, %b %-d')} · office 11580 (Carlos)"
+    summary = f"{date.strftime('%A, %b %-d')} · {OFFICE_SHORT}"
     parent = c.chat_postMessage(channel=CHANNEL_ID, text=PARENT_TEXT)
     ts = parent["ts"]
     up = c.files_upload_v2(channel=CHANNEL_ID, thread_ts=ts, file=pdf_path,
@@ -369,7 +376,7 @@ def _load_flagged_snapshot(date: dt.date) -> dict:
     (output/oat-flagged-<date>.json): who still needs a number / a manual text right
     now. Empty if the walk hasn't written one yet today."""
     import json as _json
-    path = f"output/oat-flagged-{date.isoformat()}.json"
+    path = f"output/oat-flagged-{date.isoformat()}{config.FILE_SUFFIX}.json"
     try:
         with open(path) as fh:
             return _json.load(fh) or {}
@@ -447,7 +454,8 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
     slot = dt.datetime.now().strftime("%I %p").lstrip("0")
 
     if dry_run:
-        print("[report] DRY-RUN — would post to #alphaletegp-recruiting:", flush=True)
+        print(f"[report] DRY-RUN — would post to {CHANNEL_ID} ({OFFICE_SHORT}):",
+              flush=True)
         print("  HEADER (parent, created once/day): " + header, flush=True)
         print(f"  REPLY (in today's thread, {slot}):\n    "
               + body.replace("\n", "\n    "), flush=True)
@@ -605,7 +613,7 @@ def main(argv=None) -> int:
         from automations.shared import slack_metrics_post as smp
         # Header only — the PDF already carries the full breakdown (Megan 2026-07-29).
         comment = (f"\U0001F4CB OAT Daily Push — {date.strftime('%b %-d')} "
-                   f"(office 11580, Carlos)")
+                   f"({OFFICE_SHORT})")
         res = smp.dm_user_with_file(pdf, user=args.dm, comment=comment,
                                     file_name=f"OAT-Daily-Push-{date.isoformat()}.pdf")
         print(f"[scorecard] DM'd to {args.dm}: {res}", flush=True)
