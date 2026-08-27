@@ -1623,16 +1623,55 @@ def lookup_resume_phone(page):
         for _i in range(12):
             try:
                 title = (newpg.title() or "").lower()
-                body = newpg.evaluate("() => (document.body.innerText || '')")
+                # READ THE FRAMES TOO, not just the top document. Indeed's resume
+                # viewer renders the resume itself in a nested frame; the TOP page
+                # holds only the viewer chrome ("<Name>'s Resume", "View candidate",
+                # nav, footer). That chrome is real text and comfortably over the
+                # blocked-read length floor, so a frame-blind read looked like a
+                # page that loaded fine and simply had no number on it — and every
+                # such applicant was written off for the day as "no phone on
+                # resume" while a human opening the same link saw the number in the
+                # header immediately (Megan 2026-08-27: Carlos Nevarez, office
+                # 23467, "(303) 710-6301 ... his number is right there"). It was not
+                # rare: 24 of Atef's and 19 of Carlos's applicants sat in that state
+                # that morning alone. _view_resume_href already walks page.frames to
+                # FIND this link — only the reader was frame-blind.
+                #
+                # Top document FIRST so a resume whose number is in the main
+                # document keeps resolving exactly as it did before; frames are
+                # only consulted when that finds nothing. Ordering matters beyond
+                # compatibility: résumés list former employers' phone numbers in the
+                # work history, and the applicant's own number is in the header, so
+                # first-match-nearest-the-top is what keeps us texting the candidate
+                # rather than one of their old bosses.
+                texts = []
+                try:
+                    texts.append(newpg.evaluate(
+                        "() => (document.body.innerText || '')") or "")
+                except Exception:  # noqa: BLE001
+                    texts.append("")
+                for _fr in newpg.frames:
+                    try:
+                        t = _fr.evaluate("() => (document.body.innerText || '')")
+                    except Exception:  # noqa: BLE001
+                        continue    # cross-origin / detached frame — skip, not fatal
+                    if t and t not in texts:
+                        texts.append(t)
+                # `body` stays the ALL-FRAMES text: it is what the challenge check
+                # and _blocked_reason below judge, and judging those on the chrome
+                # alone is the same blindness one level down.
+                body = "\n".join(texts)
             except Exception:  # noqa: BLE001
-                title, body = "", ""
+                title, body, texts = "", "", []
             challenged = ("just a moment" in title or "just a moment" in body.lower()
                           or "verify you are human" in body.lower())
             if not challenged and body:
-                for m in _PHONE_RE.finditer(body):
-                    digits = re.sub(r"\D", "", m.group(0))
-                    if 10 <= len(digits) <= 11:     # a real US number
-                        return m.group(0).strip(), f"from resume ({newpg.url[:50]})"
+                for _t in texts:
+                    for m in _PHONE_RE.finditer(_t):
+                        digits = re.sub(r"\D", "", m.group(0))
+                        if 10 <= len(digits) <= 11:     # a real US number
+                            return (m.group(0).strip(),
+                                    f"from resume ({newpg.url[:50]})")
             newpg.wait_for_timeout(1000)
         # The poll ran out. Two VERY different endings look identical from here, and
         # calling both "no phone" is what burned 90 applicants on 2026-08-25:
