@@ -69,11 +69,12 @@ def main(argv):
     finally:
         con.close()
 
-    pairs, last = [], since
+    pairs, last, from_others = [], since, 0
     for rowid, text, from_me in rows:
         last = max(last, rowid)
         if from_me:                       # never act on our own messages
             continue
+        from_others += 1
         for line in (text or "").splitlines():
             m = PAIR_RE.match(line)
             if m and m.group(1).strip().lower() != m.group(2).strip().lower():
@@ -92,8 +93,12 @@ def main(argv):
     except OSError as e:
         print("couldn't write %s: %s" % (out_path, e))
         return 1
-    print("read %d message(s) after rowid %d; %d alias line(s) found; now at %d"
-          % (len(rows), since, len(pairs), last))
+    # The counts separate "nobody has typed one" from "somebody did and the
+    # pattern missed it" -- without logging anyone's words, which this script
+    # has no business writing down.
+    print("read %d message(s) after rowid %d (%d from other people); "
+          "%d alias line(s) found; now at %d"
+          % (len(rows), since, from_others, len(pairs), last))
     return 0
 
 
