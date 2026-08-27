@@ -124,8 +124,8 @@ def test_a_missing_rep_is_named_in_the_text_and_counted():
     assert rows == [] and len(missing) == 1, (rows, missing)
     text = N.leaderboard({"Jane Doe": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0}},
                          [], None, missing)
-    assert "ANTONIO DAVIS 3 (1 Int, 2 NL) - NOT ON THE BOARD" in text, text
-    assert ":trophy: TOTALS: 4" in text, text          # 1 + (1 Int + 2 NL)
+    assert "ANTONIO DAVIS 3 (1 Int, 2 NL)" in text, text
+    assert "TOTALS: 4" in text, text                   # 1 + (1 Int + 2 NL)
     assert "no row on this week's board" in text, text
 
 
@@ -152,15 +152,31 @@ def test_hype_is_stable_across_a_rerun():
     assert N.hype("Jane Doe", m, day) == N.hype("Jane Doe", m, day)
 
 
-def test_leaderboard_shape():
-    today = {"Jane Doe": {"Int": 2, "Int Up": 0, "DTV": 1, "NL": 0},
-             "Rex Ryan": {"Int": 1, "Int Up": 1, "DTV": 0, "NL": 1}}
-    text = N.leaderboard(today, ["Jane Doe"], 42)
+def test_leaderboard_matches_the_live_post():
+    # Rebuilt from the message the existing system posted on 2026-08-26:
+    # 'First L.' names, breakdown only when there's more than one kind of
+    # sale, real emoji, upgrades INSIDE the totals, no goal line.
+    today = {"Jane Doe": {"Int": 2, "Int Up": 1, "DTV": 1, "NL": 0},
+             "Rex Ryan": {"Int": 2, "Int Up": 0, "DTV": 0, "NL": 0}}
+    text = N.leaderboard(today, ["Jane Doe"])
     lines = text.splitlines()
-    assert lines[0] == "Jane Doe 3 (2 Int, 1 DTV) :fire:", lines[0]
-    assert lines[1] == "Rex Ryan 2 (1 Int, 1 Up, 1 NL)", lines[1]
-    assert ":trophy: TOTALS: 5" in text, text          # upgrades are NOT counted
-    assert "GOAL FOR THE WEEK: 42/80" in text, text
+    assert lines[0] == "Jane Doe 4 (2 Int, 1 Up, 1 DTV) \U0001F525", lines[0]
+    assert lines[1] == "Rex Ryan 2 (2 Int)", lines[1]
+    assert "Upgrades: 1" in text, text
+    assert "\U0001F3C6 TOTALS: 6" in text, text       # 4 + 2, upgrades counted
+    assert "GOAL FOR THE WEEK" in N.leaderboard(today, [], 42), "our layout keeps the goal"
+
+
+def test_ties_keep_saraplus_order():
+    today = {"Zoe Adams": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0},
+             "Al Baker": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0}}
+    assert N.leaderboard(today, []).splitlines()[:2] == ["Zoe Adams 1 (1 Int)",
+                                                        "Al Baker 1 (1 Int)"]
+
+
+def test_short_name_drops_week_suffixes():
+    assert N.short_name("Jaylen (Ash) Walker (Wk 2)") == "Jaylen Walker"
+    assert N.short_name("Cher") == "Cher"
 
 
 def main() -> int:

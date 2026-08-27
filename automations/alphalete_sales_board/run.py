@@ -252,19 +252,34 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
     today = {r["board_name"]: r["metrics"] for r in rows}
     gained = S.deltas(data, day, today)
     rec_gained = S.record_deltas(data, day, records)
+
+    # BASELINE PASS. With no state for today, EVERY sale reads as new -- so the
+    # first sweep after a cutover, a state-file loss, or a mid-day start would
+    # fire one hype line per rep and one credit-check line per rep. On the day
+    # this shipped that was 11 + 31 = 42 Slack messages and a leaderboard with a
+    # flame beside every name, announcing as "just now" sales that happened
+    # hours ago. So the first sweep of a day SETTLES rather than celebrates: one
+    # leaderboard with the true picture, no flames, no per-sale hype, no credit
+    # -check pings. From the next sweep on, deltas mean what they say.
+    baseline = not (data.get(day.isoformat()) or {})
+    if baseline and (gained or rec_gained):
+        _log("BASELINE pass (no state for %s yet): sending the standings once, "
+             "with no per-sale hype for %d rep(s) and no credit-check pings for "
+             "%d" % (day.isoformat(), len(gained), len(rec_gained)))
     _log("new this sweep: %d rep(s) with sales, %d with credit checks"
          % (len(gained), len(rec_gained)))
 
     if gained or rec_gained or missing:
         wtd = week_to_date(grid, day) if apply_writes else None
-        body = N.leaderboard(today, list(gained), wtd, missing)
-        if gained:
+        body = N.leaderboard(today, [] if baseline else list(gained), wtd, missing)
+        if gained or (baseline and today):
             N.text_group(C.GROUP_PARTNERS, body, dry_run=not send, log=_log)
+        if not baseline:
             for rep, delta in sorted(gained.items()):
                 N.slack(N.hype(rep, delta, day), dry_run=not send, log=_log)
-        for rep, up in sorted(rec_gained.items()):
-            N.slack(N.records_line(rep, records.get(rep, up), up),
-                    dry_run=not send, log=_log)
+            for rep, up in sorted(rec_gained.items()):
+                N.slack(N.records_line(rep, records.get(rep, up), up),
+                        dry_run=not send, log=_log)
 
     if C.lvl1_due() and not S.lvl1_sent(data, day):
         body = N.leaderboard(today, [], week_to_date(grid, day), missing)
