@@ -165,8 +165,7 @@ class EmailEvidenceTests(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertFalse(out[0].corroborated)
         line = name_gate.render_line(out[0])
-        self.assertIn("nikki.creative@zohomail.com", line)
-        self.assertIn("no \u201cLanequa\u201d in it", line)
+        self.assertNotIn("nikki.creative@zohomail.com", line)
 
     def test_corroborated_questions_come_first(self):
         out = propose(
@@ -314,8 +313,8 @@ class AskPlacementTests(unittest.TestCase):
         self.assertNotIn("✅", line)
         self.assertNotIn("❌", line)
 
-    def test_the_email_line_says_which_way_it_cuts(self):
-        """Megan: "just listing the email tells us nothing." """
+    def test_the_email_shows_only_when_it_proves_something(self):
+        """Megan: "we don't need the email if it doesn't do anything." """
         backed = propose([person("Nikki", "Valentine",
                                  email="Shuminiquevalentine@yahoo.com")],
                          [event("Shuminique", "Valentine")])[0]
@@ -323,7 +322,9 @@ class AskPlacementTests(unittest.TestCase):
                       name_gate.render_line(backed))
         plain = propose([person("Adriana", "Ruiz", email="adrianaruiz@icloud.com")],
                         [event("Jordan", "Ruiz")])[0]
-        self.assertIn("no \u201cJordan\u201d in it", name_gate.render_line(plain))
+        line = name_gate.render_line(plain)
+        self.assertNotIn("adrianaruiz@icloud.com", line)
+        self.assertIn("took the check", line)
 
     def test_the_parent_carries_the_meanings_and_the_tags(self):
         parent = name_gate.render_parent(2)

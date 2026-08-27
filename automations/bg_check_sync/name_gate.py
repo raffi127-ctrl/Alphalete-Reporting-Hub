@@ -386,14 +386,15 @@ def render_line(p: Proposal) -> str:
     version unreadable.
     """
     bits = []
-    if p.email:
-        # SAY WHICH WAY IT CUTS. Megan 2026-08-26: "just listing the email tells
-        # us nothing." The address is only evidence once someone is told what to
-        # look for in it, so name the Sterling first name and say whether it is
-        # in there.
-        verdict = ("has \u201c%s\u201d in it" % p.legal_first if p.corroborated
-                   else "no \u201c%s\u201d in it" % p.legal_first)
-        bits.append(f"{p.email} — {verdict}")
+    # THE EMAIL ONLY EARNS ITS LINE WHEN IT PROVES SOMETHING. Shown, it names
+    # the Sterling first name and says it is in there — that answers the
+    # question at a glance. Absent, it proves nothing either way (plenty of
+    # people use an address that looks like neither name), so it is left out
+    # rather than printed for the reader to squint at. Two rounds of Megan on
+    # this: "just listing the email tells us nothing", then "we don't need the
+    # email if it doesn't do anything".
+    if p.email and p.corroborated:
+        bits.append(f"{p.email} — has \u201c{p.legal_first}\u201d in it")
     if p.taken_on:
         try:
             d = dt.date.fromisoformat(p.taken_on)
