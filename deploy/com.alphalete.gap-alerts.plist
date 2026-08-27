@@ -27,13 +27,19 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Every 5 minutes. The wrapper exits immediately outside Mon-Fri 1:30-8:30pm / Sat 10am-5pm,
-         so the off-hours ticks cost nothing. StartInterval, not
-         StartCalendarInterval: ~100 calendar entries would be unreadable, and a
-         missed tick matters far less than a tick that fires at the wrong hour
-         after a TZ cache drift. -->
+    <!-- Ticks every MINUTE; the wrapper decides which minutes count and exits in
+         milliseconds on the rest (wrong day, wrong hour, or a minute that is not
+         a multiple of 5). It has to be this way round: StartInterval counts from
+         when the previous run EXITS, so a 300 here meant "5 minutes after the
+         last run finished" and a slow browser launch stretched the gap to nearly
+         9 minutes. At 60 the wrapper's own clock check is what sets the cadence.
+
+         Still StartInterval and not StartCalendarInterval: ~100 calendar entries
+         would be unreadable, and launchd caches its timezone on these boxes and
+         has fired calendar jobs two hours off. The wrapper reads the real local
+         clock every run, so a cached TZ cannot move it. -->
     <key>StartInterval</key>
-    <integer>300</integer>
+    <integer>60</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/megan/1st Claude Folder/output/logs/gap-alerts.launchd.out.log</string>

@@ -41,6 +41,31 @@ else
     [ "$HOUR" -gt 20 ] && exit 0
 fi
 
+# WALL-CLOCK ANCHOR — this is what makes it every FIVE minutes.
+#
+# launchd's StartInterval counts from when the previous run EXITS, not from when
+# it started, so a plain StartInterval 300 gives a cadence of 5 minutes PLUS
+# however long the run took. On 2026-08-26 that produced fires at 20:14:42,
+# 20:20:35 and 20:29:27 — 5m53s then 8m52s apart, because one run spent nearly
+# four minutes launching its browser. Megan saw two cards nine minutes apart on
+# a report that says "every 5 minutes".
+#
+# So the plist now ticks every 60s and THIS decides which minutes count. The
+# spacing no longer chains off the previous run's length.
+#
+# :00 and :01 both count. launchd's minute tick can slip a few seconds and skip
+# a minute entirely; without the :01 catch-up that would silently turn one 5
+# minute gap into 10. The catch-up is safe precisely because it cannot
+# double-post — run.py refuses a card inside MIN_SEND_GAP_MINUTES, so if :00
+# already sent, :01 renders nothing and exits.
+#
+# `date` here reads the REAL local clock on every run, which is the other reason
+# this beats StartCalendarInterval on these boxes: launchd caches its timezone
+# and has fired calendar jobs two hours off. A cached TZ cannot fool this gate.
+MINUTE=$(date +%M)
+MINUTE=$((10#$MINUTE))
+[ $((MINUTE % 5)) -gt 1 ] && exit 0
+
 VENV_PY=".venv/bin/python"
 [ -x "$VENV_PY" ] || VENV_PY="python3"
 
