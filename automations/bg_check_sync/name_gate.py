@@ -734,6 +734,13 @@ def record_rejections(rejected: list[dict], state: dict, *, dry_run: bool = True
         }}
 
 
+# Bump when the settled-line wording changes: strike_backlog rewrites anything
+# stamped with an older number. Without it the first strike wins forever, and a
+# question answered ten minutes before a copy fix keeps the old words for good
+# (which is exactly what happened to Adriana Ruiz on 2026-08-26).
+STRUCK_VERSION = 2
+
+
 def mark_settled(applied: list, rejected: list, *, dry_run: bool = True) -> None:
     """Strike through a question once it has been answered.
 
@@ -767,6 +774,7 @@ def mark_settled(applied: list, rejected: list, *, dry_run: bool = True) -> None
             cli.chat_update(channel=entry["channel"], ts=entry["reply_ts"],
                             text=text)
             entry["struck"] = True
+            entry["struck_v"] = STRUCK_VERSION
         except Exception as e:  # noqa: BLE001
             print(f"[name-gate] couldn't strike through {old}: {e}")
 
@@ -777,19 +785,24 @@ def strike_backlog(state: dict, *, dry_run: bool = True) -> int:
     One-time catch-up, and cheap insurance afterwards: a settled question whose
     line still reads like a question is the thing that buried the open one.
     """
+    def _stale(e: dict, status: str) -> bool:
+        return (isinstance(e, dict) and e.get("status") == status
+                and e.get("reply_ts")
+                and e.get("struck_v", 0) < STRUCK_VERSION)
+
     applied = [{**e, "pid": pid} for pid, e in state.items()
-               if isinstance(e, dict) and e.get("status") == "applied"
-               and not e.get("struck") and e.get("reply_ts")]
+               if _stale(e, "applied")]
     rejected = [{**e, "pid": pid} for pid, e in state.items()
-                if isinstance(e, dict) and e.get("status") == "rejected"
-                and not e.get("struck") and e.get("reply_ts")]
+                if _stale(e, "rejected")]
     if not (applied or rejected):
         return 0
     mark_settled(applied, rejected, dry_run=dry_run)
     if not dry_run:
         for entry in applied + rejected:
             if entry.get("struck"):
-                state.setdefault(entry["pid"], {})["struck"] = True
+                stored = state.setdefault(entry["pid"], {})
+                stored["struck"] = True
+                stored["struck_v"] = STRUCK_VERSION
     return len(applied) + len(rejected)
 
 

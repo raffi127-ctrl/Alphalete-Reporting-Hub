@@ -606,6 +606,23 @@ class SettledLineTests(unittest.TestCase):
         self.assertEqual((first, second), (1, 0))
         self.assertEqual(len(sent), 1)
         self.assertTrue(state["pid1"]["struck"])
+        self.assertEqual(state["pid1"]["struck_v"], name_gate.STRUCK_VERSION)
+
+    def test_a_wording_change_re_strikes_an_old_one(self):
+        """Adriana was struck ten minutes before the words changed."""
+        state = {"pid1": {**self.ENTRY, "status": "rejected",
+                          "struck": True, "struck_v": 1}}
+        sent = []
+        class _Cli:
+            def chat_update(self, channel, ts, text):
+                sent.append(text)
+        orig = name_gate._client
+        name_gate._client = lambda: _Cli()
+        try:
+            self.assertEqual(name_gate.strike_backlog(state, dry_run=False), 1)
+        finally:
+            name_gate._client = orig
+        self.assertIn("no Jordan Ruiz on the OBCL to match to", sent[0])
 
     def test_a_pending_question_is_left_alone(self):
         state = {"pid1": {**self.ENTRY, "status": "pending"}}
