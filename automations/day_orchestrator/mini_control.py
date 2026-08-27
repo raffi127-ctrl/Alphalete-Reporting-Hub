@@ -289,6 +289,36 @@ def _now() -> str:
     return dt.datetime.now().isoformat(timespec="seconds")
 
 
+# --- queue timestamps: stamp the OFFSET, not just the wall clock ---------------
+# Queued At / Finished At are written by one machine and read by ANOTHER, and
+# _now() is a naive local clock — so a row queued from a box on UTC-3 lands in
+# the tab reading two hours ahead of the poller's own day, and `lucy status`
+# shows a still-queued row stamped in the FUTURE. Measured on Lucy 2's tab
+# 2026-08-27: 516 of 3202 rows, at exactly 2.00h (Eve's box now), 7.00h (the
+# same box in July, on UTC+2) and 5.00h (an onboard_apply path stamping plain
+# UTC). It reads as a wedged poller, which is exactly what it cost that morning.
+#
+# NOT _now() itself: ~15 call sites turn _now() into a FILENAME stamp via
+# .replace(":", "").replace("-", "").replace("T", "-"), where an offset would
+# glue a bogus "0500" onto every log name.
+def _now_tz() -> str:
+    """Local wall clock WITH its UTC offset — for cells another machine reads."""
+    return dt.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _parse_ts(s: str) -> dt.datetime | None:
+    """A queue timestamp as an aware datetime in THIS machine's local time.
+
+    naive .astimezone() assumes local, so this handles both shapes in one call:
+    an old naive row is read as local exactly as it was before this change (no
+    row gets worse — whose clock it came from is unknowable), and a new row with
+    an offset converts honestly."""
+    try:
+        return dt.datetime.fromisoformat(str(s).strip()).astimezone()
+    except (TypeError, ValueError):
+        return None
+
+
 def _open(sandbox: bool = False, machine: str | None = None):
     """Open (creating if needed) the control worksheet for THIS machine — or the
     shared TEST tab when sandbox."""
@@ -6009,7 +6039,7 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
         machine = DEFAULT_MACHINE if target == CONTROL_TAB \
             else target[len(prefix):]
     ws = _open(sandbox, machine)
-    ws.append_row([_now(), action, args, by, "queued", "", ""],
+    ws.append_row([_now_tz(), action, args, by, "queued", "", ""],
                   value_input_option="RAW")
     # Don't echo a secret back at the person queueing it — their terminal
     # scrollback is one more place the password would sit.
@@ -6048,7 +6078,7 @@ def _tab_is_live(sh, title: str) -> bool:
 
 def _set(ws, rownum: int, status: str, result: str = "", finished: bool = False) -> None:
     """Write Status / Result / Finished At (cols E,F,G) for one row, one call."""
-    fin = _now() if finished else ""
+    fin = _now_tz() if finished else ""
     ws.update_cells(
         [gspread.Cell(rownum, 5, status),
          gspread.Cell(rownum, 6, (result or "")[:480]),
@@ -6065,15 +6095,24 @@ def _autoruns_today(rows: list[dict]) -> int:
     bound repeated REPORT runs (rerun). READONLY_ACTIONS (logtail, git_status,
     git_diff, …) are excluded for the same reason and one more: they're how a
     failure gets diagnosed, so charging them means a bad morning spends the
-    budget it needs (2026-08-13 — 55 of the day's 100 rows were reads)."""
-    today = dt.date.today().isoformat()
+    budget it needs (2026-08-13 — 55 of the day's 100 rows were reads).
+
+    "Today" is THIS poller's day. Matching the date as a string prefix charged a
+    row to whatever day the QUEUER's clock said, so an off-timezone late-night
+    row counted on the wrong side of midnight (2 such rows on Lucy 2's tab, both
+    2026-08-13) — see _parse_ts."""
+    today = dt.datetime.now().astimezone().date()
     free = PLUMBING_ACTIONS | READONLY_ACTIONS
-    return sum(
-        1 for r in rows
-        if str(r.get("Status", "")).strip().lower() in ("done", "failed", "running")
-        and str(r.get("Queued At", "")).startswith(today)
-        and str(r.get("Action", "")).strip().lower() not in free
-    )
+    n = 0
+    for r in rows:
+        if str(r.get("Status", "")).strip().lower() not in ("done", "failed", "running"):
+            continue
+        if str(r.get("Action", "")).strip().lower() in free:
+            continue
+        queued = _parse_ts(r.get("Queued At", ""))
+        if queued is not None and queued.date() == today:
+            n += 1
+    return n
 
 
 _ORPHAN_GRACE_MIN = 10
@@ -6347,8 +6386,14 @@ def print_status(n: int = 10, *, sandbox: bool = False, machine: str | None = No
             args = "<redacted>"
         by = str(row.get("By", "")).strip()
         result = str(row.get("Result", "")).strip()
-        when = (str(row.get("Finished At", "")).strip()
-                or str(row.get("Queued At", "")).strip())
+        # Render in the READER's clock. A row queued from another timezone is
+        # stored with its own offset, and printing that raw is what made a
+        # healthy queue look wedged on 2026-08-27 (a queued row dated 11:35 at
+        # 10:15). Unparseable / pre-offset rows print exactly as before.
+        when_raw = (str(row.get("Finished At", "")).strip()
+                    or str(row.get("Queued At", "")).strip())
+        when_at = _parse_ts(when_raw)
+        when = when_at.strftime("%Y-%m-%dT%H:%M:%S") if when_at else when_raw
         head = f"{icon} {status.lower():<7} {action} {args}".rstrip()
         if by:
             head += f"  (by {by})"
