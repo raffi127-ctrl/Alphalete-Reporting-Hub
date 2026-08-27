@@ -257,24 +257,140 @@ def _pin_campaign(page, rqst: str, campaign_id: str) -> None:
              "campaign" % type(e).__name__)
 
 
-def _pages_for(im, max_aspect: float, overlap: int):
-    """Slice one tall panel into page-sized pieces, top to bottom.
+def titled(src: Path, title: str, out: Path) -> Path:
+    """Prepend a title bar whose text actually FITS the image.
 
-    A panel only gets cut if it is taller than `max_aspect` times its width.
-    Consecutive pieces OVERLAP, so a rep row unlucky enough to land on a page
-    break still appears whole on the next page — the one thing a naive slice
-    gets wrong, and the one that would quietly hide a rep."""
+    cap.add_title_header draws at a fixed 30px and never measures, so on a
+    narrow panel the title runs off the right edge — Raf's PDF showed
+    "TODAY'S ACTIVITY — 6" with the time sliced off (Megan, 2026-08-27). Here
+    the font steps down until the text fits, and the bar grows or shrinks with
+    it, so the header scales to the panel instead of the panel having to be
+    wide enough for the header.
+    """
+    from PIL import Image, ImageDraw
+    im = Image.open(src).convert("RGB")
+    W = im.width
+    pad = max(12, W // 60)
+    size = max(11, min(34, W // 22))
+    f = cap._stitch_font(size)
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    while size > 11:
+        f = cap._stitch_font(size)
+        if probe.textlength(title, font=f) <= W - pad * 2:
+            break
+        size -= 1
+    bar = int(size * 1.9)
+    canvas = Image.new("RGB", (W, bar + 8 + im.height), (255, 255, 255))
+    d = ImageDraw.Draw(canvas)
+    d.rectangle([0, 0, W, bar], fill=(32, 41, 57))
+    d.text((pad, (bar - size) // 2 - 2), title, font=f, fill=(255, 255, 255))
+    canvas.paste(im, (0, bar + 8))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out)
+    return out
+
+
+def _blank_rows(im, margin: int = 6):
+    """y -> True where a horizontal scanline is entirely background.
+
+    Both panels draw their rows as light boxes separated by a band of near-white
+    page. Those bands are the only safe place to cut, so find them by asking a
+    much simpler question than "where are the rows": is this whole scanline
+    light? Ignores a few pixels at each edge, where a panel border runs the full
+    height and would otherwise make every line look non-blank.
+    """
+    g = im.convert("L")
+    w, h = g.size
+    px = g.load()
+    x0, x1 = margin, max(margin + 1, w - margin)
+    step = max(1, (x1 - x0) // 160)          # sample, don't read every pixel
+    xs = list(range(x0, x1, step))
+    # A FRACTION, not "every pixel is light". The real OwnerVille panel has a
+    # container border and a scrollbar track running its full height, so an
+    # all-or-nothing test finds NO blank row anywhere and every cut falls back
+    # to a hard slice — which is exactly the severed-and-repeated row Raf saw.
+    # Allowing a couple of dark samples ignores those verticals while still
+    # rejecting any line that touches a name, a time or a count pill.
+    allow = max(1, len(xs) // 50)            # ~2% of the width may be dark
+    out = bytearray(h)
+    for y in range(h):
+        dark = 0
+        for x in xs:
+            if px[x, y] < 232:               # text, border, avatar or pill
+                dark += 1
+                if dark > allow:
+                    break
+        out[y] = 1 if dark <= allow else 0
+    return out
+
+
+def _bands(blank, lo: int, hi: int):
+    """[(top, bottom, thickness)] for every run of blank scanlines in [lo, hi)."""
+    out, y = [], max(0, lo)
+    hi = min(hi, len(blank))
+    while y < hi:
+        if blank[y]:
+            top = y
+            while y + 1 < hi and blank[y + 1]:
+                y += 1
+            out.append((top, y, y - top + 1))
+        y += 1
+    return out
+
+
+def _cut_at_row_boundary(blank, target: int, reach: int):
+    """Cut through the THICKEST blank band at or above `target`.
+
+    Thickest, not nearest, and that distinction is the whole fix. A row is not
+    solid: there is white space above and below the text INSIDE each row too,
+    so "nearest blank line" happily cuts through the middle of a rep and leaves
+    a half-drawn row — which is what Raf saw. The gap BETWEEN two rows is the
+    thickest blank run in any neighbourhood, so picking by thickness lands
+    between reps instead of inside one.
+
+    Returns (y, thickness); thickness 0 means nothing usable was found and the
+    caller should fall back to a hard cut.
+    """
+    bands = _bands(blank, target - reach, target + 1)
+    if not bands:
+        return target, 0
+    top, bottom, thick = max(bands, key=lambda b: (b[2], b[0]))
+    return (top + bottom) // 2, thick
+
+
+def _pages_for(im, max_aspect: float, overlap: int = 0):
+    """Slice one tall panel into page-sized pieces, cutting BETWEEN rows.
+
+    The first version cut at a fixed height and overlapped the pieces so a
+    severed row still appeared whole on the next page. It worked, and it looked
+    broken: Raf's PDF showed a half-drawn "Rep 13" dangling off one page and
+    the same rep repeated at the top of the next (Megan, 2026-08-27).
+
+    So the cut now snaps UP to the gap between two rows, and there is no
+    overlap at all — nothing is severed, so nothing needs repeating.
+    """
     if im.height <= im.width * max_aspect:
         return [im]
     page_h = int(im.width * max_aspect)
-    step = max(1, page_h - overlap)
-    out, top = [], 0
+    blank = _blank_rows(im)
+    reach = max(40, page_h // 3)     # how far up we will hunt for a clean gap
+    out, top, cuts = [], 0, []
     while top < im.height:
-        bottom = min(top + page_h, im.height)
-        out.append(im.crop((0, top, im.width, bottom)))
-        if bottom >= im.height:
+        if top + page_h >= im.height:
+            out.append(im.crop((0, top, im.width, im.height)))
             break
-        top += step
+        cut, thick = _cut_at_row_boundary(blank, top + page_h, reach)
+        if cut <= top + 20:          # nothing usable — hard cut, ugly but safe
+            cut, thick = top + page_h, 0
+        cuts.append(thick)
+        out.append(im.crop((0, top, im.width, cut)))
+        top = cut
+    if cuts:
+        # Visible in the run log so a bad split can be diagnosed without
+        # fetching the PNG off the runner. A 0 means that page break had to be
+        # cut blind, which is the only way a row gets severed now.
+        _log("  sliced into %d page(s); gap found at each break: %s px"
+             % (len(out), ", ".join(str(c) for c in cuts)))
     return out
 
 
@@ -314,8 +430,7 @@ def to_pdf(panel_paths, out_pdf: Path) -> Path:
         if not p.exists():
             continue
         im = Image.open(p).convert("RGB")
-        for j, piece in enumerate(_pages_for(im, C.PDF_MAX_ASPECT,
-                                             C.PDF_SLICE_OVERLAP_PX)):
+        for j, piece in enumerate(_pages_for(im, C.PDF_MAX_ASPECT)):
             sp = tmp_dir / ("page_%02d_%02d.png" % (i, j))
             piece.save(sp)          # PNG all the way to fitz — never re-encoded
             slices.append(sp)
@@ -367,6 +482,21 @@ def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
             " i.dispatchEvent(new Event('change',{bubbles:true})); } } }",
             dt.datetime.now().strftime("%m/%d/%Y"))
         page.wait_for_timeout(3500)
+
+        # SHARPNESS. The rep list is narrower than the PDF page, so the viewer
+        # blows it up and soft, blurry text is what Raf actually reads
+        # (Megan 2026-08-27: "can we also sharpen up the images"). The fix is
+        # more source pixels, not upscaling later — nothing recovers detail a
+        # screenshot never captured. CSS zoom re-renders the page's text and
+        # badges at twice the size, so the shot carries twice the detail; the
+        # crop maths is unaffected because _shoot scales by the measured
+        # element box, not by assumed pixels.
+        try:
+            page.evaluate("(z) => { document.body.style.zoom = z; }",
+                          str(C.CAPTURE_ZOOM))
+            page.wait_for_timeout(1200)
+        except Exception:
+            _log("  zoom not applied — capturing at 1x")
 
         out = out_dir / ("activity_%s.png" % cfg["key"])
         how = cap._shoot(page, out, kind="todays_activity",
@@ -449,13 +579,12 @@ def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str,
     out = out_dir / ("gaps_%s.png" % cfg["key"])
 
     if activity_png is not None and Path(activity_png).exists():
-        titled_gaps = out_dir / ("gaps_%s_titled.png" % cfg["key"])
-        cap.add_title_header(bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot),
-                             titled_gaps)
-        titled_act = out_dir / ("activity_%s_titled.png" % cfg["key"])
-        cap.add_title_header(Path(activity_png),
-                             "%s%s — %s" % (C.PANEL_TODAYS_ACTIVITY, who, slot),
-                             titled_act)
+        titled_gaps = titled(bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot),
+                             out_dir / ("gaps_%s_titled.png" % cfg["key"]))
+        titled_act = titled(
+            Path(activity_png),
+            "%s%s — %s" % (C.PANEL_TODAYS_ACTIVITY, who, slot),
+            out_dir / ("activity_%s_titled.png" % cfg["key"]))
         if C.SEND_AS_PDF:
             try:
                 # Activity first, gaps second — Carlos's order, and the order

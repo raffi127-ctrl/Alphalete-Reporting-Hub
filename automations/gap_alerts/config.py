@@ -100,7 +100,15 @@ PDF_MAX_ASPECT = 1.45
 # Slices overlap by this many pixels so a rep row cut by a page break still
 # appears whole on the next page. Cheap insurance against the one thing a naive
 # slice gets wrong.
-PDF_SLICE_OVERLAP_PX = 44
+# Slices no longer overlap — the cut snaps to the gap BETWEEN rows, so nothing
+# is severed and nothing needs repeating. Kept at 0 as the record of why.
+PDF_SLICE_OVERLAP_PX = 0
+
+# CSS zoom applied before the Today's Activity screenshot. The panel is narrower
+# than the PDF page, so the viewer scales it up; 2x source pixels is what makes
+# that scaled-up text sharp instead of soft. Nothing recovers detail the
+# screenshot never captured.
+CAPTURE_ZOOM = 2
 
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 10 minutes inside these windows (Megan 2026-08-26):
