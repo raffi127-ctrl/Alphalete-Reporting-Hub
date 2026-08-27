@@ -8290,6 +8290,75 @@
    "depends_on": [],
    "timeout_minutes": 15,
    "verify": null
+  },
+  "gap_alerts": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Rep Gap Alerts runs ITSELF every 5 minutes of the selling day (Mon-Sat 12:00-20:00, 12:00-16:00 Saturday, machine-local) from the standalone com.alphalete.gap-alerts LaunchAgent (StartInterval 300; deploy/gap_alerts_5min.sh exits in bash outside those hours). Present here so `lucy rerun gap_alerts` works and so a Hub play from ANY machine routes the run to LUCY 1. base_args are deliberately EMPTY = preview: a hand rerun renders the card and RESOLVES the iMessage group but texts nobody. The LaunchAgent is the only thing that passes --send.",
+   "machine": "Lucy 1",
+   "_machine_note": "Lucy 1 because that is the machine iMessage is set up on (Megan 2026-08-26) -- the 7-person 'Alphalete Partners' chat only exists in Lucy 1's Messages (alphaletereporting@, the account Megan added to the room on 8/26). Same constraint that pins alphalete_sales_board there. Load is fenced instead: own browser profile (automations/uploaded/.browser_profile_gap_alerts), headless, one JSON call per tick, pid lock, and nothing before noon -- after the 4am batch's browser-heavy wave is long through.",
+   "display_name": "Rep Gap Alerts (15-min gaps -> Partners chat)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.gap_alerts.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "install_gap_alerts_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_gap_alerts_agent --machine \"Lucy 1\"` can install or refresh the standalone com.alphalete.gap-alerts LaunchAgent (StartInterval 300) on Lucy 1. Every LaunchAgent in this repo needs one of these -- the one agent that had no install_* entry is how a fully-provisioned runner still ran nothing. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data. Re-run after any change to the plist.",
+   "machine": "Lucy 1",
+   "display_name": "Install Rep Gap Alerts agent (5-min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "gap-alerts"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "install_slack_skool_email_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_slack_skool_email_agent --machine \"Lucy 1\"` can install/refresh the STANDALONE com.alphalete.slack-skool-email LaunchAgent on Lucy 1 (Monday 08:00 machine-local, deploy/slack_skool_email.sh). install_agent only loads the plist; it reads no Sheet data. The wrapper passes --send, so from the moment this runs the Monday timer mails real new starts. Safe to arm ahead of time because run.py refuses any tab that isn't dated for the day it runs -- but that gate is the backstop, not the reason. Verified on Lucy 1 first: dry run read 52 of 71, the Slack link came back '[Slack, just now]', and --check-mailbox confirmed the token sends as reception (2026-08-26).",
+   "display_name": "Install Slack / Skool email agent (Mon 8:00am)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "slack-skool-email"
+   ],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "08:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
   }
  },
  "read_only_standalone": {
