@@ -59,8 +59,61 @@ def test_cannot_override_message_blocks():
     assert oat._try_overwrite_send(p) is False
 
 
+
+
+# --- removal reason -------------------------------------------------------- #
+class _RemovePage:
+    """Page with a Remove Applicant? checkbox, a reason <select>, and a button."""
+    def __init__(self, options):
+        self.options, self.picked = options, None
+
+    class _Loc:
+        def __init__(self, n=1): self._n = n
+        def count(self): return self._n
+        @property
+        def first(self): return self
+        def check(self, timeout=0): pass
+        def click(self, **kw): pass
+
+    def locator(self, _sel): return self._Loc()
+    def wait_for_timeout(self, _ms): pass
+    def expect_navigation(self, timeout=0):
+        class _C:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+        return _C()
+
+    def evaluate(self, js, *args):
+        import re as _re
+        pat = args[0] if args else r"duplicate"
+        o = next((o for o in self.options if _re.search(pat, o, _re.I)), None)
+        self.picked = o
+        return o or ""
+
+
+def test_default_reason_is_duplicate():
+    p = _RemovePage(["Commute Too Far", "Duplicate Applicant",
+                     "Incorrect / Insufficient Contact Info"])
+    assert oat._perform_remove(p) is True
+    assert p.picked == "Duplicate Applicant", p.picked
+
+
+def test_no_contact_reason_is_not_duplicate():
+    """A no-phone applicant must NOT be filed as a duplicate."""
+    p = _RemovePage(["Commute Too Far", "Duplicate Applicant",
+                     "Incorrect / Insufficient Contact Info"])
+    assert oat._perform_remove(p, oat.NO_CONTACT_REASON) is True
+    assert p.picked == "Incorrect / Insufficient Contact Info", p.picked
+
+
+def test_missing_reason_fails_safe():
+    p = _RemovePage(["Commute Too Far"])
+    assert oat._perform_remove(p, oat.NO_CONTACT_REASON) is False
+
 if __name__ == "__main__":
     for fn in (test_overwrite_wording, test_override_wording,
-               test_no_control_means_no_send, test_cannot_override_message_blocks):
+               test_no_control_means_no_send, test_cannot_override_message_blocks,
+               test_default_reason_is_duplicate, test_no_contact_reason_is_not_duplicate,
+               test_missing_reason_fails_safe):
         fn(); print(f"  ok  {fn.__name__}")
-    print("4/4 passed")
+    print("7/7 passed")

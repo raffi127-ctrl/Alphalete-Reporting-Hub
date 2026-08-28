@@ -65,3 +65,21 @@ MAX_PER_RUN = int(os.environ.get("OAT_MAX_PER_RUN", "60"))
 FILE_SUFFIX = os.environ.get("OAT_FILE_SUFFIX", "")
 # Same reason for the Sheet tab each walk appends its proof row to.
 WALK_DIAG_TAB = os.environ.get("OAT_WALK_DIAG_TAB", "OAT Walk Diag")
+
+# --- Remove the truly uncontactable (Carlos 2026-08-27) ------------------- #
+# When the resume lookup proves an applicant has NO reachable number — the resume
+# opened and carries none, or there is no resume at all and the panel is blank —
+# remove them with the "Incorrect / Insufficient Contact Info" reason rather than
+# leaving them to circle the queue. Filing them as a DUPLICATE (the old catch-all)
+# was actively misleading: the removal reason is the only record of why someone
+# was dropped, and "duplicate" on an applicant who simply had no number makes the
+# ad look like it produced a repeat rather than an unusable applicant.
+#
+# NEVER fires on a BLOCKED resume read — that is our failure, not the applicant's,
+# and it retries (see _is_blocked_detail / _mark_nophone_blocked).
+#
+# NOTE this replaces the flag-for-human path for CONFIRMED-empty resumes, which is
+# what feeds Megan's noon/4pm "needs a number pulled from Indeed" post. Those
+# applicants had no number to pull, so the post gets shorter and truer; blocked
+# reads still flag exactly as before.
+REMOVE_NO_PHONE = os.environ.get("OAT_REMOVE_NO_PHONE", "1") == "1"

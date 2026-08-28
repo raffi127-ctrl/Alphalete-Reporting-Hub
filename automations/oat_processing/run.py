@@ -405,13 +405,24 @@ def _parse_last_corr(body: str):
     return _parse_us_date(m.group(1)) if m else None
 
 
-def _perform_remove(page) -> bool:
-    """Remove-for-duplicate (Carlos's flow, confirmed by Megan 2026-07-27): check
-    'Remove Applicant?' (removApp) + set the Remove Reason to the '…Duplicate…'
-    option + click 'Save Applicant' (submitSaveApplicant). Done in ONE in-page
-    step so it isn't tripped up by the post-block panel's actionability quirks.
-    Fails safe (returns False, logs why) if the Duplicate reason or Save button
-    isn't found."""
+DUP_REASON = r"duplicate"
+# Carlos 2026-08-27: an applicant with NO reachable phone number must not be
+# filed as a duplicate — the removal reason is the only record of WHY they were
+# dropped, and "duplicate" on someone who simply had no number makes the ad look
+# like it produced a repeat applicant instead of an unusable one. Matches the
+# "Incorrect / Insufficient Contact Info" option the office already uses by hand.
+NO_CONTACT_REASON = r"incorrect|insufficient|contact info"
+
+
+def _perform_remove(page, reason_pattern: str = DUP_REASON) -> bool:
+    """Remove the current applicant: check 'Remove Applicant?' (removApp), set the
+    Remove Reason to the first option matching ``reason_pattern``, and click
+    'Remove Applicant'. Done in ONE in-page step so it isn't tripped up by the
+    post-block panel's actionability quirks. Fails safe (returns False, logs why)
+    if the reason or the button isn't found.
+
+    ``reason_pattern`` defaults to duplicate so every existing caller behaves
+    exactly as before; pass NO_CONTACT_REASON for the no-phone case."""
     try:
         # 1) CHECK "Remove Applicant?" — a real check so the ATS reveals the Remove
         #    Reason dropdown + the "Remove Applicant" button (Megan 7/27).
@@ -424,17 +435,19 @@ def _perform_remove(page) -> bool:
         except Exception:  # noqa: BLE001
             cb.click(force=True, timeout=4000)
         page.wait_for_timeout(700)
-        # 2) pick the '…Duplicate…' remove reason.
-        picked = page.evaluate(r"""() => {
-            const s = document.querySelector("select[name='rmvReason']");
-            if (!s) return '';
-            const o = [...s.options].find(o => /duplicate/i.test(o.text));
-            if (!o) return '';
-            s.value = o.value; s.dispatchEvent(new Event('change',{bubbles:true}));
-            return o.text;
-        }""")
+        # 2) pick the remove reason matching the caller's pattern.
+        picked = page.evaluate(
+            """(pat) => {
+                const s = document.querySelector("select[name='rmvReason']");
+                if (!s) return '';
+                const re = new RegExp(pat, 'i');
+                const o = [...s.options].find(o => re.test(o.text));
+                if (!o) return '';
+                s.value = o.value; s.dispatchEvent(new Event('change',{bubbles:true}));
+                return o.text;
+            }""", reason_pattern)
         if not picked:
-            _log("    [remove] FAIL: no '…Duplicate…' reason on the page")
+            _log(f"    [remove] FAIL: no reason matching /{reason_pattern}/ on the page")
             return False
         # 3) Click the "REMOVE APPLICANT" button — NOT "Save Applicant" (that one is
         #    BLOCKED for dupes: "Cannot Save this Applicant"). Real click + nav wait
@@ -1617,14 +1630,32 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                      f"{_BLOCKED_RETRY_AFTER_MIN}min: "
                      f"{a.first_name} {a.last_name}")
         elif "no view-resume link" in str(detail):
-            # No resume attached to the record at all. Nothing to open, so the check
-            # costs nothing — don't burn a cache slot on it, just re-check next walk
-            # (a resume can get attached later in the day).
-            _log(f"    no resume on file ({detail}) → flag: "
-                 f"{a.first_name} {a.last_name}")
+            # No resume attached to the record at all — nothing to open, so there is
+            # no number anywhere: panel blank AND no resume. Uncontactable.
+            if getattr(config, "REMOVE_NO_PHONE", False):
+                if _perform_remove(page, NO_CONTACT_REASON):
+                    _log(f"    \U0001f5d1 removed (no resume, no phone — "
+                         f"insufficient contact info): {a.first_name} {a.last_name}")
+                    return "removed_no_contact"
+                _log(f"    remove-for-no-contact FAILED → flag: "
+                     f"{a.first_name} {a.last_name}")
+            else:
+                _log(f"    no resume on file ({detail}) → flag: "
+                     f"{a.first_name} {a.last_name}")
         else:
-            _log(f"    no resume phone ({detail}) → flag + remember (won't re-read "
-                 f"today): {a.first_name} {a.last_name}")
+            # The resume OPENED and genuinely carries no number. Confirmed
+            # uncontactable — distinct from a blocked read, which is OUR failure and
+            # must never cost an applicant their record (see _is_blocked_detail).
+            if getattr(config, "REMOVE_NO_PHONE", False):
+                if _perform_remove(page, NO_CONTACT_REASON):
+                    _log(f"    \U0001f5d1 removed (no phone on resume — "
+                         f"insufficient contact info): {a.first_name} {a.last_name}")
+                    return "removed_no_contact"
+                _log(f"    remove-for-no-contact FAILED → flag: "
+                     f"{a.first_name} {a.last_name}")
+            else:
+                _log(f"    no resume phone ({detail}) → flag + remember (won't "
+                     f"re-read today): {a.first_name} {a.last_name}")
             _mark_nophone_checked(key)
     _NO_PHONE_ROWS.append([
         dt.date.today().isoformat(), a.first_name, a.last_name,
