@@ -16,7 +16,6 @@ import datetime as dt
 import sys
 import traceback
 import urllib.parse
-from pathlib import Path
 
 from . import fetch, parse, sheet
 from .offices import OFFICES, month_window
@@ -203,16 +202,6 @@ def rows_for(manager, period, ads):
 
 
 def main(argv=None):
-    # STOOD DOWN? Carlos asked for this off all runs 2026-08-27. Bail before
-    # argparse so every entry point — launchd, `lucy rerun`, the Hub Run button,
-    # a hand-typed command — hits the same wall. Exit 0, not an error: a
-    # deliberate stand-down is not a failure and must not page anyone.
-    marker = Path(__file__).parent / "DISABLED"
-    if marker.exists():
-        print("[indeed_source_report] DISABLED — stood down 2026-08-27 at "
-              "Carlos's request (runs long). Delete "
-              f"{marker} to bring it back. Exiting.", flush=True)
-        return 0
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--month", help="YYYY-MM (default: current month)")

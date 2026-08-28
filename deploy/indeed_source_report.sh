@@ -28,14 +28,6 @@ LOG_DIR="output/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/indeed_source_report_$(date +%Y%m%d).log"
 
-# STOOD DOWN? run.py refuses too, but bail HERE so the stand-down never touches
-# the Hub: publishing a run for a pass that pulled nothing would paint the card
-# and tell everyone not to look (same gate as tracker_mirror.sh, 2026-08-24).
-if [ -f automations/indeed_source_report/DISABLED ]; then
-    echo "[$(date)] indeed-source-report STOOD DOWN (automations/indeed_source_report/DISABLED) — not running, not publishing" >> "$LOG"
-    exit 0
-fi
-
 echo "[$(date)] indeed-source-report START $*" >> "$LOG"
 "$VENV_PY" -m automations.indeed_source_report.run "$@" >> "$LOG" 2>&1
 rc=$?

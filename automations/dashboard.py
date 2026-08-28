@@ -1386,20 +1386,6 @@ PAUSED_REPORTS = {
     "tracker_mirror": ("Stood down 2026-08-24 (Carlos, 5d4042b) — the manager "
                        "tabs are on live IMPORTRANGE again, so a ferry pass "
                        "would overwrite those formulas with frozen values."),
-    "indeed-source-report": ("Stood down 2026-08-27 (Carlos) — the report runs "
-                             "long (~11 min for 28 offices) and he asked for it "
-                             "off all three passes. Enforced by "
-                             "automations/indeed_source_report/DISABLED plus an "
-                             "unloaded LaunchAgent on Lucy 2."),
-    # Both spellings deliberately. The Hub card is the hyphenated library card
-    # (the one documented exception in test_hub_card_ids), but schedule_config
-    # carries the same report under the underscore id for `lucy rerun`, and
-    # _paused_reason is called on rows from both lists.
-    "indeed_source_report": ("Stood down 2026-08-27 (Carlos) — the report runs "
-                             "long (~11 min for 28 offices) and he asked for it "
-                             "off all three passes. Enforced by "
-                             "automations/indeed_source_report/DISABLED plus an "
-                             "unloaded LaunchAgent on Lucy 2."),
 }
 
 
