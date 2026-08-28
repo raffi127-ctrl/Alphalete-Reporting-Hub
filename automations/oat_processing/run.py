@@ -2146,6 +2146,48 @@ def probe_sms(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def office_on_page(page):
+    """Which office the ATS page is CURRENTLY showing, or None if we can't tell.
+
+    The OAT header renders "Office ID: 23467   Owner: Atef Choudhury". That string
+    is the only trustworthy statement of whose queue we are about to act on."""
+    body = _body(page)
+    m = re.search(r"office\s*id\s*:?\s*([0-9]{3,6})", body)
+    return m.group(1) if m else None
+
+
+def assert_on_expected_office(page, tries: int = 3) -> bool:
+    """Refuse to work a queue that is not the office we were told to work.
+
+    WHY THIS HAS TO EXIST: the office switch happens once, when the session opens.
+    `run_walk` — the thing that actually SENDS, REMOVES and TEXTS — never checked
+    which office it had landed on. The standalone `run()` path aborts on a failed
+    switch; the applicant_push path we actually run does not, so a switch that
+    silently did not take would have this walk process someone else's applicants,
+    irreversibly, every ten minutes. That hole was harmless while one office was
+    ever worked; it stopped being harmless the day a second office was added
+    (2026-08-26) and the session started switching between them.
+
+    FAILS CLOSED. A mismatch aborts, and so does a header we cannot read after a
+    few tries — "I don't know whose queue this is" is not a licence to send. The
+    header is on the OAT page in every screenshot we have, so an unreadable one
+    means the page is not what we think it is, which is exactly when to stop."""
+    want = str(config.OFFICE_ID)
+    seen = None
+    for _ in range(tries):
+        seen = office_on_page(page)
+        if seen == want:
+            return True
+        if seen is not None:
+            _log(f"[oat] ABORT: this page is office {seen}, expected {want} — "
+                 f"refusing to process another office's applicants")
+            return False
+        page.wait_for_timeout(700)   # header may still be rendering
+    _log(f"[oat] ABORT: could not read an Office ID off the page (expected "
+         f"{want}) — refusing to act on a queue we cannot identify")
+    return False
+
+
 def run_walk(page, live: bool = False, limit: int = None,
              max_actions: int = None, today=None) -> int:
     """Walk the One-App-at-a-time queue on an ALREADY-OPEN, logged-in, office-11580
@@ -2165,6 +2207,11 @@ def run_walk(page, live: bool = False, limit: int = None,
 
     if not open_oat(page):
         _log("[oat] FATAL: could not open the One-App-at-a-time page")
+        return 2
+
+    # WHOSE queue is this? Checked BEFORE a single applicant is read, because
+    # everything past this point sends, removes or texts a real person.
+    if not assert_on_expected_office(page):
         return 2
 
     _start_total = getattr(read_current_applicant(page, today), "_total", None)
