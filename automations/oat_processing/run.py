@@ -54,7 +54,8 @@ from automations.shared.tableau_patchright import (
 from automations.recruiting_report import fetch_office
 
 from . import config
-from .classify import Applicant, Action, Decision, classify
+from .classify import (Applicant, Action, Decision, classify,
+                       verdict_for_history as classify_history)
 
 
 def _log(msg: str) -> None:
@@ -387,6 +388,26 @@ def _click_first(page, labels, timeout: int = 6000) -> bool:
     return False
 
 
+_DUP_STATUS_JS = """() => { const out=[]; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();
+  for (const t of document.querySelectorAll('table')) {
+    const h=[...(t.rows[0]||{cells:[]}).cells].map(c=>norm(c.innerText).toLowerCase());
+    const si=h.findIndex(x=>x.indexOf('status')>=0); if (si<0) continue;
+    for (const r of [...t.rows].slice(1)) {
+      const v=norm((r.cells[si]||{}).innerText); if (v) out.push(v); } }
+  return out; }"""
+
+
+def read_dup_statuses(page):
+    """Status cells from the 'Following Applicants found with the same email
+    address or phone number' box — the interview history a recruiter reads before
+    deciding whether to re-text or remove. Header matched by SUBSTRING; an exact
+    'status' match missed the table entirely."""
+    try:
+        return page.evaluate(_DUP_STATUS_JS) or []
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _has_dup_signal(x: Applicant) -> bool:
     return bool(x.override_button or x.correspondence_blocked or x.interview_future
                 or x.interview_past_noshow or x.sent_to_call_list_today)
@@ -551,6 +572,25 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     if _try_overwrite_send(page):
         _log(f"    ✅ SENT via overwrite: {a.first_name} {a.last_name}")
         return "sent_override"
+    # The ATS refuses. Before the generic date-based fallbacks, read the INTERVIEW
+    # HISTORY — Carlos 2026-08-28. "Delay disqualified" means we interviewed them
+    # and chose not to advance them, so texting again is pointless; "no show /
+    # rejected / not qualified" means they never really got interviewed, so they
+    # deserve the await text rather than a silent removal. Getting these two
+    # backwards either pesters someone we already passed on or throws away a live
+    # candidate.
+    _verdict = classify_history(read_dup_statuses(page))
+    if _verdict == "remove_duplicate":
+        if _perform_remove(page, DUP_REASON):
+            _log(f"    🗑 removed — interviewed and disqualified (no re-text): "
+                 f"{a.first_name} {a.last_name}")
+            return "removed"
+    elif _verdict == "retext":
+        _flag_retext(a, None)
+        _log(f"    ⚑ FLAG re-text (no-show / not qualified — never truly "
+             f"interviewed): {a.first_name} {a.last_name}")
+        return "flag_retext"
+
     # genuinely can't send → >1wk re-text (armed: text+remove, else flag) else
     # auto-remove (recent dup).
     lc = _parse_last_corr(_body(page))
@@ -1194,15 +1234,32 @@ def retext_by_name(page, first, last, phone=""):
     except Exception as e:  # noqa: BLE001
         return "search_err", f"{type(e).__name__}"
     # Open the matching applicant from the results.
-    full = f"{first} {last}".lower()
+    #
+    # Match FIRST and LAST independently, order-free and accent-folded. Looking for
+    # the literal "first last" substring failed on every applicant: the results
+    # grid renders "Last, First", so the needle never appeared, and a name like
+    # "Darisleidy Remedios González" also lost to the accent. Both came back
+    # not_found and NO text was sent (2026-08-28) — the applicant was silently
+    # skipped rather than re-engaged, which is the exact failure this flow exists
+    # to prevent.
+    f_norm, l_norm = _deaccent(first).lower(), _deaccent(last).lower()
     opened = page.evaluate(
-        """(full) => {
-            const a = [...document.querySelectorAll('a')].find(e =>
-                (e.innerText||'').toLowerCase().includes(full));
-            if (a) { a.click(); return (a.innerText||'').trim().slice(0,40); }
-            return null; }""", full)
+        """(args) => {
+            const [f, l] = args;
+            const fold = s => (s || '')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+            const links = [...document.querySelectorAll('a')];
+            // prefer a link carrying BOTH names; fall back to the last name alone
+            const both = links.find(e => {
+                const t = fold(e.innerText);
+                return t.includes(f) && t.includes(l); });
+            const one = both || links.find(e => {
+                const t = fold(e.innerText);
+                return l.length > 2 && t.includes(l) && t.length < 60; });
+            if (one) { one.click(); return (one.innerText || '').trim().slice(0, 40); }
+            return null; }""", [f_norm, l_norm])
     if not opened:
-        return "not_found", f"no search result for {full!r}"
+        return "not_found", f"no search result for {first} {last}"
     page.wait_for_timeout(2500)
     a = read_current_applicant(page)
     role = _role_from_position(a.position)
