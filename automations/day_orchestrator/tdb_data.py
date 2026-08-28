@@ -82,6 +82,20 @@ ADJUSTMENTS_BY_MONTH = {
 
 EXCLUDE_NEW_LEADERS = {"Giselle Loredo"}   # dropped even if auto-detected
 
+# Promoter corrections, keyed by NEW LEADER, scoped BY MONTH.
+# Auto-detect credits the Break-a-Leader to whoever the sales board's 'Trainer'
+# column names at the moment the rep flips to Level 1 — so a wrong/stale Trainer
+# pays the wrong person and the flyer prints the wrong arrow. The pair is already
+# frozen in the local json AND the shared store by then (union-only, first
+# sighting wins), and a manual pair would ADD a second row rather than replace
+# it, so the fix has to be a rewrite at read time. Applied to BOTH readers
+# (update_leaders_state for points, load_leaders_state for the flyer), never
+# written back to the state file.
+PROMOTER_FIXES_BY_MONTH = {
+    # Board Trainer said Anthony Coca; Algemar: it's Anthony Marchetti (2026-08-28).
+    "2026-08": {"Giovanna Santos": "Anthony Marchetti"},
+}
+
 POS_HERE = {"Here", "H+DC", "RT", "H+LM"}
 LATE_PEN = {"Late"}
 OFF_PEN  = {"Off", "STF", "O-NA"}
@@ -469,6 +483,14 @@ def read_leadership(sales_file):
     wb.close()
     return out
 
+def _fix_promoters(pairs):
+    """Rewrite the promoter of any pair listed in PROMOTER_FIXES_BY_MONTH."""
+    fixes = {norm(k): v for k, v in
+             PROMOTER_FIXES_BY_MONTH.get(_current_period(), {}).items()}
+    if not fixes:
+        return [list(p) for p in pairs]
+    return [[fixes.get(norm(p[1]), p[0]), p[1]] for p in pairs]
+
 def update_leaders_state(leadership):
     """Accumulate promotions to 'Level 1' + car-ride 'BEST'; first sighting seeds."""
     try:
@@ -500,7 +522,7 @@ def update_leaders_state(leadership):
         print(f"(couldn't save leaders state: {e})")
     if first_run:
         print(f"Leaders baseline set for {len(baseline)} reps")
-    return promos, cars
+    return _fix_promoters(promos), cars
 
 def load_leaders_state():
     """Read-only view of auto-detected leaders, for the flyer."""
@@ -510,7 +532,7 @@ def load_leaders_state():
         return [], []
     if (state.get("period") or _current_period()) != _current_period():
         return [], []
-    return state.get("new_leaders") or [], state.get("car_ride") or []
+    return _fix_promoters(state.get("new_leaders") or []), state.get("car_ride") or []
 
 def load_manual_inputs():
     """Hub-typed additions -> (promotions, solo, car_ride). Never raises."""
