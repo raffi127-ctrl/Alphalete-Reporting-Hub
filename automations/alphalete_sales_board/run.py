@@ -317,6 +317,20 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
         else:
             item["status"] = "wasn't on the board - added, numbers fill next sweep"
             _log("  added %s to row %d" % (item["sara_name"], row))
+            # Finish the row the way a person would (Raf 2026-08-27): trainer,
+            # 1st Wk, Fiber, the trainer's team, In Training, this Monday. The
+            # grid is re-read first because the board RE-SORTS through the day
+            # and the row we just wrote may already have moved.
+            try:
+                fresh = ws.get_all_values()
+                det, dnotes = fill.new_rep_details(fresh, board_name, day)
+                if det:
+                    ws.batch_update(det, value_input_option="USER_ENTERED")
+                for n in dnotes:
+                    _log("    %s" % n)
+            except Exception as e:  # noqa: BLE001 — details must never fail the add
+                _log("    couldn't fill %s's details: %s: %s"
+                     % (board_name, type(e).__name__, str(e)[:140]))
             # Recorded so an alias confirmed later can take the row back if it
             # turns out they were already on the board under another spelling.
             S.save(S.record_added(S.load(), day, item["sara_name"], board_name, row))
