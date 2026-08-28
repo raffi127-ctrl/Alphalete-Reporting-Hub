@@ -235,6 +235,15 @@ def main(argv: Optional[list] = None) -> int:
                     help="explicit no-op flag; dry-run is already the default")
     ap.add_argument("--from-file", metavar="CSV",
                     help="skip the Tableau pull and use an existing crosstab")
+    ap.add_argument("--inspect", metavar="TEXT",
+                    help="READ-ONLY diagnostic: after the pull, print every RAW "
+                         "export row whose Business Name, Contract ID or Account "
+                         "Id contains TEXT (case-insensitive), then exit without "
+                         "writing the sheet, building the workbook or posting. "
+                         "Answers 'what statuses does Tableau actually carry for "
+                         "this deal?' from the machine that owns the session — "
+                         "the question the collapsed report can't show, because a "
+                         "deal that fails the TPV gate leaves no trace in it.")
     ap.add_argument("--out", metavar="PDF", help="output PDF path")
     ap.add_argument("--quiet", action="store_true")
     # --- per-office overrides (onboarded B2B offices) ---------------------
@@ -333,6 +342,43 @@ def main(argv: Optional[list] = None) -> int:
             print("✗ Tableau pull failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()
             return 1
+
+    # ---- 1b. --inspect: dump the RAW rows, then stop ---------------------
+    # Deliberately BEFORE collapse and before every writer: this exists to show
+    # the export as it actually arrived, and it must never be able to write.
+    if args.inspect:
+        needle = args.inspect.strip().lower()
+        raw = clean.read_rows(src)
+        if args.owner_office:
+            raw = clean.filter_to_owner(raw, args.owner_office)
+        hits = [r for r in raw
+                if needle in (r.get("Business Name") or "").lower()
+                or needle in (r.get("Contract ID") or "").lower()
+                or needle in (r.get("Account Id") or "").lower()]
+        print("\n[inspect] {!r}: {} raw row(s) of {} in the export"
+              .format(args.inspect, len(hits), len(raw)))
+        for r in hits:
+            print("[inspect]   ctr {ctr} | acct {acct} | {rep} | sold {sold} "
+                  "| {status} / {sub} | accepted {acc} | complete {cs}".format(
+                      ctr=(r.get("Contract ID") or "?"),
+                      acct=(r.get("Account Id") or "?"),
+                      rep=(r.get("Rep Name") or "?"),
+                      sold=(r.get("Sale Date") or "-"),
+                      status=(r.get("Status") or "?"),
+                      sub=(r.get("Contr. Sub-status") or "-"),
+                      acc=(r.get("Accepted Date") or "-"),
+                      cs=(r.get("Complete Sales") or "-")))
+        # Say what the gates would then do with it, so the log answers the
+        # whole question in one pass rather than needing a second run.
+        keys = {(r.get("Contract ID", "").strip(),
+                 r.get("Account Id", "").strip()) for r in hits}
+        survived, _ = clean.collapse(raw)
+        kept = {s.key for s in survived}
+        for k in sorted(keys):
+            print("[inspect]   -> ctr {} : {}".format(
+                k[0], "COUNTS as a sale" if k in kept else "DROPPED by the gates"))
+        print("[inspect] read-only — nothing written, nothing posted.")
+        return 0
 
     # ---- 2. collapse ----------------------------------------------------
     sales, stats = clean.load(src, owner_office=(args.owner_office or ""))
