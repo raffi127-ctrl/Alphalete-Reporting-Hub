@@ -47,14 +47,25 @@ NAV_VIEWS = [("p=701", "console / Retention Details"),
              ("p=702", "Source Report (aggregate counts)")]
 
 
-def _tokens(ctx) -> list[tuple[str, float]]:
-    """[(short id, expiry epoch)] for every applicantstream rqst cookie."""
+def _tokens(ctx) -> list[tuple[str, float, float]]:
+    """[(short id, expiry epoch, epoch WHEN READ)] for every applicantstream
+    rqst cookie.
+
+    The read time is captured here on purpose. The first version stored only the
+    expiry and worked out "how long is left" in the print loop at the END of the
+    run — so every row was measured against the same final instant, and a token
+    that sat still for 64 minutes printed "20m left" on all five rows. Read
+    naively that says the expiry slid forward in lockstep with the clock, i.e. a
+    renewal mechanism nobody knew about. It says nothing of the sort; it is one
+    number formatted five times. An instrument built to stop this project
+    guessing must not be the thing that invents the finding."""
+    now = time.time()
     out = []
     for c in ctx.cookies():
         if ("applicantstream" in (c.get("domain") or "")
                 and (c.get("name") or "").lower().startswith("rqst_")):
             out.append((c["name"][len("rqst_"):][:8],
-                        float(c.get("expires") or 0)))
+                        float(c.get("expires") or 0), now))
     return sorted(out)
 
 
@@ -63,8 +74,23 @@ def _fmt(toks) -> str:
         return "NO TOKEN"
     return ", ".join(
         "{}({})".format(t, "no expiry" if not e else
-                        "{:.0f}m left".format((e - time.time()) / 60.0))
-        for t, e in toks)
+                        "{:.0f}m left".format((e - read_at) / 60.0))
+        for t, e, read_at in toks)
+
+
+def _ids(toks) -> list:
+    return sorted(t for t, _, _ in toks)
+
+
+def _minted(toks, first) -> bool:
+    """Did a token appear that was NOT there at the start?
+
+    Set inequality is the wrong test and produced three false "TOKEN CHANGED"
+    flags in the 2026-08-28 10:26 run: the session started with one ALREADY
+    EXPIRED cookie beside the live one, the browser dropped it, and every later
+    row differed from the first. A cookie being discarded is not the server
+    issuing anything. Only a NEW id counts."""
+    return bool(set(_ids(toks)) - set(_ids(first)))
 
 
 def main(argv=None) -> int:
@@ -146,16 +172,15 @@ def main(argv=None) -> int:
     print("\n=== token at each step ===", flush=True)
     first = steps[0][1]
     for label, toks in steps:
-        mark = ""
-        if toks and first and sorted(t for t, _ in toks) != sorted(t for t, _ in first):
-            mark = "   <-- TOKEN CHANGED"
+        mark = "   <-- NEW TOKEN MINTED" if _minted(toks, first) else ""
+        dropped = set(_ids(first)) - set(_ids(toks))
+        if dropped and not mark:
+            mark = "   (expired cookie dropped: {})".format(", ".join(sorted(dropped)))
         print(f"  {label:58} {_fmt(toks)}{mark}", flush=True)
 
     nav_rows = [st for st in steps if st[0].startswith("after navigating")]
-    nav_changed = any(sorted(t for t, _ in toks) != sorted(t for t, _ in first)
-                      for _, toks in nav_rows)
-    ctl_changed = (sorted(t for t, _ in steps[-1][1])
-                   != sorted(t for t, _ in first))
+    nav_changed = any(_minted(toks, first) for _, toks in nav_rows)
+    ctl_changed = _minted(steps[-1][1], first)
     print("\n=== reading ===", flush=True)
     if nav_changed and not ctl_changed:
         print("Navigation renewed the token and an idle reload did not — this "
