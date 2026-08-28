@@ -1230,6 +1230,25 @@ def _action_reseed_appstream(args: str) -> tuple[bool, str]:
     return ok, res + " (needs a human at the Cloudflare check on the mini)"
 
 
+def _action_appstream_renew_probe(args: str) -> tuple[bool, str]:
+    """Does USING the console renew its rqst token? Read-only diagnostic.
+
+    Settles the question the last ten AppStream fixes were built on top of
+    without checking. Navigates two report views, then runs an idle-reload
+    control in the same session, recording the token id at every step — see
+    automations.shared.appstream_renew_probe. Writes nothing, and yields the
+    profile immediately if a real report wants it.
+
+    NOT in READONLY_ACTIONS despite writing nothing: it takes the shared browser
+    profile, which is exactly what that lane promises not to touch.
+
+    Args: passed through, e.g. '--settle-min 10'."""
+    cmd = [sys.executable, "-m", "automations.shared.appstream_renew_probe"]
+    cmd += (args or "").split()
+    return _run_cmd(cmd, timeout_s=30 * 60,
+                    log_name="appstream-renew-probe.log")
+
+
 def _action_push_appstream_fleet(args: str) -> tuple[bool, str]:
     """Push THIS machine's live AppStream session to every runner — no human.
 
@@ -6126,6 +6145,7 @@ ACTIONS = {
     "post_nsf_correction": _action_post_nsf_correction,
     "reseed_appstream": _action_reseed_appstream,
     "push_appstream_fleet": _action_push_appstream_fleet,
+    "appstream_renew_probe": _action_appstream_renew_probe,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
     "appstream_status": _action_appstream_status,
