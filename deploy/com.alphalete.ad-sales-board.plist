@@ -27,9 +27,35 @@
     <!-- 7:50am daily, machine-local (Lucy 2 is Central). Deliberately AFTER
          applicant_tracker's 6:45 morning import (yesterday's call-list names)
          and clear of the 4am AppStream cluster. TIME KNOB lives here. -->
+    <!-- EVERY TWO HOURS (Carlos, 2026-08-27: "can you set up an automation so
+         that it updates once every two hours").
+
+         Anchored on :50 and starting at 07:50 on purpose — that was the proven
+         daily slot because it lands AFTER applicant_tracker's 06:45 Call List
+         import puts yesterday's names in, and an earlier pass would refresh the
+         week without them. From there it is straight +2h.
+
+         Stops after 21:50 and resumes at 07:50: the applicant push window is
+         7am-10pm, so nothing new reaches the call list overnight and an
+         overnight pass would only re-pull identical numbers while competing for
+         the AppStream session with the 3am/4am batches.
+
+         The wrapper's pgrep overlap guard means a tick that lands while a long
+         backfill is still running exits immediately instead of fighting it for
+         the browser profile.
+
+         TIME KNOB: edit this array, then re-install:
+           lucy rerun install_ad_sales_board_agent (machine: Lucy 2)     -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>50</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
