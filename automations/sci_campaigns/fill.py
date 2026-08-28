@@ -7,9 +7,11 @@ Layout (discovered at run time, never hardcoded — CLAUDE.md):
   rows 2..n    A = campaign label, one row per tab row we fill.
   last row     A = 'Total Units' — a SHEET FORMULA. Never written.
 
-Columns are found by parsing the row-1 date, rows by their column-A label. A
-week with no column is an error, not a silently-skipped write: the header runs
-out eventually and we want to be told, not to no-op every Friday.
+Columns are found by parsing the row-1 date, rows by their column-A label. The
+header is finite and DID run out (08/01/26, on 2026-08-28), so a week newer than
+the newest column now grows row 1 forward (see extend_header at the bottom). A
+week with no column that is OLDER than the newest one stays an error — that is a
+hole inside history, not a tab that needs another week.
 """
 from __future__ import annotations
 
@@ -228,3 +230,112 @@ def apply_plan(ws, plan: Plan, *, dry_run: bool) -> None:
     ws.batch_update([{"range": c.a1, "values": [[c.value]]}
                      for c in plan.updates],
                     value_input_option="USER_ENTERED")
+
+
+# --- growing the header ------------------------------------------------------
+# Row 1 is not a list of strings, it is a CHAIN: B1 is '=C1+7', C1 is '=D1+7' …
+# back to the oldest hand-typed date, so the tab's weeks are only as many as
+# somebody once built. It ran out at 08/01/26 on 2026-08-28 and the run had
+# nowhere to write WE 8/15 — and would have failed the same way every Friday
+# after that. So a week NEWER than the newest header now grows the header
+# instead of erroring: insert the column(s) at the newest end and rewrite the
+# two formulas a week column carries (the row-1 chain and 'Total Units').
+# A week OLDER than the newest header is still an error — that would be a hole
+# inside history, which the chain cannot produce and we must not paper over.
+MAX_NEW_COLUMNS = 8          # ~2 months behind; more than that means a bad date
+
+
+def total_row(grid: List[List[str]]) -> Optional[int]:
+    """1-based row of 'Total Units' (a formula row), or None."""
+    for r in range(HEADER_ROW, len(grid)):
+        if norm(grid[r][0] if grid[r] else "") == TOTAL_ROW_LABEL:
+            return r + 1
+    return None
+
+
+def header_weeks_needed(grid: List[List[str]],
+                        week_ending: dt.date) -> List[dt.date]:
+    """The Saturday column(s) row 1 is missing before `week_ending` can fill,
+    oldest first. Empty when the week already has a column (or snaps to one),
+    and empty for a week older than the newest header."""
+    cols = week_columns(grid)
+    if not cols or snap_to_column(week_ending, cols) is not None:
+        return []
+    newest = max(cols)
+    if week_ending <= newest:
+        return []
+    out: List[dt.date] = []
+    d = newest + dt.timedelta(days=7)
+    # ≤ +SNAP_DAYS so a week Adriana labelled by its FRIDAY still gets the
+    # Saturday column it will snap to, and not one week too many.
+    while d <= week_ending + dt.timedelta(days=SNAP_DAYS):
+        out.append(d)
+        d += dt.timedelta(days=7)
+    return out
+
+
+def extend_header(ws, grid: List[List[str]], weeks: List[dt.date], *,
+                  dry_run: bool = False) -> List[List[str]]:
+    """Add `weeks` to row 1 as new columns at the NEWEST end. Returns the grid
+    to keep working from (re-read from the tab when anything was inserted).
+
+    Nothing existing is moved or rewritten by hand: the insert shifts the old
+    columns right and every formula on the tab is relative, so history follows
+    itself. Formats are copied from the week column the new ones displace."""
+    weeks = sorted(set(weeks))
+    if not weeks:
+        return grid
+    cols = week_columns(grid)
+    left = min(cols.values())           # first week column (col A is labels)
+    tr = total_row(grid)
+    if tr is None:
+        raise KeyError(f"no {TOTAL_ROW_LABEL!r} row on the tab — refusing to "
+                       f"add week columns to a layout I don't recognise.")
+    n = len(weeks)
+    print(f"  ⚠ the header ran out at {max(cols):%m/%d/%y}; adding "
+          f"{n} week column(s): "
+          f"{', '.join(f'{w:%m/%d/%y}' for w in weeks)}")
+    if dry_run:
+        print("    (--dry-run: not added, so the week(s) below can't be planned)")
+        return grid
+
+    sid = ws.id
+    ws.spreadsheet.batch_update({"requests": [
+        {"insertDimension": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS",
+                      "startIndex": left - 1, "endIndex": left - 1 + n},
+            "inheritFromBefore": False}},
+        # the displaced week column now sits at left+n; clone its formats over
+        # the new ones so row 1 keeps the MM/DD/YY date format
+        {"copyPaste": {
+            "source": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": tr,
+                       "startColumnIndex": left - 1 + n,
+                       "endColumnIndex": left + n},
+            "destination": {"sheetId": sid, "startRowIndex": 0,
+                            "endRowIndex": tr, "startColumnIndex": left - 1,
+                            "endColumnIndex": left - 1 + n},
+            "pasteType": "PASTE_FORMAT"}},
+    ]})
+
+    # Newest first: the leftmost new column is the newest week, and each one
+    # reads its right-hand neighbour +7 — the same chain the tab already uses.
+    updates = []
+    for i in range(n):
+        c = a1col(left + i)
+        nxt = a1col(left + i + 1)
+        updates.append({"range": f"{c}{HEADER_ROW}",
+                        "values": [[f"={nxt}{HEADER_ROW}+7"]]})
+        updates.append({"range": f"{c}{tr}",
+                        "values": [[f"=sum({c}{HEADER_ROW + 1}:{c}{tr - 1})"]]})
+    ws.batch_update(updates, value_input_option="USER_ENTERED")
+
+    grid = ws.get_all_values()
+    got = week_columns(grid)
+    for w in weeks:
+        if w not in got:
+            raise KeyError(
+                f"added the column(s) but row 1 doesn't show {w:%m/%d/%y} "
+                f"(it now covers {max(got):%m/%d/%y} .. {min(got):%m/%d/%y}). "
+                f"Check the tab before re-running.")
+    print(f"    ✓ row 1 now runs back from {max(got):%m/%d/%y}")
+    return grid

@@ -13,6 +13,8 @@ rows exactly on every week where both PDFs parse:
       Lumen          -> Lumen Fiber           (renamed 'Quantum Fiber' 2026-06)
       Verizon FiOS   -> Verizon FiOS Fiber
       Verizon 5G     -> Verizon 5G Fiber      (dropped from the PDF 2025-11)
+      Rogers         -> Rogers                (new WE 8.15.2026)
+      Rogers Wireless-> Rogers Wireless       (new WE 8.15.2026)
       AT&T B2B       -> B2B
 
   the RANKED PDF's FOOTER  (the 'LW Week Ending' column)
@@ -33,6 +35,7 @@ row that was PRODUCING last week goes missing rather than silently zeroing it).
 """
 from __future__ import annotations
 
+import datetime as dt
 import re
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional
@@ -49,6 +52,11 @@ BYDAY_MAP = {
     "verizon fios": "Verizon FiOS Fiber",
     "verizon 5g": "Verizon 5G Fiber",
     "at&t b2b": "B2B",
+    # New campaigns Adriana started reporting WE 8.15.2026, given their own rows
+    # on the tab 2026-08-28 (Eve's call) — before that they landed in `unknown`
+    # and the identity check was off by their combined 4,115.
+    "rogers": "Rogers",
+    "rogers wireless": "Rogers Wireless",
 }
 # by-day rows we deliberately ignore (the footer supplies these, better split)
 BYDAY_IGNORED = {"at&t nds", "at&t wireless", "vz wireless"}
@@ -81,6 +89,25 @@ _FOOTER_ANY = re.compile(
 _HDR_DATE = re.compile(r"(\d{1,2}\.\d{1,2}\.\d{2,4})")
 
 
+def header_date(label: str) -> Optional["dt.date"]:
+    """'8.8.26' / '8.8.2026' -> date. None for anything else.
+
+    The by-day PDF prints the two week-endings it covers ('8.15.26', '8.8.26'),
+    which is the only way to CONFIRM that its 'Previous Week Ending' column is
+    the week we think it is — see run.resolve_week. Adriana skipped WE 8.8.2026
+    entirely, and the RANKED PDF that followed restated 8.1 in that column."""
+    m = re.fullmatch(r"\s*(\d{1,2})\.(\d{1,2})\.(\d{2,4})\s*", label or "")
+    if not m:
+        return None
+    y = int(m.group(3))
+    if y < 100:
+        y += 2000
+    try:
+        return dt.date(y, int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return None
+
+
 class ParseError(RuntimeError):
     pass
 
@@ -90,7 +117,7 @@ class Parsed(NamedTuple):
     byday_grand: Optional[int]    # the by-day PDF's Grand Total (LW column)
     byday_extra: Dict[str, int]   # the ignored by-day rows, for the audit
     header_weeks: List[str]       # ['7.18.26', '7.11.26'] as printed
-    unknown: List[str]            # campaign names we didn't recognise
+    unknown: Dict[str, int]       # campaign -> units we didn't recognise
 
 
 def _int(s: str) -> int:
@@ -104,7 +131,7 @@ def _text(pdf_path: Path) -> str:
 
 def parse_byday(pdf_path: Path, *, prev: bool = False) -> tuple:
     """-> ({row label: units}, grand_total, {ignored name: units}, header_weeks,
-    [unknown names]).
+    {unknown name: units}).
 
     Reads the 'LW Week Ending' total, or with prev=True the 'Previous Week
     Ending' one — see parse_week's `prev` for why that column matters.
@@ -112,7 +139,7 @@ def parse_byday(pdf_path: Path, *, prev: bool = False) -> tuple:
     text = _text(pdf_path)
     vals: Dict[str, int] = {}
     extra: Dict[str, int] = {}
-    unknown: List[str] = []
+    unknown: Dict[str, int] = {}
     for line in text.splitlines():
         m = _BYDAY_ROW.match(line)
         if not m:
@@ -130,7 +157,7 @@ def parse_byday(pdf_path: Path, *, prev: bool = False) -> tuple:
         elif key in BYDAY_IGNORED:
             extra[name] = _int(raw)
         else:
-            unknown.append(name)
+            unknown[name] = _int(raw)
     if not vals:
         raise ParseError(
             f"{pdf_path.name}: no campaign rows parsed — the 'Campaign Totals "
@@ -222,6 +249,10 @@ def check_consistency(p: Parsed) -> List[str]:
             warn.append(f"total identity off by {got - expect}: rows sum to "
                         f"{got}, but the by-day Grand Total implies {expect}.")
     if p.unknown:
-        warn.append(f"unmapped campaign(s) in the by-day PDF — they are NOT "
-                    f"being written anywhere: {p.unknown}")
+        # With the units, not just the names: the identity warning above is
+        # off by exactly this much, and it's how you tell one new campaign the
+        # tab may want a row for from noise.
+        warn.append("unmapped campaign(s) in the by-day PDF — they are NOT "
+                    "being written anywhere: "
+                    + ", ".join(f"{k} {v}" for k, v in sorted(p.unknown.items())))
     return warn

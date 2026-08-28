@@ -94,9 +94,22 @@ def resolve_week(we: dt.date, got: dict) -> tuple:
     if byday is None and nxt and nxt.byday_pdf:
         byday = _try(scp.parse_byday, nxt.byday_pdf, prev=True)
         src_b = f"WE {nxt_label} prior-week column"
+        # 'Previous Week Ending' is only the previous week Adriana RAN, which is
+        # W-7 only while the trackers are unbroken. She skipped WE 8.8.2026, and
+        # the 8.15 PDFs' prior column is 8.1 — filling 8.8 from it would have
+        # copied a whole week on top of another. The by-day PDF prints both
+        # week-endings it covers, so make it say so.
+        if byday is not None:
+            printed = byday[3]          # the week-endings the PDF prints
+            stated = scp.header_date(printed[1]) if len(printed) > 1 else None
+            if stated is not None and stated != we:
+                notes.append(f"  · WE {nxt_label}'s by-day prior-week column "
+                             f"is WE {es.we_label(stated)}, not this week — "
+                             f"Adriana ran no tracker for {es.we_label(we)}.")
+                byday = src_b = None
     if byday is None and we in manual.BYDAYS:
         m = manual.BYDAYS[we]
-        byday = (dict(m.values), m.grand, dict(m.extra), [], [])
+        byday = (dict(m.values), m.grand, dict(m.extra), [], {})
         src_b = "HAND-RECOVERED (see manual.py)"
 
     foot = src_f = None
@@ -108,6 +121,23 @@ def resolve_week(we: dt.date, got: dict) -> tuple:
     if foot is None and we in manual.FOOTERS:
         foot = dict(manual.FOOTERS[we])
         src_f = "HAND-RECOVERED (see manual.py)"
+
+    # The RANKED PDF prints no week-endings we can read, so its prior-week
+    # column is verified the only other way: AT&T NDS is printed in BOTH PDFs
+    # and always agrees. When the footer came from a follower and disagrees, the
+    # two PDFs are describing DIFFERENT weeks — the footer is an older week, and
+    # its five rows (AT&T NDS + the four 'Selling … Wireless') do not exist for
+    # this week anywhere. Half a week is worse than none: drop it.
+    if foot is not None and src_f and "prior-week" in src_f and byday is not None:
+        nds_byday = byday[2].get("AT&T NDS")
+        nds_foot = foot.get("AT&T NDS")
+        if nds_byday is not None and nds_foot is not None and nds_byday != nds_foot:
+            notes.append(f"  · WE {nxt_label}'s RANKED footer restates a "
+                         f"DIFFERENT week (AT&T NDS {nds_foot} vs the by-day "
+                         f"PDF's {nds_byday}) — no tracker was run for "
+                         f"{es.we_label(we)}, so its five footer rows have no "
+                         f"source.")
+            foot = src_f = None
 
     if byday is None:
         notes.append("  ✗ no 'Campaign Totals By Day' PDF for this week, and "
@@ -208,8 +238,23 @@ def main(argv=None) -> int:
     # weeks recovered by hand from a neighbouring week's images (the Apr-May
     # 2026 outage). Treat those as available alongside the inbox.
     recoverable = set(manual.BYDAYS) | set(manual.FOOTERS)
-    fillable = set(inbox) | recoverable
-    for w in recoverable:
+    # A week whose OWN email never arrived is still fillable from the FOLLOWING
+    # week's 'Previous Week Ending' column — resolve_week already sources the
+    # two halves that way, but a week missing from the inbox was never even a
+    # candidate. WE 8.8.2026 (no email of its own; WE 8.15's arrived) would
+    # otherwise sit as a permanent hole between two filled weeks and nothing in
+    # the run would say so. Only the week straight after a week we do have.
+    oldest = min(inbox)
+    from_follower = {w - dt.timedelta(days=7) for w in inbox
+                     if w - dt.timedelta(days=7) > oldest
+                     and w - dt.timedelta(days=7) not in inbox}
+    # …unless we already know the follower can't actually cover it.
+    for w in sorted(from_follower & set(manual.NO_SOURCE)):
+        print(f"  · WE {es.we_label(w)} has no source and stays blank "
+              f"(manual.NO_SOURCE): {manual.NO_SOURCE[w].split('.')[0]}.")
+    from_follower -= set(manual.NO_SOURCE)
+    fillable = set(inbox) | recoverable | from_follower
+    for w in fillable - set(inbox):
         snap.setdefault(w, scf.snap_to_column(w, cols))
 
     if args.week:
@@ -234,7 +279,23 @@ def main(argv=None) -> int:
     print(f"  {len(want)} week(s) to fill: "
           f"{', '.join(es.we_label(w) for w in want)}")
 
-    # Weeks the tab has no column for would raise per-week; say it up front.
+    # Row 1 is a finite chain of week columns, and it ran out at 08/01/26 on
+    # 2026-08-28. Grow it once here, for every week this run owes, instead of
+    # failing the same way every Friday — then re-read, because inserting
+    # columns shifts every existing week one to the right.
+    needed = sorted({d for w in want for d in scf.header_weeks_needed(grid, w)})
+    if len(needed) > scf.MAX_NEW_COLUMNS:
+        print(f"  ✗ the tab would need {len(needed)} new week columns "
+              f"({needed[0]:%m/%d/%y} .. {needed[-1]:%m/%d/%y}) — more than "
+              f"{scf.MAX_NEW_COLUMNS}, which reads like a bad week-ending rather "
+              f"than a late tracker. Add them to row 1 by hand if it's real.")
+    elif needed:
+        grid = scf.extend_header(ws, grid, needed, dry_run=args.dry_run)
+        cols = scf.week_columns(grid)
+        snap = {w: scf.snap_to_column(w, cols) for w in fillable}
+
+    # Anything still without a column is a hole INSIDE history; it would raise
+    # per-week, so say it up front.
     no_col = [w for w in want if snap.get(w) is None]
     if no_col:
         print(f"  ⚠ no header column on {tab!r} for: "
