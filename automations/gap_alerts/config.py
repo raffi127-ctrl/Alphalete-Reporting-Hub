@@ -100,6 +100,13 @@ GAP_NEW_EMOJI = "\u23F0"
 # lever to reach for when something needs to stop going to the room NOW.
 SEND_ENABLED = True
 
+# Chan Park's TOTAL line under Raf's board (Raf 2026-08-28: "can we have it
+# compare to chans every 15 minutes"). Resolved through the shared alias table,
+# pulled in the SAME ownerville session as Raf — a comparison must never cost
+# its own login at four ticks an hour. Set False to drop the line; a failed
+# comparison already drops it on its own without touching the board.
+COMPARE_TO_CHAN = True
+
 # The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
 # a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps
 # against Carlos's ~22.

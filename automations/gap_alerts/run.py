@@ -587,9 +587,21 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
     from automations.total_knocks import render as knocks_render
     from automations.knocks_intraday.run import first_name
 
-    pulled = pull_offices_days([(cfg["name"], [day])], verbose=False,
+    # Chan's TOTAL rides the board as the teal comparison line (Raf,
+    # 2026-08-28: "can we have it compare to chans every 15 minutes"). It is
+    # the same line his Slack boards already carry, and it is pulled in the
+    # SAME session as Raf — a comparison is a nicety and must never cost its
+    # own login, which at four ticks an hour would be a real bill.
+    from automations.knocks_intraday.run import compare_office
+    compare = compare_office() if C.COMPARE_TO_CHAN else ""
+    jobs = [(cfg["name"], [day])]
+    if compare and compare.strip().lower() != cfg["name"].strip().lower():
+        jobs.append((compare, [day]))
+
+    pulled = pull_offices_days(jobs, verbose=False,
                                profile_dir=str(C.PROFILE_DIR))
-    _name, by_day, err = pulled[0]
+    by_name = {name: (days, err) for name, days, err in pulled}
+    by_day, err = by_name.get(cfg["name"], ({}, None))
     if err is not None:
         raise err
     rows = by_day.get(day) or []
@@ -613,10 +625,24 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
     rows = sorted(rows, key=lambda r: (-_knocks(r),
                                        str(r.get(COL_REP) or "").lower()))
 
+    # A failed comparison costs ONE LINE, never the board.
+    extra = []
+    if compare:
+        chan_days, chan_err = by_name.get(compare, ({}, None))
+        chan_rows = (chan_days or {}).get(day) or []
+        if chan_err is not None:
+            _log("  ⚠ %s comparison pull failed (%s) — board goes out without "
+                 "the line" % (compare, type(chan_err).__name__))
+        elif chan_rows:
+            extra.append((compare, chan_rows))
+        else:
+            _log("  no %s rows for %s — board goes out without the line"
+                 % (compare, day))
+
     pngs, shape = knocks_render.render_knocks_boards(
         day, rows=rows, out_dir=out_dir / cfg["key"],
         title_suffix=first_name(cfg.get("label") or cfg["name"]),
-        date_text=_date_text(day))
+        date_text=_date_text(day), extra_totals=extra)
 
     _log("  %s: %d rep(s) -> %s (%s)"
          % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
