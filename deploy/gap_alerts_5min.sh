@@ -7,7 +7,7 @@
 # much traffic in the room). The name is deliberately NOT being fixed: the
 # installed plist on Lucy 1 points at this exact path, so renaming would mean
 # reinstalling the agent on that box to change a cadence that is pure code.
-# The number that rules is MINUTE % 10, below.
+# The number that rules is MINUTE % 15, below.
 #
 #   bash deploy/gap_alerts_5min.sh                # PREVIEW, texts nothing
 #   bash deploy/gap_alerts_5min.sh --send         # live
@@ -70,7 +70,13 @@ fi
 # and has fired calendar jobs two hours off. A cached TZ cannot fool this gate.
 MINUTE=$(date +%M)
 MINUTE=$((10#$MINUTE))
-[ $((MINUTE % 10)) -gt 1 ] && exit 0
+# 15 (Raf, 2026-08-28: "sending in the iMessage chat every fifteen minutes").
+# 60 divides by 15, so the anchors are a clean :00 :15 :30 :45 — keep it that
+# way; a cadence that does not divide the hour drifts across it.
+# THIS is the cadence, not config.TICK_MINUTES — that constant only labels
+# copy. Change both together or the card says one thing and the job does
+# another.
+[ $((MINUTE % 15)) -gt 1 ] && exit 0
 
 VENV_PY=".venv/bin/python"
 [ -x "$VENV_PY" ] || VENV_PY="python3"
