@@ -115,7 +115,12 @@ LOG_FILE="$LOG_DIR/applicant-push${OFFICE_SLUG}-$(date +%Y-%m-%d).log"
 # these in-process too; exporting them also covers the summary post below, which
 # runs as its own process).
 case "$OFFICE" in
-  11580) : ;;   # defaults are Carlos's — leave every env var unset
+  11580)
+    # Carlos 2026-08-27: in HIS office an applicant with no reachable number is
+    # LEFT IN THE QUEUE, never removed. offices.activate() sets this in-process;
+    # exported here too because the summary post runs as a separate process.
+    export OAT_REMOVE_NO_PHONE="0"
+    ;;
   23467)
     export OAT_OFFICE_ID="23467"
     export OAT_FILE_SUFFIX="-23467"

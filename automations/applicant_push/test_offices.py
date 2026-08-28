@@ -125,5 +125,23 @@ check_ne("Atef gets his own incident key",
 check_ne("Atef gets his own wedge state file",
          str(wedge._state_path("23467")), str(wedge._state_path("11580")))
 
+
+# --- no-phone removal policy is PER OFFICE (Carlos 2026-08-27) ---------------
+# "in my specific office, if they don't have a phone number on the resume, you
+# don't remove them. You leave them there." A regression here silently DELETES
+# applicants, so assert both directions, and assert every office STATES a policy
+# rather than inheriting one — a new office defaulting to True would start
+# removing people in an office nobody chose that for.
+print("no-phone removal policy")
+from automations.oat_processing import config as _oat_config
+for _oid in sorted(offices.OFFICES):
+    check("office %s states a no-phone policy" % _oid,
+          "remove_no_phone" in offices.OFFICES[_oid], True)
+offices.activate("11580")
+check("11580 LEAVES no-phone applicants", _oat_config.REMOVE_NO_PHONE, False)
+offices.activate("23467")
+check("23467 removes confirmed-uncontactable", _oat_config.REMOVE_NO_PHONE, True)
+offices.activate("11580")
+
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)

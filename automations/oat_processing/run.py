@@ -1987,6 +1987,30 @@ def lookup_resume_phone(page):
         reason = _blocked_reason(title, body)
         if reason:
             return None, f"{_BLOCKED_PREFIX}{reason} (title={newpg.title()[:40]!r})"
+
+        # LAST RESORT BEFORE ANY VERDICT: the viewer sometimes renders blank but
+        # offers "Download original message" — the number is in that file, and a
+        # human just clicks it (Carlos 2026-08-27). A page we could not READ is
+        # not a resume without a number, so try the download before concluding
+        # anything, and treat every failure of it as BLOCKED (retryable, the
+        # applicant stays put) rather than as a confirmed-empty resume. Carlos's
+        # rule: "If that doesn't work, then just leave it there. Don't remove
+        # that applicant."
+        try:
+            from automations.oat_processing import resume_download as _rd
+            _dl_phone, _dl_detail = _rd.download_and_read_phone(newpg)
+        except Exception as _e:  # noqa: BLE001
+            _dl_phone, _dl_detail = None, f"download path errored: {type(_e).__name__}"
+        if _dl_phone:
+            _log(f"    \U0001f4c4 phone from the DOWNLOADED resume: {_dl_phone} "
+                 f"({_dl_detail})")
+            return _dl_phone, f"from downloaded resume ({_dl_detail[:60]})"
+        if "no download link" not in _dl_detail:
+            # There WAS something to download and it still did not yield a number.
+            # Deliberately BLOCKED, not "no phone": we never actually read a
+            # rendered resume, so this must never cost the applicant their record.
+            return None, (f"{_BLOCKED_PREFIX}blank viewer; download attempted "
+                          f"({_dl_detail[:70]})")
         return None, f"no phone on resume (title={newpg.title()[:40]!r})"
     except Exception as e:  # noqa: BLE001
         # An exception means we never got a clean look at the resume — transient by
