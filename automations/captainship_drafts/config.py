@@ -596,6 +596,14 @@ RECIPIENTS: dict = {
         "coltenwrightsc@gmail.com", "drewtepp2735@gmail.com",
         "dylanjtwaddle@gmail.com", "fm.peakmanagementinc@gmail.com",
         "frankmatos1128@gmail.com", "amissolutions7@gmail.com",
+        # IN 2026-08-28 (Eve): Abdallah Ghousheh entra a la capitania de Jairo.
+        # Eve ya lo habia agregado A MANO al grupo vivo "Jairo's Captainship",
+        # y sin esta linea el alta no sobrevive: seed_groups REHACE el grupo
+        # desde esta lista, asi que lo marcaba para SACAR (verificado con
+        # `seed_groups --dry-run --only jairo` el mismo dia). Es la contracara
+        # exacta del caso Milan/Marcos en la lista de Colten, y la razon por la
+        # que un alta o una baja tienen que estar en los DOS lados.
+        "ghoushehbusiness@gmail.com",
         "jairoruizpmg@gmail.com", "ferminjustin71@gmail.com",
         "maudmiller4@gmail.com", "nickopereira98@gmail.com",
         "raffi127@gmail.com",
