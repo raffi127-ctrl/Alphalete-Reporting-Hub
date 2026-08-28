@@ -46,11 +46,25 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 from urllib.parse import urlencode
 
 V2_URL = "https://v2.ownerville.com/index.cfm"
 ENDPOINT = "https://v2.ownerville.com/components/users.cfc"
+
+# OUR OWN Chrome profile, like other_office_knocks' and knocks_access_watch's.
+# The shared one (automations/uploaded/.browser_profile) is first-come,
+# first-served, and a launch that finds it taken WAITS UP TO 30 MINUTES for the
+# holder (tableau_patchright._PROFILE_LOCK_WAIT_S) — while this report's
+# orchestrator timeout is 12. So a collision here can never be survived: the run
+# is killed mid-wait, having written nothing, and the log says nothing about why
+# (2026-08-28: two 12m attempts died in a row, both silent, right after the
+# board and the tracker had already been read fine). Login comes from the shared
+# ownerville storage_state, not from the profile, so a separate dir
+# authenticates identically and needs no seeding of its own.
+PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
+               / ".browser_profile_mobrium")
 
 # The column list the page itself posts, in order. Sent verbatim: the endpoint
 # echoes DataTables' contract and sorts by `sortColumnName`, so a short or
@@ -275,8 +289,13 @@ class Directory:
 
 
 def load(*, include_inactive: bool = False, headless: bool = True,
-         verbose: bool = False, logfn=print) -> Directory:
+         verbose: bool = True, logfn=print) -> Directory:
     """Open an OwnerVille session and read the rep rosters.
+
+    `verbose` defaults ON, and stays on for the scheduled run: this is the only
+    step of the report that opens a browser, and it is the step that fails. With
+    it off, a launch that waits on a busy profile prints nothing at all and the
+    orchestrator log just stops mid-run.
 
     `include_inactive` pages through the 10k-row retired list. Off by default:
     it costs five extra round-trips and this module never needs it (a removal is
@@ -285,7 +304,8 @@ def load(*, include_inactive: bool = False, headless: bool = True,
     from automations.shared import tableau_patchright as tp
 
     reps: List[Rep] = []
-    with tp.ownerville_session(headless=headless, verbose=verbose) as page:
+    with tp.ownerville_session(headless=headless, verbose=verbose,
+                              profile_dir=PROFILE_DIR) as page:
         page.goto(V2_URL, wait_until="domcontentloaded")
         page.wait_for_timeout(6_000)
         # v2 mints the request token off the login cookie; every call needs it.
