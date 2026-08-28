@@ -106,6 +106,19 @@ COL_TALK_TO_PER_REP = "Talk To's per Rep"
 # hide_columns: this renderer also draws Raf's metrics threads, the intraday
 # slots and /knocks, and none of those asked for the column.
 COL_TOTAL_APPS = "Total Apps"
+# "Average App per Rep" (Eve, 2026-08-27) — the same column, the same name and
+# the same 1-decimal format the DAILY KNOCKS SUMMARY board above these carries,
+# because the two land in front of the same reader on the same email. It rides
+# the `apps` argument for the same reason Total Apps does (nobody else asked
+# for it), and it sits right after the Total Apps it divides.
+#
+# Like Talk To's per Rep, it is filled on the SUMMARY rows only — this office's
+# TOTAL and any comparison office's line. A rep row IS one rep, where the
+# average and Total Apps are the same figure. Divisor: the reps who KNOCKED
+# (`_knockers`), which is what Talk To's per Rep divides by and what the
+# summary board divides by, so the three numbers are read against one
+# denominator and a sales-only row added for the apps column never dilutes it.
+COL_AVG_APP_PER_REP = "Average App per Rep"
 
 
 def _with_derived(cols: list) -> list:
@@ -545,7 +558,11 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     `rows` too — otherwise the total silently disagrees with the column above
     it. An extra_totals entry may carry that office's own apps dict as a third
     element. Default None leaves the column OFF entirely, so every other board
-    this renderer draws stays byte-identical.
+    this renderer draws stays byte-identical. Since 2026-08-28 it also brings
+    "Average App per Rep" right behind it (Eve) — the per-rep figure the DAILY
+    KNOCKS SUMMARY board above already shows per ICD, on the summary rows only,
+    over the reps who knocked. Same argument, so the same boards that never
+    asked for Total Apps still don't get either column.
     """
     if rows is not None:
         header, rows = _table_from_rows(rows)
@@ -561,6 +578,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     # SHEET_COLUMNS); only their TOTAL line shows, not their reps.
     extra_rows: list[list[str]] = []
     extra_apps: list = []
+    extra_knockers: list = []
     for item in (extra_totals or []):
         # (name, rows) or (name, rows, apps) — the third element is that
         # office's own {rep: apps}; only its SUM shows, as its reps never do.
@@ -572,6 +590,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         x_sub = _combined_sub(x_header, x_rows, where=f"extra office {name!r}")
         extra_rows.append(_combined_totals(f"{name.upper()} TOTAL", x_sub))
         extra_apps.append(sum(x_apps.values()) if x_apps else None)
+        # Its Average App per Rep divisor, taken here while its rep rows still
+        # exist — only its TOTAL line survives into the drawn table.
+        extra_knockers.append(len(_knockers(x_sub)))
 
     hrs_pos = COMBINED_KNOCKS_HEADERS.index(COL_HRS_KNOCKING)
     tg_pos = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_GAPS)
@@ -603,7 +624,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # lands next to the talk-to block on a board that hid Talk To's per Rep
         # just as it does on one that kept it.
         _insert_apps_column(cols, disp, table, apps,
-                            n_extra=len(extra_rows), extra_apps=extra_apps)
+                            n_extra=len(extra_rows), extra_apps=extra_apps,
+                            n_knockers=len(_knockers(sub)),
+                            extra_knockers=extra_knockers)
     return _draw(disp, table,
                  f"{title_prefix}TOTAL KNOCKS — {_office}"
                  f"{_date_text(target, end, date_text)}",
@@ -622,9 +645,12 @@ def _apps_key(name: str) -> str:
 
 
 def _insert_apps_column(cols: list, disp: list, table: list,
-                        apps: dict, *, n_extra: int, extra_apps: list) -> None:
-    """Put "Total Apps" into `cols`/`disp`/`table` IN PLACE, right after Talk
-    To's per Rep (or after Total Talk to when that column was hidden).
+                        apps: dict, *, n_extra: int, extra_apps: list,
+                        n_knockers: int = 0,
+                        extra_knockers: "list | None" = None) -> None:
+    """Put "Total Apps" — and the "Average App per Rep" that divides it — into
+    `cols`/`disp`/`table` IN PLACE, right after Talk To's per Rep (or after
+    Total Talk to when that column was hidden).
 
     `table` is laid out extra-office TOTAL rows, then this office's TOTAL,
     then the rep rows — the order render_total_knocks builds. Rep rows read
@@ -632,7 +658,14 @@ def _insert_apps_column(cols: list, disp: list, table: list,
     number under the header is always the sum of the numbers above it; an
     extra office shows its own total, or blank when the caller didn't pass
     one — blank being the honest cell for "not pulled", where 0 would read as
-    an office that sold nothing."""
+    an office that sold nothing.
+
+    `n_knockers` / `extra_knockers` are the per-rep DIVISORS: how many reps
+    actually knocked, for this office and for each extra office in the same
+    order as `extra_apps`. They come from the caller because the rep rows of
+    an extra office never reach this table — only its TOTAL line does. A row
+    whose apps cell is blank, or whose divisor is 0, gets a BLANK average and
+    never a 0: the office didn't earn that zero, we just couldn't divide."""
     if COL_TALK_TO_PER_REP in cols:
         at = cols.index(COL_TALK_TO_PER_REP) + 1
     elif COL_TOTAL_TALK_TO in cols:
@@ -653,10 +686,25 @@ def _insert_apps_column(cols: list, disp: list, table: list,
     if n_extra < len(values):
         reps = values[n_extra + 1:]
         values[n_extra] = str(sum(int(v) for v in reps if str(v).isdigit()))
+    # Per-rep averages, computed off the column AS DRAWN (same rule as the
+    # total above): whatever the reader sees in Total Apps is what this
+    # divides. Rep rows stay blank — a rep row is already one rep.
+    divisors = list(extra_knockers or [])
+    avgs: list = []
+    for i, v in enumerate(values):
+        if i > n_extra:
+            avgs.append("")                 # a rep row
+            continue
+        n = n_knockers if i == n_extra else (divisors[i] if i < len(divisors)
+                                             else 0)
+        avgs.append(f"{int(v) / n:.1f}" if str(v).isdigit() and n else "")
     cols.insert(at, COL_TOTAL_APPS)
     disp.insert(at, COL_TOTAL_APPS)
-    for row, v in zip(table, values):
+    cols.insert(at + 1, COL_AVG_APP_PER_REP)
+    disp.insert(at + 1, COL_AVG_APP_PER_REP)
+    for row, v, a in zip(table, values, avgs):
         row.insert(at, v)
+        row.insert(at + 1, a)
 
 
 def _gap_min(v: str) -> int:
