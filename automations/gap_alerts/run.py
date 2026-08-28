@@ -486,6 +486,24 @@ def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
         out = out_dir / ("activity_%s.png" % cfg["key"])
         how = cap._shoot(page, out, kind="todays_activity",
                          fixed=cap.CROP_TODAYS_ACTIVITY, pad_bottom=36)
+        # PROVE the resolution rather than assume it. Sharpness has now been
+        # "fixed" twice without anyone being able to see whether the pixels
+        # actually arrived; a dpr that reads 1 when CAPTURE_DEVICE_SCALE is 3
+        # is the whole answer, visible in one log line.
+        try:
+            dpr = page.evaluate("() => window.devicePixelRatio")
+        except Exception:
+            dpr = "?"
+        try:
+            from PIL import Image
+            dims = "%dx%d" % Image.open(out).size
+        except Exception:
+            dims = "?"
+        want = C.CAPTURE_DEVICE_SCALE
+        flag = "" if dpr == want else ("  ⚠ WANTED %s — the capture is NOT at "
+                                       "full resolution" % want)
+        _log("  activity: dpr=%s (want %s) crop=%s png=%s%s"
+             % (dpr, want, how, dims, flag))
         # THE KNOCK BADGES SIT AT THE RIGHT EDGE OF THIS PANEL, so how we
         # cropped decides whether they survive. 'box' measures the live element
         # and keeps the whole row. 'fixed' is the fallback and clips at a hard
@@ -493,10 +511,8 @@ def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
         # left to cut the green and grey pills off entirely, leaving a list of
         # names with no numbers and NO error to say so. Say it loudly instead.
         if how != "box":
-            _log("  ⚠ today's activity crop fell back to %r — the knock badges "
-                 "sit at the right edge and may be CLIPPED. Check the card." % how)
-        else:
-            _log("  today's activity captured (crop=box)")
+            _log("  ⚠ crop fell back to %r — the knock badges sit at the right "
+                 "edge and may be CLIPPED. Check the card." % how)
         return out
     except Exception as e:  # noqa: BLE001
         _log("  today's activity SKIPPED (%s: %s) — sending the gap card alone"
@@ -612,14 +628,15 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     with ownerville_session(headless=headless, verbose=False,
                             profile_dir=C.PROFILE_DIR,
                             device_scale=C.CAPTURE_DEVICE_SCALE) as page:
-        # Needed only for the Today's Activity screenshot — a plain shot sees
-        # what is in-frame, and Raf's roster is ~48 reps. Best-effort: a
-        # persistent context can refuse a resize, and _shoot's crop copes with
-        # whatever the real size turns out to be.
-        try:
-            page.set_viewport_size(dict(C.VIEWPORT))
-        except Exception:
-            pass
+        # NO set_viewport_size HERE, deliberately. The context is launched with
+        # no_viewport (a real window) plus --force-device-scale-factor, and
+        # setting a viewport switches the page to emulated-viewport mode, which
+        # resets the device scale to 1. That is why the drawn gap card came out
+        # sharp at 3x while the SCREENSHOT above it stayed soft — the card is
+        # ours to scale, the screenshot silently lost the flag (Raf,
+        # 2026-08-27: "the top section is still blurry, the bottom is great").
+        # Viewport height never mattered anyway: _shoot takes a full_page shot,
+        # which captures the whole scroll height regardless of what is in frame.
         for cfg in offices:
             try:
                 reps = gap_rows(page, cfg, day)
