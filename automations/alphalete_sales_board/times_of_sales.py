@@ -284,9 +284,24 @@ def read_slot(grid, row: Optional[int], cols: Dict[str, int]) -> Dict[str, Optio
 
 
 # --- back-fill --------------------------------------------------------------
+# HOW MANY MISSED SLOTS ARE STILL WORTH GUESSING AT. Four is two hours.
+#
+# Beyond that it is not a gap, it is a COLD START, and the two want opposite
+# treatment. A runner down from 2:30 to 3:30 really did have a total close to
+# the one standing now, so a flat line there is roughly true and gives tomorrow
+# its comparison. But the first run of a new deployment stamps the CURRENT
+# total backwards across the whole afternoon -- on 2026-08-27 the 7:00 PM
+# reading (18/25) was written into all twelve slots from 1:00 PM, and tomorrow
+# would have read them as "yesterday at 1:00 PM: 25" and told the room it was
+# 23 units down at lunchtime, twelve times, against a number that never
+# happened. A blank cell costs tomorrow one comparison line; a fabricated one
+# costs it a false alarm, and the false alarm is worse.
+MAX_BACKFILL_SLOTS = 4
+
+
 def backfill_plan(grid, row: int, slot_cols: Dict[str, Dict[str, int]],
                   slots: List[str], upto: str,
-                  now_totals: Dict[str, int]) -> List[Dict]:
+                  now_totals: Dict[str, int]) -> Tuple[List[Dict], List[str]]:
     """Fill the blank slots immediately BEFORE `upto` with today's numbers.
 
     WHY A FLAT LINE IS THE RIGHT ANSWER. If the runner was down from 2 to 4, the
@@ -298,26 +313,43 @@ def backfill_plan(grid, row: int, slot_cols: Dict[str, Dict[str, int]],
     as well, so one bad afternoon silently becomes two.
 
     It stops at the first slot that already HAS a number -- back-fill fills a
-    gap at the end, never paints over the middle of a day that was recorded.
+    gap at the end, never paints over the middle of a day that was recorded --
+    and it fills at most MAX_BACKFILL_SLOTS of them, naming the rest in a note.
     The Delta column is never back-filled: a delta computed against the wrong
     minute is a made-up number that looks exactly like a real one.
     """
     updates: List[Dict] = []
+    skipped: List[str] = []
     try:
         idx = slots.index(upto)
     except ValueError:
-        return updates
+        return updates, []
+    filled = 0
     for label in reversed(slots[:idx]):
         cols = slot_cols.get(label) or {}
         if NEW_INTERNET not in cols or TOTAL_UNITS not in cols:
             continue                      # a text-only slot (Saturday noon)
         if read_slot(grid, row, cols)["new_internet"] is not None:
             break                         # real data -- stop, don't overwrite
+        if filled >= MAX_BACKFILL_SLOTS:
+            # Keep walking so the note can name the whole run left blank --
+            # a cap nobody is told about reads as "covered everything".
+            skipped.append(label)
+            continue
         updates.append({"range": _a1(row, cols[NEW_INTERNET]),
                         "values": [[now_totals["new_internet"]]]})
         updates.append({"range": _a1(row, cols[TOTAL_UNITS]),
                         "values": [[now_totals["total_units"]]]})
-    return updates
+        filled += 1
+    notes = []
+    if skipped:
+        notes.append(
+            "left %d earlier slot(s) BLANK (%s back to %s): more than %d blank "
+            "slots in a row is a cold start, not a gap, and stamping the "
+            "current total that far back would have tomorrow comparing "
+            "against a number that never happened"
+            % (len(skipped), skipped[0], skipped[-1], MAX_BACKFILL_SLOTS))
+    return updates, notes
 
 
 def last_week_close(grid, day: dt.date,
@@ -437,11 +469,13 @@ def snapshot(agents: Sequence[Dict], label: str, day: dt.date, *,
         last_week = last_week_close(grid, day, slot_cols, slots)
 
         if row is not None and NEW_INTERNET in cols and TOTAL_UNITS in cols:
-            updates = backfill_plan(grid, row, slot_cols, slots, label, now)
+            updates, back_notes = backfill_plan(grid, row, slot_cols, slots,
+                                                label, now)
             if updates:
                 result["notes"].append(
                     "back-filled %d missed slot(s) with the current totals so "
                     "tomorrow has a reference" % (len(updates) // 2))
+            result["notes"].extend(back_notes)
             updates.append({"range": _a1(row, cols[NEW_INTERNET]),
                             "values": [[now["new_internet"]]]})
             updates.append({"range": _a1(row, cols[TOTAL_UNITS]),

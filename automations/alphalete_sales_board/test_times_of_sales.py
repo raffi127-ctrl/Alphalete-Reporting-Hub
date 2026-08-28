@@ -170,25 +170,26 @@ def test_backfill_fills_the_gap_and_stops_at_real_data():
     grid = _grid([_row("Thursday, August 27, 26",
                        "4", "5", "", "", "", "", "", "", "", "", "", "")])
     cols = T.slot_columns(grid)
-    plan = T.backfill_plan(grid, 3, cols, T.slots_for(3), "2:30 PM",
-                           {"new_internet": 9, "total_units": 12})
+    plan, notes = T.backfill_plan(grid, 3, cols, T.slots_for(3), "2:30 PM",
+                                  {"new_internet": 9, "total_units": 12})
     assert [u["range"] for u in plan] == ["H3", "I3", "E3", "F3"]
+    assert notes == []
     assert all(u["values"][0][0] in (9, 12) for u in plan)
 
 
 def test_backfill_never_paints_over_a_recorded_slot():
     grid = _grid([_row("Thursday, August 27, 26",
                        "4", "5", "", "6", "7", "", "8", "9", "", "", "", "")])
-    plan = T.backfill_plan(grid, 3, T.slot_columns(grid), T.slots_for(3),
-                           "2:30 PM", {"new_internet": 9, "total_units": 12})
+    plan, _ = T.backfill_plan(grid, 3, T.slot_columns(grid), T.slots_for(3),
+                              "2:30 PM", {"new_internet": 9, "total_units": 12})
     assert plan == []
 
 
 def test_backfill_never_writes_a_delta():
     grid = _grid([_row("Thursday, August 27, 26", "", "", "", "", "", "",
                        "", "", "", "", "", "")])
-    plan = T.backfill_plan(grid, 3, T.slot_columns(grid), T.slots_for(3),
-                           "2:30 PM", {"new_internet": 9, "total_units": 12})
+    plan, _ = T.backfill_plan(grid, 3, T.slot_columns(grid), T.slots_for(3),
+                              "2:30 PM", {"new_internet": 9, "total_units": 12})
     deltas = {"D3", "G3", "J3", "M3"}
     assert not deltas.intersection(u["range"] for u in plan)
 
@@ -328,3 +329,46 @@ def test_the_hub_card_is_wired_to_this_module():
         args = action["args_fn"]()
         assert "--times-slot" in args
         assert args[args.index("--times-slot") + 1] in every
+
+
+# --- the cold-start cap -----------------------------------------------------
+def _wide_grid(row_vals):
+    """A full weekday's worth of slots, so the cap has room to bite."""
+    labels, subs = [""], [""]
+    for lab in T.slots_for(3):
+        labels += [lab, "", ""]
+        subs += SUBS
+    return [labels, subs, ["Thursday, August 27, 26"] + list(row_vals)]
+
+
+def test_backfill_stops_at_the_cap_on_a_cold_start():
+    """2026-08-27 for real: the first run of the day was the 7:00 PM slot, and
+    the uncapped version stamped 18/25 into all twelve slots back to 1:00 PM."""
+    grid = _wide_grid([])
+    plan, notes = T.backfill_plan(grid, 3, T.slot_columns(grid), T.slots_for(3),
+                                  "7:00 PM",
+                                  {"new_internet": 18, "total_units": 25})
+    assert len(plan) == T.MAX_BACKFILL_SLOTS * 2      # 4 slots, 2 cells each
+    # The four filled are the ones NEAREST the live reading, not the oldest.
+    assert [u["range"] for u in plan[::2]] == ["AI3", "AF3", "AC3", "Z3"]
+    assert len(notes) == 1 and "left 8 earlier slot(s) BLANK" in notes[0]
+    assert "6:30 PM" not in notes[0] and "1:00 PM" in notes[0]
+
+
+def test_a_short_gap_is_still_fully_backfilled():
+    """The cap must not touch the case back-fill exists for."""
+    vals = ["4", "5", ""] + [""] * 9        # 1:00 recorded, 1:30-2:30 missed
+    grid = _wide_grid(vals)
+    plan, notes = T.backfill_plan(grid, 3, T.slot_columns(grid), T.slots_for(3),
+                                  "3:00 PM", {"new_internet": 9, "total_units": 12})
+    assert [u["range"] for u in plan[::2]] == ["K3", "H3", "E3"]
+    assert notes == []
+
+
+def test_the_cap_never_writes_a_delta():
+    grid = _wide_grid([])
+    plan, _ = T.backfill_plan(grid, 3, T.slot_columns(grid), T.slots_for(3),
+                              "7:00 PM", {"new_internet": 18, "total_units": 25})
+    cols = T.slot_columns(grid)
+    delta_cells = {T._a1(3, c[T.DELTA]) for c in cols.values() if T.DELTA in c}
+    assert not delta_cells.intersection(u["range"] for u in plan)
