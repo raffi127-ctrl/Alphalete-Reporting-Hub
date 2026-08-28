@@ -235,6 +235,14 @@ def main(argv: Optional[list] = None) -> int:
                     help="explicit no-op flag; dry-run is already the default")
     ap.add_argument("--from-file", metavar="CSV",
                     help="skip the Tableau pull and use an existing crosstab")
+    ap.add_argument("--no-tpv-memory", action="store_true",
+                    help="ignore the sheet's record of which deals reached TPV "
+                         "and judge only on today's export — the pre-2026-08-28 "
+                         "behaviour, for A/B checks")
+    ap.add_argument("--sheet-id", metavar="ID",
+                    help="workbook to read the TPV memory from (default: "
+                         "Carlos's board). Per-owner runs point this at their "
+                         "own metrics workbook.")
     ap.add_argument("--inspect", metavar="TEXT",
                     help="READ-ONLY diagnostic: after the pull, print every RAW "
                          "export row whose Business Name, Contract ID or Account "
@@ -381,7 +389,29 @@ def main(argv: Optional[list] = None) -> int:
         return 0
 
     # ---- 2. collapse ----------------------------------------------------
-    sales, stats = clean.load(src, owner_office=(args.owner_office or ""))
+    # THE TPV MEMORY (clean.py): the sheet remembers which deals reached TPV,
+    # so a deal whose TPV row has since fallen out of the Tableau export still
+    # counts. Read BEFORE the collapse, and fail-open — an unreachable sheet
+    # just means the old behaviour, never a dead report. --no-tpv-memory turns
+    # it off for an A/B against the raw export.
+    tpv_seen = set()
+    if not args.no_tpv_memory:
+        from . import sheet as _sheet_mem
+        tpv_seen = _sheet_mem.tpv_seen_keys(args.sheet_id or None)
+        if verbose:
+            print("  TPV memory: {} sale(s) the sheet already vouches for"
+                  .format(len(tpv_seen)))
+        if not tpv_seen:
+            # An empty read is indistinguishable from "nothing qualifies", and
+            # it silently restores the bug — so say it out loud either way.
+            print("  (TPV memory empty — rescues are off for this run)")
+
+    sales, stats = clean.load(src, owner_office=(args.owner_office or ""),
+                              tpv_seen=tpv_seen)
+    if stats.get("rescued_by_tpv_memory"):
+        print("  {} sale(s) kept on the sheet's TPV memory alone — today's "
+              "export no longer shows them reaching TPV".format(
+                  stats["rescued_by_tpv_memory"]))
     if not sales:
         print("✗ no sales found in the crosstab — refusing to post an empty "
               "log. Check the view's date filter.", file=sys.stderr)

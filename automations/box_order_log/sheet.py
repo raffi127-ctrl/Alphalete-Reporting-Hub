@@ -308,6 +308,50 @@ def with_spacers(rows: Sequence[Sequence[str]]) -> List[List[str]]:
     return out
 
 
+def row_reached_tpv(row: Sequence[str]) -> bool:
+    """Does this SHEET row record a sale that reached TPV or beyond?
+
+    Reads the same two columns a human would: the surfaced Status/Sub-status,
+    and the Secondary Status list of everything else it passed through. Written
+    against clean.SALE_LEVELS rather than a copy of the list, so a ruling that
+    changes what counts changes this too.
+    """
+    row = list(row) + [""] * (len(DATA_HEADERS) - len(row))
+    status = (row[_COL_STATUS] or "").strip()
+    if status in clean.SALE_EXEMPT_STATUSES:
+        return True
+    if clean.level(status, (row[_COL_STATUS + 1] or "").strip()) in clean.SALE_LEVELS:
+        return True
+    # Secondary Status is ", ".join(levels) — levels never contain a comma.
+    secondary = (row[_COL_STATUS + 2] or "").strip()
+    return any(part.strip() in clean.SALE_LEVELS for part in secondary.split(","))
+
+
+def tpv_seen_keys(sheet_id: Optional[str] = None) -> set:
+    """Sale keys the sheet already records as having reached TPV.
+
+    This is THE TPV MEMORY (see clean.py): the durable evidence that a deal was
+    real, for the days when the Tableau export drops its TPV row and the deal
+    would otherwise be gated out of the workbook entirely.
+
+    Read-only, and deliberately FAIL-OPEN — an unreachable sheet returns an
+    empty set, which is the old behaviour, rather than taking the report down.
+    The caller logs how many keys it got so a silent empty read is visible.
+    """
+    try:
+        sh = _open(sheet_id)
+        rows = _retry(lambda: sh.worksheet(TAB_DATA).get_all_values())
+    except Exception:
+        return set()
+    seen = set()
+    for row in rows[1:]:
+        if not row or not any(_row_key(row)):
+            continue
+        if row_reached_tpv(row):
+            seen.add(_row_key(row))
+    return seen
+
+
 def merge_rows(existing: Sequence[Sequence[str]], sales: Sequence,
                *, today: dt.date, weeks: int = WEEKS,
                stamp: Optional[str] = None) -> Dict[str, object]:
