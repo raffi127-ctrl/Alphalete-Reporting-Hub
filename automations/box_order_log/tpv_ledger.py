@@ -295,6 +295,16 @@ def main(argv=None) -> int:
             print("    KEEP {:<32} ctr {} · proven {}".format(
                 (r.get("Business Name") or "")[:32], k.split("|")[0],
                 (rec or {}).get("proven_on") or (rec or {}).get("first_seen")))
+        # Name the borderline bucket too: these reached TPV REVIEW and then
+        # failed, so whether they count is a ruling, not a bug. Printing them
+        # is the whole point — a bare count can't be ruled on.
+        for k, r, rec in buckets["only Requires TPV Review"]:
+            print("    REVIEW-ONLY {:<30} ctr {} | {} | sold {} | seen {}..{}"
+                  .format((r.get("Business Name") or "")[:30],
+                          k.split("|")[0], (r.get("Rep Name") or "?"),
+                          (r.get("Sale Date") or "-"),
+                          (rec or {}).get("first_seen", "?"),
+                          (rec or {}).get("last_seen", "?")))
     return 0
 
 
