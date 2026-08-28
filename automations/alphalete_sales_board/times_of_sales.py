@@ -255,6 +255,84 @@ def find_row(grid, day: dt.date) -> Optional[int]:
     return None
 
 
+# HOW FAR THE DATE COLUMN IS KEPT AHEAD OF TODAY. Column A is a pre-typed
+# calendar somebody filled in by hand; it ran to 2026-09-16, and the day it
+# ran out this report would have gone quiet in the one way that is hard to
+# notice -- the texts keep arriving, correct, and only the tab stops filling.
+# So the calendar extends itself, and 90 days means the first person to look
+# is looking at a problem that is three months away rather than one that has
+# already happened.
+CALENDAR_AHEAD_DAYS = 90
+
+
+def last_calendar_date(grid) -> Optional[Tuple[int, dt.date]]:
+    """(row, date) of the last parseable date in col A, or None.
+
+    Walks up from the bottom, because a stray note under the calendar should
+    not be mistaken for the end of it.
+    """
+    for r in range(len(grid), FIRST_DATE_ROW - 1, -1):
+        raw = _cell(grid, r, 1).strip()
+        if not raw:
+            continue
+        try:
+            return r, dt.datetime.strptime(raw, "%A, %B %d, %y").date()
+        except ValueError:
+            continue
+    return None
+
+
+def ensure_calendar(worksheet, grid, day: dt.date,
+                    ahead: int = CALENDAR_AHEAD_DAYS,
+                    apply_writes: bool = False) -> Tuple[int, List[str]]:
+    """Append date rows to col A until it reaches `day` + `ahead`.
+
+    APPEND ONLY, and column A only -- never a rewrite of what is there. The
+    dates run consecutively INCLUDING Sundays (the tab carries a Sunday row
+    even though nothing sells), so the sequence simply continues from the last
+    one; a gap would put every later row's data on the wrong date.
+
+    Refuses rather than guesses if the bottom of col A does not parse: a
+    calendar we cannot read the end of is one we must not append to, because
+    the append would land in the wrong place.
+    """
+    found = last_calendar_date(grid)
+    if not found:
+        return 0, ["could not read the end of column A on %r -- not extending "
+                   "it; the dates need a person" % TAB]
+    last_row, last_day = found
+    want_through = day + dt.timedelta(days=ahead)
+    if last_day >= want_through:
+        return 0, []
+
+    missing = []
+    d = last_day + dt.timedelta(days=1)
+    while d <= want_through:
+        missing.append(d)
+        d += dt.timedelta(days=1)
+
+    notes = ["column A ran to %s; extending it by %d day(s) to %s"
+             % (date_label(last_day), len(missing), date_label(missing[-1]))]
+    if not apply_writes:
+        return 0, notes + ["(preview: nothing written)"]
+
+    end_row = last_row + len(missing)
+    # get_all_values() stops at the last non-empty row, so the sheet may simply
+    # not have the rows yet. Grow it before writing off the end.
+    if end_row > worksheet.row_count:
+        worksheet.add_rows(end_row - worksheet.row_count + 50)
+    worksheet.update("A%d:A%d" % (last_row + 1, end_row),
+                     [[date_label(d)] for d in missing],
+                     value_input_option="RAW")
+    # Keep the in-memory grid in step so find_row() sees the new rows without
+    # a second read of the whole tab.
+    while len(grid) < last_row:
+        grid.append([])
+    for d in missing:
+        grid.append([date_label(d)])
+    return len(missing), notes
+
+
 def _a1(row: int, col: int) -> str:
     letters, c = "", col
     while c > 0:
@@ -454,6 +532,16 @@ def snapshot(agents: Sequence[Dict], label: str, day: dt.date, *,
         grid = ws.get_all_values()
         slot_cols = slot_columns(grid)
         cols = slot_cols.get(label) or {}
+
+        # Keep the date column ahead of today BEFORE looking for today's row,
+        # so the day the calendar runs out is a row that gets appended rather
+        # than a snapshot that quietly writes nothing.
+        added, cal_notes = ensure_calendar(ws, grid, day,
+                                           apply_writes=apply_writes)
+        result["notes"].extend(cal_notes)
+        if added:
+            log("  extended column A by %d date row(s)" % added)
+
         row = find_row(grid, day)
 
         if row is None:

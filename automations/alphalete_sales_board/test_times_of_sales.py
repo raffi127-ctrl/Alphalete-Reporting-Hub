@@ -372,3 +372,106 @@ def test_the_cap_never_writes_a_delta():
     cols = T.slot_columns(grid)
     delta_cells = {T._a1(3, c[T.DELTA]) for c in cols.values() if T.DELTA in c}
     assert not delta_cells.intersection(u["range"] for u in plan)
+
+
+# --- the self-extending calendar --------------------------------------------
+class _FakeWs:
+    """Records what would be written, without a Sheet."""
+    def __init__(self, rows=1001):
+        self.row_count = rows
+        self.writes = []
+        self.added = 0
+
+    def update(self, rng, values, value_input_option=None):
+        self.writes.append((rng, values))
+
+    def add_rows(self, n):
+        self.added += n
+        self.row_count += n
+
+
+def _cal_grid(dates):
+    return [[""], [""]] + [[T.date_label(d)] for d in dates]
+
+
+def test_last_calendar_date_reads_the_bottom():
+    dates = [dt.date(2026, 9, 14), dt.date(2026, 9, 15), dt.date(2026, 9, 16)]
+    assert T.last_calendar_date(_cal_grid(dates)) == (5, dt.date(2026, 9, 16))
+
+
+def test_last_calendar_date_skips_a_stray_note_under_the_calendar():
+    grid = _cal_grid([dt.date(2026, 9, 15), dt.date(2026, 9, 16)])
+    grid.append(["updated by Maud"])
+    assert T.last_calendar_date(grid) == (4, dt.date(2026, 9, 16))
+
+
+def test_calendar_extends_when_it_runs_short():
+    """The real case: col A ended 2026-09-16 while the report ran daily."""
+    grid = _cal_grid([dt.date(2026, 9, 15), dt.date(2026, 9, 16)])
+    ws = _FakeWs()
+    added, notes = T.ensure_calendar(ws, grid, dt.date(2026, 8, 27), ahead=30,
+                                     apply_writes=True)
+    assert added == 10                      # 9/17 .. 9/26
+    rng, values = ws.writes[0]
+    assert rng == "A5:A14"
+    assert values[0] == ["Thursday, September 17, 26"]
+    assert values[-1] == ["Saturday, September 26, 26"]
+    assert "extending it by 10 day(s)" in notes[0]
+
+
+def test_extended_dates_stay_consecutive_including_sundays():
+    grid = _cal_grid([dt.date(2026, 9, 16)])
+    ws = _FakeWs()
+    T.ensure_calendar(ws, grid, dt.date(2026, 9, 16), ahead=9,
+                      apply_writes=True)
+    written = [v[0] for v in ws.writes[0][1]]
+    back = [dt.datetime.strptime(w, "%A, %B %d, %y").date() for w in written]
+    assert back == [dt.date(2026, 9, 17) + dt.timedelta(days=i)
+                    for i in range(9)]
+    assert any(d.weekday() == 6 for d in back)      # a Sunday row is included
+
+
+def test_calendar_does_nothing_when_it_is_already_long_enough():
+    grid = _cal_grid([dt.date(2026, 12, 31)])
+    ws = _FakeWs()
+    added, notes = T.ensure_calendar(ws, grid, dt.date(2026, 8, 27), ahead=30,
+                                     apply_writes=True)
+    assert (added, notes, ws.writes) == (0, [], [])
+
+
+def test_calendar_writes_nothing_on_a_preview():
+    grid = _cal_grid([dt.date(2026, 9, 16)])
+    ws = _FakeWs()
+    added, notes = T.ensure_calendar(ws, grid, dt.date(2026, 8, 27), ahead=30,
+                                     apply_writes=False)
+    assert added == 0 and ws.writes == []
+    assert any("preview" in n for n in notes)
+
+
+def test_calendar_refuses_an_unreadable_column_a():
+    """A calendar we can't read the end of must not be appended to -- the
+    append would land in the wrong place."""
+    grid = [[""], [""], ["week of the 4th"], ["???"]]
+    ws = _FakeWs()
+    added, notes = T.ensure_calendar(ws, grid, dt.date(2026, 8, 27),
+                                     apply_writes=True)
+    assert added == 0 and ws.writes == []
+    assert "need a person" in notes[0]
+
+
+def test_calendar_grows_the_sheet_before_writing_off_the_end():
+    grid = _cal_grid([dt.date(2026, 9, 16)])
+    ws = _FakeWs(rows=4)                    # only 4 rows exist
+    T.ensure_calendar(ws, grid, dt.date(2026, 8, 27), ahead=30,
+                      apply_writes=True)
+    assert ws.added > 0 and ws.row_count >= 34
+
+
+def test_the_new_rows_are_findable_without_a_second_read():
+    """ensure_calendar keeps the in-memory grid in step, so find_row() works
+    on the same pass that appended the date."""
+    grid = _cal_grid([dt.date(2026, 9, 16)])
+    ws = _FakeWs()
+    T.ensure_calendar(ws, grid, dt.date(2026, 9, 16), ahead=5,
+                      apply_writes=True)
+    assert T.find_row(grid, dt.date(2026, 9, 20)) is not None
