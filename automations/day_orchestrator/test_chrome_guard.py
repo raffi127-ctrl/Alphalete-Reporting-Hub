@@ -119,5 +119,65 @@ class UnstickProfile(unittest.TestCase):
             self.assertEqual(chrome_guard.unstick_profile(verbose=False), [501])
 
 
+class OurOwnChromeIsNeverStray(unittest.TestCase):
+    """2026-08-28: `close_stray_chrome` only knew ONE family of our browsers.
+
+    The CDP downloaders (vantura_churn / att_order_log / b2b_metrics on port
+    9246, resume_pushing on 9245, apex_payroll) run the real Google Chrome out
+    of /tmp/*_cdp_profile with no `--type=` — indistinguishable from a person's
+    Chrome under the old `automations/uploaded` test, so this guard killed them
+    mid-pull. They serialise among themselves on cdp_pull._cdp_lock, but the
+    guard is not one of them and never takes it: a `lucy rerun` of any Tableau
+    report ran this pre-flight and took out whatever was capturing, which
+    surfaced as `TargetClosedError` and read like a broken Tableau view.
+    """
+
+    CDP_LINES = [
+        # port 9246 — vantura_churn / att_order_log / b2b_metrics
+        f"  601     1 {CHROME} --user-data-dir=/tmp/vantura_cdp_profile "
+        f"--remote-debugging-port=9246",
+        # port 9245 — resume_pushing
+        f"  602     1 {CHROME} --user-data-dir=/tmp/rp_cdp_profile "
+        f"--remote-debugging-port=9245",
+        # apex_payroll
+        f"  603     1 {CHROME} --user-data-dir=/tmp/apex_cdp_profile",
+        # a person's Chrome — still stray, still closed
+        "  604     1 " + CHROME,
+    ]
+
+    def setUp(self):
+        self.plat = mock.patch.object(chrome_guard.sys, "platform", "darwin")
+        self.plat.start()
+        self.addCleanup(self.plat.stop)
+        self.ps = mock.patch.object(chrome_guard.subprocess, "run",
+                                    _fake_ps(self.CDP_LINES))
+        self.ps.start()
+        self.addCleanup(self.ps.stop)
+
+    def test_cdp_downloaders_are_not_stray_human_chrome(self):
+        self.assertEqual(chrome_guard._stray_human_chrome_pids(), [604])
+
+    def test_a_real_human_chrome_is_still_closed(self):
+        """The guard must not go blind — the 2026-07-01 failure it exists for
+        (a person's Chrome adopting our launches) has to stay covered."""
+        with mock.patch.object(chrome_guard.os, "kill") as k:
+            with mock.patch.object(chrome_guard.time, "sleep"):
+                acted = chrome_guard.close_stray_chrome(verbose=False)
+        self.assertEqual(acted, [604])
+        self.assertTrue(k.called)
+
+    def test_uploaded_profiles_stay_protected(self):
+        self.assertFalse(chrome_guard._is_ours(CHROME))
+        self.assertTrue(chrome_guard._is_ours(
+            f"{CHROME} --user-data-dir={UPLOADED}/.browser_profile"))
+
+    def test_remote_debugging_port_alone_is_enough(self):
+        """The backstop: a CDP profile path nobody anticipated is still ours,
+        because a person's Chrome never carries this flag."""
+        self.assertTrue(chrome_guard._is_ours(
+            f"{CHROME} --user-data-dir=/tmp/some_new_puller "
+            f"--remote-debugging-port=9299"))
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
