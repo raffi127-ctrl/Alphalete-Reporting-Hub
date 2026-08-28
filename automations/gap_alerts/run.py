@@ -627,7 +627,8 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     seen_names = []
     with ownerville_session(headless=headless, verbose=False,
                             profile_dir=C.PROFILE_DIR,
-                            device_scale=C.CAPTURE_DEVICE_SCALE) as page:
+                            device_scale=C.CAPTURE_DEVICE_SCALE,
+                            window_size=C.capture_window()) as page:
         # NO set_viewport_size HERE, deliberately. The context is launched with
         # no_viewport (a real window) plus --force-device-scale-factor, and
         # setting a viewport switches the page to emulated-viewport mode, which

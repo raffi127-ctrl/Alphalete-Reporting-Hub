@@ -131,6 +131,20 @@ CAPTURE_DEVICE_SCALE = 3
 # softer of the two, and the PDF should read as one document.
 CARD_RENDER_SCALE = 3
 
+# The browser window is measured in DEVICE pixels, so it has to grow WITH the
+# device scale or the CSS viewport shrinks by the same factor: a 1680px window
+# at scale 3 is a 560px CSS page, which is phone width. That is what kept the
+# rep-list column at 331 CSS px and made the "3x" capture only 993px wide —
+# sharper pixels painted onto a narrower layout, which is not what was wanted.
+# Scaling both together keeps the ordinary desktop layout and simply paints it
+# with N times the pixels.
+BASE_WINDOW = (1680, 1280)
+
+
+def capture_window():
+    n = CAPTURE_DEVICE_SCALE or 1
+    return (int(BASE_WINDOW[0] * n), int(BASE_WINDOW[1] * n))
+
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 10 minutes inside these windows (Megan 2026-08-26):
 #     Mon–Fri  1:30pm – 8:30pm

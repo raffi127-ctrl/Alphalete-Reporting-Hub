@@ -432,6 +432,14 @@ def tableau_session(headless: bool = False, verbose: bool = True,
     near-empty pages on 2026-08-27. device_scale changes only how many pixels
     the same layout is painted with, so text gets sharper and nothing reflows.
 
+    window_size (default 1680x1280, unchanged for every existing caller): the
+    window is in DEVICE pixels, so it must be scaled ALONGSIDE device_scale or
+    the layout silently narrows — window 1680 at device_scale 3 is a 560px CSS
+    viewport, i.e. a phone-width page. gap_alerts hit exactly that: its rep-list
+    column measured 331 CSS px and the "sharper" capture came back barely wider
+    than before. Pass (1680*N, 1280*N) with device_scale=N to keep the desktop
+    layout and simply paint it with N times the pixels.
+
     profile_dir (default None = the shared PROFILE_DIR): give a job its OWN
     profile so it never queues behind the morning batch. Different profiles
     don't block each other — only same-profile runs do. Added for the Owner
@@ -1215,7 +1223,8 @@ def ownerville_session(headless: bool = False,
                       verbose: bool = True,
                       allow_form_login: bool = False,
                       profile_dir=None,
-                      device_scale: float | None = None) -> Iterator[Page]:
+                      device_scale: float | None = None,
+                      window_size: tuple = (1680, 1280)) -> Iterator[Page]:
     """Yield a Page logged into ownerville.com via patchright — WITHOUT the
     Tableau SSO hop. For reports that scrape ownerville's own pages (e.g.
     focus_office_att rep breakdowns). Same login + shared profile +
@@ -1236,7 +1245,8 @@ def ownerville_session(headless: bool = False,
     with sync_playwright() as p:
         ctx = _launch_persistent(p, prof, headless=headless,
                                  label="ownerville_session", verbose=verbose,
-                                 device_scale=device_scale)
+                                 device_scale=device_scale,
+                                 window_size=window_size)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             _ensure_ownerville_logged_in(page, verbose=verbose,
