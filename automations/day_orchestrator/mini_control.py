@@ -173,6 +173,9 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "install_enrollment_pending",
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
+                    # Writes a one-line identity marker, whitelisted and
+                    # idempotent — re-running it is a no-op, not a second write.
+                    "set_machine_profile",
                     "set_slack_token", "set_office_slack_token",
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
@@ -1243,9 +1246,21 @@ def _action_appstream_renew_probe(args: str) -> tuple[bool, str]:
     profile, which is exactly what that lane promises not to touch.
 
     Args: passed through, e.g. '--settle-min 10'."""
-    cmd = [sys.executable, "-m", "automations.shared.appstream_renew_probe"]
-    cmd += (args or "").split()
-    return _run_cmd(cmd, timeout_s=30 * 60,
+    parts = (args or "").split()
+    cmd = [sys.executable, "-m", "automations.shared.appstream_renew_probe"] + parts
+    # DERIVE the timeout from the hold the caller asked for. A fixed 30 min
+    # killed the first near-expiry run at 08:31 on 2026-08-28 — it was asked to
+    # hold 58 min before navigating, which is the entire point of that flag, and
+    # the harness cut it off before it ever ran a step. A probe whose whole job
+    # is waiting must not be timed out by a constant that predates the waiting.
+    hold = 0.0
+    for flag in ("--pre-settle-min", "--settle-min"):
+        if flag in parts:
+            try:
+                hold += float(parts[parts.index(flag) + 1])
+            except (IndexError, ValueError):
+                pass
+    return _run_cmd(cmd, timeout_s=int((hold + 20) * 60),
                     log_name="appstream-renew-probe.log")
 
 
@@ -2821,6 +2836,73 @@ def _action_git_diff(args: str) -> tuple[bool, str]:
     n = len([l for l in body.splitlines() if l.startswith(("+", "-"))])
     return True, (f"{scope}: {n} changed line(s)\n{stat or '(no tracked edits)'}"
                   "\n· full: lucy logtail git-diff")
+
+
+_KNOWN_RUNNERS = ("Lucy 1", "Lucy 2", "Lucy 3")
+
+
+def _action_set_machine_profile(args: str) -> tuple[bool, str]:
+    """Write this runner's `.machine-profile` identity marker. Args: '<name>'.
+
+    WHY (2026-08-28). Lucy 1 is the ORIGINAL mini and predates the marker:
+    deploy/setup_lucy_machine.sh writes it, and only Lucy 2 and Lucy 3 were ever
+    set up by that script. Nothing noticed for months because almost every reader
+    — _machine_profile(), session_holder._this_machine() — defaults to "Lucy 1"
+    when the marker is missing, so the box behaved correctly by luck.
+
+    hub_identity.machine_name() deliberately does NOT: it falls back to the raw
+    HOSTNAME, so a non-runner (Megan's laptop) is never mislabeled "Lucy 1". That
+    is the right call, and it is why silent_job_watch.job_id_for_machine — which
+    uses it — resolved Lucy 1's orchestrator heartbeat to the job id
+    'orchestrator_heartbeat_alphaletes-mac-mini.local'. silent_job_watch rejected
+    it as unknown, beat() swallowed the error by design, and Lucy 1's watchdog
+    silently never stamped a beat while the watchdog itself ran perfectly. The
+    marker is the fix; loosening machine_name()'s fallback would let the laptop
+    stamp Lucy 1's row green, which is the exact failure this all exists to stop.
+
+    NARROW ON PURPOSE. Only a known runner name is accepted, and an existing
+    marker holding a DIFFERENT name is never overwritten — re-identifying a live
+    machine would repoint its control tab and hand it another runner's queue.
+    Re-writing the same name is a no-op, so this is safe to re-run.
+    """
+    name = (args or "").strip().strip("'\"").strip()
+    if not name:
+        return False, ("set_machine_profile needs '<name>' — one of: "
+                       + ", ".join(_KNOWN_RUNNERS))
+    match = next((r for r in _KNOWN_RUNNERS if r.lower() == name.lower()), None)
+    if not match:
+        return False, (f"'{name}' is not a known runner — expected one of: "
+                       + ", ".join(_KNOWN_RUNNERS))
+    existing = ""
+    try:
+        existing = _MACHINE_MARKER.read_text().strip()
+    except Exception:  # noqa: BLE001 — absent is the normal case here
+        pass
+    if existing and existing.lower() != match.lower():
+        return False, (f"refusing to overwrite: this machine is already marked "
+                       f"'{existing}'. Re-identifying a runner would repoint its "
+                       f"control tab — delete the marker by hand if that is "
+                       f"really the intent.")
+    if existing:
+        return True, f".machine-profile already says '{existing}' — nothing to do"
+    try:
+        _MACHINE_MARKER.write_text(match + "\n", encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write .machine-profile: {str(e).splitlines()[0][:120]}"
+    # Prove it through the SAME resolver the heartbeat uses, not by re-reading the
+    # file — the whole bug was that one caller resolved this differently.
+    try:
+        from automations.shared import hub_identity
+        from automations.shared import silent_job_watch as _sjw
+        seen = hub_identity.machine_name()
+        slug = _sjw.job_id_for_machine("orchestrator_heartbeat")
+        known = slug in _sjw.JOBS
+        return True, (f".machine-profile written as '{match}' · machine_name() now "
+                      f"resolves '{seen}' · heartbeat job id '{slug}' "
+                      f"{'IS' if known else 'is NOT'} a known job")
+    except Exception as e:  # noqa: BLE001
+        return True, (f".machine-profile written as '{match}' (verify step failed: "
+                      f"{type(e).__name__})")
 
 
 def _action_purge_login_test_profile(args: str) -> tuple[bool, str]:
@@ -6103,6 +6185,7 @@ ACTIONS = {
     "git_diff": _action_git_diff,
     "git_stash": _action_git_stash,
     "git_recover": _action_git_recover,
+    "set_machine_profile": _action_set_machine_profile,
     "purge_login_test_profile": _action_purge_login_test_profile,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
