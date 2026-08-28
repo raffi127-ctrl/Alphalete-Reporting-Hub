@@ -3772,10 +3772,12 @@ AUTOMATED_REPORTS = [
             "**•** **Delta** is today's Total Units minus yesterday's at "
             "the same slot. Yesterday blank → the Delta cell is left "
             "blank, never written as 0.\n\n"
-            "THE SLOTS\n"
-            "Mon–Fri **1:00pm–9:00pm**, Saturday "
-            "**12:00pm–6:30pm**, no Sunday. Saturday's noon and 12:30 "
-            "slots are **text only** — the tab has no column for them.\n\n"
+            "HOW OFTEN\n"
+            "**Every 30 minutes** — on the hour and the half hour. "
+            "Mon–Fri **1:00pm–9:00pm** (17 a day), Saturday "
+            "**12:00pm–6:30pm** (14), nothing on Sunday. Each one is a "
+            "row update and one text. Saturday's 12:00 and 12:30 are "
+            "**text only** — the tab has no column for them.\n\n"
             "MISSED SLOTS ARE BACK-FILLED\n"
             "If the runner was down, the blank slots before the current one "
             "are filled with the current totals — knowingly a flat line "
@@ -3803,7 +3805,7 @@ AUTOMATED_REPORTS = [
             # Mon-Sat. NOT [] -- an empty list reads as "never scheduled" and
             # the didn't-run watcher would never notice this card go quiet.
             "weekdays": [0, 1, 2, 3, 4, 5],
-            "time": "every :00 and :30, 1:00pm-9:00pm (Sat 12:00pm-6:30pm)",
+            "time": "every 30 min, 1:00pm-9:00pm (Sat 12:00pm-6:30pm)",
             "estimated_minutes": 2,
         },
         "checklist": [],
