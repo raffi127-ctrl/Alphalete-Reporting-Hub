@@ -79,6 +79,28 @@ APPSTREAM_HOLD_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
 # Back-compat for anything importing the old singular name.
 APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[1]
 
+# RE-MINT THE rqst TOKEN BEFORE IT DIES, not after (Megan 2026-08-27).
+#
+# The rqst SSO token lives ~2h. Until now the holder rode one until it expired
+# and only THEN re-hopped the storage_state to get another — which is the one
+# moment the hop cannot work, because the token it hands the server in
+# `?rqst=<TOKEN>&p=701` is the dead one. What it gets back is a console that
+# RENDERS (ColdFusion's CFID/CFTOKEN are still good, and the holder's own reload
+# keeps those alive for 24h) but carries no token, so `_export_appstream` writes
+# nothing and every AppStream report fails until a human re-seeds.
+#
+# That is exactly what happened today on Lucy 1: last good export 08:38:46, the
+# token expired 08:41, and the holder printed "console warm but NO rqst token"
+# every ~6 min for the next TEN HOURS without ever recovering. Twenty cycles
+# inside the token's live window did nothing, because a healthy cycle returned
+# early and never re-hopped.
+#
+# So: once the token is inside its last REMINT_MARGIN_MIN, re-hop on every cycle
+# while it is still live enough to mint its successor. Strictly a superset of the
+# old behaviour — if the hop mints nothing we keep the still-valid token and try
+# again next cycle, and the post-expiry path is untouched.
+REMINT_MARGIN_MIN = 30.0
+
 
 def _this_machine() -> str:
     try:
@@ -191,6 +213,65 @@ def _ctx_rqst_count(ctx) -> int:
         return 0
 
 
+# WHOSE ✓ IS IT? (Megan 2026-08-27: "we've built the fix like 10 times").
+# The holder printed `AppStream ✓ — 9 cookies` every six minutes whether it had
+# just obtained a NEW login or was riding the same one down to its expiry. Both
+# look identical, so ten rounds of fixes were each judged against a signal that
+# cannot tell "renewed" from "still alive" — including the note in Megan's memory
+# claiming the token renews itself overnight, which was inferred from an expiry
+# timestamp, never observed. Until the log can say which happened, the next fix
+# is another guess. So: name the token and say when it changes.
+_LAST_RQST: dict = {"id": None}
+
+
+def _rqst_id(ctx) -> str | None:
+    """A short, stable name for the rqst token the LIVE context is carrying, so
+    consecutive cycles can be compared. The token IS the cookie name
+    (`rqst_<TOKEN>`); we print a prefix, never the whole credential."""
+    try:
+        names = sorted(c.get("name") or "" for c in ctx.storage_state().get("cookies", [])
+                       if "applicantstream" in (c.get("domain") or "")
+                       and (c.get("name") or "").lower().startswith("rqst_"))
+        return names[-1][len("rqst_"):][:8] if names else None
+    except Exception:  # noqa: BLE001 — a probe must never break the holder
+        return None
+
+
+def _rqst_note(ctx) -> str:
+    """The half of the ✓ line that actually carries information: which token,
+    how long it has left, and whether it just CHANGED (the only proof that
+    anything renewed). Never raises — worst case it adds nothing."""
+    try:
+        tok = _rqst_id(ctx)
+        if not tok:
+            return ""
+        left = _ctx_rqst_minutes_left(ctx)
+        life = f", {left:.0f}m left" if left is not None else ""
+        prev = _LAST_RQST.get("id")
+        _LAST_RQST["id"] = tok
+        if prev and prev != tok:
+            return f" · token {tok}{life} · RENEWED (was {prev})"
+        return f" · token {tok}{life}"
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _ctx_rqst_minutes_left(ctx) -> float | None:
+    """Minutes until the LIVE context's rqst token expires (the latest one, the
+    same one `appstream_watch.session_status` reads). None when the context
+    carries no dated token — treat that as "don't know", not as "expiring"."""
+    try:
+        exps = [c.get("expires") for c in ctx.storage_state().get("cookies", [])
+                if "applicantstream" in (c.get("domain") or "")
+                and (c.get("name") or "").lower().startswith("rqst")
+                and isinstance(c.get("expires"), (int, float)) and c["expires"] > 0]
+        if not exps:
+            return None
+        return (max(exps) - time.time()) / 60.0
+    except Exception:  # noqa: BLE001 — a probe must never break the holder
+        return None
+
+
 def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
     """Keep the AppStream (applicantstream) console session alive in the holder's
     context so unattended reports reuse it. Reload the open console to refresh the
@@ -211,11 +292,34 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
     reach. Lucy 1 was in that state all morning on 8/25, after an 08:42 push that
     verified clean on all three machines.
 
-    So the bar is now the TOKEN, not the render."""
+    So the bar is now the TOKEN, not the render.
+
+    AND THE RE-HOP HAPPENS BEFORE THE TOKEN DIES (2026-08-27). Raising the bar to
+    the token fixed the "✓ every 6 min while exporting nothing" lie, but the
+    holder still only re-hopped AFTER the token had expired — the one moment the
+    hop has nothing live to trade in. See REMINT_MARGIN_MIN for the ten-hour
+    outage that came of it."""
     try:
         if "applicantstream" in (page.url or ""):
             page.reload(wait_until="domcontentloaded")
             if page.locator("#searchMC").count() > 0 and _ctx_rqst_count(ctx):
+                left = _ctx_rqst_minutes_left(ctx)
+                if left is None or left > REMINT_MARGIN_MIN:
+                    return True
+                # Inside the token's last REMINT_MARGIN_MIN — re-hop NOW, while
+                # it can still mint its successor. See REMINT_MARGIN_MIN.
+                if verbose:
+                    print(f"-> rqst token has {left:.0f}m left — re-hopping "
+                          f"storage_state to mint a fresh one", flush=True)
+                try:
+                    if (_reuse_appstream_storage_state(ctx, page, verbose=verbose)
+                            and _ctx_rqst_count(ctx)):
+                        return True
+                except Exception:
+                    pass
+                # The hop minted nothing this cycle. The old token is still
+                # valid for a few more minutes, so stay warm on it and retry
+                # next cycle rather than reporting a stale session.
                 return True
             if verbose and page.locator("#searchMC").count() > 0:
                 print("-> console renders but carries no rqst token — "
@@ -308,7 +412,7 @@ def main() -> int:
                     apn = _export_appstream(ctx)
                     if apn:
                         print(f"[{_stamp()}] AppStream ✓ — console restored "
-                              f"({apn} cookies).", flush=True)
+                              f"({apn} cookies){_rqst_note(ctx)}.", flush=True)
                     else:
                         print(f"[{_stamp()}]  ⚠️ AppStream console warm but NO rqst "
                               f"token — nothing exported", flush=True)
@@ -441,7 +545,8 @@ def main() -> int:
                                 # (Lucy 1, every 6 min, all of 8/25).
                                 if apn:
                                     print(f"[{_stamp()}] AppStream ✓ — {apn} cookies "
-                                          f"(office-11580 console warm)", flush=True)
+                                          f"(office-11580 console warm)"
+                                          f"{_rqst_note(ctx)}", flush=True)
                                 else:
                                     print(f"[{_stamp()}]  ⚠️ AppStream console warm but "
                                           f"NO rqst token — nothing exported; reports "
