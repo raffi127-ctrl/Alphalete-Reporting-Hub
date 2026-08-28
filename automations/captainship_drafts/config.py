@@ -611,6 +611,23 @@ RECIPIENTS: dict = {
 }
 
 
+# Eve va en TODAS las listas, sin excepcion (Eve, 2026-08-28). Se aplica en un
+# bucle y no pegando la direccion trece veces a mano, porque el modo de falla
+# es justamente el olvido: estaba en los TRECE grupos vivos de Contacts y en
+# NINGUNA lista de codigo, asi que `seed_groups --dry-run` la marcaba para
+# SACAR de todos (verificado ese dia). Un capitan nuevo agregado manana hereda
+# esto solo; una linea literal por lista se olvida en el proximo alta.
+#
+# Ojo con lo que esto NO es: el envio expande el GRUPO VIVO de Contacts
+# (distro.recipients_for), asi que esto no cambia quien recibe hoy — arregla
+# las dos cosas que dependen del codigo, el fallback cuando el grupo no se
+# puede leer y lo que seed_groups escribe de vuelta en el grupo.
+ALWAYS = "eve@alphaletemarketing.com"
+for _lst in RECIPIENTS.values():
+    if ALWAYS.lower() not in {a.lower() for a in _lst}:
+        _lst.append(ALWAYS)
+
+
 def _to(key: str) -> str:
     """The To header for one captain — its RECIPIENTS list, comma-joined."""
     return ", ".join(RECIPIENTS[key])
