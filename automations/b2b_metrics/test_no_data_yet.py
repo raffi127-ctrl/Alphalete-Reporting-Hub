@@ -101,17 +101,70 @@ class NoDataIsNotAMiss(unittest.TestCase):
         self.assertNotIn(sid, already)
 
     def test_source_keeps_the_section_out_of_already(self):
-        src = Path(r.__file__).read_text()
+        src = Path(r.__file__).read_text(encoding="utf-8")
         block = src.split("for sid in no_data:")[1].split("per_chan_posted.append")[0]
-        self.assertIn("__nodata", block)
+        self.assertIn("_nodata_key(sid)", block)
         self.assertNotIn("already.append(sid)", block)
+
+    def test_note_key_helper_matches_the_suffix(self):
+        self.assertEqual(r._nodata_key("churn_air"), "churn_air__nodata")
+        self.assertTrue(r._nodata_key("x").endswith(r._NODATA_SUFFIX))
+
+
+class NothingNewPassSpeaksOnlyForWhatItRan(unittest.TestCase):
+    """The early return of run() — the ONE place that reports on sections by
+    reading the thread state instead of capturing them.
+
+    2026-08-28: a `--only out_of_bounds` repair found that section already in
+    every thread, took this path, and reported on the WHOLE office: Sabrina's
+    three no-data churns came back as `missed` (their real ids are deliberately
+    absent from `posted`), _write_manifest's scoped merge believed it, and a
+    fresh 🚨 fired for three sections nobody had touched."""
+
+    def _early_return(self, expected, only, done_all):
+        """The early return's arithmetic, in the shape run() computes it."""
+        exp = [i for i in expected if not only or i == only]
+        nd = {s[:-len(r._NODATA_SUFFIX)] for s in done_all
+              if s.endswith(r._NODATA_SUFFIX)}
+        return {"no_data": [i for i in exp if i in nd],
+                "present": [i for i in exp if i in done_all],
+                "missed": [i for i in exp if i not in done_all and i not in nd]}
+
+    EXPECTED = ["sales_metrics", "churn_wireless", "churn_int", "churn_air",
+                "out_of_bounds"]
+    DONE = {"sales_metrics", "out_of_bounds", "churn_wireless__nodata",
+            "churn_int__nodata", "churn_air__nodata"}
+
+    def test_only_pass_reports_on_its_own_section_alone(self):
+        got = self._early_return(self.EXPECTED, "out_of_bounds", self.DONE)
+        self.assertEqual(got["present"], ["out_of_bounds"])
+        self.assertEqual(got["missed"], [])
+
+    def test_a_noted_no_data_section_is_not_a_miss(self):
+        got = self._early_return(self.EXPECTED, None, self.DONE)
+        self.assertEqual(got["missed"], [])
+        self.assertEqual(got["no_data"],
+                         ["churn_wireless", "churn_int", "churn_air"])
+        self.assertEqual(got["present"], ["sales_metrics", "out_of_bounds"])
+
+    def test_a_genuinely_absent_section_is_still_a_miss(self):
+        got = self._early_return(self.EXPECTED, None,
+                                 self.DONE - {"sales_metrics"})
+        self.assertEqual(got["missed"], ["sales_metrics"])
+
+    def test_source_early_return_is_scoped_and_nodata_aware(self):
+        src = Path(r.__file__).read_text(encoding="utf-8")
+        block = src.split("nothing new — every expected section")[0]
+        block = block.split("if not items:")[-1]
+        self.assertIn("if not only or i[\"id\"] == only", block)
+        self.assertIn("_NODATA_SUFFIX", block)
 
 
 class RegressionsStillPage(unittest.TestCase):
     def test_blank_after_a_good_day_is_not_silenced(self):
         """Carlos 2026-08-25: a section that HAS data rendering blank is the
         incident this guard was built for. It must stay loud."""
-        src = Path(r.__file__).read_text()
+        src = Path(r.__file__).read_text(encoding="utf-8")
         branch = src.split("except BlankRender as br:")[1].split("except Exception")[0]
         self.assertIn("has_ever_posted", branch)
         # the loud path must NOT mark it deferred/no_data
