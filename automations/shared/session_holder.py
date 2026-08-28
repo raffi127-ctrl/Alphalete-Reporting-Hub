@@ -237,6 +237,16 @@ def _rqst_id(ctx) -> str | None:
         return None
 
 
+def _donated_token_ids() -> set:
+    """Token ids a fleet handoff installed on THIS machine (set_appstream_state
+    writes the marker). Used only to keep the log honest — see _rqst_note."""
+    try:
+        return {ln.strip() for ln in APPSTREAM_STORAGE_STATE.with_name(
+            ".appstream_donated_token").read_text().splitlines() if ln.strip()}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def _rqst_note(ctx) -> str:
     """The half of the ✓ line that actually carries information: which token,
     how long it has left, and whether it just CHANGED (the only proof that
@@ -250,6 +260,13 @@ def _rqst_note(ctx) -> str:
         prev = _LAST_RQST.get("id")
         _LAST_RQST["id"] = tok
         if prev and prev != tok:
+            # A DONATION IS NOT A RENEWAL. Both change the token id, so a
+            # machine that cannot renew at all would print RENEWED minutes after
+            # a handoff landed — and we would read the self-heal as working.
+            # That is the `AppStream ✓ — 9 cookies` mistake one level up, and
+            # this log line is now what the AppStream work is being steered by.
+            if tok in _donated_token_ids():
+                return f" · token {tok}{life} · RECEIVED from the fleet"
             _push_token_to_fleet()
             return f" · token {tok}{life} · RENEWED (was {prev})"
         return f" · token {tok}{life}"

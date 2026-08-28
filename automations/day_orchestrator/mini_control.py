@@ -1406,6 +1406,22 @@ def _action_set_appstream_state(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, (f"couldn't write {APPSTREAM_STORAGE_STATE.name}: "
                        f"{str(e).splitlines()[0][:120]}")
+    # RECORD THAT THIS TOKEN CAME FROM OUTSIDE (2026-08-28).
+    # The holder now logs "RENEWED" whenever the token id changes, and that line
+    # is the evidence the AppStream work is being steered by. But a token
+    # installed HERE by a fleet handoff changes the id exactly the same way, so
+    # a machine that cannot renew at all would still print RENEWED minutes after
+    # a donation landed — and we would read it as the self-heal working. That is
+    # the same defect as the old `AppStream ✓` that meant nothing, one level up.
+    # Leave a marker naming the id we installed so the holder can say RECEIVED.
+    try:
+        _ids = sorted(str(c.get("name", ""))[len("rqst_"):][:8]
+                      for c in json.loads(blob).get("cookies", [])
+                      if str(c.get("name", "")).startswith("rqst_"))
+        APPSTREAM_STORAGE_STATE.with_name(".appstream_donated_token").write_text(
+            "\n".join(_ids), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — a missing marker only costs log clarity
+        pass
     ok, res = _run_cmd(
         [sys.executable, "-m", "automations.shared.appstream_whoami"],
         timeout_s=20 * 60, log_name="appstream-whoami.log")

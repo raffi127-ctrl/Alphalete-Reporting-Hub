@@ -243,6 +243,29 @@ class TheLogCanTellRenewedFromStillAlive(unittest.TestCase):
             ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
             self.assertIn("RENEWED", sh._rqst_note(ctx2))
 
+    def test_a_donated_token_is_reported_as_received_not_renewed(self):
+        """THE CONFOUND. A handoff changes the token id exactly like a renewal,
+        so without this a machine that can never renew still prints RENEWED
+        minutes after a donation lands — and the log goes back to meaning
+        nothing, which is the whole thing this line was added to stop."""
+        with mock.patch.object(sh, "_donated_token_ids", return_value={"BRANDNEW"}), \
+             mock.patch.object(sh, "_push_token_to_fleet") as push:
+            sh._rqst_note(_ctx(rqst=1, minutes_left=5))
+            ctx2 = _ctx(rqst=1, minutes_left=120)
+            ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
+            note = sh._rqst_note(ctx2)
+        self.assertIn("RECEIVED", note)
+        self.assertNotIn("RENEWED", note)
+        push.assert_not_called()      # don't echo a donation back at the fleet
+
+    def test_a_missing_marker_leaves_the_old_reading_intact(self):
+        with mock.patch.object(sh, "_donated_token_ids", return_value=set()), \
+             mock.patch.object(sh, "_push_token_to_fleet"):
+            sh._rqst_note(_ctx(rqst=1, minutes_left=5))
+            ctx2 = _ctx(rqst=1, minutes_left=120)
+            ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
+            self.assertIn("RENEWED", sh._rqst_note(ctx2))
+
     def test_it_never_prints_the_whole_credential(self):
         ctx = _ctx(rqst=1)
         ctx.storage_state.return_value["cookies"][-1]["name"] = "rqst_" + "S" * 60
