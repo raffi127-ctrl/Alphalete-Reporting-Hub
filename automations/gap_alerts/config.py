@@ -94,11 +94,11 @@ GAP_TEXT_HEADER = "15 minutes of gaps"
 GAP_NEW_EMOJI = "\u23F0"
 
 # --- send gate ----------------------------------------------------------------
-# PAUSED 2026-08-28 at Megan's word: "give me the pdf layout view here for me to
-# view before posting". The scheduled job keeps running and keeps building, and
-# refuses to text. Flip to True once the layout is approved — that is the whole
-# change, no reinstall.
-SEND_ENABLED = False
+# The scheduled job keeps running and keeps building whatever this says; False
+# only stops the texting. Paused 2026-08-28 for a layout review, resumed the
+# same day once Megan had seen it. One constant, no reinstall — that is the
+# lever to reach for when something needs to stop going to the room NOW.
+SEND_ENABLED = True
 
 # The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
 # a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps

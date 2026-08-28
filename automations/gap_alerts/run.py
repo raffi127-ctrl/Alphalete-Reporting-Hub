@@ -183,13 +183,19 @@ def _remember_gap_names(key: str, day: dt.date, names) -> None:
 def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False):
     """The message Raf asked for, and the set of names on it.
 
-    ALPHABETICAL by name — his example listing is alphabetical, and the point
-    is no longer "who is worst" (the ordering) but "who just appeared" (the
-    emoji). Returns (text, names); text is "" when nobody is over, so a quiet
-    stretch sends no list at all rather than a header with nothing under it.
+    LONGEST GAP FIRST (Megan, 2026-08-28). Raf's Loom listed his mock-up
+    alphabetically, but read back it is a to-text list and the person who has
+    been dark 190 minutes belongs at the top, not under everyone whose name
+    starts with A. The clock still marks who just appeared; the ordering says
+    who is worst. Ties break alphabetically so the list is stable between
+    ticks and does not shuffle for no reason.
+
+    Returns (text, names); text is "" when nobody is over, so a quiet stretch
+    sends no list at all rather than a header with nothing under it.
     """
     lines, names = [], []
-    for r in sorted(gaps, key=lambda r: (r.get("name") or "").strip().lower()):
+    for r in sorted(gaps, key=lambda r: (-cap._int(r.get("minutesSinceLastKnock")),
+                                         (r.get("name") or "").strip().lower())):
         name = (r.get("name") or "").strip()
         if not name:
             continue
@@ -547,6 +553,17 @@ def gap_rows(cfg: Dict, day: dt.date) -> List[Dict]:
     return over
 
 
+def _date_text(day: dt.date) -> str:
+    """'8/28 (Friday)' — the weekday spelled out (Megan, 2026-08-28).
+
+    Not knocks_intraday's version, which is '8/28' and is shared by the Slack
+    boards; this one is ours. Built by hand rather than with %-m/%-d, which is
+    glibc/BSD only and throws on Windows — every report here has to import on
+    both.
+    """
+    return "%d/%d (%s)" % (day.month, day.day, day.strftime("%A"))
+
+
 def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
     """Pull Raf's office for TODAY and render the knock board. -> (pngs, rows).
 
@@ -568,7 +585,7 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
     """
     from automations.rashad_metrics.knocks_pull import pull_offices_days
     from automations.total_knocks import render as knocks_render
-    from automations.knocks_intraday.run import _date_text, first_name
+    from automations.knocks_intraday.run import first_name
 
     pulled = pull_offices_days([(cfg["name"], [day])], verbose=False,
                                profile_dir=str(C.PROFILE_DIR))
@@ -583,6 +600,7 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
         day, rows=rows, out_dir=out_dir / cfg["key"],
         title_suffix=first_name(cfg.get("label") or cfg["name"]),
         date_text=_date_text(day))
+
     _log("  %s: %d rep(s) -> %s (%s)"
          % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
     return list(pngs), rows
