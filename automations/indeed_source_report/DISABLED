@@ -1,0 +1,15 @@
+2026-08-27: indeed_source_report is STOOD DOWN at Carlos's request — the report
+runs long and he asked for it off ALL runs (04:00 / 12:00 / 17:00).
+
+Measured before standing it down, from output/logs/indeed_source_report_*.log
+on Lucy 2 (2026-08-27): the noon pass ran 04:00->? and 12:00:04 -> 12:10:56,
+i.e. ~11 minutes for 28 offices. That is the "forever" being complained about.
+
+Three gates hold the stand-down, so it cannot come back by accident:
+  * this file            — run.py and deploy/indeed_source_report.sh both refuse
+  * PAUSED_REPORTS       — automations/dashboard.py, so the Hub card greys out
+  * the LaunchAgent      — com.alphalete.indeed-source-report unloaded on Lucy 2
+
+To bring it back: delete this file, drop the dashboard.py PAUSED_REPORTS entry,
+and re-install the agent on Lucy 2 with
+  python -m automations.day_orchestrator.install_agent indeed-source-report
