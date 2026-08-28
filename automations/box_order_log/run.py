@@ -397,10 +397,18 @@ def main(argv: Optional[list] = None) -> int:
     tpv_seen = set()
     if not args.no_tpv_memory:
         from . import sheet as _sheet_mem
+        from . import tpv_ledger as _ledger
         tpv_seen = _sheet_mem.tpv_seen_keys(args.sheet_id or None)
+        n_sheet = len(tpv_seen)
+        # The sheet only remembers six weeks. The archived crosstabs go back to
+        # the report's first run, so a deal erased before it aged off the board
+        # is only recoverable here. Union, never replace: two partial records.
+        from_ledger = _ledger.keys()
+        tpv_seen |= from_ledger
         if verbose:
-            print("  TPV memory: {} sale(s) the sheet already vouches for"
-                  .format(len(tpv_seen)))
+            print("  TPV memory: {} from the sheet + {} from the crosstab "
+                  "ledger = {} sale(s) vouched for".format(
+                      n_sheet, len(from_ledger), len(tpv_seen)))
         if not tpv_seen:
             # An empty read is indistinguishable from "nothing qualifies", and
             # it silently restores the bug — so say it out loud either way.
