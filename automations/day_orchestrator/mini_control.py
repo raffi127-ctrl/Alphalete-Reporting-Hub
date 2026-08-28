@@ -205,7 +205,8 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # FIXING them. Worse, the failure is quiet: the poller keeps running plumbing, so
 # `update` still succeeds and the queue looks alive while every rerun sits at
 # "queued" for hours. Reading a log should never spend a fix.
-READONLY_ACTIONS = {"logtail", "daystate", "git_status", "git_diff",
+READONLY_ACTIONS = {"push_appstream_fleet",
+                    "logtail", "daystate", "git_status", "git_diff",
                     "slack_channel", "slack_find", "slack_thread"}
 
 # --- lanes --------------------------------------------------------------------
@@ -1227,6 +1228,36 @@ def _action_reseed_appstream(args: str) -> tuple[bool, str]:
            "--appstream-login"]
     ok, res = _run_cmd(cmd, timeout_s=12 * 60)
     return ok, res + " (needs a human at the Cloudflare check on the mini)"
+
+
+def _action_push_appstream_fleet(args: str) -> tuple[bool, str]:
+    """Push THIS machine's live AppStream session to every runner — no human.
+
+    Why this exists (Megan 2026-08-27: "I should not have to ever re-seed").
+    `--appstream-push-fleet` has always been able to do this, but only from a
+    keyboard, so it was treated as the second half of a HUMAN re-seed. It isn't:
+    it reads a saved session that already has a token and ships it. When Lucy 1
+    and Lucy 3 went tokenless for ten hours today, Lucy 2's holder was exporting
+    a live session the whole time, six minutes stale — the fix was sitting on the
+    fleet and there was no way to reach it except by asking a person to clear a
+    Turnstile that did not need clearing.
+
+    Read-only against the source machine, and the command refuses a session with
+    no rqst_ token, so it can never distribute a dead one. Each destination
+    installs + verifies its own copy (set_appstream_state) and blanks the
+    session from the queue when it finishes.
+
+    IN THE READ LANE on purpose, with one caveat worth naming: it does write —
+    the control-queue rows it enqueues on the other machines' tabs. What the
+    read lane actually protects is the shared browser profile and the reports
+    using it, and this touches neither. It has to be here, because the lane it
+    would otherwise sit in is exactly the one jammed behind a long backfill on
+    the night you need this most (Lucy 2, 2026-08-27)."""
+    cmd = [sys.executable, "-m", "automations.shared.tableau_patchright",
+           "--appstream-push-fleet"]
+    ok, res = _run_cmd(cmd, timeout_s=5 * 60, log_name="appstream-push-fleet.log")
+    return ok, res + (" — each machine installs + verifies its own copy"
+                      if ok else " — this machine has no live session to give")
 
 
 def _action_sheets_login(args: str) -> tuple[bool, str]:
@@ -6094,6 +6125,7 @@ ACTIONS = {
     "box_backfill_pending": _action_box_backfill_pending,
     "post_nsf_correction": _action_post_nsf_correction,
     "reseed_appstream": _action_reseed_appstream,
+    "push_appstream_fleet": _action_push_appstream_fleet,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
     "appstream_status": _action_appstream_status,

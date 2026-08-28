@@ -250,10 +250,61 @@ def _rqst_note(ctx) -> str:
         prev = _LAST_RQST.get("id")
         _LAST_RQST["id"] = tok
         if prev and prev != tok:
+            _push_token_to_fleet()
             return f" · token {tok}{life} · RENEWED (was {prev})"
         return f" · token {tok}{life}"
     except Exception:  # noqa: BLE001
         return ""
+
+
+# NOBODY SHOULD EVER HAVE TO RE-SEED (Megan 2026-08-27).
+#
+# Today Lucy 1 and Lucy 3 sat tokenless for ten hours while Lucy 2's holder was
+# exporting a LIVE session the entire time, never more than six minutes stale.
+# All three run the same rcaptain account, and one machine's session works on
+# any of them — the fix was already on the fleet, and the only way to move it
+# was to ask a person to clear a Turnstile that did not need clearing.
+#
+# So a holder that RENEWS its token hands the new one to the other hold
+# machines. A machine whose own renewal fails is then carried by whichever one
+# succeeded, and it takes all three failing at once — not any one of them — to
+# need a human. Renewal is the trigger because it is the only moment there is
+# something new to give; the hourly floor keeps a fleet-wide token change from
+# putting three big rows on the queue at once.
+#
+# Fully contained: any failure here is logged and dropped. Handing off a session
+# must never be able to take down the thing holding it.
+FLEET_PUSH_MIN_INTERVAL_MIN = 60.0
+_LAST_FLEET_PUSH: dict = {"at": 0.0}
+
+
+def _push_token_to_fleet(verbose: bool = True) -> None:
+    """Give the just-renewed session to the other AppStream hold machines.
+
+    Sends the SAME payload the human re-seed's second half sends
+    (`--appstream-push-fleet` → each machine's `set_appstream_state`), so the
+    landing side is unchanged and still installs + verifies its own copy and
+    refuses a state carrying no rqst_ token."""
+    now = time.time()
+    if (now - _LAST_FLEET_PUSH["at"]) / 60.0 < FLEET_PUSH_MIN_INTERVAL_MIN:
+        return
+    try:
+        blob = APPSTREAM_STORAGE_STATE.read_text()
+        if not sum(1 for c in json.loads(blob).get("cookies", [])
+                   if str(c.get("name", "")).startswith("rqst_")):
+            return          # never distribute a session that can't open a console
+        from automations.day_orchestrator import mini_control as mc
+        me = _this_machine()
+        sent = [m for m in APPSTREAM_HOLD_MACHINES if m != me]
+        for m in sent:
+            mc.enqueue("set_appstream_state", blob, by="holder-renewal", machine=m)
+        _LAST_FLEET_PUSH["at"] = now
+        if verbose and sent:
+            print(f"[{_stamp()}] AppStream → handed the fresh token to "
+                  f"{', '.join(sent)}", flush=True)
+    except Exception as e:  # noqa: BLE001 — a handoff must never break the holder
+        print(f"[{_stamp()}] AppStream fleet handoff skipped: "
+              f"{type(e).__name__}: {str(e)[:110]}", flush=True)
 
 
 def _ctx_rqst_minutes_left(ctx) -> float | None:

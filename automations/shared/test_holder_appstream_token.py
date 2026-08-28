@@ -237,10 +237,11 @@ class TheLogCanTellRenewedFromStillAlive(unittest.TestCase):
 
     def test_a_changed_token_is_called_out_as_renewed(self):
         """The one line that would have settled this ten fixes ago."""
-        sh._rqst_note(_ctx(rqst=1, minutes_left=5))
-        ctx2 = _ctx(rqst=1, minutes_left=120)
-        ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
-        self.assertIn("RENEWED", sh._rqst_note(ctx2))
+        with mock.patch.object(sh, "_push_token_to_fleet"):
+            sh._rqst_note(_ctx(rqst=1, minutes_left=5))
+            ctx2 = _ctx(rqst=1, minutes_left=120)
+            ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
+            self.assertIn("RENEWED", sh._rqst_note(ctx2))
 
     def test_it_never_prints_the_whole_credential(self):
         ctx = _ctx(rqst=1)
@@ -254,6 +255,97 @@ class TheLogCanTellRenewedFromStillAlive(unittest.TestCase):
         ctx = mock.Mock()
         ctx.storage_state.side_effect = RuntimeError("browser gone")
         self.assertEqual(sh._rqst_note(ctx), "")
+
+
+class ARenewedTokenIsHandedToTheFleet(unittest.TestCase):
+    """THE ANSWER TO "I should not have to ever re-seed" (Megan 2026-08-27).
+    Lucy 1 and Lucy 3 were tokenless for ten hours while Lucy 2 held a live
+    session six minutes stale. Same account, same session, works on any of them
+    — and the only route between them ran through a person clearing a Turnstile
+    that did not need clearing. A renewal is now handed to the other machines,
+    so it takes ALL of them failing at once to need a human."""
+
+    def setUp(self):
+        sh._LAST_RQST["id"] = None
+        sh._LAST_FLEET_PUSH["at"] = 0.0
+
+    def _renew(self, **kw):
+        """Two cycles with different tokens = one renewal."""
+        sh._rqst_note(_ctx(rqst=1, minutes_left=5))
+        ctx2 = _ctx(rqst=1, minutes_left=120)
+        ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
+        return sh._rqst_note(ctx2)
+
+    def _mc(self):
+        """A stand-in control queue, injected the way the holder imports it."""
+        mc = mock.Mock()
+        return mc, mock.patch.dict(
+            "sys.modules", {"automations.day_orchestrator": mock.Mock(mini_control=mc),
+                            "automations.day_orchestrator.mini_control": mc})
+
+    def test_the_other_hold_machines_get_the_new_session(self):
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            self._renew()
+        sent = [c.kwargs.get("machine") for c in mc.enqueue.call_args_list]
+        self.assertEqual(sorted(sent), ["Lucy 1", "Lucy 3"])
+
+    def test_it_never_hands_itself_the_session(self):
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            self._renew()
+        self.assertNotIn("Lucy 2",
+                         [c.kwargs.get("machine") for c in mc.enqueue.call_args_list])
+
+    def test_a_tokenless_state_file_is_never_distributed(self):
+        """The one thing worse than a dead session is three of them."""
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"CFID"}]}'))):
+            self._renew()
+        mc.enqueue.assert_not_called()
+
+    def test_it_does_not_push_more_than_once_an_hour(self):
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            self._renew()
+            n_after_first = mc.enqueue.call_count
+            sh._LAST_RQST["id"] = "somethingelse"
+            self._renew()
+        self.assertEqual(mc.enqueue.call_count, n_after_first)
+
+    def test_riding_the_same_token_hands_off_nothing(self):
+        """Only a renewal has anything new to give."""
+        with mock.patch.object(sh, "_push_token_to_fleet") as push:
+            ctx = _ctx(rqst=1, minutes_left=90)
+            sh._rqst_note(ctx)
+            sh._rqst_note(ctx)
+        push.assert_not_called()
+
+    def test_a_broken_queue_never_takes_the_holder_down(self):
+        mc, patch_mc = self._mc()
+        mc.enqueue.side_effect = RuntimeError("sheet unreachable")
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            self.assertIn("RENEWED", self._renew())   # did not raise
 
 
 class ZeroIsNotSuccess(unittest.TestCase):
