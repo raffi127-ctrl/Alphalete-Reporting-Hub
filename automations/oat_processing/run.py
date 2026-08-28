@@ -191,7 +191,14 @@ _EXTRACT_JS = r"""() => {
   // --- overwrite+send button present? ---
   const btnText = [...document.querySelectorAll('button,input[type=button],input[type=submit],a')]
     .map(e=>(e.innerText||e.value||'')).join(' | ').toLowerCase();
-  const overrideBtn = btnText.includes('overwrite') && btnText.includes('send to ai');
+  // BOTH wordings ship in AppStream and they mean the same control: some
+  // records render "Overwrite Old Applicants (Send to AI)", others "Override and
+  // Send to AI" (Carlos read the second off a live screen 2026-08-27, and one
+  // walk saw both labels within a few applicants of each other). Matching only
+  // 'overwrite' made every 'Override…' record read as override_button=false, so
+  // classify() routed a sendable applicant to re-text/remove instead. Never
+  // match one spelling.
+  const overrideBtn = /overri|overwri/.test(btnText) && btnText.includes('send to ai');
   // --- pager: "<page> of <N> Emails" ---
   const pm = body.match(/of\s+([0-9]+)\s+emails/i);
   // --- account: the "To:" address of the source application email (bottom of the
@@ -459,15 +466,40 @@ def _perform_remove(page) -> bool:
 
 
 def _try_overwrite_send(page) -> bool:
-    """Push to AI via 'Overwrite Old Applicants (Send to AI)' when the ATS allows
-    it (button present, no 'Cannot override'). The ATS still blocks a recent
-    contact, so this only sends when legitimately allowed. Send-maximizer."""
+    """Push to AI via the override control when the ATS allows it (control
+    present, no 'Cannot override'). The ATS still blocks a recent contact, so
+    this only sends when legitimately allowed. Send-maximizer.
+
+    MATCH THE CONTROL BY PATTERN, NEVER BY AN EXACT LABEL. AppStream renders this
+    button as EITHER "Overwrite Old Applicants (Send to AI)" OR "Override and
+    Send to AI" — both appear in the same office, sometimes a few applicants
+    apart. The old exact-label list only carried the first, so on an "Override…"
+    record the click silently found nothing, do_send_ai concluded the applicant
+    could not be sent, and routed them to re-text or remove. Measured on Atef's
+    office 2026-08-27: of 26 restored applicants with a clear verdict, 21 were
+    sendable and 16 of those needed exactly this button — i.e. this one mismatch
+    was the difference between a person reaching the call list and being written
+    off. Pattern-match /overri|overwri/, prefer the one that also says AI."""
     body = _body(page)
-    if "overwrite" not in body or "cannot override this applicant" in body:
+    if not re.search(r"overri|overwri", body) or "cannot override this applicant" in body:
         return False
-    if not _click_first(page, ["Overwrite Old Applicants (Send to AI)",
-                               "Overwrite Old Applicants", "Overwrite"]):
+    clicked = page.evaluate(
+        """() => {
+             const els = Array.from(document.querySelectorAll(
+                 'button, input[type=submit], input[type=button], a'))
+               .filter(e => e.offsetParent !== null);
+             const t = e => (e.innerText || e.value || '').trim();
+             const el = els.find(e => /overri|overwri/i.test(t(e))
+                                   && /\bai\b/i.test(t(e)))
+                     || els.find(e => /overri|overwri/i.test(t(e)));
+             if (!el) return null;
+             const label = t(el);
+             el.scrollIntoView({block: 'center'});
+             el.click();
+             return label; }""")
+    if not clicked:
         return False
+    _log(f"    [override] clicked {clicked!r}")
     page.wait_for_timeout(2500)
     return "cannot send to ai" not in _body(page)
 
