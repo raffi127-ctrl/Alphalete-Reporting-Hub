@@ -263,17 +263,13 @@ def test_message_uses_real_emoji_not_shortcodes():
 
 
 # --- the Hub pill -----------------------------------------------------------
-def test_prune_keeps_the_hub_markers():
+def test_prune_keeps_the_hub_marker():
     """prune() rebuilds the file from scratch, so an unlisted section is
     DELETED on the next save. '_hub' was missing, which is why the sweep
     re-published its Hub row on every pass -- 30 rows on 2026-08-26."""
     from automations.alphalete_sales_board import state as S
-    data = {"2026-08-27": {"Rep": {"Int": 1}},
-            "_hub": {"2026-08-27": True},
-            "_hub_times": {"2026-08-27": True}}
-    out = S.prune(data)
-    assert out.get("_hub") == {"2026-08-27": True}
-    assert out.get("_hub_times") == {"2026-08-27": True}
+    data = {"2026-08-27": {"Rep": {"Int": 1}}, "_hub": {"2026-08-27": True}}
+    assert S.prune(data).get("_hub") == {"2026-08-27": True}
 
 
 def test_times_sent_marker_round_trips_through_prune():
@@ -318,9 +314,15 @@ def test_the_hub_card_is_wired_to_this_module():
     from automations import hub_cards as H
     card = [c for c in H.AUTOMATED_REPORTS if c["id"] == "times-of-sales"][0]
     assert card["run_machine"] == "Lucy 1"
+    assert card["category"] == "\U0001F4F2 Ops"
     # NOT [] -- an empty weekday list reads as "never scheduled" and the
     # didn't-run watcher would never notice this card go quiet.
     assert card["schedule"]["weekdays"] == [0, 1, 2, 3, 4, 5]
+    # The phase pill counts one Hub row per snapshot, so the declared count
+    # must equal the number of slots that day or the pill never goes green.
+    for wd, want in card["daily_runs"].items():
+        assert len(T.slots_for(int(wd))) == want, wd
+    assert "6" not in card["daily_runs"]        # Sunday does not run
     # Against EVERY day's slots, not Monday's: latest_slot() reads the real
     # clock, and Saturday carries 12:00/12:30 which no weekday has -- checking
     # against slots_for(0) would fail this test only on a Saturday lunchtime.

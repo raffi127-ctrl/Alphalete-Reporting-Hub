@@ -64,7 +64,7 @@ def prune(data: Dict, keep: int = KEEP_DAYS) -> Dict:
     # this report on 2026-08-26, more than any other report on the Hub, all of
     # them the same first-sweep-of-the-day row over and over.
     for section in ("_records", "_lvl1_sent", "_added", "_times_sent",
-                    "_hub", "_hub_times"):
+                    "_hub"):
         sub = data.get(section) or {}
         keys = sorted(sub)[-keep:]
         if keys:

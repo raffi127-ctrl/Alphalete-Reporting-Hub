@@ -287,7 +287,7 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
             # tick would put a 4:07 reading in the 4:00 column.
             if apply_writes or send:
                 S.save(S.mark_times_sent(S.load(), day, times_label))
-                _publish_times_hub_once(day)
+                _publish_times_hub(times_label)
         except Exception as e:  # noqa: BLE001
             _log("Times of Sales skipped: %s: %s" % (type(e).__name__, str(e)[:200]))
 
@@ -391,26 +391,28 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
     return len(updates)
 
 
-def _publish_times_hub_once(day: dt.date) -> None:
-    """First good snapshot of the day paints the Times of Sales card.
+def _publish_times_hub(label: str) -> None:
+    """EVERY snapshot publishes, not just the first of the day.
 
-    Its own card and its own marker, because the two fail apart: the sweep can
-    be filling the board perfectly while this tab gets nothing, and one green
-    pill covering both would say the wrong thing on exactly the day somebody
-    needed to know. [[feedback_launchd_reports_must_publish]]
+    Deliberately the opposite of the sweep's once-a-day row beside it, because
+    the two cards say different things. The sweep runs ~150 times and one green
+    pill is the whole story; this card is PHASE-COLOURED (daily_runs: 17 on a
+    weekday, 14 on Saturday), so the pill ramps as the afternoon fills in and
+    only reads green once the last slot is in. That needs one row per snapshot
+    to count -- publishing once would leave it stuck at 1/17 all day, which
+    reads as a report that stalled at lunchtime.
+
+    Its own card, because the two fail apart: the sweep can be filling the
+    board perfectly while this tab gets nothing.
+    [[feedback_launchd_reports_must_publish]]
     """
-    data = S.load()
-    key = day.isoformat()
-    if (data.get("_hub_times") or {}).get(key):
-        return
     try:
         from automations.shared import hub_activity
         hub_activity.log_completed(TIMES_CARD_ID, TIMES_CARD_NAME,
                                    status="success")
-        data.setdefault("_hub_times", {})[key] = True
-        S.save(data)
     except Exception as e:  # noqa: BLE001 — the Hub row must never fail the sweep
-        _log("hub publish skipped: %s: %s" % (type(e).__name__, str(e)[:120]))
+        _log("hub publish skipped for %s: %s: %s"
+             % (label, type(e).__name__, str(e)[:120]))
 
 
 def _publish_hub_once(day: dt.date) -> None:

@@ -3778,14 +3778,25 @@ AUTOMATED_REPORTS = [
             "**12:00pm–6:30pm** (14), nothing on Sunday. Each one is a "
             "row update and one text. Saturday's 12:00 and 12:30 are "
             "**text only** — the tab has no column for them.\n\n"
-            "MISSED SLOTS ARE BACK-FILLED\n"
-            "If the runner was down, the blank slots before the current one "
-            "are filled with the current totals — knowingly a flat line "
-            "for that afternoon, and knowingly right about what those cells "
-            "are for: tomorrow reads them to say *'yesterday at 2:30'*. A "
-            "blank there would cost tomorrow its comparison too. It stops at "
-            "the first slot that already holds a number, and never back-fills "
-            "a Delta.\n\n"
+            "MISSED SLOTS ARE BACK-FILLED — UP TO A POINT\n"
+            "**•** If the runner was down, the blank slots before the "
+            "current one are filled with the current totals — a flat "
+            "line for that stretch, and right about what those cells are "
+            "for: tomorrow reads them to say *'yesterday at 2:30'*. It "
+            "stops at the first slot that already holds a number, and "
+            "never back-fills a Delta.\n"
+            "**•** At most **4 slots (two hours)**. Beyond that it is a "
+            "cold start, not a gap, and the rest are left **blank** on "
+            "purpose — stamping the current total across a whole "
+            "afternoon would have tomorrow comparing against a number "
+            "that never happened. The log names every slot it left "
+            "blank.\n\n"
+            "THE DATE COLUMN EXTENDS ITSELF\n"
+            "Column A used to be typed by hand and ended **2026-09-16**. "
+            "It is now kept **90 days ahead** automatically (append-only, "
+            "column A only). This mattered because of how it failed: when "
+            "the calendar ran out the texts kept arriving and stayed "
+            "correct, and only the tab quietly stopped filling.\n\n"
             "RUNS ON LUCY 1\n"
             "Inside the 5-minute sweep, so it inherits its pid lock and its "
             "Chrome fencing. The slot is claimed BEFORE the scrape — a "
@@ -3808,6 +3819,18 @@ AUTOMATED_REPORTS = [
             "time": "every 30 min, 1:00pm-9:00pm (Sat 12:00pm-6:30pm)",
             "estimated_minutes": 2,
         },
+        # A PHASE-COLOURED PILL, not the flat amber the always-on Ops cards
+        # carry (Megan 2026-08-27). Those are permanently orange because they
+        # report no run status at all; this one reports every snapshot, so the
+        # pill can do something better than sit still -- it ramps as the day
+        # fills in and reads green only once the last slot is in. Mon-Fri 17
+        # snapshots, Saturday 14; Sunday is absent because it does not run.
+        #
+        # NOT `phase_runs` and NOT `phases`: those are for a chain of DIFFERENT
+        # passes logging under different names. These are 17 repeats of one
+        # pass, which is the BG Check Sync case -- the same name N times, and
+        # it must still reach N.
+        "daily_runs": {"0": 17, "1": 17, "2": 17, "3": 17, "4": 17, "5": 14},
         "checklist": [],
         "post_run": {
             "message_success": "✅ Snapshot done — the slot is stamped on the Times of Sales tab.",
