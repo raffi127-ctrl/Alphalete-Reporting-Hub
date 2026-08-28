@@ -46,6 +46,11 @@ from . import clean
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 LEDGER_PATH = OUTPUT_DIR / "box_tpv_ledger.json"
 
+# Where a long --erased list goes so the mini can actually read it. The queue
+# sheet, not the Vantura board: this is diagnostics, and the board is Carlos's.
+QUEUE_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+ERASED_TAB = "Box TPV Erased"
+
 # box_order_log_2026-08-23.csv  and  box_order_log_all_2026-08-23.csv
 _CSV_GLOB = "box_order_log*.csv"
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
@@ -171,6 +176,12 @@ def main(argv=None) -> int:
     ap.add_argument("--erased", action="store_true",
                     help="list deals the ledger vouches for that TODAY's "
                          "newest crosstab no longer shows reaching TPV")
+    ap.add_argument("--to-tab", metavar="NAME", nargs="?", const=ERASED_TAB,
+                    help="also write the --erased list to a tab on the Lucy "
+                         "queue sheet. The queue's Result cell truncates to "
+                         "~450 chars keeping the tail, so a list this long is "
+                         "unreadable from the mini otherwise — same reason "
+                         "RP Diag exists.")
     args = ap.parse_args(argv)
 
     if args.build:
@@ -207,7 +218,41 @@ def main(argv=None) -> int:
             print("  {:<16} {:<34} TPV first seen {} · last seen {}".format(
                 k, v.get("business", "")[:34], v.get("first_seen", "?"),
                 v.get("last_seen", "?")))
+
+        if args.to_tab:
+            _write_tab(args.to_tab, newest.name, gone)
     return 0
+
+
+def _write_tab(tab_name: str, source: str, gone) -> None:
+    """Publish the erased list to a queue-sheet tab. Never fatal."""
+    header = ["Contract ID", "Account Id", "Rep", "Business",
+              "TPV first seen", "TPV last seen", "Level when seen"]
+    rows = [header]
+    for k, v in sorted(gone, key=lambda kv: kv[1].get("first_seen", "")):
+        contract, _, account = k.partition("|")
+        rows.append([contract, account, v.get("rep", ""), v.get("business", ""),
+                     v.get("first_seen", ""), v.get("last_seen", ""),
+                     v.get("level", "")])
+    try:
+        from automations.recruiting_report import fill as _fill
+        sh = _fill._client().open_by_key(QUEUE_SHEET)
+        try:
+            ws = sh.worksheet(tab_name)
+            ws.clear()
+        except Exception:
+            ws = sh.add_worksheet(title=tab_name, rows=max(100, len(rows) + 20),
+                                  cols=len(header))
+        ws.resize(rows=max(100, len(rows) + 20), cols=len(header))
+        ws.update(rows, "A1", value_input_option="RAW")
+        ws.update([["source: {} · {} deal(s) · built {}".format(
+            source, len(gone),
+            dt.datetime.now().strftime("%Y-%m-%d %H:%M"))]],
+            "A{}".format(len(rows) + 2), value_input_option="RAW")
+        print("  wrote {} row(s) to the {!r} tab".format(len(gone), tab_name))
+    except Exception as exc:
+        # Diagnostics must never take the run down.
+        print("  ! could not write the {!r} tab: {}".format(tab_name, exc))
 
 
 if __name__ == "__main__":
