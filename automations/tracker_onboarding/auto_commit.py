@@ -171,14 +171,31 @@ def _run() -> int:
         blocked.append(f"metrics: {type(e).__name__}: {e}")
 
     # --- schedule self-heal leg (add-only; no-op when nothing is missing) --
+    # RETRY, and do not let a rate limit fail the run. The 17:30 pass failed
+    # every day (8/27, 8/28) on a Sheets 429 "Read requests per minute per user"
+    # while the 03:15 pass always succeeded — the evening slot lands in the busy
+    # window (pushes writing walk diags every 5 min, the 2-hourly ad board, the
+    # 17:00 source report) and simply runs out of read quota. Nothing was wrong
+    # with the data.
+    #
+    # A quota miss is also HARMLESS here: this leg is add-only and a no-op when
+    # nothing is missing, so skipping it costs one cycle and the next run heals.
+    # Reporting it as BLOCKED made a daily red row for a transient condition,
+    # which is how real failures get ignored. Any OTHER exception still blocks.
     try:
         from automations.office_onboarding import apply as MA
-        healed = heal_schedule(MA)
+        from automations.recruiting_report.fill import _retry
+        healed = _retry(heal_schedule, MA, attempts=3)
         if healed:
             print(f"schedule self-heal: re-added missing entries "
                   f"{', '.join(healed)}")
     except Exception as e:                            # noqa: BLE001
-        blocked.append(f"schedule-heal: {type(e).__name__}: {e}")
+        _status = getattr(getattr(e, "response", None), "status_code", None)
+        if _status == 429 or "quota exceeded" in str(e).lower():
+            print("SKIP — schedule-heal: Sheets read quota exhausted after "
+                  "retries; add-only leg skipped, next run heals it")
+        else:
+            blocked.append(f"schedule-heal: {type(e).__name__}: {e}")
 
     for b in blocked:
         print(f"BLOCKED — {b}")
