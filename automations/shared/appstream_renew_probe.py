@@ -69,6 +69,19 @@ def _fmt(toks) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--pre-settle-min", type=float, default=0.0,
+                    help="Hold the session this long BEFORE navigating, so the "
+                         "navigation pass happens with the token near expiry. "
+                         "The first run (2026-08-28 07:47) navigated with 78m "
+                         "left on the freshest token and nothing minted — real, "
+                         "but not the case anyone cares about. What has to be "
+                         "ruled out is navigation INSIDE the last minutes.")
+    ap.add_argument("--own-profile", action="store_true",
+                    help="Run in a dedicated Chrome profile instead of the "
+                         "reports' shared one. Required for a long hold: the "
+                         "probe keeps the profile for its whole run, and a "
+                         "70-minute diagnostic must not stand in front of a "
+                         "scheduled report.")
     ap.add_argument("--settle-min", type=float, default=6.0,
                     help="Minutes to hold the session between the navigation "
                          "pass and the idle-reload control (default 6 — one "
@@ -77,12 +90,17 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     from automations.shared.tableau_patchright import (
-        AppStreamBusy, appstream_direct_session)
+        APPSTREAM_STORAGE_STATE, AppStreamBusy, appstream_direct_session)
+
+    kw = {}
+    if a.own_profile:
+        kw["profile_dir"] = APPSTREAM_STORAGE_STATE.with_name(
+            ".appstream_profile_renewprobe")
 
     steps: list[tuple[str, list]] = []
     try:
         with appstream_direct_session(headless=False, verbose=False,
-                                      yield_if_busy=True) as page:
+                                      yield_if_busy=True, **kw) as page:
             ctx = page.context
             live = page.locator("#searchMC").count() > 0
             steps.append(("after restore (the reports' own reuse path)",
@@ -93,6 +111,13 @@ def main(argv=None) -> int:
                 print("-> no live console; nothing this probe says about "
                       "renewal would mean anything. Stopping.", flush=True)
                 return 2
+
+            if a.pre_settle_min:
+                print(f"holding {a.pre_settle_min:g} min BEFORE navigating, so "
+                      f"the token is near expiry when we do…", flush=True)
+                time.sleep(a.pre_settle_min * 60)
+                steps.append((f"after idling {a.pre_settle_min:g}m, before any "
+                              f"navigation", _tokens(ctx)))
 
             for view, label in NAV_VIEWS:          # the hypothesis
                 page.goto(f"{APPSTREAM_BASE}?{view}", wait_until="domcontentloaded")
@@ -126,8 +151,9 @@ def main(argv=None) -> int:
             mark = "   <-- TOKEN CHANGED"
         print(f"  {label:58} {_fmt(toks)}{mark}", flush=True)
 
+    nav_rows = [st for st in steps if st[0].startswith("after navigating")]
     nav_changed = any(sorted(t for t, _ in toks) != sorted(t for t, _ in first)
-                      for label, toks in steps[1:len(NAV_VIEWS) + 1])
+                      for _, toks in nav_rows)
     ctl_changed = (sorted(t for t, _ in steps[-1][1])
                    != sorted(t for t, _ in first))
     print("\n=== reading ===", flush=True)
