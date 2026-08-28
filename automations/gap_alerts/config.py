@@ -131,19 +131,29 @@ CAPTURE_DEVICE_SCALE = 3
 # softer of the two, and the PDF should read as one document.
 CARD_RENDER_SCALE = 3
 
-# The browser window is measured in DEVICE pixels, so it has to grow WITH the
-# device scale or the CSS viewport shrinks by the same factor: a 1680px window
-# at scale 3 is a 560px CSS page, which is phone width. That is what kept the
-# rep-list column at 331 CSS px and made the "3x" capture only 993px wide —
-# sharper pixels painted onto a narrower layout, which is not what was wanted.
-# Scaling both together keeps the ordinary desktop layout and simply paints it
-# with N times the pixels.
+# WINDOW SIZE: left at the launcher's default ON PURPOSE. See capture_window().
 BASE_WINDOW = (1680, 1280)
 
 
 def capture_window():
-    n = CAPTURE_DEVICE_SCALE or 1
-    return (int(BASE_WINDOW[0] * n), int(BASE_WINDOW[1] * n))
+    """The launcher default, unscaled.
+
+    Scaling the window WITH the device scale is arithmetically right — the
+    window is in device pixels, so 1680 at scale 3 is a 560px CSS viewport and
+    OwnerVille lays the page out phone-width, which is why the "3x" capture came
+    back only 993px wide. But actually doing it (5040x3840) broke the capture
+    outright: the crop came back 3462x40 — three thousand pixels wide and FORTY
+    tall, i.e. the rep list gone, an empty strip texted to the room
+    (2026-08-27). Something in that layout leaves the measured element collapsed
+    at the moment we shoot; a 1280 CSS-px-tall viewport is far taller than the
+    page normally gets, and the list very likely had not laid out yet.
+
+    So this stays unscaled: dpr 3 on the default window gives a complete,
+    correct 993x8557 capture. Sharpening past that means finding out WHY the
+    element collapses in a tall viewport — worth a proper look, not another live
+    iteration in front of the room.
+    """
+    return BASE_WINDOW
 
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 10 minutes inside these windows (Megan 2026-08-26):
