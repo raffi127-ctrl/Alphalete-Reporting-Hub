@@ -256,7 +256,7 @@ def ledger_reconcile(ws, *, aliases, roster, captains, page=None, verbose=True,
         # and the two passes want the SAME snapshot anyway.
         led = led_rows if led_rows else P.ledger_rows(
             OUT_DIR / "ledger.csv", page=page, verbose=verbose)
-        to_place, pending, orphans = M.plan_placements(
+        to_place, pending, orphans, held = M.plan_placements(
             ws, led, aliases=aliases, owner_col=P.LEDGER_OWNER_COL,
             expl_col=P.LEDGER_EXPL_COL, amt_col=P.LEDGER_AMT_COL)
     except Exception as e:  # noqa: BLE001 — never let the ledger fail the backtrack
@@ -273,6 +273,12 @@ def ledger_reconcile(ws, *, aliases, roster, captains, page=None, verbose=True,
     for o in orphans:
         print("  ⚠ {} {} is in the ledger but has NO marker — NOT placed".format(
             o["kind"], o["period"]))
+    for h in held:
+        print("  ⚠ {} {} LANDED (${:,.2f}) but that is {:.0%} of what {} is "
+              "worth (${:,.2f}) — NOT placed, marker left red. Check the "
+              "ledger read before letting this money in.".format(
+                  h["kind"], h["period"], h["total"], h["share"], h["week"],
+                  h["week_total"]))
 
 
 def drop_formula_cells(ws, changes, *, verbose=True):

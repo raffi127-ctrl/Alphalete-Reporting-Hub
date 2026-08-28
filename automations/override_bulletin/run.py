@@ -325,7 +325,7 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
         _d = _P("output/override_bulletin/run"); _d.mkdir(parents=True, exist_ok=True)
         with tableau_session(headless=True, verbose=verbose) as _pg:
             led = P.ledger_rows(_d / "ledger.csv", page=_pg, verbose=verbose)
-        to_place, pending, orphans = M.plan_placements(
+        to_place, pending, orphans, held = M.plan_placements(
             ws, led, aliases=aliases, owner_col=P.LEDGER_OWNER_COL,
             expl_col=P.LEDGER_EXPL_COL, amt_col=P.LEDGER_AMT_COL)
         if to_place:
@@ -338,6 +338,11 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
         for o in orphans:
             print(f"  ⚠ {o['kind']} {o['period']} is in the ledger but has NO marker "
                   f"— NOT placed; add its marker so we know which week it belongs to")
+        for h in held:
+            print(f"  ⚠ {h['kind']} {h['period']} LANDED (${h['total']:,.2f}) but "
+                  f"that is {h['share']:.0%} of what {h['week']} is worth "
+                  f"(${h['week_total']:,.2f}) — NOT placed, marker left red. "
+                  f"Check the ledger read before letting this money in.")
     except Exception as e:  # noqa: BLE001
         print(f"⚠ marker pass skipped: {type(e).__name__}: {e}")
 

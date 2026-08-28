@@ -33,6 +33,17 @@ _ROW_LABELS = {CREDICO: "credico overrides", SPECIAL: "special overrides"}
 _PERIOD = re.compile(r"^P(\d{1,2})-(\d{4})$")
 _MONTHS = ("January", "February", "March", "April", "May", "June", "July",
            "August", "September", "October", "November", "December")
+_TOTAL_LABELS = ("total", "total general", "grand total", "totals")
+
+# A placement bigger than this share of what the target week is ALREADY worth is
+# refused and reported instead of written. Not a style rule — on 2026-08-28 the
+# credico for P7-2026 landed $397,148.65 into 8.9.26, a week whose whole-org
+# override was $152,607.90 (260%), inflating every Total-2026 on the bulletin by
+# a third. Real placements are a fraction of a week: Colten's biggest special,
+# $38,224.16 into 7.19.26, is ~25%. The money is never invented here, only
+# copied from the ledger — so when the ledger hands back something this far out
+# of scale the read is wrong, not the org.
+MAX_PLACEMENT_SHARE = 0.5
 
 
 def _is_red(cell):
@@ -176,6 +187,14 @@ def amounts_for(rows, kind, period, *, owner_col, expl_col, amt_col):
         out, cur = {}, None
         for r in rows[1:]:
             nm = (r[oc] or "").strip() if oc < len(r) else ""
+            # Subtotal / grand-total rows are NOT money: the owner column carries
+            # a label, and a blank owner on the row after one would otherwise be
+            # charged to whoever came last. pulls.parse_override_summary has
+            # skipped these from day one; this parser never did, and a crosstab
+            # that grows a total row silently doubles somebody.
+            if nm.lower() in _TOTAL_LABELS:
+                cur = None
+                continue
             if nm:
                 cur = _norm_name(nm)
             expl = (r[ec] or "") if ec < len(r) else ""
@@ -189,16 +208,34 @@ def amounts_for(rows, kind, period, *, owner_col, expl_col, amt_col):
     return None
 
 
+def _week_scale(vals, col):
+    """What the target week is already worth org-wide: the section-1 `Total` row
+    in that week's column. None when it can't be read (then the size guard stands
+    down rather than blocking a placement on a reading failure)."""
+    for r in vals:
+        nm = " ".join((r[0] if r else "").split()).lower()
+        if nm == "total":
+            v = _num_locale(r[col]) if col < len(r) else None
+            return v if v and v > 0 else None
+    return None
+
+
 def plan_placements(ws, ledger_rows, *, aliases=None, owner_col, expl_col, amt_col):
-    """What to do about every marker. Returns (to_place, still_pending, orphans).
+    """What to do about every marker.
+
+    Returns (to_place, still_pending, orphans, held).
 
     to_place      — pending markers whose money has now landed
     still_pending — pending markers the ledger still doesn't carry
     orphans       — periods present in the ledger with NO marker (report, never
                     place: we don't know which week they belong to)
+    held          — markers whose money LANDED but is out of scale for the week
+                    (see MAX_PLACEMENT_SHARE). Left red so the next run retries;
+                    a human has to look before this money goes in.
     """
     markers = read_markers(ws)
-    to_place, still_pending = [], []
+    vals = ws.get_all_values()
+    to_place, still_pending, held = [], [], []
     for mk in markers:
         if not mk["pending"]:
             continue
@@ -206,6 +243,12 @@ def plan_placements(ws, ledger_rows, *, aliases=None, owner_col, expl_col, amt_c
                            owner_col=owner_col, expl_col=expl_col, amt_col=amt_col)
         if amts:
             mk = {**mk, "amounts": F.rekey(amts, aliases) if aliases else amts}
+            total = round(sum(amts.values()), 2)
+            scale = _week_scale(vals, mk["col"])
+            if scale and total > scale * MAX_PLACEMENT_SHARE:
+                held.append({**mk, "total": total, "week_total": scale,
+                             "share": total / scale})
+                continue
             to_place.append(mk)
         else:
             still_pending.append(mk)
@@ -215,7 +258,7 @@ def plan_placements(ws, ledger_rows, *, aliases=None, owner_col, expl_col, amt_c
         for per in sorted(_periods_in_ledger(ledger_rows, kind, expl_col=expl_col)):
             if (kind, per) not in known:
                 orphans.append({"kind": kind, "period": per})
-    return to_place, still_pending, orphans
+    return to_place, still_pending, orphans, held
 
 
 def _periods_in_ledger(rows, kind, *, expl_col):
