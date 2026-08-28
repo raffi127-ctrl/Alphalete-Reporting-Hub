@@ -57,6 +57,7 @@ from automations.gap_alerts import config as C
 HUB_CARD_ID = "gap-alerts"
 HUB_CARD_NAME = "Rep Gap Alerts (15-min gaps -> Partners chat)"
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "gap_alerts"
+PREVIEW_DM = False   # set by --preview-dm
 
 # One alert after this many consecutive failed ticks, then a cooldown. A live
 # outage would otherwise post an incident every tick all afternoon, and three
@@ -632,6 +633,11 @@ def tick(day: dt.date, *, send: bool, only: str = "",
 
     from automations.b2b_dispositions import text_post as tp
 
+    if send and not getattr(C, "SEND_ENABLED", True):
+        _log("SENDING IS PAUSED (config.SEND_ENABLED=False) — building and "
+             "reporting only. Flip it to True to resume.")
+        send = False
+
     failures = []
     seen_names = []
     for cfg in offices:
@@ -677,6 +683,12 @@ def tick(day: dt.date, *, send: bool, only: str = "",
              % (len(gap_names), C.GAP_THRESHOLD_MIN, len(newly),
                 (" (" + ", ".join(newly) + ")") if newly else ""))
         pdf = render(cfg, pngs, out_dir, slot)
+        if PREVIEW_DM:
+            try:
+                _log("  preview DM -> Megan: %s" % preview_dm(pdf, slot)["file"])
+            except Exception as e:  # noqa: BLE001
+                _log("  preview DM failed: %s: %s"
+                     % (type(e).__name__, str(e)[:160]))
         try:
             # Resolution runs on a dry run too — it is read-only and it is the
             # half most likely to be wrong (Lucy removed from the chat, the
@@ -723,6 +735,25 @@ def _terminated_check_once(day: dt.date, names: List[str]) -> None:
         _log("terminated check skipped: %s: %s" % (type(e).__name__, str(e)[:120]))
 
 
+def preview_dm(pdf: Path, slot: str, user: str = "U04G5HJBGFN") -> Dict:
+    """DM the built PDF to Megan for review — the room gets nothing.
+
+    Exists because there is no way to read a file off the runner from the
+    laptop: ssh is refused and the control queue has no fetch action, so
+    "let me see it before it posts" had no answer that did not involve
+    posting it. Same files_upload_v2 path the b2b preview uses.
+    """
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    uid = smp._resolve_user_id(client, user)
+    channel = client.conversations_open(users=uid)["channel"]["id"]
+    client.files_upload_v2(
+        file_uploads=[{"file": str(pdf), "filename": pdf.name}],
+        channel=channel,
+        initial_comment="*[gap alerts preview]* %s — not sent to the room" % slot)
+    return {"ok": True, "to": user, "file": pdf.name}
+
+
 def probe(day: dt.date, cfg: Dict, headless: bool = True) -> int:
     """READ-ONLY: the rows the board is built from, and their columns.
 
@@ -757,6 +788,9 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="run outside the selling-day window")
     ap.add_argument("--headed", action="store_true", help="show the browser")
+    ap.add_argument("--preview-dm", action="store_true",
+                    help="build, then DM the PDF to Megan for review "
+                         "(the group gets nothing)")
     ap.add_argument("--probe", action="store_true",
                     help="READ-ONLY: dump the raw Time Tracker rows")
     args = ap.parse_args(argv)
@@ -764,6 +798,8 @@ def main(argv=None) -> int:
     day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
            if args.date else dt.date.today())
     send = args.send and not args.dry_run
+    global PREVIEW_DM
+    PREVIEW_DM = bool(getattr(args, "preview_dm", False))
 
     if args.probe:
         # Ahead of the window gate on purpose: you diagnose when you can, not
