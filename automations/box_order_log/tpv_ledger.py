@@ -203,6 +203,12 @@ def main(argv=None) -> int:
     ap.add_argument("--erased", action="store_true",
                     help="list deals the ledger vouches for that TODAY's "
                          "newest crosstab no longer shows reaching TPV")
+    ap.add_argument("--dead-check", action="store_true",
+                    help="for every deal in the newest crosstab that surfaces "
+                         "TPV Failed / Rejected QC, say what the ledger knows: "
+                         "never seen at all, seen only at Requires TPV Review, "
+                         "or PROVEN at TPV Passed (and when). Answers whether a "
+                         "dropped-dead deal ever said TPV passed.")
     ap.add_argument("--to-tab", metavar="NAME", nargs="?", const=ERASED_TAB,
                     help="also write the --erased list to a tab on the Lucy "
                          "queue sheet. The queue's Result cell truncates to "
@@ -248,6 +254,47 @@ def main(argv=None) -> int:
 
         if args.to_tab:
             _write_tab(args.to_tab, newest.name, gone)
+
+    if args.dead_check:
+        files = sorted(OUTPUT_DIR.glob(_CSV_GLOB), key=lambda p: p.name)
+        if not files:
+            print("no archived crosstabs found", file=sys.stderr)
+            return 1
+        newest = files[-1]
+        rows = clean.read_rows(newest)
+        groups = {}
+        for r in rows:
+            if (r.get("Status") or "").strip() in clean.JUNK_STATUSES:
+                continue
+            k = _key_str((r.get("Contract ID"), r.get("Account Id")))
+            groups.setdefault(k, []).append(r)
+        led = load()
+        buckets = {"proven at TPV Passed": [], "only Requires TPV Review": [],
+                   "never in the ledger": []}
+        for k, members in groups.items():
+            lvls = {clean.level((m.get("Status") or "").strip(),
+                                (m.get("Contr. Sub-status") or "").strip())
+                    for m in members}
+            surfaced = min(lvls, key=clean._priority)
+            if surfaced not in clean.DEAD_LEVELS:
+                continue
+            rec = led.get(k)
+            if rec is None:
+                b = "never in the ledger"
+            elif rec.get("tpv_proven") or rec.get("level") in clean.TPV_PROVEN_LEVELS:
+                b = "proven at TPV Passed"
+            else:
+                b = "only Requires TPV Review"
+            buckets[b].append((k, members[0], rec))
+        total = sum(len(v) for v in buckets.values())
+        print("newest crosstab: {}".format(newest.name))
+        print("{} deal(s) surfacing TPV Failed / Rejected QC:".format(total))
+        for name, items in buckets.items():
+            print("  {:<26} {}".format(name, len(items)))
+        for k, r, rec in buckets["proven at TPV Passed"]:
+            print("    KEEP {:<32} ctr {} · proven {}".format(
+                (r.get("Business Name") or "")[:32], k.split("|")[0],
+                (rec or {}).get("proven_on") or (rec or {}).get("first_seen")))
     return 0
 
 
