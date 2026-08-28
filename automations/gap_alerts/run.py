@@ -596,6 +596,23 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
     if not rows:
         return [], []
 
+    # RANKED BY TOTAL KNOCKS, most first (Raf, 2026-08-28: "can we put in order
+    # for most amount of total knocks"). The pull returns reps alphabetically;
+    # the board's # column numbers whatever order it is given, so sorting here
+    # is all it takes to turn the board into a leaderboard. Ties break on name
+    # so the order is stable between ticks instead of reshuffling every 15
+    # minutes for reps who are level.
+    from automations.total_knocks.pull import COL_TOTAL_KNOCKS, COL_REP
+
+    def _knocks(r):
+        try:
+            return int(float(str(r.get(COL_TOTAL_KNOCKS) or 0)))
+        except (TypeError, ValueError):
+            return 0
+
+    rows = sorted(rows, key=lambda r: (-_knocks(r),
+                                       str(r.get(COL_REP) or "").lower()))
+
     pngs, shape = knocks_render.render_knocks_boards(
         day, rows=rows, out_dir=out_dir / cfg["key"],
         title_suffix=first_name(cfg.get("label") or cfg["name"]),
@@ -606,30 +623,37 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
     return list(pngs), rows
 
 
-def render(cfg: Dict, pngs, out_dir: Path, slot: str) -> Path:
-    """The board(s) as ONE PDF — the "flyer" half of the post.
+def render(cfg: Dict, pngs, out_dir: Path, slot: str):
+    """The board(s) as IMAGES, titled. -> [paths]
 
-    No gap card here any more: Raf replaced that picture with a plain text
-    list (see gap_text). What is left is the knocks/disposition board, and it
-    stays a PDF because it is WIDE — a dozen-plus columns, which Messages
-    renders inline as an unreadable strip. A PDF opens full-screen and zooms.
+    AN IMAGE, NOT A PDF (Raf, 2026-08-28: "I just don't like where I can't see
+    what it is before clicking, anyway to change that?"). A PDF arrives as a
+    grey document tile showing only a filename; an image shows the board itself
+    in the thread and still opens full-screen and zooms on tap, which is the
+    part the PDF was reached for in the first place.
+
+    The PDF made sense for the OLD content — a 48-rep roster stacked over a gap
+    card, which is TALL, and a tall image renders inline as an unreadable
+    sliver. This board is WIDE and short, so it previews as a board. The shape
+    of the content changed, so the right container changed with it; to_pdf and
+    its slicing stay for whoever needs a tall panel again.
 
     render_knocks_boards decides how many boards the row shape deserves: it
     folds Time Gaps into the main board when the columns already carry Gaps +
-    Total Gaps, which Raf's TeleMapper shape does.
+    Total Gaps, which Raf's TeleMapper shape does — so this is normally one.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     who = (" — %s" % cfg["label"]) if cfg.get("label") else ""
-    pages = []
+    out = []
     for i, p in enumerate(pngs):
         # Only the first board carries the clock — this is one post, and a time
-        # stamped on every page reads like several separate sends.
+        # stamped on every image reads like several separate sends.
         if i == 0:
-            pages.append(titled(Path(p), "%s%s — %s" % (C.CARD_TITLE, who, slot),
-                                out_dir / ("board_%s_0.png" % cfg["key"])))
+            out.append(titled(Path(p), "%s%s — %s" % (C.CARD_TITLE, who, slot),
+                              out_dir / ("board_%s_0.png" % cfg["key"])))
         else:
-            pages.append(Path(p))
-    return to_pdf(pages, out_dir / ("gaps_%s.pdf" % cfg["key"]))
+            out.append(Path(p))
+    return out
 
 
 def tick(day: dt.date, *, send: bool, only: str = "",
@@ -700,10 +724,11 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         _log("  %d rep(s) over %d min, %d new%s"
              % (len(gap_names), C.GAP_THRESHOLD_MIN, len(newly),
                 (" (" + ", ".join(newly) + ")") if newly else ""))
-        pdf = render(cfg, pngs, out_dir, slot)
+        boards = render(cfg, pngs, out_dir, slot)
         if PREVIEW_DM:
             try:
-                _log("  preview DM -> Megan: %s" % preview_dm(pdf, slot)["file"])
+                _log("  preview DM -> Megan: %s"
+                     % preview_dm(boards[0], slot)["file"])
             except Exception as e:  # noqa: BLE001
                 _log("  preview DM failed: %s: %s"
                      % (type(e).__name__, str(e)[:160]))
@@ -714,7 +739,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             # ONE send: the gap list as the message text, the board as its
             # attachment. send_to_group posts the text first, so the names
             # arrive above the flyer.
-            res = tp.send_to_group(cfg["group"], body, [pdf], dry_run=not send)
+            res = tp.send_to_group(cfg["group"], body, boards, dry_run=not send)
             _log("  %s -> %r (%s participants)%s"
                  % ("TEXT" if send else "PREVIEW", res.get("resolved_name"),
                     res.get("participants"), "" if send else " — nothing sent"))
