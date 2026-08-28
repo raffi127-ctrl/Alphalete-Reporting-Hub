@@ -312,12 +312,13 @@ class SpanHelpers(unittest.TestCase):
 
 
 class TitleAndFilenameSpan(unittest.TestCase):
-    """A one-day board's title and filename must not change at all."""
+    """A one-day board's title names the WEEKDAY (Eve 2026-08-28); the
+    filename must not change at all."""
 
-    def test_single_day_title_is_unchanged(self):
+    def test_single_day_title_leads_with_the_weekday(self):
         d = dt.date(2026, 8, 23)
-        self.assertEqual(render._title_span(d), "August 23, 2026")
-        self.assertEqual(render._title_span(d, d), "August 23, 2026")
+        self.assertEqual(render._title_span(d), "Sunday, August 23, 2026")
+        self.assertEqual(render._title_span(d, d), "Sunday, August 23, 2026")
         self.assertEqual(render._file_span(d), "2026-08-23")
         self.assertEqual(render._file_span(d, d), "2026-08-23")
 

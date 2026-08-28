@@ -119,21 +119,60 @@ COL_TOTAL_APPS = "Total Apps"
 # summary board divides by, so the three numbers are read against one
 # denominator and a sales-only row added for the apps column never dilutes it.
 COL_AVG_APP_PER_REP = "Average App per Rep"
+# "% Talk To's per Knocks" (Eve, 2026-08-28) — Total Talk To ÷ Total Knocks,
+# one decimal (Chan 2026-08-27: 1043 / 5466 = 19.1%). It sits immediately after
+# the Total Talk To it divides, ahead of Talk To's per Rep, so the funnel reads
+# knocks → talk-tos → the rate between them.
+#
+# Unlike Talk To's per Rep this one IS filled on every rep row: a rep row is one
+# rep, so a per-rep count there would only repeat Total Talk to, but a rep's own
+# conversion rate is a different number from the office's and is exactly what a
+# reader compares down the column. Blank — never "0.0%" — when the row knocked
+# no doors, so a sales-only row carried in for Total Apps shows nothing rather
+# than a rate it never earned.
+COL_TALK_TO_PCT = "% Talk To's per Knocks"
+# "Total # of Reps Knocking" (Eve, 2026-08-28) — how many reps on that row
+# knocked at least KNOCKING_MIN_KNOCKS doors. Filled on the SUMMARY rows only
+# (this office's TOTAL and any comparison office's line), like Talk To's per
+# Rep: a rep row is one rep, where the count is always 1.
+COL_REPS_KNOCKING = "Total # of Reps Knocking"
+# A rep with 20 knocks or fewer did not work a day of doors (Eve, 2026-08-28) —
+# they're a walk-on, a half-hour, or a rep who logged in and left. They still
+# count in every total on the board; they just don't count as a rep KNOCKING.
+# NOTE this is a stricter line than the one `_knockers` draws for the per-rep
+# DIVISORS (any knock at all), which is deliberately left alone: changing it
+# would silently move Talk To's per Rep and Average App per Rep on every board
+# in the family. See the note in the daily summary board.
+KNOCKING_MIN_KNOCKS = 21
 
 
 def _with_derived(cols: list) -> list:
-    """The board's OUTPUT columns: the scraped ones plus the two we compute —
-    Talk To's per Rep after Total Talk to, Avg. Hrs Knocking after Total Gaps."""
+    """The board's OUTPUT columns: the scraped ones plus the ones we compute —
+    Reps Knocking after Rep, Talk To % and Talk To's per Rep after Total Talk
+    to, Avg. Hrs Knocking after Total Gaps."""
     out = list(cols)
+    out.insert(out.index(COL_REP) + 1, COL_REPS_KNOCKING)
     out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PER_REP)
+    out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PCT)
     out.insert(out.index(COL_TOTAL_GAPS) + 1, COL_HRS_KNOCKING)
     return out
+
+
+def _pct(part, whole) -> str:
+    """'19.1%' — part/whole to one decimal. Blank when there is nothing to
+    divide, so a row that never knocked shows an empty cell, not a 0.0%."""
+    try:
+        part, whole = int(part), int(whole)
+    except (TypeError, ValueError):
+        return ""
+    return f"{part / whole * 100:.1f}%" if whole else ""
 
 
 COMBINED_KNOCKS_HEADERS = _with_derived(COMBINED_KNOCKS_COLUMNS)
 # The cells this board computes rather than reads — blank on a rep row unless
 # stated otherwise, so `_combined_sub` never looks for them in the scrape.
-DERIVED_COLUMNS = (COL_TALK_TO_PER_REP, COL_HRS_KNOCKING)
+DERIVED_COLUMNS = (COL_TALK_TO_PER_REP, COL_TALK_TO_PCT, COL_REPS_KNOCKING,
+                   COL_HRS_KNOCKING)
 # Time Gaps shows just these, in this order.
 TIME_GAPS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
                      COL_GAPS, COL_TOTAL_GAPS]
@@ -460,8 +499,17 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     return out_path
 
 
-def _title_date(target: dt.date) -> str:
-    return f"{target.strftime('%B')} {target.day}, {target.year}"
+def _title_date(target: dt.date, weekday: bool = True) -> str:
+    """'Thursday, August 27, 2026'.
+
+    The weekday leads (Eve, 2026-08-28): these boards are read the morning
+    after, and forwarded for days after that — "August 27" makes a reader work
+    out which day of the week they're looking at before they can judge the
+    numbers, and a Saturday's knocks mean something different from a Tuesday's.
+    weekday=False drops it for the ends of a multi-day span, where two weekday
+    names in one title bar read as clutter, not context."""
+    day = f"{target.strftime('%B')} {target.day}, {target.year}"
+    return f"{target.strftime('%A')}, {day}" if weekday else day
 
 
 def _title_span(target: dt.date, end: "dt.date | None" = None) -> str:
@@ -478,7 +526,8 @@ def _title_span(target: dt.date, end: "dt.date | None" = None) -> str:
     if target.year == end.year:
         return (f"{target.strftime('%B')} {target.day} – "
                 f"{end.strftime('%B')} {end.day}, {end.year}")
-    return f"{_title_date(target)} – {_title_date(end)}"
+    return (f"{_title_date(target, weekday=False)} – "
+            f"{_title_date(end, weekday=False)}")
 
 
 def _date_text(target: dt.date, end: "dt.date | None" = None,
@@ -627,14 +676,38 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                             n_extra=len(extra_rows), extra_apps=extra_apps,
                             n_knockers=len(_knockers(sub)),
                             extra_knockers=extra_knockers)
+    number_rows(cols, disp, table, first=1 + len(extra_rows))
     return _draw(disp, table,
                  f"{title_prefix}TOTAL KNOCKS — {_office}"
                  f"{_date_text(target, end, date_text)}",
                  THEME_AMBER,
                  out_dir / f"total_knocks_{_file_span(target, end)}.png",
-                 name_col=0, wrap_headers=True,
+                 name_col=1, wrap_headers=True,
                  highlight_first_row=1 + len(extra_rows),
                  top_row_colors=_colors)
+
+
+def number_rows(cols: list, disp: list, table: list, *,
+                first: int = 0, count: "int | None" = None) -> None:
+    """Put a "#" column in front of the board IN PLACE, numbering the LISTED
+    rows 1..N in the order they are drawn (Eve, 2026-08-28).
+
+    These boards are read off a phone screenshot and talked through out loud —
+    "the fourth one down" needs a number on the row, and a roster of forty is
+    where a reader loses their line between the name and the far-right columns.
+
+    `first` is the index of the first row to number and `count` how many
+    (None = to the end of the table). Everything outside that window — a TOTAL,
+    a comparison office's line — stays BLANK: those rows count offices, and
+    numbering them in the column that counts reps is how a reader ends up
+    reading '9' as the ninth rep when it's the captainship's total. The window
+    is a parameter because the two boards put their summary rows at opposite
+    ends: an owner's board leads with them, the captainship summary trails."""
+    stop = len(table) if count is None else first + count
+    cols.insert(0, "#")
+    disp.insert(0, "#")
+    for i, row in enumerate(table):
+        row.insert(0, str(i - first + 1) if first <= i < stop else "")
 
 
 def _apps_key(name: str) -> str:
@@ -808,7 +881,12 @@ def _combined_sub(header: list[str], rows: list[list[str]],
         # Talk To's per Rep is blank here on purpose: this row IS one rep, so
         # the number would only repeat Total Talk to. `_combined_totals` fills
         # it on the rows that actually aggregate a roster.
-        derived = {COL_HRS_KNOCKING: hrs, COL_TALK_TO_PER_REP: ""}
+        # Talk To % is the one derived cell a REP row carries: it's that rep's
+        # own conversion rate, not a repeat of a count next to it.
+        derived = {COL_HRS_KNOCKING: hrs, COL_TALK_TO_PER_REP: "",
+                   COL_REPS_KNOCKING: "",
+                   COL_TALK_TO_PCT: _pct(base[src[COL_TOTAL_TALK_TO]],
+                                         base[src[COL_TOTAL_KNOCKS]])}
         # Built whole, BEFORE the sort — assembling by header name keeps every
         # derived cell tied to its own rep no matter how the table is ordered.
         sub.append([derived[c] if c in derived else base[src[c]]
@@ -847,6 +925,7 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
         return f"{h % 12 or 12}:{mm:02d} {'AM' if h < 12 else 'PM'}"
 
     tt_at = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_TALK_TO)
+    tk_at = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_KNOCKS)
     totals: list[str] = []
     for ci, c in enumerate(COMBINED_KNOCKS_HEADERS):
         if c == COL_REP:
@@ -866,6 +945,15 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
             talk = sum(_int0(r[tt_at]) for r in sub)
             n = len(_knockers(sub))
             totals.append(f"{talk / n:.1f}" if n else "0")
+        elif c == COL_TALK_TO_PCT:
+            # The office rate: talk-tos over knocks, both summed off the SAME
+            # rows the counts above come from — never an average of the reps'
+            # rates, which would weigh a 30-knock day like a 300-knock one.
+            totals.append(_pct(sum(_int0(r[tt_at]) for r in sub),
+                               sum(_int0(r[tk_at]) for r in sub)))
+        elif c == COL_REPS_KNOCKING:
+            totals.append(str(sum(1 for r in sub
+                                  if _int0(r[tk_at]) >= KNOCKING_MIN_KNOCKS)))
         else:
             totals.append(str(sum(_int0(r[ci]) for r in sub)))
     return totals
