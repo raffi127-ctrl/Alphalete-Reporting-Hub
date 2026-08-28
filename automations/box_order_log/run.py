@@ -235,6 +235,29 @@ def main(argv: Optional[list] = None) -> int:
                     help="explicit no-op flag; dry-run is already the default")
     ap.add_argument("--from-file", metavar="CSV",
                     help="skip the Tableau pull and use an existing crosstab")
+    ap.add_argument("--no-sheet", action="store_true",
+                    help="override --sheet and write NOTHING to the board. "
+                         "`lucy rerun` always appends the registered base_args "
+                         "(--sheet --xlsx), so this is the only way to get a "
+                         "real-data dry run on Lucy 2 without touching "
+                         "Carlos's board.")
+    ap.add_argument("--no-tpv-memory", action="store_true",
+                    help="ignore the sheet's record of which deals reached TPV "
+                         "and judge only on today's export — the pre-2026-08-28 "
+                         "behaviour, for A/B checks")
+    ap.add_argument("--sheet-id", metavar="ID",
+                    help="workbook to read the TPV memory from (default: "
+                         "Carlos's board). Per-owner runs point this at their "
+                         "own metrics workbook.")
+    ap.add_argument("--inspect", metavar="TEXT",
+                    help="READ-ONLY diagnostic: after the pull, print every RAW "
+                         "export row whose Business Name, Contract ID or Account "
+                         "Id contains TEXT (case-insensitive), then exit without "
+                         "writing the sheet, building the workbook or posting. "
+                         "Answers 'what statuses does Tableau actually carry for "
+                         "this deal?' from the machine that owns the session — "
+                         "the question the collapsed report can't show, because a "
+                         "deal that fails the TPV gate leaves no trace in it.")
     ap.add_argument("--out", metavar="PDF", help="output PDF path")
     ap.add_argument("--quiet", action="store_true")
     # --- per-office overrides (onboarded B2B offices) ---------------------
@@ -334,8 +357,83 @@ def main(argv: Optional[list] = None) -> int:
             traceback.print_exc()
             return 1
 
+    # ---- 1b. --inspect: dump the RAW rows, then stop ---------------------
+    # Deliberately BEFORE collapse and before every writer: this exists to show
+    # the export as it actually arrived, and it must never be able to write.
+    if args.inspect:
+        needle = args.inspect.strip().lower()
+        raw = clean.read_rows(src)
+        if args.owner_office:
+            raw = clean.filter_to_owner(raw, args.owner_office)
+        hits = [r for r in raw
+                if needle in (r.get("Business Name") or "").lower()
+                or needle in (r.get("Contract ID") or "").lower()
+                or needle in (r.get("Account Id") or "").lower()]
+        print("\n[inspect] {!r}: {} raw row(s) of {} in the export"
+              .format(args.inspect, len(hits), len(raw)))
+        for r in hits:
+            print("[inspect]   ctr {ctr} | acct {acct} | {rep} | sold {sold} "
+                  "| {status} / {sub} | accepted {acc} | complete {cs}".format(
+                      ctr=(r.get("Contract ID") or "?"),
+                      acct=(r.get("Account Id") or "?"),
+                      rep=(r.get("Rep Name") or "?"),
+                      sold=(r.get("Sale Date") or "-"),
+                      status=(r.get("Status") or "?"),
+                      sub=(r.get("Contr. Sub-status") or "-"),
+                      acc=(r.get("Accepted Date") or "-"),
+                      cs=(r.get("Complete Sales") or "-")))
+        # Say what the gates would then do with it, so the log answers the
+        # whole question in one pass rather than needing a second run.
+        keys = {(r.get("Contract ID", "").strip(),
+                 r.get("Account Id", "").strip()) for r in hits}
+        survived, _ = clean.collapse(raw)
+        kept = {s.key for s in survived}
+        for k in sorted(keys):
+            print("[inspect]   -> ctr {} : {}".format(
+                k[0], "COUNTS as a sale" if k in kept else "DROPPED by the gates"))
+        print("[inspect] read-only — nothing written, nothing posted.")
+        return 0
+
     # ---- 2. collapse ----------------------------------------------------
-    sales, stats = clean.load(src, owner_office=(args.owner_office or ""))
+    # THE TPV MEMORY (clean.py): the sheet remembers which deals reached TPV,
+    # so a deal whose TPV row has since fallen out of the Tableau export still
+    # counts. Read BEFORE the collapse, and fail-open — an unreachable sheet
+    # just means the old behaviour, never a dead report. --no-tpv-memory turns
+    # it off for an A/B against the raw export.
+    tpv_seen, tpv_proven = set(), set()
+    if not args.no_tpv_memory:
+        from . import sheet as _sheet_mem
+        from . import tpv_ledger as _ledger
+        tpv_seen = _sheet_mem.tpv_seen_keys(args.sheet_id or None)
+        n_sheet = len(tpv_seen)
+        # The sheet only remembers six weeks. The archived crosstabs go back to
+        # the report's first run, so a deal erased before it aged off the board
+        # is only recoverable here. Union, never replace: two partial records.
+        from_ledger = _ledger.keys()
+        tpv_seen |= from_ledger
+        # The narrower set: deals that actually PASSED TPV, which survive a
+        # later TPV Failed / Rejected QC (Carlos, 2026-08-28).
+        tpv_proven = {k for k in _sheet_mem.tpv_proven_keys(args.sheet_id or None)}
+        tpv_proven |= _ledger.proven_keys()
+        if verbose:
+            print("  TPV memory: {} from the sheet + {} from the crosstab "
+                  "ledger = {} sale(s) vouched for".format(
+                      n_sheet, len(from_ledger), len(tpv_seen)))
+        if not tpv_seen:
+            # An empty read is indistinguishable from "nothing qualifies", and
+            # it silently restores the bug — so say it out loud either way.
+            print("  (TPV memory empty — rescues are off for this run)")
+
+    sales, stats = clean.load(src, owner_office=(args.owner_office or ""),
+                              tpv_seen=tpv_seen, tpv_proven=tpv_proven)
+    if stats.get("kept_dead_after_tpv"):
+        print("  {} sale(s) kept despite a later TPV Failed / Rejected QC — "
+              "they said TPV Passed at some point".format(
+                  stats["kept_dead_after_tpv"]))
+    if stats.get("rescued_by_tpv_memory"):
+        print("  {} sale(s) kept on the sheet's TPV memory alone — today's "
+              "export no longer shows them reaching TPV".format(
+                  stats["rescued_by_tpv_memory"]))
     if not sales:
         print("✗ no sales found in the crosstab — refusing to post an empty "
               "log. Check the view's date filter.", file=sys.stderr)
@@ -400,7 +498,9 @@ def main(argv: Optional[list] = None) -> int:
             len(window_sales), len(sales), args.weeks))
 
     # ---- 4. write the Sheet ---------------------------------------------
-    if args.sheet:
+    if args.sheet and args.no_sheet:
+        print("\n  --no-sheet: skipping the board write (dry run)")
+    if args.sheet and not args.no_sheet:
         from . import sheet
         try:
             sheet.push(window_sales, today=today, weeks_back=args.weeks)

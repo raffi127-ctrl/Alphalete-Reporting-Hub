@@ -401,6 +401,15 @@ def expected_ids(o: B2BOffice) -> list:
 # data) would page for every genuinely-new office, which is the bug being fixed.
 _EVER_POSTED = REPO_ROOT / "output" / "b2b_metrics" / "_ever_posted.json"
 
+# Thread-state key for the "no data yet" NOTE of a section. The real section id
+# must never land in `posted` (see the note loop in run()), so the note gets its
+# own key — and every reader of the thread state has to know the difference.
+_NODATA_SUFFIX = "__nodata"
+
+
+def _nodata_key(section_id: str) -> str:
+    return "{}{}".format(section_id, _NODATA_SUFFIX)
+
 
 def _load_ever_posted() -> dict:
     try:
@@ -483,11 +492,27 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
                 log("  already in every thread — skip capture: {}".format(
                     ", ".join(_skip)))
         if not items:
-            _exp = expected_ids(o)
+            # SCOPE: a --only pass speaks for the section it ran and NOTHING
+            # else. This used to report on every expected section, so a
+            # one-section repair that found its section already posted rewrote
+            # the office's whole record — and _write_manifest's scoped merge
+            # believed it (2026-08-28: `--only out_of_bounds` re-flagged
+            # Sabrina's three no-data churns as missing and paged for them).
+            _exp = [i["id"] for i in expected_items(o)
+                    if not only or i["id"] == only]
+            # A section whose "no data yet" NOTE is in the thread is NOT a miss.
+            # Its real id deliberately stays OUT of `posted` (so the section is
+            # attempted again tomorrow and notices the day data arrives), which
+            # left it looking permanently missing from here — the one place that
+            # reads the thread state instead of running the capture.
+            _nd = {s[:-len(_NODATA_SUFFIX)] for s in _done_all
+                   if s.endswith(_NODATA_SUFFIX)}
             log("  nothing new — every expected section already in today's thread")
             return {"thread_ts": None, "posted": [], "deferred": [],
+                    "no_data": [i for i in _exp if i in _nd],
                     "present": [i for i in _exp if i in _done_all],
-                    "missed": [i for i in _exp if i not in _done_all]}
+                    "missed": [i for i in _exp
+                               if i not in _done_all and i not in _nd]}
 
     # 1) capture everything first (so a capture crash never leaves a
     #    half-posted thread), continue-on-failure.
@@ -655,7 +680,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         for sid in no_data:
             if chan_items is not None and sid not in chan_items.get(chan, set()):
                 continue
-            note_key = "{}__nodata".format(sid)
+            note_key = _nodata_key(sid)
             if note_key in already and not force:
                 continue
             meta = next((i for i in items if i["id"] == sid), None)

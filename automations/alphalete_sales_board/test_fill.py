@@ -110,11 +110,25 @@ def test_no_blank_row_refuses_rather_than_appending_below_totals():
     assert "INSERTED" in note and "every total" in note, note
 
 
+def test_a_new_person_is_added_not_second_guessed():
+    # 2026-08-27: "Aaron Corona" scored 0.62 against "Milagros Colon" on
+    # coincidental letters and was refused, so a real rep sold all day with no
+    # row. Refusing wrongly is the expensive mistake; adding wrongly is now
+    # undone by a chat reply.
+    board = ["Milagros Colon (Wk 2)", "Michael Ortiz"]
+    assert fill.near_matches("AARON CORONA", board) == [], \
+        fill.near_matches("AARON CORONA", board)
+    assert fill.near_matches("PALOMA FUNDERBURK", board) == []
+    assert fill.near_matches("MIGUEL ANGEL RIVERA", board) == []
+
+
 def test_near_matches_blocks_a_probable_duplicate():
     board = ["Michael Ortiz", "Jane Doe"]
     assert fill.near_matches("MIKE ORTIZ", board) == ["Michael Ortiz"], \
         fill.near_matches("MIKE ORTIZ", board)
     assert fill.near_matches("Michal Ortiz", board), "a typo must be caught too"
+    # a nickname sharing the surname is still caught
+    assert fill.near_matches("MIKEY ORTIZ", board) == ["Michael Ortiz"]
 
 
 def test_near_matches_allows_a_genuinely_new_person():

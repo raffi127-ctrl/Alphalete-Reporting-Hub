@@ -51,6 +51,14 @@ OFFICES = {
         # channel. Every office names its own channel; none inherits.
         "post_channel": "C09L1S3MQ1E",
         "post_todo": True,
+        # Carlos, 2026-08-27: "in my specific office, if they don't have a phone
+        # number on the resume, you don't remove them. You leave them there."
+        # So the confirmed-uncontactable removal (config.REMOVE_NO_PHONE, added
+        # the same day) is OFF here: those applicants stay in the OAT queue and
+        # keep flagging to the manual to-do list, exactly as before. Atef's office
+        # keeps the removal. This is a per-office POLICY difference, not a bug —
+        # do not "fix" the inconsistency by aligning them.
+        "remove_no_phone": False,
     },
     "23467": {
         "office_id": "23467",
@@ -75,6 +83,10 @@ OFFICES = {
         # never show up in another office's channel.
         "post_channel": "C0B85KRS5FU",
         "post_todo": True,
+        # Atef's office keeps the confirmed-uncontactable removal (a resume that
+        # opened and carries no number, or no resume at all). Never fires on a
+        # BLOCKED read — that is our failure, and it retries.
+        "remove_no_phone": True,
     },
 }
 
@@ -133,6 +145,13 @@ def activate(office_id: str) -> dict:
     oat_config.OFFICE_HINT = o["hint"]
     oat_config.FILE_SUFFIX = o["suffix"]
     oat_config.WALK_DIAG_TAB = o["walk_diag_tab"]
+    # Whether a CONFIRMED-uncontactable applicant (resume opened, no number, or no
+    # resume at all) is removed or left in the queue. Per-office on purpose —
+    # Carlos's 11580 leaves them, Atef's 23467 removes them. Defaulting a new
+    # office to the module default would silently remove people in an office
+    # nobody chose that for, so .get() is deliberately NOT used with a True
+    # fallback: a row must state its policy.
+    oat_config.REMOVE_NO_PHONE = o["remove_no_phone"]
 
     oat_summary.OFFICE_LABEL = o["label"]
     oat_summary.OFFICE_SHORT = o["short"]

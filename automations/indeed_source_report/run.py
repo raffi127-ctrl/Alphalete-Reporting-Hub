@@ -268,13 +268,24 @@ def main(argv=None):
 
     from automations.shared.tableau_patchright import appstream_direct_session
     fresh, failures, flags = {}, [], []
+    rescued_total = 0             # "[Action required] New application for …"
+    # allow_form_login ONLY on a headed run. AppStream's login form has had an
+    # interactive human-check since v2026.08.20.1, so unattended that path can
+    # never complete — it dies with "console never rendered #searchMC after
+    # login", which reads like a site change and sends whoever picks it up
+    # hunting for the wrong thing. `lucy rerun indeed_source_report` is
+    # unattended even though a person typed it: there is no browser in front of
+    # anyone to answer the check. With False the run stops on the reuse failure
+    # and prints the one thing that fixes it (re-seed). Same fix as
+    # ad_sales_board (6501686); this report is the other half of that pair.
     with appstream_direct_session(headless=not a.headed, verbose=False,
-                                  allow_form_login=True) as page:
+                                  allow_form_login=a.headed) as page:
         tok = fetch.token(page)
         for oid, name in targets:
             try:
                 fetch.select_office(page, tok, oid)
                 html, owner, nrows = fetch.source_report(page, tok, start, end)
+                rescued_total += len(parse.WRAPPER.findall(html))
                 ads, fl = parse.ads_for_month(html)
                 if name in CITY_AGNOSTIC:
                     ads, fl = parse.merge_across_cities(ads), []
@@ -364,6 +375,16 @@ def main(argv=None):
         print("[indeed_source_report] wrote %d rows" % len(new), flush=True)
         push_boards(new, periods)
 
+    if rescued_total:
+        # Until 2026-08-27 every one of these was thrown away: NOISE's
+        # `action required` rule (written for Indeed's BILLING mail) matched
+        # Indeed's forwarded-application subject too. The count is printed so
+        # the size of what was being lost is visible on the run, not inferred —
+        # the row TOTAL can't show it, because an unwrapped subject folds into
+        # an ad row that already exists rather than adding one.
+        print("\n%d '[Action required] New application for …' subject(s) were "
+              "unwrapped and counted as real applicants (they were dropped "
+              "before 2026-08-27)." % rescued_total, flush=True)
     if flags:
         print("\nCity-less pieces left unmerged (wording could not pick a city):", flush=True)
         for name, per, inbox, base, cities, apps in flags:

@@ -191,7 +191,14 @@ _EXTRACT_JS = r"""() => {
   // --- overwrite+send button present? ---
   const btnText = [...document.querySelectorAll('button,input[type=button],input[type=submit],a')]
     .map(e=>(e.innerText||e.value||'')).join(' | ').toLowerCase();
-  const overrideBtn = btnText.includes('overwrite') && btnText.includes('send to ai');
+  // BOTH wordings ship in AppStream and they mean the same control: some
+  // records render "Overwrite Old Applicants (Send to AI)", others "Override and
+  // Send to AI" (Carlos read the second off a live screen 2026-08-27, and one
+  // walk saw both labels within a few applicants of each other). Matching only
+  // 'overwrite' made every 'Override…' record read as override_button=false, so
+  // classify() routed a sendable applicant to re-text/remove instead. Never
+  // match one spelling.
+  const overrideBtn = /overri|overwri/.test(btnText) && btnText.includes('send to ai');
   // --- pager: "<page> of <N> Emails" ---
   const pm = body.match(/of\s+([0-9]+)\s+emails/i);
   // --- account: the "To:" address of the source application email (bottom of the
@@ -398,13 +405,24 @@ def _parse_last_corr(body: str):
     return _parse_us_date(m.group(1)) if m else None
 
 
-def _perform_remove(page) -> bool:
-    """Remove-for-duplicate (Carlos's flow, confirmed by Megan 2026-07-27): check
-    'Remove Applicant?' (removApp) + set the Remove Reason to the '…Duplicate…'
-    option + click 'Save Applicant' (submitSaveApplicant). Done in ONE in-page
-    step so it isn't tripped up by the post-block panel's actionability quirks.
-    Fails safe (returns False, logs why) if the Duplicate reason or Save button
-    isn't found."""
+DUP_REASON = r"duplicate"
+# Carlos 2026-08-27: an applicant with NO reachable phone number must not be
+# filed as a duplicate — the removal reason is the only record of WHY they were
+# dropped, and "duplicate" on someone who simply had no number makes the ad look
+# like it produced a repeat applicant instead of an unusable one. Matches the
+# "Incorrect / Insufficient Contact Info" option the office already uses by hand.
+NO_CONTACT_REASON = r"incorrect|insufficient|contact info"
+
+
+def _perform_remove(page, reason_pattern: str = DUP_REASON) -> bool:
+    """Remove the current applicant: check 'Remove Applicant?' (removApp), set the
+    Remove Reason to the first option matching ``reason_pattern``, and click
+    'Remove Applicant'. Done in ONE in-page step so it isn't tripped up by the
+    post-block panel's actionability quirks. Fails safe (returns False, logs why)
+    if the reason or the button isn't found.
+
+    ``reason_pattern`` defaults to duplicate so every existing caller behaves
+    exactly as before; pass NO_CONTACT_REASON for the no-phone case."""
     try:
         # 1) CHECK "Remove Applicant?" — a real check so the ATS reveals the Remove
         #    Reason dropdown + the "Remove Applicant" button (Megan 7/27).
@@ -417,17 +435,19 @@ def _perform_remove(page) -> bool:
         except Exception:  # noqa: BLE001
             cb.click(force=True, timeout=4000)
         page.wait_for_timeout(700)
-        # 2) pick the '…Duplicate…' remove reason.
-        picked = page.evaluate(r"""() => {
-            const s = document.querySelector("select[name='rmvReason']");
-            if (!s) return '';
-            const o = [...s.options].find(o => /duplicate/i.test(o.text));
-            if (!o) return '';
-            s.value = o.value; s.dispatchEvent(new Event('change',{bubbles:true}));
-            return o.text;
-        }""")
+        # 2) pick the remove reason matching the caller's pattern.
+        picked = page.evaluate(
+            """(pat) => {
+                const s = document.querySelector("select[name='rmvReason']");
+                if (!s) return '';
+                const re = new RegExp(pat, 'i');
+                const o = [...s.options].find(o => re.test(o.text));
+                if (!o) return '';
+                s.value = o.value; s.dispatchEvent(new Event('change',{bubbles:true}));
+                return o.text;
+            }""", reason_pattern)
         if not picked:
-            _log("    [remove] FAIL: no '…Duplicate…' reason on the page")
+            _log(f"    [remove] FAIL: no reason matching /{reason_pattern}/ on the page")
             return False
         # 3) Click the "REMOVE APPLICANT" button — NOT "Save Applicant" (that one is
         #    BLOCKED for dupes: "Cannot Save this Applicant"). Real click + nav wait
@@ -459,15 +479,40 @@ def _perform_remove(page) -> bool:
 
 
 def _try_overwrite_send(page) -> bool:
-    """Push to AI via 'Overwrite Old Applicants (Send to AI)' when the ATS allows
-    it (button present, no 'Cannot override'). The ATS still blocks a recent
-    contact, so this only sends when legitimately allowed. Send-maximizer."""
+    """Push to AI via the override control when the ATS allows it (control
+    present, no 'Cannot override'). The ATS still blocks a recent contact, so
+    this only sends when legitimately allowed. Send-maximizer.
+
+    MATCH THE CONTROL BY PATTERN, NEVER BY AN EXACT LABEL. AppStream renders this
+    button as EITHER "Overwrite Old Applicants (Send to AI)" OR "Override and
+    Send to AI" — both appear in the same office, sometimes a few applicants
+    apart. The old exact-label list only carried the first, so on an "Override…"
+    record the click silently found nothing, do_send_ai concluded the applicant
+    could not be sent, and routed them to re-text or remove. Measured on Atef's
+    office 2026-08-27: of 26 restored applicants with a clear verdict, 21 were
+    sendable and 16 of those needed exactly this button — i.e. this one mismatch
+    was the difference between a person reaching the call list and being written
+    off. Pattern-match /overri|overwri/, prefer the one that also says AI."""
     body = _body(page)
-    if "overwrite" not in body or "cannot override this applicant" in body:
+    if not re.search(r"overri|overwri", body) or "cannot override this applicant" in body:
         return False
-    if not _click_first(page, ["Overwrite Old Applicants (Send to AI)",
-                               "Overwrite Old Applicants", "Overwrite"]):
+    clicked = page.evaluate(
+        """() => {
+             const els = Array.from(document.querySelectorAll(
+                 'button, input[type=submit], input[type=button], a'))
+               .filter(e => e.offsetParent !== null);
+             const t = e => (e.innerText || e.value || '').trim();
+             const el = els.find(e => /overri|overwri/i.test(t(e))
+                                   && /\bai\b/i.test(t(e)))
+                     || els.find(e => /overri|overwri/i.test(t(e)));
+             if (!el) return null;
+             const label = t(el);
+             el.scrollIntoView({block: 'center'});
+             el.click();
+             return label; }""")
+    if not clicked:
         return False
+    _log(f"    [override] clicked {clicked!r}")
     page.wait_for_timeout(2500)
     return "cannot send to ai" not in _body(page)
 
@@ -1010,6 +1055,15 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
         _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name} "
              f"[{a.cell_phone or a.phone or 'no-phone'}]{tail}")
         return "flag_retext"
+    # Already established today that no thread of theirs is reachable? Then the
+    # whole widget dance below can only end the same way — flag them and move on,
+    # which is what keeps a walk from spending its time re-deciding settled cases.
+    _key = _nophone_key(a)
+    if _key in _load_nothread():
+        _flag_retext(a, days)
+        _log(f"    ⚑ no reachable thread (settled earlier today) — skipping the "
+             f"re-text attempt: {a.first_name} {a.last_name}")
+        return "flag_retext"
     role = _role_from_position(a.position)
     phone = a.cell_phone or a.phone
     status, detail = retext_applicant(page, a.first_name, a.last_name, phone, role,
@@ -1021,6 +1075,13 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
             return "retext_removed"
         return "retext_sent"
     # couldn't uniquely reach them — flag for a human, don't guess/spam.
+    # Settle ONLY 'no_thread': structural (no fresh threads in AppStream, and the
+    # widget cannot see one older than this month), so today's answer is fixed.
+    # 'retext_err' is transient — a missed template or a lost race — and must be
+    # retried, or we repeat the 2026-08-25 resume-read mistake where a blip wrote
+    # 90 applicants off for the day.
+    if status == "no_thread":
+        _mark_nothread(_key)
     _flag_retext(a, days)
     _log(f"    ⚑ re-text fell back to FLAG ({status}: {detail}): "
          f"{a.first_name} {a.last_name}")
@@ -1186,6 +1247,58 @@ def _fill_phone_field(page, phone: str) -> bool:
     return ok
 
 
+_NOTHREAD = None   # lazily-loaded set of applicants with no reachable SMS thread
+
+
+def _nothread_path():
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[2]
+    (root / "output").mkdir(parents=True, exist_ok=True)
+    return (root / "output" /
+            f"oat-nothread-{dt.date.today().isoformat()}{config.FILE_SUFFIX}.json")
+
+
+def _load_nothread() -> set:
+    """Applicants we ALREADY established today have no SMS thread the widget can
+    see. Their re-text is not worth re-attempting this day.
+
+    Why this exists (Megan 2026-08-27): "the walks should get shorter because
+    there should be less to process especially if you're recognizing what apps you
+    can now skip." The no-number cache only ever skipped the resume READ — a
+    flagged applicant still had the ENTIRE re-text attempt re-run every walk: open
+    the SMS widget, bind the thread, hunt the template, fail, flag. With ~11 of
+    them in one office that was the bulk of a walk, repeated every ten minutes, to
+    reach a conclusion we had already reached.
+
+    ONLY 'no_thread' is cached. That one is structural — AppStream cannot start a
+    fresh thread and the widget cannot see one older than this month, so the answer
+    cannot change today. A 'retext_err' (a missed template, a click that lost a
+    race) is TRANSIENT and must be retried, or we would repeat the mistake the
+    resume-read cache made on 2026-08-25, when a Cloudflare blip wrote 90
+    applicants off for the whole day."""
+    global _NOTHREAD
+    if _NOTHREAD is None:
+        try:
+            import json as _json
+            _NOTHREAD = set(_json.loads(_nothread_path().read_text()))
+            if _NOTHREAD:
+                _log(f"[oat] no-thread cache: {len(_NOTHREAD)} applicant(s) already "
+                     f"known unreachable today — their re-text is skipped")
+        except Exception:  # noqa: BLE001
+            _NOTHREAD = set()
+    return _NOTHREAD
+
+
+def _mark_nothread(key: str) -> None:
+    import json as _json
+    c = _load_nothread()
+    c.add(key)
+    try:
+        _nothread_path().write_text(_json.dumps(sorted(c)))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _persist_phone(page, phone: str) -> bool:
     """Write a recovered number onto the applicant's record with 'Save Applicant'.
 
@@ -1244,6 +1357,19 @@ _BLOCK_SIGNS = (
     "just a moment", "verify you are human", "checking your browser",
     "attention required", "access denied", "enable javascript",
 )
+# Checked against the TITLE ONLY. Indeed answers a blocked client with a page
+# titled "Blocked - Indeed.com" that carries a normal-length body, so it passed
+# every existing gate: no Cloudflare phrase, no sign-in phrase, body over the
+# 200-char floor. The read was therefore filed as "the resume opened and has no
+# number" — the CONFIRMED-uncontactable verdict. That verdict caches the
+# applicant for the rest of the day and, in an office with REMOVE_NO_PHONE on
+# (Atef's 23467), REMOVES them for "Incorrect / Insufficient Contact Info".
+# So a block on our side was costing applicants their record.
+# Seen for real on 2026-08-27/28: a headless walker gets this on every resume.
+# Title-only on purpose: a résumé body can legitimately contain the word
+# "blocked" (a candidate who "blocked out schedules"), and matching that would
+# turn every such resume into a permanent retry.
+_BLOCK_TITLE_SIGNS = ("blocked", "forbidden", "403", "too many requests", "429")
 _SIGNIN_SIGNS = (
     "sign in to your account", "employer sign in", "sign in with google",
     "create your account", "log in to indeed", "sign in to indeed",
@@ -1266,6 +1392,9 @@ def _blocked_reason(title: str, body: str) -> str:
     for sign in _BLOCK_SIGNS:
         if sign in t or sign in b:
             return "cloudflare challenge never cleared"
+    for sign in _BLOCK_TITLE_SIGNS:
+        if sign in t:
+            return f"indeed blocked the read (title says {sign!r})"
     for sign in _SIGNIN_SIGNS:
         if sign in b:
             return "indeed sign-in wall"
@@ -1517,14 +1646,32 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                      f"{_BLOCKED_RETRY_AFTER_MIN}min: "
                      f"{a.first_name} {a.last_name}")
         elif "no view-resume link" in str(detail):
-            # No resume attached to the record at all. Nothing to open, so the check
-            # costs nothing — don't burn a cache slot on it, just re-check next walk
-            # (a resume can get attached later in the day).
-            _log(f"    no resume on file ({detail}) → flag: "
-                 f"{a.first_name} {a.last_name}")
+            # No resume attached to the record at all — nothing to open, so there is
+            # no number anywhere: panel blank AND no resume. Uncontactable.
+            if getattr(config, "REMOVE_NO_PHONE", False):
+                if _perform_remove(page, NO_CONTACT_REASON):
+                    _log(f"    \U0001f5d1 removed (no resume, no phone — "
+                         f"insufficient contact info): {a.first_name} {a.last_name}")
+                    return "removed_no_contact"
+                _log(f"    remove-for-no-contact FAILED → flag: "
+                     f"{a.first_name} {a.last_name}")
+            else:
+                _log(f"    no resume on file ({detail}) → flag: "
+                     f"{a.first_name} {a.last_name}")
         else:
-            _log(f"    no resume phone ({detail}) → flag + remember (won't re-read "
-                 f"today): {a.first_name} {a.last_name}")
+            # The resume OPENED and genuinely carries no number. Confirmed
+            # uncontactable — distinct from a blocked read, which is OUR failure and
+            # must never cost an applicant their record (see _is_blocked_detail).
+            if getattr(config, "REMOVE_NO_PHONE", False):
+                if _perform_remove(page, NO_CONTACT_REASON):
+                    _log(f"    \U0001f5d1 removed (no phone on resume — "
+                         f"insufficient contact info): {a.first_name} {a.last_name}")
+                    return "removed_no_contact"
+                _log(f"    remove-for-no-contact FAILED → flag: "
+                     f"{a.first_name} {a.last_name}")
+            else:
+                _log(f"    no resume phone ({detail}) → flag + remember (won't "
+                     f"re-read today): {a.first_name} {a.last_name}")
             _mark_nophone_checked(key)
     _NO_PHONE_ROWS.append([
         dt.date.today().isoformat(), a.first_name, a.last_name,
@@ -1591,10 +1738,11 @@ def reset_nophone_cache() -> int:
     Files are RENAMED to .bak, never deleted, and the in-process caches are
     dropped so a walk in this same process reloads from disk."""
     import shutil
-    global _NOPHONE_CHECKED, _NOPHONE_BLOCKED
+    global _NOPHONE_CHECKED, _NOPHONE_BLOCKED, _NOTHREAD
     stamp = dt.datetime.now().strftime("%H%M%S")
     moved = []
-    for path in (_nophone_checked_path(), _nophone_blocked_path()):
+    for path in (_nophone_checked_path(), _nophone_blocked_path(),
+                 _nothread_path()):
         path = str(path)
         if os.path.exists(path):
             try:
@@ -1604,6 +1752,7 @@ def reset_nophone_cache() -> int:
                 _log(f"[recheck] could not archive {path}: {type(e).__name__}")
     _NOPHONE_CHECKED = None
     _NOPHONE_BLOCKED = None
+    _NOTHREAD = None
     _log(f"[recheck] cleared {len(moved)} no-number cache file(s) for office "
          f"{config.OFFICE_ID} -> {moved}; this walk re-reads those resumes")
     return len(moved)
@@ -1854,6 +2003,30 @@ def lookup_resume_phone(page):
         reason = _blocked_reason(title, body)
         if reason:
             return None, f"{_BLOCKED_PREFIX}{reason} (title={newpg.title()[:40]!r})"
+
+        # LAST RESORT BEFORE ANY VERDICT: the viewer sometimes renders blank but
+        # offers "Download original message" — the number is in that file, and a
+        # human just clicks it (Carlos 2026-08-27). A page we could not READ is
+        # not a resume without a number, so try the download before concluding
+        # anything, and treat every failure of it as BLOCKED (retryable, the
+        # applicant stays put) rather than as a confirmed-empty resume. Carlos's
+        # rule: "If that doesn't work, then just leave it there. Don't remove
+        # that applicant."
+        try:
+            from automations.oat_processing import resume_download as _rd
+            _dl_phone, _dl_detail = _rd.download_and_read_phone(newpg)
+        except Exception as _e:  # noqa: BLE001
+            _dl_phone, _dl_detail = None, f"download path errored: {type(_e).__name__}"
+        if _dl_phone:
+            _log(f"    \U0001f4c4 phone from the DOWNLOADED resume: {_dl_phone} "
+                 f"({_dl_detail})")
+            return _dl_phone, f"from downloaded resume ({_dl_detail[:60]})"
+        if "no download link" not in _dl_detail:
+            # There WAS something to download and it still did not yield a number.
+            # Deliberately BLOCKED, not "no phone": we never actually read a
+            # rendered resume, so this must never cost the applicant their record.
+            return None, (f"{_BLOCKED_PREFIX}blank viewer; download attempted "
+                          f"({_dl_detail[:70]})")
         return None, f"no phone on resume (title={newpg.title()[:40]!r})"
     except Exception as e:  # noqa: BLE001
         # An exception means we never got a clean look at the resume — transient by
@@ -2076,6 +2249,48 @@ def probe_sms(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def office_on_page(page):
+    """Which office the ATS page is CURRENTLY showing, or None if we can't tell.
+
+    The OAT header renders "Office ID: 23467   Owner: Atef Choudhury". That string
+    is the only trustworthy statement of whose queue we are about to act on."""
+    body = _body(page)
+    m = re.search(r"office\s*id\s*:?\s*([0-9]{3,6})", body)
+    return m.group(1) if m else None
+
+
+def assert_on_expected_office(page, tries: int = 3) -> bool:
+    """Refuse to work a queue that is not the office we were told to work.
+
+    WHY THIS HAS TO EXIST: the office switch happens once, when the session opens.
+    `run_walk` — the thing that actually SENDS, REMOVES and TEXTS — never checked
+    which office it had landed on. The standalone `run()` path aborts on a failed
+    switch; the applicant_push path we actually run does not, so a switch that
+    silently did not take would have this walk process someone else's applicants,
+    irreversibly, every ten minutes. That hole was harmless while one office was
+    ever worked; it stopped being harmless the day a second office was added
+    (2026-08-26) and the session started switching between them.
+
+    FAILS CLOSED. A mismatch aborts, and so does a header we cannot read after a
+    few tries — "I don't know whose queue this is" is not a licence to send. The
+    header is on the OAT page in every screenshot we have, so an unreadable one
+    means the page is not what we think it is, which is exactly when to stop."""
+    want = str(config.OFFICE_ID)
+    seen = None
+    for _ in range(tries):
+        seen = office_on_page(page)
+        if seen == want:
+            return True
+        if seen is not None:
+            _log(f"[oat] ABORT: this page is office {seen}, expected {want} — "
+                 f"refusing to process another office's applicants")
+            return False
+        page.wait_for_timeout(700)   # header may still be rendering
+    _log(f"[oat] ABORT: could not read an Office ID off the page (expected "
+         f"{want}) — refusing to act on a queue we cannot identify")
+    return False
+
+
 def run_walk(page, live: bool = False, limit: int = None,
              max_actions: int = None, today=None) -> int:
     """Walk the One-App-at-a-time queue on an ALREADY-OPEN, logged-in, office-11580
@@ -2097,8 +2312,25 @@ def run_walk(page, live: bool = False, limit: int = None,
         _log("[oat] FATAL: could not open the One-App-at-a-time page")
         return 2
 
+    # WHOSE queue is this? Checked BEFORE a single applicant is read, because
+    # everything past this point sends, removes or texts a real person.
+    if not assert_on_expected_office(page):
+        return 2
+
     _start_total = getattr(read_current_applicant(page, today), "_total", None)
-    _log(f"[oat] QUEUE at start: {_start_total} emails")
+    # Log the URL with the pager count. The count comes from the PAGE's own
+    # "<page> of <N> Emails", so it is only ever the total for the view we happen
+    # to be on — and that view carries filters (numDays / matchedOnly / job board
+    # / entered-date) that we never set and do not control. On 2026-08-27 the
+    # walk reported "13 -> 0" for Carlos while his actual inbox held 15, so the
+    # bot's idea of "the queue" and the human's disagree, and until we can SEE the
+    # filter state we cannot tell which is right. Cheap to log, and it is the one
+    # fact that settles it.
+    try:
+        _oat_url = (page.url or "")[-120:]
+    except Exception:  # noqa: BLE001
+        _oat_url = "?"
+    _log(f"[oat] QUEUE at start: {_start_total} emails | view: {_oat_url}")
 
     processed = 0
     actions = 0                 # live mutations (sent/removed) this run
@@ -2159,29 +2391,38 @@ def run_walk(page, live: bool = False, limit: int = None,
         # (couldn't get a number off the resume, or the SMS thread is too old to
         # text). Deduped by the walk's `seen` set, so this = who's flagged right now.
         _nm = f"{a.first_name} {a.last_name}".strip()
-        if _nm:
-            _days = (today - a.applied_date).days if a.applied_date else None
-            _entry = {"name": _nm, "account": a.account or "", "days": _days}
-            # OUTCOME first, action only as a fallback. `d.action` is where the
-            # applicant ENTERED the flow; `outcome` is where they ended up, and for
-            # this post only the ending matters — it tells a human what to DO.
-            # Most re-text fallbacks arrive via the no-phone path (no number on
-            # file, we read one off the resume, the ATS then refuses the send
-            # because that number was already contacted, and the SMS thread is too
-            # old for the widget to see). The old `or d.action.value ==
-            # "flag_no_phone"` clause claimed all of them for the no-phone bucket
-            # before the flag_retext branch could be reached, so "need a manual
-            # text" was **0 in all 37 snapshots on 2026-08-27** while the log
-            # recorded 103 re-text fallbacks in that office alone. Those people
-            # were shown to a human as "go pull their number from Indeed" — advice
-            # already carried out, and useless: their number is on file, what they
-            # need is a fresh message. Victor Renteria and Claudia Ceniceros were
-            # both in that state (Megan 8/27).
-            if outcome == "flag_retext":
-                flagged_now["retext"].append(_entry)
-            elif outcome == "flag_no_phone" or (
-                    not outcome and d.action.value == "flag_no_phone"):
-                flagged_now["nophone"].append(_entry)
+        if not _nm:
+            # The record read came back without a name — it happens when the ATS
+            # re-renders mid-walk (the log shows it as "filled + sending:" with
+            # nothing after the colon). This used to fall through the `if _nm`
+            # guard and DROP the applicant from the to-do post altogether:
+            # processed, flagged, and invisible to the person who has to act on
+            # them. Same failure as the bucket bug fixed earlier today — a person
+            # who needs a hand, silently absent from the list of people who need a
+            # hand. Identify them by whatever we DO have so they always appear.
+            _nm = (a.email or "").strip() or "(name unreadable — find them in the queue)"
+        _days = (today - a.applied_date).days if a.applied_date else None
+        _entry = {"name": _nm, "account": a.account or "", "days": _days}
+        # OUTCOME first, action only as a fallback. `d.action` is where the
+        # applicant ENTERED the flow; `outcome` is where they ended up, and for
+        # this post only the ending matters — it tells a human what to DO.
+        # Most re-text fallbacks arrive via the no-phone path (no number on
+        # file, we read one off the resume, the ATS then refuses the send
+        # because that number was already contacted, and the SMS thread is too
+        # old for the widget to see). The old `or d.action.value ==
+        # "flag_no_phone"` clause claimed all of them for the no-phone bucket
+        # before the flag_retext branch could be reached, so "need a manual
+        # text" was **0 in all 37 snapshots on 2026-08-27** while the log
+        # recorded 103 re-text fallbacks in that office alone. Those people
+        # were shown to a human as "go pull their number from Indeed" — advice
+        # already carried out, and useless: their number is on file, what they
+        # need is a fresh message. Victor Renteria and Claudia Ceniceros were
+        # both in that state (Megan 8/27).
+        if outcome == "flag_retext":
+            flagged_now["retext"].append(_entry)
+        elif outcome == "flag_no_phone" or (
+                not outcome and d.action.value == "flag_no_phone"):
+            flagged_now["nophone"].append(_entry)
 
         processed += 1
         # Throttle live mutations (a controlled test uses --max-actions 1).

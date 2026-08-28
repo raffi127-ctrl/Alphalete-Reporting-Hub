@@ -24,6 +24,12 @@ from typing import Dict, List, Optional
 # card is redrawn from the data — see b2b_dispositions.capture.render_gap_card.
 PAGE_TIME_TRACKER = 510
 
+# Today's Activity (p=88): the rep list with each rep's knock-count badge. Raf
+# asked for it 2026-08-27 — "can we actually get that column that Carlos gets
+# that shows total knocks" — so his card now carries the same two panels
+# Carlos's hourly B2B post has, in the same order.
+PAGE_TODAYS_ACTIVITY = 88
+
 # "Over 15 minute gap" is the card's own name for it, and >15 (not >=) is what
 # b2b_dispositions has been sending Carlos since July. Kept identical so the two
 # offices are looking at the same definition of "inactive".
@@ -66,7 +72,88 @@ def office(key: str) -> Optional[Dict]:
 
 
 # --- the card -----------------------------------------------------------------
-CARD_TITLE = "REPS OVER 15 MIN GAP"
+CARD_TITLE = "KNOCKS & GAPS"
+PANEL_TODAYS_ACTIVITY = "TODAY'S ACTIVITY"
+PANEL_GAPS = "REPS OVER 15 MIN GAP"
+
+# The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
+# a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps
+# against Carlos's ~22.
+VIEWPORT = {"width": 1680, "height": 1600}
+
+# --- delivery format ----------------------------------------------------------
+# Raf 2026-08-27, after the first two-panel card landed: "Can we make it a PDF
+# so it's easier to see please?" Stacking his ~48-rep roster above the gap card
+# made one very tall, very narrow image, which Messages shows inline as an
+# unreadable sliver.
+#
+# Carlos hit the same wall on 8/6 and split his post into TWO pictures — that
+# works at his ~22 reps. Raf's roster is more than twice that, so even a split
+# leaves a sliver; a PDF opens full-screen and zooms, which is what he asked for.
+SEND_AS_PDF = True
+
+# A PDF page taller than this many times its width gets sliced into more pages.
+# The whole point is that a page fits the screen at fit-to-width; one enormous
+# page would just move the squinting from Messages into Preview.
+PDF_MAX_ASPECT = 1.45
+
+# Slices overlap by this many pixels so a rep row cut by a page break still
+# appears whole on the next page. Cheap insurance against the one thing a naive
+# slice gets wrong.
+# Slices no longer overlap — the cut snaps to the gap BETWEEN rows, so nothing
+# is severed and nothing needs repeating. Kept at 0 as the record of why.
+PDF_SLICE_OVERLAP_PX = 0
+
+# Render at N device pixels per CSS pixel, so the screenshot carries N× the
+# detail. The panel is narrower than the PDF page, so a viewer scales it up and
+# 1× text arrives soft — the only real fix is capturing more pixels, since
+# nothing recovers detail a screenshot never took.
+#
+# NOT CSS ZOOM, and the difference is the whole lesson of 2026-08-27. Zoom
+# scales the LAYOUT: at zoom=2 the rep column went narrow, every name wrapped
+# onto two lines, the panel came back twice as tall, and it sliced into 29
+# near-empty pages. Raf called it "mushed". device_scale paints the SAME layout
+# with more pixels — nothing reflows, aspect ratios are unchanged, so the page
+# count and the row cuts come out exactly as they do at 1×.
+#
+# Same knob tableau_screenshots has used for crisper Tableau posts.
+#
+# 2 -> 3 on 2026-08-27: at 2x the text was legible but still soft once Raf
+# zoomed in, and zooming in is the whole reason this is a PDF. 3 is 50% more
+# linear resolution. Safe to turn precisely because it is NOT zoom: the layout
+# is identical, so page counts and row cuts do not move. The cost is a bigger
+# screenshot and a slightly longer run — worth watching against
+# MIN_SEND_GAP_MINUTES, which has to stay under (cadence - runtime).
+CAPTURE_DEVICE_SCALE = 3
+
+# The gap card is drawn by us, not screenshotted, so it has to be drawn bigger
+# to match. A 1× card beside a 2× screenshot on one page width is visibly the
+# softer of the two, and the PDF should read as one document.
+CARD_RENDER_SCALE = 3
+
+# WINDOW SIZE: left at the launcher's default ON PURPOSE. See capture_window().
+BASE_WINDOW = (1680, 1280)
+
+
+def capture_window():
+    """The launcher default, unscaled.
+
+    Scaling the window WITH the device scale is arithmetically right — the
+    window is in device pixels, so 1680 at scale 3 is a 560px CSS viewport and
+    OwnerVille lays the page out phone-width, which is why the "3x" capture came
+    back only 993px wide. But actually doing it (5040x3840) broke the capture
+    outright: the crop came back 3462x40 — three thousand pixels wide and FORTY
+    tall, i.e. the rep list gone, an empty strip texted to the room
+    (2026-08-27). Something in that layout leaves the measured element collapsed
+    at the moment we shoot; a 1280 CSS-px-tall viewport is far taller than the
+    page normally gets, and the list very likely had not laid out yet.
+
+    So this stays unscaled: dpr 3 on the default window gives a complete,
+    correct 993x8557 capture. Sharpening past that means finding out WHY the
+    element collapses in a tall viewport — worth a proper look, not another live
+    iteration in front of the room.
+    """
+    return BASE_WINDOW
 
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 10 minutes inside these windows (Megan 2026-08-26):
@@ -99,20 +186,25 @@ TICK_MINUTES = 10
 
 # A card is REFUSED if this office got one less than this many minutes ago.
 #
-# WHY IT EXISTS. The pid lock stops two ticks OVERLAPPING; it does nothing about
-# two ticks landing back to back, and the room reads two near-identical cards as
-# a broken alert. Three things cause that and none of them are the scheduled
-# cadence: a launchd StartInterval job fires the moment it is (re)loaded and
-# again after a wake, the Hub's "Text it now" button runs on top of whatever
-# launchd is already doing, and a `lucy rerun` does the same. It happened the
-# first evening this went live (2026-08-26): the agent was installed at 20:09,
-# hand-run at 20:12, and fired on its own at 20:14 — two cards, two minutes
-# apart, in front of everyone.
+# WHY IT EXISTS. The pid lock stops two ticks OVERLAPPING; it does nothing
+# about two landing back to back, and the room reads two near-identical cards
+# as a broken alert. A launchd job fires the moment it is (re)loaded and again
+# after a wake, the Hub button runs on top of the schedule, and so does a
+# `lucy rerun`. All three happened the first evening this went live.
 #
-# 9, not 10: launchd drift means a legitimate tick can arrive at 9m50s, and a
-# guard that ate real ticks would be worse than the problem. It tracks
-# TICK_MINUTES — if the cadence moves again, move this with it.
-MIN_SEND_GAP_MINUTES = 9
+# MUST BE WELL UNDER (cadence - runtime), and that is the part that bit us.
+# It was set to 9 against a 10-minute cadence on the reasoning that "just under
+# a full tick" was safest — but the guard measures from when the card SENT,
+# while the cadence anchors on when the tick FIRES, and a run takes 1-4 minutes
+# in between. So each send landed ~1.5 min after its anchor, the next anchored
+# tick was only ~8.5 minutes later, and the guard ate it: every second tick
+# skipped, a real cadence of 20 minutes, and Raf watching an empty chat
+# (2026-08-27, "it's not posting? it's been over 10 min").
+#
+# 5 leaves room for the slowest run we have seen (3m52s) and still blocks what
+# it is for: the :01 catch-up minute after a :00 send, a reinstall fire, a
+# hand-run stacked on the schedule.
+MIN_SEND_GAP_MINUTES = 5
 
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_state.json"
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts.lock"

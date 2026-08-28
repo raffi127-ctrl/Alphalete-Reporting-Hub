@@ -120,6 +120,75 @@ class ProbeUsesTheReportPath(unittest.TestCase):
                         "probe must step aside for a real report, not block it")
 
 
+class ItDoesNotSitOnADaytimeFailureUntil6pm(unittest.TestCase):
+    """THE TEN-HOUR SILENCE (Lucy 1, 2026-08-27). The holder lost its rqst token
+    at 08:41 and could not re-mint. Nothing was wrong with the alert's judgement
+    — a report genuinely could not open the console — but the only windows that
+    could speak were 6pm and 3am, so the first anyone heard was the 6:41pm ping,
+    after the working day, asking for a re-seed only a human at a keyboard can
+    do. The probe is still the gate: on a normal day the stored token is expired
+    at 8am too, the probe passes, and nothing is sent."""
+
+    @staticmethod
+    def _run(hour, *, probe_ok, state=None):
+        sent = []
+        dead = {"ok": False, "rqst_expiry": None, "hours_left": None,
+                "what": "AppStream", "reason": "EXPIRED"}
+        with mock.patch.object(w, "_now",
+                               return_value=__import__("datetime").datetime(
+                                   2026, 8, 27, hour, 0)), \
+             mock.patch.object(w, "_load_state", return_value=dict(state or {})), \
+             mock.patch.object(w, "_save_state") as save, \
+             mock.patch.object(w, "_export_age_min", return_value=600.0), \
+             mock.patch.object(w, "session_status",
+                               side_effect=lambda p, what: {**dead, "what": what}), \
+             mock.patch.object(w, "_appstream_reports_to_rerun", return_value=[]), \
+             mock.patch.object(w, "selfheal_ok",
+                               return_value=(probe_ok, "why")) as probe, \
+             mock.patch.object(w, "_alert", side_effect=lambda t, d: sent.append(t)):
+            w.watch(dry_run=True)
+        return sent, probe, (save.call_args[0][0] if save.call_args else {})
+
+    def test_a_dead_session_at_9am_pings_the_same_morning(self):
+        sent, _, state = self._run(9, probe_ok=False)
+        self.assertTrue(sent, "a daytime failure must not wait for 6pm")
+        self.assertIn("AppStream", sent[0])
+        self.assertEqual(state.get("alerted_daytime_for"), "2026-08-27")
+
+    def test_a_healthy_session_at_9am_says_nothing(self):
+        """The normal state: token expired between runs, holder fine. The probe
+        is what separates this from the real thing — it must stay the gate."""
+        sent, probe, _ = self._run(9, probe_ok=True)
+        self.assertEqual([t for t in sent if "AppStream" in t], [])
+        probe.assert_called_once()
+
+    def test_it_pings_once_a_day_not_every_six_minutes(self):
+        sent, _, _ = self._run(9, probe_ok=False,
+                               state={"alerted_daytime_for": "2026-08-27"})
+        self.assertEqual(sent, [])
+
+    def test_the_6pm_ping_still_fires_for_a_session_that_died_after_hours(self):
+        sent, _, state = self._run(18, probe_ok=False,
+                                   state={"alerted_daytime_for": "2026-08-27"})
+        self.assertTrue(sent)
+        self.assertIn("4am", sent[0])
+        self.assertEqual(state.get("alerted_evening_for"), "2026-08-27")
+
+    def test_ownerville_alone_never_earns_a_daytime_ping(self):
+        """Only a LIVE probe failure earns this window. Ownerville is judged by
+        its stored expiry alone, and a daily unprobed 8am ping about it would be
+        a brand-new false alarm — the exact thing this watch keeps getting wrong."""
+        sent, _, state = self._run(9, probe_ok=True)   # appstream fine, ov "dead"
+        self.assertEqual(sent, [])
+        self.assertIsNone(state.get("alerted_daytime_for"))
+
+    def test_nothing_wakes_anyone_at_2am(self):
+        """Outside every window — the 3am pre-batch check owns that hour."""
+        sent, probe, _ = self._run(2, probe_ok=False)
+        self.assertEqual(sent, [])
+        probe.assert_not_called()
+
+
 class AlertWordingNoLongerBlamesTheLogin(unittest.TestCase):
     def test_unhealthy_reason_describes_the_report_impact(self):
         """The ping text is what a human reads at 3am — it must name the real

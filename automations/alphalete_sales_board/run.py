@@ -61,11 +61,14 @@ from automations.alphalete_sales_board import (aliases, apply_replies,
                                                calc, config as C, fill)
 from automations.alphalete_sales_board import notify as N
 from automations.alphalete_sales_board import sara, state as S
+from automations.alphalete_sales_board import times_of_sales as TOS
 from automations.rep_sales_fill import board as B
 from automations.shared import name_case
 
 HUB_CARD_ID = "alphalete-sales-board"
 HUB_CARD_NAME = "Sales Text Updates"
+TIMES_CARD_ID = "times-of-sales"
+TIMES_CARD_NAME = "Times of Sales"
 FAIL_STREAK = 3                     # ~15 minutes of failures before we speak
 ALERT_COOLDOWN_HOURS = 2
 CORRECTIONS_CHANNEL = "C0BK5PRG259"  # #claudecorrections-and-requests
@@ -223,7 +226,8 @@ def week_to_date(grid, upto: dt.date) -> int:
 
 
 # --- one sweep --------------------------------------------------------------
-def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True) -> int:
+def sweep(day: dt.date, *, apply_writes: bool, send: bool,
+          headless: bool = True, times_label: Optional[str] = None) -> int:
     scraped = sara.scrape(day, headless=headless, log=_log)
     agents, records = scraped["agents"], scraped["records"]
 
@@ -264,6 +268,29 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
     else:
         _log("COVERAGE: every rep with numbers on today's board is one we pulled")
 
+    # --- the half-hour snapshot ---------------------------------------------
+    # Fires only on a :00/:30 tick inside the Times of Sales window, and the
+    # label was decided BEFORE the scrape (see times_of_sales) so a 60-second
+    # scrape cannot slide the reading into the next slot's column.
+    #
+    # Wrapped, because it is an ADDITION to the sweep: the board write is what
+    # this job exists for, and a Times of Sales failure -- a missing tab, a
+    # Sheets 429, an unresolvable chat -- must cost the snapshot, never the
+    # board and never the leaderboard that follows it.
+    if times_label:
+        try:
+            TOS.snapshot(agents, times_label, day, apply_writes=apply_writes,
+                         send=send, log=_log)
+            # Stamped only on a REAL run, so a preview never consumes a slot
+            # the live sweep still owes the chat. Stamped even if the send
+            # raised: the slot has had its attempt, and retrying it on the next
+            # tick would put a 4:07 reading in the 4:00 column.
+            if apply_writes or send:
+                S.save(S.mark_times_sent(S.load(), day, times_label))
+                _publish_times_hub(times_label)
+        except Exception as e:  # noqa: BLE001
+            _log("Times of Sales skipped: %s: %s" % (type(e).__name__, str(e)[:200]))
+
     # --- a rep who sold but has no row gets one, now -------------------------
     # Megan 2026-08-26: say in the text that they weren't on the board, that
     # they were added, and that their numbers land next sweep. Next sweep and
@@ -290,6 +317,20 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
         else:
             item["status"] = "wasn't on the board - added, numbers fill next sweep"
             _log("  added %s to row %d" % (item["sara_name"], row))
+            # Finish the row the way a person would (Raf 2026-08-27): trainer,
+            # 1st Wk, Fiber, the trainer's team, In Training, this Monday. The
+            # grid is re-read first because the board RE-SORTS through the day
+            # and the row we just wrote may already have moved.
+            try:
+                fresh = ws.get_all_values()
+                det, dnotes = fill.new_rep_details(fresh, board_name, day)
+                if det:
+                    ws.batch_update(det, value_input_option="USER_ENTERED")
+                for n in dnotes:
+                    _log("    %s" % n)
+            except Exception as e:  # noqa: BLE001 — details must never fail the add
+                _log("    couldn't fill %s's details: %s: %s"
+                     % (board_name, type(e).__name__, str(e)[:140]))
             # Recorded so an alias confirmed later can take the row back if it
             # turns out they were already on the board under another spelling.
             S.save(S.record_added(S.load(), day, item["sara_name"], board_name, row))
@@ -364,6 +405,30 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
     return len(updates)
 
 
+def _publish_times_hub(label: str) -> None:
+    """EVERY snapshot publishes, not just the first of the day.
+
+    Deliberately the opposite of the sweep's once-a-day row beside it, because
+    the two cards say different things. The sweep runs ~150 times and one green
+    pill is the whole story; this card is PHASE-COLOURED (daily_runs: 17 on a
+    weekday, 14 on Saturday), so the pill ramps as the afternoon fills in and
+    only reads green once the last slot is in. That needs one row per snapshot
+    to count -- publishing once would leave it stuck at 1/17 all day, which
+    reads as a report that stalled at lunchtime.
+
+    Its own card, because the two fail apart: the sweep can be filling the
+    board perfectly while this tab gets nothing.
+    [[feedback_launchd_reports_must_publish]]
+    """
+    try:
+        from automations.shared import hub_activity
+        hub_activity.log_completed(TIMES_CARD_ID, TIMES_CARD_NAME,
+                                   status="success")
+    except Exception as e:  # noqa: BLE001 — the Hub row must never fail the sweep
+        _log("hub publish skipped for %s: %s: %s"
+             % (label, type(e).__name__, str(e)[:120]))
+
+
 def _publish_hub_once(day: dt.date) -> None:
     """First good sweep of the day paints the card; the other 149 stay quiet."""
     data = S.load()
@@ -391,6 +456,9 @@ def main(argv=None) -> int:
     ap.add_argument("--headed", action="store_true", help="show the browser")
     ap.add_argument("--dry-run", action="store_true",
                     help="explicit preview (the default; here for the house flag)")
+    ap.add_argument("--times-slot", metavar="LABEL",
+                    help="force a Times of Sales snapshot for this slot "
+                         "(e.g. \"4:00 PM\") instead of waiting for the clock")
     ap.add_argument("--probe-grid", action="store_true",
                     help="READ-ONLY: dump a grid's headers + first rows with "
                          "column indexes, to check the COL_* mapping")
@@ -426,10 +494,32 @@ def main(argv=None) -> int:
     apply_writes = args.apply and not args.dry_run
     send = args.send and not args.dry_run
 
-    if not args.force and not C.in_selling_window():
+    # THE CHECKPOINT IS READ HERE, before the window gate and long before the
+    # scrape. A sweep takes 30-60 seconds; asking the clock afterwards would
+    # stamp the 4:00 column with numbers read at 3:59, or miss 4:00 entirely
+    # because the tick had already become 4:00:40. [[times_of_sales]]
+    # Only ever for TODAY. A --date re-run of last Tuesday must not stamp last
+    # Tuesday's row with the numbers standing right now.
+    times_label = args.times_slot or (
+        TOS.due(sent=S.times_sent(S.load(), day))
+        if day == dt.date.today() else None)
+
+    # THE SATURDAY TAIL. The board's sweep stops at 17:00 on a Saturday --
+    # Megan set that deliberately, because sweeping to 21:30 was ~65 passes
+    # after the day had been called. But Times of Sales runs to 6:30 PM on a
+    # Saturday and has done for months (the tab's Saturday rows fill through
+    # the 6:30 column), so the plain window gate would have silently dropped
+    # the last three snapshots of every Saturday. Letting a due checkpoint
+    # open the gate buys those three back at a cost of three extra passes,
+    # not sixty-five -- and the board write those passes also do is harmless,
+    # since SaraPlus is cumulative and today's cells track it all day anyway.
+    if not args.force and not C.in_selling_window() and not times_label:
         _log("outside the selling day (%s-%s, Mon-Sat) -- nothing to do"
              % ("%02d:%02d" % C.DAY_START_HHMM, "%02d:%02d" % C.DAY_END_HHMM))
         return 0
+    if times_label and not C.in_selling_window():
+        _log("outside the sweep window, but %s is a Times of Sales slot "
+             "-- running for the snapshot" % times_label)
 
     with Lock() as lock:
         if not lock.held:
@@ -437,7 +527,7 @@ def main(argv=None) -> int:
             return 0
         try:
             sweep(day, apply_writes=apply_writes, send=send,
-                  headless=not args.headed)
+                  headless=not args.headed, times_label=times_label)
         except Exception as e:  # noqa: BLE001
             _record_failure("%s: %s" % (type(e).__name__, e), dry_run=not send)
             return 1

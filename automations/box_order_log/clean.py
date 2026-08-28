@@ -129,6 +129,25 @@ SALE_LEVELS = (
 # but Megan keeps it a sale regardless (2026-07-18, reaffirmed 2026-07-22).
 SALE_EXEMPT_STATUSES = ("Incomplete",)
 
+# LEVELS THAT MEAN THE DEAL ACTUALLY PASSED TPV (or went past it).
+#
+# Carlos, 2026-08-28: "If at some point it said TPV passed and then it got moved
+# to TPV failed or rejected to QC, those sales should still be in the order log
+# ... If it ever said TPV passed, it should never get removed from the order log
+# unless we're past the date range."
+#
+# So this is the set that grants IMMUNITY from DEAD_LEVELS. It is SALE_LEVELS
+# minus "Requires TPV Review" on purpose: that level means the review is still
+# owed, which is not the same claim as having passed it. A deal whose whole
+# history is Requires TPV Review -> TPV Failed never said TPV passed, and stays
+# dropped.
+TPV_PROVEN_LEVELS = (
+    "Ready For Booking",
+    "Accepted by Supplier",
+    "Verification" + _LEVEL_SEP + "TPV Passed",
+    "Submitted to Supplier",
+)
+
 # Sub-statuses that prove a deal REACHED THE SUPPLIER even though no other
 # status survived on it. Carlos, 2026-08-27, on deals whose only row is
 # Rejected / Rejected By Supplier: "I'm not sure why they don't have the other
@@ -145,6 +164,51 @@ SALE_EXEMPT_STATUSES = ("Incomplete",)
 # don't say the supplier ever got it, and Carlos named this one. Add a line
 # here if he rules on the others.
 SUPPLIER_SAW_IT_SUBS = ("rejected by supplier",)
+
+
+# THE TPV MEMORY — a sale stays a sale once we've seen it pass TPV.
+#
+# Found 2026-08-28 chasing "El Meson Doña Tere" (ctr 278285). The sheet
+# recorded it as Verification / TPV Passed on 8/14. Two weeks later the export
+# carries only two rows for it — `Draft / Awaiting Signature` and `Cancelled by
+# Broker` — and the TPV row is simply GONE. The gate above reads history, so
+# with the TPV row missing the deal reads as "cancelled before it ever reached
+# TPV" and is dropped: it vanishes from the workbook and the payout tables.
+#
+# It is not one deal. On the 8/28 pull, 21 sales sitting on the sheet as live
+# were being gated out of the workbook the same way.
+#
+# The two artifacts then disagree, and each is wrong in its own direction. The
+# SHEET merges, so a sale missing from today's pull is carried — it kept
+# showing the stale "TPV Passed" forever. The WORKBOOK is rebuilt from the pull
+# every morning with no memory, so it lost the sale entirely.
+#
+# Carlos's rule doesn't change: "TPV completed and forward is a sale, but it
+# could go to cancelled by broker at any point." A deal that passed TPV and
+# later cancelled IS a sale, and Tableau forgetting the TPV row is not the deal
+# un-happening. So the gate now also accepts EXTERNAL evidence: a set of sale
+# keys already recorded as having reached TPV, read off the sheet (the durable
+# record we already keep). Rescued deals surface at their CURRENT status —
+# El Meson comes back as Cancelled by Broker, not as a phantom TPV Passed —
+# which fixes the sheet's over-reporting in the same move, because the merge
+# now has a fresh row to replace the stale one with.
+#
+# Scope note: the memory is the sheet's six-week window, which is about the
+# same span as the source view's rolling ~44 days. A deal older than that is
+# beyond both, so nothing is resurrected from the distant past.
+
+
+def norm_key(key) -> Tuple[str, str]:
+    """Digits-only sale key, so the pull and the sheet agree.
+
+    Sheets renders an ID column as a number the moment the format drifts, so
+    "267770" comes back as "267,770" (the bug that duplicated every row on
+    2026-07-18). Both sides go through this.
+    """
+    def digits(v):
+        return "".join(ch for ch in str(v or "") if ch.isdigit())
+    a, b = (tuple(key) + ("", ""))[:2]
+    return (digits(a), digits(b))
 
 
 def _norm_sub(sub: str) -> str:
@@ -455,7 +519,7 @@ def _is_complete(row: Dict[str, str]) -> bool:
         return False
 
 
-def _reached_tpv(sale: "Sale") -> bool:
+def _reached_tpv(sale: "Sale", tpv_seen=frozenset()) -> bool:
     """True if the sale ever reached TPV Passed or beyond — Carlos's bar for a
     real sale. Incomplete is exempt (Megan keeps it regardless). Checks the
     whole history so a deal that passed TPV and was later cancelled still
@@ -470,7 +534,24 @@ def _reached_tpv(sale: "Sale") -> bool:
         return True
     if any(_norm_sub(x) in SUPPLIER_SAW_IT_SUBS for x in sale.sub_statuses):
         return True
-    return any(h in SALE_LEVELS for h in sale.history)
+    if any(h in SALE_LEVELS for h in sale.history):
+        return True
+    # Nothing in TODAY's export says it reached TPV — but we may have seen it
+    # do so on an earlier pull. See THE TPV MEMORY above.
+    return norm_key(sale.key) in tpv_seen
+
+
+def ever_passed_tpv(sale: "Sale", tpv_proven=frozenset()) -> bool:
+    """Did this deal ever actually reach TPV Passed or beyond?
+
+    The bar for surviving a later TPV Failed / Rejected QC (Carlos, 8/28).
+    Reads the sale's own history first, then the durable record for the days
+    the export has erased the proof — the same two-source pattern the sale gate
+    uses, but against the narrower TPV_PROVEN_LEVELS.
+    """
+    if any(h in TPV_PROVEN_LEVELS for h in sale.history):
+        return True
+    return norm_key(sale.key) in tpv_proven
 
 
 def _priority(lvl: str) -> int:
@@ -496,7 +577,9 @@ def _status_rank(status: str) -> int:
             if status in STATUS_PRIORITY else len(STATUS_PRIORITY))
 
 
-def collapse(rows: Iterable[Dict[str, str]]) -> Tuple[List[Sale], Dict[str, int]]:
+def collapse(rows: Iterable[Dict[str, str]], *,
+             tpv_seen=frozenset(),
+             tpv_proven=frozenset()) -> Tuple[List[Sale], Dict[str, int]]:
     """Collapse status-transition rows into one Sale per real sale.
 
     Returns (sales, stats). `stats` records what was dropped so the caller can
@@ -504,6 +587,12 @@ def collapse(rows: Iterable[Dict[str, str]]) -> Tuple[List[Sale], Dict[str, int]
     commission questions is worse than no report.
     """
     rows = list(rows)
+    tpv_seen = frozenset(norm_key(k) for k in (tpv_seen or ()))
+    tpv_proven = frozenset(norm_key(k) for k in (tpv_proven or ()))
+    # Passing TPV certainly makes it a sale, so proven implies seen. Without
+    # this a deal rescued from DEAD_LEVELS by the proven set could still be
+    # thrown out by the sale gate a few lines later.
+    tpv_seen = tpv_seen | tpv_proven
     stats = collections.Counter()
     stats["raw_rows"] = len(rows)
 
@@ -566,15 +655,34 @@ def collapse(rows: Iterable[Dict[str, str]]) -> Tuple[List[Sale], Dict[str, int]
 
     # Drop the ones that ended dead. Post-collapse so their history survives
     # on any sale that recovered — see DEAD_LEVELS.
+    # A deal that ever said TPV Passed is NOT removed by a later TPV Failed or
+    # Rejected QC — only the date window takes it out (Carlos, 2026-08-28).
+    # One that never passed still dies here.
     before = len(sales)
-    sales = [s for s in sales if s.level not in DEAD_LEVELS]
+    survivors, spared = [], 0
+    for s in sales:
+        if s.level not in DEAD_LEVELS:
+            survivors.append(s)
+        elif ever_passed_tpv(s, tpv_proven):
+            survivors.append(s)
+            spared += 1
+    sales = survivors
+    stats["kept_dead_after_tpv"] = spared
     stats["dropped_dead"] = before - len(sales)
 
     # THE TPV GATE — drop deals that never reached TPV (Carlos, 2026-07-22).
     # A cancel/reject that never passed TPV was never a sale; Incomplete is
     # exempt. Post-collapse so a recovered deal's full history is available.
     before = len(sales)
-    sales = [s for s in sales if _reached_tpv(s)]
+    # Split the gate in two so the run log can distinguish "this export proves
+    # it's a sale" from "only our own memory does" — a rescue is exactly the
+    # case a human may want to eyeball.
+    by_export = [s for s in sales if _reached_tpv(s)]
+    kept_keys = {s.key for s in by_export}
+    rescued = [s for s in sales
+               if s.key not in kept_keys and norm_key(s.key) in tpv_seen]
+    sales = by_export + rescued
+    stats["rescued_by_tpv_memory"] = len(rescued)
     stats["dropped_never_reached_tpv"] = before - len(sales)
 
     stats["sales"] = len(sales)
@@ -665,10 +773,16 @@ def filter_to_owner(rows: List[Dict[str, str]], owner_office: str) -> List[Dict[
     return [r for r in rows if _norm_owner(r.get(OWNER_OFFICE_COL, "")) == want]
 
 
-def load(path: Path, owner_office: str = "") -> Tuple[List[Sale], Dict[str, int]]:
+def load(path: Path, owner_office: str = "",
+         tpv_seen=frozenset(),
+         tpv_proven=frozenset()) -> Tuple[List[Sale], Dict[str, int]]:
     """Read the crosstab into Sales. When `owner_office` is given, first slice the
-    (team) export to that office — the SAME isolation the B2B metric views use."""
+    (team) export to that office — the SAME isolation the B2B metric views use.
+
+    `tpv_seen`: sale keys already known to have reached TPV on an earlier pull
+    (see THE TPV MEMORY). Empty by default, which is exactly the old behaviour.
+    """
     rows = read_rows(Path(path))
     if owner_office:
         rows = filter_to_owner(rows, owner_office)
-    return collapse(rows)
+    return collapse(rows, tpv_seen=tpv_seen, tpv_proven=tpv_proven)

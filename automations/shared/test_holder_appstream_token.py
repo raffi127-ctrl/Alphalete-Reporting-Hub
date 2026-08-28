@@ -30,17 +30,23 @@ it is.
 """
 from __future__ import annotations
 
+import time
 import unittest
 from unittest import mock
 
 from automations.shared import session_holder as sh
 
 
-def _ctx(*, rqst: int, domain: str = "www.applicantstream.com"):
-    """A context whose storage_state carries `rqst` rqst_ tokens."""
+def _ctx(*, rqst: int, domain: str = "www.applicantstream.com",
+         minutes_left: float | None = None):
+    """A context whose storage_state carries `rqst` rqst_ tokens, optionally
+    dated `minutes_left` minutes out (None = undated, as before)."""
     cookies = [{"name": "CFID", "domain": domain},
                {"name": "CFTOKEN", "domain": domain}]
-    cookies += [{"name": f"rqst_{i}", "domain": domain} for i in range(rqst)]
+    exp = ({"expires": time.time() + minutes_left * 60}
+           if minutes_left is not None else {})
+    cookies += [{"name": f"rqst_{i}", "domain": domain, **exp}
+                for i in range(rqst)]
     ctx = mock.Mock()
     ctx.storage_state.return_value = {"cookies": cookies}
     return ctx
@@ -141,6 +147,228 @@ class TheExportGuardIsUnchanged(unittest.TestCase):
         with mock.patch.object(sh, "APPSTREAM_STORAGE_STATE", fake):
             sh._export_appstream(_ctx(rqst=0))
         fake.write_text.assert_not_called()
+
+
+class ItRemintsBeforeTheTokenDies(unittest.TestCase):
+    """THE TEN-HOUR HOLE (Lucy 1, 2026-08-27). Raising the bar to the token
+    still left the holder re-hopping only AFTER the token had expired — the one
+    moment `?rqst=<TOKEN>&p=701` has nothing live to trade in. Last good export
+    08:38:46, token expired 08:41, then "console warm but NO rqst token" every
+    six minutes until 6:41pm, when the 6pm ping finally told a human. Twenty
+    healthy cycles inside the token's live window re-hopped exactly zero times,
+    because a token in hand returned early no matter how little was left on it."""
+
+    def test_a_token_with_hours_left_still_short_circuits(self):
+        """The cheap path stays cheap — no re-hop every 6 min all day."""
+        with mock.patch.object(sh, "_reuse_appstream_storage_state",
+                               return_value=True) as reuse:
+            ok = sh._warm_appstream(_ctx(rqst=1, minutes_left=95), _page(),
+                                    verbose=False)
+        self.assertTrue(ok)
+        reuse.assert_not_called()
+
+    def test_a_token_inside_the_margin_re_hops_while_it_can_still_mint(self):
+        with mock.patch.object(sh, "_reuse_appstream_storage_state",
+                               return_value=True) as reuse:
+            ok = sh._warm_appstream(_ctx(rqst=1, minutes_left=12), _page(),
+                                    verbose=False)
+        self.assertTrue(ok)
+        reuse.assert_called_once()
+
+    def test_a_hop_that_mints_nothing_keeps_the_still_valid_token(self):
+        """The old token has minutes left — that is warm, not stale. Reporting
+        it stale here would fire a re-seed ping while the session still works."""
+        with mock.patch.object(sh, "_reuse_appstream_storage_state",
+                               return_value=False):
+            self.assertTrue(
+                sh._warm_appstream(_ctx(rqst=1, minutes_left=5), _page(),
+                                   verbose=False))
+
+    def test_a_hop_that_throws_never_takes_the_holder_down(self):
+        with mock.patch.object(sh, "_reuse_appstream_storage_state",
+                               side_effect=RuntimeError("navigation failed")):
+            self.assertTrue(
+                sh._warm_appstream(_ctx(rqst=1, minutes_left=5), _page(),
+                                   verbose=False))
+
+    def test_an_undated_token_is_dont_know_not_expiring(self):
+        """Cookies with no `expires` must not send it re-hopping every cycle."""
+        with mock.patch.object(sh, "_reuse_appstream_storage_state",
+                               return_value=True) as reuse:
+            sh._warm_appstream(_ctx(rqst=1), _page(), verbose=False)
+        reuse.assert_not_called()
+
+
+class TheExpiryProbe(unittest.TestCase):
+
+    def test_it_reads_the_latest_rqst_expiry(self):
+        left = sh._ctx_rqst_minutes_left(_ctx(rqst=1, minutes_left=42))
+        self.assertAlmostEqual(left, 42, delta=1)
+
+    def test_no_token_answers_dont_know(self):
+        self.assertIsNone(sh._ctx_rqst_minutes_left(_ctx(rqst=0)))
+
+    def test_a_broken_context_answers_dont_know_rather_than_raising(self):
+        ctx = mock.Mock()
+        ctx.storage_state.side_effect = RuntimeError("browser gone")
+        self.assertIsNone(sh._ctx_rqst_minutes_left(ctx))
+
+
+class TheLogCanTellRenewedFromStillAlive(unittest.TestCase):
+    """THE REASON THIS GOT FIXED TEN TIMES (Megan 2026-08-27). `AppStream ✓ — 9
+    cookies` printed identically whether the holder had just obtained a NEW
+    login or was riding the same one down to its expiry. Every fix was judged
+    against a signal that cannot distinguish the two, so "it renews itself
+    overnight" went into the memory file on the strength of an expiry timestamp
+    nobody had watched change. The ✓ has to name the token now."""
+
+    def setUp(self):
+        sh._LAST_RQST["id"] = None
+
+    def test_it_names_the_token_and_its_remaining_life(self):
+        note = sh._rqst_note(_ctx(rqst=1, minutes_left=90))
+        self.assertIn("token ", note)
+        self.assertIn("90m left", note)
+
+    def test_riding_the_same_token_is_not_reported_as_renewal(self):
+        ctx = _ctx(rqst=1, minutes_left=90)
+        sh._rqst_note(ctx)
+        self.assertNotIn("RENEWED", sh._rqst_note(ctx))
+
+    def test_a_changed_token_is_called_out_as_renewed(self):
+        """The one line that would have settled this ten fixes ago."""
+        with mock.patch.object(sh, "_push_token_to_fleet"):
+            sh._rqst_note(_ctx(rqst=1, minutes_left=5))
+            ctx2 = _ctx(rqst=1, minutes_left=120)
+            ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
+            self.assertIn("RENEWED", sh._rqst_note(ctx2))
+
+    def test_a_donated_token_is_reported_as_received_not_renewed(self):
+        """THE CONFOUND. A handoff changes the token id exactly like a renewal,
+        so without this a machine that can never renew still prints RENEWED
+        minutes after a donation lands — and the log goes back to meaning
+        nothing, which is the whole thing this line was added to stop."""
+        with mock.patch.object(sh, "_donated_token_ids", return_value={"BRANDNEW"}), \
+             mock.patch.object(sh, "_push_token_to_fleet") as push:
+            sh._rqst_note(_ctx(rqst=1, minutes_left=5))
+            ctx2 = _ctx(rqst=1, minutes_left=120)
+            ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
+            note = sh._rqst_note(ctx2)
+        self.assertIn("RECEIVED", note)
+        self.assertNotIn("RENEWED", note)
+        push.assert_not_called()      # don't echo a donation back at the fleet
+
+    def test_a_missing_marker_leaves_the_old_reading_intact(self):
+        with mock.patch.object(sh, "_donated_token_ids", return_value=set()), \
+             mock.patch.object(sh, "_push_token_to_fleet"):
+            sh._rqst_note(_ctx(rqst=1, minutes_left=5))
+            ctx2 = _ctx(rqst=1, minutes_left=120)
+            ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
+            self.assertIn("RENEWED", sh._rqst_note(ctx2))
+
+    def test_it_never_prints_the_whole_credential(self):
+        ctx = _ctx(rqst=1)
+        ctx.storage_state.return_value["cookies"][-1]["name"] = "rqst_" + "S" * 60
+        self.assertNotIn("S" * 20, sh._rqst_note(ctx))
+
+    def test_a_tokenless_context_adds_nothing(self):
+        self.assertEqual(sh._rqst_note(_ctx(rqst=0)), "")
+
+    def test_a_broken_context_adds_nothing_rather_than_raising(self):
+        ctx = mock.Mock()
+        ctx.storage_state.side_effect = RuntimeError("browser gone")
+        self.assertEqual(sh._rqst_note(ctx), "")
+
+
+class ARenewedTokenIsHandedToTheFleet(unittest.TestCase):
+    """THE ANSWER TO "I should not have to ever re-seed" (Megan 2026-08-27).
+    Lucy 1 and Lucy 3 were tokenless for ten hours while Lucy 2 held a live
+    session six minutes stale. Same account, same session, works on any of them
+    — and the only route between them ran through a person clearing a Turnstile
+    that did not need clearing. A renewal is now handed to the other machines,
+    so it takes ALL of them failing at once to need a human."""
+
+    def setUp(self):
+        sh._LAST_RQST["id"] = None
+        sh._LAST_FLEET_PUSH["at"] = 0.0
+
+    def _renew(self, **kw):
+        """Two cycles with different tokens = one renewal."""
+        sh._rqst_note(_ctx(rqst=1, minutes_left=5))
+        ctx2 = _ctx(rqst=1, minutes_left=120)
+        ctx2.storage_state.return_value["cookies"][-1]["name"] = "rqst_BRANDNEW1"
+        return sh._rqst_note(ctx2)
+
+    def _mc(self):
+        """A stand-in control queue, injected the way the holder imports it."""
+        mc = mock.Mock()
+        return mc, mock.patch.dict(
+            "sys.modules", {"automations.day_orchestrator": mock.Mock(mini_control=mc),
+                            "automations.day_orchestrator.mini_control": mc})
+
+    def test_the_other_hold_machines_get_the_new_session(self):
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            self._renew()
+        sent = [c.kwargs.get("machine") for c in mc.enqueue.call_args_list]
+        self.assertEqual(sorted(sent), ["Lucy 1", "Lucy 3"])
+
+    def test_it_never_hands_itself_the_session(self):
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            self._renew()
+        self.assertNotIn("Lucy 2",
+                         [c.kwargs.get("machine") for c in mc.enqueue.call_args_list])
+
+    def test_a_tokenless_state_file_is_never_distributed(self):
+        """The one thing worse than a dead session is three of them."""
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"CFID"}]}'))):
+            self._renew()
+        mc.enqueue.assert_not_called()
+
+    def test_it_does_not_push_more_than_once_an_hour(self):
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            self._renew()
+            n_after_first = mc.enqueue.call_count
+            sh._LAST_RQST["id"] = "somethingelse"
+            self._renew()
+        self.assertEqual(mc.enqueue.call_count, n_after_first)
+
+    def test_riding_the_same_token_hands_off_nothing(self):
+        """Only a renewal has anything new to give."""
+        with mock.patch.object(sh, "_push_token_to_fleet") as push:
+            ctx = _ctx(rqst=1, minutes_left=90)
+            sh._rqst_note(ctx)
+            sh._rqst_note(ctx)
+        push.assert_not_called()
+
+    def test_a_broken_queue_never_takes_the_holder_down(self):
+        mc, patch_mc = self._mc()
+        mc.enqueue.side_effect = RuntimeError("sheet unreachable")
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            self.assertIn("RENEWED", self._renew())   # did not raise
 
 
 class ZeroIsNotSuccess(unittest.TestCase):

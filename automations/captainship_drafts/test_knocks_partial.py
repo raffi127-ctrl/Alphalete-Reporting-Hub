@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import datetime as dt
 import unittest
+from pathlib import Path
 
 from automations.captainship_drafts import config
 from automations.captainship_drafts import email_build as EB
@@ -259,6 +260,70 @@ class TotalAppsColumn(unittest.TestCase):
              ("B", {"name": "B"}, self._rows(), 6)], chan_rows=None)
         at = KD.DAILY_SUMMARY_HEADERS.index("Average App per Rep")
         self.assertEqual([r[at] for r in table], ["2.0", "3.0", "2.5"])
+
+    def _drawn(self, monkey, **kw):
+        """Renderiza el board por-owner capturando lo que llega a _draw, sin
+        escribir un PNG: devuelve (headers, filas)."""
+        from automations.total_knocks import render as R
+        seen = {}
+        def fake_draw(cols, table, title, theme, out, **k):
+            seen["cols"], seen["table"] = list(cols), [list(r) for r in table]
+            return out
+        monkey(R, "_draw", fake_draw)
+        R.render_total_knocks(dt.date(2026, 8, 27), rows=kw.pop("rows"),
+                              out_dir=Path("."), **kw)
+        return seen["cols"], seen["table"]
+
+    def test_average_app_per_rep_rides_the_per_owner_daily_board(self):
+        """Pedido de Eve (2026-08-28): la columna que el board resumen ya
+        tenia le faltaba al board DIARIO de cada persona."""
+        from automations.total_knocks import render as R
+        old = R._draw
+        try:
+            rows, apps, _t = KD.daily_apps_for_board(
+                self._rows(), {"Alan Diaz": 3, "bree kim": 5})
+            cols, table = self._drawn(setattr, rows=rows, apps=apps)
+            at = cols.index(R.COL_AVG_APP_PER_REP)
+            self.assertEqual(cols[at - 1], R.COL_TOTAL_APPS)
+            # fila 0 = TOTAL de la oficina (8 apps / 2 reps), luego los reps.
+            self.assertEqual(table[0][at], "4.0")
+            self.assertEqual([r[at] for r in table[1:]], ["", ""])
+        finally:
+            R._draw = old
+
+    def test_average_app_per_rep_never_reaches_a_board_without_apps(self):
+        """Los hilos de metricas, los slots intraday y /knocks no la pidieron:
+        sin `apps` no aparece ninguna de las dos columnas."""
+        from automations.total_knocks import render as R
+        old = R._draw
+        try:
+            cols, _t = self._drawn(setattr, rows=self._rows())
+            self.assertNotIn(R.COL_AVG_APP_PER_REP, cols)
+            self.assertNotIn(R.COL_TOTAL_APPS, cols)
+            self.assertNotIn(R.COL_AVG_APP_PER_REP, R.COMBINED_KNOCKS_HEADERS)
+        finally:
+            R._draw = old
+
+    def test_the_comparison_office_divides_by_its_own_reps(self):
+        """La fila teal de Chan promedia sobre SUS reps, no sobre los nuestros
+        — y queda en blanco si sus apps no bajaron, nunca en 0."""
+        from automations.total_knocks import render as R
+        old = R._draw
+        try:
+            rows, apps, _t = KD.daily_apps_for_board(
+                self._rows(), {"Alan Diaz": 3, "bree kim": 5})
+            chan = self._rows()[:1]                    # un solo rep
+            cols, table = self._drawn(
+                setattr, rows=rows, apps=apps,
+                extra_totals=[("Chan Park", chan, {"Alan Diaz": 7})])
+            at = cols.index(R.COL_AVG_APP_PER_REP)
+            self.assertEqual(table[0][at], "7.0")      # 7 / 1 rep de Chan
+            cols, table = self._drawn(
+                setattr, rows=rows, apps=apps,
+                extra_totals=[("Chan Park", chan)])    # sin sus apps
+            self.assertEqual(table[0][cols.index(R.COL_AVG_APP_PER_REP)], "")
+        finally:
+            R._draw = old
 
     def test_the_daily_pull_reads_one_weekday_of_the_weekly_crosstab(self):
         from automations.weekly_knock_dispositions import apps as A

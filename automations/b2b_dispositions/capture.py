@@ -501,23 +501,35 @@ def _int(v) -> int:
         return 0
 
 
-def render_gap_card(reps: List[Dict], out_path: Path) -> Path:
+def render_gap_card(reps: List[Dict], out_path: Path,
+                    scale: float = 1.0) -> Path:
     """Draw the 'Reps Over 15 Minute Gap' card from data: one row per rep —
     bold name + red 'Inactive · N min ago (last knock time)'. Matches the live
-    card's info. `reps` should already be filtered (>15 min) and sorted."""
+    card's info. `reps` should already be filtered (>15 min) and sorted.
+
+    scale (default 1.0 = byte-identical to before, which is what Carlos's live
+    hourly post keeps getting): draw everything N× bigger. gap_alerts pairs
+    this card with a device_scale=2 SCREENSHOT in one PDF, and a 1× card next
+    to a 2× screenshot on the same page width is visibly the softer of the
+    two — the panels have to be rendered at the same resolution to look like
+    one document."""
     from PIL import Image, ImageDraw
-    W = STITCH_WIDTH
-    pad = 18
-    row_h = 62
-    f_name = _stitch_font(24)
-    f_sub = _stitch_font(19)
-    f_empty = _stitch_font(22)
-    body_h = (row_h * len(reps)) if reps else 70
+
+    def _s(v):
+        return int(round(v * scale))
+
+    W = _s(STITCH_WIDTH)
+    pad = _s(18)
+    row_h = _s(62)
+    f_name = _stitch_font(_s(24))
+    f_sub = _stitch_font(_s(19))
+    f_empty = _stitch_font(_s(22))
+    body_h = (row_h * len(reps)) if reps else _s(70)
     H = pad + body_h + pad
     im = Image.new("RGB", (W, H), (255, 255, 255))
     d = ImageDraw.Draw(im)
     if not reps:
-        d.text((pad, pad + 20), "No reps over 15 min gap", font=f_empty,
+        d.text((pad, pad + _s(20)), "No reps over 15 min gap", font=f_empty,
                fill=(120, 128, 140))
         out_path.parent.mkdir(parents=True, exist_ok=True)
         im.save(out_path)
@@ -527,11 +539,11 @@ def render_gap_card(reps: List[Dict], out_path: Path) -> Path:
         name = (r.get("name") or "").strip()
         mins = _int(r.get("minutesSinceLastKnock"))
         last = (r.get("lastKnockDate") or "").strip()
-        d.rectangle([pad, y + 4, W - pad, y + row_h - 6], outline=(228, 231, 236),
-                    width=1)
-        d.text((pad + 12, y + 10), name, font=f_name, fill=(17, 24, 39))
+        d.rectangle([pad, y + _s(4), W - pad, y + row_h - _s(6)],
+                    outline=(228, 231, 236), width=max(1, _s(1)))
+        d.text((pad + _s(12), y + _s(10)), name, font=f_name, fill=(17, 24, 39))
         sub = f"Inactive · {mins} min ago" + (f"  ({last})" if last else "")
-        d.text((pad + 12, y + 36), sub, font=f_sub, fill=(203, 68, 74))
+        d.text((pad + _s(12), y + _s(36)), sub, font=f_sub, fill=(203, 68, 74))
         y += row_h
     out_path.parent.mkdir(parents=True, exist_ok=True)
     im.save(out_path)

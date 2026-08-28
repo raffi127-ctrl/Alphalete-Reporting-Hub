@@ -57,6 +57,25 @@ CAPTION_TEXT = ("day cells = emails RECEIVED per ad per day (tracked from "
                 "Aug 17; older weeks show the weekly Pull only) · Pull = the "
                 "week's received total · To Call List = sent to call list "
                 "that week")
+# Account colours. One tint per ACCOUNT, held across the whole scroll so
+# every row under (say) Peaksalesstrategiestx reads the same in every week
+# (Carlos, 2026-08-28). The index comes from N5's MATCH against the view's
+# own UNIQUE account list, which is ordered by FIRST APPEARANCE — and the
+# scroll is newest-week-first, so the accounts running right now take the
+# low, all-distinct indices. A manager with more accounts than there are
+# tints (Carlos has 23 across the year) wraps around, but only among older
+# accounts that no longer appear beside each other.
+ACCOUNT_TINTS = [
+    (0.839, 0.894, 0.969), (0.851, 0.918, 0.827), (1.0, 0.949, 0.800),
+    (0.957, 0.800, 0.800), (0.894, 0.843, 0.961), (0.816, 0.929, 0.918),
+    (0.988, 0.898, 0.804), (0.910, 0.941, 0.784), (0.976, 0.851, 0.910),
+    (0.855, 0.882, 0.953), (0.812, 0.937, 0.875), (0.937, 0.894, 0.824),
+    (0.929, 0.851, 0.941), (0.835, 0.929, 0.969),
+]
+# Hidden helper: which account is this row, by first appearance in the view.
+N5 = ('=ARRAYFORMULA(IFERROR(MATCH($B$5:$B$600,'
+      'UNIQUE(FILTER($B$5:$B$600,$B$5:$B$600<>"")),0),""))')
+
 HINT_TEXT = ("ALL WEEKS — newest at the top, scroll down for history · blue "
              "band = week ending · TOTAL closes each week")
 
@@ -172,6 +191,7 @@ def main(argv=None):
     sheet.put_values(sess, sheet.view_range("A4"),
                      [["#", "Account", "City", "AD", "Pull"] + DAYS + ["To Call List"]])
     _uf(sess, sheet.view_range("A5"), [[A5]])
+    _uf(sess, sheet.view_range("N5"), [[N5]])
 
     # --- dress ---------------------------------------------------------------
     def fmt(r1, c1, r2, c2, cell, fields):
@@ -318,6 +338,23 @@ def main(argv=None):
                               "values": [{"userEnteredValue": '=LEFT($D5,1)="—"'}]},
                 "format": {"backgroundColor": AMBER}}}}},
     ]
+    # One rule per tint, keyed on the hidden index. Band and TOTAL rows leave
+    # column B blank, so they can never pick up an account colour.
+    for i, (r_, g_, b_) in enumerate(ACCOUNT_TINTS, 1):
+        reqs.append({"addConditionalFormatRule": {"index": 2 + i, "rule": {
+            "ranges": [{"sheetId": view_id, "startRowIndex": 4,
+                        "endRowIndex": 1500, "startColumnIndex": 1,
+                        "endColumnIndex": 2}],
+            "booleanRule": {
+                "condition": {"type": "CUSTOM_FORMULA", "values": [
+                    {"userEnteredValue": '=AND($N5=%d,$B5<>"")' % i}]},
+                "format": {"backgroundColor": {"red": r_, "green": g_,
+                                               "blue": b_}}}}}})
+    # keep the helper column out of sight
+    reqs.append({"updateDimensionProperties": {
+        "range": {"sheetId": view_id, "dimension": "COLUMNS",
+                  "startIndex": 13, "endIndex": 14},
+        "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
     _batch(sess, reqs)
     print("visible tab dressed as a stacked sales board (all weeks, no dropdown)")
     print(json.dumps({"data_sheet_id": data_id, "view_sheet_id": view_id}))

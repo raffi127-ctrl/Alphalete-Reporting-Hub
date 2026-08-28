@@ -54,6 +54,16 @@ PROD_TAB = "ATT owners list"          # the tab's own casing — matched loosely
 SANDBOX_TAB = "ATT owners list (sandbox)"
 BOARD_TAB = "Country Sales Board"
 BOARD_SANDBOX_TAB = "Country Sales Board (sandbox)"
+# OUR OWN Chrome profile. The shared one
+# (automations/uploaded/.browser_profile) is first-come, first-served, and a
+# launch that finds it taken waits for the holder — while this report's
+# orchestrator timeout is 15m, so a collision used to mean being killed
+# mid-wait having written nothing. Same escape hatch as other_office_knocks,
+# knocks_access_watch and mobrium_list; the login comes from the shared
+# storage_state, not the profile, so a separate dir needs no seeding.
+PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
+               / ".browser_profile_att_owners")
+
 OUT_DIR = Path("output")
 CENTRAL = ZoneInfo("America/Chicago")   # [[project_central-time-for-texas-reports]]
 
@@ -161,7 +171,7 @@ def main(argv=None) -> int:
     else:
         from automations.shared.tableau_patchright import tableau_session
         try:
-            with tableau_session() as page:
+            with tableau_session(profile_dir=PROFILE_DIR) as page:
                 pull = P.pull_last_week(page, OUT_DIR, near=today)
         except P.NoDataYet as e:
             print(f"  ⏸ {e}")

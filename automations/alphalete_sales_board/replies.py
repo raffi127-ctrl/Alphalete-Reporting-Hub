@@ -25,8 +25,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 # "a=b", "a = b", "a is b", "a == b". Deliberately narrow: this reads a group
 # chat people talk in, and anything looser would start interpreting sentences.
-PAIR_RE = re.compile(r"^\s*([A-Za-z][\w'.\- ]{0,40}?)\s*(?:={1,2}|\bis\b)\s*"
-                     r"([A-Za-z][\w'.\- ]{0,40}?)\s*[.!]?\s*$", re.I)
+NAME = r"[A-Za-z][\w'.\-]{0,30}(?: [A-Za-z][\w'.\-]{0,30}){0,2}"
+PAIR_RE = re.compile(r"^\s*(" + NAME + r")\s*={1,2}\s*(" + NAME + r")\s*[.!]?\s*$")
 
 
 def parse_pair(text: str) -> Optional[Tuple[str, str]]:

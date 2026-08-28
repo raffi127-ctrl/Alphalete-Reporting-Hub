@@ -94,6 +94,15 @@ MORNING_WINDOW = (4, 15)   # [4am, 3pm)
 # 2026-06-26: "slack Eve at 6pm if she needs the reseed to happen"). The watch
 # still runs every 6 min, but it HOLDS the ping until this hour.
 PING_HOUR = 18   # 6pm (mini local time)
+# A DAYTIME window, so a session that dies during business hours is not sat on
+# until 6pm (Megan 2026-08-27). Lucy 1's holder lost its token at 08:41 and
+# printed "console warm but NO rqst token" to a log nobody reads for TEN HOURS;
+# the first thing anyone saw was the 6:41pm ping — after the working day, from
+# people whose whole job this ping is asking them to do. The probe still gates
+# it, so this only fires when a report genuinely could not open the console
+# right now; on a normal day the stored token is expired at 8am too and the
+# probe passes, exactly as it does at 6pm.
+DAY_PING_HOUR = 8    # 8am (mini local time) — after the 4am batch, in work hours
 # A SECOND, last-chance window ~1h before the 4am batch: catches a session that
 # went stale AFTER the 6pm ping (or was never re-seeded), so it surfaces as an
 # early-morning heads-up instead of a 7am surprise-failure.
@@ -398,9 +407,16 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
                    and state.get("alerted_evening_for") != today)
     prebatch_due = (PRE_BATCH_PING_HOUR <= now.hour < MORNING_WINDOW[0]
                     and state.get("alerted_prebatch_for") != today)
-    ping_due = evening_due or prebatch_due
+    daytime_due = (DAY_PING_HOUR <= now.hour < PING_HOUR
+                   and state.get("alerted_daytime_for") != today)
+    ping_due = evening_due or prebatch_due or daytime_due
 
     stale = []   # [(status, reseed_cmd), ...] for sessions that won't survive the batch
+    # The subset of `stale` a LIVE probe just failed, i.e. "a report would fail
+    # right now" rather than "the stored token is past its date". Only these earn
+    # the daytime ping: ownerville is judged by expiry alone, and an unprobed
+    # 8am ping about it every morning is the cry-wolf this window exists to avoid.
+    probed_stale = []
     healthy_all = True
     state_paths = {"appstream": APPSTREAM_STORAGE_STATE, "ownerville": OWNERVILLE_STORAGE_STATE}
     for key, stt, reseed, reports in sessions:
@@ -421,6 +437,7 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
         # the normal, healthy state, and the holder re-mints one long before the
         # batch). Before pinging, ask the only question that matters: can a
         # report open the console RIGHT NOW, on the path a report actually uses?
+        probe_failed = False
         if key == "appstream" and not healthy and ping_due and probe:
             probe_ok, why = selfheal_ok()
             if probe_ok:
@@ -430,6 +447,7 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
             else:
                 stt = {**stt, "reason": "{} — and a report cannot open the "
                                         "console: {}".format(stt["reason"], why)}
+                probe_failed = True
         healthy_all = healthy_all and healthy
         was_ok = state.get(f"last_ok_{key}")
         if healthy:
@@ -448,6 +466,8 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
             state[f"last_ok_{key}"] = True
         else:
             stale.append((stt, reseed))
+            if probe_failed:
+                probed_stale.append((stt, reseed))
             state[f"last_ok_{key}"] = False
 
     # Heads-up pings, each held to an act-able window + once/day:
@@ -458,7 +478,12 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
     # AppStream can only reach here after FAILING the live self-heal probe, so a
     # ping about it is a real "the automation cannot log in", not a countdown.
     if stale:
-        if evening_due:
+        if daytime_due and probed_stale:
+            _alert(_reseed_alert_text(
+                probed_stale,
+                "NOW — AppStream reports cannot run until it lands"), dry_run)
+            state["alerted_daytime_for"] = today
+        elif evening_due:
             _alert(_reseed_alert_text(stale, "before tomorrow's 4am reports"), dry_run)
             state["alerted_evening_for"] = today
         elif prebatch_due:

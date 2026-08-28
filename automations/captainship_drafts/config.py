@@ -468,6 +468,12 @@ RECIPIENTS: dict = {
         "adreyb15@gmail.com", "dylanjtwaddle@gmail.com",
         "jpascual@elevaremanagementinc.com",
         "maudmiller4@gmail.com", "milly.vinceremarketing@gmail.com",
+        # IN 2026-08-28 (Eve): Juan Botero Berrio ya estaba en el grupo VIVO
+        # "Starr's Captainship" pero no aca, asi que seed_groups lo marcaba
+        # para SACAR. Su tarjeta de Contacts tampoco tenia direccion — Eve se
+        # la cargo el mismo dia; el mail arreglo el matcheo, esta linea es la
+        # que lo deja adentro. Mismo caso que Abdallah en la lista de Jairo.
+        "juanbotero0120@gmail.com",
         "nataliagwarda@gmail.com", "omniamanagementinc@gmail.com",
         "raffi127@gmail.com", "starr.novamanagement@gmail.com",
         # OUT 2026-08-25, two-week zero rule: William Sassenberg
@@ -596,11 +602,36 @@ RECIPIENTS: dict = {
         "coltenwrightsc@gmail.com", "drewtepp2735@gmail.com",
         "dylanjtwaddle@gmail.com", "fm.peakmanagementinc@gmail.com",
         "frankmatos1128@gmail.com", "amissolutions7@gmail.com",
+        # IN 2026-08-28 (Eve): Abdallah Ghousheh entra a la capitania de Jairo.
+        # Eve ya lo habia agregado A MANO al grupo vivo "Jairo's Captainship",
+        # y sin esta linea el alta no sobrevive: seed_groups REHACE el grupo
+        # desde esta lista, asi que lo marcaba para SACAR (verificado con
+        # `seed_groups --dry-run --only jairo` el mismo dia). Es la contracara
+        # exacta del caso Milan/Marcos en la lista de Colten, y la razon por la
+        # que un alta o una baja tienen que estar en los DOS lados.
+        "ghoushehbusiness@gmail.com",
         "jairoruizpmg@gmail.com", "ferminjustin71@gmail.com",
         "maudmiller4@gmail.com", "nickopereira98@gmail.com",
         "raffi127@gmail.com",
     ],
 }
+
+
+# Eve va en TODAS las listas, sin excepcion (Eve, 2026-08-28). Se aplica en un
+# bucle y no pegando la direccion trece veces a mano, porque el modo de falla
+# es justamente el olvido: estaba en los TRECE grupos vivos de Contacts y en
+# NINGUNA lista de codigo, asi que `seed_groups --dry-run` la marcaba para
+# SACAR de todos (verificado ese dia). Un capitan nuevo agregado manana hereda
+# esto solo; una linea literal por lista se olvida en el proximo alta.
+#
+# Ojo con lo que esto NO es: el envio expande el GRUPO VIVO de Contacts
+# (distro.recipients_for), asi que esto no cambia quien recibe hoy — arregla
+# las dos cosas que dependen del codigo, el fallback cuando el grupo no se
+# puede leer y lo que seed_groups escribe de vuelta en el grupo.
+ALWAYS = "eve@alphaletemarketing.com"
+for _lst in RECIPIENTS.values():
+    if ALWAYS.lower() not in {a.lower() for a in _lst}:
+        _lst.append(ALWAYS)
 
 
 def _to(key: str) -> str:

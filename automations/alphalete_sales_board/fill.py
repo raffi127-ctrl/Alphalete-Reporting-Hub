@@ -138,30 +138,45 @@ def free_roster_row(grid) -> Optional[int]:
     return None
 
 
-def near_matches(name: str, board_names: List[str], cutoff: float = 0.6) -> List[str]:
-    """Roster names close enough to `name` that adding a row might DUPLICATE a
-    person who is already there under a different spelling.
+def near_matches(name: str, board_names: List[str],
+                 cutoff: float = 0.85) -> List[str]:
+    """Board rows close enough that adding `name` might DUPLICATE somebody.
 
-    This is the guard that makes auto-adding safe. The matcher already tries
-    exact, unique-last-name and containment; what is left is the genuinely
-    ambiguous tail -- a nickname ('MIKE ORTIZ' vs 'Michael Ortiz'), a married
-    name, a typo. Adding a second row for someone who already has one splits
-    their week across two rows, and the totals still foot, so nobody notices.
-    When this returns anything, we do not add -- we say so and let a person
-    decide.
+    DEFAULT TO "NEW PERSON" (Megan 2026-08-27). This started at a 0.6 difflib
+    ratio and refused to add "Aaron Corona" because it scored 0.62 against
+    "Milagros Colon" — coincidental letters ("aron coron" / "agros colon"),
+    two entirely different people. A real rep then sold all day with no row
+    while the chat was told he "could be" somebody else.
+
+    The two mistakes are not symmetrical any more:
+      * refusing wrongly leaves a rep off the board, with nothing anyone can
+        do but notice and act;
+      * adding wrongly makes a duplicate row, which is now recoverable —
+        somebody types "Bo=Kelvinton" and remove_rep takes it back.
+    So the bar to refuse is deliberately high: a shared LAST NAME (Mike vs
+    Michael Ortiz), or near-identical spelling (0.85 — a typo or a missing
+    letter). Anything else is treated as a new person and gets a row.
     """
     import difflib
-    want = B._norm_name(name)
-    if not want:
+    want = _norm_name_raw(name)
+    w = want.split()
+    if not w:
         return []
-    norm = {B._norm_name(b): b for b in board_names}
-    close = difflib.get_close_matches(want, list(norm), n=3, cutoff=cutoff)
-    toks = set(want.split())
-    for n, orig in norm.items():
-        other = set(n.split())
-        if toks & other and n not in close:      # shares a first or last name
-            close.append(n)
-    return [norm[c] for c in close]
+    out = []
+    for b in board_names:
+        n = _norm_name_raw(b)
+        toks = n.split()
+        if not toks:
+            continue
+        same_last = w[-1] == toks[-1]
+        ratio = difflib.SequenceMatcher(None, want, n).ratio()
+        if same_last or ratio >= cutoff:
+            out.append(b)
+    return out
+
+
+def _norm_name_raw(s: str) -> str:
+    return B._norm_name(s)
 
 
 def add_rep(worksheet, grid, name: str) -> Tuple[Optional[int], str]:
@@ -283,3 +298,121 @@ def remove_rep(worksheet, grid, row: int, expected_name: str,
                  "automatically: " + "; ".join(carried)
                  + " -- put these on their real row by hand")
     return True, note
+
+
+# --- filling in a new rep's details (Raf, 2026-08-27) -----------------------
+# A row with only a name in it still needs a person to finish it. Raf asked for
+# the rest to be filled the same way he would:
+#   Trainer          the trainer's FIRST AND LAST name, though the classroom
+#                    block below the roster lists only a first name
+#   Field Status     "1st Wk" — they are, by definition
+#   Campaign         "Fiber"
+#   Team             the TRAINER'S team. "New start will always be on the same
+#                    team as their trainer" (Megan). Checked against the live
+#                    board: true for 34 of the 38 reps whose trainer is also on
+#                    the roster, and all four exceptions are Wk 3+ reps who have
+#                    since moved — so it is right at the moment it is written.
+#   Leadership Status "In Training", left EMPTY if it can't be established
+#   Start Date       the Monday of the board's own week
+#
+# Every column is found by its ROW-1 LABEL, never by index: row 3 says "REP"
+# over four different columns, so position here is meaningless.
+NEW_REP_FIELDS = ("Trainer", "Field Status", "Campaign", "Team",
+                  "Leadership Status", "Start Date")
+FIELD_STATUS_NEW = "1st Wk"
+CAMPAIGN_NEW = "Fiber"
+LEADERSHIP_NEW = "In Training"
+
+
+def meta_columns(grid) -> Dict[str, int]:
+    """{row-1 label: column} for the roster's detail columns."""
+    width = max(len(r) for r in grid[:3]) if grid else 0
+    out = {}
+    for c in range(1, width + 1):
+        label = " ".join(B.cell(grid, 1, c).split())
+        if label in NEW_REP_FIELDS:
+            out[label] = c
+    return out
+
+
+def classroom_trainer(grid, name: str) -> Tuple[str, str]:
+    """(trainer first name, note) from the classroom block under the roster."""
+    header = None
+    for r in range(B.last_rep_row(grid) + 1, len(grid) + 1):
+        cells = [" ".join(B.cell(grid, r, c).split()).lower() for c in range(1, 14)]
+        if "classroom" in cells and "trainers" in cells:
+            header = (r, cells.index("classroom") + 1, cells.index("trainers") + 1)
+            break
+    if not header:
+        return "", "no classroom block on this tab"
+    hrow, name_col, trainer_col = header
+    want = B._norm_name(name)
+    for r in range(hrow + 1, len(grid) + 1):
+        who = B.cell(grid, r, name_col).strip()
+        if who and B._norm_name(who) == want:
+            return B.cell(grid, r, trainer_col).strip(), ""
+    return "", "%r is not in the classroom block, so no trainer to read" % name
+
+
+def roster_match(grid, partial: str) -> Tuple[str, int, str]:
+    """(full name, row, note) for a trainer given as 'Pranish'."""
+    want = B._norm_name(partial)
+    if not want:
+        return "", 0, "no trainer name"
+    last = B.last_rep_row(grid)
+    hits = []
+    for r in range(B.SUB_ROW + 1, last + 1):
+        full = B.cell(grid, r, B.NAME_COL).strip()
+        if not full:
+            continue
+        toks = B._norm_name(full).split()
+        if B._norm_name(full) == want or (toks and want in toks) \
+                or B._norm_name(full).startswith(want + " "):
+            hits.append((full, r))
+    if len(hits) == 1:
+        return hits[0][0], hits[0][1], ""
+    if not hits:
+        return "", 0, "trainer %r matches nobody on the roster" % partial
+    return "", 0, ("trainer %r matches %d reps (%s) -- left blank"
+                   % (partial, len(hits), ", ".join(h[0] for h in hits[:3])))
+
+
+def new_rep_details(grid, name: str, day) -> Tuple[List[Dict], List[str]]:
+    """([{range,values}], notes) — the detail cells for a freshly added rep."""
+    cols = meta_columns(grid)
+    missing = [f for f in NEW_REP_FIELDS if f not in cols]
+    if missing:
+        return [], ["can't fill new-rep details: no %s column on this tab"
+                    % ", ".join(missing)]
+    row, note = B.find_rep_row(grid, name)
+    if row is None:
+        return [], [note]
+
+    monday = day - dt.timedelta(days=day.weekday())
+    values = {"Field Status": FIELD_STATUS_NEW,
+              "Campaign": CAMPAIGN_NEW,
+              "Leadership Status": LEADERSHIP_NEW,
+              "Start Date": "%d/%d/%d" % (monday.month, monday.day, monday.year)}
+    notes = []
+
+    first, why = classroom_trainer(grid, name)
+    if not first:
+        notes.append(why + " -- Trainer and Team left blank")
+    else:
+        full, trow, why2 = roster_match(grid, first)
+        if not full:
+            notes.append(why2 + " -- Trainer and Team left blank")
+        else:
+            values["Trainer"] = full
+            team = B.cell(grid, trow, cols["Team"]).strip()
+            if team:
+                values["Team"] = team
+            else:
+                notes.append("%s has no team on their own row -- Team left blank"
+                             % full)
+
+    updates = [{"range": _a1(row, cols[f]), "values": [[v]]}
+               for f, v in values.items()]
+    notes.append("filled %s" % ", ".join("%s=%s" % (k, v)
+                                         for k, v in sorted(values.items())))
+    return updates, notes

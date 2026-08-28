@@ -83,3 +83,19 @@ FOOTERS: Dict[dt.date, Dict[str, int]] = {
         "Verizon 5G selling VZ Wireless": 6,
     },
 }
+
+# --- weeks that have NO source at all ---------------------------------------
+# Not a repair: a record of a week nobody can fill, so the run reports it as a
+# known gap instead of failing every Friday over a PDF that does not exist.
+# The column is still created and left BLANK, exactly like the Apr-May 2026
+# outage weeks (Total Units reads 0.00 there too). Delete an entry the moment a
+# real source turns up and the week fills normally.
+NO_SOURCE: Dict[dt.date, str] = {
+    dt.date(2026, 8, 8): (
+        "Adriana ran no tracker for this week. The WE 8.15 by-day PDF does "
+        "restate it ('Previous Week Ending 8.8.26'), but the RANKED PDF's "
+        "footer column is 8.1.2026 — its AT&T NDS is 7046, which is 8/1's own "
+        "number, not 8/8's 6367. So AT&T NDS and the four 'Selling … Wireless' "
+        "rows have no source, and filling the other 8 rows would zero five real "
+        "ones. Found 2026-08-28."),
+}

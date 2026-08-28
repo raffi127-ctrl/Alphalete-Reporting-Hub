@@ -76,6 +76,14 @@ def _office_run_args(base_args, report_id: str):
     return list(base_args)
 
 
+def _latest_times_slot() -> str:
+    """The Times of Sales slot a Hub click means -- the most recent one that
+    has passed. Imported lazily so the Hub can render this card on a machine
+    that has never run the sweep."""
+    from automations.alphalete_sales_board import times_of_sales as _tos
+    return _tos.latest_slot() or "1:00 PM"
+
+
 def _office_metrics_card() -> dict:
     """ONE card for every per-office daily-metrics feed (Megan 2026-07-17 — was
     a card per office, and only Rashad + Aya ever had one, so the five offices
@@ -3720,6 +3728,135 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "times-of-sales",
+        "name": "Times of Sales",
+        "creator": "Claude",
+        # Ops, and a SEPARATE card from "Sales Text Updates" even though the
+        # same 5-minute sweep drives both. They answer different questions and
+        # fail independently: the sweep can be filling the board perfectly
+        # while the Times of Sales tab gets nothing (a renamed tab, a col A
+        # that ran out of dates), and folding it into the sweep's card would
+        # hide exactly that. One card, one thing a person can check.
+        "emoji": "\U0001F551",
+        "color": "#F59E0B",
+        "category": "\U0001F4F2 Ops",
+        "description": (
+            "Every half hour of the selling day, stamps the org's running "
+            "New Internet and Total Units into the 'Times of Sales' tab "
+            "— with the difference against YESTERDAY at that same clock "
+            "time — and texts the same three numbers to Alphalete "
+            "Partners."
+        ),
+        "breakdown": (
+            "WHAT IT IS FOR\n"
+            "Not the total — the board already carries that. The "
+            "**pace**: 12 units at 4pm means something different on a day "
+            "that had 8 at 4pm than on one that had 20. Every column is a "
+            "clock time, so today's row can be read straight across against "
+            "yesterday's.\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "**•** No extra login. It is handed the SaraPlus read the "
+            "**Sales Text Updates** sweep already did, so a snapshot costs "
+            "one Sheets read and one Sheets write.\n"
+            "**•** **New Internet** = Internet − Upgrades − "
+            "AIA. **Total Units** = New Internet + DTV + NL. Upgrades are "
+            "deliberately NOT counted, so this Total Units is smaller than "
+            "the leaderboard's TOTALS line, which does count them — two "
+            "different questions, both going to the same chat.\n\n"
+            "WHERE IT WRITES\n"
+            "**•** Workbook **Alphalete SALES BOARD 2025** → tab "
+            "**Times of Sales** → the row whose column A is today "
+            "(*'Thursday, August 27, 26'*) → the three columns under "
+            "that slot's time header. Columns are found by **header**, never "
+            "by position.\n"
+            "**•** **Delta** is today's Total Units minus yesterday's at "
+            "the same slot. Yesterday blank → the Delta cell is left "
+            "blank, never written as 0.\n\n"
+            "HOW OFTEN\n"
+            "**Every 30 minutes** — on the hour and the half hour. "
+            "Mon–Fri **1:00pm–9:00pm** (17 a day), Saturday "
+            "**12:00pm–6:30pm** (14), nothing on Sunday. Each one is a "
+            "row update and one text. Saturday's 12:00 and 12:30 are "
+            "**text only** — the tab has no column for them.\n\n"
+            "MISSED SLOTS ARE BACK-FILLED — UP TO A POINT\n"
+            "**•** If the runner was down, the blank slots before the "
+            "current one are filled with the current totals — a flat "
+            "line for that stretch, and right about what those cells are "
+            "for: tomorrow reads them to say *'yesterday at 2:30'*. It "
+            "stops at the first slot that already holds a number, and "
+            "never back-fills a Delta.\n"
+            "**•** At most **4 slots (two hours)**. Beyond that it is a "
+            "cold start, not a gap, and the rest are left **blank** on "
+            "purpose — stamping the current total across a whole "
+            "afternoon would have tomorrow comparing against a number "
+            "that never happened. The log names every slot it left "
+            "blank.\n\n"
+            "THE DATE COLUMN EXTENDS ITSELF\n"
+            "Column A used to be typed by hand and ended **2026-09-16**. "
+            "It is now kept **90 days ahead** automatically (append-only, "
+            "column A only). This mattered because of how it failed: when "
+            "the calendar ran out the texts kept arriving and stayed "
+            "correct, and only the tab quietly stopped filling.\n\n"
+            "RUNS ON LUCY 1\n"
+            "Inside the 5-minute sweep, so it inherits its pid lock and its "
+            "Chrome fencing. The slot is claimed BEFORE the scrape — a "
+            "scrape takes 30–60 seconds, and asking the clock afterwards "
+            "would stamp the 4:00 column with numbers read at 3:59. The Hub "
+            "pill is painted by the first good snapshot of the day, not by "
+            "all 34."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc/"
+                      "edit#gid=937816178"),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "alphalete_sales_board",
+        "schedule": {
+            "frequency": "daily",
+            # Mon-Sat. NOT [] -- an empty list reads as "never scheduled" and
+            # the didn't-run watcher would never notice this card go quiet.
+            "weekdays": [0, 1, 2, 3, 4, 5],
+            "time": "every 30 min, 1:00pm-9:00pm (Sat 12:00pm-6:30pm)",
+            "estimated_minutes": 2,
+        },
+        # A PHASE-COLOURED PILL, not the flat amber the always-on Ops cards
+        # carry (Megan 2026-08-27). Those are permanently orange because they
+        # report no run status at all; this one reports every snapshot, so the
+        # pill can do something better than sit still -- it ramps as the day
+        # fills in and reads green only once the last slot is in. Mon-Fri 17
+        # snapshots, Saturday 14; Sunday is absent because it does not run.
+        #
+        # NOT `phase_runs` and NOT `phases`: those are for a chain of DIFFERENT
+        # passes logging under different names. These are 17 repeats of one
+        # pass, which is the BG Check Sync case -- the same name N times, and
+        # it must still reach N.
+        "daily_runs": {"0": 17, "1": 17, "2": 17, "3": 17, "4": 17, "5": 14},
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Snapshot done — the slot is stamped on the Times of Sales tab.",
+            "message_failed": "❌ Snapshot failed. `lucy logtail alphalete-sales-board` on Lucy 1 to see why.",
+        },
+        "actions": [
+            {
+                "label": "Preview this slot (no writes)",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Reads SaraPlus and prints the cells that WOULD change and the text that WOULD go to Alphalete Partners. Writes nothing, texts nobody.",
+                "module": "automations.alphalete_sales_board.run",
+                "args_fn": lambda: ["--force", "--times-slot",
+                                    _latest_times_slot()],
+            },
+            {
+                "label": "Snapshot now + text",
+                "icon": "\U0001F4E3",
+                "help": "Stamps the most recent slot on the Times of Sales tab AND texts it to Alphalete Partners. Use when a slot was missed.",
+                "module": "automations.alphalete_sales_board.run",
+                "args_fn": lambda: ["--apply", "--send", "--force",
+                                    "--times-slot", _latest_times_slot()],
+            },
+        ],
+    },
+    {
         "id": "gap-alerts",
         "name": "Rep Gap Alerts (15-min gaps)",
         "creator": "Claude",
@@ -3727,13 +3864,23 @@ AUTOMATED_REPORTS = [
         "color": "#B91C1C",
         "category": "\U0001F4CA Metrics",
         "description": (
-            "Every 10 minutes of the selling day, texts the "
-            "\u201cReps Over 15 Min Gap\u201d card for Raf\u2019s office into "
-            "the **Alphalete Partners** chat \u2014 who has gone quiet, how "
-            "long, and when they last knocked. Nothing else: no activity "
-            "panel, no Slack, no thread."
+            "Every 10 minutes of the selling day, texts Raf\u2019s office "
+            "card into the **Alphalete Partners** chat: **Today\u2019s "
+            "Activity** (every rep and their knock count) over **Reps Over 15 "
+            "Min Gap** (who has gone quiet, how long, and when they last "
+            "knocked). One image, no Slack, no thread."
         ),
         "breakdown": (
+            "WHAT IS ON THE CARD \u2014 two panels, Carlos\u2019s order\n"
+            "**\u2022** **Today\u2019s Activity** \u2014 every rep and their "
+            "knock count for the day, a crop of OwnerVille\u2019s own "
+            "**p=88** panel. Added 2026-08-27: Raf asked for the knock numbers "
+            "he had seen on Carlos\u2019s post.\n"
+            "**\u2022** **Reps Over 15 Min Gap** \u2014 who has gone quiet, "
+            "how long, and when they last knocked.\n"
+            "If the activity screenshot fails the gap card still goes out "
+            "alone, under its old title \u2014 the gaps are the part that "
+            "pages people, the knock counts are context.\n\n"
             "WHERE THE NUMBERS COME FROM\n"
             "**\u2022** v2.ownerville.com \u2192 **Time Tracker (p=510)** "
             "\u2192 its own JSON feed "

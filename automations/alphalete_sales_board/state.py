@@ -56,7 +56,15 @@ def prune(data: Dict, keep: int = KEEP_DAYS) -> Dict:
     days = sorted(k for k in data if not k.startswith("_"))
     for k in days[-keep:]:
         out[k] = data[k]
-    for section in ("_records", "_lvl1_sent", "_added"):
+    # EVERY UNDERSCORE SECTION MUST BE NAMED HERE. prune() rebuilds the file
+    # from scratch, so a section it does not list is DELETED on the next save
+    # -- and '_hub' was missing, which is why the "publish the Hub pill once a
+    # day" marker never survived a single sweep: it was written, wiped by the
+    # next save, and re-published. The Hub Activity log carried 30 rows for
+    # this report on 2026-08-26, more than any other report on the Hub, all of
+    # them the same first-sweep-of-the-day row over and over.
+    for section in ("_records", "_lvl1_sent", "_added", "_times_sent",
+                    "_hub"):
         sub = data.get(section) or {}
         keys = sorted(sub)[-keep:]
         if keys:
@@ -116,6 +124,24 @@ def lvl1_sent(data: Dict, day: dt.date) -> bool:
 
 def mark_lvl1_sent(data: Dict, day: dt.date) -> Dict:
     data.setdefault("_lvl1_sent", {})[day.isoformat()] = True
+    return data
+
+
+# --- Times of Sales: which half-hour slots today has already had ------------
+# THE MARKER, NOT THE WINDOW, is what makes a slot fire exactly once. The
+# LaunchAgent ticks every 5 minutes from whenever it was loaded, never on the
+# half hour, so times_of_sales.due() has to accept a late tick -- which means
+# two ticks can both fall inside one slot's window, and only this list stops
+# the second from overwriting the first with a different reading.
+def times_sent(data: Dict, day: dt.date) -> List[str]:
+    return list((data.get("_times_sent") or {}).get(day.isoformat()) or [])
+
+
+def mark_times_sent(data: Dict, day: dt.date, label: str) -> Dict:
+    key = day.isoformat()
+    got = data.setdefault("_times_sent", {}).setdefault(key, [])
+    if label not in got:
+        got.append(label)
     return data
 
 

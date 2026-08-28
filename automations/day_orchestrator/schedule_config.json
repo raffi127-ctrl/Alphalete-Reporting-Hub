@@ -459,7 +459,7 @@
         "terminated_reps"
       ],
       "verify": null,
-      "timeout_minutes": 12,
+      "timeout_minutes": 45,
       "order": 50,
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
@@ -4081,9 +4081,9 @@
       "on_scheduler": false,
       "machine": "Lucy 2",
       "standalone_watch": false,
-      "_off_scheduler_note": "UTILITY, not a report: reads the classic 'Applicants -> Removed Apps at Processing' list for one office + date range and, with --live, clicks Restore on every row. Built 2026-08-27 for Carlos's question 'are applicants being removed instead of worked?' - restore a day's removals, then let applicant_push walk them and read the per-applicant outcome out of output/oat-activity-<date>-<office>.csv. DRY-RUN BY DEFAULT (scrapes the table to the 'Removed Apps <office>' Sheet tab and clicks nothing); --live restores. Restore is the SAFE direction of the pair - it puts an applicant BACK in the queue for the push to re-decide, and deletes nothing. cadence.weekdays [] = the 4am orchestrator never runs it; standalone_watch false so the missed-run watcher never expects it. source_type 'appstream' so rerun runs the chrome-guard first. Usage: lucy rerun restore_removed --office 23467 --start 08-24-2026 [--live]",
+      "_off_scheduler_note": "UTILITY, not a report: reads the classic 'Applicants -> Removed Apps at Processing' list for one office + date range and, with --live, clicks Restore on every row. Built 2026-08-27 for Carlos's question 'are applicants being removed instead of worked?' - restore a day's removals, then let applicant_push walk them and read the per-applicant outcome out of output/oat-activity-<date>-<office>.csv. DRY-RUN BY DEFAULT (scrapes the table to the 'Removed Apps <office>' Sheet tab and clicks nothing); --live restores. Restore is the SAFE direction of the pair - it puts an applicant BACK in the queue for the push to re-decide, and deletes nothing. cadence.weekdays [] = the 4am orchestrator never runs it; standalone_watch false so the missed-run watcher never expects it. source_type 'local' ON PURPOSE so rerun SKIPS the chrome-guard: close_stray_chrome only protects Chromes whose command line carries the 'automations/uploaded' marker, and the live push's CDP Chrome runs on --user-data-dir=/tmp/rp_cdp_<office>, so the guard would SIGTERM an in-flight walk mid-remove. This module launches + tears down its own Chrome on its own profile and needs no guard. Usage: lucy rerun restore_removed --office 23467 --start 08-24-2026 [--live]",
       "display_name": "Removed Apps \u2014 read / restore",
-      "source_type": "appstream",
+      "source_type": "local",
       "data_sources": [],
       "command": [
         "automations.oat_processing.restore_removed"
@@ -4097,6 +4097,27 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 60
+    },
+    "dump_activity": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "standalone_watch": false,
+      "_off_scheduler_note": "UTILITY: dump one office's per-applicant OAT activity CSV (output/oat-activity-<date>[-office].csv) to the 'OAT Activity <office>' Sheet tab so the mini can read per-name walk outcomes. No browser, no session, no sends - reads one CSV, writes one tab. Built 2026-08-27 for the removed-apps restore tally. source_type local (never touch the chrome guard). `lucy rerun dump_activity --office 23467 [--date YYYY-MM-DD]`",
+      "display_name": "OAT activity CSV \u2192 Sheet",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.applicant_push.dump_activity"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
     },
     "install_applicant_push_agent": {
       "on_scheduler": true,
@@ -4428,6 +4449,8 @@
     },
     "tracker_mirror": {
       "on_scheduler": false,
+      "standalone_watch": false,
+      "_standalone_watch_note": "Same gap as indeed_source_report: STOOD DOWN 2026-08-24 but still inside the watcher's historical baseline, so the \"didn't run today\" guess would keep paging about a deliberate stand-down until that history ages out. Drop this line when the report comes back.",
       "machine": "Lucy 1",
       "_machine_note": "Moved to Lucy 1 2026-08-23 (Megan) \u2014 born on Megan's laptop during the 8/22 workbook move (the building session ran there), so it only ran while her Mac was awake. Lucy 1 because the job is Sheets-API-only (no browser) AND needs the raffi127@ Sheets identity: it reads the OLD org tracker's still-authorized MIRROR tabs and writes the Recruiting Dashboard manager tabs. Lucy 3 is alphaletereporting@ (would 403, same trap as the 8/23 brand-audit incident) and Lucy 2 is Carlos's identity. Auth is funnel_board.auth (applicant service account first, personal token fallback).",
       "_note": "STOOD DOWN 2026-08-24 (Carlos, 5d4042b): the manager tabs are on live IMPORTRANGE again, so a ferry pass would overwrite those formulas with frozen values. The stand-down is the file automations/tracker_mirror/DISABLED \u2014 while it exists both run.py and deploy/tracker_mirror.sh refuse to run AND publish nothing to the Hub, so the card stays grey instead of falsely green. Delete it only if the live imports are torn back out. || Copies the 21 managers' ad-tracker values from the old org tracker (whose IMPORTRANGE grants survived the 8/22 tab move) into the manager tabs of the Alphalete Recruiting Dashboard. Runs every 2h 7:30 AM\u20135:30 PM via the standalone com.alphalete.tracker-mirror LaunchAgent (installed with install_tracker_mirror_agent). Never blanks on failure: an empty/#REF mirror keeps the previous values and is reported. Retire the whole job when all 21 managers re-Allow their IMPORTRANGEs in the new workbook. `lucy rerun tracker_mirror --dry-run` reads without writing.",
@@ -6647,6 +6670,28 @@
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 45,
+      "verify": null
+    },
+    "box_tpv_ledger": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY forensics + the TPV memory's long-term half. on_scheduler:false - never in the 4am batch. Walks output/box_order_log_<date>.csv (every raw Tableau pull since 2026-07-18; nothing deletes them) and records every sale key EVER seen at TPV or beyond into output/box_tpv_ledger.json, which box_order_log.run then unions with the six-week sheet memory. Built 2026-08-28 after El Meson Dona Tere (ctr 278285) showed TPV Passed on 8/14 and by 8/23 carried only Draft + Cancelled by Broker - the export ERASES a deal's TPV row, the history-reading sale gate then drops it, and it vanishes from the workbook and payout tables while the merged sheet keeps showing a stale TPV Passed. The sheet only remembers six weeks, so a deal erased before it aged off is recoverable ONLY from this archive. The ledger only GROWS (a rebuild unions), so a pruned archive can never shrink it, and it is written atomically via a .tmp rename - nothing regenerates it if lost, which is why it lives on disk rather than being recomputed. base_args --build --erased: rebuild, then LIST the deals the ledger vouches for that the newest crosstab no longer shows reaching TPV (the receipt for what got erased, and how far back). Touches no sheet, no Slack, no Tableau - source_type 'local' so rerun skips chrome_guard and cannot disturb box_order_log's CDP Chrome. MUST RUN ON LUCY 2: the archive lives in that machine's output/, so a laptop run truthfully reports one file. Registered 2026-08-28.",
+      "display_name": "BOX TPV ledger - rebuild from the archived crosstabs",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.box_order_log.tpv_ledger"
+      ],
+      "base_args": [
+        "--build",
+        "--erased"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
       "verify": null
     },
     "box_order_log_tier_backfill": {

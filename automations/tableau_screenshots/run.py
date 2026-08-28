@@ -57,6 +57,17 @@ from automations.tableau_screenshots import pages as pages_mod
 from automations.tableau_screenshots import capture as cap
 from automations.tableau_screenshots import slack_post as sp
 
+# OUR OWN Chrome profile. The shared one
+# (automations/uploaded/.browser_profile) is first-come, first-served, and a
+# launch that finds it taken waits for the holder — the three settle/box
+# schedule entries only get 20 minutes, so a collision used to mean being
+# killed mid-wait having captured nothing. This is the report the 2026-08-19
+# cascade ate six times in one morning for exactly that reason. Same escape
+# hatch as other_office_knocks and mobrium_list; the login comes from the
+# shared storage_state, not the profile, so a separate dir needs no seeding.
+PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
+               / ".browser_profile_trackers")
+
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "tableau_screenshots"
 
 # One manifest id PER ORG, or three runs would clobber each other's manifest and
@@ -928,7 +939,7 @@ def main(argv=None) -> int:
     if args.inspect:
         infos = []
         with tableau_session(headless=args.headless, allow_form_login=False,
-                             verbose=True) as page:
+                             verbose=True, profile_dir=PROFILE_DIR) as page:
             for spec in selected:
                 try:
                     infos.append(cap.inspect_view(page, spec, verbose=True))
@@ -1020,7 +1031,7 @@ def main(argv=None) -> int:
         # an email-only selection can't be blocked by a cold Tableau login.
         if tableau_specs:
             with tableau_session(headless=args.headless, allow_form_login=False,
-                                 verbose=True) as page:
+                                 verbose=True, profile_dir=PROFILE_DIR) as page:
                 tab_caps, tab_failed = _capture_all(tableau_specs, page, out_dir,
                                                     force_crop)
             captures += tab_caps

@@ -173,6 +173,9 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "install_enrollment_pending",
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
+                    # Writes a one-line identity marker, whitelisted and
+                    # idempotent — re-running it is a no-op, not a second write.
+                    "set_machine_profile",
                     "set_slack_token", "set_office_slack_token",
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
@@ -205,7 +208,8 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # FIXING them. Worse, the failure is quiet: the poller keeps running plumbing, so
 # `update` still succeeds and the queue looks alive while every rerun sits at
 # "queued" for hours. Reading a log should never spend a fix.
-READONLY_ACTIONS = {"logtail", "daystate", "git_status", "git_diff",
+READONLY_ACTIONS = {"push_appstream_fleet",
+                    "logtail", "daystate", "git_status", "git_diff",
                     "slack_channel", "slack_find", "slack_thread"}
 
 # --- lanes --------------------------------------------------------------------
@@ -538,9 +542,13 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # it; the rerun path didn't, so a rerun of a self-logging report wrote two
     # rows for one run — enough to fill a daily_runs>1 pill on a single phase
     # (Megan 2026-08-18). [[reference_phase_pill_id_match]]
+    # HUB_REPORT_TIMEOUT_S: same budget the timeout below enforces, so the
+    # Chrome profile lock never waits longer than this rerun is allowed to live
+    # (tableau_patchright._profile_wait_budget).
     ok, result = _run_cmd(cmd, timeout_s,
                           log_name=f"rerun-{stamp}-{report_id}.log",
-                          env={"HUB_REPORT_ID": str(report_id)})
+                          env={"HUB_REPORT_ID": str(report_id),
+                               "HUB_REPORT_TIMEOUT_S": str(timeout_s)})
 
     # A browser report killed at its timeout leaves its Chrome behind, still
     # holding the shared profile — so the NEXT rerun waits out the 30m profile
@@ -1229,6 +1237,67 @@ def _action_reseed_appstream(args: str) -> tuple[bool, str]:
     return ok, res + " (needs a human at the Cloudflare check on the mini)"
 
 
+def _action_appstream_renew_probe(args: str) -> tuple[bool, str]:
+    """Does USING the console renew its rqst token? Read-only diagnostic.
+
+    Settles the question the last ten AppStream fixes were built on top of
+    without checking. Navigates two report views, then runs an idle-reload
+    control in the same session, recording the token id at every step — see
+    automations.shared.appstream_renew_probe. Writes nothing, and yields the
+    profile immediately if a real report wants it.
+
+    NOT in READONLY_ACTIONS despite writing nothing: it takes the shared browser
+    profile, which is exactly what that lane promises not to touch.
+
+    Args: passed through, e.g. '--settle-min 10'."""
+    parts = (args or "").split()
+    cmd = [sys.executable, "-m", "automations.shared.appstream_renew_probe"] + parts
+    # DERIVE the timeout from the hold the caller asked for. A fixed 30 min
+    # killed the first near-expiry run at 08:31 on 2026-08-28 — it was asked to
+    # hold 58 min before navigating, which is the entire point of that flag, and
+    # the harness cut it off before it ever ran a step. A probe whose whole job
+    # is waiting must not be timed out by a constant that predates the waiting.
+    hold = 0.0
+    for flag in ("--pre-settle-min", "--settle-min"):
+        if flag in parts:
+            try:
+                hold += float(parts[parts.index(flag) + 1])
+            except (IndexError, ValueError):
+                pass
+    return _run_cmd(cmd, timeout_s=int((hold + 20) * 60),
+                    log_name="appstream-renew-probe.log")
+
+
+def _action_push_appstream_fleet(args: str) -> tuple[bool, str]:
+    """Push THIS machine's live AppStream session to every runner — no human.
+
+    Why this exists (Megan 2026-08-27: "I should not have to ever re-seed").
+    `--appstream-push-fleet` has always been able to do this, but only from a
+    keyboard, so it was treated as the second half of a HUMAN re-seed. It isn't:
+    it reads a saved session that already has a token and ships it. When Lucy 1
+    and Lucy 3 went tokenless for ten hours today, Lucy 2's holder was exporting
+    a live session the whole time, six minutes stale — the fix was sitting on the
+    fleet and there was no way to reach it except by asking a person to clear a
+    Turnstile that did not need clearing.
+
+    Read-only against the source machine, and the command refuses a session with
+    no rqst_ token, so it can never distribute a dead one. Each destination
+    installs + verifies its own copy (set_appstream_state) and blanks the
+    session from the queue when it finishes.
+
+    IN THE READ LANE on purpose, with one caveat worth naming: it does write —
+    the control-queue rows it enqueues on the other machines' tabs. What the
+    read lane actually protects is the shared browser profile and the reports
+    using it, and this touches neither. It has to be here, because the lane it
+    would otherwise sit in is exactly the one jammed behind a long backfill on
+    the night you need this most (Lucy 2, 2026-08-27)."""
+    cmd = [sys.executable, "-m", "automations.shared.tableau_patchright",
+           "--appstream-push-fleet"]
+    ok, res = _run_cmd(cmd, timeout_s=5 * 60, log_name="appstream-push-fleet.log")
+    return ok, res + (" — each machine installs + verifies its own copy"
+                      if ok else " — this machine has no live session to give")
+
+
 def _action_sheets_login(args: str) -> tuple[bool, str]:
     """The Sales Board SCREENSHOT profile — check it, or open its Google login.
 
@@ -1356,6 +1425,22 @@ def _action_set_appstream_state(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, (f"couldn't write {APPSTREAM_STORAGE_STATE.name}: "
                        f"{str(e).splitlines()[0][:120]}")
+    # RECORD THAT THIS TOKEN CAME FROM OUTSIDE (2026-08-28).
+    # The holder now logs "RENEWED" whenever the token id changes, and that line
+    # is the evidence the AppStream work is being steered by. But a token
+    # installed HERE by a fleet handoff changes the id exactly the same way, so
+    # a machine that cannot renew at all would still print RENEWED minutes after
+    # a donation landed — and we would read it as the self-heal working. That is
+    # the same defect as the old `AppStream ✓` that meant nothing, one level up.
+    # Leave a marker naming the id we installed so the holder can say RECEIVED.
+    try:
+        _ids = sorted(str(c.get("name", ""))[len("rqst_"):][:8]
+                      for c in json.loads(blob).get("cookies", [])
+                      if str(c.get("name", "")).startswith("rqst_"))
+        APPSTREAM_STORAGE_STATE.with_name(".appstream_donated_token").write_text(
+            "\n".join(_ids), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — a missing marker only costs log clarity
+        pass
     ok, res = _run_cmd(
         [sys.executable, "-m", "automations.shared.appstream_whoami"],
         timeout_s=20 * 60, log_name="appstream-whoami.log")
@@ -2755,6 +2840,73 @@ def _action_git_diff(args: str) -> tuple[bool, str]:
     n = len([l for l in body.splitlines() if l.startswith(("+", "-"))])
     return True, (f"{scope}: {n} changed line(s)\n{stat or '(no tracked edits)'}"
                   "\n· full: lucy logtail git-diff")
+
+
+_KNOWN_RUNNERS = ("Lucy 1", "Lucy 2", "Lucy 3")
+
+
+def _action_set_machine_profile(args: str) -> tuple[bool, str]:
+    """Write this runner's `.machine-profile` identity marker. Args: '<name>'.
+
+    WHY (2026-08-28). Lucy 1 is the ORIGINAL mini and predates the marker:
+    deploy/setup_lucy_machine.sh writes it, and only Lucy 2 and Lucy 3 were ever
+    set up by that script. Nothing noticed for months because almost every reader
+    — _machine_profile(), session_holder._this_machine() — defaults to "Lucy 1"
+    when the marker is missing, so the box behaved correctly by luck.
+
+    hub_identity.machine_name() deliberately does NOT: it falls back to the raw
+    HOSTNAME, so a non-runner (Megan's laptop) is never mislabeled "Lucy 1". That
+    is the right call, and it is why silent_job_watch.job_id_for_machine — which
+    uses it — resolved Lucy 1's orchestrator heartbeat to the job id
+    'orchestrator_heartbeat_alphaletes-mac-mini.local'. silent_job_watch rejected
+    it as unknown, beat() swallowed the error by design, and Lucy 1's watchdog
+    silently never stamped a beat while the watchdog itself ran perfectly. The
+    marker is the fix; loosening machine_name()'s fallback would let the laptop
+    stamp Lucy 1's row green, which is the exact failure this all exists to stop.
+
+    NARROW ON PURPOSE. Only a known runner name is accepted, and an existing
+    marker holding a DIFFERENT name is never overwritten — re-identifying a live
+    machine would repoint its control tab and hand it another runner's queue.
+    Re-writing the same name is a no-op, so this is safe to re-run.
+    """
+    name = (args or "").strip().strip("'\"").strip()
+    if not name:
+        return False, ("set_machine_profile needs '<name>' — one of: "
+                       + ", ".join(_KNOWN_RUNNERS))
+    match = next((r for r in _KNOWN_RUNNERS if r.lower() == name.lower()), None)
+    if not match:
+        return False, (f"'{name}' is not a known runner — expected one of: "
+                       + ", ".join(_KNOWN_RUNNERS))
+    existing = ""
+    try:
+        existing = _MACHINE_MARKER.read_text().strip()
+    except Exception:  # noqa: BLE001 — absent is the normal case here
+        pass
+    if existing and existing.lower() != match.lower():
+        return False, (f"refusing to overwrite: this machine is already marked "
+                       f"'{existing}'. Re-identifying a runner would repoint its "
+                       f"control tab — delete the marker by hand if that is "
+                       f"really the intent.")
+    if existing:
+        return True, f".machine-profile already says '{existing}' — nothing to do"
+    try:
+        _MACHINE_MARKER.write_text(match + "\n", encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write .machine-profile: {str(e).splitlines()[0][:120]}"
+    # Prove it through the SAME resolver the heartbeat uses, not by re-reading the
+    # file — the whole bug was that one caller resolved this differently.
+    try:
+        from automations.shared import hub_identity
+        from automations.shared import silent_job_watch as _sjw
+        seen = hub_identity.machine_name()
+        slug = _sjw.job_id_for_machine("orchestrator_heartbeat")
+        known = slug in _sjw.JOBS
+        return True, (f".machine-profile written as '{match}' · machine_name() now "
+                      f"resolves '{seen}' · heartbeat job id '{slug}' "
+                      f"{'IS' if known else 'is NOT'} a known job")
+    except Exception as e:  # noqa: BLE001
+        return True, (f".machine-profile written as '{match}' (verify step failed: "
+                      f"{type(e).__name__})")
 
 
 def _action_purge_login_test_profile(args: str) -> tuple[bool, str]:
@@ -6037,6 +6189,7 @@ ACTIONS = {
     "git_diff": _action_git_diff,
     "git_stash": _action_git_stash,
     "git_recover": _action_git_recover,
+    "set_machine_profile": _action_set_machine_profile,
     "purge_login_test_profile": _action_purge_login_test_profile,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
@@ -6094,6 +6247,8 @@ ACTIONS = {
     "box_backfill_pending": _action_box_backfill_pending,
     "post_nsf_correction": _action_post_nsf_correction,
     "reseed_appstream": _action_reseed_appstream,
+    "push_appstream_fleet": _action_push_appstream_fleet,
+    "appstream_renew_probe": _action_appstream_renew_probe,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
     "appstream_status": _action_appstream_status,

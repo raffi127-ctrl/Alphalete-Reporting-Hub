@@ -115,7 +115,12 @@ LOG_FILE="$LOG_DIR/applicant-push${OFFICE_SLUG}-$(date +%Y-%m-%d).log"
 # these in-process too; exporting them also covers the summary post below, which
 # runs as its own process).
 case "$OFFICE" in
-  11580) : ;;   # defaults are Carlos's — leave every env var unset
+  11580)
+    # Carlos 2026-08-27: in HIS office an applicant with no reachable number is
+    # LEFT IN THE QUEUE, never removed. offices.activate() sets this in-process;
+    # exported here too because the summary post runs as a separate process.
+    export OAT_REMOVE_NO_PHONE="0"
+    ;;
   23467)
     export OAT_OFFICE_ID="23467"
     export OAT_FILE_SUFFIX="-23467"
@@ -139,6 +144,25 @@ if [ "$DRYRUN" -eq 0 ]; then
   fi
   # -------------------------------------------------------------------------
 fi
+
+# ---- SELF-UPDATE FROM GITHUB (2026-08-27) -----------------------------------
+# GitHub is the only deploy channel that always works. The Mini Control queue is
+# a SINGLE-THREADED poller: on 2026-08-27 another session queued a 12-week
+# backfill and every `update` sat behind it for ~7 hours, so a fix that mattered
+# (the override-label bug — sendable applicants were being re-texted or removed)
+# could not reach this machine while the agent kept running the broken code every
+# 5 minutes. day_orchestrator.sh and harvest_3am.sh already self-update for the
+# same reason, but neither of them runs on every machine that runs THIS agent.
+#
+# So the push pulls its own code. Cheap (a fast-forward against an unchanged
+# remote is milliseconds), best-effort (a failure never blocks the run — we would
+# rather push resumes on yesterday's code than not push at all), and --autostash
+# because Lucy 2 has been blocked before by a file-MODE change with zero content
+# behind it (see day_orchestrator.sh's note).
+if [ -d .git ]; then
+  git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
+fi
+# -----------------------------------------------------------------------------
 
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 export NO_PROXY='*'

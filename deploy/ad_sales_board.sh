@@ -1,6 +1,8 @@
 #!/bin/bash
 # Ad Sales Board — the Source Report week by week (pull + names), refreshed
-# daily after applicant_tracker's 6:45 morning import lands yesterday's names.
+# EVERY TWO HOURS 07:50-21:50 (Carlos 2026-08-27). The 07:50 anchor is kept
+# because it lands after applicant_tracker's 6:45 morning import puts yesterday's
+# names in; the later passes pick up the day as it fills.
 #
 # Rewrites ONLY the current + previous ad-week (Wed→Tue) per office; older
 # weeks on 'Ad Sales Data' stay frozen. On Wednesdays it also flips the visible
@@ -22,6 +24,18 @@ if pgrep -f "automations.ad_sales_board.run" > /dev/null 2>&1; then
     echo "[$(date)] ad-sales-board SKIPPED — previous pass still running"
     exit 0
 fi
+
+# ---- SELF-UPDATE FROM GITHUB ------------------------------------------------
+# Same rule as applicant_push.sh and day_orchestrator.sh: GitHub is the deploy
+# channel that always works. The Mini Control queue is a single-threaded poller
+# and can sit blocked for hours behind one long report, so a job that now runs
+# every two hours must not depend on it to pick up a fix. Best-effort and
+# --ff-only: a failed pull leaves yesterday's code running rather than skipping
+# the refresh.
+if [ -d .git ]; then
+  git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
+fi
+# -----------------------------------------------------------------------------
 
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"

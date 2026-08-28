@@ -43,6 +43,19 @@ def test_two_different_people_are_not_the_same_row():
     assert R.same_person_already("Nima", "Hayden", BOARD) is None
 
 
+def test_ordinary_conversation_is_not_a_pairing():
+    # 2026-08-27: "This is what happened" was read as "This = what happened"
+    # and answered in front of the room. English uses "is" constantly; "=" is
+    # something people type on purpose.
+    for line in ("This is what happened", "Bo is Kelvinton", "that is correct",
+                 "this is the one that is wrong",
+                 "megan, can we get the column that shows total knocks"):
+        assert R.parse_pair(line) is None, line
+    for line in ("Kelvinton=Bo", "Bo = Kelvinton", "bo=kelvinton",
+                 "Miguel Angel Rivera = Mikey Ortiz"):
+        assert R.parse_pair(line), line
+
+
 def test_a_stray_line_resolves_to_nothing():
     who = R.resolve("lunch", "tacos", BOARD, PENDING)
     assert who[0] is None and "couldn't place" in who[2], who

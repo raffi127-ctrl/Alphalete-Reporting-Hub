@@ -257,6 +257,269 @@ def _pin_campaign(page, rqst: str, campaign_id: str) -> None:
              "campaign" % type(e).__name__)
 
 
+def titled(src: Path, title: str, out: Path) -> Path:
+    """Prepend a title bar whose text actually FITS the image.
+
+    cap.add_title_header draws at a fixed 30px and never measures, so on a
+    narrow panel the title runs off the right edge — Raf's PDF showed
+    "TODAY'S ACTIVITY — 6" with the time sliced off (Megan, 2026-08-27). Here
+    the font steps down until the text fits, and the bar grows or shrinks with
+    it, so the header scales to the panel instead of the panel having to be
+    wide enough for the header.
+    """
+    from PIL import Image, ImageDraw
+    im = Image.open(src).convert("RGB")
+    W = im.width
+    pad = max(12, W // 60)
+    size = max(11, min(34, W // 22))
+    f = cap._stitch_font(size)
+    probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    while size > 11:
+        f = cap._stitch_font(size)
+        if probe.textlength(title, font=f) <= W - pad * 2:
+            break
+        size -= 1
+    bar = int(size * 1.9)
+    canvas = Image.new("RGB", (W, bar + 8 + im.height), (255, 255, 255))
+    d = ImageDraw.Draw(canvas)
+    d.rectangle([0, 0, W, bar], fill=(32, 41, 57))
+    d.text((pad, (bar - size) // 2 - 2), title, font=f, fill=(255, 255, 255))
+    canvas.paste(im, (0, bar + 8))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out)
+    return out
+
+
+def _blank_rows(im, margin: int = 6):
+    """y -> True where a horizontal scanline is entirely background.
+
+    Both panels draw their rows as light boxes separated by a band of near-white
+    page. Those bands are the only safe place to cut, so find them by asking a
+    much simpler question than "where are the rows": is this whole scanline
+    light? Ignores a few pixels at each edge, where a panel border runs the full
+    height and would otherwise make every line look non-blank.
+    """
+    g = im.convert("L")
+    w, h = g.size
+    px = g.load()
+    x0, x1 = margin, max(margin + 1, w - margin)
+    step = max(1, (x1 - x0) // 160)          # sample, don't read every pixel
+    xs = list(range(x0, x1, step))
+    # A FRACTION, not "every pixel is light". The real OwnerVille panel has a
+    # container border and a scrollbar track running its full height, so an
+    # all-or-nothing test finds NO blank row anywhere and every cut falls back
+    # to a hard slice — which is exactly the severed-and-repeated row Raf saw.
+    # Allowing a couple of dark samples ignores those verticals while still
+    # rejecting any line that touches a name, a time or a count pill.
+    allow = max(1, len(xs) // 50)            # ~2% of the width may be dark
+    out = bytearray(h)
+    for y in range(h):
+        dark = 0
+        for x in xs:
+            if px[x, y] < 232:               # text, border, avatar or pill
+                dark += 1
+                if dark > allow:
+                    break
+        out[y] = 1 if dark <= allow else 0
+    return out
+
+
+def _bands(blank, lo: int, hi: int):
+    """[(top, bottom, thickness)] for every run of blank scanlines in [lo, hi)."""
+    out, y = [], max(0, lo)
+    hi = min(hi, len(blank))
+    while y < hi:
+        if blank[y]:
+            top = y
+            while y + 1 < hi and blank[y + 1]:
+                y += 1
+            out.append((top, y, y - top + 1))
+        y += 1
+    return out
+
+
+def _cut_at_row_boundary(blank, target: int, reach: int):
+    """Cut through the THICKEST blank band at or above `target`.
+
+    Thickest, not nearest, and that distinction is the whole fix. A row is not
+    solid: there is white space above and below the text INSIDE each row too,
+    so "nearest blank line" happily cuts through the middle of a rep and leaves
+    a half-drawn row — which is what Raf saw. The gap BETWEEN two rows is the
+    thickest blank run in any neighbourhood, so picking by thickness lands
+    between reps instead of inside one.
+
+    Returns (y, thickness); thickness 0 means nothing usable was found and the
+    caller should fall back to a hard cut.
+    """
+    bands = _bands(blank, target - reach, target + 1)
+    if not bands:
+        return target, 0
+    top, bottom, thick = max(bands, key=lambda b: (b[2], b[0]))
+    return (top + bottom) // 2, thick
+
+
+def _pages_for(im, max_aspect: float, overlap: int = 0):
+    """Slice one tall panel into page-sized pieces, cutting BETWEEN rows.
+
+    The first version cut at a fixed height and overlapped the pieces so a
+    severed row still appeared whole on the next page. It worked, and it looked
+    broken: Raf's PDF showed a half-drawn "Rep 13" dangling off one page and
+    the same rep repeated at the top of the next (Megan, 2026-08-27).
+
+    So the cut now snaps UP to the gap between two rows, and there is no
+    overlap at all — nothing is severed, so nothing needs repeating.
+    """
+    if im.height <= im.width * max_aspect:
+        return [im]
+    page_h = int(im.width * max_aspect)
+    blank = _blank_rows(im)
+    reach = max(40, page_h // 3)     # how far up we will hunt for a clean gap
+    out, top, cuts = [], 0, []
+    while top < im.height:
+        if top + page_h >= im.height:
+            out.append(im.crop((0, top, im.width, im.height)))
+            break
+        cut, thick = _cut_at_row_boundary(blank, top + page_h, reach)
+        if cut <= top + 20:          # nothing usable — hard cut, ugly but safe
+            cut, thick = top + page_h, 0
+        cuts.append(thick)
+        out.append(im.crop((0, top, im.width, cut)))
+        top = cut
+    if cuts:
+        # Visible in the run log so a bad split can be diagnosed without
+        # fetching the PNG off the runner. A 0 means that page break had to be
+        # cut blind, which is the only way a row gets severed now.
+        _log("  sliced into %d page(s); gap found at each break: %s px"
+             % (len(out), ", ".join(str(c) for c in cuts)))
+    return out
+
+
+def to_pdf(panel_paths, out_pdf: Path) -> Path:
+    """Turn the panels into a multi-page PDF, one panel after another.
+
+    WHY A PDF AT ALL: Messages renders a tall narrow image inline as a sliver
+    you cannot read (Raf, 2026-08-27). A PDF opens full-screen and zooms.
+
+    WHY SLICED: a single 700x2900 page would open zoomed-to-fit and be just as
+    unreadable — it would only move the squinting from Messages into Preview.
+
+    TWO THINGS COPIED FROM owner_chat_texts.pdf_build, which has been sending
+    Raf a tracker PDF every morning since 2026-08-23 — both learned the hard
+    way there, and both would bite exactly the same way here:
+
+    * **PyMuPDF, not PIL.** PIL's PDF writer re-encodes every page through its
+      JPEG codec — lossy, on an image whose entire value is small text and
+      colour-coded count badges — and not every Pillow build even carries that
+      codec (Megan's laptop does not). fitz embeds the PNGs losslessly.
+    * **EVERY page gets the SAME width.** PDF viewers pick one zoom for the
+      whole document and fit the WIDEST page, so mixing the roster screenshot's
+      width with the narrower gap card would shrink the gap card to a fraction
+      of the screen. Raf's exact complaint about the other PDF was "pretty
+      zoomed out"; this is what caused it.
+    """
+    import fitz
+    from PIL import Image
+
+    PAGE_W = 800.0
+    tmp_dir = out_pdf.parent / "_pdf_pages"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    slices = []
+    for i, p in enumerate(panel_paths):
+        p = Path(p)
+        if not p.exists():
+            continue
+        im = Image.open(p).convert("RGB")
+        for j, piece in enumerate(_pages_for(im, C.PDF_MAX_ASPECT)):
+            sp = tmp_dir / ("page_%02d_%02d.png" % (i, j))
+            piece.save(sp)          # PNG all the way to fitz — never re-encoded
+            slices.append(sp)
+    if not slices:
+        raise RuntimeError("no panels to put in the PDF")
+
+    out_pdf.parent.mkdir(parents=True, exist_ok=True)
+    doc = fitz.open()
+    for sp in slices:
+        pix = fitz.Pixmap(str(sp))
+        page = doc.new_page(width=PAGE_W,
+                            height=PAGE_W * pix.height / pix.width)
+        page.insert_image(page.rect, pixmap=pix)
+        pix = None
+    doc.save(str(out_pdf), deflate=True)
+    doc.close()
+    return out_pdf
+
+
+def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
+    """Screenshot Today's Activity (p=88) — the rep list with knock badges.
+
+    A SCREENSHOT and not a redraw, unlike the gap card: this panel renders fine
+    under patchright (it is the gap WIDGET that does not), so a crop of the real
+    page is both cheaper and always matches what Raf sees when he opens
+    OwnerVille himself.
+
+    Returns the PNG path, or None — a failure here must never cost the gap card,
+    which is the part that pages people.
+    """
+    try:
+        # Navigating WITH the campaign id also re-pins the sticky session
+        # campaign, the same way weekly_knock_dispositions pins it off p=88.
+        url = ("https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
+               % (C.PAGE_TODAYS_ACTIVITY, rqst))
+        if cfg.get("campaign_id"):
+            url += "&invD2DClientId=%s" % cfg["campaign_id"]
+        page.goto(url, wait_until="networkidle", timeout=45000)
+
+        # THE DATEPICKER PERSISTS A STALE DATE. It holds whatever day the
+        # session last looked at — b2b_dispositions found it stuck three weeks
+        # back — and the rep list quietly follows it. Nothing errors; the
+        # numbers are just the wrong day's. Force today and let the list
+        # refresh before shooting.
+        page.evaluate(
+            "(mdy)=>{ for(const i of document.querySelectorAll('input')){"
+            " if(/date/i.test(i.name||i.id||'')){ i.value=mdy;"
+            " i.dispatchEvent(new Event('input',{bubbles:true}));"
+            " i.dispatchEvent(new Event('change',{bubbles:true})); } } }",
+            dt.datetime.now().strftime("%m/%d/%Y"))
+        page.wait_for_timeout(3500)
+
+        out = out_dir / ("activity_%s.png" % cfg["key"])
+        how = cap._shoot(page, out, kind="todays_activity",
+                         fixed=cap.CROP_TODAYS_ACTIVITY, pad_bottom=36)
+        # PROVE the resolution rather than assume it. Sharpness has now been
+        # "fixed" twice without anyone being able to see whether the pixels
+        # actually arrived; a dpr that reads 1 when CAPTURE_DEVICE_SCALE is 3
+        # is the whole answer, visible in one log line.
+        try:
+            dpr = page.evaluate("() => window.devicePixelRatio")
+        except Exception:
+            dpr = "?"
+        try:
+            from PIL import Image
+            dims = "%dx%d" % Image.open(out).size
+        except Exception:
+            dims = "?"
+        want = C.CAPTURE_DEVICE_SCALE
+        flag = "" if dpr == want else ("  ⚠ WANTED %s — the capture is NOT at "
+                                       "full resolution" % want)
+        _log("  activity: dpr=%s (want %s) crop=%s png=%s%s"
+             % (dpr, want, how, dims, flag))
+        # THE KNOCK BADGES SIT AT THE RIGHT EDGE OF THIS PANEL, so how we
+        # cropped decides whether they survive. 'box' measures the live element
+        # and keeps the whole row. 'fixed' is the fallback and clips at a hard
+        # 720 image-px, which on a 2x display is only ~360 CSS px — far enough
+        # left to cut the green and grey pills off entirely, leaving a list of
+        # names with no numbers and NO error to say so. Say it loudly instead.
+        if how != "box":
+            _log("  ⚠ crop fell back to %r — the knock badges sit at the right "
+                 "edge and may be CLIPPED. Check the card." % how)
+        return out
+    except Exception as e:  # noqa: BLE001
+        _log("  today's activity SKIPPED (%s: %s) — sending the gap card alone"
+             % (type(e).__name__, str(e)[:160]))
+        return None
+
+
 def gap_rows(page, cfg: Dict, day: dt.date) -> List[Dict]:
     """Reps over the gap threshold for one office, newest-inactive last.
 
@@ -296,18 +559,54 @@ def gap_rows(page, cfg: Dict, day: dt.date) -> List[Dict]:
     return over
 
 
-def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str) -> Path:
+def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str,
+           activity_png=None) -> Path:
     """The card, with its own title bar. ONE image per tick and no accompanying
     text: send_to_group would post the caption as a second message, and over a
     day of ticks that doubles what the room scrolls past. The time lives on
-    the card instead, so a reader can tell a fresh one from one that scrolled."""
+    the card instead, so a reader can tell a fresh one from one that scrolled.
+
+    TWO PANELS since 2026-08-27, in Carlos's order — Today's Activity (every
+    rep and their knock count) on top, the gap card underneath. Raf asked for
+    the knock numbers he had seen on Carlos's post.
+
+    If the activity screenshot failed we fall back to the single titled gap
+    card rather than sending nothing: the gaps are the part that pages people,
+    and the knock counts are context."""
     out_dir.mkdir(parents=True, exist_ok=True)
     bare = out_dir / ("gaps_%s_raw.png" % cfg["key"])
-    cap.render_gap_card(reps, bare)
+    cap.render_gap_card(reps, bare, scale=C.CARD_RENDER_SCALE)
     who = (" — %s" % cfg["label"]) if cfg.get("label") else ""
-    titled = out_dir / ("gaps_%s.png" % cfg["key"])
-    return cap.add_title_header(bare, "%s%s — %s" % (C.CARD_TITLE, who, slot),
-                                titled)
+    out = out_dir / ("gaps_%s.png" % cfg["key"])
+
+    if activity_png is not None and Path(activity_png).exists():
+        titled_gaps = titled(bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot),
+                             out_dir / ("gaps_%s_titled.png" % cfg["key"]))
+        titled_act = titled(
+            Path(activity_png),
+            "%s%s — %s" % (C.PANEL_TODAYS_ACTIVITY, who, slot),
+            out_dir / ("activity_%s_titled.png" % cfg["key"]))
+        if C.SEND_AS_PDF:
+            try:
+                # Activity first, gaps second — Carlos's order, and the order
+                # Raf saw. Each panel keeps its own header page-to-page.
+                return to_pdf([titled_act, titled_gaps],
+                              out_dir / ("gaps_%s.pdf" % cfg["key"]))
+            except Exception as e:  # noqa: BLE001
+                _log("  PDF build failed (%s) — falling back to the stitched "
+                     "image" % type(e).__name__)
+        try:
+            return cap.stitch_vertical(
+                [(C.PANEL_TODAYS_ACTIVITY, Path(activity_png)),
+                 (C.PANEL_GAPS, bare)],
+                title="%s%s — %s" % (C.CARD_TITLE, who, slot), out_path=out)
+        except Exception as e:  # noqa: BLE001
+            _log("  stitch failed (%s) — gap card only" % type(e).__name__)
+    # Gap-only keeps the OLD title: the room has been reading
+    # "REPS OVER 15 MIN GAP" all along, and a card missing its knocks panel
+    # should not claim to carry knocks.
+    return cap.add_title_header(
+        bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot), out)
 
 
 def tick(day: dt.date, *, send: bool, only: str = "",
@@ -327,7 +626,18 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     failures = []
     seen_names = []
     with ownerville_session(headless=headless, verbose=False,
-                            profile_dir=C.PROFILE_DIR) as page:
+                            profile_dir=C.PROFILE_DIR,
+                            device_scale=C.CAPTURE_DEVICE_SCALE,
+                            window_size=C.capture_window()) as page:
+        # NO set_viewport_size HERE, deliberately. The context is launched with
+        # no_viewport (a real window) plus --force-device-scale-factor, and
+        # setting a viewport switches the page to emulated-viewport mode, which
+        # resets the device scale to 1. That is why the drawn gap card came out
+        # sharp at 3x while the SCREENSHOT above it stayed soft — the card is
+        # ours to scale, the screenshot silently lost the flag (Raf,
+        # 2026-08-27: "the top section is still blurry, the bottom is great").
+        # Viewport height never mattered anyway: _shoot takes a full_page shot,
+        # which captures the whole scroll height regardless of what is in frame.
         for cfg in offices:
             try:
                 reps = gap_rows(page, cfg, day)
@@ -352,7 +662,12 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                 continue
 
             seen_names += [str(r.get("name") or "").strip() for r in reps]
-            png = render(cfg, reps, out_dir, slot)
+            # Captured only after the duplicate guard has let this tick
+            # through — no point screenshotting a roster for a card that is
+            # about to be skipped.
+            activity = capture_activity(page, cfg, cap.capture_rqst(page),
+                                        out_dir)
+            png = render(cfg, reps, out_dir, slot, activity_png=activity)
             _log("%s: %d rep(s) over %d min -> %s"
                  % (cfg["key"], len(reps), C.GAP_THRESHOLD_MIN, png.name))
             try:
