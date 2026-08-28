@@ -671,6 +671,23 @@ def main(argv=None) -> int:
     # the command that was supposed to send it exits 0. The Thursday agent is
     # unaffected: dd_bulletin_thu.sh runs --post and --check as separate passes.
     if args.post and not args.check:
+        # ALREADY POSTED -> stop here, and in particular do NOT touch Drive.
+        # post_review is idempotent, but it only learns the week is already up
+        # AFTER upload_pdf has rebuilt and re-uploaded the PDF, so every pass
+        # after the one real post was re-uploading a bulletin that had already
+        # gone out. On Thu 2026-08-27 the 19:00 pass died mid-upload with a
+        # BrokenPipeError (upload_pdf, line ~217) on a week that was posted,
+        # approved by Evelyn and MAILED hours earlier: a pointless re-upload
+        # exited 1, painted the Hub card red and opened a failure incident for a
+        # report that had done its job. One Slack read up front removes the
+        # whole surface -- 15 of the 16 Thursday passes now touch nothing.
+        # --repost still rebuilds, on purpose: that flag exists to replace the
+        # message, so it has to produce a fresh PDF to point at.
+        if not args.repost and _all_posts(today, args.channel):
+            print(f"- {_title(today)} is already posted; nothing to do "
+                  f"(--refresh to update the PDF, --repost to replace the "
+                  f"message)", flush=True)
+            return 0
         # HOLD instead of posting when Eve has not opened the week's column yet.
         # The week the bulletin carries is POSITIONAL — the leftmost week header
         # on the tab — and nothing here rolls it, so an unfilled tab leaves LAST
