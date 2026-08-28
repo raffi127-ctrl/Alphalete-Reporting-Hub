@@ -1357,6 +1357,19 @@ _BLOCK_SIGNS = (
     "just a moment", "verify you are human", "checking your browser",
     "attention required", "access denied", "enable javascript",
 )
+# Checked against the TITLE ONLY. Indeed answers a blocked client with a page
+# titled "Blocked - Indeed.com" that carries a normal-length body, so it passed
+# every existing gate: no Cloudflare phrase, no sign-in phrase, body over the
+# 200-char floor. The read was therefore filed as "the resume opened and has no
+# number" — the CONFIRMED-uncontactable verdict. That verdict caches the
+# applicant for the rest of the day and, in an office with REMOVE_NO_PHONE on
+# (Atef's 23467), REMOVES them for "Incorrect / Insufficient Contact Info".
+# So a block on our side was costing applicants their record.
+# Seen for real on 2026-08-27/28: a headless walker gets this on every resume.
+# Title-only on purpose: a résumé body can legitimately contain the word
+# "blocked" (a candidate who "blocked out schedules"), and matching that would
+# turn every such resume into a permanent retry.
+_BLOCK_TITLE_SIGNS = ("blocked", "forbidden", "403", "too many requests", "429")
 _SIGNIN_SIGNS = (
     "sign in to your account", "employer sign in", "sign in with google",
     "create your account", "log in to indeed", "sign in to indeed",
@@ -1379,6 +1392,9 @@ def _blocked_reason(title: str, body: str) -> str:
     for sign in _BLOCK_SIGNS:
         if sign in t or sign in b:
             return "cloudflare challenge never cleared"
+    for sign in _BLOCK_TITLE_SIGNS:
+        if sign in t:
+            return f"indeed blocked the read (title says {sign!r})"
     for sign in _SIGNIN_SIGNS:
         if sign in b:
             return "indeed sign-in wall"
