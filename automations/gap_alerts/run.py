@@ -154,6 +154,54 @@ def _mark_sent(key: str) -> None:
     _save_state(data)
 
 
+def _previous_gap_names(key: str, day: dt.date):
+    """(names, is_first_list_of_the_day).
+
+    DAY-SCOPED on purpose. Two different bugs live here otherwise:
+      * carrying yesterday's names into today would suppress the clock on
+        someone who is dark again this morning — exactly the person to text;
+      * treating the day's FIRST list as all-new marks all twenty at once,
+        which is not a signal. The first list is the baseline; from then on the
+        clock means what Raf asked it to mean, "this one just appeared".
+    """
+    rec = (_state().get("_gap_names") or {}).get(key) or {}
+    if rec.get("day") != day.isoformat():
+        return set(), True
+    return set(rec.get("names") or []), False
+
+
+def _remember_gap_names(key: str, day: dt.date, names) -> None:
+    """Recorded only on a SEND. If a skipped tick updated this, the people who
+    joined the list while we were quiet would never be marked."""
+    data = _state()
+    data.setdefault("_gap_names", {})[key] = {"day": day.isoformat(),
+                                              "names": sorted(names)}
+    _save_state(data)
+
+
+def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False):
+    """The message Raf asked for, and the set of names on it.
+
+    ALPHABETICAL by name — his example listing is alphabetical, and the point
+    is no longer "who is worst" (the ordering) but "who just appeared" (the
+    emoji). Returns (text, names); text is "" when nobody is over, so a quiet
+    stretch sends no list at all rather than a header with nothing under it.
+    """
+    lines, names = [], []
+    for r in sorted(gaps, key=lambda r: (r.get("name") or "").strip().lower()):
+        name = (r.get("name") or "").strip()
+        if not name:
+            continue
+        names.append(name)
+        mins = cap._int(r.get("minutesSinceLastKnock"))
+        new = not first_of_day and name not in previous
+        mark = (" " + C.GAP_NEW_EMOJI) if new else ""
+        lines.append("%s - %d minutes%s" % (name, mins, mark))
+    if not lines:
+        return "", []
+    return C.GAP_TEXT_HEADER + "\n\n" + "\n".join(lines), names
+
+
 def _publish_hub_once(day: dt.date) -> None:
     """The first good tick of the day paints the card; every later tick stays
     quiet. A green pill repainted all afternoon would say nothing.
@@ -450,168 +498,130 @@ def to_pdf(panel_paths, out_pdf: Path) -> Path:
     return out_pdf
 
 
-def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
-    """Screenshot Today's Activity (p=88) — the rep list with knock badges.
+def gap_rows(cfg: Dict, day: dt.date) -> List[Dict]:
+    """Reps over the gap threshold right now, longest-dark first.
 
-    A SCREENSHOT and not a redraw, unlike the gap card: this panel renders fine
-    under patchright (it is the gap WIDGET that does not), so a crop of the real
-    page is both cheaper and always matches what Raf sees when he opens
-    OwnerVille himself.
+    KEPT AS ITS OWN SECTION (Raf via Megan, 2026-08-28: the knocks board
+    replaces the Today's Activity panel, "the bottom over 15 min gap" stays
+    separate). It is not redundant with the board's Gaps columns: those are
+    the day's CUMULATIVE gap totals, this is who is dark at this minute. One is
+    a scorecard, the other is the alert, and merging them would lose the alert.
 
-    Returns the PNG path, or None — a failure here must never cost the gap card,
-    which is the part that pages people.
+    Its own short ownerville session, because pull_board's session belongs to
+    pull_offices_days and is already closed by the time we get here.
     """
-    try:
-        # Navigating WITH the campaign id also re-pins the sticky session
-        # campaign, the same way weekly_knock_dispositions pins it off p=88.
-        url = ("https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
-               % (C.PAGE_TODAYS_ACTIVITY, rqst))
-        if cfg.get("campaign_id"):
-            url += "&invD2DClientId=%s" % cfg["campaign_id"]
-        page.goto(url, wait_until="networkidle", timeout=45000)
-
-        # THE DATEPICKER PERSISTS A STALE DATE. It holds whatever day the
-        # session last looked at — b2b_dispositions found it stuck three weeks
-        # back — and the rep list quietly follows it. Nothing errors; the
-        # numbers are just the wrong day's. Force today and let the list
-        # refresh before shooting.
-        page.evaluate(
-            "(mdy)=>{ for(const i of document.querySelectorAll('input')){"
-            " if(/date/i.test(i.name||i.id||'')){ i.value=mdy;"
-            " i.dispatchEvent(new Event('input',{bubbles:true}));"
-            " i.dispatchEvent(new Event('change',{bubbles:true})); } } }",
-            dt.datetime.now().strftime("%m/%d/%Y"))
-        page.wait_for_timeout(3500)
-
-        out = out_dir / ("activity_%s.png" % cfg["key"])
-        how = cap._shoot(page, out, kind="todays_activity",
-                         fixed=cap.CROP_TODAYS_ACTIVITY, pad_bottom=36)
-        # PROVE the resolution rather than assume it. Sharpness has now been
-        # "fixed" twice without anyone being able to see whether the pixels
-        # actually arrived; a dpr that reads 1 when CAPTURE_DEVICE_SCALE is 3
-        # is the whole answer, visible in one log line.
-        try:
-            dpr = page.evaluate("() => window.devicePixelRatio")
-        except Exception:
-            dpr = "?"
-        try:
-            from PIL import Image
-            dims = "%dx%d" % Image.open(out).size
-        except Exception:
-            dims = "?"
-        want = C.CAPTURE_DEVICE_SCALE
-        flag = "" if dpr == want else ("  ⚠ WANTED %s — the capture is NOT at "
-                                       "full resolution" % want)
-        _log("  activity: dpr=%s (want %s) crop=%s png=%s%s"
-             % (dpr, want, how, dims, flag))
-        # THE KNOCK BADGES SIT AT THE RIGHT EDGE OF THIS PANEL, so how we
-        # cropped decides whether they survive. 'box' measures the live element
-        # and keeps the whole row. 'fixed' is the fallback and clips at a hard
-        # 720 image-px, which on a 2x display is only ~360 CSS px — far enough
-        # left to cut the green and grey pills off entirely, leaving a list of
-        # names with no numbers and NO error to say so. Say it loudly instead.
-        if how != "box":
-            _log("  ⚠ crop fell back to %r — the knock badges sit at the right "
-                 "edge and may be CLIPPED. Check the card." % how)
-        return out
-    except Exception as e:  # noqa: BLE001
-        _log("  today's activity SKIPPED (%s: %s) — sending the gap card alone"
-             % (type(e).__name__, str(e)[:160]))
-        return None
-
-
-def gap_rows(page, cfg: Dict, day: dt.date) -> List[Dict]:
-    """Reps over the gap threshold for one office, newest-inactive last.
-
-    Sorted by MINUTES INACTIVE, longest first -- not alphabetically like the
-    B2B card. On a five-minute tick the person who has been dark for two hours
-    is the whole point of the message, and a phone shows the top of an image.
-    """
-    rqst = cap.capture_rqst(page)
-    impersonated = False
-    if cfg.get("ov") == "impersonate":
-        # Dead for Raf (his login IS office 11280) and live the day a second
-        # office is added. Impersonation is ALWAYS exited in the finally below,
-        # or the next office on this page reads the previous one's numbers.
-        from automations.focus_office_att.aliases import load_aliases
-        from automations.focus_office_att.run_all_owners import (
-            _exit_impersonation, _find_owner_and_impersonate,
-            _navigate_to_office_access)
-        _exit_impersonation(page)
-        _navigate_to_office_access(page)
-        rqst, reason = _find_owner_and_impersonate(page, cfg["name"],
-                                                   load_aliases())
-        if not rqst:
-            raise RuntimeError("Couldn't impersonate %r: %s"
-                               % (cfg["name"], reason))
-        impersonated = True
-    try:
-        _pin_campaign(page, rqst, cfg.get("campaign_id", ""))
-        rows = cap.fetch_time_tracking(page, rqst, day.strftime("%m/%d/%Y"))
-    finally:
-        if impersonated:
+    from automations.shared.tableau_patchright import ownerville_session
+    with ownerville_session(headless=True, verbose=False,
+                            profile_dir=C.PROFILE_DIR) as page:
+        rqst = cap.capture_rqst(page)
+        impersonated = False
+        if cfg.get("ov") == "impersonate":
+            # Dead for Raf (his login IS office 11280) and live the day a
+            # second office is added. ALWAYS exited in the finally, or the next
+            # office reads the previous one's numbers.
+            from automations.focus_office_att.aliases import load_aliases
             from automations.focus_office_att.run_all_owners import (
-                _exit_impersonation)
+                _exit_impersonation, _find_owner_and_impersonate,
+                _navigate_to_office_access)
             _exit_impersonation(page)
+            _navigate_to_office_access(page)
+            rqst, reason = _find_owner_and_impersonate(page, cfg["name"],
+                                                       load_aliases())
+            if not rqst:
+                raise RuntimeError("Couldn't impersonate %r: %s"
+                                   % (cfg["name"], reason))
+            impersonated = True
+        try:
+            _pin_campaign(page, rqst, cfg.get("campaign_id", ""))
+            rows = cap.fetch_time_tracking(page, rqst,
+                                           day.strftime("%m/%d/%Y"))
+        finally:
+            if impersonated:
+                from automations.focus_office_att.run_all_owners import (
+                    _exit_impersonation)
+                _exit_impersonation(page)
     over = [r for r in rows
             if cap._int(r.get("minutesSinceLastKnock")) > C.GAP_THRESHOLD_MIN]
     over.sort(key=lambda r: -cap._int(r.get("minutesSinceLastKnock")))
     return over
 
 
-def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str,
-           activity_png=None) -> Path:
-    """The card, with its own title bar. ONE image per tick and no accompanying
-    text: send_to_group would post the caption as a second message, and over a
-    day of ticks that doubles what the room scrolls past. The time lives on
-    the card instead, so a reader can tell a fresh one from one that scrolled.
+def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
+    """Pull Raf's office for TODAY and render the knock board. -> (pngs, rows).
 
-    TWO PANELS since 2026-08-27, in Carlos's order — Today's Activity (every
-    rep and their knock count) on top, the gap card underneath. Raf asked for
-    the knock numbers he had seen on Carlos's post.
+    This is the board Raf pointed at in his Loom (2026-08-28): the columns off
+    OwnerVille's **Disposition by Rep** export — Total Knocks, Total Talk To's,
+    First/Last Knock, Total Gaps, Avg Hrs Knocking, then the disposition
+    breakdown — in the same colours as the daily board he already gets in
+    Slack. No Rep ID column; he dropped it.
 
-    If the activity screenshot failed we fall back to the single titled gap
-    card rather than sending nothing: the gaps are the part that pages people,
-    and the knock counts are context."""
+    NOTHING NEW IS SCRAPED OR DRAWN HERE. knocks_intraday already builds this
+    exact board for the CURRENT day, so this calls the same pull and the same
+    renderer. What is different is only the trigger (every 15 minutes) and the
+    destination (the Alphalete Partners chat).
+
+    The office is pulled through `pull_offices_days`, which checks
+    `is_master_office` first: on Lucy 1 the login IS Raf's office, and
+    impersonating yourself fails — that check is why this works for him and why
+    the WKD probe never could.
+    """
+    from automations.rashad_metrics.knocks_pull import pull_offices_days
+    from automations.total_knocks import render as knocks_render
+    from automations.knocks_intraday.run import _date_text, first_name
+
+    pulled = pull_offices_days([(cfg["name"], [day])], verbose=False,
+                               profile_dir=str(C.PROFILE_DIR))
+    _name, by_day, err = pulled[0]
+    if err is not None:
+        raise err
+    rows = by_day.get(day) or []
+    if not rows:
+        return [], []
+
+    pngs, shape = knocks_render.render_knocks_boards(
+        day, rows=rows, out_dir=out_dir / cfg["key"],
+        title_suffix=first_name(cfg.get("label") or cfg["name"]),
+        date_text=_date_text(day))
+    _log("  %s: %d rep(s) -> %s (%s)"
+         % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
+    return list(pngs), rows
+
+
+def render(cfg: Dict, pngs, out_dir: Path, slot: str) -> Path:
+    """The board(s) as ONE PDF — the "flyer" half of the post.
+
+    No gap card here any more: Raf replaced that picture with a plain text
+    list (see gap_text). What is left is the knocks/disposition board, and it
+    stays a PDF because it is WIDE — a dozen-plus columns, which Messages
+    renders inline as an unreadable strip. A PDF opens full-screen and zooms.
+
+    render_knocks_boards decides how many boards the row shape deserves: it
+    folds Time Gaps into the main board when the columns already carry Gaps +
+    Total Gaps, which Raf's TeleMapper shape does.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    bare = out_dir / ("gaps_%s_raw.png" % cfg["key"])
-    cap.render_gap_card(reps, bare, scale=C.CARD_RENDER_SCALE)
     who = (" — %s" % cfg["label"]) if cfg.get("label") else ""
-    out = out_dir / ("gaps_%s.png" % cfg["key"])
-
-    if activity_png is not None and Path(activity_png).exists():
-        titled_gaps = titled(bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot),
-                             out_dir / ("gaps_%s_titled.png" % cfg["key"]))
-        titled_act = titled(
-            Path(activity_png),
-            "%s%s — %s" % (C.PANEL_TODAYS_ACTIVITY, who, slot),
-            out_dir / ("activity_%s_titled.png" % cfg["key"]))
-        if C.SEND_AS_PDF:
-            try:
-                # Activity first, gaps second — Carlos's order, and the order
-                # Raf saw. Each panel keeps its own header page-to-page.
-                return to_pdf([titled_act, titled_gaps],
-                              out_dir / ("gaps_%s.pdf" % cfg["key"]))
-            except Exception as e:  # noqa: BLE001
-                _log("  PDF build failed (%s) — falling back to the stitched "
-                     "image" % type(e).__name__)
-        try:
-            return cap.stitch_vertical(
-                [(C.PANEL_TODAYS_ACTIVITY, Path(activity_png)),
-                 (C.PANEL_GAPS, bare)],
-                title="%s%s — %s" % (C.CARD_TITLE, who, slot), out_path=out)
-        except Exception as e:  # noqa: BLE001
-            _log("  stitch failed (%s) — gap card only" % type(e).__name__)
-    # Gap-only keeps the OLD title: the room has been reading
-    # "REPS OVER 15 MIN GAP" all along, and a card missing its knocks panel
-    # should not claim to carry knocks.
-    return cap.add_title_header(
-        bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot), out)
+    pages = []
+    for i, p in enumerate(pngs):
+        # Only the first board carries the clock — this is one post, and a time
+        # stamped on every page reads like several separate sends.
+        if i == 0:
+            pages.append(titled(Path(p), "%s%s — %s" % (C.CARD_TITLE, who, slot),
+                                out_dir / ("board_%s_0.png" % cfg["key"])))
+        else:
+            pages.append(Path(p))
+    return to_pdf(pages, out_dir / ("gaps_%s.pdf" % cfg["key"]))
 
 
 def tick(day: dt.date, *, send: bool, only: str = "",
          headless: bool = True) -> List[str]:
-    """One pass. Returns the list of failures (empty = clean)."""
+    """One pass. Returns the list of failures (empty = clean).
+
+    No browser session is opened here any more: pull_board calls
+    pull_offices_days, which owns its own ownerville session (and its own
+    impersonation exit). Two sessions on one profile is the launch race that
+    has cost other reports an office.
+    """
     offices = [o for o in C.enabled()
                if not only or o["key"] in {k.strip().lower()
                                            for k in only.split(",")}]
@@ -620,74 +630,74 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     slot = C.slot_label()
     out_dir = OUTPUT_DIR / day.strftime("%Y-%m-%d")
 
-    from automations.shared.tableau_patchright import ownerville_session
     from automations.b2b_dispositions import text_post as tp
 
     failures = []
     seen_names = []
-    with ownerville_session(headless=headless, verbose=False,
-                            profile_dir=C.PROFILE_DIR,
-                            device_scale=C.CAPTURE_DEVICE_SCALE,
-                            window_size=C.capture_window()) as page:
-        # NO set_viewport_size HERE, deliberately. The context is launched with
-        # no_viewport (a real window) plus --force-device-scale-factor, and
-        # setting a viewport switches the page to emulated-viewport mode, which
-        # resets the device scale to 1. That is why the drawn gap card came out
-        # sharp at 3x while the SCREENSHOT above it stayed soft — the card is
-        # ours to scale, the screenshot silently lost the flag (Raf,
-        # 2026-08-27: "the top section is still blurry, the bottom is great").
-        # Viewport height never mattered anyway: _shoot takes a full_page shot,
-        # which captures the whole scroll height regardless of what is in frame.
-        for cfg in offices:
-            try:
-                reps = gap_rows(page, cfg, day)
-            except Exception as e:  # noqa: BLE001
-                failures.append("%s: %s: %s" % (cfg["key"], type(e).__name__,
-                                                str(e)[:200]))
-                _log("%s PULL FAILED: %s: %s"
-                     % (cfg["key"], type(e).__name__, str(e)[:200]))
-                continue
+    for cfg in offices:
+        # The guard runs BEFORE the pull. A skipped tick should cost nothing,
+        # and this pull is the expensive half of the run.
+        recent = _sent_too_recently(cfg["key"])
+        if recent is not None and send:
+            _log("%s: last board went out %.1f min ago — skipping this tick "
+                 "(min gap %d min). The room already has this."
+                 % (cfg["key"], recent, C.MIN_SEND_GAP_MINUTES))
+            continue
 
-            if not reps:
-                _log("%s: nobody over %d min at %s — nothing sent (an empty "
-                     "card is not news)" % (cfg["key"], C.GAP_THRESHOLD_MIN,
-                                            slot))
-                continue
+        try:
+            pngs, rows = pull_board(cfg, day, out_dir)
+        except Exception as e:  # noqa: BLE001
+            failures.append("%s: %s: %s" % (cfg["key"], type(e).__name__,
+                                            str(e)[:200]))
+            _log("%s PULL FAILED: %s: %s"
+                 % (cfg["key"], type(e).__name__, str(e)[:200]))
+            continue
 
-            recent = _sent_too_recently(cfg["key"])
-            if recent is not None and send:
-                _log("%s: last card went out %.1f min ago — skipping this tick "
-                     "(min gap %d min). The room already has this."
-                     % (cfg["key"], recent, C.MIN_SEND_GAP_MINUTES))
-                continue
+        if not pngs:
+            # Visible absence, never a blank board — the standing rule. Before
+            # the field is out there are simply no rows, and that is not news.
+            _log("%s: no rows yet at %s — nothing sent" % (cfg["key"], slot))
+            continue
 
-            seen_names += [str(r.get("name") or "").strip() for r in reps]
-            # Captured only after the duplicate guard has let this tick
-            # through — no point screenshotting a roster for a card that is
-            # about to be skipped.
-            activity = capture_activity(page, cfg, cap.capture_rqst(page),
-                                        out_dir)
-            png = render(cfg, reps, out_dir, slot, activity_png=activity)
-            _log("%s: %d rep(s) over %d min -> %s"
-                 % (cfg["key"], len(reps), C.GAP_THRESHOLD_MIN, png.name))
-            try:
-                # Resolution runs on a dry run too — it is read-only and it is
-                # the half most likely to be wrong (Lucy removed from the chat,
-                # the room renamed). A preview that skipped it proves nothing.
-                res = tp.send_to_group(cfg["group"], "", [png],
-                                       dry_run=not send)
-                _log("  %s -> %r (%s participants)%s"
-                     % ("TEXT" if send else "PREVIEW", res.get("resolved_name"),
-                        res.get("participants"), "" if send else " — nothing sent"))
-                if send:
-                    # Stamped only after Messages actually took it, so a failed
-                    # send never blocks the next tick from trying again.
-                    _mark_sent(cfg["key"])
-            except Exception as e:  # noqa: BLE001
-                failures.append("%s text: %s: %s" % (cfg["key"],
-                                                     type(e).__name__,
-                                                     str(e)[:200]))
-                _log("  TEXT FAILED: %s: %s" % (type(e).__name__, str(e)[:200]))
+        seen_names += [str(r.get("Rep") or r.get("rep") or "").strip()
+                       for r in rows]
+        # A failed gap pull costs the section, never the board — the board is
+        # the thing Raf asked for and it is already in hand.
+        try:
+            gaps = gap_rows(cfg, day)
+        except Exception as e:  # noqa: BLE001
+            gaps = []
+            _log("  gap list SKIPPED (%s: %s)"
+                 % (type(e).__name__, str(e)[:160]))
+        previous, first_of_day = _previous_gap_names(cfg["key"], day)
+        body, gap_names = gap_text(gaps, previous, first_of_day)
+        newly = ([] if first_of_day
+                 else [n for n in gap_names if n not in previous])
+        _log("  %d rep(s) over %d min, %d new%s"
+             % (len(gap_names), C.GAP_THRESHOLD_MIN, len(newly),
+                (" (" + ", ".join(newly) + ")") if newly else ""))
+        pdf = render(cfg, pngs, out_dir, slot)
+        try:
+            # Resolution runs on a dry run too — it is read-only and it is the
+            # half most likely to be wrong (Lucy removed from the chat, the
+            # room renamed). A preview that skipped it would prove nothing.
+            # ONE send: the gap list as the message text, the board as its
+            # attachment. send_to_group posts the text first, so the names
+            # arrive above the flyer.
+            res = tp.send_to_group(cfg["group"], body, [pdf], dry_run=not send)
+            _log("  %s -> %r (%s participants)%s"
+                 % ("TEXT" if send else "PREVIEW", res.get("resolved_name"),
+                    res.get("participants"), "" if send else " — nothing sent"))
+            if send:
+                # Both stamped only after Messages actually took it: a failed
+                # send must not block the next retry, and must not consume the
+                # "new" marks — those people would then never be flagged.
+                _mark_sent(cfg["key"])
+                _remember_gap_names(cfg["key"], day, gap_names)
+        except Exception as e:  # noqa: BLE001
+            failures.append("%s text: %s: %s" % (cfg["key"], type(e).__name__,
+                                                 str(e)[:200]))
+            _log("  TEXT FAILED: %s: %s" % (type(e).__name__, str(e)[:200]))
     _terminated_check_once(day, seen_names)
     return failures
 
@@ -714,21 +724,24 @@ def _terminated_check_once(day: dt.date, names: List[str]) -> None:
 
 
 def probe(day: dt.date, cfg: Dict, headless: bool = True) -> int:
-    """READ-ONLY: what the Time Tracker endpoint actually returns right now.
-    The one-pass answer when the card looks wrong or comes back empty."""
-    from automations.shared.tableau_patchright import ownerville_session
-    with ownerville_session(headless=headless, verbose=False,
-                            profile_dir=C.PROFILE_DIR) as page:
-        rqst = cap.capture_rqst(page)
-        _pin_campaign(page, rqst, cfg.get("campaign_id", ""))
-        rows = cap.fetch_time_tracking(page, rqst, day.strftime("%m/%d/%Y"))
-    _log("office=%s rows=%d" % (cfg["key"], len(rows)))
+    """READ-ONLY: the rows the board is built from, and their columns.
+
+    Points at the SAME pull the post uses, deliberately. A probe that reads a
+    different source can agree with itself while the board is wrong.
+    """
+    from automations.rashad_metrics.knocks_pull import pull_offices_days
+    pulled = pull_offices_days([(cfg["name"], [day])], verbose=True,
+                               profile_dir=str(C.PROFILE_DIR))
+    _name, by_day, err = pulled[0]
+    if err is not None:
+        _log("PULL FAILED: %s: %s" % (type(err).__name__, str(err)[:300]))
+        return 1
+    rows = by_day.get(day) or []
+    _log("office=%s day=%s rows=%d" % (cfg["key"], day, len(rows)))
     if rows:
-        _log("keys=%s" % sorted(rows[0].keys()))
-    for r in rows[:40]:
-        _log("  %-28s gap=%-5s last=%s"
-             % (str(r.get("name"))[:28], r.get("minutesSinceLastKnock"),
-                r.get("lastKnockDate")))
+        _log("columns=%s" % sorted(rows[0].keys()))
+    for r in rows[:25]:
+        _log("  %s" % {k: v for k, v in list(r.items())[:8]})
     return 0
 
 

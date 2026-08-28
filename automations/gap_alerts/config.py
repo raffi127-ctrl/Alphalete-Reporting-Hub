@@ -72,9 +72,26 @@ def office(key: str) -> Optional[Dict]:
 
 
 # --- the card -----------------------------------------------------------------
-CARD_TITLE = "KNOCKS & GAPS"
+CARD_TITLE = "KNOCKS & DISPOSITIONS"
 PANEL_TODAYS_ACTIVITY = "TODAY'S ACTIVITY"
 PANEL_GAPS = "REPS OVER 15 MIN GAP"
+
+# --- the gap list, as TEXT ----------------------------------------------------
+# Raf's second Loom (2026-08-28): the gap CARD is gone. "It's just too much
+# friction... what I want it to be is just a text message... listed out
+# alphabetically of who is at 15 minutes or more gaps. And then every time
+# there's a new one, similar to the sales board, have it post a fire emoji, that
+# way we know this is the newest person that just made the list so we know who
+# to text."
+#
+# Alphabetical, NOT longest-dark-first. That was right when the card was a
+# picture you scanned top-down; this list is read as a to-text list, and the
+# emoji — not the ordering — is what says "act on this one".
+#
+# Clock, not fire (Megan 2026-08-28) — fire already means a SALE in the sales
+# board texts these same people read, and a gap is the opposite of a sale.
+GAP_TEXT_HEADER = "15 minutes of gaps"
+GAP_NEW_EMOJI = "\u23F0"
 
 # The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
 # a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps
@@ -182,7 +199,7 @@ SATURDAY = 5
 # top of that script). Was 5 from launch until 2026-08-27, when Raf asked for
 # 10: at 5 minutes the card was arriving faster than the room could act on it.
 # CHANGE BOTH, and keep MIN_SEND_GAP_MINUTES just under this.
-TICK_MINUTES = 10
+TICK_MINUTES = 15
 
 # A card is REFUSED if this office got one less than this many minutes ago.
 #
