@@ -598,6 +598,22 @@ def main() -> int:
                                     print(f"[{_stamp()}] AppStream ✓ — {apn} cookies "
                                           f"(office-11580 console warm)"
                                           f"{_rqst_note(ctx)}", flush=True)
+                                    # Donate on ANY live export, not only on a
+                                    # renewal. Measured 2026-08-27 20:13: Lucy 2
+                                    # renews, Lucy 1 and Lucy 3 do not (their
+                                    # token id sat unchanged through the
+                                    # re-hop, at 20m and 14m left). So a machine
+                                    # that can never renew must be topped up by
+                                    # one that can, and waiting for the donor's
+                                    # own renewal event is a trigger we can't
+                                    # count on. The hourly floor bounds it; a
+                                    # dead machine has nothing to export and so
+                                    # never donates.
+                                    # TIGHTEN THIS once renewal is understood —
+                                    # three healthy machines cost 6 queue rows
+                                    # an hour, which is worth it only while the
+                                    # holder cannot renew on its own.
+                                    _push_token_to_fleet()
                                 else:
                                     print(f"[{_stamp()}]  ⚠️ AppStream console warm but "
                                           f"NO rqst token — nothing exported; reports "
