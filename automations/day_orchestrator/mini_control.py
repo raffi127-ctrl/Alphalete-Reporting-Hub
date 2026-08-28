@@ -542,9 +542,13 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # it; the rerun path didn't, so a rerun of a self-logging report wrote two
     # rows for one run — enough to fill a daily_runs>1 pill on a single phase
     # (Megan 2026-08-18). [[reference_phase_pill_id_match]]
+    # HUB_REPORT_TIMEOUT_S: same budget the timeout below enforces, so the
+    # Chrome profile lock never waits longer than this rerun is allowed to live
+    # (tableau_patchright._profile_wait_budget).
     ok, result = _run_cmd(cmd, timeout_s,
                           log_name=f"rerun-{stamp}-{report_id}.log",
-                          env={"HUB_REPORT_ID": str(report_id)})
+                          env={"HUB_REPORT_ID": str(report_id),
+                               "HUB_REPORT_TIMEOUT_S": str(timeout_s)})
 
     # A browser report killed at its timeout leaves its Chrome behind, still
     # holding the shared profile — so the NEXT rerun waits out the 30m profile

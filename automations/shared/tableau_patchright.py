@@ -146,8 +146,45 @@ try:
 except ImportError:            # Windows — no flock; keep the wait+retry behavior
     _fcntl = None
 
-_PROFILE_LOCK_WAIT_S = 1800.0  # wait up to 30min for a long report ahead of us
+_PROFILE_LOCK_WAIT_S = 1800.0  # ceiling: wait up to 30min for a long report
 _PROFILE_LOCK_POLL_S = 2.0
+# Of its own budget, how much a run may spend WAITING for a busy profile before
+# it gives up and lets the launch fail loudly. The rest is the work itself.
+_PROFILE_WAIT_SHARE = 0.4
+_PROFILE_WAIT_FLOOR_S = 60.0
+
+
+def _profile_wait_budget() -> float:
+    """How long THIS run may sit waiting for a profile someone else holds.
+
+    WHY THIS ISN'T THE FLAT 1800s ANY MORE (2026-08-28): 30 minutes is longer
+    than most reports are allowed to live. `mobrium_list` has a 12-minute
+    timeout, and on 2026-08-28 it spent BOTH of its attempts inside this wait —
+    killed mid-wait each time, so it wrote nothing, posted nothing, and left no
+    error in the log at all (the kill lands before the launch that would have
+    raised). Waiting past your own deadline can produce nothing else: a silent
+    death, and a retry burned on the same wait.
+
+    Capping the wait at a share of the run's budget converts that into a FAST,
+    named failure ("Opening in existing browser session") with attempts 2 and 3
+    still intact — and a retry twelve minutes later is exactly the thing most
+    likely to find the profile free.
+
+    The orchestrator exports HUB_REPORT_TIMEOUT_S (mini_control's `rerun` too).
+    Without it — a hand run, a module driven directly — nothing changes and the
+    full ceiling applies.
+    """
+    raw = os.environ.get("HUB_REPORT_TIMEOUT_S", "").strip()
+    if not raw:
+        return _PROFILE_LOCK_WAIT_S
+    try:
+        budget = float(raw)
+    except ValueError:
+        return _PROFILE_LOCK_WAIT_S
+    if budget <= 0:
+        return _PROFILE_LOCK_WAIT_S
+    return max(_PROFILE_WAIT_FLOOR_S,
+               min(_PROFILE_LOCK_WAIT_S, budget * _PROFILE_WAIT_SHARE))
 # How often, while waiting, to re-check whether the thing holding this profile is
 # an ORPHAN Chrome rather than a live run. See _clear_orphan_holder.
 _ORPHAN_RECHECK_S = 60.0
@@ -219,7 +256,7 @@ def _acquire_profile_lock(profile_dir, *, busy_retries, verbose, label):
     if _fcntl is None:
         return None
     yield_fast = busy_retries is not None and busy_retries <= 1
-    wait_s = 0.0 if yield_fast else _PROFILE_LOCK_WAIT_S
+    wait_s = 0.0 if yield_fast else _profile_wait_budget()
     path = _profile_lock_path(profile_dir)
     try:
         fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o644)
@@ -250,11 +287,11 @@ def _acquire_profile_lock(profile_dir, *, busy_retries, verbose, label):
                     os.close(fd)
                 except Exception:  # noqa: BLE001
                     pass
-                if verbose and not yield_fast:
+                if not yield_fast:
                     print(f"[{label}] {path.name} still held after {int(wait_s)}s "
                           "— launching anyway (wait+retry will guard)", flush=True)
                 return None
-            if verbose and not announced and not yield_fast:
+            if not announced and not yield_fast:
                 # NAME the holder: without it this line reads as "Tableau is
                 # slow" and sends you to the wrong place (2026-08-19).
                 who = _lock_holder(path)

@@ -1297,7 +1297,11 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
             # HUB_REPORT_ID lets the Tableau access ledger blame each pull on
             # the report that made it (Megan 2026-08-17). Inherited by every
             # descendant; nothing reads it except the ledger.
-            child_env = dict(os.environ, HUB_REPORT_ID=str(r.report_id))
+            # HUB_REPORT_TIMEOUT_S is this run's whole budget. The profile
+            # lock reads it so it never waits longer than the report is allowed
+            # to live — see tableau_patchright._profile_wait_budget.
+            child_env = dict(os.environ, HUB_REPORT_ID=str(r.report_id),
+                             HUB_REPORT_TIMEOUT_S=str(timeout_s))
             proc = subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT,
                                     cwd=str(REPO_ROOT), start_new_session=True,
                                     env=child_env)
