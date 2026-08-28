@@ -15,6 +15,7 @@ rows exactly on every week where both PDFs parse:
       Verizon 5G     -> Verizon 5G Fiber      (dropped from the PDF 2025-11)
       Rogers         -> Rogers                (new WE 8.15.2026)
       Rogers Wireless-> Rogers Wireless       (new WE 8.15.2026)
+      Kinetic        -> Kinetic                (row added 2026-08-28)
       AT&T B2B       -> B2B
 
   the RANKED PDF's FOOTER  (the 'LW Week Ending' column)
@@ -57,6 +58,9 @@ BYDAY_MAP = {
     # and the identity check was off by their combined 4,115.
     "rogers": "Rogers",
     "rogers wireless": "Rogers Wireless",
+    # Kinetic (Windstream) reported since WE 7.25.2026 but deliberately kept off
+    # the tab until 2026-08-28, when Eve gave it a row alongside Rogers.
+    "kinetic": "Kinetic",
 }
 # by-day rows we deliberately ignore (the footer supplies these, better split)
 BYDAY_IGNORED = {"at&t nds", "at&t wireless", "vz wireless"}
