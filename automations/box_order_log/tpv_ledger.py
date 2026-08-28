@@ -50,6 +50,7 @@ LEDGER_PATH = OUTPUT_DIR / "box_tpv_ledger.json"
 # sheet, not the Vantura board: this is diagnostics, and the board is Carlos's.
 QUEUE_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 ERASED_TAB = "Box TPV Erased"
+DEAD_TAB = "Box TPV Dead Check"
 
 # box_order_log_2026-08-23.csv  and  box_order_log_all_2026-08-23.csv
 _CSV_GLOB = "box_order_log*.csv"
@@ -298,6 +299,8 @@ def main(argv=None) -> int:
         # Name the borderline bucket too: these reached TPV REVIEW and then
         # failed, so whether they count is a ruling, not a bug. Printing them
         # is the whole point — a bare count can't be ruled on.
+        if args.to_tab:
+            _write_dead_tab(newest.name, buckets)
         for k, r, rec in buckets["only Requires TPV Review"]:
             print("    REVIEW-ONLY {:<30} ctr {} | {} | sold {} | seen {}..{}"
                   .format((r.get("Business Name") or "")[:30],
@@ -306,6 +309,47 @@ def main(argv=None) -> int:
                           (rec or {}).get("first_seen", "?"),
                           (rec or {}).get("last_seen", "?")))
     return 0
+
+
+def _write_dead_tab(source: str, buckets) -> None:
+    """Publish the dropped-dead breakdown. The review-only bucket is the one
+    that needs a human ruling, so it is listed in full rather than counted."""
+    rows = [["Verdict", "Contract ID", "Account Id", "Rep", "Business",
+             "Sale Date", "Ledger first seen", "Ledger last seen"]]
+    for verdict in ("proven at TPV Passed", "only Requires TPV Review",
+                    "never in the ledger"):
+        for k, r, rec in buckets.get(verdict, []):
+            contract, _, account = k.partition("|")
+            rec = rec or {}
+            rows.append([verdict, contract, account,
+                         (r.get("Rep Name") or "").strip(),
+                         (r.get("Business Name") or "").strip(),
+                         (r.get("Sale Date") or "").strip(),
+                         rec.get("first_seen", ""), rec.get("last_seen", "")])
+    _publish(DEAD_TAB, rows, "source: {} · {} dropped-dead deal(s)".format(
+        source, len(rows) - 1))
+
+
+def _publish(tab_name: str, rows, footer: str) -> None:
+    """Write a table to a queue-sheet tab. Never fatal — diagnostics must not
+    be able to take a run down."""
+    try:
+        from automations.recruiting_report import fill as _fill
+        sh = _fill._client().open_by_key(QUEUE_SHEET)
+        try:
+            ws = sh.worksheet(tab_name)
+            ws.clear()
+        except Exception:
+            ws = sh.add_worksheet(title=tab_name, rows=max(100, len(rows) + 20),
+                                  cols=len(rows[0]))
+        ws.resize(rows=max(100, len(rows) + 20), cols=len(rows[0]))
+        ws.update(rows, "A1", value_input_option="RAW")
+        ws.update([["{} · built {}".format(
+            footer, dt.datetime.now().strftime("%Y-%m-%d %H:%M"))]],
+            "A{}".format(len(rows) + 2), value_input_option="RAW")
+        print("  wrote {} row(s) to the {!r} tab".format(len(rows) - 1, tab_name))
+    except Exception as exc:
+        print("  ! could not write the {!r} tab: {}".format(tab_name, exc))
 
 
 def _write_tab(tab_name: str, source: str, gone) -> None:
