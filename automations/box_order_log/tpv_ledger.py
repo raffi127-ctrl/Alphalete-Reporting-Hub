@@ -109,6 +109,25 @@ def keys(path: Path = LEDGER_PATH) -> Set[Tuple[str, str]]:
     return out
 
 
+def proven_keys(path: Path = LEDGER_PATH) -> Set[Tuple[str, str]]:
+    """Only the keys we ever saw at TPV Passed or beyond.
+
+    These survive a later TPV Failed / Rejected QC; the broader `keys()` set
+    only decides whether something was a sale at all. Entries written before
+    tpv_proven existed carry no flag — fall back to their recorded level so an
+    old ledger still answers correctly instead of silently returning nothing.
+    """
+    out = set()
+    for k, v in load(path).items():
+        flag = v.get("tpv_proven")
+        if flag is None:
+            flag = v.get("level") in clean.TPV_PROVEN_LEVELS
+        if flag:
+            a, _, b = k.partition("|")
+            out.add((a, b))
+    return out
+
+
 def build(output_dir: Path = OUTPUT_DIR, path: Path = LEDGER_PATH,
           log=print) -> dict:
     """Walk the archived crosstabs and fold what they prove into the ledger."""
@@ -137,13 +156,21 @@ def build(output_dir: Path = OUTPUT_DIR, path: Path = LEDGER_PATH,
             k = _key_str((row.get("Contract ID"), row.get("Account Id")))
             if k == "|":
                 continue
+            proven = lvl in clean.TPV_PROVEN_LEVELS
             rec = seen.get(k)
             if rec is None:
                 seen[k] = {"first_seen": stamp, "last_seen": stamp,
-                           "level": lvl,
+                           "level": lvl, "tpv_proven": proven,
+                           "proven_on": stamp if proven else None,
                            "business": (row.get("Business Name") or "").strip(),
                            "rep": (row.get("Rep Name") or "").strip()}
             else:
+                # tpv_proven LATCHES: a deal seen at Requires TPV Review on
+                # Monday and TPV Passed on Tuesday has passed, and nothing
+                # later un-passes it. Carlos, 2026-08-28.
+                if proven and not rec.get("tpv_proven"):
+                    rec["tpv_proven"] = True
+                    rec["proven_on"] = stamp
                 # Keep the EARLIEST proof and the latest sighting; the archive
                 # is walked in name order, but a re-run or a back-filled file
                 # must not be able to move first_seen forward.

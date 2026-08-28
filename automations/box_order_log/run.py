@@ -235,6 +235,12 @@ def main(argv: Optional[list] = None) -> int:
                     help="explicit no-op flag; dry-run is already the default")
     ap.add_argument("--from-file", metavar="CSV",
                     help="skip the Tableau pull and use an existing crosstab")
+    ap.add_argument("--no-sheet", action="store_true",
+                    help="override --sheet and write NOTHING to the board. "
+                         "`lucy rerun` always appends the registered base_args "
+                         "(--sheet --xlsx), so this is the only way to get a "
+                         "real-data dry run on Lucy 2 without touching "
+                         "Carlos's board.")
     ap.add_argument("--no-tpv-memory", action="store_true",
                     help="ignore the sheet's record of which deals reached TPV "
                          "and judge only on today's export — the pre-2026-08-28 "
@@ -394,7 +400,7 @@ def main(argv: Optional[list] = None) -> int:
     # counts. Read BEFORE the collapse, and fail-open — an unreachable sheet
     # just means the old behaviour, never a dead report. --no-tpv-memory turns
     # it off for an A/B against the raw export.
-    tpv_seen = set()
+    tpv_seen, tpv_proven = set(), set()
     if not args.no_tpv_memory:
         from . import sheet as _sheet_mem
         from . import tpv_ledger as _ledger
@@ -405,6 +411,10 @@ def main(argv: Optional[list] = None) -> int:
         # is only recoverable here. Union, never replace: two partial records.
         from_ledger = _ledger.keys()
         tpv_seen |= from_ledger
+        # The narrower set: deals that actually PASSED TPV, which survive a
+        # later TPV Failed / Rejected QC (Carlos, 2026-08-28).
+        tpv_proven = {k for k in _sheet_mem.tpv_proven_keys(args.sheet_id or None)}
+        tpv_proven |= _ledger.proven_keys()
         if verbose:
             print("  TPV memory: {} from the sheet + {} from the crosstab "
                   "ledger = {} sale(s) vouched for".format(
@@ -415,7 +425,11 @@ def main(argv: Optional[list] = None) -> int:
             print("  (TPV memory empty — rescues are off for this run)")
 
     sales, stats = clean.load(src, owner_office=(args.owner_office or ""),
-                              tpv_seen=tpv_seen)
+                              tpv_seen=tpv_seen, tpv_proven=tpv_proven)
+    if stats.get("kept_dead_after_tpv"):
+        print("  {} sale(s) kept despite a later TPV Failed / Rejected QC — "
+              "they said TPV Passed at some point".format(
+                  stats["kept_dead_after_tpv"]))
     if stats.get("rescued_by_tpv_memory"):
         print("  {} sale(s) kept on the sheet's TPV memory alone — today's "
               "export no longer shows them reaching TPV".format(
@@ -484,7 +498,9 @@ def main(argv: Optional[list] = None) -> int:
             len(window_sales), len(sales), args.weeks))
 
     # ---- 4. write the Sheet ---------------------------------------------
-    if args.sheet:
+    if args.sheet and args.no_sheet:
+        print("\n  --no-sheet: skipping the board write (dry run)")
+    if args.sheet and not args.no_sheet:
         from . import sheet
         try:
             sheet.push(window_sales, today=today, weeks_back=args.weeks)

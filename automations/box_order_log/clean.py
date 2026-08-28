@@ -129,6 +129,25 @@ SALE_LEVELS = (
 # but Megan keeps it a sale regardless (2026-07-18, reaffirmed 2026-07-22).
 SALE_EXEMPT_STATUSES = ("Incomplete",)
 
+# LEVELS THAT MEAN THE DEAL ACTUALLY PASSED TPV (or went past it).
+#
+# Carlos, 2026-08-28: "If at some point it said TPV passed and then it got moved
+# to TPV failed or rejected to QC, those sales should still be in the order log
+# ... If it ever said TPV passed, it should never get removed from the order log
+# unless we're past the date range."
+#
+# So this is the set that grants IMMUNITY from DEAD_LEVELS. It is SALE_LEVELS
+# minus "Requires TPV Review" on purpose: that level means the review is still
+# owed, which is not the same claim as having passed it. A deal whose whole
+# history is Requires TPV Review -> TPV Failed never said TPV passed, and stays
+# dropped.
+TPV_PROVEN_LEVELS = (
+    "Ready For Booking",
+    "Accepted by Supplier",
+    "Verification" + _LEVEL_SEP + "TPV Passed",
+    "Submitted to Supplier",
+)
+
 # Sub-statuses that prove a deal REACHED THE SUPPLIER even though no other
 # status survived on it. Carlos, 2026-08-27, on deals whose only row is
 # Rejected / Rejected By Supplier: "I'm not sure why they don't have the other
@@ -522,6 +541,19 @@ def _reached_tpv(sale: "Sale", tpv_seen=frozenset()) -> bool:
     return norm_key(sale.key) in tpv_seen
 
 
+def ever_passed_tpv(sale: "Sale", tpv_proven=frozenset()) -> bool:
+    """Did this deal ever actually reach TPV Passed or beyond?
+
+    The bar for surviving a later TPV Failed / Rejected QC (Carlos, 8/28).
+    Reads the sale's own history first, then the durable record for the days
+    the export has erased the proof — the same two-source pattern the sale gate
+    uses, but against the narrower TPV_PROVEN_LEVELS.
+    """
+    if any(h in TPV_PROVEN_LEVELS for h in sale.history):
+        return True
+    return norm_key(sale.key) in tpv_proven
+
+
 def _priority(lvl: str) -> int:
     """Rank of a fine-grained level. Unknown levels sort last rather than
     raising — a new Tableau status should demote itself, not break the run."""
@@ -546,7 +578,8 @@ def _status_rank(status: str) -> int:
 
 
 def collapse(rows: Iterable[Dict[str, str]], *,
-             tpv_seen=frozenset()) -> Tuple[List[Sale], Dict[str, int]]:
+             tpv_seen=frozenset(),
+             tpv_proven=frozenset()) -> Tuple[List[Sale], Dict[str, int]]:
     """Collapse status-transition rows into one Sale per real sale.
 
     Returns (sales, stats). `stats` records what was dropped so the caller can
@@ -555,6 +588,11 @@ def collapse(rows: Iterable[Dict[str, str]], *,
     """
     rows = list(rows)
     tpv_seen = frozenset(norm_key(k) for k in (tpv_seen or ()))
+    tpv_proven = frozenset(norm_key(k) for k in (tpv_proven or ()))
+    # Passing TPV certainly makes it a sale, so proven implies seen. Without
+    # this a deal rescued from DEAD_LEVELS by the proven set could still be
+    # thrown out by the sale gate a few lines later.
+    tpv_seen = tpv_seen | tpv_proven
     stats = collections.Counter()
     stats["raw_rows"] = len(rows)
 
@@ -617,8 +655,19 @@ def collapse(rows: Iterable[Dict[str, str]], *,
 
     # Drop the ones that ended dead. Post-collapse so their history survives
     # on any sale that recovered — see DEAD_LEVELS.
+    # A deal that ever said TPV Passed is NOT removed by a later TPV Failed or
+    # Rejected QC — only the date window takes it out (Carlos, 2026-08-28).
+    # One that never passed still dies here.
     before = len(sales)
-    sales = [s for s in sales if s.level not in DEAD_LEVELS]
+    survivors, spared = [], 0
+    for s in sales:
+        if s.level not in DEAD_LEVELS:
+            survivors.append(s)
+        elif ever_passed_tpv(s, tpv_proven):
+            survivors.append(s)
+            spared += 1
+    sales = survivors
+    stats["kept_dead_after_tpv"] = spared
     stats["dropped_dead"] = before - len(sales)
 
     # THE TPV GATE — drop deals that never reached TPV (Carlos, 2026-07-22).
@@ -725,7 +774,8 @@ def filter_to_owner(rows: List[Dict[str, str]], owner_office: str) -> List[Dict[
 
 
 def load(path: Path, owner_office: str = "",
-         tpv_seen=frozenset()) -> Tuple[List[Sale], Dict[str, int]]:
+         tpv_seen=frozenset(),
+         tpv_proven=frozenset()) -> Tuple[List[Sale], Dict[str, int]]:
     """Read the crosstab into Sales. When `owner_office` is given, first slice the
     (team) export to that office — the SAME isolation the B2B metric views use.
 
@@ -735,4 +785,4 @@ def load(path: Path, owner_office: str = "",
     rows = read_rows(Path(path))
     if owner_office:
         rows = filter_to_owner(rows, owner_office)
-    return collapse(rows, tpv_seen=tpv_seen)
+    return collapse(rows, tpv_seen=tpv_seen, tpv_proven=tpv_proven)

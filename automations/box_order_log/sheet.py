@@ -327,6 +327,21 @@ def row_reached_tpv(row: Sequence[str]) -> bool:
     return any(part.strip() in clean.SALE_LEVELS for part in secondary.split(","))
 
 
+def row_proved_tpv(row: Sequence[str]) -> bool:
+    """Does this SHEET row show the deal actually PASSED TPV (or went past)?
+
+    Narrower than row_reached_tpv: the bar for surviving a later TPV Failed /
+    Rejected QC (Carlos, 2026-08-28). "Requires TPV Review" does not count.
+    """
+    row = list(row) + [""] * (len(DATA_HEADERS) - len(row))
+    status = (row[_COL_STATUS] or "").strip()
+    if clean.level(status, (row[_COL_STATUS + 1] or "").strip()) in clean.TPV_PROVEN_LEVELS:
+        return True
+    secondary = (row[_COL_STATUS + 2] or "").strip()
+    return any(part.strip() in clean.TPV_PROVEN_LEVELS
+               for part in secondary.split(","))
+
+
 def tpv_seen_keys(sheet_id: Optional[str] = None) -> set:
     """Sale keys the sheet already records as having reached TPV.
 
@@ -350,6 +365,21 @@ def tpv_seen_keys(sheet_id: Optional[str] = None) -> set:
         if row_reached_tpv(row):
             seen.add(_row_key(row))
     return seen
+
+
+def tpv_proven_keys(sheet_id: Optional[str] = None) -> set:
+    """Sale keys the sheet shows as having actually PASSED TPV or gone past.
+
+    The immunity list for DEAD_LEVELS (Carlos, 2026-08-28). Fail-open like
+    tpv_seen_keys — an unreachable sheet must never take the report down.
+    """
+    try:
+        sh = _open(sheet_id)
+        rows = _retry(lambda: sh.worksheet(TAB_DATA).get_all_values())
+    except Exception:
+        return set()
+    return {_row_key(r) for r in rows[1:]
+            if r and any(_row_key(r)) and row_proved_tpv(r)}
 
 
 def merge_rows(existing: Sequence[Sequence[str]], sales: Sequence,
@@ -409,7 +439,12 @@ def merge_rows(existing: Sequence[Sequence[str]], sales: Sequence,
         # counting (Carlos ruled TPV Failed out on 2026-07-18) would sit on
         # the sheet forever — it isn't in the new pull, so nothing would
         # replace it, and it isn't old, so nothing would age it out.
-        if clean.level(row[_COL_STATUS], row[_COL_STATUS + 1]) in clean.DEAD_LEVELS:
+        # A row that ever said TPV Passed is NOT purged by a later TPV Failed
+        # or Rejected QC — only the date window below takes it out (Carlos,
+        # 2026-08-28). The evidence is the row's own Secondary Status, which
+        # is where the earlier levels live.
+        if (clean.level(row[_COL_STATUS], row[_COL_STATUS + 1]) in clean.DEAD_LEVELS
+                and not row_proved_tpv(row)):
             purged += 1
             continue
         wk = clean._parse_date(row[_COL_WEEK])
