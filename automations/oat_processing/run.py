@@ -505,8 +505,9 @@ def _try_overwrite_send(page) -> bool:
     this only sends when legitimately allowed. Send-maximizer.
 
     MATCH THE CONTROL BY PATTERN, NEVER BY AN EXACT LABEL. AppStream renders this
-    button as EITHER "Overwrite Old Applicants (Send to AI)" OR "Override and
-    Send to AI" — both appear in the same office, sometimes a few applicants
+    button as "Overwrite Old Applicants (Send to AI)", "Override and Send to AI",
+    or a bare "Overwrite old Applicants" with no AI suffix at all (Paula Ruiz,
+    2026-08-28) — which is why the fallback matcher drops the /\bai\b/ clause — both appear in the same office, sometimes a few applicants
     apart. The old exact-label list only carried the first, so on an "Override…"
     record the click silently found nothing, do_send_ai concluded the applicant
     could not be sent, and routed them to re-text or remove. Measured on Atef's
@@ -515,7 +516,15 @@ def _try_overwrite_send(page) -> bool:
     was the difference between a person reaching the call list and being written
     off. Pattern-match /overri|overwri/, prefer the one that also says AI."""
     body = _body(page)
-    if not re.search(r"overri|overwri", body) or "cannot override this applicant" in body:
+    if not re.search(r"overri|overwri", body):
+        return False
+    # "Cannot override this applicant." VETOES the click even though a control is
+    # still on the page. Observed live on Paula Ruiz 2026-08-28: the page offered a
+    # bare "Overwrite old Applicants" button AND carried that sentence — clicking
+    # it cannot send, so treating the button's presence as permission would report
+    # a send that never happened.
+    if "cannot override this applicant" in body:
+        _log("    [override] page says 'Cannot override this applicant' — not clicking")
         return False
     clicked = page.evaluate(
         """() => {

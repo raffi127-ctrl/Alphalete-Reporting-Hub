@@ -117,3 +117,21 @@ if __name__ == "__main__":
                test_missing_reason_fails_safe):
         fn(); print(f"  ok  {fn.__name__}")
     print("7/7 passed")
+
+
+def test_cannot_override_vetoes_even_with_a_button_present():
+    """Paula Ruiz, 2026-08-28: the page showed a bare "Overwrite old Applicants"
+    button AND the sentence "Cannot override this applicant." Clicking cannot
+    send, so the button's presence must not be read as permission."""
+    p = _FakePage(["Overwrite old Applicants", "Save Applicant"],
+                  "cannot send to ai ... cannot override this applicant.")
+    assert oat._try_overwrite_send(p) is False
+
+
+def test_bare_overwrite_label_without_ai_suffix_is_matched():
+    # body must carry the button text, as the real page does — _try_overwrite_send
+    # checks the page for an override affordance before looking for the control.
+    p = _FakePage(["Overwrite old Applicants"],
+                  "cannot send to ai as correspondence ... overwrite old applicants")
+    ok, clicked = oat._try_overwrite_send(p), p.clicked
+    assert ok and clicked == "Overwrite old Applicants", clicked
