@@ -453,10 +453,40 @@ def _has_dup_signal(x: Applicant) -> bool:
 
 
 def _body(page) -> str:
+    """ALL-frames body text, lowercased. Top-document-only reading is how the
+    walk missed an overwrite button that rendered inside a frame and removed
+    Moises Santamaria while the control sat on Carlos's screen (2026-08-29,
+    the third wrong removal of the day — every one traced to a read that saw
+    less of the page than the human watching it)."""
+    texts = []
     try:
-        return (page.inner_text("body") or "").lower()
+        texts.append(page.inner_text("body") or "")
     except Exception:  # noqa: BLE001
-        return ""
+        pass
+    try:
+        for fr in (getattr(page, "frames", None) or []):
+            try:
+                t = fr.evaluate("() => (document.body.innerText || '')")
+            except Exception:  # noqa: BLE001
+                continue
+            if t and t not in texts:
+                texts.append(t)
+    except Exception:  # noqa: BLE001
+        pass
+    return "\n".join(texts).lower()
+
+
+def _red_messages(page):
+    """The red inline error lines on the refusal screen, verbatim — so the log
+    shows WHAT refused a send, not just that one did."""
+    out = []
+    body = _body(page)
+    for ln in body.splitlines():
+        ln = ln.strip()
+        if ln and ("cannot send to ai" in ln or "cannot override" in ln
+                   or "last correspondence" in ln):
+            out.append(ln[:160])
+    return out[:4]
 
 
 def _parse_last_corr(body: str):
@@ -600,8 +630,7 @@ def _try_overwrite_send(page) -> bool:
     # the send is a separate click afterwards. Refusing to click it (or checking
     # for the error immediately after) reports a dead end on an applicant who was
     # one more click from the call list.
-    clicked = page.evaluate(
-        """() => {
+    _CLICK_JS = """() => {
              const els = Array.from(document.querySelectorAll(
                  'button, input[type=submit], input[type=button], a'))
                .filter(e => e.offsetParent !== null);
@@ -613,7 +642,18 @@ def _try_overwrite_send(page) -> bool:
              const label = t(el);
              el.scrollIntoView({block: 'center'});
              el.click();
-             return label; }""")
+             return label; }"""
+    # EVERY frame, not just the top document — the control can render inside one
+    # (Moises Santamaria, 2026-08-29: button on screen, top-document click found
+    # nothing, applicant removed).
+    clicked = None
+    for _fr in (getattr(page, "frames", None) or [page]):
+        try:
+            clicked = _fr.evaluate(_CLICK_JS)
+        except Exception:  # noqa: BLE001
+            continue
+        if clicked:
+            break
     if not clicked:
         return False
     _log(f"    [override] clicked {clicked!r}")
@@ -1362,6 +1402,9 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
             _log(f"    ✅ SENT to AI (confirmed left the slot): "
                  f"{a.first_name} {a.last_name}")
             return "sent"
+        if outcome == "refused":
+            for _ln in _red_messages(page):
+                _log(f"    [refusal] {_ln}")
         if outcome == "refused" and _try_overwrite_send(page):
             _log(f"    ✅ override-sent instead of removing: "
                  f"{a.first_name} {a.last_name}")
