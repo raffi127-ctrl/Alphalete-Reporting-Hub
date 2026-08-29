@@ -72,6 +72,22 @@ def test_two_people_sharing_a_surname_is_left_for_a_person():
     assert any("shares a surname" in n for n in notes), notes
 
 
+def test_a_shared_surname_with_a_real_rep_is_refused():
+    # Megan: "last name won't always be 100% true if they have a common last
+    # name." A unique surname in the BLOCK still isn't proof — if that entry is
+    # its own rep on the roster, they are two people who share a name.
+    grid = _grid(
+        [_rep("Willie Henderson", team="Ceaseless"),
+         _rep("Nikki Valentine", team="Velocity"),
+         _rep("Shuminique Valentine")],
+        [["", "", "Nikki Valentine", "Willie Henderson", "", "", "", "", "", "",
+          "Dallas"]])
+    ups, notes = fill.new_rep_details(grid, "Shuminique Valentine", WEDNESDAY)
+    got = [u["values"][0][0] for u in ups]
+    assert "Willie Henderson" not in got and "Ceaseless" not in got, got
+    assert any("different people sharing a surname" in n for n in notes), notes
+
+
 def test_no_classroom_entry_still_fills_what_it_knows():
     grid = _grid([_rep("Aaron Corona")], [])
     ups, notes = fill.new_rep_details(grid, "Aaron Corona", WEDNESDAY)

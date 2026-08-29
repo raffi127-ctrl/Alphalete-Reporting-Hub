@@ -328,6 +328,11 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
                     ws.batch_update(det, value_input_option="USER_ENTERED")
                 for n in dnotes:
                     _log("    %s" % n)
+                # A surname match is a JUDGEMENT, so the room sees it and can
+                # say otherwise. A clean match says nothing extra.
+                guessed = next((n for n in dnotes if "surname" in n), "")
+                if guessed:
+                    item["status"] += " (%s)" % guessed
             except Exception as e:  # noqa: BLE001 — details must never fail the add
                 _log("    couldn't fill %s's details: %s: %s"
                      % (board_name, type(e).__name__, str(e)[:140]))

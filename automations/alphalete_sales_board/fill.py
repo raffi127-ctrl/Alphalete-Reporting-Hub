@@ -373,8 +373,20 @@ def classroom_trainer(grid, name: str) -> Tuple[str, str, str]:
         by_last = [r for who, r in entries
                    if last and B._norm_name(who).split()[-1:] == [last]]
         if len(by_last) == 1:
-            hit, how = by_last, "matched on surname (the block calls them %r)" % (
-                next(w for w, r in entries if r == by_last[0]))
+            other = next(w for w, r in entries if r == by_last[0])
+            # A UNIQUE SURNAME IS STILL NOT PROOF (Megan 2026-08-27: "last name
+            # won't always be 100% true if they have a common last name"). If
+            # the classroom entry is ITSELF somebody on the roster, it is a
+            # different person who happens to share the name -- attaching their
+            # trainer to this rep would be quietly wrong.
+            claimed, crow, _why = roster_match(grid, other)
+            if claimed and B._norm_name(claimed) != B._norm_name(name):
+                return "", "", ("%r looked like %r in the classroom block, but "
+                                "%r is their own rep on the board -- different "
+                                "people sharing a surname, so Trainer and Team "
+                                "are left blank"
+                                % (name, other, claimed))
+            hit, how = by_last, "matched on surname (the block calls them %r)" % other
         elif len(by_last) > 1:
             return "", "", ("%r shares a surname with %d classroom entries -- "
                             "left for a person" % (name, len(by_last)))
