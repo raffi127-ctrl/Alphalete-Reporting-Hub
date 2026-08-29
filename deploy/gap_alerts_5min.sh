@@ -44,7 +44,10 @@ if [ "$DOW" = "6" ]; then
     [ "$HOUR" -gt 17 ] && exit 0
 else
     [ "$HOUR" -lt 13 ] && exit 0
-    [ "$HOUR" -gt 20 ] && exit 0
+    # 22, not 20: the day now runs to 10pm (Raf 2026-08-28). This gate is
+    # HOUR-granular and deliberately generous — config.in_selling_window makes
+    # the exact 22:00 call, so this only has to avoid cutting the hour short.
+    [ "$HOUR" -gt 22 ] && exit 0
 fi
 
 # WALL-CLOCK ANCHOR — this is what makes it every TEN minutes.

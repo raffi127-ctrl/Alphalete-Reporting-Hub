@@ -202,7 +202,7 @@ def capture_window():
 # of red that says nothing. That is why the day is fenced to the hours reps are
 # actually out rather than left to run to midnight.
 DAY_START_HHMM = (13, 30)
-DAY_END_HHMM = (20, 30)
+DAY_END_HHMM = (22, 0)   # 10pm (Raf, 2026-08-28: "can we have this come till 10:00pm")
 SATURDAY_START_HHMM = (10, 0)
 SATURDAY_END_HHMM = (17, 0)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
