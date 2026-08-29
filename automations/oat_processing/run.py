@@ -58,6 +58,27 @@ from .classify import (Applicant, Action, Decision, classify,
                        verdict_for_history as classify_history)
 
 
+def _norm_name(s: str) -> str:
+    """Fold a name for allowlist matching: lowercase, strip accents/punctuation,
+    collapse whitespace. AppStream renders 'Willy Jean - Felix' and the removed
+    table 'Willy Jean-Felix' for the same person."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", (s or "")).encode("ascii", "ignore").decode()
+    t = re.sub(r"[^a-z0-9 ]+", " ", t.lower())
+    return " ".join(t.split())
+
+
+def _load_only_names():
+    """Set of folded names from $OAT_ONLY_NAMES, or None when unset."""
+    path = os.environ.get("OAT_ONLY_NAMES", "").strip()
+    if not path:
+        return None
+    with open(path) as fh:
+        names = {_norm_name(l) for l in fh if l.strip()}
+    names.discard("")
+    return names
+
+
 def _log(msg: str) -> None:
     print(msg, flush=True)
 
@@ -2541,6 +2562,10 @@ def run_walk(page, live: bool = False, limit: int = None,
         _oat_url = "?"
     _log(f"[oat] QUEUE at start: {_start_total} emails | view: {_oat_url}")
 
+    _ONLY_NAMES = _load_only_names()
+    if _ONLY_NAMES is not None:
+        _log(f"[oat] ALLOWLIST active: only {len(_ONLY_NAMES)} named applicant(s) "
+             f"will be touched; everyone else is skipped untouched")
     processed = 0
     actions = 0                 # live mutations (sent/removed) this run
     MUTATIONS = ("sent", "sent_override", "removed")
@@ -2574,6 +2599,19 @@ def run_walk(page, live: bool = False, limit: int = None,
             continue
         no_progress = 0
         seen.add(key)
+        # OPTIONAL ALLOWLIST (OAT_ONLY_NAMES=/path/to/names.txt, one name per
+        # line). When set, every applicant NOT on the list is skipped without a
+        # single mutation — the walk still pages past them. Added 2026-08-29 so a
+        # restore-and-push audit can touch ONLY the applicants it restored: the
+        # office's other queued applicants belong to that office's own schedule
+        # and must not be pushed as a side effect of an audit.
+        if _ONLY_NAMES is not None:
+            _nm = f"{a.first_name} {a.last_name}".strip().lower()
+            if _norm_name(_nm) not in _ONLY_NAMES:
+                _log(f"[skip] not on the allowlist: {_nm}")
+                if not advance_to_next(page):
+                    break
+                continue
         d: Decision = classify(a, today)
         sig = (f"phone={'Y' if (a.phone or a.cell_phone) else 'N'} "
                f"ovr={int(a.override_button)} blk={int(a.correspondence_blocked)} "

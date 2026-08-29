@@ -88,6 +88,34 @@ OFFICES = {
         # BLOCKED read — that is our failure, and it retries.
         "remove_no_phone": True,
     },
+    # DIAGNOSTIC ONLY (Carlos, 2026-08-29). Added to run the same lazy-removal
+    # audit we ran on Atef: restore a day of "Removed Apps at Processing" and let
+    # the push re-decide each one. It is deliberately NOT in ROTATION — nothing
+    # scheduled touches Jamis's office — and post_todo is OFF so his applicant
+    # names never land in a Slack channel that was not set up for them.
+    "19592": {
+        "office_id": "19592",
+        "hint": "JAMIS GARAY",
+        "owner": "Jamis Garay",
+        "label": "office 19592 · Jamis Garay — MIDSPIRE INC",
+        "short": "office 19592, Jamis",
+        "suffix": "-19592",
+        "cdp_profile": "/tmp/rp_cdp_19592",
+        "cdp_port": "9248",
+        "cdp_kill_pat": "rp_cdp_19592",
+        "walk_diag_tab": "OAT Walk Diag 19592",
+        "push_diag_tab": "Applicant Push Diag 19592",
+        "log_stem": "applicant-push-19592",
+        "hub_report_id": "applicant_push_jamis",
+        "hub_display": "Applicant Push (Jamis)",
+        # Stated explicitly so a process that already activated another office
+        # cannot keep ITS channel; with post_todo False nothing posts anyway.
+        "post_channel": "C09L1S3MQ1E",
+        "post_todo": False,
+        # Matches the policy for every office that is not Carlos's: a resume that
+        # opens and carries no number is a confirmed-uncontactable removal.
+        "remove_no_phone": True,
+    },
 }
 
 DEFAULT_OFFICE = "11580"
