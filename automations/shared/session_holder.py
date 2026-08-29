@@ -62,22 +62,39 @@ _MACHINE_MARKER = Path(__file__).resolve().parents[2] / ".machine-profile"
 # removal couldn't silently re-activate warming — a good reason, and the reason
 # this is a list rather than "any machine with a seed file".
 #
-# LUCY 1 + LUCY 3 ADDED 2026-08-24 (Megan). Both run AppStream reports and
-# NEITHER was holding its session warm, so the token simply aged out: seeded
-# ~06:00, expired 14:05 — about eight hours — and the 4am flow the next morning
-# would have found it dead. Today that cost five reports on Lucy 1 (daily_focus,
-# applicant_sync_morning, both recruiter_retention) plus alphalete_org_focus's
-# Recruiting pull on Lucy 3, and the fix was a human clearing a Turnstile twice
-# in one day. Holding it warm is what makes the seed last: the holder never
-# closes the session, so it is never re-challenged.
+# BACK TO ONE HOLDER, 2026-08-29 (Megan: "before we added Lucy 3, the other two
+# Lucys were working great and no re-seeding was needed. We need to do whatever
+# was being done then.") She is right, and the git history says so plainly.
 #
-# Safe to extend now because all three were freshly seeded + verified tonight
-# (Lucy 1 reported reachable=8/8), so none of them is the stale-file case the
-# gate was written for. A machine still needs its OWN seed file — the
-# APPSTREAM_STORAGE_STATE.exists() half of the check is unchanged.
-APPSTREAM_HOLD_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
+# Until `a965a8a` (2026-08-24 19:08, "all three Lucys keep AppStream warm") this
+# was `APPSTREAM_HOLD_MACHINE = "Lucy 2"` — a SINGLE machine held a live console
+# and every other runner simply consumed the session it pushed. The re-seeding
+# began after that commit, not before.
+#
+# WHY THREE HOLDERS EAT THEMSELVES. All three run the same rcaptain account, and
+# this module already records the mechanism a few lines down in
+# _push_token_to_fleet: "Renewing appears to INVALIDATE the token the donor
+# handed out last time — which every other machine is still holding. So an
+# hour's delay is not an hour of slightly-stale tokens, it is an hour of DEAD
+# ones that still read as valid." With one holder that is a clean handoff. With
+# three, each machine re-hops its own console every ~6 min on the same account,
+# so they invalidate each other's tokens continuously and the fleet converges on
+# everyone holding something dead that still reads valid — which is exactly the
+# 2026-08-29 shape: all three dark on one shared expiry.
+#
+# The 8/24 reasoning was sound about the SYMPTOM (Lucy 1 and Lucy 3 let their
+# tokens age out) and wrong about the CURE: what those machines needed was the
+# donor's session pushed to them, which they now get, not a competing console of
+# their own.
+APPSTREAM_HOLD_MACHINES = ("Lucy 2",)
 # Back-compat for anything importing the old singular name.
-APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[1]
+APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[0]
+
+# WHO RECEIVES the pushed session — every runner that RUNS AppStream reports,
+# which is all three. Deliberately separate from who HOLDS one: consuming a
+# donated session costs nothing and is what keeps Lucy 1 and Lucy 3 alive;
+# holding a competing console is what broke them.
+APPSTREAM_FLEET_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
 
 # RE-MINT THE rqst TOKEN BEFORE IT DIES, not after (Megan 2026-08-27).
 #
@@ -368,7 +385,10 @@ def _push_token_to_fleet(verbose: bool = True, urgent: bool = False) -> None:
             return          # never distribute a session that can't open a console
         from automations.day_orchestrator import mini_control as mc
         me = _this_machine()
-        sent = [m for m in APPSTREAM_HOLD_MACHINES if m != me]
+        # FLEET, not HOLD: the donor is the only holder now, so pushing to the
+        # hold list would push to nobody. Every runner that RUNS AppStream
+        # reports needs the session, whether or not it holds one.
+        sent = [m for m in APPSTREAM_FLEET_MACHINES if m != me]
         for m in sent:
             mc.enqueue("set_appstream_state", blob, by="holder-renewal", machine=m)
         _LAST_FLEET_PUSH["at"] = now
@@ -702,10 +722,13 @@ def main() -> int:
         #     console so the batch/resume side rides a held session instead of a
         #     flaky fresh login. All AppStream work is try/except-contained so it
         #     can never crash the ownerville holder. ---
-        # Gate on BOTH a seed file AND this being an AppStream-hold machine
-        # (see APPSTREAM_HOLD_MACHINES — all three Lucys since 2026-08-24). The
-        # machine check stops a box carrying a stale .appstream_storage_state.json
-        # from before the 2026-06-30 removal silently re-activating warming.
+        # Gate on BOTH a seed file AND this being THE AppStream-hold machine
+        # (see APPSTREAM_HOLD_MACHINES — back to one holder on 2026-08-29). A
+        # non-holder runner still gets the session pushed to it; it just doesn't
+        # keep a competing console on the same account, which is what made the
+        # three holders invalidate each other. The machine check also stops a box
+        # carrying a stale .appstream_storage_state.json from before the
+        # 2026-06-30 removal silently re-activating warming.
         as_enabled = (APPSTREAM_STORAGE_STATE.exists()
                       and _this_machine() in APPSTREAM_HOLD_MACHINES)
         appstream_page = None

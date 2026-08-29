@@ -372,6 +372,58 @@ class TheRecoveryPathCanStillMint(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class ExactlyOneMachineHoldsTheSession(unittest.TestCase):
+    """THE REGRESSION MEGAN NAMED (2026-08-29): "before we added Lucy 3, the
+    other two Lucys were working great and no re-seeding was needed."
+
+    Until `a965a8a` (8/24 19:08) this was APPSTREAM_HOLD_MACHINE = "Lucy 2" — a
+    single machine held a live console and every other runner consumed the
+    session it pushed. That commit made all three hold one, and the re-seeding
+    started.
+
+    All three run the SAME rcaptain account, and _push_token_to_fleet already
+    records why that eats itself: "Renewing appears to INVALIDATE the token the
+    donor handed out last time — which every other machine is still holding."
+    One holder is a clean handoff. Three are three consoles on one account
+    invalidating each other every ~6 minutes, ending with all three holding
+    something dead that still reads valid — the 8/29 outage exactly.
+
+    If this test fails because someone re-added a holder, read that comment
+    before deciding the extra holder is the fix. It was tried; it is what
+    brought Megan the re-seeds."""
+
+    def test_only_one_machine_holds_a_console(self):
+        self.assertEqual(len(h.APPSTREAM_HOLD_MACHINES), 1,
+                         "more than one holder on the same account — this is the "
+                         "8/24 regression that caused the re-seeding")
+
+    def test_every_runner_still_receives_the_pushed_session(self):
+        """Holding is restricted; RECEIVING must not be. Lucy 1 and Lucy 3 run
+        AppStream reports and stay alive on the donor's pushes."""
+        for m in ("Lucy 1", "Lucy 2", "Lucy 3"):
+            self.assertIn(m, h.APPSTREAM_FLEET_MACHINES)
+
+    def test_the_donor_pushes_to_the_others_not_to_nobody(self):
+        """The trap in restricting the hold list: _push_token_to_fleet used to
+        iterate it, so a single-entry hold list would push to NOBODY and quietly
+        strand the other two."""
+        import ast
+        import inspect
+        src = inspect.getsource(h._push_token_to_fleet)
+        self.assertIn("APPSTREAM_FLEET_MACHINES", src)
+        tree = ast.parse(src).body[0]
+        body = tree.body[1:] if ast.get_docstring(tree) else tree.body
+        code = "\n".join(ast.dump(n) for n in body)
+        self.assertNotIn("APPSTREAM_HOLD_MACHINES", code,
+                         "pushing to the hold list strands every non-holder")
+
+    def test_the_back_compat_singular_name_still_resolves(self):
+        """It was APPSTREAM_HOLD_MACHINES[1] when the tuple had three entries —
+        an IndexError waiting to happen on a one-entry tuple."""
+        self.assertEqual(h.APPSTREAM_HOLD_MACHINE, h.APPSTREAM_HOLD_MACHINES[0])
+        self.assertEqual(h.APPSTREAM_HOLD_MACHINE, "Lucy 2")
+
+
 class ItNeverDrivesTheHumanGatedPaths(unittest.TestCase):
     def test_no_login_form_and_no_applicant_actions(self):
         """The form is human-gated ([[reference_appstream_turnstile]]), and
