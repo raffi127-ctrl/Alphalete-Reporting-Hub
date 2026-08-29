@@ -339,18 +339,46 @@ class ARenewedTokenIsHandedToTheFleet(unittest.TestCase):
             self._renew()
         mc.enqueue.assert_not_called()
 
-    def test_it_does_not_push_more_than_once_an_hour(self):
+    def test_a_renewal_goes_out_even_inside_the_hourly_floor(self):
+        """THE DEFECT (2026-08-28 19:47). Renewing invalidates the token the
+        other machines are holding, so throttling THIS push leaves them on a
+        dead one that still reads valid — Lucy 1 and Lucy 3 both on EA30849A
+        showing "18m left" while Lucy 2 had moved to EC854530. An hour's delay
+        here is an hour of false health, not an hour of staleness."""
         mc, patch_mc = self._mc()
         with patch_mc, \
              mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
              mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
                                mock.Mock(read_text=mock.Mock(
                                    return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
-            self._renew()
-            n_after_first = mc.enqueue.call_count
+            self._renew()                       # first renewal: sets the floor
+            n_first = mc.enqueue.call_count
             sh._LAST_RQST["id"] = "somethingelse"
-            self._renew()
-        self.assertEqual(mc.enqueue.call_count, n_after_first)
+            self._renew()                       # second renewal, seconds later
+        self.assertGreater(mc.enqueue.call_count, n_first,
+                           "a renewal must not wait out the floor")
+
+    def test_the_alive_heartbeat_still_respects_the_floor(self):
+        """The other trigger has nothing new to say, so it stays throttled —
+        otherwise three healthy machines flood the queue every six minutes."""
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            sh._push_token_to_fleet()
+            n_first = mc.enqueue.call_count
+            sh._push_token_to_fleet()
+        self.assertEqual(mc.enqueue.call_count, n_first)
+
+    # REPLACED 2026-08-28. This used to assert that a second renewal inside the
+    # hour pushed nothing — it was written when the floor was believed to be a
+    # pure cost control. It was the bug: a renewal invalidates the token the
+    # other machines hold, so suppressing that push leaves them dead-but-
+    # valid-looking for up to an hour. The floor's real job is bounding the
+    # "I am alive" heartbeat, which is what the test above now pins. Kept as a
+    # note rather than deleted, so nobody restores the old assertion as a fix.
 
     def test_riding_the_same_token_hands_off_nothing(self):
         """Only a renewal has anything new to give."""

@@ -267,7 +267,7 @@ def _rqst_note(ctx) -> str:
             # this log line is now what the AppStream work is being steered by.
             if tok in _donated_token_ids():
                 return f" · token {tok}{life} · RECEIVED from the fleet"
-            _push_token_to_fleet()
+            _push_token_to_fleet(urgent=True)
             return f" · token {tok}{life} · RENEWED (was {prev})"
         return f" · token {tok}{life}"
     except Exception:  # noqa: BLE001
@@ -285,9 +285,21 @@ def _rqst_note(ctx) -> str:
 # So a holder that RENEWS its token hands the new one to the other hold
 # machines. A machine whose own renewal fails is then carried by whichever one
 # succeeded, and it takes all three failing at once — not any one of them — to
-# need a human. Renewal is the trigger because it is the only moment there is
-# something new to give; the hourly floor keeps a fleet-wide token change from
-# putting three big rows on the queue at once.
+# need a human. There are two triggers, and only one of them may be throttled.
+#
+# A RENEWAL MUST GO OUT AT ONCE. Renewing appears to INVALIDATE the token the
+# donor handed out last time — which every other machine is still holding. So an
+# hour's delay is not an hour of slightly-stale tokens, it is an hour of DEAD
+# ones that still read as valid, because a cookie's expiry is a clock and not a
+# statement about the server. That is exactly where the fleet was caught at
+# 2026-08-28 19:47: Lucy 1 and Lucy 3 both sat on EA30849A showing "18m left"
+# while Lucy 2 had already moved to EC854530; their holders printed ✓ off
+# consoles opened before the switch, and the watch was right that no report
+# could open one. Throttling this push was the defect.
+#
+# The other trigger — "I am alive, here is my session", on any live export — is
+# what carries a machine that cannot renew at all. That one keeps the hourly
+# floor: it has nothing new to say, so its only cost is queue rows.
 #
 # Fully contained: any failure here is logged and dropped. Handing off a session
 # must never be able to take down the thing holding it.
@@ -295,15 +307,18 @@ FLEET_PUSH_MIN_INTERVAL_MIN = 60.0
 _LAST_FLEET_PUSH: dict = {"at": 0.0}
 
 
-def _push_token_to_fleet(verbose: bool = True) -> None:
+def _push_token_to_fleet(verbose: bool = True, urgent: bool = False) -> None:
     """Give the just-renewed session to the other AppStream hold machines.
+
+    urgent=True bypasses the hourly floor. A RENEWAL is always urgent, and the
+    floor was actively harmful there — see FLEET_PUSH_MIN_INTERVAL_MIN.
 
     Sends the SAME payload the human re-seed's second half sends
     (`--appstream-push-fleet` → each machine's `set_appstream_state`), so the
     landing side is unchanged and still installs + verifies its own copy and
     refuses a state carrying no rqst_ token."""
     now = time.time()
-    if (now - _LAST_FLEET_PUSH["at"]) / 60.0 < FLEET_PUSH_MIN_INTERVAL_MIN:
+    if not urgent and (now - _LAST_FLEET_PUSH["at"]) / 60.0 < FLEET_PUSH_MIN_INTERVAL_MIN:
         return
     try:
         blob = APPSTREAM_STORAGE_STATE.read_text()
