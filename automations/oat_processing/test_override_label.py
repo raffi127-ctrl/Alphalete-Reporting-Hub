@@ -117,3 +117,25 @@ if __name__ == "__main__":
                test_missing_reason_fails_safe):
         fn(); print(f"  ok  {fn.__name__}")
     print("7/7 passed")
+
+
+def test_cannot_override_message_does_not_stop_the_click():
+    """Paula Ruiz, 2026-08-28. The page carried "Cannot override this applicant."
+    AND a bare "Overwrite old Applicants" button. Those are different controls:
+    the button clears the duplicate records so the applicant can be saved, and
+    the send is the next click. Bailing on the sentence strands someone who was
+    one click from the call list."""
+    p = _FakePage(["Overwrite old Applicants", "Send to AI"],
+                  "cannot send to ai ... cannot override this applicant. "
+                  "overwrite old applicants")
+    assert oat._try_overwrite_send(p) is True
+    assert p.clicked == "Overwrite old Applicants", p.clicked
+
+
+def test_bare_overwrite_label_without_ai_suffix_is_matched():
+    # body must carry the button text, as the real page does — _try_overwrite_send
+    # checks the page for an override affordance before looking for the control.
+    p = _FakePage(["Overwrite old Applicants"],
+                  "cannot send to ai as correspondence ... overwrite old applicants")
+    ok, clicked = oat._try_overwrite_send(p), p.clicked
+    assert ok and clicked == "Overwrite old Applicants", clicked

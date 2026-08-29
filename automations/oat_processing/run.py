@@ -505,8 +505,9 @@ def _try_overwrite_send(page) -> bool:
     this only sends when legitimately allowed. Send-maximizer.
 
     MATCH THE CONTROL BY PATTERN, NEVER BY AN EXACT LABEL. AppStream renders this
-    button as EITHER "Overwrite Old Applicants (Send to AI)" OR "Override and
-    Send to AI" — both appear in the same office, sometimes a few applicants
+    button as "Overwrite Old Applicants (Send to AI)", "Override and Send to AI",
+    or a bare "Overwrite old Applicants" with no AI suffix at all (Paula Ruiz,
+    2026-08-28) — which is why the fallback matcher drops the /\bai\b/ clause — both appear in the same office, sometimes a few applicants
     apart. The old exact-label list only carried the first, so on an "Override…"
     record the click silently found nothing, do_send_ai concluded the applicant
     could not be sent, and routed them to re-text or remove. Measured on Atef's
@@ -515,8 +516,16 @@ def _try_overwrite_send(page) -> bool:
     was the difference between a person reaching the call list and being written
     off. Pattern-match /overri|overwri/, prefer the one that also says AI."""
     body = _body(page)
-    if not re.search(r"overri|overwri", body) or "cannot override this applicant" in body:
+    if not re.search(r"overri|overwri", body):
         return False
+    # DO NOT bail just because the page says "Cannot override this applicant."
+    # Carlos, 2026-08-28: "you even told me that you saw the option that said
+    # overwrite old applicants, so you should have been able to." Those are two
+    # different controls. The bare "Overwrite old Applicants" button does not send
+    # — it clears the old duplicate records so this applicant CAN be saved — and
+    # the send is a separate click afterwards. Refusing to click it (or checking
+    # for the error immediately after) reports a dead end on an applicant who was
+    # one more click from the call list.
     clicked = page.evaluate(
         """() => {
              const els = Array.from(document.querySelectorAll(
@@ -535,7 +544,16 @@ def _try_overwrite_send(page) -> bool:
         return False
     _log(f"    [override] clicked {clicked!r}")
     page.wait_for_timeout(2500)
-    return "cannot send to ai" not in _body(page)
+    if "cannot send to ai" not in _body(page):
+        return True
+    # A bare "Overwrite…" (no AI suffix) only cleared the duplicates; the send is
+    # the NEXT click. Try it before calling this blocked.
+    if _click_first(page, ["Send to AI", "Send To AI"], timeout=6000):
+        page.wait_for_timeout(2500)
+        if "cannot send to ai" not in _body(page):
+            _log("    [override] send succeeded after the overwrite cleared the dups")
+            return True
+    return False
 
 
 _RETEXT_ROWS: list = []
