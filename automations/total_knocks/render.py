@@ -114,10 +114,10 @@ COL_TOTAL_APPS = "Total Apps"
 #
 # Like Talk To's per Rep, it is filled on the SUMMARY rows only — this office's
 # TOTAL and any comparison office's line. A rep row IS one rep, where the
-# average and Total Apps are the same figure. Divisor: the reps who KNOCKED
-# (`_knockers`), which is what Talk To's per Rep divides by and what the
-# summary board divides by, so the three numbers are read against one
-# denominator and a sales-only row added for the apps column never dilutes it.
+# average and Total Apps are the same figure. Divisor: the reps KNOCKING
+# (`_knockers`), which is what Talk To's per Rep divides by, what the summary
+# board divides by, and the very count Total # of Reps Knocking prints — one
+# denominator behind all three, sitting in plain sight on the same row.
 COL_AVG_APP_PER_REP = "Average App per Rep"
 # "% Talk To's per Knocks" (Eve, 2026-08-28) — Total Talk To ÷ Total Knocks,
 # one decimal (Chan 2026-08-27: 1043 / 5466 = 19.1%). It sits immediately after
@@ -139,10 +139,13 @@ COL_REPS_KNOCKING = "Total # of Reps Knocking"
 # A rep with 20 knocks or fewer did not work a day of doors (Eve, 2026-08-28) —
 # they're a walk-on, a half-hour, or a rep who logged in and left. They still
 # count in every total on the board; they just don't count as a rep KNOCKING.
-# NOTE this is a stricter line than the one `_knockers` draws for the per-rep
-# DIVISORS (any knock at all), which is deliberately left alone: changing it
-# would silently move Talk To's per Rep and Average App per Rep on every board
-# in the family. See the note in the daily summary board.
+#
+# It is also the divisor of Talk To's per Rep and Average App per Rep (Rafael
+# approved 2026-08-28: "it kind of raises the bar"). Those two used to divide
+# by every rep with any knock at all, which on Rafael's 8/27 board meant 41
+# instead of 38 and put a rep who knocked twice in the same denominator as one
+# who worked the whole day. Moving the bar moves both averages UP a little
+# (12.9 → 13.9 talk-to's per rep that day) and moves no total at all.
 KNOCKING_MIN_KNOCKS = 21
 
 
@@ -897,13 +900,27 @@ def _combined_sub(header: list[str], rows: list[list[str]],
 
 
 def _knockers(sub: list[list[str]]) -> list[list[str]]:
-    """The rows that actually knocked — a row with no knock count and no first
-    knock is a sales-only rep carried in for the Total Apps column, not someone
-    who worked a door."""
+    """The rows that count as a rep KNOCKING — KNOCKING_MIN_KNOCKS doors or
+    more. This is both the Total # of Reps Knocking count and the divisor of
+    the two per-rep columns, deliberately the SAME function so the head count
+    a reader sees and the number the averages divided by can never drift.
+
+    Rafael approved the stricter line 2026-08-28: it was every rep with any
+    knock at all, which put a rep who knocked twice in the same denominator as
+    one who worked a full day and pulled the average down for a reason that
+    isn't performance. Their knocks, talk-to's and apps still count in every
+    total on the board — they just aren't a head.
+
+    A sales-only row (no knocks, carried in for the Total Apps column) fails
+    the same test, as it always did."""
     tk = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_KNOCKS)
-    fk = COMBINED_KNOCKS_HEADERS.index(COL_FIRST_KNOCK)
     return [r for r in sub
-            if str(r[tk]).strip() not in ("", "0") or str(r[fk]).strip()]
+            if _to_int_or_zero(r[tk]) >= KNOCKING_MIN_KNOCKS]
+
+
+def _to_int_or_zero(v) -> int:
+    v = str(v).strip()
+    return int(v) if v.isdigit() else 0
 
 
 def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
@@ -936,15 +953,16 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
             vals = [_int0(r[ci]) for r in sub if str(r[ci]).strip() != ""]
             totals.append(str(round(sum(vals) / len(vals))) if vals else "")
         elif c == COL_TALK_TO_PER_REP:
-            # Per rep who KNOCKED — ownerville's Disposition by Rep only lists
-            # reps with activity, so an office isn't diluted by someone who was
-            # off. Same denominator the DAILY KNOCKS SUMMARY board uses, which
-            # is why the sales-only rows a `apps` caller adds (a rep who sold
-            # without knocking) are left OUT of it: counting them would make
-            # this board and the summary above it disagree on the same office.
+            # Per rep KNOCKING — the head count in COL_REPS_KNOCKING, same
+            # denominator the DAILY KNOCKS SUMMARY board uses (Rafael
+            # 2026-08-28). See _knockers.
+            #
+            # BLANK, not "0", when nobody cleared the bar: on a washed-out day
+            # the office still has talk-to's, and printing 0.0 next to them
+            # says the reps had none. Nothing to divide by is not a zero.
             talk = sum(_int0(r[tt_at]) for r in sub)
             n = len(_knockers(sub))
-            totals.append(f"{talk / n:.1f}" if n else "0")
+            totals.append(f"{talk / n:.1f}" if n else "")
         elif c == COL_TALK_TO_PCT:
             # The office rate: talk-tos over knocks, both summed off the SAME
             # rows the counts above come from — never an average of the reps'
@@ -952,8 +970,7 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
             totals.append(_pct(sum(_int0(r[tt_at]) for r in sub),
                                sum(_int0(r[tk_at]) for r in sub)))
         elif c == COL_REPS_KNOCKING:
-            totals.append(str(sum(1 for r in sub
-                                  if _int0(r[tk_at]) >= KNOCKING_MIN_KNOCKS)))
+            totals.append(str(len(_knockers(sub))))
         else:
             totals.append(str(sum(_int0(r[ci]) for r in sub)))
     return totals

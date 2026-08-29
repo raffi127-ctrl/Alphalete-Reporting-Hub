@@ -461,6 +461,42 @@ class DailyBoardColumns(unittest.TestCase):
         R.number_rows(cols, disp, table, count=3)
         self.assertEqual([r[0] for r in table], ["1", "2", "3", "", ""])
 
+    def test_both_per_rep_averages_divide_by_the_reps_knocking(self):
+        """Rafael, 2026-08-28: el que golpeo 20 o menos deja de estar en el
+        divisor. Sus talk-tos y sus apps siguen sumando arriba."""
+        from automations.total_knocks import render as R
+        specs = (("a", 40, 10), ("b", 60, 20), ("c", 5, 2))   # c no llega a 21
+        sub = self._office(*specs)
+        self.assertEqual(len(R._knockers(sub)), 2)
+        totals = R._combined_totals("TOTAL", sub)
+        # 32 talk-tos (los 2 de c incluidos) / 2 reps, no / 3
+        self.assertEqual(totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_TALK_TO_PER_REP)], "16.0")
+        self.assertEqual(totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_TOTAL_TALK_TO)], "32")
+        # y el resumen violeta tiene que dar EXACTO lo mismo para esa oficina
+        summary = KD.daily_summary_row("ICD", self._rows(*specs), 9)
+        at = KD.DAILY_SUMMARY_HEADERS.index
+        self.assertEqual(summary[at("Talk To's per Rep")], "16.0")
+        self.assertEqual(summary[at("Average App per Rep")], "4.5")  # 9 / 2
+        self.assertEqual(summary[at("Total # of Reps Knocking")], "2")
+
+    def test_a_day_nobody_cleared_the_bar_leaves_the_averages_blank(self):
+        """Un 0.0 al lado de talk-tos reales dice que los reps no hicieron
+        ninguno. No hay por quien dividir, que no es lo mismo que cero."""
+        from automations.total_knocks import render as R
+        specs = (("a", 12, 4), ("b", 7, 3))
+        totals = R._combined_totals("TOTAL", self._office(*specs))
+        self.assertEqual(totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_TALK_TO_PER_REP)], "")
+        self.assertEqual(totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_TOTAL_TALK_TO)], "7")      # pero el total si esta
+        summary = KD.daily_summary_row("ICD", self._rows(*specs), 3)
+        at = KD.DAILY_SUMMARY_HEADERS.index
+        self.assertEqual(summary[at("Talk To's per Rep")], "")
+        self.assertEqual(summary[at("Average App per Rep")], "")
+        self.assertEqual(summary[at("Total Apps")], "3")
+
     def test_the_summary_board_draws_with_the_number_column(self):
         rows = self._rows(("a", 40, 5), ("b", 60, 9))
         captured = [("ICD One", {"name": "ICD One"}, rows, 4)]
