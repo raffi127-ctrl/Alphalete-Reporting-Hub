@@ -59,9 +59,44 @@ RAF = {
     "campaign_id": "3",
     "group": "Alphalete Partners",
     "label": "",           # blank = no office name on the card (Raf's own room)
+    "compare": True,       # Chan's teal TOTAL line
 }
 
-OFFICES: List[Dict] = [RAF]
+# Calvin Ribera — ENERGY WELLS, added 2026-08-28 (Raf's Loom).
+#
+# NAME: ownerville spells him "Calvin RIBERA" (office 22162, Vernon Inc.);
+# everyone says "Rivera". That is an ICD-alias row, not a per-report patch, and
+# it is already in the alias sheet — impersonation resolves either spelling.
+#
+# NO CAMPAIGN PIN, and that is deliberate: he is Energy-Wells-ONLY, so the
+# campaign he lands on after impersonation already IS Energy Wells. Pinning
+# Raf's "3" here would be actively wrong — that is RES AT&T.
+#
+# VERIFIED 2026-08-28 by --probe-campaigns: his Disposition grid carries every
+# column the scraper needs ("missing: nothing"), so this office needs no
+# schema work. Raf said Energy Wells also counts "VL" as a talk-to; there is
+# NO VL column in the live grid (the 13 extras are the same TM metadata and
+# side dispositions fiber has), so Total Talk To is the standard sum until
+# somebody can point at what VL is called on screen.
+CALVIN = {
+    "key": "calvin",
+    "name": "Calvin Ribera",
+    "ov": "impersonate",
+    "campaign_id": "",
+    "group": "ENERGY WELLS DOMINATION",
+    "label": "Calvin",
+    # Chan is a FIBER office. His totals under an Energy Wells board would
+    # invite a comparison between two different businesses, so no line here.
+    "compare": False,
+}
+
+# Jay Turnage — Energy Wells AND AT&T, as TWO separate reports (Raf: "not
+# combined, 2 separate reports, knocks posted for each"). NOT ENABLED: Raf
+# himself said "I don't have him, we're gonna add him" — he is not in
+# ownerville yet, so there is nothing to impersonate. Add two rows here once
+# he exists, one with the AT&T campaign pinned and one without.
+
+OFFICES: List[Dict] = [RAF, CALVIN]
 
 
 def enabled() -> List[Dict]:
@@ -110,6 +145,13 @@ SEND_ENABLED = True
 # its own login at four ticks an hour. Set False to drop the line; a failed
 # comparison already drops it on its own without touching the board.
 COMPARE_TO_CHAN = True
+
+
+def compares(cfg: Dict) -> bool:
+    """Does this office's board carry Chan's comparison line? Per-office since
+    Calvin arrived: Chan is fiber, and his totals under an Energy Wells board
+    would compare two different businesses."""
+    return bool(COMPARE_TO_CHAN and cfg.get("compare", True))
 
 # "Avg Knocks / Hr" + "Avg Doors / Rep" on the board (Raf 2026-08-28).
 # Previewed, then rolled out to every knock board — the renderer now defaults

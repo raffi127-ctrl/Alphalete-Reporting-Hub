@@ -594,7 +594,7 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
     # SAME session as Raf — a comparison is a nicety and must never cost its
     # own login, which at four ticks an hour would be a real bill.
     from automations.knocks_intraday.run import compare_office
-    compare = compare_office() if C.COMPARE_TO_CHAN else ""
+    compare = compare_office() if C.compares(cfg) else ""
     jobs = [(cfg["name"], [day])]
     if compare and compare.strip().lower() != cfg["name"].strip().lower():
         jobs.append((compare, [day]))
