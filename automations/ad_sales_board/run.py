@@ -112,6 +112,31 @@ def slot_totals(block):
     return tot, known
 
 
+def _closest(base, cands, floor=0.5):
+    """The ad on this inbox whose role best matches `base`, or [] if none is
+    close enough.
+
+    A one-day window merges fewer title variants than a seven-day one, so the
+    same posting can land on a different base role. Exact matching then drops
+    real emails: Carlos's April weeks lost 192 in a single week that way, all
+    from inboxes running more than one ad, which the unambiguous-inbox rule
+    deliberately refuses. Token overlap recovers those without ever crediting
+    an ad that is merely on the same account.
+    """
+    want = set(base.split())
+    if not want:
+        return []
+    best, score = None, 0.0
+    for g in cands:
+        have = set(g["base"].lower().split())
+        if not have:
+            continue
+        j = len(want & have) / float(len(want | have))
+        if j > score:
+            best, score = g, j
+    return [best] if best is not None and score >= floor else []
+
+
 def ad_key(inbox, title, city, agnostic):
     """Stable identity for one merged ad row, used to carry the accumulated
     received-per-day counts (T..Z) across rewrites: the weekly refresh
@@ -388,7 +413,16 @@ def main(argv=None):
                             # row — a silent wrong beats nothing, so it stays
                             # dropped and gets named in the log instead.
                             sole = by_inbox.get(inbox, [])
-                            cands = sole if len(sole) == 1 else []
+                            if len(sole) == 1:
+                                cands = sole
+                            elif sole:
+                                # Several ads on this inbox: take the closest
+                                # title rather than drop real emails. Same
+                                # account, near-identical role — far better
+                                # than a hole. Below the threshold it still
+                                # refuses, so a genuinely different ad is
+                                # never credited to the wrong row.
+                                cands = _closest(base, sole)
                         if not cands:
                             missed += n
                             if len(unmatched_keys) < 4:
