@@ -258,10 +258,12 @@ def phone_from_file(path: str):
     phone = phone_from_text(txt)
     if phone:
         return phone
-    if len((txt or "").strip()) < 40:
-        # Nothing readable came out: an image resume, not an empty one.
-        return phone_from_text(_text_from_ocr(path))
-    return None
+    # No number in the text layer -> OCR, even when the layer had plenty of text.
+    # Gating OCR on "text layer is empty" missed the common middle case: a resume
+    # whose body is real text but whose CONTACT BLOCK is part of a graphic, which
+    # is exactly how the designed templates on Indeed are built. The cost is a
+    # couple of seconds on a file we were about to give up on anyway.
+    return phone_from_text(_text_from_ocr(path))
 
 
 # --------------------------------------------------------------------------- #
