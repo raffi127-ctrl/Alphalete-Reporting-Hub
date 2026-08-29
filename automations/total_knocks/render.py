@@ -148,6 +148,11 @@ COL_REPS_KNOCKING = "Total # of Reps Knocking"
 # (12.9 → 13.9 talk-to's per rep that day) and moves no total at all.
 KNOCKING_MIN_KNOCKS = 21
 
+# The fill for a rep who has hit the doors target (Raf 2026-08-29). Bright
+# enough to find at a glance down a column of forty, dark enough that the
+# black number stays readable on it.
+GREEN_HIT = (74, 222, 128)
+
 # "Avg Knocks / Hr" (Raf 2026-08-28) — a rep's knocks divided by the hours from
 # their FIRST knock to their LAST. His words were "calculated from their 1st
 # knock time", and Megan settled it as exactly that: the RAW span, NOT
@@ -357,7 +362,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           highlight_first_row: "bool | int" = False,
           repeat_header_before: int = 0,
           top_row_colors: "list | None" = None,
-          total_row_bgs: "list | None" = None) -> Path:
+          total_row_bgs: "list | None" = None,
+          cell_bgs: "dict | None" = None) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
     wrap_headers=False (default): every existing board unchanged — column
@@ -376,6 +382,11 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     long board's totals block is readable without scrolling to the top.
     The bottom band uses theme["repeat_header_bg"] when present (Megan
     2026-08-23: lighter purple) — else the header colour.
+    cell_bgs (Raf 2026-08-29, "turn the total doors knocked bright green once
+    the rep hits 140"): {(row_index, col_index): fill} — paints INDIVIDUAL
+    cells over whatever the row already draws. Row indexes are into `rows` as
+    passed, so the caller counts the same rows it built. None = every existing
+    board byte-identical.
     total_row_bgs (Megan 2026-08-23, "make Chan's row teal"): per-row fills
     for the trailing highlighted rows, in order — e.g. [plum, teal] paints
     the host OFFICE TOTALS plum and the comparison row teal. None = the
@@ -510,6 +521,11 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
         d.rectangle([PAD, y, PAD + table_w, y + ROW_H], fill=bg)
         x = PAD
         for ci in range(ncol):
+            # One cell's own fill, painted over the row band. Drawn before the
+            # text so the number sits on top of it.
+            _cbg = (cell_bgs or {}).get((ri, ci))
+            if _cbg:
+                d.rectangle([x, y, x + col_w[ci], y + ROW_H], fill=_cbg)
             val = r[ci] if ci < len(r) else ""
             font = f_name if (ci == name_col or is_total) else f_cell
             fg = (HEADER_FG if is_total
@@ -602,7 +618,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         hide_columns: "tuple[str, ...]" = (),
                         extra_totals: "list[tuple] | None" = None,
                         apps: "dict[str, int] | None" = None,
-                        rate_columns: bool = True) -> Path:
+                        rate_columns: bool = True,
+                        knocks_green_at: "int | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -723,12 +740,29 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                             n_extra=len(extra_rows), extra_apps=extra_apps,
                             n_knockers=len(_knockers(sub)),
                             extra_knockers=extra_knockers)
+    _cell_bgs: dict = {}
     if rate_columns:
         # After the hide and apps passes, by NAME on what survived, same as
         # the apps column — so it lands correctly on a board that hid others.
         _insert_rate_columns(cols, disp, table, n_extra=len(extra_rows),
                              extra_listed=extra_listed)
+    if knocks_green_at and COL_TOTAL_KNOCKS in cols:
+        # Raf 2026-08-29: "turn the total doors knocked bright green once the
+        # rep hits 140". REP ROWS ONLY — a green office total would be a
+        # different claim, and the reps are who the target is for.
+        _tk = cols.index(COL_TOTAL_KNOCKS)
+        for _ri, _row in enumerate(table):
+            if _ri <= len(extra_rows):      # comparison rows + our TOTAL
+                continue
+            _v = str(_row[_tk]).strip().replace(",", "")
+            if _v.isdigit() and int(_v) >= knocks_green_at:
+                _cell_bgs[(_ri, _tk)] = GREEN_HIT
     number_rows(cols, disp, table, first=1 + len(extra_rows))
+    if _cell_bgs:
+        # number_rows inserted a "#" column at 0, so every recorded column
+        # index shifts one right. Done here rather than at record time so the
+        # rule above reads against the columns it actually tested.
+        _cell_bgs = {(r, c + 1): v for (r, c), v in _cell_bgs.items()}
     return _draw(disp, table,
                  f"{title_prefix}TOTAL KNOCKS — {_office}"
                  f"{_date_text(target, end, date_text)}",
@@ -736,7 +770,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                  out_dir / f"total_knocks_{_file_span(target, end)}.png",
                  name_col=1, wrap_headers=True,
                  highlight_first_row=1 + len(extra_rows),
-                 top_row_colors=_colors)
+                 top_row_colors=_colors, cell_bgs=_cell_bgs or None)
 
 
 def number_rows(cols: list, disp: list, table: list, *,
@@ -819,7 +853,18 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
     n_listed = max(0, len(table) - n_extra - 1)
     per_hr, per_rep = [], []
     for i, row in enumerate(table):
-        per_hr.append(_rate(row))
+        if i <= n_extra:
+            # SUMMARY ROWS DO NOT GET total ÷ span, and this is a real bug that
+            # shipped: those rows carry the AVERAGE of the reps' first and last
+            # knock, so early in the day the span is a minute or two and the
+            # office "rate" explodes — Raf's 10:45 board read 480.0 against
+            # reps of 40 and blank (Megan 2026-08-29: "not adding correctly").
+            # The office's own figure is the AVERAGE OF THE REP RATES, filled
+            # in below once they exist; a comparison office has no rep rows
+            # here at all, so it gets a blank rather than a fabricated number.
+            per_hr.append(None)
+        else:
+            per_hr.append(_rate(row))
         if i < n_extra:
             x = (extra_listed[i] if extra_listed and i < len(extra_listed)
                  else None)
@@ -829,6 +874,12 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
                            if n_listed else "")
         else:
             per_rep.append("")          # a rep row IS one rep
+    # The office TOTAL's rate = the mean of its reps' rates, over the reps that
+    # HAVE one. Comparison rows stay blank: their reps never reach this table.
+    _rates = [float(v) for v in per_hr[n_extra + 1:] if v]
+    per_hr[n_extra] = ("%.1f" % (sum(_rates) / len(_rates))) if _rates else ""
+    per_hr = ["" if v is None else v for v in per_hr]
+
     for name, vals in ((COL_DOORS_PER_REP, per_rep),
                        (COL_KNOCKS_PER_HR, per_hr)):
         cols.insert(at, name)
@@ -1215,7 +1266,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          end: "dt.date | None" = None,
                          date_text: str = "",
                          extra_totals=None,
-                         rate_columns: bool = True
+                         rate_columns: bool = True,
+                         knocks_green_at: "int | None" = None
                          ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
@@ -1250,6 +1302,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
     else:
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      rate_columns=rate_columns,
+                                     knocks_green_at=knocks_green_at,
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,
                                      extra_totals=extra_totals)], shape)

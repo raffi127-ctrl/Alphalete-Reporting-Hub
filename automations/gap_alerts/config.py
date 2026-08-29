@@ -229,6 +229,11 @@ def compares(cfg: Dict) -> bool:
 # them on, so this is only an explicit local override.
 RATE_COLUMNS = True
 
+# Raf 2026-08-29: "can we turn the total doors knocked bright green once the
+# rep hits 140 please". Rep rows only — the target is a rep's day, and a green
+# office total would be claiming something else. None turns it off.
+KNOCKS_GREEN_AT = 140
+
 # The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
 # a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps
 # against Carlos's ~22.

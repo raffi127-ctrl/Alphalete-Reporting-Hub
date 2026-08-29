@@ -684,7 +684,8 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
         title_suffix=first_name(cfg.get("label") or cfg["name"]),
         date_text=_date_text(day), extra_totals=extra,
         rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
-                      else RATES_OVERRIDE))
+                      else RATES_OVERRIDE),
+        knocks_green_at=C.KNOCKS_GREEN_AT)
 
     _log("  %s: %d rep(s) -> %s (%s)"
          % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
