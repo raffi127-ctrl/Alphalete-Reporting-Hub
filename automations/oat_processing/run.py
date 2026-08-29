@@ -586,9 +586,32 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
                  f"{a.first_name} {a.last_name}")
             return "removed"
     elif _verdict == "retext":
+        # A no-show / not-qualified was never actually interviewed, so if the ATS
+        # will not let us override them onto the call list we TEXT them instead of
+        # dropping them (Carlos 2026-08-28). Only fall back to flagging when the
+        # send itself could not be completed — never silently.
+        ph_now = (a.cell_phone or a.phone or "").strip()
+        if not ph_now:
+            got_ph, _d = lookup_resume_phone(page)
+            if got_ph:
+                _fill_phone_field(page, got_ph)
+                ph_now = got_ph
+        if ph_now:
+            role = _role_from_position(read_posting_title(page, a.position))
+            st, det = retext_applicant(page, a.first_name, a.last_name, ph_now,
+                                       role, do_send=True)
+            if st == "sent":
+                _log(f"    📲 re-texted (no-show / not qualified — never truly "
+                     f"interviewed): {a.first_name} {a.last_name}")
+                if _perform_remove(page, DUP_REASON):
+                    return "retext_removed"
+                return "retext_sent"
+            _log(f"    ⚑ re-text could not send ({st}: {str(det)[:70]}) — flagging: "
+                 f"{a.first_name} {a.last_name}")
+        else:
+            _log(f"    ⚑ no number for the re-text — flagging: "
+                 f"{a.first_name} {a.last_name}")
         _flag_retext(a, None)
-        _log(f"    ⚑ FLAG re-text (no-show / not qualified — never truly "
-             f"interviewed): {a.first_name} {a.last_name}")
         return "flag_retext"
 
     # genuinely can't send → >1wk re-text (armed: text+remove, else flag) else
