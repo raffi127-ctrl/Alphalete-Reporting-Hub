@@ -874,7 +874,8 @@ def preview_dm(pdf: Path, slot: str, user: str = "U04G5HJBGFN") -> Dict:
     return {"ok": True, "to": user, "file": pdf.name}
 
 
-def probe_campaigns(headless: bool = True, office: str = "") -> int:
+def probe_campaigns(headless: bool = True, office: str = "",
+                    campaign: str = "") -> int:
     """READ-ONLY: list the campaigns this login can see, and dump the
     Disposition-by-Rep table's LIVE column headers for each.
 
@@ -919,18 +920,33 @@ def probe_campaigns(headless: bool = True, office: str = "") -> int:
                 return 0
             _log("impersonated %r" % office)
 
-        # CALVIN IS ENERGY-WELLS-ONLY (Raf), so once impersonated his DEFAULT
-        # campaign already is Energy Wells — the headers below are that
-        # campaign's, with no switching needed. This is the question that
-        # actually gates the build; the id scan afterwards is only for Jay,
-        # who runs two campaigns and will need one pinned.
+        # THE CAMPAIGN IS A STICKY SESSION-GLOBAL AND IMPERSONATION DOES NOT
+        # RESET IT. This probe previously loaded p=89 with no campaign param
+        # and reported "missing: nothing" — it was reading RES AT&T's grid
+        # while impersonated as an Energy Wells owner, because that is what the
+        # session happened to be pinned to. The headers it printed (close,
+        # credit check, already has at&t, bill payer not home) are AT&T
+        # dispositions; Energy Wells has Not Interested, Presentation and VL.
+        # Always pass --campaign and read the campaign name off the page.
         try:
-            cap._goto(page, "https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
-                      % (C.PAGE_DISPOSITION, rqst))
+            _extra = ("&invD2DClientId=%s" % campaign) if campaign else ""
+            cap._goto(page, "https://v2.ownerville.com/index.cfm?p=%d&rqst=%s%s"
+                      % (C.PAGE_DISPOSITION, rqst, _extra))
             page.wait_for_timeout(3000)
             idx = knocks._header_index(page)
-            _log("DEFAULT campaign headers (%d): %s"
-                 % (len(idx), ", ".join(sorted(idx))))
+            # WHICH campaign is this actually? The page prints its name; the
+            # probe must say it, or a header dump proves nothing about which
+            # campaign produced it.
+            try:
+                onscreen = page.evaluate(
+                    "() => { const t = (document.body.innerText || '');"
+                    " const m = t.match(/RES-?[A-Z& ]{3,20}/); "
+                    " return m ? m[0].trim() : ''; }")
+            except Exception:  # noqa: BLE001
+                onscreen = ""
+            _log("campaign=%s onscreen=%r headers (%d): %s"
+                 % (campaign or "(session default)", onscreen, len(idx),
+                    ", ".join(sorted(idx))))
             missing = [c for c in knocks.SHEET_COLUMNS
                        if c not in {knocks.COL_TOTAL_TALK_TO,
                                     *knocks.TIME_TRACKER_COLUMNS}
@@ -1093,6 +1109,11 @@ def main(argv=None) -> int:
                          "Disposition table's live column headers")
     ap.add_argument("--office", default="",
                     help="impersonate this owner for --probe-campaigns")
+    ap.add_argument("--campaign", default="",
+                    help="pin this invD2DClientId before dumping headers — "
+                         "REQUIRED to trust the dump, since the campaign is a "
+                         "sticky session-global that impersonation does not "
+                         "reset")
     ap.add_argument("--probe", action="store_true",
                     help="READ-ONLY: dump the raw Time Tracker rows")
     args = ap.parse_args(argv)
@@ -1106,7 +1127,8 @@ def main(argv=None) -> int:
         RATES_OVERRIDE = True
 
     if getattr(args, "probe_campaigns", False):
-        return probe_campaigns(headless=not args.headed, office=args.office)
+        return probe_campaigns(headless=not args.headed, office=args.office,
+                               campaign=args.campaign)
 
     if args.probe:
         # Ahead of the window gate on purpose: you diagnose when you can, not
