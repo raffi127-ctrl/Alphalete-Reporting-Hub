@@ -210,6 +210,45 @@ def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False):
     return C.GAP_TEXT_HEADER + "\n\n" + "\n".join(lines), names
 
 
+def _slack_due(key: str, now: dt.datetime) -> bool:
+    """Has this office's board gone to Slack yet THIS clock hour?
+
+    Keyed on the hour itself rather than "minutes since the last post", so the
+    post lands on the first tick of each hour and cannot drift later and later
+    across the day the way an elapsed-time check would.
+    """
+    stamp = (_state().get("_slack_hour") or {}).get(key)
+    return stamp != now.strftime("%Y-%m-%dT%H")
+
+
+def _mark_slack_sent(key: str, now: dt.datetime) -> None:
+    data = _state()
+    data.setdefault("_slack_hour", {})[key] = now.strftime("%Y-%m-%dT%H")
+    _save_state(data)
+
+
+def post_slack(cfg: Dict, png: Path, slot: str, day: dt.date,
+               dry_run: bool = True) -> Dict:
+    """Put the board in #alphalete-lvl1-chat, once an hour (Raf 2026-08-29).
+
+    The board only — not the gap list. The gap list is a to-text list for the
+    handful of people who chase reps; a channel of reps reading a leaderboard
+    has no use for who is 20 minutes dark, and posting it would put every rep's
+    quiet stretch in front of everyone.
+    """
+    who = cfg.get("label") or cfg["name"].split()[0]
+    comment = ("*%s — %s*  ·  ranked by total knocks"
+               % (C.CARD_TITLE.title(), slot))
+    if dry_run:
+        return {"dry_run": True, "channel": C.SLACK_HOURLY_CHANNEL,
+                "comment": comment, "file": png.name}
+    from automations.shared import slack_metrics_post as smp
+    smp._client().files_upload_v2(
+        file_uploads=[{"file": str(png), "filename": png.name}],
+        channel=C.SLACK_HOURLY_CHANNEL, initial_comment=comment)
+    return {"channel": C.SLACK_HOURLY_CHANNEL, "file": png.name, "ok": True}
+
+
 def _publish_hub_once(day: dt.date) -> None:
     """The first good tick of the day paints the card; every later tick stays
     quiet. A green pill repainted all afternoon would say nothing.
@@ -772,6 +811,25 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             _log("  %s -> %r (%s participants)%s"
                  % ("TEXT" if send else "PREVIEW", res.get("resolved_name"),
                     res.get("participants"), "" if send else " — nothing sent"))
+            # The hourly Slack post rides the SAME board that was just
+            # built — never its own pull. It is also independent of the text:
+            # a Messages failure must not cost the channel its leaderboard,
+            # and vice versa, so it sits in its own try.
+            if cfg.get("slack_hourly") and boards:
+                now = dt.datetime.now()
+                if _slack_due(cfg["key"], now):
+                    try:
+                        res = post_slack(cfg, boards[0], slot, day,
+                                         dry_run=not send)
+                        _log("  %s -> %s (%s)"
+                             % ("SLACK" if send else "SLACK (preview)",
+                                res.get("channel"), res.get("file")))
+                        if send:
+                            _mark_slack_sent(cfg["key"], now)
+                    except Exception as e:  # noqa: BLE001
+                        _log("  SLACK FAILED: %s: %s"
+                             % (type(e).__name__, str(e)[:200]))
+
             if send:
                 # Both stamped only after Messages actually took it: a failed
                 # send must not block the next retry, and must not consume the

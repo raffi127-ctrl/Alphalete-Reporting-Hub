@@ -60,6 +60,10 @@ RAF = {
     "group": "Alphalete Partners",
     "label": "",           # blank = no office name on the card (Raf's own room)
     "compare": True,       # Chan's teal TOTAL line
+    # Raf's office only. "Our slack lvl 1 chat" is HIS org's channel; Calvin is
+    # Energy Wells, a different business, and his board landing in front of
+    # Raf's reps would invite a comparison nobody asked for.
+    "slack_hourly": True,
 }
 
 # Calvin Ribera — ENERGY WELLS, added 2026-08-28 (Raf's Loom).
@@ -194,6 +198,25 @@ SEND_ENABLED = True
 # comparison already drops it on its own without touching the board.
 COMPARE_TO_CHAN = True
 
+# --- the hourly Slack post ----------------------------------------------------
+# Raf 2026-08-29: "On our slack lvl 1 chat, once an hr can we get it posted
+# there please? Ranked highest knocks to least. I put myself on blast, everyone
+# is trying to beat me, if they do, they get owner pay."
+#
+# ONCE AN HOUR, not every tick: the chat texts run every 15 minutes because the
+# people in them are acting on gaps; a channel of reps reading a leaderboard
+# does not need four a hour, and four would train them to scroll past it.
+#
+# The board is ALREADY ranked highest-knocks-first — that is what the iMessage
+# post has carried since it was ranked, so "ranked highest to least" needs no
+# separate sort here.
+#
+# C09JG28CD27 is #alphalete-lvl1-chat, PRIVATE — the same channel
+# slack_metrics_post already mirrors #alphalete-sales into, so Lucy is a member.
+# A private channel Lucy has not joined fails with a 200 and sign-in HTML, not
+# a 401, so membership is the thing to check first if this ever goes quiet.
+SLACK_HOURLY_CHANNEL = "C09JG28CD27"      # #alphalete-lvl1-chat
+
 
 def compares(cfg: Dict) -> bool:
     """Does this office's board carry Chan's comparison line? Per-office since
@@ -302,7 +325,7 @@ def capture_window():
 # actually out rather than left to run to midnight.
 DAY_START_HHMM = (13, 30)
 DAY_END_HHMM = (22, 0)   # 10pm (Raf, 2026-08-28: "can we have this come till 10:00pm")
-SATURDAY_START_HHMM = (10, 0)
+SATURDAY_START_HHMM = (10, 45)   # Raf 2026-08-29: "can it start at 10:45am"
 SATURDAY_END_HHMM = (17, 0)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
 SATURDAY = 5
