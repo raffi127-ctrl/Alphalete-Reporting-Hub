@@ -991,6 +991,42 @@ def probe_campaigns(headless: bool = True, office: str = "",
         except Exception as e:  # noqa: BLE001
             _log("campaign-id scan failed (%s)" % type(e).__name__)
 
+        # THE CAMPAIGN PICKER IS NOT A <select> AND NOT A PLAIN LINK. Calvin's
+        # screen shows "RES-ENERGYWELL" in a custom dropdown top-right, so the
+        # id exists — the earlier a[href] scan simply never saw it (it found 3
+        # and 39, which turned out to be RES AT&T and a third campaign with
+        # "bill pull"/"inaccessible no soliciting").
+        #
+        # So scan the WHOLE document for invD2DClientId — every attribute and
+        # every inline script — and pair each id with the nearest readable
+        # text. That is what turns an id into a NAME, which is the only way to
+        # know we pinned Energy Wells and not something that merely returns
+        # rows.
+        try:
+            pairs = page.evaluate(
+                "() => { const out = [];"
+                " for (const el of document.querySelectorAll('*')) {"
+                "   for (const a of el.attributes || []) {"
+                "     const m = String(a.value).match(/invD2DClientId=?[\"']?(\\d+)/);"
+                "     if (m) { out.push([m[1], (el.innerText || el.textContent || '')"
+                "        .replace(/\\s+/g,' ').trim().slice(0,40)]); } } }"
+                " for (const sc of document.querySelectorAll('script')) {"
+                "   const txt = sc.textContent || '';"
+                "   const re = /invD2DClientId[=:\\s\"']+(\\d+)/g; let m;"
+                "   while ((m = re.exec(txt))) { out.push([m[1], '(script)']); } }"
+                " return out.slice(0, 60); }")
+            seen = {}
+            for cid, label in pairs:
+                if cid not in seen or (label and label != "(script)"
+                                       and seen[cid] == "(script)"):
+                    seen[cid] = label
+            for cid, label in sorted(seen.items(), key=lambda kv: int(kv[0])):
+                _log("PICKER id=%-4s %s" % (cid, label or "(no text)"))
+            if not seen:
+                _log("PICKER: no invD2DClientId anywhere in the DOM")
+        except Exception as e:  # noqa: BLE001
+            _log("picker scan failed (%s: %s)" % (type(e).__name__, str(e)[:120]))
+
         # NAME each candidate id. Two ids in Calvin's links (3 and 39) is not
         # an answer: 3 is RES AT&T, so 39 is PROBABLY Energy Wells — and
         # "probably" is exactly what would hand Jay's Energy Wells report the
