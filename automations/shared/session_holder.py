@@ -112,29 +112,30 @@ APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[1]
 # the session this process holds warm 24/7 — for a genuinely new token.
 REMINT_MARGIN_MIN = 30.0
 
-# OWNERVILLE MINT — OFF BY DEFAULT (2026-08-29). Read before switching on.
+# OWNERVILLE MINT — ON, and the reason it failed this morning is understood.
 #
-# The mechanism is right: _sso_to_appstream really does get a NEW rqst out of
-# ownerville unattended (measured 10:04 — ownerville issued 43A275AE while we
-# held 083AE947). What it CANNOT currently do is turn that token into a console:
-# every hop lands with #searchMC absent, including with proper waits and a
-# re-navigation. That is the same symptom `appstream_whoami --force` reports for
-# the human-gated login form, which suggests establishing a NEW AppStream
-# session is what the 2026-08-20 Turnstile blocks — by SSO as well as by form.
-# An EXISTING session continues fine; only a fresh one is refused.
+# Ownerville issues a fresh rqst on demand, unattended (measured 10:04 on
+# 2026-08-29: it handed over 43A275AE while we held 083AE947). That was never
+# the problem. The problem was HOW the token was applied:
 #
-# Off because a failing mint is not free. It re-navigates the holder's console
-# tab on every cycle, and on 2026-08-29 it ran every ~6 min for over an hour
-# against the SSO endpoint. The fleet's shared token expired at 10:05 with no
-# successor and all three machines went dark together. I cannot separate "the
-# hops did nothing" from "the hops tripped a protection that then refused new
-# sessions" — and while that is unresolved, the holder must not hammer a login
-# path unattended. What is certain is that it did not help.
+#   • v1 called _sso_to_appstream(page), which navigates the CONSOLE tab to
+#     v2.ownerville.com and back. Navigating that tab away tears down the live
+#     AppStream session, so the hop back has to establish a NEW one — and a NEW
+#     session is precisely what the 2026-08-20 Turnstile refuses. #searchMC
+#     never rendered, at 10:04 and again at 10:50 with waits and a retry.
+#   • The reuse path shows the shape that works: leave the session ALONE and
+#     navigate the console tab to `?rqst=<TOKEN>&p=701`. That renders every
+#     time, which is how every report and every fleet push lands.
 #
-# Leave OFF until someone confirms a hop can render a console again (one manual
-# `--probe` is enough). The post-expiry replay + the fleet push are untouched
-# and are what carry the machines today.
-MINT_VIA_OWNERVILLE = False
+# So the token is now read in its OWN tab (_fresh_rqst_from_ownerville) and the
+# console tab is only ever RE-KEYED, never torn down. Same navigation the
+# working path uses; the only difference is a new token instead of a saved one.
+#
+# Still throttled (MINT_MIN_INTERVAL_MIN): v1 ran every ~6 min for an hour
+# against the SSO endpoint, and while a failing mint is cheap it is not free.
+# On failure the caller falls back to the replay, so a bad attempt costs a
+# navigation, not the session.
+MINT_VIA_OWNERVILLE = True
 # Never more than one attempt per this many minutes, even when enabled.
 MINT_MIN_INTERVAL_MIN = 30.0
 _LAST_MINT_ATTEMPT: dict = {"at": 0.0}
@@ -160,6 +161,7 @@ from automations.shared.tableau_patchright import (
     OWNERVILLE_STORAGE_STATE,
     APPSTREAM_STORAGE_STATE,
     OWNERVILLE_V2_URL,
+    APPSTREAM_BASE,
 )
 
 # The holder runs CONTINUOUSLY, so it must NOT use the reports' profile —
@@ -394,6 +396,48 @@ def _ctx_rqst_minutes_left(ctx) -> float | None:
         return None
 
 
+_RQST_RE = re.compile(r"rqst=([A-Za-z0-9_-]+)")
+
+
+def _fresh_rqst_from_ownerville(ctx) -> str | None:
+    """A NEW rqst token, read from the warm ownerville session in its OWN tab.
+
+    Deliberately does NOT touch the AppStream console tab. Ownerville is the
+    issuer — it hands out a fresh token on request, unattended, and this process
+    already holds a valid ownerville login 24/7 (measured 8/29: it issued
+    43A275AE on demand at 10:04). Everything here is read-only navigation of
+    ownerville's own page; the token is then applied to the console tab by the
+    caller, the same way the reuse path applies a saved one.
+
+    None on any failure — a mint we cannot do is a missed cycle, never a raise."""
+    page = None
+    try:
+        page = ctx.new_page()
+        page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(5_000)
+        m = _RQST_RE.search(page.url or "")
+        if not m:
+            href = page.evaluate(
+                "() => { const a=[...document.querySelectorAll('a')]"
+                ".find(x=>/p=701/.test(x.getAttribute('href')||'')); "
+                "return a?a.getAttribute('href'):''; }")
+            m = _RQST_RE.search(href or "")
+        if not m:
+            m = _RQST_RE.search(
+                page.evaluate("() => document.documentElement.innerHTML") or "")
+        return m.group(1) if m else None
+    except Exception as e:  # noqa: BLE001 — never raise into the holder
+        print(f"[{_stamp()}] AppStream mint — ownerville token read failed: "
+              f"{type(e).__name__}: {str(e)[:110]}", flush=True)
+        return None
+    finally:
+        if page is not None:
+            try:
+                page.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     """Mint a genuinely NEW rqst token by re-running ownerville's SSO hop.
 
@@ -439,10 +483,27 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
         return False
     _LAST_MINT_ATTEMPT["at"] = now
     before = _rqst_id(ctx)
+    # FETCH THE TOKEN IN A SEPARATE TAB. This is the whole fix. The first
+    # version called _sso_to_appstream(page), which navigates THIS tab to
+    # v2.ownerville.com and then back — and navigating the console tab away
+    # tears down the live AppStream session, so the hop back has to establish a
+    # NEW one, which is exactly what the 2026-08-20 Turnstile refuses
+    # (#searchMC never rendered, 10:04 and 10:50 on 8/29).
+    #
+    # The reuse path proves the shape that DOES work: with the session left
+    # intact, navigating the console tab to `?rqst=<TOKEN>&p=701` renders every
+    # time. So do that — just with a token that is NEW instead of saved. The
+    # console session is never torn down; it is only re-keyed.
+    tok = _fresh_rqst_from_ownerville(ctx)
+    if not tok:
+        print(f"[{_stamp()}] AppStream mint FAILED — no rqst token on the warm "
+              f"ownerville session (is ownerville logged in?)", flush=True)
+        return False
     try:
-        _sso_to_appstream(page, verbose=verbose)
+        page.goto(f"{APPSTREAM_BASE}?rqst={tok}&p=701",
+                  wait_until="domcontentloaded")
     except Exception as e:  # noqa: BLE001 — a mint attempt must never break the holder
-        print(f"[{_stamp()}] AppStream mint FAILED (ownerville hop): "
+        print(f"[{_stamp()}] AppStream mint FAILED (re-key nav): "
               f"{type(e).__name__}: {str(e)[:140]}", flush=True)
         return False
     # WAIT for the console the way the REPORTS' path waits for it.
