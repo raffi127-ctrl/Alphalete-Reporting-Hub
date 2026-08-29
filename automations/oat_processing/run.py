@@ -603,6 +603,15 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
             _log(f"    🗑 removed — interviewed and disqualified (no re-text): "
                  f"{a.first_name} {a.last_name}")
             return "removed"
+    elif _verdict == "override_send":
+        # "Left Message" = we called and never reached them, and they are
+        # applying again, so they are still looking. Override them straight onto
+        # the call list (Carlos 2026-08-29, Kim Hamilton).
+        if _try_overwrite_send(page):
+            _log(f"    ✅ override-sent — prior contact only left a message: "
+                 f"{a.first_name} {a.last_name}")
+            return "sent_override"
+        _log(f"    ⚑ left-message override refused: {a.first_name} {a.last_name}")
     elif _verdict == "retext":
         # A no-show / not-qualified was never actually interviewed, so if the ATS
         # will not let us override them onto the call list we TEXT them instead of

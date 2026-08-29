@@ -162,6 +162,10 @@ RETEXT_STATUS = re.compile(
     r"no[\s-]?show|rejected|not\s+qualified|declined", re.I)
 DISQUALIFIED_STATUS = re.compile(
     r"delay\s*disqualif", re.I)
+# "Left Message" means we called and never actually reached them. They are
+# applying again, so they are still job-hunting: override and send, do not
+# remove and do not re-text. (Carlos, 8/29, on Kim Hamilton.)
+OVERRIDE_STATUS = re.compile(r"left\s*message", re.I)
 
 
 def interview_verdict(status_text: str):
@@ -171,6 +175,8 @@ def interview_verdict(status_text: str):
         return "remove_duplicate"
     if RETEXT_STATUS.search(t):
         return "retext"
+    if OVERRIDE_STATUS.search(t):
+        return "override_send"
     return None
 
 
@@ -182,4 +188,6 @@ def verdict_for_history(statuses) -> str:
         return "remove_duplicate"
     if "retext" in verdicts:
         return "retext"
+    if "override_send" in verdicts:
+        return "override_send"
     return ""
