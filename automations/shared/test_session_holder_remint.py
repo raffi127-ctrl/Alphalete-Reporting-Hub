@@ -23,21 +23,44 @@ did what four re-hop cycles could not. Overnight nothing restarts it and no
 console work is scheduled between midnight and 4am, so the token died and the
 3:00 AM "Session re-seed needed" fired with the 4am batch an hour out.
 
+HOW IT ENDED THE SAME DAY — the mint is OFF (MINT_VIA_OWNERVILLE = False).
+Ownerville really does issue a fresh token unattended (10:04: it handed over
+43A275AE while we held 083AE947), so the mechanism was right. What it cannot do
+is turn that token into a console: every hop landed with #searchMC absent, with
+proper waits and a re-navigation. That is the symptom the human-gated form
+gives, so the 2026-08-20 Turnstile appears to refuse any NEW session — by SSO as
+well as by form. An existing session continues fine. The fleet's shared token
+expired at 10:05 with no successor and all three machines went dark together.
+
 THE RULES:
-  • inside the margin, the holder mints through OWNERVILLE;
   • "the hop ran" is not success — a new token id is;
-  • a fleet push still gets picked up for free (that carries a machine that
-    cannot mint at all), and is tried BEFORE spending an ownerville round-trip;
-  • when the token is already gone, minting is still attempted — that is the
-    ten-hour-outage path;
+  • a failed mint says WHY, with verbose off (a silent failure cost the first
+    live attempt);
+  • wait for the console, never snapshot it with count();
+  • a fleet push is picked up for free and is tried BEFORE any ownerville
+    round-trip — that is what carries a machine that cannot mint;
+  • the mint stays off, and throttled when on: a path that cannot succeed must
+    not re-navigate the holder's console every cycle;
+  • off must not mean broken — the replay still runs and still reports healthy;
   • nothing here may ever raise into the holder loop.
 """
 from __future__ import annotations
 
+import contextlib
 import unittest
 from unittest import mock
 
 from automations.shared import session_holder as h
+
+
+@contextlib.contextmanager
+def _mint_enabled():
+    """MINT_VIA_OWNERVILLE is OFF by default and every attempt is throttled.
+    These tests are about what the mint DOES once it runs, so switch it on and
+    clear the throttle. The gate itself is covered by TheMintIsOffByDefault."""
+    with mock.patch.object(h, "MINT_VIA_OWNERVILLE", True), \
+         mock.patch.dict(h._LAST_MINT_ATTEMPT, {"at": 0.0}):
+        yield
 
 
 class _Locator:
@@ -88,12 +111,50 @@ class _Page:
         return _Locator(1 if self._has else 0)
 
 
+class TheMintIsOffByDefault(unittest.TestCase):
+    """SWITCHED OFF 2026-08-29 after it failed in the wild — see
+    MINT_VIA_OWNERVILLE. Ownerville does issue a new token, but the hop cannot
+    turn it into a console (#searchMC absent every time, waits and a
+    re-navigation included), which matches what the Turnstile does to a NEW
+    session. A mint that cannot succeed still costs a console re-navigation
+    every cycle, so it stays off until someone shows a hop rendering again."""
+
+    def test_it_does_nothing_and_touches_nothing_while_off(self):
+        with mock.patch.object(h, "_sso_to_appstream") as sso:
+            self.assertFalse(
+                h._mint_appstream_via_ownerville(object(), _Page()))
+        sso.assert_not_called()
+
+    def test_the_holder_still_replays_and_stays_warm_with_it_off(self):
+        """Off must not mean broken: the margin falls through to the replay and
+        the session is still reported healthy."""
+        page = _Page()
+        with mock.patch.object(h, "_ctx_rqst_count", return_value=1), \
+             mock.patch.object(h, "_ctx_rqst_minutes_left", return_value=12.0), \
+             mock.patch.object(h, "_reuse_appstream_storage_state",
+                               return_value=True) as reuse:
+            self.assertTrue(h._warm_appstream(object(), page))
+        reuse.assert_called_once()
+
+    def test_attempts_are_throttled_even_when_on(self):
+        """It ran every ~6 min for over an hour on 8/29. Once per 30 min, max."""
+        page = _Page()
+        with _mint_enabled(), mock.patch.object(h, "_sso_to_appstream") as sso, \
+             mock.patch.object(h, "_rqst_id", side_effect=["OLD", "NEW", "NEW", "NEWER"]), \
+             mock.patch.object(h, "_ctx_rqst_minutes_left", return_value=118.0):
+            first = h._mint_appstream_via_ownerville(object(), page)
+            second = h._mint_appstream_via_ownerville(object(), page)
+        self.assertTrue(first)
+        self.assertFalse(second, "a second attempt inside the window must not run")
+        sso.assert_called_once()
+
+
 class MintingGoesThroughOwnerville(unittest.TestCase):
     """_mint_appstream_via_ownerville: success is a NEW token, nothing less."""
 
     def test_a_new_token_is_a_mint(self):
         page = _Page()
-        with mock.patch.object(h, "_sso_to_appstream") as sso, \
+        with _mint_enabled(), mock.patch.object(h, "_sso_to_appstream") as sso, \
              mock.patch.object(h, "_rqst_id", side_effect=["OLD", "NEW"]), \
              mock.patch.object(h, "_ctx_rqst_minutes_left", return_value=118.0):
             self.assertTrue(h._mint_appstream_via_ownerville(object(), page))
@@ -103,13 +164,13 @@ class MintingGoesThroughOwnerville(unittest.TestCase):
         """The exact 8/27 measurement: the hop runs, the id does not change.
         Reporting that as success is what hid the bug for two days."""
         page = _Page()
-        with mock.patch.object(h, "_sso_to_appstream"), \
+        with _mint_enabled(), mock.patch.object(h, "_sso_to_appstream"), \
              mock.patch.object(h, "_rqst_id", side_effect=["SAME", "SAME"]):
             self.assertFalse(h._mint_appstream_via_ownerville(object(), page))
 
     def test_no_console_is_not_a_mint(self):
         page = _Page(has_console=False)
-        with mock.patch.object(h, "_sso_to_appstream"), \
+        with _mint_enabled(), mock.patch.object(h, "_sso_to_appstream"), \
              mock.patch.object(h, "_rqst_id", side_effect=["OLD", "NEW"]):
             self.assertFalse(h._mint_appstream_via_ownerville(object(), page))
 
@@ -117,8 +178,9 @@ class MintingGoesThroughOwnerville(unittest.TestCase):
         """Ownerville may be mid-refresh. That is a missed cycle, not a crash of
         the one process holding the session."""
         page = _Page()
-        with mock.patch.object(h, "_sso_to_appstream",
-                               side_effect=RuntimeError("ownerville login isn't valid")), \
+        with _mint_enabled(), mock.patch.object(
+                h, "_sso_to_appstream",
+                side_effect=RuntimeError("ownerville login isn't valid")), \
              mock.patch.object(h, "_rqst_id", return_value="OLD"):
             self.assertFalse(h._mint_appstream_via_ownerville(object(), page))
 
@@ -222,10 +284,9 @@ class ItWaitsForTheConsoleLikeTheReportsDo(unittest.TestCase):
 
     @staticmethod
     def _mint(page, ids=("OLD", "NEW")):
-        import contextlib
         import io
         buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), \
+        with _mint_enabled(), contextlib.redirect_stdout(buf), \
              mock.patch.object(h, "_stamp", return_value="T"), \
              mock.patch.object(h, "_sso_to_appstream"), \
              mock.patch.object(h, "_rqst_id", side_effect=list(ids)), \
@@ -278,12 +339,11 @@ class AFailedMintIsNeverSilent(unittest.TestCase):
     @staticmethod
     def _mint(page=None, ids=("OLD", "NEW"), raises=None, left=118.0):
         """Run a mint with verbose OFF and return (result, everything printed)."""
-        import contextlib
         import io
         buf = io.StringIO()
         sso = mock.patch.object(h, "_sso_to_appstream", side_effect=raises) \
             if raises else mock.patch.object(h, "_sso_to_appstream")
-        with contextlib.redirect_stdout(buf), \
+        with _mint_enabled(), contextlib.redirect_stdout(buf), \
              mock.patch.object(h, "_stamp", return_value="T"), sso, \
              mock.patch.object(h, "_rqst_id", side_effect=list(ids)), \
              mock.patch.object(h, "_ctx_rqst_minutes_left", return_value=left):

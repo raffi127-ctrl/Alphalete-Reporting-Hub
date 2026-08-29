@@ -112,6 +112,33 @@ APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[1]
 # the session this process holds warm 24/7 — for a genuinely new token.
 REMINT_MARGIN_MIN = 30.0
 
+# OWNERVILLE MINT — OFF BY DEFAULT (2026-08-29). Read before switching on.
+#
+# The mechanism is right: _sso_to_appstream really does get a NEW rqst out of
+# ownerville unattended (measured 10:04 — ownerville issued 43A275AE while we
+# held 083AE947). What it CANNOT currently do is turn that token into a console:
+# every hop lands with #searchMC absent, including with proper waits and a
+# re-navigation. That is the same symptom `appstream_whoami --force` reports for
+# the human-gated login form, which suggests establishing a NEW AppStream
+# session is what the 2026-08-20 Turnstile blocks — by SSO as well as by form.
+# An EXISTING session continues fine; only a fresh one is refused.
+#
+# Off because a failing mint is not free. It re-navigates the holder's console
+# tab on every cycle, and on 2026-08-29 it ran every ~6 min for over an hour
+# against the SSO endpoint. The fleet's shared token expired at 10:05 with no
+# successor and all three machines went dark together. I cannot separate "the
+# hops did nothing" from "the hops tripped a protection that then refused new
+# sessions" — and while that is unresolved, the holder must not hammer a login
+# path unattended. What is certain is that it did not help.
+#
+# Leave OFF until someone confirms a hop can render a console again (one manual
+# `--probe` is enough). The post-expiry replay + the fleet push are untouched
+# and are what carry the machines today.
+MINT_VIA_OWNERVILLE = False
+# Never more than one attempt per this many minutes, even when enabled.
+MINT_MIN_INTERVAL_MIN = 30.0
+_LAST_MINT_ATTEMPT: dict = {"at": 0.0}
+
 
 def _this_machine() -> str:
     try:
@@ -405,6 +432,12 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     the exact shape of the bug this function exists to fix, and it cost a first
     attempt on 2026-08-29 (token 083AE947 sat at 21m left inside the margin with
     no line explaining why). If it can fail, it has to say so."""
+    if not MINT_VIA_OWNERVILLE:
+        return False
+    now = time.time()
+    if (now - _LAST_MINT_ATTEMPT["at"]) / 60.0 < MINT_MIN_INTERVAL_MIN:
+        return False
+    _LAST_MINT_ATTEMPT["at"] = now
     before = _rqst_id(ctx)
     try:
         _sso_to_appstream(page, verbose=verbose)
