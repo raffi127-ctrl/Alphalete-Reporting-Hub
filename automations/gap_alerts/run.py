@@ -991,6 +991,33 @@ def probe_campaigns(headless: bool = True, office: str = "",
         except Exception as e:  # noqa: BLE001
             _log("campaign-id scan failed (%s)" % type(e).__name__)
 
+        # OPEN the dropdown before reading it. The scan below found only 3
+        # (RES AT&T) and 39 (BASE Energy) — the ids already sitting in the DOM.
+        # Calvin's screen shows RES-ENERGYWELL, so the picker fills its options
+        # in when OPENED, and a scan of the collapsed page can never see them.
+        # b2b_dispositions already solved this: its dropdown is the same
+        # Bootstrap widget, and campaign_options() forces it open (the site's
+        # jQuery handler does not fire under patchright's isolated world) and
+        # reads every option with its invD2DClientId.
+        # NOT cap.campaign_options(): it filters on a hardcoded allowlist of
+        # the three B2B campaign names, so RES-ENERGYWELL would be dropped
+        # before we ever saw it. Same opener, same reader, wider pattern.
+        try:
+            cap._open_campaign_dropdown(page)
+            opts = page.evaluate(
+                cap._CAMPAIGN_OPTIONS_JS,
+                r"^(RES[A-Za-z0-9\-& ]*|BASE [A-Za-z0-9\-& ]*"
+                r"|B2B[A-Za-z0-9\-& ]*)$") or []
+            if opts:
+                for o in opts:
+                    _log("DROPDOWN id=%-5s %s"
+                         % (o.get("id"), str(o.get("name"))[:50]))
+            else:
+                _log("DROPDOWN: opened but matched no campaign options")
+        except Exception as e:  # noqa: BLE001
+            _log("dropdown read failed (%s: %s)"
+                 % (type(e).__name__, str(e)[:120]))
+
         # THE CAMPAIGN PICKER IS NOT A <select> AND NOT A PLAIN LINK. Calvin's
         # screen shows "RES-ENERGYWELL" in a custom dropdown top-right, so the
         # id exists — the earlier a[href] scan simply never saw it (it found 3
