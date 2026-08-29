@@ -648,22 +648,11 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
     if not rows:
         return [], []
 
-    # RANKED BY TOTAL KNOCKS, most first (Raf, 2026-08-28: "can we put in order
-    # for most amount of total knocks"). The pull returns reps alphabetically;
-    # the board's # column numbers whatever order it is given, so sorting here
-    # is all it takes to turn the board into a leaderboard. Ties break on name
-    # so the order is stable between ticks instead of reshuffling every 15
-    # minutes for reps who are level.
-    from automations.total_knocks.pull import COL_TOTAL_KNOCKS, COL_REP
-
-    def _knocks(r):
-        try:
-            return int(float(str(r.get(COL_TOTAL_KNOCKS) or 0)))
-        except (TypeError, ValueError):
-            return 0
-
-    rows = sorted(rows, key=lambda r: (-_knocks(r),
-                                       str(r.get(COL_REP) or "").lower()))
+    # NO SORT HERE. Ranking is the RENDERER's job (sort_by="knocks" below):
+    # _combined_sub re-orders whatever rows it is handed, so sorting them here
+    # was thrown away and the board kept coming out alphabetical while this
+    # code looked like it had already fixed it (2026-08-28 -> 29). One place
+    # decides the order.
 
     # A failed comparison costs ONE LINE, never the board.
     extra = []
@@ -685,7 +674,7 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
         date_text=_date_text(day), extra_totals=extra,
         rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
                       else RATES_OVERRIDE),
-        knocks_green_at=C.KNOCKS_GREEN_AT)
+        knocks_green_at=C.KNOCKS_GREEN_AT, sort_by="knocks")
 
     _log("  %s: %d rep(s) -> %s (%s)"
          % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))

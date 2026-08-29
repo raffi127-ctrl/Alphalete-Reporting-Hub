@@ -619,7 +619,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         extra_totals: "list[tuple] | None" = None,
                         apps: "dict[str, int] | None" = None,
                         rate_columns: bool = True,
-                        knocks_green_at: "int | None" = None) -> Path:
+                        knocks_green_at: "int | None" = None,
+                        sort_by: str = "rep") -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -637,6 +638,12 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     `end` (optional): the last day of a multi-day board, for the title and the
     filename. The ROWS must already be folded (total_knocks.aggregate) — this
     only labels them. None / same-as-target renders exactly as it always did.
+
+    `sort_by` (optional): "rep" (default, alphabetical — every existing board
+    unchanged) or "knocks", highest Total Knocks first, for a board read as a
+    leaderboard (Raf 2026-08-29). It has to live HERE: this function re-sorts
+    the rows it is given, so a caller that pre-sorts its own list silently has
+    that order discarded.
 
     `hide_columns` (optional): columns to leave OFF this board. For a derived
     column that only carries a number on the TOTAL row — Talk To's per Rep is
@@ -679,7 +686,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         header, rows = _read_table(sheet_id, tab)
     if not rows:
         raise RuntimeError(f"No data rows in tab {tab!r} to render.")
-    sub = _combined_sub(header, rows, where=f"tab {tab!r}")
+    sub = _combined_sub(header, rows, sort_by=sort_by, where=f"tab {tab!r}")
     totals = _combined_totals("TOTAL", sub)
 
     # Extra offices' totals rows ABOVE ours (Raf 2026-08-23: "add Chan's
@@ -1016,6 +1023,7 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
 
 
 def _combined_sub(header: list[str], rows: list[list[str]],
+                  sort_by: str = "rep",
                   where: str = "") -> list[list[str]]:
     """Select + order one office's rows into the combined-board shape:
     COMBINED_KNOCKS_HEADERS order (Hrs Knocking computed), alphabetical by
@@ -1063,7 +1071,22 @@ def _combined_sub(header: list[str], rows: list[list[str]],
         sub.append([derived[c] if c in derived else base[src[c]]
                     for c in COMBINED_KNOCKS_HEADERS])
     rep_pos = COMBINED_KNOCKS_HEADERS.index(COL_REP)
-    sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
+    if sort_by == "knocks":
+        # Highest total knocks first — a leaderboard, not a roster (Raf
+        # 2026-08-29). THIS is the sort that decides the board: a caller that
+        # pre-sorts its rows has that order thrown away here, which is exactly
+        # what happened when gap_alerts sorted its rows and the board still
+        # came out A-Z. Ties fall back to name so reps who are level don't
+        # shuffle between ticks.
+        tk_pos = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_KNOCKS)
+
+        def _tk(r):
+            v = str(r[tk_pos]).strip().replace(",", "")
+            return int(v) if v.isdigit() else 0
+
+        sub.sort(key=lambda r: (-_tk(r), str(r[rep_pos]).strip().lower()))
+    else:
+        sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
     return sub
 
 
@@ -1267,7 +1290,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          date_text: str = "",
                          extra_totals=None,
                          rate_columns: bool = True,
-                         knocks_green_at: "int | None" = None
+                         knocks_green_at: "int | None" = None,
+                         sort_by: str = "rep"
                          ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
@@ -1303,6 +1327,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      rate_columns=rate_columns,
                                      knocks_green_at=knocks_green_at,
+                                     sort_by=sort_by,
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,
                                      extra_totals=extra_totals)], shape)
