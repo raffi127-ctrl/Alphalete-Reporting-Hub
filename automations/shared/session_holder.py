@@ -397,30 +397,45 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     console); it never touches p=604 or any applicant action.
 
     True only when the context comes back holding a DIFFERENT token — "the hop
-    ran" is not the claim, "we have a new token" is. [[reference_appstream_turnstile]]"""
+    ran" is not the claim, "we have a new token" is. [[reference_appstream_turnstile]]
+
+    EVERY OUTCOME IS LOGGED UNCONDITIONALLY, not behind `verbose`. The holder's
+    loop calls _warm_appstream(verbose=False), so a verbose-gated message here
+    means a failed mint says NOTHING and the token just counts down — which is
+    the exact shape of the bug this function exists to fix, and it cost a first
+    attempt on 2026-08-29 (token 083AE947 sat at 21m left inside the margin with
+    no line explaining why). If it can fail, it has to say so."""
     before = _rqst_id(ctx)
     try:
         _sso_to_appstream(page, verbose=verbose)
     except Exception as e:  # noqa: BLE001 — a mint attempt must never break the holder
-        if verbose:
-            print(f"-> ownerville mint failed: {type(e).__name__}: {str(e)[:110]}",
-                  flush=True)
+        print(f"[{_stamp()}] AppStream mint FAILED (ownerville hop): "
+              f"{type(e).__name__}: {str(e)[:140]}", flush=True)
         return False
     try:
         if page.locator("#searchMC").count() == 0:
+            print(f"[{_stamp()}] AppStream mint FAILED — ownerville hop landed "
+                  f"without a console (#searchMC absent, at "
+                  f"{(page.url or '')[:80]})", flush=True)
             return False
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        print(f"[{_stamp()}] AppStream mint FAILED — console check raised: "
+              f"{type(e).__name__}: {str(e)[:110]}", flush=True)
         return False
     after = _rqst_id(ctx)
-    if not after or after == before:
-        if verbose:
-            print("-> ownerville hop returned the SAME token — nothing minted",
-                  flush=True)
+    if not after:
+        print(f"[{_stamp()}] AppStream mint FAILED — console rendered but the "
+              f"context carries NO rqst token", flush=True)
         return False
-    if verbose:
-        left = _ctx_rqst_minutes_left(ctx)
-        print(f"-> minted a fresh rqst via ownerville: {after}"
-              + (f", {left:.0f}m left" if left is not None else ""), flush=True)
+    if after == before:
+        print(f"[{_stamp()}] AppStream mint FAILED — ownerville handed back the "
+              f"SAME token {after} (it re-used our session instead of issuing "
+              f"a new one)", flush=True)
+        return False
+    left = _ctx_rqst_minutes_left(ctx)
+    print(f"[{_stamp()}] AppStream MINTED a fresh rqst via ownerville: "
+          f"{before} -> {after}"
+          + (f", {left:.0f}m left" if left is not None else ""), flush=True)
     return True
 
 

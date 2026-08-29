@@ -185,6 +185,56 @@ class TheRecoveryPathCanStillMint(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class AFailedMintIsNeverSilent(unittest.TestCase):
+    """COST A REAL ATTEMPT (2026-08-29). The first deploy gated every mint
+    message behind `verbose`, and the holder's loop calls
+    _warm_appstream(verbose=False). So when the margin opened on token 083AE947
+    the mint failed and the log said NOTHING — the token just counted down from
+    21m with no explanation, exactly the silence this whole subsystem keeps
+    getting caught by. Each failure mode must name itself with verbose OFF."""
+
+    @staticmethod
+    def _mint(page=None, ids=("OLD", "NEW"), raises=None, left=118.0):
+        """Run a mint with verbose OFF and return (result, everything printed)."""
+        import contextlib
+        import io
+        buf = io.StringIO()
+        sso = mock.patch.object(h, "_sso_to_appstream", side_effect=raises) \
+            if raises else mock.patch.object(h, "_sso_to_appstream")
+        with contextlib.redirect_stdout(buf), \
+             mock.patch.object(h, "_stamp", return_value="T"), sso, \
+             mock.patch.object(h, "_rqst_id", side_effect=list(ids)), \
+             mock.patch.object(h, "_ctx_rqst_minutes_left", return_value=left):
+            ok = h._mint_appstream_via_ownerville(
+                object(), page or _Page(), verbose=False)
+        return ok, buf.getvalue()
+
+    def test_a_thrown_ownerville_says_so(self):
+        ok, out = self._mint(raises=RuntimeError("ownerville login isn't valid"))
+        self.assertFalse(ok)
+        self.assertIn("mint FAILED", out)
+        self.assertIn("ownerville login isn't valid", out)
+
+    def test_the_same_token_back_says_so(self):
+        """The failure we actually hit. It must name the token and the cause."""
+        ok, out = self._mint(ids=("SAME", "SAME"))
+        self.assertFalse(ok)
+        self.assertIn("mint FAILED", out)
+        self.assertIn("SAME", out)
+
+    def test_a_console_that_never_rendered_says_so(self):
+        ok, out = self._mint(page=_Page(has_console=False), ids=("OLD", "OLD"))
+        self.assertFalse(ok)
+        self.assertIn("mint FAILED", out)
+        self.assertIn("#searchMC", out)
+
+    def test_a_success_says_so_too(self):
+        ok, out = self._mint()
+        self.assertTrue(ok)
+        self.assertIn("MINTED", out)
+        self.assertIn("OLD -> NEW", out)
+
+
 class ItMintsThroughOwnervilleNotTheLoginForm(unittest.TestCase):
     def test_the_margin_path_names_ownerville(self):
         """The login form is human-gated and off-limits to unattended runs
