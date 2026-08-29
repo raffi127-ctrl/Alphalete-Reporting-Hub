@@ -30,6 +30,10 @@ PAGE_TIME_TRACKER = 510
 # Carlos's hourly B2B post has, in the same order.
 PAGE_TODAYS_ACTIVITY = 88
 
+# Disposition by Rep — the grid the knock board is built from, and the one whose
+# column headers decide whether a campaign can be scraped at all.
+PAGE_DISPOSITION = 89
+
 # "Over 15 minute gap" is the card's own name for it, and >15 (not >=) is what
 # b2b_dispositions has been sending Carlos since July. Kept identical so the two
 # offices are looking at the same definition of "inactive".
