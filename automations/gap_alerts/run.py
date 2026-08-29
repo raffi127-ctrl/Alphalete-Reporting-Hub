@@ -927,6 +927,25 @@ def probe_campaigns(headless: bool = True, office: str = "") -> int:
         except Exception as e:  # noqa: BLE001
             _log("campaign-id scan failed (%s)" % type(e).__name__)
 
+        # NAME each candidate id. Two ids in Calvin's links (3 and 39) is not
+        # an answer: 3 is RES AT&T, so 39 is PROBABLY Energy Wells — and
+        # "probably" is exactly what would hand Jay's Energy Wells report the
+        # wrong campaign's numbers while looking perfectly normal. Load each id
+        # and read the campaign the page says it is on.
+        for cid in sorted((found.get("ids") or {})):
+            try:
+                cap._goto(page, "https://v2.ownerville.com/index.cfm?p=%d"
+                                "&rqst=%s&invD2DClientId=%s"
+                          % (C.PAGE_TODAYS_ACTIVITY, rqst, cid))
+                page.wait_for_timeout(1800)
+                head = page.evaluate(
+                    "() => (document.body.innerText || '')"
+                    "   .split('\\n').map(s => s.trim())"
+                    "   .filter(s => s && s.length < 60).slice(0, 12)")
+                _log("id=%s top-of-page: %s" % (cid, " | ".join(head)))
+            except Exception as e:  # noqa: BLE001
+                _log("id=%s label unavailable (%s)" % (cid, type(e).__name__))
+
         # Every <select> on the page, so the campaign picker (and its ids) can
         # be found without guessing at the B2B dropdown's shape — that reader
         # returned nothing on this login, which is why the first scan was blind.
