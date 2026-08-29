@@ -868,7 +868,47 @@ def probe_campaigns(headless: bool = True, office: str = "") -> int:
                 return 0
             _log("impersonated %r" % office)
 
-        for cid in range(1, 31):
+        # CALVIN IS ENERGY-WELLS-ONLY (Raf), so once impersonated his DEFAULT
+        # campaign already is Energy Wells — the headers below are that
+        # campaign's, with no switching needed. This is the question that
+        # actually gates the build; the id scan afterwards is only for Jay,
+        # who runs two campaigns and will need one pinned.
+        try:
+            cap._goto(page, "https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
+                      % (C.PAGE_DISPOSITION, rqst))
+            page.wait_for_timeout(3000)
+            idx = knocks._header_index(page)
+            _log("DEFAULT campaign headers (%d): %s"
+                 % (len(idx), ", ".join(sorted(idx))))
+            missing = [c for c in knocks.SHEET_COLUMNS
+                       if c not in {knocks.COL_TOTAL_TALK_TO,
+                                    *knocks.TIME_TRACKER_COLUMNS}
+                       and knocks._norm(c) not in idx]
+            _log("scraper would %s — missing: %s"
+                 % ("RAISE" if missing else "WORK AS-IS",
+                    ", ".join(missing) if missing else "nothing"))
+        except Exception as e:  # noqa: BLE001
+            _log("default headers unavailable (%s: %s)"
+                 % (type(e).__name__, str(e)[:160]))
+
+        # Every <select> on the page, so the campaign picker (and its ids) can
+        # be found without guessing at the B2B dropdown's shape — that reader
+        # returned nothing on this login, which is why the first scan was blind.
+        try:
+            sels = page.evaluate(
+                "() => [...document.querySelectorAll('select')].map(s => ({"
+                " name: s.name || s.id || '', n: s.options.length,"
+                " opts: [...s.options].slice(0, 12).map(o => "
+                "   (o.value || '') + '=' + (o.textContent || '')"
+                "     .replace(/\\s+/g, ' ').trim().slice(0, 40)) }))")
+            for s in sels:
+                if s["n"] and s["n"] < 40:
+                    _log("select %r (%d): %s"
+                         % (s["name"], s["n"], " | ".join(s["opts"])))
+        except Exception as e:  # noqa: BLE001
+            _log("select dump failed (%s)" % type(e).__name__)
+
+        for cid in range(1, 0):   # id scan disabled — the dumps above answer it
             url = ("https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
                    "&invD2DClientId=%d" % (C.PAGE_TIME_TRACKER, rqst, cid))
             try:
