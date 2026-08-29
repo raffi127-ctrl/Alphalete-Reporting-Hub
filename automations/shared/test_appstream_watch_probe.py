@@ -431,6 +431,92 @@ class ItReadsRealFailuresFromTheOrchestratorsOwnRecord(unittest.TestCase):
             self.assertEqual(w.appstream_session_failures(), [])
 
 
+class RecoveryOnlyRerunsWhatActuallyFailed(unittest.TestCase):
+    """CAUGHT IN PRODUCTION, 2026-08-29 05:29. The recovery list was "every
+    AppStream report that isn't DONE", which silently includes PENDING — reports
+    the orchestrator has not reached yet and still owns. Deploying the health fix
+    flipped last_ok_appstream False→True mid-batch, read as a recovery, and
+    re-queued other_office_knocks, which the day-state listed as
+    `pending - daily_metrics`: waiting on a dependency. mini_control._action_rerun
+    runs a report directly and does NOT check deps, so that is an early,
+    dependency-violating run of a report that posts to Slack.
+
+    A re-seed recovers what a session failure COST. It does not reach into the
+    batch and start work the batch is going to do itself."""
+
+    @staticmethod
+    def _rerun_list(reports, tmp):
+        import json
+        from automations.day_orchestrator import state as day_state
+        (tmp / "2026-08-29.json").write_text(
+            json.dumps({"reports": reports}), encoding="utf-8")
+        cfg = [mock.Mock(report_id=r, source_type="appstream",
+                         machine="Lucy 1", order=i)
+               for i, r in enumerate(("daily_metrics", "other_office_knocks"))]
+        with mock.patch("automations.day_orchestrator.registry.load_config",
+                        return_value={}), \
+             mock.patch("automations.day_orchestrator.registry.scheduled_today",
+                        return_value=cfg), \
+             mock.patch.object(day_state, "STATE_DIR", tmp):
+            return w._appstream_reports_to_rerun(dt.datetime(2026, 8, 29, 5, 29))
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_a_pending_report_is_never_rerun(self):
+        """The exact production case, with its real dependency note."""
+        out = self._rerun_list(
+            {"other_office_knocks": {"status": "PENDING",
+                                     "last_reason": "pending - daily_metrics"}},
+            self.tmp)
+        self.assertEqual(out, [], "re-queued a report the batch had not reached")
+
+    def test_a_failed_report_is_rerun(self):
+        out = self._rerun_list(
+            {"other_office_knocks": {"status": "FAILED", "last_reason": "no rqst"}},
+            self.tmp)
+        self.assertEqual([r for r, _ in out], ["other_office_knocks"])
+
+    def test_a_blocked_session_report_is_rerun(self):
+        out = self._rerun_list(
+            {"daily_metrics": {"status": "BLOCKED_SESSION", "last_reason": ""}},
+            self.tmp)
+        self.assertEqual([r for r, _ in out], ["daily_metrics"])
+
+    def test_done_and_still_trying_are_left_alone(self):
+        out = self._rerun_list(
+            {"daily_metrics": {"status": "DONE", "last_reason": ""},
+             "other_office_knocks": {"status": "STILL_TRYING", "last_reason": ""}},
+            self.tmp)
+        self.assertEqual(out, [])
+
+    def test_no_daystate_at_all_recovers_nothing(self):
+        """No day-state file means the batch has recorded nothing, so nothing
+        has failed yet — there is nothing for a re-seed to pick up."""
+        from automations.day_orchestrator import state as day_state
+        cfg = [mock.Mock(report_id="daily_focus", source_type="appstream",
+                         machine="Lucy 1", order=0)]
+        with mock.patch("automations.day_orchestrator.registry.load_config",
+                        return_value={}), \
+             mock.patch("automations.day_orchestrator.registry.scheduled_today",
+                        return_value=cfg), \
+             mock.patch.object(day_state, "STATE_DIR", self.tmp):
+            out = w._appstream_reports_to_rerun(dt.datetime(2026, 8, 29, 5, 29))
+        self.assertEqual(out, [])
+
+    def test_an_unreadable_state_recovers_nothing_rather_than_guessing(self):
+        """It used to fall back to ['daily_focus'] — a blind rerun of a report
+        that posts. The alert still carries the news either way."""
+        with mock.patch("automations.day_orchestrator.registry.load_config",
+                        side_effect=RuntimeError("boom")):
+            self.assertEqual(
+                w._appstream_reports_to_rerun(dt.datetime(2026, 8, 29, 5, 29)), [])
+
+
 class AlertWordingNoLongerBlamesTheLogin(unittest.TestCase):
     def test_unhealthy_reason_describes_the_report_impact(self):
         """The ping text is what a human reads at 3am — it must name the real

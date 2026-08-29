@@ -120,11 +120,11 @@ WATCH_STATE = Path(__file__).resolve().parents[2] / "output" / "appstream_watch_
 # keyboard, not a specific someone.
 ALERT_SLACK_TARGETS = ["C0BK5PRG259"]
 
-# Reports that depend on the AppStream recruiting console — auto-rerun on recovery.
-# FALLBACK ONLY. The live list is derived per-day by _appstream_reports_to_rerun()
-# from schedule_config + today's day-state; this is what we use when either of
-# those can't be read.
-APPSTREAM_REPORTS_FALLBACK = ["daily_focus"]
+# (There used to be an APPSTREAM_REPORTS_FALLBACK = ["daily_focus"] here, used
+# when the day-state or registry couldn't be read. Removed 2026-08-29: guessing
+# a report to re-run is the one thing this path must not do — daily_focus posts,
+# and a blind rerun off an unreadable state is how you double-post. The recovery
+# list now falls back to nothing and lets the alert carry the news.)
 
 # NOT a health test any more — see false alarm #2 in the module docstring. The
 # rqst TTL is ~2h, so "outlasts the next 4am batch by 90 min" is unsatisfiable by
@@ -423,17 +423,27 @@ def _alert(text: str, dry_run: bool) -> None:
 
 
 def _appstream_reports_to_rerun(now: dt.datetime | None = None) -> list[tuple[str, str]]:
-    """(report_id, machine) for every AppStream-backed report today's batch did
-    NOT finish — what a morning re-seed should pick up — in run order.
+    """(report_id, machine) for the AppStream-backed reports a session failure
+    actually COST us today — what a re-seed should pick up — in run order.
 
     This was a hardcoded ["daily_focus"], so a re-seed landing after 4am
     recovered exactly one of the AppStream reports and left the rest to be
     re-queued by hand, every morning, since the 2026-08-20 release human-gated
     the login form (Eve 2026-08-25: applicant_sync_morning +
     recruiter_retention_daily, every day). Derived now from the same two files
-    the batch itself uses, which also settles the two ways a list like this goes
+    the batch itself uses, which also settles the ways a list like this goes
     wrong:
 
+      • ONLY reports that reached a FAILED / BLOCKED_SESSION end-state. It used
+        to be "everything that isn't DONE", which quietly includes PENDING —
+        reports the orchestrator has not reached yet and still owns. On
+        2026-08-29 a recovery fired mid-batch at 05:29 and re-queued
+        other_office_knocks, which the day-state listed as `pending -
+        daily_metrics`: waiting on a dependency. The rerun path runs a report
+        DIRECTLY and does not check deps (mini_control._action_rerun), so that
+        is a dependency-violating early run of a report that posts to Slack —
+        and [[feedback_never_post_blank]] is exactly the cost. A report the
+        batch has not attempted is not something a re-seed needs to recover.
       • It must not re-run a report that already reached DONE. Several of these
         post to Slack, and the rqst token only lives ~2h — a wasted run can cost
         a real one.
@@ -447,23 +457,30 @@ def _appstream_reports_to_rerun(now: dt.datetime | None = None) -> list[tuple[st
         from automations.day_orchestrator import state as day_state
         day = (now or _now()).date()
         cfg = registry.load_config()
-        pending = [r for r in registry.scheduled_today(cfg, day)
-                   if r.source_type == "appstream"]
-        if not pending:
+        scheduled = {r.report_id: r for r in registry.scheduled_today(cfg, day)
+                     if r.source_type == "appstream"}
+        if not scheduled:
             return []
         state_file = day_state.STATE_DIR / f"{day.isoformat()}.json"
-        if state_file.exists():
-            raw = json.loads(state_file.read_text(encoding="utf-8"))
-            done = {rid for rid, rs in raw.get("reports", {}).items()
-                    if rs.get("status") == day_state.DONE}
-            pending = [r for r in pending if r.report_id not in done]
-        pending.sort(key=lambda r: (r.order if r.order is not None else 10_000,
-                                    r.report_id))
-        return [(r.report_id, r.machine) for r in pending]
+        if not state_file.exists():
+            # No day-state means the batch has not recorded anything, so nothing
+            # has failed yet — there is nothing for a re-seed to recover.
+            return []
+        raw = json.loads(state_file.read_text(encoding="utf-8"))
+        failed_states = {day_state.FAILED, day_state.BLOCKED_SESSION}
+        hit = [scheduled[rid] for rid, rs in (raw.get("reports") or {}).items()
+               if rid in scheduled and rs.get("status") in failed_states]
+        hit.sort(key=lambda r: (r.order if r.order is not None else 10_000,
+                                r.report_id))
+        return [(r.report_id, r.machine) for r in hit]
     except Exception as e:
-        print(f"[appstream_watch] (couldn't derive the rerun list, falling back "
-              f"to {APPSTREAM_REPORTS_FALLBACK}: {type(e).__name__}: {str(e)[:100]})")
-        return [(rid, _registry_default_machine()) for rid in APPSTREAM_REPORTS_FALLBACK]
+        # Fall back to NOTHING, not to a report. A recovery rerun is a
+        # convenience; firing one on a guess can double-post. The alert still
+        # goes out either way, so a human still learns about it.
+        print(f"[appstream_watch] (couldn't derive the rerun list, "
+              f"recovering nothing automatically: "
+              f"{type(e).__name__}: {str(e)[:100]})")
+        return []
 
 
 def _registry_default_machine() -> str:
@@ -569,11 +586,16 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
                    and state.get("alerted_daytime_for") != today)
     ping_due = evening_due or prebatch_due or daytime_due
 
-    stale = []   # [(status, reseed_cmd), ...] for sessions that won't survive the batch
-    # The subset of `stale` a LIVE probe just failed, i.e. "a report would fail
-    # right now" rather than "the stored token is past its date". Only these earn
-    # the daytime ping: ownerville is judged by expiry alone, and an unprobed
-    # 8am ping about it every morning is the cry-wolf this window exists to avoid.
+    # [(status, reseed_cmd), ...] for sessions that are UNHEALTHY RIGHT NOW —
+    # not "won't survive the batch", which is what this used to mean and what
+    # made it fire on healthy sessions. Ownerville was quietly caught by the same
+    # forecast: its 24h token is refreshed around 05:11 each morning, i.e.
+    # perpetually just under a 4am+90min threshold of 05:30, so it too was stale
+    # every single evening. Both are judged in the present tense now.
+    stale = []
+    # The subset of `stale` a LIVE probe just failed. Only these earn the daytime
+    # ping: ownerville is judged by its stored expiry (no probe), and an unprobed
+    # 8am ping about it every morning would be a brand-new false alarm.
     probed_stale = []
     healthy_all = True
     state_paths = {"appstream": APPSTREAM_STORAGE_STATE, "ownerville": OWNERVILLE_STORAGE_STATE}
