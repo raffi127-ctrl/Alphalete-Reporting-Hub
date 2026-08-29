@@ -753,9 +753,22 @@ def main() -> int:
                 print(f"[{_stamp()}] AppStream warm init skipped: "
                       f"{type(e).__name__}: {str(e)[:120]}", flush=True)
         else:
-            print(f"[{_stamp()}] AppStream not seeded on this machine — ownerville-only. "
-                  f"(To hold office-11580 AppStream warm here, seed once:  "
-                  f"--appstream-login)", flush=True)
+            # SAY WHICH of the two reasons it is. A non-holder runner is the
+            # NORMAL, correct state since 2026-08-29 — it consumes the donor's
+            # pushed session and must not keep a console of its own. Printing
+            # "not seeded … seed once: --appstream-login" at it sends whoever
+            # reads the log off to do a re-seed that is neither needed nor
+            # harmless (a fresh login invalidates the token the whole fleet is
+            # holding). Misleading log lines are most of why this took a week.
+            if not APPSTREAM_STORAGE_STATE.exists():
+                print(f"[{_stamp()}] AppStream not seeded on this machine — "
+                      f"ownerville-only. (Seed once with --appstream-login, then "
+                      f"--appstream-push-fleet.)", flush=True)
+            else:
+                print(f"[{_stamp()}] AppStream: this machine is a CONSUMER, not "
+                      f"the holder ({APPSTREAM_HOLD_MACHINE} holds it) — "
+                      f"ownerville-only here, by design. Its session arrives by "
+                      f"fleet push; do NOT --appstream-login here.", flush=True)
 
         # --- Continuous keep-alive + export loop, ONE ownerville tab. When the
         #     session is healthy we navigate that tab to keep it warm; when it
