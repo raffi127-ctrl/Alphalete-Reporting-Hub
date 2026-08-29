@@ -644,6 +644,11 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
         # will not let us override them onto the call list we TEXT them instead of
         # dropping them (Carlos 2026-08-28). Only fall back to flagging when the
         # send itself could not be completed — never silently.
+        if not getattr(config, "ALLOW_RETEXT", False):
+            _log(f"    ⚑ FLAG re-text (this office does not text): "
+                 f"{a.first_name} {a.last_name}")
+            _flag_retext(a, None)
+            return "flag_retext"
         ph_now = (a.cell_phone or a.phone or "").strip()
         if not ph_now:
             got_ph, _d = lookup_resume_phone(page)
@@ -1262,6 +1267,15 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
     applicant via the SMS widget, then remove the current record
     ('re-texted & removed'). Not armed, or no reachable SMS thread: FLAG (no
     send/remove) — never guesses/spams."""
+    # Texting is per-office. An office that has not opted in gets the applicant
+    # FLAGGED for a human instead of messaged. (Carlos, 2026-08-29: only his
+    # office and Atef's text people.)
+    if not getattr(config, "ALLOW_RETEXT", False):
+        _flag_retext(a, days)
+        _log(f"    ⚑ FLAG re-text (this office does not text): "
+             f"{a.first_name} {a.last_name} "
+             f"[{a.cell_phone or a.phone or 'no-phone'}]")
+        return "flag_retext"
     if not (live and getattr(config, "RETEXT_ARMED", False)):
         _flag_retext(a, days)
         tail = f" (last contact {days}d)" if days is not None else ""

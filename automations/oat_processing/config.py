@@ -87,3 +87,12 @@ WALK_DIAG_TAB = os.environ.get("OAT_WALK_DIAG_TAB", "OAT Walk Diag")
 # reason to drop someone; they stay in the queue so a human can chase the number
 # (and so a later resume read, now with OCR, can still find it). Default OFF.
 REMOVE_NO_PHONE = os.environ.get("OAT_REMOVE_NO_PHONE", "0") == "1"
+
+
+# Sending an applicant the await text when the ATS will not let us override them
+# is a MESSAGE TO A REAL PERSON from an office's own SMS thread, so it is not a
+# global behaviour. Carlos, 2026-08-29: "the texting thing when overriding isn't
+# an option, let's do for Atef and I only moving forward." Every other office
+# flags the applicant for a human instead of texting them. Default OFF so an
+# office added later never texts anyone until its row opts in.
+ALLOW_RETEXT = os.environ.get("OAT_ALLOW_RETEXT", "0") == "1"
