@@ -796,8 +796,9 @@ def main(argv=None) -> int:
 
     # ------------------------------------------------- partial-failure report
     # Churn wrote, activations didn't. Loud, not silent: the board looks fine
-    # to anyone reading it, so nothing but a red manifest + an email tells
-    # Megan that half the report is stale.
+    # to anyone reading it, so nothing but a red manifest tells Megan that
+    # half the report is stale. The manifest IS the alert — see the note on
+    # the removed _email_failure below.
     if act_problems:
         log("\n✗ CHURN WROTE, ACTIVATIONS DID NOT:")
         for p in act_problems:
@@ -805,8 +806,6 @@ def main(argv=None) -> int:
         detail = ("Churn tabs updated normally, but the activations tab "
                   "could not be written: " + "; ".join(act_problems))
         _act_fail_manifest(detail)
-        if not args.dry_run:
-            _email_failure(detail, log=log)
         return 3
 
     # --------------------------------------- activation source down (a PING)
@@ -827,73 +826,30 @@ def main(argv=None) -> int:
     return 0
 
 
-# Megan + the reporting inbox only — Raf is deliberately NOT on this
-# (Megan 2026-07-20). Address confirmed 1191 (not 1119).
-FAILURE_TO = ["Meganhidalgo1191@gmail.com", "alphaletereporting@gmail.com"]
-
-
-def _email_failure(msg: str, log=print) -> None:
-    """Email on a blocked/failed run — ALWAYS on (Megan 2026-07-19).
-
-    This job runs on its own LaunchAgent, outside the 4am batch, and its
-    wrapper exits 0 so launchd never flags it. Before this, a reconciliation
-    failure wrote nothing and said nothing: the board just kept yesterday's
-    numbers and looked fine. That is exactly how 2026-07-19 went unnoticed.
-
-    Best-effort — a mail problem must never mask the underlying failure.
-    """
-    try:
-        import socket
-        from email.message import EmailMessage
-        from automations.day_orchestrator.notify import _send_email
-        host = socket.gethostname()
-        when = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-        subject = f"❌ Vantura Churn & Activations did NOT write ({when})"
-        text = (
-            f"The Vantura churn refresh ran on {host} at {when} and wrote "
-            f"NOTHING.\n\n{msg}\n\n"
-            "The board still shows the PREVIOUS successful run's numbers — "
-            "it is stale, not wrong.\n\n"
-            "DON'T just re-run and expect it to clear. The gate already "
-            f"tolerates normal refresh drift (base +/-{BASE_TOL_PCT:.0%}, "
-            f"churn +/-{RATE_TOL_PP * 100:.1f}pp), so getting here means the "
-            "Order Log and the CHURN RATES dashboard genuinely disagree by "
-            "more than that.\n\n"
-            "Check, in order:\n"
-            "  1. Did the Order Log pull apply the owner filter and the "
-            "60-day window? A short or wrong-owner pull is the usual cause.\n"
-            "  2. Has CHURNRATES finished refreshing? Compare its 0-30 "
-            "'Activated SPE/SP' against the numbers above.\n"
-            "  3. Only then re-run:  lucy rerun vantura_churn "
-            "--machine \"Lucy 2\"\n"
-        )
-        html = ("<p><b>The Vantura churn refresh wrote NOTHING.</b></p>"
-                f"<p>{host} &middot; {when}</p>"
-                f"<pre style='background:#f6f6f6;padding:10px'>{msg}</pre>"
-                "<p>The board still shows the previous successful run's "
-                "numbers &mdash; <b>stale, not wrong</b>.</p>"
-                "<p><b>Don't just re-run.</b> The gate already tolerates "
-                f"normal refresh drift (base &plusmn;{BASE_TOL_PCT:.0%}, "
-                f"churn &plusmn;{RATE_TOL_PP * 100:.1f}pp), so this is a real "
-                "divergence. Check the Order Log pull (owner filter? 60-day "
-                "window?) and whether CHURNRATES has finished refreshing, "
-                "then:<br><code>lucy rerun vantura_churn --machine "
-                "\"Lucy 2\"</code></p>")
-        _send_email(subject, html, text, FAILURE_TO, False, "vantura-churn-fail")
-    except Exception as e:  # noqa: BLE001 — never mask the real failure
-        log(f"  ⚠ failure email not sent: {e}")
+# NO FAILURE EMAIL (Megan 2026-08-29). This used to mail Megan +
+# alphaletereporting on every blocked run. It was written 2026-07-19 for a
+# vantura_churn that ran on its OWN LaunchAgent outside the 4am batch, under a
+# wrapper that exits 0 — so launchd never flagged it and nothing else would
+# have said a word. Neither half of that is true now: the standalone agent was
+# retired 2026-08-14 and the run is in Lucy 2's 4am flow, where the manifest
+# written by _fail_manifest / _act_fail_manifest opens (and closes) an incident
+# thread in #claudecorrections-and-requests. The email was a second copy of an
+# alert that already lands in the channel — and because the orchestrator
+# retries, one bad morning sent THREE of them (05:06 / 05:28 / 05:49 on
+# 2026-08-29, the morning this came out). Alerts go to the channel only.
+#
+# If you ever restore an out-of-band schedule for this report, restore an
+# alert with it — but make it a Slack post, not mail.
 
 
 def _abort(problems: list[str], detail: str, log, dry_run: bool) -> int:
     """One exit for every "we will not write" verdict: log the reasons, record
-    the manifest, mail it, exit 2. Shared so the structural check can't drift
-    into a quieter failure than the reconciliation one."""
+    the manifest, exit 2. Shared so the structural check can't drift into a
+    quieter failure than the reconciliation one."""
     log("\n✗ NOTHING WRITTEN:")
     for p in problems:
         log(f"   {p}")
     _fail_manifest(detail)
-    if not dry_run:
-        _email_failure(detail, log=log)
     return 2
 
 

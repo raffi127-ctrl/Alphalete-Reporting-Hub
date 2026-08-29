@@ -137,6 +137,55 @@ def _merge_onboarded():
 _merge_onboarded()
 
 
+def _probe_columns(page, tag: str, spec: dict, log=print) -> None:
+    """READ-ONLY: download the crosstab and print its shape, ONE FIELD PER LINE.
+
+    Why one per line: these logs are read remotely through `lucy logtail`, which
+    truncates every line to 200 chars. On 2026-08-29 that truncation hid the
+    back half of the header twice while att_churn was being diagnosed, and the
+    visible half was misleading on its own. A column per line is unhidable.
+
+    Writes nothing but its own temp csv - no Sheet, no Slack, no manifest.
+    """
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+
+    from . import churn_shape
+
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    raw = WORK_DIR / "{}_probe_raw.csv".format(tag)
+    log("  [{}] crosstab download (probe)...".format(tag))
+    drive_crosstab_dialog(page, spec["url"], CROSSTAB_SHEET, raw, verbose=False)
+
+    rows = churn_shape.read_crosstab(raw)
+    hdr = [str(h or "").strip().lstrip("\ufeff") for h in rows[0]]
+    log("  [{}] HEADER - {} column(s), {} data row(s)".format(
+        tag, len(hdr), max(0, len(rows) - 1)))
+    for i, h in enumerate(hdr):
+        log("    col[{:02d}] {!r}".format(i, h))
+
+    for ri, row in enumerate(rows[1:4], 1):
+        log("    --- sample row {} ---".format(ri))
+        for i, v in enumerate(row):
+            log("      [{:02d}] {!r}".format(i, str(v or "")[:60]))
+
+    # Distinct values of the leading (dimension) columns - this is what tells us
+    # whether Rep and Product Type are really in here and how they are spelled.
+    for ci in range(min(4, len(hdr))):
+        seen = []
+        for row in rows[1:]:
+            if ci >= len(row):
+                continue
+            val = str(row[ci] or "").split("\n")[0].strip()
+            if val and val not in seen:
+                seen.append(val)
+            if len(seen) >= 15:
+                break
+        log("    distinct col[{:02d}] {!r} ({}{}):".format(
+            ci, hdr[ci], len(seen), "+" if len(seen) >= 15 else ""))
+        for val in seen:
+            log("        {!r}".format(val))
+
+
 def _pull_and_adapt(page, tag: str, spec: dict, log=print) -> Path:
     """Crosstab-download one view and rename its header to D2D naming.
 
@@ -303,6 +352,10 @@ def main(argv=None) -> int:
     ap.add_argument("--only", choices=sorted(PRODUCTS), default=None,
                     metavar="PRODUCT",
                     help="run one product (default: all three)")
+    ap.add_argument("--probe-columns", action="store_true", dest="probe_columns",
+                    help="READ-ONLY: print the crosstab's real header, sample "
+                         "rows and distinct dimension values, one field per "
+                         "line, then stop. Writes nothing.")
     ap.add_argument("--probe-owners", action="store_true", dest="probe_owners",
                     help="pull each TEAM view once and print the distinct owners "
                          "it contains (no slice, no write) — confirm an office's "
@@ -315,6 +368,14 @@ def main(argv=None) -> int:
                          "next daily run for that product).")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
     args = ap.parse_args(argv)
+
+    # The probe is READ-ONLY, and it has to stay that way even when it is
+    # invoked through `lucy rerun att_churn`, which appends its flags AFTER the
+    # scheduled base_args (["--fill"]). Without this, a probe run would reach
+    # _write_manifest and mark the source manifest clean.
+    if args.probe_columns:
+        args.fill = False
+        args.png = False
     if args.png:
         args.fill = True          # render reads the tab the fill just wrote
 
@@ -371,6 +432,10 @@ def main(argv=None) -> int:
                     tp._ensure_tableau_authenticated(page, verbose=False,
                                                      allow_form_login=True)
                     log("  [cdp] auth OK")
+                    if args.probe_columns:
+                        _probe_columns(page, pkey, pv, log=log)
+                        adapted = "probed"   # sentinel: not a real pull
+                        break
                     adapted = _pull_and_adapt(page, pkey, pv, log=log)
                     break
                 except Exception:  # noqa: BLE001 — one product/attempt must not kill the rest
@@ -391,6 +456,9 @@ def main(argv=None) -> int:
                 for okey in offices:
                     results["{}_{}".format(okey, pkey)] = "FAILED"
                 rc = 1
+                continue
+
+            if args.probe_columns:
                 continue
 
             if args.probe_owners:
