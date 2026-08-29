@@ -610,14 +610,29 @@ def _try_overwrite_send(page) -> bool:
     sendable and 16 of those needed exactly this button — i.e. this one mismatch
     was the difference between a person reaching the call list and being written
     off. Pattern-match /overri|overwri/, prefer the one that also says AI."""
-    # WAIT for the control, do not snapshot. The override button renders via its
-    # own request after the refusal panel; one early peek concludes "no override"
-    # on a page that grows the button a second later, and the caller then removes
-    # a sendable applicant (Rossana Martheins, 2026-08-29).
+    # WAIT for the control by scanning ELEMENTS, never body text. The control is
+    # a <button> in some offices but an <input> in others (Haytham's, found
+    # 2026-08-29 via a full control dump) — and an input's label lives in its
+    # value attribute, which body text does NOT contain. The text gate said "no
+    # override" on a page whose 'Override and Send to AI' input was plainly
+    # visible, and Moises Santamaria was removed for it — twice. Same matcher as
+    # the click below: innerText OR value, across every frame.
+    _FIND_JS = """() => {
+         const t = e => (e.innerText || e.value || '').trim();
+         return [...document.querySelectorAll(
+             'button, input[type=submit], input[type=button], a')]
+           .some(e => e.offsetParent !== null && /overri|overwri/i.test(t(e)));
+    }"""
     _found = False
-    for _ in range(8):                       # up to ~8s
-        if re.search(r"overri|overwri", _body(page)):
-            _found = True
+    for _ in range(8):                       # up to ~8s for it to render
+        for _fr in (getattr(page, "frames", None) or [page]):
+            try:
+                if _fr.evaluate(_FIND_JS):
+                    _found = True
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        if _found:
             break
         page.wait_for_timeout(1000)
     if not _found:
