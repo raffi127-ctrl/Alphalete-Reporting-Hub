@@ -165,7 +165,12 @@ DISQUALIFIED_STATUS = re.compile(
 # "Left Message" means we called and never actually reached them. They are
 # applying again, so they are still job-hunting: override and send, do not
 # remove and do not re-text. (Carlos, 8/29, on Kim Hamilton.)
-OVERRIDE_STATUS = re.compile(r"left\s*message", re.I)
+# Also: "Removed from Call List (Incorrect / Insufficient Contact Info)" — the
+# only reason they were dropped was a missing number. Once we pull one off the
+# resume that reason is gone, so override and send. (Carlos, 8/29, Lillys
+# Hernandez.) This whole cleanup exists to push exactly these people.
+OVERRIDE_STATUS = re.compile(
+    r"left\s*message|insufficient\s*/?\s*contact|incorrect\s*/\s*insufficient", re.I)
 
 
 def interview_verdict(status_text: str):
