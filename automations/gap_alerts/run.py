@@ -58,6 +58,7 @@ HUB_CARD_ID = "gap-alerts"
 HUB_CARD_NAME = "Rep Gap Alerts (15-min gaps -> Partners chat)"
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "gap_alerts"
 PREVIEW_DM = False   # set by --preview-dm
+RATES_OVERRIDE = None  # set by --rates: force the rate columns on for ONE run
 
 # One alert after this many consecutive failed ticks, then a cooldown. A live
 # outage would otherwise post an incident every tick all afternoon, and three
@@ -642,7 +643,9 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
     pngs, shape = knocks_render.render_knocks_boards(
         day, rows=rows, out_dir=out_dir / cfg["key"],
         title_suffix=first_name(cfg.get("label") or cfg["name"]),
-        date_text=_date_text(day), extra_totals=extra)
+        date_text=_date_text(day), extra_totals=extra,
+        rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
+                      else RATES_OVERRIDE))
 
     _log("  %s: %d rep(s) -> %s (%s)"
          % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
@@ -979,6 +982,9 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="run outside the selling-day window")
     ap.add_argument("--headed", action="store_true", help="show the browser")
+    ap.add_argument("--rates", action="store_true",
+                    help="force the Avg Knocks/Hr + Avg Doors/Rep columns on "
+                         "for THIS run, without arming them for the schedule")
     ap.add_argument("--preview-dm", action="store_true",
                     help="build, then DM the PDF to Megan for review "
                          "(the group gets nothing)")
@@ -994,8 +1000,10 @@ def main(argv=None) -> int:
     day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
            if args.date else dt.date.today())
     send = args.send and not args.dry_run
-    global PREVIEW_DM
+    global PREVIEW_DM, RATES_OVERRIDE
     PREVIEW_DM = bool(getattr(args, "preview_dm", False))
+    if getattr(args, "rates", False):
+        RATES_OVERRIDE = True
 
     if getattr(args, "probe_campaigns", False):
         return probe_campaigns(headless=not args.headed, office=args.office)

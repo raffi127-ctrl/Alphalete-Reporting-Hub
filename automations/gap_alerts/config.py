@@ -107,6 +107,13 @@ SEND_ENABLED = True
 # comparison already drops it on its own without touching the board.
 COMPARE_TO_CHAN = True
 
+# "Avg Knocks / Hr" + "Avg Doors / Rep" on the board (Raf 2026-08-28). OFF
+# until the layout has been eyeballed once — the columns live in
+# total_knocks.render, which draws every knock board in the repo, and Raf's
+# report is posting every 15 minutes while this is being written. Flip to True
+# after a --preview-dm shows them sitting right.
+RATE_COLUMNS = False
+
 # The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
 # a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps
 # against Carlos's ~22.

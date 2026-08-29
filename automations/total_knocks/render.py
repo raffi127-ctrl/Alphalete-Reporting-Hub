@@ -148,6 +148,40 @@ COL_REPS_KNOCKING = "Total # of Reps Knocking"
 # (12.9 → 13.9 talk-to's per rep that day) and moves no total at all.
 KNOCKING_MIN_KNOCKS = 21
 
+# "Avg Knocks / Hr" (Raf 2026-08-28) — a rep's knocks divided by the hours from
+# their FIRST knock to their LAST. His words were "calculated from their 1st
+# knock time", and Megan settled it as exactly that: the RAW span, NOT
+# Avg. Hrs Knocking, which is the same span minus gaps. The two are different
+# numbers and the gap-adjusted one flatters a rep who took long breaks — the
+# raw span answers "over the stretch you were out, how fast did you knock".
+#
+# Filled on every rep row (a rep's own rate is what a reader compares down the
+# column) and on the summary rows from their own totals. Blank when the span
+# cannot be read or is zero, never "0.0" — a rep with one knock has no rate.
+COL_KNOCKS_PER_HR = "Avg Knocks / Hr"
+
+# "Avg Doors / Rep" (Raf 2026-08-28, defined by Megan) — total knocks divided
+# by the number of reps LISTED on the board.
+#
+# NOTE THE DENOMINATOR. Its two neighbours, Talk To's per Rep and Average App
+# per Rep, divide by the reps KNOCKING (KNOCKING_MIN_KNOCKS+, `_knockers`) —
+# the bar Rafael approved on 2026-08-28 because a rep who knocked twice
+# shouldn't sit in the same denominator as one who worked the day. This column
+# was specified as every rep listed, so on a board with 47 rows and 41 knockers
+# it divides by 47 and reads LOWER than the same figure would beside it.
+# Deliberate, and flagged: if the three should agree, switch this to
+# len(_knockers(sub)) and they do.
+#
+# Summary rows only — a rep row IS one rep, where it would just repeat Total
+# Knocks.
+COL_DOORS_PER_REP = "Avg Doors / Rep"
+
+# Both ride an OPT-IN argument rather than the headers, for the same reason
+# Total Apps does: this renderer also draws Raf's metrics threads, the
+# captainship emails, the intraday slots and /knocks, and none of those asked
+# for either column. Default off = every other board byte-identical.
+RATE_COLUMNS = (COL_KNOCKS_PER_HR, COL_DOORS_PER_REP)
+
 
 def _with_derived(cols: list) -> list:
     """The board's OUTPUT columns: the scraped ones plus the ones we compute —
@@ -562,7 +596,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         title_prefix: str = "",
                         hide_columns: "tuple[str, ...]" = (),
                         extra_totals: "list[tuple] | None" = None,
-                        apps: "dict[str, int] | None" = None) -> Path:
+                        apps: "dict[str, int] | None" = None,
+                        rate_columns: bool = False) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -631,6 +666,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     extra_rows: list[list[str]] = []
     extra_apps: list = []
     extra_knockers: list = []
+    extra_listed: list = []
     for item in (extra_totals or []):
         # (name, rows) or (name, rows, apps) — the third element is that
         # office's own {rep: apps}; only its SUM shows, as its reps never do.
@@ -645,6 +681,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # Its Average App per Rep divisor, taken here while its rep rows still
         # exist — only its TOTAL line survives into the drawn table.
         extra_knockers.append(len(_knockers(x_sub)))
+        # Its LISTED rep count, taken while its rep rows still exist — only
+        # its TOTAL line survives into the drawn table.
+        extra_listed.append(len(x_sub))
 
     hrs_pos = COMBINED_KNOCKS_HEADERS.index(COL_HRS_KNOCKING)
     tg_pos = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_GAPS)
@@ -679,6 +718,11 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                             n_extra=len(extra_rows), extra_apps=extra_apps,
                             n_knockers=len(_knockers(sub)),
                             extra_knockers=extra_knockers)
+    if rate_columns:
+        # After the hide and apps passes, by NAME on what survived, same as
+        # the apps column — so it lands correctly on a board that hid others.
+        _insert_rate_columns(cols, disp, table, n_extra=len(extra_rows),
+                             extra_listed=extra_listed)
     number_rows(cols, disp, table, first=1 + len(extra_rows))
     return _draw(disp, table,
                  f"{title_prefix}TOTAL KNOCKS — {_office}"
@@ -718,6 +762,74 @@ def _apps_key(name: str) -> str:
     The caller already matched Tableau's spelling to ownerville's; this only
     keeps a stray double space or a capital from losing a matched rep."""
     return " ".join(str(name or "").split()).lower()
+
+
+def _insert_rate_columns(cols: list, disp: list, table: list, *,
+                         n_extra: int, extra_listed: "list | None" = None
+                         ) -> None:
+    """Put "Avg Knocks / Hr" and "Avg Doors / Rep" in IN PLACE, after Total
+    Knocks — the column both divide, so the board reads knocks → how fast →
+    how many each.
+
+    `table` is extra-office TOTAL rows, then this office's TOTAL, then the rep
+    rows, the order render_total_knocks builds.
+
+    Knocks/Hr uses the RAW span, first knock to last, per Raf and Megan — not
+    Avg. Hrs Knocking, which is that span minus gaps. On the TOTAL rows the
+    times are already the office's AVERAGE first and last, so the rate is the
+    office's day on the same definition.
+
+    Doors/Rep is summary-only and divides by the reps LISTED. This office's
+    listed count is the rep rows right here; an extra office's rep rows never
+    reach this table, so its count comes from `extra_listed` — blank when the
+    caller didn't pass one, because blank is honest for "not counted" where a
+    0 would read as an office that knocked nothing.
+
+    Blank, never 0.0, wherever the span or the divisor is missing: a rep with
+    one knock has no rate and did not earn a zero.
+    """
+    at = (cols.index(COL_TOTAL_KNOCKS) + 1 if COL_TOTAL_KNOCKS in cols
+          else len(cols))
+    tk_at = cols.index(COL_TOTAL_KNOCKS) if COL_TOTAL_KNOCKS in cols else None
+    f_at = cols.index(COL_FIRST_KNOCK) if COL_FIRST_KNOCK in cols else None
+    l_at = cols.index(COL_LAST_KNOCK) if COL_LAST_KNOCK in cols else None
+    if tk_at is None:
+        return
+
+    def _n(v) -> int:
+        v = str(v).strip().replace(",", "")
+        return int(v) if v.isdigit() else 0
+
+    def _rate(row) -> str:
+        if f_at is None or l_at is None:
+            return ""
+        first = _knock_time_key(str(row[f_at]))
+        last = _knock_time_key(str(row[l_at]))
+        if first >= 24 * 60 or last >= 24 * 60 or last <= first:
+            return ""
+        hours = (last - first) / 60.0
+        knocks = _n(row[tk_at])
+        return f"{knocks / hours:.1f}" if hours and knocks else ""
+
+    n_listed = max(0, len(table) - n_extra - 1)
+    per_hr, per_rep = [], []
+    for i, row in enumerate(table):
+        per_hr.append(_rate(row))
+        if i < n_extra:
+            x = (extra_listed[i] if extra_listed and i < len(extra_listed)
+                 else None)
+            per_rep.append(f"{_n(row[tk_at]) / x:.1f}" if x else "")
+        elif i == n_extra:
+            per_rep.append(f"{_n(row[tk_at]) / n_listed:.1f}"
+                           if n_listed else "")
+        else:
+            per_rep.append("")          # a rep row IS one rep
+    for name, vals in ((COL_DOORS_PER_REP, per_rep),
+                       (COL_KNOCKS_PER_HR, per_hr)):
+        cols.insert(at, name)
+        disp.insert(at, COMBINED_KNOCKS_DISPLAY.get(name, name))
+        for row, v in zip(table, vals):
+            row.insert(at, v)
 
 
 def _insert_apps_column(cols: list, disp: list, table: list,
@@ -1097,7 +1209,9 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          title_suffix: str = "",
                          end: "dt.date | None" = None,
                          date_text: str = "",
-                         extra_totals=None) -> "tuple[list[Path], str]":
+                         extra_totals=None,
+                         rate_columns: bool = False
+                         ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
     Time Gaps rides along ONLY when the main board doesn't already carry Gaps
@@ -1130,6 +1244,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                                              end=end, date_text=date_text)
     else:
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
+                                     rate_columns=rate_columns,
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,
                                      extra_totals=extra_totals)], shape)
