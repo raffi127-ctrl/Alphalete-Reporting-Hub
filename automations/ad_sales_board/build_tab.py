@@ -39,6 +39,7 @@ GREY = {"red": 0.8509804, "green": 0.8509804, "blue": 0.8509804}
 AMBER = {"red": 1, "green": 0.95, "blue": 0.8}
 CAPTION = {"red": 0.8, "green": 0.8, "blue": 0.8}
 BORDER = {"red": 0.7176471, "green": 0.7176471, "blue": 0.7176471}
+INK = {"red": 0.09, "green": 0.09, "blue": 0.11}   # near-black, reads on every tint
 
 D = sheet.DATA_TAB
 # ONE stacked scroll: every week of the picked manager, newest first — no week
@@ -59,7 +60,10 @@ CAPTION_TEXT = ("day cells = emails RECEIVED per ad per day (tracked from "
                 "that week")
 # Account colours. One tint per ACCOUNT, held across the whole scroll so
 # every row under (say) Peaksalesstrategiestx reads the same in every week
-# (Carlos, 2026-08-28). The index comes from N5's MATCH against the view's
+# (Carlos, 2026-08-28). It paints Account + City + AD — the ad carries its
+# account's colour — and deliberately NOT the numbers: a full-row tint was
+# tried and pulled back, since dark figures on white are what makes the day
+# columns scannable. The index comes from N5's MATCH against the view's
 # own UNIQUE account list, which is ordered by FIRST APPEARANCE — and the
 # scroll is newest-week-first, so the accounts running right now take the
 # low, all-distinct indices. A manager with more accounts than there are
@@ -258,19 +262,24 @@ def main(argv=None):
         fmt(3, 0, 4, 13, {"userEnteredFormat": {
                 "backgroundColor": NAVY, "horizontalAlignment": "CENTER",
                 "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP",
-                "textFormat": arial(bold=True, fontSize=10,
+                "textFormat": arial(bold=True, fontSize=11,
                                     foregroundColor=WHITE)}},
             "userEnteredFormat(backgroundColor,horizontalAlignment,"
             "verticalAlignment,wrapStrategy,textFormat)"),
         # grid body — EVERYTHING centered (Carlos: "center everything")
+        # Bold and a size up: the account tint now runs the full width of the
+        # row, and thin grey text disappears on colour (Carlos, 2026-08-28).
         fmt(4, 0, 1500, 13, {"userEnteredFormat": {
                 "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
-                "wrapStrategy": "CLIP", "textFormat": arial()}},
+                "wrapStrategy": "CLIP",
+                "textFormat": arial(bold=True, fontSize=11,
+                                    foregroundColor=INK)}},
             "userEnteredFormat(horizontalAlignment,verticalAlignment,"
             "wrapStrategy,textFormat)"),
         fmt(4, 0, 1500, 1, {"userEnteredFormat": {
-                "textFormat": arial(foregroundColor={"red": 0.45, "green": 0.45,
-                                                     "blue": 0.45})}},
+                "textFormat": arial(bold=True, fontSize=11,
+                                    foregroundColor={"red": 0.42, "green": 0.42,
+                                                     "blue": 0.42})}},
             "userEnteredFormat.textFormat"),
         fmt(4, 4, 1500, 13, {"userEnteredFormat": {
                 "numberFormat": {"type": "NUMBER", "pattern": "0"}}},
@@ -344,7 +353,7 @@ def main(argv=None):
         reqs.append({"addConditionalFormatRule": {"index": 2 + i, "rule": {
             "ranges": [{"sheetId": view_id, "startRowIndex": 4,
                         "endRowIndex": 1500, "startColumnIndex": 1,
-                        "endColumnIndex": 2}],
+                        "endColumnIndex": 4}],
             "booleanRule": {
                 "condition": {"type": "CUSTOM_FORMULA", "values": [
                     {"userEnteredValue": '=AND($N5=%d,$B5<>"")' % i}]},
