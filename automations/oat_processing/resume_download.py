@@ -307,10 +307,36 @@ def download_and_read_phone(pg, timeout_ms: int = 45000):
     fr, el = find_download_link(pg)
     if el is None:
         return None, "no download link on the page"
+    # THREE ways to start the download, in order. A plain .click() runs
+    # Playwright's actionability checks and fails the moment anything overlaps
+    # the link — a Chrome "Restore pages?" bubble parked over that corner is
+    # enough, and that is exactly how Willy Jean-Felix came back "no phone" on
+    # 2026-08-29 when his resume in fact had one. So: normal click, then a JS
+    # click that ignores overlays, then navigating straight to the href.
+    dl = None
+    last_err = None
+    for how in ("click", "jsclick", "href"):
+        try:
+            if how == "href":
+                href = el.get_attribute("href")
+                if not href:
+                    continue
+                with pg.expect_download(timeout=timeout_ms) as info:
+                    (fr or pg).evaluate("u => { window.location.href = u }", href)
+            else:
+                with pg.expect_download(timeout=timeout_ms) as info:
+                    if how == "click":
+                        el.click(timeout=10000)
+                    else:
+                        el.evaluate("e => e.click()")
+            dl = info.value
+            break
+        except Exception as e:          # noqa: BLE001
+            last_err = f"{how}: {type(e).__name__}: {str(e)[:60]}"
+            continue
     try:
-        with pg.expect_download(timeout=timeout_ms) as info:
-            el.click(timeout=10000)
-        dl = info.value
+        if dl is None:
+            return None, f"download failed ({last_err})"
         name = dl.suggested_filename or "download"
         dest = os.path.join(tempfile.mkdtemp(prefix="oat_resume_"), name)
         dl.save_as(dest)
