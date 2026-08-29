@@ -127,9 +127,17 @@ JAY_EW = {
     "enabled": False,
 }
 
-# Discovered by probing Calvin's session (he is EW-only, so whatever his
-# impersonated session resolves to IS Energy Wells). Fill this in, put it on
-# JAY_EW, and flip both of Jay's rows when access lands.
+# STILL UNKNOWN, and deliberately not guessed. Calvin's page links carry two
+# ids, 3 and 39; 3 is RES AT&T, so 39 looks like Energy Wells — but loading
+# either id while impersonated bounced the session back to the Office Access
+# owner list, so neither could be NAMED. An id that is "probably right" would
+# hand Jay's Energy Wells report another campaign's numbers on a board that
+# looks completely normal.
+#
+# READ IT OFF JAY'S OWN SESSION when his access lands. That is the better probe
+# anyway: he runs BOTH campaigns, so his switcher shows both with their labels,
+# where Calvin's session can only ever show one. Until then this blocks nothing
+# — Calvin needs no pin (EW is his only campaign) and Jay cannot run at all.
 ENERGY_WELLS_CAMPAIGN_ID = ""
 
 OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW]
