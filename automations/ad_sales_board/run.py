@@ -373,6 +373,7 @@ def main(argv=None):
                 # piece is matched onto the WEEK's ad rows below, fuzzily,
                 # the same way names.attach does.
                 day_pieces = {}   # label -> [(inbox, base, city, slot, n)]
+                pulled_slots = {}  # label -> {slot} actually re-read this run
                 for d in sorted(set(day_targets) | set(heal)):
                     anc = weeks.anchor_for(d)
                     dlabel = weeks.window(anc)[0]
@@ -383,6 +384,7 @@ def main(argv=None):
                         empty_days.append((name, d))
                         continue
                     slot = (d - anc).days
+                    pulled_slots.setdefault(dlabel, set()).add(slot)
                     for g in dads:
                         if g["rec"]["apps"]:
                             day_pieces.setdefault(dlabel, []).append(
@@ -391,6 +393,19 @@ def main(argv=None):
                 for label, start, ads, nrows, rescued in weekly:
                     recv = {k: list(v)
                             for k, v in carry.get((name, label), {}).items()}
+                    # Clear every slot this run re-read, across all ads, before
+                    # applying. Otherwise a day's old value survives on the ad
+                    # it used to be credited to while the new value lands on
+                    # another — the counts are then held twice. That is exactly
+                    # what the closest-title matching exposed on 2026-08-29:
+                    # eight of Carlos's weeks swung from under-counting to
+                    # over-counting (Apr 27: +256) the moment pieces started
+                    # landing on different rows than before. Days that came
+                    # back empty are NOT cleared — an unread day must not
+                    # destroy what an earlier run legitimately captured.
+                    for _slot in pulled_slots.get(label, ()):
+                        for _v in recv.values():
+                            _v[_slot] = ""
                     # map this run's day pieces onto the week's ad rows:
                     # exact (inbox, base, city) first, else (inbox, base)
                     # taken by the biggest Pull; re-pulled days REPLACE the
