@@ -823,6 +823,80 @@ def preview_dm(pdf: Path, slot: str, user: str = "U04G5HJBGFN") -> Dict:
     return {"ok": True, "to": user, "file": pdf.name}
 
 
+def probe_campaigns(headless: bool = True, office: str = "") -> int:
+    """READ-ONLY: list the campaigns this login can see, and dump the
+    Disposition-by-Rep table's LIVE column headers for each.
+
+    Both halves are needed before Energy Wells can be built, and neither can be
+    guessed:
+
+    * the campaign's `invD2DClientId` — the id is what pins a TeleMapper page;
+    * its disposition COLUMNS. total_knocks scrapes a FIXED list
+      (SHEET_COLUMNS) and RAISES if one is missing, so a campaign whose grid is
+      shaped differently does not degrade, it fails. Raf says Energy Wells adds
+      "VL" and counts it as a talk-to, which means at minimum a column the
+      current scraper neither reads nor sums.
+
+    `office` (optional): impersonate this owner first, for a campaign the
+    master login cannot see on its own.
+    """
+    from automations.shared.tableau_patchright import ownerville_session
+    from automations.total_knocks import pull as knocks
+
+    with ownerville_session(headless=headless, verbose=False,
+                            profile_dir=C.PROFILE_DIR) as page:
+        rqst = cap.capture_rqst(page)
+        if office:
+            from automations.focus_office_att.aliases import load_aliases
+            from automations.focus_office_att.run_all_owners import (
+                _exit_impersonation, _find_owner_and_impersonate,
+                _navigate_to_office_access)
+            _exit_impersonation(page)
+            _navigate_to_office_access(page)
+            rqst, reason = _find_owner_and_impersonate(page, office,
+                                                       load_aliases())
+            if not rqst:
+                _log("could not impersonate %r: %s" % (office, reason))
+                return 1
+            _log("impersonated %r" % office)
+
+        for cid in range(1, 31):
+            url = ("https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
+                   "&invD2DClientId=%d" % (C.PAGE_TIME_TRACKER, rqst, cid))
+            try:
+                cap._goto(page, url)
+                label, _cur = cap.current_campaign(page)
+            except Exception as e:  # noqa: BLE001
+                label = "(err %s)" % type(e).__name__
+            if not label or label.startswith("(err"):
+                continue
+            _log("campaign id=%-3d %s" % (cid, label))
+            # The grid's real headers for this campaign.
+            try:
+                cap._goto(page, "https://v2.ownerville.com/index.cfm?p=%d"
+                                "&rqst=%s&invD2DClientId=%d"
+                          % (C.PAGE_DISPOSITION, rqst, cid))
+                page.wait_for_timeout(2500)
+                idx = knocks._header_index(page)
+                heads = sorted(idx)
+                _log("    headers(%d): %s" % (len(heads), ", ".join(heads)))
+                missing = [c for c in knocks.SHEET_COLUMNS
+                           if c not in {knocks.COL_TOTAL_TALK_TO,
+                                        *knocks.TIME_TRACKER_COLUMNS}
+                           and knocks._norm(c) not in idx]
+                if missing:
+                    _log("    ⚠ the current scraper would RAISE here — missing: %s"
+                         % ", ".join(missing))
+            except Exception as e:  # noqa: BLE001
+                _log("    headers unavailable (%s: %s)"
+                     % (type(e).__name__, str(e)[:120]))
+        if office:
+            from automations.focus_office_att.run_all_owners import (
+                _exit_impersonation)
+            _exit_impersonation(page)
+    return 0
+
+
 def probe(day: dt.date, cfg: Dict, headless: bool = True) -> int:
     """READ-ONLY: the rows the board is built from, and their columns.
 
@@ -860,6 +934,11 @@ def main(argv=None) -> int:
     ap.add_argument("--preview-dm", action="store_true",
                     help="build, then DM the PDF to Megan for review "
                          "(the group gets nothing)")
+    ap.add_argument("--probe-campaigns", action="store_true",
+                    help="READ-ONLY: list campaign ids and dump each "
+                         "Disposition table's live column headers")
+    ap.add_argument("--office", default="",
+                    help="impersonate this owner for --probe-campaigns")
     ap.add_argument("--probe", action="store_true",
                     help="READ-ONLY: dump the raw Time Tracker rows")
     args = ap.parse_args(argv)
@@ -869,6 +948,9 @@ def main(argv=None) -> int:
     send = args.send and not args.dry_run
     global PREVIEW_DM
     PREVIEW_DM = bool(getattr(args, "preview_dm", False))
+
+    if getattr(args, "probe_campaigns", False):
+        return probe_campaigns(headless=not args.headed, office=args.office)
 
     if args.probe:
         # Ahead of the window gate on purpose: you diagnose when you can, not
