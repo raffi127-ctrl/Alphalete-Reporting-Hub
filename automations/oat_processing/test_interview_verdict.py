@@ -76,3 +76,16 @@ def test_no_phone_removal_is_per_office():
     from automations.oat_processing import config
     offices.activate("11580"); assert config.REMOVE_NO_PHONE is False
     offices.activate("23467"); assert config.REMOVE_NO_PHONE is True
+
+
+def test_declined_next_round_is_a_retext():
+    """Maribel Chavez 2026-08-28: showed up, then declined the next round over
+    the commute. Carlos: "she's still looking for a job, so let's try again."
+    They turned US down — that is not us rejecting them."""
+    assert interview_verdict("Declined Next Round") == "retext"
+    assert interview_verdict("1st Interview - Show Up / declined next round") == "retext"
+
+
+def test_declined_still_loses_to_a_disqualification():
+    assert verdict_for_history(["Declined Next Round", "Delay Disqualified"]) \
+        == "remove_duplicate"

@@ -147,6 +147,10 @@ def classify(a: Applicant, today: dt.date, cfg=config) -> Decision:
 #   "1st Interview - No Show", "rejected", "not qualified"
 #       -> they never actually got interviewed. Re-text the await message and
 #          give them another shot.
+#   "declined next round" (seen behind View Last Activity on a 1st Interview -
+#   Show Up; Maribel Chavez declined over the commute, 2026-08-28)
+#       they turned US down, which is not us turning them down — Carlos: "she's
+#       still looking for a job, so let's try again." Re-text, then remove.
 #   "delay disqualified"
 #       -> we DID interview them and chose not to advance them to a 2nd round.
 #          No point texting again; remove as a duplicate.
@@ -155,7 +159,7 @@ def classify(a: Applicant, today: dt.date, cfg=config) -> Decision:
 # guess here either texts someone we already rejected or throws away a live
 # candidate, and neither is recoverable from the log.
 RETEXT_STATUS = re.compile(
-    r"no[\s-]?show|rejected|not\s+qualified", re.I)
+    r"no[\s-]?show|rejected|not\s+qualified|declined", re.I)
 DISQUALIFIED_STATUS = re.compile(
     r"delay\s*disqualif", re.I)
 
