@@ -318,7 +318,7 @@ def remove_rep(worksheet, grid, row: int, expected_name: str,
 # Every column is found by its ROW-1 LABEL, never by index: row 3 says "REP"
 # over four different columns, so position here is meaningless.
 NEW_REP_FIELDS = ("Trainer", "Field Status", "Campaign", "Team",
-                  "Leadership Status", "Start Date")
+                  "Leadership Status", "Start Date", "Location")
 FIELD_STATUS_NEW = "1st Wk"
 CAMPAIGN_NEW = "Fiber"
 LEADERSHIP_NEW = "In Training"
@@ -335,23 +335,56 @@ def meta_columns(grid) -> Dict[str, int]:
     return out
 
 
-def classroom_trainer(grid, name: str) -> Tuple[str, str]:
-    """(trainer first name, note) from the classroom block under the roster."""
+def classroom_trainer(grid, name: str) -> Tuple[str, str, str]:
+    """(trainer, location, note) from the classroom block under the roster.
+
+    MATCHED ON THE LAST NAME when the full name misses. The block is written by
+    hand and uses whatever people are called: SaraPlus said "SHUMINIQUE
+    VALENTINE" and the block says "Nikki Valentine", so an exact match found
+    nothing and she was added with no trainer, no team and no location
+    (2026-08-27). A surname is the part that survives a nickname. Only when it
+    is UNIQUE in the block -- two Valentines is a question for a person, not a
+    guess.
+    """
     header = None
     for r in range(B.last_rep_row(grid) + 1, len(grid) + 1):
-        cells = [" ".join(B.cell(grid, r, c).split()).lower() for c in range(1, 14)]
+        cells = [" ".join(B.cell(grid, r, c).split()).lower() for c in range(1, 16)]
         if "classroom" in cells and "trainers" in cells:
-            header = (r, cells.index("classroom") + 1, cells.index("trainers") + 1)
+            header = (r, cells.index("classroom") + 1, cells.index("trainers") + 1,
+                      (cells.index("location") + 1) if "location" in cells else 0)
             break
     if not header:
-        return "", "no classroom block on this tab"
-    hrow, name_col, trainer_col = header
-    want = B._norm_name(name)
+        return "", "", "no classroom block on this tab"
+    hrow, name_col, trainer_col, loc_col = header
+
+    entries = []
     for r in range(hrow + 1, len(grid) + 1):
         who = B.cell(grid, r, name_col).strip()
-        if who and B._norm_name(who) == want:
-            return B.cell(grid, r, trainer_col).strip(), ""
-    return "", "%r is not in the classroom block, so no trainer to read" % name
+        if who:
+            entries.append((who, r))
+    if not entries:
+        return "", "", "the classroom block is empty"
+
+    want = B._norm_name(name)
+    hit = [r for who, r in entries if B._norm_name(who) == want]
+    how = "by name"
+    if not hit:
+        last = want.split()[-1] if want.split() else ""
+        by_last = [r for who, r in entries
+                   if last and B._norm_name(who).split()[-1:] == [last]]
+        if len(by_last) == 1:
+            hit, how = by_last, "matched on surname (the block calls them %r)" % (
+                next(w for w, r in entries if r == by_last[0]))
+        elif len(by_last) > 1:
+            return "", "", ("%r shares a surname with %d classroom entries -- "
+                            "left for a person" % (name, len(by_last)))
+    if not hit:
+        return "", "", "%r is not in the classroom block, so no trainer to read" % name
+
+    row = hit[0]
+    trainer = B.cell(grid, row, trainer_col).strip()
+    location = B.cell(grid, row, loc_col).strip() if loc_col else ""
+    return trainer, location, ("" if how == "by name" else how)
 
 
 def roster_match(grid, partial: str) -> Tuple[str, int, str]:
@@ -395,9 +428,13 @@ def new_rep_details(grid, name: str, day) -> Tuple[List[Dict], List[str]]:
               "Start Date": "%d/%d/%d" % (monday.month, monday.day, monday.year)}
     notes = []
 
-    first, why = classroom_trainer(grid, name)
+    first, location, why = classroom_trainer(grid, name)
+    if location and "Location" in cols:
+        values["Location"] = location
+    if why:
+        notes.append(why)
     if not first:
-        notes.append(why + " -- Trainer and Team left blank")
+        notes.append("no trainer found -- Trainer and Team left blank")
     else:
         full, trow, why2 = roster_match(grid, first)
         if not full:
