@@ -903,6 +903,30 @@ def probe_campaigns(headless: bool = True, office: str = "") -> int:
             _log("default headers unavailable (%s: %s)"
                  % (type(e).__name__, str(e)[:160]))
 
+        # WHICH CAMPAIGN ID AM I ON? Calvin is Energy-Wells-only, so whatever
+        # this session resolves to after impersonating him IS the Energy Wells
+        # id — and that id is what JAY's Energy Wells report will have to pin,
+        # because he runs two campaigns and has no safe default.
+        #
+        # Read off the page's own links rather than a dropdown: the campaign
+        # picker is not a <select> here (the earlier dump found only territory,
+        # table-length and feedbackModules), and every campaign-scoped link the
+        # page builds carries the id.
+        try:
+            found = page.evaluate(
+                "() => { const out = {};"
+                " for (const a of document.querySelectorAll('a[href]')) {"
+                "   const m = a.href.match(/invD2DClientId=(\\d+)/);"
+                "   if (m) { out[m[1]] = (out[m[1]] || 0) + 1; } }"
+                " return { ids: out, url: location.href }; }")
+            _log("current url: %s" % str(found.get("url"))[:160])
+            ids = found.get("ids") or {}
+            _log("invD2DClientId seen in page links: %s"
+                 % (", ".join("%s (x%s)" % (k, v) for k, v in ids.items())
+                    or "none"))
+        except Exception as e:  # noqa: BLE001
+            _log("campaign-id scan failed (%s)" % type(e).__name__)
+
         # Every <select> on the page, so the campaign picker (and its ids) can
         # be found without guessing at the B2B dropdown's shape — that reader
         # returned nothing on this login, which is why the first scan was blind.

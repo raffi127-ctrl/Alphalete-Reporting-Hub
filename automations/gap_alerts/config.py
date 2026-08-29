@@ -90,17 +90,57 @@ CALVIN = {
     "compare": False,
 }
 
-# Jay Turnage — Energy Wells AND AT&T, as TWO separate reports (Raf: "not
-# combined, 2 separate reports, knocks posted for each"). NOT ENABLED: Raf
-# himself said "I don't have him, we're gonna add him" — he is not in
-# ownerville yet, so there is nothing to impersonate. Add two rows here once
-# he exists, one with the AT&T campaign pinned and one without.
+# Jay Turnage — Clear View Consultants, Inc., account 21959, 144 sales reps.
+# TWO SEPARATE reports, not combined (Raf: "not combined, 2 separate reports,
+# knocks posted for each").
+#
+# enabled=False until Office Access is GRANTED. As of 2026-08-28 the request
+# shows "Request Sent" — he exists, we cannot impersonate him yet, and a live
+# row would fail every 15 minutes and open incidents rather than post.
+#
+# BOTH need an explicit campaign pin, unlike Calvin. Calvin is Energy-Wells-
+# only so his post-impersonation default is already the right campaign; Jay
+# runs both, so whichever he happens to land on would silently decide which
+# report is which. ENERGY_WELLS_CAMPAIGN_ID below is the missing half.
+#
+# 144 reps is three times Raf's roster — worth an eye on the first board for
+# how the image reads at that length before assuming the layout holds.
+JAY_ATT = {
+    "key": "jay_att",
+    "name": "Jay Turnage",
+    "ov": "impersonate",
+    "campaign_id": "3",              # RES AT&T, same id Raf's office pins
+    "group": "ENERGY WELLS DOMINATION",
+    "label": "Jay (AT&T)",
+    "compare": False,
+    "enabled": False,
+}
 
-OFFICES: List[Dict] = [RAF, CALVIN]
+JAY_EW = {
+    "key": "jay_ew",
+    "name": "Jay Turnage",
+    "ov": "impersonate",
+    "campaign_id": "",               # <- ENERGY_WELLS_CAMPAIGN_ID once known
+    "group": "ENERGY WELLS DOMINATION",
+    "label": "Jay (Energy Wells)",
+    "compare": False,
+    "enabled": False,
+}
+
+# Discovered by probing Calvin's session (he is EW-only, so whatever his
+# impersonated session resolves to IS Energy Wells). Fill this in, put it on
+# JAY_EW, and flip both of Jay's rows when access lands.
+ENERGY_WELLS_CAMPAIGN_ID = ""
+
+OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW]
 
 
 def enabled() -> List[Dict]:
-    return list(OFFICES)
+    """The offices that actually run. A row with enabled=False is WIRED but
+    switched off — Jay's two are waiting on Office Access, and a live row we
+    cannot impersonate would fail every tick and open incidents instead of
+    posting."""
+    return [o for o in OFFICES if o.get("enabled", True)]
 
 
 def office(key: str) -> Optional[Dict]:
