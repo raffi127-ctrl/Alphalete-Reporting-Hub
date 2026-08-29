@@ -1294,6 +1294,16 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
     if not getattr(config, "ALLOW_RETEXT", False):
         # Send if we possibly can (override/overwrite, either label); otherwise
         # this office removes rather than leaving them flagged forever.
+        #
+        # CLICK SEND FIRST. The override/overwrite control only RENDERS on the
+        # refused screen, and do_retext_then_remove reaches here without ever
+        # having attempted a send — so looking for the control now would find
+        # nothing and remove someone who was sendable all along. That is the very
+        # mistake this audit exists to find. (Carlos, 2026-08-29, on Rossana
+        # Martheins: "I'm pretty sure Rosanna had the option to overwrite.")
+        if "cannot send to ai" not in _body(page):
+            _click_first(page, ["Send to AI", "Send To AI"], timeout=6000)
+            page.wait_for_timeout(2500)
         if _try_overwrite_send(page):
             _log(f"    ✅ override-sent instead of removing: "
                  f"{a.first_name} {a.last_name}")
