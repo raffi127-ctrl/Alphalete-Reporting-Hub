@@ -2279,6 +2279,22 @@ def _view_resume_link(page):
     return None, None
 
 
+def _office_emails(page) -> set:
+    """Addresses that must NEVER be written into an applicant record: the office
+    inbox the application was sent to, and whatever is already in the panel's
+    email field. Read off the ORIGINAL p=604 page, not the resume tab."""
+    out = set()
+    try:
+        d = page.evaluate(_EXTRACT_JS) or {}
+        for k in ("account", "email"):
+            v = (d.get(k) or "").strip().lower()
+            if "@" in v:
+                out.add(v)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def _rd_email(text: str) -> str:
     from automations.oat_processing.resume_download import email_from_text
     return email_from_text(text)
@@ -2384,7 +2400,16 @@ def lookup_resume_phone(page):
                     for m in _PHONE_RE.finditer(_t):
                         digits = re.sub(r"\D", "", m.group(0))
                         if 10 <= len(digits) <= 11:     # a real US number
-                            _LAST_RESUME_EMAIL = _rd_email("\n".join(texts))
+                            # Email ONLY from the same text block the phone was
+                            # found in — that is the resume itself. The joined
+                            # texts include Indeed's page chrome, which carries
+                            # the LOGGED-IN account's address, and that is how
+                            # the office owner's own email got typed into an
+                            # applicant record (Carlos, 2026-08-29).
+                            _cand = _rd_email(_t)
+                            _LAST_RESUME_EMAIL = (
+                                "" if _cand.lower() in _office_emails(page)
+                                else _cand)
                             return (m.group(0).strip(),
                                     f"from resume ({newpg.url[:50]})")
             newpg.wait_for_timeout(1000)
@@ -2413,7 +2438,9 @@ def lookup_resume_phone(page):
         except Exception as _e:  # noqa: BLE001
             _dl_phone, _dl_detail = None, f"download path errored: {type(_e).__name__}"
         if _dl_phone:
-            _LAST_RESUME_EMAIL = getattr(_rd, "LAST_EMAIL", "") or ""
+            _cand = (getattr(_rd, "LAST_EMAIL", "") or "").strip()
+            _LAST_RESUME_EMAIL = ("" if _cand.lower() in _office_emails(page)
+                                  else _cand)
             _log(f"    \U0001f4c4 phone from the DOWNLOADED resume: {_dl_phone} "
                  f"({_dl_detail})")
             return _dl_phone, f"from downloaded resume ({_dl_detail[:60]})"

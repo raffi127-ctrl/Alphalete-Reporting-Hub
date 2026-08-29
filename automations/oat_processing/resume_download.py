@@ -276,7 +276,13 @@ def phone_from_file(path: str):
     global LAST_EMAIL
     LAST_EMAIL = ""
     txt = extract_text(path)
-    LAST_EMAIL = email_from_text(txt)
+    # ONLY an actual resume file can carry the applicant's email. A downloaded
+    # .eml is the application email TO THE OFFICE INBOX — every address in it
+    # (To:, account footer) belongs to the office, and taking "the first email
+    # in the text" typed the OWNER'S OWN ADDRESS into an applicant record
+    # (Carlos, 2026-08-29: "why are you putting in my email?").
+    if not path.lower().endswith(".eml"):
+        LAST_EMAIL = email_from_text(txt)
     phone = phone_from_text(txt)
     if phone:
         return phone
@@ -286,7 +292,7 @@ def phone_from_file(path: str):
     # is exactly how the designed templates on Indeed are built. The cost is a
     # couple of seconds on a file we were about to give up on anyway.
     ocr = _text_from_ocr(path)
-    if not LAST_EMAIL:
+    if not LAST_EMAIL and not path.lower().endswith(".eml"):
         LAST_EMAIL = email_from_text(ocr)
     return phone_from_text(ocr)
 
