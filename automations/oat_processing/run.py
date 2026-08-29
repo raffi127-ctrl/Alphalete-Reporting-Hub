@@ -518,14 +518,14 @@ def _try_overwrite_send(page) -> bool:
     body = _body(page)
     if not re.search(r"overri|overwri", body):
         return False
-    # "Cannot override this applicant." VETOES the click even though a control is
-    # still on the page. Observed live on Paula Ruiz 2026-08-28: the page offered a
-    # bare "Overwrite old Applicants" button AND carried that sentence — clicking
-    # it cannot send, so treating the button's presence as permission would report
-    # a send that never happened.
-    if "cannot override this applicant" in body:
-        _log("    [override] page says 'Cannot override this applicant' — not clicking")
-        return False
+    # DO NOT bail just because the page says "Cannot override this applicant."
+    # Carlos, 2026-08-28: "you even told me that you saw the option that said
+    # overwrite old applicants, so you should have been able to." Those are two
+    # different controls. The bare "Overwrite old Applicants" button does not send
+    # — it clears the old duplicate records so this applicant CAN be saved — and
+    # the send is a separate click afterwards. Refusing to click it (or checking
+    # for the error immediately after) reports a dead end on an applicant who was
+    # one more click from the call list.
     clicked = page.evaluate(
         """() => {
              const els = Array.from(document.querySelectorAll(
@@ -544,7 +544,16 @@ def _try_overwrite_send(page) -> bool:
         return False
     _log(f"    [override] clicked {clicked!r}")
     page.wait_for_timeout(2500)
-    return "cannot send to ai" not in _body(page)
+    if "cannot send to ai" not in _body(page):
+        return True
+    # A bare "Overwrite…" (no AI suffix) only cleared the duplicates; the send is
+    # the NEXT click. Try it before calling this blocked.
+    if _click_first(page, ["Send to AI", "Send To AI"], timeout=6000):
+        page.wait_for_timeout(2500)
+        if "cannot send to ai" not in _body(page):
+            _log("    [override] send succeeded after the overwrite cleared the dups")
+            return True
+    return False
 
 
 _RETEXT_ROWS: list = []

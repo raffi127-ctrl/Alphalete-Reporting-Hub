@@ -119,13 +119,17 @@ if __name__ == "__main__":
     print("7/7 passed")
 
 
-def test_cannot_override_vetoes_even_with_a_button_present():
-    """Paula Ruiz, 2026-08-28: the page showed a bare "Overwrite old Applicants"
-    button AND the sentence "Cannot override this applicant." Clicking cannot
-    send, so the button's presence must not be read as permission."""
-    p = _FakePage(["Overwrite old Applicants", "Save Applicant"],
-                  "cannot send to ai ... cannot override this applicant.")
-    assert oat._try_overwrite_send(p) is False
+def test_cannot_override_message_does_not_stop_the_click():
+    """Paula Ruiz, 2026-08-28. The page carried "Cannot override this applicant."
+    AND a bare "Overwrite old Applicants" button. Those are different controls:
+    the button clears the duplicate records so the applicant can be saved, and
+    the send is the next click. Bailing on the sentence strands someone who was
+    one click from the call list."""
+    p = _FakePage(["Overwrite old Applicants", "Send to AI"],
+                  "cannot send to ai ... cannot override this applicant. "
+                  "overwrite old applicants")
+    assert oat._try_overwrite_send(p) is True
+    assert p.clicked == "Overwrite old Applicants", p.clicked
 
 
 def test_bare_overwrite_label_without_ai_suffix_is_matched():
