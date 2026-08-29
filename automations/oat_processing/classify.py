@@ -179,11 +179,19 @@ OVERRIDE_STATUS = re.compile(
 # no-show rule so the two never get confused.
 UNMARKED_FUTURE = re.compile(r"unmarked\s*show", re.I)
 
+# "Second Round Showed Up" — they attended a SECOND interview and we still did
+# not move forward. Same territory as an outright disqualification: we already
+# took them far and passed. Remove as a duplicate, never text them again.
+# (Carlos, 2026-08-29.)
+SECOND_ROUND = re.compile(r"second\s*round|2nd\s*round", re.I)
+
 
 def interview_verdict(status_text: str):
     """'retext' | 'remove_duplicate' | 'override_send' | None for one Status cell."""
     t = status_text or ""
     if UNMARKED_FUTURE.search(t):
+        return "remove_duplicate"
+    if SECOND_ROUND.search(t):
         return "remove_duplicate"
     if DISQUALIFIED_STATUS.search(t):
         return "remove_duplicate"

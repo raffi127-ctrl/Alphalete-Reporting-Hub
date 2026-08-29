@@ -55,6 +55,7 @@ from automations.recruiting_report import fetch_office
 
 from . import config
 from .classify import (Applicant, Action, Decision, classify,
+                       interview_verdict,
                        verdict_for_history as classify_history)
 
 
@@ -624,7 +625,15 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     # deserve the await text rather than a silent removal. Getting these two
     # backwards either pesters someone we already passed on or throws away a live
     # candidate.
-    _verdict = classify_history(read_dup_statuses(page))
+    # LOG THE RAW STATUS TEXT, always. The verdict alone hides which history we
+    # actually saw, so an unrecognised status (e.g. "Second Round Showed Up",
+    # Carlos 2026-08-29) silently falls through to the generic path and nobody
+    # can tell afterwards which applicant it was or what it said.
+    _statuses = read_dup_statuses(page)
+    _verdict = classify_history(_statuses)
+    for _st in (_statuses or []):
+        _known = interview_verdict(_st)
+        _log(f"    [history] {_st!r} -> {_known or 'UNRECOGNISED (no rule)'}")
     if _verdict == "remove_duplicate":
         if _perform_remove(page, DUP_REASON):
             _log(f"    🗑 removed — interviewed and disqualified (no re-text): "
@@ -645,8 +654,20 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
         # dropping them (Carlos 2026-08-28). Only fall back to flagging when the
         # send itself could not be completed — never silently.
         if not getattr(config, "ALLOW_RETEXT", False):
-            _log(f"    ⚑ FLAG re-text (this office does not text): "
-                 f"{a.first_name} {a.last_name}")
+            # An office that does not text still SENDS whenever it can. Try the
+            # override/overwrite control first — whichever of the two labels is
+            # on the page — and only remove as a duplicate when there is none.
+            # (Carlos, 2026-08-29: "whichever one of those two options comes up,
+            # you use it if it's there.") Removing someone we could have sent is
+            # the exact mistake this whole audit exists to find.
+            if _try_overwrite_send(page):
+                _log(f"    ✅ override-sent instead of removing: "
+                     f"{a.first_name} {a.last_name}")
+                return "sent_override"
+            if _perform_remove(page, DUP_REASON):
+                _log(f"    🗑 removed as duplicate (no override, and this office "
+                     f"does not text): {a.first_name} {a.last_name}")
+                return "removed"
             _flag_retext(a, None)
             return "flag_retext"
         ph_now = (a.cell_phone or a.phone or "").strip()
@@ -1271,8 +1292,18 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
     # FLAGGED for a human instead of messaged. (Carlos, 2026-08-29: only his
     # office and Atef's text people.)
     if not getattr(config, "ALLOW_RETEXT", False):
+        # Send if we possibly can (override/overwrite, either label); otherwise
+        # this office removes rather than leaving them flagged forever.
+        if _try_overwrite_send(page):
+            _log(f"    ✅ override-sent instead of removing: "
+                 f"{a.first_name} {a.last_name}")
+            return "sent_override"
+        if _perform_remove(page, DUP_REASON):
+            _log(f"    🗑 removed as duplicate (no override, and this office does "
+                 f"not text): {a.first_name} {a.last_name}")
+            return "removed"
         _flag_retext(a, days)
-        _log(f"    ⚑ FLAG re-text (this office does not text): "
+        _log(f"    ⚑ FLAG re-text (could not send OR remove): "
              f"{a.first_name} {a.last_name} "
              f"[{a.cell_phone or a.phone or 'no-phone'}]")
         return "flag_retext"

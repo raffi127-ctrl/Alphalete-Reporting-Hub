@@ -53,10 +53,15 @@ def test_no_control_means_no_send():
     assert oat._try_overwrite_send(p) is False
 
 
-def test_cannot_override_message_blocks():
+def test_cannot_override_message_does_NOT_veto():
+    """A page that says "cannot override this applicant" while still SHOWING an
+    override control must still be clicked. Carlos, 2026-08-28: "You even told me
+    that you saw the option that said 'overwrite old applicants', so you should
+    have been able to." The control on the page is the truth; the sentence is
+    not. Vetoing on that wording is what stranded sendable applicants."""
     p = _FakePage(["Override and Send to AI"],
                   "cannot override this applicant. override and send to ai")
-    assert oat._try_overwrite_send(p) is False
+    assert oat._try_overwrite_send(p) is True
 
 
 
@@ -112,7 +117,7 @@ def test_missing_reason_fails_safe():
 
 if __name__ == "__main__":
     for fn in (test_overwrite_wording, test_override_wording,
-               test_no_control_means_no_send, test_cannot_override_message_blocks,
+               test_no_control_means_no_send, test_cannot_override_message_does_NOT_veto,
                test_default_reason_is_duplicate, test_no_contact_reason_is_not_duplicate,
                test_missing_reason_fails_safe):
         fn(); print(f"  ok  {fn.__name__}")
