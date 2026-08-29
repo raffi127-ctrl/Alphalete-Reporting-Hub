@@ -44,13 +44,20 @@ def _batch_sig(roster: dict, ready: list[dict]) -> str:
 
 def _render_setup() -> None:
     """First-time, per-machine setup for auto-sending the CARD image."""
-    ready = imessage.shortcut_installed()
+    # One source of truth for "can this Mac really send a card": the same check
+    # the sender uses, so the panel can't say "set up" while a batch reports 54
+    # failed cards (JD, 2026-08-25).
+    blocked = imessage.card_autosend_blocked()
+    ready = blocked is None
     title = ("✅ Card sending is set up on this Mac"
              if ready else "🛠️ First-time setup — sending the card (do once per Mac)")
     with st.expander(title, expanded=not ready):
         if ready:
             st.success("This Mac has the **Alphalete Swag Card** Shortcut — cards "
                        "will send automatically. (The text needs no setup.)")
+        elif "macOS" in blocked:
+            # Not a setup problem — no amount of clicking fixes an old macOS.
+            st.error("**This Mac can't auto-send the card image.** " + blocked)
         else:
             st.warning("This Mac can send the **text** with no setup, but to also "
                        "auto-send the **card image** it needs a one-time Shortcut. "
