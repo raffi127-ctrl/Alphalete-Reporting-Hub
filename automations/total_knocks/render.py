@@ -176,10 +176,15 @@ COL_KNOCKS_PER_HR = "Avg Knocks / Hr"
 # Knocks.
 COL_DOORS_PER_REP = "Avg Doors / Rep"
 
-# Both ride an OPT-IN argument rather than the headers, for the same reason
-# Total Apps does: this renderer also draws Raf's metrics threads, the
-# captainship emails, the intraday slots and /knocks, and none of those asked
-# for either column. Default off = every other board byte-identical.
+# ON EVERYWHERE (Megan 2026-08-28: "we need to roll that out to everyone
+# including what jiriya pulls and what goes in the emails"). They went in
+# opt-in and off, so Raf's 15-minute board could be looked at first without
+# moving anyone else's; once it read right the answer was every board — the
+# metrics threads, the captainship emails, the intraday slots and /knocks.
+#
+# Still a PARAMETER rather than a bare header entry, so a board that shouldn't
+# carry them can say so (rate_columns=False) without a header edit. A shape
+# with no Total Knocks column — Time Gaps, TeleMapper — is skipped on its own.
 RATE_COLUMNS = (COL_KNOCKS_PER_HR, COL_DOORS_PER_REP)
 
 
@@ -597,7 +602,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         hide_columns: "tuple[str, ...]" = (),
                         extra_totals: "list[tuple] | None" = None,
                         apps: "dict[str, int] | None" = None,
-                        rate_columns: bool = False) -> Path:
+                        rate_columns: bool = True) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -1210,7 +1215,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          end: "dt.date | None" = None,
                          date_text: str = "",
                          extra_totals=None,
-                         rate_columns: bool = False
+                         rate_columns: bool = True
                          ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
