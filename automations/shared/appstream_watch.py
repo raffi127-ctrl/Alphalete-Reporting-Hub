@@ -68,7 +68,17 @@ WATCH_STATE = Path(__file__).resolve().parents[2] / "output" / "appstream_watch_
 # specific someone, so the ping belongs where the rest of the day's failures
 # already land. chat_postMessage takes a channel id in the same slot as a
 # user id, so this needs no other change.
-ALERT_SLACK_TARGETS = ["U04G5HJBGFN", "U088E2KJEV8", "C0BK5PRG259"]
+# CHANNEL ONLY (Megan 2026-08-28: "it also shouldn't be DMing Eve and I").
+# This used to DM Megan + Eve as well, on the 2026-06-26 reasoning that a
+# re-seed needs SOMEBODY and two people beats one. That reasoning stopped
+# holding the moment #claudecorrections-and-requests became where the day's
+# failures land: the DM adds no reader, it just puts the same alert in three
+# places, and this particular alert has fired repeatedly while the batch was
+# being carried — so the cost of a false one is paid three times over, by name,
+# out of hours. The channel is the standing home for this
+# ([[project_corrections_slack_channel]]); a re-seed needs someone at a
+# keyboard, not a specific someone.
+ALERT_SLACK_TARGETS = ["C0BK5PRG259"]
 
 # Reports that depend on the AppStream recruiting console — auto-rerun on recovery.
 # FALLBACK ONLY. The live list is derived per-day by _appstream_reports_to_rerun()
