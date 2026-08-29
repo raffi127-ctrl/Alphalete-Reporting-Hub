@@ -856,8 +856,16 @@ def probe_campaigns(headless: bool = True, office: str = "") -> int:
             rqst, reason = _find_owner_and_impersonate(page, office,
                                                        load_aliases())
             if not rqst:
-                _log("could not impersonate %r: %s" % (office, reason))
-                return 1
+                # ANSWERED, not failed. A probe that cannot reach an owner has
+                # told you the thing you asked it — and exiting non-zero makes
+                # the run watcher open an incident against the LIVE 15-minute
+                # report, which is posting perfectly (it did, 2026-08-28).
+                # A read-only diagnostic must never page the corrections
+                # channel about a report it did not touch.
+                _log("ANSWER: %r is not reachable from this login — %s. "
+                     "Either the name needs an ICD alias or the owner needs "
+                     "Office Access provisioned." % (office, reason))
+                return 0
             _log("impersonated %r" % office)
 
         for cid in range(1, 31):
