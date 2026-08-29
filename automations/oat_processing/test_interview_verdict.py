@@ -68,3 +68,11 @@ def test_await_copy_substitutes_both_placeholders():
         "Blanca", "Entry Level Assistant Manager")
     assert "applicantFirstName" not in out and "adPostingTitle" not in out
     assert "Blanca" in out and "Entry Level Assistant Manager" in out
+
+
+def test_no_phone_removal_is_per_office():
+    """Carlos 2026-08-28: leave them in HIS office, remove in Atef's."""
+    from automations.applicant_push import offices
+    from automations.oat_processing import config
+    offices.activate("11580"); assert config.REMOVE_NO_PHONE is False
+    offices.activate("23467"); assert config.REMOVE_NO_PHONE is True
