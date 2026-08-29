@@ -405,6 +405,87 @@ def parse_day_total(text: str, target: dt.date) -> Optional[float]:
     return None
 
 
+# A day that is a small fraction of its OWN week's other business days did not
+# finish loading, however settled the number looks. 0.5 because real day-to-day
+# variation lives well above it — the six Fridays before 2026-08-29 ran 139-215
+# against ~180 midweek — while the failure it exists to catch came in at 0.27
+# (NDS) and 0.12 (Quantum).
+WEEKDAY_FLOOR_FRAC = 0.5
+
+# Baseline days needed before the floor may fire. 2 keeps Monday and Tuesday
+# targets out of it: one prior day is an anecdote, not a baseline.
+MIN_BASELINE_DAYS = 2
+
+
+def week_baseline_totals(text: str, target: dt.date) -> Dict[dt.date, float]:
+    """{date: grand total} for the BUSINESS days of target's week BEFORE it, read
+    off the very same crosstab.
+
+    No extra pull and no stored history: both live layouts already carry the
+    whole week (Mon..Sun), which is the only reason a relative floor is possible
+    here at all. The sheets hold ONE week, so a trailing 4-week same-weekday
+    average — the textbook baseline — is simply not available to this probe.
+    A zero or unreadable day is dropped rather than counted: Sunday reads 0 on
+    every one of these sheets, and averaging that in would sink the median."""
+    out: Dict[dt.date, float] = {}
+    monday = target - dt.timedelta(days=target.weekday())
+    for i in range(target.weekday()):        # Mon .. the day before target
+        d = monday + dt.timedelta(days=i)
+        if d.weekday() >= 5:                 # Sat/Sun are legitimately near-zero
+            continue
+        try:
+            val = parse_day_total(text, d)
+        except Exception:                    # noqa: BLE001 — one odd column
+            continue
+        if val:                              # None and 0.0 both carry no signal
+            out[d] = val
+    return out
+
+
+def volume_shortfall(text: str, target: dt.date, total: float, *,
+                     frac: float = WEEKDAY_FLOOR_FRAC,
+                     min_days: int = MIN_BASELINE_DAYS) -> Optional[str]:
+    """Why `total` is too small to be a FINISHED day, or None to allow it.
+
+    WHY THIS EXISTS (2026-08-29). The stability test above asks only whether the
+    number STOPPED MOVING, which is not the same question as whether the day is
+    complete — and it fails in the worst possible direction: the longer a feed
+    stays broken, the more confident the "finished loading" verdict gets. That
+    morning NDS Friday sat at 280 against Mon-Thu of ~1,050 from 04:01 to 08:52,
+    and all three runners independently agreed it was settled ("unchanged for
+    289m"). Nothing in the gate asked whether 280 was a PLAUSIBLE Friday. The
+    boards went to sixteen channels showing a -70% day that never happened.
+
+    So this asks the other half of the question: is the number believable next to
+    the rest of its own week? Deliberately conservative — it may only ever fire
+    on a landslide, because a false HOLD costs a morning's boards:
+      * weekday targets only — Sat/Sun are genuinely tiny, not broken;
+      * needs `min_days` real baseline days, so Mon/Tue never trip on thin
+        evidence and a fresh week is never judged on one number;
+      * compares against the MEDIAN, so a single monster or dead day can't move
+        the bar;
+      * silent on any parse trouble. An unreadable week is not evidence of a bad
+        one — same fail-open rule as everywhere else in this module.
+
+    The message ends in "extract not refreshed" deliberately: that substring is
+    what `stale_boards` matches to actually HOLD a board rather than merely note
+    it. Reword it and the boards post anyway."""
+    if target.weekday() >= 5:
+        return None
+    base = week_baseline_totals(text, target)
+    if len(base) < min_days:
+        return None
+    vals = sorted(base.values())
+    mid = len(vals) // 2
+    median = vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2.0
+    if median <= 0 or total >= frac * median:
+        return None
+    return ("%s = %g is only %.0f%% of this week's Mon-%s median of %g — the day "
+            "is still part-loaded — extract not refreshed"
+            % (target.isoformat(), total, 100.0 * total / median,
+               _WEEKDAYS[max(base).weekday()][:3], median))
+
+
 def _read_local_stability(today: dt.date) -> Dict[str, list]:
     """Just this machine's file."""
     try:
@@ -485,7 +566,8 @@ def _check_stable_total(extract_id: str, cfg: dict, target: dt.date,
     except Exception as e:                  # noqa: BLE001 — not pullable yet
         line = str(e).splitlines()[0][:120] if str(e) else repr(e)
         return True, "day-total sheet not pullable (%s) — not held" % line
-    total = parse_day_total(_read_crosstab_text(Path(path)), target)
+    text = _read_crosstab_text(Path(path))
+    total = parse_day_total(text, target)
     if total is None:
         return True, ("could not read %s's total off %r — not held (the sheet's "
                       "layout may have changed)" % (target.isoformat(),
@@ -497,6 +579,18 @@ def _check_stable_total(extract_id: str, cfg: dict, target: dt.date,
     series = _record_observation(today, extract_id, total)
     log("%s total for %s = %g (sample %d of today, all machines)"
         % (conf["sheet"], target.isoformat(), total, len(series)))
+    # A number that has stopped moving still has to be a BELIEVABLE day. Checked
+    # AFTER the sample is recorded so the day's history stays continuous whether
+    # this holds or not — the run that finally sees good data still needs the
+    # earlier samples to prove the number settled.
+    try:
+        short = volume_shortfall(
+            text, target, total,
+            frac=float(conf.get("weekday_floor_frac", WEEKDAY_FLOOR_FRAC)))
+    except Exception:                        # noqa: BLE001 — a floor bug must
+        short = None                         # never break the gate
+    if short:
+        return False, short
     if len(series) < 2:
         return False, ("%s = %g, first sample of the day — no proof it has "
                        "finished loading — extract not refreshed"
