@@ -92,6 +92,28 @@ CALVIN = {
     # Chan is a FIBER office. His totals under an Energy Wells board would
     # invite a comparison between two different businesses, so no line here.
     "compare": False,
+    # OFF 2026-08-29. He was enabled on the belief that an Energy-Wells-only
+    # owner lands on Energy Wells after impersonation. Megan's screenshot of
+    # his real grid (No answer / Not Interested / Come Back / VL /
+    # Inaccessible / Presentation / Do Not Knock, picker reading
+    # RES-ENERGYWELL) shows the probe had been reading RES AT&T instead — the
+    # campaign is a sticky session-global and impersonation does not reset it.
+    # So his rows=0 was very likely the wrong campaign returning nothing, not
+    # an office that had not knocked, and leaving him on risks posting another
+    # campaign's numbers into the Energy Wells chat.
+    #
+    # TO TURN HIM BACK ON, two things, in order:
+    #   1. the RES-ENERGYWELL invD2DClientId, pinned in campaign_id. It is
+    #      NOT 3 (RES AT&T) and NOT 39 (a third campaign — "bill pull",
+    #      "inaccessible no soliciting"). The picker is a custom dropdown, so
+    #      it needs the DOM scan in --probe-campaigns, run outside the tick
+    #      window or it loses the profile race.
+    #   2. an Energy Wells COLUMN SET. Its grid has Not Interested,
+    #      Presentation and VL where fiber has Talk To - Not Interested,
+    #      Presentation - Not Interested and Sale, so total_knocks' fixed
+    #      SHEET_COLUMNS will RAISE on it. Closest existing shape is
+    #      WIRELESS_KNOCKS_COLUMNS. VL counts as a talk-to (Raf).
+    "enabled": False,
 }
 
 # Jay Turnage — Clear View Consultants, Inc., account 21959, 144 sales reps.
