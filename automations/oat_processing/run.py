@@ -267,7 +267,13 @@ def read_current_applicant(page, today: dt.date = None) -> Applicant:
     for r in dup_rows:
         st = (r.get("status") or "").lower()
         if "interview assigned" in st or "interview" in st:
-            if "unmarked show" in st or "no show" in st or "no-show" in st:
+            # "Unmarked Show" means the interview day has NOT ARRIVED yet — every
+            # past day gets marked on the calendar, so an unmarked one is still
+            # in the future. That is an active booking: remove as a duplicate,
+            # do not treat it as a no-show. (Carlos, 8/29, on Alexandra.)
+            if "unmarked show" in st:
+                interview_future = True
+            elif "no show" in st or "no-show" in st:
                 interview_past_noshow = True
             else:
                 # a future/scheduled interview shows a date; treat any non-no-show

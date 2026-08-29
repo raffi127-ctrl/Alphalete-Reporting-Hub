@@ -173,9 +173,18 @@ OVERRIDE_STATUS = re.compile(
     r"left\s*message|insufficient\s*/?\s*contact|incorrect\s*/\s*insufficient", re.I)
 
 
+# "Unmarked Show" = the interview date has not arrived yet. Every past calendar
+# day gets marked, so unmarked means future. They are already booked — remove as
+# a duplicate, and never re-text them. (Carlos, 8/29.) This is checked before the
+# no-show rule so the two never get confused.
+UNMARKED_FUTURE = re.compile(r"unmarked\s*show", re.I)
+
+
 def interview_verdict(status_text: str):
-    """'retext' | 'remove_duplicate' | None (undecided) for one Status cell."""
+    """'retext' | 'remove_duplicate' | 'override_send' | None for one Status cell."""
     t = status_text or ""
+    if UNMARKED_FUTURE.search(t):
+        return "remove_duplicate"
     if DISQUALIFIED_STATUS.search(t):
         return "remove_duplicate"
     if RETEXT_STATUS.search(t):
