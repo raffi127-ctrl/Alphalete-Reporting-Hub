@@ -412,16 +412,32 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
         print(f"[{_stamp()}] AppStream mint FAILED (ownerville hop): "
               f"{type(e).__name__}: {str(e)[:140]}", flush=True)
         return False
-    try:
-        if page.locator("#searchMC").count() == 0:
+    # WAIT for the console the way the REPORTS' path waits for it.
+    # _sso_to_appstream returns after a FIXED sleep and never confirms #searchMC,
+    # so asking count() the instant it returns fails a console that simply had
+    # not painted yet — which is precisely what happened on the first live
+    # attempt (2026-08-29 10:04): ownerville handed over a genuinely NEW token
+    # (43A275AE…, not the 083AE947 we held), the hop navigated to it, and the
+    # check called it a failure with no wait at all. _reuse_appstream_storage_state
+    # has always used wait_for_selector here; the mint path must match it.
+    # One re-navigation of the same ?rqst=<TOKEN>&p=701 URL before giving up,
+    # for the same reason the reuse path tries each saved token.
+    for attempt in (1, 2):
+        try:
+            page.wait_for_selector("#searchMC", timeout=15_000)
+            break
+        except Exception:  # noqa: BLE001 — timeout or a dead frame
+            url = page.url or ""
+            if attempt == 1 and "rqst=" in url:
+                try:
+                    page.goto(url, wait_until="domcontentloaded")
+                    continue
+                except Exception:  # noqa: BLE001
+                    pass
             print(f"[{_stamp()}] AppStream mint FAILED — ownerville hop landed "
-                  f"without a console (#searchMC absent, at "
-                  f"{(page.url or '')[:80]})", flush=True)
+                  f"without a console (#searchMC absent after {attempt} "
+                  f"attempt(s), at {url[:100]})", flush=True)
             return False
-    except Exception as e:  # noqa: BLE001
-        print(f"[{_stamp()}] AppStream mint FAILED — console check raised: "
-              f"{type(e).__name__}: {str(e)[:110]}", flush=True)
-        return False
     after = _rqst_id(ctx)
     if not after:
         print(f"[{_stamp()}] AppStream mint FAILED — console rendered but the "

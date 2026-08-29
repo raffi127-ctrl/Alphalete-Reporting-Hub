@@ -48,16 +48,40 @@ class _Locator:
         return self._n
 
 
-class _Page:
-    """A console page. `has_console` drives #searchMC."""
+class _Timeout(Exception):
+    """Stands in for playwright's TimeoutError."""
 
-    def __init__(self, has_console=True, url="https://x.applicantstream.com/a"):
+
+class _Page:
+    """A console page. `has_console` drives #searchMC.
+
+    `console_after` models a console that needs a moment to paint: the first
+    N wait_for_selector calls time out, then it appears. That is the real
+    2026-08-29 10:04 failure — a good token whose console had not rendered when
+    the instant count() check ran."""
+
+    def __init__(self, has_console=True, url="https://x.applicantstream.com/a",
+                 console_after=0):
         self.url = url
         self._has = has_console
+        self._waits = 0
+        self._console_after = console_after
         self.reloaded = False
+        self.gotos = []
 
     def reload(self, **kw):
         self.reloaded = True
+
+    def goto(self, url, **kw):
+        self.gotos.append(url)
+        self.url = url
+
+    def wait_for_selector(self, sel, timeout=None):
+        assert sel == "#searchMC"
+        self._waits += 1
+        if not self._has or self._waits <= self._console_after:
+            raise _Timeout("timed out waiting for #searchMC")
+        return object()
 
     def locator(self, sel):
         assert sel == "#searchMC"
@@ -183,6 +207,64 @@ class TheRecoveryPathCanStillMint(unittest.TestCase):
         ok, _, _ = self._warm_no_token(
             reuse_ok=False, tokens_after_reuse=0, mint_ok=False)
         self.assertFalse(ok)
+
+
+class ItWaitsForTheConsoleLikeTheReportsDo(unittest.TestCase):
+    """THE FIRST LIVE FAILURE (2026-08-29 10:04). Ownerville did its job — it
+    handed over a genuinely NEW token (43A275AE…, not the 083AE947 we held) and
+    the hop navigated to it. But `_sso_to_appstream` returns after a FIXED sleep
+    and never confirms #searchMC, and the mint then asked `locator().count()`
+    the instant it returned. A console that had not finished painting was called
+    a failed mint, so the token kept counting down to expiry.
+
+    `_reuse_appstream_storage_state` has always used wait_for_selector here.
+    The mint path has to match it."""
+
+    @staticmethod
+    def _mint(page, ids=("OLD", "NEW")):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), \
+             mock.patch.object(h, "_stamp", return_value="T"), \
+             mock.patch.object(h, "_sso_to_appstream"), \
+             mock.patch.object(h, "_rqst_id", side_effect=list(ids)), \
+             mock.patch.object(h, "_ctx_rqst_minutes_left", return_value=118.0):
+            ok = h._mint_appstream_via_ownerville(object(), page, verbose=False)
+        return ok, buf.getvalue()
+
+    def test_it_waits_rather_than_snapshotting_with_count(self):
+        """The regression in one assertion: a console that is NOT present at the
+        instant of the check, but appears within the wait. The old code asked
+        locator().count() and lost the mint; the new code waits for it."""
+        page = _Page()
+        page.locator = lambda sel: _Locator(0)   # count() would say "no console"
+        ok, out = self._mint(page)
+        self.assertTrue(ok, "still snapshotting with count() instead of waiting")
+        self.assertIn("MINTED", out)
+
+    def test_it_re_navigates_the_token_url_once_before_giving_up(self):
+        page = _Page(url="https://applicantstream.com/index.cfm?rqst=ABC&p=701",
+                     console_after=1)
+        ok, out = self._mint(page)
+        self.assertTrue(ok)
+        self.assertEqual(page.gotos,
+                         ["https://applicantstream.com/index.cfm?rqst=ABC&p=701"])
+
+    def test_a_console_that_never_appears_still_fails_and_says_how_hard_it_tried(self):
+        page = _Page(has_console=False,
+                     url="https://applicantstream.com/index.cfm?rqst=ABC&p=701")
+        ok, out = self._mint(page, ids=("OLD", "OLD"))
+        self.assertFalse(ok)
+        self.assertIn("#searchMC absent after 2 attempt(s)", out)
+
+    def test_it_does_not_re_navigate_a_url_with_no_token(self):
+        """Nothing to retry — re-loading a tokenless URL just burns 15s."""
+        page = _Page(has_console=False, url="https://applicantstream.com/login")
+        ok, out = self._mint(page, ids=("OLD", "OLD"))
+        self.assertFalse(ok)
+        self.assertEqual(page.gotos, [])
+        self.assertIn("after 1 attempt(s)", out)
 
 
 class AFailedMintIsNeverSilent(unittest.TestCase):
