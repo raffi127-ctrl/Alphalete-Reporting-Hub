@@ -1003,17 +1003,47 @@ def probe_campaigns(headless: bool = True, office: str = "",
         # the three B2B campaign names, so RES-ENERGYWELL would be dropped
         # before we ever saw it. Same opener, same reader, wider pattern.
         try:
-            cap._open_campaign_dropdown(page)
-            opts = page.evaluate(
-                cap._CAMPAIGN_OPTIONS_JS,
-                r"^(RES[A-Za-z0-9\-& ]*|BASE [A-Za-z0-9\-& ]*"
-                r"|B2B[A-Za-z0-9\-& ]*)$") or []
+            # POLL, don't snapshot. _open_campaign_dropdown waits a flat 900ms;
+            # if the option list is fetched per-office after the click, a single
+            # read returns the list the page was already holding — which is
+            # exactly what "only RES AT&T and BASE Energy" looks like when
+            # RES-ENERGYWELL is on its way. Re-open and re-read for a few
+            # seconds, keeping the LONGEST list seen.
+            rx = (r"^(RES[A-Za-z0-9\-& ]*|BASE [A-Za-z0-9\-& ]*"
+                  r"|B2B[A-Za-z0-9\-& ]*)$")
+            opts = []
+            for _try in range(6):
+                cap._open_campaign_dropdown(page)
+                page.wait_for_timeout(1500)
+                got = page.evaluate(cap._CAMPAIGN_OPTIONS_JS, rx) or []
+                names = {str(o.get("name")) for o in got}
+                if len(names) > len({str(o.get("name")) for o in opts}):
+                    opts = got
+                    _log("  (attempt %d: %d option(s) — %s)"
+                         % (_try + 1, len(names), ", ".join(sorted(names))[:90]))
+                if any("ENERGY" in str(o.get("name")).upper()
+                       and "BASE" not in str(o.get("name")).upper()
+                       for o in got):
+                    break
             if opts:
                 for o in opts:
                     _log("DROPDOWN id=%-5s %s"
                          % (o.get("id"), str(o.get("name"))[:50]))
             else:
                 _log("DROPDOWN: opened but matched no campaign options")
+            # UNFILTERED: if RES-ENERGYWELL is present under a spelling the
+            # pattern misses, the regex would hide it and we would keep
+            # concluding "access". Print what the menu literally contains.
+            try:
+                raw = page.evaluate(
+                    "() => [...document.querySelectorAll("
+                    "  '.dropdown-menu a, .dropdown-menu li, .dropdown-menu span')]"
+                    " .map(e => (e.innerText || e.textContent || '')"
+                    "   .replace(/\\s+/g,' ').trim())"
+                    " .filter(t => t && t.length < 40).slice(0, 25)")
+                _log("DROPDOWN raw menu text: %s" % (" | ".join(raw) or "(empty)"))
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as e:  # noqa: BLE001
             _log("dropdown read failed (%s: %s)"
                  % (type(e).__name__, str(e)[:120]))
