@@ -1983,7 +1983,8 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
             phone, detail = None, f"{_BLOCKED_PREFIX}read error: {type(e).__name__}"
         if phone and _fill_contact(page, phone):
             _log(f"    \U0001f4de resume phone {phone} → filled + sending: "
-                 f"{a.first_name} {a.last_name}")
+                 f"{a.first_name} {a.last_name} "
+                 f"[panel email: {a.email or '(blank)'}]")
             try:
                 page.bring_to_front()
             except Exception:  # noqa: BLE001
@@ -2279,11 +2280,21 @@ def _view_resume_link(page):
     return None, None
 
 
+# Logins this fleet browses AppStream/Indeed with. The resume viewer renders the
+# logged-in account's address in its chrome, which is how carloshidalgo349
+# ended up typed into an applicant record — twice. These can never be an
+# applicant's email, no matter where they appear.
+_FLEET_EMAILS = {
+    "carloshidalgo349@gmail.com",
+    "raffi127@gmail.com",
+}
+
+
 def _office_emails(page) -> set:
     """Addresses that must NEVER be written into an applicant record: the office
-    inbox the application was sent to, and whatever is already in the panel's
-    email field. Read off the ORIGINAL p=604 page, not the resume tab."""
-    out = set()
+    inbox the application was sent to, whatever is already in the panel's email
+    field, and the fleet's own logins. Read off the ORIGINAL p=604 page."""
+    out = set(_FLEET_EMAILS)
     try:
         d = page.evaluate(_EXTRACT_JS) or {}
         for k in ("account", "email"):
@@ -2400,13 +2411,17 @@ def lookup_resume_phone(page):
                     for m in _PHONE_RE.finditer(_t):
                         digits = re.sub(r"\D", "", m.group(0))
                         if 10 <= len(digits) <= 11:     # a real US number
-                            # Email ONLY from the same text block the phone was
-                            # found in — that is the resume itself. The joined
-                            # texts include Indeed's page chrome, which carries
-                            # the LOGGED-IN account's address, and that is how
-                            # the office owner's own email got typed into an
-                            # applicant record (Carlos, 2026-08-29).
-                            _cand = _rd_email(_t)
+                            # Email ONLY when it sits right next to the phone
+                            # (same contact header, within ~300 chars). "Same
+                            # frame" was NOT enough: the resume tab's top
+                            # document holds the viewer chrome AND the content,
+                            # so the LOGGED-IN Indeed account's address (the
+                            # office owner's own gmail) shared a block with the
+                            # phone and got typed into Moises Santamaria's
+                            # record TWICE (Carlos, 2026-08-29). Proximity plus
+                            # the hard blocklist, or no email at all.
+                            _near = _t[max(0, m.start() - 300):m.end() + 300]
+                            _cand = _rd_email(_near)
                             _LAST_RESUME_EMAIL = (
                                 "" if _cand.lower() in _office_emails(page)
                                 else _cand)
