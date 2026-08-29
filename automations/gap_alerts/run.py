@@ -890,6 +890,15 @@ def probe_campaigns(headless: bool = True, office: str = "") -> int:
             _log("scraper would %s — missing: %s"
                  % ("RAISE" if missing else "WORK AS-IS",
                     ", ".join(missing) if missing else "nothing"))
+            # The columns this campaign HAS that the fiber scraper ignores.
+            # Short list, and the one that matters: Raf says Energy Wells
+            # counts "VL" as a talk-to, so if it is here it has to be added to
+            # that campaign's talk-to sum — TALK_TO_PARTS is shared with every
+            # fiber board and cannot simply be appended to.
+            known = {knocks._norm(c) for c in knocks.SHEET_COLUMNS}
+            extra = sorted(h for h in idx if h not in known)
+            _log("EXTRA headers this campaign has (%d): %s"
+                 % (len(extra), ", ".join(extra)))
         except Exception as e:  # noqa: BLE001
             _log("default headers unavailable (%s: %s)"
                  % (type(e).__name__, str(e)[:160]))
