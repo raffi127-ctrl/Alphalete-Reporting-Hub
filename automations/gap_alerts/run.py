@@ -57,6 +57,8 @@ from automations.gap_alerts import config as C
 HUB_CARD_ID = "gap-alerts"
 HUB_CARD_NAME = "Rep Gap Alerts (15-min gaps -> Partners chat)"
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "gap_alerts"
+PREVIEW_DM = False   # set by --preview-dm
+RATES_OVERRIDE = None  # set by --rates: force the rate columns on for ONE run
 
 # One alert after this many consecutive failed ticks, then a cooldown. A live
 # outage would otherwise post an incident every tick all afternoon, and three
@@ -152,6 +154,99 @@ def _mark_sent(key: str) -> None:
     data.setdefault("_last_sent", {})[key] = dt.datetime.now().isoformat(
         timespec="seconds")
     _save_state(data)
+
+
+def _previous_gap_names(key: str, day: dt.date):
+    """(names, is_first_list_of_the_day).
+
+    DAY-SCOPED on purpose. Two different bugs live here otherwise:
+      * carrying yesterday's names into today would suppress the clock on
+        someone who is dark again this morning — exactly the person to text;
+      * treating the day's FIRST list as all-new marks all twenty at once,
+        which is not a signal. The first list is the baseline; from then on the
+        clock means what Raf asked it to mean, "this one just appeared".
+    """
+    rec = (_state().get("_gap_names") or {}).get(key) or {}
+    if rec.get("day") != day.isoformat():
+        return set(), True
+    return set(rec.get("names") or []), False
+
+
+def _remember_gap_names(key: str, day: dt.date, names) -> None:
+    """Recorded only on a SEND. If a skipped tick updated this, the people who
+    joined the list while we were quiet would never be marked."""
+    data = _state()
+    data.setdefault("_gap_names", {})[key] = {"day": day.isoformat(),
+                                              "names": sorted(names)}
+    _save_state(data)
+
+
+def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False):
+    """The message Raf asked for, and the set of names on it.
+
+    LONGEST GAP FIRST (Megan, 2026-08-28). Raf's Loom listed his mock-up
+    alphabetically, but read back it is a to-text list and the person who has
+    been dark 190 minutes belongs at the top, not under everyone whose name
+    starts with A. The clock still marks who just appeared; the ordering says
+    who is worst. Ties break alphabetically so the list is stable between
+    ticks and does not shuffle for no reason.
+
+    Returns (text, names); text is "" when nobody is over, so a quiet stretch
+    sends no list at all rather than a header with nothing under it.
+    """
+    lines, names = [], []
+    for r in sorted(gaps, key=lambda r: (-cap._int(r.get("minutesSinceLastKnock")),
+                                         (r.get("name") or "").strip().lower())):
+        name = (r.get("name") or "").strip()
+        if not name:
+            continue
+        names.append(name)
+        mins = cap._int(r.get("minutesSinceLastKnock"))
+        new = not first_of_day and name not in previous
+        mark = (" " + C.GAP_NEW_EMOJI) if new else ""
+        lines.append("%s - %d minutes%s" % (name, mins, mark))
+    if not lines:
+        return "", []
+    return C.GAP_TEXT_HEADER + "\n\n" + "\n".join(lines), names
+
+
+def _slack_due(key: str, now: dt.datetime) -> bool:
+    """Has this office's board gone to Slack yet THIS clock hour?
+
+    Keyed on the hour itself rather than "minutes since the last post", so the
+    post lands on the first tick of each hour and cannot drift later and later
+    across the day the way an elapsed-time check would.
+    """
+    stamp = (_state().get("_slack_hour") or {}).get(key)
+    return stamp != now.strftime("%Y-%m-%dT%H")
+
+
+def _mark_slack_sent(key: str, now: dt.datetime) -> None:
+    data = _state()
+    data.setdefault("_slack_hour", {})[key] = now.strftime("%Y-%m-%dT%H")
+    _save_state(data)
+
+
+def post_slack(cfg: Dict, png: Path, slot: str, day: dt.date,
+               dry_run: bool = True) -> Dict:
+    """Put the board in #alphalete-lvl1-chat, once an hour (Raf 2026-08-29).
+
+    The board only — not the gap list. The gap list is a to-text list for the
+    handful of people who chase reps; a channel of reps reading a leaderboard
+    has no use for who is 20 minutes dark, and posting it would put every rep's
+    quiet stretch in front of everyone.
+    """
+    who = cfg.get("label") or cfg["name"].split()[0]
+    comment = ("*%s — %s*  ·  ranked by total knocks"
+               % (C.CARD_TITLE.title(), slot))
+    if dry_run:
+        return {"dry_run": True, "channel": C.SLACK_HOURLY_CHANNEL,
+                "comment": comment, "file": png.name}
+    from automations.shared import slack_metrics_post as smp
+    smp._client().files_upload_v2(
+        file_uploads=[{"file": str(png), "filename": png.name}],
+        channel=C.SLACK_HOURLY_CHANNEL, initial_comment=comment)
+    return {"channel": C.SLACK_HOURLY_CHANNEL, "file": png.name, "ok": True}
 
 
 def _publish_hub_once(day: dt.date) -> None:
@@ -450,168 +545,184 @@ def to_pdf(panel_paths, out_pdf: Path) -> Path:
     return out_pdf
 
 
-def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
-    """Screenshot Today's Activity (p=88) — the rep list with knock badges.
+def gap_rows(cfg: Dict, day: dt.date) -> List[Dict]:
+    """Reps over the gap threshold right now, longest-dark first.
 
-    A SCREENSHOT and not a redraw, unlike the gap card: this panel renders fine
-    under patchright (it is the gap WIDGET that does not), so a crop of the real
-    page is both cheaper and always matches what Raf sees when he opens
-    OwnerVille himself.
+    KEPT AS ITS OWN SECTION (Raf via Megan, 2026-08-28: the knocks board
+    replaces the Today's Activity panel, "the bottom over 15 min gap" stays
+    separate). It is not redundant with the board's Gaps columns: those are
+    the day's CUMULATIVE gap totals, this is who is dark at this minute. One is
+    a scorecard, the other is the alert, and merging them would lose the alert.
 
-    Returns the PNG path, or None — a failure here must never cost the gap card,
-    which is the part that pages people.
+    Its own short ownerville session, because pull_board's session belongs to
+    pull_offices_days and is already closed by the time we get here.
     """
-    try:
-        # Navigating WITH the campaign id also re-pins the sticky session
-        # campaign, the same way weekly_knock_dispositions pins it off p=88.
-        url = ("https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
-               % (C.PAGE_TODAYS_ACTIVITY, rqst))
-        if cfg.get("campaign_id"):
-            url += "&invD2DClientId=%s" % cfg["campaign_id"]
-        page.goto(url, wait_until="networkidle", timeout=45000)
-
-        # THE DATEPICKER PERSISTS A STALE DATE. It holds whatever day the
-        # session last looked at — b2b_dispositions found it stuck three weeks
-        # back — and the rep list quietly follows it. Nothing errors; the
-        # numbers are just the wrong day's. Force today and let the list
-        # refresh before shooting.
-        page.evaluate(
-            "(mdy)=>{ for(const i of document.querySelectorAll('input')){"
-            " if(/date/i.test(i.name||i.id||'')){ i.value=mdy;"
-            " i.dispatchEvent(new Event('input',{bubbles:true}));"
-            " i.dispatchEvent(new Event('change',{bubbles:true})); } } }",
-            dt.datetime.now().strftime("%m/%d/%Y"))
-        page.wait_for_timeout(3500)
-
-        out = out_dir / ("activity_%s.png" % cfg["key"])
-        how = cap._shoot(page, out, kind="todays_activity",
-                         fixed=cap.CROP_TODAYS_ACTIVITY, pad_bottom=36)
-        # PROVE the resolution rather than assume it. Sharpness has now been
-        # "fixed" twice without anyone being able to see whether the pixels
-        # actually arrived; a dpr that reads 1 when CAPTURE_DEVICE_SCALE is 3
-        # is the whole answer, visible in one log line.
-        try:
-            dpr = page.evaluate("() => window.devicePixelRatio")
-        except Exception:
-            dpr = "?"
-        try:
-            from PIL import Image
-            dims = "%dx%d" % Image.open(out).size
-        except Exception:
-            dims = "?"
-        want = C.CAPTURE_DEVICE_SCALE
-        flag = "" if dpr == want else ("  ⚠ WANTED %s — the capture is NOT at "
-                                       "full resolution" % want)
-        _log("  activity: dpr=%s (want %s) crop=%s png=%s%s"
-             % (dpr, want, how, dims, flag))
-        # THE KNOCK BADGES SIT AT THE RIGHT EDGE OF THIS PANEL, so how we
-        # cropped decides whether they survive. 'box' measures the live element
-        # and keeps the whole row. 'fixed' is the fallback and clips at a hard
-        # 720 image-px, which on a 2x display is only ~360 CSS px — far enough
-        # left to cut the green and grey pills off entirely, leaving a list of
-        # names with no numbers and NO error to say so. Say it loudly instead.
-        if how != "box":
-            _log("  ⚠ crop fell back to %r — the knock badges sit at the right "
-                 "edge and may be CLIPPED. Check the card." % how)
-        return out
-    except Exception as e:  # noqa: BLE001
-        _log("  today's activity SKIPPED (%s: %s) — sending the gap card alone"
-             % (type(e).__name__, str(e)[:160]))
-        return None
-
-
-def gap_rows(page, cfg: Dict, day: dt.date) -> List[Dict]:
-    """Reps over the gap threshold for one office, newest-inactive last.
-
-    Sorted by MINUTES INACTIVE, longest first -- not alphabetically like the
-    B2B card. On a five-minute tick the person who has been dark for two hours
-    is the whole point of the message, and a phone shows the top of an image.
-    """
-    rqst = cap.capture_rqst(page)
-    impersonated = False
-    if cfg.get("ov") == "impersonate":
-        # Dead for Raf (his login IS office 11280) and live the day a second
-        # office is added. Impersonation is ALWAYS exited in the finally below,
-        # or the next office on this page reads the previous one's numbers.
-        from automations.focus_office_att.aliases import load_aliases
-        from automations.focus_office_att.run_all_owners import (
-            _exit_impersonation, _find_owner_and_impersonate,
-            _navigate_to_office_access)
-        _exit_impersonation(page)
-        _navigate_to_office_access(page)
-        rqst, reason = _find_owner_and_impersonate(page, cfg["name"],
-                                                   load_aliases())
-        if not rqst:
-            raise RuntimeError("Couldn't impersonate %r: %s"
-                               % (cfg["name"], reason))
-        impersonated = True
-    try:
-        _pin_campaign(page, rqst, cfg.get("campaign_id", ""))
-        rows = cap.fetch_time_tracking(page, rqst, day.strftime("%m/%d/%Y"))
-    finally:
-        if impersonated:
+    from automations.shared.tableau_patchright import ownerville_session
+    with ownerville_session(headless=True, verbose=False,
+                            profile_dir=C.PROFILE_DIR) as page:
+        rqst = cap.capture_rqst(page)
+        impersonated = False
+        if cfg.get("ov") == "impersonate":
+            # Dead for Raf (his login IS office 11280) and live the day a
+            # second office is added. ALWAYS exited in the finally, or the next
+            # office reads the previous one's numbers.
+            from automations.focus_office_att.aliases import load_aliases
             from automations.focus_office_att.run_all_owners import (
-                _exit_impersonation)
+                _exit_impersonation, _find_owner_and_impersonate,
+                _navigate_to_office_access)
             _exit_impersonation(page)
+            _navigate_to_office_access(page)
+            rqst, reason = _find_owner_and_impersonate(page, cfg["name"],
+                                                       load_aliases())
+            if not rqst:
+                raise RuntimeError("Couldn't impersonate %r: %s"
+                                   % (cfg["name"], reason))
+            impersonated = True
+        try:
+            _pin_campaign(page, rqst, cfg.get("campaign_id", ""))
+            rows = cap.fetch_time_tracking(page, rqst,
+                                           day.strftime("%m/%d/%Y"))
+        finally:
+            if impersonated:
+                from automations.focus_office_att.run_all_owners import (
+                    _exit_impersonation)
+                _exit_impersonation(page)
     over = [r for r in rows
             if cap._int(r.get("minutesSinceLastKnock")) > C.GAP_THRESHOLD_MIN]
     over.sort(key=lambda r: -cap._int(r.get("minutesSinceLastKnock")))
     return over
 
 
-def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str,
-           activity_png=None) -> Path:
-    """The card, with its own title bar. ONE image per tick and no accompanying
-    text: send_to_group would post the caption as a second message, and over a
-    day of ticks that doubles what the room scrolls past. The time lives on
-    the card instead, so a reader can tell a fresh one from one that scrolled.
+def _date_text(day: dt.date) -> str:
+    """'8/28 (Friday)' — the weekday spelled out (Megan, 2026-08-28).
 
-    TWO PANELS since 2026-08-27, in Carlos's order — Today's Activity (every
-    rep and their knock count) on top, the gap card underneath. Raf asked for
-    the knock numbers he had seen on Carlos's post.
+    Not knocks_intraday's version, which is '8/28' and is shared by the Slack
+    boards; this one is ours. Built by hand rather than with %-m/%-d, which is
+    glibc/BSD only and throws on Windows — every report here has to import on
+    both.
+    """
+    return "%d/%d (%s)" % (day.month, day.day, day.strftime("%A"))
 
-    If the activity screenshot failed we fall back to the single titled gap
-    card rather than sending nothing: the gaps are the part that pages people,
-    and the knock counts are context."""
+
+def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
+    """Pull Raf's office for TODAY and render the knock board. -> (pngs, rows).
+
+    This is the board Raf pointed at in his Loom (2026-08-28): the columns off
+    OwnerVille's **Disposition by Rep** export — Total Knocks, Total Talk To's,
+    First/Last Knock, Total Gaps, Avg Hrs Knocking, then the disposition
+    breakdown — in the same colours as the daily board he already gets in
+    Slack. No Rep ID column; he dropped it.
+
+    NOTHING NEW IS SCRAPED OR DRAWN HERE. knocks_intraday already builds this
+    exact board for the CURRENT day, so this calls the same pull and the same
+    renderer. What is different is only the trigger (every 15 minutes) and the
+    destination (the Alphalete Partners chat).
+
+    The office is pulled through `pull_offices_days`, which checks
+    `is_master_office` first: on Lucy 1 the login IS Raf's office, and
+    impersonating yourself fails — that check is why this works for him and why
+    the WKD probe never could.
+    """
+    from automations.rashad_metrics.knocks_pull import pull_offices_days
+    from automations.total_knocks import render as knocks_render
+    from automations.knocks_intraday.run import first_name
+
+    # Chan's TOTAL rides the board as the teal comparison line (Raf,
+    # 2026-08-28: "can we have it compare to chans every 15 minutes"). It is
+    # the same line his Slack boards already carry, and it is pulled in the
+    # SAME session as Raf — a comparison is a nicety and must never cost its
+    # own login, which at four ticks an hour would be a real bill.
+    from automations.knocks_intraday.run import compare_office
+    compare = compare_office() if C.compares(cfg) else ""
+    jobs = [(cfg["name"], [day])]
+    if compare and compare.strip().lower() != cfg["name"].strip().lower():
+        jobs.append((compare, [day]))
+
+    pulled = pull_offices_days(jobs, verbose=False,
+                               profile_dir=str(C.PROFILE_DIR))
+    by_name = {name: (days, err) for name, days, err in pulled}
+    by_day, err = by_name.get(cfg["name"], ({}, None))
+    if err is not None:
+        raise err
+    rows = by_day.get(day) or []
+    if not rows:
+        return [], []
+
+    # NO SORT HERE. Ranking is the RENDERER's job (sort_by="knocks" below):
+    # _combined_sub re-orders whatever rows it is handed, so sorting them here
+    # was thrown away and the board kept coming out alphabetical while this
+    # code looked like it had already fixed it (2026-08-28 -> 29). One place
+    # decides the order.
+
+    # A failed comparison costs ONE LINE, never the board.
+    extra = []
+    if compare:
+        chan_days, chan_err = by_name.get(compare, ({}, None))
+        chan_rows = (chan_days or {}).get(day) or []
+        if chan_err is not None:
+            _log("  ⚠ %s comparison pull failed (%s) — board goes out without "
+                 "the line" % (compare, type(chan_err).__name__))
+        elif chan_rows:
+            extra.append((compare, chan_rows))
+        else:
+            _log("  no %s rows for %s — board goes out without the line"
+                 % (compare, day))
+
+    pngs, shape = knocks_render.render_knocks_boards(
+        day, rows=rows, out_dir=out_dir / cfg["key"],
+        title_suffix=first_name(cfg.get("label") or cfg["name"]),
+        date_text=_date_text(day), extra_totals=extra,
+        rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
+                      else RATES_OVERRIDE),
+        knocks_green_at=C.KNOCKS_GREEN_AT, sort_by="knocks")
+
+    _log("  %s: %d rep(s) -> %s (%s)"
+         % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
+    return list(pngs), rows
+
+
+def render(cfg: Dict, pngs, out_dir: Path, slot: str):
+    """The board(s) as IMAGES, titled. -> [paths]
+
+    AN IMAGE, NOT A PDF (Raf, 2026-08-28: "I just don't like where I can't see
+    what it is before clicking, anyway to change that?"). A PDF arrives as a
+    grey document tile showing only a filename; an image shows the board itself
+    in the thread and still opens full-screen and zooms on tap, which is the
+    part the PDF was reached for in the first place.
+
+    The PDF made sense for the OLD content — a 48-rep roster stacked over a gap
+    card, which is TALL, and a tall image renders inline as an unreadable
+    sliver. This board is WIDE and short, so it previews as a board. The shape
+    of the content changed, so the right container changed with it; to_pdf and
+    its slicing stay for whoever needs a tall panel again.
+
+    render_knocks_boards decides how many boards the row shape deserves: it
+    folds Time Gaps into the main board when the columns already carry Gaps +
+    Total Gaps, which Raf's TeleMapper shape does — so this is normally one.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    bare = out_dir / ("gaps_%s_raw.png" % cfg["key"])
-    cap.render_gap_card(reps, bare, scale=C.CARD_RENDER_SCALE)
     who = (" — %s" % cfg["label"]) if cfg.get("label") else ""
-    out = out_dir / ("gaps_%s.png" % cfg["key"])
-
-    if activity_png is not None and Path(activity_png).exists():
-        titled_gaps = titled(bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot),
-                             out_dir / ("gaps_%s_titled.png" % cfg["key"]))
-        titled_act = titled(
-            Path(activity_png),
-            "%s%s — %s" % (C.PANEL_TODAYS_ACTIVITY, who, slot),
-            out_dir / ("activity_%s_titled.png" % cfg["key"]))
-        if C.SEND_AS_PDF:
-            try:
-                # Activity first, gaps second — Carlos's order, and the order
-                # Raf saw. Each panel keeps its own header page-to-page.
-                return to_pdf([titled_act, titled_gaps],
-                              out_dir / ("gaps_%s.pdf" % cfg["key"]))
-            except Exception as e:  # noqa: BLE001
-                _log("  PDF build failed (%s) — falling back to the stitched "
-                     "image" % type(e).__name__)
-        try:
-            return cap.stitch_vertical(
-                [(C.PANEL_TODAYS_ACTIVITY, Path(activity_png)),
-                 (C.PANEL_GAPS, bare)],
-                title="%s%s — %s" % (C.CARD_TITLE, who, slot), out_path=out)
-        except Exception as e:  # noqa: BLE001
-            _log("  stitch failed (%s) — gap card only" % type(e).__name__)
-    # Gap-only keeps the OLD title: the room has been reading
-    # "REPS OVER 15 MIN GAP" all along, and a card missing its knocks panel
-    # should not claim to carry knocks.
-    return cap.add_title_header(
-        bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot), out)
+    out = []
+    for i, p in enumerate(pngs):
+        # Only the first board carries the clock — this is one post, and a time
+        # stamped on every image reads like several separate sends.
+        if i == 0:
+            out.append(titled(Path(p), "%s%s — %s" % (C.CARD_TITLE, who, slot),
+                              out_dir / ("board_%s_0.png" % cfg["key"])))
+        else:
+            out.append(Path(p))
+    return out
 
 
 def tick(day: dt.date, *, send: bool, only: str = "",
          headless: bool = True) -> List[str]:
-    """One pass. Returns the list of failures (empty = clean)."""
+    """One pass. Returns the list of failures (empty = clean).
+
+    No browser session is opened here any more: pull_board calls
+    pull_offices_days, which owns its own ownerville session (and its own
+    impersonation exit). Two sessions on one profile is the launch race that
+    has cost other reports an office.
+    """
     offices = [o for o in C.enabled()
                if not only or o["key"] in {k.strip().lower()
                                            for k in only.split(",")}]
@@ -620,74 +731,105 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     slot = C.slot_label()
     out_dir = OUTPUT_DIR / day.strftime("%Y-%m-%d")
 
-    from automations.shared.tableau_patchright import ownerville_session
     from automations.b2b_dispositions import text_post as tp
+
+    if send and not getattr(C, "SEND_ENABLED", True):
+        _log("SENDING IS PAUSED (config.SEND_ENABLED=False) — building and "
+             "reporting only. Flip it to True to resume.")
+        send = False
 
     failures = []
     seen_names = []
-    with ownerville_session(headless=headless, verbose=False,
-                            profile_dir=C.PROFILE_DIR,
-                            device_scale=C.CAPTURE_DEVICE_SCALE,
-                            window_size=C.capture_window()) as page:
-        # NO set_viewport_size HERE, deliberately. The context is launched with
-        # no_viewport (a real window) plus --force-device-scale-factor, and
-        # setting a viewport switches the page to emulated-viewport mode, which
-        # resets the device scale to 1. That is why the drawn gap card came out
-        # sharp at 3x while the SCREENSHOT above it stayed soft — the card is
-        # ours to scale, the screenshot silently lost the flag (Raf,
-        # 2026-08-27: "the top section is still blurry, the bottom is great").
-        # Viewport height never mattered anyway: _shoot takes a full_page shot,
-        # which captures the whole scroll height regardless of what is in frame.
-        for cfg in offices:
+    for cfg in offices:
+        # The guard runs BEFORE the pull. A skipped tick should cost nothing,
+        # and this pull is the expensive half of the run.
+        recent = _sent_too_recently(cfg["key"])
+        if recent is not None and send:
+            _log("%s: last board went out %.1f min ago — skipping this tick "
+                 "(min gap %d min). The room already has this."
+                 % (cfg["key"], recent, C.MIN_SEND_GAP_MINUTES))
+            continue
+
+        try:
+            pngs, rows = pull_board(cfg, day, out_dir)
+        except Exception as e:  # noqa: BLE001
+            failures.append("%s: %s: %s" % (cfg["key"], type(e).__name__,
+                                            str(e)[:200]))
+            _log("%s PULL FAILED: %s: %s"
+                 % (cfg["key"], type(e).__name__, str(e)[:200]))
+            continue
+
+        if not pngs:
+            # Visible absence, never a blank board — the standing rule. Before
+            # the field is out there are simply no rows, and that is not news.
+            _log("%s: no rows yet at %s — nothing sent" % (cfg["key"], slot))
+            continue
+
+        seen_names += [str(r.get("Rep") or r.get("rep") or "").strip()
+                       for r in rows]
+        # A failed gap pull costs the section, never the board — the board is
+        # the thing Raf asked for and it is already in hand.
+        try:
+            gaps = gap_rows(cfg, day)
+        except Exception as e:  # noqa: BLE001
+            gaps = []
+            _log("  gap list SKIPPED (%s: %s)"
+                 % (type(e).__name__, str(e)[:160]))
+        previous, first_of_day = _previous_gap_names(cfg["key"], day)
+        body, gap_names = gap_text(gaps, previous, first_of_day)
+        newly = ([] if first_of_day
+                 else [n for n in gap_names if n not in previous])
+        _log("  %d rep(s) over %d min, %d new%s"
+             % (len(gap_names), C.GAP_THRESHOLD_MIN, len(newly),
+                (" (" + ", ".join(newly) + ")") if newly else ""))
+        boards = render(cfg, pngs, out_dir, slot)
+        if PREVIEW_DM:
             try:
-                reps = gap_rows(page, cfg, day)
+                _log("  preview DM -> Megan: %s"
+                     % preview_dm(boards[0], slot)["file"])
             except Exception as e:  # noqa: BLE001
-                failures.append("%s: %s: %s" % (cfg["key"], type(e).__name__,
-                                                str(e)[:200]))
-                _log("%s PULL FAILED: %s: %s"
-                     % (cfg["key"], type(e).__name__, str(e)[:200]))
-                continue
+                _log("  preview DM failed: %s: %s"
+                     % (type(e).__name__, str(e)[:160]))
+        try:
+            # Resolution runs on a dry run too — it is read-only and it is the
+            # half most likely to be wrong (Lucy removed from the chat, the
+            # room renamed). A preview that skipped it would prove nothing.
+            # ONE send: the gap list as the message text, the board as its
+            # attachment. send_to_group posts the text first, so the names
+            # arrive above the flyer.
+            res = tp.send_to_group(cfg["group"], body, boards, dry_run=not send)
+            _log("  %s -> %r (%s participants)%s"
+                 % ("TEXT" if send else "PREVIEW", res.get("resolved_name"),
+                    res.get("participants"), "" if send else " — nothing sent"))
+            # The hourly Slack post rides the SAME board that was just
+            # built — never its own pull. It is also independent of the text:
+            # a Messages failure must not cost the channel its leaderboard,
+            # and vice versa, so it sits in its own try.
+            if cfg.get("slack_hourly") and boards:
+                now = dt.datetime.now()
+                if _slack_due(cfg["key"], now):
+                    try:
+                        res = post_slack(cfg, boards[0], slot, day,
+                                         dry_run=not send)
+                        _log("  %s -> %s (%s)"
+                             % ("SLACK" if send else "SLACK (preview)",
+                                res.get("channel"), res.get("file")))
+                        if send:
+                            _mark_slack_sent(cfg["key"], now)
+                    except Exception as e:  # noqa: BLE001
+                        _log("  SLACK FAILED: %s: %s"
+                             % (type(e).__name__, str(e)[:200]))
 
-            if not reps:
-                _log("%s: nobody over %d min at %s — nothing sent (an empty "
-                     "card is not news)" % (cfg["key"], C.GAP_THRESHOLD_MIN,
-                                            slot))
-                continue
-
-            recent = _sent_too_recently(cfg["key"])
-            if recent is not None and send:
-                _log("%s: last card went out %.1f min ago — skipping this tick "
-                     "(min gap %d min). The room already has this."
-                     % (cfg["key"], recent, C.MIN_SEND_GAP_MINUTES))
-                continue
-
-            seen_names += [str(r.get("name") or "").strip() for r in reps]
-            # Captured only after the duplicate guard has let this tick
-            # through — no point screenshotting a roster for a card that is
-            # about to be skipped.
-            activity = capture_activity(page, cfg, cap.capture_rqst(page),
-                                        out_dir)
-            png = render(cfg, reps, out_dir, slot, activity_png=activity)
-            _log("%s: %d rep(s) over %d min -> %s"
-                 % (cfg["key"], len(reps), C.GAP_THRESHOLD_MIN, png.name))
-            try:
-                # Resolution runs on a dry run too — it is read-only and it is
-                # the half most likely to be wrong (Lucy removed from the chat,
-                # the room renamed). A preview that skipped it proves nothing.
-                res = tp.send_to_group(cfg["group"], "", [png],
-                                       dry_run=not send)
-                _log("  %s -> %r (%s participants)%s"
-                     % ("TEXT" if send else "PREVIEW", res.get("resolved_name"),
-                        res.get("participants"), "" if send else " — nothing sent"))
-                if send:
-                    # Stamped only after Messages actually took it, so a failed
-                    # send never blocks the next tick from trying again.
-                    _mark_sent(cfg["key"])
-            except Exception as e:  # noqa: BLE001
-                failures.append("%s text: %s: %s" % (cfg["key"],
-                                                     type(e).__name__,
-                                                     str(e)[:200]))
-                _log("  TEXT FAILED: %s: %s" % (type(e).__name__, str(e)[:200]))
+            if send:
+                # Both stamped only after Messages actually took it: a failed
+                # send must not block the next retry, and must not consume the
+                # "new" marks — those people would then never be flagged.
+                _mark_sent(cfg["key"])
+                _remember_gap_names(cfg["key"], day, gap_names)
+        except Exception as e:  # noqa: BLE001
+            failures.append("%s text: %s: %s" % (cfg["key"], type(e).__name__,
+                                                 str(e)[:200]))
+            _log("  TEXT FAILED: %s: %s" % (type(e).__name__, str(e)[:200]))
     _terminated_check_once(day, seen_names)
     return failures
 
@@ -713,22 +855,218 @@ def _terminated_check_once(day: dt.date, names: List[str]) -> None:
         _log("terminated check skipped: %s: %s" % (type(e).__name__, str(e)[:120]))
 
 
-def probe(day: dt.date, cfg: Dict, headless: bool = True) -> int:
-    """READ-ONLY: what the Time Tracker endpoint actually returns right now.
-    The one-pass answer when the card looks wrong or comes back empty."""
+def preview_dm(pdf: Path, slot: str, user: str = "U04G5HJBGFN") -> Dict:
+    """DM the built PDF to Megan for review — the room gets nothing.
+
+    Exists because there is no way to read a file off the runner from the
+    laptop: ssh is refused and the control queue has no fetch action, so
+    "let me see it before it posts" had no answer that did not involve
+    posting it. Same files_upload_v2 path the b2b preview uses.
+    """
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    uid = smp._resolve_user_id(client, user)
+    channel = client.conversations_open(users=uid)["channel"]["id"]
+    client.files_upload_v2(
+        file_uploads=[{"file": str(pdf), "filename": pdf.name}],
+        channel=channel,
+        initial_comment="*[gap alerts preview]* %s — not sent to the room" % slot)
+    return {"ok": True, "to": user, "file": pdf.name}
+
+
+def probe_campaigns(headless: bool = True, office: str = "") -> int:
+    """READ-ONLY: list the campaigns this login can see, and dump the
+    Disposition-by-Rep table's LIVE column headers for each.
+
+    Both halves are needed before Energy Wells can be built, and neither can be
+    guessed:
+
+    * the campaign's `invD2DClientId` — the id is what pins a TeleMapper page;
+    * its disposition COLUMNS. total_knocks scrapes a FIXED list
+      (SHEET_COLUMNS) and RAISES if one is missing, so a campaign whose grid is
+      shaped differently does not degrade, it fails. Raf says Energy Wells adds
+      "VL" and counts it as a talk-to, which means at minimum a column the
+      current scraper neither reads nor sums.
+
+    `office` (optional): impersonate this owner first, for a campaign the
+    master login cannot see on its own.
+    """
     from automations.shared.tableau_patchright import ownerville_session
+    from automations.total_knocks import pull as knocks
+
     with ownerville_session(headless=headless, verbose=False,
                             profile_dir=C.PROFILE_DIR) as page:
         rqst = cap.capture_rqst(page)
-        _pin_campaign(page, rqst, cfg.get("campaign_id", ""))
-        rows = cap.fetch_time_tracking(page, rqst, day.strftime("%m/%d/%Y"))
-    _log("office=%s rows=%d" % (cfg["key"], len(rows)))
+        if office:
+            from automations.focus_office_att.aliases import load_aliases
+            from automations.focus_office_att.run_all_owners import (
+                _exit_impersonation, _find_owner_and_impersonate,
+                _navigate_to_office_access)
+            _exit_impersonation(page)
+            _navigate_to_office_access(page)
+            rqst, reason = _find_owner_and_impersonate(page, office,
+                                                       load_aliases())
+            if not rqst:
+                # ANSWERED, not failed. A probe that cannot reach an owner has
+                # told you the thing you asked it — and exiting non-zero makes
+                # the run watcher open an incident against the LIVE 15-minute
+                # report, which is posting perfectly (it did, 2026-08-28).
+                # A read-only diagnostic must never page the corrections
+                # channel about a report it did not touch.
+                _log("ANSWER: %r is not reachable from this login — %s. "
+                     "Either the name needs an ICD alias or the owner needs "
+                     "Office Access provisioned." % (office, reason))
+                return 0
+            _log("impersonated %r" % office)
+
+        # CALVIN IS ENERGY-WELLS-ONLY (Raf), so once impersonated his DEFAULT
+        # campaign already is Energy Wells — the headers below are that
+        # campaign's, with no switching needed. This is the question that
+        # actually gates the build; the id scan afterwards is only for Jay,
+        # who runs two campaigns and will need one pinned.
+        try:
+            cap._goto(page, "https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
+                      % (C.PAGE_DISPOSITION, rqst))
+            page.wait_for_timeout(3000)
+            idx = knocks._header_index(page)
+            _log("DEFAULT campaign headers (%d): %s"
+                 % (len(idx), ", ".join(sorted(idx))))
+            missing = [c for c in knocks.SHEET_COLUMNS
+                       if c not in {knocks.COL_TOTAL_TALK_TO,
+                                    *knocks.TIME_TRACKER_COLUMNS}
+                       and knocks._norm(c) not in idx]
+            _log("scraper would %s — missing: %s"
+                 % ("RAISE" if missing else "WORK AS-IS",
+                    ", ".join(missing) if missing else "nothing"))
+            # The columns this campaign HAS that the fiber scraper ignores.
+            # Short list, and the one that matters: Raf says Energy Wells
+            # counts "VL" as a talk-to, so if it is here it has to be added to
+            # that campaign's talk-to sum — TALK_TO_PARTS is shared with every
+            # fiber board and cannot simply be appended to.
+            known = {knocks._norm(c) for c in knocks.SHEET_COLUMNS}
+            extra = sorted(h for h in idx if h not in known)
+            _log("EXTRA headers this campaign has (%d): %s"
+                 % (len(extra), ", ".join(extra)))
+        except Exception as e:  # noqa: BLE001
+            _log("default headers unavailable (%s: %s)"
+                 % (type(e).__name__, str(e)[:160]))
+
+        # WHICH CAMPAIGN ID AM I ON? Calvin is Energy-Wells-only, so whatever
+        # this session resolves to after impersonating him IS the Energy Wells
+        # id — and that id is what JAY's Energy Wells report will have to pin,
+        # because he runs two campaigns and has no safe default.
+        #
+        # Read off the page's own links rather than a dropdown: the campaign
+        # picker is not a <select> here (the earlier dump found only territory,
+        # table-length and feedbackModules), and every campaign-scoped link the
+        # page builds carries the id.
+        try:
+            found = page.evaluate(
+                "() => { const out = {};"
+                " for (const a of document.querySelectorAll('a[href]')) {"
+                "   const m = a.href.match(/invD2DClientId=(\\d+)/);"
+                "   if (m) { out[m[1]] = (out[m[1]] || 0) + 1; } }"
+                " return { ids: out, url: location.href }; }")
+            _log("current url: %s" % str(found.get("url"))[:160])
+            ids = found.get("ids") or {}
+            _log("invD2DClientId seen in page links: %s"
+                 % (", ".join("%s (x%s)" % (k, v) for k, v in ids.items())
+                    or "none"))
+        except Exception as e:  # noqa: BLE001
+            _log("campaign-id scan failed (%s)" % type(e).__name__)
+
+        # NAME each candidate id. Two ids in Calvin's links (3 and 39) is not
+        # an answer: 3 is RES AT&T, so 39 is PROBABLY Energy Wells — and
+        # "probably" is exactly what would hand Jay's Energy Wells report the
+        # wrong campaign's numbers while looking perfectly normal. Load each id
+        # and read the campaign the page says it is on.
+        for cid in sorted((found.get("ids") or {})):
+            try:
+                cap._goto(page, "https://v2.ownerville.com/index.cfm?p=%d"
+                                "&rqst=%s&invD2DClientId=%s"
+                          % (C.PAGE_TODAYS_ACTIVITY, rqst, cid))
+                page.wait_for_timeout(1800)
+                head = page.evaluate(
+                    "() => (document.body.innerText || '')"
+                    "   .split('\\n').map(s => s.trim())"
+                    "   .filter(s => s && s.length < 60).slice(0, 12)")
+                _log("id=%s top-of-page: %s" % (cid, " | ".join(head)))
+            except Exception as e:  # noqa: BLE001
+                _log("id=%s label unavailable (%s)" % (cid, type(e).__name__))
+
+        # Every <select> on the page, so the campaign picker (and its ids) can
+        # be found without guessing at the B2B dropdown's shape — that reader
+        # returned nothing on this login, which is why the first scan was blind.
+        try:
+            sels = page.evaluate(
+                "() => [...document.querySelectorAll('select')].map(s => ({"
+                " name: s.name || s.id || '', n: s.options.length,"
+                " opts: [...s.options].slice(0, 12).map(o => "
+                "   (o.value || '') + '=' + (o.textContent || '')"
+                "     .replace(/\\s+/g, ' ').trim().slice(0, 40)) }))")
+            for s in sels:
+                if s["n"] and s["n"] < 40:
+                    _log("select %r (%d): %s"
+                         % (s["name"], s["n"], " | ".join(s["opts"])))
+        except Exception as e:  # noqa: BLE001
+            _log("select dump failed (%s)" % type(e).__name__)
+
+        for cid in range(1, 0):   # id scan disabled — the dumps above answer it
+            url = ("https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
+                   "&invD2DClientId=%d" % (C.PAGE_TIME_TRACKER, rqst, cid))
+            try:
+                cap._goto(page, url)
+                label, _cur = cap.current_campaign(page)
+            except Exception as e:  # noqa: BLE001
+                label = "(err %s)" % type(e).__name__
+            if not label or label.startswith("(err"):
+                continue
+            _log("campaign id=%-3d %s" % (cid, label))
+            # The grid's real headers for this campaign.
+            try:
+                cap._goto(page, "https://v2.ownerville.com/index.cfm?p=%d"
+                                "&rqst=%s&invD2DClientId=%d"
+                          % (C.PAGE_DISPOSITION, rqst, cid))
+                page.wait_for_timeout(2500)
+                idx = knocks._header_index(page)
+                heads = sorted(idx)
+                _log("    headers(%d): %s" % (len(heads), ", ".join(heads)))
+                missing = [c for c in knocks.SHEET_COLUMNS
+                           if c not in {knocks.COL_TOTAL_TALK_TO,
+                                        *knocks.TIME_TRACKER_COLUMNS}
+                           and knocks._norm(c) not in idx]
+                if missing:
+                    _log("    ⚠ the current scraper would RAISE here — missing: %s"
+                         % ", ".join(missing))
+            except Exception as e:  # noqa: BLE001
+                _log("    headers unavailable (%s: %s)"
+                     % (type(e).__name__, str(e)[:120]))
+        if office:
+            from automations.focus_office_att.run_all_owners import (
+                _exit_impersonation)
+            _exit_impersonation(page)
+    return 0
+
+
+def probe(day: dt.date, cfg: Dict, headless: bool = True) -> int:
+    """READ-ONLY: the rows the board is built from, and their columns.
+
+    Points at the SAME pull the post uses, deliberately. A probe that reads a
+    different source can agree with itself while the board is wrong.
+    """
+    from automations.rashad_metrics.knocks_pull import pull_offices_days
+    pulled = pull_offices_days([(cfg["name"], [day])], verbose=True,
+                               profile_dir=str(C.PROFILE_DIR))
+    _name, by_day, err = pulled[0]
+    if err is not None:
+        _log("PULL FAILED: %s: %s" % (type(err).__name__, str(err)[:300]))
+        return 1
+    rows = by_day.get(day) or []
+    _log("office=%s day=%s rows=%d" % (cfg["key"], day, len(rows)))
     if rows:
-        _log("keys=%s" % sorted(rows[0].keys()))
-    for r in rows[:40]:
-        _log("  %-28s gap=%-5s last=%s"
-             % (str(r.get("name"))[:28], r.get("minutesSinceLastKnock"),
-                r.get("lastKnockDate")))
+        _log("columns=%s" % sorted(rows[0].keys()))
+    for r in rows[:25]:
+        _log("  %s" % {k: v for k, v in list(r.items())[:8]})
     return 0
 
 
@@ -744,6 +1082,17 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="run outside the selling-day window")
     ap.add_argument("--headed", action="store_true", help="show the browser")
+    ap.add_argument("--rates", action="store_true",
+                    help="force the Avg Knocks/Hr + Avg Doors/Rep columns on "
+                         "for THIS run, without arming them for the schedule")
+    ap.add_argument("--preview-dm", action="store_true",
+                    help="build, then DM the PDF to Megan for review "
+                         "(the group gets nothing)")
+    ap.add_argument("--probe-campaigns", action="store_true",
+                    help="READ-ONLY: list campaign ids and dump each "
+                         "Disposition table's live column headers")
+    ap.add_argument("--office", default="",
+                    help="impersonate this owner for --probe-campaigns")
     ap.add_argument("--probe", action="store_true",
                     help="READ-ONLY: dump the raw Time Tracker rows")
     args = ap.parse_args(argv)
@@ -751,6 +1100,13 @@ def main(argv=None) -> int:
     day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
            if args.date else dt.date.today())
     send = args.send and not args.dry_run
+    global PREVIEW_DM, RATES_OVERRIDE
+    PREVIEW_DM = bool(getattr(args, "preview_dm", False))
+    if getattr(args, "rates", False):
+        RATES_OVERRIDE = True
+
+    if getattr(args, "probe_campaigns", False):
+        return probe_campaigns(headless=not args.headed, office=args.office)
 
     if args.probe:
         # Ahead of the window gate on purpose: you diagnose when you can, not

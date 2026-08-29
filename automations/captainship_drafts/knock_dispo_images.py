@@ -107,8 +107,13 @@ CAMPAIGN_ID = "3"
 # To's per Rep — the reps who WORKED that day, i.e. the rows this board got
 # from ownerville — so the two per-rep columns are read against the same
 # denominator. Blank (never 0) whenever Total Apps is blank.
+# Column names, and the two derived ones added 2026-08-28 (Eve), are the SAME
+# strings the per-owner boards under this one use (total_knocks.render) — the
+# two land on one email in front of one reader, and a column that means the
+# same thing has to be spelled the same way on both.
 DAILY_SUMMARY_HEADERS = [
-    "ICD", "Total Leads Knocked", "Total Knocks", "Total Talk To",
+    "ICD", "Total # of Reps Knocking", "Total Leads Knocked", "Total Knocks",
+    "Total Talk To", "% Talk To's per Knocks",
     "Talk To's per Rep", "Total Apps", "Average App per Rep",
     "Avg First Knock", "Avg Last Knock", "Gaps", "Total Gaps",
 ]
@@ -326,7 +331,8 @@ def daily_summary_row(label: str, rows: list,
                       apps: Optional[int] = None) -> List[str]:
     """One daily-summary board row aggregating `rows` (one owner's reps,
     records keyed by total_knocks.pull SHEET_COLUMNS): the count columns SUM;
-    Talk To's per Rep divides that row's talk-tos by its rep count;
+    Talk To's per Rep and Average App per Rep divide by the row's reps
+    KNOCKING (>= render.KNOCKING_MIN_KNOCKS doors), the count the row prints;
     First/Last Knock are the AVERAGE of the reps' times (the wkd board's
     _avg_knock — reps with a parsable time only); Gaps sums the gap counts;
     Total Gaps sums the minutes and formats 'Xh Ym' like the daily board
@@ -341,24 +347,38 @@ def daily_summary_row(label: str, rows: list,
         v = rec.get(col)
         return v if isinstance(v, int) else knocks._to_int(str(v or ""))
 
+    from automations.total_knocks.render import (
+        KNOCKING_MIN_KNOCKS, _pct)
+
     talk_to = sum(_i(r, knocks.COL_TOTAL_TALK_TO) for r in rows)
+    total_knocks = sum(_i(r, knocks.COL_TOTAL_KNOCKS) for r in rows)
+    # Reps KNOCKING: 20 knocks or fewer is a walk-on, not a day of doors (Eve
+    # 2026-08-28). It is the ICD's head count AND the divisor of both per-rep
+    # columns further right (Rafael approved 2026-08-28) — one number, printed
+    # on the same row it divides, so a reader can check the arithmetic without
+    # being told what the denominator was. Same rule and same threshold as the
+    # per-owner boards' `render._knockers`; the two boards must agree on an
+    # office to the decimal.
+    knocking = sum(1 for r in rows
+                   if _i(r, knocks.COL_TOTAL_KNOCKS) >= KNOCKING_MIN_KNOCKS)
     return [
         label,
+        str(knocking),
         str(sum(_i(r, knocks.COL_TOTAL_LEADS_KNOCKED) for r in rows)),
-        str(sum(_i(r, knocks.COL_TOTAL_KNOCKS) for r in rows)),
+        str(total_knocks),
         str(talk_to),
-        # Per rep = per rep who WORKED that day, i.e. the rows on this board:
-        # ownerville's Disposition-by-Rep table only lists reps with activity,
-        # so an ICD is not diluted by someone who was off. No rows at all =>
-        # the ICD didn't knock; "0" keeps the column numeric.
-        (f"{talk_to / len(rows):.1f}" if rows else "0"),
+        # The rate the ICD turned doors into conversations — summed talk-tos
+        # over summed knocks, never an average of the reps' rates.
+        _pct(talk_to, total_knocks),
+        # BLANK, never "0", when nobody cleared the bar: on a washed-out day
+        # the ICD still has talk-to's, and a 0.0 beside them says its reps had
+        # none. Nothing to divide by is not a zero.
+        (f"{talk_to / knocking:.1f}" if knocking else ""),
         # None = the PSS crosstab never came down for this ICD; blank says so.
         ("" if apps is None else str(apps)),
         # Apps per rep — blank when there is nothing to divide (no apps
-        # pulled, or an ICD that didn't knock at all), never a 0 the ICD
-        # didn't earn. Divisor = len(rows), the same reps Talk To's per Rep
-        # divides by.
-        ("" if apps is None or not rows else f"{apps / len(rows):.1f}"),
+        # pulled, or nobody knocking), never a 0 the ICD didn't earn.
+        ("" if apps is None or not knocking else f"{apps / knocking:.1f}"),
         _avg_knock(rows, knocks.COL_FIRST_KNOCK),
         _avg_knock(rows, knocks.COL_LAST_KNOCK),
         str(sum(_i(r, knocks.COL_GAPS) for r in rows)),
@@ -476,12 +496,20 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
     from automations.total_knocks.render import THEME_AMBER
     table, bgs = daily_summary_table(captured, chan_rows, roster_n,
                                      n_covered, chan_apps)
-    date_s = f"{target.strftime('%b')} {target.day}, {target.year}"
+    # Same date line, weekday and all, as the per-owner boards under it.
+    date_s = knocks_render._title_date(target)
+    # The ICDs are numbered the way each owner's board numbers its reps (Eve,
+    # 2026-08-28). Only the ICD rows: the trailing block is a comparison office
+    # and the captainship TOTALS, and a number on those would read as one more
+    # ICD in the list. `bgs` is exactly that block, so its length is the count.
+    cols = list(DAILY_SUMMARY_HEADERS)
+    disp = list(cols)
+    knocks_render.number_rows(cols, disp, table, count=len(table) - len(bgs))
     return knocks_render._draw(
-        list(DAILY_SUMMARY_HEADERS), table,
+        disp, table,
         f"DAILY KNOCKS SUMMARY — {date_s}", THEME_AMBER,
         Path(out_dir) / f"daily_knocks_summary_{target.isoformat()}.png",
-        name_col=0, wrap_headers=True,
+        name_col=1, wrap_headers=True,
         highlight_last_row=len(bgs), total_row_bgs=bgs)
 
 

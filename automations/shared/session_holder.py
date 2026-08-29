@@ -95,11 +95,50 @@ APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[1]
 # inside the token's live window did nothing, because a healthy cycle returned
 # early and never re-hopped.
 #
-# So: once the token is inside its last REMINT_MARGIN_MIN, re-hop on every cycle
-# while it is still live enough to mint its successor. Strictly a superset of the
-# old behaviour — if the hop mints nothing we keep the still-valid token and try
-# again next cycle, and the post-expiry path is untouched.
+# So: once the token is inside its last REMINT_MARGIN_MIN, act on every cycle
+# while it is still live. If nothing is minted we keep the still-valid token and
+# try again next cycle.
+#
+# CORRECTION (2026-08-29) — the margin was right, the ACTION was wrong. This
+# originally re-hopped the storage_state, on the belief that a hop performed
+# early enough could "mint its successor". It cannot, at any time: replaying
+# `?rqst=<SAVED TOKEN>&p=701` restores a session but never issues a token
+# (measured 8/27 — same id every cycle inside the margin, then expiry). So the
+# holder counted its token down to zero while dutifully re-hopping, and only
+# came back when a fleet push or a RESTART minted for it. Overnight neither
+# happens: no console work is scheduled between midnight and 4am, which is why
+# the session was dead at 3:00 AM with the batch an hour out.
+# The margin now runs _mint_appstream_via_ownerville, which asks ownerville —
+# the session this process holds warm 24/7 — for a genuinely new token.
 REMINT_MARGIN_MIN = 30.0
+
+# OWNERVILLE MINT — ON, and the reason it failed this morning is understood.
+#
+# Ownerville issues a fresh rqst on demand, unattended (measured 10:04 on
+# 2026-08-29: it handed over 43A275AE while we held 083AE947). That was never
+# the problem. The problem was HOW the token was applied:
+#
+#   • v1 called _sso_to_appstream(page), which navigates the CONSOLE tab to
+#     v2.ownerville.com and back. Navigating that tab away tears down the live
+#     AppStream session, so the hop back has to establish a NEW one — and a NEW
+#     session is precisely what the 2026-08-20 Turnstile refuses. #searchMC
+#     never rendered, at 10:04 and again at 10:50 with waits and a retry.
+#   • The reuse path shows the shape that works: leave the session ALONE and
+#     navigate the console tab to `?rqst=<TOKEN>&p=701`. That renders every
+#     time, which is how every report and every fleet push lands.
+#
+# So the token is now read in its OWN tab (_fresh_rqst_from_ownerville) and the
+# console tab is only ever RE-KEYED, never torn down. Same navigation the
+# working path uses; the only difference is a new token instead of a saved one.
+#
+# Still throttled (MINT_MIN_INTERVAL_MIN): v1 ran every ~6 min for an hour
+# against the SSO endpoint, and while a failing mint is cheap it is not free.
+# On failure the caller falls back to the replay, so a bad attempt costs a
+# navigation, not the session.
+MINT_VIA_OWNERVILLE = True
+# Never more than one attempt per this many minutes, even when enabled.
+MINT_MIN_INTERVAL_MIN = 30.0
+_LAST_MINT_ATTEMPT: dict = {"at": 0.0}
 
 
 def _this_machine() -> str:
@@ -118,9 +157,11 @@ from automations.shared.tableau_patchright import (
     _launch_persistent,
     _ownerville_session_valid,
     _reuse_appstream_storage_state,
+    _sso_to_appstream,
     OWNERVILLE_STORAGE_STATE,
     APPSTREAM_STORAGE_STATE,
     OWNERVILLE_V2_URL,
+    APPSTREAM_BASE,
 )
 
 # The holder runs CONTINUOUSLY, so it must NOT use the reports' profile —
@@ -267,7 +308,7 @@ def _rqst_note(ctx) -> str:
             # this log line is now what the AppStream work is being steered by.
             if tok in _donated_token_ids():
                 return f" · token {tok}{life} · RECEIVED from the fleet"
-            _push_token_to_fleet()
+            _push_token_to_fleet(urgent=True)
             return f" · token {tok}{life} · RENEWED (was {prev})"
         return f" · token {tok}{life}"
     except Exception:  # noqa: BLE001
@@ -285,9 +326,21 @@ def _rqst_note(ctx) -> str:
 # So a holder that RENEWS its token hands the new one to the other hold
 # machines. A machine whose own renewal fails is then carried by whichever one
 # succeeded, and it takes all three failing at once — not any one of them — to
-# need a human. Renewal is the trigger because it is the only moment there is
-# something new to give; the hourly floor keeps a fleet-wide token change from
-# putting three big rows on the queue at once.
+# need a human. There are two triggers, and only one of them may be throttled.
+#
+# A RENEWAL MUST GO OUT AT ONCE. Renewing appears to INVALIDATE the token the
+# donor handed out last time — which every other machine is still holding. So an
+# hour's delay is not an hour of slightly-stale tokens, it is an hour of DEAD
+# ones that still read as valid, because a cookie's expiry is a clock and not a
+# statement about the server. That is exactly where the fleet was caught at
+# 2026-08-28 19:47: Lucy 1 and Lucy 3 both sat on EA30849A showing "18m left"
+# while Lucy 2 had already moved to EC854530; their holders printed ✓ off
+# consoles opened before the switch, and the watch was right that no report
+# could open one. Throttling this push was the defect.
+#
+# The other trigger — "I am alive, here is my session", on any live export — is
+# what carries a machine that cannot renew at all. That one keeps the hourly
+# floor: it has nothing new to say, so its only cost is queue rows.
 #
 # Fully contained: any failure here is logged and dropped. Handing off a session
 # must never be able to take down the thing holding it.
@@ -295,15 +348,18 @@ FLEET_PUSH_MIN_INTERVAL_MIN = 60.0
 _LAST_FLEET_PUSH: dict = {"at": 0.0}
 
 
-def _push_token_to_fleet(verbose: bool = True) -> None:
+def _push_token_to_fleet(verbose: bool = True, urgent: bool = False) -> None:
     """Give the just-renewed session to the other AppStream hold machines.
+
+    urgent=True bypasses the hourly floor. A RENEWAL is always urgent, and the
+    floor was actively harmful there — see FLEET_PUSH_MIN_INTERVAL_MIN.
 
     Sends the SAME payload the human re-seed's second half sends
     (`--appstream-push-fleet` → each machine's `set_appstream_state`), so the
     landing side is unchanged and still installs + verifies its own copy and
     refuses a state carrying no rqst_ token."""
     now = time.time()
-    if (now - _LAST_FLEET_PUSH["at"]) / 60.0 < FLEET_PUSH_MIN_INTERVAL_MIN:
+    if not urgent and (now - _LAST_FLEET_PUSH["at"]) / 60.0 < FLEET_PUSH_MIN_INTERVAL_MIN:
         return
     try:
         blob = APPSTREAM_STORAGE_STATE.read_text()
@@ -340,6 +396,159 @@ def _ctx_rqst_minutes_left(ctx) -> float | None:
         return None
 
 
+_RQST_RE = re.compile(r"rqst=([A-Za-z0-9_-]+)")
+
+
+def _fresh_rqst_from_ownerville(ctx) -> str | None:
+    """A NEW rqst token, read from the warm ownerville session in its OWN tab.
+
+    Deliberately does NOT touch the AppStream console tab. Ownerville is the
+    issuer — it hands out a fresh token on request, unattended, and this process
+    already holds a valid ownerville login 24/7 (measured 8/29: it issued
+    43A275AE on demand at 10:04). Everything here is read-only navigation of
+    ownerville's own page; the token is then applied to the console tab by the
+    caller, the same way the reuse path applies a saved one.
+
+    None on any failure — a mint we cannot do is a missed cycle, never a raise."""
+    page = None
+    try:
+        page = ctx.new_page()
+        page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(5_000)
+        m = _RQST_RE.search(page.url or "")
+        if not m:
+            href = page.evaluate(
+                "() => { const a=[...document.querySelectorAll('a')]"
+                ".find(x=>/p=701/.test(x.getAttribute('href')||'')); "
+                "return a?a.getAttribute('href'):''; }")
+            m = _RQST_RE.search(href or "")
+        if not m:
+            m = _RQST_RE.search(
+                page.evaluate("() => document.documentElement.innerHTML") or "")
+        return m.group(1) if m else None
+    except Exception as e:  # noqa: BLE001 — never raise into the holder
+        print(f"[{_stamp()}] AppStream mint — ownerville token read failed: "
+              f"{type(e).__name__}: {str(e)[:110]}", flush=True)
+        return None
+    finally:
+        if page is not None:
+            try:
+                page.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
+    """Mint a genuinely NEW rqst token by re-running ownerville's SSO hop.
+
+    THE THING THE HOLDER WAS MISSING (2026-08-29). There are two hops and only
+    one of them mints:
+
+      • `_reuse_appstream_storage_state` replays a token we already have
+        (`?rqst=<SAVED TOKEN>&p=701`). It RESTORES a session; it never ISSUES
+        one. Measured 2026-08-27 with token-identity logging: the id was
+        unchanged across every cycle inside the re-mint margin, then expired.
+      • `_sso_to_appstream` goes to v2.ownerville.com and asks OWNERVILLE for a
+        fresh token, then hops with that. This is where an rqst comes from —
+        it is how the very first seed gets one, and how a holder RESTART gets
+        one.
+
+    The 8/27 re-mint fix wired the margin to the FIRST of those, so the holder
+    faithfully re-hopped a dying token every cycle and minted nothing. It only
+    ever came back with a fresh token when something else happened to mint: a
+    fleet push, or a restart. Observed on Lucy 1 on 8/29: token 03F0A612 counted
+    down to `1m left` at 08:04, the holder restarted on a code change at 08:10,
+    and at 08:11 it was handing a fresh token to the fleet — the restart minted
+    what four re-hop cycles could not. Overnight nothing restarts it and no
+    console work is scheduled between midnight and 4am, so the token simply
+    died: hence the 3:00 AM "session re-seed needed" with the batch an hour out.
+
+    Ownerville is exactly what this process holds warm 24/7, so this path is
+    available at 3am with no human. Read-only navigation (ownerville → p=701
+    console); it never touches p=604 or any applicant action.
+
+    True only when the context comes back holding a DIFFERENT token — "the hop
+    ran" is not the claim, "we have a new token" is. [[reference_appstream_turnstile]]
+
+    EVERY OUTCOME IS LOGGED UNCONDITIONALLY, not behind `verbose`. The holder's
+    loop calls _warm_appstream(verbose=False), so a verbose-gated message here
+    means a failed mint says NOTHING and the token just counts down — which is
+    the exact shape of the bug this function exists to fix, and it cost a first
+    attempt on 2026-08-29 (token 083AE947 sat at 21m left inside the margin with
+    no line explaining why). If it can fail, it has to say so."""
+    if not MINT_VIA_OWNERVILLE:
+        return False
+    now = time.time()
+    if (now - _LAST_MINT_ATTEMPT["at"]) / 60.0 < MINT_MIN_INTERVAL_MIN:
+        return False
+    _LAST_MINT_ATTEMPT["at"] = now
+    before = _rqst_id(ctx)
+    # FETCH THE TOKEN IN A SEPARATE TAB. This is the whole fix. The first
+    # version called _sso_to_appstream(page), which navigates THIS tab to
+    # v2.ownerville.com and then back — and navigating the console tab away
+    # tears down the live AppStream session, so the hop back has to establish a
+    # NEW one, which is exactly what the 2026-08-20 Turnstile refuses
+    # (#searchMC never rendered, 10:04 and 10:50 on 8/29).
+    #
+    # The reuse path proves the shape that DOES work: with the session left
+    # intact, navigating the console tab to `?rqst=<TOKEN>&p=701` renders every
+    # time. So do that — just with a token that is NEW instead of saved. The
+    # console session is never torn down; it is only re-keyed.
+    tok = _fresh_rqst_from_ownerville(ctx)
+    if not tok:
+        print(f"[{_stamp()}] AppStream mint FAILED — no rqst token on the warm "
+              f"ownerville session (is ownerville logged in?)", flush=True)
+        return False
+    try:
+        page.goto(f"{APPSTREAM_BASE}?rqst={tok}&p=701",
+                  wait_until="domcontentloaded")
+    except Exception as e:  # noqa: BLE001 — a mint attempt must never break the holder
+        print(f"[{_stamp()}] AppStream mint FAILED (re-key nav): "
+              f"{type(e).__name__}: {str(e)[:140]}", flush=True)
+        return False
+    # WAIT for the console the way the REPORTS' path waits for it.
+    # _sso_to_appstream returns after a FIXED sleep and never confirms #searchMC,
+    # so asking count() the instant it returns fails a console that simply had
+    # not painted yet — which is precisely what happened on the first live
+    # attempt (2026-08-29 10:04): ownerville handed over a genuinely NEW token
+    # (43A275AE…, not the 083AE947 we held), the hop navigated to it, and the
+    # check called it a failure with no wait at all. _reuse_appstream_storage_state
+    # has always used wait_for_selector here; the mint path must match it.
+    # One re-navigation of the same ?rqst=<TOKEN>&p=701 URL before giving up,
+    # for the same reason the reuse path tries each saved token.
+    for attempt in (1, 2):
+        try:
+            page.wait_for_selector("#searchMC", timeout=15_000)
+            break
+        except Exception:  # noqa: BLE001 — timeout or a dead frame
+            url = page.url or ""
+            if attempt == 1 and "rqst=" in url:
+                try:
+                    page.goto(url, wait_until="domcontentloaded")
+                    continue
+                except Exception:  # noqa: BLE001
+                    pass
+            print(f"[{_stamp()}] AppStream mint FAILED — ownerville hop landed "
+                  f"without a console (#searchMC absent after {attempt} "
+                  f"attempt(s), at {url[:100]})", flush=True)
+            return False
+    after = _rqst_id(ctx)
+    if not after:
+        print(f"[{_stamp()}] AppStream mint FAILED — console rendered but the "
+              f"context carries NO rqst token", flush=True)
+        return False
+    if after == before:
+        print(f"[{_stamp()}] AppStream mint FAILED — ownerville handed back the "
+              f"SAME token {after} (it re-used our session instead of issuing "
+              f"a new one)", flush=True)
+        return False
+    left = _ctx_rqst_minutes_left(ctx)
+    print(f"[{_stamp()}] AppStream MINTED a fresh rqst via ownerville: "
+          f"{before} -> {after}"
+          + (f", {left:.0f}m left" if left is not None else ""), flush=True)
+    return True
+
+
 def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
     """Keep the AppStream (applicantstream) console session alive in the holder's
     context so unattended reports reuse it. Reload the open console to refresh the
@@ -374,28 +583,55 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
                 left = _ctx_rqst_minutes_left(ctx)
                 if left is None or left > REMINT_MARGIN_MIN:
                     return True
-                # Inside the token's last REMINT_MARGIN_MIN — re-hop NOW, while
-                # it can still mint its successor. See REMINT_MARGIN_MIN.
+                # Inside the token's last REMINT_MARGIN_MIN — MINT a successor
+                # through ownerville. This used to call
+                # _reuse_appstream_storage_state, which replays the token we
+                # already hold and cannot issue a new one, so the holder
+                # re-hopped a dying token every cycle and minted nothing. See
+                # _mint_appstream_via_ownerville for the measurements.
                 if verbose:
-                    print(f"-> rqst token has {left:.0f}m left — re-hopping "
-                          f"storage_state to mint a fresh one", flush=True)
+                    print(f"-> rqst token has {left:.0f}m left — minting a fresh "
+                          f"one through ownerville", flush=True)
+                if _mint_appstream_via_ownerville(ctx, page, verbose=verbose):
+                    return True
+                # Ownerville couldn't mint this cycle (its own session may be
+                # mid-refresh). Fall back to the old replay: it cannot produce a
+                # new token, but it does re-assert the session we still hold.
                 try:
                     if (_reuse_appstream_storage_state(ctx, page, verbose=verbose)
                             and _ctx_rqst_count(ctx)):
                         return True
                 except Exception:
                     pass
-                # The hop minted nothing this cycle. The old token is still
-                # valid for a few more minutes, so stay warm on it and retry
-                # next cycle rather than reporting a stale session.
+                # Nothing minted this cycle. The old token is still valid for a
+                # few more minutes, so stay warm on it and retry next cycle
+                # rather than reporting a stale session.
                 return True
             if verbose and page.locator("#searchMC").count() > 0:
                 print("-> console renders but carries no rqst token — "
                       "re-reading storage_state", flush=True)
     except Exception:
         pass
+    # THE RECOVERY PATH — we are here because the token is gone (expired, or the
+    # console renders off CFID/CFTOKEN alone). Two steps, in this order:
+    #
+    #  1. Replay the storage_state. It is re-read from disk every call, so this
+    #     is how a FLEET PUSH reaches this process: a donor machine's fresh
+    #     token lands in the file and we pick it up for free. Cheap, and it is
+    #     the whole reason a machine that cannot mint is still carried.
+    #  2. If that leaves us with no live token, MINT one through ownerville.
+    #     This step is new (2026-08-29). Without it, a holder that missed its
+    #     re-mint margin could only sit and replay dead tokens — which is
+    #     exactly the ten-hour outage of 2026-08-27, where twenty cycles printed
+    #     "console warm but NO rqst token" and never recovered without a human.
     try:
-        return _reuse_appstream_storage_state(ctx, page, verbose=verbose)
+        if (_reuse_appstream_storage_state(ctx, page, verbose=verbose)
+                and _ctx_rqst_count(ctx)):
+            return True
+    except Exception:
+        pass
+    try:
+        return _mint_appstream_via_ownerville(ctx, page, verbose=verbose)
     except Exception:
         return False
 

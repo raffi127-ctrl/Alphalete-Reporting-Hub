@@ -82,4 +82,8 @@ WALK_DIAG_TAB = os.environ.get("OAT_WALK_DIAG_TAB", "OAT Walk Diag")
 # what feeds Megan's noon/4pm "needs a number pulled from Indeed" post. Those
 # applicants had no number to pull, so the post gets shorter and truer; blocked
 # reads still flag exactly as before.
-REMOVE_NO_PHONE = os.environ.get("OAT_REMOVE_NO_PHONE", "1") == "1"
+# 2026-08-28, LATER THE SAME DAY — Carlos reversed this: "you don't remove
+# people with no contact info you leave them there." A missing number is not a
+# reason to drop someone; they stay in the queue so a human can chase the number
+# (and so a later resume read, now with OCR, can still find it). Default OFF.
+REMOVE_NO_PHONE = os.environ.get("OAT_REMOVE_NO_PHONE", "0") == "1"

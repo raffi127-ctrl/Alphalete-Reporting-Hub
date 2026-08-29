@@ -145,6 +145,8 @@ def activate(office_id: str) -> dict:
     oat_config.OFFICE_HINT = o["hint"]
     oat_config.FILE_SUFFIX = o["suffix"]
     oat_config.WALK_DIAG_TAB = o["walk_diag_tab"]
+    # Missing-contact-info policy is the office owner's call, not a global.
+    oat_config.REMOVE_NO_PHONE = bool(o.get("remove_no_phone", True))
     # Whether a CONFIRMED-uncontactable applicant (resume opened, no number, or no
     # resume at all) is removed or left in the queue. Per-office on purpose —
     # Carlos's 11580 leaves them, Atef's 23467 removes them. Defaulting a new

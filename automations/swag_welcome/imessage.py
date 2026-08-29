@@ -90,14 +90,25 @@ SHORTCUT_NAME = "Alphalete Swag Card"
 _SWAG_DIR = Path.home() / "AlphaleteSwagCards"
 _SWAG_IMG = _SWAG_DIR / "current.png"
 _SWAG_PHONE = _SWAG_DIR / "phone.txt"   # phone written here too (file is context-safe)
-# Card auto-send via the "Alphalete Swag Card" Shortcut is OFF (Megan,
-# 2026-08-25). It worked on 2026-07-13, but a bad recipient makes the Shortcut
-# park a "No recipients" compose sheet on the sending Mac's screen and block
-# there indefinitely — one sat on Megan's laptop for hours. Texts still send
-# via AppleScript; cards are still built into output/swag_welcome/ to attach by
-# hand. Flip back to True once the Shortcut is proven on macOS 26+ AND the
-# recipient gate below has been exercised on a real batch.
-_AUTO_SEND_CARD = False
+# Card auto-send via the "Alphalete Swag Card" Shortcut is ON. It was switched
+# off for one day (2026-08-25) after a bad recipient value left a "No
+# recipients" compose sheet parked on Megan's screen — but off is the wrong
+# default: a batch then texts 54 hires a promise of a sneak peek and sends no
+# photo, which is worse than the window it was avoiding. Back on at Megan's
+# call the same day, with the two guards that stranded window actually needed:
+#   - `_looks_like_phone` refuses to hand the Shortcut anything that isn't a
+#     number, which is what opens a recipient-less compose sheet in the first place
+#   - the Shortcut runs under Popen and is KILLED at 60s, so nothing can sit
+#     blocking on someone's screen unattended
+# Machines that physically can't deliver an image are handled by
+# `card_autosend_blocked()` below — they report the real reason instead of
+# claiming a send that never happened.
+_AUTO_SEND_CARD = True
+
+# macOS 15 and earlier CANNOT deliver an automated image send: `shortcuts run`
+# executes, exits 0, and sends nothing (proven on JD's Mac, 2026-07-23). Exit 0
+# would otherwise be read as success and reported as a card that went out.
+_MIN_MACOS_FOR_CARDS = 26
 
 
 def _find_shortcut(name: str = SHORTCUT_NAME) -> str | None:
@@ -116,6 +127,31 @@ def _find_shortcut(name: str = SHORTCUT_NAME) -> str | None:
 
 def shortcut_installed(name: str = SHORTCUT_NAME) -> bool:
     return _find_shortcut(name) is not None
+
+
+def card_autosend_blocked() -> str | None:
+    """None when this Mac can really auto-send a card, else the reason why not.
+
+    Checked BEFORE the Shortcut runs so a machine that can't deliver images says
+    so, instead of reporting 54 phantom card sends (macOS 15 exits 0 and sends
+    nothing).
+    """
+    if platform.system() != "Darwin":
+        return "not macOS — no Messages.app"
+    ver = platform.mac_ver()[0] or "0"
+    try:
+        major = int(ver.split(".")[0])
+    except ValueError:
+        major = 0
+    if major and major < _MIN_MACOS_FOR_CARDS:
+        return (f"this Mac is macOS {ver} — automated image sends need macOS "
+                f"{_MIN_MACOS_FOR_CARDS}+. The text sent; attach the card from "
+                "output/swag_welcome/ by hand, or run the Shortcut with 'Show "
+                "When Run' ON and click Send per card.")
+    if not shortcut_installed():
+        return (f"the '{SHORTCUT_NAME}' Shortcut isn't on this Mac — build it "
+                "(see the setup steps on the Hub card), then cards send themselves")
+    return None
 
 
 def _looks_like_phone(value: str) -> bool:
@@ -214,20 +250,20 @@ def send(phone: str, text: str, attachment: str | None = None,
         # still generated in the grid + output folder to attach manually. Flip
         # _AUTO_SEND_CARD to re-enable once the Shortcut path is proven.
         result["image_auto_sent"] = False
-        if attachment and _AUTO_SEND_CARD and shortcut_installed():
-            try:
-                result["image_debug"] = _send_image_via_shortcut(phone, attachment)
-                result["image_auto_sent"] = True
-            except Exception as e:
-                result["image_error"] = str(e)
-        elif attachment and _AUTO_SEND_CARD:
-            result["image_error"] = ("Shortcut 'Alphalete Swag Card' not found by "
-                                     "`shortcuts list` in this process")
-        elif attachment:
-            # Say WHY out loud. A silent "no card" is how the last round of
-            # Shortcut breakage stayed invisible for weeks.
-            result["image_error"] = ("card auto-send is switched off — attach the "
-                                     "card from output/swag_welcome/ by hand")
+        if attachment:
+            # Say WHY out loud when a card doesn't go. A silent "no card" is how
+            # the last round of Shortcut breakage stayed invisible for weeks.
+            blocked = (None if _AUTO_SEND_CARD
+                       else "card auto-send is switched off in imessage.py")
+            blocked = blocked or card_autosend_blocked()
+            if blocked:
+                result["image_error"] = blocked
+            else:
+                try:
+                    result["image_debug"] = _send_image_via_shortcut(phone, attachment)
+                    result["image_auto_sent"] = True
+                except Exception as e:
+                    result["image_error"] = str(e)
     except Exception as e:
         result["error"] = str(e)
     return result

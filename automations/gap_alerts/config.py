@@ -30,6 +30,10 @@ PAGE_TIME_TRACKER = 510
 # Carlos's hourly B2B post has, in the same order.
 PAGE_TODAYS_ACTIVITY = 88
 
+# Disposition by Rep — the grid the knock board is built from, and the one whose
+# column headers decide whether a campaign can be scraped at all.
+PAGE_DISPOSITION = 89
+
 # "Over 15 minute gap" is the card's own name for it, and >15 (not >=) is what
 # b2b_dispositions has been sending Carlos since July. Kept identical so the two
 # offices are looking at the same definition of "inactive".
@@ -55,13 +59,100 @@ RAF = {
     "campaign_id": "3",
     "group": "Alphalete Partners",
     "label": "",           # blank = no office name on the card (Raf's own room)
+    "compare": True,       # Chan's teal TOTAL line
+    # Raf's office only. "Our slack lvl 1 chat" is HIS org's channel; Calvin is
+    # Energy Wells, a different business, and his board landing in front of
+    # Raf's reps would invite a comparison nobody asked for.
+    "slack_hourly": True,
 }
 
-OFFICES: List[Dict] = [RAF]
+# Calvin Ribera — ENERGY WELLS, added 2026-08-28 (Raf's Loom).
+#
+# NAME: ownerville spells him "Calvin RIBERA" (office 22162, Vernon Inc.);
+# everyone says "Rivera". That is an ICD-alias row, not a per-report patch, and
+# it is already in the alias sheet — impersonation resolves either spelling.
+#
+# NO CAMPAIGN PIN, and that is deliberate: he is Energy-Wells-ONLY, so the
+# campaign he lands on after impersonation already IS Energy Wells. Pinning
+# Raf's "3" here would be actively wrong — that is RES AT&T.
+#
+# VERIFIED 2026-08-28 by --probe-campaigns: his Disposition grid carries every
+# column the scraper needs ("missing: nothing"), so this office needs no
+# schema work. Raf said Energy Wells also counts "VL" as a talk-to; there is
+# NO VL column in the live grid (the 13 extras are the same TM metadata and
+# side dispositions fiber has), so Total Talk To is the standard sum until
+# somebody can point at what VL is called on screen.
+CALVIN = {
+    "key": "calvin",
+    "name": "Calvin Ribera",
+    "ov": "impersonate",
+    "campaign_id": "",
+    "group": "ENERGY WELLS DOMINATION",
+    "label": "Calvin",
+    # Chan is a FIBER office. His totals under an Energy Wells board would
+    # invite a comparison between two different businesses, so no line here.
+    "compare": False,
+}
+
+# Jay Turnage — Clear View Consultants, Inc., account 21959, 144 sales reps.
+# TWO SEPARATE reports, not combined (Raf: "not combined, 2 separate reports,
+# knocks posted for each").
+#
+# enabled=False until Office Access is GRANTED. As of 2026-08-28 the request
+# shows "Request Sent" — he exists, we cannot impersonate him yet, and a live
+# row would fail every 15 minutes and open incidents rather than post.
+#
+# BOTH need an explicit campaign pin, unlike Calvin. Calvin is Energy-Wells-
+# only so his post-impersonation default is already the right campaign; Jay
+# runs both, so whichever he happens to land on would silently decide which
+# report is which. ENERGY_WELLS_CAMPAIGN_ID below is the missing half.
+#
+# 144 reps is three times Raf's roster — worth an eye on the first board for
+# how the image reads at that length before assuming the layout holds.
+JAY_ATT = {
+    "key": "jay_att",
+    "name": "Jay Turnage",
+    "ov": "impersonate",
+    "campaign_id": "3",              # RES AT&T, same id Raf's office pins
+    "group": "ENERGY WELLS DOMINATION",
+    "label": "Jay (AT&T)",
+    "compare": False,
+    "enabled": False,
+}
+
+JAY_EW = {
+    "key": "jay_ew",
+    "name": "Jay Turnage",
+    "ov": "impersonate",
+    "campaign_id": "",               # <- ENERGY_WELLS_CAMPAIGN_ID once known
+    "group": "ENERGY WELLS DOMINATION",
+    "label": "Jay (Energy Wells)",
+    "compare": False,
+    "enabled": False,
+}
+
+# STILL UNKNOWN, and deliberately not guessed. Calvin's page links carry two
+# ids, 3 and 39; 3 is RES AT&T, so 39 looks like Energy Wells — but loading
+# either id while impersonated bounced the session back to the Office Access
+# owner list, so neither could be NAMED. An id that is "probably right" would
+# hand Jay's Energy Wells report another campaign's numbers on a board that
+# looks completely normal.
+#
+# READ IT OFF JAY'S OWN SESSION when his access lands. That is the better probe
+# anyway: he runs BOTH campaigns, so his switcher shows both with their labels,
+# where Calvin's session can only ever show one. Until then this blocks nothing
+# — Calvin needs no pin (EW is his only campaign) and Jay cannot run at all.
+ENERGY_WELLS_CAMPAIGN_ID = ""
+
+OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW]
 
 
 def enabled() -> List[Dict]:
-    return list(OFFICES)
+    """The offices that actually run. A row with enabled=False is WIRED but
+    switched off — Jay's two are waiting on Office Access, and a live row we
+    cannot impersonate would fail every tick and open incidents instead of
+    posting."""
+    return [o for o in OFFICES if o.get("enabled", True)]
 
 
 def office(key: str) -> Optional[Dict]:
@@ -72,9 +163,76 @@ def office(key: str) -> Optional[Dict]:
 
 
 # --- the card -----------------------------------------------------------------
-CARD_TITLE = "KNOCKS & GAPS"
+CARD_TITLE = "KNOCKS & DISPOSITIONS"
 PANEL_TODAYS_ACTIVITY = "TODAY'S ACTIVITY"
 PANEL_GAPS = "REPS OVER 15 MIN GAP"
+
+# --- the gap list, as TEXT ----------------------------------------------------
+# Raf's second Loom (2026-08-28): the gap CARD is gone. "It's just too much
+# friction... what I want it to be is just a text message... listed out
+# alphabetically of who is at 15 minutes or more gaps. And then every time
+# there's a new one, similar to the sales board, have it post a fire emoji, that
+# way we know this is the newest person that just made the list so we know who
+# to text."
+#
+# Alphabetical, NOT longest-dark-first. That was right when the card was a
+# picture you scanned top-down; this list is read as a to-text list, and the
+# emoji — not the ordering — is what says "act on this one".
+#
+# Clock, not fire (Megan 2026-08-28) — fire already means a SALE in the sales
+# board texts these same people read, and a gap is the opposite of a sale.
+GAP_TEXT_HEADER = "15 minutes of gaps"
+GAP_NEW_EMOJI = "\u23F0"
+
+# --- send gate ----------------------------------------------------------------
+# The scheduled job keeps running and keeps building whatever this says; False
+# only stops the texting. Paused 2026-08-28 for a layout review, resumed the
+# same day once Megan had seen it. One constant, no reinstall — that is the
+# lever to reach for when something needs to stop going to the room NOW.
+SEND_ENABLED = True
+
+# Chan Park's TOTAL line under Raf's board (Raf 2026-08-28: "can we have it
+# compare to chans every 15 minutes"). Resolved through the shared alias table,
+# pulled in the SAME ownerville session as Raf — a comparison must never cost
+# its own login at four ticks an hour. Set False to drop the line; a failed
+# comparison already drops it on its own without touching the board.
+COMPARE_TO_CHAN = True
+
+# --- the hourly Slack post ----------------------------------------------------
+# Raf 2026-08-29: "On our slack lvl 1 chat, once an hr can we get it posted
+# there please? Ranked highest knocks to least. I put myself on blast, everyone
+# is trying to beat me, if they do, they get owner pay."
+#
+# ONCE AN HOUR, not every tick: the chat texts run every 15 minutes because the
+# people in them are acting on gaps; a channel of reps reading a leaderboard
+# does not need four a hour, and four would train them to scroll past it.
+#
+# The board is ALREADY ranked highest-knocks-first — that is what the iMessage
+# post has carried since it was ranked, so "ranked highest to least" needs no
+# separate sort here.
+#
+# C09JG28CD27 is #alphalete-lvl1-chat, PRIVATE — the same channel
+# slack_metrics_post already mirrors #alphalete-sales into, so Lucy is a member.
+# A private channel Lucy has not joined fails with a 200 and sign-in HTML, not
+# a 401, so membership is the thing to check first if this ever goes quiet.
+SLACK_HOURLY_CHANNEL = "C09JG28CD27"      # #alphalete-lvl1-chat
+
+
+def compares(cfg: Dict) -> bool:
+    """Does this office's board carry Chan's comparison line? Per-office since
+    Calvin arrived: Chan is fiber, and his totals under an Energy Wells board
+    would compare two different businesses."""
+    return bool(COMPARE_TO_CHAN and cfg.get("compare", True))
+
+# "Avg Knocks / Hr" + "Avg Doors / Rep" on the board (Raf 2026-08-28).
+# Previewed, then rolled out to every knock board — the renderer now defaults
+# them on, so this is only an explicit local override.
+RATE_COLUMNS = True
+
+# Raf 2026-08-29: "can we turn the total doors knocked bright green once the
+# rep hits 140 please". Rep rows only — the target is a rep's day, and a green
+# office total would be claiming something else. None turns it off.
+KNOCKS_GREEN_AT = 140
 
 # The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
 # a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps
@@ -171,8 +329,8 @@ def capture_window():
 # of red that says nothing. That is why the day is fenced to the hours reps are
 # actually out rather than left to run to midnight.
 DAY_START_HHMM = (13, 30)
-DAY_END_HHMM = (20, 30)
-SATURDAY_START_HHMM = (10, 0)
+DAY_END_HHMM = (22, 0)   # 10pm (Raf, 2026-08-28: "can we have this come till 10:00pm")
+SATURDAY_START_HHMM = (10, 45)   # Raf 2026-08-29: "can it start at 10:45am"
 SATURDAY_END_HHMM = (17, 0)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
 SATURDAY = 5
@@ -182,7 +340,7 @@ SATURDAY = 5
 # top of that script). Was 5 from launch until 2026-08-27, when Raf asked for
 # 10: at 5 minutes the card was arriving faster than the room could act on it.
 # CHANGE BOTH, and keep MIN_SEND_GAP_MINUTES just under this.
-TICK_MINUTES = 10
+TICK_MINUTES = 15
 
 # A card is REFUSED if this office got one less than this many minutes ago.
 #

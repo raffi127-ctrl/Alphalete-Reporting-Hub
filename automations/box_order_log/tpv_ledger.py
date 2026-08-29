@@ -50,6 +50,7 @@ LEDGER_PATH = OUTPUT_DIR / "box_tpv_ledger.json"
 # sheet, not the Vantura board: this is diagnostics, and the board is Carlos's.
 QUEUE_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 ERASED_TAB = "Box TPV Erased"
+DEAD_TAB = "Box TPV Dead Check"
 
 # box_order_log_2026-08-23.csv  and  box_order_log_all_2026-08-23.csv
 _CSV_GLOB = "box_order_log*.csv"
@@ -203,6 +204,12 @@ def main(argv=None) -> int:
     ap.add_argument("--erased", action="store_true",
                     help="list deals the ledger vouches for that TODAY's "
                          "newest crosstab no longer shows reaching TPV")
+    ap.add_argument("--dead-check", action="store_true",
+                    help="for every deal in the newest crosstab that surfaces "
+                         "TPV Failed / Rejected QC, say what the ledger knows: "
+                         "never seen at all, seen only at Requires TPV Review, "
+                         "or PROVEN at TPV Passed (and when). Answers whether a "
+                         "dropped-dead deal ever said TPV passed.")
     ap.add_argument("--to-tab", metavar="NAME", nargs="?", const=ERASED_TAB,
                     help="also write the --erased list to a tab on the Lucy "
                          "queue sheet. The queue's Result cell truncates to "
@@ -248,7 +255,101 @@ def main(argv=None) -> int:
 
         if args.to_tab:
             _write_tab(args.to_tab, newest.name, gone)
+
+    if args.dead_check:
+        files = sorted(OUTPUT_DIR.glob(_CSV_GLOB), key=lambda p: p.name)
+        if not files:
+            print("no archived crosstabs found", file=sys.stderr)
+            return 1
+        newest = files[-1]
+        rows = clean.read_rows(newest)
+        groups = {}
+        for r in rows:
+            if (r.get("Status") or "").strip() in clean.JUNK_STATUSES:
+                continue
+            k = _key_str((r.get("Contract ID"), r.get("Account Id")))
+            groups.setdefault(k, []).append(r)
+        led = load()
+        buckets = {"proven at TPV Passed": [], "only Requires TPV Review": [],
+                   "never in the ledger": []}
+        for k, members in groups.items():
+            lvls = {clean.level((m.get("Status") or "").strip(),
+                                (m.get("Contr. Sub-status") or "").strip())
+                    for m in members}
+            surfaced = min(lvls, key=clean._priority)
+            if surfaced not in clean.DEAD_LEVELS:
+                continue
+            rec = led.get(k)
+            if rec is None:
+                b = "never in the ledger"
+            elif rec.get("tpv_proven") or rec.get("level") in clean.TPV_PROVEN_LEVELS:
+                b = "proven at TPV Passed"
+            else:
+                b = "only Requires TPV Review"
+            buckets[b].append((k, members[0], rec))
+        total = sum(len(v) for v in buckets.values())
+        print("newest crosstab: {}".format(newest.name))
+        print("{} deal(s) surfacing TPV Failed / Rejected QC:".format(total))
+        for name, items in buckets.items():
+            print("  {:<26} {}".format(name, len(items)))
+        for k, r, rec in buckets["proven at TPV Passed"]:
+            print("    KEEP {:<32} ctr {} · proven {}".format(
+                (r.get("Business Name") or "")[:32], k.split("|")[0],
+                (rec or {}).get("proven_on") or (rec or {}).get("first_seen")))
+        # Name the borderline bucket too: these reached TPV REVIEW and then
+        # failed, so whether they count is a ruling, not a bug. Printing them
+        # is the whole point — a bare count can't be ruled on.
+        if args.to_tab:
+            _write_dead_tab(newest.name, buckets)
+        for k, r, rec in buckets["only Requires TPV Review"]:
+            print("    REVIEW-ONLY {:<30} ctr {} | {} | sold {} | seen {}..{}"
+                  .format((r.get("Business Name") or "")[:30],
+                          k.split("|")[0], (r.get("Rep Name") or "?"),
+                          (r.get("Sale Date") or "-"),
+                          (rec or {}).get("first_seen", "?"),
+                          (rec or {}).get("last_seen", "?")))
     return 0
+
+
+def _write_dead_tab(source: str, buckets) -> None:
+    """Publish the dropped-dead breakdown. The review-only bucket is the one
+    that needs a human ruling, so it is listed in full rather than counted."""
+    rows = [["Verdict", "Contract ID", "Account Id", "Rep", "Business",
+             "Sale Date", "Ledger first seen", "Ledger last seen"]]
+    for verdict in ("proven at TPV Passed", "only Requires TPV Review",
+                    "never in the ledger"):
+        for k, r, rec in buckets.get(verdict, []):
+            contract, _, account = k.partition("|")
+            rec = rec or {}
+            rows.append([verdict, contract, account,
+                         (r.get("Rep Name") or "").strip(),
+                         (r.get("Business Name") or "").strip(),
+                         (r.get("Sale Date") or "").strip(),
+                         rec.get("first_seen", ""), rec.get("last_seen", "")])
+    _publish(DEAD_TAB, rows, "source: {} · {} dropped-dead deal(s)".format(
+        source, len(rows) - 1))
+
+
+def _publish(tab_name: str, rows, footer: str) -> None:
+    """Write a table to a queue-sheet tab. Never fatal — diagnostics must not
+    be able to take a run down."""
+    try:
+        from automations.recruiting_report import fill as _fill
+        sh = _fill._client().open_by_key(QUEUE_SHEET)
+        try:
+            ws = sh.worksheet(tab_name)
+            ws.clear()
+        except Exception:
+            ws = sh.add_worksheet(title=tab_name, rows=max(100, len(rows) + 20),
+                                  cols=len(rows[0]))
+        ws.resize(rows=max(100, len(rows) + 20), cols=len(rows[0]))
+        ws.update(rows, "A1", value_input_option="RAW")
+        ws.update([["{} · built {}".format(
+            footer, dt.datetime.now().strftime("%Y-%m-%d %H:%M"))]],
+            "A{}".format(len(rows) + 2), value_input_option="RAW")
+        print("  wrote {} row(s) to the {!r} tab".format(len(rows) - 1, tab_name))
+    except Exception as exc:
+        print("  ! could not write the {!r} tab: {}".format(tab_name, exc))
 
 
 def _write_tab(tab_name: str, source: str, gone) -> None:

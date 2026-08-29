@@ -10,33 +10,72 @@ session on 8/24 18:53 → 20:53). The 24h figure belongs to CFID/CFTOKEN riding
 alongside it. So an EXPIRED stored token is the normal state between runs and is
 NOT by itself a verdict on health.
 
-HOW THE BATCH ACTUALLY SURVIVES THE NIGHT (Megan 2026-08-27). The session-holder
-carries it, unattended, with no human login:
+HOW THE BATCH ACTUALLY SURVIVES THE NIGHT — the fleet renews it, unattended,
+with no human login. Get the MECHANISM right, because an earlier version of this
+comment had it wrong and the wrong version is very persuasive:
 
-  • its 6-minute reload keeps the ColdFusion session (CFID/CFTOKEN) from
-    idle-timing-out, indefinitely;
-  • when the ~2h rqst lapses, `_warm_appstream` no longer short-circuits on a
-    rendering console (`6665dff`, 8/25) — it falls through to the storage_state
-    re-hop (`?rqst=<TOKEN>&p=701`) off that still-live ColdFusion session and
-    comes back with a FRESH token, which it exports for the reports to reuse.
+  • the holder's 6-minute reload keeps the ColdFusion session (CFID/CFTOKEN,
+    24h) from idle-timing-out, indefinitely;
+  • the storage_state re-hop (`?rqst=<TOKEN>&p=701`) RESTORES a session but does
+    NOT issue a new token. Measured with token-identity logging on 2026-08-27:
+    Lucy 1 and Lucy 3 held the same token id across every cycle inside the
+    re-mint margin and then expired anyway. Do not build on the re-hop;
+  • what actually mints is a machine that USES the console (Lucy 2 —
+    applicant_push / resume_pushing). When its token renews it pushes the new
+    one to every hold machine (`_push_token_to_fleet` →
+    `set_appstream_state`, by=holder-renewal). That is what the other runners
+    are living on.
 
-Measured on Lucy 1: token minted ~22:03 (expiry 12:03AM), re-minted by ~06:41
-the next morning with nobody touching it; no "NO rqst" lapse in the 31h since
-the 8/25 fix; and the 4am batch ran 47/50 clean (the 3 not-done were clock-gated,
-none AppStream). Ownerville's holder self-heals the same way.
+Observed on the control queue overnight into 2026-08-29: a `set_appstream_state
+… session VERIFIED here — the AppStream reports can run` landing every ~6 min
+without a break, straight through the 4am batch (04:08, 04:10, 05:07, 05:13).
+Yesterday's batch finished 45/47; the two failures (mobrium_list, sci_campaigns)
+are not AppStream reports.
 
-WHAT THIS WATCH MUST NOT DO. Until 2026-08-27 the probe drove the rcaptain FORM
-login (force_form_login=True) and cried "the self-heal is BROKEN" when it
-failed. But `d793ea3` had disabled that form for scheduled runs hours before, so
-no report had taken it since — the watch was failing a route nothing uses and
-waking people nightly while the batch ran fine. `selfheal_ok()` now drives the
-REUSE path the reports drive. A ping means a real report would fail right now.
+THE ONE CASE THAT STILL NEEDS A HUMAN: only the console-using machine renews, so
+if it stops, every machine goes dark together on a shared expiry. That is a real
+outage, it is what the alerting below must stay loud for, and it is why the
+quieting in this module is scoped to forecasts rather than to failures.
+[[reference_appstream_turnstile]]
+
+WHAT THIS WATCH MUST NOT DO — two false alarms, both now fixed.
+
+1. THE DEAD LOGIN ROUTE (fixed 2026-08-27, `e6bba32`). The probe drove the
+   rcaptain FORM login (force_form_login=True) and cried "the self-heal is
+   BROKEN" when it failed. But `d793ea3` had disabled that form for scheduled
+   runs hours before, so no report had taken it since — the watch was failing a
+   route nothing uses. `selfheal_ok()` now drives the REUSE path the reports
+   drive.
+
+2. THE IMPOSSIBLE PREDICTION (fixed 2026-08-29, this change). Health was
+   "does the stored rqst outlast the next 4am batch + 90 min?". The rqst TTL is
+   a fixed ~2 HOURS. No token can ever satisfy that test — a freshly minted,
+   perfectly healthy one least of all. Measured on Lucy 1 at 05:17 on 8/29,
+   mid-batch, with the holder re-exporting a VERIFIED session every six
+   minutes: "AppStream rqst token valid 0.7h more (until Aug 29 6:01AM)" —
+   against a required Aug 30 05:30. So `healthy` was structurally False every
+   hour of every day, every ping window escalated to the live probe, and any
+   single flake in that probe (stray Chrome, a busy profile, a slow console)
+   became a page for a session that was fine. That is the wolf Megan kept
+   hearing, and it could not stop on its own.
+
+   Health is now judged in the PRESENT TENSE — is the token valid *right now*,
+   and is the holder still exporting it? — because the holder re-mints on its
+   own and a lapsed stored token between runs is the normal, healthy state, not
+   a forecast of failure. Prediction is what cried wolf; it is gone from the
+   paging path.
+
+THE BAR FOR WAKING SOMEONE. A page now requires evidence that a report cannot
+get a session — never a forecast that it might not:
+  • an AppStream-backed report ACTUALLY failed today with a session/auth
+    reason (read from the orchestrator's own day_state), or
+  • the live probe failed on the reports' own path, twice, minutes apart.
 
 WHAT EVE DOES (everything but the click):
-  • PREDICT  — read the rqst expiry from the stored session (cheap, no network,
-               no Cloudflare risk).
-  • PING     — if the session won't survive to the next 4am run, ping Megan ONCE
-               with the exact re-seed command (a daily reminder until re-seeded).
+  • OBSERVE  — read the rqst expiry from the stored session + how recently the
+               holder re-exported it (cheap, no network, no Cloudflare risk).
+  • PING     — only on the evidence above, ONCE per window per day, with the
+               exact re-seed command.
   • RECOVER  — the moment the session is healthy again AND it's the morning
                window (a 4am failure), auto-rerun the AppStream reports via
                mini_control so they fill with no further human step.
@@ -52,6 +91,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import time
 from pathlib import Path
 
 from automations.shared.tableau_patchright import (
@@ -68,17 +108,39 @@ WATCH_STATE = Path(__file__).resolve().parents[2] / "output" / "appstream_watch_
 # specific someone, so the ping belongs where the rest of the day's failures
 # already land. chat_postMessage takes a channel id in the same slot as a
 # user id, so this needs no other change.
-ALERT_SLACK_TARGETS = ["U04G5HJBGFN", "U088E2KJEV8", "C0BK5PRG259"]
+# CHANNEL ONLY (Megan 2026-08-28: "it also shouldn't be DMing Eve and I").
+# This used to DM Megan + Eve as well, on the 2026-06-26 reasoning that a
+# re-seed needs SOMEBODY and two people beats one. That reasoning stopped
+# holding the moment #claudecorrections-and-requests became where the day's
+# failures land: the DM adds no reader, it just puts the same alert in three
+# places, and this particular alert has fired repeatedly while the batch was
+# being carried — so the cost of a false one is paid three times over, by name,
+# out of hours. The channel is the standing home for this
+# ([[project_corrections_slack_channel]]); a re-seed needs someone at a
+# keyboard, not a specific someone.
+ALERT_SLACK_TARGETS = ["C0BK5PRG259"]
 
-# Reports that depend on the AppStream recruiting console — auto-rerun on recovery.
-# FALLBACK ONLY. The live list is derived per-day by _appstream_reports_to_rerun()
-# from schedule_config + today's day-state; this is what we use when either of
-# those can't be read.
-APPSTREAM_REPORTS_FALLBACK = ["daily_focus"]
+# (There used to be an APPSTREAM_REPORTS_FALLBACK = ["daily_focus"] here, used
+# when the day-state or registry couldn't be read. Removed 2026-08-29: guessing
+# a report to re-run is the one thing this path must not do — daily_focus posts,
+# and a blind rerun off an unreadable state is how you double-post. The recovery
+# list now falls back to nothing and lets the alert carry the news.)
 
-# The session must stay valid through the 4am batch — require it to outlast 4am
-# by this margin so the token covers the whole daily_focus run, not just its start.
+# NOT a health test any more — see false alarm #2 in the module docstring. The
+# rqst TTL is ~2h, so "outlasts the next 4am batch by 90 min" is unsatisfiable by
+# construction and marked every healthy session stale. Kept only so the status
+# line can SAY what the stored token would and wouldn't cover; nothing pages on
+# it. session_check.py reads it for the same display-only purpose.
 SURVIVAL_BUFFER_MIN = 90
+
+# The live probe opens a real Chrome, so it inherits every transient this repo
+# already knows about: a stray human Chrome, a profile another report is holding,
+# a console that renders slowly. One flake used to equal one page. Ask twice,
+# minutes apart, and only believe a failure both times agree on — the holder
+# re-exports every ~6 min, so a genuine outage is still caught on the next pass
+# while a hiccup costs nobody their evening.
+PROBE_ATTEMPTS = 2
+PROBE_RETRY_SLEEP_S = 45
 # A recovery during this window means a 4am failure we should re-run; a recovery
 # outside it (e.g. an evening proactive re-seed) needs no rerun.
 # Ran to noon until 2026-08-25. Since the login form went human-gated the re-seed
@@ -213,14 +275,12 @@ def selfheal_ok(verbose: bool = False) -> tuple[bool, str]:
     since — the probe was failing a route nothing uses and waking people for it,
     every night, while the 4am batch ran clean.
 
-    What actually carries the batch is the session-holder: its 6-minute reload
-    keeps the ColdFusion session (CFID/CFTOKEN, 24h) alive, and when the ~2h
-    rqst lapses `_warm_appstream` falls through to the storage_state re-hop
-    (`?rqst=<TOKEN>&p=701`) and comes back with a fresh token — the behaviour
-    `6665dff` restored on 8/25. Measured on Lucy 1: token minted 22:03 → 12:03AM,
-    then re-minted by 06:41 with nobody touching it, and no lapse warning since
-    8/25 17:34. So the honest question is not "can we log in" — it is "does the
-    session the reports will use authenticate", which is what this now asks.
+    What actually carries the batch is the fleet: the console-using machine
+    renews the ~2h rqst and pushes it to every hold machine every few minutes
+    (see the module docstring — NOT the storage_state re-hop, which restores a
+    session without issuing a token). So the honest question is not "can we log
+    in" — it is "does the session the reports will use authenticate", which is
+    what this now asks.
 
     'profile busy' counts as healthy — another AppStream report is holding a
     live session right now, which is proof the path works."""
@@ -239,6 +299,83 @@ def selfheal_ok(verbose: bool = False) -> tuple[bool, str]:
     except Exception as e:                                      # noqa: BLE001
         return False, "stored session is dead: {}: {}".format(
             type(e).__name__, str(e)[:110])
+
+
+def probe_appstream_healthy(attempts: int = PROBE_ATTEMPTS,
+                            sleep_s: float = PROBE_RETRY_SLEEP_S) -> tuple[bool, str]:
+    """selfheal_ok() with a retry, so one flaky Chrome launch is not a page.
+
+    A single probe failure is not evidence of an outage: the probe drives a real
+    browser against a profile the 4am batch also uses, and 'profile in use',
+    a stray human Chrome and a slow-rendering console all surface here as an
+    exception. A genuinely dead session fails every time, so a second ask costs
+    nothing and removes the biggest remaining source of false pages."""
+    why = "probe never ran"
+    for i in range(max(1, attempts)):
+        ok, why = selfheal_ok()
+        if ok:
+            return True, (why if i == 0 else f"{why} (recovered on attempt {i + 1})")
+        if i < attempts - 1:
+            print(f"[appstream_watch] probe attempt {i + 1}/{attempts} failed "
+                  f"({why}) — retrying in {sleep_s:.0f}s")
+            time.sleep(sleep_s)
+    return False, f"{why} (failed {attempts}x)"
+
+
+# A report's own failure reason, when what failed was GETTING A SESSION rather
+# than anything about the report. These are the phrases the AppStream path
+# actually emits (tableau_patchright's re-seed message, the direct-session
+# guard, the console check) — kept narrow on purpose: a broad match here would
+# turn an ordinary report bug into a re-seed page, which is the same cry-wolf
+# in a new costume.
+_SESSION_FAIL_MARKERS = (
+    "re-seed", "reseed", "no rqst", "rqst token", "no stored", "storage_state",
+    "session is dead", "session is stale", "session stale", "not authenticated",
+    "appstream session", "#searchmc", "sign in", "signed out", "login page",
+)
+
+
+def appstream_session_failures(now: dt.datetime | None = None) -> list[tuple[str, str]]:
+    """(report_id, reason) for AppStream-backed reports that ACTUALLY failed
+    today because they could not get a session. The ground truth this watch was
+    missing: it used to page on a forecast while never once reading whether a
+    report had in fact failed.
+
+    BLOCKED_SESSION counts on its own — the status means exactly this. FAILED
+    counts only when its reason reads like an auth/session failure, so a report
+    that died of its own bug does not ask anyone for a re-seed.
+
+    Returns [] on any error: this is an ADDITIONAL alarm, and a broken read of
+    it must never be the thing that wakes someone."""
+    try:
+        from automations.day_orchestrator import registry
+        from automations.day_orchestrator import state as day_state
+        day = (now or _now()).date()
+        cfg = registry.load_config()
+        appstream_ids = {r.report_id for r in registry.scheduled_today(cfg, day)
+                         if r.source_type == "appstream"}
+        if not appstream_ids:
+            return []
+        state_file = day_state.STATE_DIR / f"{day.isoformat()}.json"
+        if not state_file.exists():
+            return []
+        raw = json.loads(state_file.read_text(encoding="utf-8"))
+        out = []
+        for rid, rs in (raw.get("reports") or {}).items():
+            if rid not in appstream_ids:
+                continue
+            status = rs.get("status")
+            reason = (rs.get("last_reason") or "").strip()
+            if status == day_state.BLOCKED_SESSION:
+                out.append((rid, reason or "BLOCKED_SESSION"))
+            elif status == day_state.FAILED and any(
+                    m in reason.lower() for m in _SESSION_FAIL_MARKERS):
+                out.append((rid, reason))
+        return sorted(out)
+    except Exception as e:                                      # noqa: BLE001
+        print(f"[appstream_watch] (couldn't read today's report failures: "
+              f"{type(e).__name__}: {str(e)[:100]})")
+        return []
 
 
 def _ov_reseed_cmd() -> str:
@@ -286,17 +423,27 @@ def _alert(text: str, dry_run: bool) -> None:
 
 
 def _appstream_reports_to_rerun(now: dt.datetime | None = None) -> list[tuple[str, str]]:
-    """(report_id, machine) for every AppStream-backed report today's batch did
-    NOT finish — what a morning re-seed should pick up — in run order.
+    """(report_id, machine) for the AppStream-backed reports a session failure
+    actually COST us today — what a re-seed should pick up — in run order.
 
     This was a hardcoded ["daily_focus"], so a re-seed landing after 4am
     recovered exactly one of the AppStream reports and left the rest to be
     re-queued by hand, every morning, since the 2026-08-20 release human-gated
     the login form (Eve 2026-08-25: applicant_sync_morning +
     recruiter_retention_daily, every day). Derived now from the same two files
-    the batch itself uses, which also settles the two ways a list like this goes
+    the batch itself uses, which also settles the ways a list like this goes
     wrong:
 
+      • ONLY reports that reached a FAILED / BLOCKED_SESSION end-state. It used
+        to be "everything that isn't DONE", which quietly includes PENDING —
+        reports the orchestrator has not reached yet and still owns. On
+        2026-08-29 a recovery fired mid-batch at 05:29 and re-queued
+        other_office_knocks, which the day-state listed as `pending -
+        daily_metrics`: waiting on a dependency. The rerun path runs a report
+        DIRECTLY and does not check deps (mini_control._action_rerun), so that
+        is a dependency-violating early run of a report that posts to Slack —
+        and [[feedback_never_post_blank]] is exactly the cost. A report the
+        batch has not attempted is not something a re-seed needs to recover.
       • It must not re-run a report that already reached DONE. Several of these
         post to Slack, and the rqst token only lives ~2h — a wasted run can cost
         a real one.
@@ -310,23 +457,30 @@ def _appstream_reports_to_rerun(now: dt.datetime | None = None) -> list[tuple[st
         from automations.day_orchestrator import state as day_state
         day = (now or _now()).date()
         cfg = registry.load_config()
-        pending = [r for r in registry.scheduled_today(cfg, day)
-                   if r.source_type == "appstream"]
-        if not pending:
+        scheduled = {r.report_id: r for r in registry.scheduled_today(cfg, day)
+                     if r.source_type == "appstream"}
+        if not scheduled:
             return []
         state_file = day_state.STATE_DIR / f"{day.isoformat()}.json"
-        if state_file.exists():
-            raw = json.loads(state_file.read_text(encoding="utf-8"))
-            done = {rid for rid, rs in raw.get("reports", {}).items()
-                    if rs.get("status") == day_state.DONE}
-            pending = [r for r in pending if r.report_id not in done]
-        pending.sort(key=lambda r: (r.order if r.order is not None else 10_000,
-                                    r.report_id))
-        return [(r.report_id, r.machine) for r in pending]
+        if not state_file.exists():
+            # No day-state means the batch has not recorded anything, so nothing
+            # has failed yet — there is nothing for a re-seed to recover.
+            return []
+        raw = json.loads(state_file.read_text(encoding="utf-8"))
+        failed_states = {day_state.FAILED, day_state.BLOCKED_SESSION}
+        hit = [scheduled[rid] for rid, rs in (raw.get("reports") or {}).items()
+               if rid in scheduled and rs.get("status") in failed_states]
+        hit.sort(key=lambda r: (r.order if r.order is not None else 10_000,
+                                r.report_id))
+        return [(r.report_id, r.machine) for r in hit]
     except Exception as e:
-        print(f"[appstream_watch] (couldn't derive the rerun list, falling back "
-              f"to {APPSTREAM_REPORTS_FALLBACK}: {type(e).__name__}: {str(e)[:100]})")
-        return [(rid, _registry_default_machine()) for rid in APPSTREAM_REPORTS_FALLBACK]
+        # Fall back to NOTHING, not to a report. A recovery rerun is a
+        # convenience; firing one on a guess can double-post. The alert still
+        # goes out either way, so a human still learns about it.
+        print(f"[appstream_watch] (couldn't derive the rerun list, "
+              f"recovering nothing automatically: "
+              f"{type(e).__name__}: {str(e)[:100]})")
+        return []
 
 
 def _registry_default_machine() -> str:
@@ -374,17 +528,38 @@ def _reseed_alert_text(stale, when: str) -> str:
     return "\n".join(lines)
 
 
+def _real_failure_text(failures, reseed: str) -> str:
+    """The page for a session failure that has ALREADY cost a report. Says which
+    reports, and what they said — so the reader can tell in one line that this
+    is the real thing and not the nightly countdown this alert used to send."""
+    n = len(failures)
+    lines = [f"⚠️ *AppStream session failure* — {n} report"
+             f"{'' if n == 1 else 's'} could not open the recruiting console "
+             f"today and did NOT fill:"]
+    for rid, reason in failures:
+        lines.append(f"\n• *{rid}* — {reason[:200]}")
+    lines.append(f"\nRe-seed from any machine you're at (clear the check once):"
+                 f"\n```{reseed}```")
+    lines.append("The moment it's healthy I'll auto-re-run these — "
+                 "you don't have to touch anything else.")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # The watch — one evaluation
 # ---------------------------------------------------------------------------
 
 def watch(dry_run: bool = False, probe: bool = True) -> dict:
     """One evaluation across BOTH sessions (AppStream recruiting console +
-    ownerville/Tableau). Predict / ping / recover. Safe to call every few minutes
-    (throttled to one ping + one rerun-batch per day). Never raises.
+    ownerville/Tableau). Observe / ping / recover. Safe to call every few minutes
+    (throttled to one ping per window + one rerun-batch per day). Never raises.
 
-    probe=False skips the live AppStream self-heal check and judges by the stored
-    token's expiry alone — the old, cry-wolf behaviour. Debugging only."""
+    AppStream can only page on EVIDENCE: a report that actually failed on a
+    session today, or a live probe that failed twice on the reports' own path.
+    The stored token's timestamp alone never pages it — that was the cry-wolf.
+
+    probe=False drops both evidence sources, leaving only the stored timestamp,
+    which by the rule above means AppStream cannot page at all. Debugging only."""
     state = _load_state()
     now = _now()
     today = now.date().isoformat()
@@ -411,16 +586,26 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
                    and state.get("alerted_daytime_for") != today)
     ping_due = evening_due or prebatch_due or daytime_due
 
-    stale = []   # [(status, reseed_cmd), ...] for sessions that won't survive the batch
-    # The subset of `stale` a LIVE probe just failed, i.e. "a report would fail
-    # right now" rather than "the stored token is past its date". Only these earn
-    # the daytime ping: ownerville is judged by expiry alone, and an unprobed
-    # 8am ping about it every morning is the cry-wolf this window exists to avoid.
+    # [(status, reseed_cmd), ...] for sessions that are UNHEALTHY RIGHT NOW —
+    # not "won't survive the batch", which is what this used to mean and what
+    # made it fire on healthy sessions. Ownerville was quietly caught by the same
+    # forecast: its 24h token is refreshed around 05:11 each morning, i.e.
+    # perpetually just under a 4am+90min threshold of 05:30, so it too was stale
+    # every single evening. Both are judged in the present tense now.
+    stale = []
+    # The subset of `stale` a LIVE probe just failed. Only these earn the daytime
+    # ping: ownerville is judged by its stored expiry (no probe), and an unprobed
+    # 8am ping about it every morning would be a brand-new false alarm.
     probed_stale = []
     healthy_all = True
     state_paths = {"appstream": APPSTREAM_STORAGE_STATE, "ownerville": OWNERVILLE_STORAGE_STATE}
     for key, stt, reseed, reports in sessions:
-        token_ok = bool(stt["ok"] and stt["rqst_expiry"] and stt["rqst_expiry"] >= threshold)
+        # PRESENT TENSE, not a forecast. `stt["ok"]` is "the stored token is
+        # valid right now". It used to be "…and still valid after tomorrow's
+        # 4am batch", which the ~2h rqst TTL makes impossible — see false alarm
+        # #2 in the module docstring. The holder re-mints long before 4am, so a
+        # token that cannot reach it is the normal state, not a fault.
+        token_ok = bool(stt["ok"])
         age = _export_age_min(state_paths[key])
         export_fresh = age is not None and age <= STALE_EXPORT_MIN
         # A future-dated token whose file has gone stale means the holder stopped
@@ -439,7 +624,7 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
         # report open the console RIGHT NOW, on the path a report actually uses?
         probe_failed = False
         if key == "appstream" and not healthy and ping_due and probe:
-            probe_ok, why = selfheal_ok()
+            probe_ok, why = probe_appstream_healthy()
             if probe_ok:
                 healthy = True
                 stt = {**stt, "reason": "{} reachable — {} (stored token: {})"
@@ -465,7 +650,14 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
                 state[f"reran_{key}"] = today
             state[f"last_ok_{key}"] = True
         else:
-            stale.append((stt, reseed))
+            # THE INVARIANT: AppStream reaches the paging list ONLY on a failed
+            # LIVE probe — never on the stored token alone. Its token is expired
+            # or short more often than not (2h TTL, holder re-mints), so letting
+            # the file's timestamp put it here is precisely the wolf. Ownerville
+            # keeps its file-based verdict: its token is 24h, so "expired right
+            # now with no fresh export" already means the holder is down.
+            if key != "appstream" or probe_failed:
+                stale.append((stt, reseed))
             if probe_failed:
                 probed_stale.append((stt, reseed))
             state[f"last_ok_{key}"] = False
@@ -475,9 +667,18 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
     #   • 3am — a last-chance check ~1h before the 4am batch, catching a session
     #           that went stale AFTER the evening ping (which used to surface only
     #           as a 7am surprise). Both re-seeds need a human at the mini.
-    # AppStream can only reach here after FAILING the live self-heal probe, so a
-    # ping about it is a real "the automation cannot log in", not a countdown.
-    if stale:
+    # AppStream can only reach here after FAILING the live probe twice, so a ping
+    # about it is a real "the automation cannot open the console", not a countdown.
+    #
+    # THE REAL-OUTAGE PATH, and the only one that is not window-gated. A report
+    # that already failed for want of a session is not a forecast to sit on
+    # until 6pm — it is today's data missing, now. Once per day so a re-detected
+    # failure (or a resume) doesn't re-post.
+    real_failures = appstream_session_failures(now) if probe else []
+    if real_failures and state.get("alerted_realfail_for") != today:
+        _alert(_real_failure_text(real_failures, _reseed_cmd()), dry_run)
+        state["alerted_realfail_for"] = today
+    elif stale:
         if daytime_due and probed_stale:
             _alert(_reseed_alert_text(
                 probed_stale,
@@ -495,12 +696,19 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
     _save_state(state)
     return {"sessions": {stt["what"]: stt["reason"] for _, stt, _, _ in sessions},
             "stale": [stt["what"] for stt, _ in stale],
-            "survives_next_4am_batch": healthy_all,
-            "next_threshold": threshold.isoformat(timespec="minutes")}
+            # Renamed from "survives_next_4am_batch": nothing is forecast any
+            # more, and the old name is what made an impossible prediction read
+            # like a health verdict for as long as it did.
+            "healthy_now": healthy_all,
+            "failed_reports": [rid for rid, _ in real_failures],
+            # Display only — what the stored token would have to reach to cover
+            # the whole next batch on its own. It never can (2h TTL); the holder
+            # is what covers it. Nothing pages on this.
+            "would_need_token_until": threshold.isoformat(timespec="minutes")}
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Predict + recover the AppStream + ownerville sessions")
+    ap = argparse.ArgumentParser(description="Watch + recover the AppStream + ownerville sessions")
     ap.add_argument("--once", action="store_true", help="one evaluation (default)")
     ap.add_argument("--status", action="store_true",
                     help="print BOTH session statuses (AppStream + ownerville) + exit")
@@ -508,11 +716,13 @@ def main(argv=None) -> int:
                     help="send a test Slack DM to the alert recipients to prove the path")
     ap.add_argument("--dry-run", action="store_true", help="no Slack / no enqueue")
     ap.add_argument("--probe", action="store_true",
-                    help="run the AppStream self-heal probe now and exit (drives "
-                         "the unattended rcaptain login -> re-seeds this machine)")
+                    help="run the AppStream probe now and exit — opens the "
+                         "console on the SAME reuse path the 4am reports use "
+                         "(no login form); exit 0 = a report could run now")
     ap.add_argument("--no-probe", action="store_true",
-                    help="judge AppStream by the stored token's expiry alone "
-                         "(the old cry-wolf behaviour - debugging only)")
+                    help="skip the live probe AND the day_state failure read, "
+                         "leaving only the stored token's timestamp - debugging "
+                         "only; AppStream can never page in this mode")
     a = ap.parse_args(argv)
     if a.status:
         for path, what in ((APPSTREAM_STORAGE_STATE, "AppStream"),
@@ -528,12 +738,17 @@ def main(argv=None) -> int:
         return 0
     if a.probe:
         ok, why = selfheal_ok(verbose=True)
-        print("[appstream_watch] self-heal probe: {} — {}".format(
-            "OK" if ok else "BROKEN", why))
+        # "OK / CANNOT OPEN" — never "BROKEN". The old word named a self-heal
+        # that had been switched off on purpose, and that wording is half of why
+        # a passing batch read as an outage for days.
+        print("[appstream_watch] console probe: {} — {}".format(
+            "OK" if ok else "CANNOT OPEN", why))
         return 0 if ok else 1
     res = watch(dry_run=a.dry_run, probe=not a.no_probe)
-    print(f"[appstream_watch] survives next 4am batch: {res['survives_next_4am_batch']} "
-          f"(stale: {res['stale'] or 'none'}; needs valid until {res['next_threshold']})")
+    print(f"[appstream_watch] healthy now: {res['healthy_now']} "
+          f"(stale: {res['stale'] or 'none'}; "
+          f"reports that failed on a session today: "
+          f"{', '.join(res['failed_reports']) or 'none'})")
     return 0
 
 

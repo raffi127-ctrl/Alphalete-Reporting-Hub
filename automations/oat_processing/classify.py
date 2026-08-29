@@ -33,6 +33,7 @@ Decision tree (first match wins):
 from __future__ import annotations  # Lucy 2 / mini run Python 3.9
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -136,3 +137,45 @@ def classify(a: Applicant, today: dt.date, cfg=config) -> Decision:
 
     # 6. Nothing special -> just send.
     return Decision(Action.SEND_AI, f"{name}: fresh applicant — send to AI", a)
+
+# --- Interview-history verdicts (Carlos, 2026-08-28) ----------------------- #
+# Read off the duplicate table's Status column ("Following Applicants found with
+# the same email address or phone number"), which is what a recruiter reads
+# before deciding. Two outcomes that look identical to a naive matcher mean
+# OPPOSITE things:
+#
+#   "1st Interview - No Show", "rejected", "not qualified"
+#       -> they never actually got interviewed. Re-text the await message and
+#          give them another shot.
+#   "delay disqualified"
+#       -> we DID interview them and chose not to advance them to a 2nd round.
+#          No point texting again; remove as a duplicate.
+#
+# Anything else with interview history is left UNDECIDED on purpose — a wrong
+# guess here either texts someone we already rejected or throws away a live
+# candidate, and neither is recoverable from the log.
+RETEXT_STATUS = re.compile(
+    r"no[\s-]?show|rejected|not\s+qualified", re.I)
+DISQUALIFIED_STATUS = re.compile(
+    r"delay\s*disqualif", re.I)
+
+
+def interview_verdict(status_text: str):
+    """'retext' | 'remove_duplicate' | None (undecided) for one Status cell."""
+    t = status_text or ""
+    if DISQUALIFIED_STATUS.search(t):
+        return "remove_duplicate"
+    if RETEXT_STATUS.search(t):
+        return "retext"
+    return None
+
+
+def verdict_for_history(statuses) -> str:
+    """Verdict across every prior record. A disqualification anywhere wins: if we
+    already interviewed and passed on them, an older no-show does not re-open it."""
+    verdicts = [interview_verdict(s) for s in (statuses or [])]
+    if "remove_duplicate" in verdicts:
+        return "remove_duplicate"
+    if "retext" in verdicts:
+        return "retext"
+    return ""

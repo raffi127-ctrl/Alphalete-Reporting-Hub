@@ -2,7 +2,10 @@
 
 Double-click the "Session Check" button on the mini's Desktop to run this. It:
   1. Checks the ownerville/Tableau session (the one the holder keeps warm).
-  2. Prints a clear ✅ / ⚠️ summary (does it last to the next 4am batch?).
+  2. Prints a clear ✅ / ⚠️ summary. Ownerville (24h token) is judged on whether
+     it lasts to the next 4am batch; AppStream (~2h token, re-minted by the
+     holder) is judged on whether it is live RIGHT NOW — asking it to cover
+     tomorrow's batch is a question it can never answer yes to.
   3. If ownerville WON'T survive, it restarts the session-holder so its login
      window comes up for you to log into.
   4. Checks the AppStream recruiting session too. It does NOT self-heal:
@@ -34,7 +37,7 @@ def main() -> int:
     print("════════════════════════════════════════════════")
     print("   MINI SESSION CHECK")
     print(f"   {now:%a %b %-d  %-I:%M %p}   "
-          f"(needs to last until {threshold:%-I:%M %p})")
+          f"(ownerville needs to last until {threshold:%-I:%M %p})")
     print("════════════════════════════════════════════════\n")
 
     # Ownerville / Tableau — the one session the holder keeps warm.
@@ -52,19 +55,32 @@ def main() -> int:
     # and nobody knew until they failed, because this screen still said it
     # self-heals. A button that reports a session it never reads is worse than
     # no button.
+    # Judged in the PRESENT TENSE, unlike ownerville above. AppStream's rqst TTL
+    # is ~2h, so it can NEVER reach `threshold` (next 4am + 90 min) — this button
+    # asked an impossible question and answered "⚠️ needs a fresh login" every
+    # single time, on a session the holder was re-minting fine. That is the same
+    # bug appstream_watch was paging on; see false alarm #2 in its module
+    # docstring. What carries the batch is the holder's re-hop, not the token
+    # sitting on disk, so the honest question is "is it valid right now".
     ap = session_status(APPSTREAM_STORAGE_STATE, "AppStream (recruiting)")
-    ap_survives = bool(ap["ok"] and ap["rqst_expiry"]
-                       and ap["rqst_expiry"] >= threshold)
+    ap_survives = bool(ap["ok"])
     print(f"  {'✅' if ap_survives else '⚠️ '} AppStream (recruiting)")
-    print(f"      {ap['reason']}\n")
+    print(f"      {ap['reason']}")
+    if ap_survives:
+        print("      (the session-holder re-mints this every ~2h on its own — "
+              "a short window here is normal, not a problem)")
+    print()
 
     if ov_survives and ap_survives:
-        print("✅  Both sessions are good through tomorrow's 4am run.")
+        print("✅  Ownerville is good through tomorrow's 4am run, and AppStream "
+              "is live right now.")
         print("    You're set — nothing to do.\n")
         return 0
     if not ap_survives:
         print("──────────────────────────────────────────────────")
-        print("  AppStream needs a fresh login — it cannot re-seed itself.")
+        print("  AppStream has no live token this minute. The session-holder")
+        print("  normally re-mints one within a few minutes — check again")
+        print("  before logging in by hand. If it stays empty, re-seed it:")
         print("  Run:  PYTHONPATH=. .venv/bin/python -m "
               "automations.shared.tableau_patchright --appstream-login")
         print("  and clear the 'verify you're human' box.")

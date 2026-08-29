@@ -54,7 +54,8 @@ from automations.shared.tableau_patchright import (
 from automations.recruiting_report import fetch_office
 
 from . import config
-from .classify import Applicant, Action, Decision, classify
+from .classify import (Applicant, Action, Decision, classify,
+                       verdict_for_history as classify_history)
 
 
 def _log(msg: str) -> None:
@@ -387,6 +388,26 @@ def _click_first(page, labels, timeout: int = 6000) -> bool:
     return False
 
 
+_DUP_STATUS_JS = """() => { const out=[]; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();
+  for (const t of document.querySelectorAll('table')) {
+    const h=[...(t.rows[0]||{cells:[]}).cells].map(c=>norm(c.innerText).toLowerCase());
+    const si=h.findIndex(x=>x.indexOf('status')>=0); if (si<0) continue;
+    for (const r of [...t.rows].slice(1)) {
+      const v=norm((r.cells[si]||{}).innerText); if (v) out.push(v); } }
+  return out; }"""
+
+
+def read_dup_statuses(page):
+    """Status cells from the 'Following Applicants found with the same email
+    address or phone number' box — the interview history a recruiter reads before
+    deciding whether to re-text or remove. Header matched by SUBSTRING; an exact
+    'status' match missed the table entirely."""
+    try:
+        return page.evaluate(_DUP_STATUS_JS) or []
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _has_dup_signal(x: Applicant) -> bool:
     return bool(x.override_button or x.correspondence_blocked or x.interview_future
                 or x.interview_past_noshow or x.sent_to_call_list_today)
@@ -551,6 +572,48 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     if _try_overwrite_send(page):
         _log(f"    ✅ SENT via overwrite: {a.first_name} {a.last_name}")
         return "sent_override"
+    # The ATS refuses. Before the generic date-based fallbacks, read the INTERVIEW
+    # HISTORY — Carlos 2026-08-28. "Delay disqualified" means we interviewed them
+    # and chose not to advance them, so texting again is pointless; "no show /
+    # rejected / not qualified" means they never really got interviewed, so they
+    # deserve the await text rather than a silent removal. Getting these two
+    # backwards either pesters someone we already passed on or throws away a live
+    # candidate.
+    _verdict = classify_history(read_dup_statuses(page))
+    if _verdict == "remove_duplicate":
+        if _perform_remove(page, DUP_REASON):
+            _log(f"    🗑 removed — interviewed and disqualified (no re-text): "
+                 f"{a.first_name} {a.last_name}")
+            return "removed"
+    elif _verdict == "retext":
+        # A no-show / not-qualified was never actually interviewed, so if the ATS
+        # will not let us override them onto the call list we TEXT them instead of
+        # dropping them (Carlos 2026-08-28). Only fall back to flagging when the
+        # send itself could not be completed — never silently.
+        ph_now = (a.cell_phone or a.phone or "").strip()
+        if not ph_now:
+            got_ph, _d = lookup_resume_phone(page)
+            if got_ph:
+                _fill_phone_field(page, got_ph)
+                ph_now = got_ph
+        if ph_now:
+            role = _role_from_position(read_posting_title(page, a.position))
+            st, det = retext_applicant(page, a.first_name, a.last_name, ph_now,
+                                       role, do_send=True)
+            if st == "sent":
+                _log(f"    📲 re-texted (no-show / not qualified — never truly "
+                     f"interviewed): {a.first_name} {a.last_name}")
+                if _perform_remove(page, DUP_REASON):
+                    return "retext_removed"
+                return "retext_sent"
+            _log(f"    ⚑ re-text could not send ({st}: {str(det)[:70]}) — flagging: "
+                 f"{a.first_name} {a.last_name}")
+        else:
+            _log(f"    ⚑ no number for the re-text — flagging: "
+                 f"{a.first_name} {a.last_name}")
+        _flag_retext(a, None)
+        return "flag_retext"
+
     # genuinely can't send → >1wk re-text (armed: text+remove, else flag) else
     # auto-remove (recent dup).
     lc = _parse_last_corr(_body(page))
@@ -600,9 +663,61 @@ def do_remove_duplicate(page, a: Applicant, live: bool) -> str:
 
 _TEMPLATE_NAME = "FOR LUCY"
 
+# The await/re-engagement copy, given verbatim by Carlos 2026-08-28. Kept HERE so
+# the re-text no longer depends on a saved template: office 11580's Load Template
+# modal holds only three templates (BG still needed / IN PERSON / ZOOM CODE) and
+# has NO "FOR LUCY" at all, so every automated re-text failed with "FOR LUCY
+# Select link not found" and the applicant was flagged instead of contacted.
+AWAIT_TEXT = ("Hey {first}, this is Elena with Vantura! We received your "
+              "application for the {role} role and would love to set up a quick "
+              "20-minute Zoom interview. Are you available?")
+
+# AppStream's own placeholders are applicantFirstName / adPostingTitle — NOT the
+# NAME / xxxx this module used to substitute. A template loaded and left
+# unsubstituted would have texted the applicant the literal word
+# "applicantFirstName".
+_PLACEHOLDERS_FIRST = (r"applicantFirstName", r"\bNAME\b")
+_PLACEHOLDERS_ROLE = (r"adPostingTitle", r"xxxx")
+
+
+def _fill_placeholders(text: str, first: str, role: str) -> str:
+    out = text or ""
+    for pat in _PLACEHOLDERS_FIRST:
+        out = re.sub(pat, first, out)
+    for pat in _PLACEHOLDERS_ROLE:
+        out = re.sub(pat, role, out)
+    return out
+
 
 def _digits(s: str) -> str:
     return re.sub(r"\D", "", s or "")
+
+
+_SUBJECT_ROLE_RE = re.compile(
+    r"new application for\s+(.+?)\s*(?:,\s*[A-Za-z .]+,\s*[A-Z]{2}\b|$)", re.I)
+
+
+def read_posting_title(page, fallback: str = "") -> str:
+    """The role the applicant applied to.
+
+    `emailApplicantSubject` is blank on plenty of records (every one walked on
+    2026-08-28), which made _role_from_position fall back to the word "open" —
+    so a re-text would have read "we received your application for the open
+    role". The title is still on the page: the source email's subject line says
+    "[Action required] New application for <TITLE>, <City>, <ST>", and Indeed's
+    own panel repeats it. Read those before giving up."""
+    if (fallback or "").strip():
+        return fallback
+    for fr in list(page.frames):
+        try:
+            txt = fr.evaluate("() => document.body ? document.body.innerText : ''") or ""
+        except Exception:  # noqa: BLE001
+            continue
+        for line in txt.splitlines():
+            m = _SUBJECT_ROLE_RE.search(" ".join(line.split()))
+            if m and len(m.group(1)) > 3:
+                return m.group(1).strip()
+    return ""
 
 
 def _role_from_position(position: str) -> str:
@@ -750,6 +865,14 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     _SET_JS = r"""(args) => {
         const nm=args[0], phone=args[1], win=args[2];
         const out={date:'', term:false, by:'', opts:[]};
+        // Reset the TYPE filter first. It persists across uses of the widget, so a
+        // filter left on (e.g. "Await Call") silently hides the applicant's thread
+        // and the re-text dies as no_thread even though the conversation exists —
+        // observed 2026-08-28 when a diagnostic left it set.
+        const tf=document.querySelector("#sms_type_filter,[name='sms_type_filter']");
+        if(tf){ const all=[...tf.options].find(o=>/^all$/i.test(o.text.trim()));
+            if(all && tf.value!==all.value){ tf.value=all.value;
+                tf.dispatchEvent(new Event('change',{bubbles:true})); } }
         const d=document.querySelector("#sms_date_filter, [name='sms_date_filter']");
         if(d){ out.opts=[...d.options].map(o=>o.text.trim());
             const o=[...d.options].find(o=>o.text.trim().toLowerCase()===win.toLowerCase())
@@ -848,8 +971,39 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     _, sel, _tries = _xframe_wait(page, _SELECT_TEMPLATE_XPATH, timeout_s=12.0,
                                   on_retry=_type_filter)
     if sel is None:
+        # No saved template by that name in this office — compose the copy
+        # ourselves rather than abandoning the applicant. This is the normal path
+        # for office 11580, whose template modal has no await template at all.
+        _log("    [retext] no saved template — composing the await copy directly")
+        body = AWAIT_TEXT.format(first=first, role=role)
+        cf0, _ = _xframe(page, "#ta_smsChat, textarea[name='ta_smsChat']")
+        cf0 = cf0 or w
+        wrote = cf0.evaluate(
+            """(msg) => { const ta = document.querySelector(
+                   "#ta_smsChat, textarea[name='ta_smsChat']")
+                || [...document.querySelectorAll('textarea')]
+                     .find(t => /Write message/i.test(t.placeholder || ''));
+               if (!ta) return '';
+               ta.value = msg;
+               ta.dispatchEvent(new Event('input', { bubbles: true }));
+               return ta.value; }""", body)
+        if not wrote:
+            _close_sms_panel(page)
+            return "retext_err", "compose box not found (no template, direct write failed)"
+        _log(f"    [retext] composed -> {wrote[:150]!r}")
+        if not do_send:
+            _close_sms_panel(page)
+            return "retext_dry", wrote
+        sfr2, sbtn2 = _xframe(page, "#btn-sms-send")
+        try:
+            (sbtn2 or w.locator("#btn-sms-send").first).click(timeout=5000,
+                                                              no_wait_after=True)
+            page.wait_for_timeout(2200)
+        except Exception as e:  # noqa: BLE001
+            _close_sms_panel(page)
+            return "retext_err", f"send click: {type(e).__name__}"
         _close_sms_panel(page)
-        return "retext_err", "FOR LUCY Select link not found"
+        return "sent", wrote
     if _tries:
         _log(f"    [retext] template row appeared after {_tries} extra poll(s) "
              f"— a single look would have abandoned this re-text")
@@ -868,7 +1022,11 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
                     || [...document.querySelectorAll('textarea')]
                          .find(t => /NAME|Vantura/.test(t.value||''));
             if (!ta) return '';
-            let v = (ta.value || '').replace(/\bNAME\b/g, first).replace(/xxxx/g, role);
+            let v = (ta.value || '')
+                .replace(/applicantFirstName/g, first)
+                .replace(/\bNAME\b/g, first)
+                .replace(/adPostingTitle/g, role)
+                .replace(/xxxx/g, role);
             ta.value = v; ta.dispatchEvent(new Event('input', { bubbles: true }));
             return v;
         }""", [first, role])
@@ -876,7 +1034,8 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         _close_sms_panel(page)
         return "retext_err", "compose box not found after template load"
     _log(f"    [retext] composed -> {filled[:130]!r}")
-    if "NAME" in filled or "xxxx" in filled:
+    if any(t in filled for t in ("applicantFirstName", "adPostingTitle",
+                                        "NAME", "xxxx")):
         _log("    [retext] WARN: placeholder still present after fill")
 
     if not do_send:
@@ -1194,18 +1353,35 @@ def retext_by_name(page, first, last, phone=""):
     except Exception as e:  # noqa: BLE001
         return "search_err", f"{type(e).__name__}"
     # Open the matching applicant from the results.
-    full = f"{first} {last}".lower()
+    #
+    # Match FIRST and LAST independently, order-free and accent-folded. Looking for
+    # the literal "first last" substring failed on every applicant: the results
+    # grid renders "Last, First", so the needle never appeared, and a name like
+    # "Darisleidy Remedios González" also lost to the accent. Both came back
+    # not_found and NO text was sent (2026-08-28) — the applicant was silently
+    # skipped rather than re-engaged, which is the exact failure this flow exists
+    # to prevent.
+    f_norm, l_norm = _deaccent(first).lower(), _deaccent(last).lower()
     opened = page.evaluate(
-        """(full) => {
-            const a = [...document.querySelectorAll('a')].find(e =>
-                (e.innerText||'').toLowerCase().includes(full));
-            if (a) { a.click(); return (a.innerText||'').trim().slice(0,40); }
-            return null; }""", full)
+        """(args) => {
+            const [f, l] = args;
+            const fold = s => (s || '')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+            const links = [...document.querySelectorAll('a')];
+            // prefer a link carrying BOTH names; fall back to the last name alone
+            const both = links.find(e => {
+                const t = fold(e.innerText);
+                return t.includes(f) && t.includes(l); });
+            const one = both || links.find(e => {
+                const t = fold(e.innerText);
+                return l.length > 2 && t.includes(l) && t.length < 60; });
+            if (one) { one.click(); return (one.innerText || '').trim().slice(0, 40); }
+            return null; }""", [f_norm, l_norm])
     if not opened:
-        return "not_found", f"no search result for {full!r}"
+        return "not_found", f"no search result for {first} {last}"
     page.wait_for_timeout(2500)
     a = read_current_applicant(page)
-    role = _role_from_position(a.position)
+    role = _role_from_position(read_posting_title(page, a.position))
     ph = phone or a.cell_phone or a.phone
     _log(f"    [retext-name] opened {a.first_name} {a.last_name} role={role!r} "
          f"phone={ph!r}")

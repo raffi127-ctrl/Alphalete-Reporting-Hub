@@ -354,5 +354,155 @@ class FiberCarriesBothSections(unittest.TestCase):
         self.assertTrue(config.kind_runs_on("daily_knocks", tuesday))
 
 
+class DailyBoardColumns(unittest.TestCase):
+    """Los pedidos de Eve del 2026-08-28: dia de la semana en la banda, % de
+    talk-to sobre knocks, cuenta de reps que golpearon (>=21) y reps
+    numerados."""
+
+    def _rows(self, *specs):
+        from automations.total_knocks import pull as K
+        out = []
+        for rep, knocks, talk in specs:
+            r = {c: "" for c in K.SHEET_COLUMNS}
+            r.update({K.COL_REP: rep, K.COL_TOTAL_KNOCKS: knocks,
+                      K.COL_TOTAL_TALK_TO: talk,
+                      K.COL_FIRST_KNOCK: "10:00 AM",
+                      K.COL_LAST_KNOCK: "7:00 PM"})
+            out.append(r)
+        return out
+
+    def _office(self, *specs):
+        from automations.total_knocks import render as R
+        header, table = R._table_from_rows(self._rows(*specs))
+        return R._combined_sub(header, table)
+
+    def test_the_band_names_the_weekday(self):
+        from automations.total_knocks import render as R
+        self.assertEqual(R._title_date(dt.date(2026, 8, 27)),
+                         "Thursday, August 27, 2026")
+
+    def test_a_multi_day_band_keeps_its_range(self):
+        """Dos nombres de dia en una banda es ruido, no contexto."""
+        from automations.total_knocks import render as R
+        self.assertEqual(R._title_span(dt.date(2026, 8, 18),
+                                       dt.date(2026, 8, 23)),
+                         "August 18–23, 2026")
+
+    def test_talk_to_pct_is_chans_number(self):
+        """5466 knocks / 1043 talk-tos = 19.1% (el ejemplo de Eve)."""
+        from automations.total_knocks import render as R
+        totals = R._combined_totals("TOTAL", self._office(("Chan", 5466, 1043)))
+        at = R.COMBINED_KNOCKS_HEADERS.index(R.COL_TALK_TO_PCT)
+        self.assertEqual(totals[at], "19.1%")
+        summary = KD.daily_summary_row("CHAN PARK",
+                                       self._rows(("Chan", 5466, 1043)))
+        self.assertEqual(
+            summary[KD.DAILY_SUMMARY_HEADERS.index("% Talk To's per Knocks")],
+            "19.1%")
+
+    def test_the_office_pct_is_not_an_average_of_the_reps(self):
+        """Suma sobre suma: un dia de 30 knocks no puede pesar igual que uno
+        de 300."""
+        from automations.total_knocks import render as R
+        sub = self._office(("a", 300, 30), ("b", 30, 15))
+        at = R.COMBINED_KNOCKS_HEADERS.index(R.COL_TALK_TO_PCT)
+        self.assertEqual(sub[0][at], "10.0%")      # la fila del rep, si va
+        self.assertEqual(sub[1][at], "50.0%")
+        self.assertEqual(R._combined_totals("TOTAL", sub)[at], "13.6%")
+
+    def test_a_rep_who_never_knocked_gets_a_blank_pct_not_a_zero(self):
+        from automations.total_knocks import render as R
+        rows, _apps, _t = KD.daily_apps_for_board(
+            self._rows(("Alan Diaz", 38, 9)), {"Zed Moore": 2})
+        header, table = R._table_from_rows(rows)
+        sub = R._combined_sub(header, table)
+        at = R.COMBINED_KNOCKS_HEADERS.index(R.COL_TALK_TO_PCT)
+        by_rep = {r[R.COMBINED_KNOCKS_HEADERS.index(R.COL_REP)]: r[at]
+                  for r in sub}
+        self.assertEqual(by_rep["Zed Moore"], "")
+
+    def test_twenty_knocks_is_not_a_rep_knocking_but_twentyone_is(self):
+        from automations.total_knocks import render as R
+        specs = (("a", 20, 5), ("b", 21, 5), ("c", 900, 100))
+        at = R.COMBINED_KNOCKS_HEADERS.index(R.COL_REPS_KNOCKING)
+        self.assertEqual(R._combined_totals("TOTAL", self._office(*specs))[at],
+                         "2")
+        summary = KD.daily_summary_row("ICD", self._rows(*specs))
+        self.assertEqual(summary[KD.DAILY_SUMMARY_HEADERS.index(
+            "Total # of Reps Knocking")], "2")
+
+    def test_the_count_never_lands_on_a_rep_row(self):
+        """Una fila de rep siempre seria 1: la columna solo tiene sentido
+        donde se agrega un roster."""
+        from automations.total_knocks import render as R
+        at = R.COMBINED_KNOCKS_HEADERS.index(R.COL_REPS_KNOCKING)
+        for row in self._office(("a", 40, 5), ("b", 60, 9)):
+            self.assertEqual(row[at], "")
+
+    def test_the_reps_are_numbered_and_the_totals_rows_are_not(self):
+        """El board de una oficina lleva las filas de totales ARRIBA."""
+        from automations.total_knocks import render as R
+        cols = ["Rep", "Total Knocks"]
+        disp = list(cols)
+        table = [["CHAN PARK TOTAL", "9"], ["TOTAL", "8"],
+                 ["ana", "4"], ["beto", "3"], ["cami", "1"]]
+        R.number_rows(cols, disp, table, first=2)
+        self.assertEqual(cols[0], "#")
+        self.assertEqual([r[0] for r in table], ["", "", "1", "2", "3"])
+
+    def test_the_summary_numbers_the_icds_but_not_its_trailing_block(self):
+        """Y el resumen las lleva ABAJO: un numero ahi se leeria como un ICD
+        mas de la lista."""
+        from automations.total_knocks import render as R
+        cols = ["ICD", "Total Knocks"]
+        disp = list(cols)
+        table = [["icd a", "9"], ["icd b", "8"], ["icd c", "7"],
+                 ["CHAN PARK", "9"], ["CAPTAINSHIP TOTALS", "24"]]
+        R.number_rows(cols, disp, table, count=3)
+        self.assertEqual([r[0] for r in table], ["1", "2", "3", "", ""])
+
+    def test_both_per_rep_averages_divide_by_the_reps_knocking(self):
+        """Rafael, 2026-08-28: el que golpeo 20 o menos deja de estar en el
+        divisor. Sus talk-tos y sus apps siguen sumando arriba."""
+        from automations.total_knocks import render as R
+        specs = (("a", 40, 10), ("b", 60, 20), ("c", 5, 2))   # c no llega a 21
+        sub = self._office(*specs)
+        self.assertEqual(len(R._knockers(sub)), 2)
+        totals = R._combined_totals("TOTAL", sub)
+        # 32 talk-tos (los 2 de c incluidos) / 2 reps, no / 3
+        self.assertEqual(totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_TALK_TO_PER_REP)], "16.0")
+        self.assertEqual(totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_TOTAL_TALK_TO)], "32")
+        # y el resumen violeta tiene que dar EXACTO lo mismo para esa oficina
+        summary = KD.daily_summary_row("ICD", self._rows(*specs), 9)
+        at = KD.DAILY_SUMMARY_HEADERS.index
+        self.assertEqual(summary[at("Talk To's per Rep")], "16.0")
+        self.assertEqual(summary[at("Average App per Rep")], "4.5")  # 9 / 2
+        self.assertEqual(summary[at("Total # of Reps Knocking")], "2")
+
+    def test_a_day_nobody_cleared_the_bar_leaves_the_averages_blank(self):
+        """Un 0.0 al lado de talk-tos reales dice que los reps no hicieron
+        ninguno. No hay por quien dividir, que no es lo mismo que cero."""
+        from automations.total_knocks import render as R
+        specs = (("a", 12, 4), ("b", 7, 3))
+        totals = R._combined_totals("TOTAL", self._office(*specs))
+        self.assertEqual(totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_TALK_TO_PER_REP)], "")
+        self.assertEqual(totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_TOTAL_TALK_TO)], "7")      # pero el total si esta
+        summary = KD.daily_summary_row("ICD", self._rows(*specs), 3)
+        at = KD.DAILY_SUMMARY_HEADERS.index
+        self.assertEqual(summary[at("Talk To's per Rep")], "")
+        self.assertEqual(summary[at("Average App per Rep")], "")
+        self.assertEqual(summary[at("Total Apps")], "3")
+
+    def test_the_summary_board_draws_with_the_number_column(self):
+        rows = self._rows(("a", 40, 5), ("b", 60, 9))
+        captured = [("ICD One", {"name": "ICD One"}, rows, 4)]
+        table, bgs = KD.daily_summary_table(captured, chan_rows=None)
+        self.assertEqual(len(table), len(captured) + len(bgs))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
