@@ -48,3 +48,23 @@ if __name__ == "__main__":
                test_empty_history_is_no_verdict):
         fn(); print(f"  ok  {fn.__name__}")
     print("6/6 passed")
+
+
+# --- posting title / await copy ------------------------------------------- #
+def test_subject_line_yields_the_role():
+    """emailApplicantSubject is blank on many records; the source-email subject
+    still carries the title, and without it the text says 'the open role'."""
+    from automations.oat_processing.run import _SUBJECT_ROLE_RE
+    m = _SUBJECT_ROLE_RE.search(
+        "Subject: [Action required] New application for "
+        "Entry Level Assistant Manager (Spanish Needed), Ft Worth, TX")
+    assert m and m.group(1).strip() == "Entry Level Assistant Manager (Spanish Needed)"
+
+
+def test_await_copy_substitutes_both_placeholders():
+    from automations.oat_processing.run import _fill_placeholders
+    out = _fill_placeholders(
+        "Hey applicantFirstName, ... for the adPostingTitle role",
+        "Blanca", "Entry Level Assistant Manager")
+    assert "applicantFirstName" not in out and "adPostingTitle" not in out
+    assert "Blanca" in out and "Entry Level Assistant Manager" in out
