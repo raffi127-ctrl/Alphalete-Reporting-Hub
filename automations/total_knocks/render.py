@@ -696,6 +696,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     extra_apps: list = []
     extra_knockers: list = []
     extra_listed: list = []
+    extra_rates: list = []
     for item in (extra_totals or []):
         # (name, rows) or (name, rows, apps) — the third element is that
         # office's own {rep: apps}; only its SUM shows, as its reps never do.
@@ -713,6 +714,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # Its LISTED rep count, taken while its rep rows still exist — only
         # its TOTAL line survives into the drawn table.
         extra_listed.append(len(x_sub))
+        # Its average rep rate, taken here for the same reason — only its
+        # TOTAL line survives into the drawn table.
+        extra_rates.append(_mean_rate(x_sub))
 
     hrs_pos = COMBINED_KNOCKS_HEADERS.index(COL_HRS_KNOCKING)
     tg_pos = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_GAPS)
@@ -752,7 +756,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # After the hide and apps passes, by NAME on what survived, same as
         # the apps column — so it lands correctly on a board that hid others.
         _insert_rate_columns(cols, disp, table, n_extra=len(extra_rows),
-                             extra_listed=extra_listed)
+                             extra_listed=extra_listed,
+                             extra_rates=extra_rates)
     if knocks_green_at and COL_TOTAL_KNOCKS in cols:
         # Raf 2026-08-29: "turn the total doors knocked bright green once the
         # rep hits 140". REP ROWS ONLY — a green office total would be a
@@ -810,9 +815,34 @@ def _apps_key(name: str) -> str:
     return " ".join(str(name or "").split()).lower()
 
 
+def _sub_rate(row: list) -> "float | None":
+    """One COMBINED_KNOCKS_HEADERS-shaped row's knocks-per-hour, or None.
+
+    The same arithmetic _insert_rate_columns does on the drawn table, but
+    against the full header order — used for a COMPARISON office, whose rep
+    rows exist only before the table is assembled.
+    """
+    tk = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_KNOCKS)
+    fk = COMBINED_KNOCKS_HEADERS.index(COL_FIRST_KNOCK)
+    lk = COMBINED_KNOCKS_HEADERS.index(COL_LAST_KNOCK)
+    first, last = _knock_time_key(str(row[fk])), _knock_time_key(str(row[lk]))
+    if first >= 24 * 60 or last >= 24 * 60 or last <= first:
+        return None
+    v = str(row[tk]).strip().replace(",", "")
+    if not v.isdigit() or not int(v):
+        return None
+    return int(v) / ((last - first) / 60.0)
+
+
+def _mean_rate(sub: list) -> str:
+    """A roster's average rep rate, one decimal — '' when nobody has one."""
+    rates = [r for r in (_sub_rate(row) for row in sub) if r]
+    return "%.1f" % (sum(rates) / len(rates)) if rates else ""
+
+
 def _insert_rate_columns(cols: list, disp: list, table: list, *,
-                         n_extra: int, extra_listed: "list | None" = None
-                         ) -> None:
+                         n_extra: int, extra_listed: "list | None" = None,
+                         extra_rates: "list | None" = None) -> None:
     """Put "Avg Knocks / Hr" and "Avg Doors / Rep" in IN PLACE, after Total
     Knocks — the column both divide, so the board reads knocks → how fast →
     how many each.
@@ -860,7 +890,15 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
     n_listed = max(0, len(table) - n_extra - 1)
     per_hr, per_rep = [], []
     for i, row in enumerate(table):
-        if i <= n_extra:
+        if i < n_extra:
+            # A comparison office's own average rep rate, computed by the
+            # caller while its rep rows still existed (Raf 2026-08-29: "can we
+            # get chans averages doors knocked per hr?"). Blank stays blank
+            # when it could not be worked out — never a number we didn't earn.
+            x = (extra_rates[i] if extra_rates and i < len(extra_rates)
+                 else "")
+            per_hr.append(x or None)
+        elif i == n_extra:
             # SUMMARY ROWS DO NOT GET total ÷ span, and this is a real bug that
             # shipped: those rows carry the AVERAGE of the reps' first and last
             # knock, so early in the day the span is a minute or two and the
@@ -885,6 +923,7 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
     # HAVE one. Comparison rows stay blank: their reps never reach this table.
     _rates = [float(v) for v in per_hr[n_extra + 1:] if v]
     per_hr[n_extra] = ("%.1f" % (sum(_rates) / len(_rates))) if _rates else ""
+    # (comparison rows above were filled from extra_rates and are left alone)
     per_hr = ["" if v is None else v for v in per_hr]
 
     for name, vals in ((COL_DOORS_PER_REP, per_rep),
