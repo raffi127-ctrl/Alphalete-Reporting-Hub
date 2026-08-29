@@ -85,6 +85,64 @@ def _text_from_pdf(path: str) -> str:
         return ""
 
 
+def _text_from_ocr(path: str) -> str:
+    """OCR a PDF/image with macOS Vision. Last resort, and the ONLY thing that
+    reads an image resume.
+
+    Carlos 2026-08-28, looking at Michelle Valencia's resume on screen with her
+    number plainly visible: "you can open hers just fine, it's image vs a file
+    you can copy and paste the number from, but the number is there for sure."
+    Every text extractor returns "" on those, which the pipeline would otherwise
+    read as a resume with no number — the exact verdict that removes someone who
+    is perfectly contactable.
+
+    Vision ships with macOS, so no install is needed on any machine that runs the
+    push. PDFs are rasterised page by page with PyMuPDF first (200 dpi is plenty
+    for a phone number and keeps a multi-page resume quick)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    swift_src = os.path.join(here, "bin", "ocr_image.swift")
+    if not os.path.exists(swift_src):
+        return ""
+
+    def _ocr(img_path: str) -> str:
+        try:
+            r = subprocess.run(["swift", swift_src, img_path],
+                               capture_output=True, timeout=90)
+            return (r.stdout or b"").decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            return ""
+
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".gif", ".bmp"):
+        return _ocr(path)
+    if ext != ".pdf":
+        return ""
+    try:
+        import fitz
+    except Exception:  # noqa: BLE001
+        return ""
+    out = []
+    tmpdir = tempfile.mkdtemp(prefix="oat_ocr_")
+    try:
+        with fitz.open(path) as doc:
+            for i, page in enumerate(doc):
+                if i >= 3:                 # the number lives on page 1 in practice
+                    break
+                png = os.path.join(tmpdir, f"p{i}.png")
+                page.get_pixmap(dpi=200).save(png)
+                out.append(_ocr(png))
+    except Exception:  # noqa: BLE001
+        return ""
+    finally:
+        try:
+            for f in os.listdir(tmpdir):
+                os.unlink(os.path.join(tmpdir, f))
+            os.rmdir(tmpdir)
+        except Exception:  # noqa: BLE001
+            pass
+    return "\n".join(out)
+
+
 def _text_from_docx(path: str) -> str:
     """docx is a zip of XML — no third-party dependency needed."""
     try:
@@ -194,7 +252,16 @@ def extract_text(path: str) -> str:
 
 
 def phone_from_file(path: str):
-    return phone_from_text(extract_text(path))
+    """Phone from a downloaded resume — text layer first, OCR only if that is
+    empty. OCR costs a second or two, so it never runs on a file we could read."""
+    txt = extract_text(path)
+    phone = phone_from_text(txt)
+    if phone:
+        return phone
+    if len((txt or "").strip()) < 40:
+        # Nothing readable came out: an image resume, not an empty one.
+        return phone_from_text(_text_from_ocr(path))
+    return None
 
 
 # --------------------------------------------------------------------------- #
