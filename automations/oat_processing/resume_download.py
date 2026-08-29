@@ -57,6 +57,25 @@ def looks_like_real_phone(raw: str) -> bool:
     return True
 
 
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+# The email seen alongside the last phone extraction — read by run.py right
+# after phone_from_file()/download_and_read_phone() so the walk can fill the
+# real address over the job-board-generated one (Carlos, 2026-08-29: "when we
+# open up the resume, we want to grab the email for everyone if it's there").
+LAST_EMAIL = ""
+
+
+def email_from_text(text: str) -> str:
+    """First plausible personal email in the text — skip job-board relays."""
+    for m in EMAIL_RE.finditer(text or ""):
+        em = m.group(0)
+        if not re.search(r"indeedemail\.com|indeed\.com|ziprecruiter|talroo",
+                         em, re.I):
+            return em
+    return ""
+
+
 def phone_from_text(text: str):
     """First plausible phone in `text`, reading top-down.
 
@@ -254,7 +273,10 @@ def extract_text(path: str) -> str:
 def phone_from_file(path: str):
     """Phone from a downloaded resume — text layer first, OCR only if that is
     empty. OCR costs a second or two, so it never runs on a file we could read."""
+    global LAST_EMAIL
+    LAST_EMAIL = ""
     txt = extract_text(path)
+    LAST_EMAIL = email_from_text(txt)
     phone = phone_from_text(txt)
     if phone:
         return phone
@@ -263,7 +285,10 @@ def phone_from_file(path: str):
     # whose body is real text but whose CONTACT BLOCK is part of a graphic, which
     # is exactly how the designed templates on Indeed are built. The cost is a
     # couple of seconds on a file we were about to give up on anyway.
-    return phone_from_text(_text_from_ocr(path))
+    ocr = _text_from_ocr(path)
+    if not LAST_EMAIL:
+        LAST_EMAIL = email_from_text(ocr)
+    return phone_from_text(ocr)
 
 
 # --------------------------------------------------------------------------- #

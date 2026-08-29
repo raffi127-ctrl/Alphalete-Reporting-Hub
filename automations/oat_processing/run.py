@@ -48,6 +48,7 @@ import datetime as dt
 import re
 import os
 import sys
+import time
 
 from automations.shared.tableau_patchright import (
     appstream_direct_session, AppStreamBusy)
@@ -268,6 +269,16 @@ def _parse_us_date(s: str):
                                     "%B %d %Y").date()
     except Exception:  # noqa: BLE001
         return None
+
+
+def read_current_name(page) -> str:
+    """Just the current applicant's name off the p=604 panel — cheap enough to
+    poll while waiting for a send to settle."""
+    try:
+        d = page.evaluate(_EXTRACT_JS) or {}
+        return f"{d.get('fname') or ''} {d.get('lname') or ''}".strip()
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def read_current_applicant(page, today: dt.date = None) -> Applicant:
@@ -527,6 +538,32 @@ def _perform_remove(page, reason_pattern: str = DUP_REASON) -> bool:
         return False
 
 
+def _wait_send_outcome(page, a, timeout_ms: int = 15000) -> str:
+    """After a Send-to-AI click, wait for a DEFINITE outcome instead of taking
+    one snapshot. The refusal panel and its override button render via separate
+    requests, so a single 2.5s peek can see neither — which on 2026-08-29 made
+    the walk remove Rossana Martheins while her overwrite button was still
+    loading, and call refused sends 'clean'. Returns:
+      'refused'  — the cannot-send panel rendered
+      'sent'     — the applicant left the current slot (a new name is loaded)
+      'unknown'  — neither, even after the full wait. NEVER remove on unknown.
+    """
+    deadline = time.time() + timeout_ms / 1000.0
+    target = f"{a.first_name} {a.last_name}".strip().lower()
+    while time.time() < deadline:
+        body = _body(page)
+        if "cannot send to ai" in body:
+            return "refused"
+        try:
+            cur = read_current_name(page).strip().lower()
+        except Exception:  # noqa: BLE001
+            cur = ""
+        if cur and target and cur != target:
+            return "sent"
+        page.wait_for_timeout(800)
+    return "unknown"
+
+
 def _try_overwrite_send(page) -> bool:
     """Push to AI via the override control when the ATS allows it (control
     present, no 'Cannot override'). The ATS still blocks a recent contact, so
@@ -543,8 +580,17 @@ def _try_overwrite_send(page) -> bool:
     sendable and 16 of those needed exactly this button — i.e. this one mismatch
     was the difference between a person reaching the call list and being written
     off. Pattern-match /overri|overwri/, prefer the one that also says AI."""
-    body = _body(page)
-    if not re.search(r"overri|overwri", body):
+    # WAIT for the control, do not snapshot. The override button renders via its
+    # own request after the refusal panel; one early peek concludes "no override"
+    # on a page that grows the button a second later, and the caller then removes
+    # a sendable applicant (Rossana Martheins, 2026-08-29).
+    _found = False
+    for _ in range(8):                       # up to ~8s
+        if re.search(r"overri|overwri", _body(page)):
+            _found = True
+            break
+        page.wait_for_timeout(1000)
+    if not _found:
         return False
     # DO NOT bail just because the page says "Cannot override this applicant."
     # Carlos, 2026-08-28: "you even told me that you saw the option that said
@@ -654,27 +700,30 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
         # dropping them (Carlos 2026-08-28). Only fall back to flagging when the
         # send itself could not be completed — never silently.
         if not getattr(config, "ALLOW_RETEXT", False):
-            # An office that does not text still SENDS whenever it can. Try the
-            # override/overwrite control first — whichever of the two labels is
-            # on the page — and only remove as a duplicate when there is none.
-            # (Carlos, 2026-08-29: "whichever one of those two options comes up,
-            # you use it if it's there.") Removing someone we could have sent is
-            # the exact mistake this whole audit exists to find.
+            # An office that does not text still SENDS whenever it can. We are on
+            # the refused screen here (the verdict came off it), so the override
+            # control is legitimate to wait for; _try_overwrite_send polls up to
+            # ~8s for it. Only a refusal WITH no control after that wait earns a
+            # removal — anything ambiguous is flagged, never removed.
             if _try_overwrite_send(page):
                 _log(f"    ✅ override-sent instead of removing: "
                      f"{a.first_name} {a.last_name}")
                 return "sent_override"
-            if _perform_remove(page, DUP_REASON):
-                _log(f"    🗑 removed as duplicate (no override, and this office "
-                     f"does not text): {a.first_name} {a.last_name}")
+            if ("cannot send to ai" in _body(page)
+                    and _perform_remove(page, DUP_REASON)):
+                _log(f"    🗑 removed as duplicate (refused, no override after "
+                     f"waiting, office does not text): "
+                     f"{a.first_name} {a.last_name}")
                 return "removed"
             _flag_retext(a, None)
+            _log(f"    ⚑ FLAG (ambiguous — not removing): "
+                 f"{a.first_name} {a.last_name}")
             return "flag_retext"
         ph_now = (a.cell_phone or a.phone or "").strip()
         if not ph_now:
             got_ph, _d = lookup_resume_phone(page)
             if got_ph:
-                _fill_phone_field(page, got_ph)
+                _fill_contact(page, got_ph)
                 ph_now = got_ph
         if ph_now:
             role = _role_from_position(read_posting_title(page, a.position))
@@ -1301,19 +1350,33 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
         # nothing and remove someone who was sendable all along. That is the very
         # mistake this audit exists to find. (Carlos, 2026-08-29, on Rossana
         # Martheins: "I'm pretty sure Rosanna had the option to overwrite.")
-        if "cannot send to ai" not in _body(page):
+        outcome = "refused" if "cannot send to ai" in _body(page) else ""
+        if not outcome:
             _click_first(page, ["Send to AI", "Send To AI"], timeout=6000)
-            page.wait_for_timeout(2500)
-        if _try_overwrite_send(page):
+            # Wait for a DEFINITE outcome — refusal panel, or the applicant gone
+            # from the slot. One 2.5s snapshot saw neither and produced both
+            # failure modes of 2026-08-29: refused sends logged as clean, and
+            # Rossana removed while her overwrite button was still rendering.
+            outcome = _wait_send_outcome(page, a)
+        if outcome == "sent":
+            _log(f"    ✅ SENT to AI (confirmed left the slot): "
+                 f"{a.first_name} {a.last_name}")
+            return "sent"
+        if outcome == "refused" and _try_overwrite_send(page):
             _log(f"    ✅ override-sent instead of removing: "
                  f"{a.first_name} {a.last_name}")
             return "sent_override"
-        if _perform_remove(page, DUP_REASON):
-            _log(f"    🗑 removed as duplicate (no override, and this office does "
-                 f"not text): {a.first_name} {a.last_name}")
-            return "removed"
+        if outcome == "refused":
+            # Positive refusal AND the override wait came up empty — only now is
+            # a removal earned.
+            if _perform_remove(page, DUP_REASON):
+                _log(f"    🗑 removed as duplicate (refused, no override after "
+                     f"waiting, office does not text): "
+                     f"{a.first_name} {a.last_name}")
+                return "removed"
+        # 'unknown', or the remove itself failed: NEVER remove on ambiguity.
         _flag_retext(a, days)
-        _log(f"    ⚑ FLAG re-text (could not send OR remove): "
+        _log(f"    ⚑ FLAG (outcome={outcome or 'unknown'} — not removing): "
              f"{a.first_name} {a.last_name} "
              f"[{a.cell_phone or a.phone or 'no-phone'}]")
         return "flag_retext"
@@ -1502,6 +1565,45 @@ def retext_by_name(page, first, last, phone=""):
 
 
 _NO_PHONE_ROWS: list = []
+
+
+# Email seen on the last resume read — set by lookup_resume_phone, consumed by
+# _fill_contact right after the phone goes in. Carlos, 2026-08-29: "when we open
+# up the resume, we want to grab the email for everyone if it's there. If it's
+# not there, all good — we just leave the email that's generated on there."
+_LAST_RESUME_EMAIL = ""
+
+
+def _fill_email_field(page, email: str) -> bool:
+    """Type the applicant's real email over the job-board-generated relay.
+    Keystrokes for the same reason as the phone: JS-setting the value makes AS
+    re-render and drop the Send-to-AI button."""
+    if not email or "@" not in email:
+        return False
+    try:
+        loc = page.locator("input[name='email']").first
+        if loc.count() == 0:
+            return False
+        cur = (loc.input_value() or "").strip().lower()
+        if cur == email.strip().lower():
+            return True                      # already right — leave it alone
+        loc.click(timeout=4000)
+        loc.fill("")
+        loc.press_sequentially(email.strip(), delay=25)
+        page.keyboard.press("Tab")
+        _log(f"    ✉ filled email from resume: {email.strip()}")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _fill_contact(page, phone: str) -> bool:
+    """Phone + (when the resume carried one) email, in one move. The phone is
+    what gates the send; the email is best-effort on top."""
+    ok = _fill_phone_field(page, phone)
+    if ok and _LAST_RESUME_EMAIL:
+        _fill_email_field(page, _LAST_RESUME_EMAIL)
+    return ok
 
 
 def _fill_phone_field(page, phone: str) -> bool:
@@ -1879,7 +1981,7 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
         except Exception as e:  # noqa: BLE001
             # Never saw the resume -> blocked (retryable), not a confirmed empty one.
             phone, detail = None, f"{_BLOCKED_PREFIX}read error: {type(e).__name__}"
-        if phone and _fill_phone_field(page, phone):
+        if phone and _fill_contact(page, phone):
             _log(f"    \U0001f4de resume phone {phone} → filled + sending: "
                  f"{a.first_name} {a.last_name}")
             try:
@@ -2177,11 +2279,18 @@ def _view_resume_link(page):
     return None, None
 
 
+def _rd_email(text: str) -> str:
+    from automations.oat_processing.resume_download import email_from_text
+    return email_from_text(text)
+
+
 def lookup_resume_phone(page):
     """Open the applicant's Indeed resume and pull the first phone number. Prefer
     CLICKING the 'View resume' link (real gesture + referer + in-session nav — the
     way Megan opens it), which gets past Cloudflare where a cold page.goto now hits
     the 'Just a moment…' block (2026-08-02). Falls back to loading the signed href."""
+    global _LAST_RESUME_EMAIL
+    _LAST_RESUME_EMAIL = ""
     fr, loc = _view_resume_link(page)
     href = _view_resume_href(page)
     if loc is None and not href:
@@ -2275,6 +2384,7 @@ def lookup_resume_phone(page):
                     for m in _PHONE_RE.finditer(_t):
                         digits = re.sub(r"\D", "", m.group(0))
                         if 10 <= len(digits) <= 11:     # a real US number
+                            _LAST_RESUME_EMAIL = _rd_email("\n".join(texts))
                             return (m.group(0).strip(),
                                     f"from resume ({newpg.url[:50]})")
             newpg.wait_for_timeout(1000)
@@ -2303,6 +2413,7 @@ def lookup_resume_phone(page):
         except Exception as _e:  # noqa: BLE001
             _dl_phone, _dl_detail = None, f"download path errored: {type(_e).__name__}"
         if _dl_phone:
+            _LAST_RESUME_EMAIL = getattr(_rd, "LAST_EMAIL", "") or ""
             _log(f"    \U0001f4c4 phone from the DOWNLOADED resume: {_dl_phone} "
                  f"({_dl_detail})")
             return _dl_phone, f"from downloaded resume ({_dl_detail[:60]})"
