@@ -1537,6 +1537,20 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
                           whoami(client) or "this machine", key_or_report))
             return False
         ok = _react(client, channel, inc["ts"], WORKING_REACTION)
+        # ONE STATUS REACTION AT A TIME (Megan 2026-08-30: "lucy should only
+        # have 1 reaction at a time, not 2"). incident_triage._apply already
+        # holds that invariant — it puts its bucket's reaction on and takes the
+        # other two off — but this path only ever ADDED. So a post triage had
+        # painted :red_circle: ("needs a person") kept it and gained :pending:
+        # on top, which reads as two contradictory states: nobody has this AND
+        # somebody has this. Taking it is the ANSWER to "needs a person", so the
+        # red comes off here; same for the purple waiting mark.
+        #
+        # Best-effort and after the add: if the remove fails, the post wears two
+        # reactions, which is exactly today's behaviour — never worse.
+        if ok:
+            for _stale in (NEEDS_HUMAN_REACTION, WAITING_REACTION):
+                _react(client, channel, inc["ts"], _stale, remove=True)
         if note:
             try:
                 _send(client, channel, [note], thread_ts=inc["ts"])
