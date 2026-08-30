@@ -243,8 +243,12 @@ ENERGYWELL_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
                              COL_FIRST_KNOCK, COL_LAST_KNOCK,
                              COL_GAPS, COL_TOTAL_GAPS, COL_NO_ANSWER,
                              COL_NOT_INTERESTED, COL_PRESENTATION,
-                             COL_COME_BACK, COL_VL, COL_INACCESSIBLE,
+                             COL_COME_BACK, COL_INACCESSIBLE,
                              COL_DO_NOT_KNOCK]
+# NO VL COLUMN (Megan 2026-08-30: "drop the VL line"). VL is still SCRAPED and
+# still counted in Total Talk to — Raf: "consider VL a talk too" — it just does
+# not get a column of its own. The scrape keeping it is also what identifies
+# the shape: knocks_shape() tests the ROW KEYS for VL, not this display list.
 # Energy Wells gets the SAME derived columns fiber does — Reps Knocking, Talk
 # To %, Talk To's per Rep, Avg Hrs Knocking — because it now goes through the
 # same renderer. _with_derived needs Rep, Total Talk to and Total Gaps as
