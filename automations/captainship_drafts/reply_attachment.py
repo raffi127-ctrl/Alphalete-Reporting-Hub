@@ -59,10 +59,12 @@ SENT_MAILBOX = '"[Gmail]/Sent Mail"'
 
 BODY = (
     "Hi team,\n\n"
-    "Attached is the Weekly Knock Dispositions report for {span}, updated with "
-    "the columns Rafael asked for.\n"
+    "Attached is an updated Weekly Knock Dispositions report for {span}, with "
+    "the columns Rafael asked for. It replaces the copy attached to the email "
+    "below.\n"
     "{missing}"
-    "\nNothing else in the report below has changed.\n\n"
+    "\nThis attachment is the only thing that changed. None of the data in "
+    "the email below it has changed — use that report as sent.\n\n"
     "— Alphalete Reporting\n"
 )
 
