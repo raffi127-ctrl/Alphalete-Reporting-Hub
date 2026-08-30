@@ -701,7 +701,11 @@ def render(cfg: Dict, pngs, out_dir: Path, slot: str):
     Total Gaps, which Raf's TeleMapper shape does — so this is normally one.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    who = (" — %s" % cfg["label"]) if cfg.get("label") else ""
+    # "KNOCKS & DISPOSITIONS — EnergyWell — Calvin — 11:06 AM": campaign then
+    # office, so a reader knows which business the numbers are before whose
+    # they are. Raf's row sets neither, so his header is unchanged.
+    who = "".join(" — %s" % cfg[k] for k in ("campaign_label", "label")
+                  if cfg.get(k))
     out = []
     for i, p in enumerate(pngs):
         # Only the first board carries the clock — this is one post, and a time

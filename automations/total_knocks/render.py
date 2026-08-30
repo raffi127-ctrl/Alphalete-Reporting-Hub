@@ -233,9 +233,15 @@ TELEMAPPER_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
 # Energy Wells (RES-ENERGYWELL): the wireless shape plus Presentation and VL,
 # and it DOES carry Total Talk to — Raf asked for talk-tos on this board and
 # knocks_pull computes them over the Energy Wells parts (VL included).
+# Gaps + Total Gaps are IN this list on purpose: needs_time_gaps() asks the
+# COLUMN LIST whether a separate Time Gaps image is still owed, so carrying
+# them here retires that second post and the office gets ONE board — the same
+# merge Raf's fiber board got (Megan 2026-08-30: "these 2 should be combined
+# just like we have for Raf's").
 ENERGYWELL_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
                              COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
-                             COL_FIRST_KNOCK, COL_LAST_KNOCK, COL_NO_ANSWER,
+                             COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                             COL_GAPS, COL_TOTAL_GAPS, COL_NO_ANSWER,
                              COL_NOT_INTERESTED, COL_PRESENTATION,
                              COL_COME_BACK, COL_VL, COL_INACCESSIBLE,
                              COL_DO_NOT_KNOCK]

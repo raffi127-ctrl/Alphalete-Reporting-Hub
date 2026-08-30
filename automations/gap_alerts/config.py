@@ -99,6 +99,10 @@ CALVIN = {
     "campaign_id": "40",
     "group": "ENERGY WELLS DOMINATION",
     "label": "Calvin",
+    # Shown in the post's header (Megan 2026-08-30). Raf's office runs one
+    # campaign and its name would say nothing; this chat is named for the
+    # campaign, and Jay will run TWO, so the board has to say which one it is.
+    "campaign_label": "EnergyWell",
     # Chan is a FIBER office. His totals under an Energy Wells board would
     # invite a comparison between two different businesses, so no line here.
     "compare": False,
