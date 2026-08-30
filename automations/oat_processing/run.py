@@ -2083,6 +2083,18 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
         if _is_blocked_detail(detail):
             n = _mark_nophone_blocked(key, detail[len(_BLOCKED_PREFIX):])
             if n >= _BLOCKED_MAX_ATTEMPTS:
+                # In the audit offices a resume page that will not open, even
+                # after every retry, gets the applicant removed as INSUFFICIENT
+                # CONTACT INFO — never "Duplicate", they are not one. (Carlos,
+                # 2026-08-29, on Rashad's office: "if the page isn't opening for
+                # those, can you choose a different removal reason?") Carlos's
+                # and Atef's offices keep the leave-them rule.
+                if getattr(config, "REMOVE_BLOCKED_READ", False):
+                    if _perform_remove(page, NO_CONTACT_REASON):
+                        _log(f"    \U0001f5d1 removed (resume page never opened "
+                             f"after {n} tries — insufficient contact info): "
+                             f"{a.first_name} {a.last_name}")
+                        return "removed_no_contact"
                 _log(f"    resume read BLOCKED ({detail}) — attempt "
                      f"{n}/{_BLOCKED_MAX_ATTEMPTS}, giving up for today → flag: "
                      f"{a.first_name} {a.last_name}")

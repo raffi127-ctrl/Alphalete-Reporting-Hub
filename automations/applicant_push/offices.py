@@ -54,6 +54,7 @@ OFFICES = {
         # Carlos and Atef are the only offices that text an applicant when the
         # override is unavailable (Carlos, 2026-08-29).
         "allow_retext": True,
+        "remove_blocked_read": False,
         # Carlos, 2026-08-27: "in my specific office, if they don't have a phone
         # number on the resume, you don't remove them. You leave them there."
         # So the confirmed-uncontactable removal (config.REMOVE_NO_PHONE, added
@@ -87,6 +88,7 @@ OFFICES = {
         "post_channel": "C0B85KRS5FU",
         "post_todo": True,
         "allow_retext": True,
+        "remove_blocked_read": False,
         # Atef's office keeps the confirmed-uncontactable removal (a resume that
         # opened and carries no number, or no resume at all). Never fires on a
         # BLOCKED read — that is our failure, and it retries.
@@ -118,6 +120,7 @@ OFFICES = {
         "post_todo": False,
         # Diagnostic office: never texts anyone. Only Carlos's and Atef's do.
         "allow_retext": False,
+        "remove_blocked_read": True,
         # Matches the policy for every office that is not Carlos's: a resume that
         # opens and carries no number is a confirmed-uncontactable removal.
         "remove_no_phone": True,
@@ -142,6 +145,7 @@ OFFICES = {
         "post_channel": "C09L1S3MQ1E",
         "post_todo": False,
         "allow_retext": False,
+        "remove_blocked_read": True,
         "remove_no_phone": True,
     },
     # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit as 19592.
@@ -164,6 +168,7 @@ OFFICES = {
         "post_channel": "C09L1S3MQ1E",
         "post_todo": False,
         "allow_retext": False,
+        "remove_blocked_read": True,
         "remove_no_phone": True,
     },
     # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit as 19592.
@@ -186,6 +191,7 @@ OFFICES = {
         "post_channel": "C09L1S3MQ1E",
         "post_todo": False,
         "allow_retext": False,
+        "remove_blocked_read": True,
         "remove_no_phone": True,
     },
     # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit as 19592.
@@ -208,6 +214,7 @@ OFFICES = {
         "post_channel": "C09L1S3MQ1E",
         "post_todo": False,
         "allow_retext": False,
+        "remove_blocked_read": True,
         "remove_no_phone": True,
     },
 }
@@ -279,6 +286,8 @@ def activate(office_id: str) -> dict:
     # Texting a real person is opt-in per office; a row must state it, and a row
     # that does not gets NO texting rather than inheriting someone else's policy.
     oat_config.ALLOW_RETEXT = bool(o.get("allow_retext", False))
+    # Blocked-read removal is audit-office-only; unstated means OFF.
+    oat_config.REMOVE_BLOCKED_READ = bool(o.get("remove_blocked_read", False))
 
     oat_summary.OFFICE_LABEL = o["label"]
     oat_summary.OFFICE_SHORT = o["short"]

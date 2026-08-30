@@ -96,3 +96,9 @@ REMOVE_NO_PHONE = os.environ.get("OAT_REMOVE_NO_PHONE", "0") == "1"
 # flags the applicant for a human instead of texting them. Default OFF so an
 # office added later never texts anyone until its row opts in.
 ALLOW_RETEXT = os.environ.get("OAT_ALLOW_RETEXT", "0") == "1"
+
+# Audit offices only: a resume page that never opens (blocked read, every retry
+# exhausted) removes the applicant as Incorrect/Insufficient Contact Info
+# instead of leaving them to linger. OFF for Carlos's and Atef's offices, whose
+# rule stays "our failure must never cost an applicant their record".
+REMOVE_BLOCKED_READ = os.environ.get("OAT_REMOVE_BLOCKED_READ", "0") == "1"
