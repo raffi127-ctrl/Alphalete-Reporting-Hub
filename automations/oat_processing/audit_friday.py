@@ -84,11 +84,53 @@ def _dump_calendar(page, date_str):
     return raw, tables
 
 
+_SET_JS = r"""(args) => {
+    const nm=args[0], phone=args[1], win=args[2];
+    const out={date:'', term:false, by:'', opts:[]};
+    const tf=document.querySelector("#sms_type_filter,[name='sms_type_filter']");
+    if(tf){ const all=[...tf.options].find(o=>/^all$/i.test(o.text.trim()));
+        if(all && tf.value!==all.value){ tf.value=all.value;
+            tf.dispatchEvent(new Event('change',{bubbles:true})); } }
+    const d=document.querySelector("#sms_date_filter, [name='sms_date_filter']");
+    if(d){ out.opts=[...d.options].map(o=>o.text.trim());
+        const o=[...d.options].find(o=>o.text.trim().toLowerCase()===win.toLowerCase())
+              ||[...d.options].find(o=>new RegExp(win,'i').test(o.text));
+        if(o){ d.value=o.value; d.dispatchEvent(new Event('change',{bubbles:true})); out.date=o.text.trim(); } }
+    const setF=(sel,val)=>{const e=document.querySelector(sel); if(!e)return false;
+        e.value=val; e.dispatchEvent(new Event('input',{bubbles:true}));
+        e.dispatchEvent(new Event('change',{bubbles:true})); return true;};
+    setF("#sms_name_filter, [name='sms_name_filter']","");
+    setF("#sms_phone_filter, [name='sms_phone_filter']","");
+    if(phone && setF("#sms_phone_filter, [name='sms_phone_filter']",phone)){out.term=true;out.by='phone';}
+    else if(setF("#sms_name_filter, [name='sms_name_filter']",nm)){out.term=true;out.by='name';}
+    return out;
+}"""
+
+_PICK_JS = r"""(args) => {
+    const want = args[0], name = (args[1]||'').toLowerCase();
+    const norm = s => (s||'').replace(/\D/g,'');
+    const all = [...document.querySelectorAll('div,li,a,tr')];
+    const rows = all.filter(e => { const t=e.innerText||'';
+        return t.length<200 && norm(t).length>=10 && /\+?1?\d{10}/.test(norm(t))
+               && e.querySelectorAll('*').length<25; });
+    const cand = rows.filter(e => !rows.some(o => o!==e && e.contains(o)));
+    window.__aud_rows = cand;
+    const scored = cand.map((e,i)=>{ const t=e.innerText||'', d=norm(t);
+        return {i, hasPhone:!!(want && d.includes(want)),
+                hasName:!!(name && t.toLowerCase().includes(name)),
+                text:t.replace(/\s+/g,' ').slice(0,60)}; });
+    const byPhone = scored.find(s=>s.hasPhone);
+    const named = scored.filter(s=>s.hasName);
+    const choice = byPhone || (named.length===1 ? named[0] : (cand.length===1 ? scored[0] : null));
+    return {count:cand.length, choice};
+}"""
+
+
 def _read_thread(page, name, phone):
-    """Open the SMS widget and read ONE applicant's conversation. Everything is
-    scoped to #chatContainer — the widget injects into the MAIN page DOM, so an
-    unscoped read returns the entire calendar page (the first smoke test's
-    102KB "threads" were exactly that)."""
+    """Open the SMS widget and read ONE applicant's conversation, using the SAME
+    filter/search/bind choreography the production re-text uses (its _SET_JS /
+    _PICK_JS verbatim; window sweep; #sms_filter_search). Text is read from
+    #chatContainer only — the widget lives in the MAIN page DOM."""
     if not oat._open_sms_panel(page):
         return None, "sms panel failed"
     w, diag = oat._sms_widget_frame(page, 30000)
@@ -97,46 +139,40 @@ def _read_thread(page, name, phone):
         return None, f"widget missing ({diag[:80]})"
     page.wait_for_timeout(800)
     want = re.sub(r"\D", "", phone or "")[-10:]
-    w.evaluate(r"""(args) => {
-        const [nm, ph] = args;
-        const root = document.querySelector('#chatContainer');
-        if (!root) return false;
-        const setF = (sel, v) => { const el = root.querySelector(sel);
-            if (!el) return false; el.value = v;
-            el.dispatchEvent(new Event('input', {bubbles: true}));
-            el.dispatchEvent(new Event('change', {bubbles: true})); return true; };
-        const dsel = root.querySelector("#sms_date_filter, [name='sms_date_filter']");
-        if (dsel) { for (const o of dsel.options)
-            if (/this month/i.test(o.text)) { dsel.value = o.value;
-                dsel.dispatchEvent(new Event('change', {bubbles: true})); break; } }
-        setF("#sms_name_filter", "");
-        setF("#sms_phone_filter", "");
-        if (ph) setF("#sms_phone_filter", ph); else setF("#sms_name_filter", nm);
-        const go = [...root.querySelectorAll('button, input')]
-            .find(b => /search/i.test(b.value || b.innerText || ''));
-        if (go) go.click();
-        return true; }""", [name, want])
-    page.wait_for_timeout(3500)
-    clicked = w.evaluate(r"""(nm) => {
-        const root = document.querySelector('#chatContainer');
-        if (!root) return false;
-        const fold = s => s.normalize('NFKD').replace(/[^\w ]/g, '').toLowerCase();
-        const items = [...root.querySelectorAll('li, [class*="chat-box-list"] div, tr')]
-            .filter(e => e.offsetParent !== null
-                      && fold(e.innerText || '').includes(fold(nm).split(' ')[0])
-                      && (e.innerText || '').length < 400);
-        if (!items.length) return false;
-        items[0].click();
-        return (items[0].innerText || '').replace(/\n/g, ' ').slice(0, 80); }""",
-        name)
-    if not clicked:
+    last = (name or "").split()[-1]
+    picked = None
+    for win in ("This Month", "Last Month", "This Week", "Today"):
+        st = w.evaluate(_SET_JS, [last or name, want, win])
+        if not st.get("term"):
+            oat._close_sms_panel(page)
+            return None, "filters not found"
+        if not st.get("date"):
+            continue
+        try:
+            w.locator("#sms_filter_search").first.click(timeout=4000,
+                                                        no_wait_after=True)
+        except Exception:  # noqa: BLE001
+            w.evaluate("() => { const b=document.querySelector('#sms_filter_search');"
+                       " if (b) b.click(); }")
+        page.wait_for_timeout(2600)
+        pk = w.evaluate(_PICK_JS, [want, name])
+        if pk.get("choice"):
+            picked = pk
+            break
+    choice = picked.get("choice") if picked else None
+    if not choice:
         oat._close_sms_panel(page)
         return None, "no thread matched"
-    page.wait_for_timeout(3500)
+    try:
+        w.evaluate("(i) => window.__aud_rows[i].click()", choice["i"])
+        page.wait_for_timeout(3000)
+    except Exception as e:  # noqa: BLE001
+        oat._close_sms_panel(page)
+        return None, f"thread click: {type(e).__name__}"
     text = w.evaluate("""() => { const r = document.querySelector('#chatContainer');
         return r ? (r.innerText || '') : ''; }""")
     oat._close_sms_panel(page)
-    return text, f"ok (bound: {clicked})"
+    return text, f"ok (bound: {choice.get('text','')[:50]})"
 
 
 def main(argv=None) -> int:
