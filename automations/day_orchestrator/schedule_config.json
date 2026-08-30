@@ -180,6 +180,38 @@
     }
   },
   "reports": {
+    "team_tree": {
+      "on_scheduler": false,
+      "_note": "Alphalete team tree -> #a-players-b2b PNG, fired by com.alphalete.team-tree-daily on Lucy 2 at 6:00am (Carlos 2026-08-30). Manual: `lucy rerun team_tree -- --dm` posts to Carlos's DM; `--dry-run` renders only.",
+      "display_name": "Alphalete team tree (6am screenshot)",
+      "source_type": "local",
+      "data_sources": ["Vantura Master Sales Board"],
+      "command": ["automations.team_tree.run"],
+      "base_args": [],
+      "cadence": {"weekdays": []},
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10,
+      "machine": "Lucy 2"
+    },
+    "install_team_tree_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.team-tree-daily on Lucy 2 (6:00am daily; deploy/team_tree_daily.sh -> python -m automations.team_tree.run). `lucy update` then `lucy rerun install_team_tree_agent` on the Lucy 2 control tab.",
+      "display_name": "Install team tree daily agent (6am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": ["automations.day_orchestrator.install_agent"],
+      "base_args": ["team-tree-daily"],
+      "cadence": {"weekdays": []},
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
+      "machine": "Lucy 2"
+    },
     "close_stranded_incidents": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun close_stranded_incidents` can run `incident_thread --close-stranded` ON THE MINI. It finishes the incident parents whose white check landed but whose text still reads `open`: resolve() posts the reply, then edits the parent, and chat.update only touches your OWN messages -- so an incident opened by one machine and fixed from another keeps a parent that says `open` forever. Six were stranded on 2026-08-26 (four Lucy's, two Megan's laptop). It ONLY touches a parent that already carries the white check, so it can never close a real open problem, and it can only edit posts the machine it runs on wrote -- which is why it has to run on BOTH boxes: the laptop CLI for the laptop's, this entry for Lucy's.",

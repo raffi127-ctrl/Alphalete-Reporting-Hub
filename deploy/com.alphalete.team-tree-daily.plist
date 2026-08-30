@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.team-tree-daily</string>
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         installing machine's repo path. RUNS ON LUCY 2 (Carlos 2026-08-30):
+         her creds open the Vantura workbook and her Slack token posts to
+         #a-players-b2b. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/team_tree_daily.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY 6:00am machine-local (Central). Early enough to be waiting in
+         the channel when the office day starts. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.team-tree-daily.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.team-tree-daily.err</string>
+</dict>
+</plist>
