@@ -25,9 +25,38 @@ export PYTHONPATH="$(pwd)"
 
 LOG_FILE="$LOG_DIR/orchestrator-heartbeat-$(date +%Y-%m-%d).log"
 echo "[$(date)] heartbeat starting (args: ${*:-none})" >> "$LOG_FILE"
+
+# PUBLISH TO THE HUB (Megan 2026-08-30). This wrapper stamped its silent_job_watch
+# beat but never told the Hub it ran, so the "Orchestrator Heartbeat" card sat on
+# "scheduled 4:20 AM, no run logged" every day - on a machine where the watchdog
+# was running perfectly and recording its beat (verified in Lucy 1's own log:
+# "heartbeat recorded for orchestrator_heartbeat_lucy_1 / heartbeat OK"). A
+# watchdog that READS as dead is worse than no card: it trains you to ignore the
+# one row whose whole job is to be believed. Standing rule - a LaunchAgent report
+# publishes to the Hub. Card id resolves to 'orchestrator_heartbeat' (checked via
+# hub_publish.hub_card_id, not guessed, so this lands on the existing card
+# instead of auto-creating a twin).
+#
+# The --dry-run gate MUST match the one after the run, or a preview strands a
+# yellow running pill that never closes.
+case " $* " in
+  *" --dry-run "*) : ;;
+  *) "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('orchestrator_heartbeat','Orchestrator Heartbeat')" >> "$LOG_FILE" 2>&1 || true ;;
+esac
+
 "$VENV_PY" -u -m automations.orchestrator_heartbeat.run "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] heartbeat finished exit=$ST" >> "$LOG_FILE"
+
+# Best-effort and swallowed, like the beat below: the Hub pill must never change
+# what this job reports about the orchestrator.
+case " $* " in
+  *" --dry-run "*) : ;;
+  *)
+    if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('orchestrator_heartbeat','Orchestrator Heartbeat','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+    ;;
+esac
 
 # WHO WATCHES THIS ONE. Everything above is silent when the batch is healthy —
 # correct, but it means this watchdog going missing looks exactly like a good
