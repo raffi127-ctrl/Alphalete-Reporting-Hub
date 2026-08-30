@@ -7431,6 +7431,52 @@
       "verify": null,
       "machine": "Lucy 2"
     },
+    "vantura_orderlog_sales": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Vantura Sales Board morning close-out from the ORDER LOGS (Carlos 2026-08-30: 'this morning you would have looked at yesterday's order log and filled in the proper sales'). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.vantura-orderlog-sales, installed via `lucy rerun install_vantura_orderlog_sales_agent`) on LUCY 2 at 05:02 daily incl. weekends — AFTER att_order_log's 4am-batch refresh and the 05:00 vantura-slack-sales pass, BEFORE com.alphalete.sales-boards' 05:10 post. B2B from 'Lucy At&t Data' (SUM Unit Count per rep per order date, the captainship_boards rule, validated vs the live board 2026-08-30); BOX from 'Lucy Box Data' (TPV sale gate) STARTING TUE 2026-09-01 — until then the module skips BOX on its own and Slack stays the BOX source. Raise-only, same wrong-week hold as the Slack fill. Present here so `lucy rerun vantura_orderlog_sales` works — but NEVER rerun it with --week over weeks before 2026-08-31: Carlos hand-spread some earlier sales across days and a raise-only backfill would double-count them. Pure Sheets API, no browser.",
+      "display_name": "Vantura Order-Log Sales fill (5:02am)",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.vantura_orderlog_sales.run"
+      ],
+      "base_args": [
+        "--fill",
+        "--yes"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 10,
+      "verify": null,
+      "machine": "Lucy 2"
+    },
+    "install_vantura_orderlog_sales_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_orderlog_sales_agent` can install the STANDALONE com.alphalete.vantura-orderlog-sales LaunchAgent on LUCY 2 (05:02 daily, deploy/vantura_orderlog_sales.sh, --fill --yes). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
+      "display_name": "Install Vantura Order-Log Sales agent (5:02am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "vantura-orderlog-sales"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
+    },
     "install_vantura_slack_sales_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_slack_sales_agent` can install the STANDALONE com.alphalete.vantura-slack-sales LaunchAgent on LUCY 2 (4-9pm hourly + 5:00am, deploy/vantura_slack_sales.sh, --fill --yes). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",

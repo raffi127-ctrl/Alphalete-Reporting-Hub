@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.vantura-orderlog-sales</string>
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         installing machine's repo path. Runs on LUCY 2 — the Vantura board is
+         Carlos's and the order-log tabs are refreshed by his 4am batch. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/vantura_orderlog_sales.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY incl. weekends. 05:02: after att_order_log's 4am-batch refresh
+         and vantura-slack-sales' 05:00 close-out, before
+         com.alphalete.sales-boards' 05:10 first post (which renders whatever
+         is on the board). Hour/Minute are machine LOCAL time; Lucy 2 is
+         Central. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>2</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-orderlog-sales.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-orderlog-sales.launchd.err.log</string>
+</dict>
+</plist>

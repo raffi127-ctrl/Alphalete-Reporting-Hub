@@ -1,4 +1,6 @@
-"""Vantura Sales Board fill — counts Base, BOX and AT&T sales from Slack.
+"""Vantura Sales Board fill — counts BOX and AT&T sales from Slack.
+
+Base RETIRED 2026-08-30 (Carlos) — the campaign ended; nothing looks for it.
 
 Three of the four campaigns on Carlos's Sales Board are reported nowhere but
 #alphalete-gp-sales, so the VA opens the channel every morning, sorts the reps
@@ -14,14 +16,13 @@ day is safe by construction.
 
 Reconciliation is built in, because the hand-count has been wrong both ways:
   * the office posts its own running tally through the day — "A&T - 21/16 /
-    Box - 6/8 / Base - 12/20" — and the last one is an independent check;
+    Box - 6/8" — and the last one is an independent check;
   * every rep's current board cell is shown next to ours before any write.
 Both are REPORTED, never silently corrected.
 
   python -m automations.vantura_slack_sales.run                 # yesterday
   python -m automations.vantura_slack_sales.run --date 2026-07-22
   python -m automations.vantura_slack_sales.run --week          # Mon..yesterday
-  python -m automations.vantura_slack_sales.run --campaign Base
   python -m automations.vantura_slack_sales.run --fill          # plan the write
   python -m automations.vantura_slack_sales.run --fill --yes    # actually write
 """
@@ -48,6 +49,13 @@ TAB = "Sales Board"
 OFFICE_DAY_START = 10
 
 NAME_COL, CAMPAIGN_COL = 2, 12        # col B, col L
+
+# BOX moves off Slack and onto the box order log Tue 2026-09-01 (Carlos
+# 2026-08-30: "starting Tuesday morning, you can use the box order log
+# instead of Slack"). From that date the default passes stop counting BOX
+# posts — vantura_orderlog_sales' 05:02 close-out owns BOX. An explicit
+# --campaign BOX still works for a manual catch-up.
+BOX_TO_ORDERLOG = dt.date(2026, 9, 1)
 DAY_HEADER_ROW = 4                    # row carrying Monday..Sunday
 FIRST_DAY_COL, LAST_DAY_COL = 5, 11   # cols E..K
 
@@ -201,7 +209,6 @@ NAME_ALIASES = {
 
 # The office's own running tally, e.g. "A&T - 21/16", "Box - 6/8", "Base -12/20".
 TALLY_RE = {
-    "Base": re.compile(r"base\s*-?\s*(\d+)\s*/\s*\d+", re.I),
     "BOX": re.compile(r"box\s*-?\s*(\d+)\s*/\s*\d+", re.I),
     "B2B": re.compile(r"a\s*&?\s*t\s*-?\s*(\d+)\s*/\s*\d+", re.I),
 }
@@ -633,6 +640,10 @@ def main(argv=None) -> int:
 
     campaigns = a.campaign or [c.name for c in P.CAMPAIGNS]
     now = dt.datetime.now(TZ)
+    if not a.campaign and now.date() >= BOX_TO_ORDERLOG and "BOX" in campaigns:
+        campaigns.remove("BOX")
+        _log(f"BOX comes from the order log since {BOX_TO_ORDERLOG.isoformat()}"
+             " (vantura_orderlog_sales) — not counted from Slack")
     today = now.date()
     if a.date:
         end = dt.date.fromisoformat(a.date)

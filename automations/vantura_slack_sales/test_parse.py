@@ -32,18 +32,8 @@ def _tallied(text, campaign, **kw):
 CASES = [
     # (label, text, campaign, sales it contributes to the day)
 
-    # --- Base: residential energy, door-to-door ---------------------------
-    ("base numbered", "D2D :door::zap:\n\n1,390 kwh\n\nBase #1", "Base", 1),
-    ("base three in one post",
-     "2,528 kwh\n\nBase #1\n\nBase # 2\n\nBase # 3", "Base", 3),
-    ("base no space no hash", "BASE1\nD2D :door::zap:\n\n1,000 kwh", "Base", 1),
-    ("base cx counter", "D2D\n\nBase\n\nCX2\n\n2112 kwh", "Base", 2),
-    ("base flag emoji", "D2D\n\n:us:BASE:us:\n\n1,560 KWH\n\n#1", "Base", 1),
-    ("base no base word", "D2D\n\n1998 kwh\n\nCx2", "Base", 2),
-    # Megan 2026-07-23: "this would be 1 Base sale"
-    ("base cx hash", "D2D :door::zap:\n\n23591 Kwh\n\nBase Cx #1", "Base", 1),
-    ("base address only",
-     "Base :zap:\n\n220 PALOMINO DR\nSAGINAW, TX 76179", "Base", 1),
+    # Base cases RETIRED 2026-08-30 — the campaign ended; D2D/Base posts
+    # now classify as None (both remaining campaigns exclude d2d).
 
     # --- BOX: business energy ---------------------------------------------
     ("box numbered", "B2B :package::zap:\nBill Submitted :white_check_mark:\n\n"
@@ -175,11 +165,11 @@ def test_cases():
 
 
 def test_running_counter():
-    """Base/BOX numbers are cumulative for the day — max, never sum."""
-    posts = [_post("D2D\n\n998 kWh\n\nBase\n\nCX1", hh=15),
-             _post("D2D\n\n1998 kwh\n\nCx2", hh=16),
-             _post("D2D\n\n1299kwh\n\nCx3", hh=16, mm=30)]
-    got = P.tally(posts, dt.date(2026, 7, 22), "Base")["Rep"]["count"]
+    """BOX numbers are cumulative for the day — max, never sum."""
+    posts = [_post("B2B :package:\n\nBF 1\n998 kWh\n\nBox 1", hh=15),
+             _post("B2B :package:\n\nBF 1\n1998 kwh\n\nBox 2", hh=16),
+             _post("B2B :package:\n\nBF 1\n1299kwh\n\nBox 3", hh=16, mm=30)]
+    got = P.tally(posts, dt.date(2026, 7, 22), "BOX")["Rep"]["count"]
     return [] if got == 3 else [f"running counter: got {got}, want 3"]
 
 
@@ -194,24 +184,18 @@ def test_units_sum():
     return [] if got == 7 else [f"units sum: got {got}, want 7"]
 
 
-def test_run_on_address():
-    """'Cx210810 HERMOSA DR' is customer 2 at 10810, not customer 21."""
-    _p, count = _tallied("*Base*:zap:\n\n*Cx1 1403 Rio hondo drive 75218*\n\n"
-                         "*Cx210810 HERMOSA DR, DALLAS, TX 75218*", "Base")
-    return [] if count == 2 else [f"run-on address: got {count}, want 2"]
+# test_run_on_address RETIRED with Base 2026-08-30 (Cx-address counting
+# was a Base-only parse path).
 
 
 def test_campaigns_dont_poach():
-    """The three campaigns all quote kWh and/or CX — none may claim another's
+    """Both campaigns quote kWh and/or CX — none may claim another's
     post."""
     bad = []
     box = _post("B2B :package::zap:\nBill Submitted\n\nBF 1\n36 month term\n"
                 "45,000KWH\nCX 1\nBox #1")
     if box.campaign != "BOX":
         bad.append(f"BOX post read as {box.campaign}")
-    base = _post("D2D :door::zap:\n\n2,226 KWH\n\nBase #1")
-    if base.campaign != "Base":
-        bad.append(f"Base post read as {base.campaign}")
     att = _post("B2B (Business)\nWrap Text sent\nAuto Pay on\n\nCx 1\nNL 1")
     if att.campaign != "B2B":
         bad.append(f"AT&T post read as {att.campaign}")
@@ -221,10 +205,10 @@ def test_campaigns_dont_poach():
 def test_day_rollover():
     """Late-night posts stay on their own day; 'YESTERDAY' moves one back."""
     bad = []
-    late = _post("D2D\n\n1000 kwh\n\nBase #1", hh=22, day=22)
+    late = _post("B2B :package:\n\nBF 1\n1000 kwh\n\nBox 1", hh=22, day=22)
     if late.sales_day != dt.date(2026, 7, 22):
         bad.append(f"22:00 post landed on {late.sales_day}")
-    early = _post("D2D\n\n1000 kwh\n\nBase #1", hh=2, day=23)
+    early = _post("B2B :package:\n\nBF 1\n1000 kwh\n\nBox 1", hh=2, day=23)
     if early.sales_day != dt.date(2026, 7, 22):
         bad.append(f"02:00 post landed on {early.sales_day}")
     tagged = _post("B2B :package::zap:\nYESTERDAY\n\nBill Submitted\nBF 1\n"
@@ -239,12 +223,12 @@ def test_fill_only_raises():
     reach the board by routes that aren't the channel, and those stand."""
     from automations.vantura_slack_sales import run as R
 
-    # Minimal grid: row 4 day headers, row 5 a Base rep, row 6 the totals
+    # Minimal grid: row 4 day headers, row 5 a BOX rep, row 6 the totals
     # anchor so campaign_rows() stops there.
     def grid(cell_value):
         g = [[""] * 12 for _ in range(6)]
         g[3][1], g[3][4] = "REP", "Monday"
-        g[4][1], g[4][4], g[4][11] = "Some Rep", cell_value, "Base"
+        g[4][1], g[4][4], g[4][11] = "Some Rep", cell_value, "BOX"
         g[5][1] = R.TOTALS_TOP
         return g
 
@@ -329,7 +313,7 @@ def test_sara_overwrite():
 
 def main() -> int:
     checks = [test_cases, test_running_counter, test_units_sum, test_week_guard,
-              test_run_on_address, test_campaigns_dont_poach, test_day_rollover,
+              test_campaigns_dont_poach, test_day_rollover,
               test_fill_only_raises, test_sara_overwrite]
     bad = [b for chk in checks for b in chk()]
     for b in bad:
