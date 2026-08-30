@@ -1004,7 +1004,7 @@ def probe_campaigns(headless: bool = True, office: str = "",
         # text, click it, and read what opens.
         try:
             found = page.evaluate(
-                """() => {
+                r"""() => {
                   const rx = /^\s*[★*]?\s*(RES[-\w &]*|BASE [-\w &]*|B2B[-\w &]*)\s*$/i;
                   const cands = [...document.querySelectorAll('a,button,span,div')]
                     .filter(e => rx.test((e.innerText || '').trim())
@@ -1025,7 +1025,7 @@ def probe_campaigns(headless: bool = True, office: str = "",
             _log("PICKER control: %s" % found)
             page.wait_for_timeout(2500)
             items = page.evaluate(
-                """() => [...document.querySelectorAll('a,li,span,button')]
+                r"""() => [...document.querySelectorAll('a,li,span,button')]
                      .filter(e => e.offsetParent !== null)
                      .map(e => {
                        const t = (e.innerText || '').replace(/\s+/g,' ').trim();
