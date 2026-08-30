@@ -129,6 +129,97 @@ def price_box(sale):
     return amt, ",".join(notes)
 
 
+# The OLD scale, for comparison only (Carlos 2026-08-30: "what would the
+# payout have been for Box this week if they had used this payout scale?" —
+# the TX Grid on the same Box Pay tab). 40k+ kWh: base 375/310/275/240,
+# term 24mo +100 / 36+ +150; below 40k: base 325/275/210/190, term +50/+100;
+# kWh bonus 40-45k 25 / 45-50k 50 / 50-55k 80 / 55-60k 120 / 60-80k 180 /
+# 80-100k 250 / 100k+ 350; volume bonus 4-6 $100 / 7-9 $130 / 10-12 $165 /
+# 13+ $210 per activation.
+TX_BASE_40K = {1: 375, 2: 310, 3: 275, 4: 240}
+TX_BASE_LOW = {1: 325, 2: 275, 3: 210, 4: 190}
+TX_KWH = ((100_000, 350), (80_000, 250), (60_000, 180), (55_000, 120),
+          (50_000, 80), (45_000, 50), (40_000, 25))
+TX_TIERS = ((13, 210), (10, 165), (7, 130), (4, 100), (0, 0))
+
+
+def price_box_tx(sale):
+    import re as _re
+    f = sale.fields
+    try:
+        vol = float((f.get("Sales (All) kWH+Therms") or "0").replace(",", ""))
+    except ValueError:
+        vol = 0.0
+    m = _re.search(r"(\d)", f.get("BF Tier") or "")
+    bf = int(m.group(1)) if m else 4
+    bf = bf if bf in (1, 2, 3, 4) else 4
+    big = vol >= 40_000
+    amt = (TX_BASE_40K if big else TX_BASE_LOW)[bf]
+    m = _re.search(r"(\d+)", f.get("Term") or "")
+    months = int(m.group(1)) if m else 0
+    if months >= 36:
+        amt += 150 if big else 100
+    elif months >= 24:
+        amt += 100 if big else 50
+    for floor, b in TX_KWH:
+        if vol >= floor:
+            amt += b
+            break
+    return amt
+
+
+def box_scale_compare(csv_path: Path, monday: dt.date, upto: dt.date):
+    """Both scales side by side, per rep — written to the Mini Control
+    workbook tab 'Box Scale Compare'."""
+    from automations.box_order_log import clean as bclean
+    reps_ok = board_box_reps()
+    agg = collections.defaultdict(lambda: {"n": 0, "tx": 0.0, "new": 0.0})
+    sales, _ = bclean.load(csv_path)
+    for s in sales:
+        rep = _n(s.fields.get("Rep Name"))
+        if not rep or norm_name(rep) not in reps_ok:
+            continue
+        if not s.sale_date or not (monday <= s.sale_date <= upto):
+            continue
+        if s.level in bclean.DEAD_LEVELS or not bclean._reached_tpv(s):
+            continue
+        a = agg[rep.title()]
+        a["n"] += 1
+        a["tx"] += price_box_tx(s)
+        new_amt, _notes = price_box(s)
+        a["new"] += new_amt
+    lines = [["BOX — TX Grid vs New Compensation",
+              f"week {monday} .. {upto}", str(csv_path.name)],
+             ["REP", "SALES", "TX GRID (incl vol bonus)",
+              "NEW COMP (incl vol bonus)", "DIFF new-tx"]]
+    t_tx = t_new = 0.0
+    for rep, a in sorted(agg.items(), key=lambda kv: -kv[1]["new"]):
+        _tn, tx_rate = next(((n, r) for f, r in TX_TIERS
+                             for n in [""] if a["n"] >= f), ("", 0))
+        tx_rate = next(r for f, r in TX_TIERS if a["n"] >= f)
+        _nm, new_rate = box_tier_for(a["n"])
+        tx = a["tx"] + tx_rate * a["n"]
+        new = a["new"] + new_rate * a["n"]
+        t_tx += tx
+        t_new += new
+        lines.append([rep, a["n"], round(tx, 2), round(new, 2),
+                      round(new - tx, 2)])
+    lines.append(["OFFICE TOTAL", sum(a["n"] for a in agg.values()),
+                  round(t_tx, 2), round(t_new, 2), round(t_new - t_tx, 2)])
+    for row in lines:
+        print("  " + "  |  ".join(str(c) for c in row))
+    from automations.recruiting_report.fill import open_by_key, _retry
+    from automations.vantura_payout_estimate.run import CONTROL_ID
+    sh = open_by_key(CONTROL_ID)
+    try:
+        ws = sh.worksheet("Box Scale Compare")
+        ws.clear()
+    except Exception:  # noqa: BLE001
+        ws = sh.add_worksheet(title="Box Scale Compare", rows=40, cols=6)
+    _retry(ws.update, values=lines, range_name="A1")
+    print("written to 'Box Scale Compare' on the Mini Control workbook")
+
+
 def load_box_priced(csv_path: Path, monday: dt.date, upto: dt.date):
     """-> per-rep {'days': {date: $}, 'elig': n, 'payable': n} for BOX. The
     count gate is the order-log one: reached TPV (or exempt) and not dead."""
@@ -346,12 +437,22 @@ def main(argv=None) -> int:
                          "appends the registry's --post; this is the override)")
     ap.add_argument("--only", choices=["att", "box"],
                     help="just one campaign's board")
+    ap.add_argument("--tx-compare", action="store_true",
+                    help="one-off: BOX week priced on the OLD TX Grid vs the "
+                         "New Compensation, written to Mini Control; no post")
     a = ap.parse_args(argv)
 
     upto = (dt.date.fromisoformat(a.date) if a.date
             else dt.date.today() - dt.timedelta(days=1))
     monday = week_of(upto)
     now = dt.datetime.now()
+    if a.tx_compare:
+        box_csv = Path(a.box_csv) if a.box_csv else newest_box_csv()
+        if not box_csv:
+            print("no box csv on disk")
+            return 1
+        box_scale_compare(box_csv, monday, upto)
+        return 0
     held = False
     boards = []          # (png, plain, caption)
     tag = f"{upto.month}.{upto.day}"
