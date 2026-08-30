@@ -281,6 +281,52 @@ def deliver(leader_phone: str, text: str, *, dry_run: bool = True,
     return res
 
 
+def readiness(leader_phones: Optional[List[str]] = None) -> List[str]:
+    """Can this machine actually deliver into Raf groups? Read-only.
+
+    Exists because the ordinary dry run can't answer it: once a week's .sent
+    markers are down, every leader short-circuits to "already texted this week"
+    and the delivery path is never reached, so the rehearsal goes quiet exactly
+    when you most want it to talk (2026-08-30 — the first post-build dry run
+    reported nothing at all). These three lines are marker-independent, so the
+    rehearsal is honest on any day of the week.
+
+    What it CANNOT prove: the Shortcut's folder bookmark and the Automation
+    grant, both of which only fail when the Shortcut actually runs. A live
+    send is the only proof of those.
+    """
+    from automations.swag_welcome.roster import pretty_phone
+    lines = ["Raf-group readiness:"]
+
+    raf = raf_phone()
+    lines.append("  Raf's number      %s" % (
+        pretty_phone(raf) or raf if raf else
+        "MISSING from the phone overlay (key %s) — every text goes 1:1"
+        % RAF_SLACK_ID))
+
+    actual = find_shortcut()
+    lines.append("  '%s'  %s" % (SHORTCUT_NAME, (
+        "installed as %r" % actual if actual else
+        "NOT INSTALLED — existing groups still work, new ones can't be opened")))
+
+    try:
+        chats = list_chats()
+    except Exception as exc:  # noqa: BLE001
+        lines.append("  Messages chats    UNREADABLE (%s) — everything goes 1:1"
+                     % str(exc)[:120])
+        return lines
+    have = 0
+    if raf and leader_phones:
+        have = sum(1 for ph in leader_phones
+                   if ph and find_pair([raf, ph], chats=chats))
+        lines.append("  Raf groups        %d of %d leader(s) already have one; "
+                     "the rest get opened on first send"
+                     % (have, len([p for p in leader_phones if p])))
+    else:
+        lines.append("  Messages chats    %d readable" % len(chats))
+    return lines
+
+
 def describe(res: Dict) -> str:
     """Short per-leader label for the run output."""
     if res["mode"] == "group":

@@ -107,7 +107,14 @@ def _run_funnel(args, funnel, monday, when) -> int:
 
     if args.mode == "sat-texts":
         from automations.new_start_followup import (
-            texts, group_reminders, number_requests)
+            texts, group_reminders, number_requests, pair_chat)
+        # Printed BEFORE the sweep and independent of the .sent markers: once a
+        # week's markers are down every leader short-circuits to "already
+        # texted", and without this the rehearsal says nothing about whether
+        # the Raf groups can be delivered into at all.
+        for line in pair_chat.readiness([s.leader.phone for s in rec.pending]):
+            print(line)
+        print()
         outcomes = texts.run(rec, send=args.live)
         print(texts.render(outcomes, send=args.live))
         print()
