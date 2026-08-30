@@ -150,8 +150,9 @@ def _probe_columns(page, tag: str, spec: dict, log=print) -> None:
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     raw = WORK_DIR / "{}_probe_raw.csv".format(tag)
-    log("  [{}] crosstab download (probe)...".format(tag))
-    drive_crosstab_dialog(page, spec["url"], CROSSTAB_SHEET, raw, verbose=False)
+    sheet = spec.get("crosstab_sheet") or CROSSTAB_SHEET
+    log("  [{}] crosstab download (probe) — sheet {!r}...".format(tag, sheet))
+    drive_crosstab_dialog(page, spec["url"], sheet, raw, verbose=False)
 
     rows = churn_shape.read_crosstab(raw)
     hdr = [str(h or "").strip().lstrip("\ufeff") for h in rows[0]]
@@ -359,6 +360,12 @@ def main(argv=None) -> int:
     ap.add_argument("--only", choices=sorted(PRODUCTS), default=None,
                     metavar="PRODUCT",
                     help="run one product (default: all three)")
+    ap.add_argument("--crosstab-sheet", default=None, metavar="NAME",
+                    dest="crosstab_sheet",
+                    help="probe a DIFFERENT worksheet than %r. Only meaningful "
+                         "with --probe-columns: it lets the probe point at any "
+                         "ATTTRACKER-B2B view, not just the churn ones (e.g. "
+                         "B2BCancelRates' 'Cancel Rates Sheet')." % CROSSTAB_SHEET)
     ap.add_argument("--dry-run", action="store_true", dest="dry_run",
                     help="pull + parse + report, write NOTHING. Overrides "
                          "--fill, so it can preview a scheduled run: `lucy "
@@ -408,6 +415,9 @@ def main(argv=None) -> int:
             ap.error("--url needs --only <product>, so it is unambiguous which "
                      "view is being replaced")
         products = {args.only: dict(PRODUCTS[args.only], url=args.url)}
+    if args.crosstab_sheet:
+        products = {k: dict(v, crosstab_sheet=args.crosstab_sheet)
+                    for k, v in products.items()}
     offices = ({args.office: OFFICES[args.office]} if args.office else OFFICES)
     log = print
     if args.probe_owners:
