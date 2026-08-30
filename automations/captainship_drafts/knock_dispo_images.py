@@ -1148,9 +1148,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         n_top = 0
                         if (chan_weekly and not gaps_only
                                 and _nn(display) != _nn(CHAN_CFG["name"])):
-                            # index 1: under this owner's own TOTALS row,
-                            # which compute_rows now puts first.
-                            rows.insert(1, B.totals_row(
+                            # index 0: ABOVE this owner's own TOTALS row
+                            # (Megan 2026-08-30, "under chan's row").
+                            rows.insert(0, B.totals_row(
                                 chan_weekly[0], chan_weekly_apps, dispo_cols,
                                 label=f"{CHAN_CFG['name'].upper()} TOTALS"))
                             n_top = 1
@@ -1257,7 +1257,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 # Summed against the HOST board's column list, like every
                 # other comparison row: his own live columns could differ and
                 # the row has to stay aligned under these headers.
-                sum_rows.insert(1, totals_row(
+                sum_rows.insert(0, totals_row(
                     _c_rows, chan_weekly_apps, common_cols,
                     label=f"{_CHAN['name'].upper()} TOTALS"))
                 n_top = 1
@@ -1272,8 +1272,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 name_col=1, wrap_headers=True,
                 # CAPTAINSHIP TOTALS plum, then Chan teal — one block, on top.
                 highlight_first_row=1 + n_top,
-                top_row_colors=[THEME_PLUM["header_bg"]]
-                + [COMPARE_ROW_BG] * n_top,
+                top_row_colors=[COMPARE_ROW_BG] * n_top
+                + [THEME_PLUM["header_bg"]],
                 highlight_last_row=0)
             out_weekly.insert(0, ("Captainship Summary" + (
                 " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"

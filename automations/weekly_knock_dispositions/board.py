@@ -413,10 +413,11 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             rows.append(["", _display_name(rep), "", "", "", str(n_apps),
                          "", "", "", "", "", "", "", ""] + _dispo_cells(None))
 
-    # OFFICE TOTALS leads the board (Megan 2026-08-30: "move the office totals
-    # row to be above Chan's at the top"), so the summary block is the first
-    # thing read and the rep list runs to the bottom uninterrupted. A caller
-    # adding a comparison office inserts it at index 1, under this row.
+    # The summary block leads the board, and inside it the GUEST office comes
+    # first: Chan's totals, then this office's, then the reps (Megan
+    # 2026-08-30, "under chan's row" — matching the daily TOTAL KNOCKS board,
+    # which Raf pointed at as the reference). A caller adding a comparison
+    # office inserts it at index 0, ABOVE this row.
     rows.insert(0, totals_row(ov_rows, apps, dispo_cols))
     return rows
 
@@ -514,14 +515,14 @@ def render(office: str, monday: dt.date, saturday: dt.date,
                                # name_col=1: "#" took column 0.
                                title, THEME_PLUM, out, name_col=1,
                                wrap_headers=True,
-                               # One highlighted block, at the top: this
-                               # office's TOTALS plum, then any comparison
-                               # office teal (Megan 2026-08-30).
+                               # One highlighted block at the top: the
+                               # comparison office teal, then this office's
+                               # TOTALS plum under it (Megan 2026-08-30).
                                highlight_first_row=n_top,
-                               top_row_colors=([THEME_PLUM["header_bg"]]
-                                               * n_totals
-                                               + [COMPARE_ROW_BG]
-                                               * n_compare_top),
+                               top_row_colors=([COMPARE_ROW_BG]
+                                               * n_compare_top
+                                               + [THEME_PLUM["header_bg"]]
+                                               * n_totals),
                                # Nothing trails now, so no bottom totals block
                                # and no repeated header band above one (that
                                # band existed to make the OLD bottom block
