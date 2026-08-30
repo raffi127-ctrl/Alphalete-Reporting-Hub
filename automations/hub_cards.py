@@ -4526,7 +4526,7 @@ AUTOMATED_REPORTS = [
         "id": "override-bulletin",
         # Sits directly before the PNL card: the bulletin goes out first, then
         # PNL for the Office posts right after (same Friday 10am slot, Lucy 1).
-        "name": "Override Bulletin \u2192 #alphalete-sales + both recruiting rooms",
+        "name": "Override Bulletin \u2192 #alphalete-sales + #alphalete-lvl1-chat + Raf's office",
         "creator": "Megan & Claude",
         "emoji": "\U0001F3C6",
         # Gold \u2014 matches the black/gold bulletin artwork.
