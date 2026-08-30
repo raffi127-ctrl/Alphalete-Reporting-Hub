@@ -199,16 +199,28 @@ def has_daily_knocks(ov_rows: list[dict]) -> bool:
 
 
 def knocking_cells(ov_rows: list[dict]) -> list[str]:
-    """The two summary cells: the head count, and the office's total doors
-    divided by it. Blank — never "0" — when the pull has no daily counts, and
-    the doors cell stays blank when nobody cleared the bar: nothing to divide
-    by is not a zero, and a 0.0 beside a week of real talk-to's reads as
-    'these reps knocked nothing'."""
+    """The two summary cells: the head count, and the doors THOSE reps knocked
+    divided by it.
+
+    THE NUMERATOR IS THE QUALIFIERS' OWN DOORS, not the office's (Megan chose
+    this reading 2026-08-30 off the real Aug 24-29 board). Dividing the whole
+    office's doors by only the reps who cleared the bar produced numbers no rep
+    could have knocked — Muhammad Haque's 21 reps over 2 qualifiers read 4,511
+    doors per rep for the week, ~750 a day — and it made the column reward
+    having FEWER qualifiers, so it could not be compared down a summary board,
+    which is the one thing a summary column is for. Qualifiers' doors over
+    qualifiers lands every ICD in the 400-850 range: a real average for a rep
+    who worked the whole week.
+
+    Blank — never "0" — when the pull has no daily counts, and blank when
+    nobody cleared the bar: nothing to divide by is not a zero, and a 0.0
+    beside a week of real talk-to's reads as 'these reps knocked nothing'."""
     if not has_daily_knocks(ov_rows):
         return ["", ""]
-    knocking = sum(1 for r in ov_rows if is_knocking(r))
-    doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in ov_rows)
-    return [str(knocking), (_num(doors / knocking) if knocking else "")]
+    knocking = [r for r in ov_rows if is_knocking(r)]
+    doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in knocking)
+    return [str(len(knocking)),
+            (_num(doors / len(knocking)) if knocking else "")]
 
 
 def _display_name(rep: str) -> str:

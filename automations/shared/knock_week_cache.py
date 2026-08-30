@@ -181,6 +181,18 @@ def _jsonable(v: Any) -> Any:
     """
     if v is None or isinstance(v, (str, int, float, bool)):
         return v
+    # Lists round-trip as lists (recursing, so a list of lists survives too).
+    # WITHOUT this they were stringified — 2026-08-30, the day pull_office_week
+    # started carrying K_DAILY_KNOCKS, every cached row came back holding
+    # "[35, 53, 141, 65, 49, 50]" instead of the six numbers. Nothing raised:
+    # board.is_knocking type-checks for a list, so it just answered False for
+    # every rep, and the two knocking columns went BLANK on every board drawn
+    # from cache — which is Monday's captainship build and every Sunday
+    # weekly_knock_dispositions run after the captainship one. The fill-but-
+    # flag blank is the correct output for "we can't tell"; it is the wrong
+    # output for "we measured it and threw it away in the cache writer".
+    if isinstance(v, (list, tuple)):
+        return [_jsonable(x) for x in v]
     return str(v)
 
 
@@ -190,7 +202,11 @@ def _jsonable(v: Any) -> Any:
 # field — instead of the board quietly drawing a blank column off a row that
 # predates it. Bumped to 2 on 2026-08-30 (per-day door counts, for Raf's reps-
 # knocking columns). A miss costs one pull; a stale hit costs a wrong board.
-SCHEMA = 2
+#
+# 3 on the same day: _jsonable was stringifying the list it had just started
+# storing, so every schema-2 entry holds a useless "[35, 53, …]" string and has
+# to be thrown away, not read.
+SCHEMA = 3
 
 
 def get(office: str, saturday, *,

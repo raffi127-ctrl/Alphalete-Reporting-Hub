@@ -963,7 +963,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
             # per-process, so the first captain pays the one pull and the
             # other five read it.
             from automations.weekly_knock_dispositions.offices import (
-                CHAN as _CHAN_CFG)
+                CHAN as CHAN_CFG)
+            from automations.focus_office_att.aliases import _norm_name as _nn
+            _CHAN_CFG = CHAN_CFG
             if want_weekly:
                 # Same reasoning as the daily line below — the summary needs
                 # it and the ladder inside makes it at most one pull per
@@ -1134,6 +1136,22 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             continue
                         gaps_only = B.is_gaps_only(ov_rows)
                         rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
+                        # Chan's totals ride the TOP of EVERY owner's weekly
+                        # board, not just the captainship summary (Raf
+                        # 2026-08-30: "make sure chan's numbers are at the top
+                        # of this weekly disposition summary report. For mine
+                        # and everyone elses" — everyone else's BOARD, which is
+                        # what the metrics-thread copies have carried all along
+                        # and these did not). The daily boards next to them
+                        # already do it via compare_totals_for; this is the
+                        # weekly half catching up.
+                        n_top = 0
+                        if (chan_weekly and not gaps_only
+                                and _nn(display) != _nn(CHAN_CFG["name"])):
+                            rows.insert(0, B.totals_row(
+                                chan_weekly[0], chan_weekly_apps, dispo_cols,
+                                label=f"{CHAN_CFG['name'].upper()} TOTALS"))
+                            n_top = 1
                         # office=display puts the owner's name in the image
                         # title — many owners share one email, so every board
                         # must say whose it is (unlike the Metrics-thread
@@ -1141,7 +1159,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         png = B.render(display, monday, saturday, rows,
                                        weekly_root / _slug(display),
                                        dispo_cols, gaps_only=gaps_only,
-                                       n_totals=1)
+                                       n_totals=1, n_compare_top=n_top)
                         # INCOMPLETE flag rides the display name so it lands
                         # in the sub-heading next to the board it qualifies.
                         label = (display if pss_path is not None
@@ -1150,6 +1168,10 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         out_weekly.append((label, png))
                         captured_weekly.append((display, ov_rows, office_apps,
                                                 dispo_cols))
+                        # ov_rows only — the office's own reps. The Chan row
+                        # is drawn ON the board, it is not this office's data,
+                        # and a reuse that folded it in would double-count him
+                        # into the captainship totals.
                         _write_rows(png, {"ov_rows": ov_rows,
                                           "apps": office_apps,
                                           "dispo_cols": dispo_cols})
