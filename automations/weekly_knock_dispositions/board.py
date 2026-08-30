@@ -49,7 +49,7 @@ DAYS = 6                     # Mon–Sat
 # "20 knocks or fewer is a walk-on, not a day of doors" and Rafael approved
 # that bar 2026-08-28. The header prints the number so nobody has to guess
 # which side of 20 the line falls on.
-MIN_KNOCKS_PER_DAY = knocks_render.KNOCKING_MIN_KNOCKS
+MIN_KNOCKS_PER_DAY = knocks_render.KNOCKING_MIN_KNOCKS   # 21 — "21 or more"
 
 # Raf's two asks, 2026-08-30. Both are SUMMARY-row columns — a rep row is one
 # rep, where a head count is always 1 and doors-per-rep just repeats the rep's
@@ -209,18 +209,29 @@ def _avg_knock(ov_rows: list[dict], col: str) -> str:
 
 
 def is_knocking(rec: dict) -> bool:
-    """Did this rep work the full week of doors — MIN_KNOCKS_PER_DAY or more
-    on EVERY one of the six days (Raf 2026-08-30)?
+    """Does this rep count as knocking — MIN_KNOCKS_PER_DAY doors a day on
+    average across Mon–Sat?
+
+    THE SIX-DAY REQUIREMENT IS GONE (Raf 2026-08-30: "remove the criteria that
+    the rep needs to work six days for it to count. Only the 21 or more doors
+    for it to count can stay"). It used to demand 21+ on every one of the six
+    days, which counted 84 of his captainship's 305 reps.
+
+    The test is the AVERAGE, deliberately, because the two other readings of
+    "21 or more doors" measure nothing: 21+ on any single day counts 300 of
+    305, and 21+ for the whole week counts the same 300 — a column that says
+    "300 of 305" is a column nobody reads twice. The average counts 255, and it
+    is the one criterion a reader can CHECK, because Avg Doors / Day is printed
+    on the very next cell of the same row.
 
     False for a rep whose record carries no daily counts at all, which is what
     a pre-2026-08-30 cached pull and a gaps-only (TeleMapper) office both look
-    like. `has_daily_knocks` is what separates "nobody qualified" from "we
-    can't tell" — the caller blanks the columns for the second, because a 0
-    head count on a week we simply didn't measure is a claim, not a gap."""
+    like. `has_daily_knocks` separates "nobody qualified" from "we can't
+    tell" — a 0 on a week we never measured is a claim, not a gap."""
     daily = rec.get(K_DAILY_KNOCKS)
-    if not isinstance(daily, (list, tuple)) or len(daily) < DAYS:
+    if not isinstance(daily, (list, tuple)) or not daily:
         return False
-    return all(int(d or 0) >= MIN_KNOCKS_PER_DAY for d in daily[:DAYS])
+    return (int(rec.get(K_TOTAL_KNOCKS) or 0) / DAYS) >= MIN_KNOCKS_PER_DAY
 
 
 def _doors_per_day(rec: dict) -> str:
@@ -408,9 +419,15 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
     _door_reps = [r for r in ov_rows
                   if isinstance(r.get(K_DAILY_KNOCKS), (list, tuple))]
     _tot_doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in _door_reps)
+    _knocking = reps_knocking(ov_rows)
     return ([
-        # The office's REP COUNT, not a row number — see COL_NUM.
-        str(len(ov_rows)),
+        # The count of reps who COUNT AS KNOCKING, not a row number and not
+        # the raw head count — "have the total at the top and bottom headers"
+        # (Raf 2026-08-30), where the total is what the criteria produced. The
+        # raw head count is still readable off the board: it is the number on
+        # the last rep row. Falls back to the head count when no daily doors
+        # were measured, so the cell is never empty on a totals row.
+        str(_knocking if _knocking is not None else len(ov_rows)),
         label,
     ] + [
         # Per rep, not office-level — the same rule every Avg column on this
