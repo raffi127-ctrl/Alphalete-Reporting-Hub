@@ -488,7 +488,8 @@ def restore_all(page, expected: int, limit: int = 0) -> int:
 # Main
 # --------------------------------------------------------------------------- #
 def run(office: str, start: str, end: str = "", live: bool = False,
-        limit: int = 0, debug: bool = False, tab: str = "") -> int:
+        limit: int = 0, debug: bool = False, tab: str = "",
+        names_out: str = "") -> int:
     o = offices.activate(office)
     # A DEDICATED Chrome profile + port, NOT the office's own. The scheduled
     # applicant-push fires every 5 min and each office's run pkills `-f` its own
@@ -532,6 +533,12 @@ def run(office: str, start: str, end: str = "", live: bool = False,
         if debug:
             probe_restore_mechanism(page)
         header, rows = scrape_rows(page)
+        if names_out:
+            _names = sorted({(r[0] or "").strip() for r in rows
+                             if (r[0] or "").strip()})
+            with open(names_out, "w") as _fh:
+                _fh.write("\n".join(_names) + "\n")
+            _log(f"[rm] wrote {len(_names)} unique name(s) to {names_out}")
         stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         write_sheet(tab, header, rows,
                     f"{o['label']} · removed {start}–{end} · scraped {stamp} · "
@@ -580,10 +587,14 @@ def main(argv=None) -> int:
     p.add_argument("--debug", action="store_true",
                    help="dump the page's controls + tables (selector discovery)")
     p.add_argument("--tab", default="", help="Sheet tab for the scrape")
+    p.add_argument("--names-out", default="", metavar="PATH",
+                   help="also write the unique applicant names to PATH, one per "
+                        "line — feeds applicant_push --only-names so a follow-up "
+                        "push touches ONLY the applicants this run restored")
     a = p.parse_args(argv)
     return run(office=a.office, start=a.start, end=a.end,
                live=a.live and not a.dry_run, limit=a.limit, debug=a.debug,
-               tab=a.tab)
+               tab=a.tab, names_out=a.names_out)
 
 
 if __name__ == "__main__":

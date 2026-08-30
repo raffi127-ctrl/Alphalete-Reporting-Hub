@@ -242,6 +242,11 @@ def main(argv=None) -> int:
                    help="Cap OAT live mutations this run (controlled test)")
     p.add_argument("--batch-limit", type=int, default=0,
                    help="Send only the first N batch rows (small live test)")
+    p.add_argument("--only-names", default="", metavar="PATH",
+                   help="allowlist file (one applicant name per line) — the walk "
+                        "touches ONLY these people and pages past everyone else. "
+                        "Written by restore_removed --names-out; sets "
+                        "OAT_ONLY_NAMES for the OAT stage.")
     p.add_argument("--recheck-nophone", action="store_true",
                    help="Re-read the resumes of applicants already flagged "
                         "no-number TODAY (archives the day's cache first). Use "
@@ -254,6 +259,8 @@ def main(argv=None) -> int:
                         "browser profile, day files and Slack settings — see "
                         "automations/applicant_push/offices.py.")
     args = p.parse_args(argv)
+    if getattr(args, "only_names", ""):
+        os.environ["OAT_ONLY_NAMES"] = args.only_names
 
     live = args.live and not args.dry_run
     if args.batch_only and args.oat_only:

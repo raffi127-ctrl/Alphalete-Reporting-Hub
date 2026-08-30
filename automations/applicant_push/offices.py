@@ -217,6 +217,29 @@ OFFICES = {
         "remove_blocked_read": True,
         "remove_no_phone": True,
     },
+    # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit, run ON
+    # LUCY 2 so it can go in parallel with the mini's local runs.
+    "11280": {
+        "office_id": "11280",
+        "hint": "RAFAEL HIDALGO",
+        "owner": "Rafael Hidalgo",
+        "label": "office 11280 · Rafael Hidalgo — ALPHALETE MARKETING, INC.",
+        "short": "office 11280, Rafael",
+        "suffix": "-11280",
+        "cdp_profile": "/tmp/rp_cdp_11280",
+        "cdp_port": "9253",
+        "cdp_kill_pat": "rp_cdp_11280",
+        "walk_diag_tab": "OAT Walk Diag 11280",
+        "push_diag_tab": "Applicant Push Diag 11280",
+        "log_stem": "applicant-push-11280",
+        "hub_report_id": "applicant_push_rafael",
+        "hub_display": "Applicant Push (Rafael)",
+        "post_channel": "C09L1S3MQ1E",
+        "post_todo": False,
+        "allow_retext": False,
+        "remove_blocked_read": True,
+        "remove_no_phone": True,
+    },
 }
 
 DEFAULT_OFFICE = "11580"
