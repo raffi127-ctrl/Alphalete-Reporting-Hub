@@ -100,7 +100,7 @@ def missing_offices(render_dir, captain_key: str, saturday) -> List[str]:
     the manifest is what the capture actually saw, so an office added or
     renamed this morning can't turn into a phantom "missing" line."""
     import json
-    newest = None
+    newest, errs = None, {}
     pat = f"knocks_manifest_{captain_key}_*_{saturday.isoformat()}.json"
     for man in sorted(Path(render_dir).glob(pat), reverse=True):
         try:
@@ -108,12 +108,24 @@ def missing_offices(render_dir, captain_key: str, saturday) -> List[str]:
         except Exception:      # noqa: BLE001 — an unreadable one is not fatal
             continue
         pairs = (data.get("items") or {}).get("knock_dispo")
-        if pairs:
+        errs = data.get("errors") or {}
+        if pairs or errs:
             newest = pairs
             break
-    if not newest:
-        return []
-    return [lab.split(" — ")[0].strip() for lab, path in newest if not path]
+    out = [lab.split(" — ")[0].strip() for lab, path in (newest or [])
+           if not path]
+    # AND the owners that never reached the items list at all. capture_sections
+    # splits its failures: an ordinary one is appended as (display, None), but
+    # an ACCESS GAP is routed to `gapped_weekly` and omitted from items
+    # entirely — which is precisely the case this line exists to name. Both
+    # kinds are recorded under errors["knock_dispo:<display>"], so that is the
+    # complete source. Without this the dry-run showed no missing offices for
+    # Wayne while his PDF held 3 pages of a 6-office captainship.
+    for key in (errs or {}):
+        kind, _, who = key.partition(":")
+        if kind == "knock_dispo" and who and who not in out:
+            out.append(who)
+    return out
 
 
 def _addrs(msg, header: str) -> List[str]:
