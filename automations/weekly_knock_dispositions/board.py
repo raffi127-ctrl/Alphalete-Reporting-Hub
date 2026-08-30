@@ -56,7 +56,25 @@ MIN_KNOCKS_PER_DAY = knocks_render.KNOCKING_MIN_KNOCKS
 # own knocks — so they fill on the totals / comparison / per-ICD summary rows
 # and stay blank down the rep list. Same convention the daily board's
 # "Total # of Reps Knocking" already reads by.
-COL_REPS_KNOCKING = f"Reps Knocking ({DAYS} Days {MIN_KNOCKS_PER_DAY}+)"
+# Raf 2026-08-30, third pass on the same board: "add a number to the left of
+# each rep name counting them and then have the total at the top and bottom
+# headers — then that blank row won't exist."
+#
+# So the leftmost column numbers the reps 1..N, and the summary rows (a
+# comparison office on top, this office's TOTALS at the bottom) carry that
+# office's REP COUNT instead of a row number. It is the same "#" column the
+# daily boards run (render.number_rows) with one deliberate difference: that
+# one leaves the summary rows blank, on the reasoning that a number there reads
+# as a row index. On a totals row that is already drawn in reversed bold the
+# count is unambiguous, and it is what he asked to see.
+#
+# This REPLACES "Reps Knocking (6 Days 21+)" rather than joining it. That
+# column could only ever be filled on summary rows — a head count of one rep is
+# always 1 — and the blank it left down the rep list is the thing he had now
+# flagged twice. The six-day bar itself is untouched and still computed
+# (is_knocking / MIN_KNOCKS_PER_DAY); it simply has no column of its own. If it
+# should come back, it is one entry in HEADERS plus one cell in totals_row.
+COL_NUM = "#"
 # The doors column, settled by Raf 2026-08-30 after two rounds on the same day:
 # "This should be 'AVG Doors a rep knocked per day', so every rep should have a
 # number."
@@ -81,7 +99,7 @@ COL_DOORS_PER_DAY = "Avg Doors / Day"
 # skews them), the gap columns SAY Mon–Sat, and Saturday's own knock times
 # get their own two columns after the gaps.
 HEADERS = [
-    "Rep", COL_REPS_KNOCKING, COL_DOORS_PER_DAY,
+    COL_NUM, "Rep", COL_DOORS_PER_DAY,
     "Total Talk To's", "Avg Talk To's / Day", "Total Apps",
     "Avg Talk To's per App", "Mon\u2013Fri Avg First Knock",
     "Mon\u2013Fri Avg Last Knock", "Avg Hrs Knocking / Day",
@@ -103,7 +121,7 @@ DISPO_DISPLAY = {
 
 # A WIRELESS / gaps-only office (no Disposition page — records carry no
 # K_TALK_TO) draws just what TeleMapper knows about it.
-GAPS_ONLY_HEADERS = ["Rep", "Mon\u2013Fri Avg First Knock",
+GAPS_ONLY_HEADERS = [COL_NUM, "Rep", "Mon\u2013Fri Avg First Knock",
                      "Mon\u2013Fri Avg Last Knock",
                      "Avg Hrs Knocking / Day",
                      "Mon\u2013Sat Avg Gap / Day",
@@ -221,16 +239,19 @@ def has_daily_knocks(ov_rows: list[dict]) -> bool:
                for r in ov_rows)
 
 
-def knocking_cells(ov_rows: list[dict]) -> list[str]:
-    """The head-count cell: how many reps cleared the bar on all six days.
+def reps_knocking(ov_rows: list[dict]) -> int | None:
+    """How many reps cleared the bar on all six days — None when the pull
+    carried no daily counts at all (a pre-2026-08-30 cached row, a gaps-only
+    office), because nothing measured is not nobody qualifying.
 
-    SUMMARY ROWS ONLY — on a rep row the answer is always 1, which is why that
-    cell stays empty. Blank rather than "0" when the pull carried no daily
-    counts at all (a pre-2026-08-30 cached row, a gaps-only office): nothing
-    measured is not nobody qualifying."""
+    NO LONGER A COLUMN (Raf 2026-08-30 — see COL_NUM): it could only be filled
+    on summary rows and the blank it left down the rep list is what he asked to
+    lose. Kept because the number is still the answer to "how many of my reps
+    worked the whole week", and putting it back is one HEADERS entry and one
+    cell in totals_row."""
     if not has_daily_knocks(ov_rows):
-        return [""]
-    return [str(sum(1 for r in ov_rows if is_knocking(r)))]
+        return None
+    return sum(1 for r in ov_rows if is_knocking(r))
 
 
 def _display_name(rep: str) -> str:
@@ -284,6 +305,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
                         key=lambda r: str(r.get(COL_REP, "")).lower()):
             gap_min = r.get(K_GAP_MIN)
             rows.append([
+                "",                      # numbered by render(), see COL_NUM
                 _display_name(str(r.get(COL_REP, "")).strip()),
                 str(r.get(COL_FIRST_KNOCK, "")).strip(),
                 str(r.get(COL_LAST_KNOCK, "")).strip(),
@@ -302,6 +324,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
                     _avg_knock(ov_rows, COL_LAST_KNOCK))
         _gg = (tot_gaps / DAYS / len(gap_reps)) if gap_reps else 0
         rows.append([
+            str(len(ov_rows)),
             TOTALS_LABEL,
             _gf, _gl,
             _knocking_hm(_gf, _gl, _gg),
@@ -330,8 +353,8 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         n_apps = matched.get(rep)
         gap_min = r.get(K_GAP_MIN)
         rows.append([
+            "",                          # numbered by render(), see COL_NUM
             _display_name(rep),
-            "",                          # Reps Knocking: summary rows only
             _doors_per_day(r),
             str(talk),
             _num(avg_day),
@@ -354,7 +377,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         for rep, n_apps in sorted(apps.items()):
             if _norm_name(rep) in consumed or not n_apps:
                 continue
-            rows.append([_display_name(rep), "", "", "", "", str(n_apps),
+            rows.append(["", _display_name(rep), "", "", "", str(n_apps),
                          "", "", "", "", "", "", "", ""] + _dispo_cells(None))
 
     rows.append(totals_row(ov_rows, apps, dispo_cols))
@@ -386,8 +409,10 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
                   if isinstance(r.get(K_DAILY_KNOCKS), (list, tuple))]
     _tot_doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in _door_reps)
     return ([
+        # The office's REP COUNT, not a row number — see COL_NUM.
+        str(len(ov_rows)),
         label,
-    ] + knocking_cells(ov_rows) + [
+    ] + [
         # Per rep, not office-level — the same rule every Avg column on this
         # row follows (Megan 2026-08-22: a sum in an "Avg / Day" cell misreads).
         (_num(_tot_doors / DAYS / len(_door_reps)) if _door_reps else ""),
@@ -429,9 +454,16 @@ def render(office: str, monday: dt.date, saturday: dt.date,
             else "WEEKLY KNOCK DISPOSITIONS")
     _office = f"{office.upper()} — " if office else ""
     title = f"{what} — {_office}{span}"
+    # Number the REP rows 1..N. The blocks either side — a comparison office on
+    # top, this office's TOTALS at the bottom — already carry their own rep
+    # count from totals_row and must not be renumbered.
+    for i, row in enumerate(rows[n_compare_top:len(rows) - n_totals]):
+        if row:
+            row[0] = str(i + 1)
     out = out_dir / f"weekly_knock_dispositions_{saturday.isoformat()}.png"
     return knocks_render._draw(headers_for(dispo_cols, gaps_only), rows,
-                               title, THEME_PLUM, out, name_col=0,
+                               # name_col=1: "#" took column 0.
+                               title, THEME_PLUM, out, name_col=1,
                                wrap_headers=True,
                                highlight_last_row=n_totals,
                                # Comparison lines above the reps, teal.
