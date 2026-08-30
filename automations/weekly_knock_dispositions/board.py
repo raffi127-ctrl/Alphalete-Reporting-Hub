@@ -250,6 +250,28 @@ def has_daily_knocks(ov_rows: list[dict]) -> bool:
                for r in ov_rows)
 
 
+def listed_reps(ov_rows: list[dict], apps: dict[str, int] | None) -> int:
+    """How many rows the board LISTS: the reps who knocked, plus the sales-only
+    reps compute_rows appends for anyone who sold without a knock row. Mirrors
+    that function's own rule, so the count can never drift from the numbering
+    beside it."""
+    if not apps:
+        return len(ov_rows)
+    _m, consumed = match_apps([r.get(COL_REP, "") for r in ov_rows], apps)
+    extra = sum(1 for rep, n in apps.items()
+                if n and _norm_name(rep) not in consumed)
+    return len(ov_rows) + extra
+
+
+def _knocking_label(ov_rows: list[dict], apps: dict[str, int] | None) -> str:
+    """The "#" cell on a summary row: "21 of 22", or just the listed count when
+    no daily doors were measured (a pre-2026-08-30 cached row, a gaps-only
+    office) — never a "0 of 22" we didn't measure."""
+    listed = listed_reps(ov_rows, apps)
+    k = reps_knocking(ov_rows)
+    return f"{k} of {listed}" if k is not None else str(listed)
+
+
 def reps_knocking(ov_rows: list[dict]) -> int | None:
     """How many reps cleared the bar on all six days — None when the pull
     carried no daily counts at all (a pre-2026-08-30 cached row, a gaps-only
@@ -419,15 +441,19 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
     _door_reps = [r for r in ov_rows
                   if isinstance(r.get(K_DAILY_KNOCKS), (list, tuple))]
     _tot_doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in _door_reps)
-    _knocking = reps_knocking(ov_rows)
     return ([
-        # The count of reps who COUNT AS KNOCKING, not a row number and not
-        # the raw head count — "have the total at the top and bottom headers"
-        # (Raf 2026-08-30), where the total is what the criteria produced. The
-        # raw head count is still readable off the board: it is the number on
-        # the last rep row. Falls back to the head count when no daily doors
-        # were measured, so the cell is never empty on a totals row.
-        str(_knocking if _knocking is not None else len(ov_rows)),
+        # "K of N" — reps who COUNT AS KNOCKING, out of the reps LISTED above
+        # (Raf 2026-08-30: "have the total at the top and bottom headers").
+        #
+        # BOTH numbers, because they are different quantities and this cell
+        # sits in the column that numbers the rows. Megan caught the bare form
+        # on Aya Al-Khafaji's board: 22 numbered reps over a totals cell
+        # reading 21, which looks like an off-by-one and is not. Row 22 was
+        # Keylee Edwards — 13 apps, no knock row at all — a sales-only line the
+        # board carries so the apps column adds up, and correctly no part of a
+        # knocking count. A reader cannot be expected to reconstruct that from
+        # one number, so the cell now shows the arithmetic.
+        _knocking_label(ov_rows, apps),
         label,
     ] + [
         # Per rep, not office-level — the same rule every Avg column on this
