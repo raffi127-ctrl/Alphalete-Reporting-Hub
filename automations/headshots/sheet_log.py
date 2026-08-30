@@ -88,8 +88,11 @@ def tab_date(title: str, today: dt.date | None = None) -> dt.date | None:
 
 
 def find_week_tab(sh, today: dt.date | None = None):
-    """The dated OBCL tab for the current week — the newest one dated on or
-    before today. (Raf's team creates the tab on/just before the Monday.)"""
+    """The active dated OBCL tab — the NEWEST one, not the newest in the past.
+
+    The team keeps ONE dated tab and rolls it forward: on 2026-08-30 the only
+    dated tab was "D2D OBCL 8.31" (next week's). An "on or before today" rule
+    would have skipped it, so the newest dated tab wins outright."""
     today = today or dt.date.today()
     dated = []
     for ws in sh.worksheets():
@@ -99,9 +102,36 @@ def find_week_tab(sh, today: dt.date | None = None):
     if not dated:
         raise SheetLogError(
             f"no dated {DATED_TAB_PREFIX!r} tab in the workbook")
-    past = [(d, w) for d, w in dated if d <= today]
-    chosen = max(past or dated, key=lambda t: t[0])
-    return chosen[1], chosen[0]
+    d, ws = max(dated, key=lambda t: t[0])
+    return ws, d
+
+
+def candidate_tabs(sh, today: dt.date | None = None) -> list:
+    """Every tab worth searching, best first.
+
+    The dated weekly tabs (newest first), THEN the rolling undated
+    "D2D OBCL" stack. The rolling tab matters: a headshot often arrives days
+    after that person's week has rolled over, and their row only survives in
+    the stack — Ivan Soto (submitted 8/26) was reported "Not found on OBCL
+    Sheet" purely because his week's dated tab no longer existed."""
+    today = today or dt.date.today()
+    dated = []
+    rolling = None
+    for ws in sh.worksheets():
+        title = ws.title.strip()
+        d = tab_date(title, today)
+        if d:
+            dated.append((d, ws))
+        elif title.lower() == DATED_TAB_PREFIX.lower():
+            rolling = ws
+    dated.sort(key=lambda t: t[0], reverse=True)
+    out = [ws for _, ws in dated]
+    if rolling is not None:
+        out.append(rolling)
+    if not out:
+        raise SheetLogError(
+            f"no {DATED_TAB_PREFIX!r} tab in the workbook")
+    return out
 
 
 def _norm(s: str) -> str:
@@ -208,23 +238,29 @@ def mark(ws, row: int, col: int, *, dry_run: bool = False) -> None:
 
 def log_upload(name: str, *, dry_run: bool = False,
                verbose: bool = True) -> dict:
-    """Mark `name`'s Headshot Photo cell on this week's OBCL tab."""
+    """Mark `name`'s Headshot Photo cell on whichever OBCL tab holds them.
+
+    Searches the newest dated tab first, then older dated tabs, then the
+    rolling stack — the first tab carrying the person wins."""
     sh = _client().open_by_key(SHEET_ID)
-    ws, when = find_week_tab(sh)
-    values = ws.get_values("A1:CM400")
-    row, col, got = find_person(values, name, verbose=verbose)
-    if row is None:
-        return {"status": "not_marked", "name": name, "tab": ws.title,
-                "reason": got}
-    cur = ""
-    if row - 1 < len(values) and col - 1 < len(values[row - 1]):
-        cur = _norm(values[row - 1][col - 1]).upper()
-    if cur == "TRUE":
-        return {"status": "already_marked", "name": name, "tab": ws.title,
-                "row": row, "matched_as": got}
-    mark(ws, row, col, dry_run=dry_run)
-    return {"status": "would_mark" if dry_run else "marked", "name": name,
-            "tab": ws.title, "row": row, "matched_as": got}
+    tried = []
+    for ws in candidate_tabs(sh):
+        tried.append(ws.title)
+        values = ws.get_values("A1:CM3000")
+        row, col, got = find_person(values, name, verbose=verbose)
+        if row is None:
+            continue
+        cur = ""
+        if row - 1 < len(values) and col - 1 < len(values[row - 1]):
+            cur = _norm(values[row - 1][col - 1]).upper()
+        if cur == "TRUE":
+            return {"status": "already_marked", "name": name, "tab": ws.title,
+                    "row": row, "matched_as": got}
+        mark(ws, row, col, dry_run=dry_run)
+        return {"status": "would_mark" if dry_run else "marked", "name": name,
+                "tab": ws.title, "row": row, "matched_as": got}
+    return {"status": "not_marked", "name": name, "tab": tried[0] if tried else "",
+            "reason": f"not on any OBCL tab (tried {', '.join(tried)})"}
 
 
 def main(argv=None) -> int:

@@ -770,7 +770,27 @@
       "timeout_minutes": 5,
       "machine": "Lucy 3"
     },
-    "headshots_tick_now": {
+    "headshots_sheet_mark_one": {
+   "on_scheduler": false,
+   "_note": "Tick ONE person's \"Headshot Photo\" box on the OBCL sheet, on demand — the retry path when a headshot was uploaded but the sheet mark missed (e.g. their week's dated tab had already rolled over). Searches the newest dated tab, then older dated tabs, then the rolling \"D2D OBCL\" stack. `lucy rerun headshots_sheet_mark_one --name \"Ivan Soto\" --machine \"Lucy 3\"`; add --dry-run to see where it WOULD mark without writing.",
+   "display_name": "OBCL Headshot box — mark one person",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.headshots.sheet_log"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10,
+   "machine": "Lucy 3"
+  },
+  "headshots_tick_now": {
       "on_scheduler": false,
       "_note": "Run the headshot processing tick ONCE, on demand, with its output in a rerun log \u2014 the diagnostic path when the 10-min launchd tick isn't picking up a submission. Same code the agent runs (automations.headshots.run); processes any unhandled photo replies and uploads to OV. `lucy rerun headshots_tick_now --machine \"Lucy 3\"`. Add --dry-run to process + preview without posting.",
       "display_name": "Headshot tick \u2014 run once now",
