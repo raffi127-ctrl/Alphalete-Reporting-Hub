@@ -35,6 +35,13 @@ as it does for the build.
     python -m automations.captainship_drafts.knocks_capture
     python -m automations.captainship_drafts.knocks_capture --date 2026-08-24
     python -m automations.captainship_drafts.knocks_capture --only rafael
+    python -m automations.captainship_drafts.knocks_capture --only rafael --fresh
+
+--fresh is the "the board itself changed" switch: without it a second run the
+same day short-circuits on the manifest and hands back the morning's PNGs, so a
+layout change looks like it did nothing. It is the section-only twin of run.py's
+--fresh-knocks — reach for this one when only the knock boards are wanted and
+the rest of the captain's email should not be rebuilt at all.
 """
 from __future__ import annotations
 
@@ -71,6 +78,15 @@ def main(argv=None) -> int:
                                    "The boards cover the day before, same "
                                    "anchor the drafts use.")
     ap.add_argument("--only", help="One captain key (e.g. rafael).")
+    ap.add_argument("--fresh", action="store_true",
+                    help="Re-pull instead of reusing today's capture. The "
+                         "manifest keys on the DATE, so after a board's "
+                         "LAYOUT changed this is the only way a same-day "
+                         "re-capture shows the new board — same switch "
+                         "run.py spells --fresh-knocks. Costs the full "
+                         "impersonation loop again, so use it when the "
+                         "boards themselves changed, not to retry a bad "
+                         "office.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -90,6 +106,7 @@ def main(argv=None) -> int:
                 captain, today, config.RENDER_DIR,
                 want_daily="daily_knocks" in wants,
                 want_weekly="knock_dispo" in wants,
+                reuse=not args.fresh,
                 errors=errors)
         except Exception as e:  # noqa: BLE001 — one captain ≠ the step
             failures += 1

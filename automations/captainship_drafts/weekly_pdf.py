@@ -57,13 +57,30 @@ MAX_WEEKS_BACK = 3
 # PNGs are gone is still mailable from the PDF already made for it.
 PDF_DIR = Path(__file__).resolve().parents[2] / "output" / "weekly_dispositions"
 
-# Letter LANDSCAPE at 150 dpi. Landscape because these boards are wide — 17
-# columns on the per-owner ones — and portrait would shrink them to the point
-# where the numbers stop being readable on a phone, which is where a captain
-# opens this.
+# EVERY PAGE IS ITS OWN BOARD'S SIZE (Rafael's Loom, 2026-08-30). It was a
+# fixed Letter LANDSCAPE page with each board scaled down and centred on white,
+# and that is what he was looking at when he said "this one's super small,
+# there's just a lot of white space on there … Chan's looks way better, it's
+# more fit to screen … maybe, I guess, like a PDF of each, it's just a PDF of
+# the thing, there's no white space on any of it."
+#
+# The white space was not a bug in the scaling, it was the fixed page. These
+# boards have wildly different aspect ratios — the Captainship Summary is wide
+# and short (one row per ICD), a 48-rep office board is nearly square — so
+# fitting each into one page shape means whichever dimension runs out first
+# decides the scale and the OTHER one pads with white. Rafael's board padded
+# top and bottom; Chan's, with a third of the reps, happened to land near the
+# page's own ratio and so looked "fit to screen". Same code, different office.
+#
+# So the page IS the image: no letter box, no margin, no downscale. A viewer's
+# fit-to-width then fills the screen with the board on every page, which is
+# what he asked for, and the board PNG already carries its own padding
+# (render._draw's PAD) so nothing touches the paper edge.
+#
+# DPI still 150 — it sets the page's physical size (a 1800px board becomes a
+# 12in-wide page), and PDF readers fit to the window, so this only decides what
+# "100%" means on a desktop.
 DPI = 150
-PAGE_W, PAGE_H = int(11 * DPI), int(8.5 * DPI)
-MARGIN = int(0.35 * DPI)
 
 
 def last_report_saturday(today: dt.date) -> dt.date:
@@ -178,22 +195,16 @@ def pdf_path(captain_key: str, saturday: dt.date) -> Path:
 
 
 def _compose(pages: List[Tuple[str, Path]], out: Path) -> Path:
-    """One board per page, scaled to fit a Letter-landscape page and centred on
-    white. Scaled DOWN only — a small board is left at its own size rather than
-    blown up into a blurry one."""
+    """One board per page, each page EXACTLY its board's size — no letter box,
+    no margin, no scaling (Rafael 2026-08-30; see the DPI note above).
+
+    Pages in one PDF may differ in size, which is what lets a wide-and-short
+    summary and a tall office board each fill the screen on their own page.
+    The convert("RGB") stays: a PNG with alpha cannot be written to PDF."""
     from PIL import Image
     canvases = []
     for _label, png in pages:
-        img = Image.open(png).convert("RGB")
-        room_w, room_h = PAGE_W - 2 * MARGIN, PAGE_H - 2 * MARGIN
-        scale = min(room_w / img.width, room_h / img.height, 1.0)
-        if scale < 1.0:
-            img = img.resize((max(1, int(img.width * scale)),
-                              max(1, int(img.height * scale))),
-                             Image.LANCZOS)
-        page = Image.new("RGB", (PAGE_W, PAGE_H), (255, 255, 255))
-        page.paste(img, ((PAGE_W - img.width) // 2, (PAGE_H - img.height) // 2))
-        canvases.append(page)
+        canvases.append(Image.open(png).convert("RGB"))
     out.parent.mkdir(parents=True, exist_ok=True)
     canvases[0].save(out, "PDF", resolution=DPI, save_all=True,
                      append_images=canvases[1:])
