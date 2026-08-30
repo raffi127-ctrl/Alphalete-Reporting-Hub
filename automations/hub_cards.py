@@ -3718,7 +3718,7 @@ AUTOMATED_REPORTS = [
             # carried the weekday list all along; this just brings the pair
             # back into step.
             "weekdays": [0, 1, 2, 3, 4, 5],
-            "time": "every 5 min, 10:00am-9:30pm (Sat 10:00am-6:30pm)",
+            "time": "every 5 min, 10:00am-9:30pm (Sat 10:00am-5:00pm)",
             "estimated_minutes": 2,
         },
         "checklist": [],
