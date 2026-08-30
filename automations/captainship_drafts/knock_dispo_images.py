@@ -125,6 +125,14 @@ DAILY_SUMMARY_HEADERS = [
 # are deliberately NOT cached, so a later captain's build retries.
 _CHAN_DAILY_CACHE: Dict[str, list] = {}
 
+# The same economy for Chan's WEEKLY rows, keyed by the Saturday. Cheaper than
+# the daily one usually is: the shared week cache (shared/knock_week_cache.py)
+# already holds most completed weeks, so this only ever pays for a live pull
+# when captainship_drafts is the first report of the week to want him — and
+# then it PUTS what it pulled, so Sunday's weekly_knock_dispositions run reads
+# it free. Failures are not cached, so a later captain retries.
+_CHAN_WEEKLY_CACHE: Dict[str, tuple] = {}
+
 
 # An owner on the captainship roster who has NO ownerville office at all —
 # not a name-spelling drift an alias could fix (Megan checked Office Access
@@ -540,6 +548,63 @@ def compare_totals_for(display: str, chan_rows, chan_apps=None) -> list:
     return [(_CHAN["name"], chan_rows, chan_apps)]
 
 
+def _chan_weekly_rows(page, captured_weekly: list, aliases_raw,
+                      monday: dt.date, saturday: dt.date, *, logfn=print):
+    """Chan Park's rows + dispo columns for the WEEK — the captainship
+    summary's teal comparison line (Raf 2026-08-30: "make sure Chan's numbers
+    are at the top of this weekly disposition summary report. For mine and
+    everyone else's").
+
+    Cheapest source first, same ladder as the daily helper: (1) this captain's
+    own weekly loop, when Chan is one of its owners; (2) the per-process cache
+    an earlier captain in this build filled; (3) the shared week cache, which
+    on Monday is always a hit because Sunday paid; (4) ONE data-only
+    pull_office_week inside the already-open session, whose result is written
+    BACK to the shared cache. None = unavailable, and the summary just goes
+    out without the teal row — never a crash, never a fabricated line."""
+    from automations.focus_office_att.aliases import (
+        _norm_name, alias_to_canonical)
+    from automations.weekly_knock_dispositions import pull as P
+    from automations.weekly_knock_dispositions.offices import CHAN as _CHAN
+    from automations.shared import knock_week_cache as KWC
+    key = saturday.isoformat()
+    chan_norm = _norm_name(_CHAN["name"])
+    for _d, rows, _a, cols in captured_weekly:
+        if _norm_name(_d) == chan_norm and rows:
+            _CHAN_WEEKLY_CACHE[key] = (rows, cols)
+            return rows, cols
+    if key in _CHAN_WEEKLY_CACHE:
+        return _CHAN_WEEKLY_CACHE[key]
+    try:
+        canonical = alias_to_canonical(_CHAN["name"], aliases_raw)
+    except Exception:  # noqa: BLE001 — a broken alias sheet ≠ no row
+        canonical = _CHAN["name"]
+    hit = KWC.get(_CHAN["name"], saturday, aliases=aliases_raw)
+    if hit is not None:
+        _CHAN_WEEKLY_CACHE[key] = hit
+        logfn("    Chan weekly comparison: from week cache")
+        return hit
+    if page is None:
+        return None
+    try:
+        logfn(f"    Chan weekly comparison: extra data-only pull "
+              f"({canonical})")
+        # _CHAN as-is: pull_office_week resolves the spelling itself through
+        # _find_owner_and_impersonate(name, aliases_raw), exactly as
+        # weekly_knock_dispositions/run.py hands it over.
+        rows, cols = P.pull_office_week(page, _CHAN, aliases_raw,
+                                        monday, saturday)
+        if not rows:
+            return None
+        KWC.put(_CHAN["name"], saturday, rows, cols, aliases=aliases_raw)
+        _CHAN_WEEKLY_CACHE[key] = (rows, cols)
+        return rows, cols
+    except Exception as e:  # noqa: BLE001 — a nicety, never the section
+        logfn(f"    ⚠ Chan weekly comparison pull failed ({type(e).__name__}: "
+              f"{str(e)[:120]}) — summary omits the teal row")
+        return None
+
+
 def _chan_daily_rows(page, captured_daily: list, aliases_raw,
                      target: dt.date, *, logfn=print) -> Optional[list]:
     """Chan Park's yesterday rows for the summary's teal comparison row —
@@ -857,6 +922,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     chan_rows: Optional[list] = None
     chan_apps_by_rep: Optional[dict] = None   # Chan's {rep: apps} for the day
     chan_apps: Optional[int] = None           # …and its total, for the summary
+    chan_weekly: Optional[tuple] = None       # (ov_rows, dispo_cols) for the week
+    chan_weekly_apps: Optional[dict] = None   # Chan's {rep: apps} for the week
     # Set when a board was reused from disk WITHOUT its rows sidecar (drawn
     # before the sidecar existed). That owner's own board is intact; only the
     # captainship SUMMARY loses their line, and it says so rather than showing
@@ -895,6 +962,21 @@ def capture_sections(captain, today: dt.date, render_dir, *,
             # them. Costs nothing extra across a build: _CHAN_DAILY_CACHE is
             # per-process, so the first captain pays the one pull and the
             # other five read it.
+            from automations.weekly_knock_dispositions.offices import (
+                CHAN as _CHAN_CFG)
+            if want_weekly:
+                # Same reasoning as the daily line below — the summary needs
+                # it and the ladder inside makes it at most one pull per
+                # build, usually none (Sunday's cache / Monday's hit).
+                chan_weekly = _chan_weekly_rows(page, [], aliases_raw,
+                                                monday, saturday, logfn=logfn)
+                if chan_weekly and pss_path is not None:
+                    try:
+                        chan_weekly_apps = A.rep_apps_for_owner(
+                            pss_path, _CHAN_CFG["pss_owner"], aliases_map)
+                    except Exception as e:  # noqa: BLE001 — apps ≠ the row
+                        logfn(f"    ⚠ Chan weekly apps: {type(e).__name__}: "
+                              f"{str(e)[:120]}")
             if want_daily:
                 chan_rows = _chan_daily_rows(page, [], aliases_raw, target,
                                              logfn=logfn)
@@ -1118,7 +1200,11 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     if captured_weekly:
         try:
             from automations.weekly_knock_dispositions.board import (
-                THEME_PLUM, headers_for, totals_row)
+                COMPARE_ROW_BG, THEME_PLUM, headers_for, totals_row)
+            from automations.focus_office_att.aliases import (
+                _norm_name as _nn)
+            from automations.weekly_knock_dispositions.offices import (
+                CHAN as _CHAN)
             common_cols = next(
                 (c for _d, _r, _a, c in captured_weekly if c), [])
             sum_rows = [totals_row(r, a, common_cols, label=d)
@@ -1133,6 +1219,22 @@ def capture_sections(captain, today: dt.date, render_dir, *,
             sum_rows.append(totals_row(
                 all_rows, merged_apps if has_apps else None, common_cols,
                 label=totals_label(len(answered_weekly), len(pairs))))
+            # Chan Park's line, teal, at the TOP (Raf 2026-08-30: "make sure
+            # chan's numbers are at the top of this weekly disposition summary
+            # report. For mine and everyone elses"). Skipped on a captainship
+            # that already lists him as an owner — a comparison line identical
+            # to a row three inches above it reads like he was counted twice.
+            n_top = 0
+            if chan_weekly and not any(_nn(d) == _nn(_CHAN["name"])
+                                       for d, _r, _a, _c in captured_weekly):
+                _c_rows, _ = chan_weekly
+                # Summed against the HOST board's column list, like every
+                # other comparison row: his own live columns could differ and
+                # the row has to stay aligned under these headers.
+                sum_rows.insert(0, totals_row(
+                    _c_rows, chan_weekly_apps, common_cols,
+                    label=f"{_CHAN['name'].upper()} TOTALS"))
+                n_top = 1
             span = (f"{monday.strftime('%b')} {monday.day} – "
                     f"{saturday.strftime('%b')} {saturday.day}, "
                     f"{saturday.year}")
@@ -1141,7 +1243,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 f"CAPTAINSHIP SUMMARY — {span}", THEME_PLUM,
                 weekly_root / "summary"
                 / f"knock_dispo_summary_{saturday.isoformat()}.png",
-                name_col=0, wrap_headers=True, highlight_last_row=1)
+                name_col=0, wrap_headers=True, highlight_last_row=1,
+                highlight_first_row=n_top,
+                top_row_colors=[COMPARE_ROW_BG] * n_top)
             out_weekly.insert(0, ("Captainship Summary" + (
                 " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"
                 if weekly_partial else ""), png))

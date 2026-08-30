@@ -184,6 +184,15 @@ def _jsonable(v: Any) -> Any:
     return str(v)
 
 
+# The shape of what put() writes. BUMP THIS whenever pull_office_week starts
+# carrying a field the boards need: an entry written by an older build is then
+# a MISS, so the office re-pulls once and every reader after it gets the new
+# field — instead of the board quietly drawing a blank column off a row that
+# predates it. Bumped to 2 on 2026-08-30 (per-day door counts, for Raf's reps-
+# knocking columns). A miss costs one pull; a stale hit costs a wrong board.
+SCHEMA = 2
+
+
 def get(office: str, saturday, *,
         aliases: Optional[Dict[str, list]] = None
         ) -> Optional[Tuple[List[dict], List[str]]]:
@@ -197,6 +206,8 @@ def get(office: str, saturday, *,
         office_key(office, aliases))
     if not isinstance(entry, dict):
         return None
+    if int(entry.get("schema") or 1) < SCHEMA:
+        return None                     # written by an older build — re-pull
     rows, cols = entry.get("rows"), entry.get("dispo_cols")
     if not isinstance(rows, list) or not isinstance(cols, list) or not rows:
         return None
@@ -231,6 +242,7 @@ def put(office: str, saturday, ov_rows: List[dict], dispo_cols: List[str], *,
             "office": office,
             "canonical": office_key(office, aliases),
             "at": now,
+            "schema": SCHEMA,
             "rows": [{str(k): _jsonable(v) for k, v in rec.items()}
                      for rec in ov_rows],
             "dispo_cols": [str(c) for c in dispo_cols or []],

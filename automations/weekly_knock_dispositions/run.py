@@ -472,16 +472,21 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
             # TEMPORARY comparison rows (offices.COMPARE_TOTALS — delete
             # the entry there to remove): the other office's totals, summed
-            # against THIS board's columns, appended under OFFICE TOTALS.
+            # against THIS board's columns. They sit at the TOP of the board
+            # since Raf's 2026-08-30 ask ("make sure Chan's numbers are at the
+            # top … for mine and everyone else's") — they used to ride under
+            # OFFICE TOTALS. The daily boards have always put them on top;
+            # this is the weekly one catching up.
             n_totals = 1
+            compare_rows: list[list[str]] = []
             _lookup = {**pulled, **compare_pulled}
             for other in compare_targets(name):
                 if other in _lookup and not gaps_only:
                     o_cfg, o_rows, _ = _lookup[other]
-                    rows.append(B.totals_row(
+                    compare_rows.append(B.totals_row(
                         o_rows, _office_apps(o_cfg), dispo_cols,
                         label=f"{other.upper()} TOTALS"))
-                    n_totals += 1
+            rows = compare_rows + rows
             # Office name in title/comment only when the board lands
             # somewhere that isn't the office's own thread (Chan) — saying
             # it in their own channel is redundant (Megan 2026-08-23).
@@ -489,7 +494,8 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             out_dir = OUT_DIR / _slug(name)
             png = B.render(title_office, monday, saturday, rows, out_dir,
                            dispo_cols, gaps_only=gaps_only,
-                           n_totals=n_totals)
+                           n_totals=n_totals,
+                           n_compare_top=len(compare_rows))
             boards.append((cfg, png, extra))
             if (not gaps_only and cfg.get("pss_owner") is not None
                     and pss_path is None and name not in failed):

@@ -3,9 +3,12 @@
 Column order is Raf's own spreadsheet's, left to right (his worked example,
 2026-08-22 — the template):
 
-    Rep | Total Talk To's | Avg Talk To's / Day | Total Apps
-        | Avg Talk To's per App | First Knock | Last Knock
-        | Avg Gap / Day | Total Gap Hours
+    Rep | Reps Knocking | Avg Doors / Rep Knocking | Total Talk To's
+        | Avg Talk To's / Day | Total Apps | Avg Talk To's per App
+        | First Knock | Last Knock | Avg Gap / Day | Total Gap Hours
+
+(the two knocking columns joined 2026-08-30 on Raf's ask — see
+COL_REPS_KNOCKING below; they fill on summary rows only)
 
 and an OFFICE TOTALS bottom row (computed properly — his sheet's =SUM(B1:B39)
 had drifted off the data range; ours is the whole rep list by construction).
@@ -32,15 +35,40 @@ from automations.total_knocks.pull import (
     COL_REP,
 )
 from automations.weekly_knock_dispositions.pull import (
-    K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST, K_TALK_TO)
+    K_DAILY_KNOCKS, K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST, K_TALK_TO,
+    K_TOTAL_KNOCKS)
 
 DAYS = 6                     # Mon–Sat
+
+# A rep counts as KNOCKING for the week when they cleared the daily doors bar
+# on every one of the six days (Raf 2026-08-30: "this should only count reps
+# that worked 6 days with 20+ knocks per day"). Same bar as the DAILY boards'
+# `render._knockers` — the two land in one email in front of one reader, and a
+# rep who is a head count there has to be one here. Note it is "more than 20",
+# not "20 or more": KNOCKING_MIN_KNOCKS is 21 because Eve set the daily rule as
+# "20 knocks or fewer is a walk-on, not a day of doors" and Rafael approved
+# that bar 2026-08-28. The header prints the number so nobody has to guess
+# which side of 20 the line falls on.
+MIN_KNOCKS_PER_DAY = knocks_render.KNOCKING_MIN_KNOCKS
+
+# Raf's two asks, 2026-08-30. Both are SUMMARY-row columns — a rep row is one
+# rep, where a head count is always 1 and doors-per-rep just repeats the rep's
+# own knocks — so they fill on the totals / comparison / per-ICD summary rows
+# and stay blank down the rep list. Same convention the daily board's
+# "Total # of Reps Knocking" already reads by.
+COL_REPS_KNOCKING = f"Reps Knocking ({DAYS} Days {MIN_KNOCKS_PER_DAY}+)"
+# Deliberately NOT the daily board's "Avg Doors / Rep": that one divides by
+# every rep LISTED, this one divides by the reps knocking ("Based off of
+# average reps knocking" — Raf). Two different denominators must not wear one
+# name on two boards in the same email.
+COL_DOORS_PER_REP = "Avg Doors / Rep Knocking"
 
 # Raf's mockup 2026-08-23: knock averages are Mon–Fri (Saturday's schedule
 # skews them), the gap columns SAY Mon–Sat, and Saturday's own knock times
 # get their own two columns after the gaps.
 HEADERS = [
-    "Rep", "Total Talk To's", "Avg Talk To's / Day", "Total Apps",
+    "Rep", COL_REPS_KNOCKING, COL_DOORS_PER_REP,
+    "Total Talk To's", "Avg Talk To's / Day", "Total Apps",
     "Avg Talk To's per App", "Mon\u2013Fri Avg First Knock",
     "Mon\u2013Fri Avg Last Knock", "Avg Hrs Knocking / Day",
     "Mon\u2013Sat Avg Gap / Day", "Mon\u2013Sat Total Gap Hours",
@@ -148,6 +176,41 @@ def _avg_knock(ov_rows: list[dict], col: str) -> str:
     return _fmt_knock(round(sum(mins) / len(mins))) if mins else ""
 
 
+def is_knocking(rec: dict) -> bool:
+    """Did this rep work the full week of doors — MIN_KNOCKS_PER_DAY or more
+    on EVERY one of the six days (Raf 2026-08-30)?
+
+    False for a rep whose record carries no daily counts at all, which is what
+    a pre-2026-08-30 cached pull and a gaps-only (TeleMapper) office both look
+    like. `has_daily_knocks` is what separates "nobody qualified" from "we
+    can't tell" — the caller blanks the columns for the second, because a 0
+    head count on a week we simply didn't measure is a claim, not a gap."""
+    daily = rec.get(K_DAILY_KNOCKS)
+    if not isinstance(daily, (list, tuple)) or len(daily) < DAYS:
+        return False
+    return all(int(d or 0) >= MIN_KNOCKS_PER_DAY for d in daily[:DAYS])
+
+
+def has_daily_knocks(ov_rows: list[dict]) -> bool:
+    """True when the pull carried per-day door counts, so the two knocking
+    columns can be filled at all."""
+    return any(isinstance(r.get(K_DAILY_KNOCKS), (list, tuple))
+               for r in ov_rows)
+
+
+def knocking_cells(ov_rows: list[dict]) -> list[str]:
+    """The two summary cells: the head count, and the office's total doors
+    divided by it. Blank — never "0" — when the pull has no daily counts, and
+    the doors cell stays blank when nobody cleared the bar: nothing to divide
+    by is not a zero, and a 0.0 beside a week of real talk-to's reads as
+    'these reps knocked nothing'."""
+    if not has_daily_knocks(ov_rows):
+        return ["", ""]
+    knocking = sum(1 for r in ov_rows if is_knocking(r))
+    doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in ov_rows)
+    return [str(knocking), (_num(doors / knocking) if knocking else "")]
+
+
 def _display_name(rep: str) -> str:
     """House standard: title-cased names. Only all-lower / all-upper words
     are touched ('rhea mckee' → 'Rhea Mckee'); mixed-case spellings like
@@ -246,6 +309,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         gap_min = r.get(K_GAP_MIN)
         rows.append([
             _display_name(rep),
+            "", "",                      # summary-only columns (see HEADERS)
             str(talk),
             _num(avg_day),
             "" if apps is None else str(n_apps or 0),
@@ -267,7 +331,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         for rep, n_apps in sorted(apps.items()):
             if _norm_name(rep) in consumed or not n_apps:
                 continue
-            rows.append([_display_name(rep), "", "", str(n_apps),
+            rows.append([_display_name(rep), "", "", "", "", str(n_apps),
                          "", "", "", "", "", "", "", ""] + _dispo_cells(None))
 
     rows.append(totals_row(ov_rows, apps, dispo_cols))
@@ -297,6 +361,7 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
         sum(int(r.get(c) or 0) for r in ov_rows) for c in dispo_cols]
     return ([
         label,
+    ] + knocking_cells(ov_rows) + [
         str(tot_talk),
         (_num(tot_talk / DAYS / n_reps) if n_reps else ""),
         "" if apps is None else str(tot_apps),
@@ -316,11 +381,19 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
 def render(office: str, monday: dt.date, saturday: dt.date,
            rows: list[list[str]], out_dir: Path,
            dispo_cols: list[str] | None = None,
-           gaps_only: bool = False, n_totals: int = 1) -> Path:
+           gaps_only: bool = False, n_totals: int = 1,
+           n_compare_top: int = 0) -> Path:
     """`office` in the title ONLY when non-empty — an office posting in its
     own channel doesn't repeat its name (Megan 2026-08-23). `n_totals`:
     how many trailing rows draw as highlighted totals (host + appended
-    comparison rows)."""
+    comparison rows).
+
+    `n_compare_top` (Raf 2026-08-30, "make sure Chan's numbers are at the top
+    … for mine and everyone else's"): the first N rows are comparison totals
+    lines — drawn teal, above the rep list instead of under OFFICE TOTALS,
+    which is where the DAILY boards have carried their comparison rows all
+    along. The caller passes them already at the front of `rows`; the trailing
+    highlighted block is then the office's own totals alone."""
     span = (f"{monday.strftime('%b')} {monday.day} – "
             f"{saturday.strftime('%b')} {saturday.day}, {saturday.year}")
     what = ("WEEKLY KNOCK TIMES & GAPS" if gaps_only
@@ -332,6 +405,9 @@ def render(office: str, monday: dt.date, saturday: dt.date,
                                title, THEME_PLUM, out, name_col=0,
                                wrap_headers=True,
                                highlight_last_row=n_totals,
+                               # Comparison lines above the reps, teal.
+                               highlight_first_row=n_compare_top,
+                               top_row_colors=[COMPARE_ROW_BG] * n_compare_top,
                                # Raf 2026-08-23: header band re-drawn above
                                # the totals block so the bottom reads alone.
                                repeat_header_before=n_totals,

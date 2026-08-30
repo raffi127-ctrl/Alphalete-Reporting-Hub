@@ -48,6 +48,20 @@ K_GAP_MIN = "Gap Minutes"          # summed Time Tracker minutes, Mon–Sat
 # differs, so it leaves the averages and gets its own columns).
 K_SAT_FIRST = "Sat First Knock"
 K_SAT_LAST = "Sat Last Knock"
+# Doors knocked, kept per DAY (Raf 2026-08-30: "average reps knocking … should
+# only count reps that worked 6 days with 20+ knocks per day"). The board's
+# rep-knocking test is a per-day one, so a single week total can't answer it —
+# 300 doors on Monday and nothing after is not six days of work. K_DAILY_KNOCKS
+# is Mon..Sat in order, a 0 for a day the rep never appeared, and the THRESHOLD
+# lives in board.py: keeping the raw counts here means moving the bar is a
+# re-render, never a re-pull.
+K_DAILY_KNOCKS = "Daily Knocks"
+K_TOTAL_KNOCKS = "Week Total Knocks"   # their sum — the doors-per-rep numerator
+# The scraped column those come from. It is one of the table's own aggregates
+# (_AGGREGATES), so it stays OFF the board and out of the talk-to sum exactly
+# as before — we only carry the number.
+_DAY_KNOCKS = "_day_knocks"
+COL_TOTAL_KNOCKS = "Total Knocks"
 
 
 def _avg_weekday(entries):
@@ -164,6 +178,7 @@ def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
             + ", ".join(missing)
             + ". Live headers were: " + ", ".join(sorted(idx)) + ".")
 
+    _knocks_i = idx.get(_norm(COL_TOTAL_KNOCKS))
     dispo = [(h, i) for i, h in enumerate(raws)
              if h and _norm(h) not in _IDENTITY
              and _norm(h) not in _AGGREGATES
@@ -197,6 +212,11 @@ def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
             for h, i in dispo:
                 rec[h] = _to_int(cells[i])
             rec[K_TALK_TO] = sum(rec[h] for h in talk_to_cols)
+            # The aggregate the board never shows but the reps-knocking test
+            # needs. Absent column = key absent = the board draws the two
+            # columns blank rather than a count it couldn't take.
+            if _knocks_i is not None and _knocks_i < len(cells):
+                rec[_DAY_KNOCKS] = _to_int(cells[_knocks_i])
             rid = str(rec[COL_ID]).strip()
             if rid and rid in seen_ids:
                 continue
@@ -317,6 +337,7 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
         last_t: dict[str, list[int]] = {}
         dispo_cols: list[str] = []
         talk_to_cols: list[str] = []
+        n_days = (saturday - monday).days + 1
         day = monday
         while day <= saturday:
             _navigate_day(page, rqst, day, verbose=verbose)
@@ -332,6 +353,14 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                                          COL_REP: rec.get(COL_REP, "")})
                 for c in day_cols:
                     a[c] = int(a.get(c) or 0) + int(rec.get(c) or 0)
+                if _DAY_KNOCKS in rec:
+                    # Slot the day's doors into its own Mon..Sat position, so
+                    # a rep who missed Wednesday reads as a 0 there and not as
+                    # a five-day week that happens to have five numbers.
+                    a.setdefault(K_DAILY_KNOCKS, [0] * n_days)
+                    i = (day - monday).days
+                    if 0 <= i < n_days:
+                        a[K_DAILY_KNOCKS][i] = int(rec.get(_DAY_KNOCKS) or 0)
                 fm = _knock_min(str(rec.get(COL_FIRST_KNOCK, "")))
                 lm = _knock_min(str(rec.get(COL_LAST_KNOCK, "")))
                 if fm is not None:
@@ -348,6 +377,8 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
             a[COL_LAST_KNOCK] = _avg_weekday(ls)
             a[K_SAT_FIRST] = _sat_time(fs)
             a[K_SAT_LAST] = _sat_time(ls)
+            if K_DAILY_KNOCKS in a:
+                a[K_TOTAL_KNOCKS] = sum(a[K_DAILY_KNOCKS])
         if verbose:
             print(f"[wkd] {len(rows)} rep(s) across the week; talk-to = "
                   "sum of: " + ", ".join(talk_to_cols), flush=True)
