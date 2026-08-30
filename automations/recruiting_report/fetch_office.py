@@ -139,23 +139,36 @@ def _switch_office(page: Page, office_id: str, owner_hint: str = "") -> bool:
         _dismiss_overlays(page)
         if not _focus_search_box(page):
             raise PWTimeout("#searchMC not present even after a console reload")
-    page.locator("#searchMC").fill("")
-    # Type the office_id — most specific search term.
-    page.locator("#searchMC").type(office_id, delay=30)
-    page.wait_for_timeout(800)
-
     # Find the matching item in the autocomplete dropdown. Match strictly on
     # office_id — DO NOT fall back to the first item, because that would write
     # the wrong office's data to this tab.
-    items = page.locator(".ui-autocomplete li, .ui-menu li").all()
+    #
+    # WAIT for the dropdown, don't snapshot it. The old fixed 800ms peek raced
+    # AppStream's autocomplete: under load zero items had rendered yet, the
+    # "not accessible" branch fired, and office 23411 failed every switch for a
+    # whole afternoon (2026-08-29) on an account that plainly had it. Poll up to
+    # ~8s, and retype once before giving up — only an ANSWERED dropdown with no
+    # matching row means the office truly isn't on this account.
     target_item = None
-    for item in items:
-        text = item.inner_text()
-        if office_id in text:
-            target_item = item
+    for attempt in range(2):
+        page.locator("#searchMC").fill("")
+        page.locator("#searchMC").type(office_id, delay=30)
+        for _ in range(16):                     # up to ~8s per attempt
+            page.wait_for_timeout(500)
+            items = page.locator(".ui-autocomplete li, .ui-menu li").all()
+            for item in items:
+                try:
+                    if office_id in item.inner_text():
+                        target_item = item
+                        break
+                except Exception:  # noqa: BLE001 — item detached mid-read
+                    continue
+            if target_item is not None or items:
+                break
+        if target_item is not None:
             break
     if not target_item:
-        # Office isn't accessible in this AS account. Caller should skip.
+        # The dropdown answered and held no row for this id — a real access gap.
         return False
 
     # Click the item — this triggers AppStream's office-switch (page reload).
