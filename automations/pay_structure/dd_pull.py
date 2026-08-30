@@ -548,6 +548,38 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
                     other[txn] += _num(r.get(COL_TOTAL)) or 0
             for txn, v in sorted(other.items(), key=lambda x: -abs(x[1])):
                 out_rows.append(["", wk, txn, "", "", round(v, 2)])
+            # ITEMIZE the non-commission rows (Carlos: "all the add-ons and
+            # random bonuses") — every (txn type, description-or-product) with
+            # row count + total, so no bonus stays a lump.
+            bonus_items: Dict[tuple, List[float]] = collections.defaultdict(list)
+            for r in wrows:
+                if _is_commission(r):
+                    continue
+                txn = str(r.get(COL_TXN, "") or "").strip() or "(no txn type)"
+                what = (str(r.get(COL_DESCRIPTION, "") or "").strip()
+                        or str(r.get(COL_PRODUCT, "") or "").strip()
+                        or str(r.get(COL_DETAIL, "") or "").strip() or "(blank)")
+                bonus_items[(txn, what)].append(_num(r.get(COL_TOTAL)) or 0)
+            for (txn, what), vals in sorted(bonus_items.items(),
+                                            key=lambda x: -abs(sum(x[1]))):
+                out_rows.append(["", wk, "{} :: {}".format(txn, what),
+                                 len(vals), round(sum(vals) / len(vals), 2),
+                                 round(sum(vals), 2)])
+            # ITEMIZE commission LINE ITEMS by description (the add-on rows —
+            # Unlimited Extra / Premium / Next Up / BYOD — that the per-ORDER
+            # grouping below folds into bundle averages).
+            line_items: Dict[str, List[float]] = collections.defaultdict(list)
+            for r in comm:
+                cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
+                what = (str(r.get(COL_DESCRIPTION, "") or "").strip()
+                        or str(r.get(COL_PRODUCT, "") or "").strip() or "(blank)")
+                line_items["{} :: {}".format(cat, what)].append(
+                    _num(r.get(COL_TOTAL)) or 0)
+            for what, vals in sorted(line_items.items(),
+                                     key=lambda x: -abs(sum(x[1]))):
+                out_rows.append(["", wk, "LINE {}".format(what), len(vals),
+                                 round(sum(vals) / len(vals), 2),
+                                 round(sum(vals), 2)])
             # per-product: distinct orders + per-order payout (sum of the
             # order's Commissions rows — the post-2026-08 row-split format)
             per: Dict[str, Dict[str, float]] = collections.defaultdict(
