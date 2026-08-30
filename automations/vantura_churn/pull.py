@@ -35,6 +35,27 @@ CHURNRATES_URL = (
     "ALLTEAMCHURN?:iid=1")
 CHURNRATES_SHEET = "ICD Churn"
 
+# The product breakout added to CHURNRATES on 2026-08-30. Probed live off
+# ALLTEAMCHURN: 5 values — Total, AIR/AWB, BYOD WIRELESS, NON BYOD WIRELESS,
+# NEW INTERNET. 'Total' is a roll-up and is never summed.
+PRODUCT_COL = "Product Type (Broken Out) (BYOD/Non BYOD)"
+PRODUCT_TOTAL = "TOTAL"
+
+# The crosstab's unnamed measure column. 'Disconnect count (SPE/SP)' is the name
+# the export actually uses — this module looked for "Disconnects", which has
+# never matched anything; both are accepted so a Tableau rename can't silently
+# take the derived rate away again.
+_DISCONNECT_MEASURES = ("Disconnect count (SPE/SP)", "Disconnects")
+_COUNT_MEASURES = ("Activated SPE/SP",) + _DISCONNECT_MEASURES
+_MEASURES = (("Activated SPE/SP", "Calculation1 (1)", "Churn Rate")
+             + _DISCONNECT_MEASURES)
+
+
+def _to_num(v):
+    """Crosstab cell -> float, or None when it isn't a plain number."""
+    t = str(v if v is not None else "").replace(",", "").replace("%", "").strip()
+    return float(t) if re.fullmatch(r"-?\d+(\.\d+)?", t) else None
+
 # Exact Tableau filter values (runbook Part 10). The Owner & Office member
 # renders with an embedded newline in crosstabs; the FILTER value is the
 # flat one-line form shown in the quick-filter dropdown.
@@ -126,7 +147,27 @@ def parse_churnrates(path: Path, owner_prefix: str) -> dict:
     if col_030 is None:
         raise RuntimeError("CHURNRATES crosstab: no '0-30 Day' column found")
 
-    raw: dict = {}
+    # PRODUCT BREAKOUT (2026-08-30). CHURNRATES gained a "Product Type (Broken
+    # Out)" row dimension, which split every owner's block into one row PER
+    # PRODUCT. This loop used to see exactly one 0-30 reading per measure per
+    # owner and assign it; with the breakout it saw four and kept the LAST, so
+    # `base` became one product bucket instead of the owner's total — CARLOS
+    # read 22 against a real 401, and the reconcile gate correctly refused to
+    # write all day. (The old comment claimed "first"; the code always assigned,
+    # so it was really the last. Identical while there was only ever one.)
+    #
+    # Summing the REAL product rows is right whether or not each owner also
+    # carries its own 'Total' roll-up: the roll-ups are excluded either way, so
+    # this can never double-count, and it needs no assumption about a per-owner
+    # Total row that the probe could not confirm exists.
+    col_prod = None
+    for ci, v in enumerate(grid[hdr_row]):
+        if str(v or "").strip() == PRODUCT_COL:
+            col_prod = ci
+            break
+
+    raw: dict = {}          # measure -> last non-empty reading (rates, labels)
+    sums: dict = {}         # measure -> summed reading (counts)
     for row in grid[hdr_row + 1:]:
         owner = ""
         measure = ""
@@ -134,15 +175,22 @@ def parse_churnrates(path: Path, owner_prefix: str) -> dict:
             s = str(v or "").split("\n")[0].strip()
             if s.upper().startswith(owner_prefix.upper()):
                 owner = s
-            if str(v or "").strip() in ("Activated SPE/SP", "Calculation1 (1)",
-                                        "Churn Rate", "Disconnects"):
+            if str(v or "").strip() in _MEASURES:
                 measure = str(v).strip()
+        # Skip the roll-up rows — adding a total to its own parts doubles it.
+        if col_prod is not None and col_prod < len(row):
+            if str(row[col_prod] or "").strip().upper() == PRODUCT_TOTAL:
+                continue
         # An owner spans multiple color-band blocks (Red/Yellow/Green); each
         # holds only some day-buckets, so the 0-30 value is present in exactly
         # one block and BLANK in the others. Never overwrite a real value with
-        # a blank — keep the first non-empty 0-30 reading per measure.
+        # a blank.
         if owner and measure and str(row[col_030] or "").strip():
             raw[measure] = row[col_030]
+            if measure in _COUNT_MEASURES:
+                n = _to_num(row[col_030])
+                if n is not None:
+                    sums[measure] = sums.get(measure, 0.0) + n
     if not raw:
         raise RuntimeError(
             f"CHURNRATES crosstab: no rows for owner '{owner_prefix}'")
@@ -152,9 +200,21 @@ def parse_churnrates(path: Path, owner_prefix: str) -> dict:
         m = re.fullmatch(r"-?\d+(\.\d+)?", s)
         return float(s) if m else None
 
-    base = _num(raw.get("Activated SPE/SP"))
-    rate = _num(raw.get("Churn Rate"))
-    if rate is not None and rate > 1:
-        rate = rate / 100.0
+    # Counts come from the SUM across products; the rate is DERIVED, never
+    # summed — adding four percentages together is meaningless, and the
+    # dashboard's own per-product rates cannot be averaged into an owner rate
+    # without their weights, which is exactly what base and disc are.
+    base = sums.get("Activated SPE/SP")
+    if base is None:
+        base = _num(raw.get("Activated SPE/SP"))
+    disc = next((sums[m] for m in _DISCONNECT_MEASURES if m in sums), None)
+
+    rate = None
+    if disc is not None and base:
+        rate = disc / base
+    if rate is None:
+        rate = _num(raw.get("Churn Rate"))
+        if rate is not None and rate > 1:
+            rate = rate / 100.0
     return {"base": int(base) if base is not None else None,
             "rate": rate, "raw": raw}
