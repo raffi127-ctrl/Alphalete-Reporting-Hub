@@ -185,10 +185,16 @@
       "_note": "Alphalete team tree -> #a-players-b2b PNG, fired by com.alphalete.team-tree-daily on Lucy 2 at 6:00am (Carlos 2026-08-30). Manual: `lucy rerun team_tree -- --dm` posts to Carlos's DM; `--dry-run` renders only.",
       "display_name": "Alphalete team tree (6am screenshot)",
       "source_type": "local",
-      "data_sources": ["Vantura Master Sales Board"],
-      "command": ["automations.team_tree.run"],
+      "data_sources": [
+        "Vantura Master Sales Board"
+      ],
+      "command": [
+        "automations.team_tree.run"
+      ],
       "base_args": [],
-      "cadence": {"weekdays": []},
+      "cadence": {
+        "weekdays": []
+      },
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
@@ -202,9 +208,15 @@
       "display_name": "Install team tree daily agent (6am)",
       "source_type": "local",
       "data_sources": [],
-      "command": ["automations.day_orchestrator.install_agent"],
-      "base_args": ["team-tree-daily"],
-      "cadence": {"weekdays": []},
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "team-tree-daily"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
@@ -771,26 +783,26 @@
       "machine": "Lucy 3"
     },
     "headshots_sheet_mark_one": {
-   "on_scheduler": false,
-   "_note": "Tick ONE person's \"Headshot Photo\" box on the OBCL sheet, on demand — the retry path when a headshot was uploaded but the sheet mark missed (e.g. their week's dated tab had already rolled over). Searches the newest dated tab, then older dated tabs, then the rolling \"D2D OBCL\" stack. `lucy rerun headshots_sheet_mark_one --name \"Ivan Soto\" --machine \"Lucy 3\"`; add --dry-run to see where it WOULD mark without writing.",
-   "display_name": "OBCL Headshot box — mark one person",
-   "source_type": "local",
-   "data_sources": [],
-   "command": [
-    "automations.headshots.sheet_log"
-   ],
-   "base_args": [],
-   "cadence": {
-    "weekdays": []
-   },
-   "priority": "P3",
-   "freshness_target": null,
-   "depends_on": [],
-   "verify": null,
-   "timeout_minutes": 10,
-   "machine": "Lucy 3"
-  },
-  "headshots_tick_now": {
+      "on_scheduler": false,
+      "_note": "Tick ONE person's \"Headshot Photo\" box on the OBCL sheet, on demand \u2014 the retry path when a headshot was uploaded but the sheet mark missed (e.g. their week's dated tab had already rolled over). Searches the newest dated tab, then older dated tabs, then the rolling \"D2D OBCL\" stack. `lucy rerun headshots_sheet_mark_one --name \"Ivan Soto\" --machine \"Lucy 3\"`; add --dry-run to see where it WOULD mark without writing.",
+      "display_name": "OBCL Headshot box \u2014 mark one person",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.headshots.sheet_log"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10,
+      "machine": "Lucy 3"
+    },
+    "headshots_tick_now": {
       "on_scheduler": false,
       "_note": "Run the headshot processing tick ONCE, on demand, with its output in a rerun log \u2014 the diagnostic path when the 10-min launchd tick isn't picking up a submission. Same code the agent runs (automations.headshots.run); processes any unhandled photo replies and uploads to OV. `lucy rerun headshots_tick_now --machine \"Lucy 3\"`. Add --dry-run to process + preview without posting.",
       "display_name": "Headshot tick \u2014 run once now",
@@ -4659,7 +4671,7 @@
     },
     "install_orchestrator_heartbeat_agent": {
       "on_scheduler": true,
-      "_note": "NOT a report — a one-shot LaunchAgent installer. Run it on EVERY machine that carries com.alphalete.day-orchestrator: `lucy rerun install_orchestrator_heartbeat_agent --machine \"Lucy 2\"` (and Lucy 1 / Lucy 3). Bootstraps com.alphalete.orchestrator-heartbeat, which fires 04:20 + 06:00 machine-local and asks ONE question: did the 4am orchestrator write a day_state today? WHY: on 2026-08-27 Lucy 2's orchestrator started at 04:00:04 and was dead by 04:00:05 (JSONDecodeError — a 00:47 `lucy update` autostash pop had left schedule_config.json unmerged), ran ZERO reports, and NOTHING alerted, because every alert in the system is per-report and a report that never runs has nothing to fail. Megan found out ~2h45m later from missing B2B Metrics, and the box passed every liveness check the whole time, which is why the outage kept being misdiagnosed as a re-seed or a wedged poller. The intraday watcher could not have caught it either: machine_digest._run_watch calls registry.load_config() UNGUARDED (so the same bad file kills it) and deliberately skips orchestrator-managed reports. The heartbeat module therefore imports NOTHING from automations.day_orchestrator — there is a unit test pinning that — and resolves the Slack channel from the id cache / a raw config read / a literal fallback, so it still speaks when the config is the broken thing. Safe to install anywhere: it exits quietly on a machine where the orchestrator agent isn't loaded, and it pages at most once a day. on_scheduler:true ONLY so registry.load_config keeps it for rerun; cadence.weekdays [] means the 4am batch NEVER auto-runs it.",
+      "_note": "NOT a report \u2014 a one-shot LaunchAgent installer. Run it on EVERY machine that carries com.alphalete.day-orchestrator: `lucy rerun install_orchestrator_heartbeat_agent --machine \"Lucy 2\"` (and Lucy 1 / Lucy 3). Bootstraps com.alphalete.orchestrator-heartbeat, which fires 04:20 + 06:00 machine-local and asks ONE question: did the 4am orchestrator write a day_state today? WHY: on 2026-08-27 Lucy 2's orchestrator started at 04:00:04 and was dead by 04:00:05 (JSONDecodeError \u2014 a 00:47 `lucy update` autostash pop had left schedule_config.json unmerged), ran ZERO reports, and NOTHING alerted, because every alert in the system is per-report and a report that never runs has nothing to fail. Megan found out ~2h45m later from missing B2B Metrics, and the box passed every liveness check the whole time, which is why the outage kept being misdiagnosed as a re-seed or a wedged poller. The intraday watcher could not have caught it either: machine_digest._run_watch calls registry.load_config() UNGUARDED (so the same bad file kills it) and deliberately skips orchestrator-managed reports. The heartbeat module therefore imports NOTHING from automations.day_orchestrator \u2014 there is a unit test pinning that \u2014 and resolves the Slack channel from the id cache / a raw config read / a literal fallback, so it still speaks when the config is the broken thing. Safe to install anywhere: it exits quietly on a machine where the orchestrator agent isn't loaded, and it pages at most once a day. on_scheduler:true ONLY so registry.load_config keeps it for rerun; cadence.weekdays [] means the 4am batch NEVER auto-runs it.",
       "display_name": "Install: Orchestrator Heartbeat LaunchAgent",
       "command": [
         "automations.day_orchestrator.install_agent"
@@ -8750,29 +8762,29 @@
       }
     },
     "install_sales_text_reader": {
-   "on_scheduler": false,
-   "_off_scheduler_note": "Installs com.alphalete.sales-text-reader on Lucy 1 \u2014 the ONE privileged step of the Sales Text Updates reply loop, split out on purpose. Full Disk Access is granted to a BINARY and macOS applies it to the responsible process; Lucy 1's venv python3.9 is a bash wrapper, so the sweep stayed denied ('authorization denied') even after Python.app was granted, while Terminal read the same file fine. Rather than rewrite the interpreter all ~130 automations share, this agent runs deploy/sales_text_read_chat.py with the granted Python.app DIRECTLY. That script is stdlib-only, reads message text from ONE named chat, keeps only lines shaped like 'a=b', and writes them to a file. No Sheets, no Slack, no sending.",
-   "machine": "Lucy 1",
-   "display_name": "Install Sales Text reply reader (5-min)",
-   "source_type": "local",
-   "data_sources": [],
-   "command": [
-    "automations.day_orchestrator.install_agent"
-   ],
-   "base_args": [
-    "sales-text-reader"
-   ],
-   "cadence": {
-    "weekdays": []
-   },
-   "priority": "P3",
-   "freshness_target": null,
-   "depends_on": [],
-   "verify": {
-    "type": "not_configured"
-   }
-  },
-  "install_alphalete_sales_board_watchdog": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Installs com.alphalete.sales-text-reader on Lucy 1 \u2014 the ONE privileged step of the Sales Text Updates reply loop, split out on purpose. Full Disk Access is granted to a BINARY and macOS applies it to the responsible process; Lucy 1's venv python3.9 is a bash wrapper, so the sweep stayed denied ('authorization denied') even after Python.app was granted, while Terminal read the same file fine. Rather than rewrite the interpreter all ~130 automations share, this agent runs deploy/sales_text_read_chat.py with the granted Python.app DIRECTLY. That script is stdlib-only, reads message text from ONE named chat, keeps only lines shaped like 'a=b', and writes them to a file. No Sheets, no Slack, no sending.",
+      "machine": "Lucy 1",
+      "display_name": "Install Sales Text reply reader (5-min)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "sales-text-reader"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
+    "install_alphalete_sales_board_watchdog": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Installs or refreshes the standalone com.alphalete.alphalete-sales-board-watchdog LaunchAgent (StartInterval 1200) on Lucy 1. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
       "machine": "Lucy 1",
@@ -8833,6 +8845,27 @@
       "_note": "Office metrics for sabrina -> alisei-b2b-sales. Onboarded via office_onboarding on 2026-08-27 03:40 UTC. Machine Lucy 2 (view owners). RE-ADDED by tracker_onboarding.auto_commit schedule self-heal: the entry was missing from the committed schedule (never committed, or wiped by a pull).",
       "_onboarded": true,
       "machine": "Lucy 2"
+    },
+    "audit_friday": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "standalone_watch": false,
+      "_off_scheduler_note": "UTILITY, not a report: READ-ONLY audit of AI-Messaging interview bookings. For each office: the p=102 calendar for one date, every FIRST-round interview whose Booked By says AI Messaging, and that applicant's full SMS thread out of the Bandwidth widget (#chatContainer). Sends nothing, removes nothing, edits nothing \u2014 the SMS widget is only read. Built 2026-08-30 for Carlos's cross-office comparison of how AI Messaging books. Same local source_type rationale as audit_friday: launches its own Chrome on its own profile, no chrome-guard needed. Usage: lucy rerun audit_friday --offices 22992,22583 --date 08-28-2026 [--limit N]",
+      "display_name": "Removed Apps \u2014 read / restore",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.oat_processing.audit_friday"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 60
     }
   },
   "read_only_standalone": {
