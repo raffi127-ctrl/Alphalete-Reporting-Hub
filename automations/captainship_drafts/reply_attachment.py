@@ -290,12 +290,15 @@ def main(argv=None) -> int:
         gaps = missing_offices(config.RENDER_DIR, c.key, sat)
         reply = build_reply(original, pdf, span, FROM_ADDR, missing=gaps)
         who = original["to"] + original["cc"]
-        if gaps:
-            print(f"      ⚠ {len(gaps)} office(s) missing from the PDF: "
-                  f"{', '.join(gaps)}")
+        # Captain line FIRST, then its gaps indented under it. Printed the
+        # other way round the ⚠ appears above the name it belongs to, and a
+        # reader approving a send attributes each gap list to the wrong
+        # captainship.
         print(f"  {c.key}: reply to {len(who)} recipient(s) "
               f"[{', '.join(who[:3])}{', …' if len(who) > 3 else ''}] "
               f"+ {pdf.name} ({pdf.stat().st_size // 1024} KB)")
+        if gaps:
+            print(f"      ⚠ not in this PDF ({len(gaps)}): {', '.join(gaps)}")
         if not args.send:
             continue
         from automations.captainship_drafts import mailer
