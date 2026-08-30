@@ -154,6 +154,46 @@ KNOCKING_MIN_KNOCKS = 21
 # black number stays readable on it.
 GREEN_HIT = (74, 222, 128)
 
+# ---- Rafael's targets (Loom, 2026-08-30) -----------------------------------
+# He states these as the numbers he manages his office to, and none of them
+# were on any board — the boards showed actuals with no goal line, so a reader
+# had to hold the target in their head. Megan 2026-08-30: "we should turn their
+# cell green if these are met."
+#
+#   "If a rep knocks 23 doors an hour on a seven-hour shift, 1:30 to 8:30,
+#    that's 160 doors … I'm gonna hammer on 23 doors a freaking hour, it is my
+#    number." Saturday is a SIX-hour day: "everyone should be able to knock
+#    140. It's 23 doors an hour."
+#
+# So the doors target is DAY-DEPENDENT and the rate target is not — 23/hr is
+# the constant, and 160 / 140 are just that rate times the length of the shift.
+# Keeping all four here means the daily and weekly boards cannot drift on what
+# "hit the target" means.
+KNOCKS_PER_HR_TARGET = 23
+DOORS_TARGET_WEEKDAY = 160          # 23/hr x 7h (1:30–8:30)
+DOORS_TARGET_SATURDAY = 140         # 23/hr x 6h
+# "I need them to have the seven hours" — the 1:30 first knock is what makes
+# the 160 reachable, which is why he is cutting atmo to 12:00.
+FIRST_KNOCK_TARGET_MIN = 13 * 60 + 30      # 1:30 PM, minutes since midnight
+
+
+def doors_target(day) -> int:
+    """The doors goal for `day` — Saturday is a shorter shift, so a rep who
+    hits 140 on a Saturday has met the target and must read green, while the
+    same 140 on a Tuesday has not."""
+    return (DOORS_TARGET_SATURDAY if getattr(day, "weekday", lambda: 0)() == 5
+            else DOORS_TARGET_WEEKDAY)
+
+
+def _hhmm_to_min(v) -> "int | None":
+    """'1:24 PM' → minutes since midnight; None when unreadable/blank."""
+    import datetime as _dt
+    try:
+        t = _dt.datetime.strptime(str(v).strip(), "%I:%M %p")
+    except ValueError:
+        return None
+    return t.hour * 60 + t.minute
+
 # "Avg Knocks / Hr" (Raf 2026-08-28) — a rep's knocks divided by the hours from
 # their FIRST knock to their LAST. His words were "calculated from their 1st
 # knock time", and Megan settled it as exactly that: the RAW span, NOT
@@ -206,6 +246,14 @@ def _with_derived(cols: list) -> list:
     out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PCT)
     out.insert(out.index(COL_TOTAL_GAPS) + 1, COL_HRS_KNOCKING)
     return out
+
+
+def _is_num(v) -> bool:
+    try:
+        float(str(v).strip())
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 def _pct(part, whole) -> str:
@@ -864,17 +912,35 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         _insert_rate_columns(cols, disp, table, n_extra=len(extra_rows),
                              extra_listed=extra_listed,
                              extra_rates=extra_rates)
-    if knocks_green_at and COL_TOTAL_KNOCKS in cols:
-        # Raf 2026-08-29: "turn the total doors knocked bright green once the
-        # rep hits 140". REP ROWS ONLY — a green office total would be a
-        # different claim, and the reps are who the target is for.
-        _tk = cols.index(COL_TOTAL_KNOCKS)
+    # Raf 2026-08-29 ("turn the total doors knocked bright green once the rep
+    # hits 140"), widened 2026-08-30 to the other two targets he states in the
+    # same breath. REP ROWS ONLY throughout — a green office total would be a
+    # different claim, and the reps are who the targets are for.
+    #
+    # The doors goal defaults to the DAY's target (160 weekday / 140 Saturday)
+    # rather than a flat 140: on a Tuesday the old flat number greened a rep
+    # who was 20 doors short of what Rafael actually asks for. An explicit
+    # knocks_green_at still wins, so a caller that wants its own bar keeps it.
+    _goal = knocks_green_at or doors_target(target)
+    _green = [(COL_TOTAL_KNOCKS,
+               lambda v: v.replace(",", "").isdigit()
+               and int(v.replace(",", "")) >= _goal),
+              (COL_KNOCKS_PER_HR,
+               lambda v: _is_num(v) and float(v) >= KNOCKS_PER_HR_TARGET),
+              # EARLIER is better here, unlike the other two.
+              (COL_FIRST_KNOCK,
+               lambda v: (_hhmm_to_min(v) or 10 ** 6)
+               <= FIRST_KNOCK_TARGET_MIN)]
+    for _col, _hit in _green:
+        if _col not in cols:
+            continue
+        _ci = cols.index(_col)
         for _ri, _row in enumerate(table):
             if _ri <= len(extra_rows):      # comparison rows + our TOTAL
                 continue
-            _v = str(_row[_tk]).strip().replace(",", "")
-            if _v.isdigit() and int(_v) >= knocks_green_at:
-                _cell_bgs[(_ri, _tk)] = GREEN_HIT
+            _v = str(_row[_ci]).strip()
+            if _v and _hit(_v):
+                _cell_bgs[(_ri, _ci)] = GREEN_HIT
     # The reps-knocking count for each summary line, in the order those rows
     # are drawn (comparison offices first, then this office's TOTAL), so they
     # land in the "#" column instead of a column of their own.

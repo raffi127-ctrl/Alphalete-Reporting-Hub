@@ -216,6 +216,14 @@ def _norm_name(s: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", (s or "").lower())).strip()
 
 
+def _isfloat(v) -> bool:
+    try:
+        float(str(v).strip())
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def _num(x: float) -> str:
     """2-decimal display that doesn't dress an int up: 16.6, 13.83, 15."""
     s = f"{round(x, 2):.2f}".rstrip("0").rstrip(".")
@@ -645,6 +653,25 @@ def render(office: str, monday: dt.date, saturday: dt.date,
             else "WEEKLY KNOCK DISPOSITIONS")
     _office = f"{office.upper()} — " if office else ""
     title = f"{what} — {_office}{span}"
+    # Rafael's targets, greened on REP ROWS only (Megan 2026-08-30: "we should
+    # turn their cell green if these are met"). The summary block is excluded
+    # for the same reason the daily board excludes its TOTAL: an office-level
+    # green is a different claim from a rep hitting his number.
+    #
+    # Avg Doors / Day divides by SIX, so its goal is the blended one —
+    # (5 x 160 weekday + 140 Saturday) / 6 — not the flat weekday 160. A rep
+    # averaging 157 across the week has met what Rafael asks for; holding him
+    # to 160 would fail him for Saturday being a shorter shift.
+    _WEEK_DOORS_GOAL = (knocks_render.DOORS_TARGET_WEEKDAY * 5
+                        + knocks_render.DOORS_TARGET_SATURDAY) / DAYS
+    _green = {COL_DOORS_PER_DAY:
+              lambda v: _isfloat(v) and float(v) >= _WEEK_DOORS_GOAL,
+              # EARLIER is better. Saturday's first knock has no stated target
+              # (it is a different shift), so only the Mon–Fri one is judged.
+              "Mon\u2013Fri Avg First Knock":
+              lambda v: (_knock_min(v) if _knock_min(v) is not None
+                         else 10 ** 6) <= knocks_render.FIRST_KNOCK_TARGET_MIN}
+
     # Drop any OPTIONAL column that is empty on every row — header included.
     # A column added before its data exists (Sat Clocked In, until a fresh pull
     # carries K_TT_DAYS) would otherwise draw blank down the whole board, which
@@ -667,6 +694,18 @@ def render(office: str, monday: dt.date, saturday: dt.date,
     for i, row in enumerate(rows[n_top:]):
         if row:
             row[0] = str(i + 1)
+    cell_bgs = {}
+    for _h, _hit in _green.items():
+        if _h not in hdr:
+            continue
+        _ci = hdr.index(_h)
+        for _ri, _row in enumerate(rows):
+            if _ri < n_top or _ci >= len(_row):
+                continue                     # summary block: never greened
+            _v = str(_row[_ci]).strip()
+            if _v and _hit(_v):
+                cell_bgs[(_ri, _ci)] = knocks_render.GREEN_HIT
+
     out = out_dir / f"weekly_knock_dispositions_{saturday.isoformat()}.png"
     return knocks_render._draw(hdr, rows,
                                # name_col=1: "#" took column 0.
@@ -685,4 +724,5 @@ def render(office: str, monday: dt.date, saturday: dt.date,
                                # band existed to make the OLD bottom block
                                # readable without scrolling back up).
                                highlight_last_row=0,
-                               repeat_header_before=0)
+                               repeat_header_before=0,
+                               cell_bgs=cell_bgs or None)
