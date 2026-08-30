@@ -2891,6 +2891,48 @@
         "report_id": "daily-focus-post"
       }
     },
+    "install_daily_focus_refill_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_daily_focus_refill_agent`. Bootstraps com.alphalete.daily-focus-refill from the committed plist: 18:30 Mon-Fri, the second fill of the day so the 7pm office post has the current day's numbers. Must land on the SAME machine as the 4am pass \u2014 the AppStream session lives there. on_scheduler:true only so registry.load_config keeps it; cadence.weekdays [] means the 4am orchestrator never fires it.",
+      "display_name": "Install daily-focus-refill agent",
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "daily-focus-refill"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 5,
+      "verify": null
+    },
+    "install_daily_focus_post_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_daily_focus_post_agent`. Bootstraps com.alphalete.daily-focus-post, which TICKS every 10 minutes and asks daily_focus_post/run.py whether any office's OWN local 7pm has passed on a weekday. The slot is NOT in the plist \u2014 that is what lets an office in another timezone get its own 7pm when it joins the roster.",
+      "display_name": "Install daily-focus-post agent",
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "daily-focus-post"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 5,
+      "verify": null
+    },
     "weather_alert": {
       "on_scheduler": true,
       "display_name": "Weather Alert (Frisco team)",
