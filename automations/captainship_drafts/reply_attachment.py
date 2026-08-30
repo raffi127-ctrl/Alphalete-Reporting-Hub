@@ -47,6 +47,7 @@ import email
 import imaplib
 import sys
 from email.message import EmailMessage
+from email.header import decode_header, make_header
 from email.utils import getaddresses, formataddr
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -126,8 +127,18 @@ def _addrs(msg, header: str) -> List[str]:
     return out
 
 
+# The ASCII fragment every report subject contains, used as the IMAP-side
+# filter. The FULL subject is NOT sent to the server: a Subject header can be
+# RFC2047-encoded ("=?utf-8?b?…?="), and a SUBJECT search for the decoded text
+# then matches nothing — which is exactly what happened on 2026-08-30, silently
+# and for every captain. Filtering on a plain substring and comparing the
+# DECODED header in Python is immune to how the header happens to be encoded.
+SUBJECT_FRAGMENT = "Captainship Report"
+
+
 def find_sent(subject: str, account: str, password: str,
-              *, logfn=print) -> Optional[dict]:
+              *, since: "dt.date | None" = None,
+              logfn=print) -> Optional[dict]:
     """The already-sent message with this exact Subject, as
     {message_id, to, cc, subject, date}. None when it isn't there — which is
     the honest answer for a report that never went out."""
@@ -141,8 +152,10 @@ def find_sent(subject: str, account: str, password: str,
         M.select(SENT_MAILBOX, readonly=True)
         # HEADER SUBJECT does a substring match; the exact string is compared
         # again below, so a near-miss subject can never be answered by mistake.
-        typ, data = M.search(None, 'FROM', f'"{account}"',
-                             'SUBJECT', f'"{subject}"')
+        crit = ['FROM', f'"{account}"', 'SUBJECT', f'"{SUBJECT_FRAGMENT}"']
+        if since:
+            crit = ['SINCE', since.strftime("%d-%b-%Y")] + crit
+        typ, data = M.search(None, *crit)
         if typ != "OK" or not data or not data[0]:
             return None
         best = None
@@ -151,14 +164,15 @@ def find_sent(subject: str, account: str, password: str,
             if typ != "OK" or not raw or not raw[0]:
                 continue
             msg = email.message_from_bytes(raw[0][1])
-            if (msg.get("Subject") or "").strip() != subject.strip():
+            got = str(make_header(decode_header(msg.get("Subject") or "")))
+            if got.strip() != subject.strip():
                 continue
             mid = (msg.get("Message-ID") or "").strip()
             if not mid:
                 continue
             best = {"message_id": mid, "to": _addrs(msg, "To"),
                     "cc": _addrs(msg, "Cc"),
-                    "subject": (msg.get("Subject") or "").strip(),
+                    "subject": got.strip(),
                     "date": (msg.get("Date") or "").strip(),
                     "references": (msg.get("References") or "").strip()}
         return best
@@ -255,7 +269,8 @@ def main(argv=None) -> int:
             print(f"  ⤳ {c.key}: PDF did not print — SKIPPED")
             skipped += 1
             continue
-        original = find_sent(subject, FROM_ADDR, pw)
+        original = find_sent(subject, FROM_ADDR, pw,
+                             since=sat - dt.timedelta(days=1))
         if not original:
             print(f"  ⤳ {c.key}: no sent message titled {subject!r} — SKIPPED")
             skipped += 1
