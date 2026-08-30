@@ -132,6 +132,16 @@ def _run_funnel(args, funnel, monday, when) -> int:
         failed = [o for o in outcomes if o.error]
         return 2 if (failed or out["errors"]) else 0
 
+    if args.mode == "thread-replies":
+        # Answering people who @-tag Lucy in the thread (Raf 2026-08-30).
+        # Dry-run by default: this is the one pass that posts without a human
+        # in the loop, so the first ones are meant to be read.
+        from automations.new_start_followup import lucy_replies
+        res = lucy_replies.run(rec, live=args.live)
+        for line in res["lines"]:
+            print(line)
+        return 0
+
     if args.mode == "number-replies":
         from automations.new_start_followup import number_requests
         result = number_requests.process(rec, live=args.live)
@@ -213,13 +223,15 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="New-start follow-up: who texted their new starts.")
     ap.add_argument("--mode",
                     choices=["status", "rollcall", "nudge", "checklist",
-                             "sat-texts", "daily-reminder", "number-replies"],
+                             "sat-texts", "daily-reminder", "number-replies",
+                             "thread-replies"],
                     default="status",
                     help="status = print only; rollcall = Saturday 8am tag-everyone; "
                          "nudge = Saturday reminder; checklist = Sunday roll-up; "
                          "sat-texts = Sat 8:30 individual iMessages + lvl-1 group "
                          "posts (Lucy 1 only); daily-reminder = Mon-Fri 9am lvl-1 "
-                         "group posts")
+                         "group posts; thread-replies = answer people who "
+                         "@-tag Lucy in the thread")
     ap.add_argument("--force", action="store_true",
                     help="post the roll call again even if one is already in the thread")
     ap.add_argument("--when", choices=["auto", "morning", "midday", "evening"], default="auto",
