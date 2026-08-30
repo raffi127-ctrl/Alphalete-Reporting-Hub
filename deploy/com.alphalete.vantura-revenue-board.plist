@@ -24,15 +24,20 @@
     </dict>
 
     <!-- DAILY incl. weekends. 05:20 / 05:50 / 06:30: AFTER sales-boards'
-         05:10 post creates the Vantura Production thread. The module holds
-         (exit 75) while the export lacks the day or the thread is missing,
-         and dedups on 'Revenue Board <tag>' so only one reply ever lands.
-         Hour/Minute are machine LOCAL time; Lucy 2 is Central. -->
+         05:10 post creates the thread — the AT&T board lands here. 07:25 /
+         08:50 / 09:40: the BOX board, once box_order_log's 7:00/8:30 csv
+         carries the day (its extract refreshes ~7am). The module holds
+         (exit 75) while a board's data or the thread is missing, and dedups
+         per board plain so each reply lands exactly once. Hour/Minute are
+         machine LOCAL time; Lucy 2 is Central. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>20</integer></dict>
         <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>50</integer></dict>
         <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>25</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>40</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
