@@ -36,7 +36,7 @@ from automations.total_knocks.pull import (
 )
 from automations.weekly_knock_dispositions.pull import (
     K_DAILY_GAP_MIN, K_DAILY_KNOCKS, K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST,
-    K_TALK_TO, K_TOTAL_KNOCKS, K_TOTAL_LEADS)
+    K_TALK_TO, K_TOTAL_KNOCKS, K_TOTAL_LEADS, K_TT_DAYS)
 
 DAYS = 6                     # Mon–Sat
 WEEKDAYS = 5                 # Mon–Fri, the span the knock-time columns average
@@ -85,6 +85,16 @@ MIN_KNOCKS_PER_DAY = knocks_render.KNOCKING_MIN_KNOCKS   # 21 — "21 or more"
 # The threshold is interpolated, never typed, so the label cannot drift from
 # the rule is_knocking actually applies.
 COL_NUM = f"# Reps ({MIN_KNOCKS_PER_DAY}+ Doors / Day)"
+
+# Raf 2026-08-30 (Loom, 12:59): "I should get a column that says reps clocked
+# into TeleMapper on Saturday. Because Saturday, some of us really suck at our
+# reps working, me included."
+#
+# A rep row answers Yes or nothing — the same shape the other Saturday columns
+# already take for someone who didn't work that day, which he has never
+# objected to; what he objects to is a column that CAN'T be filled on a rep
+# row. The summary rows carry the count he actually asked for, "12 of 21".
+COL_SAT_CLOCKED = "Sat Clocked In"
 # The doors column, settled by Raf 2026-08-30 after two rounds on the same day:
 # "This should be 'AVG Doors a rep knocked per day', so every rep should have a
 # number."
@@ -130,9 +140,17 @@ HEADERS = [
     "Mon\u2013Sat Avg Gap / Day", "Mon\u2013Sat Total Gap Hours",
     # Saturday's own block, in the order he asked for it: knocking hours in
     # front of the gap hours, and both in front of Sat Last Knock.
-    "Sat First Knock", "Sat Avg Hrs Knocking", "Sat Avg Gap Hours",
-    "Sat Last Knock",
+    COL_SAT_CLOCKED, "Sat First Knock", "Sat Avg Hrs Knocking",
+    "Sat Avg Gap Hours", "Sat Last Knock",
 ]
+
+# Columns that DISAPPEAR when no row on the board has a value for them, header
+# and all. Without this a column added before its data exists draws empty down
+# the whole board — and an empty column is the one thing Raf reliably reacts to
+# (2026-08-30, three times in an afternoon). It also covers the honest case: an
+# office whose Time Tracker never answered shouldn't show a clock-in column at
+# all rather than a column of blanks that reads as "nobody worked Saturday".
+OPTIONAL_COLUMNS = {COL_SAT_CLOCKED}
 
 # After the summary columns comes the full disposition breakdown (Raf
 # 2026-08-22 — his sheet's green columns; the aggregate red ones stay off).
@@ -153,7 +171,8 @@ GAPS_ONLY_HEADERS = [COL_NUM, "Rep", "Mon\u2013Fri Avg First Knock",
                      "Mon\u2013Fri Avg Hrs Knocking / Day",
                      "Mon\u2013Sat Avg Gap / Day",
                      "Mon\u2013Sat Total Gap Hours",
-                     "Sat First Knock", "Sat Avg Hrs Knocking",
+                     COL_SAT_CLOCKED, "Sat First Knock",
+                     "Sat Avg Hrs Knocking",
                      "Sat Avg Gap Hours", "Sat Last Knock"]
 
 
@@ -287,6 +306,25 @@ def _monfri_gap_per_day(rec: dict) -> float | None:
     return (sum(int(x or 0) for x in g[:WEEKDAYS]) / WEEKDAYS) if g else None
 
 
+def _sat_clocked(rec: dict) -> bool | None:
+    """Did this rep have a TeleMapper record on Saturday? None when the pull
+    didn't carry per-day records at all — which is what makes the column drop
+    out rather than claim nobody worked."""
+    d = rec.get(K_TT_DAYS)
+    if not isinstance(d, (list, tuple)) or len(d) < DAYS:
+        return None
+    return bool(int(d[SATURDAY] or 0))
+
+
+def _sat_clocked_cells(ov_rows: list[dict]) -> str:
+    """The summary cell: "12 of 21" — reps who clocked in Saturday, of the reps
+    with Time Tracker data at all. Blank when nothing was measured."""
+    known = [r for r in ov_rows if _sat_clocked(r) is not None]
+    if not known:
+        return ""
+    return f"{sum(1 for r in known if _sat_clocked(r))} of {len(known)}"
+
+
 def _sat_gap(rec: dict) -> int | None:
     g = _gaps(rec)
     return int(g[SATURDAY] or 0) if g else None
@@ -418,6 +456,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
                  if _mf is not None else ""),
                 (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
                 (_hm(int(gap_min)) if gap_min is not None else ""),
+                ("Yes" if _sat_clocked(r) else ""),
                 str(r.get(K_SAT_FIRST, "")).strip(),
                 (_knocking_hm(str(r.get(K_SAT_FIRST, "")),
                               str(r.get(K_SAT_LAST, "")), _sg)
@@ -441,6 +480,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             (_knocking_hm(_gf, _gl, sum(_mfg) / len(_mfg)) if _mfg else ""),
             (_hm(round(_gg)) if gap_reps else ""),
             _hm(tot_gaps),
+            _sat_clocked_cells(ov_rows),
             _avg_knock(ov_rows, K_SAT_FIRST),
             (_knocking_hm(_avg_knock(ov_rows, K_SAT_FIRST),
                           _avg_knock(ov_rows, K_SAT_LAST),
@@ -485,6 +525,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
              if mf_gap is not None else ""),
             (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
             (_hm(int(gap_min)) if gap_min is not None else ""),
+            ("Yes" if _sat_clocked(r) else ""),
             str(r.get(K_SAT_FIRST, "")).strip(),
             (_knocking_hm(str(r.get(K_SAT_FIRST, "")),
                           str(r.get(K_SAT_LAST, "")), s_gap)
@@ -500,7 +541,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             if _norm_name(rep) in consumed or not n_apps:
                 continue
             rows.append(["", _display_name(rep)] + [""] * 6 + [str(n_apps)]
-                        + [""] * 10)
+                        + [""] * 11)
 
     # The summary block leads the board, and inside it the GUEST office comes
     # first: Chan's totals, then this office's, then the reps (Megan
@@ -572,6 +613,7 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
                       sum(_mf_gaps) / len(_mf_gaps)) if _mf_gaps else ""),
         (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
         _hm(tot_gaps),
+        _sat_clocked_cells(ov_rows),
         _avg_knock(ov_rows, K_SAT_FIRST),
         (_knocking_hm(_avg_knock(ov_rows, K_SAT_FIRST),
                       _avg_knock(ov_rows, K_SAT_LAST),
@@ -603,6 +645,20 @@ def render(office: str, monday: dt.date, saturday: dt.date,
             else "WEEKLY KNOCK DISPOSITIONS")
     _office = f"{office.upper()} — " if office else ""
     title = f"{what} — {_office}{span}"
+    # Drop any OPTIONAL column that is empty on every row — header included.
+    # A column added before its data exists (Sat Clocked In, until a fresh pull
+    # carries K_TT_DAYS) would otherwise draw blank down the whole board, which
+    # is the one thing Raf reliably reacts to. It switches itself on the first
+    # time a pull answers, with no deploy.
+    hdr = headers_for(dispo_cols, gaps_only)
+    _drop = {i for i, h in enumerate(hdr)
+             if h in OPTIONAL_COLUMNS
+             and not any(str(r[i]).strip() for r in rows if i < len(r))}
+    if _drop:
+        _keep = [i for i in range(len(hdr)) if i not in _drop]
+        hdr = [hdr[i] for i in _keep]
+        rows = [[r[i] for i in _keep if i < len(r)] for r in rows]
+
     # Every summary row now sits at the TOP — this office's TOTALS first, then
     # any comparison office under it — so the rep rows are simply everything
     # after that block, numbered 1..N. They carry their own counts from
@@ -612,7 +668,7 @@ def render(office: str, monday: dt.date, saturday: dt.date,
         if row:
             row[0] = str(i + 1)
     out = out_dir / f"weekly_knock_dispositions_{saturday.isoformat()}.png"
-    return knocks_render._draw(headers_for(dispo_cols, gaps_only), rows,
+    return knocks_render._draw(hdr, rows,
                                # name_col=1: "#" took column 0.
                                title, THEME_PLUM, out, name_col=1,
                                wrap_headers=True,

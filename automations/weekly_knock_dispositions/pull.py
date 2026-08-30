@@ -67,6 +67,15 @@ K_TOTAL_LEADS = "Week Total Leads Knocked"
 # Avg Hrs Knocking / Day was subtracting a Mon–SAT average gap from a Mon–FRI
 # span, and Raf asked for Saturday's own gap and knocking hours as columns.
 K_DAILY_GAP_MIN = "Daily Gap Minutes"
+# Which days the rep had a Time Tracker record AT ALL, Mon..Sat — 1 = clocked
+# into TeleMapper that day. Raf 2026-08-30 (Loom, 12:59): "I should get a
+# column that says reps clocked into TeleMapper on Saturday. Because Saturday,
+# some of us really suck at our reps working, me included."
+#
+# It CANNOT be read off K_DAILY_GAP_MIN: that fills 0 for a day with no record,
+# which is indistinguishable from a rep who clocked in and took no breaks. The
+# presence of the day's row is the signal, so it is captured separately.
+K_TT_DAYS = "Time Tracker Days"
 # The scraped column those come from. It is one of the table's own aggregates
 # (_AGGREGATES), so it stays OFF the board and out of the talk-to sum exactly
 # as before — we only carry the number.
@@ -282,6 +291,7 @@ def _week_tt(page, rqst: str, monday: dt.date, saturday: dt.date,
             _g = int(rec.get(knocks.COL_TOTAL_GAPS) or 0)
             a["gap_min"] += _g
             a["gaps"].append((day, _g))
+            a.setdefault("tt_days", []).append((day, 1))
             fm = _knock_min(str(rec.get(knocks.COL_FIRST_KNOCK, "")))
             lm = _knock_min(str(rec.get(knocks.COL_LAST_KNOCK, "")))
             if fm is not None:
@@ -441,6 +451,8 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                 K_GAP_MIN: a["gap_min"],
                 K_DAILY_GAP_MIN: _daily_list(a.get("gaps") or [], monday,
                                              (saturday - monday).days + 1),
+                K_TT_DAYS: _daily_list(a.get("tt_days") or [], monday,
+                                       (saturday - monday).days + 1),
             })
         if verbose:
             print(f"[wkd] gaps-only office: {len(rows)} rep(s) from the "
@@ -454,6 +466,8 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
             rec[K_GAP_MIN] = tt[rid]["gap_min"]
             rec[K_DAILY_GAP_MIN] = _daily_list(tt[rid].get("gaps") or [],
                                                monday, n_days)
+            rec[K_TT_DAYS] = _daily_list(tt[rid].get("tt_days") or [],
+                                         monday, n_days)
             matched += 1
     if verbose:
         print(f"[wkd] merged weekly gaps onto {matched}/{len(rows)} rep(s)",
