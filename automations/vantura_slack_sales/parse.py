@@ -241,29 +241,8 @@ class Campaign:
 
 
 CAMPAIGNS = [
-    Campaign(
-        name="Base",
-        include=re.compile(r"\bd2d\b|\bbase\b|\bbase\s*#?\s*\d", re.I),
-        exclude=re.compile(_BOX_SIGNAL.pattern + r"|\bb2b\b|" +
-                           _ATT_SIGNAL.pattern, re.I),
-        override=re.compile(r"\bbase\s*#?\s*\d", re.I),
-        mode="running",
-        markers=[re.compile(r"\bbase\s*(?:cx)?\s*#?\s*(\d{1,2})(?!\d)", re.I),
-                 _CX,
-                 re.compile(r"(?m)^\s*#\s*(\d{1,2})(?!\d)")],
-        # Reps who skip the "#1" still quote the meter reading or the service
-        # address; "WHOSSS FIRST (BASE)" has neither. A posted address is the
-        # signal — a 5-digit ZIP or the state is the most reliable tell (the
-        # street-suffix list kept missing ones like "kinwest PARKWAY").
-        evidence=re.compile(
-            r"\d[\d,]*\s*kwh"                       # meter reading
-            r"|" + _CX_EVID +                       # Cx / Cx1
-            r"|\b\d{5}(?:-\d{4})?\b"                # a ZIP => an address
-            r"|\btexas\b|\btx\b"                    # ...or the state
-            r"|\d{2,}\s+[A-Za-z].*\b(?:dr|st|ln|ct|cir|rd|ave|blvd|way|pkwy"
-            r"|parkway|hwy|expy|trl|pl|loop|ct)\b",
-            re.I),
-    ),
+    # Base (residential energy) RETIRED 2026-08-30 — the campaign ended
+    # (Carlos); no Base rows remain on the board.
     Campaign(
         name="BOX",
         include=_BOX_SIGNAL,

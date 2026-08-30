@@ -1,4 +1,6 @@
-"""Vantura Sales Board fill — counts Base, BOX and AT&T sales from Slack.
+"""Vantura Sales Board fill — counts BOX and AT&T sales from Slack.
+
+Base RETIRED 2026-08-30 (Carlos) — the campaign ended; nothing looks for it.
 
 Three of the four campaigns on Carlos's Sales Board are reported nowhere but
 #alphalete-gp-sales, so the VA opens the channel every morning, sorts the reps
@@ -14,14 +16,13 @@ day is safe by construction.
 
 Reconciliation is built in, because the hand-count has been wrong both ways:
   * the office posts its own running tally through the day — "A&T - 21/16 /
-    Box - 6/8 / Base - 12/20" — and the last one is an independent check;
+    Box - 6/8" — and the last one is an independent check;
   * every rep's current board cell is shown next to ours before any write.
 Both are REPORTED, never silently corrected.
 
   python -m automations.vantura_slack_sales.run                 # yesterday
   python -m automations.vantura_slack_sales.run --date 2026-07-22
   python -m automations.vantura_slack_sales.run --week          # Mon..yesterday
-  python -m automations.vantura_slack_sales.run --campaign Base
   python -m automations.vantura_slack_sales.run --fill          # plan the write
   python -m automations.vantura_slack_sales.run --fill --yes    # actually write
 """
@@ -201,7 +202,6 @@ NAME_ALIASES = {
 
 # The office's own running tally, e.g. "A&T - 21/16", "Box - 6/8", "Base -12/20".
 TALLY_RE = {
-    "Base": re.compile(r"base\s*-?\s*(\d+)\s*/\s*\d+", re.I),
     "BOX": re.compile(r"box\s*-?\s*(\d+)\s*/\s*\d+", re.I),
     "B2B": re.compile(r"a\s*&?\s*t\s*-?\s*(\d+)\s*/\s*\d+", re.I),
 }
