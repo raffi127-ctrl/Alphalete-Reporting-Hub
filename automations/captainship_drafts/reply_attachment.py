@@ -54,8 +54,16 @@ from typing import List, Optional, Tuple
 from automations.captainship_drafts import config
 
 IMAP_HOST = "imap.gmail.com"
-# Gmail exposes Sent under this name via IMAP regardless of the UI language.
-SENT_MAILBOX = '"[Gmail]/Sent Mail"'
+# ALL MAIL, not "[Gmail]/Sent Mail". The reports go out over SMTP, and a
+# search of Sent for the exact subject returned nothing on 2026-08-30 while the
+# same search of All Mail found every one of them. All Mail is the superset
+# Gmail always files a sent message into, so it is the reliable place to look.
+#
+# The cost of the superset is that All Mail also holds the REPLIES people send
+# back ("Re: Rafael's Captainship Report 8/29", from Rafael himself). Two
+# things keep those out: the FROM filter below, and the exact-subject compare
+# in find_sent, which a "Re:" prefix fails.
+SENT_MAILBOX = '"[Gmail]/All Mail"'
 
 BODY = (
     "Hi team,\n\n"
@@ -133,7 +141,8 @@ def find_sent(subject: str, account: str, password: str,
         M.select(SENT_MAILBOX, readonly=True)
         # HEADER SUBJECT does a substring match; the exact string is compared
         # again below, so a near-miss subject can never be answered by mistake.
-        typ, data = M.search(None, 'HEADER', 'SUBJECT', f'"{subject}"')
+        typ, data = M.search(None, 'FROM', f'"{account}"',
+                             'SUBJECT', f'"{subject}"')
         if typ != "OK" or not data or not data[0]:
             return None
         best = None
