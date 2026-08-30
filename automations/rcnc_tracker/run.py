@@ -220,15 +220,20 @@ def _serial(d: dt.date) -> int:
     return (d - EPOCH).days
 
 
-def _week_cols(ws) -> Dict[dt.date, int]:
-    """{week_ending_date: 1-based col} from the header row (serial dates)."""
-    row = ws.get(f"B{HDR_ROW}:ZZ{HDR_ROW}",
-                 value_render_option="UNFORMATTED_VALUE")
+def _week_cols_from(row, base_col: int) -> Dict[dt.date, int]:
+    """{week_ending_date: 1-based col} from a fetched header row of serial
+    dates, whose first cell is column `base_col`."""
     out: Dict[dt.date, int] = {}
     for j, v in enumerate(row[0] if row else []):
         if isinstance(v, (int, float)) and v > 40000:
-            out[EPOCH + dt.timedelta(days=int(v))] = 2 + j
+            out[EPOCH + dt.timedelta(days=int(v))] = base_col + j
     return out
+
+
+def _week_cols(ws) -> Dict[dt.date, int]:
+    return _week_cols_from(ws.get(f"B{HDR_ROW}:ZZ{HDR_ROW}",
+                                  value_render_option="UNFORMATTED_VALUE"),
+                           base_col=2)
 
 
 def _name_rows(ws) -> Tuple[Dict[str, int], Dict[str, int], int, int]:
@@ -489,6 +494,37 @@ def probe() -> int:
     return 0 if ok else 1
 
 
+# ------------------------------------------------------------- ICD backfill
+BACKFILL_START = dt.date(2025, 12, 27)          # first email of the year set
+
+
+def backfill_icds(dry: bool) -> int:
+    """Rebuild 'Our ICDs' from every weekly email since BACKFILL_START."""
+    from automations.residential_rep_count import email_source
+    from automations.rcnc_tracker import icds
+    latest = email_source.latest_week_ending()
+    if latest is None:
+        print("no Archey emails found")
+        return 1
+    weeks_data = {}
+    wk = BACKFILL_START
+    while wk <= latest:
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                xlsx, got = fetch_xlsx(td, wk)
+                weeks_data[got] = icds.parse_week(xlsx)
+                print(f"  WE {got}: {len(weeks_data[got])} ICDs")
+        except Exception as e:  # noqa: BLE001 — a missing week isn't fatal
+            print(f"  WE {wk}: skipped ({type(e).__name__}: {str(e)[:80]})")
+        wk += dt.timedelta(days=7)
+    if not weeks_data:
+        print("nothing parsed — aborting")
+        return 1
+    icds.rebuild(_client_sheet(), weeks_data, dry)
+    print("=== done ===")
+    return 0
+
+
 # ---------------------------------------------------------------------- main
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
@@ -501,9 +537,14 @@ def main(argv=None) -> int:
     ap.add_argument("--to", action="append",
                     help="Slack recipient override: user id, email or name "
                          "(repeatable)")
+    ap.add_argument("--backfill-icds", action="store_true",
+                    help="rebuild the 'Our ICDs' tab from EVERY email of the "
+                         "year (per-ICD headcounts for the two Hidalgo orgs)")
     args = ap.parse_args(argv)
     if args.probe:
         return probe()
+    if args.backfill_icds:
+        return backfill_icds(dry=args.dry_run)
 
     week = (dt.datetime.strptime(args.week_ending, "%Y-%m-%d").date()
             if args.week_ending else None)
@@ -528,6 +569,8 @@ def main(argv=None) -> int:
             sh = _client_sheet()
             info = append_week(sh, week, leaders, totals, args.dry_run)
             point_week_view(sh, week, args.dry_run)
+            from automations.rcnc_tracker import icds
+            icds.upsert(sh, week, icds.parse_week(xlsx), args.dry_run)
             if args.no_send:
                 print("  --no-send: skipping screenshots + Slack DM")
             else:
