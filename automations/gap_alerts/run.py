@@ -769,12 +769,22 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                        for r in rows]
         # A failed gap pull costs the section, never the board — the board is
         # the thing Raf asked for and it is already in hand.
-        try:
-            gaps = gap_rows(cfg, day)
-        except Exception as e:  # noqa: BLE001
+        # A BACKDATED RUN GETS NO GAP LIST. "minutesSinceLastKnock" is measured
+        # from RIGHT NOW, so for any past day every rep reads as inactive for a
+        # thousand-plus minutes — a wall of red that says nothing except that
+        # yesterday ended. The board is history and travels fine; the gap list
+        # is a live signal and does not.
+        if day != dt.date.today():
             gaps = []
-            _log("  gap list SKIPPED (%s: %s)"
-                 % (type(e).__name__, str(e)[:160]))
+            _log("  gap list SKIPPED — %s is not today, and 'minutes since "
+                 "last knock' is only meaningful live" % day)
+        else:
+            try:
+                gaps = gap_rows(cfg, day)
+            except Exception as e:  # noqa: BLE001
+                gaps = []
+                _log("  gap list SKIPPED (%s: %s)"
+                     % (type(e).__name__, str(e)[:160]))
         previous, first_of_day = _previous_gap_names(cfg["key"], day)
         body, gap_names = gap_text(gaps, previous, first_of_day)
         newly = ([] if first_of_day
