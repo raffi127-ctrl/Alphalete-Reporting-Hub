@@ -254,25 +254,22 @@ def _branch_html(r: Rep) -> str:
             f'{_node(r)}{inner}</div>')
 
 
-CAMPAIGN_TITLES = {"B2B": "Alphalete B2B AT&amp;T", "BOX": "Alphalete BOX"}
-
-
-def render_html(week, reps, roots, scheduled, campaign) -> str:
-    """One campaign per page (Carlos 2026-08-30: two screenshots, each with
-    only its own tree, its own Level 2+ cards, and its own totals box)."""
+def render_html(week, reps, roots, scheduled) -> str:
     css = (Path(__file__).parent / "style.css").read_text()
-    branches = "".join(_branch_html(r) for r in roots
-                       if r.campaign == campaign)
-    section = f"""<section>
-  <div class="campaign"><span class="root-node">{CAMPAIGN_TITLES[campaign]}</span>
+    sections = []
+    for camp, title in (("B2B", "Alphalete B2B AT&amp;T"),
+                        ("BOX", "Alphalete BOX")):
+        branches = "".join(_branch_html(r) for r in roots
+                           if r.campaign == camp)
+        sections.append(f"""<section>
+  <div class="campaign"><span class="root-node">{title}</span>
   <div class="root-stem"></div></div>
   <div class="map-scroll"><div class="map"><div class="rail"></div>
-  <div class="branches">{branches}</div></div></div></section>"""
+  <div class="branches">{branches}</div></div></div></section>""")
 
-    # This campaign's Level 2+ leader cards, largest team first
+    # Level 2+ leader cards, largest team first
     cards = []
-    leaders = [r for r in reps
-               if r.status in CARD_STATUSES and r.campaign == campaign]
+    leaders = [r for r in reps if r.status in CARD_STATUSES]
     for ld in sorted(leaders, key=lambda r: -r.size):
         sub = list(ld.subtree())
         active, lead, training = stats(sub)
@@ -286,14 +283,16 @@ def render_html(week, reps, roots, scheduled, campaign) -> str:
   <dt>In training</dt><dd>{training}</dd>
   <dt>NS scheduled</dt><dd>{ns}</dd></dl></div>""")
 
-    sub = [r for r in reps if r.campaign == campaign]
-    active, lead, training = stats(sub)
-    ns = sum(1 for _, c, _ in scheduled if c == campaign)
-    box = f"""<div class="office-box"><div class="title">{campaign}</div>
+    boxes = []
+    for camp in ("B2B", "BOX"):
+        sub = [r for r in reps if r.campaign == camp]
+        active, lead, training = stats(sub)
+        ns = sum(1 for _, c, _ in scheduled if c == camp)
+        boxes.append(f"""<div class="office-box"><div class="title">{camp}</div>
   <dl><dt>Total active</dt><dd>{active}</dd>
   <dt>Leaders</dt><dd>{lead}</dd>
   <dt>In training</dt><dd>{training}</dd>
-  <dt>New starts scheduled</dt><dd>{ns}</dd></dl></div>"""
+  <dt>New starts scheduled</dt><dd>{ns}</dd></dl></div>""")
 
     return f"""<meta charset="utf-8">
 <title>Alphalete Team Tree</title>
@@ -309,9 +308,9 @@ def render_html(week, reps, roots, scheduled, campaign) -> str:
   </div>
 </header>
 <div class="layout"><div class="main">
-{section}
+{"".join(sections)}
 <section class="totals"><h2>Office Totals</h2>
-<div class="boxes">{box}</div></section>
+<div class="boxes">{"".join(boxes)}</div></section>
 </div>
 <aside class="leaders"><h2>Level 2+ Leaders</h2>
 <div class="cards">{"".join(cards)}</div>
@@ -369,9 +368,7 @@ def _trim(png_path: Path, pad: int = 60) -> None:
              min(im.height, bottom + pad))).save(png_path)
 
 
-def post(pngs: "list[tuple[str, Path]]", week: str, *, dm: bool) -> dict:
-    """Upload the per-campaign PNGs as ONE message (one comment, both
-    images) so the channel gets a single post, not two."""
+def post(png: Path, week: str, *, dm: bool) -> dict:
     from automations.shared.slack_metrics_post import _client
     client = _client()
     if dm:
@@ -380,14 +377,10 @@ def post(pngs: "list[tuple[str, Path]]", week: str, *, dm: bool) -> dict:
     else:
         channel = CHANNEL[1]
     resp = client.files_upload_v2(
-        channel=channel,
-        file_uploads=[
-            {"file": str(png),
-             "filename": f"alphalete-{camp.lower()}-tree-{week or 'week'}.png",
-             "title": f"Alphalete {camp} team tree"}
-            for camp, png in pngs],
-        initial_comment=(f"Alphalete team trees — week ending {week}: "
-                         "B2B AT&T and BOX by trainer, color = leadership "
+        channel=channel, file=str(png),
+        filename=f"alphalete-team-tree-{week or 'week'}.png",
+        initial_comment=(f"Alphalete team tree — week ending {week}: "
+                         "B2B AT&T + BOX by trainer, color = leadership "
                          "status, Level 2+ leader stats and office totals."))
     return {"ok": resp.get("ok"), "channel": channel}
 
@@ -407,20 +400,17 @@ def main(argv=None) -> int:
           f"{len(roots)} branches, {len(scheduled)} scheduled orientations")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    pngs = []
-    for camp in ("B2B", "BOX"):
-        html_path = OUT_DIR / f"team_tree_{camp.lower()}.html"
-        png_path = OUT_DIR / f"team_tree_{camp.lower()}.png"
-        html_path.write_text(
-            render_html(week, reps, roots, scheduled, camp), encoding="utf-8")
-        render_png(html_path, png_path)
-        print(f"  rendered {png_path} ({png_path.stat().st_size:,} bytes)")
-        pngs.append((camp, png_path))
+    html_path = OUT_DIR / "team_tree.html"
+    png_path = OUT_DIR / "team_tree.png"
+    html_path.write_text(render_html(week, reps, roots, scheduled),
+                         encoding="utf-8")
+    render_png(html_path, png_path)
+    print(f"  rendered {png_path} ({png_path.stat().st_size:,} bytes)")
 
     if args.dry_run:
         print("  dry-run: not posting")
         return 0
-    out = post(pngs, week, dm=args.dm)
+    out = post(png_path, week, dm=args.dm)
     dest = "Carlos DM" if args.dm else CHANNEL[0]
     print(f"  posted to {dest}: {out}")
     return 0 if out.get("ok") else 1
