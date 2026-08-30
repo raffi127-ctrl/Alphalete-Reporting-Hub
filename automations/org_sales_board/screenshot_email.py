@@ -681,17 +681,12 @@ _INLINE_MAX_PX = 2 * _beh.WRAPPER_PX
 
 def _inline_bytes(path: Path) -> bytes:
     """The INLINE payload for one block image: pre-shrunk + lightly sharpened
-    when it is wider than any client can show, verbatim bytes otherwise."""
-    from PIL import Image, ImageFilter
-    im = Image.open(path)
-    if im.width <= _INLINE_MAX_PX:
-        return Path(path).read_bytes()
-    h = round(im.height * _INLINE_MAX_PX / im.width)
-    im = im.convert("RGB").resize((_INLINE_MAX_PX, h), Image.LANCZOS)
-    im = im.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
-    buf = io.BytesIO()
-    im.save(buf, "PNG")
-    return buf.getvalue()
+    when it is wider than any client can show, verbatim bytes otherwise.
+
+    The body MOVED to shared/board_email_html on 2026-08-30, unchanged, because
+    the Captainship Reports needed the identical treatment and a second copy is
+    how the two drift. This stays as the name this module already calls."""
+    return _beh.inline_image_bytes(path, _INLINE_MAX_PX)
 
 
 def build_email(images: List[Tuple], to_addrs: List[str],

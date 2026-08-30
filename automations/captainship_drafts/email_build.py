@@ -27,6 +27,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from automations.shared import board_email_html as _beh
 from automations.captainship_drafts.config import Captain
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, PHOTO_EMBED_PX, PHOTO_IMG,
@@ -359,7 +360,15 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     # image. The scramble this module exists to fix is cured by the Content-IDs
     # above, not by naming the parts.
     for cid, path, _filename in imgs.pairs:
-        html_part.add_related(Path(path).read_bytes(),
+        # NOT read_bytes(): a board wider than any client can show is
+        # pre-shrunk with one clean Lanczos pass + a mild unsharp, so the mail
+        # client is left a gentle final shrink instead of a 3x one it does with
+        # cheap sampling. Same helper the Org Sales Board email uses — that
+        # blur was Raf's 2026-08-23 report and this email never got the fix
+        # (Megan 2026-08-30: everything we hand anyone should be as
+        # fit-to-screen as possible WITHOUT losing sharpness). A board already
+        # inside the cap is passed through byte-for-byte.
+        html_part.add_related(_beh.inline_image_bytes(path),
                               maintype="image", subtype="png", cid=cid)
     html_part.add_related(_circular_photo_png(PHOTO_IMG, PHOTO_EMBED_PX),
                           maintype="image", subtype="png", cid=cid_photo)

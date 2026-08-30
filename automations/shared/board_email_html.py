@@ -47,7 +47,46 @@ from typing import Iterable, List, Sequence, Tuple
 # are what survive, which is the point.
 WRAPPER_PX = 1200
 
+# The most pixels any mail client can actually show: 2x the wrapper, i.e. the
+# CSS width at retina density.
+INLINE_MAX_PX = 2 * WRAPPER_PX
+
 _FONT = "Arial,Helvetica,sans-serif"
+
+
+def inline_image_bytes(path, max_px: int = 0) -> bytes:
+    """One inline board image's payload: pre-shrunk + lightly sharpened when it
+    is wider than any client can show, the file's own bytes otherwise.
+
+    WHY PRE-SHRINK AT ALL (Raf 2026-08-23, "comes out kind of blurry"). A board
+    that renders 3000-4400px wide and is embedded at max-width:100% gets shrunk
+    3x+ by the CLIENT, and mail clients downscale that far with cheap sampling
+    that drops half the 1px gridlines and glyph strokes. One clean Lanczos pass
+    plus a mild unsharp leaves the client only a gentle final shrink, so the
+    strokes survive. An image already inside the cap is passed through
+    byte-for-byte — resampling something that doesn't need it is the one way
+    this could COST sharpness rather than buy it.
+
+    Lives here, next to WRAPPER_PX, because it is the same answer for every
+    board email we send. It was written for the Org Sales Board's blur and then
+    not carried to the Captainship Reports, which embedded raw PNGs until
+    2026-08-30 — one implementation is what stops that happening again
+    (Megan's standing rule: everything we hand anyone is as fit-to-screen as it
+    can be without losing sharpness)."""
+    import io
+    from pathlib import Path
+    from PIL import Image, ImageFilter
+    path = Path(path)
+    cap = max_px or INLINE_MAX_PX
+    im = Image.open(path)
+    if im.width <= cap:
+        return path.read_bytes()
+    h = round(im.height * cap / im.width)
+    im = im.convert("RGB").resize((cap, h), Image.LANCZOS)
+    im = im.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue()
 
 
 # FULL-BLEED blocks take the whole wrapper and do NOT set the scale for anything

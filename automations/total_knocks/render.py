@@ -268,15 +268,50 @@ WIRELESS_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
                            COL_INACCESSIBLE, COL_DO_NOT_KNOCK]
 
 # ---- layout ----
-PAD        = 16
-TITLE_H    = 52
-HEADER_H   = 40
-ROW_H      = 28
-CELL_PAD_X = 10   # was 4 — more breathing room so text isn't cramped to the grid
-MIN_COL_W  = 26
-MAX_COL_W  = 640  # was 320 — the old cap truncated wide headers ("Presentation –
-                  # Not Interested") and long rep names; widen so every cell fits
-                  # its text (Megan 2026-08-06: "all cells fit to text").
+# EVERY BOARD IS DRAWN AT 2x DENSITY (Megan's standing rule, 2026-08-30:
+# "everything we give him or anyone as fit to screen as possible WITHOUT losing
+# sharpness"). Nothing about the LAYOUT changes — every length and every font
+# below is multiplied by the same number, so the board is the identical picture
+# with twice the pixels in each direction.
+#
+# WHY IT IS THE ANSWER TO "BLURRY". These boards are always shown smaller than
+# they are drawn: a 48-rep weekly board is ~1750px wide and Gmail's pane is
+# 600-1000, so the reader is looking at a 2-3x downscale no matter what we do.
+# Drawn at 1x that downscale had barely more source pixels than destination and
+# 13px glyph strokes disintegrated; drawn at 2x the same final image is
+# resampled from four times the information, and a reader who zooms in finds
+# real detail instead of enlarged pixels. It is the retina-asset trick, and it
+# is the only lever that adds sharpness — cropping white space (weekly_pdf) and
+# resampling well (board_email_html.inline_image_bytes) can only avoid LOSING
+# it.
+#
+# COST: ~2-3x the PNG bytes. That is why the email path pre-shrinks — at 2x the
+# wide boards now cross INLINE_MAX_PX, so our one clean Lanczos pass fires and
+# the client is left a gentle final shrink instead of a brutal one.
+#
+# NOT ON YET — SCALE = 1 renders exactly what every board rendered before
+# 2026-08-30, pixel for pixel. Flip it to 2 to roll out, which is the whole
+# change: every length and font below multiplies, nothing else moves.
+#
+# WHY IT IS PARKED. It is a formatting change to EVERY board in the fleet
+# (Megan's standing preview-before-rollout rule), and it is not free: a 48-rep
+# weekly board goes 1753x2628 -> 3466x5232, and the inline email copy goes
+# ~400KB -> ~890KB even after the pre-shrink and a palette pass. A captainship
+# email carries ~14 boards plus the weekly PDF, and an oversized email FAILS to
+# send rather than arriving degraded — so this wants one real build measured
+# end to end before it goes on, not a Sunday flip.
+SCALE      = 1
+PAD        = 16 * SCALE
+TITLE_H    = 52 * SCALE
+HEADER_H   = 40 * SCALE
+ROW_H      = 28 * SCALE
+CELL_PAD_X = 10 * SCALE   # was 4 — more breathing room so text isn't cramped
+                          # to the grid
+MIN_COL_W  = 26 * SCALE
+MAX_COL_W  = 640 * SCALE  # was 320 — the old cap truncated wide headers
+                  # ("Presentation – Not Interested") and long rep names; widen
+                  # so every cell fits its text (Megan 2026-08-06: "all cells
+                  # fit to text").
 OUT_DIR_DEFAULT = Path("output")
 
 
@@ -433,17 +468,17 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     the host OFFICE TOTALS plum and the comparison row teal. None = the
     theme default for all. Default None/0 = every existing board
     byte-identical."""
-    f_title = _font(26, bold=True)
-    f_head  = _font(13, bold=True)
-    f_cell  = _font(13)
-    f_name  = _font(13, bold=True)
+    f_title = _font(26 * SCALE, bold=True)
+    f_head  = _font(13 * SCALE, bold=True)
+    f_cell  = _font(13 * SCALE)
+    f_name  = _font(13 * SCALE, bold=True)
     # Wrapped headers draw smaller (11px, line height 14) — the header is a
     # label, the number is the data, so the label never dictates the box
     # (Megan 2026-08-22: "still too much extra space in these columns").
-    f_head_w = _font(11, bold=True)
+    f_head_w = _font(11 * SCALE, bold=True)
     head_font = f_head_w if wrap_headers else f_head
-    head_lh = 14 if wrap_headers else 16
-    head_pad = 4 if wrap_headers else CELL_PAD_X
+    head_lh = (14 if wrap_headers else 16) * SCALE
+    head_pad = 4 * SCALE if wrap_headers else CELL_PAD_X
 
     probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     ncol = len(header)
@@ -496,8 +531,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     # Shrink to the largest size that fits (floor 14, still clearly readable);
     # only if even 14 overflows does the canvas widen to hold it, so every
     # existing image whose title already fit is byte-identical.
-    title_size = 26
-    for size in (26, 24, 22, 20, 18, 16, 14):
+    title_size = 26 * SCALE
+    for size in (s_ * SCALE for s_ in (26, 24, 22, 20, 18, 16, 14)):
         f_title = _font(size, bold=True)
         title_size = size
         if _text_w(probe, title, f_title) + 2 * CELL_PAD_X <= table_w:
@@ -575,22 +610,22 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
                 tx = x + (col_w[ci] - _text_w(d, val, font)) // 2
             else:
                 tx = x + CELL_PAD_X
-            d.text((tx, y + (ROW_H - 13) // 2), val, font=font, fill=fg)
+            d.text((tx, y + (ROW_H - 13 * SCALE) // 2), val, font=font, fill=fg)
             x += col_w[ci]
         y += ROW_H
 
     x = PAD
     for ci in range(ncol + 1):
-        d.line([x, PAD + TITLE_H, x, img_h - PAD], fill=GRID, width=1)
+        d.line([x, PAD + TITLE_H, x, img_h - PAD], fill=GRID, width=SCALE)
         if ci < ncol:
             x += col_w[ci]
     yy = PAD + TITLE_H
-    d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=1)
+    d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=SCALE)
     yy += header_h
     for ri in range(len(rows) + 1):
         if ri == _rep_at and ri:
             yy += header_h                 # jump the bottom header band
-        d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=1)
+        d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=SCALE)
         yy += ROW_H
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
