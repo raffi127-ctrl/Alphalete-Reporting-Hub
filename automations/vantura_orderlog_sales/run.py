@@ -55,6 +55,29 @@ DATA_TAB_BOX = "Lucy Box Data"
 # BOX comes off Slack and onto the order log Tue 2026-09-01 (Carlos 2026-08-30).
 BOX_START = dt.date(2026, 9, 1)
 
+# FRESHNESS, the country-tracker way (Carlos 2026-08-30: "I'm sure the tracker
+# post does something to make sure it's updated ... we would probably have to
+# do the exact same thing"). tableau_screenshots.freshness gates each board on
+# its DATA COVERAGE — does the data actually reach the last completed day —
+# circles back while it doesn't, and fail-opens past a floor rather than ever
+# skipping. Same rule here, per campaign, read off the log tabs themselves:
+# a campaign is filled only when its data tab HAS rows for the target day.
+# Not there yet -> exit 75 (HOLD) and the LaunchAgent ladder retries; past the
+# campaign's fail-open floor the pass writes whatever the tab holds (raise-only
+# makes that harmless — the next covered pass tops it up).
+#
+# The floors come from each feed's own clock:
+#   B2B  06:45 — att_order_log's 4am-batch probe fail-opens at 05:30, so the
+#                tab is normally written by ~05:35; 06:45 is well past it.
+#   BOX  09:30 — the BOX extract refreshes ~07:00 and box_order_log writes at
+#                07:00 + 08:30, so BOX is only ATTEMPTED from 08:40 (earlier
+#                passes would hold every single day by design, which is noise,
+#                not signal) and fail-opens at 09:30.
+B2B_FAILOPEN = dt.time(6, 45)
+BOX_ATTEMPT_FROM = dt.time(8, 40)
+BOX_FAILOPEN = dt.time(9, 30)
+FAILOPEN = {"B2B": B2B_FAILOPEN, "BOX": BOX_FAILOPEN}
+
 # The export writes legal first names; the board keeps the name the rep goes
 # by. Alias only the first token — last names match as-is.
 FIRST_NAME_ALIASES = {
@@ -141,6 +164,20 @@ def counts_box(sh, day: dt.date) -> dict[str, float]:
 
 
 CAMPAIGNS = {"B2B": counts_att, "BOX": counts_box}
+COVERAGE_TABS = {"B2B": (DATA_TAB_ATT, "sp.Order Date (copy)"),
+                 "BOX": (DATA_TAB_BOX, "Sale Date")}
+
+
+def covers(sh, campaign: str, day: dt.date) -> bool:
+    """Does the campaign's log tab hold ANY row for `day`? The pure-Sheets
+    version of the tracker probe's data-coverage question. One blind spot,
+    accepted: a genuinely zero-sales day looks exactly like a stale tab, so it
+    holds until the fail-open floor and then correctly writes nothing."""
+    tab, date_col = COVERAGE_TABS[campaign]
+    rows = sh.worksheet(tab).get_all_values()
+    i = rows[0].index(date_col)
+    want = _mdy(day)
+    return any(r[i].strip() == want for r in rows[1:])
 
 
 def match_rep(log_key: str, rows: dict[str, int]):
@@ -252,24 +289,47 @@ def main(argv=None) -> int:
         days = [monday + dt.timedelta(days=i)
                 for i in range((end - monday).days + 1)]
 
+    now_t = dt.datetime.now(TZ).time()
     if a.campaign:
-        campaigns = a.campaign            # explicit ask overrides the gate
+        campaigns = a.campaign            # explicit ask overrides the gates
     else:
         campaigns = ["B2B"]
-        if today >= BOX_START:
-            campaigns.append("BOX")
-        else:
+        if today < BOX_START:
             _log(f"BOX stays on Slack until {BOX_START.isoformat()} — skipped "
                  "(pass --campaign BOX to force)")
+        elif now_t < BOX_ATTEMPT_FROM:
+            _log(f"BOX attempted from {BOX_ATTEMPT_FROM:%H:%M} — its extract "
+                 "refreshes ~7am and box_order_log writes 7:00/8:30; skipped "
+                 "this pass (the 8:45 pass picks it up)")
+        else:
+            campaigns.append("BOX")
 
     from automations.recruiting_report.fill import open_by_key, _retry
     sh = open_by_key(SHEET_ID)
     ws, g = board_grid()
 
+    # Coverage gate, per campaign (see FRESHNESS above). Gated on the LAST
+    # target day — with --week the earlier days are already-covered history.
+    held_fresh = False
+    ready = []
+    for c in campaigns:
+        if covers(sh, c, days[-1]):
+            ready.append(c)
+        elif now_t >= FAILOPEN[c]:
+            _log(f"{c}: no {days[-1]} rows in the log tab but past the "
+                 f"{FAILOPEN[c]:%H:%M} fail-open floor — proceeding with "
+                 "what's there (a gate never skips a report)")
+            ready.append(c)
+        else:
+            held_fresh = True
+            _log(f"{c}: log tab has NO rows for {days[-1]} yet — HOLDING "
+                 f"(retries until {FAILOPEN[c]:%H:%M}, then fail-open)")
+    campaigns = ready
+
     results = [run_campaign(sh, g, d, c) for d in days for c in campaigns]
 
     if not a.fill:
-        return 0
+        return 75 if held_fresh else 0
 
     _log("")
     held = False
@@ -296,7 +356,7 @@ def main(argv=None) -> int:
             _log(f"  wrote {len(plan)} cell(s)")
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
-    return 75 if held else 0
+    return 75 if (held or held_fresh) else 0
 
 
 if __name__ == "__main__":

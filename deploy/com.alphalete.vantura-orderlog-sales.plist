@@ -23,14 +23,31 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- DAILY incl. weekends. 05:02: after att_order_log's 4am-batch refresh
-         and vantura-slack-sales' 05:00 close-out, before
-         com.alphalete.sales-boards' 05:10 first post (which renders whatever
-         is on the board). Hour/Minute are machine LOCAL time; Lucy 2 is
-         Central. -->
+    <!-- DAILY incl. weekends — a RETRY LADDER, not one shot, mirroring the
+         country trackers' circle-back (the module holds with exit 75 while a
+         campaign's log tab has no rows for the target day, and fail-opens
+         past its floor):
+           05:02              B2B first try — after att_order_log's 4am-batch
+                              write, before sales-boards' 05:10 post.
+           05:25/05:48/06:11  B2B circle-back (att_order_log's own probe
+                              fail-opens 05:30, so the tab is normally there
+                              by ~05:35 on a slow day).
+           06:45              B2B fail-open floor pass.
+           08:45              BOX pass — the BOX extract refreshes ~7am and
+                              box_order_log writes the tab 7:00 + 8:30, so
+                              earlier passes skip BOX by design.
+           09:30              BOX fail-open floor pass.
+         Raise-only writes make repeat passes harmless. Hour/Minute are
+         machine LOCAL time; Lucy 2 is Central. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>2</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>25</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>48</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>11</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

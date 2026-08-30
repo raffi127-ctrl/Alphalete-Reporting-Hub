@@ -5,11 +5,13 @@
 # close-out Carlos asked for 2026-08-30 ("this morning you would have looked
 # at yesterday's order log and filled in the proper sales").
 #
-# CADENCE: 05:02 daily incl. weekends. AFTER the 4am batch's att_order_log
-# refresh and the 05:00 vantura-slack-sales close-out (both raise-only, so
-# order never changes a number the other one raised), and BEFORE
-# com.alphalete.sales-boards' 05:10 post, which renders whatever is on the
-# board. Pure Sheets API — no Tableau, no browser, safe at any hour.
+# CADENCE: a morning retry LADDER (05:02 .. 09:30, see the plist) mirroring
+# the country trackers' freshness circle-back: the module HOLDS (exit 75)
+# while a campaign's log tab has no rows for the target day and fail-opens
+# past its floor. B2B aims to land before com.alphalete.sales-boards' 05:10
+# post; BOX runs on the 08:45+ passes because its extract only refreshes ~7am
+# (box_order_log writes 7:00 + 8:30). Raise-only, so repeat passes are
+# harmless. Pure Sheets API — no Tableau, no browser, safe at any hour.
 #
 # NO BACKFILL of days before 2026-08-31: Carlos hand-spread some earlier
 # sales across days on purpose ("I knew what their total should be",
