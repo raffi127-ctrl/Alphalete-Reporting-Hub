@@ -422,33 +422,44 @@ class DailyBoardColumns(unittest.TestCase):
         self.assertEqual(by_rep["Zed Moore"], "")
 
     def test_twenty_knocks_is_not_a_rep_knocking_but_twentyone_is(self):
+        """El umbral no se movio: la cuenta solo cambio de columna."""
         from automations.total_knocks import render as R
         specs = (("a", 20, 5), ("b", 21, 5), ("c", 900, 100))
-        at = R.COMBINED_KNOCKS_HEADERS.index(R.COL_REPS_KNOCKING)
-        self.assertEqual(R._combined_totals("TOTAL", self._office(*specs))[at],
-                         "2")
+        self.assertEqual(len(R._knockers(self._office(*specs))), 2)
         summary = KD.daily_summary_row("ICD", self._rows(*specs))
         self.assertEqual(summary[KD.DAILY_SUMMARY_HEADERS.index(
             "Total # of Reps Knocking")], "2")
 
-    def test_the_count_never_lands_on_a_rep_row(self):
-        """Una fila de rep siempre seria 1: la columna solo tiene sentido
-        donde se agrega un roster."""
+    def test_the_count_has_no_column_of_its_own_any_more(self):
+        """Raf 2026-08-30: se movio a la izquierda, a la columna '#'. Una
+        columna propia solo podia llenarse en las filas de totales."""
         from automations.total_knocks import render as R
-        at = R.COMBINED_KNOCKS_HEADERS.index(R.COL_REPS_KNOCKING)
-        for row in self._office(("a", 40, 5), ("b", 60, 9)):
-            self.assertEqual(row[at], "")
+        self.assertNotIn(R.COL_REPS_KNOCKING, R.COMBINED_KNOCKS_HEADERS)
+        self.assertNotIn(R.COL_REPS_KNOCKING,
+                         R._with_derived(R.COMBINED_KNOCKS_COLUMNS))
 
-    def test_the_reps_are_numbered_and_the_totals_rows_are_not(self):
-        """El board de una oficina lleva las filas de totales ARRIBA."""
+    def test_the_reps_are_numbered_and_the_totals_rows_carry_the_count(self):
+        """El board de una oficina lleva las filas de totales ARRIBA, y ahora
+        esas filas llevan sus reps knocking en la columna '#' (Raf 8/30)."""
         from automations.total_knocks import render as R
         cols = ["Rep", "Total Knocks"]
         disp = list(cols)
         table = [["CHAN PARK TOTAL", "9"], ["TOTAL", "8"],
                  ["ana", "4"], ["beto", "3"], ["cami", "1"]]
-        R.number_rows(cols, disp, table, first=2)
-        self.assertEqual(cols[0], "#")
-        self.assertEqual([r[0] for r in table], ["", "", "1", "2", "3"])
+        R.number_rows(cols, disp, table, first=2, summary_values=[34, 36])
+        self.assertEqual(cols[0], R.COL_NUM_HEADER)
+        self.assertIn("TeleMapper", R.COL_NUM_HEADER)   # de donde sale
+        self.assertEqual([r[0] for r in table],
+                         ["34", "36", "1", "2", "3"])
+
+    def test_without_summary_values_those_rows_stay_blank(self):
+        """El comportamiento viejo sigue disponible: omitir summary_values
+        deja las filas de totales en blanco, como antes del 8/30."""
+        from automations.total_knocks import render as R
+        cols, disp = ["Rep"], ["Rep"]
+        table = [["TOTAL"], ["ana"], ["beto"]]
+        R.number_rows(cols, disp, table, first=1)
+        self.assertEqual([r[0] for r in table], ["", "1", "2"])
 
     def test_the_summary_numbers_the_icds_but_not_its_trailing_block(self):
         """Y el resumen las lleva ABAJO: un numero ahi se leeria como un ICD

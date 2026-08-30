@@ -199,7 +199,9 @@ def _with_derived(cols: list) -> list:
     Reps Knocking after Rep, Talk To % and Talk To's per Rep after Total Talk
     to, Avg. Hrs Knocking after Total Gaps."""
     out = list(cols)
-    out.insert(out.index(COL_REP) + 1, COL_REPS_KNOCKING)
+    # COL_REPS_KNOCKING is NOT inserted any more — its number moved into the
+    # "#" column on the left (Raf 2026-08-30). The constant stays because the
+    # aggregate helpers still write the value under that name.
     out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PER_REP)
     out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PCT)
     out.insert(out.index(COL_TOTAL_GAPS) + 1, COL_HRS_KNOCKING)
@@ -437,7 +439,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           repeat_header_before: int = 0,
           top_row_colors: "list | None" = None,
           total_row_bgs: "list | None" = None,
-          cell_bgs: "dict | None" = None) -> Path:
+          cell_bgs: "dict | None" = None,
+          col_min_w: "dict | None" = None) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
     wrap_headers=False (default): every existing board unchanged — column
@@ -461,6 +464,14 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     cells over whatever the row already draws. Row indexes are into `rows` as
     passed, so the caller counts the same rows it built. None = every existing
     board byte-identical.
+    col_min_w (2026-08-30): {column_index: minimum width in px} — a floor for
+    a column whose HEADER carries a long word its data can never justify. The
+    oversize-word rule below deliberately hyphenates rather than let
+    "Inaccessible" hold a narrow column open (Megan 2026-08-22), which is right
+    for a disposition name and wrong for a label naming a number's SOURCE:
+    "# Reps (TeleMapper)" over a column of two-digit counts came out
+    "TeleM-apper". This is the opt-in exception, per column, so no other board
+    moves.
     total_row_bgs (Megan 2026-08-23, "make Chan's row teal"): per-row fills
     for the trailing highlighted rows, in order — e.g. [plum, teal] paints
     the host OFFICE TOTALS plum and the comparison row teal. None = the
@@ -493,7 +504,7 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
             # little wider than the data widens the box to stay whole ("Gaps",
             # "Knocks"); a truly oversize word ("Inaccessible") hyphenates
             # instead of holding the column open (Megan 2026-08-22).
-            fit = max(w_cells, MIN_COL_W)
+            fit = max(w_cells, MIN_COL_W, (col_min_w or {}).get(ci, 0))
             for wd in header[ci].split():
                 ww = _text_w(probe, wd, head_font)
                 if fit < ww <= int(fit * 1.8) + 8:
@@ -825,13 +836,17 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         cols = [cols[i] for i in keep]
         disp = [disp[i] for i in keep]
         table = [[r[i] for i in keep] for r in table]
+    # This office's reps-knocking count. Taken once: it is both the Average App
+    # per Rep divisor and the number the "#" column prints on the TOTAL row,
+    # and the two must not drift.
+    n_knockers = len(_knockers(sub, _out))
     if apps is not None:
         # AFTER the hide pass, and by NAME on what survived it, so the column
         # lands next to the talk-to block on a board that hid Talk To's per Rep
         # just as it does on one that kept it.
         _insert_apps_column(cols, disp, table, apps,
                             n_extra=len(extra_rows), extra_apps=extra_apps,
-                            n_knockers=len(_knockers(sub, _out)),
+                            n_knockers=n_knockers,
                             extra_knockers=extra_knockers)
     _cell_bgs: dict = {}
     if rate_columns:
@@ -851,12 +866,24 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
             _v = str(_row[_tk]).strip().replace(",", "")
             if _v.isdigit() and int(_v) >= knocks_green_at:
                 _cell_bgs[(_ri, _tk)] = GREEN_HIT
-    number_rows(cols, disp, table, first=1 + len(extra_rows))
+    # The reps-knocking count for each summary line, in the order those rows
+    # are drawn (comparison offices first, then this office's TOTAL), so they
+    # land in the "#" column instead of a column of their own.
+    number_rows(cols, disp, table, first=1 + len(extra_rows),
+                summary_values=list(extra_knockers) + [n_knockers])
     if _cell_bgs:
         # number_rows inserted a "#" column at 0, so every recorded column
         # index shifts one right. Done here rather than at record time so the
         # rule above reads against the columns it actually tested.
         _cell_bgs = {(r, c + 1): v for (r, c), v in _cell_bgs.items()}
+    # The "#" column's header names where its count comes from, and
+    # "(TeleMapper)" is wider than two-digit counts will ever justify — so it
+    # gets an explicit floor rather than hyphenating mid-word.
+    _min_w = {}
+    if disp and disp[0] == COL_NUM_HEADER:
+        _probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        _min_w[0] = max(_text_w(_probe, w, _font(11 * SCALE, bold=True))
+                        for w in COL_NUM_HEADER.split())
     return _draw(disp, table,
                  f"{title_prefix}TOTAL KNOCKS — {_office}"
                  f"{_date_text(target, end, date_text)}",
@@ -864,11 +891,22 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                  out_dir / f"total_knocks_{_file_span(target, end)}.png",
                  name_col=1, wrap_headers=True,
                  highlight_first_row=1 + len(extra_rows),
-                 top_row_colors=_colors, cell_bgs=_cell_bgs or None)
+                 top_row_colors=_colors, cell_bgs=_cell_bgs or None,
+                 col_min_w=_min_w or None)
+
+
+# The "#" column's header. It numbers the rep rows AND carries each summary
+# row's rep count, so it says where that count comes from (Raf 2026-08-30:
+# "move the total reps being counted via telemapper to the left side, the way
+# that you just made the weekly report … can we just label it, though, so that
+# people know where that number is coming from?"). Wrapped headers put it on
+# three short lines, so it costs the column almost no width.
+COL_NUM_HEADER = "# Reps (TeleMapper)"
 
 
 def number_rows(cols: list, disp: list, table: list, *,
-                first: int = 0, count: "int | None" = None) -> None:
+                first: int = 0, count: "int | None" = None,
+                summary_values: "list | None" = None) -> None:
     """Put a "#" column in front of the board IN PLACE, numbering the LISTED
     rows 1..N in the order they are drawn (Eve, 2026-08-28).
 
@@ -877,17 +915,25 @@ def number_rows(cols: list, disp: list, table: list, *,
     where a reader loses their line between the name and the far-right columns.
 
     `first` is the index of the first row to number and `count` how many
-    (None = to the end of the table). Everything outside that window — a TOTAL,
-    a comparison office's line — stays BLANK: those rows count offices, and
-    numbering them in the column that counts reps is how a reader ends up
-    reading '9' as the ninth rep when it's the captainship's total. The window
-    is a parameter because the two boards put their summary rows at opposite
-    ends: an owner's board leads with them, the captainship summary trails."""
+    (None = to the end of the table). The window is a parameter because the two
+    boards put their summary rows at opposite ends: an owner's board leads with
+    them, the captainship summary trails.
+
+    `summary_values` fills the rows OUTSIDE that window, in order — the reps
+    knocking on each TOTAL / comparison line (Raf 2026-08-30, moving that count
+    out of its own column and over to the left). Those rows used to stay blank,
+    on the reasoning that a number there reads as a row index; a count on a
+    reversed-bold totals row does not, and the header now names what it is.
+    Omit it and they stay blank, exactly as before."""
     stop = len(table) if count is None else first + count
-    cols.insert(0, "#")
-    disp.insert(0, "#")
+    cols.insert(0, COL_NUM_HEADER)
+    disp.insert(0, COL_NUM_HEADER)
+    pending = list(summary_values or [])
     for i, row in enumerate(table):
-        row.insert(0, str(i - first + 1) if first <= i < stop else "")
+        if first <= i < stop:
+            row.insert(0, str(i - first + 1))
+        else:
+            row.insert(0, str(pending.pop(0)) if pending else "")
 
 
 def _apps_key(name: str) -> str:
