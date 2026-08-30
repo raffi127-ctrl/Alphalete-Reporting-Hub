@@ -499,24 +499,49 @@ BACKFILL_START = dt.date(2025, 12, 27)          # first email of the year set
 
 
 def backfill_icds(dry: bool) -> int:
-    """Rebuild 'Our ICDs' from every weekly email since BACKFILL_START."""
+    """Rebuild 'Our ICDs' from every weekly email since BACKFILL_START.
+
+    ONE IMAP pass: fetch_latest() walks newer messages per requested week, so
+    calling it per week is quadratic in 2.3MB downloads (timed out at 20m on
+    2026-08-30). Here each message is fetched exactly once."""
+    import email as email_mod
+    import imaplib
     from automations.residential_rep_count import email_source
     from automations.rcnc_tracker import icds
-    latest = email_source.latest_week_ending()
-    if latest is None:
-        print("no Archey emails found")
-        return 1
+
     weeks_data = {}
-    wk = BACKFILL_START
-    while wk <= latest:
+    M = imaplib.IMAP4_SSL(email_source.IMAP_HOST)
+    M.login(email_source.ACCOUNT, email_source._app_password())
+    try:
+        M.select('"[Gmail]/All Mail"', readonly=True)
+        _typ, data = M.search(
+            None, f'(FROM "{email_source.SENDER}" SUBJECT "{email_source.SUBJECT}")')
+        ids = data[0].split()
+        print(f"  {len(ids)} matching emails; scanning once, newest first")
+        with tempfile.TemporaryDirectory() as td:
+            for i in reversed(ids):
+                _typ, raw = M.fetch(i, "(RFC822)")
+                msg = email_mod.message_from_bytes(raw[0][1])
+                for part in msg.walk():
+                    fn = email_source._decode(part.get_filename() or "")
+                    if not fn.lower().endswith(".xlsx"):
+                        continue
+                    we = email_source._week_from_filename(fn)
+                    if not we or we < BACKFILL_START or we in weeks_data:
+                        continue
+                    p = Path(td) / f"we-{we}.xlsx"
+                    p.write_bytes(part.get_payload(decode=True))
+                    try:
+                        weeks_data[we] = icds.parse_week(p)
+                        print(f"  WE {we}: {len(weeks_data[we])} ICDs")
+                    except Exception as e:  # noqa: BLE001
+                        print(f"  WE {we}: parse failed "
+                              f"({type(e).__name__}: {str(e)[:80]})")
+    finally:
         try:
-            with tempfile.TemporaryDirectory() as td:
-                xlsx, got = fetch_xlsx(td, wk)
-                weeks_data[got] = icds.parse_week(xlsx)
-                print(f"  WE {got}: {len(weeks_data[got])} ICDs")
-        except Exception as e:  # noqa: BLE001 — a missing week isn't fatal
-            print(f"  WE {wk}: skipped ({type(e).__name__}: {str(e)[:80]})")
-        wk += dt.timedelta(days=7)
+            M.logout()
+        except Exception:  # noqa: BLE001
+            pass
     if not weeks_data:
         print("nothing parsed — aborting")
         return 1
