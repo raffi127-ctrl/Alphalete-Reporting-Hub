@@ -74,7 +74,15 @@ MIN_KNOCKS_PER_DAY = knocks_render.KNOCKING_MIN_KNOCKS   # 21 — "21 or more"
 # flagged twice. The six-day bar itself is untouched and still computed
 # (is_knocking / MIN_KNOCKS_PER_DAY); it simply has no column of its own. If it
 # should come back, it is one entry in HEADERS plus one cell in totals_row.
-COL_NUM = "#"
+# LABELLED, not a bare "#" (Megan 2026-08-30, "can we label this somehow or is
+# it already?"). The cell reads "21 of 22" on a summary row and the header has
+# to say what those two numbers are, or a reader is left guessing — and this
+# week Aya's count (21 reps) happens to equal the threshold (21 doors), which
+# is exactly the coincidence a bare "#" would let someone misread.
+#
+# The threshold is interpolated, never typed, so the label cannot drift from
+# the rule is_knocking actually applies.
+COL_NUM = f"# Reps ({MIN_KNOCKS_PER_DAY}+ Doors / Day)"
 # The doors column, settled by Raf 2026-08-30 after two rounds on the same day:
 # "This should be 'AVG Doors a rep knocked per day', so every rep should have a
 # number."
