@@ -745,6 +745,71 @@ def _auto_library_ids() -> set:
 #   module + args -> what ▶ Run Report actually runs (else it's a print stub)
 #   minutes       -> the "~N min" chip
 _AGENT_CARD_COPY: Dict[str, dict] = {
+    "orchestrator-heartbeat": {
+        "name": "Orchestrator Heartbeat",
+        "emoji": "\U0001FA7A",
+        "description": (
+            "Asks one question twice a morning: did the 4am batch actually "
+            "START today? Silent when it did — this card going green IS the "
+            "answer."),
+        "module": "automations.orchestrator_heartbeat.run",
+        # --force skips the once-a-day marker so pressing Run actually
+        # re-checks instead of no-op'ing on a morning it already ran.
+        "args": ["--force"],
+        "minutes": 1,
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "At 04:20 and again at 06:00 (machine-local) it reads the day_state "
+            "file the 4am orchestrator writes and asks ONE question: is there "
+            "one for today? Not \"did report X fail\" — did the batch run at "
+            "all. If the answer is no, it posts to "
+            "#claudecorrections-and-requests. If the answer is yes it says "
+            "NOTHING, which is the normal morning.\n\n"
+            "WHY IT EXISTS\n"
+            "Lucy 2, 2026-08-27: the orchestrator started at 04:00:04 and was "
+            "dead by 04:00:05 — a conflicted `git stash pop` had left "
+            "schedule_config.json with merge markers, so load_config() threw. "
+            "It ran ZERO of its ~19 reports and nothing said a word for nearly "
+            "three hours. Megan found out when B2B Metrics never appeared in "
+            "the office channels.\n\n"
+            "WHY NOTHING ELSE CATCHES THIS\n"
+            "Every other alert in the system is PER-REPORT. A report that "
+            "fails raises an incident; a report that never runs has nothing to "
+            "fail. So a dead batch is silent by construction — and the machine "
+            "passes every liveness check the whole time (poller alive, Chrome "
+            "fine, AppStream seeded), which is why that outage kept getting "
+            "misdiagnosed as a wedged poller or a bad re-seed.\n\n"
+            "WHY IT IS BUILT THE WAY IT IS\n"
+            "It imports NOTHING from automations.day_orchestrator — not the "
+            "registry, not the config loader — and there is a unit test "
+            "pinning that. A watchdog that shares a fuse with the thing it "
+            "watches is not a watchdog. It reads day_state as plain JSON off "
+            "disk and resolves its Slack channel without the schedule config, "
+            "so it can still speak when the config is exactly what broke.\n"
+            "It also deliberately does NOT `git pull` first, unlike every "
+            "other wrapper: a bad pull is precisely the failure it exists to "
+            "catch.\n\n"
+            "WHO WATCHES THE WATCHDOG\n"
+            "Being silent when healthy means an ABSENT heartbeat and a good "
+            "morning look identical. So it stamps its own silent_job_watch "
+            "beat (one row per machine — a shared id would let any one box "
+            "show the whole fleet green), and machine_digest alerts if no beat "
+            "lands by 05:00. It also publishes to this card, which is what "
+            "makes the pill mean something; before 2026-08-30 it published "
+            "nothing at all and the card read \"no run logged\" every day on "
+            "every machine while the watchdog was working perfectly.\n\n"
+            "WHAT \u25b6 RUN REPORT DOES\n"
+            "Re-runs the same check now, with --force so it isn't skipped by "
+            "the once-a-day marker. Read-only against the day_state file; it "
+            "can post an alert if today's batch really is missing.\n\n"
+            "WHERE IT LIVES\n"
+            "deploy/orchestrator_heartbeat.sh, scheduled by "
+            "com.alphalete.orchestrator-heartbeat.plist (04:20 + 06:00). Logs: "
+            "output/logs/orchestrator-heartbeat-<date>.log. Install or refresh "
+            "it per machine with `lucy rerun "
+            "install_orchestrator_heartbeat_agent --machine \"Lucy N\"` — it "
+            "has to be installed on EVERY box that carries the orchestrator."),
+    },
     "board-catchup": {
         "name": "Org Sales Board — Afternoon Catch-Up",
         "emoji": "🔁",
