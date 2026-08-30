@@ -486,7 +486,9 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     compare_rows.append(B.totals_row(
                         o_rows, _office_apps(o_cfg), dispo_cols,
                         label=f"{other.upper()} TOTALS"))
-            rows = compare_rows + rows
+            # index 1: under this office's own TOTALS, which compute_rows
+            # now puts first (Megan 2026-08-30).
+            rows[1:1] = compare_rows
             # Office name in title/comment only when the board lands
             # somewhere that isn't the office's own thread (Chan) — saying
             # it in their own channel is redundant (Megan 2026-08-23).

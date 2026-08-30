@@ -1148,7 +1148,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         n_top = 0
                         if (chan_weekly and not gaps_only
                                 and _nn(display) != _nn(CHAN_CFG["name"])):
-                            rows.insert(0, B.totals_row(
+                            # index 1: under this owner's own TOTALS row,
+                            # which compute_rows now puts first.
+                            rows.insert(1, B.totals_row(
                                 chan_weekly[0], chan_weekly_apps, dispo_cols,
                                 label=f"{CHAN_CFG['name'].upper()} TOTALS"))
                             n_top = 1
@@ -1238,7 +1240,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 if a:
                     has_apps = True
                     merged_apps.update(a)
-            sum_rows.append(totals_row(
+            # CAPTAINSHIP TOTALS leads the summary, matching the per-owner
+            # boards' new order (Megan 2026-08-30).
+            sum_rows.insert(0, totals_row(
                 all_rows, merged_apps if has_apps else None, common_cols,
                 label=totals_label(len(answered_weekly), len(pairs))))
             # Chan Park's line, teal, at the TOP (Raf 2026-08-30: "make sure
@@ -1253,7 +1257,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 # Summed against the HOST board's column list, like every
                 # other comparison row: his own live columns could differ and
                 # the row has to stay aligned under these headers.
-                sum_rows.insert(0, totals_row(
+                sum_rows.insert(1, totals_row(
                     _c_rows, chan_weekly_apps, common_cols,
                     label=f"{_CHAN['name'].upper()} TOTALS"))
                 n_top = 1
@@ -1265,9 +1269,12 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 f"CAPTAINSHIP SUMMARY — {span}", THEME_PLUM,
                 weekly_root / "summary"
                 / f"knock_dispo_summary_{saturday.isoformat()}.png",
-                name_col=0, wrap_headers=True, highlight_last_row=1,
-                highlight_first_row=n_top,
-                top_row_colors=[COMPARE_ROW_BG] * n_top)
+                name_col=1, wrap_headers=True,
+                # CAPTAINSHIP TOTALS plum, then Chan teal — one block, on top.
+                highlight_first_row=1 + n_top,
+                top_row_colors=[THEME_PLUM["header_bg"]]
+                + [COMPARE_ROW_BG] * n_top,
+                highlight_last_row=0)
             out_weekly.insert(0, ("Captainship Summary" + (
                 " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"
                 if weekly_partial else ""), png))

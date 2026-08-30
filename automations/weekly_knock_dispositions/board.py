@@ -356,7 +356,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         _gf, _gl = (_avg_knock(ov_rows, COL_FIRST_KNOCK),
                     _avg_knock(ov_rows, COL_LAST_KNOCK))
         _gg = (tot_gaps / DAYS / len(gap_reps)) if gap_reps else 0
-        rows.append([
+        rows.insert(0, [
             str(len(ov_rows)),
             TOTALS_LABEL,
             _gf, _gl,
@@ -413,7 +413,11 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             rows.append(["", _display_name(rep), "", "", "", str(n_apps),
                          "", "", "", "", "", "", "", ""] + _dispo_cells(None))
 
-    rows.append(totals_row(ov_rows, apps, dispo_cols))
+    # OFFICE TOTALS leads the board (Megan 2026-08-30: "move the office totals
+    # row to be above Chan's at the top"), so the summary block is the first
+    # thing read and the rep list runs to the bottom uninterrupted. A caller
+    # adding a comparison office inserts it at index 1, under this row.
+    rows.insert(0, totals_row(ov_rows, apps, dispo_cols))
     return rows
 
 
@@ -497,10 +501,12 @@ def render(office: str, monday: dt.date, saturday: dt.date,
             else "WEEKLY KNOCK DISPOSITIONS")
     _office = f"{office.upper()} — " if office else ""
     title = f"{what} — {_office}{span}"
-    # Number the REP rows 1..N. The blocks either side — a comparison office on
-    # top, this office's TOTALS at the bottom — already carry their own rep
-    # count from totals_row and must not be renumbered.
-    for i, row in enumerate(rows[n_compare_top:len(rows) - n_totals]):
+    # Every summary row now sits at the TOP — this office's TOTALS first, then
+    # any comparison office under it — so the rep rows are simply everything
+    # after that block, numbered 1..N. They carry their own counts from
+    # totals_row and must not be renumbered.
+    n_top = n_totals + n_compare_top
+    for i, row in enumerate(rows[n_top:]):
         if row:
             row[0] = str(i + 1)
     out = out_dir / f"weekly_knock_dispositions_{saturday.isoformat()}.png"
@@ -508,14 +514,17 @@ def render(office: str, monday: dt.date, saturday: dt.date,
                                # name_col=1: "#" took column 0.
                                title, THEME_PLUM, out, name_col=1,
                                wrap_headers=True,
-                               highlight_last_row=n_totals,
-                               # Comparison lines above the reps, teal.
-                               highlight_first_row=n_compare_top,
-                               top_row_colors=[COMPARE_ROW_BG] * n_compare_top,
-                               # Raf 2026-08-23: header band re-drawn above
-                               # the totals block so the bottom reads alone.
-                               repeat_header_before=n_totals,
-                               # Host totals plum, comparison rows teal.
-                               total_row_bgs=([THEME_PLUM["header_bg"]]
-                                              + [COMPARE_ROW_BG]
-                                              * (n_totals - 1)))
+                               # One highlighted block, at the top: this
+                               # office's TOTALS plum, then any comparison
+                               # office teal (Megan 2026-08-30).
+                               highlight_first_row=n_top,
+                               top_row_colors=([THEME_PLUM["header_bg"]]
+                                               * n_totals
+                                               + [COMPARE_ROW_BG]
+                                               * n_compare_top),
+                               # Nothing trails now, so no bottom totals block
+                               # and no repeated header band above one (that
+                               # band existed to make the OLD bottom block
+                               # readable without scrolling back up).
+                               highlight_last_row=0,
+                               repeat_header_before=0)
