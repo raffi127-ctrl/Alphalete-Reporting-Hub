@@ -78,6 +78,51 @@ _WIRELESS_COUNTS = {
 }
 
 
+# Energy Wells: the wireless columns plus Presentation and VL. Ordered so the
+# board reads knocks -> outcomes, the same left-to-right as the others.
+_ENERGYWELL_COLUMNS = [
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_TOTAL_LEADS_KNOCKED,
+    knocks.COL_TOTAL_KNOCKS, knocks.COL_FIRST_KNOCK, knocks.COL_LAST_KNOCK,
+    knocks.COL_NO_ANSWER, knocks.COL_NOT_INTERESTED, knocks.COL_PRESENTATION,
+    knocks.COL_COME_BACK, knocks.COL_VL, knocks.COL_INACCESSIBLE,
+    knocks.COL_DO_NOT_KNOCK,
+]
+_ENERGYWELL_COUNTS = {
+    knocks.COL_TOTAL_LEADS_KNOCKED, knocks.COL_TOTAL_KNOCKS,
+    knocks.COL_NO_ANSWER, knocks.COL_NOT_INTERESTED, knocks.COL_PRESENTATION,
+    knocks.COL_COME_BACK, knocks.COL_VL, knocks.COL_INACCESSIBLE,
+    knocks.COL_DO_NOT_KNOCK,
+}
+# Talk-to = everything except No answer and Inaccessible — nobody was spoken to
+# in those. The SAME rule fiber uses (Do Not Knock counts), with VL added per
+# Raf. Fiber's TALK_TO_PARTS is shared by every fiber board and must not gain
+# VL, so Energy Wells carries its own list.
+_ENERGYWELL_TALK_TO_PARTS = [
+    knocks.COL_NOT_INTERESTED, knocks.COL_PRESENTATION, knocks.COL_COME_BACK,
+    knocks.COL_VL, knocks.COL_DO_NOT_KNOCK,
+]
+
+
+def _is_energywell_dispo(idx: dict) -> bool:
+    """Energy-Wells-shaped Disposition: the VL column is the signature — no
+    other campaign's grid carries it. Checked BEFORE the wireless test, which
+    this shape would otherwise satisfy (it has no Talk-To split either)."""
+    return (knocks._norm(knocks.COL_TOTAL_KNOCKS) in idx
+            and knocks._norm(knocks.COL_VL) in idx)
+
+
+def _scrape_energywell_rows(page, idx: dict) -> list[dict]:
+    """Energy Wells rows, keyed by _ENERGYWELL_COLUMNS, with Total Talk to
+    computed over _ENERGYWELL_TALK_TO_PARTS. Same pagination walk as the
+    wireless scrape."""
+    rows = _scrape_shaped_rows(page, idx, _ENERGYWELL_COLUMNS,
+                               _ENERGYWELL_COUNTS, "Energy Wells")
+    for rec in rows:
+        rec[knocks.COL_TOTAL_TALK_TO] = sum(
+            int(rec.get(c) or 0) for c in _ENERGYWELL_TALK_TO_PARTS)
+    return rows
+
+
 def _is_wireless_dispo(idx: dict) -> bool:
     """Wireless-shaped Disposition: has Total Knocks but not the house
     Talk-To split — the signature that separates the two table shapes."""
@@ -89,11 +134,23 @@ def _scrape_wireless_rows(page, idx: dict) -> list[dict]:
     """Walk the DataTables pages of a WIRELESS-shaped Disposition table and
     return one dict per rep keyed by _WIRELESS_COLUMNS. Same pagination walk
     as the house _scrape_rows, minus the Talk-To calculation."""
-    want = {c: idx.get(knocks._norm(c)) for c in _WIRELESS_COLUMNS}
+    return _scrape_shaped_rows(page, idx, _WIRELESS_COLUMNS, _WIRELESS_COUNTS,
+                               "Wireless")
+
+
+def _scrape_shaped_rows(page, idx: dict, columns: list, counts: set,
+                        label: str) -> list[dict]:
+    """The DataTables walk, for any campaign's column set.
+
+    Was the wireless-only scrape; Energy Wells needed the identical walk over a
+    different column list, and a second copy of a pagination loop is how the
+    two drift. `label` only names the shape in errors.
+    """
+    want = {c: idx.get(knocks._norm(c)) for c in columns}
     missing = [c for c, i in want.items() if i is None]
     if missing:
         raise RuntimeError(
-            "Wireless disposition table is missing expected column(s): "
+            f"{label} disposition table is missing expected column(s): "
             + ", ".join(missing)
             + ". Live headers were: " + ", ".join(sorted(idx)) + ".")
 
@@ -107,7 +164,7 @@ def _scrape_wireless_rows(page, idx: dict) -> list[dict]:
         # zero rows means the grid never built — a failed scrape, not a quiet
         # day. Same rule as the house walk in total_knocks.pull._scrape_rows.
         raise KnocksPullFailed(
-            "Wireless disposition grid rendered no rows at all — not even "
+            f"{label} disposition grid rendered no rows at all — not even "
             "DataTables' 'No data available' placeholder — so the scrape "
             "failed rather than the day being empty.") from e
 
@@ -123,7 +180,7 @@ def _scrape_wireless_rows(page, idx: dict) -> list[dict]:
             rec = {}
             for col, i in want.items():
                 raw = cells[i]
-                rec[col] = knocks._to_int(raw) if col in _WIRELESS_COUNTS else raw
+                rec[col] = knocks._to_int(raw) if col in counts else raw
             rid = str(rec.get(knocks.COL_ID, "")).strip()
             if rid and rid in seen_ids:
                 continue
@@ -346,7 +403,14 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
     # scrape it with the wireless column set instead of letting the house
     # scrape raise "missing expected column(s)". The wireless rows keep
     # COL_TOTAL_KNOCKS, so knocks_run renders a real Total Knocks board.
-    if _is_wireless_dispo(idx):
+    if _is_energywell_dispo(idx):
+        # BEFORE the wireless test: Energy Wells has no Talk-To split either,
+        # so the wireless check would claim it and drop VL and Presentation.
+        rows = _scrape_energywell_rows(page, idx)
+        if verbose:
+            print(f"-> Energy-Wells-shaped disposition: {len(rows)} rep(s)",
+                  flush=True)
+    elif _is_wireless_dispo(idx):
         rows = _scrape_wireless_rows(page, idx)
         if verbose:
             print(f"-> Wireless-shaped disposition: {len(rows)} rep(s)",

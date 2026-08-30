@@ -52,6 +52,12 @@ COL_DO_NOT_KNOCK        = "Do Not Knock"
 # Wireless (NDS) dispositions collapse the Talk-To split into one bucket and
 # have no Sale column. Only the wireless-shaped scrape/board uses this.
 COL_NOT_INTERESTED      = "Not Interested"
+# Energy Wells (RES-ENERGYWELL, invD2DClientId=40) dispositions. Its grid is the
+# wireless shape PLUS these two: no Talk-To split, no Sale, but a Presentation
+# bucket and VL. Raf 2026-08-28: "talk-tos are all the same as a fiber, but VL
+# is also a talk-to."
+COL_VL                  = "VL"
+COL_PRESENTATION        = "Presentation"
 # From Time Tracker (p=510 JSON), merged onto the disposition rows by badge ID.
 COL_GAPS                = "Gaps"               # count of gaps
 COL_TOTAL_GAPS          = "Total Gaps (min)"   # total gap minutes (int)

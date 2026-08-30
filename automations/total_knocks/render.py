@@ -34,6 +34,7 @@ from automations.total_knocks.pull import (
     COL_TOTAL_LEADS_KNOCKED, COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
     COL_NO_ANSWER, COL_TALK_TO_NI, COL_PRES_NI, COL_SALE,
     COL_NOT_INTERESTED, COL_COME_BACK, COL_INACCESSIBLE, COL_DO_NOT_KNOCK,
+    COL_VL, COL_PRESENTATION,
     SHEET_COLUMNS,
     _norm,
 )
@@ -229,6 +230,16 @@ TIME_GAPS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
 TELEMAPPER_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
                              COL_TT_BREAKS, COL_GAPS, COL_TOTAL_GAPS,
                              COL_TT_SALES_TIME, COL_TT_SALES]
+# Energy Wells (RES-ENERGYWELL): the wireless shape plus Presentation and VL,
+# and it DOES carry Total Talk to — Raf asked for talk-tos on this board and
+# knocks_pull computes them over the Energy Wells parts (VL included).
+ENERGYWELL_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
+                             COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
+                             COL_FIRST_KNOCK, COL_LAST_KNOCK, COL_NO_ANSWER,
+                             COL_NOT_INTERESTED, COL_PRESENTATION,
+                             COL_COME_BACK, COL_VL, COL_INACCESSIBLE,
+                             COL_DO_NOT_KNOCK]
+
 # Wireless (NDS) Total Knocks: the house board's shape, with the wireless
 # disposition set — one Not Interested bucket, no Talk-To split, no Sale.
 WIRELESS_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
@@ -1252,30 +1263,67 @@ def render_telemapper_knocks(target: dt.date, *, rows: list[dict],
                  out_dir / f"telemapper_knocks_{_file_span(target, end)}.png")
 
 
+def render_energywell_total_knocks(target: dt.date, *, rows: list[dict],
+                                   out_dir: Path = OUT_DIR_DEFAULT,
+                                   title_suffix: str = "",
+                                   end: "dt.date | None" = None,
+                                   date_text: str = "",
+                                   sort_by: str = "rep",
+                                   knocks_green_at: "int | None" = None) -> Path:
+    """TOTAL KNOCKS for an Energy Wells office — the wireless board with
+    Presentation, VL and a Total Talk to column."""
+    return render_wireless_total_knocks(
+        target, rows=rows, out_dir=out_dir, title_suffix=title_suffix,
+        end=end, date_text=date_text, columns=ENERGYWELL_KNOCKS_COLUMNS,
+        sort_by=sort_by, knocks_green_at=knocks_green_at)
+
+
 def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
                                  out_dir: Path = OUT_DIR_DEFAULT,
                                  title_suffix: str = "",
                                  end: "dt.date | None" = None,
-                                 date_text: str = "") -> Path:
+                                 date_text: str = "",
+                                 columns: "list | None" = None,
+                                 sort_by: str = "rep",
+                                 knocks_green_at: "int | None" = None) -> Path:
     """TOTAL KNOCKS for a WIRELESS (NDS) office — same amber board as the
     house one, but the wireless disposition column set (one Not Interested
     bucket, no Talk-To split, no Sale). Rows come from the wireless-shaped
     Disposition by Rep table (rashad_metrics.knocks_pull scrapes it when the
     house columns aren't there). Sorted First Knock asc like the house board."""
-    recs = sorted(rows, key=lambda r: _knock_time_key(str(r.get(COL_FIRST_KNOCK, ""))))
+    cols = list(columns or WIRELESS_KNOCKS_COLUMNS)
+
+    def _tk(r):
+        v = str(r.get(COL_TOTAL_KNOCKS, "")).strip().replace(",", "")
+        return int(v) if v.isdigit() else 0
+
+    if sort_by == "knocks":
+        recs = sorted(rows, key=lambda r: (-_tk(r),
+                                           str(r.get(COL_REP, "")).lower()))
+    else:
+        recs = sorted(rows,
+                      key=lambda r: _knock_time_key(str(r.get(COL_FIRST_KNOCK, ""))))
     table = []
     for rec in recs:
         row = ["" if rec.get(c, "") is None else str(rec.get(c, ""))
-               for c in WIRELESS_KNOCKS_COLUMNS]
+               for c in cols]
         if any(c.strip() for c in row):
             table.append(row)
     if not table:
-        raise RuntimeError("No wireless disposition rows to render.")
+        raise RuntimeError("No disposition rows to render.")
+    _cells = {}
+    if knocks_green_at and COL_TOTAL_KNOCKS in cols:
+        _tki = cols.index(COL_TOTAL_KNOCKS)
+        for _ri, _row in enumerate(table):
+            _v = str(_row[_tki]).strip().replace(",", "")
+            if _v.isdigit() and int(_v) >= knocks_green_at:
+                _cells[(_ri, _tki)] = GREEN_HIT
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
-    return _draw(list(WIRELESS_KNOCKS_COLUMNS), table,
+    return _draw(cols, table,
                  f"TOTAL KNOCKS — {_office}{_date_text(target, end, date_text)}",
                  THEME_AMBER,
-                 out_dir / f"total_knocks_{_file_span(target, end)}.png")
+                 out_dir / f"total_knocks_{_file_span(target, end)}.png",
+                 cell_bgs=_cells or None)
 
 
 # ---------------------------------------------------------------- shapes ---
@@ -1283,6 +1331,7 @@ def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
 # 2026-08-22, "telemapper knocks … should be on there for the NDS guys"). The
 # test is which COLUMNS the scrape found, not which office asked — an office's
 # campaign can change without anyone editing config.
+SHAPE_ENERGYWELL = "energywell"  # RES-ENERGYWELL: wireless + Presentation + VL
 SHAPE_HOUSE = "house"          # fiber: full disposition columns
 SHAPE_WIRELESS = "wireless"    # NDS disposition shape: counts, no Talk-To split
 SHAPE_GAPS_ONLY = "gaps_only"  # no disposition page at all: Time Tracker only
@@ -1301,10 +1350,15 @@ def knocks_shape(rows: "list[dict]") -> str:
     first = rows[0]
     if COL_TOTAL_KNOCKS not in first:
         return SHAPE_GAPS_ONLY
+    # Energy Wells FIRST: it has no Talk-To split either, so the wireless test
+    # below would claim it and its board would lose VL and Presentation.
+    if COL_VL in first:
+        return SHAPE_ENERGYWELL
     return SHAPE_WIRELESS if COL_TALK_TO_NI not in first else SHAPE_HOUSE
 
 
 _SHAPE_COLUMNS = {
+    SHAPE_ENERGYWELL: ENERGYWELL_KNOCKS_COLUMNS,
     SHAPE_HOUSE: COMBINED_KNOCKS_HEADERS,
     SHAPE_WIRELESS: WIRELESS_KNOCKS_COLUMNS,
     SHAPE_GAPS_ONLY: TELEMAPPER_KNOCKS_COLUMNS,
@@ -1357,6 +1411,11 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         first = render_telemapper_knocks(target, rows=rows, out_dir=out_dir,
                                          title_suffix=title_suffix, end=end,
                                          date_text=date_text)
+    elif shape == SHAPE_ENERGYWELL:
+        first = render_energywell_total_knocks(
+            target, rows=rows, out_dir=out_dir, title_suffix=title_suffix,
+            end=end, date_text=date_text, sort_by=sort_by,
+            knocks_green_at=knocks_green_at)
     elif shape == SHAPE_WIRELESS:
         first = render_wireless_total_knocks(target, rows=rows,
                                              out_dir=out_dir,
