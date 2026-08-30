@@ -46,6 +46,32 @@ RENAME: Dict[str, str] = {
     # extra bucket is carried through untouched and ignored.
 }
 
+# The EXPANDED view (ALLTEAMSEXP) carries every product in ONE pull, with the
+# product as an extra row dimension in column 2. Probed live 2026-08-30:
+#
+#   Owner & Office | Rep | Product Type (Broken Out) (BYOD/Non BYOD) |
+#   30-60 Color Churn (copy) | <unnamed> | 0-30 Day | 30 Day | 60 Day |
+#   90 Day | 120 Day
+#
+# which is the ORIGINAL per-product shape with exactly one column inserted. So
+# selecting a product and DROPPING that column hands the D2D parser back the
+# byte-identical shape it already reads - no parser change, same as the rename.
+PRODUCT_COL = "Product Type (Broken Out) (BYOD/Non BYOD)"
+
+# Each owner/rep block also carries a 'Total' roll-up row alongside its real
+# product rows (and the sheet's Grand Total block is all 'Total'). Those are
+# NEVER selected - summing a roll-up in with its own parts doubles every number.
+PRODUCT_TOTAL = "TOTAL"
+
+# product key -> the Product Type values that make it up. 'wireless' is BOTH
+# halves: verified 2026-08-30 by probing the old ALLTEAMWireless view, whose own
+# product filter admits exactly {Total, BYOD WIRELESS, NON BYOD WIRELESS}.
+PRODUCT_TYPES = {
+    "wireless": ("BYOD WIRELESS", "NON BYOD WIRELESS"),
+    "new_int": ("NEW INTERNET",),
+    "air": ("AIR/AWB",),
+}
+
 # Must survive the rename or the parse silently yields nothing.
 REQUIRED_AFTER = ("Rep Name", "0-30 Day Churn")
 
@@ -84,6 +110,43 @@ def rename_header(rows: List[list]) -> List[list]:
             "churn crosstab is missing {} after rename — the export's schema "
             "moved. Header was: {}".format(missing, hdr))
     return [out_hdr] + rows[1:]
+
+
+def select_product(rows: List[list], keep: Sequence[str]) -> List[list]:
+    """Keep only `keep`'s product rows, then DROP the product column.
+
+    A per-product view has no product column at all, so this is a no-op there —
+    which keeps the old three-view path working untouched if it is ever restored.
+
+    FAIL LOUD, for the same reason rename_header does: if the product values are
+    renamed in Tableau, silently keeping zero rows would fill the tabs with
+    nothing and report success.
+    """
+    if not rows:
+        raise ValueError("empty churn crosstab")
+    hdr = [_norm(h).lstrip("\ufeff") for h in rows[0]]
+    if PRODUCT_COL not in hdr:
+        return rows
+    pi = hdr.index(PRODUCT_COL)
+    wanted = {str(k).strip().upper() for k in keep}
+
+    def _drop(row):
+        return [c for i, c in enumerate(row) if i != pi]
+
+    out = [_drop(rows[0])]
+    seen = set()
+    for r in rows[1:]:
+        val = _norm(r[pi]).upper() if pi < len(r) else ""
+        if val:
+            seen.add(val)
+        if val in wanted:
+            out.append(_drop(r))
+    if len(out) == 1:
+        raise ValueError(
+            "churn crosstab has no rows for product(s) {} — the export carries "
+            "{}. The Product Type values moved.".format(
+                sorted(wanted), sorted(seen) or "nothing"))
+    return out
 
 
 def write_crosstab(rows: Sequence[Sequence[str]], path: Path) -> Path:
@@ -165,10 +228,15 @@ def normalize_metric_column(rows: List[list]) -> List[list]:
     return out
 
 
-def adapt(src: Path, dest: Path) -> Dict[str, object]:
+def adapt(src: Path, dest: Path, keep: Sequence[str] = None) -> Dict[str, object]:
     """Read the B2B crosstab, rename its header, normalize the owner + metric
-    columns, and write a D2D-shaped file."""
+    columns, and write a D2D-shaped file.
+
+    `keep` selects one product family out of the expanded all-products view; omit
+    it for a view that is already filtered to a single product."""
     rows = read_crosstab(src)
+    if keep:
+        rows = select_product(rows, keep)
     renamed = rename_header(rows)
     renamed = normalize_owner_column(renamed)
     renamed = normalize_metric_column(renamed)

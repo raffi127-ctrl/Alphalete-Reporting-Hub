@@ -59,33 +59,30 @@ _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 # THREE ALL-TEAM PRODUCT VIEWS, pulled ONCE each per run, then sliced per office
 # by owner IN CODE (the new_internet_churn parser's CHURN_SLICE_OWNER mode — the
 # same one office_metrics uses against the D2D INTAllTeams / WirelessAllTeams).
-# WHY per-product-but-not-per-office: the CHURNRATES crosstab carries an OWNER
-# column (so owners split in code) but NO product column (so products can only be
-# separated by the view's own filter — hence one TEAM view per product). Net:
-# 3 pulls/day for ANY number of offices, and adding an office needs no new view.
+#
+# ONE VIEW FOR EVERYTHING since 2026-08-30. It used to be one view PER PRODUCT,
+# because the crosstab carried an owner column (so owners split in code) but no
+# product column (so products could only be separated by the view's own filter).
+# That stopped being true: ATTTRACKER-B2B gained a "Product Type (Broken Out)"
+# row dimension, which took Rep's place in the three ALLTEAM* per-product views
+# and broke all 12 feeds on 8/29 — churn_shape could not find 'Rep' at all.
+#
+# ALLTEAMSEXP ("all teams, expanded") carries Owner AND Rep AND Product Type in
+# one sheet, so the product now splits in code exactly like the owner does, and
+# the same argument that gave us one pull for N offices gives us one pull for N
+# products: 1 pull/day total, down from 3. Probed live before wiring (see
+# churn_shape.PRODUCT_TYPES for the value mapping and how it was verified).
 # Same three tab names on every office board, so tab lives here, not per office.
+EXPANDED_URL = (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                "982d0e4e-d8ed-4574-8a4c-86fdbc345b5c/ALLTEAMSEXP?:iid=1")
+
 PRODUCTS = {
-    "wireless": {
-        "label": "Wireless Churn", "tab": "Lucy Wireless Churn",
-        # ALL-TEAM for real since 2026-08-19. The CarlosTEAM* views carried
-        # only Carlos's captaincy (8 owners), so Atef's three feeds went empty
-        # the morning after he split off. Eve saved these three off the same
-        # viz with the captaincy filter cleared, and each was checked with
-        # --probe-owners BEFORE being wired here: wireless 93 owners, new_int
-        # 85, air 92 — ATEF CHOUDHURY present in all three.
-        "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
-               "f800acd5-c7aa-4600-9a8c-522cd61af026/ALLTEAMWireless?:iid=1",
-    },
-    "new_int": {
-        "label": "New Internet Churn", "tab": "Lucy New INT Churn",
-        "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
-               "0392114c-6f14-43e7-8c84-c93ba7cdc502/ALLTEAMNewINT?:iid=1",
-    },
-    "air": {
-        "label": "AIR Churn", "tab": "Lucy AIR Churn",
-        "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
-               "a20aafca-748f-4e80-b52f-107bf5f2b78e/ALLTEAMAIR?:iid=1",
-    },
+    "wireless": {"label": "Wireless Churn", "tab": "Lucy Wireless Churn",
+                 "url": EXPANDED_URL},
+    "new_int": {"label": "New Internet Churn", "tab": "Lucy New INT Churn",
+                "url": EXPANDED_URL},
+    "air": {"label": "AIR Churn", "tab": "Lucy AIR Churn",
+            "url": EXPANDED_URL},
 }
 
 # ONE ROW PER B2B OFFICE — owner + board, nothing else. Adding an office is a new
@@ -186,26 +183,36 @@ def _probe_columns(page, tag: str, spec: dict, log=print) -> None:
             log("        {!r}".format(val))
 
 
-def _pull_and_adapt(page, tag: str, spec: dict, log=print) -> Path:
-    """Crosstab-download one view and rename its header to D2D naming.
-
-    `tag` is the unique office_product handle (e.g. "carlos_wireless") — it names
-    the temp files so two offices' same-product pulls never overwrite each other.
-    """
+def _download_raw(page, url: str, dest: Path, log=print) -> Path:
+    """Crosstab-download ONE view. Split out from the adapt step because the
+    expanded view now serves every product, so the pull happens once per RUN
+    while the adapt happens once per PRODUCT."""
     from automations.recruiting_report.opt_phase import drive_crosstab_dialog
 
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    log("  crosstab download…")
+    drive_crosstab_dialog(page, url, CROSSTAB_SHEET, dest, verbose=False)
+    return dest
+
+
+def _adapt_raw(raw: Path, tag: str, log=print) -> Path:
+    """Select `tag`'s product out of a pulled crosstab and rename its header to
+    D2D naming. No browser, no network — pure file work."""
     from . import churn_shape
 
-    WORK_DIR.mkdir(parents=True, exist_ok=True)
-    raw = WORK_DIR / "{}_raw.csv".format(tag)
     adapted = WORK_DIR / "{}_adapted.csv".format(tag)
-
-    log("  [{}] crosstab download…".format(tag))
-    drive_crosstab_dialog(page, spec["url"], CROSSTAB_SHEET, raw, verbose=False)
-    info = churn_shape.adapt(raw, adapted)
+    info = churn_shape.adapt(raw, adapted,
+                             keep=churn_shape.PRODUCT_TYPES.get(tag))
     log("  [{}] {} rows; periods {}".format(
         tag, info["rows"], info["periods"]))
     return adapted
+
+
+def _pull_and_adapt(page, tag: str, spec: dict, log=print) -> Path:
+    """Download + adapt in one step (the single-product path)."""
+    raw = WORK_DIR / "{}_raw.csv".format(tag)
+    _download_raw(page, spec["url"], raw, log=log)
+    return _adapt_raw(raw, tag, log=log)
 
 
 def _parse(adapted: Path, owner: str, log=print) -> dict:
@@ -352,6 +359,11 @@ def main(argv=None) -> int:
     ap.add_argument("--only", choices=sorted(PRODUCTS), default=None,
                     metavar="PRODUCT",
                     help="run one product (default: all three)")
+    ap.add_argument("--dry-run", action="store_true", dest="dry_run",
+                    help="pull + parse + report, write NOTHING. Overrides "
+                         "--fill, so it can preview a scheduled run: `lucy "
+                         "rerun att_churn` appends flags AFTER base_args, and "
+                         "att_churn's base_args are ['--fill'].")
     ap.add_argument("--probe-columns", action="store_true", dest="probe_columns",
                     help="READ-ONLY: print the crosstab's real header, sample "
                          "rows and distinct dimension values, one field per "
@@ -374,6 +386,15 @@ def main(argv=None) -> int:
     # scheduled base_args (["--fill"]). Without this, a probe run would reach
     # _write_manifest and mark the source manifest clean.
     if args.probe_columns:
+        args.fill = False
+        args.png = False
+
+    # --dry-run BEATS --fill wherever it appears. Same reason as above: the
+    # scheduled base_args carry --fill, so without an explicit override there is
+    # no way to preview this report on the machine that actually runs it.
+    if args.dry_run:
+        if args.fill or args.png:
+            print("--dry-run overrides --fill/--png: nothing will be written")
         args.fill = False
         args.png = False
     if args.png:
@@ -406,6 +427,7 @@ def main(argv=None) -> int:
     rc = 0
     results = {}          # "office_product" -> "ok" | "FAILED"
     gaps = {}             # "office_product" -> owner the view no longer carries
+    raw_by_url = {}       # view url -> the ONE raw csv pulled for it THIS run
 
     # Pull each ALL-TEAM product view ONCE (its own fresh browser + one retry —
     # the CDP Chrome on Lucy 2 dies mid-run intermittently, so isolating each pull
@@ -416,7 +438,24 @@ def main(argv=None) -> int:
             log("")
             log("=== {} ({}) ===".format(pv["label"], pkey))
             adapted = None
-            for attempt in (1, 2):
+            # The expanded view serves every product, so once it has been pulled
+            # the remaining products are pure file work — no second Chrome. Keyed
+            # per RUN (never by "the file exists"), so a stale csv from an
+            # earlier day can never be mistaken for today's pull.
+            cached_raw = raw_by_url.get(pv["url"])
+            if cached_raw is not None:
+                try:
+                    log("  [{}] reusing this run's {} pull".format(
+                        pkey, CROSSTAB_SHEET))
+                    adapted = _adapt_raw(cached_raw, pkey, log=log)
+                except Exception:  # noqa: BLE001 — one product must not kill the rest
+                    log("  {} adapt FAILED:".format(pkey))
+                    for ln in traceback.format_exc().splitlines()[-12:]:
+                        log("    " + ln[:200])
+            # Already served from this run's pull? Then there is nothing to
+            # download and no browser to launch.
+            attempts = () if cached_raw is not None else (1, 2)
+            for attempt in attempts:
                 proc = None
                 try:
                     cdp_pull._kill_ours()
@@ -436,7 +475,10 @@ def main(argv=None) -> int:
                         _probe_columns(page, pkey, pv, log=log)
                         adapted = "probed"   # sentinel: not a real pull
                         break
-                    adapted = _pull_and_adapt(page, pkey, pv, log=log)
+                    raw = WORK_DIR / "{}_raw.csv".format(pkey)
+                    _download_raw(page, pv["url"], raw, log=log)
+                    raw_by_url[pv["url"]] = raw
+                    adapted = _adapt_raw(raw, pkey, log=log)
                     break
                 except Exception:  # noqa: BLE001 — one product/attempt must not kill the rest
                     log("  {} pull attempt {} FAILED:".format(pkey, attempt))
