@@ -154,13 +154,26 @@ def find_pair(phones: List[str], chats: Optional[List[Dict]] = None) -> Optional
     return None
 
 
-def _shortcut_installed() -> bool:
+def find_shortcut() -> Optional[str]:
+    """The Shortcut's ACTUAL name, or None.
+
+    Matched ignoring surrounding space and returned VERBATIM: Shortcuts keeps a
+    trailing space in a name silently, and `shortcuts run` then needs the real
+    one. An imported copy is exactly where that bites (swag-card lesson).
+    """
     try:
         out = subprocess.run(["shortcuts", "list"], capture_output=True,
                              text=True, timeout=15).stdout
-        return any(l.strip() == SHORTCUT_NAME for l in out.splitlines())
+        for line in out.splitlines():
+            if line.strip() == SHORTCUT_NAME.strip():
+                return line
     except Exception:  # noqa: BLE001
-        return False
+        pass
+    return None
+
+
+def _shortcut_installed() -> bool:
+    return find_shortcut() is not None
 
 
 def _looks_like_phone(value: str) -> bool:
@@ -189,7 +202,8 @@ def _create_via_shortcut(phones: List[str], text: str) -> None:
     _HANDOFF_DIR.mkdir(exist_ok=True)
     _RECIPIENTS.write_text(", ".join(phones), encoding="utf-8")
     _BODY.write_text(text, encoding="utf-8")
-    proc = subprocess.run(["shortcuts", "run", SHORTCUT_NAME],
+    actual = find_shortcut() or SHORTCUT_NAME
+    proc = subprocess.run(["shortcuts", "run", actual],
                           capture_output=True, text=True, timeout=90)
     if proc.returncode != 0:
         raise PairChatError(
