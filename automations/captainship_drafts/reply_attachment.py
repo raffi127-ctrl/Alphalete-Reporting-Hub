@@ -69,15 +69,19 @@ BODY = (
 # The line naming offices the PDF does NOT cover (Megan 2026-08-30, choosing
 # this over sending only the complete ones or sending the gaps unexplained).
 #
-# WHY IT HAS TO BE SAID. A captain who has nine offices and opens a PDF with
-# three reads the REPORT as broken. It isn't — those offices aren't reachable
-# on the reporting account, which is a permission to grant, not a bug to fix,
-# and naming them turns a confusing gap into a clear ask. Wayne is the sharp
-# end of this: 6 of his 6 ICDs were unreachable on the 2026-08-30 pull.
+# WHY IT HAS TO BE SAID, AND WHY IT NAMES RAFAEL. A captain who has nine
+# offices and opens a PDF with three reads the REPORT as broken. It isn't: the
+# whole report runs on Rafael's OwnerVille login, and an office that is not in
+# HIS Office Access cannot be pulled for anyone. Saying "the reporting account"
+# left readers guessing whose account and what to do about it (Megan
+# 2026-08-30) — naming Rafael's makes the fix obvious and puts it with the
+# person who can grant it. Wayne is the sharp end: 6 of his 6 ICDs were
+# unreachable on the 2026-08-30 pull.
 MISSING_LINE = (
-    "\nNot included: {names}. Those offices aren't reachable on the reporting "
-    "account yet, so they have no page in this PDF — once access is granted "
-    "they appear automatically.\n")
+    "\nNot included: {names}. Rafael's OwnerVille login doesn't have Office "
+    "Access to those offices, so the report can't pull them and they have no "
+    "page in this PDF. Once they're added to his access they'll appear "
+    "automatically.\n")
 
 
 def missing_offices(render_dir, captain_key: str, saturday) -> List[str]:
