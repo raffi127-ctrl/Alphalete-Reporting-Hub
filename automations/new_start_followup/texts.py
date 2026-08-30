@@ -6,6 +6,10 @@ they respond quickly if they get a text." Scheduled Saturday 8:30am CST —
 after the 8:00 roll call, so the Slack thread the text links to already
 exists. This replaces Raf hand-texting 30+ leaders every weekend.
 
+Since 2026-08-30 each text lands in a GROUP with Raf and the one leader, not a
+1:1 (Raf via Megan: "make it a group message with him and the leader") — see
+pair_chat.py, which also explains why creating that group needs a Shortcut.
+
 The copy mirrors the message Raf already sends from Lucy's number (Megan's
 screenshot, 8/23): short ask + the Slack thread link. Two rules survive from
 the 7/19 build:
@@ -31,6 +35,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
+from automations.new_start_followup import pair_chat
 from automations.swag_welcome import imessage
 from automations.swag_welcome.roster import pretty_phone
 
@@ -119,12 +124,15 @@ def starts_by_leader(monday) -> dict:
 
 class Outcome:
     def __init__(self, status, text: str, sent: bool, skipped: Optional[str] = None,
-                 error: Optional[str] = None):
+                 error: Optional[str] = None, route: str = "",
+                 note: Optional[str] = None):
         self.status = status
         self.text = text
         self.sent = sent
         self.skipped = skipped   # why we didn't even try
         self.error = error       # why the send failed
+        self.route = route       # "group with Raf" / "NEW group with Raf" / "1:1"
+        self.note = note         # why it fell back off the group route
 
     @property
     def label(self) -> str:
@@ -163,6 +171,17 @@ def run(rec, send: bool = False) -> List[Outcome]:
         print("WARNING: couldn't build the thread link — texts go out without it.")
     details = starts_by_leader(rec.monday)
 
+    # Every text goes to a 3-way thread — Lucy, Raf, the leader (Raf via Megan,
+    # 2026-08-30). The chat index is read ONCE for the whole sweep: it's a
+    # single osascript call over the entire Messages library, and doing it per
+    # leader would be 40+ round trips for the same answer.
+    chats = None
+    try:
+        chats = pair_chat.list_chats()
+    except Exception as exc:  # noqa: BLE001 — degrade to 1:1, never to nothing
+        print("WARNING: couldn't read the Messages chat list ({}) — texts go "
+              "out 1:1 instead of in a group with Raf.".format(exc))
+
     for status in pending:
         text = compose(status, rec.monday, link=link,
                        starts=details.get(status.leader.slack_id))
@@ -178,16 +197,40 @@ def run(rec, send: bool = False) -> List[Outcome]:
             outcomes.append(Outcome(status, text, False,
                                     skipped="already texted this week"))
             continue
+        if chats is None:
+            # The chat index didn't read, so we can't tell an existing Raf
+            # group from a missing one. Send 1:1 rather than let the Shortcut
+            # open a duplicate thread beside one that already exists.
+            result = {"sent": False, "mode": "direct", "note":
+                      "Messages chat list unreadable — sent 1:1", "error": None}
+            if send:
+                out = imessage.send(phone, text, dry_run=False)
+                result["sent"] = bool(out.get("sent"))
+                result["error"] = out.get("error")
+        else:
+            result = pair_chat.deliver(phone, text, dry_run=not send,
+                                       chats=chats)
+        route = pair_chat.describe(result)
         if not send:
-            outcomes.append(Outcome(status, text, False, skipped="dry-run"))
+            outcomes.append(Outcome(status, text, False, skipped="dry-run",
+                                    route=route, note=result.get("note")))
             continue
-        result = imessage.send(phone, text, dry_run=False)
         ok = bool(result.get("sent"))
         if ok:
             import datetime as dt
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(dt.datetime.now().isoformat(timespec="seconds"))
-        outcomes.append(Outcome(status, text, ok, error=result.get("error")))
+            # A group we just opened is a real chat NOW. Re-read the index so
+            # it carries a real chat id — the Shortcut sends without telling us
+            # the guid, and a placeholder entry would send the next message
+            # into `chat id ""`.
+            if result.get("created"):
+                try:
+                    chats = pair_chat.list_chats()
+                except Exception:  # noqa: BLE001
+                    pass
+        outcomes.append(Outcome(status, text, ok, error=result.get("error"),
+                                route=route, note=result.get("note")))
     return outcomes
 
 
@@ -206,7 +249,10 @@ def render(outcomes: List[Outcome], send: bool) -> str:
             mark = "would send"
         else:
             mark = "SKIPPED: {}".format(out.skipped)
-        lines.append("{:<20} {:<16} {}".format(out.label, phone, mark))
+        lines.append("{:<20} {:<16} {:<22} {}".format(
+            out.label, phone, out.route or "", mark))
+        if out.note:
+            lines.append("    ! {}".format(out.note))
         lines.append("    {}".format(out.text.replace("\n", "\n    ")))
         lines.append("")
 
@@ -231,4 +277,12 @@ def render(outcomes: List[Outcome], send: bool) -> str:
     if failed:
         lines.append("INCOMPLETE — {} send(s) failed: {}".format(
             len(failed), ", ".join(o.label for o in failed)))
+
+    # Raf asked to be in every one of these threads — a leader who fell back to
+    # a 1:1 is a gap he can't see, so it gets named, not buried in the log.
+    solo = [o for o in outcomes if o.route == "1:1" and o.skipped != "already texted this week"]
+    if solo:
+        lines.append("NOT IN A GROUP WITH RAF — {} leader(s) went 1:1: {}".format(
+            len(solo), ", ".join(o.label for o in solo)))
+        lines.append("  " + pair_chat.SHORTCUT_SETUP.replace("\n", "\n  "))
     return "\n".join(lines)

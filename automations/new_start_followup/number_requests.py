@@ -221,8 +221,10 @@ def process(rec, live: bool = False) -> dict:
                              .format(status.leader.name))
                 resolved.append(status)
                 continue
-            from automations.swag_welcome import imessage
-            result = imessage.send(val, body, dry_run=False)
+            # Same 3-way delivery as the Saturday sweep — a number that
+            # arrives late still puts Raf in the thread (Raf, 2026-08-30).
+            from automations.new_start_followup import pair_chat
+            result = pair_chat.deliver(val, body, dry_run=False)
             if result.get("sent"):
                 marker.parent.mkdir(parents=True, exist_ok=True)
                 marker.write_text(dt.datetime.now().isoformat(timespec="seconds"))
@@ -230,8 +232,11 @@ def process(rec, live: bool = False) -> dict:
                     channel=rec.thread["channel"],
                     thread_ts=rec.thread["anchor_ts"],
                     text="✅ Got it — texted {}.".format(status.leader.name))
-                lines.append("Texted {} at {}.".format(
-                    status.leader.name, pretty_phone(val)))
+                lines.append("Texted {} at {} ({}).".format(
+                    status.leader.name, pretty_phone(val),
+                    pair_chat.describe(result)))
+                if result.get("note"):
+                    lines.append("  ! {}".format(result["note"]))
                 resolved.append(status)
             else:
                 lines.append("SEND FAILED for {}: {}".format(
