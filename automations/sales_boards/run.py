@@ -203,7 +203,8 @@ def _publish_hub(status: str) -> None:
         pass
 
 
-def _replies(imgs: dict, zeros: dict, tag: str, want_zeros: bool) -> list:
+def _replies(imgs: dict, zeros: dict, tag: str, want_zeros: bool,
+             corrected: bool = False) -> list:
     """The thread's replies in post order: the boards, then (A-Players only) one
     reply per Zero Streak level. Each entry is
     (plain_needle, caption, [(local_path, slack_filename), …])."""
@@ -213,6 +214,12 @@ def _replies(imgs: dict, zeros: dict, tag: str, want_zeros: bool) -> list:
         if not parts:
             continue
         plain = f"{p} Sales Board {tag}"
+        if corrected:
+            # A re-post AFTER the order log corrected the board (the 5:10
+            # thread already carries the original reply, and _already_replied
+            # keys on the plain text — this suffix is what lets the corrected
+            # images through, exactly once).
+            plain += " (corrected)"
         out.append((plain, f"{PROGRAM_EMOJI.get(p, '')} *{plain}*".strip(),
                     [(parts[k], f"{plain} ({k}).png") for k in ("a", "b") if k in parts]))
     if want_zeros:
@@ -225,7 +232,7 @@ def _replies(imgs: dict, zeros: dict, tag: str, want_zeros: bool) -> list:
 
 
 def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
-                dm_user: str = "") -> list:
+                dm_user: str = "", corrected: bool = False) -> list:
     """Find-or-create today's parent in EACH target channel, then post the replies.
     dm_user routes one thread into a DM instead — same code path, used to prove the
     multi-image threaded upload before pointing it at a channel."""
@@ -238,7 +245,8 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
         return [{"dry_run": True, "channel": name, "id": cid,
                  "header": header_text(day, zeros if wz else None, tag),
                  "replies": [(cap, [f for _, f in ups])
-                             for _, cap, ups in _replies(imgs, zeros, tag, wz)]}
+                             for _, cap, ups in _replies(imgs, zeros, tag, wz,
+                                                         corrected)]}
                 for name, cid, wz in targets]
 
     from automations.shared import slack_metrics_post as smp
@@ -267,7 +275,8 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
             except Exception as e:  # noqa: BLE001
                 print(f"    (parent header not refreshed on {name} — {type(e).__name__})")
         out.append({"channel": name, "thread_ts": ts, "created_parent": created})
-        for plain, caption, ups in _replies(imgs, zeros, tag, wz):
+        for plain, caption, ups in _replies(imgs, zeros, tag,
+                                            wz and not corrected, corrected):
             # dedupe on the PLAIN text — Slack may store the emoji as a shortcode
             # or the rendered character, so matching the caption verbatim is
             # unreliable. Checked per channel: a reply landing in one channel says
@@ -417,6 +426,10 @@ def main(argv=None) -> int:
                     help="post the thread to a DM instead of the channel (test run)")
     ap.add_argument("--only-zeros", action="store_true",
                     help="render just the Zero Streak images (skip the boards)")
+    ap.add_argument("--corrected", action="store_true",
+                    help="re-post pass after an order-log correction: captions "
+                         "carry '(corrected)' (so the morning reply doesn't "
+                         "dedupe them away) and Zero Streaks are skipped")
     args = ap.parse_args(argv)
 
     today = dt.date.today()
@@ -469,7 +482,8 @@ def main(argv=None) -> int:
             sh.del_worksheet(w)
     # Zeros render on their OWN throwaway tab — they overwrite the day columns with
     # a cross-week window, which would corrupt the boards if the two shared a copy.
-    zrs = Z.render_zeros(sh, src, SHEET_ID, _token(), yday, OUT_DIR)
+    zrs = {} if args.corrected else \
+        Z.render_zeros(sh, src, SHEET_ID, _token(), yday, OUT_DIR)
 
     imgs = {p: {} for p in programs}
     if not args.only_zeros:
@@ -493,7 +507,8 @@ def main(argv=None) -> int:
         return 0
     print("POSTING thread to Slack as Lucy:")
     try:
-        results = post_thread(imgs, zrs, today, yday, dry_run=False, dm_user=args.dm or "")
+        results = post_thread(imgs, zrs, today, yday, dry_run=False,
+                              dm_user=args.dm or "", corrected=args.corrected)
     except Exception:
         if not args.dm:              # a DM test shouldn't touch the Hub card either
             _publish_hub("failed")   # way — a failed test used to mark the card red

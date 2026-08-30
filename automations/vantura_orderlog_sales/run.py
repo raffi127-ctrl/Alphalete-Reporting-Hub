@@ -14,10 +14,16 @@ morning close-out reads THEM instead of counting Slack posts:
     `Sale Date` = that day that pass the sale gate (the TPV rule from
     box_order_log.clean, applied to the cleaned tab: Draft never reaches the
     tab; TPV Failed / Rejected QC / never-reached-TPV cancels don't count;
-    Incomplete counts — Megan 2026-07-18). Cutover: Slack stays the BOX
-    source through Mon 2026-08-31; this module fills BOX starting Tue
-    2026-09-01 (Carlos 2026-08-30). --campaign BOX overrides the gate for a
-    manual run.
+    Incomplete counts — Megan 2026-07-18). BOX starts Tue 2026-09-01 and is
+    AUTHORITATIVE, not raise-only (Carlos 2026-08-30 evening: Slack keeps
+    filling BOX live, "then once the order log is updated, refill out the
+    sales board or confirm everything through the order log"): the 08:45
+    pass sets every BOX rep's day cell to exactly the log's count —
+    including LOWERING a Slack overcount or clearing a phantom — and when it
+    changed anything it re-posts the BOX board images into the day's
+    'Vantura Production' thread as '(corrected)'. Hand-typed markers (T/X/F)
+    are kept unless the log shows sales. --campaign BOX overrides the gate
+    for a manual run.
 
 Base is GONE — the campaign ended (Carlos 2026-08-30); no Base rows remain on
 the board and vantura_slack_sales no longer parses it either.
@@ -248,23 +254,40 @@ def run_campaign(sh, g, day: dt.date, campaign: str) -> dict:
 
 
 def fill_plan(g, result):
-    """Raise-only, same contract as vantura_slack_sales.fill_plan."""
+    """B2B: raise-only, same contract as vantura_slack_sales.fill_plan.
+    BOX: AUTHORITATIVE — every BOX rep's day cell is set to exactly the log's
+    count, lowering or clearing included (Carlos 2026-08-30 evening: the order
+    log confirms/corrects what Slack filled live). A hand-typed marker (T/X/F)
+    is kept unless the log shows sales; a log count of 0 writes a BLANK (the
+    board's convention: blank = none)."""
     from gspread.utils import rowcol_to_a1
     col = result["col"]
     if not col:
         return []
     plan = []
-    for key, new in result["matched"].items():
+    authoritative = result["campaign"] == "BOX"
+    keys = result["rows"] if authoritative else result["matched"]
+    for key in keys:
         row = result["rows"][key]
+        new = int(result["matched"].get(key, 0))
         cur = str(_cell(g, row, col)).strip()
         note = ""
         if cur.isdigit():
-            if new <= int(cur):
-                continue
+            if authoritative:
+                if new == int(cur):
+                    continue
+                if new < int(cur):
+                    note = "  (LOWERED to the order log — Slack overcount)"
+            elif new <= int(cur):
+                continue                      # B2B: never lower what's there
         elif cur:
+            if not new:
+                continue                      # keep the marker (T/X/F...)
             note = f"  (replaces marker {cur!r})"
+        elif not new:
+            continue                          # blank -> blank
         plan.append((_cell(g, row, NAME_COL), rowcol_to_a1(row, col),
-                     cur or "(blank)", str(new), note))
+                     cur or "(blank)", str(new) if new else "(blank)", note))
     return plan
 
 
@@ -333,6 +356,7 @@ def main(argv=None) -> int:
 
     _log("")
     held = False
+    box_corrected = False
     for res in results:
         ok, shown, want = week_ok(g, res["day"])
         if not ok:
@@ -351,11 +375,35 @@ def main(argv=None) -> int:
             _log(f"  {a1}  {rep:<28} {cur} -> {new}{note}")
         if a.yes and plan:
             _retry(ws.batch_update,
-                   [{"range": a1, "values": [[int(new)]]}
+                   [{"range": a1,
+                     "values": [[int(new) if new != "(blank)" else ""]]}
                     for _rep, a1, _cur, new, _note in plan])
             _log(f"  wrote {len(plan)} cell(s)")
+            if res["campaign"] == "BOX" and res["day"] == today - dt.timedelta(days=1):
+                box_corrected = True
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
+
+    # The 5:10am thread already showed BOX as Slack filled it. If the order
+    # log just changed the board, the pictures out there are wrong — re-post
+    # the BOX images into the same thread as "(corrected)" (Carlos 2026-08-30
+    # evening: "If you need to resend out the screenshot for BOX").
+    if box_corrected:
+        import subprocess
+        _log("BOX changed — re-posting the BOX board images as (corrected)")
+        try:
+            r = subprocess.run(
+                [sys.executable, "-m", "automations.sales_boards.run",
+                 "--program", "BOX", "--post", "--corrected"],
+                capture_output=True, text=True, timeout=900)
+            for line in (r.stdout or "").splitlines()[-12:]:
+                _log(f"  sales_boards: {line}")
+            if r.returncode != 0:
+                _log(f"  ! corrected re-post exited {r.returncode} — the board "
+                     "is right; only the thread images are stale")
+        except Exception as e:  # noqa: BLE001 — the fill itself succeeded
+            _log(f"  ! corrected re-post failed to launch: {e!r}")
+
     return 75 if (held or held_fresh) else 0
 
 
