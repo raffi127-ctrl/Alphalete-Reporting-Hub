@@ -5580,7 +5580,7 @@
       "order": 24,
       "on_scheduler": true,
       "machine": "Lucy 3",
-      "_note": "Later pass for boards the MORNING run held. Until 2026-08-26 the ~7am Box catch-up was the last attempt of the day, so a board whose Tableau data settled after it never posted at all -- and under Megan's rule (\"the updated ones are sent and the non updated ones are reported and NOT sent\") that is a board silently missing all day. On 8/26 NDS and AT&T were still loading at 10:30. --settle re-checks ONLY what the morning held, posts whatever has since finished loading, and leaves the rest held with its note. A clean no-op on the normal day when nothing was held. Own report_id so it cannot overwrite the Box catch-up's manifest or per-channel checklist. NOT a clock for the data: the stability gate decides whether a board is ready; not_before only decides when to ask again.",
+      "_note": "Hourly retry for boards the MORNING run held (Megan 2026-08-30: \"run it every hour until it's correct until 2pm\"). Until 2026-08-26 the ~7am Box catch-up was the last attempt of the day, so a board whose Tableau data settled after it never posted AT ALL -- and under Megan's rule (\"the updated ones are sent and the non updated ones are reported and NOT sent\") that is a board silently missing all day. On 8/26 NDS and AT&T were still loading at 10:30. --settle re-checks ONLY what the morning held, posts whatever has since finished loading, and leaves the rest held with its note, so a pass with nothing outstanding is a clean no-op and the extra hours cost nothing on a normal day. Cadence has no interval vocabulary (weekdays + not_before only), so hourly = ONE ENTRY PER HOUR: 10:00, 11:00, 12:00, 13:00, 14:00. 14:00 is the last -- past that the board has missed the selling day and posting it is noise, not news. All five share verify.report_id 'tableau-screenshots-settle' and one Hub card, so this reads as one job that retries rather than five reports. Config KEYS keep their original names (_am/_pm) because they are Hub card ids and key each report's run history.",
       "display_name": "Tableau Country Trackers \u2014 settle (10am)",
       "source_type": "tableau",
       "data_sources": [],
@@ -5616,7 +5616,79 @@
       "order": 41,
       "on_scheduler": true,
       "machine": "Lucy 3",
-      "_note": "Later pass for boards the MORNING run held. Until 2026-08-26 the ~7am Box catch-up was the last attempt of the day, so a board whose Tableau data settled after it never posted at all -- and under Megan's rule (\"the updated ones are sent and the non updated ones are reported and NOT sent\") that is a board silently missing all day. On 8/26 NDS and AT&T were still loading at 10:30. --settle re-checks ONLY what the morning held, posts whatever has since finished loading, and leaves the rest held with its note. A clean no-op on the normal day when nothing was held. Own report_id so it cannot overwrite the Box catch-up's manifest or per-channel checklist. NOT a clock for the data: the stability gate decides whether a board is ready; not_before only decides when to ask again.",
+      "_note": "Hourly retry for boards the MORNING run held (Megan 2026-08-30: \"run it every hour until it's correct until 2pm\"). Until 2026-08-26 the ~7am Box catch-up was the last attempt of the day, so a board whose Tableau data settled after it never posted AT ALL -- and under Megan's rule (\"the updated ones are sent and the non updated ones are reported and NOT sent\") that is a board silently missing all day. On 8/26 NDS and AT&T were still loading at 10:30. --settle re-checks ONLY what the morning held, posts whatever has since finished loading, and leaves the rest held with its note, so a pass with nothing outstanding is a clean no-op and the extra hours cost nothing on a normal day. Cadence has no interval vocabulary (weekdays + not_before only), so hourly = ONE ENTRY PER HOUR: 10:00, 11:00, 12:00, 13:00, 14:00. 14:00 is the last -- past that the board has missed the selling day and posting it is noise, not news. All five share verify.report_id 'tableau-screenshots-settle' and one Hub card, so this reads as one job that retries rather than five reports. Config KEYS keep their original names (_am/_pm) because they are Hub card ids and key each report's run history.",
+      "display_name": "Tableau Country Trackers \u2014 settle (11am)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--settle",
+        "--text-trackers"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "11:00"
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": {
+        "type": "manifest",
+        "report_id": "tableau-screenshots-settle"
+      }
+    },
+    "tableau_screenshots_settle_12": {
+      "order": 42,
+      "on_scheduler": true,
+      "machine": "Lucy 3",
+      "_note": "Hourly retry for boards the MORNING run held (Megan 2026-08-30: \"run it every hour until it's correct until 2pm\"). Until 2026-08-26 the ~7am Box catch-up was the last attempt of the day, so a board whose Tableau data settled after it never posted AT ALL -- and under Megan's rule (\"the updated ones are sent and the non updated ones are reported and NOT sent\") that is a board silently missing all day. On 8/26 NDS and AT&T were still loading at 10:30. --settle re-checks ONLY what the morning held, posts whatever has since finished loading, and leaves the rest held with its note, so a pass with nothing outstanding is a clean no-op and the extra hours cost nothing on a normal day. Cadence has no interval vocabulary (weekdays + not_before only), so hourly = ONE ENTRY PER HOUR: 10:00, 11:00, 12:00, 13:00, 14:00. 14:00 is the last -- past that the board has missed the selling day and posting it is noise, not news. All five share verify.report_id 'tableau-screenshots-settle' and one Hub card, so this reads as one job that retries rather than five reports. Config KEYS keep their original names (_am/_pm) because they are Hub card ids and key each report's run history.",
+      "display_name": "Tableau Country Trackers \u2014 settle (12pm)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--settle",
+        "--text-trackers"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "12:00"
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": {
+        "type": "manifest",
+        "report_id": "tableau-screenshots-settle"
+      }
+    },
+    "tableau_screenshots_settle_13": {
+      "order": 43,
+      "on_scheduler": true,
+      "machine": "Lucy 3",
+      "_note": "Hourly retry for boards the MORNING run held (Megan 2026-08-30: \"run it every hour until it's correct until 2pm\"). Until 2026-08-26 the ~7am Box catch-up was the last attempt of the day, so a board whose Tableau data settled after it never posted AT ALL -- and under Megan's rule (\"the updated ones are sent and the non updated ones are reported and NOT sent\") that is a board silently missing all day. On 8/26 NDS and AT&T were still loading at 10:30. --settle re-checks ONLY what the morning held, posts whatever has since finished loading, and leaves the rest held with its note, so a pass with nothing outstanding is a clean no-op and the extra hours cost nothing on a normal day. Cadence has no interval vocabulary (weekdays + not_before only), so hourly = ONE ENTRY PER HOUR: 10:00, 11:00, 12:00, 13:00, 14:00. 14:00 is the last -- past that the board has missed the selling day and posting it is noise, not news. All five share verify.report_id 'tableau-screenshots-settle' and one Hub card, so this reads as one job that retries rather than five reports. Config KEYS keep their original names (_am/_pm) because they are Hub card ids and key each report's run history.",
       "display_name": "Tableau Country Trackers \u2014 settle (1pm)",
       "source_type": "tableau",
       "data_sources": [],
@@ -5638,6 +5710,42 @@
           6
         ],
         "not_before": "13:00"
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": {
+        "type": "manifest",
+        "report_id": "tableau-screenshots-settle"
+      }
+    },
+    "tableau_screenshots_settle_14": {
+      "order": 44,
+      "on_scheduler": true,
+      "machine": "Lucy 3",
+      "_note": "Hourly retry for boards the MORNING run held (Megan 2026-08-30: \"run it every hour until it's correct until 2pm\"). Until 2026-08-26 the ~7am Box catch-up was the last attempt of the day, so a board whose Tableau data settled after it never posted AT ALL -- and under Megan's rule (\"the updated ones are sent and the non updated ones are reported and NOT sent\") that is a board silently missing all day. On 8/26 NDS and AT&T were still loading at 10:30. --settle re-checks ONLY what the morning held, posts whatever has since finished loading, and leaves the rest held with its note, so a pass with nothing outstanding is a clean no-op and the extra hours cost nothing on a normal day. Cadence has no interval vocabulary (weekdays + not_before only), so hourly = ONE ENTRY PER HOUR: 10:00, 11:00, 12:00, 13:00, 14:00. 14:00 is the last -- past that the board has missed the selling day and posting it is noise, not news. All five share verify.report_id 'tableau-screenshots-settle' and one Hub card, so this reads as one job that retries rather than five reports. Config KEYS keep their original names (_am/_pm) because they are Hub card ids and key each report's run history.",
+      "display_name": "Tableau Country Trackers \u2014 settle (2pm)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--settle",
+        "--text-trackers"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "14:00"
       },
       "priority": "P2",
       "freshness_target": null,
