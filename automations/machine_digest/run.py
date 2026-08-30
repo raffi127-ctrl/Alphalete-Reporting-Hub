@@ -379,6 +379,29 @@ def _handrun_only_ids(cfg) -> set:
     return ids
 
 
+def _retired_ids() -> set:
+    """Ids hub_coverage._RETIRED declares dead. A name in that set is a promise
+    the report DOES NOT RUN, so it must not alert either.
+
+    Goes in `skip`, not `offday`: off-day only suppresses the "didn't run" GUESS
+    and still reports a real FAILED, which is right for a live report on its day
+    off and wrong for a retired one. att_cancels, 2026-08-30 — retired at 13:5x
+    because its Tableau view was deleted, and at 14:06 this watcher opened
+    "didn't run clean on Lucy 2" off the morning's genuine 04:10 failure. The
+    failure was real; the report is gone. Without this it would reopen every
+    time the Activity log still holds a failed row for a retired id.
+
+    Best-effort: if hub_coverage can't be read, skip nothing and behave exactly
+    as before — a retired report alerting is far better than a live one going
+    quiet.
+    """
+    try:
+        from automations.day_orchestrator import hub_coverage
+        return set(hub_coverage._RETIRED)
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def _offday_standalone_ids(cfg, target_date) -> set:
     """Registry ids of STANDALONE (LaunchAgent) reports that are NOT supposed to run
     on `target_date`, per an explicit `standalone_weekdays` list (Python weekday():
@@ -907,7 +930,8 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         return 1
     target_date = dt.date.fromisoformat(day)
     reports = _collect(rows, None, day, exact=False)   # host=None → all machines
-    skip = _orchestrator_ids(cfg, target_date) | _oneshot_utility_ids(cfg)
+    skip = (_orchestrator_ids(cfg, target_date) | _oneshot_utility_ids(cfg)
+            | _retired_ids())
     # Off-day exemption for weekday-pinned standalone reports. Deliberately NOT
     # folded into `skip`: it must suppress the "didn't run" guess only, never a
     # real FAILED / INCOMPLETE / STUCK on an off-day hand-rerun.
