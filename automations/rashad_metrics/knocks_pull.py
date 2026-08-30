@@ -216,10 +216,25 @@ KNOCKS_CAMPAIGN_ID = os.environ.get("KNOCKS_CAMPAIGN_ID", "3")
 
 
 # An office that knocks a campaign OTHER than the default goes here, keyed by
-# ownerville name. Empty on purpose: every office we have actually looked at
-# knocks RES AT&T, so this stays empty until one is PROVEN different — a guess
-# here silently blanks a whole office's board.
-CAMPAIGN_OVERRIDES: "dict[str, str]" = {}
+# ownerville name (already _norm_name'd — lowercase, trimmed). An entry has to
+# be OBSERVED and written down, never inferred: a guess here silently blanks a
+# whole office's board.
+#
+# calvin ribera -> 40 (RES-ENERGYWELL). Observed 2026-08-29: Megan read
+# invD2DClientId=40 straight off the live URL with his grid on screen. He is
+# Energy Wells ONLY (Raf: "Calvin is ENERGY WELL only"), and without this entry
+# he was being pinned to 3 (RES AT&T) like everyone else and coming back with
+# ZERO rows for days that plainly had four reps on them — the exact
+# silently-blank-board failure this dict exists to prevent.
+CAMPAIGN_OVERRIDES: "dict[str, str]" = {
+    "calvin ribera": "40",
+    # BOTH spellings. Ownerville has "Ribera", everyone says "Rivera", and the
+    # alias sheet resolves one to the other — but this lookup happens on
+    # whatever name the caller passed. Missing here, the wrong spelling would
+    # fall through to the RES AT&T default and blank his board, which is the
+    # failure that cost days.
+    "calvin rivera": "40",
+}
 
 
 def campaign_for_office(name: str) -> str:

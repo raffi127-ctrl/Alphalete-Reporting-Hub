@@ -91,6 +91,11 @@ CALVIN = {
     # be pinned: the campaign is a sticky session-global, so with no pin Calvin
     # inherits whatever Raf's pull left it on (AT&T), which is exactly what he
     # was silently doing.
+    # Used by the GAP-LIST pull (p=510). The BOARD pull pins its campaign
+    # through rashad_metrics.knocks_pull.CAMPAIGN_OVERRIDES, which forces every
+    # office to 3 (RES AT&T) unless listed — this field alone does NOT reach
+    # it, which is why Calvin returned zero rows even after it was set. Both
+    # say 40; change them together.
     "campaign_id": "40",
     "group": "ENERGY WELLS DOMINATION",
     "label": "Calvin",
@@ -324,9 +329,9 @@ def capture_window():
     return BASE_WINDOW
 
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
-# Ticks every 10 minutes inside these windows (Megan 2026-08-26):
-#     Mon–Fri  1:30pm – 8:30pm
-#     Saturday 10:00am – 5:00pm
+# Ticks every 15 minutes inside these windows (Megan 2026-08-26):
+#     Mon–Fri  1:30pm – 10:00pm
+#     Saturday 10:45am – 6:30pm
 #     Sunday   off entirely
 #
 # Saturday has its OWN START, not just its own end — it is the one day the field
@@ -341,7 +346,15 @@ def capture_window():
 DAY_START_HHMM = (13, 30)
 DAY_END_HHMM = (22, 0)   # 10pm (Raf, 2026-08-28: "can we have this come till 10:00pm")
 SATURDAY_START_HHMM = (10, 45)   # Raf 2026-08-29: "can it start at 10:45am"
-SATURDAY_END_HHMM = (17, 0)
+# 6:30pm (Megan, 2026-08-30). The 8/28 "till 10:00pm" was scoped to weekdays
+# (commit 8473d41) and left Saturday at 5:00pm, which is why the KNOCKS &
+# DISPOSITIONS texts appeared to die at 4:45 PM on Sat 8/29 — the 17:00 tick
+# launched at 17:00:55 and was refused as out-of-window. Saturday gets its own
+# end, NOT the weekday 10pm: the field goes in earlier on a Saturday.
+# CHANGING THIS ALSO MEANS CHANGING THE HOUR GATE in deploy/gap_alerts_5min.sh
+# — that gate exits before Python ever runs, so config alone cannot widen the
+# day. Keep the two consistent.
+SATURDAY_END_HHMM = (18, 30)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
 SATURDAY = 5
 

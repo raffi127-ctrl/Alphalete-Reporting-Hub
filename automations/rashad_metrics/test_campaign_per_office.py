@@ -59,10 +59,22 @@ class CampaignForOffice(unittest.TestCase):
         finally:
             KP.CAMPAIGN_OVERRIDES.pop("someone else", None)
 
-    def test_overrides_start_empty(self):
-        # A guessed override silently blanks an office's whole board, so the
-        # map stays empty until an exception is actually observed.
-        self.assertEqual(KP.CAMPAIGN_OVERRIDES, {})
+    def test_overrides_are_observed_not_guessed(self):
+        # The map was empty by design: a GUESSED override silently blanks an
+        # office's whole board. Calvin is the first observed exception —
+        # invD2DClientId=40 (RES-ENERGYWELL), read off his live URL on
+        # 2026-08-29 — so the rule is now "only observed entries", not "none".
+        self.assertEqual(set(KP.CAMPAIGN_OVERRIDES.values()), {"40"},
+                         "every override must be an observed campaign id")
+        for name in ("Calvin Ribera", "Calvin Rivera"):
+            self.assertEqual(KP.campaign_for_office(name), "40",
+                             "both spellings of Calvin must pin Energy Wells")
+
+    def test_everyone_else_still_gets_the_default(self):
+        # The override map must not leak onto offices that never asked.
+        for name in ("Rafael Hidalgo", "Chan Park", "Isaiah Jones"):
+            self.assertEqual(KP.campaign_for_office(name),
+                             KP.KNOCKS_CAMPAIGN_ID)
 
 
 class PinCampaign(unittest.TestCase):
