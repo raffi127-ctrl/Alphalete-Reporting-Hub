@@ -14,7 +14,8 @@ IMAP source Megan's residential_rep_count report already reads):
   3. move the amber "latest week" highlight, re-issue the sort filters and the
      Week View picker range, and point the Week View picker at the new week;
   4. screenshot the Week View tab + the Unique Headcount tab (last 4 weeks)
-     via the Sheets PDF-export engine and email both from alphaletereporting@.
+     via the Sheets PDF-export engine and Slack-DM both from Lucy (the bot
+     token — same delivery as team_tree; Carlos asked for Slack, NOT email).
 
 Runs on LUCY 2 via com.alphalete.rcnc-tracker-friday (Fri 8am/11am/2pm + Sat
 9am CT — Archey usually sends Thu night, occasionally Fri morning). Every
@@ -23,7 +24,7 @@ flag file short-circuits the later firings.
 
     python -m automations.rcnc_tracker.run --probe      # env + email + xlsx recon, NO writes
     python -m automations.rcnc_tracker.run --dry-run    # parse + plan, NO writes/sends
-    python -m automations.rcnc_tracker.run --no-email   # write sheet, skip the send
+    python -m automations.rcnc_tracker.run --no-send    # write sheet, skip the Slack DM
     python -m automations.rcnc_tracker.run              # full run (sends to TEST list)
     python -m automations.rcnc_tracker.run --week-ending 2026-08-29 --force
 """
@@ -31,13 +32,9 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import smtplib
-import ssl
 import sys
 import tempfile
 import traceback
-from email.message import EmailMessage
-from email.utils import make_msgid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -53,11 +50,13 @@ HDR_ROW = 3                      # 1-based header row on the trend tabs
 FIRST_DATA_ROW = 4
 LAST4 = 4                        # weeks shown on the Unique Headcount shot
 
-# Recipients. TEST tier only until Carlos signs off, then flip DEFAULT_TO to
-# PROD_TO (adds his brother Rafael) — his explicit ask 2026-08-30: "test it out
-# with sending it to me" first, brother later.
-TEST_TO = ["carloshidalgo349@gmail.com"]
-PROD_TO = ["carloshidalgo349@gmail.com", "raffi127@gmail.com"]
+# Delivery is SLACK DM from Lucy (Carlos 2026-08-30: "I don't want to email
+# that. I want it screenshotted to Slack"). TEST tier = Carlos only until he
+# signs off, then flip DEFAULT_TO to PROD_TO (adds his brother Rafael —
+# dm_users_with_file tries one group DM first, falls back to individual DMs).
+CARLOS_SLACK_ID = "U046G04P5LG"          # same id team_tree DMs
+TEST_TO = [CARLOS_SLACK_ID]
+PROD_TO = [CARLOS_SLACK_ID, "raffi127@gmail.com"]
 DEFAULT_TO = TEST_TO
 
 ORG_TAB = "Org Snapshot (by Campaign)"       # xlsx tab (same one Megan's report reads)
@@ -416,44 +415,29 @@ def shoot(sh, info: dict, out_dir: Path) -> List[Path]:
     return shots
 
 
-# --------------------------------------------------------------------- email
-def send_email(week: dt.date, shots: List[Path], to: List[str],
+# --------------------------------------------------------------------- slack
+def send_slack(week: dt.date, shots: List[Path], to: List[str],
                dry: bool) -> None:
-    from automations.scheduled_6_days_out.email_send import (
-        FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password)
-    subject = f"Residential Rep Count Tracker — WE {week.month}/{week.day}"
-    msg = EmailMessage()
-    msg["From"] = f"Lucy <{FROM_ADDR}>"
-    msg["To"] = ", ".join(to)
-    msg["Subject"] = subject
-    msg.set_content(
-        f"Residential Rep Count Tracker updated for WE {week:%m/%d/%Y}.\n"
-        f"Week View + Unique Headcount (last {LAST4} weeks) attached.\n"
-        f"Full tracker: {TRACKER_URL}\n")
-    cids = [make_msgid() for _ in shots]
-    imgs = "".join(
-        f'<div style="margin:18px 0"><img src="cid:{cid[1:-1]}" '
-        f'style="max-width:100%;border:1px solid #ddd"/></div>'
-        for cid in cids)
-    msg.add_alternative(
-        f'<div style="font-family:Arial,sans-serif;color:#0B1220">'
-        f'<h2 style="margin:0 0 4px">Residential Rep Count Tracker — '
-        f'WE {week.month}/{week.day}</h2>'
-        f'<p style="margin:0 0 12px"><a href="{TRACKER_URL}">Open the full '
-        f'tracker</a> (Week View · My Org · Unique Headcount · ICDs · '
-        f'Reps Per ICD)</p>{imgs}</div>', subtype="html")
-    for p, cid in zip(shots, cids):
-        msg.get_payload()[1].add_related(
-            p.read_bytes(), "image", "png", cid=cid)
+    """DM the screenshots from Lucy. First shot carries the header comment
+    with the tracker link; the rest follow bare so the DM reads as one drop."""
+    from automations.shared.slack_metrics_post import (
+        dm_user_with_file, dm_users_with_file)
+    header = (f"*Residential Rep Count Tracker — WE {week.month}/{week.day}*\n"
+              f"Week View + Unique Headcount (last {LAST4} weeks). "
+              f"Full tracker: {TRACKER_URL}")
     if dry:
-        print(f"  DRY-RUN: would email {to}: {subject} "
-              f"({', '.join(x.name for x in shots)})")
+        print(f"  DRY-RUN: would Slack-DM {to}: "
+              f"{', '.join(x.name for x in shots)}")
         return
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT,
-                          context=ssl.create_default_context(), timeout=60) as s:
-        s.login(FROM_ADDR, app_password())
-        s.send_message(msg)
-    print(f"  emailed {to}: {subject}")
+    for i, p in enumerate(shots):
+        comment = header if i == 0 else ""
+        if len(to) == 1:
+            r = dm_user_with_file(p, user=to[0], comment=comment)
+        else:
+            r = dm_users_with_file(p, users=to, comment=comment)
+        if not (r.get("ok") or r.get("sent")):
+            raise RuntimeError(f"Slack upload failed for {p.name}: {r}")
+    print(f"  Slack-DM'd {to}: {len(shots)} screenshots (WE {week})")
 
 
 # --------------------------------------------------------------------- probe
@@ -510,11 +494,13 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--probe", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--no-email", action="store_true")
+    ap.add_argument("--no-send", "--no-email", dest="no_send",
+                    action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--week-ending", help="YYYY-MM-DD (a Saturday)")
     ap.add_argument("--to", action="append",
-                    help="recipient override (repeatable)")
+                    help="Slack recipient override: user id, email or name "
+                         "(repeatable)")
     args = ap.parse_args(argv)
     if args.probe:
         return probe()
@@ -542,13 +528,13 @@ def main(argv=None) -> int:
             sh = _client_sheet()
             info = append_week(sh, week, leaders, totals, args.dry_run)
             point_week_view(sh, week, args.dry_run)
-            if args.no_email:
-                print("  --no-email: skipping screenshots + send")
+            if args.no_send:
+                print("  --no-send: skipping screenshots + Slack DM")
             else:
                 shots = ([] if args.dry_run else
                          shoot(sh, info, FLAG_DIR / f"shots-{week}"))
-                send_email(week, shots, args.to or DEFAULT_TO, args.dry_run)
-            if not args.dry_run and not args.no_email:
+                send_slack(week, shots, args.to or DEFAULT_TO, args.dry_run)
+            if not args.dry_run and not args.no_send:
                 FLAG_DIR.mkdir(parents=True, exist_ok=True)
                 flag.write_text(dt.datetime.now().isoformat())
         print("=== done ===")
