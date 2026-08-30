@@ -89,8 +89,10 @@ def _rows(ws) -> Dict[str, int]:
 
 
 def _restyle(sh, ws, n_weeks: int, n_rows: int) -> None:
-    """Deterministic full restyle: banding, filter, header, date formats,
-    amber wash on the newest week. Cheap enough to re-issue every run."""
+    """Deterministic full restyle, re-issued every run: banding, filter,
+    header, date formats, amber wash on the NEWEST (first) week column, inner
+    gridlines, hard structural lines, month boundaries, org divider, bold
+    labels. Weeks run newest-first (Carlos 2026-08-30)."""
     last_col = 2 + n_weeks                       # 1-based
     last_row = FIRST_ROW + n_rows - 1
     g = lambda sr, er, sc, ec: {"sheetId": ws.id, "startRowIndex": sr,
@@ -122,18 +124,33 @@ def _restyle(sh, ws, n_weeks: int, n_rows: int) -> None:
                 "textFormat": {"fontSize": 11}}},
             "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,"
                       "textFormat.fontSize)"}},
-        # clear stale amber before re-applying to the newest column
+        # clear stale amber/bold, then: amber on the FIRST week column (the
+        # newest), bold Org + ICD label columns
         {"repeatCell": {"range": g(FIRST_ROW - 1, last_row, 2, last_col),
             "cell": {}, "fields": "userEnteredFormat.backgroundColor,"
                                   "userEnteredFormat.textFormat.bold"}},
-        {"repeatCell": {"range": g(FIRST_ROW - 1, last_row, last_col - 1, last_col),
+        {"repeatCell": {"range": g(FIRST_ROW - 1, last_row, 2, 3),
             "cell": {"userEnteredFormat": {"backgroundColor": _run.HILITE,
                      "textFormat": {"bold": True}}},
             "fields": "userEnteredFormat(backgroundColor,textFormat.bold)"}},
+        {"repeatCell": {"range": g(FIRST_ROW - 1, last_row, 0, 2),
+            "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+            "fields": "userEnteredFormat.textFormat.bold"}},
         {"repeatCell": {"range": g(FIRST_ROW - 1, last_row, 2, last_col),
             "cell": {"userEnteredFormat": {"numberFormat": {
                 "type": "NUMBER", "pattern": "#,##0"}}},
             "fields": "userEnteredFormat.numberFormat"}},
+        # grid: light inner lines everywhere, hard frame + header underline +
+        # label|weeks divider
+        {"updateBorders": {"range": g(HDR_ROW - 1, last_row, 0, last_col),
+            "innerHorizontal": {"style": "SOLID", "color": _run.GRIDLINE},
+            "innerVertical": {"style": "SOLID", "color": _run.GRIDLINE},
+            "top": {"style": "SOLID_MEDIUM", "color": _run.LINE_HARD},
+            "bottom": {"style": "SOLID_MEDIUM", "color": _run.LINE_HARD}}},
+        {"updateBorders": {"range": g(HDR_ROW - 1, HDR_ROW, 0, last_col),
+            "bottom": {"style": "SOLID_MEDIUM", "color": _run.LINE_HARD}}},
+        {"updateBorders": {"range": g(HDR_ROW - 1, last_row, 2, 3),
+            "left": {"style": "SOLID_MEDIUM", "color": _run.LINE_HARD}}},
         {"addBanding": {"bandedRange": {"range": g(FIRST_ROW - 1, last_row, 0,
                                                    last_col),
             "rowProperties": {"firstBandColor": WHITE,
@@ -149,15 +166,33 @@ def _restyle(sh, ws, n_weeks: int, n_rows: int) -> None:
             "startIndex": FIRST_ROW - 1, "endIndex": last_row},
             "properties": {"pixelSize": 24}, "fields": "pixelSize"}},
     ]
+    # month boundaries between adjacent (descending) weeks
+    hdr = ws.get(f"C{HDR_ROW}:ZZ{HDR_ROW}",
+                 value_render_option="UNFORMATTED_VALUE")
+    serials = [v for v in (hdr[0] if hdr else [])
+               if isinstance(v, (int, float)) and v > 40000]
+    dates = [_run.EPOCH + dt.timedelta(days=int(v)) for v in serials]
+    for j in range(1, len(dates)):
+        if dates[j].month != dates[j - 1].month:
+            reqs.append({"updateBorders": {
+                "range": g(HDR_ROW - 1, last_row, 2 + j, 3 + j),
+                "left": {"style": "SOLID", "color": _run.LINE_HARD}}})
+    # divider between the two org blocks
+    orgs = [r[0] if r else "" for r in ws.get(f"A{FIRST_ROW}:A{last_row}")]
+    for i in range(1, len(orgs)):
+        if orgs[i] and orgs[i - 1] and orgs[i] != orgs[i - 1]:
+            reqs.append({"updateBorders": {
+                "range": g(FIRST_ROW - 1 + i, FIRST_ROW + i, 0, last_col),
+                "top": {"style": "SOLID_MEDIUM", "color": _run.LINE_HARD}}})
     sh.batch_update({"requests": reqs})
 
 
 def rebuild(sh, weeks_data: Dict[dt.date, Dict[str, Tuple[str, int]]],
             dry: bool) -> None:
-    """One-shot: wipe the tab's data area and write every week. Row order:
-    org (Raf first), then newest-week headcount high-to-low."""
-    weeks = sorted(weeks_data)
-    newest = weeks_data[weeks[-1]]
+    """One-shot: wipe the tab's data area and write every week NEWEST-FIRST.
+    Row order: org (Raf first), then newest-week headcount high-to-low."""
+    weeks = sorted(weeks_data, reverse=True)
+    newest = weeks_data[weeks[0]]
     all_icds: Dict[str, str] = {}
     for wk in weeks:
         for nm, (org, _hc) in weeks_data[wk].items():
@@ -188,6 +223,10 @@ def upsert(sh, week: dt.date, icds: Dict[str, Tuple[str, int]],
     if not icds:
         print("  Our ICDs: nothing parsed for the two orgs — skipped")
         return
+    if dry:
+        print(f"  Our ICDs DRY-RUN: would upsert WE {week} "
+              f"({len(icds)} ICDs)")
+        return
     ws = _ensure_tab(sh)
     cols = _run._week_cols_from(ws.get(f"C{HDR_ROW}:ZZ{HDR_ROW}",
                                        value_render_option="UNFORMATTED_VALUE"),
@@ -198,13 +237,17 @@ def upsert(sh, week: dt.date, icds: Dict[str, Tuple[str, int]],
         if cols and week < max(cols):
             raise RuntimeError(f"{TAB}: WE {week} older than newest column — "
                                f"use --backfill-icds instead")
-        col = (max(cols.values()) + 1) if cols else 3
+        # newest-first: INSERT at column C, inheriting from the old newest
+        # week to its right (_restyle re-derives every format anyway)
+        col = 3
+        sh.batch_update({"requests": [{"insertDimension": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": 2, "endIndex": 3},
+            "inheritFromBefore": False}}]})
     rows = _rows(ws)
     print(f"  Our ICDs: col {_run._colletter(col)} "
           f"({'update' if week in cols else 'append'}), "
           f"{len([n for n in icds if n not in rows])} new ICDs")
-    if dry:
-        return
     new = [n for n in icds if n not in rows]
     if new:
         start = (max(rows.values()) + 1) if rows else FIRST_ROW
@@ -218,4 +261,4 @@ def upsert(sh, week: dt.date, icds: Dict[str, Tuple[str, int]],
         updates.append({"range": f"{_run._colletter(col)}{r}",
                         "values": [["" if rec is None else rec[1]]]})
     ws.batch_update(updates, value_input_option="USER_ENTERED")
-    _restyle(sh, ws, col - 2, len(rows))
+    _restyle(sh, ws, len(cols) + (0 if week in cols else 1), len(rows))

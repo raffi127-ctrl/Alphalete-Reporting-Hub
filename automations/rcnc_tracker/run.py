@@ -275,6 +275,7 @@ def append_week(sh, week: dt.date, leaders: Dict[str, dict],
         ws = sh.worksheet(tab)
         cols = _week_cols(ws)
         existed = week in cols
+        prior_newest = max(cols) if cols else None
         if existed:
             col = cols[week]
         else:
@@ -283,12 +284,15 @@ def append_week(sh, week: dt.date, leaders: Dict[str, dict],
                     f"{tab}: WE {week} is older than the sheet's newest column "
                     f"({max(cols)}) — backfill by hand, the appender only adds "
                     f"the next week")
-            col = (max(cols.values()) + 1) if cols else 2
+            # Weeks run NEWEST-FIRST (Carlos 2026-08-30): the new week is
+            # INSERTED at column B, inheriting format from the old newest week
+            # to its right (amber included; _restyle cleans the old column).
+            col = 2
             if not dry:
                 sh.batch_update({"requests": [{"insertDimension": {
                     "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                              "startIndex": col - 1, "endIndex": col},
-                    "inheritFromBefore": True}}]})
+                              "startIndex": 1, "endIndex": 2},
+                    "inheritFromBefore": False}}]})
         rows, tot_rows, tot_first, grand = _name_rows(ws)
 
         new_leaders = [n for n in leaders if n not in rows]
@@ -322,7 +326,8 @@ def append_week(sh, week: dt.date, leaders: Dict[str, dict],
             updates.append({"range": f"{_colletter(col)}{r}", "values": [[v]]})
         if not dry:
             ws.batch_update(updates, value_input_option="USER_ENTERED")
-            _restyle(sh, ws, col, existed, tot_first, grand)
+            _restyle(sh, ws, col, existed, tot_first, grand,
+                     week=week, prior_newest=prior_newest)
         info[tab] = {"col": col, "tot_first": tot_first, "grand": grand,
                      "existed": existed, "new_leaders": new_leaders}
         print(f"  {tab}: col {_colletter(col)} "
@@ -331,40 +336,95 @@ def append_week(sh, week: dt.date, leaders: Dict[str, dict],
     return info
 
 
-def _restyle(sh, ws, col: int, existed: bool, tot_first: int, grand: int) -> None:
-    """Move the amber latest-week wash to `col` and re-issue the sort filter."""
+GRIDLINE = {"red": 0.804, "green": 0.839, "blue": 0.878}
+LINE_HARD = {"red": 0.392, "green": 0.455, "blue": 0.545}
+
+
+def _restyle(sh, ws, col: int, existed: bool, tot_first: int, grand: int,
+             *, week: dt.date, prior_newest: Optional[dt.date]) -> None:
+    """Move the amber newest-week wash to `col` (=B), fix the borders the
+    insert shifted, and re-issue the sort filter. Weeks run newest-first."""
     c0 = col - 1                                 # 0-based new column
+    last_col = 1 + len(_week_cols(ws))           # 0-based exclusive filter end
     reqs = []
     g = lambda sr, er, sc, ec: {"sheetId": ws.id, "startRowIndex": sr,
                                 "endRowIndex": er, "startColumnIndex": sc,
                                 "endColumnIndex": ec}
-    if not existed and col > 2:
-        # Prior latest column: leader rows back to banding, totals back to BAND.
+    if not existed and prior_newest:
+        # Old newest week now sits one column right: leader rows back to
+        # banding, totals back to BAND fill.
         reqs.append({"repeatCell": {"range": g(FIRST_DATA_ROW - 1, tot_first - 1,
-                                               c0 - 1, c0),
+                                               c0 + 1, c0 + 2),
                      "cell": {}, "fields": "userEnteredFormat.backgroundColor,"
                                            "userEnteredFormat.textFormat.bold"}})
-        reqs.append({"repeatCell": {"range": g(tot_first - 1, grand, c0 - 1, c0),
+        reqs.append({"repeatCell": {"range": g(tot_first - 1, grand, c0 + 1, c0 + 2),
                      "cell": {"userEnteredFormat": {"backgroundColor": BAND,
                               "textFormat": {"bold": True}}},
                      "fields": "userEnteredFormat(backgroundColor,textFormat.bold)"}})
+        # The insert shifted the hard label|weeks divider onto the old newest
+        # column — restore it: hard line left of B, month-aware line left of C.
+        reqs.append({"updateBorders": {"range": g(HDR_ROW - 1, grand, c0, c0 + 1),
+                     "left": {"style": "SOLID_MEDIUM", "color": LINE_HARD}}})
+        month_break = week.month != prior_newest.month
+        reqs.append({"updateBorders": {"range": g(HDR_ROW - 1, grand, c0 + 1, c0 + 2),
+                     "left": {"style": "SOLID",
+                              "color": LINE_HARD if month_break else GRIDLINE}}})
     reqs.append({"repeatCell": {"range": g(FIRST_DATA_ROW - 1, grand, c0, c0 + 1),
                  "cell": {"userEnteredFormat": {"backgroundColor": HILITE,
                           "textFormat": {"bold": True}}},
                  "fields": "userEnteredFormat(backgroundColor,textFormat.bold)"}})
     reqs.append({"setBasicFilter": {"filter": {"range":
-                 g(HDR_ROW - 1, tot_first - 1, 0, col)}}})
+                 g(HDR_ROW - 1, tot_first - 1, 0, last_col)}}})
     sh.batch_update({"requests": reqs})
 
 
+def _week_view_formula(last: str) -> str:
+    """The Week View spill. Weeks run newest-first, so 'prior week' is the
+    column to the RIGHT (c+1); the NA() guard blanks the delta when c+1 has no
+    week header (oldest week / slack). Elementwise arithmetic MUST stay inside
+    ARRAYFORMULA or LET collapses it to a scalar (ARRAY_ROW size error)."""
+    hc = f"'Unique Headcount'!$B$4:${last}$64"
+    hdr = f"'Unique Headcount'!$B$3:${last}$3"
+    return (f"=LET(c,MATCH($B$2,{hdr},0),"
+            f"nm,'Unique Headcount'!$A$4:$A$64,"
+            f"h,INDEX({hc},0,c),"
+            f"i,ARRAYFORMULA(IFERROR(VLOOKUP(nm,'ICDs'!$A$4:${last}$64,c+1,FALSE),\"\")),"
+            f"r,ARRAYFORMULA(IFERROR(VLOOKUP(nm,'Reps Per ICD'!$A$4:${last}$64,c+1,FALSE),\"\")),"
+            f"d,ARRAYFORMULA(IFERROR(h-INDEX({hc},0,c+1)"
+            f"+IF(ISNUMBER(INDEX({hdr},1,c+1)),0,NA()),\"\")),"
+            f"SORT(FILTER({{nm,h,i,r,d}},h<>\"\"),2,FALSE))")
+
+
+def _my_org_formula(last: str) -> str:
+    hdr = f"'Unique Headcount'!$B$3:${last}$3"
+    grid = f"'Unique Headcount'!$B$3:${last}$64"
+    names = "'Unique Headcount'!$A$3:$A$64"
+    return (f"=LET(wk,SORT(TRANSPOSE(FILTER({hdr},{hdr}<>\"\")),1,FALSE),"
+            f"ch,ARRAYFORMULA(N(HLOOKUP(wk,{grid},MATCH(\"Carlos Hidalgo\",{names},0),FALSE))),"
+            f"rf,ARRAYFORMULA(N(HLOOKUP(wk,{grid},MATCH(\"Rafael Hidalgo\",{names},0),FALSE))),"
+            f"sel,ARRAYFORMULA(IF($B$2,ch,0)+IF($B$3,rf,0)),"
+            f"{{wk,ch,rf,sel}})")
+
+
 def point_week_view(sh, week: dt.date, dry: bool) -> None:
+    """Set the picker to the new week and REGENERATE the formulas + picker
+    validation. The newest-first insert lands at column B — the very start of
+    every span these formulas use — so Sheets shifts their ranges to start at
+    C and the new week silently falls outside; deterministic regeneration
+    every run makes that impossible to drift."""
     if dry:
         return
     wv = sh.worksheet(WEEK_VIEW_TAB)
+    uh = sh.worksheet(TREND_TABS[0])
+    last = _colletter(max(_week_cols(uh).values()) + 4)      # + slack columns
     wv.update(values=[[f"{week.month}/{week.day}/{week.year}"]],
               range_name="B2", raw=False)
-    uh = sh.worksheet(TREND_TABS[0])
-    last = _colletter(max(_week_cols(uh).values()))
+    wv.update(values=[[_week_view_formula(last)]], range_name="B6", raw=False)
+    try:
+        mo = sh.worksheet("My Org")
+        mo.update(values=[[_my_org_formula(last)]], range_name="A6", raw=False)
+    except Exception as e:  # noqa: BLE001 — tab renamed/deleted isn't fatal
+        print(f"  My Org formula refresh skipped ({e})")
     sh.batch_update({"requests": [{"setDataValidation": {
         "range": {"sheetId": wv.id, "startRowIndex": 1, "endRowIndex": 2,
                   "startColumnIndex": 1, "endColumnIndex": 2},
@@ -395,28 +455,14 @@ def shoot(sh, info: dict, out_dir: Path) -> List[Path]:
     shots.append(_export_png(wv.id, f"A1:F{6 + n}", out_dir / "week_view.png",
                              token, spreadsheet_id=TRACKER_ID))
 
+    # Newest-first columns: the last 4 weeks are simply columns B..E.
     uh = sh.worksheet(TREND_TABS[0])
-    i = info[TREND_TABS[0]]
-    col, grand = i["col"], i["grand"]
-    first_shown = max(2, col - LAST4 + 1)
-    hide = {"requests": [{"updateDimensionProperties": {
-        "range": {"sheetId": uh.id, "dimension": "COLUMNS",
-                  "startIndex": 1, "endIndex": first_shown - 1},
-        "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}}]}
-    show = {"requests": [{"updateDimensionProperties": {
-        "range": {"sheetId": uh.id, "dimension": "COLUMNS",
-                  "startIndex": 1, "endIndex": first_shown - 1},
-        "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}}]}
-    if first_shown > 2:
-        sh.batch_update(hide)
-    try:
-        shots.append(_export_png(
-            uh.id, f"A{HDR_ROW}:{_colletter(col)}{grand}",
-            out_dir / "unique_headcount_last4.png", token,
-            spreadsheet_id=TRACKER_ID))
-    finally:
-        if first_shown > 2:
-            sh.batch_update(show)
+    grand = info[TREND_TABS[0]]["grand"]
+    n = min(LAST4, len(_week_cols(uh)))
+    shots.append(_export_png(
+        uh.id, f"A{HDR_ROW}:{_colletter(1 + n)}{grand}",
+        out_dir / "unique_headcount_last4.png", token,
+        spreadsheet_id=TRACKER_ID))
     return shots
 
 
