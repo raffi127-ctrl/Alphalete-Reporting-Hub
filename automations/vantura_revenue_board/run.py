@@ -244,6 +244,9 @@ def main(argv=None) -> int:
     ap.add_argument("--post", action="store_true",
                     help="post to the thread (default: render only)")
     ap.add_argument("--dm", metavar="USER_ID", help="post to a DM (test)")
+    ap.add_argument("--no-post", action="store_true",
+                    help="render only, even if --post was given (rerun always "
+                         "appends the registry's --post; this is the override)")
     a = ap.parse_args(argv)
 
     upto = (dt.date.fromisoformat(a.date) if a.date
@@ -284,6 +287,9 @@ def main(argv=None) -> int:
                  OUT_DIR / f"revenue_board_{upto}.png")
     print(f"rendered {png}")
 
+    if a.no_post:
+        print("--no-post — not posting")
+        return 0
     if a.post or a.dm:
         return post(png, monday, upto, dm_user=a.dm or "")
     print("dry-run — --post to reply in the thread")
