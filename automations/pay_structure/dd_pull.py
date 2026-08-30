@@ -622,6 +622,48 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
                 out_rows.append(["", wk, "BDIST {}".format(what), len(vals), "",
                                  "; ".join("{}x ${:g}".format(n, v)
                                            for v, n in c.most_common(10))])
+            # ATTACH probe (Carlos): of the orders that sold a given product
+            # line, how many also received its bonus row? Joined on Order ID.
+            def _orders_where(pred):
+                s = set()
+                for r in wrows:
+                    if pred(r):
+                        s.add(str(r.get(COL_ORDER, "") or "").strip())
+                return s
+            def _desc_or_prod(r):
+                return (str(r.get(COL_DESCRIPTION, "") or "").strip()
+                        or str(r.get(COL_PRODUCT, "") or "").strip())
+            pairs = [
+                ("Port Line (real, >=$90)",
+                 lambda r: _is_commission(r) and _desc_or_prod(r) == "Port Line"
+                           and (_num(r.get(COL_TOTAL)) or 0) >= 90,
+                 lambda r: (not _is_commission(r)) and _desc_or_prod(r) == "Port Line"),
+                ("Port Line (any line row)",
+                 lambda r: _is_commission(r) and _desc_or_prod(r) == "Port Line",
+                 lambda r: (not _is_commission(r)) and _desc_or_prod(r) == "Port Line"),
+                ("New Line",
+                 lambda r: _is_commission(r) and _desc_or_prod(r) == "New Line",
+                 lambda r: (not _is_commission(r)) and _desc_or_prod(r) == "New Line"),
+                ("Protect Advantage for 4",
+                 lambda r: _is_commission(r)
+                           and "Protect Advantage for 4" in _desc_or_prod(r),
+                 lambda r: (not _is_commission(r))
+                           and "Protect Advantage for 4" in _desc_or_prod(r)),
+                ("Protect Advantage for 1",
+                 lambda r: _is_commission(r)
+                           and "Protect Advantage for 1" in _desc_or_prod(r),
+                 lambda r: (not _is_commission(r))
+                           and "Protect Advantage for 1" in _desc_or_prod(r)),
+            ]
+            for label, sale_pred, bonus_pred in pairs:
+                sold = _orders_where(sale_pred)
+                bonused = _orders_where(bonus_pred)
+                both = sold & bonused
+                out_rows.append(["", wk, "ATTACH {}".format(label),
+                                 "sold:{} bonus:{} both:{}".format(
+                                     len(sold), len(bonused), len(both)),
+                                 "", "bonus-only orders: {}".format(
+                                     len(bonused - sold))])
             # per-product: distinct orders + per-order payout (sum of the
             # order's Commissions rows — the post-2026-08 row-split format)
             per: Dict[str, Dict[str, float]] = collections.defaultdict(
