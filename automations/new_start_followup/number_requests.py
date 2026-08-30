@@ -97,10 +97,56 @@ def find_request(replies: List[dict]) -> Optional[dict]:
     return None
 
 
+def _fill_from_contacts(gaps, live: bool = False) -> Dict[str, str]:
+    """Fill missing leader numbers from reception's Google Contacts.
+
+    Best-effort and non-fatal: the reception OAuth token isn't on every
+    machine, and a report must never die because a lookup it only tries as a
+    courtesy wasn't available. Returns {name: e164} for what it filled.
+    """
+    from automations.new_start_followup import contacts_google, roster as roster_mod
+
+    names = [g.leader.name for g in gaps]
+    try:
+        found = contacts_google.numbers_for(names)
+    except Exception as exc:  # noqa: BLE001
+        print("[numbers] couldn't check reception's Contacts ({}) — asking in "
+              "the thread instead.".format(str(exc)[:140]))
+        return {}
+    if not found:
+        return {}
+
+    phones = roster_mod.load_phones()
+    for g in gaps:
+        num = found.get(g.leader.name)
+        if not num:
+            continue
+        print("[numbers] {} found in reception's Contacts.".format(g.leader.name))
+        g.leader.phone = num
+        phones[g.leader.slack_id] = num
+    if live:
+        roster_mod.save_phones(phones)
+    else:
+        print("[numbers] [dry-run] overlay not written.")
+    return found
+
+
 def ensure_request(rec, client=None, live: bool = False) -> Optional[str]:
     """Post the numbers-needed request if gaps exist and none is up yet.
     Returns a human line describing what happened (None = nothing to do)."""
     gaps = gap_statuses(rec)
+    if gaps:
+        # LOOK BEFORE ASKING (Megan 2026-08-30: "shouldn't you just have looked
+        # at the reception email contacts once he was on?"). Kenneth Guzman was
+        # asked about in the thread while his number sat in reception's
+        # Contacts the whole time — he only became a leader that morning, when
+        # a hand-tag taught Lucy who he was, and nothing re-checked Contacts
+        # for a leader who arrived mid-week. Tagging two people to ask for
+        # something we already have is the kind of noise that teaches everyone
+        # to ignore the post.
+        filled = _fill_from_contacts(gaps, live=live)
+        if filled:
+            gaps = gap_statuses(rec)
     if not gaps:
         return None
     from automations.shared import slack_metrics_post as smp

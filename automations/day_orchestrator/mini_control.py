@@ -3346,6 +3346,16 @@ _CRED_FILES = {
     "gmail-token-alphaletereception":
         lambda: Path.home() / ".config" / "recruiting-report"
                 / "gmail-token-alphaletereception.json",
+    # READ-ONLY Google Contacts for alphaletereception@, the account that holds
+    # every leader's number. Needed on the machine that TEXTS, not just the one
+    # that authorizes: when New-Start learns a leader mid-week from a hand-tag,
+    # it looks their number up here before asking humans for it in Slack
+    # (2026-08-30 — Kenneth Guzman was asked about while his number sat in
+    # Contacts). Authorize on a machine with a browser
+    # (new_start_followup.contacts_google --auth), then push.
+    "contacts-token-alphaletereception":
+        lambda: Path.home() / ".config" / "recruiting-report"
+                / "contacts-token-alphaletereception.json",
 }
 
 # Of those, the file-keys that are a BAG OF INDEPENDENT CREDENTIALS: one flat

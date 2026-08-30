@@ -170,6 +170,36 @@ def match_leaders(contacts=None):
     return matches, lines
 
 
+def numbers_for(names) -> Dict[str, str]:
+    """-> {name: e164} for the names reception's Contacts knows, by name only.
+
+    match_leaders() can't answer this: it walks leaders.json, and the people
+    this is for are exactly the ones NOT in it — leaders Lucy learned from a
+    hand-tag in the thread (shared.slack_tag_learning). Same rules as
+    match_leaders: normalized-name match, and a name with two DIFFERENT numbers
+    is skipped rather than guessed at.
+    """
+    from automations.new_start_followup import roster as roster_mod
+    from automations.swag_welcome.roster import normalize_phone
+
+    by = {}  # type: Dict[str, set]
+    for display, phones in fetch_contacts():
+        key = roster_mod._norm(display)
+        if not key:
+            continue
+        for raw in phones:
+            e164, _ = normalize_phone(raw)
+            if e164:
+                by.setdefault(key, set()).add(e164)
+
+    out = {}  # type: Dict[str, str]
+    for name in names:
+        nums = by.get(roster_mod._norm(name), set())
+        if len(nums) == 1:
+            out[name] = list(nums)[0]
+    return out
+
+
 def write_overlay(matches: Dict[str, str], overwrite: bool = False) -> Path:
     """Merge matches into the machine-local overlay. Hand-entered numbers WIN
     unless --overwrite."""
