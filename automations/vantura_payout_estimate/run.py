@@ -159,6 +159,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--week", help="Monday YYYY-MM-DD (default: newest csv)")
     ap.add_argument("--csv", help="explicit csv path")
+    ap.add_argument("--headers", action="store_true",
+                    help="just print every column of the export + sample "
+                         "values (looking for a tier/volume column)")
     a = ap.parse_args(argv)
 
     if a.csv:
@@ -173,6 +176,17 @@ def main(argv=None) -> int:
     print(f"pricing {src.name}")
 
     from automations.att_order_log import clean
+
+    if a.headers:
+        rows = list(clean.load_rows(str(src), owner_prefix=None))
+        cols = list(rows[0].keys()) if rows else []
+        print(f"{len(cols)} columns:")
+        for c in cols:
+            vals = [str(r.get(c) or "").strip() for r in rows[:400]]
+            uniq = sorted({v for v in vals if v})[:4]
+            print(f"  {c!r}: {uniq}")
+        return 0
+
     reps_ok = board_b2b_reps()
 
     per_rep = collections.defaultdict(float)
