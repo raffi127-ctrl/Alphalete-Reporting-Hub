@@ -602,7 +602,27 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
             # most recent day it actually ran — so it is both fresher and, after
             # a move, correct. Take the hour (and the machine, stale for the same
             # reason: that agent moved to Lucy 1) and leave membership alone.
-            out[cid]["start_hour"] = start_hour
+            # ...but take the LATER of the two, not the daily one outright
+            # (Megan 2026-08-30: "this shouldn't be flagging if it isn't even
+            # scheduled to run yet"). The daily anchor is the newest day the
+            # report ran REGARDLESS OF WEEKDAY, which is only "correct after a
+            # move" for a report that runs at ONE time. For a report whose hour
+            # varies BY WEEKDAY it imports yesterday's clock into today:
+            # new_start_followup runs Sat 08:00 (roll call) and Sun 13:00
+            # (checklist), so on Sunday this read Saturday's 8 and posted
+            # "didn't run today on the mini" at 10:03 — nearly three hours
+            # before the job was due to start.
+            #
+            # max() still fixes the case this branch was written for. The
+            # enrollment_pending_check move was 04:00 -> 09:00: weekday path 4,
+            # daily path 9, max 9 — the same answer. It only differs when the
+            # weekday reading is LATER, which is exactly the varies-by-weekday
+            # shape above.
+            #
+            # Erring later is the cheap direction on purpose: a late alert
+            # delays a true report by an hour, an early one is pure noise in the
+            # channel this watcher exists to keep readable.
+            out[cid]["start_hour"] = max(start_hour, out[cid]["start_hour"])
             if rec["machine"]:
                 out[cid]["machine"] = rec["machine"]
             continue

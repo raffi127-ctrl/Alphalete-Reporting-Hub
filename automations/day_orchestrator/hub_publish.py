@@ -473,6 +473,39 @@ def incomplete_status(report_id: str) -> str:
     return "partial"
 
 
+def ran_ok_today(report_id: str, day: str = "") -> bool:
+    """Did THIS REPORT's card already record a successful run today, from any
+    machine? Read-only; False on any error.
+
+    WHY (Megan 2026-08-30). Several reports run BOTH in the 4am flow and from a
+    standalone launchd agent kept as a backstop. b2b_metrics is the live case:
+    its 7:45 agent posted the full 9-section thread at 7:56, while the flow copy
+    sat gated behind vantura_churn and never ran — so the noon backstop retired
+    the flow copy MISSED_NOT_READY and #claudecorrections got "didn't run today"
+    about a report that had been out for four hours. Two days running.
+
+    The orchestrator only ever knew about its OWN copy. The Hub Activity log is
+    the one place that sees both, because the standalone wrapper publishes there
+    too, so this answers "did the REPORT run" rather than "did MY run of it run".
+    """
+    try:
+        import datetime as _dt
+        card = hub_card_id(report_id)
+        if not card:
+            return False
+        day = day or _dt.date.today().isoformat()
+        for r in _ws().get_all_records():
+            if str(r.get("Report ID") or "").strip() != card:
+                continue
+            if not str(r.get("Started At") or "").startswith(day):
+                continue
+            if str(r.get("Status") or "").strip().lower() in ("success", "done"):
+                return True
+    except Exception:  # noqa: BLE001 — never let a lookup change a verdict
+        return False
+    return False
+
+
 def _find_open_row_for_card(ws, card: str, report_name: str = ""):
     """Row index (1-based) of the most-recent OPEN 'started' row for `card` — one a
     publish_running opened and never closed (Status col 8 == 'started', Ended At

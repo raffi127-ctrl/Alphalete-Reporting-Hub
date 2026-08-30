@@ -1650,6 +1650,18 @@ def _backstop_covering(backstop_at: dt.datetime, todays, target: dt.date):
     return latest
 
 
+def _ran_outside_the_flow(report_id: str) -> bool:
+    """Did this report already publish a successful run today from somewhere
+    other than this loop (its standalone launchd agent)? Best-effort: any
+    problem answers False, so a lookup failure can only keep today's behaviour,
+    never invent a DONE."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        return bool(hub_publish.ran_ok_today(report_id))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _apply_backstop(ds, stale_after):
     """At noon, turn non-terminal reports into terminal MISSED/BLOCKED."""
     warm, _, _ = readiness.session_status(stale_after)
@@ -1680,6 +1692,26 @@ def _apply_backstop(ds, stale_after):
             # honest terminal state: nothing was scheduled to happen, and nothing did.
             ds.set(rs.report_id, state.SKIPPED,
                    reason=f"nothing to do today ({rs.last_reason or 'n/a'})")
+        elif _ran_outside_the_flow(rs.report_id):
+            # IT DID RUN — just not through this loop (Megan 2026-08-30).
+            # Several reports exist BOTH in the 4am flow and as a standalone
+            # launchd agent kept as a backstop. b2b_metrics is the live case: its
+            # 7:45 agent posted the full thread at 7:56 while the flow copy sat
+            # gated behind vantura_churn, so this branch retired the flow copy
+            # MISSED_NOT_READY and #claudecorrections announced "didn't run
+            # today" about a report that had been out for four hours — two days
+            # running, and it would recur every time vantura is late.
+            #
+            # Same reasoning as the `nothing_to_do` branch above: a red card and
+            # a fix-block for a report that did exactly what it should is the
+            # noise that teaches people to skim this channel. The backstop only
+            # ever saw its OWN copy; the Hub Activity log sees both, because the
+            # standalone wrapper publishes there too.
+            ds.set(rs.report_id, state.DONE,
+                   reason="already ran today outside the 4am flow (its "
+                          "standalone agent published a successful run) — the "
+                          "flow copy never got its turn: "
+                          f"{rs.last_reason or 'n/a'}")
         else:
             ds.set(rs.report_id, state.MISSED_NOT_READY,
                    reason=f"data never ready by noon (last: {rs.last_reason or 'n/a'})")
