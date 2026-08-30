@@ -62,12 +62,24 @@ COL_REPS_KNOCKING = f"Reps Knocking ({DAYS} Days {MIN_KNOCKS_PER_DAY}+)"
 # average reps knocking" — Raf). Two different denominators must not wear one
 # name on two boards in the same email.
 COL_DOORS_PER_REP = "Avg Doors / Rep Knocking"
+# Raf 2026-08-30, looking at the rep rows: "each rep should also have an amount
+# of doors that they knocked per day. Right now it seems blank." The two
+# columns above are summary-only by design — a head count on one rep is always
+# 1 — so on a rep row they read as missing data. This is the per-rep answer,
+# and it is filled on EVERY row: a rep's own doors per day is exactly what a
+# reader compares down the column.
+#
+# Divisor is 6, the same Mon–Sat the board's other "/ Day" column uses, NOT the
+# days that rep actually knocked. Consistency inside one board wins: a rep who
+# worked two days reads low here for the same reason they read low in Avg Talk
+# To's / Day, and the two columns can be read against each other.
+COL_DOORS_PER_DAY = "Avg Doors / Day"
 
 # Raf's mockup 2026-08-23: knock averages are Mon–Fri (Saturday's schedule
 # skews them), the gap columns SAY Mon–Sat, and Saturday's own knock times
 # get their own two columns after the gaps.
 HEADERS = [
-    "Rep", COL_REPS_KNOCKING, COL_DOORS_PER_REP,
+    "Rep", COL_REPS_KNOCKING, COL_DOORS_PER_REP, COL_DOORS_PER_DAY,
     "Total Talk To's", "Avg Talk To's / Day", "Total Apps",
     "Avg Talk To's per App", "Mon\u2013Fri Avg First Knock",
     "Mon\u2013Fri Avg Last Knock", "Avg Hrs Knocking / Day",
@@ -189,6 +201,15 @@ def is_knocking(rec: dict) -> bool:
     if not isinstance(daily, (list, tuple)) or len(daily) < DAYS:
         return False
     return all(int(d or 0) >= MIN_KNOCKS_PER_DAY for d in daily[:DAYS])
+
+
+def _doors_per_day(rec: dict) -> str:
+    """One rep's own doors per day — their Mon–Sat total over 6. Blank when the
+    pull carried no door counts for them (a pre-2026-08-30 cached row, or a
+    gaps-only office), never a 0 they didn't earn."""
+    if not isinstance(rec.get(K_DAILY_KNOCKS), (list, tuple)):
+        return ""
+    return _num(int(rec.get(K_TOTAL_KNOCKS) or 0) / DAYS)
 
 
 def has_daily_knocks(ov_rows: list[dict]) -> bool:
@@ -322,6 +343,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         rows.append([
             _display_name(rep),
             "", "",                      # summary-only columns (see HEADERS)
+            _doors_per_day(r),
             str(talk),
             _num(avg_day),
             "" if apps is None else str(n_apps or 0),
@@ -343,7 +365,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         for rep, n_apps in sorted(apps.items()):
             if _norm_name(rep) in consumed or not n_apps:
                 continue
-            rows.append([_display_name(rep), "", "", "", "", str(n_apps),
+            rows.append([_display_name(rep), "", "", "", "", "", str(n_apps),
                          "", "", "", "", "", "", "", ""] + _dispo_cells(None))
 
     rows.append(totals_row(ov_rows, apps, dispo_cols))
@@ -371,9 +393,15 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
     n_reps = len(ov_rows)
     dispo_tots = [
         sum(int(r.get(c) or 0) for r in ov_rows) for c in dispo_cols]
+    _door_reps = [r for r in ov_rows
+                  if isinstance(r.get(K_DAILY_KNOCKS), (list, tuple))]
+    _tot_doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in _door_reps)
     return ([
         label,
     ] + knocking_cells(ov_rows) + [
+        # Per rep, not office-level — the same rule every Avg column on this
+        # row follows (Megan 2026-08-22: a sum in an "Avg / Day" cell misreads).
+        (_num(_tot_doors / DAYS / len(_door_reps)) if _door_reps else ""),
         str(tot_talk),
         (_num(tot_talk / DAYS / n_reps) if n_reps else ""),
         "" if apps is None else str(tot_apps),
