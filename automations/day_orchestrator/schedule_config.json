@@ -7473,6 +7473,53 @@
       "verify": null,
       "machine": "Lucy 2"
     },
+    "vantura_revenue_board": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Vantura B2B Revenue Board -> the day's 'Vantura Production' thread in #alphalete-gp-sales (Carlos 2026-08-30: sales-board-style grid, Mon-Sun revenue per rep per day + Week Total incl. the Tiered Volume bonus at the rep's current tier). on_scheduler:false; the real schedule is the STANDALONE com.alphalete.vantura-revenue-board LaunchAgent on LUCY 2 at 05:20/05:50/06:30 (after sales-boards' 05:10 creates the thread). Pulls its own full 47-col ORDERLOG export for Monday-of-yesterday -> yesterday (captainship_boards.pull_orderlog, shared CDP lock), prices it with vantura_payout_estimate.price (ABP/Next Up/Premium/Extra add-ons, baseline churn), HOLDS (75) while the export lacks the target day or the thread is missing, dedups on 'Revenue Board <tag>'. MCOE/road trip not included. Present so `lucy rerun vantura_revenue_board` works (pass --dm <uid> to preview).",
+      "display_name": "Vantura Revenue Board (5:20am)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.vantura_revenue_board.run"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 25,
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
+    },
+    "install_vantura_revenue_board_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_revenue_board_agent` can install the STANDALONE com.alphalete.vantura-revenue-board LaunchAgent on LUCY 2 (05:20/05:50/06:30, deploy/vantura_revenue_board.sh, --post). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
+      "display_name": "Install Vantura Revenue Board agent (5:20am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "vantura-revenue-board"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
+    },
     "vantura_payout_estimate": {
       "on_scheduler": false,
       "_off_scheduler_note": "MANUAL-ONLY (weekdays []). `lucy rerun vantura_payout_estimate` prices the newest output/captainship_boards/orderlog_*.csv (the full 47-col export captainship_boards pulls every morning) on the office comp sheet eff 2026-08-24 — per rep / per product / office total, WITH the add-ons the flat estimate missed (Auto Bill Pay, Next Up, Premium/Extra) and the baseline churn adjustment (Carlos 2026-08-30). Scope = the Vantura board's B2B roster. Writes the result to the Mini Control workbook tab 'Pay Estimate' (never the live board). Pure local csv + Sheets API; no Tableau pull of its own.",
