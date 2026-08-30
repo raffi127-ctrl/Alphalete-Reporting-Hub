@@ -5707,7 +5707,11 @@ AUTOMATED_REPORTS = [
         "id": "applicant-push",
         # ~10 min, not 5, since 2026-08-26: the one q5min job now alternates
         # Carlos's office and Atef's, one office per pass.
-        "name": "Applicant Push (Q 10 Min)",
+        "name": "Applicant Push — Carlos (Q 10 Min)",  # office 11580; named for
+        # the same reason Atef's card is — two identical flows on the same
+        # machine and schedule, and an unnamed one reads as "the" push
+        # rather than one of two (Megan 2026-08-30). Card ID is unchanged:
+        # it keys the Ops pill CSS and the Hub Activity rows.
         "creator": "Carlos",
         "emoji": "📲",
         "color": "#F59E0B",
