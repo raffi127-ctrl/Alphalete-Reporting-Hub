@@ -57,11 +57,35 @@ K_SAT_LAST = "Sat Last Knock"
 # re-render, never a re-pull.
 K_DAILY_KNOCKS = "Daily Knocks"
 K_TOTAL_KNOCKS = "Week Total Knocks"   # their sum — the doors-per-rep numerator
+# Leads knocked, same treatment as the doors above: another of the table's own
+# aggregates, carried but not drawn until Raf asked for it back 2026-08-30
+# ("at the front can we also add Total leads knocked").
+K_TOTAL_LEADS = "Week Total Leads Knocked"
+# Time-Tracker gap minutes PER DAY, Mon..Sat in order (0 for a day with no
+# record). The week's total alone cannot answer "how much of Saturday was gap"
+# or "what is the Mon–Fri average", and 2026-08-30 the board needed both:
+# Avg Hrs Knocking / Day was subtracting a Mon–SAT average gap from a Mon–FRI
+# span, and Raf asked for Saturday's own gap and knocking hours as columns.
+K_DAILY_GAP_MIN = "Daily Gap Minutes"
 # The scraped column those come from. It is one of the table's own aggregates
 # (_AGGREGATES), so it stays OFF the board and out of the talk-to sum exactly
 # as before — we only carry the number.
 _DAY_KNOCKS = "_day_knocks"
+_DAY_LEADS = "_day_leads"
 COL_TOTAL_KNOCKS = "Total Knocks"
+COL_TOTAL_LEADS = "Total Leads Knocked"
+
+
+def _daily_list(entries, monday, n_days: int = 6):
+    """[(day, minutes), …] → a Mon..Sat list, 0 for a day with no record.
+    Positional, never packed, so a rep who missed Wednesday reads as a 0 there
+    rather than as a shorter week."""
+    out = [0] * n_days
+    for d, m in entries:
+        i = (d - monday).days
+        if 0 <= i < n_days:
+            out[i] = int(m or 0)
+    return out
 
 
 def _avg_weekday(entries):
@@ -179,6 +203,7 @@ def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
             + ". Live headers were: " + ", ".join(sorted(idx)) + ".")
 
     _knocks_i = idx.get(_norm(COL_TOTAL_KNOCKS))
+    _leads_i = idx.get(_norm(COL_TOTAL_LEADS))
     dispo = [(h, i) for i, h in enumerate(raws)
              if h and _norm(h) not in _IDENTITY
              and _norm(h) not in _AGGREGATES
@@ -217,6 +242,8 @@ def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
             # columns blank rather than a count it couldn't take.
             if _knocks_i is not None and _knocks_i < len(cells):
                 rec[_DAY_KNOCKS] = _to_int(cells[_knocks_i])
+            if _leads_i is not None and _leads_i < len(cells):
+                rec[_DAY_LEADS] = _to_int(cells[_leads_i])
             rid = str(rec[COL_ID]).strip()
             if rid and rid in seen_ids:
                 continue
@@ -250,8 +277,11 @@ def _week_tt(page, rqst: str, monday: dt.date, saturday: dt.date,
             if not rid:
                 continue
             a = out.setdefault(rid, {"rep": rec.get(knocks.COL_REP, ""),
-                                     "first": [], "last": [], "gap_min": 0})
-            a["gap_min"] += int(rec.get(knocks.COL_TOTAL_GAPS) or 0)
+                                     "first": [], "last": [], "gap_min": 0,
+                                     "gaps": []})
+            _g = int(rec.get(knocks.COL_TOTAL_GAPS) or 0)
+            a["gap_min"] += _g
+            a["gaps"].append((day, _g))
             fm = _knock_min(str(rec.get(knocks.COL_FIRST_KNOCK, "")))
             lm = _knock_min(str(rec.get(knocks.COL_LAST_KNOCK, "")))
             if fm is not None:
@@ -353,6 +383,9 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                                          COL_REP: rec.get(COL_REP, "")})
                 for c in day_cols:
                     a[c] = int(a.get(c) or 0) + int(rec.get(c) or 0)
+                if _DAY_LEADS in rec:
+                    a[K_TOTAL_LEADS] = (int(a.get(K_TOTAL_LEADS) or 0)
+                                        + int(rec.get(_DAY_LEADS) or 0))
                 if _DAY_KNOCKS in rec:
                     # Slot the day's doors into its own Mon..Sat position, so
                     # a rep who missed Wednesday reads as a 0 there and not as
@@ -406,6 +439,8 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                 K_SAT_FIRST: _sat_time(a["first"]),
                 K_SAT_LAST: _sat_time(a["last"]),
                 K_GAP_MIN: a["gap_min"],
+                K_DAILY_GAP_MIN: _daily_list(a.get("gaps") or [], monday,
+                                             (saturday - monday).days + 1),
             })
         if verbose:
             print(f"[wkd] gaps-only office: {len(rows)} rep(s) from the "
@@ -417,6 +452,8 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
         rid = str(rec.get(COL_ID, "")).strip()
         if rid in tt:
             rec[K_GAP_MIN] = tt[rid]["gap_min"]
+            rec[K_DAILY_GAP_MIN] = _daily_list(tt[rid].get("gaps") or [],
+                                               monday, n_days)
             matched += 1
     if verbose:
         print(f"[wkd] merged weekly gaps onto {matched}/{len(rows)} rep(s)",

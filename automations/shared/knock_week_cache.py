@@ -206,7 +206,11 @@ def _jsonable(v: Any) -> Any:
 # 3 on the same day: _jsonable was stringifying the list it had just started
 # storing, so every schema-2 entry holds a useless "[35, 53, …]" string and has
 # to be thrown away, not read.
-SCHEMA = 3
+# 4 (2026-08-30, later the same day): per-day GAP minutes and Total Leads
+# Knocked joined the pull for Raf's Saturday columns and the Mon–Fri knocking
+# fix. A schema-3 row has neither, so it must re-pull rather than draw them
+# blank.
+SCHEMA = 4
 
 
 def get(office: str, saturday, *,

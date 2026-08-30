@@ -35,10 +35,12 @@ from automations.total_knocks.pull import (
     COL_REP,
 )
 from automations.weekly_knock_dispositions.pull import (
-    K_DAILY_KNOCKS, K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST, K_TALK_TO,
-    K_TOTAL_KNOCKS)
+    K_DAILY_GAP_MIN, K_DAILY_KNOCKS, K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST,
+    K_TALK_TO, K_TOTAL_KNOCKS, K_TOTAL_LEADS)
 
 DAYS = 6                     # Mon–Sat
+WEEKDAYS = 5                 # Mon–Fri, the span the knock-time columns average
+SATURDAY = 5                 # its index in a Mon..Sat daily list
 
 # A rep counts as KNOCKING for the week when they cleared the daily doors bar
 # on every one of the six days (Raf 2026-08-30: "this should only count reps
@@ -107,12 +109,29 @@ COL_DOORS_PER_DAY = "Avg Doors / Day"
 # skews them), the gap columns SAY Mon–Sat, and Saturday's own knock times
 # get their own two columns after the gaps.
 HEADERS = [
-    COL_NUM, "Rep", COL_DOORS_PER_DAY,
-    "Total Talk To's", "Avg Talk To's / Day", "Total Apps",
+    COL_NUM, "Rep",
+    # "At the front can we also add Total leads knocked … can we also Total
+    # knocks" (Raf 2026-08-30). These are two of the table's own aggregates,
+    # the ones he had taken OFF on 2026-08-22 ("remove what's in red"); they
+    # are back by name, and only these two.
+    "Total Leads Knocked", "Total Knocks",
+    COL_DOORS_PER_DAY,
+    # "% Talk To's per Knocks" sits right after the Total Talk To it divides,
+    # the same place and the same spelling the DAILY board gives it — the two
+    # land in one email in front of one reader.
+    "Total Talk To's", "% Talk To's per Knocks",
+    "Avg Talk To's / Day", "Total Apps",
     "Avg Talk To's per App", "Mon\u2013Fri Avg First Knock",
-    "Mon\u2013Fri Avg Last Knock", "Avg Hrs Knocking / Day",
+    "Mon\u2013Fri Avg Last Knock",
+    # LABELLED Mon–Fri, and now actually Mon–Fri. It was a Mon–Fri span minus
+    # a Mon–SAT average gap — Raf asked "is that only counting Monday-Friday?"
+    # and the honest answer was "nearly". Both halves are Mon–Fri now.
+    "Mon\u2013Fri Avg Hrs Knocking / Day",
     "Mon\u2013Sat Avg Gap / Day", "Mon\u2013Sat Total Gap Hours",
-    "Sat First Knock", "Sat Last Knock",
+    # Saturday's own block, in the order he asked for it: knocking hours in
+    # front of the gap hours, and both in front of Sat Last Knock.
+    "Sat First Knock", "Sat Avg Hrs Knocking", "Sat Avg Gap Hours",
+    "Sat Last Knock",
 ]
 
 # After the summary columns comes the full disposition breakdown (Raf
@@ -131,10 +150,11 @@ DISPO_DISPLAY = {
 # K_TALK_TO) draws just what TeleMapper knows about it.
 GAPS_ONLY_HEADERS = [COL_NUM, "Rep", "Mon\u2013Fri Avg First Knock",
                      "Mon\u2013Fri Avg Last Knock",
-                     "Avg Hrs Knocking / Day",
+                     "Mon\u2013Fri Avg Hrs Knocking / Day",
                      "Mon\u2013Sat Avg Gap / Day",
                      "Mon\u2013Sat Total Gap Hours",
-                     "Sat First Knock", "Sat Last Knock"]
+                     "Sat First Knock", "Sat Avg Hrs Knocking",
+                     "Sat Avg Gap Hours", "Sat Last Knock"]
 
 
 def is_gaps_only(ov_rows: list[dict]) -> bool:
@@ -145,7 +165,17 @@ def headers_for(dispo_cols: list[str] | None,
                 gaps_only: bool = False) -> list[str]:
     if gaps_only:
         return list(GAPS_ONLY_HEADERS)
-    return list(HEADERS) + [DISPO_DISPLAY.get(c, c) for c in (dispo_cols or [])]
+    # The per-disposition breakdown (No answer → Credit Check) is GONE from
+    # this board (Raf 2026-08-30: "on the weekly report, let's go ahead and
+    # remove every column from 'no answer - Credit check' … it's a lot of
+    # un-needed data for the weekly. The daily one can still keep it"). The
+    # DAILY board is untouched.
+    #
+    # `dispo_cols` is still accepted and still travels through the pull and the
+    # week cache, because K_TALK_TO is summed FROM those columns — dropping
+    # them from the scrape would change the talk-to number. It is only the
+    # drawing that stops.
+    return list(HEADERS)
 
 THEME_PLUM = {               # distinct from the amber daily knocks board
     "title_bg": (86, 44, 122),
@@ -240,6 +270,37 @@ def is_knocking(rec: dict) -> bool:
     if not isinstance(daily, (list, tuple)) or not daily:
         return False
     return (int(rec.get(K_TOTAL_KNOCKS) or 0) / DAYS) >= MIN_KNOCKS_PER_DAY
+
+
+def _gaps(rec: dict):
+    """A rep's Mon..Sat gap minutes, or None when the pull didn't carry them
+    (any row cached before 2026-08-30). None is what makes the columns that
+    need per-day gaps draw BLANK rather than wrong."""
+    g = rec.get(K_DAILY_GAP_MIN)
+    return list(g) if isinstance(g, (list, tuple)) and len(g) >= DAYS else None
+
+
+def _monfri_gap_per_day(rec: dict) -> float | None:
+    """Mon–Fri gap minutes per day. Divides by 5, not 6 — the whole point of
+    the rename is that this column stops mixing the two spans."""
+    g = _gaps(rec)
+    return (sum(int(x or 0) for x in g[:WEEKDAYS]) / WEEKDAYS) if g else None
+
+
+def _sat_gap(rec: dict) -> int | None:
+    g = _gaps(rec)
+    return int(g[SATURDAY] or 0) if g else None
+
+
+def _pct(part, whole) -> str:
+    """'19.1%' — blank when there is nothing to divide, so a rep who knocked
+    no doors shows an empty cell, not a 0.0% they didn't earn. Same rule and
+    same spelling as the daily board's column of this name."""
+    try:
+        part, whole = int(part or 0), int(whole or 0)
+    except (TypeError, ValueError):
+        return ""
+    return f"{part / whole * 100:.1f}%" if whole else ""
 
 
 def _doors_per_day(rec: dict) -> str:
@@ -345,17 +406,23 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         for r in sorted(ov_rows,
                         key=lambda r: str(r.get(COL_REP, "")).lower()):
             gap_min = r.get(K_GAP_MIN)
+            _mf = _monfri_gap_per_day(r)
+            _sg = _sat_gap(r)
             rows.append([
                 "",                      # numbered by render(), see COL_NUM
                 _display_name(str(r.get(COL_REP, "")).strip()),
                 str(r.get(COL_FIRST_KNOCK, "")).strip(),
                 str(r.get(COL_LAST_KNOCK, "")).strip(),
-                _knocking_hm(str(r.get(COL_FIRST_KNOCK, "")),
-                             str(r.get(COL_LAST_KNOCK, "")),
-                             (gap_min / DAYS) if gap_min is not None else 0),
+                (_knocking_hm(str(r.get(COL_FIRST_KNOCK, "")),
+                              str(r.get(COL_LAST_KNOCK, "")), _mf)
+                 if _mf is not None else ""),
                 (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
                 (_hm(int(gap_min)) if gap_min is not None else ""),
                 str(r.get(K_SAT_FIRST, "")).strip(),
+                (_knocking_hm(str(r.get(K_SAT_FIRST, "")),
+                              str(r.get(K_SAT_LAST, "")), _sg)
+                 if _sg is not None else ""),
+                ("" if _sg is None else _hm(int(_sg))),
                 str(r.get(K_SAT_LAST, "")).strip(),
             ])
         gap_reps = [int(r.get(K_GAP_MIN) or 0) for r in ov_rows
@@ -364,14 +431,21 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         _gf, _gl = (_avg_knock(ov_rows, COL_FIRST_KNOCK),
                     _avg_knock(ov_rows, COL_LAST_KNOCK))
         _gg = (tot_gaps / DAYS / len(gap_reps)) if gap_reps else 0
+        _mfg = [g for g in (_monfri_gap_per_day(r) for r in ov_rows)
+                if g is not None]
+        _stg = [g for g in (_sat_gap(r) for r in ov_rows) if g is not None]
         rows.insert(0, [
             str(len(ov_rows)),
             TOTALS_LABEL,
             _gf, _gl,
-            _knocking_hm(_gf, _gl, _gg),
+            (_knocking_hm(_gf, _gl, sum(_mfg) / len(_mfg)) if _mfg else ""),
             (_hm(round(_gg)) if gap_reps else ""),
             _hm(tot_gaps),
             _avg_knock(ov_rows, K_SAT_FIRST),
+            (_knocking_hm(_avg_knock(ov_rows, K_SAT_FIRST),
+                          _avg_knock(ov_rows, K_SAT_LAST),
+                          sum(_stg) / len(_stg)) if _stg else ""),
+            (_hm(round(sum(_stg) / len(_stg))) if _stg else ""),
             _avg_knock(ov_rows, K_SAT_LAST),
         ])
         return rows
@@ -380,12 +454,6 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
                                     apps)
                          if apps else ({}, set()))
 
-    def _dispo_cells(rec: dict | None) -> list[str]:
-        if rec is None:
-            return [""] * len(dispo_cols)
-        return ["" if not int(rec.get(c) or 0) else str(int(rec.get(c) or 0))
-                for c in dispo_cols]
-
     rows: list[list[str]] = []
     for r in sorted(ov_rows, key=lambda r: str(r.get(COL_REP, "")).lower()):
         rep = str(r.get(COL_REP, "")).strip()
@@ -393,24 +461,37 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         avg_day = talk / DAYS
         n_apps = matched.get(rep)
         gap_min = r.get(K_GAP_MIN)
+        knocks = r.get(K_TOTAL_KNOCKS)
+        leads = r.get(K_TOTAL_LEADS)
+        mf_gap = _monfri_gap_per_day(r)
+        s_gap = _sat_gap(r)
         rows.append([
             "",                          # numbered by render(), see COL_NUM
             _display_name(rep),
+            ("" if leads is None else str(int(leads))),
+            ("" if knocks is None else str(int(knocks))),
             _doors_per_day(r),
             str(talk),
+            _pct(talk, knocks),
             _num(avg_day),
             "" if apps is None else str(n_apps or 0),
             (_num(talk / n_apps) if n_apps else ""),
             str(r.get(COL_FIRST_KNOCK, "")).strip(),
             str(r.get(COL_LAST_KNOCK, "")).strip(),
-            _knocking_hm(str(r.get(COL_FIRST_KNOCK, "")),
-                         str(r.get(COL_LAST_KNOCK, "")),
-                         (gap_min / DAYS) if gap_min is not None else 0),
+            # Mon–Fri span MINUS the Mon–Fri gap. Blank, not wrong, on a row
+            # with no per-day gaps (see _gaps).
+            (_knocking_hm(str(r.get(COL_FIRST_KNOCK, "")),
+                          str(r.get(COL_LAST_KNOCK, "")), mf_gap)
+             if mf_gap is not None else ""),
             (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
             (_hm(int(gap_min)) if gap_min is not None else ""),
             str(r.get(K_SAT_FIRST, "")).strip(),
+            (_knocking_hm(str(r.get(K_SAT_FIRST, "")),
+                          str(r.get(K_SAT_LAST, "")), s_gap)
+             if s_gap is not None else ""),
+            ("" if s_gap is None else _hm(int(s_gap))),
             str(r.get(K_SAT_LAST, "")).strip(),
-        ] + _dispo_cells(r))
+        ])
 
     # Sales with no knock row — visible, not silently dropped. `consumed`
     # keeps a PSS name a prefix-match already claimed from re-appearing.
@@ -418,8 +499,8 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         for rep, n_apps in sorted(apps.items()):
             if _norm_name(rep) in consumed or not n_apps:
                 continue
-            rows.append(["", _display_name(rep), "", "", "", str(n_apps),
-                         "", "", "", "", "", "", "", ""] + _dispo_cells(None))
+            rows.append(["", _display_name(rep)] + [""] * 6 + [str(n_apps)]
+                        + [""] * 10)
 
     # The summary block leads the board, and inside it the GUEST office comes
     # first: Chan's totals, then this office's, then the reps (Megan
@@ -449,11 +530,14 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
                 if r.get(K_GAP_MIN) is not None]
     tot_gaps = sum(gap_reps)
     n_reps = len(ov_rows)
-    dispo_tots = [
-        sum(int(r.get(c) or 0) for r in ov_rows) for c in dispo_cols]
     _door_reps = [r for r in ov_rows
                   if isinstance(r.get(K_DAILY_KNOCKS), (list, tuple))]
     _tot_doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in _door_reps)
+    _lead_reps = [r for r in ov_rows if r.get(K_TOTAL_LEADS) is not None]
+    _tot_leads = sum(int(r.get(K_TOTAL_LEADS) or 0) for r in _lead_reps)
+    _mf_gaps = [g for g in (_monfri_gap_per_day(r) for r in ov_rows)
+                if g is not None]
+    _sat_gaps = [g for g in (_sat_gap(r) for r in ov_rows) if g is not None]
     return ([
         # "K of N" — reps who COUNT AS KNOCKING, out of the reps LISTED above
         # (Raf 2026-08-30: "have the total at the top and bottom headers").
@@ -469,23 +553,32 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
         _knocking_label(ov_rows, apps),
         label,
     ] + [
+        ("" if not _lead_reps else str(_tot_leads)),
+        ("" if not _door_reps else str(_tot_doors)),
         # Per rep, not office-level — the same rule every Avg column on this
         # row follows (Megan 2026-08-22: a sum in an "Avg / Day" cell misreads).
         (_num(_tot_doors / DAYS / len(_door_reps)) if _door_reps else ""),
         str(tot_talk),
+        (_pct(tot_talk, _tot_doors) if _door_reps else ""),
         (_num(tot_talk / DAYS / n_reps) if n_reps else ""),
         "" if apps is None else str(tot_apps),
         (_num(tot_talk / tot_apps) if tot_apps else ""),
         _avg_knock(ov_rows, COL_FIRST_KNOCK),
         _avg_knock(ov_rows, COL_LAST_KNOCK),
-        _knocking_hm(_avg_knock(ov_rows, COL_FIRST_KNOCK),
-                     _avg_knock(ov_rows, COL_LAST_KNOCK),
-                     (tot_gaps / DAYS / len(gap_reps)) if gap_reps else 0),
+        # Mon–Fri span minus the Mon–FRI gap, averaged over the reps who have
+        # per-day gaps (not every rep has a Time Tracker record).
+        (_knocking_hm(_avg_knock(ov_rows, COL_FIRST_KNOCK),
+                      _avg_knock(ov_rows, COL_LAST_KNOCK),
+                      sum(_mf_gaps) / len(_mf_gaps)) if _mf_gaps else ""),
         (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
         _hm(tot_gaps),
         _avg_knock(ov_rows, K_SAT_FIRST),
+        (_knocking_hm(_avg_knock(ov_rows, K_SAT_FIRST),
+                      _avg_knock(ov_rows, K_SAT_LAST),
+                      sum(_sat_gaps) / len(_sat_gaps)) if _sat_gaps else ""),
+        (_hm(round(sum(_sat_gaps) / len(_sat_gaps))) if _sat_gaps else ""),
         _avg_knock(ov_rows, K_SAT_LAST),
-    ] + ["" if not t else str(t) for t in dispo_tots])
+    ])
 
 
 def render(office: str, monday: dt.date, saturday: dt.date,
