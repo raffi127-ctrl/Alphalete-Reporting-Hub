@@ -211,6 +211,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
+    from automations.captainship_drafts import email_build as EB
     from automations.captainship_drafts import weekly_pdf as WP
     from automations.scheduled_6_days_out.email_send import (
         FROM_ADDR, app_password)
@@ -229,7 +230,7 @@ def main(argv=None) -> int:
     span = WP._span(sat)
     sent_n = skipped = 0
     for c in targets:
-        subject = config.subject_for(c, today)
+        subject = EB.subject_for(c, today)
         # BUILD from the boards on disk rather than trusting whatever PDF is
         # already there. weekly_pdf.build re-prints when the PNGs exist, which
         # is the whole point today: Rafael's file on the mini was printed at
