@@ -5478,6 +5478,48 @@
       },
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "rcnc_tracker": {
+      "on_scheduler": false,
+      "_note": "Carlos's Residential Rep Count TRACKER (sheet 1hOP-zt2r...): appends Archey's weekly RC/NC Org Snapshot (Unique Headcount / ICDs / Reps Per ICD per Org Leader) as a new week-ending column on the tracker's three trend tabs, points the Week View picker at the new week, then emails Week View + last-4-weeks screenshots from alphaletereporting@. on_scheduler:false = NOT in the 4am batch; its real schedule is com.alphalete.rcnc-tracker-friday on Lucy 2 (Fri 8am/11am/2pm + Sat 9am CT - Archey sends Thu night, occasionally Fri morning; firings are idempotent via a sent-<WE> flag file, and 'email not landed' exits 0 so the next firing retries). Reads the SAME alphaletereporting@ IMAP source as Megan's residential_rep_count (shares email_source) but writes a DIFFERENT workbook - no overlap. Recipients: TEST tier (Carlos only) until he signs off, then PROD adds raffi127@ (flip DEFAULT_TO in run.py). Manual: `lucy rerun rcnc_tracker -- --probe` (recon, no writes) / `-- --dry-run` / bare (live).",
+      "display_name": "Residential Rep Count Tracker (Carlos)",
+      "source_type": "email",
+      "data_sources": [],
+      "command": [
+        "automations.rcnc_tracker.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20,
+      "machine": "Lucy 2"
+    },
+    "install_rcnc_tracker_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.rcnc-tracker-friday on Lucy 2 (Fri 8/11/14 + Sat 9 CT; deploy/rcnc_tracker_friday.sh -> python -m automations.rcnc_tracker.run). `lucy update` then `lucy rerun install_rcnc_tracker_agent` on the Lucy 2 control tab. install_agent only loads the plist - read-only w.r.t. sheet data.",
+      "display_name": "Install RCNC tracker Friday agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "rcnc-tracker-friday"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
+      "machine": "Lucy 2"
+    },
     "frontier_opt": {
       "on_scheduler": false,
       "_retired_note": "RETIRED 2026-08-23 (Megan): 'we no longer use anything with frontier'. Sunday 6pm LaunchAgent removed via uninstall_frontier_sunday_agent (deploy plist + wrapper deleted); on_scheduler false so nothing triggers it. Module kept for history / one-off `lucy rerun frontier_opt`. Frontier sections still wired inside other reports (org sales board, leaders call, ICD campaigns, helen_residential) come out in a separate pass.",
@@ -7433,7 +7475,7 @@
     },
     "vantura_orderlog_sales": {
       "on_scheduler": false,
-      "_off_scheduler_note": "Vantura Sales Board morning close-out from the ORDER LOGS (Carlos 2026-08-30: 'this morning you would have looked at yesterday's order log and filled in the proper sales'). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.vantura-orderlog-sales, installed via `lucy rerun install_vantura_orderlog_sales_agent`) on LUCY 2 as a morning RETRY LADDER (05:02/05:25/05:48/06:11/06:45 for B2B — first pass lands before com.alphalete.sales-boards' 05:10 post — and 07:15/07:45/08:45/09:30 for BOX — its extract refreshes ~7am, the same clock as the BOX country tracker, and box_order_log writes the tab at 7:00 + 8:30, so BOX confirms right behind the 7:00 write). FRESHNESS: same rule as tableau_screenshots.freshness (Carlos 2026-08-30) — each campaign is gated on DATA COVERAGE (its log tab must hold rows for the target day), holds with exit 75 and circles back while it doesn't, and fail-opens past its floor (B2B 06:45, BOX 09:30) so a gate never skips a report. B2B from 'Lucy At&t Data' (SUM Unit Count per rep per order date, the captainship_boards rule, validated vs the live board 2026-08-30); BOX from 'Lucy Box Data' (TPV sale gate) STARTING TUE 2026-09-01 — until then the module skips BOX on its own and Slack stays the BOX source. Raise-only, same wrong-week hold as the Slack fill. Present here so `lucy rerun vantura_orderlog_sales` works — but NEVER rerun it with --week over weeks before 2026-08-31: Carlos hand-spread some earlier sales across days and a raise-only backfill would double-count them. Pure Sheets API, no browser.",
+      "_off_scheduler_note": "Vantura Sales Board morning close-out from the ORDER LOGS (Carlos 2026-08-30: 'this morning you would have looked at yesterday's order log and filled in the proper sales'). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.vantura-orderlog-sales, installed via `lucy rerun install_vantura_orderlog_sales_agent`) on LUCY 2 as a morning RETRY LADDER (05:02/05:25/05:48/06:11/06:45 for B2B \u2014 first pass lands before com.alphalete.sales-boards' 05:10 post \u2014 and 07:15/07:45/08:45/09:30 for BOX \u2014 its extract refreshes ~7am, the same clock as the BOX country tracker, and box_order_log writes the tab at 7:00 + 8:30, so BOX confirms right behind the 7:00 write). FRESHNESS: same rule as tableau_screenshots.freshness (Carlos 2026-08-30) \u2014 each campaign is gated on DATA COVERAGE (its log tab must hold rows for the target day), holds with exit 75 and circles back while it doesn't, and fail-opens past its floor (B2B 06:45, BOX 09:30) so a gate never skips a report. B2B from 'Lucy At&t Data' (SUM Unit Count per rep per order date, the captainship_boards rule, validated vs the live board 2026-08-30); BOX from 'Lucy Box Data' (TPV sale gate) STARTING TUE 2026-09-01 \u2014 until then the module skips BOX on its own and Slack stays the BOX source. Raise-only, same wrong-week hold as the Slack fill. Present here so `lucy rerun vantura_orderlog_sales` works \u2014 but NEVER rerun it with --week over weeks before 2026-08-31: Carlos hand-spread some earlier sales across days and a raise-only backfill would double-count them. Pure Sheets API, no browser.",
       "display_name": "Vantura Order-Log Sales fill (5:02am)",
       "source_type": "api",
       "data_sources": [],

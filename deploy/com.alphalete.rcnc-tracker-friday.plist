@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.rcnc-tracker-friday</string>
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         installing machine's repo path. RUNS ON LUCY 2 (Carlos 2026-08-30):
+         appends Archey's weekly RC/NC Org Snapshot to Carlos's Residential
+         Rep Count Tracker sheet and emails the Week View + last-4-weeks
+         screenshots. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/rcnc_tracker_friday.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Archey's email lands Thu night, occasionally Fri ~10:30am. Fri 8/11/14
+         + Sat 9 machine-local; the run is idempotent so extra firings no-op. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.rcnc-tracker-friday.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.rcnc-tracker-friday.err</string>
+</dict>
+</plist>
