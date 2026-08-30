@@ -277,6 +277,81 @@ def resolve_card(report_id: str, report_name: str = "", *,
     return report_id
 
 
+# ---------------------------------------------------- curated copy: REPORTS
+# _AGENT_CARD_COPY (below) does this for standalone launchd agents. This is the
+# same idea for SCHEDULER reports, which had no equivalent: their auto-cards were
+# created with a name and nothing else, so the detail page said "No write-up for
+# this report yet" forever. Megan has now raised that three times (2026-08-26,
+# and twice on 08-30) — it is the single most common complaint about the Hub.
+#
+# Keyed by report_id (schedule_config key). Every field optional:
+#   name / emoji  -> the tile
+#   description   -> the one-liner under the title
+#   breakdown     -> the "How <report> works" panel (ALL-CAPS section headers)
+#   minutes       -> the "~N min" chip
+#
+# WHY IN CODE, not typed into the Sheet: ensure_library_card REWRITES the row on
+# every sync, so hand-typed copy is erased. Applied as DEFAULTS only — an
+# explicit argument from a caller always wins — and pushed to existing rows by
+# `python -m automations.day_orchestrator.hub_coverage reenrich --apply`.
+_REPORT_CARD_COPY: Dict[str, dict] = {
+    # ONE card for the whole hourly settle sweep. The five schedule_config
+    # entries (10:00/11:00/12:00/13:00/14:00) all publish here via _HUB_CARD, so
+    # this reads as one job that retries rather than five reports. The card id
+    # keeps its "_am" suffix because it already carries this report's run
+    # history; renaming it would orphan that.
+    "tableau_screenshots_settle_am": {
+        "name": "Tableau Country Trackers — settle",
+        "emoji": "\U0001F551",
+        "description": (
+            "Re-sends the tracker boards the MORNING run held back because "
+            "their Tableau data hadn't refreshed yet. Retries hourly, 10am "
+            "to 2pm. Silent no-op when nothing was held."),
+        "minutes": 20,
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Re-checks ONLY the boards the morning tracker run held, posts the "
+            "ones that have since finished loading, and leaves the rest held "
+            "with their note. It never re-posts a board that already went out, "
+            "and on a normal morning — nothing held — it is a clean no-op.\n\n"
+            "WHY IT EXISTS\n"
+            "The standing rule is that behind boards are REPORTED, not sent. "
+            "Until 2026-08-26 the ~7am Box catch-up was the last attempt of the "
+            "day, so a board whose Tableau data settled after it never posted "
+            "AT ALL — silently missing for the whole day, with nothing on any "
+            "channel to say so. On 8/26 both NDS and AT&T were still loading at "
+            "10:30, well past the last attempt.\n\n"
+            "WHEN IT RUNS\n"
+            "Hourly on Lucy 3: 10:00, 11:00, 12:00, 13:00 and 14:00. 2pm is "
+            "deliberately the last — past that a tracker has missed the selling "
+            "day and posting it is noise rather than news. It used to be two "
+            "passes, 10am and 1pm, which meant a board that settled at 10:30 "
+            "sat unposted for two and a half hours (Megan 2026-08-30: \"run it "
+            "every hour until it's correct until 2pm\").\n\n"
+            "WHY FIVE SCHEDULE ENTRIES, ONE CARD\n"
+            "The orchestrator's cadence vocabulary is weekdays + not_before "
+            "only — there is no interval — so hourly has to be one entry per "
+            "hour. All five map to THIS card in hub_publish._HUB_CARD and share "
+            "verify.report_id 'tableau-screenshots-settle', so the Hub shows "
+            "one job that retries instead of five near-identical reports.\n\n"
+            "IT IS NOT A CLOCK FOR THE DATA\n"
+            "The stability gate decides whether a board is ready to send; the "
+            "hour only decides when to ASK again. A later pass does not force "
+            "anything out — it just gives a slow extract another chance to have "
+            "landed.\n\n"
+            "WHAT \u25b6 RUN REPORT DOES\n"
+            "The same --settle sweep, right now: re-checks what is still held "
+            "and posts whatever is ready. Safe to press — it cannot re-post a "
+            "board that already went, and it sends nothing that is still "
+            "behind.\n\n"
+            "WHERE IT LIVES\n"
+            "automations.tableau_screenshots.run --settle --text-trackers, on "
+            "Lucy 3. Its own report_id keeps it from overwriting the Box "
+            "catch-up's manifest or per-channel checklist."),
+    },
+}
+
+
 def _launcher_script(cid: str, real_module: Optional[str],
                      base_args: List[str]) -> str:
     """A runnable script for an auto-created library card. The Hub runs a library
@@ -362,6 +437,17 @@ def ensure_library_card(report_id: str, report_name: str, *,
         return False, ("{} belongs to an offboarded office — no Hub card "
                        "(see office_onboarding.apply.OFFBOARDED_KEYS)"
                        .format(report_id))
+    # Curated copy for a scheduler report — DEFAULTS ONLY, so an explicit
+    # argument (e.g. the launchd sync passing _AGENT_CARD_COPY) always wins.
+    _copy = _REPORT_CARD_COPY.get(report_id, {})
+    if _copy:
+        report_name = report_name or _copy.get("name") or ""
+        emoji = emoji or _copy.get("emoji")
+        description = description or _copy.get("description")
+        breakdown = breakdown or _copy.get("breakdown")
+        module = module or _copy.get("module")
+        if args_ov is None and _copy.get("args") is not None:
+            args_ov = list(_copy["args"])
     cid = report_id  # underscore id -> valid materialized-module filename
     real_module, base_args = module, []  # type: Optional[str], List[str]
     name = report_name
@@ -379,6 +465,10 @@ def ensure_library_card(report_id: str, report_name: str, *,
         est = r.get("timeout_minutes")
     except Exception:
         name = name or report_id.replace("_", " ").title()
+    if _copy.get("name"):
+        name = _copy["name"]          # curated name beats display_name
+    if _copy.get("minutes"):
+        est = _copy["minutes"]
     if machine_ov:
         machine = machine_ov
     if args_ov is not None:
