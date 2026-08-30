@@ -4420,7 +4420,7 @@ AUTOMATED_REPORTS = [
         "id": "dd-bulletin",
         # Thursday's bulletin, so it sits directly before the Friday Override
         # Bulletin — which in turn stays adjacent to the PNL card below it.
-        "name": "DD Bulletin → #alphalete-sales + #alphalete-lvl1-chat",
+        "name": "DD Bulletin → #alphalete-sales + #alphalete-lvl1-chat + Raf's office",
         "creator": "Megan & Claude",
         "emoji": "\U0001F3C6",
         # Same gold as the Override Bulletin — they are the same artwork family.
