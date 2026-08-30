@@ -160,9 +160,17 @@ _NOT_A_REPORT = frozenset({
 # both doors together: add it back here AND set on_scheduler:false (+ cadence
 # weekdays []) when Eve's exit condition lands and those two offices are granted.
 #
-# EMPTY IS THE HONEST STATE. Nothing is retired right now; do not keep a name here
-# "for later" — a name in this set is a promise that the report does not run.
-_RETIRED: frozenset = frozenset()
+# A name here is a promise that the report DOES NOT RUN — keep it in step with
+# on_scheduler:false + cadence weekdays [] in schedule_config, both doors.
+_RETIRED: frozenset = frozenset({
+    # B2B Ongoing Cancels. Its only source, ATTTRACKER-B2B/B2BCancelRates, was
+    # removed from Tableau; Carlos, 2026-08-30: "yes it got removed. we can
+    # remove this automation we werent looking at it". Both doors are shut —
+    # on_scheduler:false + cadence weekdays [] live in schedule_config beside a
+    # note with the whole story. The module stays on disk: reviving it is one
+    # GUID and two flags if the view ever comes back.
+    "att_cancels",
+})
 
 
 def is_internal(report_id: str) -> bool:

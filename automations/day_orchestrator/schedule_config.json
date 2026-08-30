@@ -6731,8 +6731,8 @@
       "machine": "Lucy 2"
     },
     "att_cancels": {
-      "on_scheduler": true,
-      "_note": "SCHEDULED 2026-08-17 (Eve). Ran off-scheduler for a month, which meant it only ran when a human pressed the button \u2014 the 'Lucy Cancel Rates' tab silently went stale. Sundays because THIS view's weeks end SATURDAY (its newest column is 'WE (08/22)'), unlike the Sunday-ending weeks the rest of the Hub uses \u2014 so a Sunday run is the first one that sees the week complete. Weekly, not daily, is Megan's 2026-07-20 call, still pending her confirming with Carlos (see _off_scheduler_note). Nothing is lost by waiting a week: the view carries 6 weeks and the tab is rebuilt from all of them each run.",
+      "on_scheduler": false,
+      "_note": "RETIRED 2026-08-30. Its source view - ATTTRACKER-B2B/B2BCancelRates - was REMOVED from Tableau, and Carlos confirmed in #alphalete-gp-sales: \"yes it got removed. we can remove this automation we werent looking at it\". The Sunday run failed twice on 2026-08-30 with a 120s patchright timeout waiting for a download button on a page that answers 'That page could not be accessed' - verified on Carlos's own login, so it is the view, not permissions. Retired the two-door way the _RETIRED contract requires: on_scheduler false AND cadence weekdays [] here, plus att_cancels in hub_coverage._RETIRED so the card stops and does not self-register again. The MODULE is deliberately left in place (automations/att_order_log/cancels_run.py): nothing costs anything while it never runs, and if the view is ever republished this is one GUID and two flags away from living again. NOTE the collateral: opt_phase_carlos.py still lists this same view for the '0-30 Day Cancel Rate' row on the Carlos + org B2B tabs, which will now blank every run - that is a separate decision, not covered by this retirement.",
       "_off_scheduler_note": "Carlos's B2B Ongoing Cancels -> the 'Lucy Cancel Rates' tab on the Vantura Master Sales Board. Loom 2:21: 'the ongoing cancel report... if they could live on my spreadsheet, that'd be great.' WEEKLY, NOT DAILY: Carlos pointed at Raf's DAILY ongoing-cancel screenshot, but his own view (B2BCancelRates / CarlosLOExpCancels, Megan-supplied 2026-07-20) reports by WEEK ENDING and carries none of the D2D running-sum captions, so automations/ongoing_cancel cannot parse it. Megan 2026-07-20: build it weekly, she will confirm with Carlos; re-pointing to a daily view later is a URL plus a renderer, not a rebuild. Crosstab worksheet is 'Cancel Rates Sheet' (the dialog's other thumb is 'zzz Last Refresh'). The MODULE is dry-run by default; base_args carries --sheet so a Hub run actually fills the tab. It did NOT until 2026-08-17: base_args was empty, so every run pulled Tableau and threw the result away while the card said 'B2B Ongoing Cancels -> Sheet' \u2014 the tab has never been written by an automated run. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing.",
       "display_name": "B2B Ongoing Cancels (Carlos) -> Sheet",
       "source_type": "tableau",
@@ -6744,9 +6744,7 @@
         "--sheet"
       ],
       "cadence": {
-        "weekdays": [
-          6
-        ]
+        "weekdays": []
       },
       "priority": "P2",
       "freshness_target": null,
