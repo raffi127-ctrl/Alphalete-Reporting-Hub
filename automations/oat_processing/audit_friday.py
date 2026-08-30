@@ -36,10 +36,24 @@ def _dump_calendar(page, date_str):
         try:
             with page.expect_navigation(timeout=30000,
                                         wait_until="domcontentloaded"):
+                # calDate is a jQuery-UI datepicker: a raw value+submit is
+                # ignored (the server reads the picker's own state / onSelect
+                # fires the real navigation) — the same trap
+                # fetch_office._set_week_and_submit documents for #weekStart.
                 page.evaluate("""(d) => {
                     const el = document.querySelector("input[name='calDate']");
-                    el.value = d;
-                    HTMLFormElement.prototype.submit.call(el.form); }""", date_str)
+                    let fired = false;
+                    try {
+                        jQuery(el).datepicker('setDate', d);
+                        const os = jQuery(el).datepicker('option', 'onSelect');
+                        if (os) { os.call(el, d, jQuery(el).data('datepicker'));
+                                  fired = true; }
+                    } catch (e) {}
+                    if (!fired) {
+                        el.value = d;
+                        el.dispatchEvent(new Event('change', {bubbles: true}));
+                        HTMLFormElement.prototype.submit.call(el.form);
+                    } }""", date_str)
         except Exception:  # noqa: BLE001
             pass
         page.wait_for_timeout(4000)
