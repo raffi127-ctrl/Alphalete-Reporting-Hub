@@ -33,9 +33,11 @@
                               fail-opens 05:30, so the tab is normally there
                               by ~05:35 on a slow day).
            06:45              B2B fail-open floor pass.
-           08:45              BOX pass — the BOX extract refreshes ~7am and
-                              box_order_log writes the tab 7:00 + 8:30, so
-                              earlier passes skip BOX by design.
+           07:15/07:45        BOX passes — the BOX extract refreshes ~7am
+                              (when the BOX country tracker goes out) and
+                              box_order_log writes the tab at 7:00; confirm
+                              right behind it (Carlos 2026-08-30).
+           08:45              BOX pass behind box_order_log's 8:30 refresh.
            09:30              BOX fail-open floor pass.
          Raise-only writes make repeat passes harmless. Hour/Minute are
          machine LOCAL time; Lucy 2 is Central. -->
@@ -46,6 +48,8 @@
         <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>48</integer></dict>
         <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>11</integer></dict>
         <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
         <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
     </array>

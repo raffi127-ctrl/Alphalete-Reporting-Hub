@@ -75,12 +75,15 @@ BOX_START = dt.date(2026, 9, 1)
 # The floors come from each feed's own clock:
 #   B2B  06:45 — att_order_log's 4am-batch probe fail-opens at 05:30, so the
 #                tab is normally written by ~05:35; 06:45 is well past it.
-#   BOX  09:30 — the BOX extract refreshes ~07:00 and box_order_log writes at
-#                07:00 + 08:30, so BOX is only ATTEMPTED from 08:40 (earlier
-#                passes would hold every single day by design, which is noise,
-#                not signal) and fail-opens at 09:30.
+#   BOX  09:30 — the BOX extract refreshes ~07:00 (the same reason the BOX
+#                country tracker rides the ~7am catch-up — Carlos 2026-08-30:
+#                confirm BOX when the tracker is out) and box_order_log
+#                writes the tab at 07:00 + 08:30. BOX is ATTEMPTED from 07:10
+#                — right after the 7:00 write — with the coverage gate
+#                holding until the tab really has the day; 08:45 rides the
+#                8:30 refresh and 09:30 fail-opens.
 B2B_FAILOPEN = dt.time(6, 45)
-BOX_ATTEMPT_FROM = dt.time(8, 40)
+BOX_ATTEMPT_FROM = dt.time(7, 10)
 BOX_FAILOPEN = dt.time(9, 30)
 FAILOPEN = {"B2B": B2B_FAILOPEN, "BOX": BOX_FAILOPEN}
 
@@ -322,8 +325,8 @@ def main(argv=None) -> int:
                  "(pass --campaign BOX to force)")
         elif now_t < BOX_ATTEMPT_FROM:
             _log(f"BOX attempted from {BOX_ATTEMPT_FROM:%H:%M} — its extract "
-                 "refreshes ~7am and box_order_log writes 7:00/8:30; skipped "
-                 "this pass (the 8:45 pass picks it up)")
+                 "refreshes ~7am and box_order_log writes the tab at 7:00; "
+                 "skipped this pass (the 7:15+ passes pick it up)")
         else:
             campaigns.append("BOX")
 
