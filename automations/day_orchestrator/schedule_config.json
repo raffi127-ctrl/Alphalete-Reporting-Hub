@@ -2268,6 +2268,32 @@
       "cadence": {
         "weekdays": []
       },
+      "_note": "Raf 2026-08-30: 'I want to be able to talk to LUCY in this thread, is their a way to make that happen by tagging her?' Answers replies in the week's new-start thread that @-mention Lucy (U0BCG8F9B5Z). Answers come ONLY from the report's own Reconciliation - the facts block is built in code, the model picks and phrases them and never supplies facts of its own - and a request to CHANGE something is acknowledged and flagged for Megan, never claimed as done. DELIBERATELY NOT ARMED: base_args carries no --live, so it composes answers and posts NOTHING. It is the only pass that would post to Slack with no human in the loop, and the standing rule here is to ask before any Slack send - so the first answers are meant to be read. To arm it, add '--live' to base_args and give it a cadence. weekdays [] = never orchestrator-run; `lucy rerun new_start_thread_replies` = check now. Idempotent per mention ts via output/new_start_followup/thread_replies/<monday>.json.",
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
+    "new_start_thread_replies": {
+      "on_scheduler": true,
+      "machine": "Lucy 1",
+      "display_name": "New-Start Thread Replies (answer @Lucy)",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.new_start_followup.run"
+      ],
+      "base_args": [
+        "--mode",
+        "thread-replies",
+        "--funnel",
+        "main"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
       "_note": "Raf 2026-08-30: 'I want to be able to talk to LUCY in this thread, is there a way to make that happen by tagging her?' Answers replies in the week's new-start thread that @-mention Lucy (U0BCG8F9B5Z). Answers come ONLY from the report's own Reconciliation — the model phrases the facts, it never supplies them — and a request to CHANGE something is acknowledged and flagged for Megan, never claimed as done. DELIBERATELY NOT ARMED: base_args has no --live, so this composes answers and posts NOTHING. It is the only pass that would post to Slack with no human in the loop, so the first answers are meant to be read (standing rule: ask before any Slack send). To arm it, add '--live' to base_args and give it a cadence. weekdays [] = never orchestrator-run; `lucy rerun new_start_thread_replies` = check now. Idempotent per mention ts via output/new_start_followup/thread_replies/<monday>.json.",
       "priority": "P3",
       "freshness_target": null,
