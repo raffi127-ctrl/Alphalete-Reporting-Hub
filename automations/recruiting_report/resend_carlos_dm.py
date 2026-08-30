@@ -15,7 +15,7 @@ from __future__ import annotations
 import datetime as dt
 import sys
 
-from automations.recruiting_report import fill, focus_render, focus_slack
+from automations.recruiting_report import fill, focus_shot, focus_slack
 from automations.recruiting_report.daily_focus import (
     DAILY_FOCUS_SPREADSHEET_ID, _OUTPUT_DIR, find_captainship_worksheet)
 
@@ -27,7 +27,9 @@ def main() -> int:
     if ws is None:
         print("Carlos tab not found — nothing to send.")
         return 1
-    pngs = focus_render.render_tab_grouped(
+    # Same exporter the scheduled run uses, so a resend is not a
+    # different-looking image from the one it replaces.
+    pngs = focus_shot.render_tab_grouped(
         sh, ws.title, _OUTPUT_DIR,
         prefix=f"daily-focus-carlos-{today.isoformat()}", per=3)
     res = focus_slack.post_carlos_screenshots(pngs, today, summary=None)

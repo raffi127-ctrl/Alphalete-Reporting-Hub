@@ -1594,7 +1594,7 @@ AUTOMATED_REPORTS = [
         "emoji": "☀️",
         "color": "#4ECDC4",
         "category": "🎯 Recruiting",
-        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for every captainship tab — fills them all in one run.",
+        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for every captainship tab. Fills at 4 AM, refills at 6:30 PM, then posts each enrolled office its own board at 7 PM local.",
         "breakdown": (
             "WHAT IT DOES\n"
             "A day-by-day breakdown (Mon-Fri) of the recruiting numbers "
@@ -1610,6 +1610,24 @@ AUTOMATED_REPORTS = [
             "• **Jairo Ruiz** → Jairo, Colten Wright, Analay Ruiz.\n"
             "A Slack hiccup on one tab is logged but never fails the run or "
             "blocks the other tabs' DMs.\n\n"
+            "TWO FILLS A DAY \u2014 4 AM AND 6:30 PM\n"
+            "The 4 AM pass can only ever finalise YESTERDAY: at 4 AM today's "
+            "column is still empty. So the same fill runs again at **6:30 PM**, "
+            "once the day's interviews are done, and the evening pass is what "
+            "makes the current day complete. Raf caught this on a Friday "
+            "afternoon \u2014 his Friday column was still zeros.\n"
+            "The evening pass runs with **--no-slack**: without it the group DMs "
+            "above would go out a second time every night.\n\n"
+            "7 PM OFFICE POST (phase 2)\n"
+            "At **7 PM in each office's OWN local time**, Mon-Fri, Lucy starts a "
+            "dated *Daily Focus Report* thread in that office's channel and "
+            "replies with that office's board \u2014 Current Week beside Last "
+            "Week. The image is an exact-sheet export (Google renders it), not a "
+            "redraw, so it carries the sheet's real borders and headers.\n"
+            "\u2022 **Rafael Hidalgo** \u2192 #rafs-office-recruiting-11280.\n"
+            "Other offices are added as a row in "
+            "`automations/daily_focus_post/roster.py` \u2014 no code change. An "
+            "office posts its OWN section, not its captain's whole tab.\n\n"
             "WEEKEND ROLLOVER\n"
             "Per Raf's rule, weekend numbers fold into the adjacent weekday:\n"
             "• **Sunday → Monday** (Sun + Mon counts combined into Mon's cell).\n"
@@ -1626,6 +1644,12 @@ AUTOMATED_REPORTS = [
             "If an ICD can't be pulled or a Slack DM doesn't send, the gap is "
             "posted to **#claudecorrections-and-requests** so it's caught."
         ),
+        # TWO PHASES. Phase 1 is the fill (which runs TWICE a day, 4 AM and
+        # 6:30 PM — both passes write the SAME 'daily-focus' manifest, so they
+        # are one phase, not two). Phase 2 is the 7 PM per-office Slack post,
+        # which writes its own id. Phase ids are MANIFEST ids, not
+        # schedule_config keys. [[reference_hub_card_rendering_rules]]
+        "phases": ["daily-focus", "daily-focus-post"],
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Lucy 1"],
         "schedule": {
@@ -1634,7 +1658,8 @@ AUTOMATED_REPORTS = [
             # 7 days a week on the calendar.)
             "frequency": "weekly",
             "weekdays": [0, 1, 2, 3, 4],  # Mon–Fri (Megan 2026-06-07)
-            "time": "4 AM flow (when data's ready)",  # 7am CST (Eve)
+            # 4 AM fill -> 6:30 PM refill -> 7 PM office posts (Megan 2026-08-30).
+            "time": "4 AM flow, refill 6:30 PM, posts 7 PM",
             "estimated_minutes": 10,
         },
         # Fully unattended via patchright (rcaptain AppStream) — no pre-flight

@@ -1617,7 +1617,7 @@ def main() -> int:
     # (the data fill already succeeded). Skipped on --dry-run / --only (partial
     # views) and with --no-slack.
     if not args.dry_run and not args.only and not args.no_slack:
-        from automations.recruiting_report import focus_render, focus_slack
+        from automations.recruiting_report import focus_shot, focus_slack
         sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
         _dm_failures: List[str] = []
         for cs, recipients in focus_slack.FOCUS_DM_RECIPIENTS.items():
@@ -1628,8 +1628,15 @@ def main() -> int:
                 if ws is None:
                     raise RuntimeError(f"{cs} tab not found — skipping Slack DM.")
                 # Split into one image per 3 owners so the DM is easy to read.
+                # focus_SHOT, not focus_render: the shots are exported by Google
+                # (exact borders / wrapped headers / the black "Office Focus
+                # Report" band) instead of redrawn cell-by-cell with PIL. The
+                # redraw silently dropped all three — most visibly it painted the
+                # black header white, so its white text vanished — and these DMs
+                # had carried that the whole time (Megan 2026-08-30: "they've been
+                # missed/messed up the whole time").
                 slug = cs.lower().replace(" ", "-")
-                pngs = focus_render.render_tab_grouped(
+                pngs = focus_shot.render_tab_grouped(
                     sh, ws.title, _OUTPUT_DIR,
                     prefix=f"daily-focus-{slug}-{today.isoformat()}", per=3)
                 summary = None

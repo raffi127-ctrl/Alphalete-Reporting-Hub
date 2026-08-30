@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.daily-focus-post</string>
+
+    <!-- The 7pm per-office Daily Focus post. This TICKS; the slot is NOT in the
+         plist. run.py asks whether each office's OWN local 7pm has passed on a
+         weekday, which is what lets an office in another timezone get its own
+         7pm instead of Central's. A tick with nothing due makes no network call
+         at all. Same shape as com.alphalete.knocks-intraday.
+         python -m automations.day_orchestrator.install_agent daily-focus-post -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/daily_focus_post.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Every 10 minutes. The 3-hour grace window in run.py means a machine that
+         was asleep at 7pm still delivers the day's post when it wakes. -->
+    <key>StartInterval</key>
+    <integer>600</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/daily-focus-post.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/daily-focus-post.launchd.err.log</string>
+</dict>
+</plist>

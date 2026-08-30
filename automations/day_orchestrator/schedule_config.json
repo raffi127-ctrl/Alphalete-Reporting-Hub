@@ -2838,6 +2838,59 @@
       },
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "daily_focus_evening": {
+      "hand_run_only": true,
+      "on_scheduler": true,
+      "_note": "THE 6:30pm REFILL, second run of the SAME fill as daily_focus. The 4am pass can only ever finalise YESTERDAY \u2014 at 4am today's column is empty \u2014 so without this the 7pm per-office Slack post shows the current day as zeros. Raf caught it on a Friday afternoon (Loom 2026-08-30). --no-slack is NOT optional: the fill's post-run hook group-DMs the Carlos / Colten Wright / Jairo Ruiz tabs, and without the flag every evening refill sends those three a SECOND copy of the morning DM. weekdays [] + hand_run_only because the real clock is deploy/com.alphalete.daily-focus-refill.plist (18:30 Mon-Fri, machine-local); this entry exists so `lucy rerun daily_focus_evening` works and the Hub has a handle. Writes the SAME manifest id as the morning pass ('daily-focus'), which is why the card counts it with daily_runs:2 rather than listing it as its own phase.",
+      "display_name": "Daily Recruiting Focus \u2014 6:30pm refill",
+      "source_type": "appstream",
+      "command": [
+        "automations.recruiting_report.daily_focus"
+      ],
+      "base_args": [
+        "--captainship",
+        "all",
+        "--no-slack"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P1",
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "manifest",
+        "report_id": "daily-focus"
+      }
+    },
+    "daily_focus_post": {
+      "hand_run_only": true,
+      "on_scheduler": true,
+      "_note": "The 7pm per-office Daily Focus Slack post (automations/daily_focus_post). Lucy STARTS a dated 'Daily Focus Report' thread in the office's own channel and replies with that office's section \u2014 Current Week beside Last Week. Raf's office only to start (Loom 2026-08-30: 'I would like it for my office. And then eventually I want to take this to other offices'); rollout is a row in daily_focus_post/roster.py, not code. weekdays [] + hand_run_only because the real clock is deploy/com.alphalete.daily-focus-post.plist, which TICKS and asks run.py whether any office's OWN local 7pm has passed on a weekday \u2014 that is what lets an office in another timezone get its own 7pm. --live is spelled out in base_args on purpose: the module dry-runs by default so a hand-run can never surprise a channel.",
+      "display_name": "Daily Recruiting Focus \u2014 7pm office post",
+      "source_type": "local",
+      "command": [
+        "automations.daily_focus_post.run"
+      ],
+      "base_args": [
+        "--check-time",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P2",
+      "timeout_minutes": 15,
+      "verify": {
+        "type": "manifest",
+        "report_id": "daily-focus-post"
+      }
+    },
     "weather_alert": {
       "on_scheduler": true,
       "display_name": "Weather Alert (Frisco team)",
