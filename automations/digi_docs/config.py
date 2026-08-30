@@ -266,7 +266,7 @@ QUIZ_ROWS_REFERENCE_ONLY = (
 # nothing ticks that column, so it never needed answering.
 
 # Where the by-hand leftovers get posted, same room as its two siblings.
-SLACK_CHANNEL = "#11280-alphalete-marketing-inc-rafael-hidalgo"
+SLACK_CHANNEL = "#rafs-office-recruiting-11280"
 
 # Who gets @-tagged when somebody could NOT be sent (Megan 2026-08-26: "so they
 # get on it asap"). Onboarding owns the fix, and a name sitting unread in a busy

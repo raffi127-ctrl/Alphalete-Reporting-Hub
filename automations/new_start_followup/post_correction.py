@@ -11,7 +11,8 @@ import sys
 
 from automations.shared import slack_metrics_post as smp
 
-CHANNEL = "C06881A7WLV"                 # #rafs-office-recruiting
+CHANNEL = "C06881A7WLV"                 # #rafs-office-recruiting (retired) —
+                                        # correct: this one-off's thread lives there
 THREAD_TS = "1785532928.456599"         # Aisha's "New Starts Scheduled for Monday" post
 
 MESSAGE = (

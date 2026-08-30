@@ -126,7 +126,7 @@ So the run is three passes:
 1. Read this week's OBCL tab (every chart) and apply the eligibility block-list.
 2. Add every eligible rep who isn't in OwnerVille yet. Ticks nothing.
 3. For each rep still showing `REQUIRED ACTION`, generate the bundle, then tint
-   their **Digi Docs** cell. Post the by-hand leftovers to #11280 at the end.
+   their **Digi Docs** cell. Post the by-hand leftovers to #rafs-office-recruiting-11280 at the end.
 
 ### What gets written back, exactly (Megan 2026-08-25)
 
@@ -444,4 +444,4 @@ cheap and each guarding an expensive mistake:
   full names filter to zero" trick, and the pill reader.
 - Tick + tint + Slack summary: `blueink_docs` tints the name light green on
   send and posts who still needs doing by hand to
-  #11280-alphalete-marketing-inc-rafael-hidalgo.
+  #rafs-office-recruiting-11280.

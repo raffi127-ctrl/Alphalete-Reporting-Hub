@@ -1,4 +1,4 @@
-"""Post who still needs doing by hand to #11280.
+"""Post who still needs doing by hand to #rafs-office-recruiting-11280.
 
 Correct skips are NOT listed — no-shows, terminations, people already marked.
 They would bury the names that need acting on, which is the same call
@@ -11,7 +11,7 @@ from typing import List, Tuple
 
 from automations.digi_docs import config
 
-# #11280-alphalete-marketing-inc-rafael-hidalgo — confirmed by Megan
+# #rafs-office-recruiting-11280 — confirmed by Megan
 # 2026-08-25, not just inherited from blueink_docs because it sits next
 # to it. Same room as the other two new-start steps.
 CHANNEL = os.environ.get("DIGI_DOCS_SLACK_CHANNEL", "C0AUAS88FGW")

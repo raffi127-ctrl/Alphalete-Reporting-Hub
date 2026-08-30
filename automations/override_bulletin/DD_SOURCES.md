@@ -6,8 +6,8 @@ Item 4 of the VA replacement. Reverse-engineered from the VA's Loom walkthrough
 Cadence: VA builds it **Wednesday**, posts **Thursday morning by 10am**. Numbers
 were still moving Thursday morning, so she moved to building it very early
 Thursday instead. Goes to Slack **#alphalete-sales + #alphalete-lvl1-chat**
-(Megan also lists the recruiting rooms — #rafs-office-recruiting and, from
-2026-08-20, #11280-alphalete-marketing-inc-rafael-hidalgo) AND by email
+(Megan also lists the recruiting rooms — #rafs-office-recruiting (retired) and, from
+2026-08-20, #rafs-office-recruiting-11280) AND by email
 to **Alphalete Org
 Owners** + a 4-person **Bulletins** distro.
 
@@ -737,8 +737,8 @@ a rival sender. `--dd` switches artwork, rooms and state file:
     python -m automations.override_bulletin.send --dd --send       # the real distro
 
 - **Slack**: `#alphalete-sales` (C068PH3RFSM), `#alphalete-lvl1-chat`
-  (C09JG28CD27), `#rafs-office-recruiting` (C06881A7WLV),
-  `#11280-alphalete-marketing-inc-rafael-hidalgo` (C0AUAS88FGW, added
+  (C09JG28CD27), `#rafs-office-recruiting` (C06881A7WLV, retired),
+  `#rafs-office-recruiting-11280` (C0AUAS88FGW, added
   2026-08-20) — every id resolved
   against the workspace 2026-07-24, not copied from this doc. Both pages go up as
   ONE message per channel (`file_uploads`); two posts in a row read as two

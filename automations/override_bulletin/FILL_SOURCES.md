@@ -242,8 +242,8 @@ with `send.py`. PNL-for-the-office posts right after (separate —
     python -m automations.override_bulletin.send --send      # real distro
 
 * **Slack** — the rendered PNG to `#alphalete-sales` (C068PH3RFSM) and
-  `#rafs-office-recruiting` (C06881A7WLV) and
-  `#11280-alphalete-marketing-inc-rafael-hidalgo` (C0AUAS88FGW, added
+  `#rafs-office-recruiting` (C06881A7WLV, retired) and
+  `#rafs-office-recruiting-11280` (C0AUAS88FGW, added
   2026-08-20), as Lucy (xoxp USER token via
   `slack_metrics_post._client()`). `OVERRIDE_BULLETIN_CHANNEL_ID` redirects BOTH
   to a scratch channel for a safe live test.

@@ -1,4 +1,4 @@
-"""Weekly BG-status post to #11280-alphalete-marketing-inc-rafael-hidalgo, as Lucy.
+"""Weekly BG-status post to #rafs-office-recruiting-11280, as Lucy.
 
 CHANNELS supports multiple rooms (each gets its OWN parent thread + reply,
 tracked separately, so the edit-in-place model works per room) — currently
@@ -29,7 +29,7 @@ from automations.bg_check_sync import parse
 # another room's update down.
 # BGSYNC_SLACK_CHANNEL overrides, comma-separated, for a scratch-channel test.
 CHANNELS = [
-    ("#11280-alphalete-marketing-inc-rafael-hidalgo", "C0AUAS88FGW"),
+    ("#rafs-office-recruiting-11280", "C0AUAS88FGW"),
 ]
 _env = os.environ.get("BGSYNC_SLACK_CHANNEL", "").strip()
 if _env:

@@ -1,4 +1,4 @@
-"""Who has LEFT #rafs-office-recruiting — don't tag or text former employees.
+"""Who has LEFT #rafs-office-recruiting-11280 — don't tag or text former employees.
 
 Raf's rule: a leader who ran the 2nd round but is no longer in the channel
 shouldn't be @-tagged or texted. Their new starts still need chasing, so they're
@@ -49,7 +49,7 @@ def _save_state(users: Dict[str, dict]) -> None:
     body = {
         "_note": (
             "Latest observed channel_join / channel_leave per user in "
-            "#rafs-office-recruiting, replayed from history because Lucy's token "
+            "#rafs-office-recruiting-11280, replayed from history because Lucy's token "
             "has no channels:read. Sticky so an old leave isn't forgotten when it "
             "scrolls out of the scan window. Safe to delete — it rebuilds."
         ),

@@ -7,7 +7,7 @@ Makes sure every Monday new start gets a text from the person who ran their
 
 | When | Who | What |
 |---|---|---|
-| Fri ~4:54pm | Aisha | posts **"D2D Alphalete New Starts Scheduled for Monday"** in `#rafs-office-recruiting` with the copy/paste script |
+| Fri ~4:54pm | Aisha | posts **"D2D Alphalete New Starts Scheduled for Monday"** in `#rafs-office-recruiting` (retired) with the copy/paste script |
 | Sat 8:00am | **Aisha** | replied in that thread @-tagging every leader |
 | Sat all day | leaders | reply `Sent` / `sent x4` as they text their new starts |
 | Sat ~10am/1pm/5pm | **Raf** | pings the leaders chat to chase stragglers |
@@ -59,8 +59,8 @@ there, so a re-fire can't tag 21 people twice. `--force` overrides.
   (the one whose A1 holds the Monday date) → header row 2 → column B
   **"2ND Round Interviewer"**, one row per new start. Rows whose column J
   "Final Status" is declined/cancelled/no-show/rescheduled don't count.
-- **Who already sent** — `#11280-alphalete-marketing-inc-rafael-hidalgo`
-  (`C0AUAS88FGW`; moved from `#rafs-office-recruiting` on 2026-08-21) → Aisha's
+- **Who already sent** — `#rafs-office-recruiting-11280`
+  (`C0AUAS88FGW`; moved from `#rafs-office-recruiting` (retired) on 2026-08-21) → Aisha's
   Friday anchor post → replies after the Saturday roll call matching
   (there can be TWO same-titled Friday posts now — Aisha's main-funnel thread
   first, Tiffani's 2nd-funnel copy later that evening; the report takes the
@@ -127,7 +127,7 @@ them.
 Posted into Slack (the team should see these):
 
 - **No longer a channel member** — the interviewer has left
-  `#rafs-office-recruiting`. They are **never @-tagged, nudged, or texted**, and
+  `#rafs-office-recruiting-11280`. They are **never @-tagged, nudged, or texted**, and
   they don't count against the "N of M have sent" score. Their new starts are
   listed by name so somebody else picks them up.
 - **Unable to tag — needs a manual reach-out** — an interviewer in OBCL column B

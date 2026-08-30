@@ -4447,7 +4447,7 @@ AUTOMATED_REPORTS = [
             "minutes until **1:00pm CST**).\n\n"
             "WHERE IT GOES\n"
             "Slack: **#alphalete-sales**, **#alphalete-lvl1-chat**, and "
-            "**#11280-alphalete-marketing-inc-rafael-hidalgo**. Email (the PNG pages, from "
+            "**#rafs-office-recruiting-11280**. Email (the PNG pages, from "
             "alphaletereporting@gmail.com): the **Alphalete Org Owners** and "
             "**Bulletins** contact groups.\n\n"
             "SAFETY\n"
@@ -4546,7 +4546,7 @@ AUTOMATED_REPORTS = [
             "Lucy posts the week's bulletin link in **#revision-emails** and "
             "@-mentions Eve. **Nothing goes out until Eve reacts "
             ":white_check_mark:** \u2014 then it posts to **#alphalete-sales + "
-            "#11280-alphalete-marketing-inc-rafael-hidalgo** and emails both contact groups "
+            "#rafs-office-recruiting-11280** and emails both contact groups "
             "(Owners/Bulletins). It **holds** if the week isn't filled yet and "
             "**never double-sends**. A checkmark from anyone but Eve does "
             "nothing.\n\n"
@@ -4605,7 +4605,7 @@ AUTOMATED_REPORTS = [
                 "label": "Send Now (after Eve's \u2705)",
                 "icon": "\U0001F680",
                 "primary": False,
-                "help": "Checks for Eve's checkmark and, if it's there, sends the full distro: #alphalete-sales + #11280-alphalete-marketing-inc-rafael-hidalgo + both contact groups. Does nothing until she has approved.",
+                "help": "Checks for Eve's checkmark and, if it's there, sends the full distro: #alphalete-sales + #rafs-office-recruiting-11280 + both contact groups. Does nothing until she has approved.",
                 "module": "automations.override_bulletin.override_gate",
                 "args_fn": lambda: ["--check", "--send", "--distro"],
             },
@@ -4995,7 +4995,7 @@ AUTOMATED_REPORTS = [
         "breakdown": (
             "WHAT IT DOES\n"
             "Every **Monday 8:30am** Lucy posts a *Headshot Submissions* "
-            "thread in **#11280-alphalete-marketing-inc-rafael-hidalgo**. "
+            "thread in **#rafs-office-recruiting-11280**. "
             "Anyone replies with a photo and the person's first and last name "
             "in the same message. Within 5 minutes the bot:\n"
             "**\u2022** removes the background and crops to head-and-shoulders "
@@ -5134,7 +5134,7 @@ AUTOMATED_REPORTS = [
             "column stays a human one.\n\n"
             "WHEN SOMETHING DOESN'T FIT\n"
             "Whoever still needs doing by hand is posted to "
-            "**#11280-alphalete-marketing-inc-rafael-hidalgo** at the end of "
+            "**#rafs-office-recruiting-11280** at the end of "
             "the run, with the reason. The most common one is a rep "
             "OwnerVille can't find under any campaign."),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
@@ -5230,7 +5230,7 @@ AUTOMATED_REPORTS = [
             "shouldn't be told *see you at orientation today*.\n\n"
             "WHAT THE CHANNEL GETS\n"
             "A one-line post in "
-            "**#11280-alphalete-marketing-inc-rafael-hidalgo**, detail in the "
+            "**#rafs-office-recruiting-11280**, detail in the "
             "thread: how many were emailed and off which tab. If anyone was "
             "**unreachable** \u2014 nobody excluded them, the sheet just has "
             "no usable address \u2014 they are **named**, with their row, and "
@@ -5277,7 +5277,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "\u2705 Slack + Skool links emailed to this week's new starts, summary posted to #11280.",
+            "message_success": "\u2705 Slack + Skool links emailed to this week's new starts, summary posted to #rafs-office-recruiting-11280.",
             "message_failed": "\u274C Run failed \u2014 nothing was sent. Usual causes: this week's D2D OBCL tab hasn't been built yet, or the Slack session on Lucy 1 has expired (re-seed with `slack_invite --login` at that machine). The run says which.",
         },
         "actions": [
@@ -5366,7 +5366,7 @@ AUTOMATED_REPORTS = [
             "**still sends** \u2014 paperwork beats a marking.\n\n"
             "AFTER IT RUNS\n"
             "Posts **Blueink Status Update** to "
-            "**#11280-alphalete-marketing-inc-rafael-hidalgo**: how many went "
+            "**#rafs-office-recruiting-11280**: how many went "
             "out, and a bullet per person who still needs doing by hand, "
             "tagging Tiff, Aimee and Alisson. The correct skips aren't listed "
             "\u2014 they'd bury the names that need acting on."),
@@ -5389,7 +5389,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "\u2705 Packets sent, names tinted green, and the status summary posted to #11280.",
+            "message_success": "\u2705 Packets sent, names tinted green, and the status summary posted to #rafs-office-recruiting-11280.",
             "message_failed": "\u274C Run failed. Usually the Blue Ink session on Lucy 2 has expired \u2014 someone at that machine runs `python -m automations.blueink_docs.session --login`. Nothing was sent.",
         },
         "actions": [
@@ -5432,14 +5432,14 @@ AUTOMATED_REPORTS = [
         # nightly schedule_guard only self-heals jobs with <=2 launchd entries,
         # so a 3rd run would drop guard coverage (that caused the 7/20-22 stall).
         "daily_runs": 2,
-        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, corrects each new start's name to the one Sterling ran their check under — on the checklist AND in their OwnerVille profile — and posts a weekly new-starts status thread to #11280-alphalete-marketing-inc-rafael-hidalgo.",
+        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, corrects each new start's name to the one Sterling ran their check under — on the checklist AND in their OwnerVille profile — and posts a weekly new-starts status thread to #rafs-office-recruiting-11280.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Reads the **Sterling / First Advantage** BG-check emails (raffi127 "
             "inbox) and updates **column K “BG Status”** for the week's new "
             "starts on both `D2D OBCL` tabs. Then posts a weekly "
             "thread in "
-            "**#11280-alphalete-marketing-inc-rafael-hidalgo**, grouping everyone into Passed / "
+            "**#rafs-office-recruiting-11280**, grouping everyone into Passed / "
             "Taken-Pending / Failed / Unperformable / Invited-not-taken (one "
             "edited-in-place reply, so the thread never grows).\n\n"
             "NAMES (added 2026-08-26)\n"
@@ -5499,7 +5499,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ BG statuses synced to both D2D OBCL tabs, names matched to Sterling (checklist + OwnerVille), and the weekly Slack thread updated.",
-            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #11280-alphalete-marketing-inc-rafael-hidalgo. An OwnerVille session that won't open is reported per rep, never a failed run.",
+            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #rafs-office-recruiting-11280. An OwnerVille session that won't open is reported per rep, never a failed run.",
         },
         "actions": [
             {
@@ -5528,7 +5528,7 @@ AUTOMATED_REPORTS = [
             "Every new start should get a text from **the person who ran their "
             "2nd-round interview** before Monday. This chases that — it reads "
             "who owes a text (**Aisha's Friday roster screenshot** in the "
-            "**#11280-alphalete-marketing-inc-rafael-hidalgo** thread) against "
+            "**#rafs-office-recruiting-11280** thread) against "
             "who's replied **Sent**, and chases whoever's still out by Slack "
             "tag AND a personal iMessage that lists each new start's **name + "
             "number** (off the OBCL sheet). A leader Lucy has **no number** "

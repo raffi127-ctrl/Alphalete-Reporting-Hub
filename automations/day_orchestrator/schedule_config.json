@@ -880,7 +880,7 @@
     },
     "install_headshots_monday_agent": {
       "on_scheduler": false,
-      "_note": "One-shot installer for com.alphalete.headshots-monday on LUCY 3 (Monday 8:30am Central; deploy/headshots_monday.sh -> python -m automations.headshots.weekly_thread). Moved off the mini 2026-08-23 (Megan: Lucy 3 has less running). Posts Lucy's 'Headshot Submissions' thread in #11280-alphalete-marketing-inc-rafael-hidalgo \u2014 Megan approved the exact wording 2026-08-23. HELD via HEADSHOTS_LIVE=0 in the wrapper until the end-to-end flow (incl. OwnerVille upload) is approved. Idempotent: marker-in-channel check, Monday-only. `lucy update --machine \"Lucy 3\"` then `lucy rerun install_headshots_monday_agent --machine \"Lucy 3\"`.",
+      "_note": "One-shot installer for com.alphalete.headshots-monday on LUCY 3 (Monday 8:30am Central; deploy/headshots_monday.sh -> python -m automations.headshots.weekly_thread). Moved off the mini 2026-08-23 (Megan: Lucy 3 has less running). Posts Lucy's 'Headshot Submissions' thread in #rafs-office-recruiting-11280 \u2014 Megan approved the exact wording 2026-08-23. HELD via HEADSHOTS_LIVE=0 in the wrapper until the end-to-end flow (incl. OwnerVille upload) is approved. Idempotent: marker-in-channel check, Monday-only. `lucy update --machine \"Lucy 3\"` then `lucy rerun install_headshots_monday_agent --machine \"Lucy 3\"`.",
       "display_name": "Install Headshot Monday thread agent (Mon 8:30am)",
       "source_type": "local",
       "data_sources": [],
@@ -2311,7 +2311,7 @@
     },
     "bg_check_sync_post": {
       "on_scheduler": true,
-      "_note": "MANUAL trigger for the BG Check Sync (`lucy rerun bg_check_sync_post`). Same as the daily launchd run: reads Sterling emails, updates col K on both OBCL tabs, and EDITS the weekly #rafs-office-recruiting thread reply in place (uses the mini's bg_slack_state.json, so it edits rather than reposts). weekdays [] = manual only; the real schedule is the com.alphalete.bg-check-sync launchd job (8/11:30/16 CST).",
+      "_note": "MANUAL trigger for the BG Check Sync (`lucy rerun bg_check_sync_post`). Same as the daily launchd run: reads Sterling emails, updates col K on both OBCL tabs, and EDITS the weekly #rafs-office-recruiting-11280 thread reply in place (uses the mini's bg_slack_state.json, so it edits rather than reposts). weekdays [] = manual only; the real schedule is the com.alphalete.bg-check-sync launchd job (8/11:30/16 CST).",
       "display_name": "BG Check Sync \u2014 run now (post)",
       "source_type": "local",
       "data_sources": [],

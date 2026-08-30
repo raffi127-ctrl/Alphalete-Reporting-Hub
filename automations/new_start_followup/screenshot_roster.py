@@ -3,7 +3,7 @@
 Raf's call (2026-08-03): the live OBCL tab carries people we're NOT moving
 forward with (plus duplicate/leftover rows), so the only true reach-out list is
 the screenshot Aisha posts each week. This module finds that post in
-#rafs-office-recruiting, downloads the roster-table image, and reads the
+#rafs-office-recruiting-11280, downloads the roster-table image, and reads the
 "2ND Round Interviewer -> new start" rows off it with Claude vision — the same
 pattern automations/swag_welcome/extract.py uses for the swag roster.
 
@@ -25,8 +25,8 @@ import requests
 from automations.shared import slack_metrics_post as smp
 from automations.brand_audit import credentials
 
-# Moved from #rafs-office-recruiting (C06881A7WLV) on 2026-08-21 — Aisha now
-# posts the weekly thread in #11280-alphalete-marketing-inc-rafael-hidalgo.
+# Moved from #rafs-office-recruiting (C06881A7WLV, retired) on 2026-08-21 — Aisha now
+# posts the weekly thread in #rafs-office-recruiting-11280.
 CHANNEL_ID = os.environ.get("NSF_CHANNEL_ID", "C0AUAS88FGW")
 # Aisha's weekly post — matched loosely on wording (she has some variance).
 POST_RE = re.compile(r"new\s*starts?.*scheduled.*monday", re.I)

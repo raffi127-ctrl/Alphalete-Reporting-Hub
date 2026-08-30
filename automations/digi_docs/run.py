@@ -426,7 +426,7 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
 
     SEND PHASE ONLY. Both of these ran unconditionally, so `--add-only --live`
     -- a phase that deliberately mails nobody and ticks nothing -- would still
-    have posted "*0* new starts sent digi docs" into #11280 off an empty
+    have posted "*0* new starts sent digi docs" into #rafs-office-recruiting-11280 off an empty
     `done`. Adding reps is not a send and must not announce itself as one.
     """
     dry = tinted_dry

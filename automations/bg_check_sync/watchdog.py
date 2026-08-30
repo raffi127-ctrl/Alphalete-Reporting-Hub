@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 HEARTBEAT = REPO_ROOT / "output" / "logs" / "bg-check-sync.heartbeat"
 LAST_ALERT = REPO_ROOT / "output" / "logs" / "bg-check-sync.watchdog-alert"
 
-RAF_SLACK_ID = "U045Z8N0ZQC"   # Rafael Hidalgo (creator of #rafs-office-recruiting)
+RAF_SLACK_ID = "U045Z8N0ZQC"   # Rafael Hidalgo (creator of #rafs-office-recruiting, retired)
 STALE_HOURS = 6.0              # main runs are 11:30 + 16:00, so >6h stale = a miss
 COOLDOWN_HOURS = 6.0           # don't re-ping more than once per this window
 DAY_START, DAY_END = 8, 21     # only alert 8am–9pm Central (mini local time)

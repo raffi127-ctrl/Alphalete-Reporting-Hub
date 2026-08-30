@@ -20,8 +20,8 @@ is deliberate — this is an outward-facing post to the whole org, and the stand
 rule is that Megan approves each send.
 
 WHAT GETS SENT
-  * Slack — the rendered PNG to #alphalete-sales, #rafs-office-recruiting and
-    #11280-alphalete-marketing-inc-rafael-hidalgo,
+  * Slack — the rendered PNG to #alphalete-sales, #alphalete-lvl1-chat and
+    #rafs-office-recruiting-11280,
     posted AS LUCY (channel posts use the xoxp USER token, per
     slack_metrics_post._client()).
   * Email — from alphaletereporting@gmail.com to the "Alphalete Org Owners" and
@@ -67,7 +67,7 @@ from automations.override_bulletin import fill as F
 
 # Slack targets — Lucy must be a member of every room listed.
 # 2026-08-22 (Raf): #rafs-office-recruiting (C06881A7WLV) is being RETIRED —
-# dropped from BOTH lists; #11280-alphalete-marketing-inc-rafael-hidalgo
+# dropped from BOTH lists; #rafs-office-recruiting-11280
 # (C0AUAS88FGW, private, lucy_reporting is a member) replaced it 2026-08-20.
 # Set OVERRIDE_BULLETIN_CHANNEL_ID to a scratch channel to test a real post
 # safely; it replaces ALL the real channels (same knob as pnl_office).
@@ -76,7 +76,7 @@ from automations.override_bulletin import fill as F
 CHANNELS = [
     ("#alphalete-sales",        "C068PH3RFSM"),
     ("#alphalete-lvl1-chat",    "C09JG28CD27"),
-    ("#11280-alphalete-marketing-inc-rafael-hidalgo", "C0AUAS88FGW"),
+    ("#rafs-office-recruiting-11280", "C0AUAS88FGW"),
 ]
 # DD bulletin rooms — DD_SOURCES.md: the VA posted it to #alphalete-sales and
 # #alphalete-lvl1-chat, and Megan also lists the recruiting room. Every id
@@ -84,7 +84,7 @@ CHANNELS = [
 DD_CHANNELS = [
     ("#alphalete-sales",        "C068PH3RFSM"),
     ("#alphalete-lvl1-chat",    "C09JG28CD27"),
-    ("#11280-alphalete-marketing-inc-rafael-hidalgo", "C0AUAS88FGW"),
+    ("#rafs-office-recruiting-11280", "C0AUAS88FGW"),
 ]
 # Preview recipient for --preview (Megan only, before the distro goes live).
 PREVIEW_TO = ["Meganhidalgo1191@gmail.com"]

@@ -89,7 +89,7 @@ EMAIL_GROUPS = ["Alphalete Org Owners", "Raf's Captain Team",
 # Slack targets for the posted image (informational — send.py owns the real
 # lists). #rafs-office-recruiting dropped 2026-08-22: channel being retired.
 SLACK_CHANNELS = ["#alphalete-sales",
-                  "#11280-alphalete-marketing-inc-rafael-hidalgo"]
+                  "#rafs-office-recruiting-11280"]
 
 
 def email_subject(week_label: str) -> str:

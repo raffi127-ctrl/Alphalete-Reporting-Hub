@@ -27,7 +27,7 @@ from typing import List, Tuple
 
 from automations.shared import slack_metrics_post as smp
 
-# #11280-alphalete-marketing-inc-rafael-hidalgo -- confirmed by Megan
+# #rafs-office-recruiting-11280 -- confirmed by Megan
 # 2026-08-24. Same room bg_check_sync posts to, so Lucy is already a member;
 # it is PRIVATE, and a bot that isn't invited fails with channel_not_found.
 CHANNEL = os.environ.get("BLUEINK_SLACK_CHANNEL", "C0AUAS88FGW")

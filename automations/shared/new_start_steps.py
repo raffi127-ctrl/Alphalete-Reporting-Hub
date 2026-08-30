@@ -41,7 +41,7 @@ SHEET_URL = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 DATED_TAB_PREFIX = "D2D OBCL"
 
 # Where every step reports what still needs doing by hand.
-SLACK_CHANNEL = "#11280-alphalete-marketing-inc-rafael-hidalgo"
+SLACK_CHANNEL = "#rafs-office-recruiting-11280"
 
 # NOTE: there is deliberately NO family-wide card id. Each Step carries its own
 # `card`, and runners pass THAT to hub_activity.log_completed — which keys on

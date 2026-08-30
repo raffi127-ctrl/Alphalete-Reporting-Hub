@@ -1,4 +1,4 @@
-"""The Monday headshot thread in #11280-alphalete-marketing-inc-rafael-hidalgo.
+"""The Monday headshot thread in #rafs-office-recruiting-11280.
 
 Megan 2026-08-23: start a thread each Monday asking people to reply with the
 headshot photo INCLUDING the person's name, so the bot knows who they are.
@@ -26,7 +26,7 @@ import sys
 from typing import Optional
 
 # Same channel bg_check_sync + the new-start threads use.
-CHANNEL_ID = "C0AUAS88FGW"     # #11280-alphalete-marketing-inc-rafael-hidalgo
+CHANNEL_ID = "C0AUAS88FGW"     # #rafs-office-recruiting-11280
 
 # Stable first line — the find/scan side keys off this exact phrase, so
 # reword the BODY freely but never this marker.

@@ -1,4 +1,4 @@
-"""Post the run's result to #11280: one bare header line, detail in the thread.
+"""Post the run's result to #rafs-office-recruiting-11280: one bare header line, detail in the thread.
 
 Same shape as the Blue Ink summary and the corrections channel -- the room
 stays scannable and whoever owns it clicks once for the detail.
@@ -21,7 +21,7 @@ from typing import List, Tuple
 
 from automations.shared import slack_metrics_post as smp
 
-# #11280-alphalete-marketing-inc-rafael-hidalgo -- the new-start family's room
+# #rafs-office-recruiting-11280 -- the new-start family's room
 # (automations/shared/new_start_steps.SLACK_CHANNEL). PRIVATE: a bot that
 # isn't invited fails with channel_not_found.
 CHANNEL = os.environ.get("SLACK_SKOOL_SLACK_CHANNEL", "C0AUAS88FGW")

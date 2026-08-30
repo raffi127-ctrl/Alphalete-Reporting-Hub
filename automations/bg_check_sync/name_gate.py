@@ -80,7 +80,7 @@ ALSO_DECIDE = (
     ("Megan", "U04G5HJBGFN"),      # Megan Hidalgo
     ("Raf", "U045Z8N0ZQC"),        # Rafael Hidalgo
     ("JD", "U05094TTPKQ"),         # JD Mascorro — the workspace has two of him;
-                                   # this is the one in #11280 (checked 8/26)
+                                   # this is the one in #rafs-office-recruiting-11280 (checked 8/26)
 )
 DECIDER_IDS = {uid for _, uid in DECIDERS} | {uid for _, uid in ALSO_DECIDE}
 

@@ -54,7 +54,7 @@ class LeaderStatus:
         self.tagged = tagged              # in Aisha's Saturday roll call
         self.confirmation = confirmation  # thread_mod.Confirmation | None
         self.covered_by = covered_by      # another Leader who sent on their behalf
-        self.departed = departed          # left #rafs-office-recruiting
+        self.departed = departed          # left #rafs-office-recruiting-11280
 
     @property
     def sent(self) -> bool:

@@ -1,4 +1,4 @@
-"""Find the week's new-start thread in #rafs-office-recruiting and read who sent.
+"""Find the week's new-start thread in #rafs-office-recruiting-11280 and read who sent.
 
 Shape of the thread (Raf's existing manual flow):
   Fri ~4:54pm  Aisha  "*D2D Alphalete New Starts Scheduled for Monday*"   <- anchor
@@ -24,8 +24,8 @@ from typing import Dict, List, Optional
 
 from automations.shared import slack_metrics_post as smp
 
-# Moved from #rafs-office-recruiting (C06881A7WLV) on 2026-08-21 — Aisha now
-# posts the weekly thread in #11280-alphalete-marketing-inc-rafael-hidalgo.
+# Moved from #rafs-office-recruiting (C06881A7WLV, retired) on 2026-08-21 — Aisha now
+# posts the weekly thread in #rafs-office-recruiting-11280.
 CHANNEL_ID = os.environ.get("NSF_SLACK_CHANNEL", "C0AUAS88FGW")
 
 # TWO FUNNELS since the week of 8/24 (Megan 2026-08-22: "apply this to

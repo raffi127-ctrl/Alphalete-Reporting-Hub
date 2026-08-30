@@ -2,7 +2,7 @@
 
 Raf's ask (2026-08-23, #l10-alphalete "Headshot Orientation posting"), shaped
 by Megan 2026-08-23: weekly_thread.py starts a thread each Monday in
-#11280-alphalete-marketing-inc-rafael-hidalgo asking people to reply with the
+#rafs-office-recruiting-11280 asking people to reply with the
 headshot photo AND the person's name. This side runs on a tick and:
 
   1. Finds this week's and last week's Monday threads (by their marker line —

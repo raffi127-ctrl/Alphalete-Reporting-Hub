@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 
-# #11280-alphalete-marketing-inc-rafael-hidalgo — same office channel the
+# #rafs-office-recruiting-11280 — same office channel the
 # new-start threads + BG-status posts live in.
 CHANNEL_ID = os.environ.get("HEADSHOTS_CHANNEL_ID", "").strip() or "C0AUAS88FGW"
 
