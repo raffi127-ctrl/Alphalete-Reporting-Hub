@@ -358,11 +358,19 @@ SATURDAY_END_HHMM = (18, 30)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
 SATURDAY = 5
 
-# The cadence, in one place. The gate that actually enforces it is MINUTE % 10
-# in deploy/gap_alerts_5min.sh (whose filename is historic — see the note at the
-# top of that script). Was 5 from launch until 2026-08-27, when Raf asked for
-# 10: at 5 minutes the card was arriving faster than the room could act on it.
-# CHANGE BOTH, and keep MIN_SEND_GAP_MINUTES just under this.
+# THIS CONSTANT ONLY LABELS COPY. The gate that actually enforces the cadence is
+# MINUTE % 15 in deploy/gap_alerts_5min.sh (whose filename is historic — see the
+# note at the top of that script). If the two ever disagree, THE WRAPPER WINS and
+# this is the one that is wrong — read it there before believing this number.
+#
+# Walked 5 → 10 → 15: 5 from launch; 10 on 2026-08-27 (Raf — at 5 minutes the
+# card arrived faster than the room could act on it); 15 on 2026-08-28 (Raf,
+# "sending in the iMessage chat every fifteen minutes"). 60 divides by 15, so
+# the anchors are a clean :00 :15 :30 :45 — keep any future value dividing the
+# hour or the cadence drifts across it.
+#
+# CHANGE BOTH. MIN_SEND_GAP_MINUTES is NOT "just under this" — see its own note
+# for why that reasoning was the 2026-08-27 bug.
 TICK_MINUTES = 15
 
 # A card is REFUSED if this office got one less than this many minutes ago.
