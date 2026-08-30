@@ -29,54 +29,59 @@ from automations.oat_processing import run as oat
 
 
 def _dump_calendar(page, date_str):
-    """POST the calDate form, WAIT for the navigation, and verify the banner
-    says the requested date — the first version read the page mid-reload and
-    saw an empty calendar. Returns (raw_text, parsed_rows)."""
+    """Set the calendar date the way a human does — click the datepicker input,
+    type the date, press Enter. Raw value+submit and the jQuery API are both
+    ignored on this page (no global jQuery; the picker's own handler navigates).
+    Then parse every table whose header carries a 'Booked By' column."""
+    banner = ""
     for _attempt in range(3):
         try:
-            with page.expect_navigation(timeout=30000,
-                                        wait_until="domcontentloaded"):
-                # calDate is a jQuery-UI datepicker: a raw value+submit is
-                # ignored (the server reads the picker's own state / onSelect
-                # fires the real navigation) — the same trap
-                # fetch_office._set_week_and_submit documents for #weekStart.
-                page.evaluate("""(d) => {
-                    const el = document.querySelector("input[name='calDate']");
-                    let fired = false;
-                    try {
-                        jQuery(el).datepicker('setDate', d);
-                        const os = jQuery(el).datepicker('option', 'onSelect');
-                        if (os) { os.call(el, d, jQuery(el).data('datepicker'));
-                                  fired = true; }
-                    } catch (e) {}
-                    if (!fired) {
-                        el.value = d;
-                        el.dispatchEvent(new Event('change', {bubbles: true}));
-                        HTMLFormElement.prototype.submit.call(el.form);
-                    } }""", date_str)
+            loc = page.locator("input[name='calDate']").first
+            loc.click(timeout=8000)
+            page.wait_for_timeout(1000)
+            loc.press("Meta+a")
+            loc.press_sequentially(date_str, delay=60)
+            page.wait_for_timeout(500)
+            try:
+                with page.expect_navigation(timeout=20000,
+                                            wait_until="domcontentloaded"):
+                    loc.press("Enter")
+            except Exception:  # noqa: BLE001
+                pass
+            page.wait_for_timeout(4000)
         except Exception:  # noqa: BLE001
-            pass
-        page.wait_for_timeout(4000)
-        banner = page.evaluate("() => (document.body.innerText||'').match("
-                               "/Calendars for [0-9-]+/) ? "
-                               "document.body.innerText.match("
-                               "/Calendars for [0-9-]+/)[0] : ''")
+            page.wait_for_timeout(2000)
+        banner = page.evaluate(
+            "() => { const m=(document.body.innerText||'').match("
+            "/Calendars for [0-9-]+/); return m ? m[0] : ''; }")
         if date_str in banner:
             break
         print(f"    calendar banner {banner!r} != {date_str}, retrying",
               flush=True)
     raw = page.evaluate("() => document.body.innerText || ''")
-    rows = page.evaluate("""() => {
+    tables = page.evaluate("""() => {
         const out = [];
         for (const tb of document.querySelectorAll('table')) {
-            const head = (tb.rows[0] ? tb.rows[0].innerText : '');
-            for (const r of tb.rows) {
-                const t = r.innerText.replace(/\\n/g, ' | ').trim();
-                if (t) out.push(t);
+            const hdr = tb.rows[0] ? [...tb.rows[0].cells]
+                .map(c => c.innerText.trim()) : [];
+            const bi = hdr.findIndex(h => /booked by/i.test(h));
+            if (bi < 0) continue;
+            // nearest earlier text that names the section
+            let section = '';
+            for (let el = tb.previousElementSibling; el && !section;
+                 el = el.previousElementSibling) {
+                const t = (el.innerText || '').trim();
+                if (/INTERVIEW|FIRST DAY/i.test(t)) section = t.slice(0, 60);
             }
+            const rows = [];
+            for (const r of [...tb.rows].slice(1)) {
+                const c = [...r.cells].map(x => x.innerText.trim());
+                if (c.length >= bi + 1 && (c[1] || c[2])) rows.push(c);
+            }
+            out.push({section, header: hdr, rows});
         }
         return out; }""")
-    return raw, rows
+    return raw, tables
 
 
 def _read_thread(page, name, phone):
@@ -149,33 +154,46 @@ def main(argv=None) -> int:
                 page.goto(f"https://applicantstream.com/index.cfm?rqst={m.group(1)}&p=102",
                           wait_until="domcontentloaded", timeout=45000)
                 page.wait_for_timeout(5000)
-                raw, rows = _dump_calendar(page, a.date)
-                # first-round rows booked by AI Messaging: name is the first cell
-                ai_rows = [r for r in rows if re.search(r"AI Messaging", r, re.I)]
+                raw, tables = _dump_calendar(page, a.date)
                 fh = open(outp, "w")
                 fh.write(json.dumps({"office": oid, "date": a.date,
-                                     "calendar_rows": rows[:400]}) + "\n")
+                                     "tables": tables}) + "\n")
                 names = []
-                for r in ai_rows:
-                    cells = [c.strip() for c in r.split("|") if c.strip()]
-                    nm = next((c for c in cells
-                               if re.match(r"^[A-Z][a-zA-Z'\-]+ [A-Z]", c)
-                               and not re.search(r"AI Messaging|Interview|Calendar", c)), "")
-                    ph = next((re.sub(r"\D", "", c) for c in cells
-                               if re.search(r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}", c)), "")
-                    if nm:
-                        names.append((nm, ph))
+                n_ai = 0
+                for t in tables:
+                    hdr = [h.lower() for h in t["header"]]
+                    def col(label, hdr=hdr):
+                        return next((i for i, h in enumerate(hdr)
+                                     if label in h), None)
+                    bi, fi, li = col("booked by"), col("first name"), col("last name")
+                    pi, ci = col("phone"), col("cell")
+                    first_round = "second" not in (t["section"] or "").lower()
+                    for r in t["rows"]:
+                        booked = r[bi] if bi is not None and bi < len(r) else ""
+                        if not re.search(r"AI Messaging", booked, re.I):
+                            continue
+                        n_ai += 1
+                        if not first_round:
+                            continue          # Carlos asked for FIRST rounds
+                        nm = f"{r[fi] if fi is not None else ''} " \
+                             f"{r[li] if li is not None else ''}".strip()
+                        ph = ""
+                        for j in (pi, ci):
+                            if j is not None and j < len(r) and r[j].strip():
+                                ph = r[j]; break
+                        if nm:
+                            names.append((nm, ph, booked[:60]))
                 seen = set()
-                names = [(n, p2) for n, p2 in names
-                         if not (n.lower() in seen or seen.add(n.lower()))]
+                names = [t3 for t3 in names
+                         if not (t3[0].lower() in seen or seen.add(t3[0].lower()))]
                 if a.limit:
                     names = names[:a.limit]
-                print(f"[{oid}] AI-booked rows={len(ai_rows)} "
-                      f"distinct names={len(names)}", flush=True)
-                for nm, ph in names:
+                print(f"[{oid}] AI-booked rows={n_ai} "
+                      f"first-round names={len(names)}", flush=True)
+                for nm, ph, booked in names:
                     text, why = _read_thread(page, nm, ph)
                     fh.write(json.dumps({"office": oid, "name": nm, "phone": ph,
-                                         "thread_status": why,
+                                         "booked": booked, "thread_status": why,
                                          "thread": (text or "")[:20000]}) + "\n")
                     print(f"[{oid}]   {nm}: {why} "
                           f"({len(text or '')} chars)", flush=True)
