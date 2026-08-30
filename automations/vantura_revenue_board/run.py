@@ -56,6 +56,102 @@ DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 TIERS = ((12, "T5", 85), (9, "T4", 65), (7, "T3", 45), (5, "T2", 30),
          (4, "T1", 20), (0, "—", 0))
 
+# BOX — New Compensation (B2B Vantura doc, 'Box Pay' tab, 2026-08-30).
+# Payout per Electric sale = Base + Term + kWh + Volume bonus; Ancillary =
+# Base + Term only. NO churn impact for now (Carlos 2026-08-30: "there is no
+# churn tier impact at the moment").
+BOX_BASE_ELECTRIC = {1: 300, 2: 275, 3: 210, 4: 190}
+BOX_BASE_ANCILLARY = {1: 150, 2: 100, 3: 75, 4: 50}
+BOX_KWH_BONUS = ((100_000, 450), (75_000, 400), (50_000, 350), (45_000, 300),
+                 (40_000, 250), (35_000, 200), (30_000, 150), (25_000, 125),
+                 (20_000, 100))
+BOX_TIERS = ((13, "T4", 200), (10, "T3", 150), (7, "T2", 100), (4, "T1", 75),
+             (0, "—", 0))
+
+
+def box_tier_for(count: int):
+    for floor, name, rate in BOX_TIERS:
+        if count >= floor:
+            return name, rate
+    return "—", 0
+
+
+def newest_box_csv():
+    d = Path(__file__).resolve().parents[2] / "output"
+    c = sorted(d.glob("box_order_log_*.csv"))
+    return c[-1] if c else None
+
+
+def board_box_reps():
+    from automations.recruiting_report.fill import open_by_key
+    from automations.vantura_payout_estimate.run import BOARD_ID
+    g = open_by_key(BOARD_ID).worksheet("Sales Board").get_all_values()
+    reps = set()
+    for r in g[4:]:
+        name = (r[1] if len(r) > 1 else "").strip()
+        if name.startswith("AT&T"):
+            break
+        if name and (r[11] if len(r) > 11 else "").strip() == "BOX":
+            reps.add(norm_name(name))
+    return reps
+
+
+def price_box(sale):
+    """(amount, notes) per the BOX — New Compensation grid. Electric =
+    10k+ kWh (no start-date column in the export, so 'starting within 24
+    months' can't be checked — volume is the gate we have)."""
+    f = sale.fields
+    try:
+        vol = float((f.get("Sales (All) kWH+Therms") or "0").replace(",", ""))
+    except ValueError:
+        vol = 0.0
+    import re as _re
+    m = _re.search(r"(\d)", f.get("BF Tier") or "")
+    bf = int(m.group(1)) if m else 4
+    bf = bf if bf in (1, 2, 3, 4) else 4
+    electric = vol >= 10_000
+    amt = (BOX_BASE_ELECTRIC if electric else BOX_BASE_ANCILLARY)[bf]
+    notes = [f"BF{bf}", "elec" if electric else "anc"]
+    m = _re.search(r"(\d+)", f.get("Term") or "")
+    months = int(m.group(1)) if m else 0
+    if months >= 36:
+        amt += 200 if electric else 100
+        notes.append("term36")
+    elif months >= 24:
+        amt += 50 if electric else 25
+        notes.append("term24")
+    if electric:
+        for floor, b in BOX_KWH_BONUS:
+            if vol >= floor:
+                amt += b
+                notes.append(f"kwh+{b}")
+                break
+    return amt, ",".join(notes)
+
+
+def load_box_priced(csv_path: Path, monday: dt.date, upto: dt.date):
+    """-> per-rep {'days': {date: $}, 'elig': n, 'payable': n} for BOX. The
+    count gate is the order-log one: reached TPV (or exempt) and not dead."""
+    from automations.box_order_log import clean as bclean
+    reps_ok = board_box_reps()
+    out = collections.defaultdict(lambda: {"days": collections.defaultdict(float),
+                                           "elig": 0.0, "payable": 0.0})
+    sales, _stats = bclean.load(csv_path)
+    for s in sales:
+        rep = _n(s.fields.get("Rep Name"))
+        if not rep or norm_name(rep) not in reps_ok:
+            continue
+        if not s.sale_date or not (monday <= s.sale_date <= upto):
+            continue
+        if s.level in bclean.DEAD_LEVELS or not bclean._reached_tpv(s):
+            continue
+        amt, _notes = price_box(s)
+        rec = out[rep.title()]
+        rec["days"][s.sale_date] += amt
+        rec["elig"] += 1
+        rec["payable"] += 1
+    return out
+
 
 def tier_for(count: int):
     for floor, name, rate in TIERS:
@@ -107,11 +203,11 @@ def load_priced(csv_path: Path, monday: dt.date, upto: dt.date):
     return out, unpriced
 
 
-def build_rows(per_rep, monday: dt.date, upto: dt.date):
+def build_rows(per_rep, monday: dt.date, upto: dt.date, tier_fn=tier_for):
     rows, office = [], {"days": collections.defaultdict(float), "bonus": 0.0}
     for rep, rec in per_rep.items():
         base = sum(rec["days"].values())
-        tname, rate = tier_for(int(rec["elig"]))
+        tname, rate = tier_fn(int(rec["elig"]))
         bonus = rate * rec["payable"]
         row = {"rep": rep, "tier": tname, "total": base + bonus}
         for i, dcode in enumerate(DAYS):
@@ -126,7 +222,8 @@ def build_rows(per_rep, monday: dt.date, upto: dt.date):
 
 
 # ------------------------------------------------------------------ image --
-def render(rows, office, monday: dt.date, upto: dt.date, dest: Path) -> Path:
+def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
+           board_name: str = "Vantura B2B Revenue") -> Path:
     from PIL import Image, ImageDraw
     from automations.box_order_log.png import _font
 
@@ -136,7 +233,8 @@ def render(rows, office, monday: dt.date, upto: dt.date, dest: Path) -> Path:
     fb = _font(11 * S, bold=True)
     ft = _font(14 * S, bold=True)
 
-    cols = ["Rep"] + list(DAYS) + ["Tier", "Week Total"]
+    # Week Total rides right after the name (Carlos, first preview).
+    cols = ["Rep", "Week Total"] + list(DAYS) + ["Tier"]
 
     def cell(row, c):
         if c == "Rep":
@@ -171,7 +269,7 @@ def render(rows, office, monday: dt.date, upto: dt.date, dest: Path) -> Path:
     img = Image.new("RGB", (W, H), (255, 255, 255))
     d = ImageDraw.Draw(img)
 
-    title = (f"Vantura B2B Revenue — Week of {monday.month}/{monday.day}  "
+    title = (f"{board_name} — Week of {monday.month}/{monday.day}  "
              f"(through {upto.strftime('%a')} {upto.month}/{upto.day})")
     d.text((pad, pad), title, font=ft, fill=(20, 20, 20))
 
@@ -204,24 +302,19 @@ def render(rows, office, monday: dt.date, upto: dt.date, dest: Path) -> Path:
 
 
 # ------------------------------------------------------------------ slack --
-def post(png: Path, monday: dt.date, upto: dt.date, dm_user: str = "") -> int:
+def post(png: Path, plain: str, caption: str, dm_user: str = "") -> int:
     from automations.sales_boards.run import (_already_replied, find_thread_ts,
                                               header_title)
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
     today = dt.date.today()
-    plain = f"Revenue Board {upto.month}.{upto.day}"
-    caption = (f":moneybag: *{plain}* — per-day revenue on the office comp "
-               "sheet (incl. ABP / plan add-ons; Week Total includes the "
-               "Tiered Volume bonus at the rep's current tier; baseline "
-               "churn; MCOE/road trip not included)")
     if dm_user:
         cid = client.conversations_open(users=dm_user)["channel"]["id"]
         client.files_upload_v2(channel=cid,
                                file_uploads=[{"file": str(png),
                                               "filename": f"{plain}.png"}],
                                initial_comment=caption)
-        print(f"posted to DM {dm_user}")
+        print(f"posted {plain!r} to DM {dm_user}")
         return 0
     cid = CHANNEL[1]
     ts = find_thread_ts(client, cid, today)
@@ -236,67 +329,116 @@ def post(png: Path, monday: dt.date, upto: dt.date, dm_user: str = "") -> int:
                            file_uploads=[{"file": str(png),
                                           "filename": f"{plain}.png"}],
                            initial_comment=caption)
-    print(f"posted into {CHANNEL[0]} thread {ts}")
+    print(f"posted {plain!r} into {CHANNEL[0]} thread {ts}")
     return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", help="target day YYYY-MM-DD (default yesterday)")
-    ap.add_argument("--csv", help="price an existing export instead of pulling")
+    ap.add_argument("--csv", help="price an existing ATT export instead of pulling")
+    ap.add_argument("--box-csv", help="explicit BOX crosstab csv")
     ap.add_argument("--post", action="store_true",
                     help="post to the thread (default: render only)")
     ap.add_argument("--dm", metavar="USER_ID", help="post to a DM (test)")
     ap.add_argument("--no-post", action="store_true",
                     help="render only, even if --post was given (rerun always "
                          "appends the registry's --post; this is the override)")
+    ap.add_argument("--only", choices=["att", "box"],
+                    help="just one campaign's board")
     a = ap.parse_args(argv)
 
     upto = (dt.date.fromisoformat(a.date) if a.date
             else dt.date.today() - dt.timedelta(days=1))
     monday = week_of(upto)
+    now = dt.datetime.now()
+    held = False
+    boards = []          # (png, plain, caption)
+    tag = f"{upto.month}.{upto.day}"
 
-    if a.csv:
-        src = Path(a.csv)
-    else:
-        from automations.captainship_boards.run import pull_orderlog
-        src = OUT_DIR / f"orderlog_{monday}_{upto}.csv"
-        if not (src.exists() and src.stat().st_mtime > time.time() - 3600):
-            def log(m):
-                print(m, flush=True)
-            pull_orderlog(monday, upto, src)
-    print(f"pricing {src}")
+    # ---------------- AT&T ----------------
+    if a.only != "box":
+        if a.csv:
+            src_csv = Path(a.csv)
+        else:
+            from automations.captainship_boards.run import pull_orderlog
+            src_csv = OUT_DIR / f"orderlog_{monday}_{upto}.csv"
+            if not (src_csv.exists()
+                    and src_csv.stat().st_mtime > time.time() - 3600):
+                pull_orderlog(monday, upto, src_csv)
+        print(f"ATT: pricing {src_csv}")
+        per_rep, unpriced = load_priced(src_csv, monday, upto)
+        if not any(rec["days"].get(upto) for rec in per_rep.values()) and \
+                (now.hour < 6 or (now.hour == 6 and now.minute < 25)):
+            print(f"ATT HOLD: no rows for {upto} in the export yet")
+            held = True
+        else:
+            rows, office = build_rows(per_rep, monday, upto)
+            for r in rows:
+                print(f"  {r['rep']:24} {r['tier']:>3} ${r['total']:>8,.0f}")
+            print(f"  ATT OFFICE ${sum(r['total'] for r in rows):,.0f} "
+                  f"(incl ${office['bonus']:,.0f} tier bonus)")
+            if unpriced:
+                print(f"  unpriced: {dict(unpriced)}")
+            png = render(rows, office, monday, upto,
+                         OUT_DIR / f"revenue_board_{upto}.png")
+            boards.append((png, f"Revenue Board {tag}",
+                           f":moneybag: *Revenue Board {tag}* — per-day AT&T "
+                           "revenue on the office comp sheet (incl. ABP / plan "
+                           "add-ons; Week Total includes the Tiered Volume "
+                           "bonus at the rep's current tier; baseline churn; "
+                           "MCOE/road trip not included)"))
 
-    per_rep, unpriced = load_priced(src, monday, upto)
-    if not any(rec["days"].get(upto) for rec in per_rep.values()):
-        # Same rule as everything else in this family: the export not carrying
-        # the target day yet is a HOLD, not an empty board. (A true zero-sales
-        # day holds too and the last ladder pass posts whatever is real.)
-        now = dt.datetime.now()
-        if now.hour < 6 or (now.hour == 6 and now.minute < 25):
-            print(f"HOLD: no rows for {upto} in the export yet")
-            return 75
-        print(f"past fail-open — proceeding ({upto} shows blank)")
+    # ---------------- BOX ----------------
+    if a.only != "att":
+        box_csv = Path(a.box_csv) if a.box_csv else newest_box_csv()
+        if not box_csv or not box_csv.exists():
+            print("BOX HOLD: no box_order_log csv on disk yet")
+            held = True
+        else:
+            print(f"BOX: pricing {box_csv}")
+            per_box = load_box_priced(box_csv, monday, upto)
+            box_ready = any(rec["days"].get(upto) for rec in per_box.values())
+            # The BOX extract refreshes ~7am and box_order_log writes the csv
+            # at 7:00/8:30 — before ~9:35 an empty target day means "not
+            # posted yet", after it it means a real zero.
+            if not box_ready and (now.hour < 9 or
+                                  (now.hour == 9 and now.minute < 35)):
+                print(f"BOX HOLD: csv has no {upto} sales yet "
+                      "(extract refreshes ~7am)")
+                held = True
+            elif per_box:
+                rows_b, office_b = build_rows(per_box, monday, upto,
+                                              tier_fn=box_tier_for)
+                for r in rows_b:
+                    print(f"  {r['rep']:24} {r['tier']:>3} ${r['total']:>8,.0f}")
+                print(f"  BOX OFFICE ${sum(r['total'] for r in rows_b):,.0f} "
+                      f"(incl ${office_b['bonus']:,.0f} volume bonus)")
+                png_b = render(rows_b, office_b, monday, upto,
+                               OUT_DIR / f"box_revenue_board_{upto}.png",
+                               board_name="Vantura BOX Revenue")
+                boards.append((png_b, f"Box Revenue Board {tag}",
+                               f":package: *Box Revenue Board {tag}* — per-day "
+                               "BOX revenue on the New Compensation grid "
+                               "(base by BF tier, Electric vs Ancillary + "
+                               "term + kWh bonuses; Week Total includes the "
+                               "Volume bonus at the rep's tier; no churn "
+                               "impact for now)"))
+            else:
+                print("BOX: no counted sales this week — nothing to render")
 
-    rows, office = build_rows(per_rep, monday, upto)
-    for r in rows:
-        print(f"  {r['rep']:24} {r['tier']:>3} ${r['total']:>8,.0f}")
-    print(f"  OFFICE TOTAL ${sum(r['total'] for r in rows):,.0f} "
-          f"(incl ${office['bonus']:,.0f} tier bonus)")
-    if unpriced:
-        print(f"  unpriced: {dict(unpriced)}")
-
-    png = render(rows, office, monday, upto,
-                 OUT_DIR / f"revenue_board_{upto}.png")
-    print(f"rendered {png}")
-
+    for png, _plain, _cap in boards:
+        print(f"rendered {png}")
     if a.no_post:
         print("--no-post — not posting")
-        return 0
+        return 75 if held else 0
     if a.post or a.dm:
-        return post(png, monday, upto, dm_user=a.dm or "")
+        for png, plain, caption in boards:
+            rc = post(png, plain, caption, dm_user=a.dm or "")
+            held = held or rc == 75
+        return 75 if held else 0
     print("dry-run — --post to reply in the thread")
-    return 0
+    return 75 if held else 0
 
 
 if __name__ == "__main__":
