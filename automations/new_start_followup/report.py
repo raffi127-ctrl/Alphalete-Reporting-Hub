@@ -18,9 +18,17 @@ from typing import Dict, List, Optional
 
 from automations.new_start_followup import (
     membership, obcl, roster as roster_mod, thread as thread_mod)
+from automations.shared import slack_metrics_post as smp
+from automations.shared import (
+    slack_suppression as suppression, slack_tag_learning as tag_learning)
 
 
 DEPARTED_NOTE = "No longer a channel member"
+
+# Scopes both shared stores to this report: a name suppressed here isn't
+# suppressed for every other Slack report, and a learned id records where it
+# came from.
+REPORT_ID = "new_start_followup"
 
 # Raf gets @'d when OBCL rows are marked "Terminated" — those new starts have
 # no leader, and he assigns one (his Loom, 2026-08-23).
@@ -80,6 +88,8 @@ class Reconciliation:
         self.tagged_no_starts = []    # type: List[str]       Slack id tagged, but owes nothing
         self.thread = None            # type: Optional[dict]
         self.needs_leader = 0         # new starts whose OBCL row says "Terminated"
+        self.suppressed = []          # type: List[str]  on the do-not-ping list
+        self.learned = {}             # type: Dict[str, str]  name -> id, from a hand-tag
 
     @property
     def sent(self) -> List[LeaderStatus]:
@@ -245,6 +255,10 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
     so they can't drift apart."""
     if friday is None:
         friday = monday - dt.timedelta(days=3)
+    # Resolve it HERE, not just inside read_thread: callers pass client=None and
+    # read_thread quietly makes its own, which left `client` None for everything
+    # downstream. That silently broke hand-tag learning (users.info on None).
+    client = client or smp._client()
     th = thread_mod.read_thread(friday=friday, client=client, poster=poster)
 
     rec = Reconciliation()
@@ -262,17 +276,65 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
         for key in [k for k in src if roster_mod._norm(k) == "terminated"]:
             rec.needs_leader += src.pop(key)
 
+    # Do-not-ping (Raf 2026-08-30 re: Giovanna Santos + Heiddy Ochoa, "I don't
+    # want LUCY to keep pinging"). Dropped BEFORE anything else so a suppressed
+    # person is never tagged, never texted, and never listed as a gap either --
+    # listing them just moves the nagging onto whoever reads the report. Log
+    # only, via rec.suppressed.
+    for src in (owed, sheet_only):
+        for key in [k for k in src if suppression.is_suppressed(k, REPORT_ID)]:
+            src.pop(key)
+            if key not in rec.suppressed:
+                rec.suppressed.append(key)
+
     owed_by_id = {}  # type: Dict[str, int]
+    roster_gaps = {}  # type: Dict[str, int]  screenshot name, no roster entry
     for name, count in owed.items():
         leader = ros.by_obcl_name(name)
         if leader is None:
-            rec.unmatched_obcl[name] = rec.unmatched_obcl.get(name, 0) + count
+            roster_gaps[name] = roster_gaps.get(name, 0) + count
             continue
         owed_by_id[leader.slack_id] = owed_by_id.get(leader.slack_id, 0) + count
 
-    # Sheet-only interviewers nobody can @-mention. Never tagged, never nudged --
-    # they only ever reach the "needs a manual reach-out" list.
+    # Sheet-only interviewers: on the OBCL but not on Aisha's screenshot.
     for name, count in sheet_only.items():
+        roster_gaps[name] = roster_gaps.get(name, 0) + count
+
+    # A name we said we couldn't tag, that a human then hand-tagged in this
+    # thread, is learned ONCE and never listed again (Megan 2026-08-30: "if
+    # someone tags them you should learn that person going forward"). It also
+    # fixes the complaint underneath it -- with no roster entry their own
+    # "Sent" reply can't be matched to them either, so Raf saw "Aimee and Ana
+    # haven't sent anything, but they have."
+    #
+    # This DOES let a sheet-only name become an @-mention, which the 2026-08-08
+    # rule ("the screenshot is truth, a sheet-only name is never tagged")
+    # deliberately forbade. It is a considered override, not an oversight: that
+    # rule exists because the SHEET is a weak signal -- it carries departed and
+    # not-moving-forward rows, so promoting off it alone tagged people like
+    # Quigley Nolan who had left. A human deliberately @-tagging the name we
+    # just published as unreachable is a far stronger signal than either the
+    # sheet or the screenshot, and it is the ONLY thing that promotes anyone
+    # here. Aimee, Ana and Kenneth were all sheet-only on 8/30, so restricting
+    # this to screenshot names fixed nothing.
+    if roster_gaps:
+        try:
+            rec.learned = tag_learning.learn_from_replies(
+                client, th.get("replies") or [], list(roster_gaps),
+                after_ts=th.get("our_rollcall_ts") or th["anchor_ts"],
+                source=REPORT_ID)
+        except Exception as exc:  # noqa: BLE001 — never fail the report over this
+            print("WARNING: couldn't read hand-tags ({}) — anyone we don't "
+                  "already know stays on the manual reach-out list.".format(exc))
+        for name in list(roster_gaps):
+            sid = rec.learned.get(name) or tag_learning.lookup(name)
+            if not sid:
+                continue
+            leader = ros.add(roster_mod.Leader(sid, name, obcl_names=[name]))
+            owed_by_id[leader.slack_id] = (
+                owed_by_id.get(leader.slack_id, 0) + roster_gaps.pop(name))
+
+    for name, count in roster_gaps.items():
         rec.unmatched_obcl[name] = rec.unmatched_obcl.get(name, 0) + count
 
     covered = _covers(th["confirmations"], ros)
@@ -309,6 +371,13 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
         if leader is None:
             if sid not in rec.tagged_unknown:
                 rec.tagged_unknown.append(sid)
+            continue
+        # Second suppression gate, by leader rather than by OBCL spelling: it
+        # catches a suppressed person who has a roster entry and got here via a
+        # confirmation or a tag rather than via an owed row.
+        if suppression.is_suppressed(leader.name, REPORT_ID):
+            if leader.name not in rec.suppressed:
+                rec.suppressed.append(leader.name)
             continue
         rec.statuses.append(
             LeaderStatus(
@@ -587,6 +656,19 @@ def ops_flags(rec: Reconciliation) -> List[str]:
     leaders.json, not something to tag into a channel of 20 leaders.
     """
     out = []  # type: List[str]
+    if rec.learned:
+        out.append("Learned from a hand-tag in the thread — they'll be tagged "
+                   "from now on, no leaders.json edit needed:")
+        for name in sorted(rec.learned):
+            out.append("   •  {} = {}".format(name, rec.learned[name]))
+    if rec.suppressed:
+        # Silent in Slack, loud here: a suppressed person vanishing from the
+        # post with no trace anywhere is how a do-not-ping list quietly becomes
+        # a nobody-chased-them list.
+        out.append("On the do-not-ping list — not tagged, texted, or listed "
+                   "(automations/shared/slack_do_not_ping.json):")
+        for name in sorted(rec.suppressed):
+            out.append("   •  {}".format(name))
     if rec.unmatched_obcl:
         out.append("In OBCL but no Slack match — add them to leaders.json:")
         for name in sorted(rec.unmatched_obcl):

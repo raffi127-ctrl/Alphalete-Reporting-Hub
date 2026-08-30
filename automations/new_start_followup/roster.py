@@ -103,6 +103,21 @@ class Roster:
     def by_id(self, slack_id: str) -> Optional[Leader]:
         return self._by_id.get(slack_id)
 
+    def add(self, leader: Leader) -> Leader:
+        """Add a leader AND its lookup keys — the indexes are built in
+        __init__, so appending to .leaders alone leaves them invisible to
+        by_id/by_obcl_name. Used for people learned from a hand-tag in the
+        thread (shared.slack_tag_learning), which is why it never touches
+        leaders.json: the store of record for a learned id is that shared file.
+        """
+        if leader.slack_id in self._by_id:
+            return self._by_id[leader.slack_id]
+        self.leaders.append(leader)
+        self._by_id[leader.slack_id] = leader
+        for k in leader.keys():
+            self._by_name.setdefault(k, leader)
+        return leader
+
     def by_obcl_name(self, name: str) -> Optional[Leader]:
         """Exact/alias match, then first-name + last-initial.
 

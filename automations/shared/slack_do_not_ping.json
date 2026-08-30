@@ -1,0 +1,17 @@
+{
+  "_note": "Do-not-ping list. A person here is never tagged, texted, or listed as a gap by the reports named in 'reports' (omit 'reports' to suppress everywhere). Read by automations.shared.slack_suppression. Suppression BEATS tag-learning: a hand-tag teaches us who someone is, it does not un-suppress them. Safe to hand-edit; add a 'why' so the next person knows whether it still applies.",
+  "people": [
+    {
+      "name": "Giovanna Santos",
+      "reports": ["new_start_followup"],
+      "why": "Raf 2026-08-30 in the #11280 thread: not his people, he knows their engagement, doesn't want Lucy pinging them.",
+      "added": "2026-08-30"
+    },
+    {
+      "name": "Heiddy Ochoa",
+      "reports": ["new_start_followup"],
+      "why": "Raf 2026-08-30 in the #11280 thread: same as Giovanna Santos — don't ping.",
+      "added": "2026-08-30"
+    }
+  ]
+}

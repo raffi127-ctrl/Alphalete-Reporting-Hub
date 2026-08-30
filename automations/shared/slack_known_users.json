@@ -1,0 +1,23 @@
+{
+  "_note": "Slack IDs learned from humans hand-tagging people a report said it could not tag. Written by automations.shared.slack_tag_learning — safe to hand-edit. Keyed by normalized name. IDs and display names only; nothing secret, which is why this is committed (git is the only channel to the mini).",
+  "users": {
+    "aimee garibay": {
+      "id": "U0APVP29QSD",
+      "name": "Aimee Garibay",
+      "source": "new_start_followup",
+      "learned": "2026-08-30"
+    },
+    "ana griffin": {
+      "id": "U08LPKSUMD5",
+      "name": "Ana Griffin",
+      "source": "new_start_followup",
+      "learned": "2026-08-30"
+    },
+    "kenneth guzman": {
+      "id": "U0BL7731LJD",
+      "name": "Kenneth Guzman",
+      "source": "new_start_followup",
+      "learned": "2026-08-30"
+    }
+  }
+}
