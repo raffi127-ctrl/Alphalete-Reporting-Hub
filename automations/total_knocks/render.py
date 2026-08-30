@@ -305,8 +305,14 @@ PAD        = 16 * SCALE
 TITLE_H    = 52 * SCALE
 HEADER_H   = 40 * SCALE
 ROW_H      = 28 * SCALE
-CELL_PAD_X = 10 * SCALE   # was 4 — more breathing room so text isn't cramped
-                          # to the grid
+# 6, down from 10 (Megan 2026-08-30: "make sure every cell is fit to the text
+# it holds — remember Raf doesn't like blank space"). It went 4 -> 10 on
+# 2026-08-06 for breathing room, back when every cell was LEFT-aligned and the
+# padding was the only thing keeping text off the grid line. Cells centre now,
+# so the text sits away from both edges on its own and the padding is pure
+# width: at 10 it was 1,080px of a 3,114px board. 6 keeps a visible gutter and
+# takes 220px off. Not lower — at 4 the columns start reading as one block.
+CELL_PAD_X = 6 * SCALE
 MIN_COL_W  = 26 * SCALE
 MAX_COL_W  = 640 * SCALE  # was 320 — the old cap truncated wide headers
                   # ("Presentation – Not Interested") and long rep names; widen
@@ -615,10 +621,13 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
             font = f_name if (ci == name_col or is_total) else f_cell
             fg = (HEADER_FG if is_total
                   else NAME_FG if ci == name_col else TEXT)
-            if val.strip().isdigit() and ci != 0:    # center counts (not ID)
-                tx = x + (col_w[ci] - _text_w(d, val, font)) // 2
-            else:
-                tx = x + CELL_PAD_X
+            # EVERY cell centres (Megan 2026-08-30, "let's center all text to
+            # cell"), which is the house standard these boards are supposed to
+            # follow — centred both ways. It used to centre only cells that
+            # were entirely digits and never column 0, so a rep name, a time
+            # like "2:38 PM", an "8h 49m" gap and the "#" column's own row
+            # numbers all sat left while the counts beside them sat centred.
+            tx = x + max(CELL_PAD_X, (col_w[ci] - _text_w(d, val, font)) // 2)
             d.text((tx, y + (ROW_H - 13 * SCALE) // 2), val, font=font, fill=fg)
             x += col_w[ci]
         y += ROW_H
