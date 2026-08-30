@@ -73,6 +73,19 @@ class EmailNotLanded(Exception):
     will retry. Exit 0 so the agent doesn't look broken."""
 
 
+class TrackerNotShared(RuntimeError):
+    """The tracker workbook isn't readable by THIS machine's Sheets identity.
+
+    Its own class because it is the one failure a re-run can never fix: someone
+    has to add a share in Drive. gspread turns Sheets' 403/404 into a BARE
+    `PermissionError` / `SpreadsheetNotFound` whose str() is EMPTY, so the
+    first live failure (2026-08-30, Carlos's probe on Lucy 2) reported itself as
+    `probe: tracker open ✗ ()` — an empty pair of brackets and nothing else.
+    Every Lucy signs in as a DIFFERENT Google account (Lucy 1 raffi127@, Lucy 2
+    Carlos's, Lucy 3 alphaletereporting@), so "it opens in my browser" says
+    nothing about the machine the agent runs on."""
+
+
 # --------------------------------------------------------------- email → data
 def _expected_week_ending(today: dt.date) -> dt.date:
     """Most recent Saturday strictly before today (Archey labels weeks by
@@ -185,7 +198,23 @@ def parse_snapshot(xlsx_path: Path) -> Tuple[Dict[str, dict], Dict[str, dict], L
 # --------------------------------------------------------------- sheet append
 def _client_sheet():
     from automations.recruiting_report import fill as rfill
-    return rfill._retry(lambda: rfill.open_by_key(TRACKER_ID))
+    try:
+        return rfill._retry(lambda: rfill.open_by_key(TRACKER_ID))
+    except Exception as e:  # noqa: BLE001 — re-raised, just spelled out first
+        if type(e).__name__ not in ("PermissionError", "SpreadsheetNotFound"):
+            raise
+        cause = getattr(e, "__cause__", None)
+        resp = getattr(cause, "response", None)
+        code = getattr(resp, "status_code", None)
+        body = (getattr(resp, "text", "") or "").strip()[:200].replace("\n", " ")
+        raise TrackerNotShared(
+            f"cannot open the tracker {TRACKER_ID} "
+            f"(http={code} {type(e).__name__}: {body or 'no body'}). THIS "
+            f"machine's Sheets token (~/.config/recruiting-report/"
+            f"oauth-token.json) is not on the file — each Lucy is a different "
+            f"Google account. Fix: share {TRACKER_URL} with that account as "
+            f"Editor, then re-run. Which account is it: "
+            f"`lucy --machine \"Lucy 2\" sheets_whoami`.") from e
 
 
 def _serial(d: dt.date) -> int:
@@ -444,7 +473,9 @@ def probe() -> int:
               f"{[w.title for w in sh.worksheets()]}")
     except Exception as e:  # noqa: BLE001
         ok = False
-        print(f"probe: tracker open ✗ ({e})")
+        # type + message: gspread's 403/404 carry an EMPTY str(), so printing
+        # the message alone said literally nothing (2026-08-30).
+        print(f"probe: tracker open ✗ ({type(e).__name__}: {e or 'no message'})")
     try:
         from automations.residential_rep_count import email_source
         latest = email_source.latest_week_ending()
