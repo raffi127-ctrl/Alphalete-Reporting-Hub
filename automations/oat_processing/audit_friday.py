@@ -182,11 +182,15 @@ def main(argv=None) -> int:
     p.add_argument("--date", default="08-28-2026")
     p.add_argument("--limit", type=int, default=0,
                    help="cap threads read per office (0 = all)")
+    p.add_argument("--profile-office", default="11580",
+                   help="whose CDP profile/port to borrow for the session — a "
+                        "SECOND concurrent lane on one machine must use a "
+                        "different one or the lanes pkill each other's Chrome")
     a = p.parse_args(argv)
     ids = [o.strip() for o in a.offices.split(",") if o.strip()]
 
     from automations.applicant_push import offices as OF
-    OF.activate("11580")
+    OF.activate(a.profile_office)
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     with rp.warm_appstream_cdp_page(switch_office=False, diag_tab="") as (page, ctx, net):
         for oid in ids:
