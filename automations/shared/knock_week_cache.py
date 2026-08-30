@@ -210,7 +210,11 @@ def _jsonable(v: Any) -> Any:
 # Knocked joined the pull for Raf's Saturday columns and the Mon–Fri knocking
 # fix. A schema-3 row has neither, so it must re-pull rather than draw them
 # blank.
-SCHEMA = 4
+# 5 (2026-08-30, same evening): K_TT_DAYS — which days the rep had a Time
+# Tracker record — for Raf's Saturday clock-in column. A schema-4 row cannot be
+# topped up: "no record" and "record with no gaps" both stored 0 minutes, so
+# the distinction has to come from a fresh pull.
+SCHEMA = 5
 
 
 def get(office: str, saturday, *,
