@@ -147,9 +147,37 @@ class NeverPostsBlank(unittest.TestCase):
     def test_a_failed_office_does_not_post_either(self):
         with mock.patch("automations.shared.slack_metrics_post"
                         ".post_reply_with_image") as never:
-            intraday.post(self._results(error=RuntimeError("boom")), EOD,
-                          dry_run=False, logfn=lambda m: None)
+            code = intraday.post(self._results(error=RuntimeError("boom")), EOD,
+                                 dry_run=False, logfn=lambda m: None)
         never.assert_not_called()
+        # ...and it FAILS the run. A raised office exiting 0 is what published a
+        # green card over Hammad's missing 2026-08-29 board.
+        self.assertEqual(code, 1)
+
+    def test_a_raised_office_is_not_confused_with_an_empty_one(self):
+        """The two never-post states must not collapse into one exit code: an
+        empty office is a finished answer, a raised office is no answer. Both
+        stay silent in Slack; only one turns the card red."""
+        with mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_with_image"):
+            empty = intraday.post(self._results(), EOD, dry_run=False,
+                                  logfn=lambda m: None)
+            raised = intraday.post(self._results(error=RuntimeError("boom")),
+                                   EOD, dry_run=False, logfn=lambda m: None)
+        self.assertEqual((empty, raised), (0, 1))
+
+    def test_one_raised_office_still_lets_the_others_post(self):
+        """A dark office must cost its own board and nothing else — the run goes
+        red, but the healthy offices are still posted."""
+        recs = (self._results(key="dark", error=RuntimeError("boom"))
+                + self._results(key="ok", png=Path("/tmp/ok.png"),
+                                rows=rows_for()))
+        with mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_with_image") as sent:
+            code = intraday.post(recs, EOD, dry_run=False,
+                                 logfn=lambda m: None)
+        self.assertEqual(sent.call_count, 1)   # the healthy office went
+        self.assertEqual(code, 1)              # and the run still reports red
 
     def test_dry_run_never_touches_slack(self):
         with mock.patch("automations.shared.slack_metrics_post"

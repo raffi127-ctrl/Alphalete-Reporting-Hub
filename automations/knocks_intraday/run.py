@@ -254,6 +254,11 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
     standing never-post-blank rule. It still shows in the log so a silent
     office is visible to whoever reads the run.
 
+    AN OFFICE WHOSE PULL RAISED IS FAILED, NOT SKIPPED. "Nothing posted" is the
+    only thing those two states share; one is an answer and the other is the
+    absence of one. Skipping a raised office is what let a dead board exit 0 and
+    paint the card green on 2026-08-29 — see the branch below.
+
     CROSS-WORKSPACE OFFICES POST WITH THEIR OWN TOKEN, never Lucy's. Trang's
     channel lives in the FRESH SUCCESS workspace; posting her board on the AO
     token would either fail or, worse, land a channel id that means something
@@ -285,11 +290,37 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
     for rec in results:
         day = rec["day"]
         cap = _caption(rec["label"], day, slot, rec["abbr"])
-        if rec["error"] is not None or rec["png"] is None:
+        if rec["error"] is not None:
+            # A BROKEN PULL IS A FAILURE, NOT A SKIP (2026-08-30). This used to
+            # share the `skipped` branch with a verified-empty office, on the
+            # reasoning that neither one posts so neither one matters. They are
+            # opposites: an empty office HAS its answer and the answer is
+            # nothing; a raised office has no answer at all.
+            #
+            # What that cost, 2026-08-29: Hammad's 9 PM board died on the
+            # ownerville Office-Access table (RuntimeError after 3x30s of
+            # stalled DataTables AJAX), the slot logged
+            # `posted=2 skipped=2 failed=0`, exited 0, and knocks_intraday.sh
+            # published the phase SUCCESS. Green card, no #claudecorrections
+            # alert, and that office simply had no board that night — found only
+            # because someone went looking. schedule.GRACE_MIN had closed by the
+            # time the pass ended, so it never retried either.
+            #
+            # Same treatment the missing cross-workspace token already gets
+            # below, for the reason Megan gave it (2026-08-25: "it should fail
+            # loudly"). The other offices still post — one dark office must not
+            # cost the rest their board.
+            failed += 1
+            logfn(f"[knocks] ❌ {rec['key']}: {type(rec['error']).__name__}: "
+                  f"{str(rec['error'])[:160]} — no board, and NOT calling this "
+                  "a clean run")
+            continue
+        if rec["png"] is None:
+            # Verified empty: the pull WORKED and the office genuinely logged
+            # nothing (Salik, the same 2026-08-29 slot — Time Tracker answered
+            # 200 with no rows). Never a blank board, and never a failure.
             skipped += 1
-            why = ("no rows" if rec["error"] is None
-                   else f"{type(rec['error']).__name__}")
-            logfn(f"[knocks] skip {rec['key']} ({why}) — nothing posted")
+            logfn(f"[knocks] skip {rec['key']} (no rows) — nothing posted")
             continue
         tok = token_path(rec)
         if tok is not None and not tok.exists():
