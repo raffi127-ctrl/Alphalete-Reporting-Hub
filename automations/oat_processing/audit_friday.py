@@ -85,7 +85,10 @@ def _dump_calendar(page, date_str):
 
 
 def _read_thread(page, name, phone):
-    """Open the SMS widget, bind this applicant's thread, return its text."""
+    """Open the SMS widget and read ONE applicant's conversation. Everything is
+    scoped to #chatContainer — the widget injects into the MAIN page DOM, so an
+    unscoped read returns the entire calendar page (the first smoke test's
+    102KB "threads" were exactly that)."""
     if not oat._open_sms_panel(page):
         return None, "sms panel failed"
     w, diag = oat._sms_widget_frame(page, 30000)
@@ -93,41 +96,47 @@ def _read_thread(page, name, phone):
         oat._close_sms_panel(page)
         return None, f"widget missing ({diag[:80]})"
     page.wait_for_timeout(800)
-    want = re.sub(r"\\D", "", phone or "")[-10:]
-    hit = w.evaluate(r"""(args) => {
+    want = re.sub(r"\D", "", phone or "")[-10:]
+    w.evaluate(r"""(args) => {
         const [nm, ph] = args;
-        const setF = (sel, v) => { const el = document.querySelector(sel);
+        const root = document.querySelector('#chatContainer');
+        if (!root) return false;
+        const setF = (sel, v) => { const el = root.querySelector(sel);
             if (!el) return false; el.value = v;
             el.dispatchEvent(new Event('input', {bubbles: true}));
             el.dispatchEvent(new Event('change', {bubbles: true})); return true; };
-        const dsel = document.querySelector("#sms_date_filter, [name='sms_date_filter']");
+        const dsel = root.querySelector("#sms_date_filter, [name='sms_date_filter']");
         if (dsel) { for (const o of dsel.options)
             if (/this month/i.test(o.text)) { dsel.value = o.value;
                 dsel.dispatchEvent(new Event('change', {bubbles: true})); break; } }
-        setF("#sms_name_filter, [name='sms_name_filter']", "");
-        setF("#sms_phone_filter, [name='sms_phone_filter']", "");
-        if (ph) setF("#sms_phone_filter, [name='sms_phone_filter']", ph);
-        else setF("#sms_name_filter, [name='sms_name_filter']", nm);
-        const go = [...document.querySelectorAll('button, input')]
+        setF("#sms_name_filter", "");
+        setF("#sms_phone_filter", "");
+        if (ph) setF("#sms_phone_filter", ph); else setF("#sms_name_filter", nm);
+        const go = [...root.querySelectorAll('button, input')]
             .find(b => /search/i.test(b.value || b.innerText || ''));
         if (go) go.click();
         return true; }""", [name, want])
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(3500)
     clicked = w.evaluate(r"""(nm) => {
-        const fold = s => s.normalize('NFKD').replace(/[^\\w ]/g, '').toLowerCase();
-        const items = [...document.querySelectorAll('li, tr, div')]
-            .filter(e => e.offsetParent !== null && e.childElementCount < 12
-                      && fold(e.innerText || '').includes(fold(nm).split(' ')[0]));
+        const root = document.querySelector('#chatContainer');
+        if (!root) return false;
+        const fold = s => s.normalize('NFKD').replace(/[^\w ]/g, '').toLowerCase();
+        const items = [...root.querySelectorAll('li, [class*="chat-box-list"] div, tr')]
+            .filter(e => e.offsetParent !== null
+                      && fold(e.innerText || '').includes(fold(nm).split(' ')[0])
+                      && (e.innerText || '').length < 400);
         if (!items.length) return false;
-        items[0].click(); return (items[0].innerText || '').slice(0, 80); }""",
+        items[0].click();
+        return (items[0].innerText || '').replace(/\n/g, ' ').slice(0, 80); }""",
         name)
     if not clicked:
         oat._close_sms_panel(page)
         return None, "no thread matched"
     page.wait_for_timeout(3500)
-    text = w.evaluate("() => document.body.innerText || ''")
+    text = w.evaluate("""() => { const r = document.querySelector('#chatContainer');
+        return r ? (r.innerText || '') : ''; }""")
     oat._close_sms_panel(page)
-    return text, "ok"
+    return text, f"ok (bound: {clicked})"
 
 
 def main(argv=None) -> int:
