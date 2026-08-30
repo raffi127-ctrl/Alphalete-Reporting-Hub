@@ -56,7 +56,8 @@ from automations.captainship_drafts import knock_dispo_images as KD
 KNOCK_KINDS = ("daily_knocks", "knock_dispo")
 
 
-def captains_for(today: dt.date, only: str | None = None):
+def captains_for(today: dt.date, only: str | None = None,
+                 only_section: str | None = None):
     """The captains whose sections TODAY include a knock board, in config
     order. Resolved through Captain.sections_on so the Sun+Mon gate on the
     weekly section is honoured here exactly as the build honours it — this
@@ -67,6 +68,9 @@ def captains_for(today: dt.date, only: str | None = None):
             continue
         kinds = {k for _h, k in captain.sections_on(today)}
         wants = tuple(k for k in KNOCK_KINDS if k in kinds)
+        if only_section:
+            keep = "knock_dispo" if only_section == "weekly" else "daily_knocks"
+            wants = tuple(k for k in wants if k == keep)
         if wants:
             out.append((captain, wants))
     return out
@@ -78,6 +82,17 @@ def main(argv=None) -> int:
                                    "The boards cover the day before, same "
                                    "anchor the drafts use.")
     ap.add_argument("--only", help="One captain key (e.g. rafael).")
+    ap.add_argument("--section", choices=("weekly", "daily"), default=None,
+                    help="Capture only ONE of the two knock sections. "
+                         "Default: whichever the day calls for (Sun/Mon = "
+                         "both). Use 'weekly' when only the Mon-Sat "
+                         "disposition boards changed: the completed week is "
+                         "frozen and shared/knock_week_cache almost always "
+                         "has it, so --section weekly --fresh re-RENDERS "
+                         "without pulling ownerville at all, while the daily "
+                         "half is never cached (it moves intraday) and would "
+                         "impersonate every ICD again for boards nobody "
+                         "asked to change.")
     ap.add_argument("--fresh", action="store_true",
                     help="Re-pull instead of reusing today's capture. The "
                          "manifest keys on the DATE, so after a board's "
@@ -90,7 +105,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
-    targets = captains_for(today, args.only)
+    targets = captains_for(today, args.only, args.section)
     if not targets:
         print(f"no captain has a knock section on {today} — nothing to pull")
         print("=== done ===")
