@@ -517,6 +517,70 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
             print("INSP|RAFWK|{}|{}descs={}".format(wk, len(byweek[wk]),
                   sorted(byweek[wk])[:14]))
         return
+    # Raf DD probe: `--inspect __RAFDD__` (Carlos 2026-08-30). Per-DD-week
+    # deposit math for Rafael Hidalgo out of the last-saved ORG crosstab —
+    # week total $ to ICD (the deposit), Commissions vs bonus/override/
+    # chargeback transaction lines, and per-product order counts with the
+    # per-order payout — so Carlos can lay Raf's real revenue next to the
+    # office Commissions sheet. Rich output goes to the control workbook's
+    # 'Inspect Out' tab (the mini Result cell truncates); INSP| lines mirror
+    # the headline numbers for logtail.
+    if owner.strip().upper() in ("__RAFDD__",):
+        mine = [r for r in rows
+                if str(r.get(COL_OWNER, "")).strip() == "Rafael Hidalgo"]
+        out_rows = [["RAF DD", "week", "key", "orders/rows", "$ per order", "total $"]]
+        byweek: Dict[str, list] = collections.defaultdict(list)
+        for r in mine:
+            byweek[str(r.get(COL_DDWEEK, "")).strip() or "-"].append(r)
+        for wk in sorted(byweek):
+            wrows = byweek[wk]
+            tot = sum(_num(r.get(COL_TOTAL)) or 0 for r in wrows)
+            comm = [r for r in wrows if _is_commission(r)]
+            comm_tot = sum(_num(r.get(COL_TOTAL)) or 0 for r in comm)
+            out_rows.append(["WEEK", wk, "DEPOSIT (all rows)", len(wrows), "",
+                             round(tot, 2)])
+            out_rows.append(["", wk, "product commissions", len(comm), "",
+                             round(comm_tot, 2)])
+            other: Dict[str, float] = collections.defaultdict(float)
+            for r in wrows:
+                if not _is_commission(r):
+                    txn = str(r.get(COL_TXN, "") or "").strip() or "(no txn type)"
+                    other[txn] += _num(r.get(COL_TOTAL)) or 0
+            for txn, v in sorted(other.items(), key=lambda x: -abs(x[1])):
+                out_rows.append(["", wk, txn, "", "", round(v, 2)])
+            # per-product: distinct orders + per-order payout (sum of the
+            # order's Commissions rows — the post-2026-08 row-split format)
+            per: Dict[str, Dict[str, float]] = collections.defaultdict(
+                lambda: collections.defaultdict(float))
+            for r in comm:
+                cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
+                key = "{} | {}".format(cat, _product_name(r, cat) or "(blank)")
+                oid = str(r.get(COL_ORDER, "") or "").strip()
+                per[key][oid] += _num(r.get(COL_TOTAL)) or 0
+            for key, orders in sorted(per.items(),
+                                      key=lambda x: -sum(x[1].values())):
+                s = sum(orders.values())
+                n = len(orders)
+                out_rows.append(["", wk, key, n,
+                                 round(s / n, 2) if n else "", round(s, 2)])
+        for r in out_rows:
+            if r[0] in ("RAF DD", "WEEK"):
+                print("INSP|RAFDD|" + "|".join(str(c) for c in r))
+        try:
+            import gspread
+            from automations.recruiting_report import fill as _fill
+            from automations.day_orchestrator.mini_control import CONTROL_SHEET_ID
+            sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+            try:
+                ws = sh.worksheet("Inspect Out")
+            except gspread.WorksheetNotFound:
+                ws = sh.add_worksheet(title="Inspect Out", rows=300, cols=8)
+            ws.clear()
+            ws.update(out_rows, "A1")
+            print("INSP|RAFDD|wrote {} rows to 'Inspect Out'".format(len(out_rows)))
+        except Exception as e:            # noqa: BLE001 — probe must not crash on the write
+            print("INSP|RAFDD|Inspect Out write failed: {}".format(str(e)[:200]))
+        return
     if owner.strip().upper() in ("__PRODUCTS__", "__PROD__"):
         BONUS = ("bonus", "captains", "lead disposition", "converged", "kwh",
                  "guarantee", "disposition", "pilot", "adjustment", "chargeback")
