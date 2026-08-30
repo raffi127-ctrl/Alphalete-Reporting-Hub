@@ -49,6 +49,13 @@ TAB = "Sales Board"
 OFFICE_DAY_START = 10
 
 NAME_COL, CAMPAIGN_COL = 2, 12        # col B, col L
+
+# BOX moves off Slack and onto the box order log Tue 2026-09-01 (Carlos
+# 2026-08-30: "starting Tuesday morning, you can use the box order log
+# instead of Slack"). From that date the default passes stop counting BOX
+# posts — vantura_orderlog_sales' 05:02 close-out owns BOX. An explicit
+# --campaign BOX still works for a manual catch-up.
+BOX_TO_ORDERLOG = dt.date(2026, 9, 1)
 DAY_HEADER_ROW = 4                    # row carrying Monday..Sunday
 FIRST_DAY_COL, LAST_DAY_COL = 5, 11   # cols E..K
 
@@ -633,6 +640,10 @@ def main(argv=None) -> int:
 
     campaigns = a.campaign or [c.name for c in P.CAMPAIGNS]
     now = dt.datetime.now(TZ)
+    if not a.campaign and now.date() >= BOX_TO_ORDERLOG and "BOX" in campaigns:
+        campaigns.remove("BOX")
+        _log(f"BOX comes from the order log since {BOX_TO_ORDERLOG.isoformat()}"
+             " (vantura_orderlog_sales) — not counted from Slack")
     today = now.date()
     if a.date:
         end = dt.date.fromisoformat(a.date)
