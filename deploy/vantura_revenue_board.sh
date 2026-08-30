@@ -2,7 +2,7 @@
 # Vantura B2B Revenue Board -> the Vantura Production thread, on LUCY 2.
 # Prices the week's order log (full export incl. Auto Bill Pay / plan
 # add-ons + the Tiered Volume bonus in the Week Total) and replies with the
-# board image in the day's 5:10 thread (Carlos 2026-08-30).
+# board image in the day's 5:10 thread in #a-players-b2b (Carlos 2026-08-30).
 #
 # CADENCE: 05:20 / 05:50 / 06:30 — after the 5:10 sales-boards post creates
 # the thread. The module HOLDS (exit 75) while the export lacks the target

@@ -21,7 +21,7 @@ What it does, every morning after the order-log data is fresh:
      TOTAL column.
   4. Renders one board image — Rep | Mon..Sun | Tier | Week Total — and
      replies with it in the day's 'Vantura Production M/D/YYYY' thread in
-     #alphalete-gp-sales.
+     #a-players-b2b (A-Players ONLY to start — Carlos 2026-08-30).
 
 HOLDS (exit 75, the LaunchAgent ladder retries): export has no rows for the
 target day yet, or the Vantura Production thread hasn't been posted yet
@@ -47,7 +47,10 @@ from automations.vantura_payout_estimate.run import (
 )
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "vantura_revenue_board"
-CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
+# A-PLAYERS ONLY to start (Carlos 2026-08-30: "It shouldn't go on the GP
+# sales. I want it on the A players' Slack to start.") — the thread exists
+# in both channels; we reply to the one in #a-players-b2b.
+CHANNEL = ("#a-players-b2b", "C0AJQA8P716")
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 TIERS = ((12, "T5", 85), (9, "T4", 65), (7, "T3", 45), (5, "T2", 30),
