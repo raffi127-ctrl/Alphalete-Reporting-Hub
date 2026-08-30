@@ -58,9 +58,17 @@ def _n(s) -> str:
     return " ".join(str(s or "").split()).strip()
 
 
+# The export writes legal first names, the board the name the rep goes by —
+# same aliasing vantura_orderlog_sales uses (Will/William cost the first run
+# two whole reps).
+_FIRST_ALIASES = {"william": "will", "nicholas": "nick", "jeffrey": "jeff"}
+
+
 def norm_name(n: str):
     t = re.sub(r"[^a-z ]", "", n.lower()).split()
-    return (t[0], t[-1]) if t else ("", "")
+    if not t:
+        return ("", "")
+    return (_FIRST_ALIASES.get(t[0], t[0]), t[-1])
 
 
 def board_b2b_reps():
