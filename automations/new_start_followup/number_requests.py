@@ -97,14 +97,21 @@ def find_request(replies: List[dict]) -> Optional[dict]:
     return None
 
 
-def _fill_from_contacts(gaps, live: bool = False) -> Dict[str, str]:
-    """Fill missing leader numbers from reception's Google Contacts.
+def _fill_from_contacts(rec, gaps, client=None, live: bool = False) -> Dict[str, str]:
+    """Fill missing leader numbers from reception's Contacts, then TEXT them.
 
     Best-effort and non-fatal: the reception OAuth token isn't on every
     machine, and a report must never die because a lookup it only tries as a
     courtesy wasn't available. Returns {name: e164} for what it filled.
+
+    Sending is part of the same step on purpose. Filling the number alone only
+    resolves the ASK -- the leader still owes their new start a text, and
+    nothing else would ever send it: the late-number path only fires when a
+    number arrives as a thread REPLY, which this one never will. The gap would
+    close silently with nobody texted.
     """
-    from automations.new_start_followup import contacts_google, roster as roster_mod
+    from automations.new_start_followup import (
+        contacts_google, pair_chat, roster as roster_mod, texts)
 
     names = [g.leader.name for g in gaps]
     try:
@@ -117,6 +124,7 @@ def _fill_from_contacts(gaps, live: bool = False) -> Dict[str, str]:
         return {}
 
     phones = roster_mod.load_phones()
+    filled = []
     for g in gaps:
         num = found.get(g.leader.name)
         if not num:
@@ -124,10 +132,43 @@ def _fill_from_contacts(gaps, live: bool = False) -> Dict[str, str]:
         print("[numbers] {} found in reception's Contacts.".format(g.leader.name))
         g.leader.phone = num
         phones[g.leader.slack_id] = num
-    if live:
-        roster_mod.save_phones(phones)
-    else:
-        print("[numbers] [dry-run] overlay not written.")
+        filled.append(g)
+    if not live:
+        print("[numbers] [dry-run] overlay not written, no texts sent.")
+        return found
+    roster_mod.save_phones(phones)
+
+    link = texts.thread_link(rec)
+    details = None
+    for status in filled:
+        marker = texts._marker(rec.monday, status.leader.slack_id)
+        if marker.exists():
+            continue
+        if details is None:
+            details = texts.starts_by_leader(rec.monday)
+        body = texts.compose(status, rec.monday, link=link,
+                             starts=details.get(status.leader.slack_id))
+        # Same 3-way delivery as the Saturday sweep, so Raf is in this one too
+        # (Megan 2026-08-30: "raf should be included in the text to kenneth").
+        result = pair_chat.deliver(status.leader.phone, body, dry_run=False)
+        if not result.get("sent"):
+            print("[numbers] SEND FAILED for {}: {}".format(
+                status.leader.name, result.get("error")))
+            continue
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(dt.datetime.now().isoformat(timespec="seconds"))
+        print("[numbers] texted {} ({}).".format(
+            status.leader.name, pair_chat.describe(result)))
+        if client is not None and rec.thread:
+            try:
+                client.chat_postMessage(
+                    channel=rec.thread["channel"],
+                    thread_ts=rec.thread["anchor_ts"],
+                    text="✅ Found {}'s number and sent their text.".format(
+                        status.leader.name))
+            except Exception as exc:  # noqa: BLE001 — the text already went
+                print("[numbers] couldn't confirm in the thread: {}".format(
+                    str(exc)[:120]))
     return found
 
 
@@ -144,7 +185,7 @@ def ensure_request(rec, client=None, live: bool = False) -> Optional[str]:
         # for a leader who arrived mid-week. Tagging two people to ask for
         # something we already have is the kind of noise that teaches everyone
         # to ignore the post.
-        filled = _fill_from_contacts(gaps, live=live)
+        filled = _fill_from_contacts(rec, gaps, client=client, live=live)
         if filled:
             gaps = gap_statuses(rec)
     if not gaps:

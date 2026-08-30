@@ -30,6 +30,8 @@ DEPARTED_NOTE = "No longer a channel member"
 # came from.
 REPORT_ID = "new_start_followup"
 
+_PHONES = None
+
 # Raf gets @'d when OBCL rows are marked "Terminated" — those new starts have
 # no leader, and he assigns one (his Loom, 2026-08-23).
 RAF_SLACK_ID = "U045Z8N0ZQC"
@@ -252,6 +254,18 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
                      poster=poster)
 
 
+def _phone_overlay():
+    """slack_id -> number, read once per process. Machine-local; absent on a
+    machine that doesn't text, which is fine — it just means no number."""
+    global _PHONES
+    if _PHONES is None:
+        try:
+            _PHONES = roster_mod.load_phones()
+        except Exception:  # noqa: BLE001
+            _PHONES = {}
+    return _PHONES
+
+
 def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
               poster=None) -> Reconciliation:
     """Join the chosen roster against the thread. Shared by every roster source
@@ -333,7 +347,13 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
             sid = rec.learned.get(name) or tag_learning.lookup(name)
             if not sid:
                 continue
-            leader = ros.add(roster_mod.Leader(sid, name, obcl_names=[name]))
+            leader = roster_mod.Leader(sid, name, obcl_names=[name])
+            # The phone overlay is merged in roster.load(), which ran BEFORE
+            # this leader existed — so a learned leader would look like they
+            # have no number even when one is on file, and get asked about in
+            # Slack for nothing.
+            leader.phone = _phone_overlay().get(sid, "")
+            leader = ros.add(leader)
             owed_by_id[leader.slack_id] = (
                 owed_by_id.get(leader.slack_id, 0) + roster_gaps.pop(name))
 
