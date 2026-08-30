@@ -580,6 +580,33 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
                 out_rows.append(["", wk, "LINE {}".format(what), len(vals),
                                  round(sum(vals) / len(vals), 2),
                                  round(sum(vals), 2)])
+            # DEDUCTIONS probe (Carlos): any NEGATIVE rows (chargebacks /
+            # clawbacks) and the exact $ distribution per line item — if SCI
+            # applies churn-tier deductions inside the DD, lines post below
+            # base and the distribution shows the tiers.
+            neg = [r for r in wrows if (_num(r.get(COL_TOTAL)) or 0) < 0]
+            out_rows.append(["", wk, "NEGATIVE rows", len(neg), "",
+                             round(sum(_num(r.get(COL_TOTAL)) or 0 for r in neg), 2)])
+            negd: Dict[str, List[float]] = collections.defaultdict(list)
+            for r in neg:
+                txn = str(r.get(COL_TXN, "") or "").strip() or "(no txn)"
+                what = (str(r.get(COL_DESCRIPTION, "") or "").strip()
+                        or str(r.get(COL_PRODUCT, "") or "").strip() or "(blank)")
+                negd["{} :: {}".format(txn, what)].append(_num(r.get(COL_TOTAL)) or 0)
+            for what, vals in sorted(negd.items(), key=lambda x: sum(x[1])):
+                out_rows.append(["", wk, "NEG {}".format(what), len(vals),
+                                 round(sum(vals) / len(vals), 2), round(sum(vals), 2)])
+            dist_src: Dict[str, List[float]] = collections.defaultdict(list)
+            for r in comm:
+                cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
+                what = (str(r.get(COL_DESCRIPTION, "") or "").strip()
+                        or str(r.get(COL_PRODUCT, "") or "").strip() or "(blank)")
+                dist_src["{} :: {}".format(cat, what)].append(_num(r.get(COL_TOTAL)) or 0)
+            for what, vals in sorted(dist_src.items(), key=lambda x: -len(x[1]))[:8]:
+                c = collections.Counter(round(v, 0) for v in vals)
+                out_rows.append(["", wk, "DIST {}".format(what), len(vals), "",
+                                 "; ".join("{}x ${:g}".format(n, v)
+                                           for v, n in c.most_common(8))])
             # per-product: distinct orders + per-order payout (sum of the
             # order's Commissions rows — the post-2026-08 row-split format)
             per: Dict[str, Dict[str, float]] = collections.defaultdict(
