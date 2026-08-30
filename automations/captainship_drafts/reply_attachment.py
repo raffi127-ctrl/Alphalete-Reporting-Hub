@@ -60,10 +60,46 @@ SENT_MAILBOX = '"[Gmail]/Sent Mail"'
 BODY = (
     "Hi team,\n\n"
     "Attached is the Weekly Knock Dispositions report for {span}, updated with "
-    "the columns Rafael asked for.\n\n"
-    "Nothing else in the report below has changed.\n\n"
+    "the columns Rafael asked for.\n"
+    "{missing}"
+    "\nNothing else in the report below has changed.\n\n"
     "— Alphalete Reporting\n"
 )
+
+# The line naming offices the PDF does NOT cover (Megan 2026-08-30, choosing
+# this over sending only the complete ones or sending the gaps unexplained).
+#
+# WHY IT HAS TO BE SAID. A captain who has nine offices and opens a PDF with
+# three reads the REPORT as broken. It isn't — those offices aren't reachable
+# on the reporting account, which is a permission to grant, not a bug to fix,
+# and naming them turns a confusing gap into a clear ask. Wayne is the sharp
+# end of this: 6 of his 6 ICDs were unreachable on the 2026-08-30 pull.
+MISSING_LINE = (
+    "\nNot included: {names}. Those offices aren't reachable on the reporting "
+    "account yet, so they have no page in this PDF — once access is granted "
+    "they appear automatically.\n")
+
+
+def missing_offices(render_dir, captain_key: str, saturday) -> List[str]:
+    """The owners this captain's capture could NOT produce a board for, newest
+    manifest wins. Read from the manifest rather than diffed against a roster:
+    the manifest is what the capture actually saw, so an office added or
+    renamed this morning can't turn into a phantom "missing" line."""
+    import json
+    newest = None
+    pat = f"knocks_manifest_{captain_key}_*_{saturday.isoformat()}.json"
+    for man in sorted(Path(render_dir).glob(pat), reverse=True):
+        try:
+            data = json.loads(man.read_text(encoding="utf-8"))
+        except Exception:      # noqa: BLE001 — an unreadable one is not fatal
+            continue
+        pairs = (data.get("items") or {}).get("knock_dispo")
+        if pairs:
+            newest = pairs
+            break
+    if not newest:
+        return []
+    return [lab.split(" — ")[0].strip() for lab, path in newest if not path]
 
 
 def _addrs(msg, header: str) -> List[str]:
@@ -123,7 +159,8 @@ def find_sent(subject: str, account: str, password: str,
 
 
 def build_reply(original: dict, pdf: Path, span: str,
-                from_addr: str) -> EmailMessage:
+                from_addr: str,
+                missing: Optional[List[str]] = None) -> EmailMessage:
     """The reply, threaded under `original` and carrying `pdf`. Pure —
     offline-testable, and nothing here touches a network."""
     msg = EmailMessage()
@@ -139,7 +176,8 @@ def build_reply(original: dict, pdf: Path, span: str,
     msg["References"] = (
         f"{original['references']} {original['message_id']}".strip()
         if original.get("references") else original["message_id"])
-    msg.set_content(BODY.format(span=span))
+    miss = (MISSING_LINE.format(names=", ".join(missing)) if missing else "")
+    msg.set_content(BODY.format(span=span, missing=miss))
     msg.add_attachment(pdf.read_bytes(), maintype="application",
                        subtype="pdf", filename=pdf.name)
     return msg
@@ -207,8 +245,12 @@ def main(argv=None) -> int:
             print(f"  ⤳ {c.key}: no sent message titled {subject!r} — SKIPPED")
             skipped += 1
             continue
-        reply = build_reply(original, pdf, span, FROM_ADDR)
+        gaps = missing_offices(config.RENDER_DIR, c.key, sat)
+        reply = build_reply(original, pdf, span, FROM_ADDR, missing=gaps)
         who = original["to"] + original["cc"]
+        if gaps:
+            print(f"      ⚠ {len(gaps)} office(s) missing from the PDF: "
+                  f"{', '.join(gaps)}")
         print(f"  {c.key}: reply to {len(who)} recipient(s) "
               f"[{', '.join(who[:3])}{', …' if len(who) > 3 else ''}] "
               f"+ {pdf.name} ({pdf.stat().st_size // 1024} KB)")
