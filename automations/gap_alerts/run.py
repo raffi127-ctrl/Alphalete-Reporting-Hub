@@ -604,7 +604,8 @@ def _date_text(day: dt.date) -> str:
     return "%d/%d (%s)" % (day.month, day.day, day.strftime("%A"))
 
 
-def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
+def pull_board(cfg: Dict, day: dt.date, out_dir: Path,
+               slot: str = ""):
     """Pull Raf's office for TODAY and render the knock board. -> (pngs, rows).
 
     This is the board Raf pointed at in his Loom (2026-08-28): the columns off
@@ -668,10 +669,19 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
             _log("  no %s rows for %s — board goes out without the line"
                  % (compare, day))
 
+    # ONE header, not two. The board draws its own title band, and gap_alerts
+    # used to draw a second one above it saying almost the same thing —
+    # "KNOCKS & DISPOSITIONS — EnergyWell — Calvin — 11:32 AM" stacked on
+    # "TOTAL KNOCKS — CALVIN — 8/29 (Saturday)" (Megan 2026-08-30: "this has 2
+    # redundant headers"). The campaign and the clock now go INTO the board's
+    # title and the wrapper is gone.
+    _who = " — ".join(x for x in (cfg.get("campaign_label"),
+                                  first_name(cfg.get("label") or cfg["name"]))
+                      if x)
+    _when = _date_text(day) + (" — %s" % slot if slot else "")
     pngs, shape = knocks_render.render_knocks_boards(
         day, rows=rows, out_dir=out_dir / cfg["key"],
-        title_suffix=first_name(cfg.get("label") or cfg["name"]),
-        date_text=_date_text(day), extra_totals=extra,
+        title_suffix=_who, date_text=_when, extra_totals=extra,
         rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
                       else RATES_OVERRIDE),
         knocks_green_at=C.KNOCKS_GREEN_AT, sort_by="knocks")
@@ -682,40 +692,16 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path):
 
 
 def render(cfg: Dict, pngs, out_dir: Path, slot: str):
-    """The board(s) as IMAGES, titled. -> [paths]
+    """The boards, as they come. -> [paths]
 
-    AN IMAGE, NOT A PDF (Raf, 2026-08-28: "I just don't like where I can't see
-    what it is before clicking, anyway to change that?"). A PDF arrives as a
-    grey document tile showing only a filename; an image shows the board itself
-    in the thread and still opens full-screen and zooms on tap, which is the
-    part the PDF was reached for in the first place.
+    Nothing to add any more: the campaign, the office, the date and the clock
+    are all in the board's own title band now, so the second header this used
+    to draw was pure duplication.
 
-    The PDF made sense for the OLD content — a 48-rep roster stacked over a gap
-    card, which is TALL, and a tall image renders inline as an unreadable
-    sliver. This board is WIDE and short, so it previews as a board. The shape
-    of the content changed, so the right container changed with it; to_pdf and
-    its slicing stay for whoever needs a tall panel again.
-
-    render_knocks_boards decides how many boards the row shape deserves: it
-    folds Time Gaps into the main board when the columns already carry Gaps +
-    Total Gaps, which Raf's TeleMapper shape does — so this is normally one.
+    Images, not a PDF: a PDF arrives as a grey document tile you have to tap
+    to see (Raf, 2026-08-27). The tall roster that once needed one is gone.
     """
-    out_dir.mkdir(parents=True, exist_ok=True)
-    # "KNOCKS & DISPOSITIONS — EnergyWell — Calvin — 11:06 AM": campaign then
-    # office, so a reader knows which business the numbers are before whose
-    # they are. Raf's row sets neither, so his header is unchanged.
-    who = "".join(" — %s" % cfg[k] for k in ("campaign_label", "label")
-                  if cfg.get(k))
-    out = []
-    for i, p in enumerate(pngs):
-        # Only the first board carries the clock — this is one post, and a time
-        # stamped on every image reads like several separate sends.
-        if i == 0:
-            out.append(titled(Path(p), "%s%s — %s" % (C.CARD_TITLE, who, slot),
-                              out_dir / ("board_%s_0.png" % cfg["key"])))
-        else:
-            out.append(Path(p))
-    return out
+    return [Path(p) for p in pngs]
 
 
 def tick(day: dt.date, *, send: bool, only: str = "",
@@ -755,7 +741,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             continue
 
         try:
-            pngs, rows = pull_board(cfg, day, out_dir)
+            pngs, rows = pull_board(cfg, day, out_dir, slot)
         except Exception as e:  # noqa: BLE001
             failures.append("%s: %s: %s" % (cfg["key"], type(e).__name__,
                                             str(e)[:200]))
