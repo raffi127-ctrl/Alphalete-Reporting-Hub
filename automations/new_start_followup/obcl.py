@@ -35,7 +35,8 @@ STATUS_HEADER = "Final Status"
 
 # Statuses that mean "this person is not actually starting Monday", so their
 # interviewer shouldn't be counted as owing them a text.
-DROPPED_STATUSES = {"declined", "cancelled", "canceled", "no show", "rescheduled"}
+DROPPED_STATUSES = {"declined", "cancelled", "canceled", "no show", "rescheduled",
+                    "failed background", "failed bgc"}
 
 
 class NewStart:
@@ -50,7 +51,17 @@ class NewStart:
 
     @property
     def dropped(self) -> bool:
-        return self.status.strip().lower() in DROPPED_STATUSES
+        """Not actually starting Monday, so their interviewer owes no text.
+
+        Substring as well as exact: the screenshot path matches "Declined " and
+        "Failed Background" the same way (screenshot_roster.DROPPED_MARKERS),
+        and the two sources disagreeing about who counts is worse than either
+        rule on its own.
+        """
+        value = " ".join(self.status.lower().split())
+        if value in DROPPED_STATUSES:
+            return True
+        return any(m in value for m in ("declin", "failed background", "failed bgc"))
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return "NewStart({!r}, {!r}, {!r})".format(self.interviewer, self.name, self.status)

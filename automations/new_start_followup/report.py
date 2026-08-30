@@ -194,13 +194,16 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
     try:
         rows = screenshot_roster.fetch_roster_rows(monday.isoformat(),
                                                    poster=poster)
-        owed = {}
-        for r in rows:
-            intv = (r.get("interviewer") or "").strip()
-            if intv:
-                owed[intv] = owed.get(intv, 0) + 1
+        owed, dropped_rows = screenshot_roster.owed_counts(rows)
         print("[roster] {}: {} new starts across {} interviewers"
               .format(tab, sum(owed.values()), len(owed)))
+        if dropped_rows:
+            # Named, not just counted: a silently shrinking roster is
+            # indistinguishable from a bad OCR read.
+            print("[roster] not counted — declined or failed background ({}):"
+                  .format(len(dropped_rows)))
+            for line in dropped_rows:
+                print("           " + line)
         if funnel["key"] == "main":
             sheet_only = _sheet_only_untaggable(monday, owed, ros)
     except Exception as exc:  # noqa: BLE001

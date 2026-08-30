@@ -54,11 +54,13 @@ def take_snapshot(monday: dt.date, path: Path, funnel=None) -> Path:
     funnel = funnel or thread_mod.FUNNELS[0]
     rows = screenshot_roster.fetch_roster_rows(monday.isoformat(),
                                                poster=funnel["poster"])
-    owed = {}
-    for r in rows:
-        intv = (r.get("interviewer") or "").strip()
-        if intv:
-            owed[intv] = owed.get(intv, 0) + 1
+    # Same filter as the report — declined / failed-background rows don't count
+    # (Raf 2026-08-30). Shared helper on purpose: this used to be its own copy
+    # of the loop, and a snapshot built on different rules than the roll call
+    # is worse than no snapshot.
+    owed, dropped_rows = screenshot_roster.owed_counts(rows)
+    for line in dropped_rows:
+        print("   not counted (declined / failed background): " + line)
     if not owed:
         raise RuntimeError("The screenshot produced no interviewers — refusing "
                            "to write an empty snapshot.")

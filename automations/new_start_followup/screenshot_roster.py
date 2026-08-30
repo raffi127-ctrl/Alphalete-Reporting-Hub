@@ -48,8 +48,22 @@ _SCHEMA = {
                     },
                     "name": {"type": "string", "description": "the new-start first name"},
                     "last_name": {"type": "string", "description": "the new-start last name"},
+                    "confirmation": {
+                        "type": "string",
+                        "description": "the LAST status column ('Friday "
+                        "Confirmation'), copied EXACTLY, e.g. 'Confirmed: OTP', "
+                        "'BOB Friday', 'NA: Sent Text', 'Declined', 'Failed "
+                        "Background'. Empty string if the cell is blank.",
+                    },
+                    "bg_status": {
+                        "type": "string",
+                        "description": "the 'BG Status : Last Checked' cell, "
+                        "copied EXACTLY, e.g. 'Passed', 'Taken - Pending', "
+                        "'Review', 'Sent'. Empty string if blank.",
+                    },
                 },
-                "required": ["interviewer", "name", "last_name"],
+                "required": ["interviewer", "name", "last_name", "confirmation",
+                             "bg_status"],
                 "additionalProperties": False,
             },
         }
@@ -70,8 +84,58 @@ _PROMPT = (
     "- Only rows that are actually visible in the image — do NOT invent rows and "
     "do NOT skip any visible row. Ignore the header row and any filter icons.\n"
     "- If an interviewer cell is blank because it's a continuation of the row "
-    "above, repeat that same interviewer."
+    "above, repeat that same interviewer.\n"
+    "- confirmation = the LAST status column, headed 'Friday Confirmation'. "
+    "Copy the cell text EXACTLY. Some are colour-filled (red for 'Declined' "
+    "and 'Failed Background'); read the TEXT, not the colour, and use an empty "
+    "string when the cell has none.\n"
+    "- bg_status = the 'BG Status : Last Checked' cell, exactly."
 )
+
+
+# A new start who declined, or whose background check failed, is not starting —
+# so their interviewer owes them nothing and must not be tagged about them.
+# Raf, 2026-08-30: "Lucy is tagging people where the new start has either
+# declined the position or failed the BGC, can we make it where it doesn't tag
+# those folks please."
+#
+# Substring matching, not an exact set: the sheet's wording drifts ("Declined",
+# "Declined ", "Failed Background", "Failed BGC"), and a status we fail to
+# recognise means tagging somebody about a person who isn't coming — the exact
+# complaint. The inverse risk (dropping a real new start) is bounded because
+# these two phrases don't appear in any live status: the others are Confirmed:
+# OTP / Confirmed: Via Sms / BOB Friday / NA: Sent Text / Sent / Passed /
+# Taken - Pending / Review.
+DROPPED_MARKERS = ("declin", "failed background", "failed bgc", "failed bg check")
+
+
+def is_dropped(row: dict) -> bool:
+    for field in ("confirmation", "bg_status"):
+        value = " ".join((row.get(field) or "").lower().split())
+        if any(marker in value for marker in DROPPED_MARKERS):
+            return True
+    return False
+
+
+def owed_counts(rows):
+    """-> (interviewer -> count, [dropped row description, ...]).
+
+    The ONE place screenshot rows become owed counts, so the roll call, the
+    snapshot and the checklist can't drift on who counts (they each had their
+    own copy of this loop before 2026-08-30).
+    """
+    owed, dropped = {}, []
+    for r in rows:
+        intv = (r.get("interviewer") or "").strip()
+        if not intv:
+            continue
+        if is_dropped(r):
+            dropped.append("{} — {} {} ({})".format(
+                intv, r.get("name", ""), r.get("last_name", ""),
+                (r.get("confirmation") or r.get("bg_status") or "?").strip()))
+            continue
+        owed[intv] = owed.get(intv, 0) + 1
+    return owed, dropped
 
 
 def _image_block(image_path) -> dict:
