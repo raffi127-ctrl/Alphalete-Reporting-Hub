@@ -607,6 +607,21 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
                 out_rows.append(["", wk, "DIST {}".format(what), len(vals), "",
                                  "; ".join("{}x ${:g}".format(n, v)
                                            for v, n in c.most_common(8))])
+            # same $-distribution for the BONUS rows (is 'New Fiber Internet'
+            # a flat per-sale bonus or a tier bonus with stepped values?)
+            bdist: Dict[str, List[float]] = collections.defaultdict(list)
+            for r in wrows:
+                if _is_commission(r):
+                    continue
+                txn = str(r.get(COL_TXN, "") or "").strip() or "(no txn)"
+                what = (str(r.get(COL_DESCRIPTION, "") or "").strip()
+                        or str(r.get(COL_PRODUCT, "") or "").strip() or "(blank)")
+                bdist["{} :: {}".format(txn, what)].append(_num(r.get(COL_TOTAL)) or 0)
+            for what, vals in sorted(bdist.items(), key=lambda x: -len(x[1]))[:8]:
+                c = collections.Counter(round(v, 2) for v in vals)
+                out_rows.append(["", wk, "BDIST {}".format(what), len(vals), "",
+                                 "; ".join("{}x ${:g}".format(n, v)
+                                           for v, n in c.most_common(10))])
             # per-product: distinct orders + per-order payout (sum of the
             # order's Commissions rows — the post-2026-08 row-split format)
             per: Dict[str, Dict[str, float]] = collections.defaultdict(
