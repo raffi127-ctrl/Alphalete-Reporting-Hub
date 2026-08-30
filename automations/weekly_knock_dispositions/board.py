@@ -57,29 +57,31 @@ MIN_KNOCKS_PER_DAY = knocks_render.KNOCKING_MIN_KNOCKS
 # and stay blank down the rep list. Same convention the daily board's
 # "Total # of Reps Knocking" already reads by.
 COL_REPS_KNOCKING = f"Reps Knocking ({DAYS} Days {MIN_KNOCKS_PER_DAY}+)"
-# Deliberately NOT the daily board's "Avg Doors / Rep": that one divides by
-# every rep LISTED, this one divides by the reps knocking ("Based off of
-# average reps knocking" — Raf). Two different denominators must not wear one
-# name on two boards in the same email.
-COL_DOORS_PER_REP = "Avg Doors / Rep Knocking"
-# Raf 2026-08-30, looking at the rep rows: "each rep should also have an amount
-# of doors that they knocked per day. Right now it seems blank." The two
-# columns above are summary-only by design — a head count on one rep is always
-# 1 — so on a rep row they read as missing data. This is the per-rep answer,
-# and it is filled on EVERY row: a rep's own doors per day is exactly what a
-# reader compares down the column.
+# The doors column, settled by Raf 2026-08-30 after two rounds on the same day:
+# "This should be 'AVG Doors a rep knocked per day', so every rep should have a
+# number."
 #
-# Divisor is 6, the same Mon–Sat the board's other "/ Day" column uses, NOT the
-# days that rep actually knocked. Consistency inside one board wins: a rep who
-# worked two days reads low here for the same reason they read low in Avg Talk
-# To's / Day, and the two columns can be read against each other.
+# It started as a captainship-level figure — the office's doors over the reps
+# who cleared the six-day bar — which meant it could only be filled on summary
+# rows and read BLANK down the whole rep list. That is what he was looking at.
+# (It had already been narrowed once that morning, from the office's doors to
+# the qualifiers' own, because dividing 21 reps' doors by 2 qualifiers printed
+# 4,511 doors per rep for a week. Both readings are gone now: neither could put
+# a number on a rep row, which is what the column is for.)
+#
+# So: one rep's own Mon–Sat doors over 6, filled on EVERY row. Divisor is 6 to
+# match the board's other "/ Day" column, NOT the days that rep actually
+# knocked — a rep who worked two days reads low here for the same reason they
+# read low in Avg Talk To's / Day, and the two can be read against each other.
+# On a summary row it is the ICD's doors over 6 over its reps, the same per-rep
+# rule every other Avg cell on that row follows.
 COL_DOORS_PER_DAY = "Avg Doors / Day"
 
 # Raf's mockup 2026-08-23: knock averages are Mon–Fri (Saturday's schedule
 # skews them), the gap columns SAY Mon–Sat, and Saturday's own knock times
 # get their own two columns after the gaps.
 HEADERS = [
-    "Rep", COL_REPS_KNOCKING, COL_DOORS_PER_REP, COL_DOORS_PER_DAY,
+    "Rep", COL_REPS_KNOCKING, COL_DOORS_PER_DAY,
     "Total Talk To's", "Avg Talk To's / Day", "Total Apps",
     "Avg Talk To's per App", "Mon\u2013Fri Avg First Knock",
     "Mon\u2013Fri Avg Last Knock", "Avg Hrs Knocking / Day",
@@ -220,28 +222,15 @@ def has_daily_knocks(ov_rows: list[dict]) -> bool:
 
 
 def knocking_cells(ov_rows: list[dict]) -> list[str]:
-    """The two summary cells: the head count, and the doors THOSE reps knocked
-    divided by it.
+    """The head-count cell: how many reps cleared the bar on all six days.
 
-    THE NUMERATOR IS THE QUALIFIERS' OWN DOORS, not the office's (Megan chose
-    this reading 2026-08-30 off the real Aug 24-29 board). Dividing the whole
-    office's doors by only the reps who cleared the bar produced numbers no rep
-    could have knocked — Muhammad Haque's 21 reps over 2 qualifiers read 4,511
-    doors per rep for the week, ~750 a day — and it made the column reward
-    having FEWER qualifiers, so it could not be compared down a summary board,
-    which is the one thing a summary column is for. Qualifiers' doors over
-    qualifiers lands every ICD in the 400-850 range: a real average for a rep
-    who worked the whole week.
-
-    Blank — never "0" — when the pull has no daily counts, and blank when
-    nobody cleared the bar: nothing to divide by is not a zero, and a 0.0
-    beside a week of real talk-to's reads as 'these reps knocked nothing'."""
+    SUMMARY ROWS ONLY — on a rep row the answer is always 1, which is why that
+    cell stays empty. Blank rather than "0" when the pull carried no daily
+    counts at all (a pre-2026-08-30 cached row, a gaps-only office): nothing
+    measured is not nobody qualifying."""
     if not has_daily_knocks(ov_rows):
-        return ["", ""]
-    knocking = [r for r in ov_rows if is_knocking(r)]
-    doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in knocking)
-    return [str(len(knocking)),
-            (_num(doors / len(knocking)) if knocking else "")]
+        return [""]
+    return [str(sum(1 for r in ov_rows if is_knocking(r)))]
 
 
 def _display_name(rep: str) -> str:
@@ -342,7 +331,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         gap_min = r.get(K_GAP_MIN)
         rows.append([
             _display_name(rep),
-            "", "",                      # summary-only columns (see HEADERS)
+            "",                          # Reps Knocking: summary rows only
             _doors_per_day(r),
             str(talk),
             _num(avg_day),
@@ -365,7 +354,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         for rep, n_apps in sorted(apps.items()):
             if _norm_name(rep) in consumed or not n_apps:
                 continue
-            rows.append([_display_name(rep), "", "", "", "", "", str(n_apps),
+            rows.append([_display_name(rep), "", "", "", "", str(n_apps),
                          "", "", "", "", "", "", "", ""] + _dispo_cells(None))
 
     rows.append(totals_row(ov_rows, apps, dispo_cols))
