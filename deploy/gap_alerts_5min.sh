@@ -31,7 +31,7 @@ DOW=$(date +%u)     # 1=Mon .. 7=Sun
 HOUR=$(date +%H)
 HOUR=${HOUR#0}
 [ "$DOW" = "7" ] && exit 0                       # Sunday is not a selling day
-# Mon-Fri 1:30pm-8:30pm, Saturday 10:00am-5:00pm (Megan 2026-08-26). SATURDAY
+# Mon-Fri 1:30pm-10:00pm, Saturday 10:45am-6:30pm (Megan 2026-08-30). SATURDAY
 # HAS ITS OWN START, not just its own end — it is the one day the field is out
 # in the morning.
 #
@@ -41,7 +41,11 @@ HOUR=${HOUR#0}
 # put the real schedule in two places and they would drift.
 if [ "$DOW" = "6" ]; then
     [ "$HOUR" -lt 10 ] && exit 0
-    [ "$HOUR" -gt 17 ] && exit 0
+    # 18, not 17: Saturday now runs to 6:30pm (Megan 2026-08-30). Same contract as
+    # the weekday branch — generous by an hour so config.in_selling_window makes
+    # the exact 18:30 call. Leaving this at 17 while config said 18:30 would have
+    # silently capped the day at 5pm, since this gate exits before Python runs.
+    [ "$HOUR" -gt 18 ] && exit 0
 else
     [ "$HOUR" -lt 13 ] && exit 0
     # 22, not 20: the day now runs to 10pm (Raf 2026-08-28). This gate is
