@@ -188,29 +188,33 @@ VIEWS: List[ViewConfig] = [
         notes="7 columns + 1 computed sum (row 37). The view includes ALL "
               "B2B ICDs (~78), not just Carlos's 32 — parser filters by tab list.",
     ),
-    ViewConfig(
-        key="cancel",
-        # Repointed 2026-08-17 (Eve). The viz died 2026-08-16 — the toolbar
-        # never rendered, so all 7 OPT views downloaded except this one and the
-        # '0-30 Day Cancel Rate' row went blank across the Carlos + org B2B
-        # tabs. SmartCircle republished it; this is the URL Eve verified loads.
-        url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/B2BCancelRates?:iid=2",
-        percent_format="0%",   # whole-number percent
-        sheet_thumbnail_match="Cancel Rates Sheet",
-        # Owner & Office cell looks like 'AARON CORSO\n [cor consulting agency, inc.]';
-        # 3 rows per ICD (Cancel Rates / Canceled Orders / Unit Count) — pick the
-        # 'Cancel Rates' one. Header for the subrow col is empty string in the CSV.
-        key_column="Owner & Office",
-        key_clean=_strip_office_suffix,
-        subrow_column="",
-        subrow_value="Cancel Rates",
-        # ICDs too new to have 6-week-avg data get a visible marker
-        # instead of a blank cell.
-        empty_placeholder="No Data In Tableau",
-        metrics=[
-            ViewMetric(sheet_row=43, tableau_column="6 Week Average"),
-        ],
-    ),
+    # CANCEL RATES — REMOVED 2026-08-30. There is no view left to read.
+    # ATTTRACKER-B2B/B2BCancelRates was deleted from Tableau; on Carlos's own
+    # login it answers "That page could not be accessed", and the standalone
+    # att_cancels report that shared it was retired the same day. Carlos, asked
+    # directly: "yes it got removed. we can remove this automation we werent
+    # looking at it".
+    #
+    # This is the SECOND time the viz went dark (2026-08-16, republished by
+    # SmartCircle on 8/17 and repointed by Eve). The difference now is that it
+    # is not coming back, so retrying is not a fix — a dead source left in this
+    # list downloads nothing, blanks '0-30 Day Cancel Rate' on the Carlos + org
+    # B2B tabs on EVERY run, and puts a failure in the log every morning for a
+    # number nobody is reading.
+    #
+    # Consequence, on purpose: SHEET ROW 43 IS NO LONGER WRITTEN by this phase.
+    # It is not cleared either — the tabs keep whatever was last filled there
+    # (week of 2026-08-24), so treat that cell as historical, not current. It
+    # was: subrow 'Cancel Rates' of the "Cancel Rates Sheet" crosstab, column
+    # '6 Week Average', keyed on 'Owner & Office'.
+    #
+    # If the metric ever returns under a new view: restore a ViewConfig with
+    # key="cancel", percent_format="0%", sheet_thumbnail_match="Cancel Rates
+    # Sheet", key_column="Owner & Office", key_clean=_strip_office_suffix,
+    # subrow_column="", subrow_value="Cancel Rates",
+    # empty_placeholder="No Data In Tableau", and one ViewMetric(sheet_row=43,
+    # tableau_column="6 Week Average") — and put ("Cancel Rates", "cancel")
+    # back in carlos_opt_all.CARLOS_OPT_VIEWS beside it.
     ViewConfig(
         key="activation",
         url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/ACTIVATIONRATES",
