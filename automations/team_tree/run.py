@@ -344,6 +344,28 @@ def render_png(html_path: Path, png_path: Path) -> None:
             pass
     if not png_path.exists() or png_path.stat().st_size < 20_000:
         raise RuntimeError(f"screenshot too small/missing: {png_path}")
+    _trim(png_path)
+
+
+def _trim(png_path: Path, pad: int = 60) -> None:
+    """Crop the screenshot to its content. The fixed 2100x1750 window leaves a
+    wide empty apron around the tree, and Slack scales the WHOLE image to fit —
+    so the apron is what made the first DM look zoomed out (Carlos 2026-08-30).
+    Best-effort: a machine without Pillow just posts the untrimmed shot."""
+    try:
+        from PIL import Image, ImageChops
+    except ImportError:
+        print("  (Pillow missing — posting untrimmed screenshot)")
+        return
+    im = Image.open(png_path).convert("RGB")
+    bg = Image.new("RGB", im.size, im.getpixel((0, 0)))
+    bbox = ImageChops.difference(im, bg).getbbox()
+    if not bbox:
+        return
+    left, top, right, bottom = bbox
+    im.crop((max(0, left - pad), max(0, top - pad),
+             min(im.width, right + pad),
+             min(im.height, bottom + pad))).save(png_path)
 
 
 def post(png: Path, week: str, *, dm: bool) -> dict:

@@ -1,4 +1,6 @@
 
+  /* 18px base (vs the artifact's 16) — the daily PNG reads bigger in Slack */
+  html{ font-size:18px; }
   :root{
     --bg:#fdfdfb;
     --ink:#3a3630;
