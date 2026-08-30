@@ -991,62 +991,55 @@ def probe_campaigns(headless: bool = True, office: str = "",
         except Exception as e:  # noqa: BLE001
             _log("campaign-id scan failed (%s)" % type(e).__name__)
 
-        # OPEN the dropdown before reading it. The scan below found only 3
-        # (RES AT&T) and 39 (BASE Energy) — the ids already sitting in the DOM.
-        # Calvin's screen shows RES-ENERGYWELL, so the picker fills its options
-        # in when OPENED, and a scan of the collapsed page can never see them.
-        # b2b_dispositions already solved this: its dropdown is the same
-        # Bootstrap widget, and campaign_options() forces it open (the site's
-        # jQuery handler does not fire under patchright's isolated world) and
-        # reads every option with its invD2DClientId.
-        # NOT cap.campaign_options(): it filters on a hardcoded allowlist of
-        # the three B2B campaign names, so RES-ENERGYWELL would be dropped
-        # before we ever saw it. Same opener, same reader, wider pattern.
+        # FIND THE CAMPAIGN PICKER BY ITS OWN TEXT, then click THAT.
+        #
+        # b2b's _open_campaign_dropdown grabs the first [data-toggle=dropdown]
+        # on the page. On Raf's layout that is the NOTIFICATIONS BELL — proved
+        # by dumping the menu's raw text and getting "You have 2 inventory
+        # alerts | 10 devices are expiring this week". Every "the campaign list
+        # is only RES AT&T and BASE Energy" reading came from the wrong menu.
+        #
+        # The picker is the top-right control whose label IS the current
+        # campaign ("RES-ENERGYWELL" on Calvin's screen), so locate it by that
+        # text, click it, and read what opens.
         try:
-            # POLL, don't snapshot. _open_campaign_dropdown waits a flat 900ms;
-            # if the option list is fetched per-office after the click, a single
-            # read returns the list the page was already holding — which is
-            # exactly what "only RES AT&T and BASE Energy" looks like when
-            # RES-ENERGYWELL is on its way. Re-open and re-read for a few
-            # seconds, keeping the LONGEST list seen.
-            rx = (r"^(RES[A-Za-z0-9\-& ]*|BASE [A-Za-z0-9\-& ]*"
-                  r"|B2B[A-Za-z0-9\-& ]*)$")
-            opts = []
-            for _try in range(6):
-                cap._open_campaign_dropdown(page)
-                page.wait_for_timeout(1500)
-                got = page.evaluate(cap._CAMPAIGN_OPTIONS_JS, rx) or []
-                names = {str(o.get("name")) for o in got}
-                if len(names) > len({str(o.get("name")) for o in opts}):
-                    opts = got
-                    _log("  (attempt %d: %d option(s) — %s)"
-                         % (_try + 1, len(names), ", ".join(sorted(names))[:90]))
-                if any("ENERGY" in str(o.get("name")).upper()
-                       and "BASE" not in str(o.get("name")).upper()
-                       for o in got):
-                    break
-            if opts:
-                for o in opts:
-                    _log("DROPDOWN id=%-5s %s"
-                         % (o.get("id"), str(o.get("name"))[:50]))
-            else:
-                _log("DROPDOWN: opened but matched no campaign options")
-            # UNFILTERED: if RES-ENERGYWELL is present under a spelling the
-            # pattern misses, the regex would hide it and we would keep
-            # concluding "access". Print what the menu literally contains.
-            try:
-                raw = page.evaluate(
-                    "() => [...document.querySelectorAll("
-                    "  '.dropdown-menu a, .dropdown-menu li, .dropdown-menu span')]"
-                    " .map(e => (e.innerText || e.textContent || '')"
-                    "   .replace(/\\s+/g,' ').trim())"
-                    " .filter(t => t && t.length < 40).slice(0, 25)")
-                _log("DROPDOWN raw menu text: %s" % (" | ".join(raw) or "(empty)"))
-            except Exception:  # noqa: BLE001
-                pass
+            found = page.evaluate(
+                """() => {
+                  const rx = /^\s*[★*]?\s*(RES[-\w &]*|BASE [-\w &]*|B2B[-\w &]*)\s*$/i;
+                  const cands = [...document.querySelectorAll('a,button,span,div')]
+                    .filter(e => rx.test((e.innerText || '').trim())
+                                 && (e.innerText || '').trim().length < 30
+                                 && e.offsetParent !== null);
+                  if (!cands.length) return {clicked: false, label: ''};
+                  // The SMALLEST match is the label itself, not a wrapper.
+                  cands.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+                  const el = cands[0];
+                  const label = (el.innerText || '').trim();
+                  (el.closest('[data-toggle="dropdown"],a,button') || el).click();
+                  const dd = el.closest('.dropdown,.btn-group,li,div');
+                  if (dd) { dd.classList.add('open','show');
+                            const m = dd.querySelector('.dropdown-menu');
+                            if (m) { m.classList.add('show'); m.style.display='block'; } }
+                  return {clicked: true, label};
+                }""")
+            _log("PICKER control: %s" % found)
+            page.wait_for_timeout(2500)
+            items = page.evaluate(
+                """() => [...document.querySelectorAll('a,li,span,button')]
+                     .filter(e => e.offsetParent !== null)
+                     .map(e => {
+                       const t = (e.innerText || '').replace(/\s+/g,' ').trim();
+                       const blob = [e.getAttribute('href'), e.getAttribute('onclick'),
+                                     e.getAttribute('data-id')].filter(Boolean).join(' ');
+                       const m = blob.match(/invD2DClientId\D{0,3}(\d{1,6})/i);
+                       return (t && t.length < 40 && m) ? (m[1] + ' = ' + t) : null;
+                     }).filter(Boolean).slice(0, 30)""")
+            for it in dict.fromkeys(items):
+                _log("CAMPAIGN %s" % it)
+            if not items:
+                _log("CAMPAIGN: picker opened but no invD2DClientId items visible")
         except Exception as e:  # noqa: BLE001
-            _log("dropdown read failed (%s: %s)"
-                 % (type(e).__name__, str(e)[:120]))
+            _log("picker click failed (%s: %s)" % (type(e).__name__, str(e)[:140]))
 
         # THE CAMPAIGN PICKER IS NOT A <select> AND NOT A PLAIN LINK. Calvin's
         # screen shows "RES-ENERGYWELL" in a custom dropdown top-right, so the
