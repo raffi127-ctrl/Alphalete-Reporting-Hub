@@ -3705,6 +3705,20 @@ AUTOMATED_REPORTS = [
         "run_rerun_id": "alphalete_sales_board",
         "schedule": {
             "frequency": "daily",
+            # Mon-Sat, and it starts at 10:00 - BOTH halves matter, and the
+            # card had neither (2026-08-30). deploy/alphalete_sales_board_5min.sh
+            # bails on `[ "$DOW" = "7" ] && exit 0` (Sunday is not a selling
+            # day) and again on `[ "$HOUR" -lt 10 ]`. With no weekdays list the
+            # Hub called it due on SUNDAY, and with no time it defaulted to
+            # 08:00, so it also read as late every weekday from ~09:02 until
+            # the sweep's first real tick at 10:00. Two standing false alarms
+            # on a job that was working perfectly - and a "needs attention"
+            # row that is wrong twice a week teaches you to skim the list.
+            # Its twin card times-of-sales, driven by this SAME sweep, has
+            # carried the weekday list all along; this just brings the pair
+            # back into step.
+            "weekdays": [0, 1, 2, 3, 4, 5],
+            "time": "every 5 min, 10:00am-9:30pm (Sat 10:00am-6:30pm)",
             "estimated_minutes": 2,
         },
         "checklist": [],
