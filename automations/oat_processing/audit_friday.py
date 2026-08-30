@@ -29,13 +29,28 @@ from automations.oat_processing import run as oat
 
 
 def _dump_calendar(page, date_str):
-    """Set calDate and return (raw_text, parsed_rows)."""
-    page.evaluate("""(d) => {
-        const el = document.querySelector("input[name='calDate']");
-        if (el) { el.value = d;
-          const f = el.form; if (f) HTMLFormElement.prototype.submit.call(f); }
-    }""", date_str)
-    page.wait_for_timeout(6000)
+    """POST the calDate form, WAIT for the navigation, and verify the banner
+    says the requested date — the first version read the page mid-reload and
+    saw an empty calendar. Returns (raw_text, parsed_rows)."""
+    for _attempt in range(3):
+        try:
+            with page.expect_navigation(timeout=30000,
+                                        wait_until="domcontentloaded"):
+                page.evaluate("""(d) => {
+                    const el = document.querySelector("input[name='calDate']");
+                    el.value = d;
+                    HTMLFormElement.prototype.submit.call(el.form); }""", date_str)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(4000)
+        banner = page.evaluate("() => (document.body.innerText||'').match("
+                               "/Calendars for [0-9-]+/) ? "
+                               "document.body.innerText.match("
+                               "/Calendars for [0-9-]+/)[0] : ''")
+        if date_str in banner:
+            break
+        print(f"    calendar banner {banner!r} != {date_str}, retrying",
+              flush=True)
     raw = page.evaluate("() => document.body.innerText || ''")
     rows = page.evaluate("""() => {
         const out = [];
