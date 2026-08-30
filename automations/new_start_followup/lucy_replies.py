@@ -41,6 +41,15 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 LUCY_USER_ID = "U0BCG8F9B5Z"
+
+# Anything Lucy can't do herself gets escalated to BOTH of them (Megan
+# 2026-08-30: "make sure it tags both eve and i for this"). Two names, so a
+# request doesn't sit unanswered because one of them is out — the same
+# reasoning the AppStream re-seed ping was built on.
+ESCALATE_TO = [
+    "U04G5HJBGFN",   # Megan Hidalgo
+    "U088E2KJEV8",   # Evelyn ("Eve") Sobrino
+]
 MENTION_RE = re.compile(r"<@([A-Z0-9]+)(?:\|[^>]*)?>")
 
 STATE_DIR = (Path(__file__).resolve().parents[2] / "output"
@@ -55,7 +64,7 @@ Answer ONLY from the FACTS block. It is the complete state of the report — if 
 something is not in it, you do not know it, and you must say so rather than \
 guess. Never invent a name, a number, or a status.
 
-There are exactly TWO things you can change yourself, and both are handled before you ever see the message: leaving a named person alone, and starting to chase them again. For ANY OTHER request to change something (fix a name, change the schedule, alter the roster, text somebody), do NOT claim to have done it \N{EM DASH} say you have flagged it for Megan, who makes the change.
+There are exactly TWO things you can change yourself, and both are handled before you ever see the message: leaving a named person alone, and starting to chase them again. For ANY OTHER request to change something (fix a name, change the schedule, alter the roster, text somebody), do NOT claim to have done it \N{EM DASH} say you have flagged it for Megan and Eve, who make the change.
 
 Style: plain and short, 1-3 sentences. No emoji, no greeting, no sign-off. \
 Write like a colleague answering in a thread. Do not use @-mentions."""
@@ -151,10 +160,14 @@ _INTENT_SCHEMA = {
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["none", "stop_pinging", "resume_pinging"],
+            "enum": ["none", "stop_pinging", "resume_pinging",
+                     "other_change_request"],
             "description": "stop_pinging = they are asking Lucy to leave a "
             "specific person alone. resume_pinging = start chasing a person "
-            "again. none = anything else, including questions.",
+            "again. other_change_request = they are asking for something to be "
+            "CHANGED or DONE that isn't one of those two (fix a name, change "
+            "the schedule, add someone, send a text, edit a post). none = "
+            "anything else, including all questions.",
         },
         "person": {
             "type": "string",
@@ -213,13 +226,18 @@ def intent(question_text: str, rec) -> dict:
     person = (out.get("person") or "").strip()
     # THE GATE: the name must be one we handed it, matched exactly after
     # normalisation. Anything else is downgraded to a question, never guessed.
-    if action != "none":
+    # The whitelist gate applies to the two ACTIONS only. An escalation has
+    # nothing to look up — it's going to a human either way.
+    if action in ("stop_pinging", "resume_pinging"):
         match = next((p for p in people
                       if _norm_name(p) == _norm_name(person)), None)
         if not match:
+            # Don't quietly answer it as a question: they asked for something
+            # and nothing would happen. Escalate instead, so a name Lucy
+            # doesn't recognise still reaches a human.
             print("[thread-replies] %r isn't a person in this week's report — "
-                  "not acting on it." % person)
-            return {"action": "none", "person": ""}
+                  "escalating instead of acting." % person)
+            return {"action": "other_change_request", "person": person}
         person = match
     return {"action": action, "person": person}
 
@@ -241,6 +259,9 @@ def act(intent_out: dict, asked_by: str, live: bool) -> Optional[str]:
     action, person = intent_out["action"], intent_out["person"]
     if action == "none":
         return None
+    if action == "other_change_request":
+        tags = " ".join("<@%s>" % uid for uid in ESCALATE_TO)
+        return ("I can't change that one myself — flagging it for %s." % tags)
     why = "Asked in the new-start thread on %s." % dt.date.today().isoformat()
     if action == "stop_pinging":
         if suppression.is_suppressed(person, "new_start_followup"):
