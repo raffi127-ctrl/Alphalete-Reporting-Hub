@@ -2163,6 +2163,26 @@
       "depends_on": [],
       "verify": null
     },
+    "install_new_start_thread_scan_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_new_start_thread_scan_agent` installs com.alphalete.new-start-thread-replies (every day, every 30 min, 8am-8pm CST) on THIS machine. Each firing enqueues `rerun new_start_thread_replies` for the poller. Runs all week, not just the weekend: people ask Lucy things midweek. weekdays [] = manual only.",
+      "display_name": "Install New-Start thread scan agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "new-start-thread-replies"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "new_start_texts_dry": {
       "on_scheduler": true,
       "machine": "Lucy 1",
@@ -2251,12 +2271,13 @@
         "--mode",
         "thread-replies",
         "--funnel",
-        "main"
+        "main",
+        "--live"
       ],
       "cadence": {
         "weekdays": []
       },
-      "_note": "Raf 2026-08-30: 'I want to be able to talk to LUCY in this thread, is their a way to make that happen by tagging her?' Answers replies in the week's new-start thread that @-mention Lucy (U0BCG8F9B5Z). Answers come ONLY from the report's own Reconciliation - the facts block is built in code, the model picks and phrases them and never supplies facts of its own - and a request to CHANGE something is acknowledged and flagged for Megan, never claimed as done. DELIBERATELY NOT ARMED: base_args carries no --live, so it composes answers and posts NOTHING. It is the only pass that would post to Slack with no human in the loop, and the standing rule here is to ask before any Slack send - so the first answers are meant to be read. To arm it, add '--live' to base_args and give it a cadence. weekdays [] = never orchestrator-run; `lucy rerun new_start_thread_replies` = check now. Idempotent per mention ts via output/new_start_followup/thread_replies/<monday>.json.",
+      "_note": "Raf 2026-08-30: 'I want to be able to talk to LUCY in this thread, is their a way to make that happen by tagging her?' Answers replies in the week's new-start thread that @-mention Lucy (U0BCG8F9B5Z). ARMED 2026-08-30. A QUESTION is answered only from the report's own Reconciliation (facts built in code; the model picks and phrases, never supplies). A REQUEST to stop or resume chasing a named person is executed and confirmed in code's own words. Lucy can change NOTHING else - any other change request is flagged for Megan, never claimed as done. The person in a stop/resume request must already appear in this week's report, so an arbitrary name can never reach the do-not-ping list. Runtime writes go to the GITIGNORED overlays in output/shared/, never the committed stores, because a dirty tracked file breaks `lucy update`. Cadence is com.alphalete.new-start-thread-replies (every 30 min, 8am-8pm, all week), which only enqueues a rerun; weekdays [] keeps the 4am orchestrator out of it. Idempotent per mention ts.",
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],

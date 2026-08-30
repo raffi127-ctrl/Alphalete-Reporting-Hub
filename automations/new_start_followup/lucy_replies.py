@@ -55,10 +55,7 @@ Answer ONLY from the FACTS block. It is the complete state of the report — if 
 something is not in it, you do not know it, and you must say so rather than \
 guess. Never invent a name, a number, or a status.
 
-If they are ASKING YOU TO CHANGE SOMETHING (stop pinging a person, add \
-someone, fix a name, change the schedule), do NOT claim to have done it. Say \
-you have flagged it for Megan, who makes the change. You cannot change \
-anything yourself.
+There are exactly TWO things you can change yourself, and both are handled before you ever see the message: leaving a named person alone, and starting to chase them again. For ANY OTHER request to change something (fix a name, change the schedule, alter the roster, text somebody), do NOT claim to have done it \N{EM DASH} say you have flagged it for Megan, who makes the change.
 
 Style: plain and short, 1-3 sentences. No emoji, no greeting, no sign-off. \
 Write like a colleague answering in a thread. Do not use @-mentions."""
@@ -149,6 +146,118 @@ def facts(rec) -> str:
     return "\n".join(lines)
 
 
+_INTENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": ["none", "stop_pinging", "resume_pinging"],
+            "description": "stop_pinging = they are asking Lucy to leave a "
+            "specific person alone. resume_pinging = start chasing a person "
+            "again. none = anything else, including questions.",
+        },
+        "person": {
+            "type": "string",
+            "description": "The person the action is about, copied EXACTLY "
+            "from the KNOWN PEOPLE list. Empty string if the action is none "
+            "or the person is not on that list.",
+        },
+    },
+    "required": ["action", "person"],
+    "additionalProperties": False,
+}
+
+_INTENT_SYSTEM = """Decide whether this Slack message is asking Lucy to STOP chasing a specific person, to START chasing them again, or neither.
+
+Only choose stop_pinging or resume_pinging when the message clearly names a person from the KNOWN PEOPLE list. A question ("who hasn't sent?", "why is X listed?") is always none. Complaining about someone is not a request to stop chasing them. If you are unsure, answer none."""
+
+
+def known_people(rec) -> List[str]:
+    """Every person Lucy is allowed to act on — the WHITELIST.
+
+    An action can only ever land on somebody this week's report already knows
+    about. Without this, "stop pinging Dave" would let anyone write an
+    arbitrary string into the do-not-ping list, and a name nobody recognises
+    would silently never be chased again.
+    """
+    names = [s.leader.name for s in rec.statuses]
+    names += list(rec.unmatched_obcl or {})
+    names += list(rec.suppressed or [])
+    return sorted(set(n for n in names if n))
+
+
+def intent(question_text: str, rec) -> dict:
+    """-> {'action', 'person'}. Falls back to none on any failure."""
+    import anthropic
+    from automations.brand_audit import credentials
+
+    people = known_people(rec)
+    cleaned = MENTION_RE.sub("", question_text).strip()
+    try:
+        client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
+        resp = client.messages.create(
+            model=MODEL, max_tokens=300, system=_INTENT_SYSTEM,
+            output_config={"format": {"type": "json_schema",
+                                      "schema": _INTENT_SCHEMA}},
+            messages=[{"role": "user", "content":
+                       "KNOWN PEOPLE:\n%s\n\nMESSAGE:\n%s"
+                       % ("\n".join(people), cleaned)}])
+        text = next((b.text for b in resp.content if b.type == "text"), "{}")
+        out = json.loads(text)
+    except Exception as exc:  # noqa: BLE001 — an unreadable intent is just "none"
+        print("[thread-replies] intent read failed (%s) — treating as a "
+              "question." % str(exc)[:120])
+        return {"action": "none", "person": ""}
+
+    action = out.get("action") or "none"
+    person = (out.get("person") or "").strip()
+    # THE GATE: the name must be one we handed it, matched exactly after
+    # normalisation. Anything else is downgraded to a question, never guessed.
+    if action != "none":
+        match = next((p for p in people
+                      if _norm_name(p) == _norm_name(person)), None)
+        if not match:
+            print("[thread-replies] %r isn't a person in this week's report — "
+                  "not acting on it." % person)
+            return {"action": "none", "person": ""}
+        person = match
+    return {"action": action, "person": person}
+
+
+def _norm_name(name: str) -> str:
+    from automations.shared.slack_tag_learning import _norm
+    return _norm(name)
+
+
+def act(intent_out: dict, asked_by: str, live: bool) -> Optional[str]:
+    """Perform a stop/resume request. -> the confirmation to post, or None.
+
+    Deterministic wording, not the model's: this is the one place Lucy claims
+    to have CHANGED something, so what she says has to be exactly what the
+    code did.
+    """
+    from automations.shared import slack_suppression as suppression
+
+    action, person = intent_out["action"], intent_out["person"]
+    if action == "none":
+        return None
+    why = "Asked in the new-start thread on %s." % dt.date.today().isoformat()
+    if action == "stop_pinging":
+        if suppression.is_suppressed(person, "new_start_followup"):
+            return ("%s is already on the do-not-ping list — no texts or tags "
+                    "are going to them." % person)
+        if live:
+            suppression.suppress(person, why, report="new_start_followup",
+                                 asked_by=asked_by)
+        return ("Done — I won't tag or text %s about new starts again. Megan "
+                "can undo it if that was meant to be temporary." % person)
+    if not suppression.is_suppressed(person, "new_start_followup"):
+        return "%s isn't on the do-not-ping list — I'm already chasing them." % person
+    if live:
+        suppression.unsuppress(person, why, asked_by=asked_by)
+    return "Done — %s is back on the list and I'll chase them again." % person
+
+
 def answer(question_text: str, rec) -> str:
     """One reply, grounded in `facts`. Raises if the model can't be reached."""
     import anthropic
@@ -183,7 +292,10 @@ def run(rec, live: bool = False, client=None) -> Dict:
     for msg in pending:
         asked = (msg.get("text") or "").strip()
         try:
-            reply = answer(asked, rec)
+            # A request to CHANGE something is executed here and confirmed in
+            # code's own words; everything else is answered from the facts.
+            done = act(intent(asked, rec), msg.get("user") or "", live)
+            reply = done if done else answer(asked, rec)
         except Exception as exc:  # noqa: BLE001
             result["lines"].append(
                 "COULDN'T ANSWER %s: %s" % (msg.get("ts"), str(exc)[:160]))

@@ -242,10 +242,34 @@ def _download(file_obj: dict, token: str) -> Path:
     return Path(path)
 
 
+# OCR results, keyed by the Slack FILE the rows were read from.
+#
+# The roster is a picture that changes only when Aisha posts a new one, but
+# every pass (roll call, nudge, checklist, sat-texts, and now the @Lucy
+# responder) re-downloaded and re-OCR'd it. That's a paid vision call and the
+# single flakiest step in this report -- an un-authorised download returns an
+# HTML sign-in page that surfaces as an opaque "400 Could not process image",
+# which is what broke the 8/8 roll call. Running a responder hourly off an
+# uncached read would multiply both the cost and that failure surface.
+#
+# Keyed on the file's own id AND timestamp, never on the week: if Aisha
+# replaces the screenshot the key changes and we re-read it. A stale roster is
+# the one thing this cache must never serve.
+CACHE_DIR = (Path(__file__).resolve().parents[2] / "output"
+             / "new_start_followup" / "roster_ocr")
+
+
+def _cache_path(img: dict) -> Path:
+    key = "{}-{}".format(img.get("id") or "noid", img.get("timestamp") or "0")
+    return CACHE_DIR / ("%s.json" % key)
+
+
 def fetch_roster_rows(monday_iso: Optional[str] = None,
-                      poster: Optional[str] = None) -> List[dict]:
+                      poster: Optional[str] = None,
+                      use_cache: bool = True) -> List[dict]:
     """End-to-end: find the weekly screenshot, download it, OCR it.
-    Returns [{'interviewer','name','last_name'}]. Raises if no post/image found."""
+    Returns [{'interviewer','name','last_name','confirmation','bg_status'}].
+    Raises if no post/image found."""
     client = smp._client()
     img = _find_roster_image(client, monday_iso, poster=poster)
     if not img:
@@ -253,9 +277,33 @@ def fetch_roster_rows(monday_iso: Optional[str] = None,
             "No 'New Starts Scheduled for Monday' roster image found in "
             "{}{}. Has it been posted yet?".format(
                 CHANNEL_ID, " by <@{}>".format(poster) if poster else ""))
+
+    cache = _cache_path(img)
+    if use_cache and cache.exists():
+        try:
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            rows = cached.get("rows") or []
+            # Only trust a cache written by the CURRENT schema. An older file
+            # has no status columns, and silently reusing it would count the
+            # declined rows again.
+            if rows and all("confirmation" in r for r in rows):
+                print("[roster] using cached OCR of {} ({} rows)".format(
+                    img.get("name", "?"), len(rows)))
+                return rows
+        except Exception as exc:  # noqa: BLE001 — a bad cache just means re-read
+            print("[roster] ignoring unreadable OCR cache ({}).".format(exc))
+
     path = _download(img, smp._load_token())
     try:
         rows = extract_rows(path)
+        try:
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            _cache_path(img).write_text(
+                json.dumps({"file": img.get("name"), "id": img.get("id"),
+                            "rows": rows}, indent=2, ensure_ascii=False),
+                encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 — caching is an optimisation
+            print("[roster] couldn't write the OCR cache ({}).".format(exc))
     finally:
         try:
             path.unlink()

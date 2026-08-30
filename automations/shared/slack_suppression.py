@@ -22,32 +22,104 @@ everywhere.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from automations.shared.slack_tag_learning import _norm
 
+# Committed base: hand-curated, shared with every machine.
 STORE_PATH = Path(__file__).resolve().parent / "slack_do_not_ping.json"
 
+# What a RUN writes (Lucy adding someone because they were asked to in the
+# thread). NEVER the committed file: a dirty tracked file on Lucy 1 makes
+# `lucy update`'s autostash conflict, which exits 0 and takes the 4am batch
+# with it. output/ is gitignored. Promote with --promote on the laptop.
+LOCAL_PATH = (Path(__file__).resolve().parents[2] / "output" / "shared"
+              / "slack_do_not_ping.local.json")
 
-def _load() -> dict:
-    if not STORE_PATH.exists():
+
+def _read(path: Path) -> dict:
+    if not path.exists():
         return {"people": []}
     try:
-        return json.loads(STORE_PATH.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 — never take a report down over this
         return {"people": []}
 
 
+def _all_people() -> List[dict]:
+    """Committed + local. A local entry for the same name wins, so an
+    'actually, start pinging them again' can undo a committed one."""
+    people = list(_read(STORE_PATH).get("people", []) or [])
+    for local in _read(LOCAL_PATH).get("people", []) or []:
+        people = [p for p in people
+                  if _norm(p.get("name", "")) != _norm(local.get("name", ""))]
+        people.append(local)
+    return people
+
+
 def entries(report: Optional[str] = None) -> List[dict]:
     out = []
-    for e in _load().get("people", []) or []:
+    for e in _all_people():
+        if e.get("removed"):        # an explicit un-suppress
+            continue
         scope = e.get("reports")
         if scope and report and report not in scope:
             continue
         out.append(e)
     return out
+
+
+def local_only() -> List[dict]:
+    """Entries this machine added that aren't committed yet."""
+    base = {_norm(p.get("name", "")) for p in _read(STORE_PATH).get("people", []) or []}
+    return [p for p in _read(LOCAL_PATH).get("people", []) or []
+            if _norm(p.get("name", "")) not in base or p.get("removed")]
+
+
+def suppress(name: str, why: str, report: Optional[str] = None,
+             asked_by: str = "") -> None:
+    """Stop pinging `name`. Writes the LOCAL overlay only."""
+    data = _read(LOCAL_PATH)
+    people = [p for p in data.setdefault("people", [])
+              if _norm(p.get("name", "")) != _norm(name)]
+    entry = {"name": name, "why": why, "added": dt.date.today().isoformat()}
+    if report:
+        entry["reports"] = [report]
+    if asked_by:
+        entry["asked_by"] = asked_by
+    people.append(entry)
+    data["people"] = people
+    _save_local(data)
+
+
+def unsuppress(name: str, why: str, asked_by: str = "") -> None:
+    """Start pinging `name` again — recorded as an explicit tombstone so it
+    also overrides a COMMITTED entry, which a local file otherwise couldn't."""
+    data = _read(LOCAL_PATH)
+    people = [p for p in data.setdefault("people", [])
+              if _norm(p.get("name", "")) != _norm(name)]
+    entry = {"name": name, "why": why, "removed": True,
+             "added": dt.date.today().isoformat()}
+    if asked_by:
+        entry["asked_by"] = asked_by
+    people.append(entry)
+    data["people"] = people
+    _save_local(data)
+
+
+def _save_local(data: dict) -> None:
+    data["_note"] = (
+        "MACHINE-LOCAL do-not-ping changes made at runtime (Lucy acting on a "
+        "request in the thread). Gitignored: writing the committed store would "
+        "dirty a tracked file and break `lucy update`. 'removed': true is an "
+        "un-suppress that overrides the committed list."
+    )
+    LOCAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LOCAL_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                          encoding="utf-8")
 
 
 def is_suppressed(name: str, report: Optional[str] = None) -> bool:

@@ -44,7 +44,18 @@ import unicodedata
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+# The COMMITTED base: hand-curated, and the only copy that reaches other
+# machines (git is the only channel to the mini).
 STORE_PATH = Path(__file__).resolve().parent / "slack_known_users.json"
+
+# What a RUN writes. Never the committed file: a report dirties this store
+# every time it learns somebody, and a dirty tracked file on Lucy 1 makes
+# `lucy update`'s autostash conflict -- which exits 0 and takes the whole 4am
+# batch down with it. output/ is gitignored, so a learning write can never
+# collide with a deploy. Promote entries into the committed file with
+# `python -m automations.shared.slack_tag_learning --promote`.
+LOCAL_PATH = (Path(__file__).resolve().parents[2] / "output" / "shared"
+              / "slack_known_users.local.json")
 
 # <@U123ABC> and the <@U123ABC|display name> form Slack still emits in places.
 MENTION_RE = re.compile(r"<@([A-Z0-9]+)(?:\|[^>]*)?>")
@@ -65,30 +76,40 @@ def _norm(name: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _load() -> dict:
-    if not STORE_PATH.exists():
-        return {"_note": "", "users": {}}
+def _read(path: Path) -> dict:
+    if not path.exists():
+        return {"users": {}}
     try:
-        return json.loads(STORE_PATH.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 — a corrupt store must not kill a report
-        return {"_note": "", "users": {}}
+        return {"users": {}}
 
 
-def _save(data: dict) -> None:
+def _save_local(data: dict) -> None:
     data["_note"] = (
-        "Slack IDs learned from humans hand-tagging people a report said it "
-        "could not tag. Written by automations.shared.slack_tag_learning — "
-        "safe to hand-edit. Keyed by normalized name. IDs and display names "
-        "only; nothing secret, which is why this is committed (git is the only "
-        "channel to the mini)."
+        "MACHINE-LOCAL. Slack IDs this machine learned from hand-tags. "
+        "Gitignored on purpose: writing to the committed store would dirty a "
+        "tracked file and break `lucy update`. Promote with: python -m "
+        "automations.shared.slack_tag_learning --promote"
     )
-    STORE_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+    LOCAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LOCAL_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                           encoding="utf-8")
 
 
 def known() -> Dict[str, dict]:
-    """normalized name -> {id, name, source, learned}."""
-    return _load().get("users", {}) or {}
+    """normalized name -> {id, name, source, learned}, committed + local."""
+    users = dict(_read(STORE_PATH).get("users", {}) or {})
+    users.update(_read(LOCAL_PATH).get("users", {}) or {})
+    return users
+
+
+def local_only() -> Dict[str, dict]:
+    """Learned on this machine but not yet committed — surfaced by callers so
+    a learned id isn't invisible to every other machine forever."""
+    base = _read(STORE_PATH).get("users", {}) or {}
+    return {k: v for k, v in (_read(LOCAL_PATH).get("users", {}) or {}).items()
+            if k not in base}
 
 
 def lookup(name: str) -> Optional[str]:
@@ -97,7 +118,7 @@ def lookup(name: str) -> Optional[str]:
 
 
 def remember(name: str, slack_id: str, source: str = "") -> None:
-    data = _load()
+    data = _read(LOCAL_PATH)
     users = data.setdefault("users", {})
     users[_norm(name)] = {
         "id": slack_id,
@@ -105,7 +126,52 @@ def remember(name: str, slack_id: str, source: str = "") -> None:
         "source": source,
         "learned": dt.date.today().isoformat(),
     }
-    _save(data)
+    _save_local(data)
+
+
+def promote() -> int:
+    """Fold the local overlay into the committed store. -> count promoted.
+
+    Run on the LAPTOP and commit the result; that is how a learned id reaches
+    every other machine.
+    """
+    base = _read(STORE_PATH)
+    users = base.setdefault("users", {})
+    new = local_only()
+    users.update(new)
+    base["_note"] = (
+        "Slack IDs learned from humans hand-tagging people a report said it "
+        "could not tag. Committed so every machine shares them. Runtime writes "
+        "go to the gitignored local overlay instead (see LOCAL_PATH) and are "
+        "folded in here with --promote."
+    )
+    STORE_PATH.write_text(
+        json.dumps(base, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return len(new)
+
+
+def main(argv=None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(description="Learned Slack ids")
+    ap.add_argument("--promote", action="store_true",
+                    help="fold this machine's learned ids into the committed "
+                         "store (then commit it)")
+    a = ap.parse_args(argv)
+    if a.promote:
+        n = promote()
+        print("Promoted {} learned id(s) into {}.".format(n, STORE_PATH))
+        print("Commit it so the other machines get them." if n else
+              "Nothing new to promote.")
+        return 0
+    for key, rec in sorted(known().items()):
+        mark = " (local, uncommitted)" if key in local_only() else ""
+        print("{:<26} {}{}".format(rec.get("name", key), rec.get("id"), mark))
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
 
 
 def _display_names(client, user_id: str) -> List[str]:
