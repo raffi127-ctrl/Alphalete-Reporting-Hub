@@ -238,13 +238,18 @@ TELEMAPPER_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
 # them here retires that second post and the office gets ONE board — the same
 # merge Raf's fiber board got (Megan 2026-08-30: "these 2 should be combined
 # just like we have for Raf's").
-ENERGYWELL_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
+ENERGYWELL_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
                              COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
                              COL_FIRST_KNOCK, COL_LAST_KNOCK,
                              COL_GAPS, COL_TOTAL_GAPS, COL_NO_ANSWER,
                              COL_NOT_INTERESTED, COL_PRESENTATION,
                              COL_COME_BACK, COL_VL, COL_INACCESSIBLE,
                              COL_DO_NOT_KNOCK]
+# Energy Wells gets the SAME derived columns fiber does — Reps Knocking, Talk
+# To %, Talk To's per Rep, Avg Hrs Knocking — because it now goes through the
+# same renderer. _with_derived needs Rep, Total Talk to and Total Gaps as
+# anchors and the Energy Wells set has all three.
+ENERGYWELL_KNOCKS_HEADERS = _with_derived(ENERGYWELL_KNOCKS_COLUMNS)
 
 # Wireless (NDS) Total Knocks: the house board's shape, with the wireless
 # disposition set — one Not Interested bucket, no Talk-To split, no Sale.
@@ -319,6 +324,16 @@ def _table_from_rows(
     # total_knocks.aggregate. Only then does the column join the header.
     if any(COL_HRS_KNOCKING in rec for rec in records):
         header.append(COL_HRS_KNOCKING)
+    # ANY OTHER KEY THE RECORDS CARRY. SHEET_COLUMNS is fiber's set, so a
+    # campaign with its own dispositions — Energy Wells has Not Interested,
+    # Presentation and VL — had those columns dropped here and arrived at the
+    # board BLANK, with the totals row reading 0 under each. Appended in first
+    # -seen order; a board only draws the columns it asks for, so this cannot
+    # widen an existing one.
+    for rec in records:
+        for k in rec:
+            if k not in header:
+                header.append(k)
     rows: list[list[str]] = []
     for rec in records:
         cells = ["" if rec.get(c, "") is None else str(rec.get(c, ""))
@@ -637,7 +652,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         apps: "dict[str, int] | None" = None,
                         rate_columns: bool = True,
                         knocks_green_at: "int | None" = None,
-                        sort_by: str = "rep") -> Path:
+                        sort_by: str = "rep",
+                        base_cols: "list | None" = None,
+                        out_cols: "list | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -703,8 +720,11 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         header, rows = _read_table(sheet_id, tab)
     if not rows:
         raise RuntimeError(f"No data rows in tab {tab!r} to render.")
-    sub = _combined_sub(header, rows, sort_by=sort_by, where=f"tab {tab!r}")
-    totals = _combined_totals("TOTAL", sub)
+    _base = list(base_cols or COMBINED_KNOCKS_COLUMNS)
+    _out = list(out_cols or COMBINED_KNOCKS_HEADERS)
+    sub = _combined_sub(header, rows, sort_by=sort_by, where=f"tab {tab!r}",
+                        base_cols=_base, out_cols=_out)
+    totals = _combined_totals("TOTAL", sub, _out)
 
     # Extra offices' totals rows ABOVE ours (Raf 2026-08-23: "add Chan's
     # totals above ours daily") — each is (office name, records keyed by
@@ -722,12 +742,15 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         x_header, x_rows = _table_from_rows(recs)
         if not x_rows:
             continue
-        x_sub = _combined_sub(x_header, x_rows, where=f"extra office {name!r}")
-        extra_rows.append(_combined_totals(f"{name.upper()} TOTAL", x_sub))
+        # The comparison office is scraped in ITS shape; rendered in OURS, so
+        # a column it does not have blanks instead of failing the board.
+        x_sub = _combined_sub(x_header, x_rows, where=f"extra office {name!r}",
+                              base_cols=_base, out_cols=_out)
+        extra_rows.append(_combined_totals(f"{name.upper()} TOTAL", x_sub, _out))
         extra_apps.append(sum(x_apps.values()) if x_apps else None)
         # Its Average App per Rep divisor, taken here while its rep rows still
         # exist — only its TOTAL line survives into the drawn table.
-        extra_knockers.append(len(_knockers(x_sub)))
+        extra_knockers.append(len(_knockers(x_sub, _out)))
         # Its LISTED rep count, taken while its rep rows still exist — only
         # its TOTAL line survives into the drawn table.
         extra_listed.append(len(x_sub))
@@ -735,8 +758,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # TOTAL line survives into the drawn table.
         extra_rates.append(_mean_rate(x_sub))
 
-    hrs_pos = COMBINED_KNOCKS_HEADERS.index(COL_HRS_KNOCKING)
-    tg_pos = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_GAPS)
+    hrs_pos = _out.index(COL_HRS_KNOCKING)
+    tg_pos = _out.index(COL_TOTAL_GAPS)
     for r in sub:
         r[tg_pos] = _fmt_hm(r[tg_pos])
         r[hrs_pos] = _fmt_hm(r[hrs_pos])
@@ -750,7 +773,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     _colors = ([THEME_TEAL["title_bg"]] * len(extra_rows)
                + [THEME_AMBER["total_bg"]])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
-    cols = list(COMBINED_KNOCKS_HEADERS)
+    cols = list(_out)
     disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in cols]
     if hide_columns:
         # Drop by NAME, then take the same positions out of every row — the
@@ -766,7 +789,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # just as it does on one that kept it.
         _insert_apps_column(cols, disp, table, apps,
                             n_extra=len(extra_rows), extra_apps=extra_apps,
-                            n_knockers=len(_knockers(sub)),
+                            n_knockers=len(_knockers(sub, _out)),
                             extra_knockers=extra_knockers)
     _cell_bgs: dict = {}
     if rate_columns:
@@ -1080,30 +1103,48 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
 
 def _combined_sub(header: list[str], rows: list[list[str]],
                   sort_by: str = "rep",
-                  where: str = "") -> list[list[str]]:
+                  where: str = "",
+                  base_cols: "list | None" = None,
+                  out_cols: "list | None" = None) -> list[list[str]]:
     """Select + order one office's rows into the combined-board shape:
-    COMBINED_KNOCKS_HEADERS order (Hrs Knocking computed), alphabetical by
-    rep. Gap/hour cells stay raw minutes — the caller formats them."""
+    `out_cols` order (Hrs Knocking computed), alphabetical by rep unless
+    sort_by="knocks". Gap/hour cells stay raw minutes — the caller formats them.
+
+    `base_cols`/`out_cols` default to fiber's, so every existing board is
+    unchanged. Energy Wells passes its own pair, which is what lets that office
+    have the SAME board as Raf — totals row, derived averages, the lot —
+    instead of the flat table it started with.
+
+    A column the source genuinely lacks comes through BLANK rather than
+    raising. That is what lets a comparison office of a different shape (Chan
+    is fiber; Calvin's board is Energy Wells) show the columns the two share
+    and leave the rest empty, which is honest, where a hard failure would mean
+    no board at all."""
     idx = {}
     for i, h in enumerate(header):
         k = _norm(h)
         if k and k not in idx:
             idx[k] = i
-    missing = [c for c in COMBINED_KNOCKS_COLUMNS if _norm(c) not in idx]
+    base_cols = list(base_cols or COMBINED_KNOCKS_COLUMNS)
+    out_cols = list(out_cols or COMBINED_KNOCKS_HEADERS)
+    # The identity columns are non-negotiable — without them there is no row.
+    # The rest may be absent (a cross-shape comparison office) and blank out.
+    required = [COL_REP, COL_TOTAL_KNOCKS]
+    missing = [c for c in required if _norm(c) not in idx]
     if missing:
         raise RuntimeError(f"{where or 'data'} missing column(s) for Total "
                            f"Knocks: {missing}. Header: {header}")
-    src = {c: i for i, c in enumerate(COMBINED_KNOCKS_COLUMNS)}
+    src = {c: i for i, c in enumerate(base_cols)}
     fk, lk, tg = src[COL_FIRST_KNOCK], src[COL_LAST_KNOCK], src[COL_TOTAL_GAPS]
     # Hrs Knocking is (last − first) − total gaps… UNLESS the caller already
     # computed it. A multi-day fold must AVERAGE the per-day figure; re-deriving
     # it from folded cells would subtract a week of gaps from one day's span and
     # quietly print a wrong number. See total_knocks.aggregate.
     pre = idx.get(_norm(COL_HRS_KNOCKING))
-    sel = [idx[_norm(c)] for c in COMBINED_KNOCKS_COLUMNS]
+    sel = [idx.get(_norm(c)) for c in base_cols]
 
-    def _cell(r: list[str], i: int) -> str:
-        return r[i] if i < len(r) else ""
+    def _cell(r: list[str], i) -> str:
+        return "" if i is None else (r[i] if i < len(r) else "")
 
     sub = []
     for r in rows:
@@ -1124,9 +1165,10 @@ def _combined_sub(header: list[str], rows: list[list[str]],
                                          base[src[COL_TOTAL_KNOCKS]])}
         # Built whole, BEFORE the sort — assembling by header name keeps every
         # derived cell tied to its own rep no matter how the table is ordered.
-        sub.append([derived[c] if c in derived else base[src[c]]
-                    for c in COMBINED_KNOCKS_HEADERS])
-    rep_pos = COMBINED_KNOCKS_HEADERS.index(COL_REP)
+        sub.append([derived[c] if c in derived
+                    else (base[src[c]] if c in src else "")
+                    for c in out_cols])
+    rep_pos = out_cols.index(COL_REP)
     if sort_by == "knocks":
         # Highest total knocks first — a leaderboard, not a roster (Raf
         # 2026-08-29). THIS is the sort that decides the board: a caller that
@@ -1134,7 +1176,7 @@ def _combined_sub(header: list[str], rows: list[list[str]],
         # what happened when gap_alerts sorted its rows and the board still
         # came out A-Z. Ties fall back to name so reps who are level don't
         # shuffle between ticks.
-        tk_pos = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_KNOCKS)
+        tk_pos = out_cols.index(COL_TOTAL_KNOCKS)
 
         def _tk(r):
             v = str(r[tk_pos]).strip().replace(",", "")
@@ -1146,7 +1188,8 @@ def _combined_sub(header: list[str], rows: list[list[str]],
     return sub
 
 
-def _knockers(sub: list[list[str]]) -> list[list[str]]:
+def _knockers(sub: list[list[str]],
+              out_cols: "list | None" = None) -> list[list[str]]:
     """The rows that count as a rep KNOCKING — KNOCKING_MIN_KNOCKS doors or
     more. This is both the Total # of Reps Knocking count and the divisor of
     the two per-rep columns, deliberately the SAME function so the head count
@@ -1160,7 +1203,7 @@ def _knockers(sub: list[list[str]]) -> list[list[str]]:
 
     A sales-only row (no knocks, carried in for the Total Apps column) fails
     the same test, as it always did."""
-    tk = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_KNOCKS)
+    tk = (out_cols or COMBINED_KNOCKS_HEADERS).index(COL_TOTAL_KNOCKS)
     return [r for r in sub
             if _to_int_or_zero(r[tk]) >= KNOCKING_MIN_KNOCKS]
 
@@ -1170,7 +1213,8 @@ def _to_int_or_zero(v) -> int:
     return int(v) if v.isdigit() else 0
 
 
-def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
+def _combined_totals(label: str, sub: list[list[str]],
+                     out_cols: "list | None" = None) -> list[str]:
     """One office's TOTAL line for the combined board: counts sum, the knock
     times average (reps with a parsable time only), Total Gaps sums, Hrs
     Knocking averages, and Talk To's per Rep divides. Gap/hour cells stay raw
@@ -1188,10 +1232,11 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
         h, mm = divmod(m, 60)
         return f"{h % 12 or 12}:{mm:02d} {'AM' if h < 12 else 'PM'}"
 
-    tt_at = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_TALK_TO)
-    tk_at = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_KNOCKS)
+    out_cols = list(out_cols or COMBINED_KNOCKS_HEADERS)
+    tt_at = out_cols.index(COL_TOTAL_TALK_TO)
+    tk_at = out_cols.index(COL_TOTAL_KNOCKS)
     totals: list[str] = []
-    for ci, c in enumerate(COMBINED_KNOCKS_HEADERS):
+    for ci, c in enumerate(out_cols):
         if c == COL_REP:
             totals.append(label)
         elif c in (COL_FIRST_KNOCK, COL_LAST_KNOCK):
@@ -1208,7 +1253,7 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
             # the office still has talk-to's, and printing 0.0 next to them
             # says the reps had none. Nothing to divide by is not a zero.
             talk = sum(_int0(r[tt_at]) for r in sub)
-            n = len(_knockers(sub))
+            n = len(_knockers(sub, out_cols))
             totals.append(f"{talk / n:.1f}" if n else "")
         elif c == COL_TALK_TO_PCT:
             # The office rate: talk-tos over knocks, both summed off the SAME
@@ -1217,7 +1262,7 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
             totals.append(_pct(sum(_int0(r[tt_at]) for r in sub),
                                sum(_int0(r[tk_at]) for r in sub)))
         elif c == COL_REPS_KNOCKING:
-            totals.append(str(len(_knockers(sub))))
+            totals.append(str(len(_knockers(sub, out_cols))))
         else:
             totals.append(str(sum(_int0(r[ci]) for r in sub)))
     return totals
@@ -1364,7 +1409,7 @@ def knocks_shape(rows: "list[dict]") -> str:
 
 
 _SHAPE_COLUMNS = {
-    SHAPE_ENERGYWELL: ENERGYWELL_KNOCKS_COLUMNS,
+    SHAPE_ENERGYWELL: ENERGYWELL_KNOCKS_HEADERS,
     SHAPE_HOUSE: COMBINED_KNOCKS_HEADERS,
     SHAPE_WIRELESS: WIRELESS_KNOCKS_COLUMNS,
     SHAPE_GAPS_ONLY: TELEMAPPER_KNOCKS_COLUMNS,
@@ -1418,10 +1463,20 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                                          title_suffix=title_suffix, end=end,
                                          date_text=date_text)
     elif shape == SHAPE_ENERGYWELL:
-        first = render_energywell_total_knocks(
-            target, rows=rows, out_dir=out_dir, title_suffix=title_suffix,
-            end=end, date_text=date_text, sort_by=sort_by,
-            knocks_green_at=knocks_green_at)
+        # THE SAME BOARD RAF GETS, on the Energy Wells column set: totals row,
+        # Reps Knocking, Talk To %, Talk To's per Rep, Avg Hrs Knocking, the
+        # rate columns, the 140 green, the knocks ranking and a comparison
+        # office's line. It started on the flat wireless renderer and was
+        # missing all of it (Megan 2026-08-30: "it seems it's missing like the
+        # averages and Chan's comparison"). Going through one renderer means a
+        # column Raf asks for next lands on both offices at once.
+        return ([render_total_knocks(
+            target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
+            knocks_green_at=knocks_green_at, sort_by=sort_by,
+            title_suffix=title_suffix, end=end, date_text=date_text,
+            extra_totals=extra_totals,
+            base_cols=ENERGYWELL_KNOCKS_COLUMNS,
+            out_cols=ENERGYWELL_KNOCKS_HEADERS)], shape)
     elif shape == SHAPE_WIRELESS:
         first = render_wireless_total_knocks(target, rows=rows,
                                              out_dir=out_dir,

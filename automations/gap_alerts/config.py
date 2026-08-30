@@ -103,9 +103,12 @@ CALVIN = {
     # campaign and its name would say nothing; this chat is named for the
     # campaign, and Jay will run TWO, so the board has to say which one it is.
     "campaign_label": "EnergyWell",
-    # Chan is a FIBER office. His totals under an Energy Wells board would
-    # invite a comparison between two different businesses, so no line here.
-    "compare": False,
+    # Chan's comparison line, ON (Megan 2026-08-30 listed it as missing).
+    # He is a FIBER office, so the two are different businesses — his line
+    # fills the columns the shapes SHARE (knocks, talk-tos, times, gaps) and
+    # blanks under VL and Presentation, which fiber has no equivalent of.
+    # Blank there is honest; the alternative was no board at all.
+    "compare": True,
     # ON 2026-08-29 once both halves were in: the campaign pinned above, and
     # an Energy Wells COLUMN SET (its grid has Not Interested / Presentation /
     # VL where fiber has Talk To - Not Interested / Presentation - Not
