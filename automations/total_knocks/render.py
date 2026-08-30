@@ -289,18 +289,16 @@ WIRELESS_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
 # wide boards now cross INLINE_MAX_PX, so our one clean Lanczos pass fires and
 # the client is left a gentle final shrink instead of a brutal one.
 #
-# NOT ON YET — SCALE = 1 renders exactly what every board rendered before
-# 2026-08-30, pixel for pixel. Flip it to 2 to roll out, which is the whole
-# change: every length and font below multiplies, nothing else moves.
+# ON since 2026-08-30 (Megan approved the rollout after seeing the 1x/2x
+# comparison). SCALE = 1 restores the previous output pixel for pixel.
 #
-# WHY IT IS PARKED. It is a formatting change to EVERY board in the fleet
-# (Megan's standing preview-before-rollout rule), and it is not free: a 48-rep
-# weekly board goes 1753x2628 -> 3466x5232, and the inline email copy goes
-# ~400KB -> ~890KB even after the pre-shrink and a palette pass. A captainship
-# email carries ~14 boards plus the weekly PDF, and an oversized email FAILS to
-# send rather than arriving degraded — so this wants one real build measured
-# end to end before it goes on, not a Sunday flip.
-SCALE      = 1
+# It is not free, and the two delivery paths are what keep it affordable: a
+# 48-rep weekly board goes 1753x2628 -> 3466x5232, so the EMAIL copy is
+# pre-shrunk once by us (board_email_html.inline_image_bytes) and the PDF's
+# pages are capped (weekly_pdf.PAGE_MAX_PX). Without those two an oversized
+# mail would FAIL to send rather than arrive degraded. If either is ever
+# loosened, re-measure a built .eml before trusting it.
+SCALE      = 2
 PAD        = 16 * SCALE
 TITLE_H    = 52 * SCALE
 HEADER_H   = 40 * SCALE

@@ -43,6 +43,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+
 # How far back to look for a week that actually rendered. 3 = the last three
 # Sundays; past that, an attachment is stale enough that its absence is the
 # more honest signal (and the daily boards in the body are unaffected).
@@ -81,6 +82,28 @@ PDF_DIR = Path(__file__).resolve().parents[2] / "output" / "weekly_dispositions"
 # 12in-wide page), and PDF readers fit to the window, so this only decides what
 # "100%" means on a desktop.
 DPI = 150
+
+# The widest a page's IMAGE is embedded at. The boards are drawn at 2x density
+# (total_knocks.render.SCALE) and a 48-rep one is ~3500px, which as raw page
+# images would make a 14-board PDF tens of megabytes — attached to a mail that
+# already carries every board inline, and an oversized mail FAILS to send.
+#
+# Capping the pixels costs nothing that matters here: the page's ASPECT is what
+# fit-to-screen depends on and that is untouched, so a capped page fills the
+# reader's screen exactly as an uncapped one would. All it changes is how far a
+# reader can zoom before it softens.
+#
+# 1800 rather than something larger because of what this rides in. On Sun/Mon
+# the captainship mail carries BOTH knock sections inline — ~34 board images —
+# and this PDF on top; measured 2026-08-30, a 2400 cap put the message at ~28MB
+# base64-encoded, over Gmail's 25MB, where an oversized mail FAILS rather than
+# degrades. At 1800 the whole message lands near 20MB.
+#
+# And 1800 is not a regression in zoom detail: the boards were 1753px NATIVE
+# before they rendered at 2x, so a page is still wider than the best that was
+# ever available — now arrived at by a clean downscale from ~3500px instead of
+# being the raw ceiling. Boards under the cap are embedded untouched.
+PAGE_MAX_PX = 1800
 
 
 def last_report_saturday(today: dt.date) -> dt.date:
@@ -204,7 +227,19 @@ def _compose(pages: List[Tuple[str, Path]], out: Path) -> Path:
     from PIL import Image
     canvases = []
     for _label, png in pages:
-        canvases.append(Image.open(png).convert("RGB"))
+        img = Image.open(png).convert("RGB")
+        if img.width > PAGE_MAX_PX:
+            # One good Lanczos pass, same reasoning as the email pre-shrink:
+            # if the picture has to shrink, we would rather do it well once
+            # than hand a reader's viewer a 3x reduction to do cheaply.
+            h = max(1, round(img.height * PAGE_MAX_PX / img.width))
+            img = img.resize((PAGE_MAX_PX, h), Image.LANCZOS)
+        # NO palette pass here, deliberately — unlike the inline copies. PIL
+        # flate-encodes PDF images from full RGB either way, so quantising
+        # first measured byte-for-byte identical (7.40MB both ways,
+        # 2026-08-30) and writing the P-mode image straight out is far WORSE
+        # (84MB). The pixel cap above is this path's only real lever.
+        canvases.append(img)
     out.parent.mkdir(parents=True, exist_ok=True)
     canvases[0].save(out, "PDF", resolution=DPI, save_all=True,
                      append_images=canvases[1:])

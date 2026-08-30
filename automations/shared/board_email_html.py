@@ -84,9 +84,52 @@ def inline_image_bytes(path, max_px: int = 0) -> bytes:
     h = round(im.height * cap / im.width)
     im = im.convert("RGB").resize((cap, h), Image.LANCZOS)
     im = im.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
+    # Probe the ORIGINAL, not what we just resampled — see flatten_palette.
+    im = flatten_palette(im, probe=Image.open(path))
     buf = io.BytesIO()
     im.save(buf, "PNG")
     return buf.getvalue()
+
+
+# A board that survives quantising has this few colours or fewer. Well above
+# what any table reaches (a 14-column weekly board measures ~1,600, nearly all
+# of them antialiasing shades of three or four hues) and well below a
+# photograph, which is the one thing 256 colours WOULD band.
+_PALETTE_SAFE_COLOURS = 20_000
+
+
+def flatten_palette(im, probe=None):
+    """A 256-colour copy of `im` when that is visually free, `im` otherwise.
+
+    `probe` is the image the "is this photographic?" question is asked OF,
+    defaulting to `im` itself. Pass the ORIGINAL when `im` has been resampled:
+    the question is about the CONTENT, and downscaling invents shades that have
+    nothing to do with it. Measured 2026-08-30 on one board — 1,360 colours as
+    drawn, 7,484 after Lanczos, 14,303 after the unsharp — so probing the
+    processed image made the tallest boards read as photographs and skip the
+    pass, and they were the ones costing 1.3MB each.
+
+    These boards are flat fills and text, so a palette costs nothing a reader
+    can see and roughly a THIRD of the bytes: measured 2026-08-30 on a 14-board
+    captainship email, 15.8MB of inline copies became 5.5MB, with 1% of pixels
+    differing at all and none by more than 26/255 — all of it on glyph edges.
+    That is the difference between a mail that sends and one that doesn't, now
+    that boards render at 2x (total_knocks.render.SCALE).
+
+    The colour count is a real probe, not an assumption: getcolors() returns
+    None once an image passes the ceiling, so a photograph — the one input
+    where 256 colours would band visibly — is handed back untouched."""
+    try:
+        src = probe if probe is not None else im
+        if src.convert("RGB").getcolors(maxcolors=_PALETTE_SAFE_COLOURS) is None:
+            return im
+        # dither=NONE: dithering scatters pixels to fake missing colours, which
+        # on a flat fill is visible noise AND defeats the compression this is
+        # for. With a table's handful of hues there is nothing to fake.
+        from PIL import Image as _I
+        return im.quantize(colors=256, dither=_I.Dither.NONE)
+    except Exception:  # noqa: BLE001 — a size optimisation must never fail a send
+        return im
 
 
 # FULL-BLEED blocks take the whole wrapper and do NOT set the scale for anything

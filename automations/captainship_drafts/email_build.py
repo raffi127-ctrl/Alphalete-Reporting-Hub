@@ -28,6 +28,15 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from automations.shared import board_email_html as _beh
+
+# Tighter than the shared default (2 x WRAPPER_PX) because of what THIS message
+# carries: on Sun/Mon both knock sections are inline, ~34 board images, plus the
+# weekly PDF. Measured 2026-08-30 at 2x render scale, the shared cap put the
+# message near 28MB base64 — past Gmail's 25MB, where it FAILS to send rather
+# than arriving degraded. 1800 lands the whole thing near 20MB and is still
+# wider than the boards were drawn before 2x, so nothing a reader could zoom
+# into has been taken away.
+_INLINE_PX = 1800
 from automations.captainship_drafts.config import Captain
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, PHOTO_EMBED_PX, PHOTO_IMG,
@@ -368,7 +377,7 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
         # (Megan 2026-08-30: everything we hand anyone should be as
         # fit-to-screen as possible WITHOUT losing sharpness). A board already
         # inside the cap is passed through byte-for-byte.
-        html_part.add_related(_beh.inline_image_bytes(path),
+        html_part.add_related(_beh.inline_image_bytes(path, _INLINE_PX),
                               maintype="image", subtype="png", cid=cid)
     html_part.add_related(_circular_photo_png(PHOTO_IMG, PHOTO_EMBED_PX),
                           maintype="image", subtype="png", cid=cid_photo)
