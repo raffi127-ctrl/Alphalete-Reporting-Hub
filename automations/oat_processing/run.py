@@ -2866,9 +2866,15 @@ def run_walk(page, live: bool = False, limit: int = None,
         # true end), not on the first re-seen one.
         if not key or key == "|" or key in seen:
             no_progress += 1
-            if no_progress > 3:
-                _log(f"[oat] no fresh applicants — end of queue after "
-                     f"{processed} processed")
+            # With an allowlist active, paging through junk is NORMAL: Rafael's
+            # office (11280) fronts its 777-email queue with nameless AD-receipt
+            # records, and the 4-strike guard called that "end of queue after 0
+            # processed" — twice (2026-08-30). Give the walk room to pass them;
+            # a real end still trips the guard, just later.
+            _strikes = 40 if _ONLY_NAMES is not None else 3
+            if no_progress > _strikes:
+                _log(f"[oat] no fresh applicants ({no_progress} blank/seen reads) "
+                     f"— end of queue after {processed} processed")
                 break
             if not advance_to_next(page):
                 _log(f"[oat] no next control — end of queue after "
