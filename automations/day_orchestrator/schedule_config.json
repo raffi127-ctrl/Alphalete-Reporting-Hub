@@ -8950,6 +8950,26 @@
       "timeout_minutes": 20,
       "verify": null
     },
+    "digi_docs_campaign_probe": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY proof that the add path can select RES-AT&T on the live page (Megan 2026-08-31: 'people will only get res at&t - no water or primo?'). The campaign fix was unproven and the usual proofs do not reach it: a DRY add returns 'WOULD add' from find_rep and never gets as far as choosing a campaign, and a LIVE add would prove it by adding a real person, which is not a test. 'found X under RES-AT&T' in the logs is find_rep LOCATING people re-added by hand and says nothing about what our add would pick. So this opens View Progress and runs the real _select_campaign against the real dropdown, printing every option and which one it landed on -- the whole risk being that the label carries an ampersand and there are lookalikes. Selects a dropdown value and reads the page: adds nobody, sends nothing, touches no Sheet. weekdays [] so the batch never runs it.",
+      "machine": "Lucy 3",
+      "display_name": "Digi Docs \u2014 campaign probe (read-only)",
+      "source_type": "browser",
+      "data_sources": [],
+      "command": [
+       "automations.digi_docs.campaign_probe"
+      ],
+      "base_args": [],
+      "cadence": {
+       "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 10,
+      "verify": null
+    },
     "digi_docs_attest_probe": {
       "on_scheduler": false,
       "_off_scheduler_note": "READ-ONLY proof that the Set Status attestation sections still open (Megan 2026-08-31). DRUG TEST stopped expanding and every rep in two runs failed there, so nobody's Background Check / Drug Test / Service boxes were ticked all day. _force_expand now works through the plausible toggles instead of guessing one, but that is unit-tested against a FAKE page and a fake page cannot say whether it opens the real one. The normal proof is not available either: the send phase only reaches the attestation step for someone in REQUIRED ACTION, and after a day of manual sends nearly everyone is COMPLETED or PENDING. So this opens ONE named person's modal and asks directly. It never opens the documents portal, never generates a bundle, and calls tick_attestations in DRY mode -- which expands the sections and waits for the boxes without clicking them. Safe to point at anybody, including people who already have their documents. --only is REQUIRED; it refuses without it. weekdays [] so the batch never runs it.",
