@@ -5175,9 +5175,18 @@ AUTOMATED_REPORTS = [
         # as daily_runs, NOT `phases`: a chain of two different ids
         # auto-registers a phantom library card for the second one.
         "daily_runs": 2,
+        # DAILY, NOT MONDAY (Megan 2026-08-31). The card said weekly/[0] while
+        # both agents on Lucy 3 fire every day — the add at 8:00 with no
+        # Weekday key, the send tick every five minutes — and run.py decides
+        # from the DATE WRITTEN ABOVE A CHART, not the weekday. Those dates
+        # being Mondays is how the sheet gets filled in, not a rule. So a chart
+        # dated for a Tuesday would run while the Hub showed nothing due, which
+        # is the same blind spot as a report nobody can see never running.
+        # The label still describes the normal week, because that is the honest
+        # human answer to "when does this go out".
         "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0],
+            "frequency": "daily",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
             "time": "8:00 AM",
             "time_label": "Raf's Office · Mon 8am, then 30 min before each start",
             "estimated_minutes": 25,
