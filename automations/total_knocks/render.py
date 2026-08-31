@@ -252,7 +252,18 @@ def _with_derived(cols: list) -> list:
 # board means "this rep hit the number"; a green goals row would read as the
 # office having hit it (Megan 2026-08-30 asked for the row "between chan and
 # the total", i.e. inside the summary block, where that misread is easy).
-GOALS_ROW_BG = (90, 98, 112)
+# LIGHT green (Megan 2026-08-30). The row states targets, and green is this
+# board's language for "target met" — so a goal row in the same family reads
+# as what it is. Lighter than GREEN_HIT so it can't be confused with a cell
+# that actually hit; _draw picks dark text for it automatically (see the
+# luminance rule there), because white on this would be unreadable.
+GOALS_ROW_BG = (198, 239, 206)
+
+# What the "#" column's GOAL cell says. "over 20", not "21+" (Megan
+# 2026-08-30): it reads the way Rafael says it — "20 plus, so 21 or more doors
+# knocked" — and is exactly true, where "20+" would promise that a rep with 20
+# counts. He does not. Derived from the constant so it cannot drift.
+REPS_BAR_LABEL = f"over {KNOCKING_MIN_KNOCKS - 1}"
 
 
 def _reps_cell(knocking: int, listed: int) -> str:
@@ -277,8 +288,14 @@ def goals_row(cols: list, day) -> list:
     "0 of 3" (reps at the bar, of reps in the field) and the goals row is where
     "21+ knocks" is spelled out."""
     goal = {
-        COL_REPS_KNOCKING: f"{KNOCKING_MIN_KNOCKS}+ knocks",
         COL_TOTAL_KNOCKS: str(doors_target(day)),
+        # Same number as Total Knocks, and derivable from it (Megan
+        # 2026-08-30): this column is the office's knocks over its reps, so an
+        # office where every rep hits 160 averages 160. Worth stating rather
+        # than leaving the reader to infer it — and note it divides by every
+        # rep LISTED, not by the reps knocking, so it is the stricter of the
+        # two per-rep columns to actually hit.
+        COL_DOORS_PER_REP: str(doors_target(day)),
         COL_KNOCKS_PER_HR: str(KNOCKS_PER_HR_TARGET),
         COL_FIRST_KNOCK: _min_to_hhmm(FIRST_KNOCK_TARGET_MIN),
     }
@@ -709,7 +726,13 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
                 d.rectangle([x, y, x + col_w[ci], y + ROW_H], fill=_cbg)
             val = r[ci] if ci < len(r) else ""
             font = f_name if (ci == name_col or is_total) else f_cell
-            fg = (HEADER_FG if is_total
+            # A highlighted row normally draws reversed (white on a dark
+            # fill). Pick by LUMINANCE instead of assuming: the GOAL row is
+            # deliberately light, and white on it is unreadable. Every
+            # existing dark totals fill stays above the threshold, so nothing
+            # else changes.
+            _rev = (0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]) < 150
+            fg = ((HEADER_FG if _rev else TEXT) if is_total
                   else NAME_FG if ci == name_col else TEXT)
             # EVERY cell centres (Megan 2026-08-30, "let's center all text to
             # cell"), which is the house standard these boards are supposed to
@@ -1003,7 +1026,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     number_rows(cols, disp, table, first=_n_summary,
                 summary_values=[_reps_cell(k, n) for k, n in
                                 zip(extra_knockers, extra_listed)]
-                + [f"{KNOCKING_MIN_KNOCKS}+"]
+                + [REPS_BAR_LABEL]
                 + [_reps_cell(n_knockers, len(sub))])
     if _cell_bgs:
         # number_rows inserted a "#" column at 0, so every recorded column
