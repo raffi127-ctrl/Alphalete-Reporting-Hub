@@ -8824,6 +8824,28 @@
       "_timeout_note": "Probe 6 took 11 minutes with 23 of 30 skipped as already-sent. A fresh Monday cohort where everyone needs a bundle is nearer 25, plus the add phase -- so 45, not the probe's 30.",
       "verify": null
     },
+    "disable_digi_docs_send_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "STOP the five-minute Digi Docs send tick on Lucy 3 (com.alphalete.digi-docs-send). Added 2026-08-31 because there was no way to stop it: the tick is a launchd job, not a queue row, so it keeps firing whatever the queue is doing, and on a day when every person it touches produces an alert that fills the channel faster than a fix can be deployed. Boots it out and renames the plist .disabled so a re-login cannot re-load it. RE-ENABLE with `lucy rerun install_digi_docs_send_agent --machine \"Lucy 3\"` -- and remember to, because while it is off NOBODY gets their bundle 30 minutes before they start.",
+      "machine": "Lucy 3",
+      "display_name": "Digi Docs \u2014 stop the send tick",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+       "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+       "digi-docs-send"
+      ],
+      "cadence": {
+       "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 5,
+      "verify": null
+    },
     "disable_digi_docs_monday_agent": {
       "on_scheduler": false,
       "_note": "RETIRE com.alphalete.digi-docs-monday on Lucy 3. It was installed 2026-08-26 to run `--both --live` at Monday 7:45 \u2014 one batch for the whole cohort \u2014 and Raf changed the requirement the same day: each person's documents go 30 minutes before THEIR start time. Leaving it loaded means Monday sends everyone at 7:45 regardless. Boots it out and renames the plist .disabled so a re-login cannot re-load it. Run this BEFORE installing the add/send pair.",
