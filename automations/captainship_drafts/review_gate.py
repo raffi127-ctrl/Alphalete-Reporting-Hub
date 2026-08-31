@@ -1007,7 +1007,7 @@ def send_reviewed(today: dt.date, verbose: bool = True,
 # --------------------------------------------------------------------------
 # 5. the deadline
 # --------------------------------------------------------------------------
-def _alert_deadline_failure(day: dt.date, what: str, detail: str = "") -> None:
+def _alert_deadline_failure(day: dt.date, what, detail: str = "") -> None:
     """Tell #claudecorrections-and-requests that the DEADLINE path failed.
 
     WHY THIS EXISTS (2026-08-15). The 4am orchestrator alerts on its own failed
@@ -1021,13 +1021,30 @@ def _alert_deadline_failure(day: dt.date, what: str, detail: str = "") -> None:
     ONE THREAD PER DAY (incident key carries the date): the agent ticks every 15
     minutes, and a still-broken day must not repost — it replies under the first
     message instead. Best-effort: an alert must never sink the tick.
+
+    ONE ALERT PER PASS, NAMING EVERY BLOCK THAT FAILED (2026-08-31). This used
+    to fire once per failing block, and the incident thread's per-day dedup then
+    collapsed the second one into a status line. On 2026-08-31 fiber-3 AND b2b
+    both timed out in the SAME pass, so the channel read "Fiber 3's previews are
+    built but posting them failed" plus "Failed again today — 1 more run":
+    whoever worked that ticket would have re-posted fiber-3 and left B2B's four
+    captains (Carlos, Eveliz, Luis, Atef) silently unposted — and the status
+    line's "run" was not even a second run. `what` therefore takes a LIST of
+    per-block reasons and they all go in the one message.
     """
+    reasons = [what] if isinstance(what, str) else [w for w in what if w]
     try:
         from automations.day_orchestrator import notify
-        lines = [
-            f"Reports for {day.month}/{day.day} are NOT up for review — {what}.",
+        if len(reasons) == 1:
+            lines = [f"Reports for {day.month}/{day.day} are NOT up for "
+                     f"review — {reasons[0]}."]
+        else:
+            lines = [f"Reports for {day.month}/{day.day} are NOT up for "
+                     f"review — {len(reasons)} blocks failed:"]
+            lines += [f"• {r}" for r in reasons]
+        lines += [
             "",
-            "*What this means:* that block's link was not posted to "
+            "*What this means:* those links were not posted to "
             "#revision-emails, so there is nothing for Evelyn to ✅ and those "
             "captain reports have not gone out. Any OTHER block that did post "
             "is unaffected — the blocks are approved and sent separately.",
@@ -1036,10 +1053,17 @@ def _alert_deadline_failure(day: dt.date, what: str, detail: str = "") -> None:
             lines += ["", detail]
         lines += [
             "",
-            "*To fix it now:* `lucy rerun captainship_drafts` (rebuilds the "
-            "previews), then `lucy rerun captainship_drafts_review` (posts a "
-            "PDF per block for approval; a block already up for review is left "
-            "alone). The agent also retries on its own every 15 min until 8pm.",
+            "*To fix it now, ON LUCY 3* — the whole captainship cycle "
+            "(build → PDF → post → send) moved there on 2026-08-25, and a "
+            "rebuild or a `--refresh` from any other machine re-stamps the "
+            "Drive PDF with that machine's digest, which makes the SEND refuse "
+            "while still marking the block sent:",
+            "• POST failed (previews are on disk): `lucy rerun "
+            "captainship_drafts_review --ensure-posted` — idempotent per block, "
+            "it puts up only what is missing. Do NOT rebuild.",
+            "• BUILD failed: `lucy rerun captainship_drafts --only <captains> "
+            "--dry-run` first, then the line above.",
+            "The agent also retries on its own every 15 min until 8pm.",
         ]
         notify.post_alert("✉️ *Captainship Reports — deadline path failed*",
                           lines, tag="captainship-deadline",
@@ -1107,7 +1131,7 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
                   f"review; nothing to do", flush=True)
         return 0
 
-    failures = 0
+    failures: List[str] = []
     for block in pending:
         have = preview_htmls(today, block)
         if not have:
@@ -1122,20 +1146,16 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
             rc = subprocess.call(cmd)
             have = preview_htmls(today, block)
             if not have:
-                failures += 1
                 print(f"✗ {block.key}: the deadline build produced no previews "
                       f"(exit {rc}) — nothing posted for it. The next tick "
                       f"tries again.", flush=True)
-                _alert_deadline_failure(
-                    today,
-                    f"the deadline build for {block.label} ({block.who}) "
-                    f"exited {rc} and wrote no previews — that block was not "
-                    f"posted",
-                    "This ran from the review agent "
-                    "(deploy/captainship_review.sh), NOT the 4am orchestrator, "
-                    "so the orchestrator's own failure alert never covers it. "
-                    "Check output/ for captainship_draft_*_{}.html.".format(
-                        today.strftime("%Y%m%d")))
+                failures.append(
+                    f"*{block.label}* ({block.who}) — the deadline BUILD "
+                    f"exited {rc} and wrote no previews, so nothing was "
+                    f"posted for it (look for output/captainship_draft_*_"
+                    f"{today.strftime('%Y%m%d')}.html). This ran from the "
+                    f"review agent, NOT the 4am orchestrator, so the "
+                    f"orchestrator's own failure alert never covers it")
                 continue
             if rc != 0:
                 # Partial: run.py exits 1 when a captain fails, but the ones
@@ -1153,24 +1173,41 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
         # exited, the next tick tried again, and nobody was told on the day it
         # never recovered. Alert, then keep going: one block's failed upload
         # must not cost the other four their link.
-        try:
-            if parent is None:
-                parent = ensure_parent(today, channel, verbose=verbose)
-            post_block(
-                upload_pdf(build_pdf(today, block),
-                           description=eml_digest(today, block)),
-                today, block, parent, channel, verbose=verbose)
-        except Exception as e:  # noqa: BLE001 — report it, don't swallow it
-            failures += 1
+        # RETRY IN THE SAME PASS (2026-08-31). `timeout: The read operation
+        # timed out` is a 30-second network hiccup, not a broken report, and
+        # giving the block up until the next slot costs 30-60 minutes against an
+        # 11:00 deadline — on 8/31 it cost fiber-3 and b2b the whole morning.
+        # The leg is redone from the PDF up because the failing step is unknown
+        # and all three are safe to repeat: same day = same file name, so
+        # build_pdf rewrites and upload_pdf updates in place, and post_block
+        # deletes an unapproved link of its own before posting a new one.
+        import time as _time
+        last_err = None
+        for attempt in range(3):
+            try:
+                if parent is None:
+                    parent = ensure_parent(today, channel, verbose=verbose)
+                post_block(
+                    upload_pdf(build_pdf(today, block),
+                               description=eml_digest(today, block)),
+                    today, block, parent, channel, verbose=verbose)
+                last_err = None
+                break
+            except Exception as e:  # noqa: BLE001 — report it, don't swallow it
+                last_err = e
+                print(f"  ⚠ {block.key}: post attempt {attempt + 1}/3 "
+                      f"failed: {type(e).__name__}: {e}", flush=True)
+                if attempt < 2:
+                    _time.sleep(15 * (attempt + 1))
+        if last_err is not None:
             print(f"✗ {block.key}: the deadline post failed: "
-                  f"{type(e).__name__}: {e}", flush=True)
-            _alert_deadline_failure(
-                today,
-                f"{block.label}'s previews are built but posting them failed "
-                f"({type(e).__name__})",
-                f"Error: {str(e)[:300]}\nThe previews are already on disk, so "
-                f"the fix is just the post: `lucy rerun "
-                f"captainship_drafts_review`.")
+                  f"{type(last_err).__name__}: {last_err}", flush=True)
+            failures.append(
+                f"*{block.label}* ({block.who}) — previews are built but "
+                f"POSTING them failed on all 3 tries "
+                f"({type(last_err).__name__}: {str(last_err)[:120]})")
+    if failures:
+        _alert_deadline_failure(today, failures)
     return 1 if failures else 0
 
 
