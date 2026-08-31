@@ -195,7 +195,8 @@ def _describe(sales, stats) -> str:
     return "\n".join(lines)
 
 
-def _rep_day(sales, which: str, today, to_tab) -> int:
+def _rep_day(sales, which: str, today, to_tab, week_start="mon",
+             tpv_only=False, tpv_proven=frozenset()) -> int:
     """Rep x day grid for one Sun-Sat week, counted by SALE DATE.
 
     Deliberately sale date, not accepted date: the log has always grouped that
@@ -216,14 +217,24 @@ def _rep_day(sales, which: str, today, to_tab) -> int:
             print("✗ --rep-day wants YYYY-MM-DD (any day in the week), "
                   "got {!r}".format(which), file=sys.stderr)
             return 2
-    ending = _clean.week_ending(anchor)
-    start = ending - dt.timedelta(days=6)
+    if week_start == "mon":
+        # Monday of the Mon-Sun week containing anchor (Carlos, 2026-08-28).
+        start = anchor - dt.timedelta(days=anchor.weekday())
+        ending = start + dt.timedelta(days=6)
+    else:
+        ending = _clean.week_ending(anchor)
+        start = ending - dt.timedelta(days=6)
     days = [start + dt.timedelta(days=i) for i in range(7)]
 
+    in_week = [s for s in sales
+               if s.sale_date and start <= s.sale_date <= ending]
+    if tpv_only:
+        in_week = [s for s in in_week
+                   if _clean.ever_passed_tpv(s, tpv_proven)]
+
     grid = collections.defaultdict(collections.Counter)
-    for s in sales:
-        if s.sale_date and start <= s.sale_date <= ending:
-            grid[(s.fields.get("Rep Name") or "").strip()][s.sale_date] += 1
+    for s in in_week:
+        grid[(s.fields.get("Rep Name") or "").strip()][s.sale_date] += 1
 
     reps = sorted(grid, key=lambda r: (-sum(grid[r].values()), r))
     header = ["Rep"] + [d.strftime("%a %m/%d") for d in days] + ["Total"]
@@ -241,13 +252,29 @@ def _rep_day(sales, which: str, today, to_tab) -> int:
     for r in rows:
         print("  {:<{w}} {}".format(
             r[0], "  ".join("{:>7}".format(c) for c in r[1:]), w=width))
-    print("  {} rep(s), {} sale(s) this week".format(len(reps), totals[-1]))
+    print("  {} rep(s), {} sale(s){} this week".format(
+        len(reps), totals[-1], " that ever passed TPV" if tpv_only else ""))
 
     if to_tab:
         from . import tpv_ledger as _led
-        _led._publish(to_tab, rows,
-                      "week {} to {} · by sale date · TPV-locked".format(
-                          start.isoformat(), ending.isoformat()))
+        wide = len(header)
+        out = [r + [""] * (wide - len(r)) for r in rows]
+        out.append([""] * wide)
+        detail = ["Rep", "Sale Date", "Business", "Contract ID", "Status",
+                  "Sub-status", "Secondary Status"]
+        out.append(detail + [""] * (wide - len(detail)))
+        for s in sorted(in_week, key=lambda x: (
+                (x.fields.get("Rep Name") or ""), x.sale_date)):
+            line = [(s.fields.get("Rep Name") or "").strip(),
+                    s.sale_date.strftime("%m/%d/%Y") if s.sale_date else "",
+                    (s.fields.get("Business Name") or "").strip(),
+                    (s.fields.get("Contract ID") or "").strip(),
+                    s.status, s.sub_status, s.secondary]
+            out.append(line + [""] * (wide - len(line)))
+        _led._publish(to_tab, out,
+                      "week {} to {} ({}-start) · by SALE DATE · {}".format(
+                          start.isoformat(), ending.isoformat(), week_start,
+                          "ever passed TPV only" if tpv_only else "all sales"))
     return 0
 
 
@@ -298,6 +325,17 @@ def main(argv: Optional[list] = None) -> int:
                          "the log uses, and the way Carlos counts his week. "
                          "Defaults to the current Sun-Sat week; pass "
                          "YYYY-MM-DD (any day in the week) for another.")
+    ap.add_argument("--week-start", choices=("mon", "sun"), default="mon",
+                    help="which day the SALES week starts on for --rep-day. "
+                         "Carlos, 2026-08-28: 'Sales are Monday through "
+                         "Sunday.' The log's own week_ending() is still Sun-Sat "
+                         "— inherited from Raf's Fiber Order Log, never "
+                         "confirmed with Carlos — so this flag only governs "
+                         "--rep-day until that is ruled on separately.")
+    ap.add_argument("--tpv-only", action="store_true",
+                    help="--rep-day: count ONLY sales that ever reached TPV "
+                         "Passed or beyond (the locked-in set), and list them "
+                         "individually under the grid")
     ap.add_argument("--to-tab", metavar="NAME", nargs="?", const="Box Rep Day",
                     help="also publish --rep-day to a queue-sheet tab, since "
                          "the queue's Result cell truncates to ~450 chars")
@@ -493,7 +531,9 @@ def main(argv: Optional[list] = None) -> int:
     sales, stats = clean.load(src, owner_office=(args.owner_office or ""),
                               tpv_seen=tpv_seen, tpv_proven=tpv_proven)
     if args.rep_day:
-        return _rep_day(sales, args.rep_day, today, args.to_tab)
+        return _rep_day(sales, args.rep_day, today, args.to_tab,
+                        week_start=args.week_start, tpv_only=args.tpv_only,
+                        tpv_proven=tpv_proven)
 
     if stats.get("kept_dead_after_tpv"):
         print("  {} sale(s) kept despite a later TPV Failed / Rejected QC — "
