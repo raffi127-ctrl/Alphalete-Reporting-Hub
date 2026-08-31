@@ -8905,7 +8905,7 @@
     },
     "install_digi_docs_send_agent": {
       "on_scheduler": false,
-      "_note": "Installer for com.alphalete.digi-docs-send on LUCY 3 \u2014 every 5 minutes, deploy/digi_docs.sh --send-tick -> `run --send-only --due-now --live`. THE PASS THAT MAILS PEOPLE: it sends only those whose Start Time is within the next 30 minutes, which is why it is a tick and not one fixed hour. The wrapper exits before Python unless it is Monday in office hours, and run.py opens no browser when nobody is due, so nearly every firing is free. Install AFTER disable_digi_docs_monday_agent.",
+      "_note": "Installer for com.alphalete.digi-docs-send on LUCY 3 \u2014 every 5 minutes between 06:00 and 16:00 Central, deploy/digi_docs.sh --send-tick -> `run --send-only --due-now --live`. STOPS AT 4PM (Megan 2026-08-31): a start time that has PASSED still counts as due, so after the cohort was done the tick spent every five minutes until 9pm re-opening all eighteen modals to skip each as COMPLETED or PENDING \u2014 pointless work that held the shared Chrome profile and locked other Lucy 3 jobs out. THE COST: nothing starting after 16:30 gets an automated bundle. Latest start that day was 1:30pm. THE PASS THAT MAILS PEOPLE: it sends only those whose Start Time is within the next 30 minutes, which is why it is a tick and not one fixed hour. The wrapper exits before Python unless it is Monday in office hours, and run.py opens no browser when nobody is due, so nearly every firing is free. Install AFTER disable_digi_docs_monday_agent.",
       "display_name": "Install Digi Docs send tick (Mon, every 5 min)",
       "source_type": "local",
       "data_sources": [],
