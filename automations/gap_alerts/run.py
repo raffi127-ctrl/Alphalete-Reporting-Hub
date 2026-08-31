@@ -181,7 +181,24 @@ def _remember_gap_names(key: str, day: dt.date, names) -> None:
     _save_state(data)
 
 
-def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False):
+def gap_header(cfg: Dict) -> str:
+    """"15 minutes of gaps — Jay — AT&T".
+
+    THREE reports share the ENERGY WELLS DOMINATION chat — Calvin's Energy
+    Wells, Jay's Energy Wells and Jay's AT&T — and a bare "15 minutes of gaps"
+    gave no way to tell whose names were on it (Megan 2026-08-30: "since it's 2
+    ICDs can it read ... so we know who is who"). Office then campaign, matching
+    how she wrote it.
+
+    Raf sets neither field: his chat carries only his office, so naming it there
+    would be noise.
+    """
+    bits = [cfg.get("label"), cfg.get("campaign_label")]
+    return C.GAP_TEXT_HEADER + "".join(" — %s" % b for b in bits if b)
+
+
+def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
+             header: str = ""):
     """The message Raf asked for, and the set of names on it.
 
     LONGEST GAP FIRST (Megan, 2026-08-28). Raf's Loom listed his mock-up
@@ -207,7 +224,7 @@ def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False):
         lines.append("%s - %d minutes%s" % (name, mins, mark))
     if not lines:
         return "", []
-    return C.GAP_TEXT_HEADER + "\n\n" + "\n".join(lines), names
+    return (header or C.GAP_TEXT_HEADER) + "\n\n" + "\n".join(lines), names
 
 
 def _slack_due(key: str, now: dt.datetime) -> bool:
@@ -782,7 +799,8 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                 _log("  gap list SKIPPED (%s: %s)"
                      % (type(e).__name__, str(e)[:160]))
         previous, first_of_day = _previous_gap_names(cfg["key"], day)
-        body, gap_names = gap_text(gaps, previous, first_of_day)
+        body, gap_names = gap_text(gaps, previous, first_of_day,
+                                   header=gap_header(cfg))
         newly = ([] if first_of_day
                  else [n for n in gap_names if n not in previous])
         _log("  %d rep(s) over %d min, %d new%s"
