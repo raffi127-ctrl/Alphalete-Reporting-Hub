@@ -23,12 +23,14 @@ out.
 """
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 
 from automations.digi_docs import config
 from automations.headshots.ov_upload import (   # proven on this same page
-    _campaign_select, _click_any, _rep_row, _search_box, _search_probes,
-    _show_all, find_rep,
+    VIEW_PROGRESS_P, _campaign_select, _click_any, _norm, _rep_row,
+    _search_box, _search_probes, _show_all, find_rep,
 )
 
 PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
@@ -51,20 +53,95 @@ def session(*, headless: bool = True, verbose: bool = True):
 
 # --- phase 2: add the reps ------------------------------------------------
 
+def roster_snapshot(page, *, verbose: bool = True) -> set:
+    """Every rep already on View Progress, read in ONE pass. Names normalized.
+
+    WHY (Megan 2026-08-31, mid-incident). add_sales_rep used to open with a
+    find_rep per person, and find_rep is a whole-site search: reload the huge
+    View Progress DataTable, then walk EVERY campaign, each one twice (normal
+    then Show All), typing search probes at 40ms a key. That is ~2 minutes per
+    person to answer one question — "is this person already here?" — and at 54
+    people it is 90 minutes of work to do 54 modals. Two runs died on their
+    timeout at 5 and 9 people with the 11:30 sends coming.
+
+    The question only needs asking once. One page load, one walk over the
+    campaigns with Show All on, read every row: the same answer for the whole
+    cohort, in one pass instead of 54. Returns an EMPTY set on any failure, and
+    the caller must treat empty as "unknown" and fall back to the per-person
+    search — a roster we could not read must never be evidence that somebody is
+    missing, because acting on that adds a duplicate."""
+    from automations.b2b_dispositions.capture import capture_rqst
+    names = set()
+    try:
+        rqst = capture_rqst(page)
+        page.set_default_navigation_timeout(90000)
+        page.goto(f"https://v2.ownerville.com/index.cfm?p={VIEW_PROGRESS_P}"
+                  f"&rqst={rqst}", wait_until="domcontentloaded")
+        try:
+            page.wait_for_load_state("networkidle", timeout=60000)
+        except Exception:                       # noqa: BLE001
+            pass
+        sel = _campaign_select(page)
+        for opt in sel.locator("option").all_inner_texts():
+            label = opt.strip()
+            if not label:
+                continue
+            sel.select_option(label=label)
+            try:
+                page.wait_for_load_state("networkidle", timeout=60000)
+            except Exception:                   # noqa: BLE001
+                pass
+            _show_all(page)                     # the 3-week window hides reps
+            try:
+                page.wait_for_load_state("networkidle", timeout=60000)
+            except Exception:                   # noqa: BLE001
+                pass
+            rows = page.locator("tbody tr")
+            for i in range(rows.count()):
+                try:
+                    names.add(_norm(rows.nth(i).inner_text(timeout=2000)))
+                except Exception:               # noqa: BLE001
+                    continue
+        if verbose:
+            print(f"  roster: {len(names)} row(s) across every campaign "
+                  f"(one pass)", flush=True)
+    except Exception as e:                      # noqa: BLE001
+        if verbose:
+            print(f"  roster snapshot failed ({type(e).__name__}) — falling "
+                  f"back to the per-person search", flush=True)
+        return set()
+    return names
+
+
+def in_roster(roster: set, name: str) -> bool:
+    """Is `name` in a roster_snapshot? Matches the way _rep_row does — every
+    name part present in one row's text, in order, whitespace-loose."""
+    parts = [re.escape(p) for p in name.split() if p]
+    if not parts or not roster:
+        return False
+    pat = re.compile(r"\s+".join(parts), re.I)
+    return any(pat.search(row) for row in roster)
+
+
 def add_sales_rep(page, name: str, *, dry_run: bool = True,
-                  verbose: bool = True) -> str:
+                  verbose: bool = True, known_absent: bool = False) -> str:
     """`+ Add Sales Rep` on View Progress. Returns 'added' | 'exists' | 'dry'.
 
     NO TEAM IS SELECTED (Megan 2026-08-25). That dropdown sits between the
     employee picker and the Activate Now box — both of which we DO touch — so it
     reads like a required field and is precisely the one an automation would
     helpfully fill in. Activate Now is checked by default; leave it alone too.
+
+    `known_absent` skips the per-person find_rep because a roster_snapshot has
+    already answered it for the whole cohort. Only ever passed for a name the
+    caller read as MISSING from a roster it actually managed to read.
     """
-    row, _campaign, _matched = find_rep(page, name, verbose=False)
-    if row is not None:
-        if verbose:
-            print(f"  {name}: already in OwnerVille")
-        return "exists"
+    if not known_absent:
+        row, _campaign, _matched = find_rep(page, name, verbose=False)
+        if row is not None:
+            if verbose:
+                print(f"  {name}: already in OwnerVille")
+            return "exists"
     if dry_run:
         if verbose:
             print(f"  {name}: WOULD add")
