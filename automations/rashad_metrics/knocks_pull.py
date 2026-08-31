@@ -329,7 +329,8 @@ def pull_office_knocks(office_name: Optional[str] = None,
 
 def pull_office_days_on_page(page, canonical: str, aliases_raw,
                              targets: "list[dt.date]", *,
-                             verbose: bool = True) -> "dict":
+                             verbose: bool = True,
+                             campaign: "str | None" = None) -> "dict":
     """SEVERAL days for one office on an ALREADY-OPEN page: impersonate
     `canonical` ONCE, scrape each day in `targets`, exit impersonation once.
     Returns {date: rows}.
@@ -383,7 +384,14 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
         # Sticky-campaign guard — see KNOCKS_CAMPAIGN_ID above. Pinned once
         # for the impersonated session, not once per day: the campaign is a
         # property of the session, and re-pinning would cost a navigation a day.
-        _pin_campaign(page, rqst, campaign_for_office(canonical),
+        # `campaign` overrides the per-office map for THIS pull. Needed the
+        # moment one office runs TWO campaigns: Jay Turnage knocks AT&T and
+        # Energy Wells and gets a separate report for each (Raf: "not
+        # combined, 2 separate reports"), which a map keyed by office NAME
+        # cannot express — it holds one value per office.
+        _pin_campaign(page, rqst,
+                      campaign if campaign is not None
+                      else campaign_for_office(canonical),
                       verbose=verbose)
 
         for target in targets:
@@ -547,7 +555,11 @@ def pull_offices_days(jobs, verbose: bool = True, profile_dir=None):
     aliases_raw = load_aliases()
     out: list = []
     with ownerville_session(verbose=verbose, profile_dir=profile_dir) as page:
-        for name, targets in jobs:
+        for job in jobs:
+            # (name, days) or (name, days, campaign) — the third element pins
+            # THIS pull's campaign, for an office that runs more than one.
+            name, targets = job[0], job[1]
+            campaign = job[2] if len(job) > 2 else None
             targets = sorted(set(targets))
             canonical = alias_to_canonical(name, aliases_raw)
             if verbose and canonical != name:
@@ -564,7 +576,8 @@ def pull_offices_days(jobs, verbose: bool = True, profile_dir=None):
                 else:
                     days = pull_office_days_on_page(page, canonical,
                                                     aliases_raw, targets,
-                                                    verbose=verbose)
+                                                    verbose=verbose,
+                                                    campaign=campaign)
                 out.append((name, days, None))
             except Exception as e:  # noqa: BLE001 — one office must not kill the rest
                 if verbose:

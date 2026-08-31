@@ -635,8 +635,14 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path,
     # own login, which at four ticks an hour would be a real bill.
     from automations.knocks_intraday.run import compare_office
     compare = compare_office() if C.compares(cfg) else ""
-    jobs = [(cfg["name"], [day])]
+    # The office's campaign travels WITH the job. Without this the pull falls
+    # back to CAMPAIGN_OVERRIDES, which is keyed by office NAME and so holds
+    # one campaign per office — no good for Jay Turnage, who knocks AT&T AND
+    # Energy Wells and gets a separate report for each.
+    jobs = [(cfg["name"], [day], cfg.get("campaign_id") or None)]
     if compare and compare.strip().lower() != cfg["name"].strip().lower():
+        # The comparison office keeps its OWN campaign (Chan is fiber), so no
+        # third element — the map decides for him.
         jobs.append((compare, [day]))
 
     pulled = pull_offices_days(jobs, verbose=False,
