@@ -1781,10 +1781,10 @@ def ars_breakdown(icd: str) -> None:
     """Star rating per ad — the only source that says whether an ad's people
     were any GOOD, rather than how many of them there were.
 
-    Ranked by average, but the share of 1–2 star is the column to read: that
-    is the end of the scale that separates outcomes (see ars.py). Ads with too
-    few ratings are shown separately instead of being ranked, so one 5-star
-    applicant cannot put an ad top of the table."""
+    ONLY the rating, the ad and the name are read from that sheet; its funnel
+    columns are hand-typed and every one of them has a system-side source we
+    trust more (see ars.py). Ads with too few ratings are shown separately
+    rather than ranked, so one 5-star applicant cannot top the table."""
     from automations.icd_sales_board import ars as A2
     try:
         rows = _ars(icd)
@@ -1823,21 +1823,10 @@ def ars_breakdown(icd: str) -> None:
         f"{len(solid)} ads with enough ratings to rank, best first"
         + (f" · {len(thin)} more have too few to judge" if thin else "")
         + f" · {dist['unrated']:,} interviews carry no rating at all. "
-        "Read the 1–2 star column as much as the average: across this "
-        "office's history 1 star really does mark a worse applicant, while "
-        "2 through 5 land within a few points of each other on whether "
-        "somebody was offered a job or came on board.")
-
-    with st.expander("Who did the rating"):
-        people = A2.by_interviewer(rows)
-        if people:
-            st.dataframe(people, use_container_width=True, hide_index=True,
-                         column_config=_centered(people[0]),
-                         height=_grid_height(min(len(people), 12)))
-        st.caption("Not a scoreboard — a control. Different people score "
-                   "different applicants, so an interviewer running a point "
-                   "below the rest drags down whichever ads they happened to "
-                   "screen, for a reason that has nothing to do with the ad.")
+        "This is the interviewer's judgement of the people an ad sent, and "
+        "only that — nothing here says whether they would have signed. Read "
+        "the 1–2 star share next to the average: an ad can hold a fair mean "
+        "while sending a lot of people nobody rated.")
 
 
 @st.cache_data(ttl=1800, show_spinner="Checking who stayed…")

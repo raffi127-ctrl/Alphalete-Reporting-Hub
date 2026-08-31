@@ -2,33 +2,35 @@
 
 Five workbooks, split alphabetically by the owner's FIRST name, one tab per
 ICD, owned by camilahornosk@gmail.com and edited live by the interviewers.
-Each row is one applicant: who interviewed them, the funnel outcome, the ad
-they came from, and a 1–5 star rating.
 
-WHY THIS MATTERS MORE THAN VOLUME. Everything else we have about a job ad
-counts people — applies, BOB, who lasted. This is the only source that says
-whether the people an ad sent were any GOOD, judged by the person who sat
-across from them. An ad can flood the call list and send nobody worth hiring;
-that ad looks fine on every other report and bad only on this one.
+THREE COLUMNS ONLY: Full Name, Ad Title, Star Rating (Megan 2026-08-31).
+The tab also carries Qualify / Answer Call / Booked to 2nd Rd / Showed Up to
+2nd Round / Offered Positon / BOB, and this module deliberately does not read
+them. They are typed by hand into a sheet nobody reconciles, and every one of
+them already has a system-side source we trust more — the Focus Report for the
+funnel, the 2R tab for BOB, the 3am harvest for first sale. Pulling them here
+would quietly create a second, worse version of numbers we already publish.
 
-What the numbers actually support (measured over Raf's 2,253 rows,
-2026-08-31 — recheck before leaning on it elsewhere):
+WHY THE RATING IS WORTH HAVING. Everything else we hold about a job ad counts
+people — applies, BOB, who lasted. This is the only source that says whether
+the people an ad sent were any GOOD, judged by the person who sat across from
+them. An ad can flood the call list and send nobody worth hiring; that ad
+looks fine on every other report and bad only on this one.
 
-  star      n   showed 2nd   offered   BOB
-  1       78       31%         13%      8%
-  2      168       47%         27%     15%
-  3      653       44%         29%     15%
-  4      445       40%         29%     14%
-  5       45       44%         33%     11%
+HOW FAR IT CAN BE PUSHED. The rating is a human judgement and nothing more:
+treat a low average as "the interviewers did not rate the people this ad
+sent", which is exactly the question being asked, and not as "these people
+would not have signed".
 
-So 1 Star genuinely marks a bad applicant — it is worse on every outcome.
-Above that the rating does NOT predict who comes on board: 2 through 5 sit
-within a few points of each other, and 5 Star is the SMALLEST group (45) so
-its numbers move on a handful of people. Read a low average as "this ad sends
-people the interviewers do not rate", which is the question being asked, and
-not as "this ad sends people who will not sign" — the data does not say that.
-Rank on the share of 1–2 star as much as on the mean; that is the part of the
-scale that is doing real work.
+An earlier version of this file claimed 1 star predicted worse outcomes. That
+came from the sheet's OWN outcome columns — the untrusted ones — so it has
+been removed rather than left standing on data we do not rely on. Re-running
+the same test against sources we do trust (the 2R tab's start dates and the
+first-sale map) was inconclusive: only 142 of Raf's 2,253 ARS rows match
+either by name, which leaves single-digit numerators per star and no signal
+in any direction. So there is currently NO evidence here that the scale
+predicts who comes on board. If that matters later, the way to settle it is a
+real name join, not more of this sheet.
 """
 from __future__ import annotations
 
@@ -44,20 +46,10 @@ WORKBOOKS = [
     ("16UruNs3bHGJ_pBvmD6T9KEqMAtDNNyuKArA_es6f0LE", "R to Z", "RSTUVWXYZ"),
 ]
 
-# Columns are found by HEADER, never by index — these sheets are hand-kept and
-# a new column in the middle would silently shift every read.
+# Found by HEADER, never by index — these sheets are hand-kept and a new
+# column in the middle would silently shift every read.
 COLUMNS = {
-    "owner": "Owner",
-    "date": "Date 1st Rd",
-    "interviewer": "1st Round Interviewer",
     "name": "Full Name",
-    "qualify": "Qualify",
-    "answered": "Answer Call",
-    "booked": "Booked to 2nd Rd",
-    "date_2nd": "Date 2nd Rd",
-    "showed": "Showed Up to 2nd Round",
-    "offered": "Offered Positon",        # the sheet's own spelling
-    "bob": "BOB",
     "ad": "Ad Title",
     "star": "Star Rating",
 }
@@ -90,19 +82,14 @@ def norm_ad(title: str) -> str:
     return re.sub(r"\s+", " ", t).strip(" -,").lower()
 
 
-def _client():
-    from automations.recruiting_report.fill import open_by_key
-    return open_by_key
-
-
 def load(owner: str) -> list:
-    """Every ARS row for one ICD, as dicts keyed by COLUMNS.
+    """Every ARS row for one ICD as {name, ad, star, stars}.
 
     Routed to a workbook by first letter, then falling back to a scan of the
     rest: the split is by first name today, but nothing enforces that, and a
     quiet miss here would read as 'this office has no ratings'."""
+    from automations.recruiting_report.fill import open_by_key
     from automations.focus_office_att import aliases as _al
-    open_by_key = _client()
 
     try:
         names = _al.get_search_candidates(owner, _al.load_aliases())
@@ -184,29 +171,9 @@ def by_ad(rows: list, min_rated: int = 8) -> list:
             "Ad": spellings[key].most_common(1)[0][0],
             "Rated": n,
             "Avg star": round(sum(stars) / n, 2),
-            # The bottom of the scale is the half that predicts anything.
             "1-2 star": f"{sum(1 for s in stars if s <= 2) / n:.0%}",
             "4-5 star": f"{sum(1 for s in stars if s >= 4) / n:.0%}",
             "thin": n < min_rated,
         })
     out.sort(key=lambda r: (r["thin"], -r["Avg star"], -r["Rated"]))
     return out
-
-
-def by_interviewer(rows: list) -> list:
-    """Average star per interviewer.
-
-    Not a scoreboard — it is the control on the metric above. These are
-    different people scoring different applicants, so if one interviewer runs
-    a point below the rest, an ad they happened to screen looks bad for a
-    reason that has nothing to do with the ad."""
-    per = collections.defaultdict(list)
-    for r in rows:
-        who = (r.get("interviewer") or "").strip()
-        if who and r["stars"]:
-            per[who].append(r["stars"])
-    return sorted(
-        ({"Interviewer": k, "Rated": len(v),
-          "Avg star": round(sum(v) / len(v), 2)}
-         for k, v in per.items() if len(v) >= 5),
-        key=lambda r: -r["Avg star"])
