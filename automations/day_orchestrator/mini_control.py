@@ -6014,6 +6014,7 @@ def _action_set_appstream_account(args: str) -> tuple[bool, str]:
     the report actually uses and records the account number for the send-time
     identity assert."""
     import json as _json
+    import pathlib as _pathlib   # this module imports os, not pathlib
     import shlex
     try:
         parts = shlex.split((args or "").strip())
@@ -6028,7 +6029,7 @@ def _action_set_appstream_account(args: str) -> tuple[bool, str]:
                        "set_appstream_alt_creds for that one" % name)
     if not name or not user or not pw:
         return False, "name, username and password must all be non-empty"
-    path = (pathlib.Path.home() / ".config" / "recruiting-report"
+    path = (_pathlib.Path.home() / ".config" / "recruiting-report"
             / "appstream-accounts.json")
     blob = {}
     if path.exists():
