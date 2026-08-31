@@ -248,12 +248,12 @@ def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
             # not %-d — that is Mac-only and dies on Windows
             st.info(f"{scope} hasn't happened yet — {d.strftime('%b')} "
                     f"{d.day}.", icon="🗓️")
-            c1, c2, c3, c4 = st.columns(4)
+            cols = st.columns(4, gap="small")
             for col, label in zip(
-                    (c1, c2, c3, c4),
+                    cols,
                     ("Reps in the field", "Got on the board",
                      "% of reps selling", "Rolled a zero")):
-                col.metric(label, "—")
+                _vital(col, label, "—")
             return
 
     # The board's own summary block is authoritative, but it only describes the
@@ -312,35 +312,55 @@ def _ord(n: int) -> str:
     return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
 
 
-def _vital(col, label: str, value: str, hit, goal: str = "",
-           mine: bool = False) -> None:
-    """One vital as its own card, so nine of them tile into a grid.
+def _vital(col, label: str, value: str, hit=None, goal: str = "",
+           mine: bool = False, delta=None, is_pct: bool = False,
+           inverse: bool = False, note: str = "") -> None:
+    """One vital as its own card, so a row of them tiles into a grid.
 
     Drawn by hand because st.metric cannot colour its own value, and as ONE
     block so the card's spacing is fixed rather than whatever stacked
     st.markdown calls happen to give.
 
-    Every card is the same height whatever it holds — a vital with no goal has
-    no pill, and letting that one shrink would break the grid it sits in. The
+    Every card is the same height whatever it holds — one with no goal has no
+    pill, and letting that one shrink would break the row it sits in. The
     border is neutral grey at low alpha rather than a theme colour: it has to
     read as a hairline on white AND on dark, and tinting it by pass/fail would
-    put nine coloured boxes on screen competing with the numbers they hold.
+    put a wall of coloured boxes on screen competing with the numbers.
 
     `hit` is True / False / None, and None means plain with no pill: a number
     with no goal behind it must not be painted either colour or fitted with a
-    badge, or it reads as a verdict nobody set."""
+    badge, or it reads as a verdict nobody set.
+
+    `delta` is last week's comparison. `inverse` flips which direction is
+    good — fewer zeros rolled is better, so a fall there has to read green,
+    and colouring it like the others would paint the best week of the month
+    red. A delta of exactly 0 stays grey: it moved nowhere, which is neither."""
     tone = {True: ("#09ab3b", "rgba(9,171,59,.12)"),
             False: ("#ff2b2b", "rgba(255,43,43,.12)")}.get(hit)
-    pill = "&nbsp;"
+
+    pills = []
+    if delta is not None:
+        good = None if not delta else ((delta < 0) if inverse else (delta > 0))
+        fg, bg = {True: ("#09ab3b", "rgba(9,171,59,.12)"),
+                  False: ("#ff2b2b", "rgba(255,43,43,.12)"),
+                  None: ("inherit", "rgba(128,128,128,.14)")}[good]
+        arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "•")
+        shown = f"{delta:+g}%" if is_pct else f"{delta:+g}"
+        pills.append(f'<span style="display:inline-block;padding:1px 8px;'
+                     f'border-radius:999px;font-size:.72rem;font-weight:500;'
+                     f'background:{bg};color:{fg};white-space:nowrap;'
+                     f'{"opacity:.75;" if good is None else ""}">'
+                     f'{arrow} {shown}</span>')
     if tone and goal:
         fg, bg = tone
-        pill = (f'<span style="display:inline-block;padding:1px 9px;'
-                f'border-radius:999px;font-size:.75rem;font-weight:500;'
-                f'background:{bg};color:{fg};white-space:nowrap">'
-                f'{"✓" if hit else "✗"} {"your goal" if mine else "goal"} '
-                f'{goal}</span>')
+        pills.append(f'<span style="display:inline-block;padding:1px 8px;'
+                     f'border-radius:999px;font-size:.72rem;font-weight:500;'
+                     f'background:{bg};color:{fg};white-space:nowrap">'
+                     f'{"✓" if hit else "✗"} '
+                     f'{"your goal" if mine else "goal"} {goal}</span>')
+
     col.markdown(
-        f'<div style="border:1px solid rgba(128,128,128,.25);'
+        f'<div title="{note}" style="border:1px solid rgba(128,128,128,.25);'
         f'border-radius:10px;padding:.7rem .9rem;height:112px;'
         f'margin-bottom:.6rem;'
         f'box-sizing:border-box;display:flex;flex-direction:column;'
@@ -349,49 +369,30 @@ def _vital(col, label: str, value: str, hit, goal: str = "",
         f'<div style="font-size:.8rem;opacity:.6">{label}</div>'
         f'<div style="font-size:2rem;font-weight:600;'
         f'color:{tone[0] if tone else "inherit"}">{value}</div>'
-        f'<div>{pill}</div></div>',
+        f'<div style="display:flex;gap:.3rem;flex-wrap:wrap;'
+        f'justify-content:center">{"".join(pills) or "&nbsp;"}</div></div>',
         unsafe_allow_html=True)
-
-
-def _goal_line(col, office_key: str, metric: str, actual) -> None:
-    """A green or red line under a number, against the goal this office set.
-
-    Colour follows the goal's DIRECTION — fewer zeros is better, so a fall is
-    green there and red everywhere else. No goal set means NO colour at all:
-    painting a number red against a target nobody chose is worse than leaving
-    it plain."""
-    goal = G.vital_goal(office_key, metric)
-    if goal is None:
-        return
-    hit = G.hits_goal(metric, actual, goal)
-    if hit is None:
-        return
-    shown = f"{goal:g}%" if "%" in str(actual) else f"{goal:g}"
-    col.markdown(f":green[✓ goal {shown}]" if hit
-                 else f":red[✗ goal {shown}]")
 
 
 def _render_vitals(in_field, on_board, pct, zero,
                    d_field, d_board, d_pct, d_zero, note,
                    office_key: str = "") -> None:
-    """The four metrics with last-week pills.
+    """The four vitals, as the same cards the recruiting page uses.
 
     'Rolled a zero' is INVERTED: fewer zeros is the good direction, so a drop
-    has to read green. Colouring it like the others would paint the best week
-    of the month red."""
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Reps in the field", in_field, delta=d_field, help=note)
-    c2.metric("Got on the board", on_board, delta=d_board, help=note)
-    c3.metric("% of reps selling", pct,
-              delta=(f"{d_pct:+.0f}%" if d_pct is not None else None),
-              help=note)
-    c4.metric("Rolled a zero", zero, delta=d_zero, delta_color="inverse",
-              help=note)
-    if office_key:
-        _goal_line(c1, office_key, "Reps in the field", in_field)
-        _goal_line(c2, office_key, "Got on the board", on_board)
-        _goal_line(c3, office_key, "% of reps selling", pct)
-        _goal_line(c4, office_key, "Rolled a zero", zero)
+    has to read green there — see _vital, which does the colouring."""
+    cols = st.columns(4, gap="small")
+    for col, (label, val, d, pctish, inv) in zip(cols, (
+            ("Reps in the field", in_field, d_field, False, False),
+            ("Got on the board", on_board, d_board, False, False),
+            ("% of reps selling", pct, d_pct, True, False),
+            ("Rolled a zero", zero, d_zero, False, True))):
+        goal = G.vital_goal(office_key, label) if office_key else None
+        hit = G.hits_goal(label, val, goal) if goal is not None else None
+        _vital(col, label, val, hit,
+               goal=("" if goal is None else
+                     (f"{goal:g}%" if "%" in str(val) else f"{goal:g}")),
+               delta=d, is_pct=pctish, inverse=inv, note=note)
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -721,7 +722,7 @@ def _autofit(rows: list, base: dict | None = None) -> dict:
     for col in rows[0]:
         px = min(_MAX_W, max(_MIN_W, _fit_len(col, rows) * _PX_PER_CHAR + 22))
         existing = cfg.get(col)
-        kwargs = {"width": px}
+        kwargs = {"width": px, "alignment": "center"}
         if col == "Rep":
             # keep names on screen while scrolling the production columns
             kwargs["pinned"] = True
@@ -732,9 +733,27 @@ def _autofit(rows: list, base: dict | None = None) -> dict:
             # attributes on them raises. Update the keys so a configured
             # column keeps its type (e.g. the Roll Call dropdown).
             existing["width"] = px
+            existing["alignment"] = "center"
             if col == "Rep":
                 existing["pinned"] = True
             cfg[col] = existing
+    return cfg
+
+
+def _centered(cols, base=None) -> dict:
+    """Centre every column's content, the way the house boards do it.
+
+    Streamlit renders these tables to a canvas, so CSS cannot reach inside
+    them — alignment has to come through column_config, per column, which is
+    why this builds one entry for each rather than setting a table-wide rule."""
+    cfg = dict(base or {})
+    for c in cols:
+        existing = cfg.get(c)
+        if existing is None:
+            cfg[c] = st.column_config.Column(alignment="center")
+        else:
+            existing["alignment"] = "center"
+            cfg[c] = existing
     return cfg
 
 
@@ -1359,6 +1378,7 @@ def zero_streaks(week, overrides: dict, team: str = ALL_TEAMS,
         with st.expander(f"{label} — {len(at_or_above)} reps",
                          expanded=(lvl == longest)):
             st.dataframe(at_or_above, use_container_width=True,
+                         column_config=_centered(at_or_above[0]),
                          hide_index=True,
                          height=_grid_height(len(at_or_above)))
 
@@ -1652,33 +1672,67 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
                                     "background-color:rgba(255,43,43,.13)")
         return out
 
-    st.dataframe(df.style.apply(_tint, axis=None),
-                 use_container_width=True, hide_index=True,
-                 height=_grid_height(len(rows)))
+    # THE GOAL IS EDITED WHERE IT IS READ (Megan 2026-08-31). It used to live
+    # in a second block underneath repeating all nine metrics, which meant
+    # setting a goal and seeing its effect were two different places showing
+    # the same nine rows. Same shape as the sales board: a toggle to go into
+    # edit mode, then Save or Discard — nothing is written on a keystroke, so
+    # a mistyped goal can be thrown away.
+    rkey = f"rgoal_{office_key}"
+    edit_goals = st.toggle(
+        "Edit goals", value=False, key=f"edit_{rkey}",
+        help="Turn on to set this office's own goal for a row.")
+
+    # Only make the column editable in EDIT mode. Left editable in read mode,
+    # Streamlit refuses to paint Styler output onto it — the same rule that
+    # kept Team and Leadership white on the board.
+    locked_cols = [c for c in df.columns if c != "Goal" or not edit_goals]
+    edited = st.data_editor(
+        df.style.apply(_tint, axis=None),
+        use_container_width=True, hide_index=True, num_rows="fixed",
+        disabled=locked_cols, column_config=_centered(df.columns),
+        height=_grid_height(len(rows)), key=rkey)
+    if hasattr(edited, "to_dict"):          # a Styler in means a DataFrame back
+        edited = edited.to_dict("records")
+
+    pending = {}
+    for i, (label, row, is_rate) in enumerate(F.TRACKED):
+        now = str(edited[i].get("Goal") or "").strip()
+        if now != str(rows[i]["Goal"]).strip():
+            pending[row] = now
+    st.session_state["rgoal_dirty"] = bool(pending)
+
     st.caption("Blank weeks stay blank — a 0 would claim nobody did anything, "
                "which is not the same as nobody having filled it in.")
 
-    with st.expander("Set this office's recruiting goals"):
-        st.caption("Blank uses the Focus Report's own goal for that row.")
-        edits = {}
-        for chunk in range(0, len(F.TRACKED), 3):
-            cols = st.columns(3)
-            for col, (label, row, is_rate) in zip(cols,
-                                                  F.TRACKED[chunk:chunk + 3]):
-                sheet_goal = data["metrics"].get(row, {}).get("goal", "")
-                cur = load_goal_text(office_key, row)
-                with col:
-                    edits[row] = st.text_input(
-                        label, value=cur,
-                        placeholder=f"sheet: {sheet_goal or '—'}",
-                        key=f"rg_{office_key}_{row}")
-        if st.button("Save recruiting goals", type="primary",
-                     key=f"saverg_{office_key}"):
-            for row, val in edits.items():
-                G.set_recruit_goal(office_key, row, val)
-            st.success("Saved.")
-            st.rerun()
-
+    if pending:
+        st.warning("Unsaved goal changes — save them, or discard.", icon="✏️")
+    if edit_goals:
+        c_save, c_discard, _ = st.columns([1, 1, 2])
+        with c_discard:
+            if st.button("Discard", key=f"disc_{rkey}"):
+                st.session_state.pop(rkey, None)
+                st.session_state["rgoal_dirty"] = False
+                st.rerun()
+        with c_save:
+            if st.button("Save goals", type="primary", key=f"save_{rkey}",
+                         disabled=not pending):
+                # An override is only STORED when it differs from the sheet's
+                # own goal. The column shows the effective goal, the sheet's
+                # value included, so writing every cell back would turn all
+                # nine into office overrides the first time anybody touched
+                # one — and the Focus Report's goals could then change
+                # underneath without this office ever following them again.
+                for row, val in pending.items():
+                    sheet = str(data["metrics"].get(row, {})
+                                .get("goal", "")).strip()
+                    sheet = sheet.replace("%", "").replace(",", "").strip()
+                    G.set_recruit_goal(office_key, row,
+                                       "" if val in ("", sheet) else val)
+                st.session_state.pop(rkey, None)
+                st.session_state["rgoal_dirty"] = False
+                st.rerun()
+        st.caption("Clear a goal and the Focus Report's own takes over again.")
 
 @st.cache_data(ttl=1800, show_spinner="Reading the applicant tracker…")
 def _ads(icd: str, days: int) -> list:
@@ -1733,6 +1787,7 @@ def quality_breakdown(icd: str) -> None:
 
     bob = sum(r["BOB"] for r in rows)
     st.dataframe(rows, use_container_width=True, hide_index=True,
+                 column_config=_centered(rows[0]),
                  height=_grid_height(min(len(rows), 16)))
     st.caption(
         f"Reference only, and only for offices whose board we can read — "
@@ -1767,6 +1822,7 @@ def bob_breakdown(icd: str) -> None:
     c2.metric("BOB in window", sum(r["Total"] for r in rows))
 
     st.dataframe(rows, use_container_width=True, hide_index=True,
+                 column_config=_centered(rows[0]),
                  height=_grid_height(min(len(rows), 16)))
     st.caption("BOB = a filled Start Date — coming on board, not being "
                "offered. Ranked by total, but read the weekly columns before "
@@ -1802,6 +1858,7 @@ def ads_breakdown(icd: str) -> None:
     show = [{k: ("not matched yet" if k == "Hired" and v is None else v)
              for k, v in r.items() if k != "Hire rate"} for r in rows]
     st.dataframe(show, use_container_width=True, hide_index=True,
+                 column_config=_centered(show[0]),
                  height=_grid_height(min(len(show), 18)))
     st.caption(f"{len(rows)} ads over {days} days, busiest first. Titles keep "
                "their location — the same ad in two markets is two ads with "
@@ -1826,7 +1883,8 @@ def main() -> None:
     # leaving with unsaved work, the controls that would lose it are disabled
     # until they save or discard. Same effect, no surprise.
     locked = bool(st.session_state.get("board_dirty")
-                  or st.session_state.get("goal_dirty"))
+                  or st.session_state.get("goal_dirty")
+                  or st.session_state.get("rgoal_dirty"))
     if locked:
         st.sidebar.warning("Unsaved changes", icon="✏️")
     view = st.sidebar.radio("View", ["Office", "Captain", "Org"], key="view",
@@ -1846,7 +1904,9 @@ def main() -> None:
               "Metrics": f"{len(p.metrics)}/{len(C.METRICS)}",
               "Feed today": p.channel_name or "—"}
              for n, p in profs.items()],
-            use_container_width=True, hide_index=True)
+            use_container_width=True, hide_index=True,
+            column_config=_centered(("ICD", "Campaigns", "Sells", "Metrics",
+                                     "Feed today")))
         st.info("Per-rep org roll-up lands once the per-office boards exist — "
                 "today only Raf's board carries real rep rows.")
         return
