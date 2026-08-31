@@ -342,6 +342,7 @@ def _vital(col, label: str, value: str, hit, goal: str = "",
     col.markdown(
         f'<div style="border:1px solid rgba(128,128,128,.25);'
         f'border-radius:10px;padding:.7rem .9rem;height:112px;'
+        f'margin-bottom:.6rem;'
         f'box-sizing:border-box;display:flex;flex-direction:column;'
         f'justify-content:center;align-items:center;gap:.28rem;'
         f'text-align:center;line-height:1.2">'
@@ -1589,6 +1590,13 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
     # Click-to-expand, the way the retention report does it: the number is the
     # summary, the detail sits under it. Only the rows that HAVE a detail get
     # one — an expander that opens on nothing is worse than no expander.
+    # The grid and the drill-downs are two different things to look at, and
+    # with the cards now boxed they ran straight into each other. Space says
+    # "this section ended" better than another divider would.
+    st.markdown(
+        '<style>[data-testid="stExpander"]{margin-bottom:.6rem}</style>'
+        '<div style="height:1.2rem"></div>', unsafe_allow_html=True)
+
     with st.expander("Sent to call list — which job ads it came from"):
         ads_breakdown(icd)
 
@@ -1604,23 +1612,48 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
         with st.expander("Reference — who from each ad got past 3 weeks"):
             quality_breakdown(icd)
 
+    st.markdown('<div style="height:.6rem"></div>', unsafe_allow_html=True)
     st.divider()
     st.markdown("**Week over week**")
     n = st.slider("Weeks to show", 4, max(4, min(26, len(filled))),
                   min(8, max(4, len(filled))), key="rec_n")
     shown_weeks = filled[-n:]
 
-    rows = []
+    rows, goals = [], []
     for label, row, is_rate in F.TRACKED:
         m = data["metrics"].get(row, {})
+        goal = G.recruit_goal(office_key, row, m.get("goal", ""))
+        goals.append((label, goal))
         r = {"Metric": label,
-             "Goal": (f"{G.recruit_goal(office_key, row, m.get('goal','')):g}"
-                      if G.recruit_goal(office_key, row, m.get("goal", ""))
-                      is not None else "")}
+             "Goal": "" if goal is None else f"{goal:g}"}
         for w in shown_weeks:
             r[w.strftime("%m/%d")] = m.get("by_week", {}).get(w, "")
         rows.append(r)
-    st.dataframe(rows, use_container_width=True, hide_index=True,
+
+    # EVERY WEEK GETS THE SAME VERDICT AS THE CARD ABOVE. The vitals only
+    # judge one week; the point of the history is seeing whether a miss is new
+    # or has been there a month, and that only reads at a glance if the cells
+    # are coloured on the same rule. Judged per ROW against that row's own
+    # goal, and via hits_goal so a lower-is-better metric is not called a miss
+    # for going down. A blank week gets no tint — no data is not a failure.
+    week_cols = [w.strftime("%m/%d") for w in shown_weeks]
+    df = pd.DataFrame(rows)
+
+    def _tint(frame):
+        out = pd.DataFrame("", index=frame.index, columns=frame.columns)
+        for i, (label, goal) in enumerate(goals):
+            if goal is None:
+                continue
+            for c in week_cols:
+                hit = G.hits_goal(label, frame.at[i, c], goal)
+                if hit is not None:
+                    out.at[i, c] = ("background-color:rgba(9,171,59,.15)"
+                                    if hit else
+                                    "background-color:rgba(255,43,43,.13)")
+        return out
+
+    st.dataframe(df.style.apply(_tint, axis=None),
+                 use_container_width=True, hide_index=True,
                  height=_grid_height(len(rows)))
     st.caption("Blank weeks stay blank — a 0 would claim nobody did anything, "
                "which is not the same as nobody having filled it in.")
