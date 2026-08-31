@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 
 from automations.alphalete_production import capture, slack_post
-from automations.alphalete_production.pages import SECTIONS
+from automations.alphalete_production.pages import sections_for
 from automations.shared import run_manifest
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "alphalete_production"
@@ -38,25 +38,28 @@ def main():
     today = dt.date.today()
     out_dir = Path(args.out)
     live = not (args.dry_run or args.preview_dm)
+    # day-gated sections drop out on the days they can't be built (New Starts on
+    # Monday); an explicit --only overrides that gate. pages.sections_for()
+    sections = sections_for(today, only=args.only)
 
     try:
         print(f"[alphalete_production] {today}  rendering sections"
               f"{' ' + ','.join(args.only) if args.only else ''}...", flush=True)
-        captures, _grid, tab = capture.capture_all(SECTIONS, today, out_dir, only=args.only)
+        captures, _grid, tab = capture.capture_all(sections, today, out_dir, only=args.only)
         print(f"  tab: {tab}   images: {len(captures)}", flush=True)
         for meta, png in captures:
             print(f"    {meta['title']:48} -> {Path(png).name}", flush=True)
 
         if args.dry_run:
-            res = slack_post.post_all(captures, SECTIONS, today, dry_run=True)
+            res = slack_post.post_all(captures, sections, today, dry_run=True)
             print("[dry-run] would post:\n" + json.dumps(res, indent=2), flush=True)
             return
         if args.preview_dm:
-            res = slack_post.preview_dm(captures, SECTIONS, args.preview_dm, today)
+            res = slack_post.preview_dm(captures, sections, args.preview_dm, today)
             print("[preview-dm] " + json.dumps({k: res.get(k) for k in ("ok", "mode")},
                                                 indent=2), flush=True)
             return
-        res = slack_post.post_all(captures, SECTIONS, today)
+        res = slack_post.post_all(captures, sections, today)
         print("[posted] " + json.dumps({"ok": res["ok"], "thread_ts": res.get("thread_ts"),
                                          "created": res.get("created")}, indent=2), flush=True)
         if not res.get("ok"):

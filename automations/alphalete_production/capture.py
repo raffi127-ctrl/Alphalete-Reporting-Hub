@@ -16,6 +16,8 @@ The live sheet the team is using is never touched. Recipes per 'kind':
                   the reps-summary band under TOTALS (Teams table has its own post)
   team_totals  -- the Teams table alone: CURRENT/LAST WEEK Total Units + per-day Apps
                   through 'Alphaletes TOTALS' (Raf 8/23 'All Teams Sales Board')
+  team_totals_detail -- the same Teams table with the CURRENT WEEK group opened up
+                  into its products (Total Units/INT/INT UP/DTV/NL/EN/CX), Eve 8/31
   field_status -- daily leaderboard, 1st-4th-week reps only, grouped by Field Status
   energy       -- daily leaderboard filtered to Campaign = Energy, ranked by Apps
   team         -- ONE per team: full running-week block + last-week Apps + identity thru
@@ -25,6 +27,9 @@ The live sheet the team is using is never touched. Recipes per 'kind':
   zeros        -- escalating Zero Streak, one image per depth (see zeros_streak.py;
                   fanned out in capture_all, not rendered here)
   ranking      -- running block E-J expanded, sorted by APPS/INT/NL
+  new_starts   -- the 'New Starts/Raf' roll-call table under the board: name /
+                  Trainer / Location / Team + Monday..Saturday (Eve 8/31). Tue-Sun
+                  only -- Monday's list isn't known until people show up
 """
 from __future__ import annotations
 
@@ -47,6 +52,8 @@ from automations.recruiting_report.fill import (
 SHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"
 TMP_TAB = "_auto_screenshot_tmp"
 DAY_NAMES = {"MON", "TUES", "WED", "THU", "FRI", "SAT", "SUN"}
+# the New Starts table spells its days out and stops at Saturday (Eve 8/31)
+NEW_START_DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
 
 
 # ---- small helpers -------------------------------------------------------
@@ -443,6 +450,63 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             # as the leaderboard's day blocks, so one helper serves both
             show |= _day_apps_cols(grid, last_completed_day(today))
             export_rng = f"C{hdr}:{col_letter(max(show))}{bottom}"
+
+        elif kind == "team_totals_detail":
+            # Eve 8/31: the SAME Teams table as 'team_totals', OPENED UP — the
+            # CURRENT WEEK group expanded into its per-product columns (Total
+            # Units / INT / INT UP / DTV / NL / EN / CX) instead of Total Units
+            # alone, so the thread carries the product split next to the totals.
+            # Posted immediately after 'All Teams Sales Board'.
+            hdr = _label_row(grid, "Teams")
+            bottom = _label_row(grid, "Alphaletes TOTALS")
+            h0 = hdr - 1
+            cw = next((c for c in range(len(grid[h0]))
+                       if _cell(grid, h0, c).strip().upper() == "CURRENT WEEK"), None)
+            if cw is None:
+                raise RuntimeError("Teams table: no 'CURRENT WEEK' group header "
+                                   f"on row {hdr} (renamed?)")
+            # the group runs to the next group title on the same row (LAST WEEK) —
+            # by header, so adding/removing a product column just works
+            end = next((c for c in range(cw + 1, len(grid[h0]))
+                        if _cell(grid, h0, c).strip()), len(grid[h0]))
+            show = {2} | set(range(cw, end))             # C = team names + the block
+            export_rng = f"C{hdr}:{col_letter(max(show))}{bottom}"
+
+        elif kind == "new_starts":
+            # Eve 8/31: the 'New Starts/Raf' roll-call table at the bottom of the
+            # same tab — name across to Saturday, so the thread shows day by day
+            # which new reps are still here and which came back Terminated. Only
+            # renders Tue-Sun (pages.sections_for gates it; Monday's list of new
+            # starts doesn't exist until people physically show up).
+            hdr = _label_row(grid, "New Starts/Raf")     # orange title band
+            lbl = _label_row(grid, "Classroom")          # column labels under it
+            l0 = lbl - 1
+            show = {2}                                   # C — the new start's name
+            for want in ("Trainers", "Location", "Team"):
+                c = next((c for c in range(len(grid[l0]))
+                          if _cell(grid, l0, c).strip() == want), None)
+                if c is None:
+                    print("[alphalete_production] warn: New Starts column not "
+                          "found: %s" % want)
+                else:
+                    show.add(c)
+            days = [c for c in range(len(grid[l0]))
+                    if _cell(grid, l0, c).strip() in NEW_START_DAYS]
+            if not days:
+                raise RuntimeError("New Starts table: no Monday..Saturday day "
+                                   f"headers on row {lbl}")
+            show |= set(days)                            # ends at Saturday (Eve 8/31)
+            # last named row. A brand-new week's tab carries the header band with
+            # NO rows under it until Monday's classroom actually shows up — say so
+            # instead of dying on an empty max() (capture_all skips this section).
+            named = [r for r in range(lbl + 1, len(grid) + 1)
+                     if _cell(grid, r - 1, 2).strip()]
+            if not named:
+                raise RuntimeError("New Starts table is still empty on this tab "
+                                   f"(no names under row {lbl}) — nobody has been "
+                                   "added to the week's classroom yet")
+            last = max(named)
+            export_rng = f"C{hdr}:{col_letter(max(show))}{last}"
 
         elif kind == "team":
             # Raf 8/6 (from his screenshots, "what Eve sent"): the leader's own team, everything
