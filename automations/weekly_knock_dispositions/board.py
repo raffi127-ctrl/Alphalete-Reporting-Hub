@@ -87,7 +87,7 @@ MIN_KNOCKS_PER_DAY = knocks_render.KNOCKING_MIN_KNOCKS   # 21 — "21 or more"
 # 2026-08-30, on the daily board's goal row, applied here too so the two agree)
 # — it is how Rafael says it and it is exactly right, where "20+" would promise
 # that a rep with 20 counts. He does not.
-COL_NUM = f"# Reps (over {MIN_KNOCKS_PER_DAY - 1} Doors / Day)"
+COL_NUM = f"# Reps (Over {MIN_KNOCKS_PER_DAY - 1} Doors / Day)"
 
 # Raf 2026-08-30 (Loom, 12:59): "I should get a column that says reps clocked
 # into TeleMapper on Saturday. Because Saturday, some of us really suck at our
