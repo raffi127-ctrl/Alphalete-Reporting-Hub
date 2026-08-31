@@ -95,26 +95,40 @@ if CAPTAINSHIP not in _CAPTAINSHIP_CONFIG:
 _CFG = _CAPTAINSHIP_CONFIG[CAPTAINSHIP]
 
 
-def _resolve_sheet_id() -> str:
-    if env := _os.environ.get("RECRUITING_REPORT_SHEET_ID"):
-        return env.strip()
+def captainship_sheet_id(captainship: str) -> str:
+    """The spreadsheet id of ANOTHER captainship's report, resolved the same
+    way as this process's own (config override first, shipped id as fallback).
+
+    Exists so a module that fills one captainship's sheet can also write a tab
+    that lives on a DIFFERENT one without re-hardcoding the id — the B2B OPT
+    step fills Calvin Ribero's B2B tab on Raf's ATT Program - Focus Report
+    while every other B2B ICD it serves is on the Alphalete Org sheet. The
+    RECRUITING_REPORT_SHEET_ID env var is deliberately NOT honoured here: it
+    overrides the ACTIVE captainship only, and letting it hijack a cross-
+    captainship lookup would silently redirect the other sheet's writes.
+    """
+    cfg_entry = _CAPTAINSHIP_CONFIG.get(captainship)
+    if cfg_entry is None:
+        raise KeyError(
+            f"unknown captainship {captainship!r}; "
+            f"valid choices: {sorted(_CAPTAINSHIP_CONFIG)}")
     if _CONFIG_PATH.exists():
         try:
             cfg = json.loads(_CONFIG_PATH.read_text())
-            # Per-captainship override key takes precedence over the
-            # legacy single 'spreadsheet_id' key. Lets a user with both
-            # reports configured keep them straight.
-            cap_key = f"spreadsheet_id_{CAPTAINSHIP.lower()}"
+            cap_key = f"spreadsheet_id_{captainship.lower()}"
             if cfg.get(cap_key):
                 return cfg[cap_key].strip()
-            # Legacy: 'spreadsheet_id' only applies to the default Raf
-            # captainship so an existing config file doesn't accidentally
-            # hijack Carlos runs.
-            if CAPTAINSHIP == "Raf" and cfg.get("spreadsheet_id"):
+            if captainship == "Raf" and cfg.get("spreadsheet_id"):
                 return cfg["spreadsheet_id"].strip()
         except Exception:
             pass
-    return _CFG["sheet_id_fallback"]
+    return cfg_entry["sheet_id_fallback"]
+
+
+def _resolve_sheet_id() -> str:
+    if env := _os.environ.get("RECRUITING_REPORT_SHEET_ID"):
+        return env.strip()
+    return captainship_sheet_id(CAPTAINSHIP)
 
 SPREADSHEET_ID = _resolve_sheet_id()
 OAUTH_CLIENT_PATH = Path.home() / ".config" / "recruiting-report" / "oauth-client.json"
@@ -461,6 +475,26 @@ def auto_onboard_tabs(
     return {"onboarded": onboarded, "ambiguous": ambiguous, "unmatched": unmatched}
 
 
+def opt_source_tabs(mapping: dict, source: str) -> set:
+    """Sheet tabs whose OPT block is filled by a pipeline OTHER than this
+    captainship's own — marked `"opt_source": "<source>"` on their mapping
+    entry, in whatever bucket they currently sit in.
+
+    Calvin Ribero is the first: his tab on the ATT Program - Focus Report was
+    cut from Carlos's 'B2B Template' and is filled by the B2B OPT step
+    (alphalete_org_report.opt_b2b), whose six views are org-wide. Raf's OPT
+    phase must leave it alone — the ATT/INT/Metrics crosstabs are residential
+    and carry no B2B owner, so running it over that tab writes nothing and
+    reports a bogus '[gap] … check the ICD Aliases sheet' every single week.
+    """
+    tabs = set()
+    for bucket in ("confirmed", "sales_only", "needs_review", "skip"):
+        for entry in mapping.get(bucket, []) or []:
+            if (entry.get("opt_source") or "").strip().lower() == source:
+                tabs.add(entry["sheet_tab"])
+    return tabs
+
+
 def promote_visible_sales_only(mapping: dict, dry_run: bool = False) -> List[dict]:
     """Move `sales_only` tabs that have BECOME visible in AppStream into
     `confirmed`, so their recruiting half starts filling on its own.
@@ -512,7 +546,7 @@ def promote_visible_sales_only(mapping: dict, dry_run: bool = False) -> List[dic
                 break
         if not office:
             continue
-        promoted.append({
+        new_entry = {
             "sheet_tab": tab,
             "office_id": office["office_id"],
             "as_owner": office.get("owner", tab),
@@ -520,7 +554,14 @@ def promote_visible_sales_only(mapping: dict, dry_run: bool = False) -> List[dic
             "confidence": 1.0,
             "promoted_from_sales_only": True,
             "was_sales_only_reason": entry.get("reason", ""),
-        })
+        }
+        # `opt_source` has to survive the promotion. It says which pipeline owns
+        # the tab's OPT block (see opt_source_tabs) — getting AppStream access
+        # changes the RECRUITING half only, and dropping the marker here would
+        # quietly hand a B2B tab back to Raf's ATT crosstabs.
+        if entry.get("opt_source"):
+            new_entry["opt_source"] = entry["opt_source"]
+        promoted.append(new_entry)
 
     if not promoted:
         return []

@@ -1,4 +1,4 @@
-"""B2B OPT fill for the Alphalete Org sheet — the 'Valeria Tristan - B2B' tab.
+"""B2B OPT fill for every B2B ICD tab — most on the Alphalete Org sheet.
 
 Megan 2026-05-24: "it's the same mapping from Carlos's report — duplicate it
 onto this report." It IS the same metric set (confirmed by label diff: 62
@@ -59,6 +59,11 @@ PP_ROW = 42   # canonical Personal Production row
 # head — his full B2B OPT block fills here too (Megan 2026-06-03), not just
 # Valeria's. The crosstab views carry every ICD, so we download once and extract
 # per ICD.
+# Each entry: (Tableau ICD name, sheet tab). An optional 3rd element names the
+# CAPTAINSHIP whose spreadsheet the tab lives on — omitted means the Alphalete
+# Org sheet, which is where every ICD here sat until Calvin Ribero. An optional
+# 4th element gives extra Tableau spellings to try (the Org mapping's as_owner
+# is only consulted for tabs on the Org sheet).
 B2B_ICDS = [
     ("Valeria Tristan", "Valeria Tristan - B2B"),
     ("Carlos Hidalgo",  "Carlos Hidalgo -B2B"),
@@ -77,6 +82,23 @@ B2B_ICDS = [
     # Tableau "Lizette Ruiz-Conejo".
     ("Eveliz Wright",       "Eveliz Wright - B2B"),
     ("Lizette Ruiz-Conejo", "Lizette Ruiz - B2B"),
+    # Calvin Ribero (Vernon, Inc., ownerville office 22162) — added 2026-08-30
+    # at Eve's request. The ONLY entry that is not on the Alphalete Org sheet:
+    # his B2B tab was cut from Carlos's 'B2B Template' onto Raf's *ATT Program
+    # - Focus Report*, so this step reaches across to that spreadsheet for him.
+    # Filled HERE rather than by att_focus_raf on purpose: Raf's OPT phase
+    # reads the residential/fiber ATT crosstabs, which carry no B2B owner at
+    # all, while these six views are org-wide and already downloaded — one more
+    # ICD costs a tab write, not another 17-minute Tableau session.
+    # The tab carries a "(B2B)" suffix (Eve 2026-08-30) so it does not read as
+    # one more fiber ICD among the ~52 - it is a WRITE TARGET only, never a
+    # name to match Tableau on.
+    # SPELLING: the tab says "Ribero" (Eve's spelling); ownerville says
+    # "Calvin Ribera". Tableau's spelling is unconfirmed — he is in NO cached
+    # B2B crosstab through WE 8/16 — so both are tried.
+    # His recruiting funnel (rows 2-20) stays empty until AppStream access
+    # lands; office-mapping.json carries him as sales_only/promote_when_visible.
+    ("Calvin Ribera", "Calvin Ribero (B2B)", "Raf", ["Calvin Ribero"]),
 ]
 
 # Personal Production = the ICD's OWN sales for the week: the rep row where
@@ -275,10 +297,16 @@ def collect_b2b_views(page, logfn=print) -> dict:
             "missing": missing}
 
 
-def values_for_b2b_icd(icd: str, tab: str, parsed: dict, logfn=print) -> dict:
+def values_for_b2b_icd(icd: str, tab: str, parsed: dict, logfn=print,
+                       fallbacks: Optional[List[str]] = None) -> dict:
     """Extract one ICD's {canonical_row: value} from the once-parsed data —
-    every view, DD, and Personal Production (row 42) — then apply_computed."""
-    fallback = _b2b_fallback_names(tab)
+    every view, DD, and Personal Production (row 42) — then apply_computed.
+
+    `fallbacks` are extra Tableau spellings to try before falling back to the
+    Alphalete Org mapping's as_owner. A tab on ANOTHER sheet has no row in that
+    mapping, so passing them is the only way its alternate spelling is tried.
+    """
+    fallback = list(fallbacks or []) + _b2b_fallback_names(tab)
     fb = fallback[0] if fallback else ""
     values: dict = {}
     for key, (by_owner, grand, view) in parsed["views"].items():
@@ -319,8 +347,13 @@ def fill_b2b_tab(ws: gspread.Worksheet, values: dict, week_label: str,
 
 
 def run_b2b_opt(dry_run: bool = False, logfn=print) -> dict:
-    """Pull the B2B views ONCE + fill every B2B ICD's tab on the Alphalete Org
-    sheet (Valeria + Carlos — the head). Each ICD's full OPT block, incl. PP."""
+    """Pull the B2B views ONCE + fill every B2B ICD in B2B_ICDS. Each ICD's
+    full OPT block, incl. PP.
+
+    Most tabs are on the Alphalete Org sheet; an entry may name another
+    captainship's spreadsheet instead (Calvin Ribero → Raf's ATT Program -
+    Focus Report). The crosstabs are org-wide, so the extra tabs cost a write,
+    not another download."""
     week_label = _week_col_label()
     logfn(f"OPT B2B: target week = {week_label!r}")
     try:
@@ -333,13 +366,28 @@ def run_b2b_opt(dry_run: bool = False, logfn=print) -> dict:
                 "missing_sources": ["Tableau session"]}
 
     client = rfill._client()
-    sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, client)
+    # One open per TARGET spreadsheet, cached: nearly every ICD is on the Org
+    # sheet, and re-opening it per tab would be five needless API round trips.
+    sheets: dict = {}
+
+    def _sheet_for(captainship: Optional[str]):
+        key = captainship or "_org"
+        if key not in sheets:
+            sid = (ALPHALETE_ORG_SHEET_ID if captainship is None
+                   else rfill.captainship_sheet_id(captainship))
+            sheets[key] = rfill.open_by_key(sid, client)
+        return sheets[key]
+
     filled, skipped = [], []
-    for icd, tab in B2B_ICDS:
-        values = values_for_b2b_icd(icd, tab, parsed, logfn)
+    for entry in B2B_ICDS:
+        icd, tab = entry[0], entry[1]
+        captainship = entry[2] if len(entry) > 2 else None
+        fallbacks = list(entry[3]) if len(entry) > 3 else []
+        values = values_for_b2b_icd(icd, tab, parsed, logfn,
+                                    fallbacks=fallbacks)
         logfn(f"OPT B2B: collected {len(values)} metric(s) for {icd}")
         try:
-            ws = rfill._retry(sh.worksheet, tab)
+            ws = rfill._retry(_sheet_for(captainship).worksheet, tab)
         except Exception as e:
             logfn(f"OPT B2B: ✗ {tab}: {type(e).__name__}: {str(e)[:120]}")
             skipped.append(tab)

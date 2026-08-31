@@ -1,11 +1,15 @@
-"""One-off: backfill a Carlos-1on1s ICD tab's WEEKLY SALE rows from the
-week-windowed B2B SALES SUMMARY.
+"""Backfill a B2B ICD tab's WEEKLY SALE rows from the week-windowed B2B SALES
+SUMMARY - the only B2B source that can be pinned to a past week.
+
+Was a one-off for Amos White Jr (output/carlos_b2b_backfill_sales_2026-08-17.py,
+2026-08-17); moved into the package 2026-08-30, when Calvin Ribero's B2B tab was
+added to Raf's ATT Program - Focus Report and needed the same treatment on a
+DIFFERENT spreadsheet. `--captainship` picks the sheet; nothing else changed.
 
 Why this exists
 ---------------
-Amos White Jr joined the *Carlos 1on1s - Focus Report* roster on 2026-08-17, so
-only WE 8/16 got filled; every earlier column on his tab is blank. Carlos's OPT
-engine can't go back on its own:
+A tab created mid-quarter only gets the week it was created in; every earlier
+column stays blank, and the B2B OPT engine cannot go back on its own:
 
   * `d2d1` (rows 29, 33-36, 40, 41) is hardwired to "B2B - Current Week"
     (`week_filter_field=None`) — there is no way to aim it at an older week.
@@ -58,16 +62,23 @@ skipped and logged.
 Rows are found by their column-B label and weeks by the date header, so this
 survives a template that shifts rows around.
 
-Usage
+The week crosstabs are ORG-WIDE (every B2B owner is in each file), so the cache
+under output/_carlos_b2b_weeks/ is shared: a week already pulled for one ICD
+costs no Tableau session at all for the next one.
+
+Usage (M = automations.recruiting_report.b2b_backfill_sales)
 -----
-    # 1. download the week-pinned crosstabs (resumable — skips cached weeks)
-    python output/carlos_b2b_backfill_sales_2026-08-17.py --download
+    # 1. download the week-pinned crosstabs (resumable - skips cached weeks)
+    python -m M --tab "Amos White Jr" --download
 
     # 2. dry run: parse the cache, show what would land
-    python output/carlos_b2b_backfill_sales_2026-08-17.py
+    python -m M --tab "Amos White Jr"
 
     # 3. write
-    python output/carlos_b2b_backfill_sales_2026-08-17.py --write
+    python -m M --tab "Amos White Jr" --write
+
+    # a tab on ANOTHER report's sheet (Calvin Ribero is on Raf's ATT report)
+    python -m M --captainship Raf --tab "Calvin Ribero (B2B)" --owner "Calvin Ribera" --from 2026-08-02 --to 2026-08-23 --write
 """
 from __future__ import annotations
 
@@ -75,25 +86,23 @@ import argparse
 import csv
 import datetime as dt
 import io
-import os
 import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from gspread.utils import rowcol_to_a1
 
-# CAPTAINSHIP has to be set BEFORE `fill` is imported: fill.SPREADSHEET_ID is
-# resolved at import time, so setting it later leaves us pointed at Raf's sheet
-# (the wrong-sheet bug that wore a missing-tab costume in carlos_noah_nds).
-os.environ.setdefault("CAPTAINSHIP", "Carlos")
-
-from gspread.utils import rowcol_to_a1  # noqa: E402
-
-from automations.recruiting_report import fill  # noqa: E402
-from automations.recruiting_report.opt_phase_carlos import (  # noqa: E402
+from automations.recruiting_report import fill
+from automations.recruiting_report.opt_phase_carlos import (
     VIEWS, download_view_crosstab, metric_row_for_tab,
 )
-from automations.shared import b2b_sales_summary as B2BSS  # noqa: E402
+from automations.shared import b2b_sales_summary as B2BSS
+
+# The target sheet comes from --captainship, NOT from the CAPTAINSHIP env var.
+# fill.SPREADSHEET_ID is fixed at import time, so a flag parsed in main() could
+# never move it; resolving the id explicitly is also what keeps this from
+# quietly writing to whichever sheet the environment happened to name - the
+# wrong-sheet bug that wore a missing-tab costume in carlos_noah_nds.
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -101,7 +110,10 @@ except Exception:
     pass
 
 DEFAULT_TAB = "Amos White Jr"
-DEFAULT_CACHE = Path(__file__).resolve().parent / "_carlos_b2b_weeks"
+DEFAULT_CAPTAINSHIP = "Carlos"
+# Shared, org-wide week cache - every B2B owner is in every file.
+DEFAULT_CACHE = (Path(__file__).resolve().parent.parent.parent
+                 / "output" / "_carlos_b2b_weeks")
 
 # Product label (from b2b_sales_summary.PRODUCT_COLUMNS) -> the column-B label
 # of the sheet row it belongs in. Label variants mirror ROW_TO_LABEL in
@@ -276,6 +288,10 @@ def download_weeks(weeks: list, cache: Path, force: bool = False) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tab", default=DEFAULT_TAB, help="Sheet tab name.")
+    ap.add_argument("--captainship", default=DEFAULT_CAPTAINSHIP,
+                    help="Which report's spreadsheet holds the tab: Carlos "
+                         "(Carlos 1on1s - Focus Report, the default) or Raf "
+                         "(ATT Program - Focus Report).")
     ap.add_argument("--owner", help="Owner name in the crosstab, if it differs "
                                     "from the tab name. Default: the tab name "
                                     "(punctuation is ignored when matching).")
@@ -298,7 +314,7 @@ def main() -> int:
     cache = Path(args.cache_dir)
     dry = not args.write
 
-    sh = fill.open_sheet()
+    sh = fill.open_by_key(fill.captainship_sheet_id(args.captainship))
     ws = fill._retry(sh.worksheet, args.tab)
     # TWO renders, on purpose.
     #  * FORMATTED for the layout: row 1's WE headers are a `=prev+7` chain, so
@@ -379,7 +395,7 @@ def main() -> int:
                    + (f"   [kept: {'; '.join(held)}]" if held else ""))
 
     print(f"\n{'DRY RUN' if dry else 'WRITE'} — {args.tab} "
-          f"(crosstab owner {owner!r})")
+          f"on {sh.title!r} (crosstab owner {owner!r})")
     for line in log:
         print(line)
     print(f"{len(updates)} cell(s) to fill")

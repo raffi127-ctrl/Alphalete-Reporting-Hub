@@ -1977,6 +1977,44 @@
       "depends_on": [],
       "verify": null
     },
+    "b2b_backfill_calvin": {
+      "on_scheduler": true,
+      "order": 39.1,
+      "machine": "Lucy 3",
+      "_note": "Catch-up for Calvin Ribero's OLD week columns on the ATT Program - Focus Report (tab 'Calvin Ribero (B2B)'). Runs MONDAYS right behind alphalete_org_focus - `after`, not depends_on: that report failing must not strand this, the source is unrelated. His tab is written for the FIRST time by that run's B2B step, and a new focus-report tab gets backfilled the same day it starts filling rather than sitting on one column (Eve 2026-08-30). Fills only the rows a date-windowed crosstab can honestly answer - Active Headcount on Tableau, New Internets, Voice Sales, Wireless, New Lines, Personal Production - from ATTTRACKER-B2B SALESSUMMARY, the ONLY B2B view that can be aimed at a past week. Cancel / activation / churn / penetration / Direct Deposit / Scorecard Ranking / National AVG are ROLLING windows with no notion of 'the week of 8/9': those cells stay blank for old weeks on purpose and must never be estimated. Never overwrites a cell that already holds anything, so re-runs are free and a week that only reaches Tableau later still gets picked up. --download fetches just the weeks missing from the shared org-wide cache under output/_carlos_b2b_weeks/ and opens NO Tableau session once they are all there, so after the first Monday this costs seconds. Window is WE 8/2 - 8/23, the four weeks before his tab existed; widen with --from/--to, e.g. `lucy rerun b2b_backfill_calvin --from 2026-07-05 --write`. NOTE he is in no cached B2B crosstab through 8/16 under either spelling (tab 'Calvin Ribero', ownerville 'Calvin Ribera', office 22162) - if this keeps writing 0 cells, the thing to check is whether his campaign is B2B AT&T SBS or BOX-Energy, not the spelling. Added 2026-08-30 with his tab; safe to delete once the four weeks are settled.",
+      "display_name": "B2B backfill - Calvin Ribero",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report.b2b_backfill_sales"
+      ],
+      "base_args": [
+        "--captainship",
+        "Raf",
+        "--tab",
+        "Calvin Ribero (B2B)",
+        "--owner",
+        "Calvin Ribera",
+        "--from",
+        "2026-08-02",
+        "--to",
+        "2026-08-23",
+        "--download",
+        "--write"
+      ],
+      "cadence": {
+        "weekdays": [
+          0
+        ]
+      },
+      "after": [
+        "alphalete_org_focus"
+      ],
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "sunday_coverage": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY diagnostic. `lucy rerun sunday_coverage` pulls each ORG board CROSSTAB source on Lucy 1 and prints whether last Sunday's data is actually in the extract at pull time \u2014 diagnoses the 2026-07-13 Monday undercount (board missing the just-completed Sunday). Read-only.",

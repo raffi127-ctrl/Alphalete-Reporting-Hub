@@ -2524,6 +2524,17 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     targets = ([only] if only else
                [c["sheet_tab"] for c in mapping["confirmed"]]
                + [c["sheet_tab"] for c in mapping.get("sales_only", [])])
+    # Tabs whose OPT block belongs to another pipeline (B2B ICDs cut from
+    # Carlos's 'B2B Template' — Calvin Ribero). Their metric set and their
+    # Tableau views are not these, so running them here fills nothing and
+    # reports a misleading '[gap] … check the ICD Aliases sheet'. --only still
+    # honours an explicit request, so a human can always force one.
+    if not only:
+        foreign = fill.opt_source_tabs(mapping, "b2b") & set(targets)
+        if foreign:
+            targets = [t for t in targets if t not in foreign]
+            logfn(f"OPT: {len(foreign)} B2B tab(s) left to the B2B OPT step "
+                  f"(alphalete_org_report.opt_b2b): {', '.join(sorted(foreign))}")
     # Fiber Lead — per-ICD pull (slow, one View Data scrape per ICD); skipped
     # on --skip-download, which reuses the last opt_fiber.csv. parse_fiber
     # returns {} when there's no file, so Fiber just doesn't fill.

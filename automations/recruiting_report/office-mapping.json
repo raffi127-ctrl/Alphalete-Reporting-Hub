@@ -541,7 +541,14 @@
     {
       "sheet_tab": "Jesus Hawthorne",
       "reason": "no AppStream office (sales-only, no recruiting) \u2014 present in the Tableau ATT/INT/Metrics views as 'Jesus Hawthorne', so the OPT half fills; added 2026-07-27 after his tab sat untargeted"
+    },
+    {
+      "sheet_tab": "Calvin Ribero (B2B)",
+      "as_owner": "Calvin Ribera",
+      "opt_source": "b2b",
+      "promote_when_visible": true,
+      "reason": "B2B ICD (Vernon, Inc., ownerville office 22162) \u2014 tab added 2026-08-30 from Carlos's 'B2B Template'; the '(B2B)' suffix is Eve's, so it doesn't read as one more fiber ICD, not 'Template Fiber'. No AppStream office under Raf's login yet, so the recruiting funnel (rows 2-20) stays blank until access lands; promote_when_visible flips him to confirmed the run after it does. opt_source=b2b keeps Raf's OPT phase off the tab \u2014 his OPT block is filled by alphalete_org_report.opt_b2b. as_owner is ownerville's spelling ('Ribera'); the tab is Eve's ('Ribero')."
     }
   ],
-  "sales_only_count": 2
+  "sales_only_count": 3
 }
