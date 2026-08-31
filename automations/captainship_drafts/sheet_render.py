@@ -31,7 +31,8 @@ from patchright.sync_api import sync_playwright
 
 from automations.captainship_drafts.sales_board import (
     PS_END_COL, SALES_BOARD_ID, SALES_BOARD_TAB, _open_ws, _values,
-    discover_blocks, ps_shot_plan, prior_day_columns,
+    block_anchors, discover_blocks, moved_anchors, ps_shot_plan,
+    prior_day_columns, refresh_blocks,
 )
 
 # Font families that browsers already have — everything else is pulled from
@@ -367,20 +368,47 @@ def _units_label(raw: str) -> str:
 
 
 def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
-                  today: Optional[dt.date] = None, scale: float = 2.0) -> dict:
+                  today: Optional[dt.date] = None, scale: float = 2.0,
+                  logfn=print) -> dict:
     """Product Summary + Units PNGs for one captain, rendered from API data
-    (no Google login). Same return shape as sheet_shot.captain_shots."""
+    (no Google login). Same return shape as sheet_shot.captain_shots.
+
+    Re-locates the blocks first and checks afterwards that they did not move
+    while rendering — see sales_board.refresh_blocks for the image that got
+    Khalil captured two rows low. A move gets ONE retry; a board being written
+    that fast twice in a row is not something to paper over with a picture, so
+    the second one raises and run.py degrades the section with the reason."""
     today = today or dt.date.today()
-    all_blocks = discover_blocks()
+    for attempt in (1, 2):
+        blocks, vals = _locate(captain_key)
+        expected = block_anchors(vals, blocks)
+        out = _render_blocks(captain_key, blocks, vals, Path(out_dir),
+                             today=today, scale=scale)
+        moved = moved_anchors(expected)
+        if not moved:
+            return out
+        logfn(f"  ⚠ the Sales Board moved under {captain_key}'s render "
+              f"({'; '.join(moved)})"
+              + (" — rendering it again" if attempt == 1 else ""))
+    raise RuntimeError(
+        f"the Sales Board kept moving under {captain_key}'s render "
+        f"(twice): {'; '.join(moved)}")
+
+
+def _locate(captain_key: str):
+    """(blocks, values) for one captain, re-read from the live sheet."""
+    all_blocks = refresh_blocks()
     if captain_key not in all_blocks:
         raise RuntimeError(
             f"no Product Summary block found for {captain_key!r} on "
             f"'{SALES_BOARD_TAB}' — team header missing/renamed. "
             f"Found: {sorted(all_blocks)}")
-    blocks = all_blocks[captain_key]
-    vals = _values()
-    out_dir = Path(out_dir)
+    return all_blocks[captain_key], _values()
 
+
+def _render_blocks(captain_key: str, blocks, vals, out_dir: Path, *,
+                   today: dt.date, scale: float) -> dict:
+    """One pass of the actual rendering, against blocks already located."""
     # --- Product Summary: last 4 weeks, older weeks collapsed out -----------
     hide_ranges, end_row = ps_shot_plan(blocks.ps_start, blocks.ps_end)
     skip: set = set()

@@ -299,6 +299,57 @@ def discover_blocks() -> Dict[str, CaptainBlocks]:
     return blocks
 
 
+def refresh_blocks() -> Dict[str, CaptainBlocks]:
+    """discover_blocks(), re-read against the LIVE sheet.
+
+    Both caches above are per-PROCESS, and a 12-captain build runs for about an
+    hour while other jobs (and people) write this same tab. Every capture
+    addresses its range BY ROW NUMBER, so a block that moves between discovery
+    and its own screenshot is captured at the OLD address — and nothing fails:
+    the image just shows the wrong rows.
+
+    That is exactly what Khalil's Captainship Units was on 2026-08-31 (Eve: "no
+    se ve la banda con su nombre"). Discovery put the block at 1855; by the time
+    it was captured two rows above it had gone, so A1855:E1862 landed on rows
+    1857-1864 — the "KHALIL CAPTAINSHIP" band and the day-header row off the
+    top, two blank rows padding the bottom. Exit 0, no warning.
+
+    So: re-locate immediately before capturing. One extra read per captain,
+    which is cheap next to what the render already spends, and it narrows the
+    window from an hour to seconds. `verify_anchors` closes the rest."""
+    _values.cache_clear()
+    discover_blocks.cache_clear()
+    return discover_blocks()
+
+
+def _anchor_text(vals: List[List[str]], row: int) -> str:
+    """The label a block is anchored on: col B, falling back to col A — the
+    same lookup discover_blocks uses, so the two can't disagree."""
+    r = vals[row - 1] if 0 < row <= len(vals) else []
+    return (_norm(r[1]) if len(r) > 1 else "") or (_norm(r[0]) if r else "")
+
+
+def block_anchors(vals: List[List[str]],
+                  blocks: CaptainBlocks) -> Dict[int, str]:
+    """{row -> label} for every row a capture of `blocks` addresses by number."""
+    out = {blocks.ps_start: _anchor_text(vals, blocks.ps_start)}
+    for u in blocks.units:
+        out[u.header_row] = _anchor_text(vals, u.header_row)
+    return out
+
+
+def moved_anchors(expected: Dict[int, str]) -> List[str]:
+    """Which of `expected` no longer hold — [] when the capture is trustworthy.
+
+    Re-reads the sheet, so call it AFTER the shots: it answers "did the board
+    move while we were photographing it?"."""
+    _values.cache_clear()
+    vals = _values()
+    return [f"row {r}: expected {want!r}, sheet now says "
+            f"{_anchor_text(vals, r)!r}"
+            for r, want in expected.items() if _anchor_text(vals, r) != want]
+
+
 def _day_col_map(header_row_vals: List[str]) -> Dict[str, int]:
     """day-name -> 1-based first column of its 3-col group, read from the
     units block's header row (never hardcoded F/I/L…)."""

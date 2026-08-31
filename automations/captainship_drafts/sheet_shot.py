@@ -39,8 +39,8 @@ import datetime as dt
 
 from automations.captainship_drafts.sales_board import (
     CAPTAIN_TOKEN, PS_END_COL, ROW_RENDER_SLACK, SALES_BOARD_ID,
-    SALES_BOARD_TAB, _open_ws, _values, discover_blocks, grid_span,
-    prior_day_columns, ps_shot_view,
+    SALES_BOARD_TAB, _open_ws, _values, block_anchors, discover_blocks,
+    grid_span, moved_anchors, prior_day_columns, ps_shot_view, refresh_blocks,
 )
 
 SHEETS_PROFILE_DIR = (
@@ -615,7 +615,11 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
 
     Returns {'product_summary': Path, 'units': [(caption, Path), ...]}."""
     today = today or dt.date.today()
-    all_blocks = discover_blocks()
+    # Re-located against the LIVE sheet, not the cache discovery filled an hour
+    # ago — see sales_board.refresh_blocks. The screenshot path addresses its
+    # ranges by row number exactly like the render does, so it has the same way
+    # of coming back with the wrong rows and no error.
+    all_blocks = refresh_blocks()
     if captain_key not in all_blocks:
         # Bare KeyError here surfaces as just "'khalil'" in the run log, which
         # reads like a config typo. Say what actually happened: the captain's
@@ -629,6 +633,7 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
             f"{sorted(all_blocks)}")
     blocks = all_blocks[captain_key]
     vals = _values()
+    expected = block_anchors(vals, blocks)
     out_dir = Path(out_dir)
     ps_path = out_dir / f"captainship_{captain_key}_product_summary.png"
 
@@ -667,6 +672,16 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
             for tmp in (u_left, u_day):
                 tmp.unlink(missing_ok=True)
         units_out.append((f"{_units_label(ub.label)} — {day_name}", u_path))
+    # Did the board move while we were photographing it? If it did, these PNGs
+    # are of whatever rows slid into the ranges — an image nobody can tell is
+    # wrong by looking at the log. This is the fallback path (the render is
+    # tried first), so it raises rather than retrying: run.py turns that into
+    # the section's pending note, carrying the reason.
+    moved = moved_anchors(expected)
+    if moved:
+        raise RuntimeError(
+            f"the Sales Board moved under {captain_key}'s screenshots: "
+            f"{'; '.join(moved)}")
     return {"product_summary": ps_path, "units": units_out}
 
 
