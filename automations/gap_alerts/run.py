@@ -1163,8 +1163,13 @@ def probe(day: dt.date, cfg: Dict, headless: bool = True) -> int:
     different source can agree with itself while the board is wrong.
     """
     from automations.rashad_metrics.knocks_pull import pull_offices_days
-    pulled = pull_offices_days([(cfg["name"], [day])], verbose=True,
-                               profile_dir=str(C.PROFILE_DIR))
+    # The campaign goes with the job, exactly as pull_board sends it. Without
+    # it this probe silently reads whatever campaign the office defaults to —
+    # which is how Jay's Energy Wells probe came back full of AT&T columns and
+    # briefly looked like the pin was broken when only the probe was.
+    pulled = pull_offices_days(
+        [(cfg["name"], [day], cfg.get("campaign_id") or None)],
+        verbose=True, profile_dir=str(C.PROFILE_DIR))
     _name, by_day, err = pulled[0]
     if err is not None:
         _log("PULL FAILED: %s: %s" % (type(err).__name__, str(err)[:300]))
