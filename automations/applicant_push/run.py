@@ -273,6 +273,12 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     if getattr(args, "only_names", ""):
         os.environ["OAT_ONLY_NAMES"] = args.only_names
+    # No resume pushing on Saturdays, ever — scheduled or queued. (Carlos,
+    # 2026-08-31: "no pushing resumes should be happening saturday night"; the
+    # 7AM-10PM window alone let the 8/29 evening audit runs through.)
+    import datetime as _dt
+    if args.live and _dt.date.today().weekday() == 5             and not getattr(args, "audit_office", False):
+        raise SystemExit("[push] REFUSED: live pushes never run on Saturday.")
     if (args.live and args.office not in PUSH_ALLOWED
             and not getattr(args, "audit_office", False)):
         raise SystemExit(
