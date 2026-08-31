@@ -136,6 +136,14 @@ REMOVALS: dict = {
         # "Colten". His card is on NO other live group, so this is the last
         # report he was getting.
         ("Marcos Barbosa", "marcosbarbosa.entrepeneur@gmail.com"),
+        # 2026-08-31 (Eve): Fernando Munoz, tercero de la misma forma. Fuera de
+        # la capitania de Colten: sus filas del board y de
+        # 'Churn - Colten Wright (NDS)' se fueron el mismo dia, su direccion
+        # salio de captainship_drafts.config.RECIPIENTS["colten"] y Tableau
+        # queda pinneado en shared/captainship_pins bajo "Colten". Este grupo
+        # NO es compartido con el mail del Org Sales Board; sigue siendo ICD
+        # NDS del org (oficina 22604) en todo lo demas.
+        ("Fernando Munoz", "fernandomunoz710@icloud.com"),
     ],
 }
 

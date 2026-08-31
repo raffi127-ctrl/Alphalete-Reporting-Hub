@@ -75,9 +75,18 @@ from typing import Dict, Iterable, Optional
 # left the "Colten's Captainship" distro. Like Milan, Tableau's NDS Captain
 # Teams filter still files him under "Colten's Team", so without this pin the
 # daily roster scan offers him back to Evelyn every morning.
+#
+# 2026-08-31 (Eve): Fernando Munoz comes off Colten's captainship — the third
+# of the same shape (Milan, Marcos, him). Tableau's NDS Captain Teams filter
+# still files him under "Colten's Team", so without this pin the churn pull
+# re-appends his rows and the roster scan offers him back to Evelyn every
+# morning. His board rows and his address on "Colten's Captainship" went the
+# same day. He stays an NDS ICD everywhere else (office 22604, SD Premier
+# Consulting) — the pin is scoped to Colten on purpose.
 NOT_ON_TEAM: Dict[str, tuple] = {
     "Raf": ("Steve McElwee",),
-    "Colten": ("Milan Godbolt", "Marcos Barbosa"),
+    "Colten": ("Milan Godbolt", "Marcos Barbosa", "Fernando Munoz",
+               "Fernando Muñoz"),
     "Eveliz": ("Lizette Ruiz", "Lizette Ruiz-Conejo"),
 }
 

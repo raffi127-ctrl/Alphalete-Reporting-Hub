@@ -575,7 +575,15 @@ RECIPIENTS: dict = {
     ],
     "colten": [
         "coltenwrightsc@gmail.com", "dylanjtwaddle@gmail.com",
-        "fernandomunoz710@icloud.com", "georgedelgadod2d@gmail.com",
+        # OUT 2026-08-31 (Eve): Fernando Munoz (fernandomunoz710@icloud.com)
+        # comes off Colten's captainship. Third of the same shape after Milan
+        # y Marcos: sus filas del board y sus filas de
+        # 'Churn - Colten Wright (NDS)' se fueron el mismo dia y Tableau queda
+        # pinneado en shared/captainship_pins bajo "Colten". Tiene que salir de
+        # ESTA lista Y del grupo vivo "Colten's Captainship" — seed_groups
+        # REHACE el grupo desde aca, asi que un nombre que queda en el codigo
+        # vuelve a entrar solo.
+        "georgedelgadod2d@gmail.com",
         "josevelasquezlsm@gmail.com",
         "josephdelgadosc@gmail.com", "coastalcreativeconcepts@yahoo.com",
         "campas.kyle@gmail.com", "lajaviusbrown@yahoo.com",
