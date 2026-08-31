@@ -655,9 +655,17 @@ def team_list(grid) -> List[str]:
                    if _cell(grid, r, 2).strip() and _cell(grid, r, team_col).strip()})
 
 
-def capture_all(sections, today: dt.date, out_dir: Path, only=None) -> List[Tuple[dict, Path]]:
+def capture_all(sections, today: dt.date, out_dir: Path, only=None,
+                failures=None) -> List[Tuple[dict, Path]]:
     """Render every section (Team Sales fans out per team). Returns [(meta, png)] in
-    post order; `meta` carries the caption title + emoji/react for slack_post."""
+    post order; `meta` carries the caption title + emoji/react for slack_post.
+
+    `failures` -- pass a list to be told WHICH sections were skipped: it gets
+    (section_id, reason) appended for each. A skipped section used to be visible
+    only in the log, so the thread went out short and silent (Eve 8/31, on the
+    New Starts table that isn't filled in until mid-morning). run.py turns a
+    non-empty list into the #claudecorrections alert. Optional, so every existing
+    caller (energy_crossref) is unchanged."""
     ss = open_by_key(SHEET_ID)
     _sweep_temp(ss)                    # clear any orphan temp from a prior crashed run
     ws = find_week_tab(ss, last_completed_day(today))   # tab that CONTAINS yesterday
@@ -665,7 +673,7 @@ def capture_all(sections, today: dt.date, out_dir: Path, only=None) -> List[Tupl
     token = _access_token()
     out_dir.mkdir(parents=True, exist_ok=True)
     out = []
-    failures = []
+    failed = []
     for spec in sections:
         if only and spec["id"] not in only:
             continue
@@ -688,11 +696,13 @@ def capture_all(sections, today: dt.date, out_dir: Path, only=None) -> List[Tupl
                 png = _render(ss, ws, grid, spec, today, out_dir, token)
                 out.append((dict(spec), png))
         except Exception as e:              # noqa: BLE001 — one bad section != dead post
-            failures.append((spec["id"], f"{type(e).__name__}: {e}"))
+            failed.append((spec["id"], f"{type(e).__name__}: {e}"))
             print(f"[alphalete_production] SECTION FAILED, skipping {spec['id']}: "
                   f"{type(e).__name__}: {str(e)[:200]}", flush=True)
-    if failures:
+    if failed:
         print("[alphalete_production] %d/%d section(s) failed: %s"
-              % (len(failures), len(sections),
-                 ", ".join(i for i, _ in failures)), flush=True)
+              % (len(failed), len(sections),
+                 ", ".join(i for i, _ in failed)), flush=True)
+    if failures is not None:
+        failures.extend(failed)
     return out, grid, ws.title
