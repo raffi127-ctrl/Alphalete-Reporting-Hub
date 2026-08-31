@@ -247,3 +247,56 @@ class MiddleNames(unittest.TestCase):
     @staticmethod
     def _m(knocks, rows):
         return T.match_rows(knocks, rows)
+
+
+class TotalsRowGetsATotal(unittest.TestCase):
+    """Eve, 2026-08-31: la columna TK tiene que sumar al pie. Four of the seven
+    day blocks carried a hard-typed 0 there instead of a formula."""
+
+    class _WS:
+        def __init__(self, cells):
+            self.cells = cells
+            self.written = {}
+
+        def acell(self, a1, value_render_option=None):
+            return type("C", (), {"value": self.cells.get(a1, "")})()
+
+        def update_acell(self, a1, value):
+            self.written[a1] = value
+
+    def _cols(self):
+        g = _grid()
+        apps_c, tk_c = T.day_block(g, MONDAY)
+        return g, apps_c, tk_c, T._a1_col(apps_c), T._a1_col(tk_c)
+
+    def test_a_hard_typed_zero_is_replaced_by_the_columns_own_total(self):
+        g, apps_c, tk_c, A, K = self._cols()
+        ws = self._WS({f"{A}79": f'=SUMIF($CG$4:$CG$78,"<>RT",{A}4:{A}78)',
+                       f"{K}79": "0"})
+        note = T.ensure_tk_total(ws, g, apps_c, tk_c, 79, 4, 78, apply=True)
+        self.assertEqual(ws.written,
+                         {f"{K}79": f'=SUMIF($CG$4:$CG$78,"<>RT",{K}4:{K}78)'})
+        self.assertIn("repaired", note)
+
+    def test_an_existing_formula_is_never_touched(self):
+        g, apps_c, tk_c, A, K = self._cols()
+        ws = self._WS({f"{A}79": f'=SUMIF($CG$4:$CG$78,"<>RT",{A}4:{A}78)',
+                       f"{K}79": f'=SUM({K}4:{K}78)'})
+        self.assertIsNone(T.ensure_tk_total(ws, g, apps_c, tk_c, 79, 4, 78,
+                                            apply=True))
+        self.assertEqual(ws.written, {})
+
+    def test_a_preview_writes_nothing(self):
+        g, apps_c, tk_c, A, K = self._cols()
+        ws = self._WS({f"{A}79": f'=SUMIF($CG$4:$CG$78,"<>RT",{A}4:{A}78)',
+                       f"{K}79": "0"})
+        note = T.ensure_tk_total(ws, g, apps_c, tk_c, 79, 4, 78, apply=False)
+        self.assertEqual(ws.written, {})
+        self.assertIn("would get", note)
+
+    def test_no_apps_formula_to_copy_means_hands_off(self):
+        g, apps_c, tk_c, A, K = self._cols()
+        ws = self._WS({f"{A}79": "12", f"{K}79": "0"})
+        self.assertIsNone(T.ensure_tk_total(ws, g, apps_c, tk_c, 79, 4, 78,
+                                            apply=True))
+        self.assertEqual(ws.written, {})

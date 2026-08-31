@@ -139,6 +139,48 @@ def _a1_col(n: int) -> str:
     return s
 
 
+def ensure_tk_total(ws, g, apps_c: int, tk_c: int, totals_row: int,
+                    first: int, last: int, *, apply: bool):
+    """Give the TOTALS row's TK cell the same total its neighbours get.
+
+    Eve asked for a total of knocks at the foot of the column (2026-08-31),
+    and the board does not reliably have one: on the WE 9.6 tab FOUR of the
+    seven day blocks carried a hard-typed `0` in that slot while Wed/Thu/Sun
+    already carried the real formula. A total that exists three days a week is
+    worse than none, so the fill repairs it.
+
+    THE FORMULA IS COPIED FROM THE APPS COLUMN OF THE SAME BLOCK, not written
+    from scratch -- swap its column letter and nothing else. That way the row
+    range and the `Field Status <> RT` exclusion always match the totals beside
+    it (one TOTALS row, one population), and a template that changes either
+    carries us along instead of leaving us behind.
+
+    NEVER overwrites a formula that is already there -- only a blank or a
+    hard-typed number, which is the exact shape of the bug. Returns a note or
+    None. This does NOT reach Apps: the Apps total is its own SUMIF down its
+    own column, never a sum across the TOTALS row.
+    """
+    tk_a1 = f"{_a1_col(tk_c)}{totals_row}"
+    try:
+        cur = str(ws.acell(tk_a1, value_render_option="FORMULA").value or "").strip()
+        if cur.startswith("="):
+            return None
+        apps_f = str(ws.acell(f"{_a1_col(apps_c)}{totals_row}",
+                              value_render_option="FORMULA").value or "").strip()
+    except Exception:  # noqa: BLE001 -- never fail the fill over the total
+        return None
+    if not apps_f.startswith("="):
+        return None
+    want = apps_f.replace(f"{_a1_col(apps_c)}{first}:{_a1_col(apps_c)}{last}",
+                          f"{_a1_col(tk_c)}{first}:{_a1_col(tk_c)}{last}")
+    if want == apps_f:                      # the swap found nothing to swap
+        return None
+    if not apply:
+        return f"{tk_a1} would get the column's total ({cur!r} -> {want})"
+    ws.update_acell(tk_a1, want)
+    return f"{tk_a1}: total repaired ({cur!r} was hard-typed)"
+
+
 def apps_counts_tk(ws, apps_c: int, tk_c: int, row: int) -> bool:
     """Does that day's Apps formula ADD the TK cell into the rep's app count?
 
@@ -320,6 +362,11 @@ def main(argv=None) -> int:
         return 75
 
     rows = roster(g)
+    totals_row = last_rep_row(g) + 1
+    note = ensure_tk_total(ws, g, apps_c, col, totals_row,
+                           SUB_ROW + 1, totals_row - 1, apply=a.apply)
+    if note:
+        _log(note)
     if rows and apps_counts_tk(ws, apps_c, col, min(rows)):
         _log(f"REFUSING TO WRITE: {ws.title!r}'s {day.strftime('%A')} Apps "
              f"formula still ADDS column {_a1_col(col)} (TK) into the rep's app "
