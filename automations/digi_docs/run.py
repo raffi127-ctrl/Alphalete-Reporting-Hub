@@ -376,7 +376,6 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
             # search. A roster we cannot read must never be the evidence that
             # somebody is absent; acting on that adds a duplicate.
             roster = ov.roster_snapshot(page)
-            add_refused = []
             for c in add_list:
                 try:
                     if roster and ov.in_roster(roster, c.name):
@@ -387,21 +386,7 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     if outcome in ("added", "dry"):
                         added.append(c.name)
                 except ov.Refused as e:
-                    add_refused.append(str(e))
                     _refuse(refused, str(e), dry)
-            # SAY SO IN THE THREAD (Megan 2026-08-31). The add pass mails
-            # nobody, so it used to say nothing at all — and the morning it
-            # died at 5 of 54 the only way to find that out was to read a log
-            # on the machine it ran on. Anyone not added has nothing to
-            # generate against when their own send comes round, which is worth
-            # seeing before 11:30 rather than after.
-            try:
-                from automations.digi_docs import slack_post as _sp
-                _sp.post_added(added, add_refused, dry_run=dry)
-            except Exception as e:              # noqa: BLE001 — never let the
-                # summary cost the adds it is summarising.
-                print(f"  (add summary not posted: {type(e).__name__}: "
-                      f"{str(e).splitlines()[0][:120]})", flush=True)
 
         if do_send:
             print("\nPHASE: send bundles")
