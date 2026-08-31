@@ -555,3 +555,81 @@ class EmployeeIdPickTest(unittest.TestCase):
         p = self._picker(["Ana Lopez", "Bo Diaz"], ["1", "2"])
         ov._select_person(p, "Bo Diaz")
         self.assertEqual({"label": "Bo Diaz"}, p.picked)
+
+
+class AttestationFailureIsNotAFailedSendTest(_NoNetwork):
+    """generate_bundle IS the send. Anything after it failing is not.
+
+    2026-08-31: the DRUG TEST section stopped expanding, tick_attestations
+    timed out, and the generic handler reported twelve people as
+    "Digi Docs — could not send". All twelve had their documents: the log shows
+    twelve Generate Bundle clicks and the success banner passed each time. The
+    cost of that mislabelling was nearly a re-run, and reading the channel it
+    was impossible to tell delivery from bookkeeping.
+    """
+
+    def _run_one(self, tick_raises):
+        from automations.digi_docs import run as _run
+
+        class _OV:
+            Refused = RuntimeError
+            config = type("c", (), {"DOCS_NEEDED_STATE": "REQUIRED ACTION"})
+
+            def open_set_status(self, page, name):
+                return object(), name
+
+            def docs_row_state(self, modal):
+                return "REQUIRED ACTION"
+
+            def open_docs_portal(self, page, modal):
+                return type("T", (), {"close": lambda s: None})()
+
+            def generate_bundle(self, tab, name, dry_run=True):
+                return None
+
+            def confirm_generated(self, tab, name):
+                return True
+
+            def tick_attestations(self, page, modal, dry_run=True):
+                if tick_raises:
+                    raise TimeoutError("Locator.wait_for: Timeout 15000ms exceeded.")
+                return ["a box"]
+
+        import contextlib
+        import automations.digi_docs as _pkg
+        done, refused = [], []
+        person = type("C", (), {"name": "Bianca Mendez"})()
+        # _refuse does `from automations.digi_docs import slack_post`. Letting
+        # that resolve for real posts a live alert naming a real person off a
+        # unit test — it did, on 2026-08-31, and the message had to be deleted
+        # out of the channel. Stub BOTH the sys.modules entry and the package
+        # attribute, because binding the real module on the package is also
+        # what broke the sibling test's patch.
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True):
+            _run._work(_OV(), page_ctx=contextlib.nullcontext(object()),
+                       do_add=False, do_send=True, send=[person], add_list=[],
+                       dry=False, added=[], done=done, refused=refused)
+        return done, refused
+
+    def test_an_attestation_failure_leaves_the_rep_unresolved(self):
+        """Not done, not tinted. The success banner was the only evidence the
+        bundle generated, and on 2026-08-31 people with that banner in the log
+        had no documents in OwnerVille — so this line must not decide it."""
+        done, refused = self._run_one(tick_raises=True)
+        self.assertEqual([], done, "a tint here would claim a send we cannot "
+                                   "prove happened")
+
+    def test_the_alert_says_where_it_stopped_and_what_to_check(self):
+        _, refused = self._run_one(tick_raises=True)
+        self.assertEqual(1, len(refused))
+        self.assertIn("attestation boxes", refused[0])
+        self.assertIn("CHECK OwnerVille", refused[0])
+
+    def test_a_clean_run_is_unchanged(self):
+        done, refused = self._run_one(tick_raises=False)
+        self.assertEqual([], refused)
+        self.assertEqual(["a box"], done[0][2])

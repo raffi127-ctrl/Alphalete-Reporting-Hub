@@ -292,6 +292,17 @@ def _expand(modal, label: str, page, *, reveals: str = "",
         except Exception:                                   # noqa: BLE001
             target = None
     if target is None:
+        # SAY WHAT IS ACTUALLY THERE (2026-08-31). "DRUG TEST" stopped
+        # expanding for every rep in the 12:04 run and the log could only
+        # report that it had not — leaving the real section name unknowable
+        # from the log, which is the one thing needed to fix it.
+        try:
+            seen = [t.strip()[:40] for t in
+                    modal.locator("div,li,tr").all_inner_texts()[:40]
+                    if t.strip() and len(t.strip()) < 60]
+            print(f"    ({label}: not found. Sections visible: {seen[:12]})")
+        except Exception:                                   # noqa: BLE001
+            pass
         raise Refused(f"{label}: no such section in the Set Status modal")
 
     try:

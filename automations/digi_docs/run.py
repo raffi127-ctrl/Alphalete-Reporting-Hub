@@ -406,7 +406,33 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     if not dry and not ov.confirm_generated(tab, c.name):
                         _refuse(refused, f"{c.name}: no success banner", dry)
                         continue
-                    ticked = ov.tick_attestations(page, modal, dry_run=dry)
+                    # THE SEND ALREADY HAPPENED (2026-08-31). generate_bundle
+                    # is the send — OwnerVille mails the packet on that click —
+                    # and confirm_generated above saw the success banner. So a
+                    # failure from here on is NOT a failed send, and reporting
+                    # it as one is what made 2026-08-31 look like twelve people
+                    # got nothing when all twelve had their documents. Record
+                    # them as sent, tint the cell, and raise the attestation
+                    # separately for what it is: a compliance step still owed.
+                    try:
+                        ticked = ov.tick_attestations(page, modal, dry_run=dry)
+                    except Exception as e:              # noqa: BLE001
+                        # NOT counted as done, and NOT tinted. The banner is
+                        # the only evidence the bundle generated, and on
+                        # 2026-08-31 it was not evidence enough: the log said
+                        # twelve bundles generated and Megan found people in
+                        # OwnerVille with no documents at all. Until that gap
+                        # is understood, an attestation failure leaves the rep
+                        # UNRESOLVED — check the record, do not assume either
+                        # way from this line.
+                        _refuse(refused,
+                                f"{c.name}: stopped after the bundle step, at "
+                                f"the attestation boxes ({type(e).__name__}: "
+                                f"{str(e).splitlines()[0][:80]}). CHECK "
+                                f"OwnerVille for this person: if the documents "
+                                f"are there they only need their boxes ticked, "
+                                f"if not they need a re-send.", dry)
+                        continue
                     done.append((c.name, matched, ticked))
                 except ov.Refused as e:
                     _refuse(refused, str(e), dry)
