@@ -248,6 +248,48 @@ def _with_derived(cols: list) -> list:
     return out
 
 
+# The GOALS row's fill — a muted slate, deliberately NOT green. Green on this
+# board means "this rep hit the number"; a green goals row would read as the
+# office having hit it (Megan 2026-08-30 asked for the row "between chan and
+# the total", i.e. inside the summary block, where that misread is easy).
+GOALS_ROW_BG = (90, 98, 112)
+
+
+def _reps_cell(knocking: int, listed: int) -> str:
+    """"0 of 3" — reps at the knocking bar, of reps in the field.
+
+    Megan 2026-08-30, on Calvin's board: "the total reps aren't correct, calvin
+    has 3 in the field but 0 in his totals". The bare count was right by its own
+    rule and useless as printed: at 1pm nobody has 21 knocks yet, so an intraday
+    board read 0 all afternoon under a header promising a rep count. Showing
+    both numbers keeps the divisor visible (the first one, which Talk To's per
+    Rep and Average App per Rep divide by) AND answers "how many are out".
+    Same shape the weekly board uses for the same reason."""
+    return f"{knocking} of {listed}"
+
+
+def goals_row(cols: list, day) -> list:
+    """A row stating Rafael's targets under the columns they apply to, so the
+    board carries its own legend instead of the reader holding four numbers in
+    their head. Blank everywhere else — a goal is only stated where one exists.
+
+    It is also what disambiguates the "# Reps" cell: that column prints
+    "0 of 3" (reps at the bar, of reps in the field) and the goals row is where
+    "21+ knocks" is spelled out."""
+    goal = {
+        COL_REPS_KNOCKING: f"{KNOCKING_MIN_KNOCKS}+ knocks",
+        COL_TOTAL_KNOCKS: str(doors_target(day)),
+        COL_KNOCKS_PER_HR: str(KNOCKS_PER_HR_TARGET),
+        COL_FIRST_KNOCK: _min_to_hhmm(FIRST_KNOCK_TARGET_MIN),
+    }
+    return [("GOAL" if c == COL_REP else goal.get(c, "")) for c in cols]
+
+
+def _min_to_hhmm(m: int) -> str:
+    h24, mm = divmod(int(m), 60)
+    return f"{h24 % 12 or 12}:{mm:02d} {'AM' if h24 < 12 else 'PM'}"
+
+
 def _is_num(v) -> bool:
     try:
         float(str(v).strip())
@@ -941,11 +983,28 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
             _v = str(_row[_ci]).strip()
             if _v and _hit(_v):
                 _cell_bgs[(_ri, _ci)] = GREEN_HIT
+
+    # GOALS goes in LAST, between the comparison office(s) and this office's
+    # TOTAL (Megan 2026-08-30) — so a reader meets the target immediately
+    # before the number measured against it. Inserted here, after the apps and
+    # rate passes, because it has to be built against the FINAL column list.
+    _gi = len(extra_rows)
+    table.insert(_gi, goals_row(cols, target))
+    _colors = (_colors[:_gi] + [GOALS_ROW_BG] + _colors[_gi:])
+    # Every recorded green cell below the insert point moves down one row.
+    _cell_bgs = {((r + 1) if r >= _gi else r, c): v
+                 for (r, c), v in _cell_bgs.items()}
+    _n_summary = len(extra_rows) + 2      # comparison rows + GOALS + TOTAL
     # The reps-knocking count for each summary line, in the order those rows
     # are drawn (comparison offices first, then this office's TOTAL), so they
     # land in the "#" column instead of a column of their own.
-    number_rows(cols, disp, table, first=1 + len(extra_rows),
-                summary_values=list(extra_knockers) + [n_knockers])
+    # summary_values covers the rows OUTSIDE the numbering window, in order:
+    # the comparison offices, then GOALS (its bar, not a count), then ours.
+    number_rows(cols, disp, table, first=_n_summary,
+                summary_values=[_reps_cell(k, n) for k, n in
+                                zip(extra_knockers, extra_listed)]
+                + [f"{KNOCKING_MIN_KNOCKS}+"]
+                + [_reps_cell(n_knockers, len(sub))])
     if _cell_bgs:
         # number_rows inserted a "#" column at 0, so every recorded column
         # index shifts one right. Done here rather than at record time so the
@@ -965,7 +1024,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                  THEME_AMBER,
                  out_dir / f"total_knocks_{_file_span(target, end)}.png",
                  name_col=1, wrap_headers=True,
-                 highlight_first_row=1 + len(extra_rows),
+                 highlight_first_row=_n_summary,
                  top_row_colors=_colors, cell_bgs=_cell_bgs or None,
                  col_min_w=_min_w or None)
 
