@@ -304,21 +304,35 @@ def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
                    office_key)
 
 
-def _vital(col, label: str, value: str, hit) -> None:
-    """One vital, with the NUMBER itself green or red against its goal.
+def _vital(col, label: str, value: str, hit, goal: str = "",
+           mine: bool = False) -> None:
+    """One vital: label, the number in its goal colour, and a goal pill.
 
-    st.metric cannot colour its own value, so this draws the same shape by
-    hand. `hit` is True / False / None and None means plain: a number with no
-    goal behind it must not be painted either colour, or it reads as a verdict
-    nobody set. Colours are Streamlit's own :green[]/:red[] tokens so this
-    matches the goal line under it, and the label inherits the theme's text
-    colour at reduced opacity rather than a hardcoded grey, so it survives
-    dark mode."""
-    color = {True: "#09ab3b", False: "#ff2b2b"}.get(hit, "inherit")
+    Drawn by hand because st.metric cannot colour its own value, and as ONE
+    block so the label/number/pill spacing is fixed rather than whatever
+    stacked st.markdown calls happen to give.
+
+    `hit` is True / False / None, and None means plain with no pill: a number
+    with no goal behind it must not be painted either colour or fitted with a
+    badge, or it reads as a verdict nobody set. The pill carries a tint rather
+    than more coloured text, so the number stays the thing you see first."""
+    tone = {True: ("#09ab3b", "rgba(9,171,59,.12)"),
+            False: ("#ff2b2b", "rgba(255,43,43,.12)")}.get(hit)
+    pill = ""
+    if tone and goal:
+        fg, bg = tone
+        pill = (f'<span style="display:inline-block;padding:1px 9px;'
+                f'border-radius:999px;font-size:.75rem;font-weight:500;'
+                f'background:{bg};color:{fg};white-space:nowrap">'
+                f'{"✓" if hit else "✗"} {"your goal" if mine else "goal"} '
+                f'{goal}</span>')
     col.markdown(
-        f'<div style="font-size:0.875rem;opacity:.6;line-height:1.6">{label}'
-        f'</div><div style="font-size:2.25rem;font-weight:600;'
-        f'line-height:1.3;color:{color}">{value}</div>',
+        f'<div style="line-height:1.25;margin-bottom:1.1rem">'
+        f'<div style="font-size:.8rem;opacity:.6;margin-bottom:.15rem">'
+        f'{label}</div>'
+        f'<div style="font-size:2.1rem;font-weight:600;'
+        f'color:{tone[0] if tone else "inherit"};margin-bottom:.3rem">'
+        f'{value}</div>{pill}</div>',
         unsafe_allow_html=True)
 
 
@@ -1540,15 +1554,10 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
             goal = G.recruit_goal(office_key, row, m.get("goal", ""))
             hit = (G.hits_goal(label, actual, goal)
                    if goal is not None and str(actual).strip() else None)
-            _vital(col, label, _rate_or_count(actual, is_rate), hit)
-            if hit is None:
-                continue
-            shown = f"{goal:g}%" if is_rate else f"{goal:g}"
-            mark = "✓" if hit else "✗"
-            col.markdown((f":green[{mark} goal {shown}]" if hit
-                          else f":red[{mark} goal {shown}]")
-                         + ("" if not G.is_office_override(office_key, row)
-                            else " ·  your goal"))
+            _vital(col, label, _rate_or_count(actual, is_rate), hit,
+                   goal=("" if goal is None else
+                         (f"{goal:g}%" if is_rate else f"{goal:g}")),
+                   mine=G.is_office_override(office_key, row))
 
     # Click-to-expand, the way the retention report does it: the number is the
     # summary, the detail sits under it. Only the rows that HAVE a detail get
