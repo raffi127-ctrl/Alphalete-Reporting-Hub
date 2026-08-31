@@ -1001,6 +1001,54 @@
       "timeout_minutes": 30,
       "verify": null
     },
+    "vantura_week_roll": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "standalone_weekdays": [
+        0
+      ],
+      "_standalone_weekdays_note": "Python weekday(): Monday. The REAL schedule is com.alphalete.vantura-week-roll-mon (plist Weekday 1 = Mon, 11:30 machine-local; Lucy 2 is Central). Declared here so machine_digest's error watcher stops guessing this report's cadence from the Activity log. Keep in sync with the plist's Weekday if the day ever moves.",
+      "_note": "Vantura Sales Board WEEK ROLL (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it - its real schedule is the Monday 11:30am CT launchd job (com.alphalete.vantura-week-roll-mon, wrapper deploy/vantura_week_roll_mon.sh) on Lucy 2. The WRAPPER passes --apply; the module is dry-run by default, so `lucy rerun vantura_week_roll` PREVIEWS and writes nothing. The board holds one week at a time and nothing else rolls it: archive the closing week into WeekData, 'Last Wk' per rep and per campaign, day cells back to the INDEX formula, then flip the gold cell + WeekData!J:K + its dropdown + Stations!S2. Hand-rolling is what broke 2026-08-17 (picked the week below the right one, everything held to Wednesday) and 2026-08-24 (the pick stored 8.3, not 8.30). WINDOW, bounded on both sides: com.alphalete.sales-boards posts yesterday's production from 05:10 with retries to ~08:05 and HOLDS unless the gold cell still shows the week that just closed, so the roll must come after it; car-rides-cleanup runs 08:30-11:15 over the Stations tab whose S2 this rewrites; and vantura_slack_sales fills MONDAY at 16:00 and holds all evening if the board is still on the old week. 11:30 is the first clean minute with 4.5h to spare. IF IT FAILS nothing new alerts - the 16:00 fill holds and sales_boards' WE-cell alert already names the week the board is really showing. Pure Sheets API: no browser, no Chrome profile contention. Exit codes: 0 rolled or already healthy, 2 refused to guess, 3 stopped before the flip (nothing lost), 4 the board was flipped by hand from the dropdown and needs the old week typed back first.",
+      "display_name": "Vantura Week Roll (Mon 11:30am)",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.sales_boards.week_roll"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [],
+        "not_before": "11:30"
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": null
+    },
+    "install_vantura_week_roll_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_week_roll_agent` can install/refresh the STANDALONE com.alphalete.vantura-week-roll-mon LaunchAgent on Lucy 2, which rolls the Vantura Master Sales Board onto the new week Monday 11:30am machine-local via deploy/vantura_week_roll_mon.sh (automations.sales_boards.week_roll --apply). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install Vantura Week Roll agent (Mon 11:30am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "vantura-week-roll-mon"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
+    },
     "vantura_board_audit": {
       "on_scheduler": true,
       "machine": "Lucy 2",

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.vantura-week-roll-mon</string>
+
+    <!-- Path is the laptop placeholder; on Lucy 2, install_agent.py rewrites it
+         to that machine's repo path (lucy rerun install_vantura_week_roll_agent). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/vantura_week_roll_mon.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Monday 11:30am, machine LOCAL time (Lucy 2 is Central). launchd
+         Weekday: 0/7=Sun, 1=Mon … 6=Sat.
+
+         WHY 11:30. The roll has to happen after Monday's 05:10 sales_boards
+         post (which renders the week that just CLOSED and holds, exit 75, if
+         the gold cell has already moved — its retry ladder runs to ~08:05) and
+         before vantura_slack_sales fills Monday at 16:00 (which holds all
+         evening if the board is still on the old week). 08:30-11:15 is
+         car-rides-cleanup's nine passes over the Stations tab, whose S2 this
+         rewrites, so 11:30 is the first clean minute after them and still
+         leaves 4.5 hours before the fill.
+
+         No browser: this is pure Sheets API, so it does not contend for the
+         shared Chrome profile the way the 7:00-7:20 jobs do. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>11</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-week-roll-mon.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-week-roll-mon.launchd.err.log</string>
+</dict>
+</plist>
