@@ -113,6 +113,26 @@ class CherryPickTest(unittest.TestCase):
         self.assertEqual((self.runner / "base.txt").read_text(),
                          "someone was editing this", "must not touch their edit")
 
+    def test_the_refusal_names_the_file_in_full(self):
+        """Seen on Lucy 3 (2026-08-31): the FIRST path lost its leading char.
+
+        `_git` strips the whole output, which eats the leading space of the
+        first `git status --short` line, so a fixed [3:] slice cut one char too
+        many — "eploy/captainship_review.sh". A path you cannot copy into
+        git_stash is not a useful refusal.
+        """
+        for name in ("deploy.sh", "runbook.sh"):
+            (self.runner / name).write_text("x")
+            _git(self.runner, "add", name)
+        _git(self.runner, "commit", "-m", "add scripts")
+        for name in ("deploy.sh", "runbook.sh"):
+            (self.runner / name).write_text("edited")
+        ok, msg = mc._action_cherry_pick(self.fix)
+        self.assertFalse(ok)
+        # Anchor on the separator, so a truncated first path cannot pass by
+        # being a substring of the whole one.
+        self.assertIn("pick: deploy.sh, runbook.sh", msg)
+
     def test_a_conflicting_pick_aborts_and_leaves_a_clean_tree(self):
         # Same file, different content, committed locally first → conflict.
         self._commit(self.runner, "watch.py", "local version", "local edit")

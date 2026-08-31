@@ -3155,8 +3155,14 @@ def _action_cherry_pick(args: str) -> tuple[bool, str]:
     blocked = [l for l in dirty.splitlines()
                if l.strip() and not l.startswith("??")]
     if blocked:
+        # Split off the XY status field rather than slicing a fixed 3 chars:
+        # _git strips the whole output, which eats the leading space of the
+        # FIRST line of `git status --short`, so a fixed slice silently ate a
+        # character of the first filename ("eploy/captainship_review.sh" on
+        # Lucy 3, 2026-08-31). A path you cannot copy is not a useful refusal.
         return False, ("refusing — uncommitted tracked edits would be swept into "
-                       "the pick: " + ", ".join(l[3:] for l in blocked[:6])
+                       "the pick: "
+                       + ", ".join(l.strip().split(None, 1)[-1] for l in blocked[:6])
                        + ". Park them with `lucy git_stash` first.")
 
     ok_f, out_f = _git("fetch", "origin", "main")
