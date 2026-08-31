@@ -255,6 +255,18 @@ ADD_CAMPAIGN = "RES-AT&T"
 DOCS_ROW = "ONBOARDING DOCUMENTS"
 DOCS_NEEDED_STATE = "REQUIRED ACTION"
 
+# States that mean this person is genuinely finished and owes nothing. ONLY
+# these are skipped quietly.
+#
+# Everything else — PENDING above all — is skipped but REPORTED (Megan
+# 2026-08-31). The check used to be "REQUIRED ACTION or skip", so any other
+# state made a person invisible: no send, no retry, no alert, on every run
+# forever. That is how a cohort sat in PENDING all morning while each run
+# walked past them in silence. Whether PENDING means "packet out, awaiting
+# signature" or "started and never delivered" is not something this code can
+# tell, and that is exactly why it must not decide alone.
+DOCS_DONE_STATES = ("COMPLETED",)
+
 # --- Onboarding Quizzes: NOT automated (Megan 2026-08-25) -----------------
 # No completion sweep, unlike Blue Ink's signed-packet check. The six rows below
 # are the REP's own coursework and stay PENDING long after our run finishes, so

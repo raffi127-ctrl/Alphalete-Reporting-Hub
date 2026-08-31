@@ -635,3 +635,64 @@ class AttestationFailureIsNotAFailedSendTest(_NoNetwork):
         done, refused = self._run_one(tick_raises=False)
         self.assertEqual([], refused)
         self.assertEqual(["a box"], done[0][2])
+
+
+class UnrecognisedDocsStateIsLoudTest(_NoNetwork):
+    """PENDING made people invisible. Only "finished" may be silent.
+
+    2026-08-31: the check was "REQUIRED ACTION or skip", so any other state
+    meant no send, no retry and no alert — on every run, forever. A cohort sat
+    in PENDING all morning while each run walked past them without a word, and
+    the only reason anyone noticed was Megan opening OwnerVille by hand.
+
+    COMPLETED is genuinely finished and stays quiet. Everything else is
+    reported, because this code cannot tell whether PENDING means "packet out,
+    awaiting signature" or "started and never delivered" — and a state it
+    cannot interpret is the last thing that should pass silently.
+    """
+
+    def _send_one(self, state):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import config as _cfg, run as _run
+
+        class _OV:
+            Refused = RuntimeError
+            config = _cfg
+
+            def open_set_status(self, page, name):
+                return object(), name
+
+            def docs_row_state(self, modal):
+                return state
+
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        done, refused = [], []
+        person = type("C", (), {"name": "Brittany Brandon"})()
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True):
+            _run._work(_OV(), page_ctx=contextlib.nullcontext(object()),
+                       do_add=False, do_send=True, send=[person], add_list=[],
+                       dry=False, added=[], done=done, refused=refused)
+        return refused
+
+    def test_pending_is_reported_not_swallowed(self):
+        refused = self._send_one("PENDING")
+        self.assertEqual(1, len(refused))
+        self.assertIn("NOT SENT", refused[0])
+        self.assertIn("PENDING", refused[0])
+
+    def test_completed_stays_quiet(self):
+        self.assertEqual([], self._send_one("COMPLETED"))
+
+    def test_an_unreadable_state_is_reported_too(self):
+        refused = self._send_one("")
+        self.assertEqual(1, len(refused))
+        self.assertIn("unreadable", refused[0])
+
+    def test_a_state_nobody_has_seen_before_is_reported(self):
+        refused = self._send_one("ON HOLD")
+        self.assertEqual(1, len(refused))
+        self.assertIn("ON HOLD", refused[0])

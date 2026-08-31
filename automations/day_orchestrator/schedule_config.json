@@ -8866,6 +8866,26 @@
       "timeout_minutes": 20,
       "verify": null
     },
+    "digi_docs_attest_probe": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY proof that the Set Status attestation sections still open (Megan 2026-08-31). DRUG TEST stopped expanding and every rep in two runs failed there, so nobody's Background Check / Drug Test / Service boxes were ticked all day. _force_expand now works through the plausible toggles instead of guessing one, but that is unit-tested against a FAKE page and a fake page cannot say whether it opens the real one. The normal proof is not available either: the send phase only reaches the attestation step for someone in REQUIRED ACTION, and after a day of manual sends nearly everyone is COMPLETED or PENDING. So this opens ONE named person's modal and asks directly. It never opens the documents portal, never generates a bundle, and calls tick_attestations in DRY mode -- which expands the sections and waits for the boxes without clicking them. Safe to point at anybody, including people who already have their documents. --only is REQUIRED; it refuses without it. weekdays [] so the batch never runs it.",
+      "machine": "Lucy 3",
+      "display_name": "Digi Docs \u2014 attestation probe (read-only)",
+      "source_type": "browser",
+      "data_sources": [],
+      "command": [
+       "automations.digi_docs.attest_probe"
+      ],
+      "base_args": [],
+      "cadence": {
+       "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": null
+    },
     "digi_docs_add_probe": {
       "on_scheduler": false,
       "_off_scheduler_note": "Phase-2 twin of digi_docs_probe (Megan 2026-08-25). base_args is --add-only and NOTHING else, deliberately: mini_control appends rerun args AFTER base_args, so an entry carrying --send-only could be turned into a live SEND by appending --live. This one cannot -- run.py only enters the send phase on --send-only, and only the send phase tints or posts to Slack. Verifying the Add Sales Rep modal needs a real write, so this is the one entry meant to be run with --live, ALWAYS scoped: `lucy --machine 'Lucy 3' rerun digi_docs_add_probe --live --only \"Jose Laureano\"`. Adding a rep mails nobody. weekdays [] so the batch never auto-runs it. 20 -> 45 MINUTES 2026-08-31: on a jammed Lucy 3 this entry was the only way to re-run the whole add pass, and the 20m cap killed it at 9 of 49 with the 11:30 sends coming. The scheduled path (deploy/digi_docs.sh --add) always had 45; this now matches it. base_args still cannot reach the send phase, so a longer run mails nobody -- the cap was never what made this safe.",

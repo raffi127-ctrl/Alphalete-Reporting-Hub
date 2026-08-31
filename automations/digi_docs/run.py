@@ -397,9 +397,25 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     modal, matched = ov.open_set_status(page, c.name)
                     state = ov.docs_row_state(modal)
                     if state != ov.config.DOCS_NEEDED_STATE:
-                        print(f"  · {c.name}: skipped — Onboarding Documents "
-                              f"is {state or 'unreadable'}, not "
-                              f"{ov.config.DOCS_NEEDED_STATE}")
+                        shown = state or "unreadable"
+                        done_states = getattr(ov.config, "DOCS_DONE_STATES",
+                                              ("COMPLETED",))
+                        if shown in done_states:
+                            # Finished. Nothing owed, nothing to say.
+                            print(f"  · {c.name}: skipped — Onboarding "
+                                  f"Documents is {shown}")
+                        else:
+                            # NOT silent. Any other state — PENDING above all —
+                            # used to make a person invisible: no send, no
+                            # retry, no alert, on every run forever. A cohort
+                            # sat in PENDING all morning while each run walked
+                            # past them without a word.
+                            _refuse(refused,
+                                    f"{c.name}: NOT SENT and not finished — "
+                                    f"Onboarding Documents is {shown}, which "
+                                    f"this report does not act on. Nothing "
+                                    f"will pick this person up on its own; "
+                                    f"check them in OwnerVille.", dry)
                         continue
                     tab = ov.open_docs_portal(page, modal)
                     ov.generate_bundle(tab, c.name, dry_run=dry)
