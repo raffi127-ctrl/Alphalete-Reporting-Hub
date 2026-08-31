@@ -304,21 +304,34 @@ def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
                    office_key)
 
 
+def _ord(n: int) -> str:
+    """1st / 2nd / 3rd / 17th. 11th–13th are the exceptions that break the
+    naive last-digit rule."""
+    if 11 <= n % 100 <= 13:
+        return f"{n}th"
+    return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
+
+
 def _vital(col, label: str, value: str, hit, goal: str = "",
            mine: bool = False) -> None:
-    """One vital: label, the number in its goal colour, and a goal pill.
+    """One vital as its own card, so nine of them tile into a grid.
 
     Drawn by hand because st.metric cannot colour its own value, and as ONE
-    block so the label/number/pill spacing is fixed rather than whatever
-    stacked st.markdown calls happen to give.
+    block so the card's spacing is fixed rather than whatever stacked
+    st.markdown calls happen to give.
+
+    Every card is the same height whatever it holds — a vital with no goal has
+    no pill, and letting that one shrink would break the grid it sits in. The
+    border is neutral grey at low alpha rather than a theme colour: it has to
+    read as a hairline on white AND on dark, and tinting it by pass/fail would
+    put nine coloured boxes on screen competing with the numbers they hold.
 
     `hit` is True / False / None, and None means plain with no pill: a number
     with no goal behind it must not be painted either colour or fitted with a
-    badge, or it reads as a verdict nobody set. The pill carries a tint rather
-    than more coloured text, so the number stays the thing you see first."""
+    badge, or it reads as a verdict nobody set."""
     tone = {True: ("#09ab3b", "rgba(9,171,59,.12)"),
             False: ("#ff2b2b", "rgba(255,43,43,.12)")}.get(hit)
-    pill = ""
+    pill = "&nbsp;"
     if tone and goal:
         fg, bg = tone
         pill = (f'<span style="display:inline-block;padding:1px 9px;'
@@ -327,12 +340,15 @@ def _vital(col, label: str, value: str, hit, goal: str = "",
                 f'{"✓" if hit else "✗"} {"your goal" if mine else "goal"} '
                 f'{goal}</span>')
     col.markdown(
-        f'<div style="line-height:1.25;margin-bottom:1.1rem">'
-        f'<div style="font-size:.8rem;opacity:.6;margin-bottom:.15rem">'
-        f'{label}</div>'
-        f'<div style="font-size:2.1rem;font-weight:600;'
-        f'color:{tone[0] if tone else "inherit"};margin-bottom:.3rem">'
-        f'{value}</div>{pill}</div>',
+        f'<div style="border:1px solid rgba(128,128,128,.25);'
+        f'border-radius:10px;padding:.7rem .9rem;height:112px;'
+        f'box-sizing:border-box;display:flex;flex-direction:column;'
+        f'justify-content:center;align-items:center;gap:.28rem;'
+        f'text-align:center;line-height:1.2">'
+        f'<div style="font-size:.8rem;opacity:.6">{label}</div>'
+        f'<div style="font-size:2rem;font-weight:600;'
+        f'color:{tone[0] if tone else "inherit"}">{value}</div>'
+        f'<div>{pill}</div></div>',
         unsafe_allow_html=True)
 
 
@@ -1519,9 +1535,9 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
     Goals default to the Focus Report's own OFFICE GOALS column and an office
     can override any of them; the colour says whether this week is at goal, so
     the ones that aren't green are where the focus goes."""
-    st.subheader("Recruiting")
     data = recruiting_data(icd)
     if data.get("error") or not data.get("metrics"):
+        st.subheader("Recruiting")
         st.info(f"No Focus Report tab for {icd}. The sheet has one tab per "
                 "ICD, named exactly as AppStream names them.", icon="🚧")
         return
@@ -1538,15 +1554,26 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
               if any(str(data["metrics"].get(r, {}).get("by_week", {})
                          .get(w, "")).strip() for r in counts)]
     if not filled:
+        st.subheader("Recruiting")
         st.info("No filled weeks yet for this office.", icon="🗓️")
         return
     latest = filled[-1]
-    st.caption(f"Week ending {latest.strftime('%m/%d/%y')} · "
-               "goals come from the Focus Report unless this office set its own.")
+    # THE WEEK IS PART OF THE TITLE (Megan 2026-08-31). Nine big numbers with
+    # no period on them read as "how the office is doing" — they are one week,
+    # Monday through Sunday, and usually NOT the week we are standing in: the
+    # Focus Report fills a week after it closes. Saying it in the heading beats
+    # a caption nobody reads. Day numbers built from ints, never %-d — that
+    # strftime is Mac-only and every report has to run on Windows too.
+    started = latest - dt.timedelta(days=6)
+    st.subheader(f"Recruiting · Monday {started.strftime('%b')} "
+                 f"{_ord(started.day)} – Sunday {latest.strftime('%b')} "
+                 f"{_ord(latest.day)}")
+    if (dt.date.today() - latest).days > 7:
+        st.caption("Most recent week with data — nothing filled in since.")
 
     # ---- the nine, three to a row
     for chunk in range(0, len(F.TRACKED), 3):
-        cols = st.columns(3)
+        cols = st.columns(3, gap="small")
         for col, (label, row, is_rate) in zip(cols,
                                               F.TRACKED[chunk:chunk + 3]):
             m = data["metrics"].get(row, {})
