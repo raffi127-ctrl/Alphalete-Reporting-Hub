@@ -405,17 +405,23 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                             print(f"  · {c.name}: skipped — Onboarding "
                                   f"Documents is {shown}")
                         else:
-                            # NOT silent. Any other state — PENDING above all —
-                            # used to make a person invisible: no send, no
-                            # retry, no alert, on every run forever. A cohort
-                            # sat in PENDING all morning while each run walked
-                            # past them without a word.
-                            _refuse(refused,
-                                    f"{c.name}: NOT SENT and not finished — "
-                                    f"Onboarding Documents is {shown}, which "
-                                    f"this report does not act on. Nothing "
-                                    f"will pick this person up on its own; "
-                                    f"check them in OwnerVille.", dry)
+                            # RECORDED, NOT PAGED. Any other state — PENDING
+                            # above all — used to make a person invisible, so
+                            # it has to be reported. But NOT one Slack alert
+                            # each: the send pass is a five-minute tick and
+                            # there are dozens of them, which floods the
+                            # channel the first time it runs (2026-08-31, and
+                            # it was this line that did it). It goes in the
+                            # run's summary instead, once, with everyone else.
+                            print(f"  ⚠ {c.name}: NOT SENT and not finished — "
+                                  f"Onboarding Documents is {shown}; nothing "
+                                  f"will pick this person up on its own")
+                            refused.append(
+                                f"{c.name}: NOT SENT and not finished — "
+                                f"Onboarding Documents is {shown}, which this "
+                                f"report does not act on. Nothing will pick "
+                                f"this person up on its own; check them in "
+                                f"OwnerVille.")
                         continue
                     tab = ov.open_docs_portal(page, modal)
                     ov.generate_bundle(tab, c.name, dry_run=dry)
