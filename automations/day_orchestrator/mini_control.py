@@ -246,6 +246,7 @@ def _lane_owns(action: str, lane: str) -> bool:
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
+                  "set_appstream_account",
                   "set_doubleentry_creds",
                   # The applicant_tracker service-account PRIVATE KEY rides the
                   # Args cell as base64. It relied on hand-redaction — and on
@@ -5988,6 +5989,76 @@ def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     return True, "stored %s and verified: %s" % (user, tail)
 
 
+def _action_set_appstream_account(args: str) -> tuple[bool, str]:
+    """Install a NAMED AppStream login on THIS machine.
+
+      set_appstream_account <name> <username> <password>
+
+    WHY A THIRD MECHANISM (Megan 2026-08-31): primary + alt is two slots, and
+    Lucy 2 needs three kinds of access at once — a broad account for funnel_board
+    / indeed_source_report / ad_sales_board / daily_update_fill, whatever already
+    occupies the alt slot, and now LucyResume, scoped to the only two offices
+    Applicant Push may touch. Overwriting either existing slot to make room is
+    how you trade an over-push for four broken reports.
+
+    Writes ~/.config/recruiting-report/appstream-accounts.json — OUTSIDE the repo,
+    which is public. Merges, so installing one account never disturbs another.
+    NEVER echoes the password; in SECRET_ACTIONS so the poller blanks the Args
+    cell as soon as the row finishes.
+
+    Deliberately does NOT verify by logging in. The verify in
+    set_appstream_creds drives the patchright form, which has been human-gated
+    since 2026-08-20 — on a scoped account that check would fail on a perfectly
+    good credential and read as a broken install. The real proof is
+    `lucy rerun applicant_push --dry-run`, which signs in on the real-Chrome path
+    the report actually uses and records the account number for the send-time
+    identity assert."""
+    import json as _json
+    import shlex
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]}) — quote the password"
+    if len(parts) != 3:
+        return False, ("set_appstream_account needs `<name> <username> <password>` "
+                       f"(quote the password if it has spaces) — got {len(parts)}")
+    name, user, pw = parts[0].strip().lower(), parts[1].strip(), parts[2]
+    if name in ("primary", "alt"):
+        return False, ("%r is a built-in slot — use set_appstream_creds or "
+                       "set_appstream_alt_creds for that one" % name)
+    if not name or not user or not pw:
+        return False, "name, username and password must all be non-empty"
+    path = (pathlib.Path.home() / ".config" / "recruiting-report"
+            / "appstream-accounts.json")
+    blob = {}
+    if path.exists():
+        try:
+            blob = _json.loads(path.read_text())
+        except Exception:  # noqa: BLE001 — unreadable starts clean, same as creds.py
+            blob = {}
+    if not isinstance(blob, dict):
+        blob = {}
+    existing = blob.get(name) if isinstance(blob.get(name), dict) else {}
+    entry = {"username": user, "password": pw}
+    # Drop any recorded account_no when the USERNAME changes — a fingerprint from
+    # the previous login would make the send-time assert vouch for the wrong one.
+    if existing.get("username") == user and existing.get("account_no"):
+        entry["account_no"] = existing["account_no"]
+    blob[name] = entry
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_json.dumps(blob, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+        _creds_cache_bust()
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    others = sorted(k for k in blob if k != name)
+    return True, ("stored AppStream account %r as %s (untouched: %s). NOT verified "
+                  "here — prove it with `lucy rerun applicant_push --dry-run`, "
+                  "which also records the account number the live send asserts "
+                  "against." % (name, user, ", ".join(others) or "none"))
+
+
 def _action_set_appstream_creds(args: str) -> tuple[bool, str]:
     """Install the PRIMARY AppStream login on THIS machine.
 
@@ -6442,6 +6513,7 @@ ACTIONS = {
     "funnel_board_unlock": _action_funnel_board_unlock,
     "appstream_clear_session": _action_appstream_clear_session,
     "set_appstream_alt_creds": _action_set_appstream_alt_creds,
+    "set_appstream_account": _action_set_appstream_account,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_tracker_mirror": _action_install_tracker_mirror,
     "install_day_orchestrator": _action_install_day_orchestrator,

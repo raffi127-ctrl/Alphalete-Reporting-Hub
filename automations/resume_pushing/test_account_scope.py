@@ -1,0 +1,159 @@
+"""Tests for the account scoping that bounds what Applicant Push can push.
+
+WHAT THIS LOCKS DOWN (Megan 2026-08-31). On 8/30 the push sent resumes to ~22
+offices when it is allowed two. It bounds itself with an office SWITCH, but the
+v2 batch grid's select-all -> Send To AI reaches whatever the ACCOUNT can see,
+and the shared 'Raf - Captain' login sees all 28. Send-to-AI is irreversible.
+
+Two independent guards come out of that, and both are tested here:
+
+  1. SCOPE — the two ROTATION offices sign in as LucyResume, an account granted
+     only those two. A permission the report cannot talk its way past.
+  2. IDENTITY — before any send, the console's own 'Account No:' must match the
+     account this run declared. That catches Carlos's case, which scoping alone
+     does NOT cover: the run attaching over CDP to a Chrome another report
+     already has open, carrying the BROAD login's cookies. The scoped credential
+     is never used on that screen, so its permissions never apply.
+
+    python -m unittest automations.resume_pushing.test_account_scope -v
+"""
+from __future__ import annotations
+
+import unittest
+
+from automations.applicant_push import offices
+from automations.resume_pushing import run as rp
+
+
+class _Page:
+    def __init__(self, text): self._text = text
+    def inner_text(self, _sel): return self._text
+
+
+def _console(account_no):
+    return "Account No: %s ) | Some Owner | rest" % account_no
+
+
+class OfficeScope(unittest.TestCase):
+    def test_every_office_states_an_account(self):
+        # Read with [] in activate(), so a row that forgot to state one is a
+        # crash, not a silent inherit of the broad account.
+        for oid, row in offices.OFFICES.items():
+            with self.subTest(office=oid):
+                self.assertTrue(str(row.get("account") or "").strip(),
+                                "office %s states no account" % oid)
+
+    def test_rotation_offices_use_the_scoped_account(self):
+        # These two are the ONLY offices anything scheduled pushes.
+        for oid in offices.ROTATION:
+            self.assertEqual(offices.OFFICES[oid]["account"], "lucyresume")
+
+    def test_diagnostic_offices_are_not_on_the_scoped_account(self):
+        # LucyResume cannot see them; a manual --office run there needs the broad
+        # login. If one of these ever says 'lucyresume', the scoped account has
+        # been widened — which is the thing this whole change exists to prevent.
+        for oid in offices.OFFICES:
+            if oid not in offices.ROTATION:
+                with self.subTest(office=oid):
+                    self.assertNotEqual(offices.OFFICES[oid]["account"],
+                                        "lucyresume")
+
+
+class StandaloneDefault(unittest.TestCase):
+    """The dangerous path is the one nobody routes through applicant_push."""
+
+    def test_module_default_is_the_scoped_account(self):
+        # `lucy rerun resume_pushing`, the --warm job and a bare `python -m` all
+        # reach this module WITHOUT offices.activate(). If the default here were
+        # "primary" they would sign in as the fleet reporting login, which sees
+        # all 28 offices — the 2026-08-30 over-push exactly. Safe behaviour must
+        # not depend on being called the right way.
+        import importlib
+        fresh = importlib.reload(rp)
+        try:
+            self.assertEqual(fresh.APPSTREAM_ACCOUNT, "lucyresume")
+        finally:
+            importlib.reload(rp)
+
+
+class IdentityAssert(unittest.TestCase):
+    def setUp(self):
+        self._account = rp.APPSTREAM_ACCOUNT
+        rp.APPSTREAM_ACCOUNT = "lucyresume"
+        from automations.shared import creds
+        self._creds = creds
+        self._real = creds.appstream_account_fingerprint
+
+    def tearDown(self):
+        rp.APPSTREAM_ACCOUNT = self._account
+        self._creds.appstream_account_fingerprint = self._real
+
+    def _fingerprint(self, value):
+        self._creds.appstream_account_fingerprint = lambda _n: value
+
+    def test_matching_account_may_send(self):
+        self._fingerprint("7788")
+        rp._assert_account(_Page(_console("7788")), dry_run=False)
+
+    def test_wrong_account_may_not_send(self):
+        # The wrong-screen case. This is the one that scoping cannot catch.
+        self._fingerprint("7788")
+        with self.assertRaises(rp.WrongAppStreamAccount):
+            rp._assert_account(_Page(_console("6039")), dry_run=False)
+
+    def test_unrecorded_account_may_not_send(self):
+        # Unknown identity is indistinguishable from the wrong one, so it is
+        # refused rather than waved through. A --dry-run records it first.
+        self._fingerprint(None)
+        with self.assertRaises(rp.WrongAppStreamAccount):
+            rp._assert_account(_Page(_console("7788")), dry_run=False)
+
+    def test_unreadable_console_may_not_send(self):
+        self._fingerprint("7788")
+        with self.assertRaises(rp.WrongAppStreamAccount):
+            rp._assert_account(_Page("no identity on this page"), dry_run=False)
+
+    def test_dry_run_never_blocks(self):
+        # A dry-run sends nothing, so it has nothing to protect — and it is the
+        # pass that RECORDS the fingerprint a live run then asserts against.
+        self._fingerprint(None)
+        self.assertIsNone(rp._assert_account(_Page("nothing"), dry_run=True))
+
+
+class CookiePurge(unittest.TestCase):
+    def test_login_cookies_go_and_cloudflare_clearance_stays(self):
+        import os
+        import sqlite3
+        import tempfile
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "Default"))
+        db = os.path.join(d, "Default", "Cookies")
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE cookies (host_key TEXT, name TEXT)")
+        con.executemany("INSERT INTO cookies VALUES (?,?)", [
+            (".applicantstream.com", "CFID"),
+            (".applicantstream.com", "CFTOKEN"),
+            (".applicantstream.com", "cf_clearance"),
+            (".google.com", "SID")])
+        con.commit()
+        con.close()
+
+        prev = rp.APPSTREAM_ACCOUNT
+        rp.APPSTREAM_ACCOUNT = "lucyresume"
+        try:
+            self.assertEqual(rp._purge_appstream_session_cookies(d), 2)
+        finally:
+            rp.APPSTREAM_ACCOUNT = prev
+
+        con = sqlite3.connect(db)
+        left = sorted(con.execute("SELECT host_key, name FROM cookies").fetchall())
+        con.close()
+        # cf_clearance is Cloudflare's challenge clearance, not a login: dropping
+        # it would force a fresh managed challenge on every profile seed.
+        self.assertIn((".applicantstream.com", "cf_clearance"), left)
+        self.assertIn((".google.com", "SID"), left)
+        self.assertNotIn((".applicantstream.com", "CFID"), left)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
