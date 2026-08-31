@@ -195,6 +195,62 @@ def _describe(sales, stats) -> str:
     return "\n".join(lines)
 
 
+def _rep_day(sales, which: str, today, to_tab) -> int:
+    """Rep x day grid for one Sun-Sat week, counted by SALE DATE.
+
+    Deliberately sale date, not accepted date: the log has always grouped that
+    way, because "how many sales does this rep have this week" is a question
+    about when they SOLD, not when the supplier got round to accepting. Mixing
+    the two is the bug that once showed 41 sales in a 29-sale week (see the
+    note above clean._is_complete).
+    """
+    import collections
+    from . import clean as _clean
+
+    if which in ("this", "", None):
+        anchor = today
+    else:
+        try:
+            anchor = dt.date.fromisoformat(which)
+        except ValueError:
+            print("✗ --rep-day wants YYYY-MM-DD (any day in the week), "
+                  "got {!r}".format(which), file=sys.stderr)
+            return 2
+    ending = _clean.week_ending(anchor)
+    start = ending - dt.timedelta(days=6)
+    days = [start + dt.timedelta(days=i) for i in range(7)]
+
+    grid = collections.defaultdict(collections.Counter)
+    for s in sales:
+        if s.sale_date and start <= s.sale_date <= ending:
+            grid[(s.fields.get("Rep Name") or "").strip()][s.sale_date] += 1
+
+    reps = sorted(grid, key=lambda r: (-sum(grid[r].values()), r))
+    header = ["Rep"] + [d.strftime("%a %m/%d") for d in days] + ["Total"]
+    rows = [header]
+    for rep in reps:
+        rows.append([rep] + [grid[rep][d] for d in days]
+                    + [sum(grid[rep].values())])
+    totals = ["TOTAL"] + [sum(grid[r][d] for r in reps) for d in days] \
+        + [sum(sum(grid[r].values()) for r in reps)]
+    rows.append(totals)
+
+    width = max([len(r[0]) for r in rows] + [4])
+    print("\nSales by rep and day — week {} to {} (by SALE DATE)".format(
+        start.strftime("%m/%d"), ending.strftime("%m/%d")))
+    for r in rows:
+        print("  {:<{w}} {}".format(
+            r[0], "  ".join("{:>7}".format(c) for c in r[1:]), w=width))
+    print("  {} rep(s), {} sale(s) this week".format(len(reps), totals[-1]))
+
+    if to_tab:
+        from . import tpv_ledger as _led
+        _led._publish(to_tab, rows,
+                      "week {} to {} · by sale date · TPV-locked".format(
+                          start.isoformat(), ending.isoformat()))
+    return 0
+
+
 def main(argv: Optional[list] = None) -> int:
     from . import tier_bonus          # names the default owner in --help
     ap = argparse.ArgumentParser(description="BOX Order Log -> #alphalete-gp-sales")
@@ -235,6 +291,16 @@ def main(argv: Optional[list] = None) -> int:
                     help="explicit no-op flag; dry-run is already the default")
     ap.add_argument("--from-file", metavar="CSV",
                     help="skip the Tableau pull and use an existing crosstab")
+    ap.add_argument("--rep-day", metavar="WEEK_ENDING", nargs="?", const="this",
+                    help="READ-ONLY: print a rep x day grid of sales for one "
+                         "week and exit before any write or post. Counts by "
+                         "SALE DATE (the day the rep sold it) — the same basis "
+                         "the log uses, and the way Carlos counts his week. "
+                         "Defaults to the current Sun-Sat week; pass "
+                         "YYYY-MM-DD (any day in the week) for another.")
+    ap.add_argument("--to-tab", metavar="NAME", nargs="?", const="Box Rep Day",
+                    help="also publish --rep-day to a queue-sheet tab, since "
+                         "the queue's Result cell truncates to ~450 chars")
     ap.add_argument("--no-sheet", action="store_true",
                     help="override --sheet and write NOTHING to the board. "
                          "`lucy rerun` always appends the registered base_args "
@@ -426,6 +492,9 @@ def main(argv: Optional[list] = None) -> int:
 
     sales, stats = clean.load(src, owner_office=(args.owner_office or ""),
                               tpv_seen=tpv_seen, tpv_proven=tpv_proven)
+    if args.rep_day:
+        return _rep_day(sales, args.rep_day, today, args.to_tab)
+
     if stats.get("kept_dead_after_tpv"):
         print("  {} sale(s) kept despite a later TPV Failed / Rejected QC — "
               "they said TPV Passed at some point".format(
