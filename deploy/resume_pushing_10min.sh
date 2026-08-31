@@ -57,6 +57,19 @@ if [ "$DRYRUN" -eq 0 ]; then
     echo "[$(date)] outside 8AM-10PM CST window (h=$h) — skipping" >> "$LOG_FILE"
     exit 0
   fi
+  # ---- BUSY-HOUR GATE (Carlos 2026-08-29): stand down while the recruiting
+  # chain is logging into AppStream for every office. The 1pm chain
+  # (indeed_source_report -> ad_sales_board) runs ~40 min across 29 offices;
+  # a resume-push login landing in the middle of it is what trips Cloudflare
+  # and costs BOTH jobs. The 1am chain needs no gate — it is already outside
+  # this window. Add hours here (space-separated) if more heavy jobs move in.
+  SKIP_HOURS="13"
+  for sh_ in $SKIP_HOURS; do
+    if [ "$h" -eq "$sh_" ]; then
+      echo "[$(date)] hour $h reserved for the recruiting chain — skipping" >> "$LOG_FILE"
+      exit 0
+    fi
+  done
   # -------------------------------------------------------------------------
 fi
 

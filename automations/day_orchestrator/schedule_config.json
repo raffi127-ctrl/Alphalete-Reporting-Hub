@@ -7561,7 +7561,7 @@
     },
     "vantura_revenue_board": {
       "on_scheduler": false,
-      "_off_scheduler_note": "Vantura B2B Revenue Board -> the day's 'Vantura Production' thread in #a-players-b2b (A-PLAYERS ONLY to start — Carlos 2026-08-30, explicitly NOT #alphalete-gp-sales) (Carlos 2026-08-30: sales-board-style grid, Mon-Sun revenue per rep per day + Week Total incl. the Tiered Volume bonus at the rep's current tier). on_scheduler:false; the real schedule is the STANDALONE com.alphalete.vantura-revenue-board LaunchAgent on LUCY 2 at 05:20/05:50/06:30 (after sales-boards' 05:10 creates the thread). Pulls its own full 47-col ORDERLOG export for Monday-of-yesterday -> yesterday (captainship_boards.pull_orderlog, shared CDP lock), prices it with vantura_payout_estimate.price (ABP/Next Up/Premium/Extra add-ons, baseline churn), HOLDS (75) while the export lacks the target day or the thread is missing, dedups on 'Revenue Board <tag>'. MCOE/road trip not included. Present so `lucy rerun vantura_revenue_board` works (pass --dm <uid> to preview).",
+      "_off_scheduler_note": "Vantura B2B Revenue Board -> the day's 'Vantura Production' thread in #a-players-b2b (A-PLAYERS ONLY to start \u2014 Carlos 2026-08-30, explicitly NOT #alphalete-gp-sales) (Carlos 2026-08-30: sales-board-style grid, Mon-Sun revenue per rep per day + Week Total incl. the Tiered Volume bonus at the rep's current tier). on_scheduler:false; the real schedule is the STANDALONE com.alphalete.vantura-revenue-board LaunchAgent on LUCY 2 at 05:20/05:50/06:30 (after sales-boards' 05:10 creates the thread). Pulls its own full 47-col ORDERLOG export for Monday-of-yesterday -> yesterday (captainship_boards.pull_orderlog, shared CDP lock), prices it with vantura_payout_estimate.price (ABP/Next Up/Premium/Extra add-ons, baseline churn), HOLDS (75) while the export lacks the target day or the thread is missing, dedups on 'Revenue Board <tag>'. MCOE/road trip not included. Present so `lucy rerun vantura_revenue_board` works (pass --dm <uid> to preview).",
       "display_name": "Vantura Revenue Board (5:20am)",
       "source_type": "tableau",
       "data_sources": [],
@@ -7608,7 +7608,7 @@
     },
     "vantura_payout_estimate": {
       "on_scheduler": false,
-      "_off_scheduler_note": "MANUAL-ONLY (weekdays []). `lucy rerun vantura_payout_estimate` prices the newest output/captainship_boards/orderlog_*.csv (the full 47-col export captainship_boards pulls every morning) on the office comp sheet eff 2026-08-24 — per rep / per product / office total, WITH the add-ons the flat estimate missed (Auto Bill Pay, Next Up, Premium/Extra) and the baseline churn adjustment (Carlos 2026-08-30). Scope = the Vantura board's B2B roster. Writes the result to the Mini Control workbook tab 'Pay Estimate' (never the live board). Pure local csv + Sheets API; no Tableau pull of its own.",
+      "_off_scheduler_note": "MANUAL-ONLY (weekdays []). `lucy rerun vantura_payout_estimate` prices the newest output/captainship_boards/orderlog_*.csv (the full 47-col export captainship_boards pulls every morning) on the office comp sheet eff 2026-08-24 \u2014 per rep / per product / office total, WITH the add-ons the flat estimate missed (Auto Bill Pay, Next Up, Premium/Extra) and the baseline churn adjustment (Carlos 2026-08-30). Scope = the Vantura board's B2B roster. Writes the result to the Mini Control workbook tab 'Pay Estimate' (never the live board). Pure local csv + Sheets API; no Tableau pull of its own.",
       "display_name": "Vantura Payout Estimate (manual)",
       "source_type": "local",
       "data_sources": [],
@@ -8699,21 +8699,13 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6
-        ]
+        "weekdays": []
       },
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "_note": "Pulls AppStream 'Retention - Details (new)' (p=783) for the 14 tracked managers and rewrites the five Funnel Board tabs in the Alphalete Org Applicant Tracker (1nOuJ5kG...). RESTATEMENT RULE: never pulls 'yesterday only' - managers backfill late, so every run re-pulls the WHOLE current Mon-Sun week; on Mondays it also re-pulls the prior week one last time and then freezes it. History lives in the Daily Log tab (read back and merged each run), NOT in the repo, so nothing here conflicts with git pull --ff-only. Daily Log is the only tab written; Manager Board / Trend / Matrix are SUMIFS views that recalculate themselves, and Goals is hand-typed and preserved across rebuilds. Runs headed - headless trips a Cloudflare re-challenge on the rcaptain login. ~3 min for 14 offices. MACHINE (2026-08-21): moved BACK to Lucy 2 (Megan) \u2014 Lucy 2's primary is now rcaptain, which sees all 14 offices, and Lucy 1's morning carries far more reports. Sheets auth stays the applicant_tracker service account (installed on Lucy 2 too \u2014 indeed_source_report writes this same workbook from there). Earlier hop (2026-08-10): Lucy 2 -> Lucy 1. Lucy 2's AppStream session reached only 9 of the 14 offices - the other five came back 'This Office is not assigned to you!' on every run since this went on the scheduler, while Lucy 1 pulled 14/14 (it is also where applicant_tracker sweeps those same office ids daily). Sheets auth moved to the applicant_tracker service account at the same time, since Lucy 1's personal OAuth token is not shared on this workbook. `lucy rerun funnel_board --dry-run` pulls and reports without writing; `--weeks N` backfills N weeks.",
+      "_note": "MOVED 2026-08-29 (Carlos): no longer run by the 4am batch. It is step 1 of the 1am recruiting chain (com.alphalete.recruiting-chain-1am -> deploy/recruiting_chain.sh full), which runs funnel_board -> indeed_source_report -> ad_sales_board in sequence so only one AppStream login is live at a time. cadence.weekdays [] = the orchestrator never auto-runs it. Pulls AppStream 'Retention - Details (new)' (p=783) for the 14 tracked managers and rewrites the five Funnel Board tabs in the Alphalete Org Applicant Tracker (1nOuJ5kG...). RESTATEMENT RULE: never pulls 'yesterday only' - managers backfill late, so every run re-pulls the WHOLE current Mon-Sun week; on Mondays it also re-pulls the prior week one last time and then freezes it. History lives in the Daily Log tab (read back and merged each run), NOT in the repo, so nothing here conflicts with git pull --ff-only. Daily Log is the only tab written; Manager Board / Trend / Matrix are SUMIFS views that recalculate themselves, and Goals is hand-typed and preserved across rebuilds. Runs headed - headless trips a Cloudflare re-challenge on the rcaptain login. ~3 min for 14 offices. MACHINE (2026-08-21): moved BACK to Lucy 2 (Megan) \u2014 Lucy 2's primary is now rcaptain, which sees all 14 offices, and Lucy 1's morning carries far more reports. Sheets auth stays the applicant_tracker service account (installed on Lucy 2 too \u2014 indeed_source_report writes this same workbook from there). Earlier hop (2026-08-10): Lucy 2 -> Lucy 1. Lucy 2's AppStream session reached only 9 of the 14 offices - the other five came back 'This Office is not assigned to you!' on every run since this went on the scheduler, while Lucy 1 pulled 14/14 (it is also where applicant_tracker sweeps those same office ids daily). Sheets auth moved to the applicant_tracker service account at the same time, since Lucy 1's personal OAuth token is not shared on this workbook. `lucy rerun funnel_board --dry-run` pulls and reports without writing; `--weeks N` backfills N weeks.",
       "order": 4.9,
       "_order_note": "4.9 (was 47 in the 2026-08-20 master sequence): Megan 2026-08-21 \u2014 AppStream is the first source ready in the morning while Tableau lags, so AppStream reports run up front with daily_focus/applicant_sync (orders 1-4), never behind the Tableau waves. A normal pass is ~3 min, so the early slot costs the flow nothing.",
       "timeout_minutes": 60,
@@ -9224,6 +9216,90 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 60
+    },
+    "install_recruiting_chain_1am_agent": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "display_name": "Install recruiting chain 1am agent (funnel -> indeed -> ad sales)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "recruiting-chain-1am"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "_note": "Install recruiting chain 1am agent (funnel -> indeed -> ad sales)"
+    },
+    "install_recruiting_chain_1pm_agent": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "display_name": "Install recruiting chain 1pm agent (indeed -> ad sales)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "recruiting-chain-1pm"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "_note": "Install recruiting chain 1pm agent (indeed -> ad sales)"
+    },
+    "disable_indeed_source_report_agent": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "display_name": "Retire standalone Indeed agent (now inside the recruiting chain)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "indeed-source-report"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "_note": "Retire standalone Indeed agent (now inside the recruiting chain)"
+    },
+    "disable_ad_sales_board_agent": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "display_name": "Retire standalone Ad Sales Board agent (now inside the recruiting chain)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "ad-sales-board"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "_note": "Retire standalone Ad Sales Board agent (now inside the recruiting chain)"
     }
   },
   "read_only_standalone": {
