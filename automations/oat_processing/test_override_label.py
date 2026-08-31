@@ -75,7 +75,13 @@ def test_cannot_override_message_does_NOT_veto():
 class _RemovePage:
     """Page with a Remove Applicant? checkbox, a reason <select>, and a button."""
     def __init__(self, options):
+        from automations.oat_processing import config as _cfg
+        _cfg.OFFICE_ID = "11580"
         self.options, self.picked = options, None
+
+    def inner_text(self, _sel):
+        # the per-click office guard reads the banner off the page body
+        return "Office ID: 11580 Owner: CARLOS HIDALGO"
 
     class _Loc:
         def __init__(self, n=1): self._n = n
