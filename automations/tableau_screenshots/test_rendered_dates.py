@@ -56,6 +56,26 @@ class ParseRenderedDatesTest(unittest.TestCase):
         self.assertIn(dt.date(2025, 8, 23), got)
         self.assertIn(dt.date(2026, 8, 30), got)
 
+    def test_a_label_tableau_cut_off_is_not_a_date(self):
+        """2026-08-31. att_country went from two day columns to seven, Tableau
+        narrowed the headers to fit, and "Fri (08-28)" rendered as "Fri (08-2..".
+        Reading that as August 2nd is how a board showing the correct completed
+        week got reported as five days behind."""
+        self.assertEqual([], cap.parse_rendered_dates("Fri (08-2..", self.YEAR))
+        self.assertEqual([], cap.parse_rendered_dates("Mon (0..", self.YEAR))
+        self.assertEqual([], cap.parse_rendered_dates("Sat (08-..", self.YEAR))
+
+    def test_a_full_label_beside_a_cut_one_still_reads(self):
+        """Only the truncated run is dropped — a legible date next to it stands."""
+        self.assertEqual(
+            [dt.date(2026, 8, 30)],
+            cap.parse_rendered_dates("Sun (08-30) Mon (0..", self.YEAR))
+
+    def test_truncation_is_reported(self):
+        self.assertTrue(cap.has_truncated_dates("Mon (08-2.. Tue (08-2.."))
+        self.assertFalse(cap.has_truncated_dates("Mon (08-24) Tue (08-25)"))
+        self.assertFalse(cap.has_truncated_dates("Product Type (Bro.."))
+
     def test_junk_is_not_a_date(self):
         self.assertEqual([], cap.parse_rendered_dates("13/45 99 -- 0/0", 2026))
         self.assertEqual([], cap.parse_rendered_dates("", 2026))
@@ -72,7 +92,9 @@ class ReportRenderedDatesTest(unittest.TestCase):
 
     def setUp(self):
         cap.RENDERED_DATES.clear()
+        cap.RENDERED_TRUNCATED.clear()
         self.addCleanup(cap.RENDERED_DATES.clear)
+        self.addCleanup(cap.RENDERED_TRUNCATED.clear)
         # Never let a test reach Slack, even on the dry-run path.
         import automations.day_orchestrator.notify as _n
         real = _n.post_alert
@@ -104,6 +126,23 @@ class ReportRenderedDatesTest(unittest.TestCase):
         cap.RENDERED_DATES["nds"] = [dt.date(2026, 8, 30)]
         self.assertEqual([], run_mod._report_rendered_dates(
             self.TODAY, self._caps(), dry_run=False))
+
+    def test_a_board_whose_labels_are_cut_off_is_never_flagged(self):
+        """Unreadable is not the same claim as old. The 2026-08-31 board showed
+        the right week; its headers were just too narrow to say so."""
+        cap.RENDERED_DATES["nds"] = [dt.date(2026, 8, 18)]
+        cap.RENDERED_TRUNCATED["nds"] = True
+        self.assertEqual([], run_mod._report_rendered_dates(
+            self.TODAY, self._caps(), dry_run=False))
+        self.assertFalse(self.posted)
+
+    def test_a_readable_board_is_still_flagged(self):
+        """The fix must not blind the check on boards it CAN read."""
+        cap.RENDERED_DATES["nds"] = [dt.date(2026, 8, 18)]
+        cap.RENDERED_TRUNCATED["nds"] = False
+        self.assertEqual(1, len(run_mod._report_rendered_dates(
+            self.TODAY, self._caps(), dry_run=False)))
+        self.assertTrue(self.posted)
 
     def test_a_board_we_could_not_read_is_never_flagged(self):
         """Read nothing, say nothing — the standing rule for every probe here."""

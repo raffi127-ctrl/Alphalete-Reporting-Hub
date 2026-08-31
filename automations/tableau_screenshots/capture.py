@@ -152,11 +152,24 @@ _CROP_JS = r"""
 # Every date-ish label the rendered dashboard shows. Same mechanism the crop
 # probe uses (leaf text inside the viz iframe) — the only place in this pipeline
 # that reads the PICTURE rather than the data behind it.
+#
+# ALSO reads title / aria-label. Tableau narrows a text-table column to fit and
+# writes the cut-off label into the cell TEXT — "Mon (08-24)" renders as
+# "Mon (0..", so a full Mon-Sun week is unreadable from textContent alone while
+# a two-column Tuesday reads fine. The untruncated value normally survives on
+# the cell's title/aria-label, so harvest those too. Additive only: it can add
+# a date the picture really shows, never remove one.
 _DATE_TEXT_JS = r"""
 () => {
-  const leaves = [...document.querySelectorAll('*')]
-      .filter(e => e.children.length === 0 && (e.textContent||'').trim());
-  return leaves.map(e => e.textContent.trim()).join('\n').slice(0, 300000);
+  const out = [];
+  for (const e of document.querySelectorAll('*')) {
+    if (e.children.length === 0 && (e.textContent||'').trim())
+      out.push(e.textContent.trim());
+    const t = e.getAttribute && (e.getAttribute('title') ||
+                                 e.getAttribute('aria-label'));
+    if (t && t.trim()) out.push(t.trim());
+  }
+  return out.join('\n').slice(0, 300000);
 }
 """
 
@@ -164,6 +177,22 @@ _DATE_TEXT_JS = r"""
 # Read by run.py after the capture loop. Module-level like CROP_DEBUG so the
 # probe stays a side-channel and can never change what gets captured.
 RENDERED_DATES: dict = {}
+
+# Boards whose date labels came back CUT OFF ("Mon (0..") — {board_id: True}.
+# Not the same as "the board is behind": it means we could not read the picture,
+# and the standing rule for every probe here is read nothing, say nothing.
+RENDERED_TRUNCATED: dict = {}
+
+# A date-ish label Tableau cut off mid-way: "Mon (0..", "Fri (08-2..", "8/2…".
+# Two jobs. It marks the board unreadable, AND the digits before the cut are a
+# PARTIAL day that must never be parsed as a date — "Fri (08-2.." is Friday the
+# 28th, and reading it as August 2nd is how the 2026-08-31 false alarm happened.
+_TRUNCATED_DATE_RE = __import__("re").compile(r"\d{1,2}[/-]?\d{0,2}\s*(?:\.\.|\u2026)")
+
+
+def has_truncated_dates(text: str) -> bool:
+    """Did the board render a date label too narrow to show in full?"""
+    return bool(_TRUNCATED_DATE_RE.search(text or ""))
 
 
 def parse_rendered_dates(text: str, year: int) -> list:
@@ -178,9 +207,16 @@ def parse_rendered_dates(text: str, year: int) -> list:
     boards, so the run's own year is right except across a New Year boundary,
     where a January board carrying December labels would read as this year. That
     only ever makes a date look NEWER, i.e. it can miss a stale board, never
-    invent one. Deliberate: a false hold costs 15 channels a real board."""
+    invent one. Deliberate: a false hold costs 15 channels a real board.
+
+    A label Tableau CUT OFF is not a date. "Fri (08-2.." is Friday the 28th on a
+    seven-column week, and parsing it as August 2nd is what made 2026-08-31 look
+    like a board five days behind. Those runs are dropped before anything is
+    read; has_truncated_dates() is what tells the caller the picture was
+    unreadable rather than old."""
     import datetime as _dt
     import re
+    text = _TRUNCATED_DATE_RE.sub(" ", text or "")
     out = set()
     for mth, day, yr in re.findall(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", text or ""):
         try:
@@ -219,10 +255,17 @@ def probe_rendered_dates(page, spec: dict, year: int | None = None,
                   flush=True)
         return []
     dates = parse_rendered_dates(text, year)
+    cut = has_truncated_dates(text)
     RENDERED_DATES[spec.get("id", "")] = dates
+    RENDERED_TRUNCATED[spec.get("id", "")] = cut
     if verbose and dates:
         print(f"   board shows dates up to {dates[-1].isoformat()} "
-              f"({len(dates)} label(s) read)", flush=True)
+              f"({len(dates)} label(s) read)"
+              + ("  [some date labels are cut off — not judged]" if cut else ""),
+              flush=True)
+    elif verbose and cut:
+        print("   board's date labels are cut off — picture not read",
+              flush=True)
     return dates
 
 

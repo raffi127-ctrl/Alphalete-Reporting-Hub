@@ -504,6 +504,17 @@ def _report_rendered_dates(today: dt.date, captures: list, *,
         shown = _cap.RENDERED_DATES.get(spec["id"]) or []
         if not shown:
             continue                        # read nothing -> say nothing
+        if _cap.RENDERED_TRUNCATED.get(spec["id"]):
+            # Tableau cut the date labels off to fit the column ("Mon (0..").
+            # That is UNREADABLE, not old, and the two are not the same claim:
+            # on 2026-08-31 att_country went from two day columns to seven, its
+            # headers truncated, and the newest date left legible anywhere on
+            # the dashboard was last week's page -- so a board showing the
+            # correct completed week read as five days behind. Read nothing,
+            # say nothing, the same rule the probe already follows.
+            print(f"  · {spec['title']}: date labels cut off — not judged",
+                  flush=True)
+            continue
         newest = max(shown)
         if newest < target:
             suspect.append((spec, newest))
