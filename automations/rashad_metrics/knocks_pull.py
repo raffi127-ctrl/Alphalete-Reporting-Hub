@@ -107,8 +107,15 @@ def _is_energywell_dispo(idx: dict) -> bool:
     """Energy-Wells-shaped Disposition: the VL column is the signature — no
     other campaign's grid carries it. Checked BEFORE the wireless test, which
     this shape would otherwise satisfy (it has no Talk-To split either)."""
+    # AND NOT the house Talk-To split. VL alone is not enough: a fiber grid
+    # that also carries a VL column would be claimed here and then fail the
+    # Energy Wells scrape on the columns it does not have — which is exactly
+    # what killed Chan Park's comparison line on 2026-08-31 ("this one doesn't
+    # have chans numbers?"). The campaign shapes are told apart by what they
+    # LACK as much as by what they have, the same way the wireless test works.
     return (knocks._norm(knocks.COL_TOTAL_KNOCKS) in idx
-            and knocks._norm(knocks.COL_VL) in idx)
+            and knocks._norm(knocks.COL_VL) in idx
+            and knocks._norm(knocks.COL_TALK_TO_NI) not in idx)
 
 
 def _scrape_energywell_rows(page, idx: dict) -> list[dict]:
