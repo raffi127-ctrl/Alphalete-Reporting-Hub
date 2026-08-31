@@ -661,9 +661,10 @@ def _owner_rows_file(png: Path) -> Path:
     """The pull's rows, parked next to the board they drew.
 
     The PNG alone is enough to re-show one owner's board, but NOT enough to
-    rebuild the captainship SUMMARY, which aggregates every owner's rows. Kept
-    as its own file so an older run's PNG (no sidecar) still gets reused — the
-    summary just says so instead of quietly dropping that ICD."""
+    rebuild the captainship SUMMARY, which aggregates every owner's rows —
+    and, since it carries the pull's SCHEMA, it is also what says whether the
+    board beside it still matches the columns the board draws today
+    (_weekly_rows_are_current). A weekly PNG without one is re-pulled."""
     return png.parent / f"rows_{png.stem}.json"
 
 
@@ -680,6 +681,36 @@ def _write_rows(png: Path, payload) -> None:
         _owner_rows_file(png).write_text(json.dumps(payload), encoding="utf-8")
     except Exception:  # noqa: BLE001 — best effort, never fails a capture
         pass
+
+
+def _weekly_rows_are_current(prev) -> bool:
+    """Can this on-disk weekly capture still fill TODAY's board?
+
+    Only when it was written by a build whose pull carried the same fields the
+    board now draws — the SAME test knock_week_cache.get() applies to its own
+    entries, and for the same reason ("a miss costs one pull; a stale hit costs
+    a wrong board"). The sidecar records it by carrying that module's SCHEMA.
+
+    Why this exists: Sunday 2026-08-30's boards were drawn BEFORE
+    pull_office_week started carrying per-day doors, Total Leads Knocked and
+    the Time-Tracker day list. The week cache correctly refused those rows the
+    next morning (schema 5) — but Monday's build never asked it, because the
+    per-owner PNG reuse above sits in FRONT of the cache and had no such test.
+    So the captainship summary drew every column added that afternoon blank
+    (Leads, Knocks, Avg Doors / Day, Mon–Fri Hrs Knocking, the three Saturday
+    ones) down every ICD row, while Chan Park's teal line — the one row that
+    goes through the cache — drew complete. Eve caught it 2026-08-31.
+
+    An unstamped sidecar is an OLDER build's by definition, so it fails too:
+    the PNG beside it was drawn from the same short rows and re-showing it
+    would put the same blank columns in front of the same reader."""
+    from automations.shared import knock_week_cache as KWC
+    if not isinstance(prev, dict):
+        return False
+    try:
+        return int(prev.get("schema") or 0) >= KWC.SCHEMA
+    except (TypeError, ValueError):
+        return False
 
 
 def _manifest_path(render_dir, captain_key: str, target: dt.date,
@@ -929,7 +960,6 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # captainship SUMMARY loses their line, and it says so rather than showing
     # a total that silently misses an office.
     daily_partial = False
-    weekly_partial = False
     def _day_apps(pss_owner: str):
         """That office's {rep: apps} for `target`, or None when unavailable.
         A missing weekday column is a crosstab-wide fact, so it turns the
@@ -1082,22 +1112,30 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         done_png = _owner_png(weekly_root, display,
                                               "weekly_knock_dispositions",
                                               saturday)
-                        if (reuse and done_png.exists()
-                                and done_png.stat().st_size):
+                        on_disk = (reuse and done_png.exists()
+                                   and done_png.stat().st_size)
+                        prev = _read_rows(done_png) if on_disk else None
+                        if on_disk and _weekly_rows_are_current(prev):
                             out_weekly.append((display, done_png))
                             logfn(f"    · weekly {display}: reusing "
                                   f"{done_png.name}")
-                            prev = _read_rows(done_png)
-                            if prev is not None:
-                                captured_weekly.append(
-                                    (display, prev.get("ov_rows") or [],
-                                     prev.get("apps"),
-                                     prev.get("dispo_cols") or []))
-                            else:
-                                weekly_partial = True
+                            captured_weekly.append(
+                                (display, prev.get("ov_rows") or [],
+                                 prev.get("apps"),
+                                 prev.get("dispo_cols") or []))
                             done_weekly.add(display)
                             answered_weekly.add(display)
                             continue
+                        if on_disk:
+                            # Drawn by a build whose pull carried fewer fields
+                            # than this board draws — see
+                            # _weekly_rows_are_current. Falls through to the
+                            # week cache (which refuses the same rows) and
+                            # then to a live pull, so the columns fill instead
+                            # of the reader being shown a blank one.
+                            logfn(f"    ↻ weekly {display}: board on disk "
+                                  "predates the current pull fields — "
+                                  "re-pulling")
                         # Shared week cache (shared/knock_week_cache.py): the
                         # completed Mon–Sat week is frozen, and Sunday's
                         # weekly_knock_dispositions run + MONDAY's re-build of
@@ -1176,7 +1214,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         # into the captainship totals.
                         _write_rows(png, {"ov_rows": ov_rows,
                                           "apps": office_apps,
-                                          "dispo_cols": dispo_cols})
+                                          "dispo_cols": dispo_cols,
+                                          # What tomorrow's reuse checks.
+                                          "schema": KWC.SCHEMA})
                         answered_weekly.add(display)
                         logfn(f"    ✓ weekly {display}: {len(ov_rows)} "
                               f"rep(s) → {png.name}")
@@ -1275,9 +1315,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 top_row_colors=[COMPARE_ROW_BG] * n_top
                 + [THEME_PLUM["header_bg"]],
                 highlight_last_row=0)
-            out_weekly.insert(0, ("Captainship Summary" + (
-                " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"
-                if weekly_partial else ""), png))
+            out_weekly.insert(0, ("Captainship Summary", png))
             logfn(f"    ✓ captainship summary: {len(captured_weekly)} "
                   "owner row(s)")
         except Exception as e:  # noqa: BLE001 — summary ≠ the section

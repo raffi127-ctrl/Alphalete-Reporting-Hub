@@ -515,5 +515,38 @@ class DailyBoardColumns(unittest.TestCase):
         self.assertEqual(len(table), len(captured) + len(bgs))
 
 
+class ReusedWeeklyBoardMustCarryTodaysFields(unittest.TestCase):
+    """Eve, 2026-08-31: el CAPTAINSHIP SUMMARY del Aug 24–29 salio con Total
+    Leads Knocked, Total Knocks, Avg Doors / Day, Mon–Fri Hrs Knocking y las
+    tres columnas de sabado VACIAS en cada ICD — y llenas en la fila teal de
+    Chan Park. Las columnas se agregaron el 30/8 a la tarde; los PNG del
+    domingo se dibujaron esa manana, antes. Chan pasa por el week cache (que
+    los rechaza por schema) y se re-pulleaba; los demas venian del reuse del
+    PNG por owner, que estaba ADELANTE del cache y no tenia ese test."""
+
+    def test_a_sidecar_from_an_older_build_is_not_reusable(self):
+        self.assertFalse(KD._weekly_rows_are_current(
+            {"ov_rows": [{"Rep": "a"}], "apps": None, "dispo_cols": []}))
+
+    def test_a_sidecar_stamped_with_todays_schema_is(self):
+        from automations.shared import knock_week_cache as KWC
+        self.assertTrue(KD._weekly_rows_are_current(
+            {"ov_rows": [{"Rep": "a"}], "schema": KWC.SCHEMA}))
+
+    def test_a_sidecar_from_an_older_schema_is_not(self):
+        from automations.shared import knock_week_cache as KWC
+        self.assertFalse(KD._weekly_rows_are_current(
+            {"ov_rows": [{"Rep": "a"}], "schema": KWC.SCHEMA - 1}))
+
+    def test_no_sidecar_at_all_is_not_reusable_either(self):
+        """Un PNG sin sidecar es de un build viejo por definicion: se
+        redibuja, no se re-muestra con las columnas en blanco."""
+        self.assertFalse(KD._weekly_rows_are_current(None))
+        self.assertFalse(KD._weekly_rows_are_current("[]"))
+
+    def test_a_junk_schema_value_does_not_blow_up_the_build(self):
+        self.assertFalse(KD._weekly_rows_are_current({"schema": "cinco"}))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
