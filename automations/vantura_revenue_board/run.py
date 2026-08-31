@@ -23,10 +23,19 @@ What it does, every morning after the order-log data is fresh:
      replies with it in the day's 'Vantura Production M/D/YYYY' thread in
      #a-players-b2b (A-Players ONLY to start — Carlos 2026-08-30).
 
+TWO BOARDS, TWO CLOCKS. The agent runs 05:20 / 05:50 / 06:30 for the AT&T
+board (it pulls its own export, so it only waits on the 05:10 thread) and
+07:25 / 08:50 / 09:40 for the BOX board, which reads whatever csv
+box_order_log left on disk at 7:00 / 8:30. Before 7:00 the BOX half is
+SKIPPED, not held: the newest csv is yesterday's pull and can never carry the
+target day, so holding there just published a `partial` run every morning.
+
 HOLDS (exit 75, the LaunchAgent ladder retries): export has no rows for the
-target day yet, or the Vantura Production thread hasn't been posted yet
-(sales-boards posts it at 5:10; this runs at 5:20/5:50/6:30). Not included
-anywhere: MCOE, road trip (not in the log).
+target day yet, the BOX csv has not reached the day yet (until 9:35, after
+which an empty day is a real zero — and on a MONDAY the day it must reach is
+SATURDAY, because BOX sells to businesses and they are shut on Sunday), or
+the Vantura Production thread hasn't been posted yet. Not included anywhere:
+MCOE, road trip (not in the log).
 
   python -m automations.vantura_revenue_board.run                # dry: render only
   python -m automations.vantura_revenue_board.run --post         # post to thread
@@ -493,19 +502,37 @@ def main(argv=None) -> int:
     # ---------------- BOX ----------------
     if a.only != "att":
         box_csv = Path(a.box_csv) if a.box_csv else newest_box_csv()
-        if not box_csv or not box_csv.exists():
+        # BOX data only reaches this machine when box_order_log writes its csv
+        # at 7:00 / 8:30 (same repo, same machine). Before 7:00 the newest file
+        # on disk is YESTERDAY's pull, which cannot carry `upto` no matter what
+        # — so the 05:20 / 05:50 / 06:30 passes are not HELD, it simply is not
+        # the BOX board's turn yet. Holding there published a `partial` run
+        # every single morning and machine_digest's watcher alerted on it
+        # (2026-08-31, first scheduled day). The AT&T board is the one those
+        # early passes exist for; BOX rides the 07:25 / 08:50 / 09:40 rungs.
+        if not (a.date or a.box_csv) and now.hour < 7:
+            print("BOX: not its turn yet — box_order_log writes the csv at "
+                  "7:00/8:30; this pass is the AT&T board's")
+        elif not box_csv or not box_csv.exists():
             print("BOX HOLD: no box_order_log csv on disk yet")
             held = True
         else:
             print(f"BOX: pricing {box_csv}")
             per_box = load_box_priced(box_csv, monday, upto)
-            box_ready = any(rec["days"].get(upto) for rec in per_box.values())
+            # BOX sells ENERGY TO BUSINESSES, and businesses are shut on
+            # Sunday: on a MONDAY the newest day this export can carry is
+            # SATURDAY, five Mondays out of six (the same fact behind
+            # tableau_freshness.SUNDAY_QUIET_MARKERS). Asking for Sunday held
+            # every Monday pass until the 9:35 fail-open, so Monday's board
+            # landed 2h15m late for a week with nothing wrong with it.
+            box_needs = upto - dt.timedelta(days=1) if upto.weekday() == 6 else upto
+            box_ready = any(rec["days"].get(box_needs) for rec in per_box.values())
             # The BOX extract refreshes ~7am and box_order_log writes the csv
             # at 7:00/8:30 — before ~9:35 an empty target day means "not
             # posted yet", after it it means a real zero.
             if not box_ready and (now.hour < 9 or
                                   (now.hour == 9 and now.minute < 35)):
-                print(f"BOX HOLD: csv has no {upto} sales yet "
+                print(f"BOX HOLD: csv has no {box_needs} sales yet "
                       "(extract refreshes ~7am)")
                 held = True
             elif per_box:
