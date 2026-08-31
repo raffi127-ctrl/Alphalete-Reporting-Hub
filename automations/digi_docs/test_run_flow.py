@@ -489,3 +489,69 @@ class NotLiveUntilMonday(_NoNetwork):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class EmployeeIdPickTest(unittest.TestCase):
+    """When the name cannot separate two people, the id has to.
+
+    2026-08-31: the directory held two Nathan Sanchez — different people,
+    different emails, four weeks apart in start date — and the Add Sales Rep
+    dropdown renders both as the identical string "Nathan Sanchez". The add
+    refused, correctly, and the new start went un-added until a human said
+    which record was his.
+
+    The refusal is the safe half and must stay. This is the other half: a way
+    to answer it. An id that matches nothing, or matches two, is still a
+    refusal — never a quiet fall back to the ambiguous name, which is the one
+    outcome that mails a contract to the wrong person.
+    """
+
+    def _picker(self, labels, values):
+        class _Opt:
+            def __init__(self, v): self._v = v
+            def get_attribute(self, _): return self._v
+
+        class _Opts:
+            def __init__(self, labels, values):
+                self._l, self._v = labels, values
+            def all_inner_texts(self): return list(self._l)
+            def nth(self, i): return _Opt(self._v[i])
+
+        class _Picker:
+            def __init__(self, labels, values):
+                self._opts = _Opts(labels, values)
+                self.picked = None
+            def locator(self, _): return self._opts
+            def select_option(self, **kw): self.picked = kw
+        return _Picker(labels, values)
+
+    def test_the_id_picks_the_right_twin(self):
+        from automations.digi_docs import ownerville as ov
+        p = self._picker(["Nathan Sanchez", "Nathan Sanchez"],
+                         ["9401912", "9447431"])
+        ov._select_person(p, "Nathan Sanchez", employee_id="9447431")
+        self.assertEqual({"index": 1}, p.picked)
+
+    def test_two_twins_and_no_id_is_still_a_refusal(self):
+        from automations.digi_docs import ownerville as ov
+        p = self._picker(["Nathan Sanchez", "Nathan Sanchez"],
+                         ["9401912", "9447431"])
+        with self.assertRaises(ov.Refused) as cm:
+            ov._select_person(p, "Nathan Sanchez")
+        self.assertIn("refusing to guess", str(cm.exception))
+        self.assertIsNone(p.picked)
+
+    def test_an_id_that_matches_nothing_refuses_rather_than_falls_back(self):
+        from automations.digi_docs import ownerville as ov
+        p = self._picker(["Nathan Sanchez", "Nathan Sanchez"],
+                         ["9401912", "9447431"])
+        with self.assertRaises(ov.Refused) as cm:
+            ov._select_person(p, "Nathan Sanchez", employee_id="1234567")
+        self.assertIn("not in the Add Sales Rep list", str(cm.exception))
+        self.assertIsNone(p.picked)
+
+    def test_one_match_by_name_still_works_without_an_id(self):
+        from automations.digi_docs import ownerville as ov
+        p = self._picker(["Ana Lopez", "Bo Diaz"], ["1", "2"])
+        ov._select_person(p, "Bo Diaz")
+        self.assertEqual({"label": "Bo Diaz"}, p.picked)

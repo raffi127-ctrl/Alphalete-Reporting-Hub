@@ -105,6 +105,10 @@ def main(argv=None) -> int:
                     help="work ONE person by name, not the whole cohort. For "
                          "verifying a phase against the live site without "
                          "putting 30 people through an unproven click-path.")
+    ap.add_argument("--employee-id", default="",
+                    help="the OwnerVille employee id to add, when two people "
+                         "share a name and the dropdown shows both as the same "
+                         "string. Only valid with --only.")
     args = ap.parse_args(argv)
 
     if not (args.add_only or args.send_only or args.both):
@@ -252,6 +256,10 @@ def _phases(args) -> int:
                   "thing --only exists to prevent.")
             return 1
         print(f"--only {send[0].name}")
+    if getattr(args, "employee_id", "") and not args.only:
+        print("⛔ --employee-id answers WHICH of two same-named people to add, "
+              "so it only means anything for one person. Use it with --only.")
+        return 1
     _flag_terminated(send)
     dry = not args.live
     if not dry:
@@ -343,7 +351,7 @@ def _phases(args) -> int:
     try:
         _work(ov, page_ctx=ov.session(headless=not dry), do_add=do_add,
               do_send=do_send, send=send, add_list=add_list, dry=dry,
-              added=added, done=done, refused=refused)
+              added=added, done=done, refused=refused, args_ns=args)
     except Exception as e:                          # noqa: BLE001
         fatal = f"{type(e).__name__}: {str(e).splitlines()[0][:160]}"
         print(f"\n⛔ the run stopped before it finished — {fatal}")
@@ -353,7 +361,7 @@ def _phases(args) -> int:
 
 
 def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
-          added, done, refused):
+          added, done, refused, args_ns=None):
     """The two phases. Split out only so the caller can wrap the whole thing
     in one try/except without burying the loops inside it.
 
@@ -367,7 +375,9 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
             print("PHASE: add reps")
             for c in add_list:
                 try:
-                    outcome = ov.add_sales_rep(page, c.name, dry_run=dry)
+                    outcome = ov.add_sales_rep(
+                        page, c.name, dry_run=dry,
+                        employee_id=getattr(args_ns, "employee_id", "") or None)
                     if outcome in ("added", "dry"):
                         added.append(c.name)
                 except ov.Refused as e:

@@ -23,6 +23,8 @@ out.
 """
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 
 from automations.digi_docs import config
@@ -52,7 +54,7 @@ def session(*, headless: bool = True, verbose: bool = True):
 # --- phase 2: add the reps ------------------------------------------------
 
 def add_sales_rep(page, name: str, *, dry_run: bool = True,
-                  verbose: bool = True) -> str:
+                  verbose: bool = True, employee_id: str | None = None) -> str:
     """`+ Add Sales Rep` on View Progress. Returns 'added' | 'exists' | 'dry'.
 
     NO TEAM IS SELECTED (Megan 2026-08-25). That dropdown sits between the
@@ -79,7 +81,7 @@ def add_sales_rep(page, name: str, *, dry_run: bool = True,
     # picker is the second and stays on '-Select a Team-'.
     picker = modal.locator("select:visible").first
     picker.wait_for(state="visible", timeout=15000)
-    _select_person(picker, name)
+    _select_person(picker, name, employee_id=employee_id)
 
     _click_any(modal, "Add", page=page)
     page.wait_for_load_state("networkidle")
@@ -88,15 +90,48 @@ def add_sales_rep(page, name: str, *, dry_run: bool = True,
     return "added"
 
 
-def _select_person(picker, name: str) -> None:
-    """Pick the employee by the closest option label.
+def _select_person(picker, name: str, *, employee_id: str | None = None) -> None:
+    """Pick the employee by the closest option label, or by employee id.
 
     OV spells names its own way, so match on the last name plus a first-name
     prefix rather than the exact string — the same reason find_rep probes short.
     Two options that both match is a REFUSAL, never a guess: adding the wrong
     person is the start of mailing them somebody else's contract.
+
+    THE NAME IS NOT ALWAYS ENOUGH (Megan 2026-08-31). The directory held two
+    Nathan Sanchez — different people, different emails, four weeks apart in
+    start date — and the dropdown renders both as the identical string "Nathan
+    Sanchez". No amount of name matching separates those. `employee_id` is how
+    a human answers the question the page cannot: it matches the option's VALUE
+    (the id OV carries there) or an id shown in the label, and still refuses
+    unless exactly one option matches. An id that matches nothing is a refusal
+    too — never a silent fall back to the ambiguous name, which is the one
+    outcome that could mail a contract to the wrong person.
     """
-    options = [o.strip() for o in picker.locator("option").all_inner_texts()]
+    opts = picker.locator("option")
+    options = [o.strip() for o in opts.all_inner_texts()]
+    values = []
+    for i in range(len(options)):
+        try:
+            values.append((opts.nth(i).get_attribute("value") or "").strip())
+        except Exception:                   # noqa: BLE001
+            values.append("")
+
+    if employee_id:
+        eid = str(employee_id).strip()
+        hits = [i for i, (lbl, val) in enumerate(zip(options, values))
+                if eid == val or eid in re.findall(r"\d+", val)
+                or eid in re.findall(r"\d+", lbl)]
+        if not hits:
+            raise Refused(f"{name}: employee id {eid} is not in the Add Sales "
+                          f"Rep list (saw {len(options)} option(s))")
+        if len(hits) > 1:
+            raise Refused(f"{name}: employee id {eid} matched {len(hits)} "
+                          f"options — refusing to guess")
+        picker.select_option(index=hits[0])
+        print(f"  {name}: picked employee id {eid}")
+        return
+
     parts = [p for p in name.split() if p]
     last = parts[-1].lower() if parts else ""
     first4 = parts[0][:4].lower() if len(parts) > 1 else ""
@@ -106,7 +141,9 @@ def _select_person(picker, name: str) -> None:
         raise Refused(f"{name}: not in the Add Sales Rep employee list")
     if len(hits) > 1:
         raise Refused(f"{name}: {len(hits)} employees match ({hits[:3]}) — "
-                      "refusing to guess")
+                      "refusing to guess. Re-run scoped with the employee id "
+                      f"from the OV directory: --only \"{name}\" "
+                      f"--employee-id <id>")
     picker.select_option(label=hits[0])
 
 
