@@ -255,7 +255,20 @@ def process(web, user_id: str, office: str, target: dt.date,
                                       logfn=lambda m: None)
     except Exception as e:  # noqa: BLE001 — every failure answers in words
         traceback.print_exc()
-        if service.access_gap(e):
+        if service.access_gap(e) and service.unknown_office(office):
+            # Ownerville says "not found" for a misspelling AND for an office
+            # we have no access to, so the permissions line below used to be
+            # promised to names that simply aren't ICDs ("Frank Castillo",
+            # 2026-08-31 — no such office; Francisco Castillo is the one on
+            # the roster). Only claim a permissions gap for a name we know.
+            hint = service.suggest_office(office)
+            say(f":grey_question: I don't have an office called *{office}* on "
+                "the roster"
+                + (f" — did you mean *{hint}*?" if hint else
+                   ". Either the spelling is off, or that office was never "
+                   "added to these reports — tell me the name as it reads on "
+                   "the report and I'll pull it."))
+        elif service.access_gap(e):
             say(f":lock: I can't pull *{canonical}* — that office isn't on the "
                 "Ownerville account these reports run on, so there's nothing "
                 "to fetch until someone grants Office Access to it. It's a "

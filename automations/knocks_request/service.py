@@ -507,8 +507,84 @@ def board_for(office: str, target: Optional[dt.date] = None,
 def access_gap(exc: BaseException) -> bool:
     """True when the failure is 'this office isn't on our ownerville account'
     rather than a run problem — the same test the captainship section uses, so
-    both places call an access gap by the same name."""
+    both places call an access gap by the same name.
+
+    NOTE: ownerville answers a MISSPELLED name and an un-granted office with
+    the identical "not found in ownerville", so this alone cannot tell them
+    apart — ask `unknown_office` before promising the requester it isn't a typo
+    ("Frank Castillo", 2026-08-31).
+    """
     from automations.captainship_drafts.knock_dispo_images import (
         _NO_OFFICE_MARKERS,
     )
     return any(m in str(exc).lower() for m in _NO_OFFICE_MARKERS)
+
+
+def known_office_names() -> list:
+    """Every ICD name the reports know: the recruiting roster plus every
+    spelling on the ICD Aliases sheet. Best-effort — a source that won't load
+    just narrows the list, it never raises (this only powers a hint)."""
+    names: list = []
+    try:
+        roster = json.loads(
+            (Path(__file__).resolve().parents[1] / "recruiting_report"
+             / "offices.json").read_text(encoding="utf-8"))
+        names += [o.get("name", "") for o in roster.get("offices", [])]
+    except Exception:  # noqa: BLE001 — a hint is never worth an exception
+        pass
+    try:
+        from automations.focus_office_att.aliases import load_aliases
+        raw = load_aliases()
+        for k, v in (raw.items() if isinstance(raw, dict) else []):
+            names += [str(k), str(v)]
+    except Exception:  # noqa: BLE001
+        pass
+    seen, out = set(), []
+    for n in names:
+        n = (n or "").strip()
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            out.append(n)
+    return out
+
+
+def unknown_office(typed: str) -> bool:
+    """True when `typed` matches NO name we know — so the failure is a name
+    problem, not an Office Access one. Unknowable (empty roster) reads False:
+    the old permissions answer stays the default."""
+    known = {n.lower() for n in known_office_names()}
+    if not known:
+        return False
+    t = (typed or "").strip().lower()
+    return bool(t) and t not in known and resolve_office(typed).lower() not in known
+
+
+def suggest_office(typed: str) -> Optional[str]:
+    """The roster name a mistyped or nicknamed request most likely meant, or
+    None. Two passes: a SHARED LAST NAME with exactly one roster match (how
+    'Frank Castillo' finds 'Francisco Castillo' — a nickname is nowhere near
+    its legal spelling by character ratio, but the surname is exact), then a
+    close overall match. Returns nothing when it would have to guess between
+    two people: a wrong name sends someone another office's numbers."""
+    import difflib
+
+    t = " ".join((typed or "").split()).lower()
+    if not t:
+        return None
+    known = known_office_names()
+    last = t.rsplit(" ", 1)[-1]
+    if len(last) > 2:
+        same_last = [n for n in known
+                     if n.lower().rsplit(" ", 1)[-1] == last
+                     and n.lower() != t]
+        # De-dupe on the name itself: the alias sheet lists the same person
+        # under several spellings and that must not read as two candidates.
+        if len({n.lower() for n in same_last}) == 1:
+            return same_last[0]
+        if same_last:
+            return None
+    close = difflib.get_close_matches(t, [n.lower() for n in known], n=1,
+                                      cutoff=0.85)
+    if not close:
+        return None
+    return next(n for n in known if n.lower() == close[0])

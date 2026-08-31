@@ -203,11 +203,18 @@ def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
       No answer / Inaccessible), logged so the applied rule is visible."""
     raws = _raw_headers(page)
     idx = {_norm(h): i for i, h in enumerate(raws)}
+    if not idx:
+        # Zero headers = the grid never built (see _navigate's retries), not a
+        # table shaped differently. Typed so it retries like every other
+        # stalled-grid failure instead of reading as a data problem.
+        raise knocks.KnocksPullFailed(
+            "Disposition grid never rendered a header row (0 headers) — the "
+            "scrape stalled, so nothing was read.")
     need = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK]
     missing = [c for c in need if _norm(c) not in idx]
     if missing:
         raise RuntimeError(
-            "Disposition table is missing expected column(s): "
+            "Disposition table is missing required column(s): "
             + ", ".join(missing)
             + ". Live headers were: " + ", ".join(sorted(idx)) + ".")
 

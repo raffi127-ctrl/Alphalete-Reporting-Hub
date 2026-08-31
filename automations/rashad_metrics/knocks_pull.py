@@ -146,13 +146,11 @@ def _scrape_shaped_rows(page, idx: dict, columns: list, counts: set,
     different column list, and a second copy of a pagination loop is how the
     two drift. `label` only names the shape in errors.
     """
-    want = {c: idx.get(knocks._norm(c)) for c in columns}
-    missing = [c for c, i in want.items() if i is None]
-    if missing:
-        raise RuntimeError(
-            f"{label} disposition table is missing expected column(s): "
-            + ", ".join(missing)
-            + ". Live headers were: " + ", ".join(sorted(idx)) + ".")
+    # Same tolerance as the house walk: only ID / Rep / Total Knocks are
+    # required, every other bucket is optional because the disposition
+    # vocabulary is per-office (knocks._resolve_columns).
+    want, absent = knocks._resolve_columns(idx, columns,
+                                           label=f"{label} disposition")
 
     table = page.locator("#table-dispositions")
     try:
@@ -181,6 +179,10 @@ def _scrape_shaped_rows(page, idx: dict, columns: list, counts: set,
             for col, i in want.items():
                 raw = cells[i]
                 rec[col] = knocks._to_int(raw) if col in counts else raw
+            # A bucket this office's page doesn't carry: zero doors went into
+            # it (blank for the text columns), so the board still renders.
+            for col in absent:
+                rec[col] = 0 if col in counts else ""
             rid = str(rec.get(knocks.COL_ID, "")).strip()
             if rid and rid in seen_ids:
                 continue

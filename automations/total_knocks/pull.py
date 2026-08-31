@@ -157,10 +157,12 @@ def _navigate(page, rqst: str, target_mdy: str, *, attempts: int = 3) -> None:
 
     Waits for the grid's HEADER row before returning. DataTables builds the
     grid from an AJAX call that fires AFTER networkidle, so a header read can
-    land on an empty <thead> — which surfaces downstream as the misleading
-    `Disposition table is missing expected column(s)` (every column "missing"
-    because there were no headers at all). Reproduced 1-in-2 on 2026-08-05
-    probing the same office/date, so re-navigate instead of letting it raise.
+    land on an empty <thead>. Reproduced 1-in-2 on 2026-08-05 probing the same
+    office/date, so re-navigate instead of letting it raise. When the retries
+    are exhausted anyway, _resolve_columns turns the empty header row into
+    KnocksPullFailed ("grid never rendered a header row") — it used to fall
+    through and report every canonical column as missing, which read as a
+    table-shape problem and sent people looking for one (2026-08-31).
 
     A day with NO knocks still renders the headers (empty <tbody>), so the
     header row is a safe "grid is built" signal and does NOT confuse an empty
@@ -203,20 +205,73 @@ def _header_index(page) -> dict:
     return {_norm(h): i for i, h in enumerate(headers)}
 
 
+# Columns the board CANNOT be built without — an absent one is a real failure.
+# Everything else in SHEET_COLUMNS is OPTIONAL, because the disposition
+# vocabulary is per-office: TeleMapper only renders the buckets that office
+# actually uses. Proven 2026-08-31 (Stergios Kasapidis): his table carries the
+# full house set EXCEPT 'Inaccessible', plus office-only buckets ('bill payer
+# not home', 'credit check', 'already has AT&T', 'battery', 'coverage',
+# 'device'…). The old all-or-nothing check failed that whole office over one
+# bucket nobody there uses. An absent COUNT bucket means zero doors were
+# dispositioned that way → 0; an absent text column stays blank.
+REQUIRED_COLUMNS = {COL_ID, COL_REP, COL_TOTAL_KNOCKS}
+
+
+def _resolve_columns(idx: dict, columns, *, label: str = "Disposition",
+                     verbose: bool = True) -> tuple[dict, list]:
+    """Map each wanted canonical column → live source index.
+
+    Returns (resolved, absent). `resolved` holds ONLY the columns actually on
+    the page; `absent` is everything else, which the caller fills with 0 / "".
+
+    Raises KnocksPullFailed when the grid handed back NO headers at all (the
+    stalled-grid case — see _navigate), and RuntimeError when the headers are
+    real but a REQUIRED column isn't among them.
+    """
+    if not idx:
+        # Zero headers is a grid that never built, NOT a table with a
+        # different shape. This used to fall through and report every single
+        # column as "missing" — the cryptic wall of text Francisco Castillo's
+        # request answered with on 2026-08-31. Typed as KnocksPullFailed so it
+        # is retried like the other stalled-grid failures instead of being
+        # filed as a data problem.
+        raise KnocksPullFailed(
+            f"{label} grid never rendered a header row (0 headers) — the "
+            "scrape stalled, so nothing was read. This is a failed pull, not "
+            "an office with a different table shape.")
+
+    resolved, absent = {}, []
+    for col in columns:
+        i = idx.get(_norm(col))
+        if i is None:
+            absent.append(col)
+        else:
+            resolved[col] = i
+
+    missing_required = [c for c in absent if c in REQUIRED_COLUMNS]
+    if missing_required:
+        raise RuntimeError(
+            f"{label} table is missing required column(s): "
+            + ", ".join(missing_required)
+            + ". Live headers were: " + ", ".join(sorted(idx)) + ".")
+
+    if absent and verbose:
+        # Never silent: an office whose board shows 0 in a bucket has to be
+        # traceable to "that bucket isn't on their page", not to a bad scrape.
+        print(f"  · {label}: no {', '.join(absent)} column on this office's "
+              "page — those read 0/blank", flush=True)
+    return resolved, absent
+
+
 def _scrape_rows(page, idx: dict) -> list[dict]:
     """Walk every DataTables page, return one canonical-keyed dict per rep."""
     # Resolve the source column index for each Sheet column we scrape from
     # Disposition. 'Total Talk to' is calculated; Gaps / Total Gaps come from
     # Time Tracker — none of those live in this table.
     _skip = {COL_TOTAL_TALK_TO, *TIME_TRACKER_COLUMNS}
-    want = {c: idx.get(_norm(c)) for c in SHEET_COLUMNS if c not in _skip}
-    missing = [c for c, i in want.items() if i is None]
-    if missing:
-        raise RuntimeError(
-            "Disposition table is missing expected column(s): "
-            + ", ".join(missing)
-            + ". Live headers were: " + ", ".join(sorted(idx)) + "."
-        )
+    want, absent = _resolve_columns(
+        idx, [c for c in SHEET_COLUMNS if c not in _skip],
+        label="Disposition")
 
     table = page.locator(DISP_TABLE)
     try:
@@ -252,6 +307,10 @@ def _scrape_rows(page, idx: dict) -> list[dict]:
             for col, i in want.items():
                 raw = cells[i]
                 rec[col] = _to_int(raw) if col in COUNT_COLUMNS else raw
+            # A bucket this office's page doesn't carry: zero doors went into
+            # it (blank for the text columns), so the board still renders.
+            for col in absent:
+                rec[col] = 0 if col in COUNT_COLUMNS else ""
             rec[COL_TOTAL_TALK_TO] = sum(int(rec[p] or 0) for p in TALK_TO_PARTS)
             # De-dupe by badge ID (a rep shouldn't appear twice in one day).
             rid = str(rec.get(COL_ID, "")).strip()
