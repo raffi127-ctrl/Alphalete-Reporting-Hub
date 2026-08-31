@@ -81,7 +81,12 @@ B2B_ICDS = [
     # another tab-vs-source spelling split: tab "Lizette Ruiz", AppStream and
     # Tableau "Lizette Ruiz-Conejo".
     ("Eveliz Wright",       "Eveliz Wright - B2B"),
-    ("Lizette Ruiz-Conejo", "Lizette Ruiz - B2B"),
+    # FUERA 2026-08-31 (Eveliz, confirmado por Eve): Lizette Ruiz-Conejo ya no
+    # es parte de la org. Su pestaña quedó OCULTA, no borrada, y su entrada
+    # pasó a `skip` en office-mapping-alphalete-org.json. Tiene que salir de
+    # ACÁ además: este módulo NO mira el flag `hidden`, así que si no le
+    # seguiría escribiendo 19 celdas de OPT a una pestaña oculta.
+    # ("Lizette Ruiz-Conejo", "Lizette Ruiz - B2B"),
     # Calvin Ribero (Vernon, Inc., ownerville office 22162) — added 2026-08-30
     # at Eve's request. The ONLY entry that is not on the Alphalete Org sheet:
     # his B2B tab was cut from Carlos's 'B2B Template' onto Raf's *ATT Program
