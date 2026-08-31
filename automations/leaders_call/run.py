@@ -130,6 +130,28 @@ class Campaign:
                                      # the week rolled; FLAG instead of writing 0
 
 
+# Colten's ORG — read off the "Org Tree" tab of the DD workbook (the same tree
+# rcs_ncs_data counts), NOT his captainship: Eve 2026-08-31, "tiene que estar la
+# gente de la organizacion de colten, no la capitania". They are different sets —
+# the captainship is his NDS program team, the org is his downline.
+# 8 first gen + 9 in depth + Colten = 17 (matches the WE 8.23.26 figure 8/17).
+# The org spans THREE programs, so it is added to fiber, NDS and B2B alike (BOX
+# already keeps every rep; Costco is fixed to its four ICDs by Maud).
+# A name that never shows up in a crosstab costs nothing: the filter only KEEPS
+# matches, it never adds rows.
+COLTEN_ORG = [
+    "Colten Wright",
+    # first gen
+    "Eveliz Wright", "Jairo Ruiz", "Joseph Delgado", "George Delgado",
+    "Selena Powers", "Samuel Acay", "Karrington Moody", "Cody Cannon",
+    # depth
+    "Carl Foss", "Drew Tepper", "Frank Matos", "Gian-Carlo Hernandez",
+    "Jose Velasquez", "Justin Fermin", "Raul Sosa Puerta", "Valeria Tristan",
+    # The tree says "Lizette Ruiz-Conejo"; other sources say "Lizette Ruiz"
+    # (captainship_pins carries the same pair). Both, so neither drops her.
+    "Lizette Ruiz-Conejo", "Lizette Ruiz",
+]
+
 CAMPAIGNS: dict[str, Campaign] = {
     "fiber": Campaign(
         key="fiber",
@@ -142,7 +164,7 @@ CAMPAIGNS: dict[str, Campaign] = {
         value_hdr=("grand total", "total"),
         owners=["Rafael Hidalgo", "Kash Rai", "Haytham Nagi", "Aya Al-Khafaji",
                 "Cyrus Wade", "Hammad Haque", "Jacob Dover", "Cody Cannon",
-                "Rashad Reed", "Salik Mallick"],
+                "Rashad Reed", "Salik Mallick"] + COLTEN_ORG,
         flag_if_empty=True,           # relative This Week — guards the week roll
     ),
     "nds": Campaign(
@@ -156,7 +178,8 @@ CAMPAIGNS: dict[str, Campaign] = {
         rep_hdr=("rep",),
         owner_hdr=("owner",),
         value_hdr=("product total", "grand total", "total"),
-        owners=["Khalil Mansour", "Maxamad Aden", "Isaiah Revelle"],
+        owners=["Khalil Mansour", "Maxamad Aden", "Isaiah Revelle"]
+               + COLTEN_ORG,
         flag_if_empty=True,           # relative This Week — guards the week roll
     ),
     "b2b": Campaign(
@@ -182,7 +205,7 @@ CAMPAIGNS: dict[str, Campaign] = {
         rep_hdr=("rep",),
         owner_hdr=("owner name", "owner"),
         value_hdr=("sales",),          # the 'Sales' (apps) column, not 'AIR/AWB Sales'
-        owners=["Atef Choudhury", "Carlos Hidalgo", "Kevin Driggs"],
+        owners=["Atef Choudhury", "Carlos Hidalgo", "Kevin Driggs"] + COLTEN_ORG,
         flag_if_empty=True,           # relative This Week (no date cols to check)
     ),
     "box": Campaign(
@@ -409,7 +432,7 @@ REVENUE_OWNERS = [
     # rows, All Campaigns line and both Contacts distros went with it.
     "Roshan Amin Ahmad", "Ryan McSpadden",
     "Amjad Malhas", "Ana Griffin", "Boaktear Chowdhury", "Ronald Dawson",
-]
+] + COLTEN_ORG
 
 
 def _name_tokens(s: str) -> tuple:
