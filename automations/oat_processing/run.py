@@ -513,6 +513,8 @@ def _perform_remove(page, reason_pattern: str = DUP_REASON) -> bool:
 
     ``reason_pattern`` defaults to duplicate so every existing caller behaves
     exactly as before; pass NO_CONTACT_REASON for the no-phone case."""
+    if not _guard_office_now(page, "remove"):
+        return False
     try:
         # 1) CHECK "Remove Applicant?" — a real check so the ATS reveals the Remove
         #    Reason dropdown + the "Remove Applicant" button (Megan 7/27).
@@ -661,6 +663,8 @@ def _try_overwrite_send(page) -> bool:
     # EVERY frame, not just the top document — the control can render inside one
     # (Moises Santamaria, 2026-08-29: button on screen, top-document click found
     # nothing, applicant removed).
+    if not _guard_office_now(page, "override/overwrite send"):
+        return False
     clicked = None
     for _fr in (getattr(page, "frames", None) or [page]):
         try:
@@ -677,7 +681,8 @@ def _try_overwrite_send(page) -> bool:
         return True
     # A bare "Overwrite…" (no AI suffix) only cleared the duplicates; the send is
     # the NEXT click. Try it before calling this blocked.
-    if _click_first(page, ["Send to AI", "Send To AI"], timeout=6000):
+    if (_guard_office_now(page, "Send to AI (post-overwrite)")
+            and _click_first(page, ["Send to AI", "Send To AI"], timeout=6000)):
         page.wait_for_timeout(2500)
         if "cannot send to ai" not in _body(page):
             _log("    [override] send succeeded after the overwrite cleared the dups")
@@ -708,6 +713,8 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     if _has_dup_signal(guard):
         # a dup that WAS visible on load slipped in as SEND_AI — route it.
         return _handle_visible_dup(page, guard, live)
+    if not _guard_office_now(page, "Send to AI"):
+        return "office_guard_refused"
     if not _click_first(page, ["Send to AI", "Send To AI"]):
         _log("    'Send to AI' button not found — skipped")
         return "no_button"
@@ -1407,6 +1414,9 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
         # Martheins: "I'm pretty sure Rosanna had the option to overwrite.")
         outcome = "refused" if "cannot send to ai" in _body(page) else ""
         if not outcome:
+            if not _guard_office_now(page, "Send to AI"):
+                _flag_retext(a, days)
+                return "flag_retext"
             _click_first(page, ["Send to AI", "Send To AI"], timeout=6000)
             # Wait for a DEFINITE outcome — refusal panel, or the applicant gone
             # from the slot. One 2.5s snapshot saw neither and produced both
@@ -2765,6 +2775,22 @@ def office_on_page(page):
     body = _body(page)
     m = re.search(r"office\s*id\s*:?\s*([0-9]{3,6})", body)
     return m.group(1) if m else None
+
+
+def _guard_office_now(page, action: str) -> bool:
+    """Re-check the on-page 'Office ID:' banner IMMEDIATELY before any mutating
+    click. The walk-start check is not enough: another automation sharing the
+    browser can switch offices mid-walk (Carlos, 2026-08-30, after captain-login
+    sends appeared in Vincent's office 23318 that nobody could account for —
+    "before hitting Send to AI you should be checking at the top to see the
+    office ID"). FAILS CLOSED: mismatch or unreadable header refuses the action."""
+    want = str(getattr(config, "OFFICE_ID", "") or "")
+    got = office_on_page(page)
+    if want and got == want:
+        return True
+    _log(f"    ⛔ OFFICE GUARD: page shows office {got!r}, expected {want!r} — "
+         f"REFUSING {action}. Another automation may have switched this session.")
+    return False
 
 
 def assert_on_expected_office(page, tries: int = 3) -> bool:

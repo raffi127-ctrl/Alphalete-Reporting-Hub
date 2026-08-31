@@ -11,6 +11,11 @@ import automations.oat_processing.run as oat
 class _FakePage:
     """Minimal page: a body string + a set of button labels."""
     def __init__(self, labels, body):
+        # every fake page carries the office banner the per-click guard reads —
+        # the guard FAILS CLOSED without it, which is correct live and noise here
+        from automations.oat_processing import config as _cfg
+        _cfg.OFFICE_ID = "11580"
+        body = body + " office id: 11580"
         self.labels, self._body, self.clicked = labels, body, None
 
     def inner_text(self, _sel):

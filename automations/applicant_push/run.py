@@ -222,6 +222,14 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
     return 0
 
 
+# HARD-CODED: the ONLY offices a LIVE push may ever work. Carlos, 2026-08-30,
+# after unexplained captain-login sends in Vincent's office: "hard-code it so
+# that you're only pushing resumes for Atef and my office." An audit of another
+# office must say so out loud with --audit-office — and still runs behind the
+# per-click office guard in oat_processing.
+PUSH_ALLOWED = {"11580", "23467"}
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Applicant Push — batch send + OAT leftovers on one CDP "
@@ -247,6 +255,10 @@ def main(argv=None) -> int:
                         "touches ONLY these people and pages past everyone else. "
                         "Written by restore_removed --names-out; sets "
                         "OAT_ONLY_NAMES for the OAT stage.")
+    p.add_argument("--audit-office", action="store_true",
+                   help="explicit acknowledgement that this live push targets an "
+                        "office OUTSIDE the hard-coded {11580, 23467} allowlist — "
+                        "for supervised audit runs only")
     p.add_argument("--recheck-nophone", action="store_true",
                    help="Re-read the resumes of applicants already flagged "
                         "no-number TODAY (archives the day's cache first). Use "
@@ -261,6 +273,12 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     if getattr(args, "only_names", ""):
         os.environ["OAT_ONLY_NAMES"] = args.only_names
+    if (args.live and args.office not in PUSH_ALLOWED
+            and not getattr(args, "audit_office", False)):
+        raise SystemExit(
+            f"[push] REFUSED: live push for office {args.office} — only "
+            f"{sorted(PUSH_ALLOWED)} are ever pushed. An audit run must pass "
+            f"--audit-office explicitly.")
 
     live = args.live and not args.dry_run
     if args.batch_only and args.oat_only:
