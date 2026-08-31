@@ -4829,6 +4829,50 @@
       "timeout_minutes": 5,
       "verify": null
     },
+    "production_tk_fill": {
+      "hand_run_only": true,
+      "on_scheduler": true,
+      "_note": "Manual handle for the TK (Total Knocks) column on the Alphalete SALES BOARD 2025 — `lucy rerun production_tk_fill --machine \"Lucy 3\"`. NOT a scheduled report and NOT a Hub card (Eve 2026-08-31: \"tiene que entrar dentro del batch de producción, es un agregado, no un reporte nuevo\"): it fires from com.alphalete.production-tk (StartInterval 900), which refreshes today's TK cells every 15 minutes while reps are knocking. Source is ownerville Disposition by Rep for RAF'S LOCAL OFFICE, column Total Knocks, for TODAY in Central. The fill ONLY EVER RAISES and never touches a cell holding something non-numeric, so a re-run can neither double-count nor eat a hand-typed mark. base_args --apply because the module previews by default. Quiet hours (6-23 CT) and the one-session-per-account deferral live in tk_fill.py, not in the plist. cadence.weekdays [] so the 4am orchestrator never fires it; hand_run_only so the didn't-run watcher does not invent a schedule from it.",
+      "display_name": "Sales Board TK column — refill now",
+      "machine": "Lucy 3",
+      "command": [
+        "automations.alphalete_production.tk_fill"
+      ],
+      "base_args": [
+        "--apply"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 20,
+      "verify": null
+    },
+    "install_production_tk_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_production_tk_agent --machine \"Lucy 3\"` (same pattern as install_knocks_intraday_agent). Bootstraps com.alphalete.production-tk on LUCY 3, which is where the ownerville session holder runs. It TICKS every 15 minutes (StartInterval 900) and refills today's TK column on the Alphalete SALES BOARD 2025. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",
+      "display_name": "Install: Sales Board TK LaunchAgent (Lucy 3)",
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "production-tk"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 5,
+      "verify": null
+    },
     "install_knocks_intraday_agent": {
       "on_scheduler": true,
       "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_knocks_intraday_agent` (same pattern as install_tracker_mirror_agent). Bootstraps com.alphalete.knocks-intraday on LUCY 3 from the committed plist. It TICKS every 5 minutes (StartInterval 300) and posts whatever is due; the slot times are NOT in the plist, they live in knocks_intraday/schedule.py in each office's OWN timezone \u2014 2:00 PM + 5:15 PM for Cody's channel only, 9:00 PM for every enrolled office, Mon-Sat. One calendar fire cannot serve two zones: four offices are Eastern (aya, hammad, salik, nii), so a single 21:00 Central fire reached them at 10 PM local. REPLACES install_knocks_9pm_agent (fb1e606, installed 2026-08-25): before installing this, UNLOAD the old label com.alphalete.knocks-9pm on Lucy 3 \u2014 leaving it loaded means both agents fire and every office gets its board twice. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",
