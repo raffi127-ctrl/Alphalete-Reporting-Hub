@@ -35,6 +35,7 @@ real name join, not more of this sheet.
 from __future__ import annotations
 
 import collections
+import datetime as dt
 import re
 
 # Alphabetical by the owner's FIRST name — 'Rafael Hidalgo' is in R to Z.
@@ -52,9 +53,49 @@ COLUMNS = {
     "name": "Full Name",
     "ad": "Ad Title",
     "star": "Star Rating",
+    # Hand-entered like the rest, and read for ONE purpose: putting a row in a
+    # week so the page can show a window instead of all time (Megan
+    # 2026-08-31). That is a much smaller thing to trust than an outcome —
+    # a wrong date moves somebody between weeks, where a wrong "BOB" invents a
+    # hire. It is never reported as a number, only used to filter.
+    "date": "Date 1st Rd",
 }
 
 _STAR = re.compile(r"^\s*([1-5])\s*star", re.I)
+
+
+def parse_date(value):
+    """'7/20/2026' -> date. None when it is missing or unreadable, and those
+    rows are DROPPED from a windowed view rather than swept into it: a row
+    with no date belongs to no week, and defaulting it into the current one
+    would quietly pad whichever window is on screen."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m-%d-%Y"):
+        try:
+            return dt.datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def in_window(rows: list, start=None, end=None) -> tuple:
+    """(rows inside the window, how many were dropped for having no date).
+
+    The count comes back so the page can own up to it — a quality table that
+    silently drops a third of its rows is worse than one that says so."""
+    if start is None and end is None:
+        return list(rows), 0
+    kept, undated = [], 0
+    for r in rows:
+        d = r.get("on")
+        if d is None:
+            undated += 1
+            continue
+        if (start is None or d >= start) and (end is None or d <= end):
+            kept.append(r)
+    return kept, undated
 
 
 def star(value) -> int | None:
@@ -73,13 +114,32 @@ def norm_ad(title: str) -> str:
     into three and each fragment gets its own average off a third of the
     sample. Normalising collapsed 305 spellings to 230 on Raf's tab.
 
-    The '?' is not a typo: an en-dash lost its encoding somewhere upstream and
-    lands in the cell as a literal question mark."""
+    Folds '?', en-dash and '·' to the same separator — see display_ad for
+    where the '?' comes from."""
     t = re.sub(r"[?–—·|]+", " - ", str(title or ""))
     t = re.sub(r"\s+at Alphalete Marketing.*$", "", t, flags=re.I)
     t = t.replace(",", " ")
     t = re.sub(r"\s*-\s*", " - ", t)
     return re.sub(r"\s+", " ", t).strip(" -,").lower()
+
+
+def display_ad(title: str) -> str:
+    """Tidy a title for the screen, without changing which ad it is.
+
+    The '?' is a separator that did not survive being typed in: the job boards
+    write 'AT&T Sales Associate (Spanish Required) – Balch Springs TX' with an
+    en-dash (some rows still carry a real '·'), and when the interviewer pastes
+    it through something that cannot encode that character it lands as a
+    literal question mark. The same ad reaches us from the 2R tab as
+    '…(Spanish Required), Balch Springs, TX' — plain ASCII, comma — which is
+    how we know what the '?' replaced.
+
+    Grouping never cared, since norm_ad folds ?, – and · to one key. This is
+    only so the table does not show a row that looks like a typo."""
+    t = re.sub(r"\s*\?\s*", " - ", str(title or ""))
+    t = re.sub(r"\s*[·|]\s*", " - ", t)
+    t = re.sub(r"\s*,\s*(?=,|$)", "", t)
+    return re.sub(r"\s+", " ", t).strip(" -,")
 
 
 def load(owner: str) -> list:
@@ -132,6 +192,7 @@ def _parse(grid: list) -> list:
         rec = {k: (row[i].strip() if i is not None and len(row) > i else "")
                for k, i in idx.items()}
         rec["stars"] = star(rec.get("star"))
+        rec["on"] = parse_date(rec.get("date"))
         out.append(rec)
     return out
 
@@ -168,7 +229,7 @@ def by_ad(rows: list, min_rated: int = 8) -> list:
     for key, stars in per.items():
         n = len(stars)
         out.append({
-            "Ad": spellings[key].most_common(1)[0][0],
+            "Ad": display_ad(spellings[key].most_common(1)[0][0]),
             "Rated": n,
             "Avg star": round(sum(stars) / n, 2),
             "1-2 star": f"{sum(1 for s in stars if s <= 2) / n:.0%}",

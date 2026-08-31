@@ -1578,7 +1578,16 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
         st.subheader("Recruiting")
         st.info("No filled weeks yet for this office.", icon="🗓️")
         return
-    latest = filled[-1]
+    # PICK THE WEEK, like the sales board does (Megan 2026-08-31). Newest
+    # first, because that is the one being asked about nearly every time, and
+    # only weeks that HAVE data are offered — a dropdown listing empty future
+    # weeks invites picking one and reading its blanks as zeros.
+    choices = list(reversed(filled))
+    latest = st.sidebar.selectbox(
+        "Week Ending", choices, key=f"recwk_{office_key}",
+        format_func=lambda d: (f"{d.strftime('%b')} {_ord(d.day)}, "
+                               f"{d.year}"))
+
     # THE WEEK IS PART OF THE TITLE (Megan 2026-08-31). Nine big numbers with
     # no period on them read as "how the office is doing" — they are one week,
     # Monday through Sunday, and usually NOT the week we are standing in: the
@@ -1628,8 +1637,14 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
     # column in the tables above — those have to mean the same thing for every
     # office. It sits in its own block that simply is not there when there is
     # no board to reference.
+    # The quality table follows the same stretch of time the page is showing,
+    # rather than all history (Megan 2026-08-31). Weeks-to-show lives further
+    # down the page, so its value is read from state — 8 on a first visit,
+    # whatever was picked last after that.
+    weeks_back = int(st.session_state.get("rec_n", 8))
+    win_start = latest - dt.timedelta(days=weeks_back * 7 - 1)
     with st.expander("Ad quality — how interviewers rated who each ad sent"):
-        ars_breakdown(icd)
+        ars_breakdown(icd, win_start, latest)
 
     if has_board(icd):
         # LOADED ON DEMAND. Streamlit runs an expander's body even while it is
@@ -1651,7 +1666,11 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
     st.markdown("**Week over week**")
     n = st.slider("Weeks to show", 4, max(4, min(26, len(filled))),
                   min(8, max(4, len(filled))), key="rec_n")
-    shown_weeks = filled[-n:]
+    # The history ENDS at the week being viewed. Running it to today while the
+    # vitals describe an earlier week would put columns on screen that the
+    # cards above are not talking about.
+    upto = [w for w in filled if w <= latest]
+    shown_weeks = upto[-n:]
 
     rows, goals = [], []
     for label, row, is_rate in F.TRACKED:
@@ -1777,7 +1796,7 @@ def _ars(icd: str) -> list:
     return A2.load(icd)
 
 
-def ars_breakdown(icd: str) -> None:
+def ars_breakdown(icd: str, start=None, end=None) -> None:
     """Star rating per ad — the only source that says whether an ad's people
     were any GOOD, rather than how many of them there were.
 
@@ -1794,6 +1813,30 @@ def ars_breakdown(icd: str) -> None:
     if not rows:
         st.caption(f"No ARS rows for {icd}. The five ARS workbooks carry one "
                    "tab per ICD, split alphabetically by first name.")
+        return
+
+    # Two ways to pick the span, one visible at a time: follow the page, or
+    # type your own. A radio rather than a permanently-open date box, so the
+    # ordinary case stays a single line of text.
+    span = st.radio("Dates", ["Weeks shown on this page", "Custom range"],
+                    horizontal=True, key=f"arswin_{icd}")
+    if span == "Custom range":
+        have = sorted(r["on"] for r in rows if r["on"])
+        lo, hi = (have[0], have[-1]) if have else (start, end)
+        picked = st.date_input(
+            "From / to", value=(start or lo, end or hi),
+            min_value=lo, max_value=hi, key=f"arsdate_{icd}")
+        # A half-finished range comes back as a single date; leave the table
+        # alone until the second one is chosen rather than showing one day.
+        if isinstance(picked, (list, tuple)) and len(picked) == 2:
+            start, end = picked
+        else:
+            st.caption("Pick the end of the range too.")
+            return
+
+    rows, undated = A2.in_window(rows, start, end)
+    if not rows:
+        st.caption("No interviews in that range.")
         return
 
     dist = A2.distribution(rows)
@@ -1819,10 +1862,17 @@ def ars_breakdown(icd: str) -> None:
         st.dataframe(solid, use_container_width=True, hide_index=True,
                      column_config=_centered(solid[0]),
                      height=_grid_height(min(len(solid), 16)))
+    span_txt = ""
+    if start and end:
+        span_txt = (f"{start.strftime('%b')} {_ord(start.day)} – "
+                    f"{end.strftime('%b')} {_ord(end.day)}, {end.year} · ")
     st.caption(
-        f"{len(solid)} ads with enough ratings to rank, best first"
+        span_txt
+        + f"{len(solid)} ads with enough ratings to rank, best first"
         + (f" · {len(thin)} more have too few to judge" if thin else "")
-        + f" · {dist['unrated']:,} interviews carry no rating at all. "
+        + f" · {dist['unrated']:,} interviews carry no rating at all"
+        + (f" · {undated:,} dropped for having no date" if undated else "")
+        + ". "
         "This is the interviewer's judgement of the people an ad sent, and "
         "only that — nothing here says whether they would have signed. Read "
         "the 1–2 star share next to the average: an ad can hold a fair mean "
