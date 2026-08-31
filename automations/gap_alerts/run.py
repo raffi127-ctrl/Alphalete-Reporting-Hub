@@ -221,7 +221,9 @@ def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
         mins = cap._int(r.get("minutesSinceLastKnock"))
         new = not first_of_day and name not in previous
         mark = (" " + C.GAP_NEW_EMOJI) if new else ""
-        lines.append("%s - %d minutes%s" % (name, mins, mark))
+        # "min", not "minutes" (Megan 2026-08-31: "so it's shorter on the
+        # text") — twenty of these stack up on a phone.
+        lines.append("%s - %d min%s" % (name, mins, mark))
     if not lines:
         return "", []
     return (header or C.GAP_TEXT_HEADER) + "\n\n" + "\n".join(lines), names
