@@ -276,6 +276,27 @@ def main(argv=None) -> int:
             except Exception as _edm:  # noqa: BLE001
                 print(f"  [!] relleno manual de cajas delta salteado "
                       f"({type(_edm).__name__}: {str(_edm)[:90]})", flush=True)
+            # Somebody added to a captainship — and so to its delta box —
+            # AFTER Tuesday's rollover has no per-day 'Last week' numbers:
+            # that freeze only covered the rows that existed then. The row
+            # then shows a real week against 0, its Delta reads a flat 0.00%,
+            # and the box's totals row (=SUM over these cells) comes out short
+            # by exactly the people who were added. Jairo's box, 2026-08-31:
+            # Abdallah Ghousheh and Fernando Munoz had sold 62 and 67 the week
+            # it was comparing against (Eve: "hacelo siempre que agregues a
+            # alguien a una capitania y a un delta chart").
+            #
+            # Free on a normal day: it looks for blank cells in the grid it
+            # already has and only reads the pre-rollover snapshot tab if it
+            # finds some. Wrapped like its neighbour — a backfill that cannot
+            # read that tab must not take down the board fill it rides on.
+            try:
+                from automations.org_sales_board import (
+                    delta_lastweek_backfill as _dlb)
+                _dlb.apply_backfill(ws, dry_run=args.dry_run)
+            except Exception as _edb:  # noqa: BLE001
+                print(f"  [!] backfill de 'Last week' por día salteado "
+                      f"({type(_edb).__name__}: {str(_edb)[:90]})", flush=True)
             # TRIPWIRE — the delta boxes' per-day 'This week' cells must still
             # be =SUMIFs over their captainship's daily table. A value pasted
             # over one keeps showing the number it froze on and every total
