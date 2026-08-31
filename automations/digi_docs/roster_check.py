@@ -30,8 +30,22 @@ def _norm_row(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
 
 
-def snapshot(page, *, verbose: bool = True) -> set:
-    """Every row on View Progress, across every campaign, Show All on."""
+def snapshot(page, *, verbose: bool = True) -> tuple:
+    """(rows, complete) — every row on View Progress, and whether we PROVED it.
+
+    2026-08-31, twice. The first version read `tbody tr` once per campaign and
+    got 24, 1, 24 — page sizes, not rosters — and on that it reported 29 of 52
+    people "not in OwnerVille", including two the add pass had logged as added
+    the same morning. The second version tried to widen the length menu and walk
+    Next, and reported the same 49 rows, so the pagination guess was wrong too.
+
+    Guessing at pagination markup is what failed both times. So stop guessing
+    and ask the table: DataTables prints "Showing 1 to 24 of 61 entries", and
+    that N is the truth about how many rows exist. If what we read does not
+    reach it, this run says INCOMPLETE and the caller must not claim anybody is
+    missing — an under-read roster names real people as absent and invites
+    adding them twice.
+    """
     from automations.b2b_dispositions.capture import capture_rqst
     from automations.headshots.ov_upload import (
         VIEW_PROGRESS_P, _campaign_select, _show_all,
@@ -45,7 +59,7 @@ def snapshot(page, *, verbose: bool = True) -> set:
     except Exception:                       # noqa: BLE001
         pass
     sel = _campaign_select(page)
-    rows_seen = set()
+    rows_seen, complete = set(), True
     for opt in sel.locator("option").all_inner_texts():
         label = opt.strip()
         if not label:
@@ -55,65 +69,65 @@ def snapshot(page, *, verbose: bool = True) -> set:
             page.wait_for_load_state("networkidle", timeout=60000)
         except Exception:                   # noqa: BLE001
             pass
-        _show_all(page)                     # the default 3-week window hides reps
+        _show_all(page)
         try:
             page.wait_for_load_state("networkidle", timeout=60000)
         except Exception:                   # noqa: BLE001
             pass
-        pages = _read_every_page(page, rows_seen)
+        before = len(rows_seen)
+        read = _read_pages(page, rows_seen)
+        claimed = _entries_total(page)
+        ok = claimed is None or read >= claimed
+        complete = complete and ok
         if verbose:
-            print(f"  {label}: {pages} page(s), {len(rows_seen)} row(s) so far",
-                  flush=True)
-    return rows_seen
+            says = "?" if claimed is None else str(claimed)
+            print(f"  {label}: read {read}, table says {says}"
+                  f"{'' if ok else '  ⛔ INCOMPLETE'}"
+                  f"  (+{len(rows_seen) - before} new)", flush=True)
+    return rows_seen, complete
 
 
-def _read_every_page(page, rows_seen: set) -> int:
-    """Read the WHOLE table, not the page of it DataTables happens to show.
+def _entries_total(page):
+    """The N in DataTables' "Showing 1 to 24 of N entries". None if unreadable —
+    unreadable is not zero, and the caller treats it as "cannot prove"."""
+    try:
+        txt = page.locator("div[id$='_info'], .dataTables_info").first.inner_text(
+            timeout=4000)
+    except Exception:                       # noqa: BLE001
+        return None
+    m = re.search(r"of\s+([\d,]+)\s+entries", txt or "", re.I)
+    return int(m.group(1).replace(",", "")) if m else None
 
-    2026-08-31: the first version read `tbody tr` once per campaign and got 24,
-    1, 24 — those are PAGE sizes, not rosters. It then reported 29 of 52 people
-    "not in OwnerVille", including two the add pass had logged as added the
-    same morning. A paginated read that calls itself a roster is worse than no
-    check at all: it names real people as missing and invites someone to add
-    them twice.
 
-    Widen the length menu to its largest option first (DataTables names it
-    <something>_length), then walk Next until the button stops being clickable.
-    """
-    try:                                    # biggest page size on offer
-        length = page.locator("select[name$='_length']:visible").first
-        if length.count():
-            opts = [o.strip() for o in length.locator("option").all_inner_texts()]
-            best = max(opts, key=lambda o: (o.strip().lower() in ("all", "-1"),
-                                            int(re.sub(r"\D", "", o) or 0)))
-            length.select_option(label=best)
-            page.wait_for_timeout(1200)
-    except Exception:                       # noqa: BLE001 — walk pages instead
-        pass
-    seen_pages = 0
-    while seen_pages < 40:                  # backstop, never a real page count
-        seen_pages += 1
+def _read_pages(page, rows_seen: set) -> int:
+    """Read the visible page, then every following one. Returns rows READ (not
+    unique), so it can be compared against the table's own entry count."""
+    read = 0
+    for _ in range(60):                     # backstop, never a real page count
         rows = page.locator("tbody tr")
-        for i in range(rows.count()):
+        n = rows.count()
+        for i in range(n):
             try:
                 rows_seen.add(_norm_row(rows.nth(i).inner_text(timeout=2000)))
+                read += 1
             except Exception:               # noqa: BLE001
                 continue
-        nxt = page.locator("a.next:visible, li.next:visible a, "
-                           "a.paginate_button.next:visible").first
+        nxt = page.locator("a:has-text('Next'):visible, "
+                           "li.next:visible a, a.paginate_button.next:visible"
+                           ).first
         try:
             if not nxt.count():
                 break
-            cls = (nxt.get_attribute("class") or "") + " " + (
-                nxt.evaluate("e => e.parentElement ? e.parentElement.className "
-                             ": ''") or "")
-            if "disabled" in cls.lower():
+            klass = (nxt.get_attribute("class") or "") + " " + (
+                nxt.evaluate("e => e.parentElement ? e.parentElement.className : ''")
+                or "")
+            if "disabled" in klass.lower():
                 break
             nxt.click()
             page.wait_for_timeout(900)
         except Exception:                   # noqa: BLE001
             break
-    return seen_pages
+    return read
 
 
 def present(rows_seen: set, name: str) -> bool:
@@ -145,8 +159,13 @@ def main(argv=None) -> int:
         return 0
 
     with ov.session(headless=True) as page:
-        rows_seen = snapshot(page)
+        rows_seen, complete = snapshot(page)
     print(f"\nroster: {len(rows_seen)} row(s) read\n")
+    if not complete:
+        print("⛔ INCOMPLETE — at least one campaign returned fewer rows than "
+              "the table says it has. This run cannot say who is missing, and "
+              "nothing here should be acted on or posted.")
+        return 2
     if not rows_seen:
         print("⛔ read NOTHING off View Progress — this check says nothing "
               "about who is in OwnerVille. Do not act on it.")

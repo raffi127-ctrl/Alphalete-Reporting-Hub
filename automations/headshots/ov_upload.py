@@ -68,21 +68,50 @@ def _search_box(page):
     return box
 
 
-def _rep_row(page, name: str, *, debug: bool = False):
+def _rep_row(page, name: str, *, debug: bool = False,
+             employee_id: str | None = None):
     """The table row containing `name` (case-insensitive, any cell).
 
     Probe #5 (2026-08-23) proved reading only the FIRST td misses real reps
     — DataTables likes a hidden control column up front. has_text matches
     the name anywhere in the row instead; whitespace between first/last is
     matched loosely (the cell breaks lines).
+
+    TWO ROWS IS NOT A MATCH (Megan 2026-08-31). This used to return
+    `rows.first` whenever anything matched, so two reps sharing a name meant
+    the bot silently picked one — and what it picks a row for is opening Set
+    Status and GENERATING A BUNDLE, which mails a nine-document contract and
+    cannot be unsent. The directory really does hold twins: two Nathan Sanchez,
+    different people, four weeks apart in start date. The add path already
+    refused that case; this one quietly did not.
+
+    So: exactly one match is a match. More than one is answered by
+    `employee_id` — OV writes the id into the row as "Name (9447431)" — and
+    without one it is a refusal, returning None so the caller reports a skip
+    rather than acting on a guess.
     """
     parts = [p for p in name.split() if p]
     if not parts:
         return None
     pat = re.compile(r"\s+".join(re.escape(p) for p in parts), re.I)
     rows = page.locator("tbody tr").filter(has_text=pat)
-    if rows.count():
+    n = rows.count()
+    if n == 1:
         return rows.first
+    if n > 1:
+        if employee_id:
+            eid = str(employee_id).strip()
+            byid = rows.filter(has_text=re.compile(re.escape(eid)))
+            if byid.count() == 1:
+                if debug:
+                    print(f"    {n} rows named {name!r} — took employee id {eid}")
+                return byid.first
+            print(f"    AMBIGUOUS {name!r}: {n} rows, and employee id {eid} "
+                  f"matched {byid.count()} of them — refusing to guess")
+            return None
+        print(f"    AMBIGUOUS {name!r}: {n} rows share this name and no "
+              f"employee id was given — refusing to guess")
+        return None
     if debug:
         print(f"    (no row matched — {_sample_rows(page)})")
     return None
