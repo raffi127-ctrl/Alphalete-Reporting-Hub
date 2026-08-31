@@ -29,14 +29,16 @@ TWO TRAPS ON THIS VIEW — both cost a day, both are load-bearing here:
     columns, never from today's date.
 
 Sources, per run, one Tableau session:
-  * 'Daily Tracker Sales'   — Owner x day. The owner's Grand Total is the
-    week's Total Box CX's, and the day headers give the week we are filling.
+  * 'Daily Tracker Sales'   — Owner x day. The day headers give the week we
+    are filling, and the week's Total Box CX's is SUMMED from that week's day
+    columns — never read off 'Grand Total', which is the owner's all-time
+    number whenever the week filter is sitting on `(All)`.
   * 'Daily Tracker Metrics' — Owner x metric, plus a Grand Total row that is
     the National AVG for every tab.
 
 Mapping (sheet row label -> source), looked up BY LABEL, never by index:
   Active Selling Heads           <- 'Selling Rep Count'
-  Total Box CX's                 <- the owner's Grand Total on the sales sheet
+  Total Box CX's                 <- that week's day columns, summed
   AVG Kwh Usage Per CX           <- 'Avg kWH/Sale'
   AVG Sales per Leader           =  Total Box CX's / Active Selling Heads (formula)
   National AVG for sales         <- Grand Total 'Sales/ Rep'      (SHARED)
@@ -72,7 +74,10 @@ METRICS_SHEET = "Daily Tracker Metrics"
 # same cross-sheet arrangement opt_b2b uses, and for the same reason.
 ATT_FOCUS_SHEET_ID = "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE"
 TARGETS: List[Tuple[str, str, str]] = [
-    ("Calvin Ribera", ATT_FOCUS_SHEET_ID, "Calvin Ribero (B2B)"),
+    # The tab was renamed 2026-08-31: it was cut from the B2B template and
+    # carried a "(B2B)" suffix and the "Ribero" spelling; both were wrong. It
+    # is a BOX tab now and ownerville spells him "Ribera".
+    ("Calvin Ribera", ATT_FOCUS_SHEET_ID, "Calvin Ribera (BOX)"),
 ]
 
 WEEKDAYS = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
