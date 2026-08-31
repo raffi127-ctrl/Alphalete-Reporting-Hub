@@ -678,13 +678,18 @@ class UnrecognisedDocsStateIsLoudTest(_NoNetwork):
                        dry=False, added=[], done=done, refused=refused)
         return refused
 
-    def test_pending_is_reported_not_swallowed(self):
-        refused = self._send_one("PENDING")
-        self.assertEqual(1, len(refused))
-        self.assertIn("NOT SENT", refused[0])
-        self.assertIn("PENDING", refused[0])
+    def test_pending_is_treated_as_already_generated(self):
+        """Megan 2026-08-31: "that more than likely means they were already
+        generated" — the packet is out, waiting on a signature. It behaves that
+        way too: people she sent by hand moved OUT of PENDING as their bundles
+        landed. If that read is ever wrong, take PENDING out of
+        config.DOCS_DONE_STATES and the send treats them as sendable again."""
+        from automations.digi_docs import config
+        self.assertIn("PENDING", config.DOCS_DONE_STATES)
+        self.assertEqual([], self._send_one("PENDING"))
 
     def test_completed_stays_quiet(self):
+        # noqa: kept alongside the PENDING case above
         self.assertEqual([], self._send_one("COMPLETED"))
 
     def test_an_unreadable_state_is_reported_too(self):
