@@ -192,7 +192,19 @@ def alert_failure(line: str, *, dry_run: bool = True) -> bool:
     if not dry_run and _already_alerted(line):
         print(f"  (already alerted today, not repeating: {line[:60]})")
         return False
-    body = f"*Digi Docs — could not send* {_tags()}\n• {line}"
+    # THE HEADLINE HAS TO MATCH THE LINE (Megan 2026-08-31). Every alert said
+    # "could not send", including the ones whose body said the bundle WAS sent
+    # and only the attestation boxes failed — a headline contradicting its own
+    # first line is how a day of "nothing went out" got believed. The line
+    # knows what happened; read it.
+    low = (line or "").lower()
+    if "bundle sent" in low:
+        head = "Digi Docs — SENT, but the attestation boxes are not ticked"
+    elif "not sent and not finished" in low:
+        head = "Digi Docs — not sent, and nothing will retry it"
+    else:
+        head = "Digi Docs — could not send"
+    body = f"*{head}* {_tags()}\n• {line}"
     if dry_run:
         print(f"\n--- Slack ALERT (dry run, NOT posted) -> {CHANNEL} ---")
         print(body)
