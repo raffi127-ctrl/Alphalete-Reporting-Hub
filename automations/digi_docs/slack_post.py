@@ -67,8 +67,8 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
         print(body)
         return False
     from automations.shared import slack_metrics_post as smp
-    parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
-    smp.post_reply_text_only(body, thread_ts=parent, channel_id=CHANNEL)
+    smp.post_reply_text_only(body, thread_ts=_thread_ts(smp),
+                             channel_id=CHANNEL)
     _mark_reported()
     return True
 
@@ -80,6 +80,51 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
 # wrapper would either double-post every ordinary refusal or stay silent for
 # exactly the failures nothing else can catch.
 REPORTED_MARKER = "output/logs/.digi-docs-reported"
+
+
+def _thread_ts(smp) -> str:
+    """Today's Digi Docs thread ts — the STRING, not the dict around it.
+
+    ensure_named_thread returns {"ok":…, "existed":…, "thread_ts": ts}, and
+    both callers here passed that whole dict as thread_ts. Slack answered
+    `invalid_thread_ts` every time, so the header posted and the reply under it
+    never did — which is why 2026-08-31 8:09 was a bare header with no reply,
+    and why nobody had ever seen this thread carry a body."""
+    parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
+    if isinstance(parent, dict):
+        ts = parent.get("thread_ts")
+        if not ts:
+            raise smp.SlackPostError(f"no thread_ts in {parent!r}")
+        return ts
+    return parent
+
+
+def post_added(added: List[str], refused: List[str] | None = None,
+               *, dry_run: bool = True) -> bool:
+    """Say who was put into OwnerVille, in the day's thread (Megan 2026-08-31).
+
+    The add pass mails nobody, so it used to say nothing at all — and on a
+    morning when it died at 5 of 54 the only way to learn that was to read a
+    log on the machine it ran on. NEVER posts an empty board: nothing added and
+    nothing refused means there was nothing to say."""
+    if not added and not refused:
+        return False
+    lines = [f"*New starts added to OV* — {len(added)} added"]
+    lines += [f"• {n}" for n in added]
+    if refused:
+        lines.append("")
+        lines.append(f"*Not added ({len(refused)})* — these will have nothing "
+                     f"to generate against when their send comes round:")
+        lines += [f"• {r}" for r in refused]
+    body = "\n".join(lines)
+    if dry_run:
+        print(f"\n--- Slack (dry run, NOT posted) -> {CHANNEL} ---")
+        print(body)
+        return False
+    from automations.shared import slack_metrics_post as smp
+    smp.post_reply_text_only(body, thread_ts=_thread_ts(smp),
+                             channel_id=CHANNEL)
+    return True
 
 
 def _mark_reported() -> None:
@@ -161,8 +206,8 @@ def alert_failure(line: str, *, dry_run: bool = True) -> bool:
         print(body)
         return False
     from automations.shared import slack_metrics_post as smp
-    parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
-    smp.post_reply_text_only(body, thread_ts=parent, channel_id=CHANNEL)
+    smp.post_reply_text_only(body, thread_ts=_thread_ts(smp),
+                             channel_id=CHANNEL)
     _mark_reported()
     return True
 
