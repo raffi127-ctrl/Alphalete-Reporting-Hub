@@ -87,23 +87,17 @@ B2B_ICDS = [
     # ACÁ además: este módulo NO mira el flag `hidden`, así que si no le
     # seguiría escribiendo 19 celdas de OPT a una pestaña oculta.
     # ("Lizette Ruiz-Conejo", "Lizette Ruiz - B2B"),
-    # Calvin Ribero (Vernon, Inc., ownerville office 22162) — added 2026-08-30
-    # at Eve's request. The ONLY entry that is not on the Alphalete Org sheet:
-    # his B2B tab was cut from Carlos's 'B2B Template' onto Raf's *ATT Program
-    # - Focus Report*, so this step reaches across to that spreadsheet for him.
-    # Filled HERE rather than by att_focus_raf on purpose: Raf's OPT phase
-    # reads the residential/fiber ATT crosstabs, which carry no B2B owner at
-    # all, while these six views are org-wide and already downloaded — one more
-    # ICD costs a tab write, not another 17-minute Tableau session.
-    # The tab carries a "(B2B)" suffix (Eve 2026-08-30) so it does not read as
-    # one more fiber ICD among the ~52 - it is a WRITE TARGET only, never a
-    # name to match Tableau on.
-    # SPELLING: the tab says "Ribero" (Eve's spelling); ownerville says
-    # "Calvin Ribera". Tableau's spelling is unconfirmed — he is in NO cached
-    # B2B crosstab through WE 8/16 — so both are tried.
-    # His recruiting funnel (rows 2-20) stays empty until AppStream access
-    # lands; office-mapping.json carries him as sales_only/promote_when_visible.
-    ("Calvin Ribera", "Calvin Ribero (B2B)", "Raf", ["Calvin Ribero"]),
+    # Calvin Ribero was here from 2026-08-30 to 2026-08-31. REMOVED: he is not
+    # a B2B ICD at all. Vernon, Inc. (ownerville office 22162, Chicago IL) is
+    # not provisioned for B2B AT&T SBS, and he is in no B2B crosstab under
+    # either spelling — which is why this step wrote nothing to his tab for a
+    # month, silently.
+    # He sells BOX (Box Energy): `B2BBOXEnergyTracker` -> view
+    # **BoxDailyTracker**, 27 sales the week ending 8/30/2026. Note it is that
+    # view specifically — `BoxSalesMetrics`, which opt_box reads, is scoped to
+    # three owners and does not carry him either. His tab is filled by
+    # `automations.alphalete_org_report.opt_box_daily`, which reaches across to
+    # Raf's ATT Program - Focus Report the same way this list used to.
 ]
 
 # Personal Production = the ICD's OWN sales for the week: the rep row where

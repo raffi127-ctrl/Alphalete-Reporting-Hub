@@ -2043,45 +2043,40 @@
       "depends_on": [],
       "verify": null
     },
-    "b2b_backfill_calvin": {
-      "on_scheduler": true,
-      "order": 39.1,
-      "machine": "Lucy 3",
-      "_note": "Catch-up for Calvin Ribero's OLD week columns on the ATT Program - Focus Report (tab 'Calvin Ribero (B2B)'). Runs MONDAYS right behind alphalete_org_focus - `after`, not depends_on: that report failing must not strand this, the source is unrelated. His tab is written for the FIRST time by that run's B2B step, and a new focus-report tab gets backfilled the same day it starts filling rather than sitting on one column (Eve 2026-08-30). Fills only the rows a date-windowed crosstab can honestly answer - Active Headcount on Tableau, New Internets, Voice Sales, Wireless, New Lines, Personal Production - from ATTTRACKER-B2B SALESSUMMARY, the ONLY B2B view that can be aimed at a past week. Cancel / activation / churn / penetration / Direct Deposit / Scorecard Ranking / National AVG are ROLLING windows with no notion of 'the week of 8/9': those cells stay blank for old weeks on purpose and must never be estimated. Never overwrites a cell that already holds anything, so re-runs are free and a week that only reaches Tableau later still gets picked up. --download fetches just the weeks missing from the shared org-wide cache under output/_carlos_b2b_weeks/ and opens NO Tableau session once they are all there, so after the first Monday this costs seconds. Window is WE 8/2 - 8/23, the four weeks before his tab existed; widen with --from/--to, e.g. `lucy rerun b2b_backfill_calvin --from 2026-07-05 --write`. NOTE he is in no cached B2B crosstab through 8/16 under either spelling (tab 'Calvin Ribero', ownerville 'Calvin Ribera', office 22162) - if this keeps writing 0 cells, the thing to check is whether his campaign is B2B AT&T SBS or BOX-Energy, not the spelling. Added 2026-08-30 with his tab; safe to delete once the four weeks are settled.",
-      "display_name": "B2B backfill - Calvin Ribero",
-      "source_type": "tableau",
-      "data_sources": [],
-      "command": [
-        "automations.recruiting_report.b2b_backfill_sales"
-      ],
-      "base_args": [
-        "--captainship",
-        "Raf",
-        "--tab",
-        "Calvin Ribero (B2B)",
-        "--owner",
-        "Calvin Ribera",
-        "--from",
-        "2026-08-02",
-        "--to",
-        "2026-08-23",
-        "--download",
-        "--write"
-      ],
-      "cadence": {
-        "weekdays": [
-          0
-        ]
-      },
-      "after": [
-        "alphalete_org_focus"
-      ],
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": null
-    },
-    "sunday_coverage": {
+    "box_daily_calvin": {
+   "on_scheduler": true,
+   "order": 39.1,
+   "machine": "Lucy 3",
+   "_note": "DAILY fill of Calvin Ribero's BOX numbers on the ATT Program - Focus Report (tab 'Calvin Ribero (B2B)'). REPLACED b2b_backfill_calvin on 2026-08-31: he is not a B2B ICD - Vernon, Inc. (ownerville office 22162, Chicago IL) is not provisioned for B2B AT&T SBS and is in no B2B crosstab, which is why that job wrote 0 cells every Monday. He sells BOX. Source is B2BBOXEnergyTracker -> view **BoxDailyTracker** (worksheets 'Daily Tracker Sales' + 'Daily Tracker Metrics'), and it has to be that view: the Box workbook has 11 published views and each one's Owner Name list is its own - BoxSalesMetrics, which opt_box reads, is scoped to three owners and does not carry him, and Box Order Log / Tier Bonus show four. BoxDailyTracker shows ten, Calvin among them. DAILY rather than Mondays because the tracker is a CURRENT-WEEK snapshot whose week cannot be pinned, so a run can only ever fill the week it is in; running every day keeps the open week current and rolls onto the new column by itself. Fills Total Box CX's, Active Selling Heads, AVG Kwh Usage Per CX, AVG Sales per Leader and the two National AVGs. Accepted % / Completed % / WTD KwH / Scorecard Ranking / Personal Production and the churn + financial blocks have NO source in this view and stay blank on purpose - never estimate them. Older weeks were backfilled by hand on 2026-08-31 (18 weeks, WE 5/3 - 8/30, 622 sales) off the same view with its week filter at (All), which is the only state that exports history. Two traps if you touch this: the Owner Name filter is EXCLUSIVE (a `?Owner Name=` URL slice REMOVES that owner), and a failed Crosstab dialog stays open and hangs every later click. Runs dry by default; --write is what makes it write.",
+   "display_name": "BOX fill - Calvin Ribero",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.alphalete_org_report.opt_box_daily"
+   ],
+   "base_args": [
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "after": [
+    "alphalete_org_focus"
+   ],
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
+  "sunday_coverage": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY diagnostic. `lucy rerun sunday_coverage` pulls each ORG board CROSSTAB source on Lucy 1 and prints whether last Sunday's data is actually in the extract at pull time \u2014 diagnoses the 2026-07-13 Monday undercount (board missing the just-completed Sunday). Read-only.",
       "display_name": "Sunday coverage check (org board sources)",
