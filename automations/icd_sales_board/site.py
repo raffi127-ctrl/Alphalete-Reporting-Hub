@@ -44,6 +44,8 @@ from automations.icd_sales_board import roster as R  # noqa: E402
 from automations.icd_sales_board import board_read as B  # noqa: E402
 from automations.icd_sales_board import attendance as A  # noqa: E402
 from automations.icd_sales_board import goals as G  # noqa: E402
+from automations.icd_sales_board import captains as CP  # noqa: E402
+from automations.icd_sales_board import recruiting_read as RR  # noqa: E402
 
 # Raf's board — the template, and the only office with real data wired so far.
 RAF_SHEET = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"
@@ -226,7 +228,8 @@ def _delta(now, before):
 
 
 def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
-               team: str = ALL_TEAMS, tabs=(), campaign: str = "") -> None:
+               team: str = ALL_TEAMS, tabs=(), campaign: str = "",
+               office_key: str = "") -> None:
     """The four numbers on top. Stupid simple: four numbers, one glance.
 
     They follow the day selector AND the team filter — pick Wednesday and
@@ -272,7 +275,7 @@ def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
                        _delta(v["in_field"], pv.get("in_field")),
                        _delta(v["on_board"], pv.get("on_board")),
                        _delta(pct_now, pct_prev),
-                       _delta(v["zero"], pv.get("zero")), note)
+                       _delta(v["zero"], pv.get("zero")), note, office_key)
         return
 
     all_sum = (week.summary.get("ALL") or {}) if week else {}
@@ -297,11 +300,31 @@ def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
                    _delta(n.get("in_field"), p.get("in_field")),
                    _delta(n.get("on_board"), p.get("on_board")),
                    _delta(n.get("pct"), p.get("pct")),
-                   _delta(n.get("zero"), p.get("zero")), "Week to date")
+                   _delta(n.get("zero"), p.get("zero")), "Week to date",
+                   office_key)
+
+
+def _goal_line(col, office_key: str, metric: str, actual) -> None:
+    """A green or red line under a number, against the goal this office set.
+
+    Colour follows the goal's DIRECTION — fewer zeros is better, so a fall is
+    green there and red everywhere else. No goal set means NO colour at all:
+    painting a number red against a target nobody chose is worse than leaving
+    it plain."""
+    goal = G.vital_goal(office_key, metric)
+    if goal is None:
+        return
+    hit = G.hits_goal(metric, actual, goal)
+    if hit is None:
+        return
+    shown = f"{goal:g}%" if "%" in str(actual) else f"{goal:g}"
+    col.markdown(f":green[✓ goal {shown}]" if hit
+                 else f":red[✗ goal {shown}]")
 
 
 def _render_vitals(in_field, on_board, pct, zero,
-                   d_field, d_board, d_pct, d_zero, note) -> None:
+                   d_field, d_board, d_pct, d_zero, note,
+                   office_key: str = "") -> None:
     """The four metrics with last-week pills.
 
     'Rolled a zero' is INVERTED: fewer zeros is the good direction, so a drop
@@ -315,6 +338,11 @@ def _render_vitals(in_field, on_board, pct, zero,
               help=note)
     c4.metric("Rolled a zero", zero, delta=d_zero, delta_color="inverse",
               help=note)
+    if office_key:
+        _goal_line(c1, office_key, "Reps in the field", in_field)
+        _goal_line(c2, office_key, "Got on the board", on_board)
+        _goal_line(c3, office_key, "% of reps selling", pct)
+        _goal_line(c4, office_key, "Rolled a zero", zero)
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -1286,16 +1314,421 @@ def zero_streaks(week, overrides: dict, team: str = ALL_TEAMS,
                          height=_grid_height(len(at_or_above)))
 
 
-def recruiting(profile) -> None:
+# Each section, the module that already produces its numbers, and whether the
+# site is reading it yet. Written down because the useful discovery is that
+# almost nothing here is new data work — these reports exist and run today;
+# the site is a consolidation of them, not a replacement.
+SECTIONS = [
+    ("Sales", "icd_sales_board (this module)", True,
+     "Board, production, zero streaks, week over week."),
+    ("Recruiting", "recruiting_report → ATT Program - Focus Report", True,
+     "The nine tracked funnel metrics, with each office's own goals."),
+    ("Knocks", "knocks_run → AUTOMATION MASTER 'Knocks Daily'", False,
+     "Day over day per ICD, and combined per captainship. Now being logged."),
+    ("Financials", "dd_bulletin → Org DDs Ongoing Report", False,
+     "DD totals, average DD, active owners, Credico direct deposits."),
+    ("Org", "dd_bulletin → Org DDs Ongoing Report (by-ICD breakdown)", False,
+     "The offices and how they rank."),
+    ("Compliance", "office_metrics churn + ongoing_cancel runs", False,
+     "Churn by window and by rep, red-flagged over threshold."),
+    ("Team", "icd_sales_board (Raf's board only, for now)", False,
+     "Teams, leaders, units per team — Raf's office first, since it is the "
+     "one whose sales board we can read."),
+]
+
+# The Org DDs Ongoing Report — the DD Bulletin's own source, and therefore the
+# Financials and Org numbers. Same workbook as the ORG Sales Board, which this
+# machine already reads, so neither section is blocked on access.
+ORG_DD_SHEET = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
+ORG_DD_GID = "423082205"
+
+# EVERY PAGE LEADS WITH ITS VITALS (Megan 2026-08-31). The first thing on a
+# page is the handful of numbers that page exists to answer; the breakdown
+# goes underneath. Somebody opening a page should not have to scroll to find
+# out whether things are fine.
+
+
+def summary_page(icd: str, office_key: str) -> None:
+    """One landing page that says where everything is.
+
+    The point of the site is that nobody has to visit six places, so the
+    summary names every section — including the ones not wired yet, and what
+    already produces their numbers. A section that silently isn't there reads
+    as a section that doesn't exist."""
+    st.subheader("Summary")
+    st.caption("Everything for this office in one place. Sections not yet "
+               "reading live data name the report that already produces them.")
+    for row in range(0, len(SECTIONS), 2):
+        cols = st.columns(2)
+        for col, (name, source, live, blurb) in zip(cols,
+                                                    SECTIONS[row:row + 2]):
+            with col:
+                badge = ":green[● live]" if live else ":orange[○ not wired]"
+                st.markdown(f"**{name}**  {badge}")
+                st.caption(blurb)
+                st.caption(f"source: `{source}`")
+                st.divider()
+
+
+def goals_editor(office_key: str, icd: str) -> None:
+    """Where an office sets its own goals — the thing the colours judge.
+
+    Seeded from the Focus Report's OFFICE GOALS column when the office has a
+    tab there, so nobody retypes targets that already exist."""
+    st.subheader("Goals")
+    st.caption("Your numbers, not the org's. A metric with no goal simply "
+               "isn't coloured — it never shows red against a target nobody "
+               "chose.")
+    cols = st.columns(4)
+    metrics = ["Reps in the field", "Got on the board", "% of reps selling",
+               "Rolled a zero"]
+    changed = {}
+    for col, m in zip(cols, metrics):
+        cur = G.vital_goal(office_key, m)
+        with col:
+            val = st.text_input(m, value=("" if cur is None else f"{cur:g}"),
+                                key=f"goal_{office_key}_{m}",
+                                help=("lower is better"
+                                      if G.VITAL_GOALS.get(m) == G.LOWER_IS_BETTER
+                                      else "higher is better"))
+        changed[m] = val
+    if st.button("Save goals", type="primary", key=f"savegoals_{office_key}"):
+        for m, v in changed.items():
+            G.set_vital_goal(office_key, m, v)
+        st.success("Goals saved.")
+        st.rerun()
+
+
+def knocks_page(icd: str) -> None:
+    """Where the knocks reports will live.
+
+    Standing here rather than nowhere: knocks come from ownerville, not
+    Tableau, via the one metric that impersonates an office — so this page
+    exists as the destination before the feed is pointed at it."""
+    st.subheader("Knocks")
+    c1, c2, c3, c4 = st.columns(4)
+    for col, label in zip((c1, c2, c3, c4),
+                          ("Total knocks", "Talk to", "Reps knocking",
+                           "Time gaps")):
+        col.metric(label, "—", help="Starts filling once days accumulate")
+    st.info("The knocks feed isn't wired into the site yet. It is the one "
+            "metric that comes from ownerville rather than Tableau "
+            "(impersonate → Disposition + Time Tracker), so it needs its own "
+            "pull — this page is where it will land.", icon="🚧")
+    st.success("As of today the daily run LOGS its rows to AUTOMATION MASTER → "
+               "'Knocks Daily', so day-over-day history is accumulating from "
+               "now on. It could not be built from the past: the run used to "
+               "render its images and keep nothing, so earlier days exist only "
+               "as pictures in Slack.", icon="✅")
+    st.markdown("**What will show here**")
+    st.markdown("- Total knocks per rep, per day\n"
+                "- Time gaps\n"
+                "- The same day / team filters as the sales board")
+
+
+def captain_page() -> None:
+    """A captain's own view.
+
+    The 13 captains are the people who get the daily Captainship Report; the
+    roster and the brand colours come from that email's config so the two can
+    never disagree."""
+    if not CP.CAPTAINS:
+        st.error("Captain roster unavailable.")
+        return
+    names = [c.name for c in CP.CAPTAINS]
+    who = st.sidebar.selectbox("Captain", names, key="captain")
+    cap = next(c for c in CP.CAPTAINS if c.name == who)
+
+    st.markdown(
+        f"<div style='background:{cap.color};color:#fff;padding:14px 18px;"
+        f"border-radius:8px;font-weight:700;font-size:1.4rem'>"
+        f"{cap.name}'s Captainship</div>", unsafe_allow_html=True)
+    st.caption(f"{cap.flavor.upper()} · the same people your daily "
+               "Captainship Report covers")
+
+    st.divider()
+    st.info(
+        "Week-over-week for this captainship isn't wired yet, and it is an "
+        "ACCESS problem rather than a build one: the 12 captainship boards and "
+        "the Captainship Dashboard are owned under Carlos's account and this "
+        "machine's Sheets token can't read them. The plan is a job on Lucy 2 "
+        "(which can) publishing a snapshot the site reads.",
+        icon="🔒")
+    st.markdown("**Still to confirm:** which board owners sit under each "
+                "captain. The 12 owners (Jackie LeRoy, Kinsey Guenther, "
+                "George Hipolito…) are different people from the 13 captains — "
+                "only Atef is on both lists — so that mapping has to come from "
+                "you rather than be guessed.")
+
+
+@st.cache_data(ttl=900, show_spinner="Reading the Focus Report…")
+def recruiting_data(icd: str) -> dict:
+    try:
+        return RR.load(icd)
+    except Exception as e:
+        return {"weeks": [], "metrics": {}, "error": str(e)}
+
+
+def _rate_or_count(raw: str, is_rate: bool) -> str:
+    v = str(raw or "").strip()
+    if not v:
+        return "—"
+    return v if not is_rate or v.endswith("%") else f"{v}%"
+
+
+def recruiting(profile, icd: str, office_key: str = "") -> None:
+    """The nine tracked funnel metrics up top, the full breakdown underneath.
+
+    Nine, not ninety-two: the sheet carries every row an office has ever
+    tracked, and a page that shows all of them shows nothing. These are the
+    ones an office is judged on (Megan 2026-08-31), in her order — from what
+    was sent to the call list through to whether a BOB showed up on day one.
+
+    Goals default to the Focus Report's own OFFICE GOALS column and an office
+    can override any of them; the colour says whether this week is at goal, so
+    the ones that aren't green are where the focus goes."""
     st.subheader("Recruiting")
-    st.caption("From Raf's funnel. Only the earliest stage that misses its goal "
-               "is the constraint — the rest are downstream of it.")
-    for s in F.STAGES:
-        goal = F.GOALS.get(s.key)
-        cols = st.columns([4, 2, 2])
-        cols[0].write(f"**{s.order}. {s.label}**  \n{s.ratio}")
-        cols[1].write("✅ pulled today" if s.is_wired else "⚠️ not wired")
-        cols[2].write(f"goal {goal:.0%}" if goal is not None else "no goal set")
+    data = recruiting_data(icd)
+    if data.get("error") or not data.get("metrics"):
+        st.info(f"No Focus Report tab for {icd}. The sheet has one tab per "
+                "ICD, named exactly as AppStream names them.", icon="🚧")
+        return
+
+    # A WEEK IS ONLY FILLED IF A COUNT IS FILLED. The rate rows are live
+    # formulas: for a week nobody has filled in yet they still compute, and
+    # they compute 0% off blank counts. Treating that as data picked a week
+    # with nothing in it and then painted three vitals red against their goals
+    # — a zero that means "not entered" reads exactly like a zero that means
+    # "nobody converted", and red is supposed to mean go look at this.
+    counts = [r for _, r, is_rate in F.TRACKED if not is_rate]
+    weeks = [w for w in data["weeks"] if w <= dt.date.today()]
+    filled = [w for w in weeks
+              if any(str(data["metrics"].get(r, {}).get("by_week", {})
+                         .get(w, "")).strip() for r in counts)]
+    if not filled:
+        st.info("No filled weeks yet for this office.", icon="🗓️")
+        return
+    latest = filled[-1]
+    st.caption(f"Week ending {latest.strftime('%m/%d/%y')} · "
+               "goals come from the Focus Report unless this office set its own.")
+
+    # ---- the nine, three to a row
+    for chunk in range(0, len(F.TRACKED), 3):
+        cols = st.columns(3)
+        for col, (label, row, is_rate) in zip(cols,
+                                              F.TRACKED[chunk:chunk + 3]):
+            m = data["metrics"].get(row, {})
+            actual = m.get("by_week", {}).get(latest, "")
+            goal = G.recruit_goal(office_key, row, m.get("goal", ""))
+            col.metric(label, _rate_or_count(actual, is_rate))
+            if goal is None or not str(actual).strip():
+                continue
+            hit = G.hits_goal(label, actual, goal)
+            if hit is None:
+                continue
+            shown = f"{goal:g}%" if is_rate else f"{goal:g}"
+            mark = "✓" if hit else "✗"
+            col.markdown((f":green[{mark} goal {shown}]" if hit
+                          else f":red[{mark} goal {shown}]")
+                         + ("" if not G.is_office_override(office_key, row)
+                            else " ·  your goal"))
+
+    # Click-to-expand, the way the retention report does it: the number is the
+    # summary, the detail sits under it. Only the rows that HAVE a detail get
+    # one — an expander that opens on nothing is worse than no expander.
+    with st.expander("Sent to call list — which job ads it came from"):
+        ads_breakdown(icd)
+
+    with st.expander("BOB — which ads and locations bring people on board"):
+        bob_breakdown(icd)
+
+    # REFERENCE ONLY, and only where a board exists (Megan 2026-08-31). Most
+    # offices have no sales board for us to read, so ad quality can never be a
+    # column in the tables above — those have to mean the same thing for every
+    # office. It sits in its own block that simply is not there when there is
+    # no board to reference.
+    if has_board(icd):
+        with st.expander("Reference — who from each ad got past 3 weeks"):
+            quality_breakdown(icd)
+
+    st.divider()
+    st.markdown("**Week over week**")
+    n = st.slider("Weeks to show", 4, max(4, min(26, len(filled))),
+                  min(8, max(4, len(filled))), key="rec_n")
+    shown_weeks = filled[-n:]
+
+    rows = []
+    for label, row, is_rate in F.TRACKED:
+        m = data["metrics"].get(row, {})
+        r = {"Metric": label,
+             "Goal": (f"{G.recruit_goal(office_key, row, m.get('goal','')):g}"
+                      if G.recruit_goal(office_key, row, m.get("goal", ""))
+                      is not None else "")}
+        for w in shown_weeks:
+            r[w.strftime("%m/%d")] = m.get("by_week", {}).get(w, "")
+        rows.append(r)
+    st.dataframe(rows, use_container_width=True, hide_index=True,
+                 height=_grid_height(len(rows)))
+    st.caption("Blank weeks stay blank — a 0 would claim nobody did anything, "
+               "which is not the same as nobody having filled it in.")
+
+    with st.expander("Set this office's recruiting goals"):
+        st.caption("Blank uses the Focus Report's own goal for that row.")
+        edits = {}
+        for chunk in range(0, len(F.TRACKED), 3):
+            cols = st.columns(3)
+            for col, (label, row, is_rate) in zip(cols,
+                                                  F.TRACKED[chunk:chunk + 3]):
+                sheet_goal = data["metrics"].get(row, {}).get("goal", "")
+                cur = load_goal_text(office_key, row)
+                with col:
+                    edits[row] = st.text_input(
+                        label, value=cur,
+                        placeholder=f"sheet: {sheet_goal or '—'}",
+                        key=f"rg_{office_key}_{row}")
+        if st.button("Save recruiting goals", type="primary",
+                     key=f"saverg_{office_key}"):
+            for row, val in edits.items():
+                G.set_recruit_goal(office_key, row, val)
+            st.success("Saved.")
+            st.rerun()
+
+
+@st.cache_data(ttl=1800, show_spinner="Reading the applicant tracker…")
+def _ads(icd: str, days: int) -> list:
+    from automations.icd_sales_board import job_ads as JA
+    rows = JA.load_rows()
+    since = dt.date.today() - dt.timedelta(days=days)
+    return JA.breakdown(rows, owner=icd, since=since)
+
+
+def has_board(icd: str) -> bool:
+    """Whether we can read a sales board for this office at all.
+
+    Today that is Raf only. Everything gated on this must degrade to ABSENT,
+    never to zero — an office we cannot see is not an office where nobody
+    lasted."""
+    return icd == RAF_ICD
+
+
+@st.cache_data(ttl=1800, show_spinner="Reading interviews…")
+def _bob(icd: str, key: str, weeks: int) -> tuple:
+    from automations.icd_sales_board import job_ads as JA
+    return JA.bob_weekly(JA.load_2r(), key=key, owner=icd, weeks=weeks)
+
+
+@st.cache_data(ttl=1800, show_spinner="Checking who stayed…")
+def _quality(icd: str) -> list:
+    from automations.icd_sales_board import job_ads as JA
+    sh = open_by_key(RAF_SHEET)
+    titles = [w.title for w in sh.worksheets()]
+    weeks = {d: B.parse_week(sh.worksheet(t).get_all_values(), t).reps
+             for t, d in B.week_tab_dates(titles)}
+    return JA.quality_by_ad(JA.load_2r(), owner=icd,
+                            first_sale_map=first_sale_map(),
+                            lasted=JA.lasted_names(weeks))
+
+
+def quality_breakdown(icd: str) -> None:
+    """Which ads produced people who are still here — reference, not a metric.
+
+    'Past 3 weeks' is whatever the board itself says: a rep marked 4th Wk or
+    5th wk+ visibly got there. Nothing is inferred from dates, so nobody is
+    called a failure for having started recently — they simply have not been
+    marked yet."""
+    try:
+        rows = _quality(icd)
+    except Exception as e:
+        st.warning(f"Couldn't cross-reference the board: {e}")
+        return
+    if not rows:
+        st.caption(f"No BOB with a start date recorded for {icd}.")
+        return
+
+    bob = sum(r["BOB"] for r in rows)
+    st.dataframe(rows, use_container_width=True, hide_index=True,
+                 height=_grid_height(min(len(rows), 16)))
+    st.caption(
+        f"Reference only, and only for offices whose board we can read — "
+        f"{bob} brought on board, matched by name against the board's own "
+        "Field Status. A low number here is a prompt to look, not proof an ad "
+        "is bad: someone who never appeared on the board may have been missed "
+        "in the match, and anyone hired recently has not had three weeks yet.")
+
+
+def bob_breakdown(icd: str) -> None:
+    """BOB by ad and by location, week over week.
+
+    Same week boundary as the sales board (ending Sunday) so a BOB week lines
+    up with a production week, and bucketed on the START date — when somebody
+    actually came on board, not when they were offered."""
+    key = st.radio("Break down by", ["Ad", "Location"], horizontal=True,
+                   key=f"bobkey_{icd}")
+    weeks = st.slider("Weeks", 4, 16, 8, key=f"bobwk_{icd}")
+    try:
+        wk, rows = _bob(icd, "ad" if key == "Ad" else "city", weeks)
+    except Exception as e:
+        st.warning(f"Couldn't read the tracker: {e}")
+        return
+    if not rows:
+        st.caption(f"No BOB recorded for {icd} in that window.")
+        return
+
+    top = rows[0]
+    c1, c2 = st.columns(2)
+    c1.metric(f"Highest BOB {key.lower()}",
+              (top.get("Ad") or top.get("Location"))[:34], f"{top['Total']} BOB")
+    c2.metric("BOB in window", sum(r["Total"] for r in rows))
+
+    st.dataframe(rows, use_container_width=True, hide_index=True,
+                 height=_grid_height(min(len(rows), 16)))
+    st.caption("BOB = a filled Start Date — coming on board, not being "
+               "offered. Ranked by total, but read the weekly columns before "
+               "killing an ad: the biggest ad by applies is not the best "
+               "converter.")
+
+
+def ads_breakdown(icd: str) -> None:
+    """Which job ads the call-list applies came from.
+
+    Volume alone can't decide anything — an ad can send hundreds of applies and
+    hire nobody — so this is built to sit next to a hire count. Until hires are
+    matched in, the Hired column reads 'not matched yet' rather than 0: an ad
+    with no hire DATA is not an ad with no hires, and a 0 would get one killed."""
+    days = st.select_slider("Window", [30, 60, 90, 180],
+                            value=90, key=f"adwin_{icd}")
+    try:
+        rows = _ads(icd, days)
+    except Exception as e:
+        st.warning(f"Couldn't read the applicant tracker: {e}")
+        return
+    if not rows:
+        st.caption(f"No call-list applies recorded for {icd} in {days} days.")
+        return
+
+    total = sum(r["Applies"] for r in rows)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Applies to call list", f"{total:,}")
+    c2.metric("Distinct ads", len(rows))
+    c3.metric("Top ad's share",
+              f"{rows[0]['Applies'] / total:.0%}" if total else "—")
+
+    show = [{k: ("not matched yet" if k == "Hired" and v is None else v)
+             for k, v in r.items() if k != "Hire rate"} for r in rows]
+    st.dataframe(show, use_container_width=True, hide_index=True,
+                 height=_grid_height(min(len(show), 18)))
+    st.caption(f"{len(rows)} ads over {days} days, busiest first. Titles keep "
+               "their location — the same ad in two markets is two ads with "
+               "two costs. Hires aren't matched in yet, so nothing here should "
+               "be killed on volume alone.")
+
+
+def load_goal_text(office_key: str, row: str) -> str:
+    """The office's own override as typed, or blank when it uses the sheet's."""
+    if not G.is_office_override(office_key, row):
+        return ""
+    v = G.recruit_goal(office_key, row, "")
+    return "" if v is None else f"{v:g}"
 
 
 # ----------------------------------------------------------------------- app
@@ -1310,8 +1743,12 @@ def main() -> None:
                   or st.session_state.get("goal_dirty"))
     if locked:
         st.sidebar.warning("Unsaved changes", icon="✏️")
-    view = st.sidebar.radio("View", ["Office", "Org"], key="view",
+    view = st.sidebar.radio("View", ["Office", "Captain", "Org"], key="view",
                             disabled=locked)
+
+    if view == "Captain":
+        captain_page()
+        return
 
     if view == "Org":
         st.title("Every office")
@@ -1339,8 +1776,9 @@ def main() -> None:
     # scroll (Megan 2026-08-17). They answer different questions and get read by
     # different people at different times; stacking them buries whichever is
     # second.
-    page = st.sidebar.radio("Page", ["Production", "Recruiting"], key="page",
-                            disabled=locked)
+    page = st.sidebar.radio(
+        "Page", ["Summary", "Production", "Recruiting", "Knocks", "Goals"],
+        key="page", disabled=locked)
 
     # The BUSINESS name headlines — this is the office's board, and the branded
     # name is what an owner recognises as theirs. The owner's own name sits
@@ -1349,8 +1787,17 @@ def main() -> None:
     st.caption(icd + " · "
                + " · ".join(C.CAMPAIGNS[k].label for k in prof.campaigns))
 
+    if page == "Summary":
+        summary_page(icd, key)
+        return
     if page == "Recruiting":
-        recruiting(prof)
+        recruiting(prof, icd, key)
+        return
+    if page == "Knocks":
+        knocks_page(icd)
+        return
+    if page == "Goals":
+        goals_editor(key, icd)
         return
 
     if icd != RAF_ICD:
@@ -1394,7 +1841,7 @@ def main() -> None:
     team = team or ALL_TEAMS
 
     vitals_row(week, R.load(key), scope, overrides, team,
-               data['tabs'], campaign)
+               data['tabs'], campaign, key)
     production_panel(week, scope, overrides, team, key,
                      data['tabs'], campaign)
     st.divider()

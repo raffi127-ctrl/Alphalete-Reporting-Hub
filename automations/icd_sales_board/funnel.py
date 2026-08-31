@@ -111,6 +111,34 @@ STAGES: list[Stage] = [
 
 BY_KEY: dict[str, Stage] = {s.key: s for s in STAGES}
 
+# ---------------------------------------------------------------------------
+# THE TRACKED FUNNEL (Megan 2026-08-31). Nine metrics, in her order — the ones
+# an office is actually judged on, as opposed to every row the sheet carries.
+#
+# Each maps to a row that ALREADY EXISTS in the ATT Program - Focus Report,
+# with its goal already in that sheet's OFFICE GOALS column. Nothing here is a
+# new number to collect: it is a selection out of 92 rows, so the page shows
+# the nine that matter instead of everything.
+#
+# `is_rate` marks the ones that are percentages, because a rate and a count
+# cannot share a chart axis or a goal comparison.
+# ---------------------------------------------------------------------------
+TRACKED = [
+    ("Sent to call list",     "Sent To Call List - APPS / PULL",        False),
+    ("% of call list booked", "Retention to Call list",                 True),
+    ("1st rounds showed",     "1ST SHOWED",                             False),
+    ("% offered 2nd round",   "Retention 1st showed Booked for 2nd",    True),
+    ("2nd rounds showed",     "2ND SHOWED",                             False),
+    ("2nd round retention",   "2ND Retention",                          True),
+    ("% offered job",         "Job Offered Retention",                  True),
+    ("BOB",                   "BOB",                                    False),
+    ("BOB showed to 1st day", "BOB Conversion",                         True),
+]
+
+TRACKED_ROWS = [row for _, row, _ in TRACKED]
+IS_RATE = {row: rate for _, row, rate in TRACKED}
+LABEL_FOR = {row: label for label, row, _ in TRACKED}
+
 # Raf's targets, spoken at the conference — NOT transcribed here because the
 # deck's slides are images and the numbers weren't in the text layer. Ask Raf,
 # then fill: {stage key: target as a fraction, e.g. 0.50}. Until then the

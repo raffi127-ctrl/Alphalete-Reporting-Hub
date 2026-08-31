@@ -163,6 +163,20 @@ def _pull(office_name: str, extras: list, target):
     else:
         target, rows = pull_office_knocks(office_name, target)
         extra_totals = []
+
+    # Keep the day. This run is otherwise stateless — it renders the PNGs from
+    # these rows, posts them and forgets, so yesterday's numbers survive only
+    # as an image in Slack and nothing can be shown day over day. Writing the
+    # rows we ALREADY have costs no second pull and no extra ownerville
+    # session. Idempotent (a logged day is skipped) and never fatal: a logging
+    # failure must not take down a post that would otherwise go out.
+    if rows:
+        try:
+            from automations.icd_sales_board import knocks_log
+            knocks_log.append_day(target, office_name, rows)
+        except Exception as e:                        # noqa: BLE001
+            print(f"   knocks log: SKIPPED ({type(e).__name__}: {e})",
+                  flush=True)
     return rows, extra_totals, target
 
 
