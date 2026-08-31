@@ -417,22 +417,28 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     try:
                         ticked = ov.tick_attestations(page, modal, dry_run=dry)
                     except Exception as e:              # noqa: BLE001
-                        # NOT counted as done, and NOT tinted. The banner is
-                        # the only evidence the bundle generated, and on
-                        # 2026-08-31 it was not evidence enough: the log said
-                        # twelve bundles generated and Megan found people in
-                        # OwnerVille with no documents at all. Until that gap
-                        # is understood, an attestation failure leaves the rep
-                        # UNRESOLVED — check the record, do not assume either
-                        # way from this line.
+                        # STILL TINTED (Megan 2026-08-31: "no cells are turned
+                        # green for those the digi doc bundle sent to"). The
+                        # success banner above is confirmation the bundle
+                        # generated, and generating IS the send — so the cell
+                        # has to say sent. Ticking the attestation boxes is a
+                        # separate obligation that failed, and it is raised as
+                        # its own alert rather than by withholding the tint,
+                        # because a blank cell reads as "never sent" and sends
+                        # somebody looking for a bundle that already went.
+                        #
+                        # The reason to distrust the banner earlier was the
+                        # WRONG CAMPAIGN: reps were being added under
+                        # Water/Primo, so bundles generated against the wrong
+                        # campaign's list. That is fixed at the source now.
+                        ticked = []
                         _refuse(refused,
-                                f"{c.name}: stopped after the bundle step, at "
-                                f"the attestation boxes ({type(e).__name__}: "
-                                f"{str(e).splitlines()[0][:80]}). CHECK "
-                                f"OwnerVille for this person: if the documents "
-                                f"are there they only need their boxes ticked, "
-                                f"if not they need a re-send.", dry)
-                        continue
+                                f"{c.name}: bundle SENT (success banner "
+                                f"confirmed) — but the attestation boxes were "
+                                f"not ticked ({type(e).__name__}: "
+                                f"{str(e).splitlines()[0][:70]}). Tick them in "
+                                f"OwnerVille; this person does NOT need a "
+                                f"re-send.", dry)
                     done.append((c.name, matched, ticked))
                 except ov.Refused as e:
                     _refuse(refused, str(e), dry)

@@ -615,19 +615,21 @@ class AttestationFailureIsNotAFailedSendTest(_NoNetwork):
                        dry=False, added=[], done=done, refused=refused)
         return done, refused
 
-    def test_an_attestation_failure_leaves_the_rep_unresolved(self):
-        """Not done, not tinted. The success banner was the only evidence the
-        bundle generated, and on 2026-08-31 people with that banner in the log
-        had no documents in OwnerVille — so this line must not decide it."""
+    def test_a_sent_bundle_is_tinted_even_when_attestations_fail(self):
+        """Megan 2026-08-31: "no cells are turned green for those the digi doc
+        bundle sent to". The banner confirms the bundle generated and
+        generating IS the send, so the cell must say sent. A blank cell reads
+        as never-sent and sends somebody hunting for a bundle already gone."""
         done, refused = self._run_one(tick_raises=True)
-        self.assertEqual([], done, "a tint here would claim a send we cannot "
-                                   "prove happened")
+        self.assertEqual(1, len(done))
+        self.assertEqual("Bianca Mendez", done[0][0])
+        self.assertEqual([], done[0][2], "no boxes were ticked")
 
-    def test_the_alert_says_where_it_stopped_and_what_to_check(self):
+    def test_the_alert_says_sent_and_that_no_re_send_is_needed(self):
         _, refused = self._run_one(tick_raises=True)
         self.assertEqual(1, len(refused))
-        self.assertIn("attestation boxes", refused[0])
-        self.assertIn("CHECK OwnerVille", refused[0])
+        self.assertIn("bundle SENT", refused[0])
+        self.assertIn("does NOT need a re-send", refused[0])
 
     def test_a_clean_run_is_unchanged(self):
         done, refused = self._run_one(tick_raises=False)
