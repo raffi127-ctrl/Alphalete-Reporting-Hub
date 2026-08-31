@@ -374,11 +374,29 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
     with page_ctx as page:
         if do_add:
             print("PHASE: add reps")
+            # ONE roster read for the cohort instead of a whole-site search per
+            # person (~2 min each: two runs died on their timeout partway on
+            # 2026-08-31). It is only trusted when the read PROVED it was
+            # complete against the table's own entry count — a partial read
+            # reports real people as absent, and since adding MAILS them their
+            # onboarding email, absent-when-wrong is a duplicate welcome to a
+            # real person. Not complete, or empty, means fall straight back to
+            # asking per person, which is slow and right.
+            roster, complete = ov.snapshot(page)
+            trust = bool(roster and complete)
+            if not trust:
+                print("  roster not proven complete — checking each person "
+                      "individually (slower, and the safe way round)",
+                      flush=True)
             for c in add_list:
                 try:
+                    if trust and ov.present(roster, c.name):
+                        print(f"  {c.name}: already in OwnerVille")
+                        continue
                     outcome = ov.add_sales_rep(
                         page, c.name, dry_run=dry,
-                        employee_id=getattr(args_ns, "employee_id", "") or None)
+                        employee_id=getattr(args_ns, "employee_id", "") or None,
+                        known_absent=trust)
                     if outcome in ("added", "dry"):
                         added.append(c.name)
                 except ov.Refused as e:

@@ -701,3 +701,70 @@ class UnrecognisedDocsStateIsLoudTest(_NoNetwork):
         refused = self._send_one("ON HOLD")
         self.assertEqual(1, len(refused))
         self.assertIn("ON HOLD", refused[0])
+
+
+class FastAddOnlyTrustsAProvenRosterTest(_NoNetwork):
+    """One roster read is the speed-up; PROVING it is the safety.
+
+    2026-08-31, in order: the add ran a whole-site search per person (~2 min
+    each, two runs died on their timeout partway); the first roster read fixed
+    that by reading ONE page per campaign and reporting 29 real people as
+    missing; and then Megan found that adding a rep MAILS them their onboarding
+    email. So a partial read is not a cosmetic bug — "absent" being wrong is a
+    duplicate welcome to a real person.
+
+    Hence: trust the roster only when it proved complete, and otherwise fall
+    all the way back to asking per person.
+    """
+
+    def _add(self, roster, complete):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import ownerville as _real, run as _run
+
+        class _OV:
+            Refused = RuntimeError
+            present = staticmethod(_real.present)
+
+            def __init__(s):
+                s.asked, s.known_absent_flags = [], []
+
+            def snapshot(s, page, **kw):
+                return roster, complete
+
+            def add_sales_rep(s, page, name, *, dry_run=True, employee_id=None,
+                              known_absent=False):
+                s.asked.append(name)
+                s.known_absent_flags.append(known_absent)
+                return "added"
+
+        ov = _OV()
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        people = [type("C", (), {"name": n})()
+                  for n in ("Ana Lopez", "Bo Diaz")]
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True):
+            _run._work(ov, page_ctx=contextlib.nullcontext(object()),
+                       do_add=True, do_send=False, send=[], add_list=people,
+                       dry=False, added=[], done=[], refused=[])
+        return ov
+
+    def test_a_proven_roster_skips_the_present_and_fast_paths_the_rest(self):
+        ov = self._add({"1 ana lopez rep"}, True)
+        self.assertEqual(["Bo Diaz"], ov.asked, "Ana is already there")
+        self.assertTrue(all(ov.known_absent_flags))
+
+    def test_an_incomplete_roster_is_not_trusted_at_all(self):
+        """Even though Ana is in it — a read that could not prove itself must
+        not decide who is absent, because absent means MAIL THEM."""
+        ov = self._add({"1 ana lopez rep"}, False)
+        self.assertEqual(["Ana Lopez", "Bo Diaz"], ov.asked)
+        self.assertFalse(any(ov.known_absent_flags))
+
+    def test_an_empty_roster_falls_back_rather_than_adding_everyone(self):
+        ov = self._add(set(), True)
+        self.assertEqual(["Ana Lopez", "Bo Diaz"], ov.asked)
+        self.assertFalse(any(ov.known_absent_flags),
+                         "empty means unread, never 'nobody is here'")
