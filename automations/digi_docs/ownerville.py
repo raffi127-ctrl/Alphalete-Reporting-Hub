@@ -72,6 +72,12 @@ def add_sales_rep(page, name: str, *, dry_run: bool = True,
             print(f"  {name}: WOULD add")
         return "dry"
 
+    # ADD ON THE RIGHT CAMPAIGN, EXPLICITLY. Whatever the page is showing is
+    # wherever find_rep's walk ENDED, which is the last option in the dropdown
+    # — "Water - Primo / RSW B2B". A morning of new starts went in under it
+    # before anyone noticed (2026-08-31), and the campaign is not cosmetic: the
+    # bundle list is per campaign, so the wrong one means the wrong contract.
+    _select_campaign(page, config.ADD_CAMPAIGN, verbose=verbose)
     _click_any(page, "Add Sales Rep", page=page)
     modal = page.locator("div[role='dialog'], .modal:visible").filter(
         has_text="Add Sales Rep").first
@@ -88,6 +94,30 @@ def add_sales_rep(page, name: str, *, dry_run: bool = True,
     if verbose:
         print(f"  {name}: added")
     return "added"
+
+
+def _select_campaign(page, want: str, *, verbose: bool = True) -> str:
+    """Put the campaign dropdown on `want` and wait for the table to reload.
+
+    Refuses unless exactly one option matches. Adding on the wrong campaign is
+    silent — the rep lands somewhere real, just not where their contract lives —
+    so this must never fall back to whatever is already selected."""
+    sel = _campaign_select(page)
+    options = [o.strip() for o in sel.locator("option").all_inner_texts()
+               if o.strip()]
+    hits = [o for o in options if want.lower() in o.lower()]
+    if len(hits) != 1:
+        raise Refused(f"campaign {want!r} matched {len(hits)} of "
+                      f"{len(options)} options ({options[:6]}) — refusing to "
+                      f"add on a campaign we cannot name exactly")
+    sel.select_option(label=hits[0])
+    try:
+        page.wait_for_load_state("networkidle", timeout=60000)
+    except Exception:                                       # noqa: BLE001
+        pass
+    if verbose:
+        print(f"  campaign: {hits[0]}")
+    return hits[0]
 
 
 def _select_person(picker, name: str, *, employee_id: str | None = None) -> None:

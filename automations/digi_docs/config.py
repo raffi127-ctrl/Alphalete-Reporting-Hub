@@ -231,6 +231,16 @@ DRUG_TEST_TICK = (
 )
 SERVICE_RADIO = "RES-ATT"          # the other option is RES-ATT-OOF
 
+# THE CAMPAIGN A NEW START IS ADDED UNDER (Megan 2026-08-31, after the fact).
+# add_sales_rep used to add on whatever campaign the page happened to be
+# showing, and what it was showing was wherever find_rep's search had ENDED —
+# the last option in the dropdown, "Water - Primo / RSW B2B". So a whole
+# morning of new starts went in under Water/Primo instead of RES-AT&T, which
+# is also why their bundles were wrong: the bundle list is per campaign.
+# Selected explicitly before every add now, and a name that does not match
+# exactly one option is a refusal rather than a guess.
+ADD_CAMPAIGN = "RES-AT&T"
+
 # The Set Status row whose state says whether documents are still owed. A rep
 # NOT showing this has their bundle already — skip.
 #
