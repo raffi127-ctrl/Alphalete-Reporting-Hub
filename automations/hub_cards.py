@@ -5187,14 +5187,14 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "weekdays": [0, 1, 2, 3, 4, 5, 6],
-            "time": "8:00 AM",
+            "time": "11:00 AM",
             # NOT "Mon 8am" (Megan 2026-08-31: "these pills shouldn't all say
             # monday"). Once the card went daily that label repeated on every
             # column, so Tuesday's pill claimed Monday. The report fires on the
             # DATE WRITTEN ABOVE A CHART, so the honest label names no weekday
             # at all — 8am for the add, then each person 30 minutes before
             # their own start.
-            "time_label": "Raf's Office · 8am, then 30 min before each start",
+            "time_label": "Raf's Office · 11am, then 30 min before each start",
             "estimated_minutes": 25,
         },
         "checklist": [],

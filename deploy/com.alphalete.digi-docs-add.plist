@@ -43,10 +43,13 @@
          chart is dated for today, long before it opens a browser. THE ADD PASS
          MAILS NOBODY; the sends are the separate com.alphalete.digi-docs-send
          job, 30 minutes before each person's own start time. -->
+    <!-- 11:00, moved from 08:00 (Megan 2026-08-31). The add mails nobody, so
+         the only hard constraint is that it FINISHES before the earliest send,
+         and each person's send goes 30 minutes before their own start. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>8</integer>
+        <integer>11</integer>
         <key>Minute</key>
         <integer>0</integer>
     </dict>
