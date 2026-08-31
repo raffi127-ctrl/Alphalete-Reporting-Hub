@@ -782,7 +782,25 @@
       "timeout_minutes": 5,
       "machine": "Lucy 3"
     },
-    "headshots_sheet_mark_one": {
+    "headshots_fix_note": {
+   "on_scheduler": false,
+   "_note": "Edit a stale OwnerVille line on the bot's own headshot post in this week's thread — for when an upload actually went through (or a retry fixed it) but the thread still says \"upload didn't go through\". `lucy rerun headshots_fix_note --name \"Luis Valenzuela\" --machine \"Lucy 3\"`; --dry-run shows the before/after without editing. Must run on Lucy 3: chat.update only works with the app that posted.",
+   "display_name": "Headshot thread — fix a stale OV line",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.headshots.fix_note"
+   ],
+   "base_args": [],
+   "cadence": {"weekdays": []},
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": "Lucy 3"
+  },
+  "headshots_sheet_mark_one": {
       "on_scheduler": false,
       "_note": "Tick ONE person's \"Headshot Photo\" box on the OBCL sheet, on demand \u2014 the retry path when a headshot was uploaded but the sheet mark missed (e.g. their week's dated tab had already rolled over). Searches the newest dated tab, then older dated tabs, then the rolling \"D2D OBCL\" stack. `lucy rerun headshots_sheet_mark_one --name \"Ivan Soto\" --machine \"Lucy 3\"`; add --dry-run to see where it WOULD mark without writing.",
       "display_name": "OBCL Headshot box \u2014 mark one person",
