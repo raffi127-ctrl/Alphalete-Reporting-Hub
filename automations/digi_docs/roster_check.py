@@ -60,16 +60,60 @@ def snapshot(page, *, verbose: bool = True) -> set:
             page.wait_for_load_state("networkidle", timeout=60000)
         except Exception:                   # noqa: BLE001
             pass
+        pages = _read_every_page(page, rows_seen)
+        if verbose:
+            print(f"  {label}: {pages} page(s), {len(rows_seen)} row(s) so far",
+                  flush=True)
+    return rows_seen
+
+
+def _read_every_page(page, rows_seen: set) -> int:
+    """Read the WHOLE table, not the page of it DataTables happens to show.
+
+    2026-08-31: the first version read `tbody tr` once per campaign and got 24,
+    1, 24 — those are PAGE sizes, not rosters. It then reported 29 of 52 people
+    "not in OwnerVille", including two the add pass had logged as added the
+    same morning. A paginated read that calls itself a roster is worse than no
+    check at all: it names real people as missing and invites someone to add
+    them twice.
+
+    Widen the length menu to its largest option first (DataTables names it
+    <something>_length), then walk Next until the button stops being clickable.
+    """
+    try:                                    # biggest page size on offer
+        length = page.locator("select[name$='_length']:visible").first
+        if length.count():
+            opts = [o.strip() for o in length.locator("option").all_inner_texts()]
+            best = max(opts, key=lambda o: (o.strip().lower() in ("all", "-1"),
+                                            int(re.sub(r"\D", "", o) or 0)))
+            length.select_option(label=best)
+            page.wait_for_timeout(1200)
+    except Exception:                       # noqa: BLE001 — walk pages instead
+        pass
+    seen_pages = 0
+    while seen_pages < 40:                  # backstop, never a real page count
+        seen_pages += 1
         rows = page.locator("tbody tr")
-        n = rows.count()
-        for i in range(n):
+        for i in range(rows.count()):
             try:
                 rows_seen.add(_norm_row(rows.nth(i).inner_text(timeout=2000)))
             except Exception:               # noqa: BLE001
                 continue
-        if verbose:
-            print(f"  {label}: {n} row(s)", flush=True)
-    return rows_seen
+        nxt = page.locator("a.next:visible, li.next:visible a, "
+                           "a.paginate_button.next:visible").first
+        try:
+            if not nxt.count():
+                break
+            cls = (nxt.get_attribute("class") or "") + " " + (
+                nxt.evaluate("e => e.parentElement ? e.parentElement.className "
+                             ": ''") or "")
+            if "disabled" in cls.lower():
+                break
+            nxt.click()
+            page.wait_for_timeout(900)
+        except Exception:                   # noqa: BLE001
+            break
+    return seen_pages
 
 
 def present(rows_seen: set, name: str) -> bool:
