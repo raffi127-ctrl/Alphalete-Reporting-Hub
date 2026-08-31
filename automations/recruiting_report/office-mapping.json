@@ -1,7 +1,7 @@
 {
   "confirmed_count": 57,
   "needs_review_count": 0,
-  "skip_count": 28,
+  "skip_count": 29,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -431,6 +431,11 @@
   ],
   "needs_review": [],
   "skip": [
+    {
+      "sheet_tab": "Calvin Ribero (B2B)",
+      "reason": "duplicate of 'Calvin Ribera (BOX)' — that tab is the live one (renamed 2026-08-31 when he moved off the B2B template to BOX); this copy keeps its data and is hidden",
+      "retired": "2026-08-31"
+    },
     {
       "sheet_tab": "Edgar Muniz II",
       "reason": "terminated 2026-07-22 (keeps filled tab; excluded from pull)"
