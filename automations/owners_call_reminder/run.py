@@ -21,6 +21,16 @@ import sys
 from email.message import EmailMessage
 from pathlib import Path
 
+# The success line prints a "✅" and the problem lines a "⚠". On a Windows console
+# (cp1252) that print RAISES UnicodeEncodeError — AFTER the SMTP send has already
+# gone out, so the mail leaves but the run looks like it crashed and the Hub
+# publish below never happens. Same guard as contacts_write.py (Eve, 2026-08-31).
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 # Who the reminder goes to: the "Org. Call Invite" Google Contacts distro (Megan
 # maintains it — membership changes are picked up automatically each run).
 # OWNERS_CALL_EMAILS (comma-separated) overrides it for testing.

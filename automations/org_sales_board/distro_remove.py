@@ -66,6 +66,15 @@ REMOVALS: dict = {
     # Owners Call Reminder's distro — no code fallback, the live group is it.
     "Org. Call Invite": [
         ("Paola Rodriguez", "rpaola205@gmail.com"),          # 2026-08-19
+        # 2026-08-31 (Eveliz, por mail): "We can remove Lizette from all emails
+        # from Rafs database moving forward" — amplía la baja del 2026-08-24, que
+        # entonces era SÓLO de la capitanía de Eveliz. Entró a este grupo ese
+        # mismo día con la org de Colten (está en el Org Tree como
+        # "Lizette Ruiz-Conejo") y volvió a salir. Sigue en
+        # leaders_call.COLTEN_ORG a propósito: el deck de reconocimiento no es un
+        # mail y sacarla de ahí borraría a sus reps del reconocimiento — decisión
+        # de Eve, no de esta baja.
+        ("Lizette Ruiz", "lizetteruiz0510@gmail.com"),
     ],
     "Raf's Captain Team": [
         ("Edgar Muniz II", "edgarmuniz2020@icloud.com"),     # "Edgar Munoz II" in Contacts

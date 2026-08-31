@@ -46,6 +46,11 @@ from __future__ import annotations
 # that captain alone — never here.
 EXCLUDE = (
     "Ethan McKendree",      # Eve, 2026-08-10 — Carlos' captainship
+    # 2026-08-31 (Eveliz, confirmado por Eve): ya no es parte de la org. Las
+    # dos escrituras porque las fuentes se parten: el board dice "Lizette
+    # Ruiz", AppStream/Tableau "Lizette Ruiz-Conejo".
+    "Lizette Ruiz",
+    "Lizette Ruiz-Conejo",
     # --- two-week zero rule, 2026-08-19 ---
     "Ronald Dawson",        # Retail NL + Retail Internet
     "Cinthya Reyes",        # Retail JE

@@ -1,5 +1,5 @@
 {
-  "_why": "Last-known expansion of the 'Alphalete Org Owners' contact group, used ONLY when the People API can't be reached. Seeded 2026-07-31 from the To: line of the Org Sales Board email that actually went out on 2026-07-30 (subject 'Alphalete Org Sales Board 7/29') — i.e. verified delivery, not a guess. A successful live expansion overwrites the runtime cache under output/, which wins over this file. Cinthya Reyes, Benjamin Burden and David Martinez removed 2026-08-19 under the two-week zero rule, to match the live group. Paola Rodriguez (rpaola205@gmail.com) removed 2026-08-19 - taken off every report, so she is out of the live group too. Eve (eve@alphaletemarketing.com) agregada 2026-08-28: esta en el grupo VIVO pero faltaba en este respaldo, asi que un envio que cayera al fallback la dejaba afuera — y Eve pidio estar en TODAS las listas de distribucion.",
+  "_why": "Last-known expansion of the 'Alphalete Org Owners' contact group, used ONLY when the People API can't be reached. Seeded 2026-07-31 from the To: line of the Org Sales Board email that actually went out on 2026-07-30 (subject 'Alphalete Org Sales Board 7/29') — i.e. verified delivery, not a guess. A successful live expansion overwrites the runtime cache under output/, which wins over this file. Cinthya Reyes, Benjamin Burden and David Martinez removed 2026-08-19 under the two-week zero rule, to match the live group. Paola Rodriguez (rpaola205@gmail.com) removed 2026-08-19 - taken off every report, so she is out of the live group too. Lizette Ruiz (lizetteruiz0510@gmail.com) removida 2026-08-31: Eveliz confirmo que ya no es parte de la org, sale de TODAS las listas de distribucion (grupo vivo 'Alphalete Org Owners' y 'Org. Call Invite' tambien). Eve (eve@alphaletemarketing.com) agregada 2026-08-28: esta en el grupo VIVO pero faltaba en este respaldo, asi que un envio que cayera al fallback la dejaba afuera — y Eve pidio estar en TODAS las listas de distribucion.",
   "group": "Alphalete Org Owners",
   "as_of": "2026-07-30",
   "emails": [
@@ -7,7 +7,6 @@
     "haywilson403838@gmail.com",
     "codycannon1993@gmail.com",
     "isaiah.revelle@gmail.com",
-    "lizetteruiz0510@gmail.com",
     "jahvidthompson18@gmail.com",
     "valeriatristan.amg@gmail.com",
     "jd.alphaletemarketing@gmail.com",
