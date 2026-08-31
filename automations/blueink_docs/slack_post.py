@@ -48,24 +48,50 @@ def _mentions() -> str:
     return " ".join("<@%s>" % uid for uid in TAG_USER_IDS)
 
 
-def build_thread(sent: int, problems: List[Tuple[str, str]],
-                 warnings: List[str] = None) -> str:
-    """The reply body. `problems` is [(person name, why)]."""
-    lines = ["*%d* new start%s sent" % (sent, "" if sent == 1 else "s")]
-    if not problems:
-        lines.append("*0* failed to send")
-        return "\n".join(lines + _warn_lines(warnings))
+def _held_phrase(why: str) -> str:
+    """Turn a screen verdict into something a person reads without decoding.
 
+    recent_ui.verdict hands back the row prefix and date it saw, e.g.
+    "Sent 8/24/26" or "Completed 8/24/26". Megan's wording (2026-08-31) is
+    "already sent on <date>" -- the date is the point, because it is what tells
+    the reader whether to chase a signature or leave it alone.
+    """
+    parts = (why or "").split()
+    if len(parts) == 2 and "/" in parts[1]:
+        return "already %s on %s" % (parts[0].lower(), parts[1])
+    return why or "already has a packet"
+
+
+def build_thread(sent: int, problems: List[Tuple[str, str]],
+                 warnings: List[str] = None,
+                 held: List[Tuple[str, str]] = None) -> str:
+    """The reply body. `problems` is [(person name, why)]; `held` is
+    [(person name, verdict)] for people we deliberately did NOT send because
+    Blue Ink already shows them a packet."""
+    lines = ["*%d* new start%s sent" % (sent, "" if sent == 1 else "s")]
     lines.append("*%d* failed to send" % len(problems))
-    lines.append("")
-    for name, why in problems:
-        lines.append("• *%s* — %s" % (name, why))
-    # Name the action, not the vibe: the people tagged here are the ones who
-    # will actually send these, so the line tells them to, rather than leaving
-    # them to work out that "needs a look" means "do it yourself".
-    tags = _mentions()
-    if tags:
-        lines += ["", "%s — these need to be sent manually." % tags]
+    if problems:
+        lines.append("")
+        for name, why in problems:
+            lines.append("• *%s* — %s" % (name, why))
+        # Name the action, not the vibe: the people tagged here are the ones
+        # who will actually send these, so the line tells them to, rather than
+        # leaving them to work out that "needs a look" means "do it yourself".
+        tags = _mentions()
+        if tags:
+            lines += ["", "%s — these need to be sent manually." % tags]
+
+    # Held-back people are NOT failures and must not be tagged to anyone: they
+    # already have their paperwork, so there is no action to hand out. They get
+    # named anyway because the sheet can't show it -- the green tint only marks
+    # what THIS report sent, so a packet the team sent by hand leaves the row
+    # looking untouched, and "why was Jose skipped?" costs somebody a morning
+    # (Megan asked for this line 2026-08-31, having asked exactly that).
+    if held:
+        lines += ["", "*%d* not sent — already had a packet:" % len(held)]
+        for name, why in held:
+            lines.append("• *%s* — %s" % (name, _held_phrase(why)))
+
     return "\n".join(lines + _warn_lines(warnings))
 
 
@@ -77,9 +103,10 @@ def _warn_lines(warnings) -> list:
 
 
 def post(sent: int, problems: List[Tuple[str, str]], *,
-         warnings: List[str] = None, dry_run: bool = True) -> None:
+         warnings: List[str] = None, held: List[Tuple[str, str]] = None,
+         dry_run: bool = True) -> None:
     """Header to the channel, detail in its thread."""
-    body = build_thread(sent, problems, warnings)
+    body = build_thread(sent, problems, warnings, held)
     if dry_run:
         print("\n--- Slack (dry run, NOT posted) -> %s ---" % CHANNEL)
         print(HEADER)

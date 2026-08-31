@@ -22,11 +22,22 @@ from automations.blueink_docs.roster import NewStart
 # these tabs, so an automated mark is indistinguishable from a manual one.
 LIGHT_GREEN = {"red": 0xD9 / 255, "green": 0xEA / 255, "blue": 0xD3 / 255}
 
+# Google Sheets' "light green 2" (#B6D7A8) -- deliberately a DEEPER green than
+# the send tint. Megan 2026-08-31: someone who already had a packet from an
+# earlier week has most likely rescheduled their start date, and that is worth
+# seeing without opening anything. It has to be a shade nobody squints at: the
+# tabs already carry #D9EAD3 (ours) and #D8EFD3 (the team's hand tint), which
+# are near-identical to each other, so a third pale green would read as noise.
+CARRIED_GREEN = {"red": 0xB6 / 255, "green": 0xD7 / 255, "blue": 0xA8 / 255}
 
-def highlight(worksheet, people: List[NewStart]) -> int:
+
+def highlight(worksheet, people: List[NewStart], color: dict = None) -> int:
     """Light-green the "Blue Ink" cell of everyone in `people`. Returns the
     number of cells tinted. Best-effort: a formatting failure must never make a
-    send that already went out look like it didn't."""
+    send that already went out look like it didn't.
+
+    `color` defaults to the send tint; pass CARRIED_GREEN for people who were
+    held back because they already had a packet."""
     cells = [p for p in people if p.row and p.blueink_col]
     missing = [p for p in people if p.row and not p.blueink_col]
     if missing:
@@ -44,7 +55,8 @@ def highlight(worksheet, people: List[NewStart]) -> int:
                 "startColumnIndex": p.blueink_col - 1,
                 "endColumnIndex": p.blueink_col,
             },
-            "cell": {"userEnteredFormat": {"backgroundColor": LIGHT_GREEN}},
+            "cell": {"userEnteredFormat":
+                     {"backgroundColor": color or LIGHT_GREEN}},
             "fields": "userEnteredFormat.backgroundColor",
         }
     } for p in cells]

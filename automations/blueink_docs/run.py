@@ -254,6 +254,48 @@ def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
     return failures
 
 
+def _handle_held(worksheet, to_send_all: List[NewStart], held: dict):
+    """Deal with everyone Blue Ink already shows a packet for.
+
+    They split in two, because a reader needs opposite things from them:
+
+      "same name ..."  an ambiguous match nobody has confirmed. That IS a
+                       problem -- it gets tagged for a human, same as a failure.
+      everything else  a clean hit on the person's own address. Not a failure:
+                       they already have their paperwork, and there is nothing
+                       for anyone to do.
+
+    The clean ones get a DEEPER green than a fresh send. Without any mark their
+    row looks identical to somebody nobody touched, which is exactly what had
+    Megan asking why Jose Laureano was skipped (2026-08-31); and the shade
+    differs from the send tint because a packet from an earlier week usually
+    means a rescheduled start date.
+
+    Returns ([(name, verdict)] for the clean ones, [(name, why)] to add to
+    problems).
+    """
+    ok, problems = [], []
+    for pp in to_send_all:
+        why = held.get(pp.email.strip().lower(), "")
+        if not why:
+            continue
+        if why.startswith("same name"):
+            problems.append((pp.name, why))
+        else:
+            ok.append(pp)
+    if ok:
+        try:
+            carried = mark.highlight(worksheet, ok, color=mark.CARRIED_GREEN)
+            if carried:
+                print(f"\nTinted {carried} carried-over packet(s) deeper green "
+                      f"on {worksheet.title!r}.")
+        except Exception as exc:
+            # Cosmetic. Never worth failing a run that mailed the right people.
+            print(f"\nCouldn't tint the carried-over packets: {exc}")
+    return ([(pp.name, held.get(pp.email.strip().lower(), "")) for pp in ok],
+            problems)
+
+
 def _sync_completed(worksheet, people: List[NewStart],
                     headless: bool = True) -> int:
     """Tick the Blue Ink checkbox for anyone Blue Ink shows as signed."""
@@ -494,6 +536,22 @@ def _main(argv=None) -> int:
         return 0
     if not to_send:
         print("\nNothing to send.")
+        # A week where EVERYONE already has a packet is a real outcome, not an
+        # empty one -- the 2026-08-24 screen cut 58 people to 3, so 3 to 0 is
+        # one quiet Monday away. Falling straight out here would tint nothing
+        # and say nothing in Slack, and a silent channel reads exactly like a
+        # job that never fired. So mark them and post anyway.
+        held_pairs, held_problems = _handle_held(ws, to_send_all, held)
+        if held_pairs or held_problems:
+            try:
+                _sync_completed(ws, people)
+            except Exception as exc:
+                print(f"Couldn't refresh completed packets: {exc}")
+            try:
+                slack_post.post(0, held_problems, held=held_pairs,
+                                dry_run=not args.slack)
+            except Exception as exc:
+                print(f"\nThe Slack summary failed ({exc}).")
         return 0
 
     if args.via == "api":
@@ -514,10 +572,8 @@ def _main(argv=None) -> int:
             if pp.eligible or "email" not in pp.skip_reason:
                 continue
             problems.append((pp.name, pp.skip_reason))
-        for pp in to_send_all:
-            why = held.get(pp.email.strip().lower(), "")
-            if why.startswith("same name"):
-                problems.append((pp.name, why))
+        held_pairs, held_problems = _handle_held(ws, to_send_all, held)
+        problems += held_problems
 
         # The Blue Ink column is where the green tint and the signed checkbox
         # go. Missing means those marks can't be written -- worth saying out
@@ -543,7 +599,7 @@ def _main(argv=None) -> int:
 
         try:
             slack_post.post(sent_count, problems, warnings=warnings,
-                            dry_run=not args.slack)
+                            held=held_pairs, dry_run=not args.slack)
         except Exception as exc:
             print(f"\nThe Slack summary failed ({exc}). The sends themselves "
                   "are fine and logged -- this is only the notification.")
