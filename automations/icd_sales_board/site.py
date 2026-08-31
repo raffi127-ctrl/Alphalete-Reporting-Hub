@@ -1628,9 +1628,23 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
     # column in the tables above — those have to mean the same thing for every
     # office. It sits in its own block that simply is not there when there is
     # no board to reference.
+    with st.expander("Ad quality — how interviewers rated who each ad sent"):
+        ars_breakdown(icd)
+
     if has_board(icd):
+        # LOADED ON DEMAND. Streamlit runs an expander's body even while it is
+        # collapsed, and this one reads every week tab of the board — thirteen
+        # full reads of a 247-column sheet, which by itself took the page from
+        # seconds to minutes. Everything else here is one sheet read and stays
+        # eager; this is reference material behind a click.
         with st.expander("Reference — who from each ad got past 3 weeks"):
-            quality_breakdown(icd)
+            if st.button("Load", key=f"loadq_{icd}") or \
+                    st.session_state.get(f"q_shown_{icd}"):
+                st.session_state[f"q_shown_{icd}"] = True
+                quality_breakdown(icd)
+            else:
+                st.caption("Cross-references every week of the sales board, "
+                           "so it is a slow read — click Load to run it.")
 
     st.markdown('<div style="height:.6rem"></div>', unsafe_allow_html=True)
     st.divider()
@@ -1755,6 +1769,75 @@ def has_board(icd: str) -> bool:
 def _bob(icd: str, key: str, weeks: int) -> tuple:
     from automations.icd_sales_board import job_ads as JA
     return JA.bob_weekly(JA.load_2r(), key=key, owner=icd, weeks=weeks)
+
+
+@st.cache_data(ttl=1800, show_spinner="Reading interviewer ratings…")
+def _ars(icd: str) -> list:
+    from automations.icd_sales_board import ars as A2
+    return A2.load(icd)
+
+
+def ars_breakdown(icd: str) -> None:
+    """Star rating per ad — the only source that says whether an ad's people
+    were any GOOD, rather than how many of them there were.
+
+    Ranked by average, but the share of 1–2 star is the column to read: that
+    is the end of the scale that separates outcomes (see ars.py). Ads with too
+    few ratings are shown separately instead of being ranked, so one 5-star
+    applicant cannot put an ad top of the table."""
+    from automations.icd_sales_board import ars as A2
+    try:
+        rows = _ars(icd)
+    except Exception as e:
+        st.warning(f"Couldn't read the ARS report: {e}")
+        return
+    if not rows:
+        st.caption(f"No ARS rows for {icd}. The five ARS workbooks carry one "
+                   "tab per ICD, split alphabetically by first name.")
+        return
+
+    dist = A2.distribution(rows)
+    rated = sum(dist[n] for n in range(1, 6))
+    if not rated:
+        st.caption(f"{len(rows)} interviews on file for {icd}, none rated yet.")
+        return
+
+    cols = st.columns(4, gap="small")
+    avg = sum(n * dist[n] for n in range(1, 6)) / rated
+    _vital(cols[0], "Average star", f"{avg:.2f}", None)
+    _vital(cols[1], "Rated", f"{rated:,}", None)
+    _vital(cols[2], "1–2 star",
+           f"{sum(dist[n] for n in (1, 2)) / rated:.0%}", None)
+    _vital(cols[3], "4–5 star",
+           f"{sum(dist[n] for n in (4, 5)) / rated:.0%}", None)
+
+    ads = A2.by_ad(rows)
+    solid = [{k: v for k, v in a.items() if k != "thin"}
+             for a in ads if not a["thin"]]
+    thin = [a for a in ads if a["thin"]]
+    if solid:
+        st.dataframe(solid, use_container_width=True, hide_index=True,
+                     column_config=_centered(solid[0]),
+                     height=_grid_height(min(len(solid), 16)))
+    st.caption(
+        f"{len(solid)} ads with enough ratings to rank, best first"
+        + (f" · {len(thin)} more have too few to judge" if thin else "")
+        + f" · {dist['unrated']:,} interviews carry no rating at all. "
+        "Read the 1–2 star column as much as the average: across this "
+        "office's history 1 star really does mark a worse applicant, while "
+        "2 through 5 land within a few points of each other on whether "
+        "somebody was offered a job or came on board.")
+
+    with st.expander("Who did the rating"):
+        people = A2.by_interviewer(rows)
+        if people:
+            st.dataframe(people, use_container_width=True, hide_index=True,
+                         column_config=_centered(people[0]),
+                         height=_grid_height(min(len(people), 12)))
+        st.caption("Not a scoreboard — a control. Different people score "
+                   "different applicants, so an interviewer running a point "
+                   "below the rest drags down whichever ads they happened to "
+                   "screen, for a reason that has nothing to do with the ad.")
 
 
 @st.cache_data(ttl=1800, show_spinner="Checking who stayed…")
