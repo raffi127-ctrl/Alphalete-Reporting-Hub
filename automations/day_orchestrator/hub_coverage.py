@@ -135,6 +135,15 @@ _NOT_A_REPORT = frozenset({
     # own (the wrapper passes --no-manifest so it cannot even colour the parent
     # card). It self-registered a card the first time install_agent ran.
     "org_board_box_repull",
+    # The Sales Board's TK (Total Knocks) column fill (Eve 2026-08-31, asked
+    # before it was built: "no agregues tarjeta en el hub, tiene que entrar
+    # dentro del batch de producción, es un agregado, no un reporte nuevo").
+    # com.alphalete.production-tk ticks it every 15 minutes and ~64 of the 68
+    # daily fires write nothing, so a card would repaint all day and say
+    # nothing. It is one column of the Alphalete SALES BOARD 2025 that the
+    # production batch already has a card for. It self-registered one the first
+    # time install_agent ran, which is the door this line closes.
+    "production_tk_fill",
 })
 
 
