@@ -506,6 +506,20 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
     else:
         print("\n(add phase — no tint, no Slack: nothing was sent)")
 
+    # LEAVE THE WHY WHERE THE ALERT WILL FIND IT (Megan 2026-08-31: "when
+    # that's the error - it needs to say that on slack corrections channel").
+    # hub_publish's failure alert only ever said "closed a run with status
+    # FAILED", so "the 'Start Time' column is not on this tab — 31 people
+    # cannot be scheduled" reached the channel as a generic red nobody could
+    # act on. A clean run clears it, so a stale reason can never outlive the
+    # failure it described.
+    try:
+        from automations.day_orchestrator import hub_publish as _hp
+        _hp.write_failure_reason(
+            "digi_docs", (fatal or (refused[0] if refused else "")))
+    except Exception:                                   # noqa: BLE001
+        pass
+
     print(f"\nadded {len(added)} · sent {len(done)} · tinted {tinted} · "
           f"refused {len(refused)}")
     for r in refused:
