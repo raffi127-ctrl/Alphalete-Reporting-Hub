@@ -191,6 +191,66 @@ def _export_age_min(state_path) -> float | None:
         return None
 
 
+# How long the fleet handoff may go quiet before a consumer is on its own.
+# Lucy 2 mints a fresh AppStream rqst and hands it to every consumer roughly
+# HOURLY (2026-08-31: 01:11, 02:12, 03:09, 04:11, 05:07, 06:08), while the token
+# itself only lives ~2h. A consumer's copy is therefore a few minutes from
+# expiry somewhere in every trough — that is the designed rhythm, not a fault.
+# 2026-08-31 03:01 paged Megan about a token that died at 03:05 and was replaced
+# at 03:09, eight minutes later, with the holder never having missed a beat.
+# 100m is one handoff interval plus room for a slow one.
+FLEET_HANDOFF_GRACE_MIN = 100.0
+
+
+def _donated_token_marker():
+    return APPSTREAM_STORAGE_STATE.with_name(".appstream_donated_token")
+
+
+def _donation_age_min() -> float | None:
+    """Minutes since a fleet handoff last installed a session on this machine.
+
+    mini_control writes '.appstream_donated_token' beside the state file every
+    time the holder's push lands, so its mtime is this machine's OWN record of
+    when the fleet last fed it — no cross-machine read, nothing to go stale."""
+    return _export_age_min(_donated_token_marker())
+
+
+def fleet_is_feeding_us() -> tuple[bool, str]:
+    """Is the AppStream holder still handing THIS machine fresh tokens?
+
+    Whenever it is, a human re-seed is the wrong answer and the page should not
+    go out. Only the console-using machine can mint; a consumer's copy is MEANT
+    to lapse between handoffs; and a fresh login here would invalidate the token
+    the whole fleet is holding — session_holder tells anyone reading its log the
+    same thing ("do NOT --appstream-login here"). So the question that decides
+    whether to wake someone is not "is my copy old", which is old on purpose. It
+    is the one this module's docstring already names: has the MINTER stopped?"""
+    try:
+        from automations.shared import session_holder as _sh
+        holders = _sh.APPSTREAM_HOLD_MACHINES
+    except Exception:                       # noqa: BLE001 — never break the watch
+        return False, "cannot tell who holds AppStream"
+    if _this_machine() in holders:
+        return False, "this machine IS the AppStream holder"
+    age = _donation_age_min()
+    if age is None:
+        return False, "no fleet handoff has ever landed here"
+    if age <= FLEET_HANDOFF_GRACE_MIN:
+        return True, (f"the holder handed this machine a session {age:.0f}m ago "
+                      f"— a fresh one is due, no re-seed can help")
+    return False, (f"no fleet handoff in {age:.0f}m — the holder has stopped, "
+                   f"which IS the case a human fixes")
+
+
+def _this_machine() -> str:
+    """This runner's name, the same way mini_control resolves it."""
+    try:
+        from automations.shared import hub_identity
+        return hub_identity.machine_name()
+    except Exception:                       # noqa: BLE001
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # Probe — read when the session dies. Cheap, no network.
 # ---------------------------------------------------------------------------
@@ -623,6 +683,21 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
         # batch). Before pinging, ask the only question that matters: can a
         # report open the console RIGHT NOW, on the path a report actually uses?
         probe_failed = False
+        # THE MINTER, NOT THE COPY (2026-08-31). This machine consumes a token
+        # Lucy 2 mints and pushes hourly; between pushes its copy is short or
+        # expired BY DESIGN, and no login here can shorten that wait — it would
+        # only invalidate what the fleet is holding. So while the handoffs are
+        # still arriving, there is nothing to page anyone about. Checked before
+        # the probe because the probe is what turns this into a page, and at
+        # 03:01 it correctly reported a dead copy four minutes before the
+        # replacement landed.
+        fleet_fed = False
+        if key == "appstream" and not healthy:
+            fleet_fed, why_fed = fleet_is_feeding_us()
+            if fleet_fed:
+                healthy = True
+                stt = {**stt, "reason": "{} (stored token: {})".format(
+                    why_fed, stt["reason"])}
         if key == "appstream" and not healthy and ping_due and probe:
             probe_ok, why = probe_appstream_healthy()
             if probe_ok:
@@ -638,7 +713,11 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
         if healthy:
             # Recovered in the morning window after being stale → a re-seed just
             # happened; auto-rerun this session's reports so nothing's missing.
-            if (was_ok is False and reports
+            # NOT on the fleet-fed path: "healthy because the holder is still
+            # feeding us" means nothing ever broke, so there is nothing to
+            # re-run — and re-running the AppStream reports off a trough would
+            # be exactly the blanket re-run this repo has been bitten by.
+            if (was_ok is False and reports and not fleet_fed
                     and MORNING_WINDOW[0] <= now.hour < MORNING_WINDOW[1]
                     and state.get(f"reran_{key}") != today):
                 for rid, rmachine in reports:
