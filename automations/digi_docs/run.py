@@ -365,24 +365,9 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
     with page_ctx as page:
         if do_add:
             print("PHASE: add reps")
-            # ONE roster read for the whole cohort, not one whole-site search
-            # per person. See ownerville.roster_snapshot: the per-person
-            # find_rep cost ~2 minutes each, so 54 people was 90 minutes of
-            # searching to do 54 modals, and two runs died on their timeout at
-            # 5 and 9 people (2026-08-31) with the sends coming at 11:30.
-            #
-            # An EMPTY roster means we could not read the page, NOT that the
-            # cohort is missing — so it falls straight back to the per-person
-            # search. A roster we cannot read must never be the evidence that
-            # somebody is absent; acting on that adds a duplicate.
-            roster = ov.roster_snapshot(page)
             for c in add_list:
                 try:
-                    if roster and ov.in_roster(roster, c.name):
-                        print(f"  {c.name}: already in OwnerVille")
-                        continue
-                    outcome = ov.add_sales_rep(page, c.name, dry_run=dry,
-                                               known_absent=bool(roster))
+                    outcome = ov.add_sales_rep(page, c.name, dry_run=dry)
                     if outcome in ("added", "dry"):
                         added.append(c.name)
                 except ov.Refused as e:
