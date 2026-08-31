@@ -176,6 +176,11 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # Writes a one-line identity marker, whitelisted and
                     # idempotent — re-running it is a no-op, not a second write.
                     "set_machine_profile",
+                    # Deploy plumbing, like update: bounded (it refuses anything
+                    # not already on origin/main) and idempotent (a commit this
+                    # runner already has is a no-op). A hotfix day must not spend
+                    # the budget meant for bounding repeated REPORT runs.
+                    "cherry_pick",
                     "set_slack_token", "set_office_slack_token",
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
@@ -2685,8 +2690,46 @@ def _action_update(args: str) -> tuple[bool, str]:
     if co.returncode != 0:
         return False, ("couldn't switch to main (uncommitted changes on the "
                        f"current branch?): {(co.stderr or co.stdout).strip()[:150]}")
+
+    # RECONCILE A CHERRY-PICKED RUNNER (2026-08-31). `cherry_pick` puts a commit
+    # on this machine ahead of a deploy, which leaves the branch DIVERGED from
+    # origin/main — and `pull --ff-only` cannot fast-forward across divergence,
+    # so without this every later update fails and the runner quietly stops
+    # taking deploys (the 2026-07-15 Lucy 2 stranding, by another route).
+    #
+    # cherry_pick only ever picks commits ALREADY on origin/main, so each one
+    # carries git's own "(cherry picked from commit X)" trailer with X upstream.
+    # When that holds for every local-only commit they are pure duplicates of
+    # what this pull is about to deliver, so resetting to origin/main discards
+    # nothing. When it does NOT hold, the local commits are somebody's real work
+    # and a routine deploy must not throw them away — so refuse and say whose.
+    def _g(*a, timeout=60):
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                           capture_output=True, text=True, timeout=timeout)
+        return p.returncode == 0, (p.stdout or p.stderr).strip()
+
+    picked_note = ""
+    try:
+        _g("fetch", "origin", "main", "--quiet")
+        dupes, local_only, detail = _local_only_upstream_duplicates(_g)
+        if local_only and dupes:
+            ok_r, out_r = _g("reset", "--hard", "origin/main")
+            if not ok_r:
+                return False, f"couldn't reset the cherry-picked runner: {out_r[:150]}"
+            picked_note = (f"reconciled {len(local_only)} cherry-picked commit(s) "
+                           "— origin/main now carries them. ")
+        elif local_only and not dupes:
+            return False, (
+                f"REFUSING — this runner has {len(local_only)} local-only "
+                f"commit(s) that are not cherry-picks of upstream work: {detail}. "
+                "A pull cannot fast-forward across them and this deploy will not "
+                "discard them. Push them, or clear the branch by hand.")
+    except Exception as e:  # noqa: BLE001 — never let the probe block a deploy
+        picked_note = f"(divergence check skipped: {type(e).__name__}) "
+
     ok, out = _run_cmd(["git", "-C", str(REPO_ROOT), "pull", "--ff-only",
                         "--autostash"], timeout_s=120)
+    out = picked_note + out
     # --autostash CAN LEAVE THE TREE UNMERGED AND STILL EXIT 0. Verified by
     # reproduction 2026-08-27: a local edit to a file the pull also touches gives
     # "Applying autostash resulted in conflicts. Your changes are safe in the
@@ -3019,6 +3062,150 @@ def _action_git_recover(args: str) -> tuple[bool, str]:
                   f"HEAD now: {head}\n"
                   "Uncommitted tracked edits were discarded (re-run onboard_apply "
                   "to restore). restart_poller if poller code changed.")
+
+
+# The trailer `git cherry-pick -x` writes into the commit body. It names the
+# ORIGINAL commit, which is what lets `update` prove a local-only commit is a
+# duplicate of something already upstream rather than real work.
+_CHERRY_PICKED_FROM = re.compile(
+    r"cherry picked from commit ([0-9a-f]{7,40})", re.I)
+
+
+def _local_only_upstream_duplicates(git) -> tuple[bool, list[str], str]:
+    """Are ALL of this runner's local-only commits just cherry-picks of commits
+    that are already on origin/main?
+
+    `git` is a callable taking git args and returning (ok, output) — passed in so
+    both callers share one subprocess style and tests can drive it directly.
+
+    Returns (all_are_duplicates, local_only_shas, human_detail). With no
+    local-only commits it returns (True, [], "") — the normal case, where the
+    caller should change nothing.
+
+    This is the question `update` has to answer before it can safely reset a
+    diverged runner: a duplicate is throwaway (the pull is about to deliver the
+    same content properly), while anything else is somebody's work and must not
+    be discarded by a routine deploy.
+    """
+    ok, out = git("rev-list", "origin/main..HEAD")
+    if not ok:
+        return False, [], "couldn't list local-only commits"
+    local = [s for s in out.split() if s.strip()]
+    if not local:
+        return True, [], ""
+    not_dupes = []
+    for sha in local:
+        _, body = git("log", "-1", "--format=%B", sha)
+        m = _CHERRY_PICKED_FROM.search(body or "")
+        if not m:
+            _, subj = git("log", "-1", "--format=%h %s", sha)
+            not_dupes.append(subj or sha[:9])
+            continue
+        # The trailer is only a CLAIM — verify the original really is upstream.
+        upstream, _ = git("merge-base", "--is-ancestor", m.group(1), "origin/main")
+        if not upstream:
+            _, subj = git("log", "-1", "--format=%h %s", sha)
+            not_dupes.append(f"{subj or sha[:9]} (claims {m.group(1)[:9]}, not on main)")
+    if not_dupes:
+        return False, local, "; ".join(not_dupes[:5])
+    return True, local, ""
+
+
+def _action_cherry_pick(args: str) -> tuple[bool, str]:
+    """Put ONE already-upstream commit onto this runner without pulling the rest.
+
+    THE GAP THIS FILLS (2026-08-31). A 3am false-alarm page was fixed in 72d266b
+    at 08:09, but the runners were 20 commits behind on other sessions' in-flight
+    work — so `update` meant shipping all of that mid-day just to get the one
+    fix. The only alternative was SSH, and Lucy 3 refuses SSH (Remote Login is
+    off), so for that machine there was no route at all.
+
+    THE COMMIT MUST ALREADY BE ON origin/main, and that is the entire safety
+    story. A cherry-pick puts this runner AHEAD of main on a commit main does not
+    have — divergence — and `git pull --ff-only` refuses to fast-forward across
+    it. A runner that silently stops accepting deploys is exactly how Lucy 2 got
+    stranded on 2026-07-15. Requiring the commit to be upstream already makes the
+    divergence temporary and throwaway: the same content arrives for real on the
+    next pull, so `update` can reconcile by resetting to origin/main and lose
+    nothing (see _local_only_upstream_duplicates). Picking a laptop-local commit
+    would strand the runner, so it is REFUSED rather than warned about.
+
+    Conflicts are aborted, never left in the tree. An unmerged file is not valid
+    JSON/Python, and a half-applied schedule_config.json takes out the whole 4am
+    batch — the landmine _action_update already documents.
+
+    Args: one or more commit shas. `lucy cherry_pick 72d266b`
+    """
+    shas = [s for s in (args or "").replace(",", " ").split() if s.strip()]
+    if not shas:
+        return False, ("cherry_pick needs at least one commit sha, "
+                       "e.g. `lucy cherry_pick 72d266b`")
+
+    def _git(*a, timeout=120):
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                           capture_output=True, text=True, timeout=timeout)
+        return p.returncode == 0, (p.stdout or p.stderr).strip()
+
+    ok_b, branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    if not ok_b or branch != "main":
+        return False, (f"refusing — this runner is on {branch!r}, not main. "
+                       "Production runners stay on main; fix the checkout first.")
+
+    _, dirty = _git("status", "--short")
+    blocked = [l for l in dirty.splitlines()
+               if l.strip() and not l.startswith("??")]
+    if blocked:
+        return False, ("refusing — uncommitted tracked edits would be swept into "
+                       "the pick: " + ", ".join(l[3:] for l in blocked[:6])
+                       + ". Park them with `lucy git_stash` first.")
+
+    ok_f, out_f = _git("fetch", "origin", "main")
+    if not ok_f:
+        return False, f"fetch failed: {out_f[:200]}"
+
+    picks, already, refused = [], [], []
+    for s in shas:
+        ok_r, full = _git("rev-parse", "--verify", f"{s}^{{commit}}")
+        if not ok_r:
+            refused.append(f"{s} (no such commit on this runner)")
+            continue
+        upstream, _ = _git("merge-base", "--is-ancestor", full, "origin/main")
+        if not upstream:
+            refused.append(f"{s} (not on origin/main — push it first)")
+            continue
+        have, _ = _git("merge-base", "--is-ancestor", full, "HEAD")
+        if have:
+            already.append(s)
+            continue
+        picks.append(full)
+
+    if refused:
+        return False, ("refusing — " + "; ".join(refused) + ". Only a commit "
+                       "already on origin/main can be picked: anything else "
+                       "leaves this runner diverged and it stops taking deploys.")
+    if not picks:
+        return True, f"nothing to do — already on this runner: {', '.join(already)}"
+
+    # -x records "(cherry picked from commit …)", which is both the audit trail
+    # and how `update` later proves these commits are safe to reset away.
+    ok_c, out_c = _git("cherry-pick", "-x", *picks, timeout=300)
+    if not ok_c:
+        _git("cherry-pick", "--abort")
+        return False, ("cherry-pick FAILED and was aborted — the tree is clean "
+                       f"and unchanged, nothing was applied: {out_c[:200]}")
+
+    _, head = _git("log", "-1", "--format=%h %s")
+    _, files = _git("diff", "--name-only", f"HEAD~{len(picks)}", "HEAD")
+    changed = [f for f in files.splitlines() if f.strip()]
+    skipped = f" (already here, skipped: {', '.join(already)})" if already else ""
+    more = f" (+{len(changed) - 8} more)" if len(changed) > 8 else ""
+    return True, (
+        f"picked {len(picks)} commit(s) onto main{skipped}\n"
+        f"HEAD now: {head}\n"
+        f"changed: {', '.join(changed[:8])}{more}\n"
+        "This runner is AHEAD of origin/main until the next `update`, which "
+        "resets to origin/main and takes the same change properly. "
+        "restart_poller if poller code changed.")
 
 
 def _action_set_payroll_webapp(args: str) -> tuple[bool, str]:
@@ -6199,6 +6386,7 @@ ACTIONS = {
     "git_diff": _action_git_diff,
     "git_stash": _action_git_stash,
     "git_recover": _action_git_recover,
+    "cherry_pick": _action_cherry_pick,
     "set_machine_profile": _action_set_machine_profile,
     "purge_login_test_profile": _action_purge_login_test_profile,
     "set_meta_token": _action_set_meta_token,
@@ -6765,6 +6953,9 @@ def print_help() -> None:
         "  lucy git_status           branch, HEAD, and what's blocking a pull\n"
         "  lucy git_diff [path]      what this machine's uncommitted edits SAY\n"
         "  lucy git_stash            park uncommitted edits so update can run\n"
+        "  lucy cherry_pick <sha>    take ONE already-pushed commit onto this\n"
+        "                            machine without pulling everything else\n"
+        "                            (the commit must be on origin/main first)\n"
         "  lucy purge_login_test_profile\n"
         "                            delete the leftover .ov_login_test profile\n"
         "  lucy restart_holder       restart the session keep-alive\n"
