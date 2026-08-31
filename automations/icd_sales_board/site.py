@@ -304,6 +304,24 @@ def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
                    office_key)
 
 
+def _vital(col, label: str, value: str, hit) -> None:
+    """One vital, with the NUMBER itself green or red against its goal.
+
+    st.metric cannot colour its own value, so this draws the same shape by
+    hand. `hit` is True / False / None and None means plain: a number with no
+    goal behind it must not be painted either colour, or it reads as a verdict
+    nobody set. Colours are Streamlit's own :green[]/:red[] tokens so this
+    matches the goal line under it, and the label inherits the theme's text
+    colour at reduced opacity rather than a hardcoded grey, so it survives
+    dark mode."""
+    color = {True: "#09ab3b", False: "#ff2b2b"}.get(hit, "inherit")
+    col.markdown(
+        f'<div style="font-size:0.875rem;opacity:.6;line-height:1.6">{label}'
+        f'</div><div style="font-size:2.25rem;font-weight:600;'
+        f'line-height:1.3;color:{color}">{value}</div>',
+        unsafe_allow_html=True)
+
+
 def _goal_line(col, office_key: str, metric: str, actual) -> None:
     """A green or red line under a number, against the goal this office set.
 
@@ -1520,10 +1538,9 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
             m = data["metrics"].get(row, {})
             actual = m.get("by_week", {}).get(latest, "")
             goal = G.recruit_goal(office_key, row, m.get("goal", ""))
-            col.metric(label, _rate_or_count(actual, is_rate))
-            if goal is None or not str(actual).strip():
-                continue
-            hit = G.hits_goal(label, actual, goal)
+            hit = (G.hits_goal(label, actual, goal)
+                   if goal is not None and str(actual).strip() else None)
+            _vital(col, label, _rate_or_count(actual, is_rate), hit)
             if hit is None:
                 continue
             shown = f"{goal:g}%" if is_rate else f"{goal:g}"
