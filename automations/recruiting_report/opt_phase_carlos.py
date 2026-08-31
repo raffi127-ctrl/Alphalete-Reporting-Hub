@@ -951,6 +951,60 @@ def _sheet_name_matches(target: str, filename: str) -> bool:
     return _n(target) in _n(filename)
 
 
+def _viz_failure_text(page, viz) -> str:
+    """Say WHY the viz didn't render, in one short line fit for the run log.
+
+    Until 2026-08-31 the only evidence a non-rendering view left behind was a
+    screenshot under `_debug/<view>/00_no_toolbar_attempt*.png`. That is useless
+    for the reports that run on Lucy 2: `mini_control` can ship a log tail back
+    to a laptop but has no file action, so the one artifact naming the cause
+    stayed stranded on the machine that wrote it. Carlos's engine also never
+    grew the `_clear_error_toast` logging that `opt_phase` has, so nothing in
+    the log distinguished "Tableau was slow" from "the view is gone" — which is
+    what turned MARKETPERFORMANCEZIPLEVEL into two blind re-runs before a human
+    opened the URL by hand and found it deleted.
+
+    Read-only: it looks, it never clicks or dismisses. Everything is wrapped —
+    a page that is mid-navigation or already closed must not turn a Tableau
+    diagnosis into a patchright traceback. Ordered by how much each bit
+    actually settles the question, because the caller's message gets truncated.
+    """
+    bits = []
+    # 1. The error toast is the only thing that NAMES a broken view — inside
+    #    the viz iframe (custom-view failures) or at page level (view gone).
+    for scope, label in ((viz, "toast"), (page, "page-error")):
+        try:
+            el = scope.locator('[data-tb-test-id^="banner-error-toast"]')
+            if el.count() > 0:
+                txt = " ".join((el.first.inner_text(timeout=2_000) or "").split())
+                if txt:
+                    bits.append(f"{label}: {txt[:200]}")
+        except Exception:  # noqa: BLE001 — diagnostics never raise
+            pass
+    # 2. No viz iframe at all = Tableau never served a viz for this URL, which
+    #    is what a deleted/renamed view looks like.
+    try:
+        if page.locator('iframe[title="Data Visualization"]').count() == 0:
+            bits.append("no viz iframe on the page")
+    except Exception:  # noqa: BLE001
+        pass
+    # 3. Where we actually ended up — a redirect to SSO or an error route is
+    #    its own answer, and it differs from the URL we asked for.
+    try:
+        bits.append(f"at {page.url[:160]}")
+    except Exception:  # noqa: BLE001
+        pass
+    # 4. Last resort: whatever the page says. Tableau's "view not found" screen
+    #    is plain page text with no test-id to hang a selector on.
+    try:
+        body = " ".join((page.inner_text("body", timeout=3_000) or "").split())
+        if body:
+            bits.append(f"body: {body[:240]}")
+    except Exception:  # noqa: BLE001
+        pass
+    return " | ".join(bits)
+
+
 def download_view_crosstab(view: ViewConfig, out_path: Path,
                            verbose: bool = True, week=None, page=None,
                            pre_download_hook=None) -> Path:
@@ -1012,6 +1066,7 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
                 print(f"  → week-pinned to {week} via "
                       f"'{view.week_filter_field}'", flush=True)
         last_err = None
+        last_diag = ""
         for attempt, timeout_ms in enumerate((30_000, 60_000), start=1):
             if verbose:
                 tag = f"  (attempt {attempt})" if attempt > 1 else ""
@@ -1029,22 +1084,30 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
                 break
             except Exception as e:   # patchright TimeoutError + friends
                 last_err = e
+                last_diag = _viz_failure_text(page, viz)
                 shot = debug_dir / f"00_no_toolbar_attempt{attempt}.png"
+                if verbose:
+                    print(f"  ⚠ Download button not visible after "
+                          f"{timeout_ms // 1000}s — {last_diag}", flush=True)
                 try:
                     page.screenshot(path=str(shot), full_page=True)
                     if verbose:
-                        print(f"  ⚠ Download button not visible after "
-                              f"{timeout_ms // 1000}s — saved {shot}",
-                              flush=True)
+                        print(f"     screenshot: {shot}", flush=True)
                 except Exception:
                     pass
         if last_err is not None:
+            # The diagnosis goes FIRST and the boilerplate last: this string
+            # gets truncated on its way to a human (str(e)[:120] in some
+            # callers, ~470 chars in a logtail result cell), so the part that
+            # names the real Tableau error has to survive the cut.
             raise RuntimeError(
-                f"Viz toolbar never rendered for view '{view.key}' at "
-                f"{view.url} — the viz failed to load. If the URL ends in a "
-                f"custom-view name (e.g. /REPEXPANDED), that saved view was "
-                f"likely deleted in Tableau; re-save it (or repoint to a base "
-                f"view). Screenshots: {debug_dir}"
+                f"Viz toolbar never rendered for view '{view.key}' — "
+                f"{last_diag or '(no diagnostic text readable)'} — at "
+                f"{view.url}. A dead BASE view means it was deleted or renamed "
+                f"in a workbook republish (find the replacement in the Tableau "
+                f"UI and repoint the URL); a dead custom view (URL ending in a "
+                f"name like /REPEXPANDED) just needs re-saving. "
+                f"Screenshots: {debug_dir}"
             ) from last_err
         # Optional hook to manipulate on-canvas filters (e.g. drive the base
         # dashboard's 'Time Frame' quick filter to a specific week-ending date

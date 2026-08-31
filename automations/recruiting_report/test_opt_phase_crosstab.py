@@ -154,5 +154,95 @@ class MetricsViewIsPinned(unittest.TestCase):
             self.assertIn(self.PIN, url, "%s is not pinned" % name)
 
 
+class VizFailureIsExplainedInTheLog(unittest.TestCase):
+    """`_viz_failure_text` — why a non-rendering view didn't render (2026-08-31).
+
+    MARKETPERFORMANCEZIPLEVEL was deleted in a Tableau republish. The run
+    failed twice with a bare 'Viz toolbar never rendered', and the only
+    evidence — a screenshot under `_debug/` — was on Lucy 2, which has no way
+    to send a file to a laptop. So nothing distinguished a slow render from a
+    dead view until a human opened the URL by hand.
+
+    The contract: name the cause in TEXT (it rides the exception into the log),
+    lead with the most decisive bit (callers truncate), and never raise —
+    a diagnosis must not replace the Tableau error with a patchright one.
+    """
+
+    TOAST = '[data-tb-test-id^="banner-error-toast"]'
+    IFRAME = 'iframe[title="Data Visualization"]'
+
+    class _Loc(object):
+        def __init__(self, n=0, text="", boom=False):
+            self._n, self._t, self._boom = n, text, boom
+
+        def count(self):
+            if self._boom:
+                raise RuntimeError("element is detached")
+            return self._n
+
+        @property
+        def first(self):
+            return self
+
+        def inner_text(self, timeout=None):
+            if self._boom:
+                raise RuntimeError("element is detached")
+            return self._t
+
+    class _Scope(object):
+        def __init__(self, locs, url="https://x/y", body="", boom=False):
+            self._locs, self._url = locs, url
+            self._body, self._boom = body, boom
+
+        @property
+        def url(self):
+            if self._boom:
+                raise RuntimeError("page closed")
+            return self._url
+
+        def locator(self, sel):
+            return self._locs.get(sel, VizFailureIsExplainedInTheLog._Loc(0))
+
+        def inner_text(self, sel, timeout=None):
+            if self._boom:
+                raise RuntimeError("page closed")
+            return self._body
+
+    def _diag(self, page, viz):
+        from automations.recruiting_report.opt_phase_carlos import (
+            _viz_failure_text)
+        return _viz_failure_text(page, viz)
+
+    def test_broken_custom_view_toast_is_named_and_comes_first(self):
+        msg = "An error occurred while loading the custom view REP EXPANDED."
+        viz = self._Scope({self.TOAST: self._Loc(1, msg)})
+        page = self._Scope({self.IFRAME: self._Loc(1)})
+        out = self._diag(page, viz)
+        # First, because callers truncate (str(e)[:120], ~470-char log cells).
+        self.assertTrue(out.startswith("toast: " + msg), out)
+
+    def test_deleted_view_reads_as_no_iframe_plus_the_pages_own_words(self):
+        viz = self._Scope({})
+        page = self._Scope({self.IFRAME: self._Loc(0)},
+                           url="https://us-east-1.online.tableau.com/errors/404",
+                           body="  The view   you requested\n doesn't exist. ")
+        out = self._diag(page, viz)
+        self.assertIn("no viz iframe on the page", out)
+        # Whitespace collapsed — the log line stays one line.
+        self.assertIn("body: The view you requested doesn't exist.", out)
+
+    def test_a_slow_render_still_reports_where_it_got_to(self):
+        viz = self._Scope({})
+        page = self._Scope({self.IFRAME: self._Loc(1)},
+                           url="https://ok/view", body="Loading")
+        self.assertIn("at https://ok/view", self._diag(page, viz))
+
+    def test_a_dead_page_returns_empty_and_never_raises(self):
+        """Every probe throwing must not mask the real Tableau failure."""
+        viz = self._Scope({self.TOAST: self._Loc(1, "x", boom=True)})
+        page = self._Scope({self.IFRAME: self._Loc(1, boom=True)}, boom=True)
+        self.assertEqual(self._diag(page, viz), "")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
