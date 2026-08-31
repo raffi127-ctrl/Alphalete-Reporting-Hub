@@ -252,25 +252,6 @@ def _with_derived(cols: list) -> list:
 # board means "this rep hit the number"; a green goals row would read as the
 # office having hit it (Megan 2026-08-30 asked for the row "between chan and
 # the total", i.e. inside the summary block, where that misread is easy).
-# Light green (Megan 2026-08-30). The row states targets, and green is this
-# board's language for "target met" — so a goal row in the same family reads
-# as what it is. Lighter than GREEN_HIT so it can't be confused with a cell
-# that actually hit; _draw picks dark text for it automatically (see the
-# luminance rule there), because white on this would be unreadable.
-#
-# Darkened once, from (198, 239, 206): at that value the row sat close enough
-# to the white grid lines that the cell borders vanished into it and the goals
-# read as one run-on strip (Megan, same day). This is still comfortably above
-# the luminance threshold, so the text stays dark.
-GOALS_ROW_BG = (167, 221, 180)
-
-# What the "#" column's GOAL cell says. "over 20", not "21+" (Megan
-# 2026-08-30): it reads the way Rafael says it — "20 plus, so 21 or more doors
-# knocked" — and is exactly true, where "20+" would promise that a rep with 20
-# counts. He does not. Derived from the constant so it cannot drift.
-REPS_BAR_LABEL = f"Over {KNOCKING_MIN_KNOCKS - 1}"
-
-
 def _reps_cell(knocking: int, listed: int) -> str:
     """"0 of 3" — reps at the knocking bar, of reps in the field.
 
@@ -282,37 +263,6 @@ def _reps_cell(knocking: int, listed: int) -> str:
     Rep and Average App per Rep divide by) AND answers "how many are out".
     Same shape the weekly board uses for the same reason."""
     return f"{knocking} of {listed}"
-
-
-def goals_row(cols: list, day) -> list:
-    """A row stating Rafael's targets under the columns they apply to, so the
-    board carries its own legend instead of the reader holding four numbers in
-    their head. Blank everywhere else — a goal is only stated where one exists.
-
-    It is also what disambiguates the "# Reps" cell: that column prints
-    "0 of 3" (reps at the bar, of reps in the field) and the goals row is where
-    "21+ knocks" is spelled out."""
-    goal = {
-        COL_TOTAL_KNOCKS: str(doors_target(day)),
-        # NO goal on Avg Doors / Rep, deliberately (Megan 2026-08-30: "drop it
-        # from the goals — we'll see if Raf wants to add"). It briefly carried
-        # the same 160, which was wrong to state: this column divides by every
-        # rep LISTED while its neighbours divide by the reps KNOCKING, so on
-        # Chan's real board 347 knocks read 15.1 next to a "# Reps" of 5.
-        # Hitting 160 there would need every listed rep — including one who
-        # logged in and left — to average 160, which is not what Rafael means
-        # by 160 doors. Stating a goal against the wrong denominator is worse
-        # than stating none. Fix if he asks: divide by len(_knockers(sub)) and
-        # all three per-rep columns agree, then this goal becomes true.
-        COL_KNOCKS_PER_HR: str(KNOCKS_PER_HR_TARGET),
-        COL_FIRST_KNOCK: _min_to_hhmm(FIRST_KNOCK_TARGET_MIN),
-    }
-    return [("GOAL" if c == COL_REP else goal.get(c, "")) for c in cols]
-
-
-def _min_to_hhmm(m: int) -> str:
-    h24, mm = divmod(int(m), 60)
-    return f"{h24 % 12 or 12}:{mm:02d} {'AM' if h24 < 12 else 'PM'}"
 
 
 def _is_num(v) -> bool:
@@ -1015,17 +965,10 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
             if _v and _hit(_v):
                 _cell_bgs[(_ri, _ci)] = GREEN_HIT
 
-    # GOALS goes in LAST, between the comparison office(s) and this office's
-    # TOTAL (Megan 2026-08-30) — so a reader meets the target immediately
-    # before the number measured against it. Inserted here, after the apps and
-    # rate passes, because it has to be built against the FINAL column list.
-    _gi = len(extra_rows)
-    table.insert(_gi, goals_row(cols, target))
-    _colors = (_colors[:_gi] + [GOALS_ROW_BG] + _colors[_gi:])
-    # Every recorded green cell below the insert point moves down one row.
-    _cell_bgs = {((r + 1) if r >= _gi else r, c): v
-                 for (r, c), v in _cell_bgs.items()}
-    _n_summary = len(extra_rows) + 2      # comparison rows + GOALS + TOTAL
+    # NO goals row (Raf, 2026-08-30 — added and removed the same day). The
+    # TARGETS live on: they are what turns a cell green, they just aren't
+    # printed as a row of their own any more.
+    _n_summary = len(extra_rows) + 1      # comparison rows + our TOTAL
     # The reps-knocking count for each summary line, in the order those rows
     # are drawn (comparison offices first, then this office's TOTAL), so they
     # land in the "#" column instead of a column of their own.
@@ -1034,7 +977,6 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     number_rows(cols, disp, table, first=_n_summary,
                 summary_values=[_reps_cell(k, n) for k, n in
                                 zip(extra_knockers, extra_listed)]
-                + [REPS_BAR_LABEL]
                 + [_reps_cell(n_knockers, len(sub))])
     if _cell_bgs:
         # number_rows inserted a "#" column at 0, so every recorded column

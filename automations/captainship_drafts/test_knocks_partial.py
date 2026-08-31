@@ -285,33 +285,12 @@ class TotalAppsColumn(unittest.TestCase):
             cols, table = self._drawn(setattr, rows=rows, apps=apps)
             at = cols.index(R.COL_AVG_APP_PER_REP)
             self.assertEqual(cols[at - 1], R.COL_TOTAL_APPS)
-            # fila 0 = GOAL (Megan 2026-08-30), fila 1 = TOTAL de la oficina
-            # (8 apps / 2 reps), luego los reps. La fila GOAL no declara meta
-            # para esta columna, asi que va vacia.
-            rep_at = cols.index(R.COL_REP)
-            self.assertEqual(table[0][rep_at], "GOAL")
-            self.assertEqual(table[0][at], "")
-            self.assertEqual(table[1][at], "4.0")
-            self.assertEqual([r[at] for r in table[2:]], ["", ""])
+            # fila 0 = TOTAL de la oficina (8 apps / 2 reps), luego los reps.
+            # La fila GOAL existio unas horas el 2026-08-30 y Raf la saco.
+            self.assertEqual(table[0][at], "4.0")
+            self.assertEqual([r[at] for r in table[1:]], ["", ""])
         finally:
             R._draw = old
-
-    def test_the_goal_row_sits_between_the_comparison_office_and_our_total(self):
-        """Megan 2026-08-30: "a goals row between chan and the total"."""
-        from automations.total_knocks import render as R
-        # Avg Knocks / Hr lo inserta _insert_rate_columns EN EL RENDER, no esta
-        # en COMBINED_KNOCKS_HEADERS — por eso goals_row se arma contra las
-        # columnas finales. El test usa esa misma lista final.
-        cols = list(R.COMBINED_KNOCKS_HEADERS) + [R.COL_KNOCKS_PER_HR]
-        g = R.goals_row(cols, dt.date(2026, 8, 31))
-        at = lambda c: g[cols.index(c)]
-        self.assertEqual(at(R.COL_REP), "GOAL")
-        self.assertEqual(at(R.COL_TOTAL_KNOCKS), "160")     # lunes: 7h
-        self.assertEqual(at(R.COL_KNOCKS_PER_HR), "23")
-        self.assertEqual(at(R.COL_FIRST_KNOCK), "1:30 PM")
-        self.assertEqual(at(R.COL_TOTAL_TALK_TO), "")       # sin meta: vacio
-        sat = R.goals_row(cols, dt.date(2026, 8, 29))
-        self.assertEqual(sat[cols.index(R.COL_TOTAL_KNOCKS)], "140")  # 6h
 
     def test_the_reps_cell_shows_the_bar_AND_the_field_count(self):
         """Megan 2026-08-30, sobre Calvin: "3 in the field but 0 in his
