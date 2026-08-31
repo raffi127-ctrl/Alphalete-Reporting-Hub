@@ -650,6 +650,30 @@ def _page_account_no(page):
         return None
 
 
+# The account number observed on the CLASSIC console, stashed for the assert.
+#
+# WHY STASHED (Megan 2026-08-31): the assert sits in front of the send, and by
+# then the flow is on the v2 "Explore Appstream AI" dashboard, which does not
+# render the "Account No:" banner. Read there it returns nothing — the first
+# dry-run of the cutover recorded no identity at all, and a live run would have
+# refused every send while looking like a working guard. The console DOES carry
+# it, right after the office switch, so it is captured there and asserted later.
+_OBSERVED_ACCOUNT_NO = None
+
+
+def _capture_account_identity(page) -> None:
+    """Remember the Account No the classic console is showing."""
+    global _OBSERVED_ACCOUNT_NO
+    got = _page_account_no(page)
+    if got:
+        _OBSERVED_ACCOUNT_NO = got
+        _log("[account] console identity: Account No %s (declared account: %s)"
+             % (got, APPSTREAM_ACCOUNT))
+    else:
+        _log("[account][WARN] console rendered but no Account No could be read — "
+             "a live send will refuse rather than guess")
+
+
 def _assert_account(page, dry_run: bool) -> None:
     """Refuse to send unless the console is the account this run declared.
 
@@ -669,7 +693,8 @@ def _assert_account(page, dry_run: bool) -> None:
     exactly the state we cannot distinguish from the wrong one."""
     from automations.shared import creds   # imported per-function in this module
     want = creds.appstream_account_fingerprint(APPSTREAM_ACCOUNT)
-    got = _page_account_no(page)
+    # Prefer what the CONSOLE showed; the v2 page the send runs on has no banner.
+    got = _OBSERVED_ACCOUNT_NO or _page_account_no(page)
     if dry_run:
         if got and not want:
             if creds.record_appstream_account_fingerprint(APPSTREAM_ACCOUNT, got):
@@ -1242,6 +1267,25 @@ def _copy_default_profile(force_fresh: bool = False) -> str:
     subprocess.run(["pkill", "-f", _CDP_KILL_PAT], capture_output=True)
     _t.sleep(2)
     reuse = (not force_fresh) and os.path.exists(_CDP_SEED_MARKER)
+    # A warm profile carries the session of whoever it was last used as. Reusing
+    # it across an account change is how the 2026-08-31 cutover silently kept
+    # running as the old login: the seed marker was present, so nothing was
+    # re-copied, nothing was purged, and the declared credential was never used.
+    # The profile therefore records WHICH account it belongs to, and a mismatch
+    # forces a fresh seed (which purges the inherited cookies below).
+    if reuse:
+        marker = os.path.join(dst, ".rp_account")
+        was = ""
+        try:
+            with open(marker) as fh:
+                was = fh.read().strip()
+        except Exception:  # noqa: BLE001 — absent marker = pre-cutover profile
+            was = ""
+        if was != APPSTREAM_ACCOUNT:
+            _log("[account] warm profile belongs to %r but this run is %r — "
+                 "re-seeding so the declared account has to sign in"
+                 % (was or "(unrecorded)", APPSTREAM_ACCOUNT))
+            reuse = False
     if reuse:
         for lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
             subprocess.run(["rm", "-f", f"{dst}/{lock}"], capture_output=True)
@@ -1264,6 +1308,11 @@ def _copy_default_profile(force_fresh: bool = False) -> str:
     # happens to be logged in as.
     if APPSTREAM_ACCOUNT != "primary":
         _purge_appstream_session_cookies(dst)
+    try:
+        with open(os.path.join(dst, ".rp_account"), "w") as fh:
+            fh.write(APPSTREAM_ACCOUNT)
+    except Exception:  # noqa: BLE001 — an unstamped profile just re-seeds next run
+        pass
     # Mark it seeded so subsequent runs reuse it (keeping the Cloudflare clearance).
     try:
         open(_CDP_SEED_MARKER, "w").close()
@@ -1600,6 +1649,8 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
                 _persist_appstream_session(ctx, tp)
         mc = page.locator("#searchMC").count()
         _log(f"[cdp] logged_in check: #searchMC={mc}")
+        if mc:
+            _capture_account_identity(page)
         if mc == 0:
             # Warm profile didn't log in. Drop the seed marker so the NEXT run
             # re-copies a fresh profile from the everyday Default (self-heals the
@@ -1822,6 +1873,8 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                         pass
             mc = page.locator("#searchMC").count()
             _log(f"[cdp] logged_in check: #searchMC={mc}")
+            if mc:
+                _capture_account_identity(page)
             if mc == 0:
                 # Warm profile didn't log in (stale clearance/session or a genuine
                 # Cloudflare challenge). Drop the seed marker so the NEXT q10min run

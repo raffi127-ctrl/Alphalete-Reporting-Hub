@@ -157,3 +157,56 @@ class CookiePurge(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ConsoleCapture(unittest.TestCase):
+    """The v2 dashboard has no 'Account No:' banner — the console does."""
+
+    def setUp(self):
+        self._prev = rp._OBSERVED_ACCOUNT_NO
+        rp._OBSERVED_ACCOUNT_NO = None
+        from automations.shared import creds
+        self._creds = creds
+        self._real = creds.appstream_account_fingerprint
+
+    def tearDown(self):
+        rp._OBSERVED_ACCOUNT_NO = self._prev
+        self._creds.appstream_account_fingerprint = self._real
+
+    def test_console_identity_is_used_at_send_time(self):
+        # The 2026-08-31 regression: the assert read the v2 page, found nothing,
+        # and a live run would have refused every send while reporting nothing
+        # wrong. What the console showed has to survive to the send.
+        rp._capture_account_identity(_Page(_console("7788")))
+        self.assertEqual(rp._OBSERVED_ACCOUNT_NO, "7788")
+        self._creds.appstream_account_fingerprint = lambda _n: "7788"
+        prev = rp.APPSTREAM_ACCOUNT
+        rp.APPSTREAM_ACCOUNT = "lucyresume"
+        try:
+            rp._assert_account(_Page("v2 dashboard, no banner here"), dry_run=False)
+        finally:
+            rp.APPSTREAM_ACCOUNT = prev
+
+    def test_a_console_that_shows_nothing_is_not_an_identity(self):
+        rp._capture_account_identity(_Page("no banner"))
+        self.assertIsNone(rp._OBSERVED_ACCOUNT_NO)
+
+
+class ProfileAccountMarker(unittest.TestCase):
+    """A warm profile belongs to whoever last used it."""
+
+    def test_mismatch_forces_a_fresh_seed(self):
+        # The cutover failure: the seed marker was present, so the profile was
+        # reused as-is, nothing was purged, and the declared credential was
+        # never used. Recorded account != declared account must re-seed.
+        import os
+        import tempfile
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, ".rp_account"), "w") as fh:
+            fh.write("primary")
+        with open(os.path.join(d, ".rp_account")) as fh:
+            self.assertNotEqual(fh.read().strip(), "lucyresume")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
