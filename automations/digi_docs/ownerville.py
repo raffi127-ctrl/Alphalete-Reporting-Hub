@@ -362,10 +362,90 @@ def _expand(modal, label: str, page, *, reveals: str = "",
         target.locator("svg,i,button,span").last.click(timeout=6000)
         modal.get_by_text(marker, exact=False).first.wait_for(
             state="visible", timeout=8000)
+        return
     except Exception:                                       # noqa: BLE001
-        if verbose:
-            print(f"    ({label}: still not expanded — the caller will say "
-                  f"what it could not find)")
+        pass
+    if _force_expand(modal, label, marker, verbose=verbose):
+        return
+    if verbose:
+        print(f"    ({label}: still not expanded — the caller will say "
+              f"what it could not find)")
+
+
+def _revealed(modal, marker: str, ms: int = 2200) -> bool:
+    try:
+        modal.get_by_text(marker, exact=False).first.wait_for(
+            state="visible", timeout=ms)
+        return True
+    except Exception:                                       # noqa: BLE001
+        return False
+
+
+def _force_expand(modal, label: str, marker: str, *,
+                  verbose: bool = True) -> bool:
+    """Last resort: work through every plausible toggle for this section.
+
+    WHY (Megan 2026-08-31, "fix the drug test"). BACKGROUND CHECK opened on the
+    first strategy all morning and DRUG TEST opened on none of them — the row
+    was found, but `the row itself wasn't clickable`, the label click revealed
+    nothing, and the chevron did not answer either. Every rep in two runs
+    failed there, so nobody's attestation boxes got ticked.
+
+    Guessing which single element is the real toggle is what failed three
+    times. So stop guessing: walk the candidate rows innermost outwards and,
+    for each, try a real click, a JS click (which ignores overlays and
+    pointer-events, the usual reason a visible element "isn't clickable"), and
+    the clickable descendants — checking after every attempt whether the
+    section actually opened. Bounded and short-timeout throughout, so the worst
+    case is a slow section rather than a hung batch.
+
+    Also handles <details>, where there is no click to make at all: the section
+    opens by setting the attribute.
+    """
+    tried = 0
+    for row in list(_status_rows(modal, label))[:6]:
+        # a <details> section opens by attribute, not by click
+        try:
+            row.evaluate("e => { const d = e.closest('details');"
+                         "       if (d) d.open = true; }")
+            if _revealed(modal, marker):
+                if verbose:
+                    print(f"    ({label}: opened as a <details>)")
+                return True
+        except Exception:                                   # noqa: BLE001
+            pass
+        for how, act in (
+            ("force click", lambda r=row: r.click(timeout=4000, force=True)),
+            ("js click", lambda r=row: r.evaluate("e => e.click()")),
+        ):
+            tried += 1
+            try:
+                act()
+            except Exception:                               # noqa: BLE001
+                continue
+            if _revealed(modal, marker):
+                if verbose:
+                    print(f"    ({label}: opened on a {how})")
+                return True
+        for sel in ("button", "a", "[role='button']", "svg", "i", "span"):
+            try:
+                kids = row.locator(sel)
+                for i in range(min(kids.count(), 3)):
+                    tried += 1
+                    try:
+                        kids.nth(i).evaluate("e => e.click()")
+                    except Exception:                       # noqa: BLE001
+                        continue
+                    if _revealed(modal, marker):
+                        if verbose:
+                            print(f"    ({label}: opened on a {sel} inside "
+                                  f"the row)")
+                        return True
+            except Exception:                               # noqa: BLE001
+                continue
+    if verbose:
+        print(f"    ({label}: {tried} toggle attempt(s), none opened it)")
+    return False
 
 
 def _choose_bundle_type(tab, label: str, *, verbose: bool = True) -> None:
