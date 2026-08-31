@@ -199,7 +199,7 @@ PANEL_GAPS = "REPS OVER 15 MIN GAP"
 #
 # Clock, not fire (Megan 2026-08-28) — fire already means a SALE in the sales
 # board texts these same people read, and a gap is the opposite of a sale.
-GAP_TEXT_HEADER = "15 minutes of gaps"
+GAP_TEXT_HEADER = "15 min of gaps"
 GAP_NEW_EMOJI = "\u23F0"
 
 # --- send gate ----------------------------------------------------------------
