@@ -64,6 +64,9 @@ RANKING_LABEL = "All Units - All Campaigns"   # col-B header of block 3
 # them here. See org_sales_board/roster_sync.EXCLUDE, the same decision upstream.
 EXCLUDE: set = {
     "kevin driggs",
+    # 2026-08-31: Lizette ya no es parte de la org (las dos escrituras).
+    "lizette ruiz",
+    "lizette ruiz-conejo",
     "selena powers",
     # --- two-week zero rule, 2026-08-19 ---
     "ronald dawson",

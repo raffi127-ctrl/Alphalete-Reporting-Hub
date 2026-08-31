@@ -147,9 +147,12 @@ COLTEN_ORG = [
     # depth
     "Carl Foss", "Drew Tepper", "Frank Matos", "Gian-Carlo Hernandez",
     "Jose Velasquez", "Justin Fermin", "Raul Sosa Puerta", "Valeria Tristan",
-    # The tree says "Lizette Ruiz-Conejo"; other sources say "Lizette Ruiz"
-    # (captainship_pins carries the same pair). Both, so neither drops her.
-    "Lizette Ruiz-Conejo", "Lizette Ruiz",
+    # OUT 2026-08-31 (Eveliz, confirmado por Eve): Lizette Ruiz
+    # ("Lizette Ruiz-Conejo" en el Org Tree) YA NO ES PARTE DE LA ORG. Sale de
+    # todas las listas de distribución y de los boards; acá su baja borra a SUS
+    # reps del reconocimiento, que es justamente lo que se pidió. No la vuelvas a
+    # agregar aunque siga apareciendo bajo Colten en el Org Tree — ese tab todavía
+    # no se actualizó. Pineada además en shared/captainship_pins bajo "Eveliz".
 ]
 
 CAMPAIGNS: dict[str, Campaign] = {
