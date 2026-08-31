@@ -90,7 +90,7 @@ ADD_PASS_TIME = "08:00"
 # and there is no signal at all. This guard clears itself, and until it does it
 # says so on every run.
 #
-# It gates the ADD pass too. That pass mails nobody, so it is not dangerous —
+# It gates the ADD pass too. That pass DOES mail (the onboarding email) —
 # but "not live until Monday" is a plain instruction and reading it as "except
 # the half I judged safe" is how software surprises people.
 #

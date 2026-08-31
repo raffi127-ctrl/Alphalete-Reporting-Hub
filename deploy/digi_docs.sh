@@ -5,16 +5,24 @@
 #
 #   --add        the morning pass. Adds every eligible person on the newest
 #                "D2D OBCL <m.d>" tab (every chart on it) to OwnerVille.
-#                MAILS NOBODY. Monday 8:00am, in the quiet 8-10 window.
+#                SENDS THE ONBOARDING EMAIL for the campaign they are added
+#                under -- see the warning below. 11:00am.
 #
 #   --send-tick  the day pass. Fires repeatedly and sends only the people whose
 #                start time is within the next 30 minutes, so somebody starting
 #                at 1:00 gets their bundle at 12:30. Reads the Start Time
 #                column. Opens no browser at all when nobody is due.
 #
-# The split is not tidiness. Adding early is free because it mails nobody, and
-# adding late is not: somebody starting at 1pm has to EXIST in OwnerVille
-# before their 12:30 send comes round.
+# The split is not tidiness: somebody starting at 1pm has to EXIST in
+# OwnerVille before their 12:30 send comes round.
+#
+# ADDING IS NOT FREE (Megan 2026-08-31). Every note in this repo used to say
+# this pass "mails nobody". It does: OwnerVille sends the new start their
+# ONBOARDING EMAIL the moment they are added, for the campaign they are added
+# under. That is how an entire cohort received the Water/Primo welcome instead
+# of the AT&T one -- the wrong-campaign bug was not just wrong placement, it
+# mailed the wrong email to every one of them. Treat --add with the same care
+# as --send-tick: it is a send, and there is no unsend.
 #
 # Generating the bundle IS the send — OwnerVille mails the nine documents
 # itself. There is no separate send step and no unsend.

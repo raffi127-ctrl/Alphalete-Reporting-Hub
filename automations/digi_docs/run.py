@@ -289,7 +289,7 @@ def _phases(args) -> int:
 
     # The ADD pass takes everyone starting today, due or not: somebody starting
     # at 1pm still has to exist in OwnerVille by the time their 12:30 send comes
-    # round, and adding them early costs nothing because it mails nobody.
+    # round. NOTE adding is itself a send: it mails the onboarding email.
     add_list = list(send)
     no_time = []
     if args.due_now and do_send:
@@ -367,9 +367,10 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
 
     `add_list` is the whole cohort and `send` is only who is DUE — they are
     different lists now that each person's bundle goes 30 minutes before
-    their own start time. Adding early is free (it mails nobody) and adding
-    late is not: somebody starting at 1pm has to exist in OwnerVille before
-    their 12:30 send comes round."""
+    their own start time. Adding is NOT free -- it mails the onboarding email
+    for the campaign the person lands on (Megan 2026-08-31) -- but adding late
+    is worse: somebody starting at 1pm has to exist in OwnerVille before their
+    12:30 send comes round."""
     with page_ctx as page:
         if do_add:
             print("PHASE: add reps")
@@ -489,7 +490,7 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
     so in Slack. Never the name, never the checkbox.
 
     SEND PHASE ONLY. Both of these ran unconditionally, so `--add-only --live`
-    -- a phase that deliberately mails nobody and ticks nothing -- would still
+    -- a phase that ticks nothing and sends no BUNDLE -- would still
     have posted "*0* new starts sent digi docs" into #rafs-office-recruiting-11280 off an empty
     `done`. Adding reps is not a send and must not announce itself as one.
     """

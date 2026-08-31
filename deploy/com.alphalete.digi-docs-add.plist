@@ -7,7 +7,8 @@
 
     <!-- Install on LUCY 3 with:
              lucy rerun install_digi_docs_add_agent (add machine "Lucy 3")
-         This pass adds people to OwnerVille and mails nobody.
+         This pass adds people to OwnerVille, which SENDS THEM THE ONBOARDING
+         EMAIL for the campaign they land on. It is a send.
 
          NOTE ON COMMENTS IN THIS FILE: never write two hyphens together
          inside an XML comment. It ends the comment early and makes the plist
@@ -41,11 +42,12 @@
 
          Firing daily is cheap because the run stops on the sheet read when no
          chart is dated for today, long before it opens a browser. THE ADD PASS
-         MAILS NOBODY; the sends are the separate com.alphalete.digi-docs-send
+         The document BUNDLE is the separate com.alphalete.digi-docs-send
          job, 30 minutes before each person's own start time. -->
-    <!-- 11:00, moved from 08:00 (Megan 2026-08-31). The add mails nobody, so
-         the only hard constraint is that it FINISHES before the earliest send,
-         and each person's send goes 30 minutes before their own start. -->
+    <!-- 11:00, moved from 08:00 (Megan 2026-08-31). This hour is when the
+         ONBOARDING EMAIL reaches every new start, so it is a people-facing
+         time, not a housekeeping one. It also has to FINISH before the
+         earliest bundle send, which goes 30 min before that person's start. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>

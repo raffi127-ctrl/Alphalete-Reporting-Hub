@@ -5115,12 +5115,12 @@ AUTOMATED_REPORTS = [
             "Digi Docs on the OBCL tab."),
         "breakdown": (
             "WHAT IT DOES\n"
-            "Two passes on Monday over the newest dated **`D2D OBCL <m.d>`** "
-            "tab (every **chart** on it — Monday's has two):\n"
-            "**1. Add — 8:00am.** Anyone eligible who isn't in **OwnerVille** "
-            "yet is added (Onboard → View Progress → + Add Sales Rep). "
-            "This pass mails nobody and ticks nothing, which is why it can run "
-            "early.\n"
+            "Two passes over the newest dated **`D2D OBCL <m.d>`** "
+            "tab (every **chart** on it):\n"
+            "**1. Add — 11:00am.** Anyone eligible who isn't in **OwnerVille** "
+            "yet is added (Onboard → View Progress → + Add Sales Rep) on the "
+            "**RES-AT&T** campaign. Adding **sends them the onboarding email** "
+            "for that campaign, so this is a people-facing time.\n"
             "**2. Send — 30 minutes before each person's own start time.** "
             "Read from the **Start Time** column, so somebody starting at 1:00 "
             "gets their bundle at 12:30. A tick checks every 5 minutes through "
