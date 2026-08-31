@@ -8854,6 +8854,26 @@
       "timeout_minutes": 5,
       "machine": "Lucy 3"
     },
+    "digi_docs_roster_check": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY answer to 'is everyone actually in OwnerVille?' (Megan 2026-08-31, mid-incident). The add pass died twice mid-cohort and the runs after it refused nearly everyone with 'not in the Add Sales Rep employee list' -- a line that means EITHER already added OR not an available employee, which are opposite and cannot be told apart from the log. This reads View Progress itself: one page load, one campaign walk with Show All, every row. Writes nothing -- no adds, no Sheet, and Slack only on --post, which replies once in the day's thread. weekdays [] so the batch never runs it.",
+      "machine": "Lucy 3",
+      "display_name": "Digi Docs \u2014 roster check (read-only)",
+      "source_type": "browser",
+      "data_sources": [],
+      "command": [
+       "automations.digi_docs.roster_check"
+      ],
+      "base_args": [],
+      "cadence": {
+       "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null
+    },
     "digi_docs_add_probe": {
       "on_scheduler": false,
       "_off_scheduler_note": "Phase-2 twin of digi_docs_probe (Megan 2026-08-25). base_args is --add-only and NOTHING else, deliberately: mini_control appends rerun args AFTER base_args, so an entry carrying --send-only could be turned into a live SEND by appending --live. This one cannot -- run.py only enters the send phase on --send-only, and only the send phase tints or posts to Slack. Verifying the Add Sales Rep modal needs a real write, so this is the one entry meant to be run with --live, ALWAYS scoped: `lucy --machine 'Lucy 3' rerun digi_docs_add_probe --live --only \"Jose Laureano\"`. Adding a rep mails nobody. weekdays [] so the batch never auto-runs it. 20 -> 45 MINUTES 2026-08-31: on a jammed Lucy 3 this entry was the only way to re-run the whole add pass, and the 20m cap killed it at 9 of 49 with the 11:30 sends coming. The scheduled path (deploy/digi_docs.sh --add) always had 45; this now matches it. base_args still cannot reach the send phase, so a longer run mails nobody -- the cap was never what made this safe.",

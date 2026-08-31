@@ -67,8 +67,8 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
         print(body)
         return False
     from automations.shared import slack_metrics_post as smp
-    parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
-    smp.post_reply_text_only(body, thread_ts=parent, channel_id=CHANNEL)
+    smp.post_reply_text_only(body, thread_ts=_thread_ts(smp),
+                             channel_id=CHANNEL)
     _mark_reported()
     return True
 
@@ -80,6 +80,43 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
 # wrapper would either double-post every ordinary refusal or stay silent for
 # exactly the failures nothing else can catch.
 REPORTED_MARKER = "output/logs/.digi-docs-reported"
+
+
+# TODAY'S THREAD, RESOLVED ONCE PER RUN. Not a cache for speed — it is what
+# stops the channel being flooded. See _thread_ts.
+_THREAD_TS = None
+
+
+def _thread_ts(smp) -> str:
+    """The ts of today's Digi Docs header. One per RUN, whatever happens.
+
+    Two bugs met here on 2026-08-31 and the second only became visible when the
+    first was fixed.
+
+    1. ensure_named_thread returns {"ok":…, "existed":…, "thread_ts": ts}, and
+       both callers passed that whole DICT as thread_ts. Slack answered
+       `invalid_thread_ts` every time, so the header posted and the body under
+       it never did — this thread had never once carried a reply.
+
+    2. _refuse alerts on EVERY refusal, by design (Megan 2026-08-26: "if
+       anything fails it needs to alert right away"). Each alert called
+       ensure_named_thread, whose search does not find a header posted seconds
+       earlier — so each one posted its OWN header. With bug 1 in place that
+       was an occasional orphan header nobody noticed. Fix bug 1 alone and a
+       run that refuses fifty people posts fifty headers, each tagging three
+       people, thirteen seconds apart. It did.
+
+    So resolve it ONCE and hold it for the process. Every later alert in the
+    same run replies under the same header, however many there are."""
+    global _THREAD_TS
+    if _THREAD_TS:
+        return _THREAD_TS
+    parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
+    ts = parent.get("thread_ts") if isinstance(parent, dict) else parent
+    if not ts:
+        raise smp.SlackPostError(f"no thread_ts in {parent!r}")
+    _THREAD_TS = ts
+    return ts
 
 
 def _mark_reported() -> None:
@@ -161,8 +198,8 @@ def alert_failure(line: str, *, dry_run: bool = True) -> bool:
         print(body)
         return False
     from automations.shared import slack_metrics_post as smp
-    parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
-    smp.post_reply_text_only(body, thread_ts=parent, channel_id=CHANNEL)
+    smp.post_reply_text_only(body, thread_ts=_thread_ts(smp),
+                             channel_id=CHANNEL)
     _mark_reported()
     return True
 
