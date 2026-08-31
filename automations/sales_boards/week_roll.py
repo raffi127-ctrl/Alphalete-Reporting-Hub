@@ -191,6 +191,47 @@ class Board:
         return "%s%d:%s%d" % (a1(col), first, a1(last_col or col), last)
 
 
+def archived_reps(keys, label: str) -> int:
+    """How many WeekData rows are keyed to `label`."""
+    return sum(1 for k in keys if k.rsplit("|", 1)[-1].strip() == label)
+
+
+def audit_rolled(sb, wd, sunday) -> int:
+    """The gold cell is on today's week - but was it ROLLED, or did somebody
+    just pick the week from the dropdown?
+
+    Picking is the whole failure: it moves the label and NOTHING else, so last
+    week's typed numbers stay under this week's headers (the fill only ever
+    raises a number, so they are never corrected down), the closing week is
+    never archived, and 'Last Wk' still shows an older week. That is how
+    2026-08-17 went, and it looks exactly like a healthy board. Saying
+    "nothing to do" here would let it stand, so: check that the week BEFORE
+    this one made it into WeekData, and if it didn't, say what to do.
+    """
+    b = Board(_retry(sb.get, "A1:Z60"))
+    keys = [k.strip() for k in _retry(wd.col_values, 1) if k.strip()]
+    prev = we_label(sunday - dt.timedelta(days=7))
+    n_prev, n_this = archived_reps(keys, prev), archived_reps(keys, we_label(sunday))
+    if n_prev or not keys or n_this:
+        print("the board is already rolled (%s archived with %d rows). "
+              "Nothing to do." % (prev, n_prev))
+        return 0
+
+    literals = [r["name"] for r in b.reps if any(v for v in r["days"])]
+    print("\n!! ROLLED BY HAND? Week %s is on the gold cell, but %s has NO "
+          "archived rows in WeekData." % (we_label(sunday), prev))
+    print("   That is what picking the week from the dropdown leaves behind: "
+          "the label moves and nothing else does.")
+    if literals:
+        print("   %d rep row(s) still carry typed day numbers (%s%s) - if "
+              "those are %s's, the fill will never take them down."
+              % (len(literals), ", ".join(literals[:4]),
+                 ", ..." if len(literals) > 4 else "", prev))
+    print("   To fix: type the OLD week back into the gold cell as TEXT (an "
+          "apostrophe first, e.g. '%s), then run this again." % prev)
+    return 4
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Roll the Vantura Sales Board "
                                              "onto the new week.")
@@ -251,9 +292,8 @@ def main(argv=None) -> int:
     print("board shows %s (week ending %s); rolling to %s (week ending %s)"
           % (old_we, old_sunday, new_we, new_sunday))
     if old_we == today_label:
-        print("that IS the week holding today (%s) - the board is already "
-              "rolled. Nothing to do." % today)
-        return 0
+        print("that IS the week holding today (%s)." % today)
+        return audit_rolled(sb, wd, old_sunday)
     if new_we != today_label and not args.force:
         print("but today (%s) sits in week %s, not %s. Rolling one week would "
               "leave the board on the wrong week - re-run with --force if that "

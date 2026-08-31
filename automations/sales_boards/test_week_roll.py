@@ -113,6 +113,55 @@ def test_a1():
     assert got == ["A", "D", "K", "L", "Z", "AA", "AS"], got
 
 
+class _Tab:
+    """Just enough worksheet for audit_rolled: a grid and column A."""
+
+    def __init__(self, grid, col_a=()):
+        self._grid, self._col_a = grid, list(col_a)
+
+    def get(self, _range, **_kw):
+        return self._grid
+
+    def col_values(self, _c):
+        return self._col_a
+
+
+def _rolled_grid(days):
+    """The board on week 9.6, with `days` typed into the first rep's row."""
+    g = [row[:] for row in _grid()]
+    g[1][1] = "9.6"
+    for r in (4, 5, 6):
+        g[r][4:11] = ["", "", "", "", "", "", ""]
+    g[4][4:11] = days
+    return g
+
+
+def test_audit_passes_when_the_closing_week_was_archived():
+    sb = _Tab(_rolled_grid([""] * 7))
+    wd = _Tab([], ["KEY"] + ["Rep %d|8.30" % i for i in range(3)])
+    assert W.audit_rolled(sb, wd, dt.date(2026, 9, 6)) == 0
+
+
+def test_audit_catches_a_board_flipped_from_the_dropdown():
+    """The label moved to 9.6, 8.30 was never archived, and last week's typed
+    numbers are still sitting in the day cells."""
+    sb = _Tab(_rolled_grid(["4", "5", "", "6", "9", "", ""]))
+    wd = _Tab([], ["KEY"] + ["Rep %d|8.23" % i for i in range(3)])
+    assert W.audit_rolled(sb, wd, dt.date(2026, 9, 6)) == 4
+
+
+def test_audit_stays_quiet_on_a_board_with_no_history():
+    sb = _Tab(_rolled_grid([""] * 7))
+    assert W.audit_rolled(sb, _Tab([], []), dt.date(2026, 9, 6)) == 0
+
+
+def test_archived_reps_counts_only_the_asked_week():
+    keys = ["Ann|8.30", "Bob|8.30", "Ann|8.3", "Ann|9.6", "KEY"]
+    assert W.archived_reps(keys, "8.30") == 2
+    assert W.archived_reps(keys, "8.3") == 1
+    assert W.archived_reps(keys, "9.13") == 0
+
+
 def _main() -> int:
     fails = 0
     for name, fn in sorted(globals().items()):
