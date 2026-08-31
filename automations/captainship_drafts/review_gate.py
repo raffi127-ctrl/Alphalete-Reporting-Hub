@@ -1007,6 +1007,62 @@ def send_reviewed(today: dt.date, verbose: bool = True,
 # --------------------------------------------------------------------------
 # 5. the deadline
 # --------------------------------------------------------------------------
+def _deadline_key(day: dt.date) -> str:
+    """The incident key the deadline path files under. CUSTOM, not `failure-…`,
+    because this is not a report id — the 15-minute agent is its own witness and
+    the key carries the date so a still-broken day replies instead of reposting.
+    Anything that opens OR closes that thread has to spell the key the same way,
+    which is why it lives in one function (2026-08-31)."""
+    return f"captainship-deadline-{day.isoformat()}"
+
+
+def _deadline_alerted_marker(day: dt.date) -> Path:
+    return _OUTPUT_DIR / "state" / f"captainship-deadline-{day.isoformat()}.alerted"
+
+
+def _close_deadline_incident(day: dt.date, what: str) -> None:
+    """The deadline path RECOVERED — put the ✅ on its thread.
+
+    WHY THIS EXISTS (Megan 2026-08-31: "captainship reports errored 2 times but
+    only one marked resolved"). Two captainship incidents opened that morning and
+    only one ever closed. The one that did was `failure-captainship_drafts_review`
+    — a report-id key, so the report's next clean run closed it through
+    incident_thread.resolve_report(), twice, as designed. The one that did not was
+    this path's `captainship-deadline-2026-08-31`: a CUSTOM key, outside the
+    failure- / drop- / standalone- families, so subject() answers None for it and
+    keys_for("captainship_drafts_review") never produces it. No clean run can
+    reach it — and nothing here closed it either, so every deadline alert ever
+    posted has sat open until somebody typed `lucy incident_resolve` by hand.
+    From the channel that reads as "the captainship deadline is still broken",
+    which is exactly the state the incident threads exist to make legible.
+
+    ASKS THE CHANNEL, NOT THE INDEX (ensure_closed, not resolve_if_open): the
+    alert may have been posted by an earlier tick in a different process, or by
+    a machine whose index this one has never seen. False from ensure_closed means
+    only "Slack refused" — the marker is kept so the next tick tries again, and a
+    hand-rolled all-clear is never posted in its place.
+
+    GATED so a healthy day costs no API call: the ticks run every 15 minutes and
+    nearly all of them find nothing wrong. We ask Slack only when this machine
+    has evidence a thread was opened today — the marker this module writes when
+    it alerts, or the local incident index."""
+    key = _deadline_key(day)
+    marker = _deadline_alerted_marker(day)
+    try:
+        from automations.shared import incident_thread as it
+        if not (marker.exists() or key in it.open_keys()):
+            return
+        if it.ensure_closed(key, what=what,
+                            detail="_The deadline path completed on a later "
+                                   "pass; the links are up for review._"):
+            try:
+                marker.unlink()
+            except OSError:
+                pass
+    except Exception as e:  # noqa: BLE001 — closing must never sink the tick
+        print(f"  (couldn't close the deadline incident: {e})", flush=True)
+
+
 def _alert_deadline_failure(day: dt.date, what, detail: str = "") -> None:
     """Tell #claudecorrections-and-requests that the DEADLINE path failed.
 
@@ -1067,7 +1123,15 @@ def _alert_deadline_failure(day: dt.date, what, detail: str = "") -> None:
         ]
         notify.post_alert("✉️ *Captainship Reports — deadline path failed*",
                           lines, tag="captainship-deadline",
-                          incident=f"captainship-deadline-{day.isoformat()}")
+                          incident=_deadline_key(day))
+        # Evidence for _close_deadline_incident(): cross-process (each tick is a
+        # new one) and free to check, so the healthy ticks never ask Slack.
+        try:
+            marker = _deadline_alerted_marker(day)
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(dt.datetime.now().isoformat(), encoding="utf-8")
+        except OSError:
+            pass
     except Exception as e:  # noqa: BLE001 — an alert must never break the tick
         print(f"  (corrections alert skipped: {e})", flush=True)
 
@@ -1129,6 +1193,11 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
         if verbose:
             print(f"— every block for {today:%Y-%m-%d} is already up for "
                   f"review; nothing to do", flush=True)
+        # This is where a broken morning ENDS: the block that failed at 7:23 is
+        # up by 10:00 and this tick has nothing left to do. Close the thread
+        # here or it never closes at all.
+        _close_deadline_incident(
+            today, "*Captainship Reports* — every block is up for review")
         return 0
 
     failures: List[str] = []
@@ -1208,6 +1277,9 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
                 f"({type(last_err).__name__}: {str(last_err)[:120]})")
     if failures:
         _alert_deadline_failure(today, failures)
+    else:
+        _close_deadline_incident(
+            today, "*Captainship Reports* — every block is up for review")
     return 1 if failures else 0
 
 

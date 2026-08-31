@@ -65,7 +65,15 @@ if [ "${1:-}" = "--dry" ]; then
 fi
 
 # One email per day. If the 9:00 pass fails, the marker stays unset so a manual
-# `lucy rerun owner_showdown_daily` (or tomorrow's pass) can still deliver.
+# re-run (or tomorrow's pass) can still deliver.
+#
+# THE BY-HAND RE-RUN IS `lucy rerun owner_showdown --email` (2026-08-31). This
+# used to name `lucy rerun owner_showdown_daily`, which is not a report id and
+# has never existed — and the id that DOES exist carries base_args --no-email
+# (schedule_config), so the obvious `lucy rerun owner_showdown` refills the KTS
+# tab and quietly mails nobody. On 8/31 that was the difference between the
+# standings going out and not; on 9/1 it is the CHAMPIONS mail. run.py reads
+# --email first (want_email = args.email or ...), so it overrides --no-email.
 if [ -f "$MARKER" ]; then
     echo "[$(date)] already emailed today — skipping" >> "$LOG_FILE"
     exit 0
@@ -73,8 +81,35 @@ fi
 
 echo "[$(date)] owner-showdown-daily starting (pull + fill + email PDF)" \
     > "$LOG_FILE"
-"$VENV_PY" -u -m automations.owner_showdown.run --email >> "$LOG_FILE" 2>&1
-ST=$?
+
+# RETRY A TRANSIENT NETWORK FAILURE (2026-08-31). On 8/31 this agent fired at
+# 09:00:01 and was dead by 09:00:19: sheet_fill.open_tab raised
+# ConnectionError('Connection aborted.', TimeoutError(60, 'Operation timed
+# out')) — the mini's network was not up 18 seconds after the 9:00 tick. One
+# socket timeout, and the day's flyer was gone: nothing retries this agent, the
+# marker stays unset by design but no later pass reads it, and the "didn't run
+# today" watcher only ALERTS. Megan found out from the channel two hours later.
+#
+# Sep 1 is the CHAMPIONS email — the one send of the whole competition that
+# cannot be missed — so a blip at 9:00 must not decide it. Three tries, 60s
+# apart, which clears a mini whose Wi-Fi comes up slowly and still finishes long
+# before anyone is looking for the mail.
+#
+# SAFE TO REPEAT: run.py rewrites the same KTS rows each pass (it does not
+# append), and the email goes out only on the attempt that reaches the end —
+# a run that dies at open_tab has pulled nothing and sent nothing. The marker
+# below is still what guarantees exactly one email per day.
+ST=1
+for ATTEMPT in 1 2 3; do
+    if [ "$ATTEMPT" -gt 1 ]; then
+        echo "[$(date)] retry $ATTEMPT/3 after a failed attempt" >> "$LOG_FILE"
+        sleep 60
+    fi
+    "$VENV_PY" -u -m automations.owner_showdown.run --email >> "$LOG_FILE" 2>&1
+    ST=$?
+    [ "$ST" -eq 0 ] && break
+    echo "[$(date)] attempt $ATTEMPT/3 exited $ST" >> "$LOG_FILE"
+done
 
 if [ "$ST" -eq 0 ]; then
     touch "$MARKER"
