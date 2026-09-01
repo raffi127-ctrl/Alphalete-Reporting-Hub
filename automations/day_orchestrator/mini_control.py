@@ -95,6 +95,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
+import pathlib
 import re
 import shlex
 import subprocess
@@ -171,7 +172,11 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # exact day you most want fast reads — can still deploy it.
                     "install_mini_control_read",
                     "install_enrollment_pending",
-                    "pip_install", "playwright_install", "set_applicant_service_account",
+                    "pip_install", "playwright_install",
+                    # Pinning Chrome is deploy plumbing: it must run on a
+                    # cap-hit day, which is exactly the day Chrome broke.
+                    "install_pinned_chrome",
+                    "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     # Writes a one-line identity marker, whitelisted and
                     # idempotent — re-running it is a no-op, not a second write.
@@ -639,7 +644,8 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     the office joins the morning run — and, with --post, immediately run its
     report so it posts to its channel.
 
-    <kind> = 'metrics' (D2D/B2B office metrics) | 'tracker' (Tableau trackers).
+    <kind> = 'metrics' (D2D/B2B office metrics) | 'tracker' (Tableau trackers)
+    | 'disposition' (the KNOCKS & DISPOSITIONS board, gap_alerts).
     The onboarding forms enqueue this on submit (wire only) and from their 'Post
     now' button (--post). apply reads the 'Office/Tracker Onboarding' tab (the
     source of truth), so the office need not be committed yet — this is the same
@@ -655,7 +661,8 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     dry = "--dry-run" in parts
     parts = [p for p in parts if not p.startswith("--")]
     if len(parts) < 2:
-        return False, "onboard_apply needs '<kind> <key>' (kind=metrics|tracker)"
+        return False, ("onboard_apply needs '<kind> <key>' "
+                       "(kind=metrics|tracker|disposition)")
     kind, key = parts[0].strip().lower(), parts[1].strip()
 
     try:
@@ -670,8 +677,21 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     elif kind in ("tracker", "trackers"):
         from automations.tracker_onboarding import store as _st, apply as _ap
         _st.set_client(gc)
+    elif kind in ("disposition", "dispositions"):
+        # No --post branch: the dispositions board is not a once-a-day report
+        # that can be "run now" — it is a tick inside a selling window, and the
+        # next one is at most 15 minutes away. Wiring is the whole job here.
+        from automations.disposition_signup import store as _st, apply as _ap
+        _st.set_client(gc)
+        rc = _ap.main(["--only", key, "--write"])
+        if rc != 0:
+            return False, f"apply(disposition) failed for {key!r} (rc={rc})"
+        return True, (f"wired {key} into the dispositions run — it joins the "
+                      "next tick (nothing sends if it is wired OFF pending "
+                      "Office Access)")
     else:
-        return False, f"unknown kind {kind!r} (expected metrics|tracker)"
+        return False, (f"unknown kind {kind!r} "
+                       "(expected metrics|tracker|disposition)")
 
     rc = _ap.main(["--only", key, "--write"])
     if rc != 0:
@@ -2592,6 +2612,74 @@ def _action_playwright_install(args: str) -> tuple[bool, str]:
         return False, f"playwright_install refused {browser!r}; allowed: chromium, firefox, webkit"
     return _run_cmd([sys.executable, "-m", "playwright", "install", browser],
                     timeout_s=10 * 60)
+
+
+def _action_install_pinned_chrome(args: str) -> tuple[bool, str]:
+    """Install the PINNED Chrome (Chrome for Testing) on THIS runner.
+
+      install_pinned_chrome                 # default 151.0.7922.138
+      install_pinned_chrome 151.0.7922.138  # an explicit build
+
+    WHY (2026-09-01). Chrome auto-updated to 152.0.7977.65 at 01:45 and began
+    crashing — EXC_BREAKPOINT in ChromeMain on macOS 26.6.2, 26 crashes that day
+    against ZERO on every prior day. One crash took harvest_prime from 17/17 to
+    1/17; the same TargetClosedError killed the captainship reports,
+    fiber_activations, the B2B tracker boards and org_sales_board's delta boxes.
+    tableau_patchright now launches a pinned build when one is installed.
+
+    THIS ACTION EXISTS BECAUSE LUCY 2 AND LUCY 3 TAKE NO SSH. Lucy 1 was fixed
+    by hand in minutes; the other two had no route at all, so the fix reached one
+    of three machines and the trackers (Lucy 3) stayed exposed. A queue action is
+    the only way in.
+
+    Downloads Google's official Chrome for Testing zip (~179 MB) into
+    ~/chrome-for-testing, beside the team's own Chrome — nothing in
+    /Applications is touched and nobody's browser changes. Also stops Keystone
+    re-updating Chrome underneath us. Idempotent: a matching build already
+    present is left alone."""
+    import platform
+    ver = (args or "151.0.7922.138").strip() or "151.0.7922.138"
+    if not re.fullmatch(r"[0-9]+(\.[0-9]+){3}", ver):
+        return False, f"refusing version {ver!r} — expected N.N.N.N"
+    arch = "mac-arm64" if platform.machine() == "arm64" else "mac-x64"
+    root = pathlib.Path.home() / "chrome-for-testing"
+    exe = (root / f"chrome-{arch}" / "Google Chrome for Testing.app"
+           / "Contents" / "MacOS" / "Google Chrome for Testing")
+    if exe.exists():
+        cur = subprocess.run([str(exe), "--version"], capture_output=True,
+                             text=True, timeout=60).stdout.strip()
+        if ver in cur:
+            return True, f"already installed: {cur} ({arch}) — nothing to do"
+    url = ("https://storage.googleapis.com/chrome-for-testing-public/"
+           f"{ver}/{arch}/chrome-{arch}.zip")
+    root.mkdir(parents=True, exist_ok=True)
+    zp = root / f"cft-{ver}.zip"
+    r = subprocess.run(["curl", "-sSL", "--max-time", "900", "-o", str(zp), url],
+                       capture_output=True, text=True, timeout=16 * 60)
+    if r.returncode != 0 or not zp.exists() or zp.stat().st_size < 50_000_000:
+        return False, (f"download failed rc={r.returncode} "
+                       f"size={zp.stat().st_size if zp.exists() else 0} "
+                       f"{(r.stderr or '')[:120]}")
+    mb = zp.stat().st_size / 1048576
+    u = subprocess.run(["unzip", "-qo", str(zp), "-d", str(root)],
+                       capture_output=True, text=True, timeout=10 * 60)
+    if u.returncode != 0 or not exe.exists():
+        return False, f"unzip failed rc={u.returncode} {(u.stderr or '')[:140]}"
+    got = subprocess.run([str(exe), "--version"], capture_output=True,
+                         text=True, timeout=60).stdout.strip()
+    try:
+        zp.unlink()
+    except Exception:  # noqa: BLE001 — the zip is a leftover, not the deliverable
+        pass
+    # Stop Keystone moving Chrome again. Reversible:
+    #   defaults delete com.google.Keystone.Agent checkInterval
+    ks = subprocess.run(["defaults", "write", "com.google.Keystone.Agent",
+                         "checkInterval", "0"], capture_output=True, text=True,
+                        timeout=60)
+    ks_note = "auto-update OFF" if ks.returncode == 0 else "auto-update UNCHANGED"
+    ok = ver in got
+    return ok, (f"{'installed' if ok else 'MISMATCH'}: {got} ({arch}, "
+                f"{mb:.0f} MB) · {ks_note} · reports use it on their next run")
 
 
 def _action_set_applicant_service_account(args: str) -> tuple[bool, str]:
@@ -6555,6 +6643,7 @@ ACTIONS = {
     "probe_knocks": _action_probe_knocks,
     "pip_install": _action_pip_install,
     "playwright_install": _action_playwright_install,
+    "install_pinned_chrome": _action_install_pinned_chrome,
     "set_applicant_service_account": _action_set_applicant_service_account,
     "applicant_key": _action_applicant_key,
     "rerun": _action_rerun,
