@@ -492,63 +492,16 @@ def board_for(office: str, target: Optional[dt.date] = None,
 
     from automations.total_knocks import render as knocks_render
     extra = [(compare, chan_rows)] if chan_rows else []
-    apps = _apps_for(canonical, days, logfn=logfn)
     # An NDS office gets a PAIR of boards and no comparison line; the shape
     # decides, so a fiber office that goes wireless needs no config change.
     b.pngs, b.shape = knocks_render.render_knocks_boards(
         target, rows=rows, out_dir=OUT_DIR / _slug(canonical),
-        title_suffix=canonical, end=end, extra_totals=extra, apps=apps)
+        title_suffix=canonical, end=end, extra_totals=extra)
     b.png = b.pngs[0]
     if extra and b.shape == knocks_render.SHAPE_HOUSE:
         b.compared_to = compare
     logfn(f"board -> {b.png}")
     return b
-
-
-def _apps_for(canonical: str, days: "list", *, logfn=print):
-    """{rep: apps} for this office over `days`, or None to leave the columns off.
-
-    Apps are Raf's high-level count of EVERY product type and they do NOT come
-    from ownerville — they are a Tableau PRODUCT SALES SUMMARY pull, the same
-    org-wide rep-level crosstab the weekly board uses. That is why /knocks
-    never had Total Apps, Average App per Rep or Avg Talk To's per App: the
-    knock pull alone cannot know them (Megan 2026-08-31, "Jirya is missing avg
-    talk tos per app").
-
-    ONE download per request, covering the week the span sits in, then the
-    day columns are summed. A span crossing a week boundary needs a second
-    crosstab, so those days are dropped rather than half-counted — a partial
-    apps number sitting beside a full week of talk-tos would make every
-    per-app figure wrong in a way nobody could see.
-
-    RETURNS None ON ANY FAILURE, deliberately. Apps are an enrichment; the
-    knock board is the answer. A Tableau hiccup must cost three columns, never
-    the reply — and None leaves the board exactly as it was before today.
-    """
-    from automations.weekly_knock_dispositions import apps as A
-    from automations.focus_office_att.aliases import load_aliases
-    try:
-        # The shared helper, not a re-derived formula: this is the same
-        # "Sale Date Week Ending (mon-sun)" value the ATT workbooks show and
-        # the weekly board tabs are named after, and a second copy of that
-        # arithmetic is a thing that can drift from the sheets.
-        from automations.shared.report_week import week_ending
-        weeks = {week_ending(d) for d in days}
-        if len(weeks) != 1:
-            logfn("apps: the span crosses a week boundary — apps columns "
-                  "left off rather than counting part of one week")
-            return None
-        we_sunday = weeks.pop()
-        pss_path = A.download(we_sunday, verbose=False)
-        got = A.rep_apps_for_owner(pss_path, canonical, load_aliases(),
-                                   days=[A.day_name(d) for d in days])
-        logfn(f"apps: {len(got)} rep(s) from the PSS crosstab "
-              f"(week ending {we_sunday})")
-        return got or None
-    except Exception as e:  # noqa: BLE001 — apps never cost the board
-        logfn(f"apps: unavailable ({type(e).__name__}: {str(e)[:160]}) — "
-              "board goes out without the apps columns")
-        return None
 
 
 def access_gap(exc: BaseException) -> bool:
