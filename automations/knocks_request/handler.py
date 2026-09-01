@@ -320,6 +320,16 @@ def process(web, user_id: str, office: str, target: dt.date,
             # promised to names that simply aren't ICDs ("Frank Castillo",
             # 2026-08-31 — no such office; Francisco Castillo is the one on
             # the roster). Only claim a permissions gap for a name we know.
+            # OWNERVILLE'S OWN near-matches first. They come from the live
+            # site, so they beat any roster guess: the office exists and only
+            # the spelling was wrong.
+            near = service.ownerville_near_matches(e)
+            if near:
+                say(f":grey_question: I couldn't find *{office}* in "
+                    "Ownerville, but these are close:\n"
+                    + "\n".join(f"• {n}" for n in near)
+                    + "\n_Send me one of those exactly and I'll pull it._")
+                return
             hint = service.suggest_office(office)
             say(f":grey_question: I don't have an office called *{office}* on "
                 "the roster"

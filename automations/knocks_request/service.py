@@ -610,6 +610,31 @@ def _apps_for(canonical: str, days: "list", *, logfn=print):
         return None, "no_harvest"
 
 
+def ownerville_near_matches(exc: BaseException) -> list:
+    """The names OWNERVILLE itself offered when it couldn't find the one we
+    asked for, or [].
+
+    The impersonation search already collects them — `_not_found_reason`
+    writes "name not found in ownerville - it lists: 'muhammad ui haque'; ..."
+    — and every caller then threw them away. Raf asked for "Hammad" and got
+    "I don't have an office called Hammad on the roster" while the exception in
+    hand was holding the two Muhammads it had found (2026-09-01: "I have access
+    to jacob dovers ownerville, weird"). He has access; the NAME was the
+    problem, and the answer was already in the error.
+    """
+    msg = str(exc or "")
+    marker = "it lists:"
+    if marker not in msg:
+        return []
+    tail = msg.split(marker, 1)[1]
+    out = []
+    for chunk in tail.split(";"):
+        name = chunk.strip().strip("'\"").strip()
+        if name:
+            out.append(name)
+    return out[:6]
+
+
 def access_gap(exc: BaseException) -> bool:
     """True when the failure is 'this office isn't on our ownerville account'
     rather than a run problem — the same test the captainship section uses, so
