@@ -343,6 +343,61 @@ def _hold_profile_lock_until_close(ctx, lock_fd, verbose):
     return ctx
 
 
+# PIN CHROME, DON'T RIDE WHATEVER GOOGLE SHIPPED LAST NIGHT (Megan 2026-09-01).
+#
+# Chrome auto-updated to 152.0.7977.65 at 01:45 and started crashing:
+# EXC_BREAKPOINT in ChromeMain on macOS 26.6.2, 26 crashes that day against zero
+# on every prior day. One crash took harvest_prime from 17/17 to 1/17; the same
+# error killed the captainship reports, fiber_activations, the B2B tracker boards
+# and org_sales_board's delta boxes. It is the single root cause of that morning.
+#
+# Rolling the app back is not available to us: Google publishes no old stable
+# installer, the framework symlink alone does not downgrade (the launcher reads
+# CFBundleShortVersionString from Info.plist), and two of the three runners take
+# no SSH. Chrome for Testing is the supported answer — Google's own versioned
+# builds, published for exactly this, installed BESIDE the team's Chrome so
+# nobody's browser is touched.
+#
+# Install (per machine, ~179 MB):
+#   mkdir -p ~/chrome-for-testing && cd ~/chrome-for-testing
+#   curl -sSLO https://storage.googleapis.com/chrome-for-testing-public/\
+#              151.0.7922.138/mac-arm64/chrome-mac-arm64.zip
+#   unzip -q chrome-mac-arm64.zip
+#
+# CONSERVATIVE: with no pinned build installed this returns channel="chrome" and
+# the launch is byte-identical to before, so a machine that has not been set up
+# keeps working exactly as it did. CHROME_BINARY overrides for a one-off test.
+_CFT_DIRS = ("chrome-mac-arm64", "chrome-mac-x64")
+
+
+def _pinned_chrome() -> Optional[str]:
+    """Path to a pinned Chrome build, or None to use the system channel."""
+    env = (os.environ.get("CHROME_BINARY") or "").strip()
+    if env and Path(env).exists():
+        return env
+    root = Path.home() / "chrome-for-testing"
+    for d in _CFT_DIRS:
+        exe = (root / d / "Google Chrome for Testing.app" / "Contents"
+               / "MacOS" / "Google Chrome for Testing")
+        if exe.exists():
+            return str(exe)
+    return None
+
+
+def _chrome_launch_kwargs(base: dict, verbose: bool = False) -> dict:
+    """base + either a pinned executable_path or the system chrome channel.
+
+    executable_path and channel are mutually exclusive in Playwright, so this
+    picks exactly one."""
+    kw = dict(base)
+    exe = _pinned_chrome()
+    if exe:
+        kw["executable_path"] = exe
+    else:
+        kw["channel"] = "chrome"
+    return kw
+
+
 def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                        verbose: bool = True, window_size: tuple = (1680, 1280),
                        device_scale: float | None = None,
@@ -410,7 +465,8 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                     try:
                         return _hold_profile_lock_until_close(
                             p.chromium.launch_persistent_context(
-                                channel="chrome", **base), lock_fd, verbose)
+                                **_chrome_launch_kwargs(base, verbose)),
+                            lock_fd, verbose)
                     except Exception as e:
                         if _is_profile_in_use(e):
                             raise  # bundled won't help (same profile); wait+retry
