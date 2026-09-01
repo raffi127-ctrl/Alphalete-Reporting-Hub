@@ -109,6 +109,20 @@ _PROMPT = (
 DROPPED_MARKERS = ("declin", "failed background", "failed bgc", "failed bg check")
 
 
+class RosterNotPostedYet(RuntimeError):
+    """This week's roster screenshot simply is not up yet.
+
+    A WAIT, not a fault. It clears the moment a person posts the roster, and
+    nothing is wrong in the meantime — so callers must not page about it. Before
+    this existed the refusal was a bare RuntimeError, indistinguishable from a
+    real break, and the thread-scan agent (every 30 min, all day) raised a fresh
+    incident on every tick: 7 follow-ups on one thread by mid-afternoon on
+    2026-09-01, none of them actionable, for a report that was behaving
+    correctly (Megan: "the new start thread I'm pretty sure is a Friday only
+    thing?" — it is not the schedule that is wrong, it is calling a wait a
+    failure)."""
+
+
 def is_dropped(row: dict) -> bool:
     for field in ("confirmation", "bg_status"):
         value = " ".join((row.get(field) or "").lower().split())
@@ -190,7 +204,7 @@ def _find_roster_image(client, monday_iso: Optional[str] = None,
         in_week = [m for m in matches
                    if monday - dt.timedelta(days=6) <= _posted(m) <= monday]
         if not in_week:
-            raise RuntimeError(
+            raise RosterNotPostedYet(
                 "Newest roster post in {}{} is from {} — the week of a "
                 "different Monday, not {}. This week's roster isn't up yet; "
                 "refusing to read last week's screenshot.".format(
