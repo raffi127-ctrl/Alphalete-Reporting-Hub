@@ -143,7 +143,14 @@ def main(argv=None) -> int:
     _log("saved AppStream token: %.0f min left (need %.0f to clear the batch)"
          % (left, a.min_minutes))
     if a.check:
-        return 0 if left >= a.min_minutes else 1
+        # ALWAYS 0. --check reports; it does not judge. It is wired to a registry
+        # entry, and the run wrapper reads any non-zero exit as a FAILED report —
+        # so returning 1 for "the token is low" posted a red incident to
+        # #claudecorrections-and-requests about a probe that worked perfectly
+        # (2026-08-31). A low token is the normal state this exists to observe,
+        # and paging about it is the crying-wolf we are trying to remove.
+        _log("check only — nothing changed. The 3:15am agent is what heals.")
+        return 0
 
     if left >= a.min_minutes and not a.force:
         _log("session is healthy — nothing to do, staying silent")
