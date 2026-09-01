@@ -113,7 +113,8 @@ def renew_from_state(verbose: bool = True) -> bool:
 
     Returns True only when a token actually came back."""
     from automations.shared.tableau_patchright import (
-        APPSTREAM_PROFILE_DIR, APPSTREAM_STORAGE_STATE, _launch_persistent)
+        APPSTREAM_BASE, APPSTREAM_PROFILE_DIR, APPSTREAM_STORAGE_STATE,
+        _launch_persistent)
     from patchright.sync_api import sync_playwright
     try:
         cookies = json.loads(APPSTREAM_STORAGE_STATE.read_text()).get("cookies", [])
@@ -134,15 +135,31 @@ def renew_from_state(verbose: bool = True) -> bool:
             except Exception as e:  # noqa: BLE001 — a bad cookie must not abort
                 _log("add_cookies partial (%s) — continuing" % type(e).__name__)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            page.goto("https://applicantstream.com/index.cfm?p=701",
-                      wait_until="domcontentloaded")
-            page.wait_for_timeout(4000)
-            if page.locator("#searchMC").count() == 0:
-                # Give the console a moment: it is the same wait a report does.
-                page.wait_for_timeout(6000)
-            if page.locator("#searchMC").count() == 0:
-                _log("console did not render from the saved session — it is "
-                     "genuinely dead, not merely old")
+            # THE TOKEN GOES IN THE URL. A bare ?p=701 does NOT restore a
+            # session — the form this codebase documents as rendering "every
+            # time, which is how every report and every fleet push lands" is
+            # ?rqst=<TOKEN>&p=701. The first cut navigated without it and read
+            # the empty console as "the session is genuinely dead" while the
+            # very same cookies were serving reports on that machine minutes
+            # earlier (Lucy 1, 2026-09-01 14:05).
+            toks = [str(c.get("name"))[5:] for c in cookies
+                    if str(c.get("name") or "").startswith("rqst_")]
+            if not toks:
+                _log("saved session carries no rqst_ cookie to re-key with")
+                return False
+            rendered = False
+            for tok in toks:
+                try:
+                    page.goto("%s?rqst=%s&p=701" % (APPSTREAM_BASE, tok),
+                              wait_until="domcontentloaded")
+                    page.wait_for_selector("#searchMC", timeout=15_000)
+                    rendered = True
+                    break
+                except Exception:  # noqa: BLE001 — try the next saved token
+                    continue
+            if not rendered:
+                _log("console did not render from any saved token (%d tried) — "
+                     "the session is genuinely dead, not merely old" % len(toks))
                 return False
             state = ctx.storage_state()
             ap = [c for c in state.get("cookies", [])
