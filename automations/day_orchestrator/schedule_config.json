@@ -9465,6 +9465,26 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 10
+    },
+    "appstream_selfheal": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_off_scheduler_note": "The healing run, reachable by hand. Its real schedule is the 3:15am LaunchAgent com.alphalete.appstream-selfheal; on_scheduler:false so the 4am orchestrator never also runs it. Restarts the holder ONLY when the saved token will not survive the batch, waits for a live one, and pushes it to all three machines. Exists as a handle so the exact path that runs at 3:15 can be exercised while a human is awake \u2014 an agent that fires once, unattended, 45 minutes before the batch is the worst place to discover a bug.",
+      "display_name": "AppStream self-heal (heal)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.shared.appstream_selfheal"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20
     }
   },
   "read_only_standalone": {
