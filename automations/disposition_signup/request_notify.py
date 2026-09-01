@@ -29,7 +29,7 @@ def _lines(rec: DispositionRecord, lucy: "Optional[dict]" = None
     link = "{}/?confirm={}".format(FORM_URL, rec.key or "")
     thread = ["- Requested by: {}".format(rec.requested_by or who),
               "- ICD (OwnerVille): {}".format(rec.owner or "?"),
-              "- Owner/applicant ID: {}".format(rec.ov_account or "not given"),
+              "- OwnerVille account #: {}".format(rec.ov_account or "not given"),
               "- Campaign: {}".format(
                   (rec.campaign() or {}).get("name", "?")),
               "- How often: {}".format(rec.cadence_label())]

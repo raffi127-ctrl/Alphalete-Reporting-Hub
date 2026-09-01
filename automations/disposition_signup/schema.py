@@ -86,7 +86,8 @@ class DispositionRecord:
     key: str                       # office key, e.g. "cody" (CLI/dict handle)
     owner: str = ""                # ICD name EXACTLY as OwnerVille spells it
     requested_by: str = ""         # what they go by (who filled the form)
-    # Question 2 — "in case we don't have them already". Optional on purpose:
+    # Question 2, the OwnerVille account number — "in case we don't have them
+    # already". Optional on purpose:
     # the name is what impersonation actually resolves through (via the ICD
     # alias sheet), and a blocking id field would stall every owner who does
     # not know theirs. It rides along so Megan can settle an ambiguous name

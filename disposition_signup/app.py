@@ -114,16 +114,16 @@ def request_view() -> None:
         "Your first and last name as it appears in OwnerVille *",
         help="Exactly as OwnerVille shows it. This is how we find your office.")
     knocks_office = st.text_input(
-        "Your office's name in OwnerVille (only if it's different)",
+        "Company name as it appears in OV (only if it's different from your name)",
         help="Leave blank if OwnerVille lists your office under your own "
              "name. Some offices are listed under a company name instead — "
-             "if yours is, put it here exactly as it appears.")
+             "if yours is, type it exactly as OwnerVille shows it.")
 
     # ---- 2. Owner id -----------------------------------------------------
     st.divider()
-    st.markdown("### 2. Your owner / applicant ID number")
+    st.markdown("### 2. Your OwnerVille account number")
     ov_account = st.text_input(
-        "Owner or applicant ID number (if you know it)",
+        "Your OwnerVille account number (if you know it)",
         help="Optional — it just helps us find you faster if two people share "
              "a name. Leave it blank if you don't have it handy.")
     campaign_key = st.radio(
@@ -362,7 +362,7 @@ def confirm_view(key: str) -> None:
         st.info("This one is already confirmed + wired — confirming again just "
                 "re-applies it (safe / idempotent).")
     st.markdown("- **Requested by:** %s\n- **ICD (OwnerVille):** %s\n"
-                "- **Owner/applicant ID:** %s\n- **Submitted:** %s"
+                "- **OwnerVille account #:** %s\n- **Submitted:** %s"
                 % (rec.requested_by or rec.owner, rec.owner,
                    rec.ov_account or "—", rec.submitted_at or "—"))
     if rec.notes:
@@ -388,7 +388,7 @@ def confirm_view(key: str) -> None:
     label = st.text_input("Name on the card", value=rec.label
                           or (rec.owner.split()[0] if rec.owner else ""))
     knocks_office = st.text_input(
-        "Office name in OwnerVille (impersonation resolves through this)",
+        "Company name as it appears in OV (impersonation resolves through this)",
         value=rec.knocks_office,
         placeholder=rec.owner,
         help="Blank = the owner's own name. A mismatch here is the difference "
