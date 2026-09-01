@@ -76,6 +76,20 @@ weekdays, 09:00-21:00 Saturday) around every supported zone, and
 offered on the form: its 10 PM lands at midnight Central, a different calendar
 day.
 
+## A push is not always a deploy — REBOOT after changing `automations/`
+
+Streamlit Cloud's "Updated app!" on a push re-runs **`app.py` only**. Anything
+already imported — everything under `automations/disposition_signup/` — stays
+the module object the process imported at boot. So a commit that changes
+`app.py` AND `schema.py` together deploys half of itself: the new page calling
+the old module, which fails as
+`AttributeError: module '...schema' has no attribute '...'` (2026-09-01).
+
+The fix is a real reboot: **Manage app → ⋮ → Reboot app**, which reclones and
+restarts the process. Same failure family as the Hub's stale-getsource restart.
+Rule of thumb: touched only `app.py`, the push is enough; touched anything in
+`automations/`, reboot.
+
 ## Local
 
 ```bash
