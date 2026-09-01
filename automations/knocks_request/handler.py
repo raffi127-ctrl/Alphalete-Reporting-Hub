@@ -394,8 +394,9 @@ def process(web, user_id: str, office: str, target: dt.date,
         # screenshot of it will outlive this message.
         cap += ("\n_Today so far — the day isn't over, these numbers will "
                 "grow._")
-    elif board.source in ("cache", "build"):
-        cap += "\n_From this morning's run — same numbers the report used._"
+    # No "From this morning's run" line (Megan 2026-09-01). Where the numbers
+    # were read from is our plumbing, not the reader's business — and it read
+    # like a caveat on numbers that need none.
 
     # Most shapes are ONE image now; only the wireless board still comes back
     # with a Time Gaps companion, so the second name/caption stays available.
