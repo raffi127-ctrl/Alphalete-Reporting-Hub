@@ -230,7 +230,11 @@ def by_ad(rows: list, min_rated: int = 8) -> list:
             "Ad": display_ad(spellings[key].most_common(1)[0][0]),
             "Rated": n,
             "Avg star": round(sum(stars) / n, 2),
+            # All THREE bands, so the row adds to 100%. Showing only the two
+            # ends hid the largest group — 3 star is 47% of Raf's ratings —
+            # and left the percentages looking like they did not sum.
             "1-2 star": f"{sum(1 for s in stars if s <= 2) / n:.0%}",
+            "3 star": f"{sum(1 for s in stars if s == 3) / n:.0%}",
             "4-5 star": f"{sum(1 for s in stars if s >= 4) / n:.0%}",
             "thin": n < min_rated,
         })

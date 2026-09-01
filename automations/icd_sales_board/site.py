@@ -1859,13 +1859,14 @@ def ars_breakdown(icd: str, start=None, end=None) -> None:
         st.caption(f"{len(rows)} interviews on file for {icd}, none rated yet.")
         return
 
-    cols = st.columns(4, gap="small")
+    cols = st.columns(5, gap="small")
     avg = sum(n * dist[n] for n in range(1, 6)) / rated
     _vital(cols[0], "Average star", f"{avg:.2f}", None)
     _vital(cols[1], "Rated", f"{rated:,}", None)
     _vital(cols[2], "1–2 star",
            f"{sum(dist[n] for n in (1, 2)) / rated:.0%}", None)
-    _vital(cols[3], "4–5 star",
+    _vital(cols[3], "3 star", f"{dist[3] / rated:.0%}", None)
+    _vital(cols[4], "4–5 star",
            f"{sum(dist[n] for n in (4, 5)) / rated:.0%}", None)
 
     ads = A2.by_ad(rows)
