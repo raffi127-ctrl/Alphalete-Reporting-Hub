@@ -1390,7 +1390,15 @@ def zero_streaks(week, overrides: dict, team: str = ALL_TEAMS,
 SECTIONS = [
     ("Sales", "icd_sales_board (this module)", True,
      "Board, production, zero streaks, week over week."),
-    ("Recruiting", "recruiting_report → ATT Program - Focus Report", True,
+    # NOT LIVE, whatever it currently renders. Tableau / SaraPlus / Sterling /
+    # AppStream are truth (Megan 2026-08-31); the Focus Report is a hand-typed
+    # transcription of AppStream and is explicitly not a feed. The nine
+    # metrics all exist at AppStream p=701 — Sent to Call List, Interviews
+    # Booked, Total First Interviews, First Interviews Showed Up, Total Second
+    # Interviews, Second Interviews Showed Up, Offered Job From Second Round,
+    # Total Daily Bob — so this is a repoint onto a harvest, not new mapping.
+    ("Recruiting", "AppStream p=701 (today: Focus Report — being repointed)",
+     False,
      "The nine tracked funnel metrics, with each office's own goals."),
     ("Knocks", "knocks_run → AUTOMATION MASTER 'Knocks Daily'", False,
      "Day over day per ICD, and combined per captainship. Now being logged."),
@@ -1622,6 +1630,15 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
                  f"{_ord(latest.day)}")
     if (dt.date.today() - latest).days > 7:
         st.caption("Most recent week with data — nothing filled in since.")
+
+    # Say where these came from, because it is not where they should come
+    # from. Left unlabelled they read as truth, and somebody would set a goal
+    # against a number that is about to change underneath them.
+    st.warning(
+        "These nine are still read from the ATT Program - Focus Report, which "
+        "is a hand-typed copy. The truth is AppStream p=701 and every row "
+        "exists there; the harvest that repoints them isn't built yet. Treat "
+        "the numbers as indicative until it is.", icon="⚠️")
 
     # ---- the nine, three to a row
     for chunk in range(0, len(F.TRACKED), 3):
@@ -1942,6 +1959,10 @@ def bob_breakdown(icd: str, start=None, end=None) -> None:
     st.dataframe(rows, use_container_width=True, hide_index=True,
                  column_config=_centered(rows[0]),
                  height=_grid_height(min(len(rows), 16)))
+    st.warning("Sourced from the tracker's 2R tab, which is not the truth "
+               "for BOB — AppStream is, and its BOB rows carry the ad the "
+               "person was hired from. Don't kill an ad on this table yet.",
+               icon="⚠️")
     st.caption("BOB = a filled Start Date — coming on board, not being "
                "offered. Ranked by total, but read the weekly columns before "
                "killing an ad: the biggest ad by applies is not the best "
