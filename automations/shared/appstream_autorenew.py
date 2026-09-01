@@ -347,6 +347,11 @@ def main(argv=None) -> int:
                     help="re-capture even if the token looks healthy")
     ap.add_argument("--under", type=float, default=RENEW_UNDER_MIN,
                     help="renew when fewer than this many minutes remain")
+    ap.add_argument("--refresh-ownerville", action="store_true",
+                    help="ALSO re-log in to ownerville if the warm profile "
+                         "fails. OFF by default: it swaps the machine's "
+                         "ownerville identity and breaks impersonating reports, "
+                         "and it does not extend the token anyway.")
     a = ap.parse_args(argv)
 
     left = token_minutes_left()
@@ -386,11 +391,30 @@ def main(argv=None) -> int:
         ok = _capture_appstream_state(verbose=False)
         if ok:
             _log("renewed from the warm profile")
-        else:
-            _log("warm-profile capture did not land — falling back to a fresh "
-                 "ownerville token + re-key")
+        elif a.refresh_ownerville:
+            # OPT-IN ONLY, AND IT COSTS SOMETHING. See refresh_ownerville: it
+            # signs in with the creds-file account, which is NOT the identity a
+            # runner impersonates through — Lucy 1 is Raf. Running it on
+            # 2026-09-01 replaced Raf's ownerville session and Rep Gap Alerts
+            # could no longer impersonate Calvin Ribera, Chan Park or Jay
+            # Turnage: 18 failed pulls, Partners chat got no cards, and it took
+            # a human logging back in as Raf to undo.
+            #
+            # It also never bought what it was added for — re-keying RESTORES a
+            # session, it does not extend the token (77/77, 67/67, 58/57). So
+            # the default is off: all risk, no measured benefit.
+            _log("warm-profile capture did not land — --refresh-ownerville was "
+                 "passed, so re-logging in to ownerville (THIS CHANGES THE "
+                 "MACHINE'S OWNERVILLE IDENTITY)")
             refresh_ownerville(verbose=True)
             ok = renew_from_state(verbose=True, tokens=_ownerville_tokens())
+        else:
+            _log("warm-profile capture did not land. NOT re-logging in to "
+                 "ownerville: that swaps this machine's ownerville identity and "
+                 "breaks impersonating reports (2026-09-01). This needs a "
+                 "one-time AppStream seed on this machine instead:")
+            _log("  PYTHONPATH=. .venv/bin/python -m "
+                 "automations.shared.tableau_patchright --appstream-login")
     except Exception as e:  # noqa: BLE001 — never take the timer down
         _log("renew raised %s: %s" % (type(e).__name__, str(e)[:160]))
         ok = False
