@@ -27,7 +27,7 @@ from typing import Dict, List
 from automations.disposition_signup import store
 from automations.disposition_signup.schema import (
     DEFAULT_HOURS, DEFAULT_TZ as S_DEFAULT_TZ, DispositionRecord,
-    campaign_live, validate,
+    campaign_live, campaign_machine, validate,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -68,6 +68,9 @@ def _row(rec: DispositionRecord) -> dict:
         "enabled": bool(rec.enabled),
         "ov_account": rec.ov_account.strip(),
         "source": "disposition_signup",
+        # The box that can reach this office. gap_alerts skips any office that
+        # is not its own machine's, so one registry serves both runners.
+        "machine": campaign_machine(rec.campaign_key),
     }
     # When and where the field is — only carried when it DIFFERS from the org
     # default, so a row stays readable and an office that never asked for
@@ -173,6 +176,7 @@ def main(argv=None) -> int:
         print("  - %s (%s): %d destination(s), %s"
               % (rec.key, rec.owner, len(rec.destinations),
                  row.get("campaign_label") or "?"))
+        print("      runs on %s" % campaign_machine(rec.campaign_key))
         print("      %s" % rec.hours_label())
         for r in rec.routes():
             print("      %s" % r)

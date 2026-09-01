@@ -330,12 +330,36 @@ def dest_label(dest: Dict) -> str:
     return "%s:%s" % (kind, where)
 
 
+def this_machine() -> str:
+    """This box's profile name — the same marker mini_control reads. A laptop
+    with no marker is 'Lucy 1', which is what it has always been."""
+    try:
+        from automations.day_orchestrator.mini_control import _machine_profile
+        return _machine_profile()
+    except Exception:                                # noqa: BLE001
+        return "Lucy 1"
+
+
+def for_this_machine(offices: List[Dict]) -> List[Dict]:
+    """Only the offices THIS box can actually reach.
+
+    An office is impersonated from the machine whose OwnerVille login has
+    access to it — Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's (B2B) — so the
+    same registry is read by both runners and each takes its own half. A row
+    with no `machine` is a hardcoded office and belongs to Lucy 1, which is
+    where every one of them has always run.
+    """
+    here = this_machine()
+    return [o for o in offices
+            if (o.get("machine") or "Lucy 1").strip() == here]
+
+
 def enabled() -> List[Dict]:
     """The offices that actually run. A row with enabled=False is WIRED but
     switched off — Jay's two are waiting on Office Access, and a live row we
     cannot impersonate would fail every tick and open incidents instead of
     posting."""
-    return [o for o in OFFICES if o.get("enabled", True)]
+    return for_this_machine([o for o in OFFICES if o.get("enabled", True)])
 
 
 def office(key: str) -> Optional[Dict]:

@@ -70,7 +70,8 @@ def _time_picker(label: str, default: str, key: str) -> str:
                         format_func=_ampm, key=key)
 
 
-def _enqueue_onboard(key: str, *, preflight: bool = True) -> "tuple":
+def _enqueue_onboard(key: str, *, preflight: bool = True,
+                     machine: str = "") -> "tuple":
     """Drop a mini_control `onboard_apply disposition <key>` job so the runner
     materializes the office into its working tree — it then joins the next
     tick. With `preflight` (the default) it also adds --post, which on this
@@ -83,7 +84,11 @@ def _enqueue_onboard(key: str, *, preflight: bool = True) -> "tuple":
     try:
         from automations.day_orchestrator import queue_enqueue as qenq
         args = "disposition %s%s" % (key, " --post" if preflight else "")
-        tab = qenq.enqueue(gc, "onboard_apply", args, by="Megan")
+        # ONTO THE BOX THAT WILL RUN IT. A B2B office wired on Lucy 1 would
+        # apply cleanly and then fail its preflight there for the only reason
+        # that matters: that login cannot see the office.
+        tab = qenq.enqueue(gc, "onboard_apply", args, by="Megan",
+                           machine=machine or None)
         return True, tab
     except Exception as e:                           # noqa: BLE001
         return False, "%s: %s" % (type(e).__name__, e)
@@ -461,7 +466,8 @@ def confirm_view(key: str) -> None:
         value=rec.knocks_office, placeholder=rec.owner,
         help="A mismatch here is the difference between a board and a failed "
              "tick every 15 minutes.")
-    st.caption("Field hours: **%s**" % rec.hours_label())
+    st.caption("Field hours: **%s** · runs on **%s**"
+               % (rec.hours_label(), S.campaign_machine(campaign_key)))
 
     # Every destination, each editable, each with its own cadence. Kind is
     # fixed — changing an iMessage row into a Slack one is a different request,
@@ -567,7 +573,8 @@ def confirm_view(key: str) -> None:
         # --post = run the preflight on the runner and switch the office on if
         # it passes. Skipped only when Megan ticked the manual override, since
         # the office is already on and there is nothing left to prove.
-        wired = (_enqueue_onboard(key, preflight=not enabled)
+        wired = (_enqueue_onboard(key, preflight=not enabled,
+                                  machine=S.campaign_machine(campaign_key))
                  if where == "sheet" else (False, "local"))
         st.session_state["_cf_done"] = {"rec": rec2.to_json(), "where": where,
                                         "wired": wired}

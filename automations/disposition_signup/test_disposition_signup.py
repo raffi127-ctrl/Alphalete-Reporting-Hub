@@ -636,3 +636,35 @@ def test_an_unreadable_registry_leaves_the_old_board_posting(monkeypatch,
     p.write_text("{ not json")
     monkeypatch.setattr(ros, "_ONBOARDED_JSON", p)
     assert len(ros.enrolled("eod")) == before
+
+
+# --- which box runs which office --------------------------------------------
+
+def test_the_campaign_decides_the_machine():
+    """Not a preference — an office can only be impersonated from the box whose
+    OwnerVille login has access to it. Lucy 1 is Raf's (D2D), Lucy 2 Carlos's."""
+    assert S.campaign_machine("att") == "Lucy 1"
+    assert S.campaign_machine("energy") == "Lucy 1"
+    assert S.campaign_machine("nds") == "Lucy 1"
+    assert S.campaign_machine("b2b_att") == "Lucy 2"
+    assert S.campaign_machine("b2b_box") == "Lucy 2"
+
+
+def test_the_row_carries_its_machine():
+    assert A._row(_rec(campaign_key="att"))["machine"] == "Lucy 1"
+    assert A._row(_rec(campaign_key="b2b_box"))["machine"] == "Lucy 2"
+
+
+def test_a_runner_only_takes_the_offices_it_can_reach():
+    rows = [{"key": "d2d_one", "machine": "Lucy 1"},
+            {"key": "b2b_one", "machine": "Lucy 2"},
+            {"key": "hardcoded"}]          # no machine = Lucy 1, always has been
+    monkey = C.for_this_machine(rows)
+    assert C.this_machine() == "Lucy 1"    # this laptop carries no marker
+    assert [o["key"] for o in monkey] == ["d2d_one", "hardcoded"]
+
+
+def test_the_hardcoded_offices_stay_on_lucy_1():
+    """Raf, Calvin and Jay have always run there and carry no machine key."""
+    assert {o["key"] for o in C.enabled()} == {"rafael", "calvin", "jay_att",
+                                              "jay_ew"}

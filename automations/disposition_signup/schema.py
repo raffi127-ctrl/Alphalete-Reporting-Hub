@@ -172,6 +172,19 @@ CAMPAIGNS = [
 # about what this company sells.
 FAMILIES = ["D2D", "B2B"]
 
+# WHICH BOX RUNS AN OFFICE, decided by its campaign — not a preference, a
+# constraint. An office can only be impersonated from the machine whose
+# OwnerVille login has access to it: Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's
+# (B2B). Both boxes have iMessage, each under its own Apple ID, so the texts
+# follow the pull. Same split office_onboarding.FAMILY_DEFAULT_MACHINE uses.
+FAMILY_MACHINE = {"D2D": "Lucy 1", "B2B": "Lucy 2"}
+DEFAULT_MACHINE = "Lucy 1"
+
+
+def campaign_machine(key: str) -> str:
+    c = campaign(key) or {}
+    return FAMILY_MACHINE.get(c.get("family", ""), DEFAULT_MACHINE)
+
 
 def campaigns_in(family: str) -> "List[dict]":
     return [c for c in CAMPAIGNS if c["family"] == family]
