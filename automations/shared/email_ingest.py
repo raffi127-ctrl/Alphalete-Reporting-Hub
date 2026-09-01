@@ -16,6 +16,7 @@ import email
 import fnmatch
 import imaplib
 import re
+import sys
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -33,6 +34,26 @@ def _app_password() -> str:
             f"app password for {ACCOUNT} — ask Megan to save it there.")
     # utf-8-sig strips a stray BOM; Gmail app passwords are shown with spaces.
     return APP_PW_PATH.read_text(encoding="utf-8-sig").strip().replace(" ", "")
+
+
+def _say(msg: str) -> None:
+    """`print` that can't kill a fetch on a Windows cp1252 console.
+
+    Eve 2026-09-01: `fetch_all` announces every saved attachment with a "✓",
+    and on a Windows console that character raises UnicodeEncodeError from
+    INSIDE the download loop — so the sweep died before writing a single file
+    and the caller saw "no source arrived" instead of a printing bug. The
+    attachment NAMES carry the same risk (senders use accents, dashes, emoji),
+    so escaping just the marker would not have been enough.
+
+    Same class as the staleness alert dying on cp1252; fixed here only, since
+    the general fix touches every module's alert path.
+    """
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(msg.encode(enc, "replace").decode(enc, "replace"), flush=True)
 
 
 def _decode(s: str) -> str:
@@ -143,12 +164,11 @@ def fetch_by_globs(
                             out.write_bytes(part.get_payload(decode=True))
                         except OSError as e:   # one odd attachment must not
                             if verbose:        # abort the whole sweep
-                                print(f"  ! {fn!r}: {type(e).__name__} {e}",
-                                      flush=True)
+                                _say(f"  ! {fn!r}: {type(e).__name__} {e}")
                             continue
                         found[g] = out
                         if verbose:
-                            print(f"  ✓ {g}  ->  {out.name}", flush=True)
+                            _say(f"  ✓ {g}  ->  {out.name}")
         return found
     finally:
         M.logout()
@@ -207,12 +227,11 @@ def fetch_all(
                         out.write_bytes(part.get_payload(decode=True))
                     except OSError as e:    # never abort the sweep: everything
                         if verbose:         # OLDER would silently go missing
-                            print(f"  ! {key!r}: {type(e).__name__} {e}",
-                                  flush=True)
+                            _say(f"  ! {key!r}: {type(e).__name__} {e}")
                         continue
                     seen[key] = out
                     if verbose:
-                        print(f"  ✓ {out.name}", flush=True)
+                        _say(f"  ✓ {out.name}")
         return list(seen.values())
     finally:
         M.logout()
