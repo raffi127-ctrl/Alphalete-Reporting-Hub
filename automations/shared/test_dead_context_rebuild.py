@@ -1,4 +1,4 @@
-"""A crashed browser is rebuilt, not retried into.
+"""A crashed browser fails FAST — it is not retried into, and not rebuilt.
 
 Run:  PYTHONPATH=. .venv/bin/python -m unittest \
           automations.shared.test_dead_context_rebuild
@@ -19,6 +19,15 @@ isolation group), and the B2B/Box tracker boards lost two whole catch-up runs.
 The tell that it was recoverable: a FRESH PROCESS captured four other tracker
 boards on its first try the same morning. The crash is intermittent; only our
 reuse of the dead context was deterministic.
+
+The first fix tried to REBUILD the session in-process. That cannot work:
+tableau_session opens its own sync_playwright(), and starting one inside a
+running one raises "It looks like you are using Playwright Sync API inside the
+asyncio loop." Measured the same day — 5 rebuilds fired, 5 failed, 0 recovered,
+all logged as a generic "Error" that read like a transient. So the ladder now
+STOPS at the first dead-context error and hands the run back to the
+orchestrator's whole-report retry, which spawns a fresh process. That is the
+recovery that actually carried every fix that day.
 """
 from __future__ import annotations  # Lucy 1 / mini run Python 3.9
 
@@ -59,7 +68,7 @@ class IsDeadContextTest(unittest.TestCase):
         self.assertFalse(tp.is_dead_context(None))
 
 
-class CaptureRebuildsOnDeathTest(unittest.TestCase):
+class CaptureFailsFastOnDeathTest(unittest.TestCase):
     """capture_page must not spend its ladder on a corpse."""
 
     def setUp(self):
@@ -80,8 +89,12 @@ class CaptureRebuildsOnDeathTest(unittest.TestCase):
         return self.cap.capture_page(page="DEAD_PAGE", spec=self.spec,
                                      out_dir=tmp, verbose=False)
 
-    def test_a_dead_browser_is_rebuilt_and_the_board_still_lands(self):
-        """attempt 1 dies with the browser; attempt 2 runs on a FRESH page."""
+    def test_a_dead_browser_fails_FAST_instead_of_burning_the_ladder(self):
+        """The rebuild was removed: it nested sync_playwright() inside a running
+        one, which Playwright refuses — 5 fired, 5 failed, 0 recovered. So the
+        ladder must STOP at the first dead-context error and hand the run back
+        to the orchestrator, which retries on a fresh PROCESS (the recovery that
+        actually worked all day)."""
         import tempfile
         from pathlib import Path
         seen_pages = []
@@ -105,12 +118,12 @@ class CaptureRebuildsOnDeathTest(unittest.TestCase):
         self.addCleanup(setattr, tp, "tableau_session", real)
 
         with tempfile.TemporaryDirectory() as tmp:
-            out = self._run(Path(tmp))
-            self.assertTrue(out.exists())
+            with self.assertRaises(RuntimeError):
+                self._run(Path(tmp))
 
-        self.assertEqual(seen_pages, ["DEAD_PAGE", "FRESH_PAGE"],
-                         "the retry must move to a rebuilt session, not repeat "
-                         "on the dead one")
+        self.assertEqual(seen_pages, ["DEAD_PAGE"],
+                         "a dead browser must cost ONE attempt, not three and a "
+                         "doomed relaunch")
 
     def test_an_ordinary_flake_stays_on_the_callers_page(self):
         """No rebuild, no extra login — the pre-existing behaviour, unchanged."""

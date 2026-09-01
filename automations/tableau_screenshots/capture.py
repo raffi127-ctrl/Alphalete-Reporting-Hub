@@ -634,19 +634,15 @@ def capture_page(page, spec: dict, out_dir: Path, *,
                           flush=True)
                 if attempt < MAX_ATTEMPTS:
                     if is_dead_context(e):
+                        # Fail fast. An in-process rebuild is impossible — it
+                        # nests sync_playwright() inside a running one, which
+                        # Playwright refuses (5 fired / 5 failed / 0 recovered,
+                        # 2026-09-01). A fresh PROCESS is what actually recovers
+                        # a board; see tableau_patchright for the measurements.
                         if verbose:
-                            print("   ↻ browser died — rebuilding the session "
-                                  "for the remaining attempt(s)", flush=True)
-                        try:
-                            from automations.shared.tableau_patchright import (
-                                REBUILD_PROFILE_DIR)
-                            pg = stack.enter_context(tableau_session(
-                                verbose=False, profile_dir=REBUILD_PROFILE_DIR))
-                        except Exception as re_:  # noqa: BLE001 — keep the REAL error
-                            if verbose:
-                                print(f"   (rebuild failed: {type(re_).__name__})",
-                                      flush=True)
-                            break
+                            print("   ✗ the browser died — failing fast so this "
+                                  "board retries on a fresh run", flush=True)
+                        break
                     time.sleep(BACKOFF_S)
     raise RuntimeError(
         f"{spec['id']}: Download→Image failed after {MAX_ATTEMPTS} attempts "

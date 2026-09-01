@@ -1157,25 +1157,33 @@ def download_crosstab_patchright(
         # Chrome crash cost harvest_prime all 17 pulls on 2026-09-01. A rebuild
         # costs one login and is only reached on a crash, so the happy path and
         # the ordinary-flake path are both byte-identical to before.
-        with contextlib.ExitStack() as stack:
-            pg = page
-            for attempt in range(1, MAX_ATTEMPTS + 1):
-                r = _try(pg, attempt)
-                if r is not None:
-                    return r
-                if attempt < MAX_ATTEMPTS and is_dead_context(last_err[0]):
-                    if verbose:
-                        print("  ↻ browser died — rebuilding the session for the "
-                              "remaining attempt(s)", flush=True)
-                    try:
-                        pg = stack.enter_context(tableau_session(
-                            verbose=verbose, profile_dir=REBUILD_PROFILE_DIR))
-                    except Exception as e:  # noqa: BLE001 — keep the REAL error
-                        if verbose:
-                            print(f"  (rebuild failed: {type(e).__name__}) — "
-                                  f"reporting the original failure", flush=True)
-                        break
-            raise last_err[0]
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            r = _try(page, attempt)
+            if r is not None:
+                return r
+            if is_dead_context(last_err[0]):
+                # FAIL FAST — do not spend the rest of the ladder on a corpse.
+                #
+                # An in-process rebuild is IMPOSSIBLE here, and the first cut of
+                # this tried anyway: tableau_session opens its own
+                # sync_playwright(), and starting one INSIDE a running one raises
+                # "It looks like you are using Playwright Sync API inside the
+                # asyncio loop." Measured 2026-09-01: 5 rebuilds fired, 5 failed,
+                # 0 recovered — while printing a generic "Error" that read like a
+                # transient and hid the real reason for two hours.
+                #
+                # The recovery that DOES work is a fresh PROCESS, which the
+                # orchestrator already provides as a whole-report retry and which
+                # carried every recovery that day: harvest_prime 1/17 -> 17/17,
+                # the four tracker boards, captainship churn, abp_6days. Failing
+                # fast hands the run back to that sooner, instead of burning two
+                # more attempts against a browser that is already gone.
+                if verbose:
+                    print("  ✗ the browser died — this run cannot recover in "
+                          "process; failing fast so the report retries on a "
+                          "fresh one", flush=True)
+                break
+        raise last_err[0]
 
     if shared_session_enabled():
         # ONE login for this process; a fresh page per attempt keeps the viz
