@@ -312,10 +312,27 @@ def process(web, user_id: str, office: str, target: dt.date,
     if board.is_range:
         # A range board is a FOLD, and a screenshot of it will outlive this
         # message — so what the numbers mean has to ride on the post itself.
-        cap += (f"\n_{board.days} days added together. First and Last Knock "
-                "are the earliest and latest in that stretch; Avg. Hrs "
-                "Knocking is the average over the days each rep actually "
-                "knocked._")
+        # Kept SHORT: the long version buried the part people actually needed.
+        cap += (f"\n_{board.days} days added together — First and Last Knock "
+                "are the earliest and latest in the stretch._")
+
+    # WHY the apps columns are there, or why they are not (Megan 2026-09-01).
+    # Three columns appearing and disappearing between requests reads as a bug
+    # unless the reply says what decides it, and the rule is not guessable:
+    # a completed week can be read from the harvest for free, the current week
+    # cannot.
+    _APP_COLS = ("• Total Apps\n• Average App per Rep\n"
+                 "• Avg Talk To's per App")
+    if board.apps_reps:
+        cap += ("\n\nSince every date you picked is in a fully completed "
+                f"week (Mon–Sun), these are included too:\n{_APP_COLS}")
+    elif board.apps_skipped == "current_week":
+        cap += ("\n\n_These dates are in the current week, so apps aren't "
+                "final yet — pick a completed week (Mon–Sun) and you'll also "
+                f"get:_\n{_APP_COLS}")
+    elif board.apps_skipped == "crossed_weeks":
+        cap += ("\n\n_This span crosses two weeks, so the apps columns are "
+                "left off rather than counting part of one._")
     if board.partial:
         # Today's numbers keep moving; say so on the image itself, because a
         # screenshot of it will outlive this message.

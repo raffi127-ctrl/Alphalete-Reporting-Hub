@@ -89,6 +89,8 @@ class Board:
     partial: bool = False        # the span runs to today: it isn't over yet
     compared_to: str = ""        # office whose teal TOTAL line rides the board
     days: int = 1                # how many days were folded into it
+    apps_reps: int = 0           # reps with apps on the board; 0 = no columns
+    apps_skipped: str = ""       # why they are absent: "current_week" | "no_harvest"
 
     @property
     def is_range(self) -> bool:
@@ -526,7 +528,9 @@ def board_for(office: str, target: Optional[dt.date] = None,
 
     from automations.total_knocks import render as knocks_render
     extra = [(compare, chan_rows)] if chan_rows else []
-    apps = _apps_for(canonical, days, logfn=logfn)
+    apps, apps_skipped = _apps_for(canonical, days, logfn=logfn)
+    b.apps_reps = len(apps or {})
+    b.apps_skipped = "" if apps else apps_skipped
     # An NDS office gets a PAIR of boards and no comparison line; the shape
     # decides, so a fiber office that goes wireless needs no config change.
     b.pngs, b.shape = knocks_render.render_knocks_boards(
@@ -540,7 +544,9 @@ def board_for(office: str, target: Optional[dt.date] = None,
 
 
 def _apps_for(canonical: str, days: "list", *, logfn=print):
-    """{rep: apps} for this office over `days`, or None to leave the columns off.
+    """(apps or None, reason) — the reason names WHY the columns are absent, so
+    the reply can say so instead of leaving a reader wondering where three
+    columns went.
 
     READS THE SAVED CROSSTAB. NEVER DOWNLOADS. Raf 2026-09-01: "have it where
     Lucy pulls the product sales summary for everybody for last week … it's
@@ -568,7 +574,7 @@ def _apps_for(canonical: str, days: "list", *, logfn=print):
         if len(weeks) != 1:
             logfn("apps: the span crosses a week boundary — columns left off "
                   "rather than counting part of one week")
-            return None
+            return None, "crossed_weeks"
         we_sunday = weeks.pop()
         # A COMPLETED WEEK ONLY. That is the actual rule (Megan 2026-09-01):
         # "if the date isn't from the current week, then it doesn't need to be
@@ -586,22 +592,22 @@ def _apps_for(canonical: str, days: "list", *, logfn=print):
             logfn(f"apps: week ending {we_sunday} is the CURRENT week — not "
                   "final, and nothing is pulled fresh on a request, so the "
                   "apps columns stay off")
-            return None
+            return None, "current_week"
         # The path apps.download writes; we only ever READ it.
         pss_path = A.OUT_DIR / f"pss_rep_{we_sunday.isoformat()}.csv"
         if not pss_path.exists():
             logfn(f"apps: no saved crosstab for the week ending {we_sunday} "
                   f"— columns left off (nothing is downloaded on a request)")
-            return None
+            return None, "no_harvest"
         got = A.rep_apps_for_owner(pss_path, canonical, load_aliases(),
                                    days=[A.day_name(d) for d in days])
         logfn(f"apps: {len(got)} rep(s) from the saved crosstab "
               f"(week ending {we_sunday})")
-        return got or None
+        return (got, "") if got else (None, "no_harvest")
     except Exception as e:  # noqa: BLE001 — apps never cost the board
         logfn(f"apps: unavailable ({type(e).__name__}: {str(e)[:160]}) — "
               "board goes out without the apps columns")
-        return None
+        return None, "no_harvest"
 
 
 def access_gap(exc: BaseException) -> bool:
