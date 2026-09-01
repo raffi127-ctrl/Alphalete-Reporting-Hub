@@ -30,8 +30,17 @@ class _Page:
     def inner_text(self, _sel): return self._text
 
 
-def _console(account_no):
-    return "Account No: %s ) | Some Owner | rest" % account_no
+def _console(account_no, who="Lucy Resume Pushing"):
+    return "Account No: %s ) | %s | rest" % (account_no, who)
+
+
+def _fp(account_no, who="Lucy Resume Pushing"):
+    """The fingerprint _page_account_no builds: company number AND user.
+
+    The number alone is the COMPANY (23981 = Alphalete Marketing Call Center)
+    and is the same for every login under it, so a number-only fingerprint
+    cannot tell Lucy Reports from Lucy Resume Pushing — measured 2026-08-31."""
+    return "%s/%s" % (account_no, who)
 
 
 class OfficeScope(unittest.TestCase):
@@ -92,12 +101,12 @@ class IdentityAssert(unittest.TestCase):
         self._creds.appstream_account_fingerprint = lambda _n: value
 
     def test_matching_account_may_send(self):
-        self._fingerprint("7788")
+        self._fingerprint(_fp("7788"))
         rp._assert_account(_Page(_console("7788")), dry_run=False)
 
     def test_wrong_account_may_not_send(self):
         # The wrong-screen case. This is the one that scoping cannot catch.
-        self._fingerprint("7788")
+        self._fingerprint(_fp("7788"))
         with self.assertRaises(rp.WrongAppStreamAccount):
             rp._assert_account(_Page(_console("6039")), dry_run=False)
 
@@ -109,9 +118,20 @@ class IdentityAssert(unittest.TestCase):
             rp._assert_account(_Page(_console("7788")), dry_run=False)
 
     def test_unreadable_console_may_not_send(self):
-        self._fingerprint("7788")
+        self._fingerprint(_fp("7788"))
         with self.assertRaises(rp.WrongAppStreamAccount):
             rp._assert_account(_Page("no identity on this page"), dry_run=False)
+
+    def test_same_company_different_user_is_refused(self):
+        """The hole this closes: 23981 is the COMPANY, shared by both logins.
+
+        A number-only fingerprint waved through a run signed in as Lucy Reports
+        while declaring lucyresume — which is precisely the swap the guard
+        exists to catch, and Lucy Reports can see every office."""
+        self._fingerprint(_fp("23981", "Lucy Resume Pushing"))
+        with self.assertRaises(rp.WrongAppStreamAccount):
+            rp._assert_account(_Page(_console("23981", "Lucy Reports")),
+                               dry_run=False)
 
     def test_dry_run_never_blocks(self):
         # A dry-run sends nothing, so it has nothing to protect — and it is the
@@ -155,10 +175,6 @@ class CookiePurge(unittest.TestCase):
         self.assertNotIn((".applicantstream.com", "CFID"), left)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class ConsoleCapture(unittest.TestCase):
     """The v2 dashboard has no 'Account No:' banner — the console does."""
 
@@ -178,8 +194,8 @@ class ConsoleCapture(unittest.TestCase):
         # and a live run would have refused every send while reporting nothing
         # wrong. What the console showed has to survive to the send.
         rp._capture_account_identity(_Page(_console("7788")))
-        self.assertEqual(rp._OBSERVED_ACCOUNT_NO, "7788")
-        self._creds.appstream_account_fingerprint = lambda _n: "7788"
+        self.assertEqual(rp._OBSERVED_ACCOUNT_NO, _fp("7788"))
+        self._creds.appstream_account_fingerprint = lambda _n: _fp("7788")
         prev = rp.APPSTREAM_ACCOUNT
         rp.APPSTREAM_ACCOUNT = "lucyresume"
         try:
@@ -208,10 +224,6 @@ class ProfileAccountMarker(unittest.TestCase):
             self.assertNotEqual(fh.read().strip(), "lucyresume")
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class PerAccountSessionFile(unittest.TestCase):
     """A scoped account must not touch the primary's session file."""
 
@@ -238,10 +250,6 @@ class PerAccountSessionFile(unittest.TestCase):
         self.assertNotEqual(path, tp.APPSTREAM_STORAGE_STATE)
         self.assertIn("lucyresume", path.name)
         self.assertEqual(path.parent, tp.APPSTREAM_STORAGE_STATE.parent)
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
 
 class LoginFormDetection(unittest.TestCase):

@@ -670,8 +670,22 @@ def _page_account_no(page):
     try:
         from automations.shared.appstream_whoami import identity
         import re as _re
-        m = _re.search(r"account_no=(\d+)", identity(page))
-        return m.group(1) if m else None
+        raw = identity(page)
+        num = _re.search(r"account_no=(\d+)", raw)
+        # The account number is the COMPANY (23981 = Alphalete Marketing Call
+        # Center) and is IDENTICAL for every login under it — Lucy Reports and
+        # Lucy Resume Pushing both report 23981 (measured 2026-08-31). Comparing
+        # it alone would wave through exactly the swap this guard exists to
+        # catch, so the USER label is what makes the fingerprint identifying.
+        lab = _re.search(r"label=['\"](.*?)['\"]", raw)
+        who = (lab.group(1) if lab else "").strip()
+        # No account number = no identity. identity() falls back to the first
+        # 60 chars of the body when the banner is absent, so accepting a label
+        # on its own would manufacture a fingerprint out of whatever text
+        # happened to be on a page that never rendered the console.
+        if not num:
+            return None
+        return "%s/%s" % (num.group(1), who or "?")
     except Exception as e:  # noqa: BLE001
         _log("[account] could not read the console identity: " + str(e)[:120])
         return None
