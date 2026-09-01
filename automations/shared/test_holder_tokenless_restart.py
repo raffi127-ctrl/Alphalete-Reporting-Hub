@@ -93,3 +93,46 @@ class TokenlessMintAsksForRestartTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThrottleSurvivesRelaunchTest(unittest.TestCase):
+    """The escalation must not become a relaunch loop.
+
+    Once the tokenless path started asking for restarts, _LAST_MINT_ATTEMPT's
+    module state reset on every launchd relaunch — so each fresh process saw an
+    unset throttle, minted, failed, asked for a restart and exited. Measured on
+    Lucy 2 while the session was dead: exits at 07:59:55, 08:00:49, 08:02:00,
+    08:02:41 — roughly every 45 seconds, a hot loop against ownerville's SSO.
+    """
+
+    def setUp(self):
+        import time
+        self.now = time.time()
+        sh._MINT_STAMP.unlink(missing_ok=True)
+        sh._LAST_MINT_ATTEMPT["at"] = 0.0
+        self.addCleanup(sh._MINT_STAMP.unlink, True)
+        self.addCleanup(sh._LAST_MINT_ATTEMPT.update, {"at": 0.0})
+
+    def _relaunch(self):
+        """Module state dies with the process; the stamp on disk does not."""
+        sh._LAST_MINT_ATTEMPT["at"] = 0.0
+
+    def test_a_fresh_process_still_sees_the_throttle(self):
+        sh._record_mint_attempt(self.now)
+        self._relaunch()
+        self.assertTrue(sh._mint_is_throttled(),
+                        "a relaunched holder must not immediately re-mint — "
+                        "that is the 45-second exit loop")
+
+    def test_never_attempted_is_not_throttled(self):
+        self.assertFalse(sh._mint_is_throttled())
+
+    def test_the_throttle_expires_across_a_relaunch_too(self):
+        sh._record_mint_attempt(self.now - (sh.MINT_MIN_INTERVAL_MIN + 1) * 60)
+        self._relaunch()
+        self.assertFalse(sh._mint_is_throttled())
+
+    def test_an_unreadable_stamp_does_not_take_the_holder_down(self):
+        sh._MINT_STAMP.write_text("not-a-number")
+        self._relaunch()
+        self.assertFalse(sh._mint_is_throttled())

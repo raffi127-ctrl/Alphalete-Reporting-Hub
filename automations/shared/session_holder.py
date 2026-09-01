@@ -157,6 +157,44 @@ MINT_VIA_OWNERVILLE = True
 MINT_MIN_INTERVAL_MIN = 30.0
 _LAST_MINT_ATTEMPT: dict = {"at": 0.0}
 
+# THE THROTTLE HAS TO SURVIVE A RELAUNCH (2026-09-01, third lesson of the day).
+#
+# _LAST_MINT_ATTEMPT is module state, so it resets to 0.0 every time launchd
+# relaunches the holder. Once the tokenless escalation below started asking for
+# restarts, that produced a LOOP: fresh process -> throttle looks unset -> mint
+# -> fail -> ask for restart -> exit(1) -> relaunch -> repeat, every ~45s.
+# Measured on Lucy 2 while the session was dead:
+#
+#   07:59:55  exiting (rc=1) so launchd relaunches the holder
+#   08:00:49  exiting (rc=1) ...
+#   08:02:00  exiting (rc=1) ...
+#   08:02:41  exiting (rc=1) ...
+#
+# Escalating once is the fix; escalating every 45 seconds is a hot loop against
+# ownerville's SSO, which is exactly the kind of traffic that got the fleet
+# flagged before [[project_tableau_access_budget]]. Persisting the timestamp
+# makes MINT_MIN_INTERVAL_MIN mean what it says across process boundaries, so a
+# tokenless night costs one restart per interval instead of eighty an hour.
+_MINT_STAMP = Path(__file__).resolve().parent / ".appstream_last_mint_attempt"
+
+
+def _last_mint_attempt() -> float:
+    """Epoch of the last REAL mint attempt, surviving a holder relaunch."""
+    if _LAST_MINT_ATTEMPT["at"]:
+        return float(_LAST_MINT_ATTEMPT["at"])
+    try:
+        return float(_MINT_STAMP.read_text().strip())
+    except Exception:  # noqa: BLE001 — no stamp yet is simply "never attempted"
+        return 0.0
+
+
+def _record_mint_attempt(now: float) -> None:
+    _LAST_MINT_ATTEMPT["at"] = now
+    try:
+        _MINT_STAMP.write_text(str(now))
+    except Exception:  # noqa: BLE001 — best effort; in-memory still throttles
+        pass
+
 # CONSECUTIVE FAILED MINTS BEFORE THE HOLDER RESTARTS ITSELF (Megan 2026-08-31).
 #
 # On 8/31 the mint failed from ~15:05 to 19:21 — every attempt re-keying the
@@ -194,7 +232,7 @@ def _mint_is_throttled() -> bool:
     Callers that escalate on failure MUST check this first: the mint returns
     False for both, and treating the throttle as a failure turns the holder's
     restart ladder into a relaunch loop driven by nothing but the clock."""
-    return (time.time() - _LAST_MINT_ATTEMPT["at"]) / 60.0 < MINT_MIN_INTERVAL_MIN
+    return (time.time() - _last_mint_attempt()) / 60.0 < MINT_MIN_INTERVAL_MIN
 
 
 def _this_machine() -> str:
@@ -577,9 +615,9 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     if not MINT_VIA_OWNERVILLE:
         return False
     now = time.time()
-    if (now - _LAST_MINT_ATTEMPT["at"]) / 60.0 < MINT_MIN_INTERVAL_MIN:
+    if (now - _last_mint_attempt()) / 60.0 < MINT_MIN_INTERVAL_MIN:
         return False
-    _LAST_MINT_ATTEMPT["at"] = now
+    _record_mint_attempt(now)
     before = _rqst_id(ctx)
     # FETCH THE TOKEN IN A SEPARATE TAB. This is the whole fix. The first
     # version called _sso_to_appstream(page), which navigates THIS tab to
