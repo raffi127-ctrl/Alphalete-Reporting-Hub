@@ -236,18 +236,23 @@ KNOCKS_CAMPAIGN_ID = os.environ.get("KNOCKS_CAMPAIGN_ID", "3")
 # ZERO rows for days that plainly had four reps on them — the exact
 # silently-blank-board failure this dict exists to prevent.
 CAMPAIGN_OVERRIDES: "dict[str, str]" = {
+    # ONE row, keyed by the CANONICAL name. "Calvin Rivera" is not listed and
+    # does not need to be: the alias sheet already resolves it, and every
+    # caller runs alias_to_canonical BEFORE asking this map (Megan 2026-09-01:
+    # "we already have the alias added - both those calvins are the same").
+    # A second spelling here would be the per-report patch the alias sheet
+    # exists to replace, and two places to update the next time a name drifts.
     "calvin ribera": "40",
-    # BOTH spellings. Ownerville has "Ribera", everyone says "Rivera", and the
-    # alias sheet resolves one to the other — but this lookup happens on
-    # whatever name the caller passed. Missing here, the wrong spelling would
-    # fall through to the RES AT&T default and blank his board, which is the
-    # failure that cost days.
-    "calvin rivera": "40",
 }
 
 
 def campaign_for_office(name: str) -> str:
     """The TeleMapper campaign to pin for `name`. "" would mean DON'T pin.
+
+    PASS THE CANONICAL NAME. This map is keyed by it, and resolving aliases
+    here would mean a Sheet read on every call; the callers already canonicalise
+    (pull_offices_days and pull_office_days_on_page both run
+    alias_to_canonical first), so an alias never reaches this lookup.
 
     Everyone gets the default unless CAMPAIGN_OVERRIDES says otherwise.
 
