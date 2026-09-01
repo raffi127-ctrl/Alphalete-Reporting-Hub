@@ -103,8 +103,20 @@ def central_today() -> dt.date:
 
 
 def default_target() -> dt.date:
-    """Yesterday, Central — the day this morning's board covers."""
-    return central_today() - dt.timedelta(days=1)
+    """TODAY, Central.
+
+    It was yesterday, because that is the day this morning's board covers. But
+    somebody asking Jiraiya at 2pm is almost always asking how TODAY is going,
+    and the popup was changed to open on today earlier (Megan 2026-09-01) — so
+    a bare `knocks Rafael Hidalgo` DM answering with YESTERDAY meant two doors
+    to the same feature handing back different days. That is the kind of
+    difference nobody notices until they have acted on the wrong board.
+
+    A today request explains itself: the reply carries "Today so far — the day
+    isn't over, these numbers will grow", and, today being in the current week,
+    it also says the apps columns are not final yet.
+    """
+    return central_today()
 
 
 def span_days(start: dt.date, end: Optional[dt.date] = None) -> List[dt.date]:
