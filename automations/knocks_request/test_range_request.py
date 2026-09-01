@@ -450,10 +450,16 @@ class ThePopup(unittest.TestCase):
         # A pre-filled end date would silently turn every request into a range.
         self.assertNotIn("initial_date", through[0]["element"])
 
-    def test_the_from_field_still_defaults_to_yesterday(self):
+    def test_the_from_field_defaults_to_today(self):
+        """TODAY, not yesterday (Megan 2026-09-01).
+
+        It opened on yesterday because the morning report is about yesterday.
+        But somebody running /knocks in the afternoon is usually asking how
+        TODAY is going, so the old default was wrong more often than right.
+        """
         blocks = handler.modal(TODAY)["blocks"]
         day = [b for b in blocks if b.get("block_id") == "day"][0]
-        self.assertEqual(day["element"]["initial_date"], YESTERDAY.isoformat())
+        self.assertEqual(day["element"]["initial_date"], TODAY.isoformat())
 
     def test_a_blank_through_submits_as_a_single_day(self):
         seen = {}

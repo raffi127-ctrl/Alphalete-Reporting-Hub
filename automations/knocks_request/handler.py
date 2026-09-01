@@ -53,7 +53,12 @@ _PULL_LOCK = threading.Lock()
 
 def modal(today: dt.date | None = None) -> dict:
     """The popup. `today` is injectable so the default date is testable."""
-    target = (today - dt.timedelta(days=1)) if today else service.default_target()
+    # TODAY, not yesterday (Megan 2026-09-01). The popup opened on yesterday
+    # because the morning report is about yesterday — but somebody typing
+    # /knocks at 2pm is almost always asking how today is going, and having to
+    # change the date every time made the default wrong more often than right.
+    # A today board comes back marked "Today so far — the day isn't over".
+    target = today or service.central_today()
     return {
         "type": "modal", "callback_id": CALLBACK,
         "title": {"type": "plain_text", "text": "Knocks"},
