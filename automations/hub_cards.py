@@ -3971,6 +3971,50 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    # THE B2B HALF, on Lucy 2. Same code, same board, different OwnerVille
+    # login — Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's (B2B), and an office
+    # can only be impersonated from the box that can see it. Its own card
+    # because each runner publishes its own pill: one shared card would have
+    # the two boxes overwriting each other and one of them always looking dead.
+    # ID SLUG-MATCHES the report id `gap_alerts_b2b`.
+    {
+        "id": "gap-alerts-b2b",
+        "name": "Knocks & Dispositions — B2B",
+        "creator": "Claude",
+        "emoji": "\u23F1\uFE0F",
+        "color": "#B91C1C",
+        "category": "\U0001F4CA Metrics",
+        "assignees": ["Lucy 2"],
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "gap_alerts_b2b",
+        "self_scheduled": True,
+        "description": (
+            "The **KNOCKS & DISPOSITIONS** board for **B2B** offices \u2014 the "
+            "same two panels the D2D card posts, run from Lucy 2 because that "
+            "is the box whose OwnerVille login can see a B2B office.\n\n"
+            "Owners enroll themselves at "
+            "**alphaletedispositions.streamlit.app** and pick a B2B campaign; "
+            "the enrollment is routed to this box automatically. Everything "
+            "else \u2014 the destinations, the per-destination cadence, the "
+            "field hours, the confirm-then-preflight gate \u2014 works exactly "
+            "as it does on the D2D card."
+        ),
+        "breakdown": (
+            "WHY IT IS A SEPARATE CARD\n"
+            "**\u2022** One codebase, two runners. `config.for_this_machine` "
+            "hands each box only the offices it can reach, from the one shared "
+            "`onboarded_offices.json`.\n"
+            "**\u2022** Each publishes its OWN pill \u2014 sharing a card "
+            "would have the two boxes overwriting each other, and whichever "
+            "ran second would make the other look like it never ran.\n\n"
+            "STATUS\n"
+            "**\u2022** **Not installed yet.** The LaunchAgent on Lucy 2 is "
+            "still to be created, and the B2B disposition grid has not been "
+            "proved scrapeable \u2014 `knocks_pull` knows the fiber, wireless "
+            "and Energy Wells shapes and no B2B one. Until both are done this "
+            "card has a report id and no runs.\n"
+        ),
+    },
     {
         "id": "terminated-reps",
         "name": "Terminated Reps",

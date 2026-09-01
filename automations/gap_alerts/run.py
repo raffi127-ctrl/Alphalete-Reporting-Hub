@@ -59,8 +59,16 @@ from automations.gap_alerts import config as C
 # see config.dest_channel for why it must never inherit this one.
 SLACK_FALLBACK_CHANNEL = None   # set below, after config import resolves
 
-HUB_CARD_ID = "gap-alerts"
-HUB_CARD_NAME = "Rep Gap Alerts (15-min gaps -> Partners chat)"
+# ONE CODEBASE, TWO CARDS. The same run happens on Lucy 1 (D2D, Raf's login)
+# and Lucy 2 (B2B, Carlos's), each handling only the offices its login can
+# reach — so each box publishes to its OWN Hub card, or the two would overwrite
+# each other's pill and one of them would look like it never ran.
+# The card id must slug-match the report id [[reference_hub_card_rendering_rules]].
+_HUB_CARDS = {
+    "Lucy 2": ("gap-alerts-b2b", "Knocks & Dispositions — B2B (Lucy 2)"),
+}
+HUB_CARD_ID, HUB_CARD_NAME = _HUB_CARDS.get(
+    C.this_machine(), ("gap-alerts", "Knocks & Dispositions (self-serve)"))
 SLACK_FALLBACK_CHANNEL = C.SLACK_HOURLY_CHANNEL
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "gap_alerts"
 PREVIEW_DM = False   # set by --preview-dm
