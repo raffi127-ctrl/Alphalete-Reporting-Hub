@@ -104,12 +104,14 @@ def is_due(office: "roster.FocusOffice", now: Optional[dt.datetime] = None) -> b
     return (here - fire) <= dt.timedelta(minutes=GRACE_MINUTES)
 
 
-def _caption(today: dt.date) -> str:
+def _caption(today: dt.date, office: "roster.FocusOffice" = None) -> str:
     """The same caption Carlos's and Colten's group DMs already carry
     (focus_slack._caption), so the three deliveries read as one report rather
-    than two different ones. M/D/YY built by hand — %-m/%-d are not
-    Windows-safe. Slack mrkdwn bold = single asterisks."""
-    return f"*{today.month}/{today.day}/{today:%y} Daily Recruiting Focus Report*"
+    than two different ones, plus this office's @-tags. M/D/YY built by hand —
+    %-m/%-d are not Windows-safe. Slack mrkdwn bold = single asterisks."""
+    head = f"*{today.month}/{today.day}/{today:%y} Daily Recruiting Focus Report*"
+    tags = " ".join(f"<@{u}>" for u in getattr(office, "tag_user_ids", ()) or ())
+    return f"{head} {tags}" if tags else head
 
 
 def post_office(office: "roster.FocusOffice", spreadsheet, *,
@@ -139,7 +141,7 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
     print(f"[{office.key}] rendered {office.owner!r} section from tab "
           f"{tab_title!r} -> {png} ({size:,} bytes)")
 
-    caption = _caption(today)
+    caption = _caption(today, office)
     parent = smp.ensure_named_thread(
         roster.THREAD_TITLE, today,
         dry_run=dry_run, channel_id=office.channel_id)
