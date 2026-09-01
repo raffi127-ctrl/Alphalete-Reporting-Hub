@@ -223,24 +223,75 @@ def cadence_for(cfg: Dict) -> int:
     return want
 
 
-def delivers(cfg: Dict, route: str) -> bool:
-    """Does this office get its board by `route` ("imessage" | "email")?
+def destinations(cfg: Dict) -> List[Dict]:
+    """Every place this office's board goes, each with its own cadence.
 
-    A row with no `deliver` key is a hardcoded office, and every one of those
-    is iMessage-only — the field arrived with the sign-up form.
+    {kind: "imessage"|"slack"|"email", name, channel_id, emails, cadence_min}
+
+    An office can now list SEVERAL — the owners' room every 15 minutes and the
+    rep channel once an hour (Megan 2026-09-01) — which is why cadence lives on
+    the destination and not on the office.
+
+    A HARDCODED row has no `destinations` key, and its shape is translated here
+    rather than in four call sites: its `group` at the office cadence, plus the
+    org Slack channel hourly when slack_hourly is set. That is exactly what Raf,
+    Calvin and Jay have had, so nothing about their sends changes.
     """
-    routes = cfg.get("deliver")
-    if routes is None:
-        return route == "imessage"
-    return route in routes
+    listed = cfg.get("destinations")
+    if listed:
+        out = []
+        for d in listed:
+            if not isinstance(d, dict) or not d.get("kind"):
+                continue
+            d = dict(d)
+            d.setdefault("cadence_min", TICK_MINUTES)
+            out.append(d)
+        return out
+    out = []
+    if (cfg.get("group") or "").strip():
+        out.append({"kind": "imessage", "name": cfg["group"].strip(),
+                    "cadence_min": cadence_for(cfg)})
+    if cfg.get("slack_hourly"):
+        out.append({"kind": "slack", "name": "",
+                    "channel_id": (cfg.get("slack_channel") or "").strip()
+                                  or SLACK_HOURLY_CHANNEL,
+                    "cadence_min": 60})
+    for addr_key in ("email_to",):
+        if cfg.get(addr_key):
+            out.append({"kind": "email", "emails": list(cfg[addr_key]),
+                        "cadence_min": cadence_for(cfg)})
+    return out
 
 
-def slack_channel_for(cfg: Dict) -> str:
-    """The channel this office's hourly board goes to. Per-office first: the
-    module-level default is #alphalete-lvl1-chat, Raf's org's room, and an
-    enrolled office inheriting it would put its numbers in front of another
-    org."""
-    return (cfg.get("slack_channel") or "").strip() or SLACK_HOURLY_CHANNEL
+def dest_cadence(dest: Dict) -> int:
+    """This destination's cadence, clamped the same way an office's is: it must
+    divide 60 AND be a multiple of TICK_MINUTES, or it drifts across the hour
+    and the wrapper — which only wakes Python on the quarter hour — would fire
+    it at :00 and then not again until the next :00."""
+    try:
+        want = int(dest.get("cadence_min") or TICK_MINUTES)
+    except (TypeError, ValueError):
+        return TICK_MINUTES
+    if want < TICK_MINUTES or want % TICK_MINUTES or 60 % want:
+        return TICK_MINUTES
+    return want
+
+
+def dest_channel(dest: Dict) -> str:
+    """The Slack channel this destination posts to. NEVER falls back to the
+    module default for a form-built destination: SLACK_HOURLY_CHANNEL is Raf's
+    org's room, and inheriting it silently would put one office's numbers in
+    front of another."""
+    return (dest.get("channel_id") or "").strip()
+
+
+def dest_label(dest: Dict) -> str:
+    kind = dest.get("kind", "?")
+    if kind == "email":
+        where = ", ".join(dest.get("emails") or []) or "?"
+    else:
+        where = dest.get("name") or dest.get("channel_id") or "?"
+    return "%s:%s" % (kind, where)
 
 
 def enabled() -> List[Dict]:

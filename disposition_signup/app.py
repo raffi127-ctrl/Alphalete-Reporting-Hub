@@ -114,18 +114,16 @@ def request_view() -> None:
         "Your first and last name as it appears in OwnerVille *",
         help="Exactly as OwnerVille shows it. This is how we find your office.")
     knocks_office = st.text_input(
-        "Company name as it appears in OV (only if it's different from your name)",
-        help="Leave blank if OwnerVille lists your office under your own "
-             "name. Some offices are listed under a company name instead — "
-             "if yours is, type it exactly as OwnerVille shows it.")
+        "Company name as it appears in OV *",
+        help="Type it exactly as OwnerVille shows it. If OwnerVille lists your "
+             "office under your own name, put that.")
 
     # ---- 2. Owner id -----------------------------------------------------
     st.divider()
     st.markdown("### 2. Your OwnerVille account number")
     ov_account = st.text_input(
-        "Your OwnerVille account number (if you know it)",
-        help="Optional — it just helps us find you faster if two people share "
-             "a name. Leave it blank if you don't have it handy.")
+        "Your OwnerVille account number *",
+        help="It's how we find you for certain when two people share a name.")
     campaign_key = st.radio(
         "Which campaign are these dispositions for? *",
         [c["key"] for c in S.CAMPAIGNS],
@@ -133,40 +131,81 @@ def request_view() -> None:
         help="If your office runs both, sign up once here and tell us in the "
              "notes at the bottom — you'll get one report per campaign.")
 
-    # ---- 3. How you want it ---------------------------------------------
+    # ---- 3. Where it goes ------------------------------------------------
+    # MANY destinations, each on its OWN clock (Megan 2026-09-01): the owners'
+    # room every 15 minutes and the rep channel once an hour is one office, not
+    # two sign-ups. Same count-then-container shape the tracker sign-up uses for
+    # its channels — proven, and it needs no drag-and-drop component.
     st.divider()
-    st.markdown("### 3. How do you want it sent?")
-    st.caption("Pick one or both.")
-    want_text = st.checkbox("📱 iMessage text", value=True)
-    imessage_group = ""
-    if want_text:
-        imessage_group = st.text_input(
-            "Name of the group chat to text *",
-            placeholder="Alphalete Partners",
-            help="The chat's name exactly as it shows on your phone. Lucy "
-                 "must already be in that chat — Megan sets that up.")
-    want_email = st.checkbox("✉️ Email", value=False)
-    email_raw = ""
+    st.markdown("### 3. Where should it go?")
+    st.caption("Add every chat, channel and inbox that should get it. Each one "
+               "gets its own timing — your owners' chat can run every 15 "
+               "minutes while your rep channel gets it once an hour.")
+    st.info("**Add Megan Hidalgo to EVERY Slack channel or iMessage chat you "
+            "want postings in.** She'll leave once it's set up.\n\n"
+            "Her number for the iMessage chats: **419-769-7114**")
+
+    destinations: list = []
+
+    st.markdown("#### 📱 iMessage chats")
+    n_chat = int(st.number_input(
+        "How many iMessage chats?", 0, 5, 1, key="n_chat",
+        help="0 if you don't want texts."))
+    for i in range(n_chat):
+        with st.container(border=True):
+            nm = st.text_input(
+                "Name of the group chat *", placeholder="Alphalete Partners",
+                key="chat_name_%d" % i,
+                help="The chat's name exactly as it shows on your phone.")
+            cad = st.radio("How often? *", S.CADENCE_CHOICES,
+                           index=S.CADENCE_CHOICES.index(S.DEFAULT_CADENCE),
+                           format_func=lambda m: S.CADENCE_LABELS[m],
+                           horizontal=True, key="chat_cad_%d" % i)
+            destinations.append(S.destination("imessage", name=nm,
+                                              cadence_min=cad))
+
+    st.markdown("#### 💬 Slack channels")
+    n_slack = int(st.number_input(
+        "How many Slack channels?", 0, 5, 0, key="n_slack",
+        help="0 if you don't want it in Slack."))
+    for i in range(n_slack):
+        with st.container(border=True):
+            nm = st.text_input(
+                "Slack channel name *", placeholder="#your-office-sales",
+                key="slack_name_%d" % i)
+            cid = st.text_input("Slack Channel ID *", placeholder="C0ABC12DE",
+                                key="slack_id_%d" % i,
+                                help=ui.CHANNEL_ID_HELP)
+            if i == 0:
+                ui.channel_id_help_expander(SLACK_ID_IMG)
+            cad = st.radio("How often? *", S.CADENCE_CHOICES,
+                           index=S.CADENCE_CHOICES.index(60),
+                           format_func=lambda m: S.CADENCE_LABELS[m],
+                           horizontal=True, key="slack_cad_%d" % i)
+            st.caption("Once an hour is what we'd suggest for a channel of "
+                       "reps — four times an hour is one they learn to scroll "
+                       "past.")
+            destinations.append(S.destination("slack", name=nm, channel_id=cid,
+                                              cadence_min=cad))
+
+    st.markdown("#### ✉️ Email")
+    want_email = st.checkbox("Email it to me too", value=False)
     if want_email:
-        email_raw = st.text_area(
-            "Email address(es) *", placeholder="you@example.com",
-            help="One per line, or separated by commas. Everyone listed gets "
-                 "the same email.")
-    email_to = S.parse_emails(email_raw) if want_email else []
+        with st.container(border=True):
+            email_raw = st.text_area(
+                "Email address(es) *", placeholder="you@example.com",
+                help="One per line, or separated by commas. Everyone listed "
+                     "gets the same email.")
+            cad = st.radio("How often? *", S.CADENCE_CHOICES,
+                           index=S.CADENCE_CHOICES.index(60),
+                           format_func=lambda m: S.CADENCE_LABELS[m],
+                           horizontal=True, key="email_cad")
+            destinations.append(S.destination(
+                "email", emails=S.parse_emails(email_raw), cadence_min=cad))
 
-    # ---- 4. How often ----------------------------------------------------
+    # ---- 4. When (their clock, their hours) ------------------------------
     st.divider()
-    st.markdown("### 4. How often?")
-    cadence = st.radio(
-        "Send it to me *", S.CADENCE_CHOICES,
-        index=S.CADENCE_CHOICES.index(S.DEFAULT_CADENCE),
-        format_func=lambda m: S.CADENCE_LABELS[m])
-    st.caption("It only sends while your reps are in the field. Those hours "
-               "are the next question.")
-
-    # ---- 4b. When (their clock, their hours) -----------------------------
-    st.divider()
-    st.markdown("### When are your reps in the field?")
+    st.markdown("### 4. When are your reps in the field?")
     st.caption("We only send during these hours, on your local time. Most "
                "offices leave these as they are.")
     tz = st.selectbox(
@@ -190,25 +229,6 @@ def request_view() -> None:
             sat_end = _time_picker("until ", sat_end, "sat_end")
     st.caption("Sundays are off for everyone.")
 
-    # ---- 5. Slack --------------------------------------------------------
-    st.divider()
-    st.markdown("### 5. Do you want it in a Slack channel for your team?")
-    st.caption("We recommend once an hour — a leaderboard four times an hour "
-               "is one your reps learn to scroll past.")
-    slack_hourly = st.checkbox("Yes — post it to my team's Slack channel "
-                               "once an hour", value=False)
-    slack_channel_name = slack_channel_id = ""
-    if slack_hourly:
-        slack_channel_name = st.text_input(
-            "Slack channel name *", placeholder="#your-office-sales",
-            key="slack_name")
-        slack_channel_id = st.text_input(
-            "Slack Channel ID", placeholder="C0ABC12DE", key="slack_id",
-            help=ui.CHANNEL_ID_HELP)
-        ui.channel_id_help_expander(SLACK_ID_IMG)
-        st.info("**Please add Megan Hidalgo and Eve to that channel** — Megan "
-                "adds Lucy (the bot that posts) from there.")
-
     st.divider()
     notes = st.text_area(
         "Anything else we should know?",
@@ -217,16 +237,10 @@ def request_view() -> None:
 
     # ---- submit ----------------------------------------------------------
     st.divider()
-    deliver = ([d for d, on in (("imessage", want_text), ("email", want_email))
-                if on])
     key = S.slug_from(owner)
     rec = S.DispositionRecord(
         key=key, owner=owner.strip(), requested_by=requested_by.strip(),
-        ov_account=ov_account.strip(), cadence_min=int(cadence),
-        deliver=deliver, email_to=email_to,
-        imessage_group=imessage_group.strip(), slack_hourly=bool(slack_hourly),
-        slack_channel_id=slack_channel_id.strip(),
-        slack_channel_name=slack_channel_name.strip(),
+        ov_account=ov_account.strip(), destinations=destinations,
         campaign_key=campaign_key, notes=notes.strip(), status="pending",
         knocks_office=knocks_office.strip(), tz=tz,
         day_start=day_start, day_end=day_end,
@@ -235,19 +249,31 @@ def request_view() -> None:
 
     # The button stays OFF until every required field is filled, with a live
     # list of what's still needed — no dead-end "submit then get yelled at".
+    # EVERY field we ask for is required (Megan 2026-09-01) — a half-filled
+    # sign-up is a message to Megan asking for the rest, which is the thing
+    # this link exists to avoid.
     missing: list = []
     if not requested_by.strip():
         missing.append("your name")
     if not owner.strip():
         missing.append("your OwnerVille name")
-    if not deliver and not slack_hourly:
-        missing.append("at least one way to send it")
-    if want_text and not imessage_group.strip():
-        missing.append("the group chat name")
-    if want_email and not email_to:
-        missing.append("an email address")
-    if slack_hourly and not slack_channel_name.strip():
-        missing.append("your Slack channel name")
+    if not knocks_office.strip():
+        missing.append("your company name in OV")
+    if not ov_account.strip():
+        missing.append("your OwnerVille account number")
+    if not destinations:
+        missing.append("at least one place to send it")
+    for i, d in enumerate(destinations):
+        n = "" if len(destinations) == 1 else " #%d" % (i + 1)
+        if d["kind"] == "imessage" and not d["name"]:
+            missing.append("the group chat name%s" % n)
+        if d["kind"] == "slack":
+            if not d["name"]:
+                missing.append("the Slack channel name%s" % n)
+            if not d["channel_id"]:
+                missing.append("the Slack Channel ID%s" % n)
+        if d["kind"] == "email" and not d["emails"]:
+            missing.append("an email address")
     if missing:
         st.warning("⚠️ **Still needed before you can submit:** "
                    + ", ".join(missing) + ".")
@@ -266,12 +292,17 @@ def request_view() -> None:
             rec.submitted_at = datetime.now(timezone.utc).strftime(
                 "%Y-%m-%d %H:%M UTC")
             rec.submitted_by = rec.requested_by
-            lucy = None
-            if slack_hourly:
-                lucy = ui.check_channel(rec.slack_channel_id,
-                                        rec.slack_channel_name)
-                if lucy.get("channel_id") and not rec.slack_channel_id:
-                    rec.slack_channel_id = lucy["channel_id"]
+            # One membership check per Slack destination — an office can list
+            # several now, and "Lucy is in one of them" is not an answer.
+            lucy = []
+            for d in rec.destinations:
+                if d.get("kind") != "slack":
+                    continue
+                res = ui.check_channel(d.get("channel_id", ""),
+                                       d.get("name", ""))
+                if res.get("channel_id") and not d.get("channel_id"):
+                    d["channel_id"] = res["channel_id"]
+                lucy.append(res)
             try:
                 where = store.update(rec) if updating else store.save(rec)
             except Exception as e:                   # noqa: BLE001
@@ -370,61 +401,74 @@ def confirm_view(key: str) -> None:
 
     # ---- what they asked for, all editable ------------------------------
     st.markdown("#### What they get")
-    cadence = st.radio("How often", S.CADENCE_CHOICES,
-                       index=S.CADENCE_CHOICES.index(
-                           int(rec.cadence_min)
-                           if int(rec.cadence_min) in S.CADENCE_CHOICES
-                           else S.DEFAULT_CADENCE),
-                       format_func=lambda m: S.CADENCE_LABELS[m],
-                       horizontal=True)
     campaign_key = st.radio(
         "Campaign (pins invD2DClientId — a wrong pin silently reports the "
         "wrong business)", [c["key"] for c in S.CAMPAIGNS],
-        index=max(0, [c["key"] for c in S.CAMPAIGNS].index(rec.campaign_key))
-        if S.campaign(rec.campaign_key) else 0,
-        format_func=lambda k: "%s (id %s)" % ((S.campaign(k) or {}).get("name", k),
-                                              (S.campaign(k) or {}).get("id", "?")),
+        index=([c["key"] for c in S.CAMPAIGNS].index(rec.campaign_key)
+               if S.campaign(rec.campaign_key) else 0),
+        format_func=lambda k: "%s (id %s)" % (
+            (S.campaign(k) or {}).get("name", k),
+            (S.campaign(k) or {}).get("id", "") or "no pin"),
         horizontal=True)
     label = st.text_input("Name on the card", value=rec.label
                           or (rec.owner.split()[0] if rec.owner else ""))
     knocks_office = st.text_input(
         "Company name as it appears in OV (impersonation resolves through this)",
-        value=rec.knocks_office,
-        placeholder=rec.owner,
-        help="Blank = the owner's own name. A mismatch here is the difference "
-             "between a board and a failed tick every 15 minutes.")
+        value=rec.knocks_office, placeholder=rec.owner,
+        help="A mismatch here is the difference between a board and a failed "
+             "tick every 15 minutes.")
     st.caption("Field hours: **%s**" % rec.hours_label())
-    c1, c2 = st.columns(2)
-    with c1:
-        want_text = st.checkbox("iMessage", value="imessage" in rec.deliver)
-        group = st.text_input("Group chat name", value=rec.imessage_group,
-                              disabled=not want_text)
-    with c2:
-        want_email = st.checkbox("Email", value="email" in rec.deliver)
-        emails = st.text_area("Email address(es)",
-                              value="\n".join(rec.email_to),
-                              disabled=not want_email)
-    slack_hourly = st.checkbox("Hourly Slack post", value=rec.slack_hourly)
-    s1, s2 = st.columns(2)
-    with s1:
-        ch_name = st.text_input("Slack channel name",
-                                value=rec.slack_channel_name,
-                                disabled=not slack_hourly)
-    with s2:
-        ch_id = st.text_input("Slack Channel ID", value=rec.slack_channel_id,
-                              disabled=not slack_hourly)
 
-    # ---- Lucy membership -------------------------------------------------
-    if slack_hourly:
-        ck = "_lucy_%s" % key
-        if ck not in st.session_state:
-            st.session_state[ck] = ui.check_channel(ch_id, ch_name)
-        res = st.session_state[ck]
-        (st.success if res.get("status") == "member" else st.warning)(
-            ui.lucy_line(res))
-        if st.button("🔄 Re-check Lucy's membership"):
-            st.session_state[ck] = ui.check_channel(ch_id, ch_name)
-            st.rerun()
+    # Every destination, each editable, each with its own cadence. Kind is
+    # fixed — changing an iMessage row into a Slack one is a different request,
+    # not an edit.
+    st.markdown("#### Destinations")
+    dests: list = []
+    lucy_checks: list = []
+    for i, d in enumerate(rec.destinations):
+        kind = d.get("kind", "")
+        with st.container(border=True):
+            st.markdown("**%s**" % S.DELIVERY_LABELS.get(kind, kind))
+            keep = st.checkbox("Send here", value=True, key="cf_keep_%d" % i)
+            if kind == "email":
+                addrs = st.text_area("Address(es)",
+                                     value="\n".join(d.get("emails") or []),
+                                     key="cf_mail_%d" % i)
+                nm = cid = ""
+            else:
+                nm = st.text_input(
+                    "Chat name" if kind == "imessage" else "Channel name",
+                    value=d.get("name", ""), key="cf_nm_%d" % i)
+                cid = ""
+                addrs = ""
+                if kind == "slack":
+                    cid = st.text_input("Channel ID",
+                                        value=d.get("channel_id", ""),
+                                        key="cf_cid_%d" % i)
+            cad_now = int(d.get("cadence_min") or S.DEFAULT_CADENCE)
+            cad = st.radio(
+                "How often", S.CADENCE_CHOICES,
+                index=(S.CADENCE_CHOICES.index(cad_now)
+                       if cad_now in S.CADENCE_CHOICES
+                       else S.CADENCE_CHOICES.index(S.DEFAULT_CADENCE)),
+                format_func=lambda m: S.CADENCE_LABELS[m], horizontal=True,
+                key="cf_cad_%d" % i)
+            if kind == "slack":
+                ck = "_lucy_%s_%d" % (key, i)
+                if ck not in st.session_state:
+                    st.session_state[ck] = ui.check_channel(cid, nm)
+                res = st.session_state[ck]
+                (st.success if res.get("status") == "member"
+                 else st.warning)(ui.lucy_line(res))
+                lucy_checks.append(res)
+                if st.button("🔄 Re-check Lucy", key="cf_recheck_%d" % i):
+                    st.session_state[ck] = ui.check_channel(cid, nm)
+                    st.rerun()
+            if keep:
+                dests.append(S.destination(
+                    kind, name=nm, channel_id=cid,
+                    emails=S.parse_emails(addrs) if kind == "email" else None,
+                    cadence_min=cad))
 
     # ---- the two things the form can't know ------------------------------
     st.divider()
@@ -444,14 +488,7 @@ def confirm_view(key: str) -> None:
 
     rec2 = S.DispositionRecord(
         key=key, owner=rec.owner, requested_by=rec.requested_by,
-        ov_account=rec.ov_account, cadence_min=int(cadence),
-        deliver=[d for d, on in (("imessage", want_text), ("email", want_email))
-                 if on],
-        email_to=S.parse_emails(emails) if want_email else [],
-        imessage_group=group.strip() if want_text else "",
-        slack_hourly=bool(slack_hourly),
-        slack_channel_id=ch_id.strip() if slack_hourly else "",
-        slack_channel_name=ch_name.strip() if slack_hourly else "",
+        ov_account=rec.ov_account, destinations=dests,
         campaign_key=campaign_key, label=label.strip(), notes=rec.notes,
         knocks_office=knocks_office.strip(), tz=rec.tz,
         day_start=rec.day_start, day_end=rec.day_end,

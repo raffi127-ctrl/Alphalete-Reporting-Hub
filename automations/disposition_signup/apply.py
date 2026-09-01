@@ -51,19 +51,16 @@ def _row(rec: DispositionRecord) -> dict:
         "ov": "impersonate",
         "campaign_id": rec.campaign_id(),
         "campaign_label": camp.get("label", ""),
-        # Blank group = no iMessage leg; the runner checks `deliver`, and this
-        # keeps a stale group name from being resolvable after a route is
-        # dropped.
-        "group": rec.imessage_group.strip() if "imessage" in rec.deliver else "",
+        # Every place the board goes, each with its own cadence. The legacy
+        # single-`group` field stays EMPTY for form-built offices: the runner
+        # only falls back to it for the hardcoded rows that predate this.
+        "destinations": [dict(d) for d in rec.destinations],
+        "group": "",
         # First name on the card. Raf's own row carries "" (his room, no label
         # needed); an enrolled office always gets one — its board can land in a
         # chat that also sees another office's.
         "label": _label(rec),
-        "deliver": [d for d in rec.deliver if d in ("imessage", "email")],
-        "email_to": list(rec.email_to),
-        "cadence_min": int(rec.cadence_min),
-        "slack_hourly": bool(rec.slack_hourly),
-        "slack_channel": rec.slack_channel_id.strip(),
+
         # Chan Park's comparison line is Raf's org's thing, and comparing a
         # brand-new office against it is a decision nobody made on this form.
         "compare": False,
@@ -163,9 +160,9 @@ def main(argv=None) -> int:
           % (mode, len(plans)))
     for p in plans:
         rec, row = p["rec"], p["row"]
-        print("  - %s (%s): %s, %s" % (rec.key, rec.owner,
-                                       rec.cadence_label().lower(),
-                                       row.get("campaign_label") or "?"))
+        print("  - %s (%s): %d destination(s), %s"
+              % (rec.key, rec.owner, len(rec.destinations),
+                 row.get("campaign_label") or "?"))
         print("      %s" % rec.hours_label())
         for r in rec.routes():
             print("      %s" % r)

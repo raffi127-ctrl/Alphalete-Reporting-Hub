@@ -25,15 +25,16 @@ def _lines(rec: DispositionRecord, lucy: "Optional[dict]" = None
            ) -> Tuple[str, List[str]]:
     who = rec.owner or rec.key
     title = ("New disposition sign-up — {} wants the knocks and dispositions "
-             "board {}".format(who, rec.cadence_label().lower()))
+             "board in {} place(s), {}".format(
+                 who, len(rec.destinations), rec.cadence_label().lower()))
     link = "{}/?confirm={}".format(FORM_URL, rec.key or "")
     thread = ["- Requested by: {}".format(rec.requested_by or who),
               "- ICD (OwnerVille): {}".format(rec.owner or "?"),
               "- OwnerVille account #: {}".format(rec.ov_account or "not given"),
               "- Campaign: {}".format(
                   (rec.campaign() or {}).get("name", "?")),
-              "- How often: {}".format(rec.cadence_label())]
-    thread += ["- {}".format(r) for r in rec.routes()]
+              "- Where it goes:"]
+    thread += ["      - {}".format(r) for r in rec.routes()]
     if rec.notes.strip():
         thread.append("- Notes: {}".format(rec.notes.strip()[:300]))
     if lucy:

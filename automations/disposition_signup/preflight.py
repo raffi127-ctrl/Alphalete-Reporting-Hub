@@ -34,20 +34,28 @@ from automations.disposition_signup import store
 from automations.disposition_signup.schema import DispositionRecord
 
 
-def _check_group(rec: DispositionRecord) -> Dict:
-    """Does the iMessage room resolve to exactly one live chat on this box?"""
-    if "imessage" not in rec.deliver:
-        return {"name": "iMessage group", "ok": True,
-                "note": "not enrolled for texts — skipped"}
-    try:
-        from automations.b2b_dispositions import text_post as tp
-        hit = tp.resolve_group(rec.imessage_group)
-    except Exception as e:                           # noqa: BLE001
-        return {"name": "iMessage group", "ok": False,
-                "note": "%r: %s" % (rec.imessage_group, str(e)[:220])}
-    return {"name": "iMessage group", "ok": True,
-            "note": "%r resolved (%s participants)"
-                    % (hit.get("name"), hit.get("participants"))}
+def _check_groups(rec: DispositionRecord) -> "List[Dict]":
+    """One check per iMessage room: does each resolve to exactly one live chat
+    on this box? An office can list several, and "one of them resolves" is not
+    an answer — the one that does not is a room that silently gets nothing."""
+    rooms = rec.of_kind("imessage")
+    if not rooms:
+        return [{"name": "iMessage group", "ok": True,
+                 "note": "not enrolled for texts — skipped"}]
+    from automations.b2b_dispositions import text_post as tp
+    out = []
+    for d in rooms:
+        name = (d.get("name") or "").strip()
+        label = "iMessage %r" % name
+        try:
+            hit = tp.resolve_group(name)
+        except Exception as e:                       # noqa: BLE001
+            out.append({"name": label, "ok": False, "note": str(e)[:220]})
+            continue
+        out.append({"name": label, "ok": True,
+                    "note": "resolved (%s participants)"
+                            % hit.get("participants")})
+    return out
 
 
 def _check_board(rec: DispositionRecord, day: dt.date, *,
@@ -88,9 +96,9 @@ def check(key: str, *, headless: bool = True,
                 "checks": [{"name": "sign-up row", "ok": False,
                             "note": "still %r — confirm it on the form first"
                                     % (rec.status or "unset")}]}
-    checks: List[Dict] = [_check_group(rec),
-                          _check_board(rec, day or dt.date.today(),
-                                       headless=headless)]
+    checks: List[Dict] = list(_check_groups(rec))
+    checks.append(_check_board(rec, day or dt.date.today(),
+                               headless=headless))
     return {"ok": all(c["ok"] for c in checks), "rec": rec, "checks": checks}
 
 

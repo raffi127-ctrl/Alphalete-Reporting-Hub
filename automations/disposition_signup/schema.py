@@ -28,8 +28,39 @@ DEFAULT_CADENCE = 60
 # Question 3. "Both" is not a third value — it is both boxes checked, so the
 # record carries a LIST and the runner asks "is email in here?" rather than
 # unpacking a mode string.
-DELIVERY_CHOICES = ["imessage", "email"]
-DELIVERY_LABELS = {"imessage": "iMessage text", "email": "Email"}
+# An office can have MANY places it wants the board, each on its own clock
+# (Megan 2026-09-01) — the owners' room every 15 minutes, the rep channel once
+# an hour. So the record carries a LIST OF DESTINATIONS, not a set of flags
+# plus one shared cadence.
+#
+# One destination = {kind, name, channel_id, emails, cadence_min}:
+#   kind        "imessage" | "slack" | "email"
+#   name        the iMessage group's name / "#channel" / "" for email
+#   channel_id  Slack only ("C..."), may be blank until Megan confirms
+#   emails      email only
+#   cadence_min this destination's own 15 / 30 / 60
+DELIVERY_CHOICES = ["imessage", "slack", "email"]
+DELIVERY_LABELS = {"imessage": "iMessage text", "slack": "Slack channel",
+                   "email": "Email"}
+
+
+def destination(kind: str, *, name: str = "", channel_id: str = "",
+                emails=None, cadence_min: int = DEFAULT_CADENCE) -> dict:
+    return {"kind": kind, "name": (name or "").strip(),
+            "channel_id": (channel_id or "").strip(),
+            "emails": list(emails or []), "cadence_min": int(cadence_min)}
+
+
+def dest_label(d: dict) -> str:
+    """'iMessage text — Alphalete Partners, every 15 minutes'."""
+    kind = d.get("kind", "")
+    if kind == "email":
+        where = ", ".join(d.get("emails") or []) or "?"
+    else:
+        where = d.get("name") or d.get("channel_id") or "?"
+    return "%s — %s, %s" % (
+        DELIVERY_LABELS.get(kind, kind), where,
+        CADENCE_LABELS.get(int(d.get("cadence_min") or 0), "?").lower())
 
 # The campaign the board is pulled for. The campaign is a STICKY session-global
 # in OwnerVille that any other job on the box can move, so gap_alerts re-pins it
@@ -37,10 +68,36 @@ DELIVERY_LABELS = {"imessage": "iMessage text", "email": "Email"}
 # know the id, so the form asks in their words and this maps it.
 # invD2DClientId values: 3 = RES AT&T, 40 = RES-ENERGYWELL (both read off the
 # live URL — see gap_alerts.config).
+# EVERY campaign, because NDS and B2B access is being extended to us
+# (Megan 2026-09-01) — an office that runs B2B should not have to be told this
+# form is not for them.
+#
+# The ids are the ones this repo has PROVEN live, not guesses:
+#   3   RES AT&T          — the id gap_alerts pins for Raf's office
+#   40  RES-ENERGYWELL    — read off the live URL, 2026-08-29
+#   2   B2B AT&T SBS      — b2b_dispositions --probe-campaigns, 2026-07-29
+#   16  B2B-BOX-Energy    — same probe; car_rides proved it 2026-07-15
+# The B2B two are spelled the way the OwnerVille dropdown spells them on
+# Carlos's screen, so an owner is picking the words they already see.
+#
+# NDS carries NO id, and that is not an omission. A wireless/NDS owner has no
+# Disposition campaign in OwnerVille today — that is why Isaiah's knock board
+# comes back empty (project_isaiah_legacy_wireless) — so there is nothing to
+# pin, and an empty id means "whatever campaign impersonation lands on", which
+# is the right answer for a single-campaign office. When NDS access lands and
+# it turns out to have its own id, read it off the live URL and put it here
+# (feedback_ask_for_the_url); the preflight is what will say whether the grid
+# has the columns the scraper needs.
 CAMPAIGNS = [
-    {"id": "3", "key": "att", "label": "AT&T", "name": "AT&T (residential fiber)"},
+    {"id": "3", "key": "att", "label": "AT&T",
+     "name": "AT&T residential fiber (D2D)"},
     {"id": "40", "key": "energy", "label": "EnergyWell",
      "name": "Energy Wells"},
+    {"id": "2", "key": "b2b_att", "label": "B2B AT&T",
+     "name": "B2B AT&T SBS"},
+    {"id": "16", "key": "b2b_box", "label": "B2B Box",
+     "name": "B2B-BOX-Energy"},
+    {"id": "", "key": "nds", "label": "NDS", "name": "NDS wireless"},
 ]
 DEFAULT_CAMPAIGN = "att"
 
@@ -93,18 +150,11 @@ class DispositionRecord:
     # not know theirs. It rides along so Megan can settle an ambiguous name
     # without a second message.
     ov_account: str = ""
-    cadence_min: int = DEFAULT_CADENCE                  # question 4
-    deliver: List[str] = field(default_factory=list)    # question 3
-    email_to: List[str] = field(default_factory=list)
-    imessage_group: str = ""       # the iMessage GROUP NAME, never a chat id:
-                                   # a group's GUID is reminted on every
-                                   # membership change and a stale one "sends"
-                                   # into a dead thread without erroring.
-    # Question 5. Recommended hourly regardless of the text/email cadence — a
-    # channel of reps reading a leaderboard does not need it four times an hour.
-    slack_hourly: bool = False
-    slack_channel_id: str = ""
-    slack_channel_name: str = ""
+    # Every place this office wants the board, each with its own cadence.
+    # iMessage destinations carry the group's NAME, never a chat id: a group's
+    # GUID is reminted on every membership change and a stale one "sends" into
+    # a dead thread without erroring.
+    destinations: List[Dict] = field(default_factory=list)
     campaign_key: str = DEFAULT_CAMPAIGN
     label: str = ""                # first name on the card; blank = no label
     # The office as OWNERVILLE spells it, when that differs from the owner's
@@ -142,9 +192,20 @@ class DispositionRecord:
     def display(self) -> str:
         return self.owner.strip() or self.key
 
+    def of_kind(self, kind: str) -> "List[Dict]":
+        return [d for d in self.destinations if d.get("kind") == kind]
+
     def cadence_label(self) -> str:
-        return CADENCE_LABELS.get(int(self.cadence_min or 0),
-                                  "every %s minutes" % self.cadence_min)
+        """The cadences in play. Destinations each carry their own now, so this
+        describes the setup rather than being the setting."""
+        mins = sorted({int(d.get("cadence_min") or 0)
+                       for d in self.destinations})
+        if not mins:
+            return "no cadence set"
+        if len(mins) == 1:
+            return CADENCE_LABELS.get(mins[0], "every %d minutes" % mins[0])
+        return " / ".join(CADENCE_LABELS.get(m, "every %d min" % m).lower()
+                          for m in mins)
 
     def office_name(self) -> str:
         """What impersonation looks for: the OwnerVille office name if it
@@ -159,15 +220,7 @@ class DispositionRecord:
 
     def routes(self) -> "List[str]":
         """Human list of everywhere this office's board goes."""
-        out = []
-        if "imessage" in self.deliver:
-            out.append("iMessage: %s" % (self.imessage_group or "?"))
-        if "email" in self.deliver:
-            out.append("Email: %s" % (", ".join(self.email_to) or "?"))
-        if self.slack_hourly:
-            out.append("Slack (hourly): %s"
-                       % (self.slack_channel_name or self.slack_channel_id or "?"))
-        return out
+        return [dest_label(d) for d in self.destinations]
 
     def to_json(self) -> dict:
         d = asdict(self)
@@ -219,27 +272,45 @@ def existing_office_keys() -> "List[str]":
 
 def _common(rec: DispositionRecord, problems: "List[str]") -> None:
     """Checks that hold for BOTH the owner's request and Megan's confirm."""
-    if int(rec.cadence_min or 0) not in CADENCE_CHOICES:
-        problems.append("Pick how often you want it: every 15 minutes, "
-                        "30 minutes, or once an hour.")
-    routes = [d for d in rec.deliver if d in DELIVERY_CHOICES]
-    if not routes and not rec.slack_hourly:
-        problems.append("Pick at least one way to get it — email, iMessage, "
-                        "or your team's Slack channel.")
-    if "imessage" in routes and not rec.imessage_group.strip():
-        problems.append("For iMessage, tell us the name of the group chat to "
-                        "text (exactly as it shows on your phone).")
-    if "email" in routes:
-        if not rec.email_to:
-            problems.append("For email, add at least one email address.")
-        else:
-            bad = bad_emails(rec.email_to)
-            if bad:
-                problems.append("That doesn't look like an email address: "
-                                + ", ".join(bad))
-    if rec.slack_hourly and not (rec.slack_channel_name.strip()
-                                 or rec.slack_channel_id.strip()):
-        problems.append("For the Slack post, tell us the channel name.")
+    if not rec.destinations:
+        problems.append("Pick at least one place to send it — an iMessage "
+                        "chat, a Slack channel, or email.")
+    seen = set()
+    for i, d in enumerate(rec.destinations):
+        kind = d.get("kind", "")
+        tag = " (#%d)" % (i + 1)
+        if kind not in DELIVERY_CHOICES:
+            problems.append("Unknown destination type %r." % kind)
+            continue
+        if int(d.get("cadence_min") or 0) not in CADENCE_CHOICES:
+            problems.append("Pick how often for %s%s: every 15 minutes, "
+                            "30 minutes, or once an hour."
+                            % (DELIVERY_LABELS[kind], tag))
+        if kind == "imessage" and not (d.get("name") or "").strip():
+            problems.append("Name the group chat to text%s — exactly as it "
+                            "shows on your phone." % tag)
+        elif kind == "slack" and not ((d.get("name") or "").strip()
+                                      or (d.get("channel_id") or "").strip()):
+            problems.append("Name the Slack channel to post in%s." % tag)
+        elif kind == "email":
+            addrs = d.get("emails") or []
+            if not addrs:
+                problems.append("Add at least one email address%s." % tag)
+            else:
+                bad = bad_emails(addrs)
+                if bad:
+                    problems.append("That doesn't look like an email address: "
+                                    + ", ".join(bad))
+        # The same room listed twice is two identical boards arriving together.
+        where = (kind, ((d.get("name") or d.get("channel_id") or "").strip()
+                        .lstrip("#").lower()
+                        or ",".join(sorted(a.lower()
+                                           for a in (d.get("emails") or [])))))
+        if where[1] and where in seen:
+            problems.append("%s %s is listed twice — it would send the same "
+                            "board there twice."
+                            % (DELIVERY_LABELS[kind], where[1]))
+        seen.add(where)
     if not rec.campaign():
         problems.append("Pick which campaign these dispositions are for.")
     if rec.tz not in [z["tz"] for z in TIMEZONES]:
@@ -319,9 +390,9 @@ def warnings(rec: DispositionRecord, *,
     """
     existing_groups = existing_groups or {}
     out: List[str] = []
-    grp = rec.imessage_group.strip()
-    if "imessage" in rec.deliver and grp:
-        owner_of = existing_groups.get(grp.lower())
+    for d in rec.of_kind("imessage"):
+        grp = (d.get("name") or "").strip()
+        owner_of = existing_groups.get(grp.lower()) if grp else None
         if owner_of and owner_of != rec.key:
             out.append("iMessage group %r already receives %r's board — both "
                        "offices' numbers will land in that one room. Fine if "

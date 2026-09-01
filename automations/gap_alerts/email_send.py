@@ -19,7 +19,7 @@ from __future__ import annotations
 import datetime as dt
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from automations.gap_alerts import config as C
 
@@ -62,11 +62,16 @@ def build(cfg: Dict, boards: "List[Path]", body: str, slot: str,
 
 
 def send(cfg: Dict, boards: "List[Path]", body: str, slot: str, day: dt.date,
-         *, dry_run: bool = True) -> Dict:
-    """Mail this office's board to its enrolled addresses. Returns a small dict
-    for the log line; raises only on a real SMTP failure so the caller can
-    record it as a route failure without losing the others."""
-    to_addrs = [a for a in (cfg.get("email_to") or []) if a]
+         *, to_addrs: "Optional[List[str]]" = None,
+         dry_run: bool = True) -> Dict:
+    """Mail this office's board to `to_addrs` (an email destination's own
+    list). Falls back to the office-level email_to for a hardcoded row that
+    never had destinations. Returns a small dict for the log line; raises only
+    on a real SMTP failure, so the caller can record it as one route's failure
+    without losing the others."""
+    if to_addrs is None:
+        to_addrs = cfg.get("email_to") or []
+    to_addrs = [a for a in to_addrs if a]
     if not to_addrs:
         return {"skipped": "no email_to", "to": []}
     msg = build(cfg, boards, body, slot, day, to_addrs)

@@ -54,8 +54,14 @@ except Exception:  # noqa: BLE001
 from automations.b2b_dispositions import capture as cap
 from automations.gap_alerts import config as C
 
+# Only ever used when a caller hands post_slack no channel at all — the
+# hardcoded offices' org room. A form-built destination always brings its own;
+# see config.dest_channel for why it must never inherit this one.
+SLACK_FALLBACK_CHANNEL = None   # set below, after config import resolves
+
 HUB_CARD_ID = "gap-alerts"
 HUB_CARD_NAME = "Rep Gap Alerts (15-min gaps -> Partners chat)"
+SLACK_FALLBACK_CHANNEL = C.SLACK_HOURLY_CHANNEL
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "gap_alerts"
 PREVIEW_DM = False   # set by --preview-dm
 RATES_OVERRIDE = None  # set by --rates: force the rate columns on for ONE run
@@ -229,6 +235,21 @@ def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
     return (header or C.GAP_TEXT_HEADER) + "\n\n" + "\n".join(lines), names
 
 
+def _dest_due(dest: Dict, now: Optional[dt.datetime] = None) -> bool:
+    """Is THIS destination owed a board on this tick?
+
+    Cadence lives on the destination, not the office: one office can want its
+    owners' chat every 15 minutes and its rep channel once an hour.
+
+    Anchored to the QUARTER HOUR for the same reason _cadence_due is — the tick
+    fires at :00 but Python reads the clock a minute or two later.
+    """
+    now = now or dt.datetime.now()
+    cadence = C.dest_cadence(dest)
+    anchor = now.minute - (now.minute % C.TICK_MINUTES)
+    return (anchor % cadence) == 0
+
+
 def _cadence_due(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
     """Is THIS office owed a board on this tick?
 
@@ -248,25 +269,12 @@ def _cadence_due(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
     return (anchor % cadence) == 0
 
 
-def _slack_due(key: str, now: dt.datetime) -> bool:
-    """Has this office's board gone to Slack yet THIS clock hour?
-
-    Keyed on the hour itself rather than "minutes since the last post", so the
-    post lands on the first tick of each hour and cannot drift later and later
-    across the day the way an elapsed-time check would.
-    """
-    stamp = (_state().get("_slack_hour") or {}).get(key)
-    return stamp != now.strftime("%Y-%m-%dT%H")
-
-
-def _mark_slack_sent(key: str, now: dt.datetime) -> None:
-    data = _state()
-    data.setdefault("_slack_hour", {})[key] = now.strftime("%Y-%m-%dT%H")
-    _save_state(data)
-
-
+# The old _slack_due/_mark_slack_sent pair is gone: "once this clock hour" was
+# how the single hourly Slack post avoided drifting later across the day, and a
+# destination's own cadence anchored to the quarter hour says the same thing
+# without a second piece of state to keep in sync.
 def post_slack(cfg: Dict, png: Path, slot: str, day: dt.date,
-               dry_run: bool = True) -> Dict:
+               channel: str = "", dry_run: bool = True) -> Dict:
     """Put the board in #alphalete-lvl1-chat, once an hour (Raf 2026-08-29).
 
     The board only — not the gap list. The gap list is a to-text list for the
@@ -281,7 +289,7 @@ def post_slack(cfg: Dict, png: Path, slot: str, day: dt.date,
     # RAF'S org's room. An office that enrolled through the sign-up form brings
     # its own channel, and inheriting the default would post its numbers in
     # front of another org.
-    channel = C.slack_channel_for(cfg)
+    channel = (channel or "").strip() or SLACK_FALLBACK_CHANNEL
     if dry_run:
         return {"dry_run": True, "channel": channel,
                 "comment": comment, "file": png.name}
@@ -804,9 +812,18 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             _log("%s: outside its window (%s) — skipping"
                  % (cfg["key"], C.office_window_label(cfg)))
             continue
-        if not (only or force) and not _cadence_due(cfg):
-            _log("%s: not due at %s (every %d min) — skipping"
-                 % (cfg["key"], slot, C.cadence_for(cfg)))
+        # WHICH destinations want this tick. If none do, the office is not
+        # pulled at all — driving OwnerVille for a board nobody will be sent is
+        # the one cost this job cannot afford at ~40 wakes a day.
+        dests = C.destinations(cfg)
+        due = [d for d in dests
+               if (only or force) or _dest_due(d)]
+        if not due:
+            _log("%s: nothing due at %s (%s) — skipping"
+                 % (cfg["key"], slot,
+                    ", ".join("%s every %dm" % (C.dest_label(d),
+                                                C.dest_cadence(d))
+                              for d in dests) or "no destinations"))
             continue
         recent = _sent_too_recently(cfg["key"])
         if recent is not None and send:
@@ -867,68 +884,65 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                 _log("  preview DM failed: %s: %s"
                      % (type(e).__name__, str(e)[:160]))
         # ROUTES ARE INDEPENDENT, and each gets its own try. An office can be
-        # enrolled for iMessage, email, both, or Slack alone (the sign-up form
-        # asks exactly that), and one dead route must never cost the others —
-        # a Messages failure taking the inbox copy with it is how an owner ends
-        # up with nothing while the log says one thing failed.
+        # enrolled for several chats, several channels and email at once (the
+        # sign-up form asks exactly that), and one dead route must never cost
+        # the others — a Messages failure taking the inbox copy with it is how
+        # an owner ends up with nothing while the log says one thing failed.
         delivered = False
-        if C.delivers(cfg, "imessage") and cfg.get("group"):
+        for dest in due:
+            kind = dest.get("kind")
+            where = C.dest_label(dest)
             try:
-                # Resolution runs on a dry run too — it is read-only and it is
-                # the half most likely to be wrong (Lucy removed from the chat,
-                # the room renamed). A preview that skipped it would prove
-                # nothing. ONE send: the gap list as the message text, the
-                # board as its attachment. send_to_group posts the text first,
-                # so the names arrive above the flyer.
-                res = tp.send_to_group(cfg["group"], body, boards,
-                                       dry_run=not send)
-                _log("  %s -> %r (%s participants)%s"
-                     % ("TEXT" if send else "PREVIEW",
-                        res.get("resolved_name"), res.get("participants"),
-                        "" if send else " — nothing sent"))
-                delivered = True
-            except Exception as e:  # noqa: BLE001
-                failures.append("%s text: %s: %s"
-                                % (cfg["key"], type(e).__name__, str(e)[:200]))
-                _log("  TEXT FAILED: %s: %s" % (type(e).__name__, str(e)[:200]))
-        elif C.delivers(cfg, "imessage"):
-            _log("  no iMessage group on %s — text route skipped" % cfg["key"])
-
-        if C.delivers(cfg, "email"):
-            try:
-                res = email_send.send(cfg, boards, body, slot, day,
-                                      dry_run=not send)
-                if res.get("skipped"):
-                    _log("  EMAIL skipped: %s" % res["skipped"])
-                else:
-                    _log("  %s -> %s (%s)"
-                         % ("EMAIL" if send else "EMAIL (preview)",
-                            ", ".join(res.get("to") or []),
-                            res.get("subject")))
+                if kind == "imessage":
+                    if not (dest.get("name") or "").strip():
+                        _log("  %s has no chat name — skipped" % where)
+                        continue
+                    # Resolution runs on a dry run too — it is read-only and it
+                    # is the half most likely to be wrong (Lucy removed from the
+                    # chat, the room renamed). A preview that skipped it would
+                    # prove nothing. ONE send: the gap list as the message text,
+                    # the board as its attachment. send_to_group posts the text
+                    # first, so the names arrive above the flyer.
+                    res = tp.send_to_group(dest["name"], body, boards,
+                                           dry_run=not send)
+                    _log("  %s -> %r (%s participants)%s"
+                         % ("TEXT" if send else "PREVIEW",
+                            res.get("resolved_name"), res.get("participants"),
+                            "" if send else " — nothing sent"))
                     delivered = True
-            except Exception as e:  # noqa: BLE001
-                failures.append("%s email: %s: %s"
-                                % (cfg["key"], type(e).__name__, str(e)[:200]))
-                _log("  EMAIL FAILED: %s: %s"
-                     % (type(e).__name__, str(e)[:200]))
-
-        # The hourly Slack post rides the SAME board that was just built —
-        # never its own pull.
-        if cfg.get("slack_hourly") and boards:
-            now = dt.datetime.now()
-            if _slack_due(cfg["key"], now):
-                try:
+                elif kind == "email":
+                    res = email_send.send(cfg, boards, body, slot, day,
+                                          to_addrs=dest.get("emails") or [],
+                                          dry_run=not send)
+                    if res.get("skipped"):
+                        _log("  EMAIL skipped: %s" % res["skipped"])
+                    else:
+                        _log("  %s -> %s (%s)"
+                             % ("EMAIL" if send else "EMAIL (preview)",
+                                ", ".join(res.get("to") or []),
+                                res.get("subject")))
+                        delivered = True
+                elif kind == "slack":
+                    channel = C.dest_channel(dest)
+                    if not channel:
+                        _log("  %s has no channel id — skipped" % where)
+                        continue
+                    if not boards:
+                        continue
                     res = post_slack(cfg, boards[0], slot, day,
-                                     dry_run=not send)
+                                     channel=channel, dry_run=not send)
                     _log("  %s -> %s (%s)"
                          % ("SLACK" if send else "SLACK (preview)",
                             res.get("channel"), res.get("file")))
-                    if send:
-                        _mark_slack_sent(cfg["key"], now)
                     delivered = True
-                except Exception as e:  # noqa: BLE001
-                    _log("  SLACK FAILED: %s: %s"
-                         % (type(e).__name__, str(e)[:200]))
+                else:
+                    _log("  unknown destination kind %r — skipped" % kind)
+            except Exception as e:  # noqa: BLE001
+                failures.append("%s %s: %s: %s"
+                                % (cfg["key"], where, type(e).__name__,
+                                   str(e)[:200]))
+                _log("  %s FAILED: %s: %s"
+                     % (where, type(e).__name__, str(e)[:200]))
 
         if send and delivered:
             # Both stamped only after a route actually took it: a failed send
