@@ -30,8 +30,10 @@ routine case, not the fallback.
 from __future__ import annotations  # Lucy 1 / mini run Python 3.9
 
 import argparse
+import contextlib
 import datetime as dt
 import json
+import pathlib
 import sys
 import time
 
@@ -209,6 +211,54 @@ def renew_from_state(verbose: bool = True, tokens=None) -> bool:
                 pass
 
 
+# OWNERVILLE IS ONE SESSION PER ACCOUNT — PAUSE THE HOLDER FIRST (2026-09-01).
+#
+# A fresh ownerville login BUMPS whatever session that account already has, and
+# the holder's session is the one every impersonating report rides on. This
+# module logged in without pausing it and took Rep Gap Alerts down: clean ticks
+# through 14:15, the login at 14:22, then "Couldn't impersonate 'Calvin Ribera'
+# in ownerville: name not found" on every tick until the holder was restarted at
+# 16:07. The names were never wrong — the session under them had been bumped.
+#
+# tableau_patchright says it in as many words: "ownerville is one-session-per-
+# account, so this login can still bump a live holder session server-side — stop
+# the holder first."
+#
+# ALWAYS brings the holder back, including on an exception. A holder left down
+# is strictly worse than a stale token: the token expires in two hours, a dead
+# holder is dark until someone notices.
+@contextlib.contextmanager
+def _holder_paused(verbose: bool = True):
+    """Stop the session holder for the duration, and ALWAYS restart it."""
+    import os
+    import subprocess
+    uid = os.getuid()
+    label = "gui/%d/com.alphalete.session-holder" % uid
+    plist = (pathlib.Path.home() / "Library" / "LaunchAgents"
+             / "com.alphalete.session-holder.plist")
+    stopped = False
+    try:
+        r = subprocess.run(["launchctl", "bootout", label],
+                           capture_output=True, text=True, timeout=90)
+        stopped = (r.returncode == 0)
+        _log("holder paused" if stopped else
+             "holder not running (nothing to pause)")
+        if stopped:
+            time.sleep(5)          # let it release the ownerville session
+        yield
+    finally:
+        if stopped:
+            try:
+                subprocess.run(["launchctl", "bootstrap", "gui/%d" % uid,
+                                str(plist)], capture_output=True, text=True,
+                               timeout=90)
+                _log("holder restarted")
+            except Exception as e:  # noqa: BLE001 — say it loudly, never swallow
+                _log("COULD NOT RESTART THE HOLDER (%s) — it is DOWN and needs "
+                     "a hand: launchctl bootstrap gui/%d %s"
+                     % (type(e).__name__, uid, plist))
+
+
 def refresh_ownerville(verbose: bool = True) -> bool:
     """Sign in to ownerville fresh, unattended, and EXPORT the new rqst.
 
@@ -240,7 +290,7 @@ def refresh_ownerville(verbose: bool = True) -> bool:
     shutil.rmtree(prof, ignore_errors=True)
     prof.mkdir(parents=True, exist_ok=True)
 
-    with sync_playwright() as p:
+    with _holder_paused(verbose=verbose), sync_playwright() as p:
         ctx = _launch_persistent(p, prof, headless=False,
                                  label="ov_autorenew", verbose=verbose)
         try:
