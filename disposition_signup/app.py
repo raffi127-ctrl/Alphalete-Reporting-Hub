@@ -114,7 +114,7 @@ def request_view() -> None:
         "Your first and last name as it appears in OwnerVille *",
         help="Exactly as OwnerVille shows it. This is how we find your office.")
     knocks_office = st.text_input(
-        "Company name as it appears in OV *",
+        "Company name as it appears in OwnerVille *",
         help="Type it exactly as OwnerVille shows it. If OwnerVille lists your "
              "office under your own name, put that.")
 
@@ -125,11 +125,11 @@ def request_view() -> None:
     # one that happens outside this form — in the owner's own OV dashboard and
     # inbox. Said here, next to the account number, because this is the moment
     # they are thinking about their OV account.
-    st.warning("⚠️ **If Rafael Hidalgo's OV account does not already have "
-               "access to your account in OV, you will receive a request via "
-               "email as well as on your OV dashboard to accept the request "
-               "for access. Until this is accepted, you will NOT be able to "
-               "receive any dispositions.**")
+    st.warning("⚠️ **If Rafael Hidalgo's OwnerVille account does not already "
+               "have access to your account in OwnerVille, you will receive a "
+               "request via email as well as on your OwnerVille dashboard to "
+               "accept the request for access. Until this is accepted, you "
+               "will NOT be able to receive any dispositions.**")
     ov_account = st.text_input(
         "Your OwnerVille account number *",
         help="It's how we find you for certain when two people share a name.")
@@ -277,7 +277,7 @@ def request_view() -> None:
     if not owner.strip():
         missing.append("your OwnerVille name")
     if not knocks_office.strip():
-        missing.append("your company name in OV")
+        missing.append("your company name in OwnerVille")
     if not ov_account.strip():
         missing.append("your OwnerVille account number")
     if not destinations:
@@ -450,7 +450,8 @@ def confirm_view(key: str) -> None:
     label = st.text_input("Name on the card", value=rec.label
                           or (rec.owner.split()[0] if rec.owner else ""))
     knocks_office = st.text_input(
-        "Company name as it appears in OV (impersonation resolves through this)",
+        "Company name as it appears in OwnerVille (impersonation resolves "
+        "through this)",
         value=rec.knocks_office, placeholder=rec.owner,
         help="A mismatch here is the difference between a board and a failed "
              "tick every 15 minutes.")
