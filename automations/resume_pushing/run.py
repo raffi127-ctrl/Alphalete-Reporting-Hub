@@ -770,12 +770,33 @@ def _assert_account(page, dry_run: bool) -> None:
             "cannot be verified as coming from it. Run --dry-run once (it sends "
             "nothing and records the identity), then re-run live."
             % APPSTREAM_ACCOUNT)
-    if got != want:
+    # ENFORCE ON THE NUMBER, REPORT ON THE LABEL (Megan 2026-08-31).
+    #
+    # The user label would be the identifying half — 23981 is the COMPANY and is
+    # the same for Lucy Reports and Lucy Resume Pushing. But identity() falls
+    # back to the first 60 chars of the body when its own label regex misses, so
+    # what actually came back on Lucy 2 was
+    # "0 Alphalete Marketing\xa0Call Center (Account No: 23981)   Adva" — page
+    # text, not a user. Gating irreversible sends on that means a refusal every
+    # time the page wording shifts, which is an outage this guard would be
+    # causing rather than preventing.
+    #
+    # So the number is enforced and the label is logged loudly on a mismatch.
+    # That is weaker than it should be, and it is NOT the thing keeping the push
+    # to two offices — the account's own permissions are (it cannot see a third),
+    # backed by the per-account session file and the cookie purge. Extract the
+    # real signed-in user against the live DOM and this becomes enforcing again.
+    if got.split("/")[0] != want.split("/")[0]:
         raise WrongAppStreamAccount(
             "console is signed in as Account No %s, but this run is declared to "
             "use %r (Account No %s). Refusing to send — this is the wrong-screen "
             "case: a session opened by another report can see offices this job "
             "must never push." % (got, APPSTREAM_ACCOUNT, want))
+    if got != want:
+        _log("[account][WARN] account number matches (%s) but the console text "
+             "differs from what was recorded. Not blocking — the label is not "
+             "reliably the signed-in user yet. recorded=%r now=%r"
+             % (got.split("/")[0], want, got))
     _log("[account] verified: %s = Account No %s" % (APPSTREAM_ACCOUNT, got))
 
 

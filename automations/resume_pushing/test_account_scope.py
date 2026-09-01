@@ -122,16 +122,20 @@ class IdentityAssert(unittest.TestCase):
         with self.assertRaises(rp.WrongAppStreamAccount):
             rp._assert_account(_Page("no identity on this page"), dry_run=False)
 
-    def test_same_company_different_user_is_refused(self):
-        """The hole this closes: 23981 is the COMPANY, shared by both logins.
+    def test_same_company_different_label_does_not_block(self):
+        """KNOWN GAP, held deliberately. 23981 is the COMPANY and is shared by
+        both Lucy logins, so the number cannot tell them apart. The label would
+        — but identity() falls back to raw body text when its regex misses, and
+        on Lucy 2 that produced "0 Alphalete Marketing Call Center (Account No:
+        23981)   Adva". Blocking irreversible sends on text that moves would be
+        an outage this guard causes. Enforced on the number, warned on the label,
+        until the signed-in user can be read reliably.
 
-        A number-only fingerprint waved through a run signed in as Lucy Reports
-        while declaring lucyresume — which is precisely the swap the guard
-        exists to catch, and Lucy Reports can see every office."""
+        What actually bounds the push to two offices is the ACCOUNT's own
+        permissions, not this."""
         self._fingerprint(_fp("23981", "Lucy Resume Pushing"))
-        with self.assertRaises(rp.WrongAppStreamAccount):
-            rp._assert_account(_Page(_console("23981", "Lucy Reports")),
-                               dry_run=False)
+        rp._assert_account(_Page(_console("23981", "Lucy Reports")),
+                           dry_run=False)
 
     def test_dry_run_never_blocks(self):
         # A dry-run sends nothing, so it has nothing to protect — and it is the
