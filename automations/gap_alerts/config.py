@@ -565,6 +565,40 @@ SATURDAY = 5
 # for why that reasoning was the 2026-08-27 bug.
 TICK_MINUTES = 15
 
+# HOW OFTEN PYTHON GETS TO DECIDE, as opposed to how often any one office is
+# sent. Every office still gets its exact cadence; they just do not all land on
+# the same anchor (Megan 2026-09-01: "1 ICD could go out at 1:15 1:30 1:45, 2nd
+# could go out at 1:20 1:35 1:55 — that would be fine, just as long as it's
+# every 15 min").
+#
+# THIS IS WHAT MAKES TWENTY OWNERS FIT. Un-staggered, every office on a
+# 15-minute cadence is due at :00, :15, :30, :45 — twenty offices scraped in
+# one burst, 1-4 minutes each, inside a 15-minute window. The pid lock would
+# then SKIP the overrun, so boards would quietly stop arriving rather than
+# erroring. Spread across three 5-minute buckets, each wake carries about a
+# third of them.
+#
+# MUST DIVIDE every cadence in CADENCE_CHOICES, and the wrapper's minute gate
+# has to match it (deploy/gap_alerts_5min.sh: MINUTE % 5).
+WAKE_MINUTES = 5
+
+
+def office_offset(cfg: Dict) -> int:
+    """This office's stagger, a stable 0 / 5 / 10 derived from its key.
+
+    Deterministic across processes — hashlib, NOT hash(), whose salt changes
+    every interpreter start and would move an office's slot on every tick.
+    Derived rather than configured so nobody has to hand out offsets, and so
+    adding an office cannot collide two of them on purpose.
+    """
+    import hashlib
+    key = str(cfg.get("key") or "")
+    if not key:
+        return 0
+    buckets = max(1, TICK_MINUTES // WAKE_MINUTES)
+    digest = hashlib.sha1(key.encode("utf-8")).digest()
+    return (digest[0] % buckets) * WAKE_MINUTES
+
 # A card is REFUSED if this office got one less than this many minutes ago.
 #
 # WHY IT EXISTS. The pid lock stops two ticks OVERLAPPING; it does nothing

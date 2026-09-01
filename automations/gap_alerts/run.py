@@ -260,15 +260,20 @@ def _dest_due(dest: Dict, now: Optional[dt.datetime] = None,
     now = now or dt.datetime.now()
     slots = C.dest_slots(dest)
     if slots:
+        # FIXED TIMES ARE NOT STAGGERED. "First Knocks 2:00 PM" means 2:00,
+        # not 2:05 — the moment is the point of the board.
         local = C.office_now(cfg or {}, now)
         anchor = "%02d:%02d" % (local.hour,
-                                local.minute - (local.minute % C.TICK_MINUTES))
+                                local.minute - (local.minute % C.WAKE_MINUTES))
         return anchor in slots
     cadence = C.dest_cadence(dest)
     if cadence <= 0:                    # slots mode with no usable slot left
         return False
-    anchor = now.minute - (now.minute % C.TICK_MINUTES)
-    return (anchor % cadence) == 0
+    # Staggered: the office keeps its exact spacing, on its own offset, so
+    # twenty offices do not all land on :00. See config.office_offset.
+    mins = now.hour * 60 + now.minute
+    anchor = mins - (mins % C.WAKE_MINUTES)
+    return (anchor - C.office_offset(cfg or {})) % cadence == 0
 
 
 def _intraday_covers(dest: Dict, cfg: Optional[Dict] = None,
@@ -655,6 +660,71 @@ def to_pdf(panel_paths, out_pdf: Path) -> Path:
     return out_pdf
 
 
+def gap_rows_many(offices: List[Dict], day: dt.date) -> Dict:
+    """The gap list for EVERY due office, in ONE ownerville session.
+    -> {key: (rows, error_or_None)}
+
+    WHY THIS EXISTS. gap_rows opens its own session per office, and pull_board
+    opens another — two logins per office per tick. At one office that was
+    invisible; at twenty owners on a 15-minute cadence it is forty logins every
+    fifteen minutes, which does not fit in the window at all (a run takes 1-4
+    minutes). The tick would not error, either: the pid lock SKIPS an
+    overrunning pass, so boards would simply stop arriving for some offices and
+    nothing would say so.
+
+    One office failing does NOT abort the rest — its error rides in the tuple,
+    the same contract pull_offices_days uses.
+
+    The rqst token is re-captured after every impersonation exit: it belongs to
+    the session's current identity, and reusing the pre-impersonation one for
+    the next office is how one office ends up reading another's numbers.
+    """
+    from automations.shared.tableau_patchright import ownerville_session
+    out: Dict = {}
+    if not offices:
+        return out
+    with ownerville_session(headless=True, verbose=False,
+                            profile_dir=C.PROFILE_DIR) as page:
+        rqst = cap.capture_rqst(page)
+        for cfg in offices:
+            impersonated = False
+            try:
+                office_rqst = rqst
+                if cfg.get("ov") == "impersonate":
+                    from automations.focus_office_att.aliases import load_aliases
+                    from automations.focus_office_att.run_all_owners import (
+                        _exit_impersonation, _find_owner_and_impersonate,
+                        _navigate_to_office_access)
+                    _exit_impersonation(page)
+                    _navigate_to_office_access(page)
+                    office_rqst, reason = _find_owner_and_impersonate(
+                        page, cfg["name"], load_aliases())
+                    if not office_rqst:
+                        raise RuntimeError("Couldn't impersonate %r: %s"
+                                           % (cfg["name"], reason))
+                    impersonated = True
+                try:
+                    _pin_campaign(page, office_rqst,
+                                  cfg.get("campaign_id", ""))
+                    rows = cap.fetch_time_tracking(page, office_rqst,
+                                                   day.strftime("%m/%d/%Y"))
+                finally:
+                    if impersonated:
+                        from automations.focus_office_att.run_all_owners import (
+                            _exit_impersonation)
+                        _exit_impersonation(page)
+                        # Back to the master identity — and to a NEW token.
+                        rqst = cap.capture_rqst(page)
+                over = [r for r in rows
+                        if cap._int(r.get("minutesSinceLastKnock"))
+                        > C.GAP_THRESHOLD_MIN]
+                over.sort(key=lambda r: -cap._int(r.get("minutesSinceLastKnock")))
+                out[cfg["key"]] = (over, None)
+            except Exception as e:  # noqa: BLE001 — one office, not the pass
+                out[cfg["key"]] = ([], e)
+    return out
+
+
 def gap_rows(cfg: Dict, day: dt.date) -> List[Dict]:
     """Reps over the gap threshold right now, longest-dark first.
 
@@ -664,43 +734,15 @@ def gap_rows(cfg: Dict, day: dt.date) -> List[Dict]:
     the day's CUMULATIVE gap totals, this is who is dark at this minute. One is
     a scorecard, the other is the alert, and merging them would lose the alert.
 
-    Its own short ownerville session, because pull_board's session belongs to
-    pull_offices_days and is already closed by the time we get here.
+    Kept as the ONE-OFFICE entry point (probes, --only re-runs). The tick uses
+    gap_rows_many, which does the same work for every due office in a single
+    session; this delegates to it so there is one implementation of the
+    impersonate / pin / fetch dance, not two that can drift.
     """
-    from automations.shared.tableau_patchright import ownerville_session
-    with ownerville_session(headless=True, verbose=False,
-                            profile_dir=C.PROFILE_DIR) as page:
-        rqst = cap.capture_rqst(page)
-        impersonated = False
-        if cfg.get("ov") == "impersonate":
-            # Dead for Raf (his login IS office 11280) and live the day a
-            # second office is added. ALWAYS exited in the finally, or the next
-            # office reads the previous one's numbers.
-            from automations.focus_office_att.aliases import load_aliases
-            from automations.focus_office_att.run_all_owners import (
-                _exit_impersonation, _find_owner_and_impersonate,
-                _navigate_to_office_access)
-            _exit_impersonation(page)
-            _navigate_to_office_access(page)
-            rqst, reason = _find_owner_and_impersonate(page, cfg["name"],
-                                                       load_aliases())
-            if not rqst:
-                raise RuntimeError("Couldn't impersonate %r: %s"
-                                   % (cfg["name"], reason))
-            impersonated = True
-        try:
-            _pin_campaign(page, rqst, cfg.get("campaign_id", ""))
-            rows = cap.fetch_time_tracking(page, rqst,
-                                           day.strftime("%m/%d/%Y"))
-        finally:
-            if impersonated:
-                from automations.focus_office_att.run_all_owners import (
-                    _exit_impersonation)
-                _exit_impersonation(page)
-    over = [r for r in rows
-            if cap._int(r.get("minutesSinceLastKnock")) > C.GAP_THRESHOLD_MIN]
-    over.sort(key=lambda r: -cap._int(r.get("minutesSinceLastKnock")))
-    return over
+    rows, err = gap_rows_many([cfg], day).get(cfg["key"], ([], None))
+    if err is not None:
+        raise err
+    return rows
 
 
 def _date_text(day: dt.date) -> str:
@@ -712,6 +754,94 @@ def _date_text(day: dt.date) -> str:
     both.
     """
     return "%d/%d (%s)" % (day.month, day.day, day.strftime("%A"))
+
+
+def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
+    """Every due office's board, from ONE ownerville session. -> {key: (pngs,
+    rows, err)}
+
+    `plan` is [(cfg, slot), ...]. pull_offices_days has always been able to
+    scrape several offices in one session — gap_alerts just never asked it to,
+    handing it a one-office job list per office per tick. At twenty owners that
+    is twenty logins a tick on top of twenty more for the gap list, inside a
+    window that cannot hold them.
+
+    Results are matched BY INDEX, not by name: Jay Turnage is two offices
+    (jay_att and jay_ew) with one OwnerVille name and two campaigns, so a
+    name-keyed dict would collide them and hand both reports the same rows.
+    """
+    from automations.rashad_metrics.knocks_pull import pull_offices_days
+    from automations.knocks_intraday.run import compare_office
+
+    out: Dict = {}
+    if not plan:
+        return out
+    jobs, order = [], []
+    for cfg, _slot in plan:
+        jobs.append((cfg["name"], [day], cfg.get("campaign_id") or None))
+        order.append(cfg["key"])
+    # Chan's comparison line, pulled ONCE for every office that carries it —
+    # never once per office. It keeps its own campaign (he is fiber), so no
+    # third element.
+    compare = compare_office() if any(C.compares(c) for c, _ in plan) else ""
+    compare_i = None
+    if compare and compare.strip().lower() not in {
+            c["name"].strip().lower() for c, _ in plan}:
+        compare_i = len(jobs)
+        jobs.append((compare, [day]))
+
+    pulled = pull_offices_days(jobs, verbose=False,
+                               profile_dir=str(C.PROFILE_DIR))
+    chan_rows: List = []
+    if compare_i is not None and compare_i < len(pulled):
+        _name, _days, _err = pulled[compare_i]
+        if _err is not None:
+            _log("  ⚠ %s comparison pull failed (%s: %s) — boards go out "
+                 "without the line"
+                 % (compare, type(_err).__name__, str(_err)[:300]))
+        else:
+            chan_rows = (_days or {}).get(day) or []
+
+    for i, (cfg, slot) in enumerate(plan):
+        if i >= len(pulled):
+            out[cfg["key"]] = ([], [], RuntimeError("no result for this job"))
+            continue
+        _name, by_day, err = pulled[i]
+        if err is not None:
+            out[cfg["key"]] = ([], [], err)
+            continue
+        rows = (by_day or {}).get(day) or []
+        if not rows:
+            out[cfg["key"]] = ([], [], None)
+            continue
+        extra = [(compare, chan_rows)] if (chan_rows and C.compares(cfg)) else []
+        try:
+            out[cfg["key"]] = (_render_board(cfg, rows, extra, day, out_dir,
+                                             slot), rows, None)
+        except Exception as e:  # noqa: BLE001 — one board, not the pass
+            out[cfg["key"]] = ([], rows, e)
+    return out
+
+
+def _render_board(cfg: Dict, rows: List, extra: List, day: dt.date,
+                  out_dir: Path, slot: str) -> List[Path]:
+    """The drawing half of pull_board — no network, so it runs per office
+    after the one shared pull."""
+    from automations.total_knocks import render as knocks_render
+    from automations.knocks_intraday.run import first_name
+    _who = " — ".join(x for x in (cfg.get("campaign_label"),
+                                  first_name(cfg.get("label") or cfg["name"]))
+                      if x)
+    _when = _date_text(day) + (" — %s" % slot if slot else "")
+    pngs, shape = knocks_render.render_knocks_boards(
+        day, rows=rows, out_dir=out_dir / cfg["key"],
+        title_suffix=_who, date_text=_when, extra_totals=extra,
+        rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
+                      else RATES_OVERRIDE),
+        knocks_green_at=C.KNOCKS_GREEN_AT, sort_by="knocks")
+    _log("  %s: %d rep(s) -> %s (%s)"
+         % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
+    return list(pngs)
 
 
 def pull_board(cfg: Dict, day: dt.date, out_dir: Path,
@@ -734,83 +864,11 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path,
     impersonating yourself fails — that check is why this works for him and why
     the WKD probe never could.
     """
-    from automations.rashad_metrics.knocks_pull import pull_offices_days
-    from automations.total_knocks import render as knocks_render
-    from automations.knocks_intraday.run import first_name
-
-    # Chan's TOTAL rides the board as the teal comparison line (Raf,
-    # 2026-08-28: "can we have it compare to chans every 15 minutes"). It is
-    # the same line his Slack boards already carry, and it is pulled in the
-    # SAME session as Raf — a comparison is a nicety and must never cost its
-    # own login, which at four ticks an hour would be a real bill.
-    from automations.knocks_intraday.run import compare_office
-    compare = compare_office() if C.compares(cfg) else ""
-    # The office's campaign travels WITH the job. Without this the pull falls
-    # back to CAMPAIGN_OVERRIDES, which is keyed by office NAME and so holds
-    # one campaign per office — no good for Jay Turnage, who knocks AT&T AND
-    # Energy Wells and gets a separate report for each.
-    jobs = [(cfg["name"], [day], cfg.get("campaign_id") or None)]
-    if compare and compare.strip().lower() != cfg["name"].strip().lower():
-        # The comparison office keeps its OWN campaign (Chan is fiber), so no
-        # third element — the map decides for him.
-        jobs.append((compare, [day]))
-
-    pulled = pull_offices_days(jobs, verbose=False,
-                               profile_dir=str(C.PROFILE_DIR))
-    by_name = {name: (days, err) for name, days, err in pulled}
-    by_day, err = by_name.get(cfg["name"], ({}, None))
+    pngs, rows, err = pull_boards_many([(cfg, slot)], day, out_dir).get(
+        cfg["key"], ([], [], None))
     if err is not None:
         raise err
-    rows = by_day.get(day) or []
-    if not rows:
-        return [], []
-
-    # NO SORT HERE. Ranking is the RENDERER's job (sort_by="knocks" below):
-    # _combined_sub re-orders whatever rows it is handed, so sorting them here
-    # was thrown away and the board kept coming out alphabetical while this
-    # code looked like it had already fixed it (2026-08-28 -> 29). One place
-    # decides the order.
-
-    # A failed comparison costs ONE LINE, never the board.
-    extra = []
-    if compare:
-        chan_days, chan_err = by_name.get(compare, ({}, None))
-        chan_rows = (chan_days or {}).get(day) or []
-        if chan_err is not None:
-            # The MESSAGE, not just the type. This line said "(RuntimeError)"
-            # and nothing else, and the pull runs verbose=False so its own
-            # detail never reached the log either — which left "Chan's numbers
-            # are gone" undiagnosable twice over. An error we chose to swallow
-            # still has to say why.
-            _log("  ⚠ %s comparison pull failed (%s: %s) — board goes out "
-                 "without the line"
-                 % (compare, type(chan_err).__name__, str(chan_err)[:300]))
-        elif chan_rows:
-            extra.append((compare, chan_rows))
-        else:
-            _log("  no %s rows for %s — board goes out without the line"
-                 % (compare, day))
-
-    # ONE header, not two. The board draws its own title band, and gap_alerts
-    # used to draw a second one above it saying almost the same thing —
-    # "KNOCKS & DISPOSITIONS — EnergyWell — Calvin — 11:32 AM" stacked on
-    # "TOTAL KNOCKS — CALVIN — 8/29 (Saturday)" (Megan 2026-08-30: "this has 2
-    # redundant headers"). The campaign and the clock now go INTO the board's
-    # title and the wrapper is gone.
-    _who = " — ".join(x for x in (cfg.get("campaign_label"),
-                                  first_name(cfg.get("label") or cfg["name"]))
-                      if x)
-    _when = _date_text(day) + (" — %s" % slot if slot else "")
-    pngs, shape = knocks_render.render_knocks_boards(
-        day, rows=rows, out_dir=out_dir / cfg["key"],
-        title_suffix=_who, date_text=_when, extra_totals=extra,
-        rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
-                      else RATES_OVERRIDE),
-        knocks_green_at=C.KNOCKS_GREEN_AT, sort_by="knocks")
-
-    _log("  %s: %d rep(s) -> %s (%s)"
-         % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
-    return list(pngs), rows
+    return pngs, rows
 
 
 def render(cfg: Dict, pngs, out_dir: Path, slot: str):
@@ -853,6 +911,11 @@ def tick(day: dt.date, *, send: bool, only: str = "",
 
     failures = []
     seen_names = []
+
+    # PASS ONE — who is owed a board, decided with no network at all. Every
+    # guard here is arithmetic; the pulls below are the expensive half, and
+    # they now happen ONCE for the whole tick instead of twice per office.
+    plan = []
     for cfg in offices:
         # Both guards run BEFORE the pull. A skipped tick should cost nothing,
         # and this pull is the expensive half of the run.
@@ -903,14 +966,33 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                  "(min gap %d min). The room already has this."
                  % (cfg["key"], recent, C.MIN_SEND_GAP_MINUTES))
             continue
+        plan.append((cfg, slot, due))
 
-        try:
-            pngs, rows = pull_board(cfg, day, out_dir, slot)
-        except Exception as e:  # noqa: BLE001
-            failures.append("%s: %s: %s" % (cfg["key"], type(e).__name__,
-                                            str(e)[:200]))
+    if not plan:
+        _terminated_check_once(day, seen_names)
+        return failures
+
+    # PASS TWO — the network, once. Two sessions for the whole tick (boards,
+    # then the gap lists) instead of two per office.
+    _log("pulling %d office(s) in one session: %s"
+         % (len(plan), ", ".join(c["key"] for c, _s, _d in plan)))
+    boards = pull_boards_many([(c, s) for c, s, _d in plan], day, out_dir)
+    # A BACKDATED RUN GETS NO GAP LIST. "minutesSinceLastKnock" is measured
+    # from RIGHT NOW, so for any past day every rep reads as inactive for a
+    # thousand-plus minutes — a wall of red that says nothing except that
+    # yesterday ended. The board is history and travels fine; the gap list is a
+    # live signal and does not.
+    gaps_by_key = (gap_rows_many([c for c, _s, _d in plan], day)
+                   if day == dt.date.today() else {})
+
+    # PASS THREE — render and send. No network except the sending itself.
+    for cfg, slot, due in plan:
+        pngs, rows, pull_err = boards.get(cfg["key"], ([], [], None))
+        if pull_err is not None:
+            failures.append("%s: %s: %s" % (cfg["key"], type(pull_err).__name__,
+                                            str(pull_err)[:200]))
             _log("%s PULL FAILED: %s: %s"
-                 % (cfg["key"], type(e).__name__, str(e)[:200]))
+                 % (cfg["key"], type(pull_err).__name__, str(pull_err)[:200]))
             continue
 
         if not pngs:
@@ -933,12 +1015,13 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             _log("  gap list SKIPPED — %s is not today, and 'minutes since "
                  "last knock' is only meaningful live" % day)
         else:
-            try:
-                gaps = gap_rows(cfg, day)
-            except Exception as e:  # noqa: BLE001
+            gaps, gap_err = gaps_by_key.get(cfg["key"], ([], None))
+            if gap_err is not None:
+                # A failed gap pull costs the SECTION, never the board — the
+                # board is already in hand.
                 gaps = []
                 _log("  gap list SKIPPED (%s: %s)"
-                     % (type(e).__name__, str(e)[:160]))
+                     % (type(gap_err).__name__, str(gap_err)[:160]))
         previous, first_of_day = _previous_gap_names(cfg["key"], day)
         body, gap_names = gap_text(gaps, previous, first_of_day,
                                    header=gap_header(cfg))

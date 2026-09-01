@@ -7,7 +7,8 @@
 # much traffic in the room). The name is deliberately NOT being fixed: the
 # installed plist on Lucy 1 points at this exact path, so renaming would mean
 # reinstalling the agent on that box to change a cadence that is pure code.
-# The number that rules is MINUTE % 15, below.
+# The number that rules is MINUTE % 5, below — the WAKE. The per-office cadence
+# lives in the enrollment, and Python picks who is owed a board on each wake.
 #
 #   bash deploy/gap_alerts_5min.sh                # PREVIEW, texts nothing
 #   bash deploy/gap_alerts_5min.sh --send         # live
@@ -93,7 +94,15 @@ MINUTE=$((10#$MINUTE))
 # THIS is the cadence, not config.TICK_MINUTES — that constant only labels
 # copy. Change both together or the card says one thing and the job does
 # another.
-[ $((MINUTE % 15)) -gt 1 ] && exit 0
+# EVERY 5 MINUTES, not every 15 (2026-09-01). This is now only the WAKE — it
+# is Python that decides which offices are owed a board on each one. Offices
+# are staggered across the quarter hour (config.office_offset) so twenty of
+# them on a 15-minute cadence do not all get scraped at :00: each still gets
+# its exact spacing, on its own offset. Waking here 3x as often costs three
+# Python starts that mostly exit immediately; NOT waking is what would silently
+# drop an office's board, because the pid lock skips an overrunning pass.
+# config.WAKE_MINUTES must equal the 5 here.
+[ $((MINUTE % 5)) -gt 1 ] && exit 0
 
 VENV_PY=".venv/bin/python"
 [ -x "$VENV_PY" ] || VENV_PY="python3"

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import pathlib
 
 import pytest
 
@@ -243,11 +244,12 @@ def test_destination_due_on_the_quarter_hour(cadence, minute, due):
     assert R._dest_due({"cadence_min": cadence}, now) is due
 
 
-@pytest.mark.parametrize("drift", [0, 1, 2, 9, 14])
+@pytest.mark.parametrize("drift", [0, 1, 2, 3, 4])
 def test_cadence_survives_the_wrapper_drift(drift):
-    """The tick fires on the quarter hour but Python reads the clock a minute
-    or three later. Anchoring on the raw minute would make an hourly
-    destination due never."""
+    """The wrapper launches within a minute of a 5-minute boundary and Python
+    reads the clock seconds later. Anchoring on the RAW minute would make an
+    hourly destination due never; anchoring on the wake boundary absorbs the
+    whole launch window with room to spare."""
     assert R._dest_due({"cadence_min": 60},
                        dt.datetime(2026, 9, 1, 14, drift)) is True
 
@@ -668,3 +670,95 @@ def test_the_hardcoded_offices_stay_on_lucy_1():
     """Raf, Calvin and Jay have always run there and carry no machine key."""
     assert {o["key"] for o in C.enabled()} == {"rafael", "calvin", "jay_att",
                                               "jay_ew"}
+
+
+# --- staggering -------------------------------------------------------------
+
+def test_offices_are_staggered_across_the_quarter_hour():
+    """Megan 2026-09-01: one ICD at :15/:30/:45 and another at :20/:35/:50 is
+    fine, "just as long as it's every 15 min". Un-staggered, twenty offices are
+    all scraped at :00 and the tick overruns its own window."""
+    offsets = {C.office_offset({"key": k})
+               for k in ("rafael", "calvin", "cody", "dana", "eve", "frank")}
+    assert offsets <= {0, 5, 10}
+    assert len(offsets) > 1              # they do not all land on the same one
+
+
+def test_a_staggered_office_still_gets_exactly_its_cadence():
+    dest = {"kind": "imessage", "cadence_min": 15}
+    for key in ("rafael", "calvin", "cody"):
+        cfg = {"key": key}
+        fires = [m for m in range(0, 60, C.WAKE_MINUTES)
+                 if R._dest_due(dest, dt.datetime(2026, 9, 1, 13, m), cfg=cfg)]
+        assert len(fires) == 4                      # four an hour, exactly
+        gaps = {b - a for a, b in zip(fires, fires[1:])}
+        assert gaps == {15}                         # evenly spaced
+
+
+def test_the_offset_is_stable_across_processes():
+    """hash() is salted per interpreter — an office's slot must not move on
+    every tick."""
+    assert C.office_offset({"key": "cody"}) == C.office_offset({"key": "cody"})
+    assert C.office_offset({"key": ""}) == 0
+
+
+def test_fixed_times_are_never_staggered():
+    """'First Knocks 2:00 PM' means 2:00, not 2:05."""
+    d = {"kind": "imessage", "cadence_min": 0, "slots": ["14:00"]}
+    for key in ("rafael", "calvin", "cody"):
+        cfg = {"key": key}
+        assert R._dest_due(d, dt.datetime(2026, 9, 1, 14, 0), cfg=cfg) is True
+        assert R._dest_due(d, dt.datetime(2026, 9, 1, 14, 5), cfg=cfg) is False
+
+
+def test_the_wake_divides_every_cadence_we_offer():
+    for m in S.CADENCE_CHOICES:
+        assert m % C.WAKE_MINUTES == 0
+
+
+# --- one session per tick, not two per office -------------------------------
+
+def test_the_tick_pulls_every_due_office_in_one_session(monkeypatch):
+    """The refactor that makes twenty owners possible: pull_offices_days is
+    called ONCE with every due office, not once per office."""
+    calls = []
+
+    def _fake_pull(jobs, verbose=True, profile_dir=None):
+        calls.append(list(jobs))
+        return [(name, {}, None) for name, *_ in jobs]
+
+    import automations.rashad_metrics.knocks_pull as KP
+    monkeypatch.setattr(KP, "pull_offices_days", _fake_pull)
+    monkeypatch.setattr("automations.knocks_intraday.run.compare_office",
+                        lambda: "")
+    plan = [({"key": "a", "name": "Office A", "campaign_id": "3"}, "1:00 PM"),
+            ({"key": "b", "name": "Office B", "campaign_id": "2"}, "1:00 PM"),
+            ({"key": "c", "name": "Office C"}, "1:00 PM")]
+    R.pull_boards_many(plan, dt.date(2026, 9, 1), pathlib.Path("/tmp"))
+    assert len(calls) == 1                       # ONE session, not three
+    assert [j[0] for j in calls[0]] == ["Office A", "Office B", "Office C"]
+    assert calls[0][0][2] == "3"                 # each keeps its own campaign
+    assert calls[0][1][2] == "2"
+
+
+def test_two_offices_sharing_one_ownerville_name_are_not_confused(monkeypatch):
+    """Jay Turnage is TWO offices — jay_att and jay_ew — with one OwnerVille
+    name and two campaigns. Matching results by name would hand both reports
+    the same rows."""
+    day = dt.date(2026, 9, 1)
+
+    def _fake_pull(jobs, verbose=True, profile_dir=None):
+        # Distinct rows per JOB, in the order given.
+        return [(name, {day: [{"Rep": "%s-%d" % (name, i)}]}, None)
+                for i, (name, *_rest) in enumerate(jobs)]
+
+    import automations.rashad_metrics.knocks_pull as KP
+    monkeypatch.setattr(KP, "pull_offices_days", _fake_pull)
+    monkeypatch.setattr("automations.knocks_intraday.run.compare_office",
+                        lambda: "")
+    monkeypatch.setattr(R, "_render_board",
+                        lambda cfg, rows, extra, day, out_dir, slot: rows)
+    plan = [({"key": "jay_att", "name": "Jay Turnage", "campaign_id": "3"}, ""),
+            ({"key": "jay_ew", "name": "Jay Turnage", "campaign_id": "40"}, "")]
+    got = R.pull_boards_many(plan, day, pathlib.Path("/tmp"))
+    assert got["jay_att"][1] != got["jay_ew"][1]
