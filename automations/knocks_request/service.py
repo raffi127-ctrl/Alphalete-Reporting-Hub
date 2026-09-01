@@ -492,16 +492,69 @@ def board_for(office: str, target: Optional[dt.date] = None,
 
     from automations.total_knocks import render as knocks_render
     extra = [(compare, chan_rows)] if chan_rows else []
+    apps = _apps_for(canonical, days, logfn=logfn)
     # An NDS office gets a PAIR of boards and no comparison line; the shape
     # decides, so a fiber office that goes wireless needs no config change.
     b.pngs, b.shape = knocks_render.render_knocks_boards(
         target, rows=rows, out_dir=OUT_DIR / _slug(canonical),
-        title_suffix=canonical, end=end, extra_totals=extra)
+        title_suffix=canonical, end=end, extra_totals=extra, apps=apps)
     b.png = b.pngs[0]
     if extra and b.shape == knocks_render.SHAPE_HOUSE:
         b.compared_to = compare
     logfn(f"board -> {b.png}")
     return b
+
+
+def _apps_for(canonical: str, days: "list", *, logfn=print):
+    """{rep: apps} for this office over `days`, or None to leave the columns off.
+
+    READS THE SAVED CROSSTAB. NEVER DOWNLOADS. Raf 2026-09-01: "have it where
+    Lucy pulls the product sales summary for everybody for last week … it's
+    just checking the saved report that it pulled for everybody."
+
+    The first version pulled Tableau per request. That is one Tableau hit every
+    time somebody types /knocks — the access budget Grant flagged — and Megan
+    measured it at 5-7 minutes added to the reply. The weekly board already
+    downloads this exact org-wide crosstab once a week for every owner, so the
+    file is sitting there; the request just reads it.
+
+    NO APPS FOR TODAY, by Raf's own reasoning: "if I'm checking for today only,
+    then it doesn't need to pull the product sales summary because obviously
+    it's not updated for today." A today-shaped span gets the board without the
+    columns rather than three columns of stale or empty numbers.
+
+    None on anything unexpected — a missing file, a week not yet pulled, a
+    parse failure. Apps are an enrichment; the knock board is the answer.
+    """
+    from automations.weekly_knock_dispositions import apps as A
+    from automations.focus_office_att.aliases import load_aliases
+    from automations.shared.report_week import week_ending
+    try:
+        if central_today() in set(days):
+            logfn("apps: span includes today — the product sales summary is "
+                  "not updated for today, so the apps columns stay off")
+            return None
+        weeks = {week_ending(d) for d in days}
+        if len(weeks) != 1:
+            logfn("apps: the span crosses a week boundary — columns left off "
+                  "rather than counting part of one week")
+            return None
+        we_sunday = weeks.pop()
+        # The path apps.download writes; we only ever READ it.
+        pss_path = A.OUT_DIR / f"pss_rep_{we_sunday.isoformat()}.csv"
+        if not pss_path.exists():
+            logfn(f"apps: no saved crosstab for the week ending {we_sunday} "
+                  f"— columns left off (nothing is downloaded on a request)")
+            return None
+        got = A.rep_apps_for_owner(pss_path, canonical, load_aliases(),
+                                   days=[A.day_name(d) for d in days])
+        logfn(f"apps: {len(got)} rep(s) from the saved crosstab "
+              f"(week ending {we_sunday})")
+        return got or None
+    except Exception as e:  # noqa: BLE001 — apps never cost the board
+        logfn(f"apps: unavailable ({type(e).__name__}: {str(e)[:160]}) — "
+              "board goes out without the apps columns")
+        return None
 
 
 def access_gap(exc: BaseException) -> bool:

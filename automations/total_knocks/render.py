@@ -820,6 +820,14 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     filename. The ROWS must already be folded (total_knocks.aggregate) — this
     only labels them. None / same-as-target renders exactly as it always did.
 
+    `apps` (optional): {rep: apps} — forwarded to the house board, which is
+    where Total Apps / Average App per Rep / Avg Talk To's per App live. THIS
+    ROUTER accepts it because callers reach the boards through here; passing it
+    to render_total_knocks only meant /knocks raised
+    "render_knocks_boards() got an unexpected keyword argument 'apps'" the
+    moment it was wired (2026-08-31). Wireless and gaps-only shapes have no
+    talk-to block to divide, so they ignore it.
+
     `sort_by`: "knocks" (DEFAULT since 2026-08-31) puts the highest Total
     Knocks first; "rep" is alphabetical. These boards are read as
     leaderboards — Raf asked for the ranking on his, and Megan pointed at
@@ -1661,7 +1669,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          extra_totals=None,
                          rate_columns: bool = True,
                          knocks_green_at: "int | None" = None,
-                         sort_by: str = "knocks"
+                         sort_by: str = "knocks",
+                         apps: "dict | None" = None
                          ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
@@ -1712,7 +1721,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      rate_columns=rate_columns,
                                      knocks_green_at=knocks_green_at,
-                                     sort_by=sort_by,
+                                     sort_by=sort_by, apps=apps,
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,
                                      extra_totals=extra_totals)], shape)
