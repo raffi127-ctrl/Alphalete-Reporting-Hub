@@ -5989,6 +5989,36 @@ def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     return True, "stored %s and verified: %s" % (user, tail)
 
 
+def _action_appstream_whoami_account(args: str) -> tuple[bool, str]:
+    """Which AppStream account is a NAMED login, and what can it see? READ ONLY.
+
+      appstream_whoami_account <name> [office,office,...]
+
+    Drives a real login as that account and reports the Account No it lands on
+    plus which offices answer. The password is resolved ON the machine from
+    appstream-accounts.json, so it never travels through a queue row.
+
+    WHY (Megan 2026-08-31): the scoped push login showed no activity stamps in
+    AppStream, and the run log could say only that no console ever rendered —
+    which cannot tell "the account does not exist", "wrong password", "no office
+    access" and "Cloudflare blocked it" apart. Those need different fixes, so
+    guessing between them is worse than asking."""
+    import shlex
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]})"
+    if not parts:
+        return False, "need: appstream_whoami_account <name> [office,office,...]"
+    cmd = [sys.executable, "-m", "automations.shared.appstream_whoami",
+           "--account", parts[0], "--force"]
+    if len(parts) > 1:
+        cmd += ["--offices", parts[1]]
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60,
+                       log_name="appstream-whoami-account.log")
+    return ok, res.split("·")[-1].strip()[:400]
+
+
 def _action_set_appstream_account(args: str) -> tuple[bool, str]:
     """Install a NAMED AppStream login on THIS machine.
 
@@ -6515,6 +6545,7 @@ ACTIONS = {
     "appstream_clear_session": _action_appstream_clear_session,
     "set_appstream_alt_creds": _action_set_appstream_alt_creds,
     "set_appstream_account": _action_set_appstream_account,
+    "appstream_whoami_account": _action_appstream_whoami_account,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_tracker_mirror": _action_install_tracker_mirror,
     "install_day_orchestrator": _action_install_day_orchestrator,
