@@ -83,6 +83,36 @@ def restart_holder() -> bool:
         return False
 
 
+def _read_password(username: str):
+    """The password, or None when there is no way to ask for it.
+
+    `getpass` needs a real terminal. Run through a Run button, a pipe, or `ssh`
+    without `-t` and it raises a bare EOFError/termios traceback — which reads
+    as "the command is broken" rather than "it had nowhere to draw a prompt".
+    Megan hit exactly that on 2026-09-01 and reported "nothing popped up", so a
+    no-TTY run has to say what to do instead of dumping a stack trace.
+
+    A piped password still works (`... | python -m ... rhidalgo`), because that
+    is a deliberate choice by the caller, not an accident of the terminal."""
+    try:
+        return getpass.getpass("ownerville password for %s (not shown): "
+                               % username)
+    except (EOFError, OSError):
+        pass
+    if not sys.stdin.isatty():
+        line = sys.stdin.readline()
+        if line.strip():
+            return line.rstrip("\n")
+    print("✗ no terminal to ask for the password on.\n"
+          "  Open Terminal (not a Run button, not a pipe) and run:\n"
+          "    ssh -t alphalete@alphaletes-mac-mini.local 'cd ~/recruiting-report "
+          "&& PYTHONPATH=. .venv/bin/python -m "
+          "automations.shared.set_ownerville_login %s'\n"
+          "  The -t is what gives the prompt somewhere to appear.\n"
+          "  Nothing was changed." % username)
+    return None
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: python -m automations.shared.set_ownerville_login "
@@ -92,8 +122,9 @@ def main() -> int:
     if not username or username.startswith("-"):
         print("✗ pass the ownerville username, e.g. rhidalgo")
         return 2
-    password = getpass.getpass("ownerville password for %s (not shown): "
-                               % username)
+    password = _read_password(username)
+    if password is None:
+        return 2
     if not password.strip():
         print("✗ no password entered — nothing changed")
         return 2
