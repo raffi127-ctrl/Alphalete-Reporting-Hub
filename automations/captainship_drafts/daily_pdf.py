@@ -34,7 +34,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from automations.captainship_drafts.pdf_pages import compose
+from automations.captainship_drafts.pdf_pages import DAILY_MAX_PX, compose
 
 PDF_DIR = Path(__file__).resolve().parents[2] / "output" / "daily_dispositions"
 
@@ -127,7 +127,7 @@ def build(captain, today: dt.date, pairs, day: Optional[dt.date] = None,
         out: List[Tuple[Path, str]] = []
 
         combined = base / pdf_path(captain.key, day).name
-        compose(pages, combined)
+        compose(pages, combined, max_px=DAILY_MAX_PX)
         out.append((combined, attachment_name(
             f"{captain.display_name}'s Captainship", day)))
 
@@ -139,7 +139,7 @@ def build(captain, today: dt.date, pairs, day: Optional[dt.date] = None,
                 slug += "_2"
             seen.add(slug)
             path = base / pdf_path(captain.key, day, slug).name
-            compose([(who, png)], path)
+            compose([(who, png)], path, max_px=DAILY_MAX_PX)
             out.append((path, attachment_name(who, day)))
 
         kb = sum(p.stat().st_size for p, _n in out) // 1024
