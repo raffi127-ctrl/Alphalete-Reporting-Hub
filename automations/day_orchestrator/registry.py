@@ -101,7 +101,10 @@ def _build_report(rid: str, r: dict) -> Report:
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:
-    raw = json.loads(Path(path).read_text())
+    # encoding= is not optional: the config is full of em-dashes and arrows,
+    # and read_text() defaults to the LOCALE codec — cp1252 on the Windows
+    # machines — so every config read there died on the first non-ASCII note.
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
     reports: Dict[str, Report] = {}
     for rid, r in raw.get("reports", {}).items():
         if not r.get("on_scheduler", False):
