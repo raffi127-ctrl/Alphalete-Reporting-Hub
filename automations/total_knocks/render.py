@@ -256,9 +256,17 @@ def _with_derived(cols: list) -> list:
     # COL_REPS_KNOCKING is NOT inserted any more — its number moved into the
     # "#" column on the left (Raf 2026-08-30). The constant stays because the
     # aggregate helpers still write the value under that name.
-    out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PER_REP)
-    out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PCT)
-    out.insert(out.index(COL_TOTAL_GAPS) + 1, COL_HRS_KNOCKING)
+    #
+    # INSERT ONLY WHAT THE COLUMN SET ACTUALLY HAS. The wireless grid carries
+    # no Talk-To column at all, and an unconditional .index() raises ValueError
+    # on it — which is what kept the wireless shape on the flat renderer, and
+    # therefore without the averages or Chan's comparison line. A derived
+    # column with no source column is simply not owed.
+    if COL_TOTAL_TALK_TO in out:
+        out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PER_REP)
+        out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PCT)
+    if COL_TOTAL_GAPS in out:
+        out.insert(out.index(COL_TOTAL_GAPS) + 1, COL_HRS_KNOCKING)
     return out
 
 
@@ -355,6 +363,7 @@ WIRELESS_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
                            COL_GAPS, COL_TOTAL_GAPS,
                            COL_NO_ANSWER, COL_NOT_INTERESTED, COL_COME_BACK,
                            COL_INACCESSIBLE, COL_DO_NOT_KNOCK]
+WIRELESS_KNOCKS_HEADERS = _with_derived(WIRELESS_KNOCKS_COLUMNS)
 
 # ---- layout ----
 # EVERY BOARD IS DRAWN AT 2x DENSITY (Megan's standing rule, 2026-08-30:
@@ -1401,10 +1410,15 @@ def _combined_sub(header: list[str], rows: list[list[str]],
         # it on the rows that actually aggregate a roster.
         # Talk To % is the one derived cell a REP row carries: it's that rep's
         # own conversion rate, not a repeat of a count next to it.
+        # A column set without Total Talk to (the wireless grid) owes no
+        # Talk-To percentage — reading it unconditionally is a KeyError, which
+        # is the other half of what kept that shape off this renderer.
         derived = {COL_HRS_KNOCKING: hrs, COL_TALK_TO_PER_REP: "",
                    COL_REPS_KNOCKING: "",
-                   COL_TALK_TO_PCT: _pct(base[src[COL_TOTAL_TALK_TO]],
-                                         base[src[COL_TOTAL_KNOCKS]])}
+                   COL_TALK_TO_PCT: (
+                       _pct(base[src[COL_TOTAL_TALK_TO]],
+                            base[src[COL_TOTAL_KNOCKS]])
+                       if COL_TOTAL_TALK_TO in src else "")}
         # Built whole, BEFORE the sort — assembling by header name keeps every
         # derived cell tied to its own rep no matter how the table is ordered.
         sub.append([derived[c] if c in derived
@@ -1475,7 +1489,12 @@ def _combined_totals(label: str, sub: list[list[str]],
         return f"{h % 12 or 12}:{mm:02d} {'AM' if h < 12 else 'PM'}"
 
     out_cols = list(out_cols or COMBINED_KNOCKS_HEADERS)
-    tt_at = out_cols.index(COL_TOTAL_TALK_TO)
+    # OPTIONAL, not assumed. The wireless grid has no Total Talk to column, and
+    # _with_derived therefore adds neither Talk To % nor Talk To's per Rep — so
+    # this index is never read on that shape. Taking it unconditionally just
+    # raised before the totals row was ever built.
+    tt_at = (out_cols.index(COL_TOTAL_TALK_TO)
+             if COL_TOTAL_TALK_TO in out_cols else None)
     tk_at = out_cols.index(COL_TOTAL_KNOCKS)
     totals: list[str] = []
     for ci, c in enumerate(out_cols):
@@ -1721,10 +1740,26 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             base_cols=ENERGYWELL_KNOCKS_COLUMNS,
             out_cols=ENERGYWELL_KNOCKS_HEADERS)], shape)
     elif shape == SHAPE_WIRELESS:
-        first = render_wireless_total_knocks(target, rows=rows,
-                                             out_dir=out_dir,
-                                             title_suffix=title_suffix,
-                                             end=end, date_text=date_text)
+        # THROUGH THE SAME RENDERER as the house and Energy Wells boards, for
+        # the reason the Energy Wells shape was moved here on 2026-08-30
+        # ("it seems it's missing like the averages and Chan's comparison"):
+        # the flat wireless renderer takes neither extra_totals nor
+        # rate_columns, so whichever shape an office's grid happened to come
+        # back as decided whether its board had them.
+        #
+        # That is not a stable property of an office. Calvin's grid read
+        # `energywell` in the afternoon and `wireless` in the evening, and his
+        # board lost Chan's line and the averages when it flipped — twice
+        # reported as "calvin is still missing the chan comparison row"
+        # (2026-09-01). One renderer means the shape decides the COLUMNS and
+        # nothing else.
+        return ([render_total_knocks(
+            target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
+            knocks_green_at=knocks_green_at, sort_by=sort_by,
+            title_suffix=title_suffix, end=end, date_text=date_text,
+            extra_totals=extra_totals,
+            base_cols=WIRELESS_KNOCKS_COLUMNS,
+            out_cols=WIRELESS_KNOCKS_HEADERS)], shape)
     else:
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      rate_columns=rate_columns,
