@@ -9443,6 +9443,28 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 10
+    },
+    "appstream_selfheal_check": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_off_scheduler_note": "READ-ONLY probe of the pre-batch self-heal: reports how much life the saved rqst token has and whether it clears the 4am batch. Changes nothing \u2014 the healing run is the 3:15am LaunchAgent (com.alphalete.appstream-selfheal). Exists so the self-heal's code path can be proven on the machine BEFORE 3am rather than discovered broken at 3:15 with the batch 45 minutes out.",
+      "display_name": "AppStream self-heal (check only)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.shared.appstream_selfheal"
+      ],
+      "base_args": [
+        "--check"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10
     }
   },
   "read_only_standalone": {
