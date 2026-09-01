@@ -241,6 +241,110 @@ def post_slack(flags: list, newbies: list, weeks: list, today: dt.date,
         logfn(f"  Slack: NO se posteó ({type(e).__name__}: {e}). El texto era:\n{text}")
 
 
+def score(boxes: list, live_sun: dt.date, weeks: int = DEFAULT_WEEKS):
+    """(flags, newbies) for an already-read board. Split out of main() so the
+    post-rollover hook scores exactly what the CLI scores — one rule, one
+    implementation, with no second copy to drift."""
+    # The guard against pulling a rep who just CHANGED campaigns: where is this
+    # person still selling RIGHT NOW? Recent means the live week or the last
+    # closed one — a positive number from two years ago says nothing about
+    # whether they moved, and counting it would flag every veteran as "active".
+    #
+    # STRUCTURALLY BLIND ON A ONE-BOX TAB. `elsewhere` can only see the OTHER
+    # boxes on the SAME tab, so on a board with a single leaderboard (the
+    # Country Sales Board) it is always empty and the warning that saved Kobe
+    # Cireus cannot fire. There the cross-check has to be done by hand against
+    # captain_gate.EXCLUDE / roster_sync.EXCLUDE / distro_remove.REMOVALS.
+    closed_all = sorted({d for b in boxes for d, _c in b["weeks"] if d < live_sun},
+                        reverse=True)
+    recent = [live_sun] + closed_all[:1]
+    active = set()
+    for b in boxes:
+        for rep in b["reps"]:
+            if any((rep["vals"].get(d) or 0) > 0 for d in recent):
+                active.add((norm(rep["name"]), b["owner"], b["section"]))
+    active_names = {n for n, _o, _s in active}
+    excluded = {norm(x) for x in roster_sync.EXCLUDE}
+
+    flags, newbies = [], []
+    for b in boxes:
+        box_closed = [d for d, _c in b["weeks"] if d < live_sun]
+        for rep in b["reps"]:
+            key = norm(rep["name"])
+            n = streak(rep["vals"], box_closed)
+            if n < weeks:
+                continue
+            ever = [d for d in box_closed if (rep["vals"].get(d) or 0) > 0]
+            item = {"name": rep["name"], "row": rep["row"], "owner": b["owner"],
+                    "section": b["section"], "streak": n,
+                    "last_sale": f"WE {ever[0]:%m.%d}" if ever else "—",
+                    # OTHER boxes only — a rep is always "active" in the box
+                    # being judged if they ever sold there, and listing it makes
+                    # the warning self-referential.
+                    "elsewhere": sorted({f"{o}/{s}" for nm, o, s in active
+                                         if nm == key
+                                         and (o, s) != (b["owner"], b["section"])}),
+                    "excluded": key in excluded}
+            (newbies if not ever and key not in active_names else flags).append(item)
+    return flags, newbies
+
+
+def after_rollover(sheet_id: str, tab: str, *, today=None,
+                   weeks: int = DEFAULT_WEEKS, dry_run: bool = False,
+                   logfn=print) -> int:
+    """Score a board that has JUST rolled and post the proposal. Returns how many
+    rows were flagged. NEVER raises — the caller is a board fill.
+
+    WHY IT HANGS OFF THE ROLL (Eve, 2026-09-01): "incluilo en el proceso de roleo
+    de los martes, no le crees tarjeta aparte". A separate Tuesday card had to
+    GUESS that the board had already rolled; it only worked because its `order`
+    happened to sit after the board's, an ordering invisible from either entry
+    and one that did not exist at all for a second board. Hanging it off the roll
+    makes the precondition the trigger: the rule reads the board in the one state
+    it is defined on — the freshly-frozen literals — and a week the board never
+    rolled is a week the rule never runs on stale columns.
+
+    It PROPOSES ONLY. Nothing here removes a row; `roster_remove` stays a
+    separate, deliberate step, which is exactly what the Slack post says."""
+    try:
+        today = today or dt.date.today()
+        ws = _retry(lambda: open_by_key(sheet_id).worksheet(tab))
+        grid = _retry(lambda: ws.get("A1:ZZ2200",
+                                     value_render_option="UNFORMATTED_VALUE")) or []
+        boxes = read_boxes(grid, today)
+        if not boxes:
+            logfn("  zero-rule: no leaderboard on %r — skipped" % (tab,))
+            return 0
+        live_sun = wk.reporting_sunday(today)
+        late = unrolled_boxes(boxes, live_sun)
+        if late:
+            # Called right after a roll, so this should be impossible. When it
+            # is not, the roll did not land, and scoring would read a live
+            # formula as a closed week. Say so and post nothing.
+            logfn("  zero-rule: %r still reads WE %s (live is WE %s) — the roll "
+                  "did not land, not scoring"
+                  % (tab, max(late.values()).strftime("%m.%d"),
+                     live_sun.strftime("%m.%d")))
+            return 0
+        flags, newbies = score(boxes, live_sun, weeks)
+        closed = sorted({d for b in boxes for d, _c in b["weeks"] if d < live_sun},
+                        reverse=True)
+        logfn("  zero-rule: %d fila(s) para sacar, %d sin historial"
+              % (len(flags), len(newbies)))
+        for f in sorted(flags, key=lambda x: (-x["streak"], x["name"])):
+            logfn("     %-24s %-26s %d sem · últ. venta %s"
+                  % (f["name"][:24], f["section"][:26], f["streak"], f["last_sale"]))
+        if dry_run:
+            logfn("  zero-rule: dry-run — no se postea")
+            return len(flags)
+        post_slack(flags, newbies, closed[:weeks], today, logfn=logfn)
+        return len(flags)
+    except Exception as e:                  # noqa: BLE001 — advisory, never fatal
+        logfn("  zero-rule: SALTEADO (%s: %s) — el roleo y el fill ya quedaron"
+              % (type(e).__name__, str(e)[:120]))
+        return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="org_sales_board.zero_streak")
     ap.add_argument("--weeks", type=int, default=DEFAULT_WEEKS,
@@ -293,35 +397,8 @@ def main(argv=None) -> int:
     # person still selling RIGHT NOW? Recent means the live week or the last
     # closed one — a positive number from two years ago says nothing about
     # whether they moved, and counting it would flag every veteran as "active".
-    recent = [d for d in ([live_sun] + closed[:1])]
-    active = set()
-    for b in boxes:
-        for rep in b["reps"]:
-            if any((rep["vals"].get(d) or 0) > 0 for d in recent):
-                active.add((norm(rep["name"]), b["owner"], b["section"]))
-    active_names = {n for n, _o, _s in active}
-    excluded = {norm(x) for x in roster_sync.EXCLUDE}
-
-    flags, newbies, rows = [], [], []
-    for b in boxes:
-        box_closed = [d for d, _c in b["weeks"] if d < live_sun]
-        for rep in b["reps"]:
-            key = norm(rep["name"])
-            n = streak(rep["vals"], box_closed)
-            if n < args.weeks:
-                continue
-            ever = [d for d in box_closed if (rep["vals"].get(d) or 0) > 0]
-            item = {"name": rep["name"], "row": rep["row"], "owner": b["owner"],
-                    "section": b["section"], "streak": n,
-                    "last_sale": f"WE {ever[0]:%m.%d}" if ever else "—",
-                    # OTHER boxes only — a rep is always "active" in the box
-                    # being judged if they ever sold there, and listing it makes
-                    # the warning self-referential.
-                    "elsewhere": sorted({f"{o}/{s}" for nm, o, s in active
-                                         if nm == key
-                                         and (o, s) != (b["owner"], b["section"])}),
-                    "excluded": key in excluded}
-            (newbies if not ever and key not in active_names else flags).append(item)
+    flags, newbies = score(boxes, live_sun, args.weeks)
+    rows = []
 
     def show(items, title):
         if not items:

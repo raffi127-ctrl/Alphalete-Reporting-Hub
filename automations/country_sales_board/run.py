@@ -218,6 +218,19 @@ def main() -> int:
     if rollover_summary and rollover_summary.get("rolled"):
         print(f"  rolled {rollover_summary['closed']} -> "
               f"{rollover_summary['new_label']}")
+        # TWO-WEEK ZERO RULE — same hook as the ORG board, for the same reason
+        # (Eve 2026-09-01). Runs only on the day the board actually rolls, so
+        # it reads the week that just closed as the literal it now is. Applied
+        # by hand to this tab for the first time on 2026-09-01 (10 reps, 30
+        # rows); from here it proposes itself. PROPOSES ONLY — nothing is
+        # removed without `roster_remove`.
+        #
+        # WATCH OUT on this board: its `elsewhere` warning is structurally
+        # blind, because the tab has a single leaderboard and that check can
+        # only see other boxes on the SAME tab. Cross-check a name by hand
+        # before removing it.
+        from automations.org_sales_board import zero_streak as _zs
+        _zs.after_rollover(SHEET_ID, tab, today=today, dry_run=args.dry_run)
     print(f"=== {len(plan.updates)} cell write(s) "
           f"{'planned' if args.dry_run else 'applied'} — done ===")
     # Unmatched board ICDs are WARNED, never a non-zero exit. Verified
