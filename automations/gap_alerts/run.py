@@ -805,7 +805,8 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
     (jay_att and jay_ew) with one OwnerVille name and two campaigns, so a
     name-keyed dict would collide them and hand both reports the same rows.
     """
-    from automations.rashad_metrics.knocks_pull import pull_offices_days
+    from automations.rashad_metrics.knocks_pull import (
+        campaign_for_office, pull_offices_days)
     from automations.knocks_intraday.run import compare_office
 
     out: Dict = {}
@@ -816,14 +817,23 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
         jobs.append((cfg["name"], [day], cfg.get("campaign_id") or None))
         order.append(cfg["key"])
     # Chan's comparison line, pulled ONCE for every office that carries it —
-    # never once per office. It keeps its own campaign (he is fiber), so no
-    # third element.
+    # never once per office.
+    #
+    # PIN HIS CAMPAIGN EXPLICITLY. "No third element" does not mean "his own
+    # campaign" — the ownerville campaign is a sticky SESSION global, so it
+    # means "whatever the office before him in this batch pinned". Chan is
+    # fiber, so under Raf's board (campaign 3) he came back fine and under
+    # Calvin's (Energy Wells, 40) he came back EMPTY — and an empty compare
+    # pull raises nothing, so his line just silently vanished from Calvin's
+    # board while staying on Raf's. That is the drift knocks_pull.
+    # campaign_for_office already warns about, arriving through the one job
+    # that opted out of pinning.
     compare = compare_office() if any(C.compares(c) for c, _ in plan) else ""
     compare_i = None
     if compare and compare.strip().lower() not in {
             c["name"].strip().lower() for c, _ in plan}:
         compare_i = len(jobs)
-        jobs.append((compare, [day]))
+        jobs.append((compare, [day], campaign_for_office(compare)))
 
     pulled = pull_offices_days(jobs, verbose=False,
                                profile_dir=str(C.PROFILE_DIR))
@@ -836,6 +846,14 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
                  % (compare, type(_err).__name__, str(_err)[:300]))
         else:
             chan_rows = (_days or {}).get(day) or []
+            if not chan_rows:
+                # An empty compare pull is not an error, so nothing above says
+                # a word — and the line simply is not drawn. That is exactly
+                # how it disappeared from Calvin's board for a whole afternoon
+                # while Raf's kept it: silence looked like success.
+                _log("  ⚠ %s comparison pull returned NO rows for %s "
+                     "(campaign=%s) — boards go out without the line"
+                     % (compare, day, campaign_for_office(compare) or "(none)"))
 
     for i, (cfg, slot) in enumerate(plan):
         if i >= len(pulled):
