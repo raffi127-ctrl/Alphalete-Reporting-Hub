@@ -193,7 +193,27 @@ def _navigate(page, rqst: str, target_mdy: str, *, attempts: int = 3) -> None:
 
 
 def _header_index(page) -> dict:
-    """Map normalized source-header text → 0-based column index, read live."""
+    """Map normalized source-header text → 0-based column index, read live.
+
+    WAITS for the header row first. It used to read the instant the navigation
+    returned, so a grid that had not finished building yielded {} — and an
+    empty index makes EVERY expected column "missing", which the callers raise
+    on. That is an intermittent failure that looks exactly like a permanent
+    one: Chan Park's comparison line vanished from Raf's board on some ticks
+    and came back on the next ("chan's numbers are gone again" … "now it's
+    back??", 2026-08-31).
+
+    Best-effort: a stub page in tests has no wait_for_function, and a genuinely
+    absent table should still fall through to the caller's own error rather
+    than a timeout here.
+    """
+    try:
+        page.wait_for_function(
+            "() => document.querySelectorAll("
+            "  '#table-dispositions thead th, #table-dispositions thead td'"
+            ").length > 0", timeout=15000)
+    except Exception:  # noqa: BLE001 — the read below reports what it finds
+        pass
     headers = page.evaluate(
         """() => {
             const t = document.querySelector('#table-dispositions');
