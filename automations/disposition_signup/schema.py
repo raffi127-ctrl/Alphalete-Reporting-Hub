@@ -54,7 +54,10 @@ CODY_SLOT_LABELS = dict(_cody_slots())
 def slots_label(slots: "Optional[List[str]]" = None) -> str:
     """'1st knock 2:00 PM · money lap 5:15 PM · last knock 9:00 PM'."""
     slots = slots or CODY_SLOTS
-    return " · ".join("%s %s" % (CODY_SLOT_LABELS.get(t, t).lower(), _ampm(t))
+    # Title Case, the way knocks_intraday already titles these moments on the
+    # board itself ("First Knocks" / "Money Lap" / "End of Day"). They are the
+    # names of the moments, not a description of them.
+    return " · ".join("%s %s" % (CODY_SLOT_LABELS.get(t, t), _ampm(t))
                       for t in slots)
 
 

@@ -238,7 +238,8 @@ def request_view() -> None:
         day_start = _time_picker("Monday-Friday, from",
                                  S.DEFAULT_HOURS["day_start"], "day_start")
     with h2:
-        day_end = _time_picker("until", S.DEFAULT_HOURS["day_end"], "day_end")
+        day_end = _time_picker("Monday-Friday, until",
+                               S.DEFAULT_HOURS["day_end"], "day_end")
     saturday = st.checkbox("We knock on Saturdays too", value=True)
     sat_start = S.DEFAULT_HOURS["sat_start"]
     sat_end = S.DEFAULT_HOURS["sat_end"]
@@ -247,7 +248,7 @@ def request_view() -> None:
         with s1:
             sat_start = _time_picker("Saturday, from", sat_start, "sat_start")
         with s2:
-            sat_end = _time_picker("until ", sat_end, "sat_end")
+            sat_end = _time_picker("Saturday, until", sat_end, "sat_end")
     st.caption("Sundays are off for everyone.")
 
     st.divider()
@@ -368,7 +369,10 @@ def _request_done_view() -> None:
                    "and dispositions start arriving on their own. Nothing else "
                    "for you to do — go sell something. 🐾🚀"
                    % (" (updated)" if res.get("updated") else ""))
-    st.markdown("**What you'll get, %s:**" % d["_derived"]["cadence"].lower())
+    # Each route already carries its own timing, and with several destinations
+    # the summary line was reading "What you'll get, every 15 minutes / once an
+    # hour:" — a sentence nobody can parse. The list says it better.
+    st.markdown("**What you'll get:**")
     st.caption("During your field hours: %s" % d["_derived"]["hours"])
     for r in d["_derived"]["routes"]:
         st.markdown("- %s" % r)

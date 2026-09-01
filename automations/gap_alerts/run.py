@@ -263,6 +263,44 @@ def _dest_due(dest: Dict, now: Optional[dt.datetime] = None,
     return (anchor % cadence) == 0
 
 
+def _intraday_covers(dest: Dict, cfg: Optional[Dict] = None,
+                     now: Optional[dt.datetime] = None) -> bool:
+    """Is knocks_intraday ALREADY posting this exact board to this exact Slack
+    channel at this exact moment?
+
+    It posts End of Day (9 PM) to every enrolled office's channel and First
+    Knocks / Money Lap to Cody's, on the office's own clock — the same board,
+    from the same pull, drawn by the same renderer. An office that enrolls here
+    for a 9 PM Slack post and is already on that roster would get two identical
+    images seconds apart, which reads as a broken alert rather than a thorough
+    one (Megan 2026-09-01: "they should only get 1").
+
+    iMessage and email are never covered: knocks_intraday only posts to Slack.
+
+    Best-effort — if the roster can't be read we send. A duplicate is annoying;
+    a board that silently stops arriving is the failure that matters.
+    """
+    if dest.get("kind") != "slack":
+        return False
+    channel = C.dest_channel(dest)
+    if not channel:
+        return False
+    try:
+        from automations.knocks_intraday import roster as _ros
+        from automations.knocks_intraday.schedule import SLOTS
+    except Exception:  # noqa: BLE001
+        return False
+    local = C.office_now(cfg or {}, now or dt.datetime.now())
+    anchor = (local.hour, local.minute - (local.minute % C.TICK_MINUTES))
+    slot = next((s for s in SLOTS if (s.hour, s.minute) == anchor), None)
+    if slot is None:
+        return False
+    try:
+        return channel in {o.channel_id for o in _ros.enrolled(slot.key)}
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _cadence_due(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
     """Is THIS office owed a board on this tick?
 
@@ -831,6 +869,15 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         dests = C.destinations(cfg)
         due = [d for d in dests
                if (only or force) or _dest_due(d, cfg=cfg)]
+        # Drop anything the intraday job is about to post to that same channel.
+        # Checked even on a hand-run: --only is for re-sending a board, never
+        # for sending the room two of them.
+        _dupes = [d for d in due if _intraday_covers(d, cfg)]
+        for d in _dupes:
+            _log("%s: %s already gets this board from knocks_intraday right "
+                 "now — skipping so the channel only gets one"
+                 % (cfg["key"], C.dest_label(d)))
+        due = [d for d in due if d not in _dupes]
         if not due:
             _log("%s: nothing due at %s (%s) — skipping"
                  % (cfg["key"], slot,

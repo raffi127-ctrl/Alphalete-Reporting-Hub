@@ -509,14 +509,14 @@ def test_cody_slots_come_from_the_module_that_already_posts_them():
 def test_set_times_is_offered_alongside_the_intervals():
     assert S.CADENCE_PICKER == [15, 30, 60, S.SLOT_CADENCE]
     assert "Set times" in S.cadence_picker_label(S.SLOT_CADENCE)
-    assert "money lap 5:15 PM" in S.cadence_picker_label(S.SLOT_CADENCE)
+    assert "Money Lap 5:15 PM" in S.cadence_picker_label(S.SLOT_CADENCE)
 
 
 def test_a_set_times_destination_carries_its_slots():
     d = S.destination("imessage", name="Crew", cadence_min=S.SLOT_CADENCE)
     assert d["slots"] == ["14:00", "17:15", "21:00"]
     assert S.validate_request(_rec(destinations=[d])) == []
-    assert "money lap" in S.dest_label(d)
+    assert "Money Lap" in S.dest_label(d)
 
 
 def test_an_off_quarter_slot_is_refused():
@@ -551,3 +551,43 @@ def test_set_times_uses_the_offices_own_clock():
     east = {"tz": "America/New_York"}
     assert R._dest_due(d, dt.datetime(2026, 9, 1, 13, 0), cfg=east) is True
     assert R._dest_due(d, dt.datetime(2026, 9, 1, 14, 0), cfg=east) is False
+
+
+# --- never two of the same board --------------------------------------------
+
+def test_a_channel_already_on_the_intraday_roster_is_not_double_posted():
+    """knocks_intraday posts End of Day to every enrolled channel. An office
+    that also enrolls HERE for a 9 PM Slack post must get one board, not two
+    (Megan 2026-09-01: "they should only get 1")."""
+    from automations.knocks_intraday import roster as ros
+    chan = ros.enrolled("eod")[0].channel_id
+    dest = {"kind": "slack", "channel_id": chan, "cadence_min": 60}
+    assert R._intraday_covers(dest, {}, dt.datetime(2026, 9, 1, 21, 0)) is True
+    # ...and only at that moment. The rest of the day is ours to post.
+    assert R._intraday_covers(dest, {}, dt.datetime(2026, 9, 1, 19, 0)) is False
+
+
+def test_a_channel_nobody_else_posts_to_is_left_alone():
+    dest = {"kind": "slack", "channel_id": "C0BRANDNEW", "cadence_min": 60}
+    assert R._intraday_covers(dest, {}, dt.datetime(2026, 9, 1, 21, 0)) is False
+
+
+def test_texts_and_email_are_never_deduped():
+    """knocks_intraday only posts to Slack — an owner's chat is not a duplicate
+    of anything."""
+    for kind in ("imessage", "email"):
+        assert R._intraday_covers({"kind": kind, "name": "Crew"}, {},
+                                  dt.datetime(2026, 9, 1, 21, 0)) is False
+
+
+def test_dedupe_respects_the_offices_own_clock():
+    """An Eastern office's 9 PM is 8 PM Central — the duplicate happens on
+    THEIR clock, which is the clock knocks_intraday fires on too."""
+    from automations.knocks_intraday import roster as ros
+    chan = ros.enrolled("eod")[0].channel_id
+    dest = {"kind": "slack", "channel_id": chan, "cadence_min": 60}
+    east = {"tz": "America/New_York"}
+    assert R._intraday_covers(dest, east,
+                              dt.datetime(2026, 9, 1, 20, 0)) is True
+    assert R._intraday_covers(dest, east,
+                              dt.datetime(2026, 9, 1, 21, 0)) is False
