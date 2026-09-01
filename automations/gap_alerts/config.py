@@ -330,6 +330,22 @@ def dest_label(dest: Dict) -> str:
     return "%s:%s" % (kind, where)
 
 
+# WHOSE OwnerVille login each box is supposed to be carrying. Lucy 1 is Raf's,
+# Lucy 2 is Carlos's — the standing rule, now written where the code can check
+# it instead of only in someone's memory.
+#
+# 2026-09-01: Lucy 1's session was switched to Carlos to look at a B2B office.
+# Nothing errored. `is_master_office` compares the name in CONFIG, not the name
+# actually logged in, so Raf's board was pulled from Carlos's office and came
+# back empty, and every impersonation target vanished because Carlos's Office
+# Access list is not Raf's. Boards silently stopped for 40 minutes.
+MACHINE_OWNER = {"Lucy 1": "Rafael Hidalgo", "Lucy 2": "Carlos Hidalgo"}
+
+
+def expected_owner(machine: str = "") -> str:
+    return MACHINE_OWNER.get((machine or this_machine()).strip(), "")
+
+
 def this_machine() -> str:
     """This box's profile name — the same marker mini_control reads. A laptop
     with no marker is 'Lucy 1', which is what it has always been."""

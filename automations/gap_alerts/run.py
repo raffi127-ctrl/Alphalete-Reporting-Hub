@@ -276,6 +276,37 @@ def _dest_due(dest: Dict, now: Optional[dt.datetime] = None,
     return (anchor - C.office_offset(cfg or {})) % cadence == 0
 
 
+def _wrong_account(plan: List, boards: Dict) -> bool:
+    """Does this box look like it is logged into the WRONG OwnerVille account?
+
+    The signature, watched live on 2026-09-01: EVERY office we meant to
+    impersonate comes back "not found in ownerville", because the account we
+    are on has a different Office Access list. On the right account they
+    resolve; on the wrong one none of them do.
+
+    This matters far beyond the missing boards. The MASTER office is whoever is
+    logged in — `is_master_office` compares the name in config, not the session
+    — so on the wrong account that office's board is pulled from a stranger's
+    numbers and labelled with our owner's name. Silence is the good outcome;
+    sending is the bad one. So when this fires the whole tick is abandoned,
+    master office included.
+
+    Needs at least two impersonation targets to call it: one office failing is
+    an office problem, every office failing is a session problem.
+    """
+    imp = [c for c, _s, _d in plan if c.get("ov") == "impersonate"]
+    if len(imp) < 2:
+        return False
+    misses = 0
+    for cfg in imp:
+        err = boards.get(cfg["key"], ([], [], None))[2]
+        if err is None:
+            return False          # one resolved, so the session is fine
+        if "not found" in str(err).lower():
+            misses += 1
+    return misses == len(imp)
+
+
 def _intraday_covers(dest: Dict, cfg: Optional[Dict] = None,
                      now: Optional[dt.datetime] = None) -> bool:
     """Is knocks_intraday ALREADY posting this exact board to this exact Slack
@@ -984,6 +1015,20 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     # live signal and does not.
     gaps_by_key = (gap_rows_many([c for c, _s, _d in plan], day)
                    if day == dt.date.today() else {})
+
+    # THE SESSION IDENTITY CHECK, before anything is sent. See _wrong_account.
+    if _wrong_account(plan, boards):
+        who = C.expected_owner() or "this machine's owner"
+        msg = ("WRONG OWNERVILLE ACCOUNT on %s — every office we tried to "
+               "impersonate came back 'not found'. This box must be logged in "
+               "as %s. NOTHING was sent this tick, including the master "
+               "office's board: on the wrong account that board is another "
+               "office's numbers under our owner's name."
+               % (C.this_machine(), who))
+        _log(msg)
+        failures.append(msg)
+        _terminated_check_once(day, seen_names)
+        return failures
 
     # PASS THREE — render and send. No network except the sending itself.
     for cfg, slot, due in plan:

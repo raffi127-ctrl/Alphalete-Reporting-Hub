@@ -762,3 +762,54 @@ def test_two_offices_sharing_one_ownerville_name_are_not_confused(monkeypatch):
             ({"key": "jay_ew", "name": "Jay Turnage", "campaign_id": "40"}, "")]
     got = R.pull_boards_many(plan, day, pathlib.Path("/tmp"))
     assert got["jay_att"][1] != got["jay_ew"][1]
+
+
+# --- the wrong-account guard ------------------------------------------------
+
+def _plan_with(*kinds):
+    return [({"key": "k%d" % i, "name": "N%d" % i, "ov": ov}, "", [])
+            for i, ov in enumerate(kinds)]
+
+
+def _notfound(key):
+    return {key: ([], [], RuntimeError(
+        "Couldn't impersonate 'X' in ownerville: name not found in ownerville"))}
+
+
+def test_every_impersonation_failing_reads_as_the_wrong_account():
+    """2026-09-01: Lucy 1 was switched to Carlos. Nothing errored — Raf's board
+    came back empty (the master office IS whoever is logged in) and every other
+    office vanished from Office Access."""
+    plan = _plan_with("master", "impersonate", "impersonate")
+    boards = {}
+    boards.update(_notfound("k1"))
+    boards.update(_notfound("k2"))
+    boards["k0"] = ([], [], None)
+    assert R._wrong_account(plan, boards) is True
+
+
+def test_one_office_failing_is_an_office_problem_not_a_session_one():
+    plan = _plan_with("master", "impersonate", "impersonate")
+    boards = {"k0": ([], [], None), "k2": ([], [], None)}
+    boards.update(_notfound("k1"))
+    assert R._wrong_account(plan, boards) is False
+
+
+def test_a_single_impersonated_office_is_never_enough_to_call_it():
+    """Jay waiting on Office Access must not look like a wrong login."""
+    plan = _plan_with("master", "impersonate")
+    boards = dict(_notfound("k1"))
+    assert R._wrong_account(plan, boards) is False
+
+
+def test_a_real_pull_error_is_not_mistaken_for_the_wrong_account():
+    plan = _plan_with("impersonate", "impersonate")
+    boards = {"k0": ([], [], TimeoutError("nav timeout")),
+              "k1": ([], [], TimeoutError("nav timeout"))}
+    assert R._wrong_account(plan, boards) is False
+
+
+def test_each_machine_knows_whose_login_it_should_carry():
+    assert C.MACHINE_OWNER["Lucy 1"] == "Rafael Hidalgo"
+    assert C.MACHINE_OWNER["Lucy 2"] == "Carlos Hidalgo"
+    assert C.expected_owner("Lucy 1") == "Rafael Hidalgo"
