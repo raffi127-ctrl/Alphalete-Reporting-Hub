@@ -9469,7 +9469,7 @@
     "appstream_selfheal": {
       "on_scheduler": false,
       "machine": "Lucy 2",
-      "_off_scheduler_note": "The healing run, reachable by hand. Its real schedule is the 3:15am LaunchAgent com.alphalete.appstream-selfheal; on_scheduler:false so the 4am orchestrator never also runs it. Restarts the holder ONLY when the saved token will not survive the batch, waits for a live one, and pushes it to all three machines. Exists as a handle so the exact path that runs at 3:15 can be exercised while a human is awake \u2014 an agent that fires once, unattended, 45 minutes before the batch is the worst place to discover a bug.",
+      "_off_scheduler_note": "The healing run, reachable by hand. Its real schedule is the 3:15am LaunchAgent com.alphalete.appstream-selfheal; on_scheduler:false so the 4am orchestrator never also runs it. Restarts the holder ONLY when the saved token will not survive the batch, waits for a live one, and pushes it to all three machines. Exists as a handle so the exact path that runs at 3:15 can be exercised while a human is awake \u2014 an agent that fires once, unattended, 45 minutes before the batch is the worst place to discover a bug. TIMEOUT 35, deliberately above RECOVER_WAIT_MIN (20): with both at 20 the wrapper killed the run at the exact moment its wait ended, so it could never report success \u2014 it looked like a failed heal when the heal had simply not been allowed to finish (2026-08-31). The 3:15am LaunchAgent has no wrapper timeout and was never affected; this only ever broke the manual handle.",
       "display_name": "AppStream self-heal (heal)",
       "source_type": "local",
       "data_sources": [],
@@ -9484,7 +9484,7 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 20
+      "timeout_minutes": 35
     }
   },
   "read_only_standalone": {
