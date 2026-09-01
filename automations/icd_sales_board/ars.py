@@ -1,34 +1,36 @@
 """ARS — the interviewer's star rating on every first-round applicant.
 
-SUPERSEDED, and kept only until the AppStream harvest replaces it
-(2026-08-31). AppStream's Retention Details report — the popup behind "Total
-Daily Bob" — carries a **Rating** column on the SAME ROW as **Ad (Subject
-Line)**, per applicant, per day, per office. That is the same judgement this
-workbook holds, in the system it was typed from, already joined to the ad.
+THE LIVE SHEET IS THE SOURCE FOR RATINGS, and stays that way (Megan
+2026-08-31, asked and answered directly). This is the one deliberate exception
+to "Tableau / SaraPlus / Sterling / AppStream are truth": everything else on
+the recruiting page moves onto the AppStream Source Report, the rating does
+not. Do not "fix" this later by repointing it — it is a decision, not an
+oversight.
 
-CHECKED, not assumed: the nine BOB rows on AppStream for Mon 2026-08-31 were
-looked up in this workbook. Eight carried the identical rating (3,4,5,3,2,3,3,3);
-the ninth — Jayla Callier — is present here with a BLANK rating where AppStream
-has a 3. Not one disagreed on a value. So it is the same judgement on the same
-scale, and this copy is simply lossier: 864 of Raf's 2,253 rows are unrated.
-(Nine people on one day is a small check — widen it before relying on it for
-anything bigger than choosing a source.)
-
-So this module is reading a hand-typed copy: the same mistake as pulling the
-Focus Report. Tableau / SaraPlus / Sterling / AppStream are truth (Megan
-2026-08-31). Ad quality should come from AppStream, where nothing has to be
-matched up by name and the office and date come for free.
-
-What is still worth taking from here when that lands: nothing about the data,
-only the shape — norm_ad (people type one ad three ways, 305 spellings folded
-to 230), the unrated-is-not-zero rule, and the thin-sample floor that keeps an
-ad with one 5-star applicant off the top of the table. Those apply to the
-AppStream rows unchanged.
+For the record, since the comparison was run: AppStream's Retention Details
+popup also carries a Rating, on the same row as the ad. Checked against the
+nine BOB rows for Mon 2026-08-31 — eight identical, the ninth blank HERE where
+AppStream had a 3, none disagreeing on a value. So AppStream is the same scale
+and slightly fuller, and it was still the right call to stay here: this
+workbook is where the interviewers actually work.
 
 Five workbooks, split alphabetically by the owner's FIRST name, one tab per
-ICD. Reads THREE columns only — Full Name, Ad Title, Star Rating — plus Date
-1st Rd purely to place a row in a week. Its funnel columns are hand-typed and
-every one has a system-side source we trust more.
+ICD, edited live by the interviewers.
+
+THREE COLUMNS ONLY: Full Name, Ad Title, Star Rating — plus Date 1st Rd, read
+purely to place a row in a week so the page can show a window. The tab also
+carries Qualify / Answer Call / Booked to 2nd Rd / Showed Up to 2nd Round /
+Offered Positon / BOB, and this module deliberately does not read them: they
+are hand-typed, and every one has a system-side source we trust more. BOB in
+particular is AppStream's, never this sheet's.
+
+HOW FAR THE RATING CAN BE PUSHED. It is a human judgement and nothing more:
+read a low average as "the interviewers did not rate the people this ad sent",
+which is exactly the question being asked, and not as "these people would not
+have signed". There is no evidence here that the scale predicts who comes on
+board — tested against the 2R start dates and the first-sale map, only 142 of
+Raf's 2,253 rows match either by name, which leaves single-digit numerators
+per star and no signal in any direction.
 """
 from __future__ import annotations
 
