@@ -1639,9 +1639,20 @@ def main() -> int:
     # in focus_slack.FOCUS_DM_RECIPIENTS: Carlos, Colten Wright, Jairo Ruiz).
     # Best-effort per tab: a Slack failure on one tab logs a warning but never
     # fails the run, blocks the success sentinel, or stops the other tabs' DMs
-    # (the data fill already succeeded). Skipped on --dry-run / --only (partial
-    # views) and with --no-slack.
-    if not args.dry_run and not args.only and not args.no_slack:
+    # (the data fill already succeeded). Skipped on --dry-run / --only /
+    # --retry-inaccessible (partial views) and with --no-slack.
+    #
+    # --retry-inaccessible BELONGS in that list and was missing (Eve 2026-09-01:
+    # "hoy se enviaron varios DMs de este reporte y parecen repetidos"). A retry
+    # re-pulls ONLY the ICDs that were skipped, but the loop below walks every
+    # captainship tab and sends regardless of whether anything changed — so each
+    # retry re-sent the whole report to Carlos', Colten's and Jairo's group DMs.
+    # Four retries that morning put four identical posts in each one. The Hub's
+    # "Retry the skipped ICDs" button runs this same flag, so it was never
+    # specific to a re-run queued by hand. The full run that preceded the retry
+    # already sent the screenshots; the retry's job is to fill the cells.
+    if (not args.dry_run and not args.only and not args.retry_inaccessible
+            and not args.no_slack):
         from automations.recruiting_report import focus_shot, focus_slack
         sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
         _dm_failures: List[str] = []
