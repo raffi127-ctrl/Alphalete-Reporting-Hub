@@ -120,6 +120,20 @@ COL_TOTAL_APPS = "Total Apps"
 # board divides by, and the very count Total # of Reps Knocking prints — one
 # denominator behind all three, sitting in plain sight on the same row.
 COL_AVG_APP_PER_REP = "Average App per Rep"
+# "Avg Talk To's per App" (Megan 2026-08-31, "we need it added asap") — the
+# column the WEEKLY board has carried since 2026-08-22 and the daily/knock
+# boards never got, so the two read differently in front of the same person.
+#
+# TOTAL talk-tos ÷ apps, Raf's definition, settled on his own worked example:
+# "should have been Total Too's / Total apps, my bad" — 83 ÷ 6 = 13.83, the
+# how-many-talk-tos-does-an-app-cost read. Two decimals, as the weekly board
+# prints it.
+#
+# Filled on EVERY row that has both numbers, rep rows included: a rep's own
+# talk-tos-per-app is a different figure from the office's and is exactly what
+# a reader compares down the column. Blank — never 0.00 — when the row has no
+# apps, since dividing by nothing is not a zero.
+COL_TALK_TO_PER_APP = "Avg Talk To's per App"
 # "% Talk To's per Knocks" (Eve, 2026-08-28) — Total Talk To ÷ Total Knocks,
 # one decimal (Chan 2026-08-27: 1043 / 5466 = 19.1%). It sits immediately after
 # the Total Talk To it divides, ahead of Talk To's per Rep, so the funnel reads
@@ -1227,13 +1241,26 @@ def _insert_apps_column(cols: list, disp: list, table: list,
         n = n_knockers if i == n_extra else (divisors[i] if i < len(divisors)
                                              else 0)
         avgs.append(f"{int(v) / n:.1f}" if str(v).isdigit() and n else "")
+    # Talk-tos per app, from the Total Talk to already on the row and the apps
+    # column as drawn — so it can never disagree with the two numbers beside it.
+    tt_at = cols.index(COL_TOTAL_TALK_TO) if COL_TOTAL_TALK_TO in cols else None
+    per_app: list = []
+    for row, v in zip(table, values):
+        tt = str(row[tt_at]).strip() if tt_at is not None else ""
+        per_app.append(f"{int(tt) / int(v):.2f}"
+                       if tt.isdigit() and str(v).isdigit() and int(v)
+                       else "")
+
     cols.insert(at, COL_TOTAL_APPS)
     disp.insert(at, COL_TOTAL_APPS)
     cols.insert(at + 1, COL_AVG_APP_PER_REP)
     disp.insert(at + 1, COL_AVG_APP_PER_REP)
-    for row, v, a in zip(table, values, avgs):
+    cols.insert(at + 2, COL_TALK_TO_PER_APP)
+    disp.insert(at + 2, COL_TALK_TO_PER_APP)
+    for row, v, a, pa in zip(table, values, avgs, per_app):
         row.insert(at, v)
         row.insert(at + 1, a)
+        row.insert(at + 2, pa)
 
 
 def _gap_min(v: str) -> int:
