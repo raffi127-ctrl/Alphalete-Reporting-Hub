@@ -1583,8 +1583,33 @@ def main() -> int:
                 if set(unmapped):
                     _lines.append("• Unmapped — needs an office id ({}): {}".format(
                         len(set(unmapped)), ", ".join(sorted(set(unmapped)))))
-                notify._post_corrections(load_config(), None, _lines,
-                                         dry_run=False, tag="daily-focus-skips")
+                # ONE THREAD PER PROBLEM, not one post per run (Eve
+                # 2026-09-01: "sigue generando mensajes nuevos sobre esta falla
+                # en el canal, marea y es redundante"). This producer went
+                # straight to _post_corrections, which has no dedupe at all, so
+                # every pass that ended with a gap opened ANOTHER top-level
+                # "N ICD(s) not pulled today" — the 4am run, the orchestrator's
+                # retry and each manual re-run, four near-identical posts about
+                # the same three ICDs that day. Same key + same day now updates
+                # one status line inside the open thread instead of bumping the
+                # channel again, and a clean run closes it through
+                # run_manifest -> incident_thread.resolve_report("daily-focus").
+                # `drop-` is the right family: the report RAN, part of it just
+                # didn't fill — so it shares a thread with the manifest's own
+                # failure alert rather than competing with it.
+                _posted = None
+                try:
+                    from automations.shared import incident_thread as _inc
+                    _posted = _inc.open_or_followup(
+                        key="drop-daily-focus",
+                        title=_lines[0], body=_lines[1:],
+                        label="*Daily Recruiting Focus*")
+                except Exception as e:  # noqa: BLE001 — never fail the run
+                    log.warning("incident thread unavailable (%s) — posting "
+                                "standalone", e)
+                if not _posted:
+                    notify._post_corrections(load_config(), None, _lines,
+                                             dry_run=False, tag="daily-focus-skips")
             except Exception as e:  # noqa: BLE001 — Slack must not fail the run
                 log.warning("corrections post (skips) failed: %s", e)
 
