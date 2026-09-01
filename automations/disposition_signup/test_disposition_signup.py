@@ -827,3 +827,17 @@ def test_each_machine_knows_whose_login_it_should_carry():
     assert C.MACHINE_OWNER["Lucy 1"] == "Rafael Hidalgo"
     assert C.MACHINE_OWNER["Lucy 2"] == "Carlos Hidalgo"
     assert C.expected_owner("Lucy 1") == "Rafael Hidalgo"
+
+
+def test_the_batch_dict_is_not_clobbered_by_the_rendered_images():
+    """The batch results dict and the per-office rendered image list must not
+    share a name. They did (both `boards`), so the first office rebound the
+    dict and the SECOND crashed with "'list' object has no attribute 'get'"
+    — live, mid-outage, 2026-09-01."""
+    import inspect
+    src = inspect.getsource(R.tick)
+    assert "pulled_boards = pull_boards_many(" in src
+    assert "pulled_boards.get(" in src
+    # the per-office render still uses its own name, and never the dict's
+    assert "boards = render(" in src
+    assert "boards.get(" not in src

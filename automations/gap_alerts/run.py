@@ -1011,7 +1011,12 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     # then the gap lists) instead of two per office.
     _log("pulling %d office(s) in one session: %s"
          % (len(plan), ", ".join(c["key"] for c, _s, _d in plan)))
-    boards = pull_boards_many([(c, s) for c, s, _d in plan], day, out_dir)
+    # NOT `boards`: the per-office rendered images are assigned to `boards`
+    # inside the send loop below, which rebound this dict after the first
+    # office and made the second iteration crash with
+    # "'list' object has no attribute 'get'" (2026-09-01, live).
+    pulled_boards = pull_boards_many([(c, s) for c, s, _d in plan],
+                                     day, out_dir)
     # A BACKDATED RUN GETS NO GAP LIST. "minutesSinceLastKnock" is measured
     # from RIGHT NOW, so for any past day every rep reads as inactive for a
     # thousand-plus minutes — a wall of red that says nothing except that
@@ -1021,7 +1026,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                    if day == dt.date.today() else {})
 
     # THE SESSION IDENTITY CHECK, before anything is sent. See _wrong_account.
-    if _wrong_account(plan, boards):
+    if _wrong_account(plan, pulled_boards):
         who = C.expected_owner() or "this machine's owner"
         msg = ("WRONG OWNERVILLE ACCOUNT on %s — every office we tried to "
                "impersonate came back 'not found'. This box must be logged in "
@@ -1036,7 +1041,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
 
     # PASS THREE — render and send. No network except the sending itself.
     for cfg, slot, due in plan:
-        pngs, rows, pull_err = boards.get(cfg["key"], ([], [], None))
+        pngs, rows, pull_err = pulled_boards.get(cfg["key"], ([], [], None))
         if pull_err is not None:
             failures.append("%s: %s: %s" % (cfg["key"], type(pull_err).__name__,
                                             str(pull_err)[:200]))
