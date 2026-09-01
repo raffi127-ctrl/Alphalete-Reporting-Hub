@@ -65,6 +65,7 @@ def _parse_when(raw: str):
 
 
 def breakdown(rows: list, owner: str = "", since: dt.date | None = None,
+              until: dt.date | None = None,
               hired_keys: set | None = None) -> list:
     """Per ad: applies sent to the call list, and how many were hired.
 
@@ -81,6 +82,11 @@ def breakdown(rows: list, owner: str = "", since: dt.date | None = None,
             continue
         when = _parse_when(r[COL_WHEN])
         if since and (when is None or when < since):
+            continue
+        # An UNDATED row is dropped from a bounded window rather than kept:
+        # it belongs to no window, and keeping it would pad whichever one is
+        # on screen while the counts still claim to cover only that span.
+        if until and (when is None or when > until):
             continue
 
         title = ad_title(r[COL_AD])
