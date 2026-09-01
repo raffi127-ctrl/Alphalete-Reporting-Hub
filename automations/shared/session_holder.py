@@ -179,9 +179,17 @@ _MINT_STAMP = Path(__file__).resolve().parent / ".appstream_last_mint_attempt"
 
 
 def _last_mint_attempt() -> float:
-    """Epoch of the last REAL mint attempt, surviving a holder relaunch."""
+    """Epoch of the last REAL mint attempt, surviving a holder relaunch.
+
+    The on-disk stamp is consulted ONLY inside the holder's own loop (main()
+    sets `holder_loop`). Library callers and tests set _LAST_MINT_ATTEMPT
+    directly and mean it literally — reading a stamp left by some other process
+    underneath them made five existing remint tests fail and, worse, would let a
+    stale file suppress a mint that a caller had explicitly asked for."""
     if _LAST_MINT_ATTEMPT["at"]:
         return float(_LAST_MINT_ATTEMPT["at"])
+    if not _MINT_FAILURES.get("holder_loop"):
+        return 0.0
     try:
         return float(_MINT_STAMP.read_text().strip())
     except Exception:  # noqa: BLE001 — no stamp yet is simply "never attempted"
@@ -190,6 +198,8 @@ def _last_mint_attempt() -> float:
 
 def _record_mint_attempt(now: float) -> None:
     _LAST_MINT_ATTEMPT["at"] = now
+    if not _MINT_FAILURES.get("holder_loop"):
+        return                      # library/test use leaves no trace on disk
     try:
         _MINT_STAMP.write_text(str(now))
     except Exception:  # noqa: BLE001 — best effort; in-memory still throttles
@@ -857,6 +867,10 @@ def main() -> int:
                     help="Minutes to wait for the human to log in on first start.")
     args = ap.parse_args()
 
+    # From here on we ARE the holder loop, so the mint throttle may persist to
+    # disk and survive a launchd relaunch (see _last_mint_attempt). Nothing
+    # outside this entry point reads or writes that stamp.
+    _MINT_FAILURES["holder_loop"] = True
     HOLDER_PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     # A crashed Chrome leaves a stale Singleton* lock in the profile that makes
     # the next launch fail with "profile already in use" — which would defeat the

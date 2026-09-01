@@ -110,6 +110,10 @@ class ThrottleSurvivesRelaunchTest(unittest.TestCase):
         self.now = time.time()
         sh._MINT_STAMP.unlink(missing_ok=True)
         sh._LAST_MINT_ATTEMPT["at"] = 0.0
+        # The stamp is scoped to the holder's own loop on purpose (a stray file
+        # must never throttle a library caller), so these tests declare it.
+        sh._MINT_FAILURES["holder_loop"] = True
+        self.addCleanup(sh._MINT_FAILURES.pop, "holder_loop", None)
         self.addCleanup(sh._MINT_STAMP.unlink, True)
         self.addCleanup(sh._LAST_MINT_ATTEMPT.update, {"at": 0.0})
 
@@ -136,3 +140,29 @@ class ThrottleSurvivesRelaunchTest(unittest.TestCase):
         sh._MINT_STAMP.write_text("not-a-number")
         self._relaunch()
         self.assertFalse(sh._mint_is_throttled())
+
+
+class TheStampIsInertOutsideTheHolderLoopTest(unittest.TestCase):
+    """A stray stamp must never throttle a library caller or a test.
+
+    The first cut consulted the file unconditionally, so a stamp left by any
+    other process suppressed mints underneath unrelated code — it broke five
+    existing remint tests, which is the cheap version of the same bug biting a
+    real caller that had explicitly asked for an attempt."""
+
+    def setUp(self):
+        sh._MINT_FAILURES.pop("holder_loop", None)
+        sh._LAST_MINT_ATTEMPT["at"] = 0.0
+        self.addCleanup(sh._MINT_STAMP.unlink, True)
+        self.addCleanup(sh._LAST_MINT_ATTEMPT.update, {"at": 0.0})
+
+    def test_a_stray_stamp_does_not_throttle_a_library_caller(self):
+        import time
+        sh._MINT_STAMP.write_text(str(time.time()))
+        self.assertFalse(sh._mint_is_throttled())
+
+    def test_recording_outside_the_loop_writes_nothing(self):
+        import time
+        sh._MINT_STAMP.unlink(missing_ok=True)
+        sh._record_mint_attempt(time.time())
+        self.assertFalse(sh._MINT_STAMP.exists())
