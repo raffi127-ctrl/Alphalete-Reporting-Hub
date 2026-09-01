@@ -18,7 +18,9 @@ only remaining judgement is a human's.
 
 Nothing is added without a checkmark, and nothing is proposed twice: the log tab
 carries one line per rep with its gate ts, so a pending rep is neither re-posted
-by the next report that sees them nor re-inserted by the next run.
+by the next report that sees them nor re-inserted by the next run. Nothing is
+proposed that is already THERE either — a rep somebody added to the boxes by
+hand has no log line, so the board itself is checked before asking.
 
 The approvers, the emoji set and the mention helper are IMPORTED from the Org
 Board's own review gate rather than re-listed here — one place decides who can
@@ -31,7 +33,7 @@ from typing import Dict, List, Optional
 
 from automations.new_owners import bank, cap_insert, notify
 from automations.shared import captainship_pins as _pins
-from automations.new_owners.captain_watch import captain_name
+from automations.new_owners.captain_watch import already_on_board, captain_name
 from automations.org_sales_board.review_gate import (
     APPROVE_EMOJI,
     APPROVERS,
@@ -112,6 +114,10 @@ def _excluded(captain: str, name: str) -> bool:
             return _k(name) in {_k(n) for n in names}
     return False
 ADDED = "added ✅"
+# Logged instead of a gate line for a rep who is already IN this captainship's
+# boxes. Deliberately NOT the PENDING prefix, so `resolve()` ignores it, and it
+# still counts for `already_logged`, so no other report asks tomorrow.
+ON_BOARD = "already on the board — not asked"
 
 
 def _client():
@@ -166,6 +172,25 @@ def propose(names: List[str], *, captain: str, source: str,
         logfn(f"  – {n} ({capt}): pinned out of this captainship — not proposing "
               f"(captain_gate.EXCLUDE)")
     fresh = [n for n in fresh if n not in pinned]
+    if not fresh:
+        return []
+
+    # The log is not the only record of who is in a captainship: the board is.
+    # Eve, 2026-09-01 — Jeff Starr and Vincent Smith had been put in Carlos'
+    # boxes BY HAND, so no log line existed and the bonus report's roster
+    # reconcile read them as new and asked for a ✅ that could only ever resolve
+    # to "already had a row". Asking is the whole currency of this channel, so a
+    # rep who already has a row is logged (silently) instead of asked about.
+    # Alias-aware: the board's 'Jeff Starr' is Tableau's 'Jeffrey Starr'.
+    have = already_on_board(capt, fresh, ss=ss)
+    if have:
+        logfn(f"  – {', '.join(sorted(have))} ({capt}): already in this "
+              f"captainship's boxes on the board — logged, not proposed")
+        bank.append_log(
+            lws, [[today.strftime("%m/%d/%Y"), bank.KIND_CAPTAINSHIP, n, capt,
+                   ON_BOARD, f"seen by {source}"] for n in fresh if n in have],
+            dry_run=dry_run, logfn=logfn)
+        fresh = [n for n in fresh if n not in have]
     if not fresh:
         return []
 

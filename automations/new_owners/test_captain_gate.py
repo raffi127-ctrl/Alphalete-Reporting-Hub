@@ -230,7 +230,7 @@ class PinnedRepIsNeverProposed(unittest.TestCase):
     keeps a future refactor of propose() from quietly dropping the filter.
     """
 
-    def _propose(self, names, captain):
+    def _propose(self, names, captain, on_board=()):
         log = []
         with mock.patch.multiple(
                 captain_gate, bank=mock.Mock(**{
@@ -238,7 +238,8 @@ class PinnedRepIsNeverProposed(unittest.TestCase):
                     "open_log.return_value": object(),
                     "log_entries.return_value": [],
                     "already_logged.return_value": False,
-                })):
+                }),
+                already_on_board=mock.Mock(return_value=set(on_board))):
             out = captain_gate.propose(names, captain=captain,
                                        source="Tableau captain filter",
                                        ss=object(), dry_run=True,
@@ -252,6 +253,32 @@ class PinnedRepIsNeverProposed(unittest.TestCase):
 
     def test_someone_else_on_the_same_scan_is_still_offered(self):
         out, _ = self._propose(["Marcos Barbosa", "Jackie Leroy"], "Colten")
+        self.assertEqual([e["name"] for e in out], ["Jackie Leroy"])
+
+
+class RepAlreadyOnTheBoardIsNeverProposed(unittest.TestCase):
+    """2026-09-01 (Eve): the bonus report asked for a ✅ on Jeffrey Starr and
+    Vincent Smith, who had been put into Carlos' boxes BY HAND weeks earlier.
+    They had no log line, so the log — until now the gate's only memory —
+    couldn't tell. A ✅ on either could only ever land on "already had a row".
+    """
+
+    _propose = PinnedRepIsNeverProposed._propose
+
+    def test_they_are_logged_not_asked_about(self):
+        out, log = self._propose(["Jeffrey Starr", "Vincent Smith"], "Carlos",
+                                 on_board=["Jeffrey Starr", "Vincent Smith"])
+        self.assertEqual(out, [])
+        self.assertIn("already in this captainship's boxes", log)
+
+    def test_a_genuinely_new_rep_on_the_same_scan_still_gets_asked(self):
+        out, _ = self._propose(["Jeffrey Starr", "Jackie Leroy"], "Carlos",
+                               on_board=["Jeffrey Starr"])
+        self.assertEqual([e["name"] for e in out], ["Jackie Leroy"])
+
+    def test_a_board_read_that_fails_still_asks(self):
+        """Not knowing must fall back to ASKING — never to swallowing a rep."""
+        out, _ = self._propose(["Jackie Leroy"], "Carlos", on_board=[])
         self.assertEqual([e["name"] for e in out], ["Jackie Leroy"])
 
 
