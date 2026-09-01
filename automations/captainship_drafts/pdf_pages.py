@@ -60,19 +60,8 @@ DPI = 150
 # being the raw ceiling. Boards under the cap are embedded untouched.
 PAGE_MAX_PX = 1800
 
-# The DAILY attachments run narrower, and that is not a compromise on
-# readability — it is where the size went. Measured 2026-09-01 on Rafael's
-# report: at 1800 the message was 22.8MB against Gmail's 25MB cliff, and the
-# daily boards were paying for those pixels THREE times over (inline in the
-# body, again in the captainship-wide PDF, again in the owner's own one-page
-# copy). A daily board is also a much simpler picture than a weekly one — six
-# columns and a row per rep, against the weekly's seventeen — so it survives
-# the narrower page where the weekly would not. The weekly keeps PAGE_MAX_PX.
-DAILY_MAX_PX = 1300
 
-
-def compose(pages: List[Tuple[str, Path]], out: Path,
-            max_px: int = PAGE_MAX_PX) -> Path:
+def compose(pages: List[Tuple[str, Path]], out: Path) -> Path:
     """One board per page, each page EXACTLY its board's size — no letter box,
     no margin, no scaling (Rafael 2026-08-30; see the DPI note above).
 
@@ -83,12 +72,12 @@ def compose(pages: List[Tuple[str, Path]], out: Path,
     canvases = []
     for _label, png in pages:
         img = Image.open(png).convert("RGB")
-        if img.width > max_px:
+        if img.width > PAGE_MAX_PX:
             # One good Lanczos pass, same reasoning as the email pre-shrink:
             # if the picture has to shrink, we would rather do it well once
             # than hand a reader's viewer a 3x reduction to do cheaply.
-            h = max(1, round(img.height * max_px / img.width))
-            img = img.resize((max_px, h), Image.LANCZOS)
+            h = max(1, round(img.height * PAGE_MAX_PX / img.width))
+            img = img.resize((PAGE_MAX_PX, h), Image.LANCZOS)
         # NO palette pass here, deliberately — unlike the inline copies. PIL
         # flate-encodes PDF images from full RGB either way, so quantising
         # first measured byte-for-byte identical (7.40MB both ways,
