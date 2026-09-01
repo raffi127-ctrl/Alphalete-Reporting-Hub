@@ -638,8 +638,10 @@ def capture_page(page, spec: dict, out_dir: Path, *,
                             print("   ↻ browser died — rebuilding the session "
                                   "for the remaining attempt(s)", flush=True)
                         try:
-                            pg = stack.enter_context(
-                                tableau_session(verbose=False))
+                            from automations.shared.tableau_patchright import (
+                                REBUILD_PROFILE_DIR)
+                            pg = stack.enter_context(tableau_session(
+                                verbose=False, profile_dir=REBUILD_PROFILE_DIR))
                         except Exception as re_:  # noqa: BLE001 — keep the REAL error
                             if verbose:
                                 print(f"   (rebuild failed: {type(re_).__name__})",

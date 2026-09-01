@@ -993,6 +993,24 @@ _DEAD_CONTEXT_MARKERS = (
 )
 
 
+# WHERE A REBUILD RELAUNCHES (2026-09-01, same morning, second lesson).
+#
+# The first cut of the rebuild reopened tableau_session() on the SHARED profile
+# — the one the crashed Chrome was using. That cannot work: a crashed Chrome
+# leaves its Singleton* lock behind, so the relaunch hits "profile is already in
+# use" and the recovery fails at the moment it is needed. Observed live on Lucy 1
+# minutes after deploy, in org_sales_board:
+#
+#   ↻ browser died — rebuilding the session for the remaining attempt(s)
+#   (rebuild failed: Error) — reporting the original failure
+#
+# tableau_session already documents the way out: "give a job its OWN profile so
+# it never queues behind the morning batch. Different profiles don't block each
+# other — only same-profile runs do." The login still comes from the shared
+# ownerville storage_state, so a fresh profile authenticates identically.
+REBUILD_PROFILE_DIR = PROFILE_DIR.parent / ".browser_profile_rebuild"
+
+
 def is_dead_context(exc) -> bool:
     """True when `exc` means the browser/context DIED, not that the page misbehaved.
 
@@ -1110,7 +1128,8 @@ def download_crosstab_patchright(
                         print("  ↻ browser died — rebuilding the session for the "
                               "remaining attempt(s)", flush=True)
                     try:
-                        pg = stack.enter_context(tableau_session(verbose=verbose))
+                        pg = stack.enter_context(tableau_session(
+                            verbose=verbose, profile_dir=REBUILD_PROFILE_DIR))
                     except Exception as e:  # noqa: BLE001 — keep the REAL error
                         if verbose:
                             print(f"  (rebuild failed: {type(e).__name__}) — "
