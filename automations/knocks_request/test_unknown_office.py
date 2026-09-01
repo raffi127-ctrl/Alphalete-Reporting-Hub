@@ -30,9 +30,26 @@ from automations.knocks_request import service
 ROSTER = ["Francisco Castillo", "Rafael Hidalgo", "Chan Park", "Isaiah Revelle"]
 
 
+# The roster AND the alias table, both faked. `unknown_office` asks
+# resolve_office whether a typed name maps to a real office, and resolve_office
+# reads the LIVE ICD alias Sheet — so without this the test's answer changes
+# whenever somebody adds an alias. That is exactly what happened: this file
+# asserted "Frank Castillo" is a name nobody has, someone then did the right
+# thing and added `Frank Castillo -> Francisco Castillo` to the alias sheet
+# (the fix CLAUDE.md asks for), and the test started failing while the code was
+# behaving correctly. A unit test must not depend on an editable Sheet.
+ALIASES = {"frank castillo": "Francisco Castillo"}
+
+
+def _fake_resolve(typed):
+    return ALIASES.get(" ".join((typed or "").split()).lower(), typed)
+
+
 def _with_roster(names):
-    return mock.patch.object(service, "known_office_names",
-                             lambda: list(names))
+    return mock.patch.multiple(
+        service,
+        known_office_names=lambda: list(names),
+        resolve_office=_fake_resolve)
 
 
 class UnknownOffice(unittest.TestCase):
@@ -41,14 +58,27 @@ class UnknownOffice(unittest.TestCase):
             self.assertFalse(service.unknown_office("Francisco Castillo"))
 
     def test_a_name_nobody_has_is_unknown(self):
+        # A name that is on no roster and in no alias row.
         with _with_roster(ROSTER):
-            self.assertTrue(service.unknown_office("Frank Castillo"))
+            self.assertTrue(service.unknown_office("Marvin Nonesuch"))
+
+    def test_an_aliased_nickname_is_NOT_unknown(self):
+        """THE ORIGINAL INCIDENT, now answered by the alias sheet.
+
+        "Frank Castillo" got ":lock: that office isn't on the Ownerville
+        account", a confident permissions answer about what was really a
+        nickname. The fix was an alias row, not code — so once it exists the
+        name RESOLVES and is not unknown at all. This pins that: adding the
+        alias must make the question go away, not merely change which wrong
+        answer is given."""
+        with _with_roster(ROSTER):
+            self.assertFalse(service.unknown_office("Frank Castillo"))
 
     def test_an_empty_roster_keeps_the_old_answer(self):
         """If the roster won't load we know nothing — and 'we know nothing' must
         not turn every real access gap into a spelling complaint."""
         with _with_roster([]):
-            self.assertFalse(service.unknown_office("Frank Castillo"))
+            self.assertFalse(service.unknown_office("Marvin Nonesuch"))
 
 
 class Suggestion(unittest.TestCase):
