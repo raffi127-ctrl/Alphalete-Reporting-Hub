@@ -64,7 +64,13 @@ def main() -> int:
             print(f"[knocks] ACCESS GAP: '{a.office}' is not on this "
                   "ownerville account — a permissions gap, not a spelling one.")
         else:
+            # THE TRACEBACK, not just the message. This is the self-test — the
+            # one place a failure is supposed to be readable — and it was
+            # printing a one-line summary, which is why an AttributeError from
+            # deep in the render was as opaque here as it was in Slack.
+            import traceback
             print(f"[knocks] FAILED: {type(e).__name__}: {e}")
+            traceback.print_exc()
         return 1
 
     span = b.target.isoformat() if not b.is_range else f"{b.target}..{b.end}"
