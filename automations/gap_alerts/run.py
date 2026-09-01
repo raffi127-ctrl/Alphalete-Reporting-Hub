@@ -1052,7 +1052,19 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         if not pngs:
             # Visible absence, never a blank board — the standing rule. Before
             # the field is out there are simply no rows, and that is not news.
-            _log("%s: no rows yet at %s — nothing sent" % (cfg["key"], slot))
+            #
+            # SAY WHAT WAS ASKED FOR. "no rows yet" is the same sentence
+            # whether the office genuinely has not knocked, or we impersonated
+            # the wrong owner, or we pinned a campaign that office does not
+            # run — three very different problems (2026-09-01: Jay came back
+            # empty on both campaigns while Raf and Calvin posted, and this
+            # line could not tell which). The probe that would answer it is a
+            # `rerun`, which the daily cap blocks, so the scheduled tick has to
+            # answer for itself.
+            _log("%s: no rows yet at %s — nothing sent "
+                 "(office=%r ov=%s campaign=%s day=%s)"
+                 % (cfg["key"], slot, cfg["name"], cfg.get("ov"),
+                    cfg.get("campaign_id") or "(map default)", day))
             continue
 
         seen_names += [str(r.get("Rep") or r.get("rep") or "").strip()
