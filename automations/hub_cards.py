@@ -577,7 +577,13 @@ AUTOMATED_REPORTS = [
             "channel at its OWN local 2 PM, 5:15 PM and 9 PM. Every office "
             "gets the 9 PM board; the two afternoon slots are Cody's only. "
             "The morning board still re-pulls the same day from scratch, "
-            "because reps keep knocking after 9."
+            "because reps keep knocking after 9.\n\n"
+            "⏳ **WINDING DOWN.** Offices are moving to the **Daily "
+            "Dispositions sign-up**, where each owner picks their own channels "
+            "and their own times. An office that enrolls there is dropped from "
+            "this roster automatically, so the count below shrinks on its own — "
+            "a channel missing from tonight's run has most likely moved, not "
+            "broken."
         ),
         "breakdown": (
             "WHAT IT DOES\n"
@@ -593,6 +599,13 @@ AUTOMATED_REPORTS = [
             "**•** **9:00 PM — End of Day**: **every enrolled office**, each "
             "at its own 9 PM. Four offices are Eastern, so the 9 PM run rolls "
             "across the timezones over about an hour rather than firing once.\n"
+            "**•** **Minus anyone who enrolled in Daily Dispositions.** The "
+            "roster subtracts every Slack channel claimed by a LIVE "
+            "dispositions enrollment (read from the same "
+            "`onboarded_offices.json` that sign-up writes), so one office "
+            "never gets two identical boards seconds apart. An office wired "
+            "but still switched OFF keeps getting this one — it is not "
+            "sending from there yet.\n"
             "**•** A slot missed by more than 15 minutes is **skipped, not "
             "posted late** — a 2 PM board landing at 6 PM is worse than none.\n\n"
             "WHAT KEEPS IT HONEST\n"
@@ -3842,17 +3855,25 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "gap-alerts",
-        "name": "Rep Gap Alerts (15-min gaps)",
+        "name": "Knocks & Dispositions (self-serve)",
         "creator": "Claude",
         "emoji": "\u23F1\uFE0F",
         "color": "#B91C1C",
         "category": "\U0001F4CA Metrics",
         "description": (
-            "Every 10 minutes of the selling day, texts Raf\u2019s office "
-            "card into the **Alphalete Partners** chat: **Today\u2019s "
+            "The **KNOCKS & DISPOSITIONS** board \u2014 **Today\u2019s "
             "Activity** (every rep and their knock count) over **Reps Over 15 "
             "Min Gap** (who has gone quiet, how long, and when they last "
-            "knocked). One image, no Slack, no thread."
+            "knocked) \u2014 sent through the selling day to every office that "
+            "asked for it.\n\n"
+            "Owners enroll themselves at "
+            "**alphaletedispositions.streamlit.app**: they pick any number of "
+            "iMessage chats, Slack channels and inboxes, **each on its own "
+            "clock** (every 15 / 30 / 60 minutes, or set times at First "
+            "Knocks, Money Lap and End of Day), plus their own timezone and "
+            "field hours. Nothing sends until Megan confirms and the runner "
+            "proves the office \u2014 impersonation and the iMessage room \u2014 "
+            "and switches it on."
         ),
         "breakdown": (
             "WHAT IS ON THE CARD \u2014 two panels, Carlos\u2019s order\n"
