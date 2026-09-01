@@ -743,8 +743,20 @@ def _assert_account(page, dry_run: bool) -> None:
                      "will now refuse any other account."
                      % (APPSTREAM_ACCOUNT, got))
         elif got and want and got != want:
-            _log("[account][WARN] dry-run is on Account No %s but %s is recorded "
-                 "as %s — NOT overwriting. Live sends will refuse."
+            # LEGACY FINGERPRINT UPGRADE. Fingerprints recorded before the user
+            # label was added are the bare company number ("23981"), which can
+            # never equal the new "<number>/<user>" form — so a dry-run refused
+            # to overwrite it and live sends refused forever. Same account, just
+            # a richer name for it: upgrade in place. Anything where the NUMBER
+            # differs is a genuine mismatch and is still left alone.
+            if "/" not in want and got.split("/")[0] == want:
+                if creds.record_appstream_account_fingerprint(APPSTREAM_ACCOUNT, got):
+                    _log("[account] upgraded the recorded fingerprint for %s from "
+                         "%s to %s (the number alone is the COMPANY and cannot "
+                         "tell two logins apart)" % (APPSTREAM_ACCOUNT, want, got))
+                    return
+            _log("[account][WARN] dry-run is on %s but %s is recorded as %s — "
+                 "NOT overwriting. Live sends will refuse."
                  % (got, APPSTREAM_ACCOUNT, want))
         return
     if not got:

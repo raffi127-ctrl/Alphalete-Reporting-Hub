@@ -305,3 +305,45 @@ class LoginFormDetection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class LegacyFingerprintUpgrade(unittest.TestCase):
+    """A pre-label fingerprint must not lock the account out forever."""
+
+    def setUp(self):
+        from automations.shared import creds
+        self.creds = creds
+        self._get = creds.appstream_account_fingerprint
+        self._set = creds.record_appstream_account_fingerprint
+        self._acct = rp.APPSTREAM_ACCOUNT
+        rp.APPSTREAM_ACCOUNT = "lucyresume"
+        rp._OBSERVED_ACCOUNT_NO = None
+        self.saved = []
+        creds.record_appstream_account_fingerprint = (
+            lambda _n, v: (self.saved.append(v), True)[1])
+
+    def tearDown(self):
+        self.creds.appstream_account_fingerprint = self._get
+        self.creds.record_appstream_account_fingerprint = self._set
+        rp.APPSTREAM_ACCOUNT = self._acct
+        rp._OBSERVED_ACCOUNT_NO = None
+
+    def test_bare_number_is_upgraded_to_number_and_user(self):
+        # The bug: "23981" can never equal "23981/Lucy Resume Pushing", so the
+        # dry-run refused to overwrite and every live send refused after it.
+        self.creds.appstream_account_fingerprint = lambda _n: "23981"
+        rp._assert_account(_Page(_console("23981", "Lucy Resume Pushing")),
+                           dry_run=True)
+        self.assertEqual(self.saved, ["23981/Lucy Resume Pushing"])
+
+    def test_a_different_number_is_never_upgraded(self):
+        # A real mismatch stays a mismatch — upgrading it would rubber-stamp
+        # the wrong account.
+        self.creds.appstream_account_fingerprint = lambda _n: "6039"
+        rp._assert_account(_Page(_console("23981", "Lucy Resume Pushing")),
+                           dry_run=True)
+        self.assertEqual(self.saved, [])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
