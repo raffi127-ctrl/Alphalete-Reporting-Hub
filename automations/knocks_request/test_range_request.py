@@ -461,6 +461,31 @@ class ThePopup(unittest.TestCase):
         day = [b for b in blocks if b.get("block_id") == "day"][0]
         self.assertEqual(day["element"]["initial_date"], TODAY.isoformat())
 
+    def test_last_full_week_is_the_completed_mon_sun(self):
+        """Whatever day it is asked on, the same finished week — never the one
+        in progress, and never a rolling last-7-days."""
+        for day in (dt.date(2026, 9, 1), dt.date(2026, 9, 6),
+                    dt.date(2026, 8, 31)):
+            self.assertEqual(handler.last_full_week(day),
+                             (dt.date(2026, 8, 24), dt.date(2026, 8, 30)))
+
+    def test_the_week_checkbox_overrides_the_datepickers(self):
+        """Its hint promises the dates are ignored; a request cannot be both
+        spans, and honouring the pickers instead would be the silent wrong
+        answer."""
+        seen = {}
+        payload = self._payload("2026-08-24", None)
+        payload["view"]["state"]["values"]["week"] = {
+            "v": {"selected_options": [{"value": handler.LAST_WEEK_VALUE}]}}
+        with mock.patch.object(handler, "process",
+                               lambda *a, **k: seen.update(args=a, kw=k)):
+            with mock.patch.object(handler, "last_full_week",
+                                   lambda *a: (dt.date(2026, 8, 24),
+                                               dt.date(2026, 8, 30))):
+                handler.handle_submission(None, payload)
+        self.assertEqual(seen["args"][3:], (dt.date(2026, 8, 24),
+                                            dt.date(2026, 8, 30)))
+
     def test_a_blank_through_submits_as_a_single_day(self):
         seen = {}
         with mock.patch.object(handler, "process",

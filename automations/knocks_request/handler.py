@@ -51,6 +51,24 @@ _PULL_LOCK = threading.Lock()
 # campaign) job — because enrollment-driven callers use it.
 
 
+LAST_WEEK_VALUE = "last_full_week"
+
+
+def last_full_week(today: dt.date | None = None) -> tuple:
+    """(monday, sunday) of the last FULLY COMPLETED Mon-Sun week.
+
+    Not "the last 7 days" and not the week in progress: a full prior week is
+    always a completed one, which is also the week the apps columns can be read
+    from the harvest for free. So the checkbox and the apps rule agree by
+    construction — tick it and the board always carries Total Apps, Average App
+    per Rep and Avg Talk To's per App.
+    """
+    from automations.shared.report_week import week_ending
+    today = today or service.central_today()
+    sunday = week_ending(today) - dt.timedelta(days=7)
+    return sunday - dt.timedelta(days=6), sunday
+
+
 def modal(today: dt.date | None = None) -> dict:
     """The popup. `today` is injectable so the default date is testable."""
     # TODAY, not yesterday (Megan 2026-09-01). The popup opened on yesterday
@@ -85,6 +103,23 @@ def modal(today: dt.date | None = None) -> dict:
              "hint": {"type": "plain_text",
                       "text": "Leave blank for just that one day."},
              "element": {"type": "datepicker", "action_id": "v"}},
+            # One tick instead of two datepickers for the commonest range
+            # anyone asks for (Megan 2026-09-01: "a 'last full week' checkbox
+            # where they don't have to go into both dropdowns"). It OVERRIDES
+            # the two dates rather than sitting alongside them — a request
+            # cannot be both, and silently honouring one of the two would be
+            # worse than either.
+            {"type": "input", "block_id": "week", "optional": True,
+             "label": {"type": "plain_text", "text": "Or just:"},
+             "element": {
+                 "type": "checkboxes", "action_id": "v",
+                 "options": [{
+                     "text": {"type": "plain_text",
+                              "text": "Last full week (Mon–Sun)"},
+                     "value": LAST_WEEK_VALUE}]},
+             "hint": {"type": "plain_text",
+                      "text": "Tick this and the two dates above are "
+                              "ignored."}},
         ],
     }
 
@@ -199,6 +234,12 @@ def handle_submission(web, payload: dict) -> None:
         end = dt.date.fromisoformat(through_s)
     except ValueError:
         end = target
+    # The checkbox wins over the pickers, as its hint says.
+    picked = (vals.get("week", {}).get("v", {})
+              .get("selected_options") or [])
+    if any(o.get("value") == LAST_WEEK_VALUE for o in picked):
+        target, end = last_full_week()
+
     process(web, payload["user"]["id"], office, target, end)
 
 
