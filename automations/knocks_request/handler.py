@@ -325,10 +325,16 @@ def process(web, user_id: str, office: str, target: dt.date,
             # the spelling was wrong.
             near = service.ownerville_near_matches(e)
             if near:
+                # READY-TO-SEND COMMANDS, not bare names. A DM only counts as
+                # a request when it LEADS with "knocks" — parse_dm returns None
+                # for "muhammad ui haque" — so "send me one of those exactly"
+                # was an instruction that quietly does nothing (Megan
+                # 2026-09-01: "if someone responds to this with the correct
+                # name, is Jiraiya going to read it?"). No.
                 say(f":grey_question: I couldn't find *{office}* in "
-                    "Ownerville, but these are close:\n"
-                    + "\n".join(f"• {n}" for n in near)
-                    + "\n_Send me one of those exactly and I'll pull it._")
+                    "Ownerville. These are close — send one back and I'll "
+                    "pull it:\n"
+                    + "\n".join(f"• `knocks {n}`" for n in near))
                 return
             hint = service.suggest_office(office)
             say(f":grey_question: I don't have an office called *{office}* on "
