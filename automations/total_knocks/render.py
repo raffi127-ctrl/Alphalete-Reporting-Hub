@@ -785,7 +785,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         apps: "dict[str, int] | None" = None,
                         rate_columns: bool = True,
                         knocks_green_at: "int | None" = None,
-                        sort_by: str = "rep",
+                        sort_by: str = "knocks",
                         base_cols: "list | None" = None,
                         out_cols: "list | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
@@ -806,11 +806,15 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     filename. The ROWS must already be folded (total_knocks.aggregate) — this
     only labels them. None / same-as-target renders exactly as it always did.
 
-    `sort_by` (optional): "rep" (default, alphabetical — every existing board
-    unchanged) or "knocks", highest Total Knocks first, for a board read as a
-    leaderboard (Raf 2026-08-29). It has to live HERE: this function re-sorts
-    the rows it is given, so a caller that pre-sorts its own list silently has
-    that order discarded.
+    `sort_by`: "knocks" (DEFAULT since 2026-08-31) puts the highest Total
+    Knocks first; "rep" is alphabetical. These boards are read as
+    leaderboards — Raf asked for the ranking on his, and Megan pointed at
+    Cody's still coming out A-Z ("shouldn't this be ordered by total knocks
+    high to low?"), so it is now the default everywhere rather than something
+    each caller opts into and most forget.
+
+    It has to live HERE: this function re-sorts the rows it is given, so a
+    caller that pre-sorts its own list silently has that order discarded.
 
     `hide_columns` (optional): columns to leave OFF this board. For a derived
     column that only carries a number on the TOTAL row — Talk To's per Rep is
@@ -1514,7 +1518,7 @@ def render_energywell_total_knocks(target: dt.date, *, rows: list[dict],
                                    title_suffix: str = "",
                                    end: "dt.date | None" = None,
                                    date_text: str = "",
-                                   sort_by: str = "rep",
+                                   sort_by: str = "knocks",
                                    knocks_green_at: "int | None" = None) -> Path:
     """TOTAL KNOCKS for an Energy Wells office — the wireless board with
     Presentation, VL and a Total Talk to column."""
@@ -1530,7 +1534,7 @@ def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
                                  end: "dt.date | None" = None,
                                  date_text: str = "",
                                  columns: "list | None" = None,
-                                 sort_by: str = "rep",
+                                 sort_by: str = "knocks",
                                  knocks_green_at: "int | None" = None) -> Path:
     """TOTAL KNOCKS for a WIRELESS (NDS) office — same amber board as the
     house one, but the wireless disposition column set (one Not Interested
@@ -1630,7 +1634,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          extra_totals=None,
                          rate_columns: bool = True,
                          knocks_green_at: "int | None" = None,
-                         sort_by: str = "rep"
+                         sort_by: str = "knocks"
                          ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
