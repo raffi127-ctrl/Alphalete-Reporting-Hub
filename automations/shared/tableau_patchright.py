@@ -30,6 +30,7 @@ interactive/debug use only.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import datetime as _dt
 import hashlib
 import json
@@ -960,6 +961,53 @@ def _xtab_cache_prune(root: Path, keep_days: int = 3) -> None:
         pass
 
 
+# A DEAD BROWSER IS NOT A PAGE FLAKE (2026-09-01).
+#
+# Every retry ladder in this repo was built for a transient Tableau
+# load/render flake, which a fresh navigation clears. It cannot clear a
+# browser that has EXITED: re-issuing page.goto into a closed context can only
+# reproduce the same TargetClosedError, so all three attempts burn in
+# milliseconds and the caller sees a hard failure.
+#
+# That is exactly what Chrome 152.0.7977.65 did on 2026-09-01 (auto-updated
+# 01:45, 22 crashes that day, zero on any prior day — EXC_BREAKPOINT in
+# ChromeMain on macOS 26.6.2). harvest_prime lost 17/17 pulls to ONE crash,
+# because harvester.py opens one session per isolation group and every need in
+# the group then retried into the corpse. The tracker boards lost the same way.
+#
+# The tell that this is recoverable: a FRESH PROCESS succeeded on the first
+# try (the --only re-capture of four tracker boards, 06:34 the same morning).
+# The crash is intermittent; only our reuse of the dead context was
+# deterministic. So the ladders now rebuild the session instead of retrying
+# into a corpse, and a crash costs one relaunch rather than a whole report.
+#
+# Deliberately NOT a Chrome pin: the runners' Chrome auto-updates, one of them
+# (Lucy 3) takes no SSH, and the same crash-mid-run can arrive with any future
+# version. This heals the class, not the version.
+_DEAD_CONTEXT_MARKERS = (
+    "target page, context or browser has been closed",
+    "target closed",
+    "browser has been closed",
+    "browser closed",
+    "connection closed",
+)
+
+
+def is_dead_context(exc) -> bool:
+    """True when `exc` means the browser/context DIED, not that the page misbehaved.
+
+    Matched on the exception's class name AND its text: patchright raises
+    TargetClosedError for a crash, but the same condition surfaces through
+    wrapped/re-raised errors whose type is generic while the message still
+    names the closed target."""
+    if exc is None:
+        return False
+    if type(exc).__name__ in ("TargetClosedError", "BrowserClosedError"):
+        return True
+    msg = str(exc).lower()
+    return any(m in msg for m in _DEAD_CONTEXT_MARKERS)
+
+
 def download_crosstab_patchright(
     view_url: str,
     crosstab_sheet: str,
@@ -1045,12 +1093,30 @@ def download_crosstab_patchright(
         return result
 
     if page is not None:
-        # Caller owns the browser: retry on their page, no login either way.
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            r = _try(page, attempt)
-            if r is not None:
-                return r
-        raise last_err[0]
+        # Caller owns the browser: retry on their page, no login either way —
+        # UNLESS the browser itself died. See is_dead_context: retrying into a
+        # closed context reproduces the same error every time, which is how ONE
+        # Chrome crash cost harvest_prime all 17 pulls on 2026-09-01. A rebuild
+        # costs one login and is only reached on a crash, so the happy path and
+        # the ordinary-flake path are both byte-identical to before.
+        with contextlib.ExitStack() as stack:
+            pg = page
+            for attempt in range(1, MAX_ATTEMPTS + 1):
+                r = _try(pg, attempt)
+                if r is not None:
+                    return r
+                if attempt < MAX_ATTEMPTS and is_dead_context(last_err[0]):
+                    if verbose:
+                        print("  ↻ browser died — rebuilding the session for the "
+                              "remaining attempt(s)", flush=True)
+                    try:
+                        pg = stack.enter_context(tableau_session(verbose=verbose))
+                    except Exception as e:  # noqa: BLE001 — keep the REAL error
+                        if verbose:
+                            print(f"  (rebuild failed: {type(e).__name__}) — "
+                                  f"reporting the original failure", flush=True)
+                        break
+            raise last_err[0]
 
     if shared_session_enabled():
         # ONE login for this process; a fresh page per attempt keeps the viz
