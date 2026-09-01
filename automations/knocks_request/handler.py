@@ -40,6 +40,22 @@ COMMAND = "/knocks"
 _PULL_LOCK = threading.Lock()
 
 
+# label -> invD2DClientId. "" means AUTO: let campaign_for_office decide.
+# The ids are the ones read off the live picker (2026-08-29): 3 = RES AT&T,
+# 40 = RES-ENERGYWELL, 39 = BASE Energy. Adding one here is a label and an id,
+# not code — but an id that was GUESSED would hand back another campaign's
+# numbers on a board that looks entirely normal, so only add observed ones.
+CAMPAIGNS = (("Auto — the owner's campaign", ""),
+             ("RES AT&T", "3"),
+             ("RES-ENERGYWELL", "40"),
+             ("BASE Energy", "39"))
+
+_CAMPAIGN_OPTIONS = [
+    {"text": {"type": "plain_text", "text": label}, "value": cid or "auto"}
+    for label, cid in CAMPAIGNS
+]
+
+
 def modal(today: dt.date | None = None) -> dict:
     """The popup. `today` is injectable so the default date is testable."""
     target = (today - dt.timedelta(days=1)) if today else service.default_target()
@@ -64,6 +80,21 @@ def modal(today: dt.date | None = None) -> dict:
             # NO initial_date, and optional: the blank IS the single-day
             # answer. Pre-filling it would make every request a range and
             # quietly change what the untouched popup does.
+            # AUTO is the default and the right answer for almost everyone:
+            # the per-office map already knows the campaign of every office
+            # that runs exactly ONE (Raf 2026-09-01: "unless it can just tell
+            # what campaign the owner is from" — it can). The picker exists for
+            # the owners who run more than one, where a map keyed by office
+            # name has no answer: Jay Turnage knocks AT&T AND Energy Wells.
+            {"type": "input", "block_id": "campaign", "optional": True,
+             "label": {"type": "plain_text", "text": "Which campaign?"},
+             "hint": {"type": "plain_text",
+                      "text": "Leave on Auto unless this owner runs more than "
+                              "one — then pick the one you want."},
+             "element": {
+                 "type": "static_select", "action_id": "v",
+                 "initial_option": _CAMPAIGN_OPTIONS[0],
+                 "options": list(_CAMPAIGN_OPTIONS)}},
             {"type": "input", "block_id": "through", "optional": True,
              "label": {"type": "plain_text", "text": "Through which day?"},
              "hint": {"type": "plain_text",
@@ -183,11 +214,16 @@ def handle_submission(web, payload: dict) -> None:
         end = dt.date.fromisoformat(through_s)
     except ValueError:
         end = target
-    process(web, payload["user"]["id"], office, target, end)
+    sel = (vals.get("campaign", {}).get("v", {})
+           .get("selected_option") or {}).get("value") or "auto"
+    campaign = None if sel == "auto" else sel
+    process(web, payload["user"]["id"], office, target, end,
+            campaign=campaign)
 
 
 def process(web, user_id: str, office: str, target: dt.date,
-            end: Optional[dt.date] = None) -> None:
+            end: Optional[dt.date] = None,
+            campaign: Optional[str] = None) -> None:
     """Fetch + send, reporting every outcome in the DM. Never raises: this runs
     on the listener's thread pool and a crash here would be silence for the
     requester and a stack trace nobody reads."""
@@ -252,6 +288,7 @@ def process(web, user_id: str, office: str, target: dt.date,
     try:
         with _PULL_LOCK:
             board = service.board_for(office, target, end,
+                                      campaign=campaign,
                                       logfn=lambda m: None)
     except Exception as e:  # noqa: BLE001 — every failure answers in words
         traceback.print_exc()

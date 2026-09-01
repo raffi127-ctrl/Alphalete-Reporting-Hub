@@ -108,9 +108,13 @@ class BoardForWalksTheDays(unittest.TestCase):
             return (rows, "build") if rows else (None, "")
 
         def fake_pull(jobs, verbose=True, profile_dir=None):
-            self.pulled.append([(n, list(days)) for n, days in jobs])
-            return [(n, {d: rows_for(d) for d in days}, None)
-                    for n, days in jobs]
+            # A job is (name, days) or (name, days, campaign) — the third
+            # element pins the campaign for an office that runs more than one.
+            # Mirrors the real pull_offices_days, which reads job[0]/job[1] and
+            # treats a missing third as "let the per-office map decide".
+            self.pulled.append([(j[0], list(j[1]),
+                                 j[2] if len(j) > 2 else None) for j in jobs])
+            return [(j[0], {d: rows_for(d) for d in j[1]}, None) for j in jobs]
 
         def fake_render(target, **kw):
             self.rendered = dict(kw, target=target)
@@ -174,7 +178,7 @@ class BoardForWalksTheDays(unittest.TestCase):
         b = service.board_for("Rafael Hidalgo", start, end,
                               logfn=lambda m: None)
         self.assertEqual(len(self.pulled), 1)
-        jobs = dict((n, days) for n, days in self.pulled[0])
+        jobs = dict((n, days) for n, days, _camp in self.pulled[0])
         self.assertEqual(jobs["Rafael Hidalgo"],
                          [dt.date(2026, 8, 22), dt.date(2026, 8, 23)])
         # Chan is complete on disk, so he is not in the session at all.
@@ -230,7 +234,7 @@ class BoardForWalksTheDays(unittest.TestCase):
         b = service.board_for("Rafael Hidalgo", start, end,
                               logfn=lambda m: None)
         # A session opened for Chan ALONE — our days needed nothing.
-        jobs = dict((n, days) for n, days in self.pulled[0])
+        jobs = dict((n, days) for n, days, _camp in self.pulled[0])
         self.assertNotIn("Rafael Hidalgo", jobs)
         self.assertEqual(jobs["Chan Park"], [dt.date(2026, 8, 23),
                                              dt.date(2026, 8, 24)])
@@ -290,7 +294,7 @@ class BoardForWalksTheDays(unittest.TestCase):
         start, end = dt.date(2026, 8, 22), dt.date(2026, 8, 24)
         b = service.board_for("Rafael Hidalgo", start, end,
                               logfn=lambda m: None)
-        jobs = dict((n, days) for n, days in self.pulled[0])
+        jobs = dict((n, days) for n, days, _camp in self.pulled[0])
         self.assertEqual(jobs["Rafael Hidalgo"], service.span_days(start, end))
         self.assertEqual(jobs["Chan Park"], service.span_days(start, end))
         self.assertEqual(b.compared_to, "Chan Park")
@@ -306,7 +310,8 @@ class BoardForWalksTheDays(unittest.TestCase):
     # ---- nothing to show --------------------------------------------------
     def test_an_empty_span_is_an_answer_not_a_crash(self):
         def empty_pull(jobs, verbose=True, profile_dir=None):
-            return [(n, {d: [] for d in days}, None) for n, days in jobs]
+            # (name, days) or (name, days, campaign) — index, don't unpack.
+            return [(j[0], {d: [] for d in j[1]}, None) for j in jobs]
 
         with mock.patch(
                 "automations.rashad_metrics.knocks_pull.pull_offices_days",
@@ -453,7 +458,7 @@ class ThePopup(unittest.TestCase):
     def test_a_blank_through_submits_as_a_single_day(self):
         seen = {}
         with mock.patch.object(handler, "process",
-                               lambda *a: seen.update(args=a)):
+                               lambda *a, **k: seen.update(args=a, kw=k)):
             handler.handle_submission(None, self._payload("2026-08-24", None))
         self.assertEqual(seen["args"][2:], ("Chan Park",
                                             dt.date(2026, 8, 24),
@@ -462,7 +467,7 @@ class ThePopup(unittest.TestCase):
     def test_a_filled_through_submits_as_a_range(self):
         seen = {}
         with mock.patch.object(handler, "process",
-                               lambda *a: seen.update(args=a)):
+                               lambda *a, **k: seen.update(args=a, kw=k)):
             handler.handle_submission(
                 None, self._payload("2026-08-18", "2026-08-23"))
         self.assertEqual(seen["args"][2:], ("Chan Park",

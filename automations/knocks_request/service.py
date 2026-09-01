@@ -334,12 +334,21 @@ def _norm(name: str) -> str:
 def board_for(office: str, target: Optional[dt.date] = None,
               end: Optional[dt.date] = None, *,
               allow_live: bool = True,
+              campaign: Optional[str] = None,
               wait_timeout_s: int = WAIT_TIMEOUT_S,
               logfn: Callable[[str], None] = print) -> Board:
     """The whole request: cache, else pull, then draw. Raises only on a real
     failure (no such office, a bad span, ownerville still busy, a broken pull)
     — a span with genuinely no knocks comes back as a Board with png=None and
     a note.
+
+    `campaign` (optional): pin this invD2DClientId for OUR office instead of
+    letting the per-office map choose. For an owner who runs more than one
+    campaign the map cannot answer — it holds one value per office — so the
+    requester says which (Raf 2026-09-01: "we might have to have a dropdown
+    for what campaign they're in. Unless it can just tell what campaign the
+    owner is from" — it can, for everyone who runs exactly one, and that stays
+    the default).
 
     `end` (optional) makes it a RANGE, start and end inclusive. Every day is
     fetched on its own — from the cache where we have it, in one shared
@@ -425,12 +434,21 @@ def board_for(office: str, target: Optional[dt.date] = None,
             # pull_office_knocks impersonates unconditionally, so asking it for
             # Raf reports his own office as an access gap.
             from automations.rashad_metrics.knocks_pull import pull_offices_days
-            jobs = ([(canonical, need)] if need else [])
+            # The campaign rides WITH our job. None = let the per-office map
+            # decide, which is right for every office that runs one campaign;
+            # an explicit pick is for an owner who runs more than one (Jay
+            # Turnage knocks AT&T and Energy Wells) or an office whose campaign
+            # the map does not know yet.
+            jobs = ([(canonical, need, campaign)] if need else [])
             if compare_need:
+                # The comparison office keeps its OWN campaign — it is a
+                # different office and the pick was about ours.
                 jobs.append((compare, compare_need))
+            # job is (name, days) or (name, days, campaign) — index, don't
+            # unpack, or adding the campaign silently crashes the pull here.
             logfn("pulling " + ", ".join(
-                f"{n} ({len(ds)} day{'s' if len(ds) != 1 else ''})"
-                for n, ds in jobs) + " from ownerville…")
+                f"{j[0]} ({len(j[1])} day{'s' if len(j[1]) != 1 else ''})"
+                for j in jobs) + " from ownerville…")
             # Indexed by name, not by position: `jobs` may hold the comparison
             # office ALONE when our own days were all cached.
             got = {n: (rows_by_day, err) for n, rows_by_day, err in
