@@ -8404,11 +8404,6 @@ else:  # st.session_state.view == "user"
             # 2026-08-03 when it became a two-phase card (build → Slack ✅ send):
             # it now rides the universal phase ramp like Country Sales Board —
             # orange after the build, green once the reports send. (Megan 8/3)
-            # August Owner Showdown — TEMP competition card. Force its pill
-            # BRIGHT YELLOW at rest so it reads as "temporary / competition"; the
-            # :not(ok):not(fail) guard lets it still turn GREEN on a real run (and
-            # red on failure). Remove with the card after 2026-08-31. (Raf 7/29)
-            "[class*='owner-showdown__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCF3B8!important;color:#6B5A0A!important;border-color:#EAB308!important;opacity:1!important;animation:none!important}"
             # Org Sales Board — LIVE daily report: no pin, it greens on a real run
             # and reds on failure like any other batch report. (Megan 2026-07-29)
             # Car-Rides Cleanup / Sales Board Fill / New-Start Follow-Up are

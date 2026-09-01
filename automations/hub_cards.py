@@ -523,12 +523,6 @@ def _tableau_box_card() -> dict:
         ],
     }
 AUTOMATED_REPORTS = [
-    # 🏆 TEMP COMPETITION CARD — August Owner Showdown (Raf, 2026-07-29).
-    # Two $5,000 battles for August only: personal new-internet sales (daily)
-    # + rep-count growth (Sundays). Remove this card after 2026-08-31. Pill is
-    # forced BRIGHT YELLOW (temp) via the calstat CSS override below (search
-    # 'owner-showdown__calstat'); it still turns GREEN when the day's run
-    # succeeds. Fills the KTS tab; Sunday digest emails Raf only.
     # Intraday knock boards — its own LaunchAgent (com.alphalete.knocks-intraday)
     # ticking every 5 min, NOT the 4am batch, so self_scheduled puts it under
     # ⏰ TIME SET REPORTS with its real times on the pill (Megan 2026-08-25).
@@ -640,66 +634,6 @@ AUTOMATED_REPORTS = [
             "message_success": "✅ Intraday Knocks — every due office posted.",
             "message_failed": "❌ Intraday Knocks failed — see the log above.",
         },
-    },
-    {
-        "id": "owner-showdown",
-        "name": "August Owner Showdown 🏆",
-        "creator": "Raf & Claude",
-        "emoji": "🏆",
-        # Bright yellow accent — temporary competition card.
-        "color": "#EAB308",
-        "assignees": ["Lucy 1"],
-        "run_machine": "Lucy 1",
-        "run_rerun_id": "owner_showdown",
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
-                      "?gid=893154737#gid=893154737"),
-        # It does NOT run in the 4am batch — it has its own agent,
-        # com.alphalete.owner-showdown-daily, firing at 09:00. self_scheduled
-        # puts it under ⏰ TIME SET REPORTS with its real time on the pill
-        # instead of sitting in the morning batch claiming "4 AM"
-        # (Megan 2026-08-19).
-        "self_scheduled": True,
-        "schedule": {
-            "frequency": "daily",
-            "time": "9:00 AM",
-            "time_label": "9 AM",
-            "estimated_minutes": 3,
-        },
-        "description": (
-            "August-only competition tracker. Fills the KTS tab daily: each "
-            "owner's personal NEW-INTERNET sales (daily) and active rep-count "
-            "growth (Sundays), both sorted highest→lowest. Sunday digest emails "
-            "Raf the standings. $5,000 to each of the two winners."
-        ),
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "**•** **Personal Sales** — every new-internet sale in each owner's "
-            "own codes (Aug 1–31), pulled daily from Tableau and written into "
-            "the KTS 'Personal Production' table. 0 entered on a day with no "
-            "sale. TOTALS = month-to-date, sorted most→least.\n"
-            "**•** **Rep Count Growth** — active rep count pulled on Sundays "
-            "(8/2, 8/9, 8/16, 8/23, 8/30) into the 'Rep Count' table. "
-            "TOTALS = growth vs the 8/2 baseline, sorted most→least.\n"
-            "**•** **Sunday email** — standings digest to Raf only, first Sun "
-            "Aug 2, last Sun Aug 30.\n"
-            "**•** Temp card — retired after Aug 31."
-        ),
-        "post_run": {
-            "message_success": "✅ Owner Showdown updated — KTS tab filled and sorted.",
-            "message_failed": "❌ Owner Showdown run failed — see the log above.",
-        },
-        "checklist": [],
-        "actions": [
-            {
-                "label": "Run Now",
-                "icon": "▶",
-                "primary": True,
-                "help": "Pulls the latest numbers and refills the KTS competition tables now.",
-                "module": "automations.owner_showdown.run",
-                "args_fn": (lambda: []),
-            },
-        ],
     },
     # 🏢 Office Operations — New-Hire Swag Texts. Renders a custom upload →
     # preflight → send UI via the report-id hook in _render_report_card (not
