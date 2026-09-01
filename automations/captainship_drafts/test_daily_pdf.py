@@ -23,6 +23,15 @@ def _png(path: Path, w: int = 240, h: int = 80) -> Path:
     return path
 
 
+def _html_of(msg) -> str:
+    """The message's HTML body, wherever the MIME nesting put it — the shape
+    changes with how many inline images a bundle carries."""
+    for part in msg.walk():
+        if part.get_content_type() == "text/html":
+            return part.get_content()
+    raise AssertionError("no text/html part")
+
+
 def _rafael():
     """The REAL Rafael captain row — his 13-owner captainship is the worked
     example Rafael gave, and a stand-in class would drift from config."""
@@ -119,10 +128,68 @@ class DailyPdfTests(unittest.TestCase):
                                    _png(self.tmp / "w.png"))],
                   "errors": {}}
         msg = email_build.build(_rafael(), bundle, dt.date(2026, 9, 6))  # Sunday
-        html = msg.get_payload()[1].get_payload()[0].get_content()
+        html = _html_of(msg)
         self.assertIn("Daily Knocks", html)
         self.assertNotIn("Weekly Knock Dispositions", html)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AttachmentBudgetTests(unittest.TestCase):
+    """Gmail's 25MB is a cliff, not a slope — a message past it FAILS. So the
+    per-owner copies, which are the same boards a third time, are what gives
+    way, and the body says which."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def _file(self, name: str, size: int) -> Path:
+        p = self.tmp / name
+        p.write_bytes(b"0" * size)
+        return p
+
+    def _bundle(self, owner_sizes, weekly=1_000_000, combined=1_000_000):
+        dailies = [(self._file("combined.pdf", combined),
+                    "Daily Knock Dispositions - Raf's Captainship - Aug 31, 2026.pdf")]
+        for i, sz in enumerate(owner_sizes):
+            dailies.append((self._file(f"o{i}.pdf", sz),
+                            f"Daily Knock Dispositions - Owner {i} - Aug 31, 2026.pdf"))
+        return {"weekly_pdf": (self._file("weekly.pdf", weekly),
+                               "Weekly - Aug 24-29, 2026.pdf"),
+                "daily_pdfs": dailies}
+
+    def test_everything_fits_when_it_fits(self):
+        kept, dropped = email_build.attachments_for(
+            self._bundle([200_000] * 13))
+        self.assertEqual(len(kept), 15)
+        self.assertEqual(dropped, [])
+
+    def test_per_owner_copies_are_what_gives_way(self):
+        big = email_build.MAX_ATTACH_BYTES // 4
+        kept, dropped = email_build.attachments_for(self._bundle([big] * 8))
+        self.assertLess(len(kept), 10)
+        self.assertTrue(dropped)
+        # the weekly and the captainship-wide day survive no matter what
+        self.assertIn("Weekly", kept[0][1])
+        self.assertIn("Captainship", kept[1][1])
+
+    def test_the_two_that_cover_everyone_are_never_dropped(self):
+        huge = email_build.MAX_ATTACH_BYTES
+        kept, dropped = email_build.attachments_for(
+            self._bundle([huge], weekly=huge, combined=huge))
+        self.assertEqual([n for _p, n in kept],
+                         ["Weekly - Aug 24-29, 2026.pdf",
+                          "Daily Knock Dispositions - Raf's Captainship - Aug 31, 2026.pdf"])
+        self.assertEqual(len(dropped), 1)
+
+    def test_the_body_names_what_was_left_off(self):
+        big = email_build.MAX_ATTACH_BYTES // 2
+        bundle = self._bundle([big, big])
+        bundle.update({"daily_knocks": [], "errors": {}})
+        msg = email_build.build(_rafael(), bundle, dt.date(2026, 9, 1))
+        html = _html_of(msg)
+        self.assertIn("left off to keep this email under the mail size limit",
+                      html)
+        self.assertIn("Owner 1", html)

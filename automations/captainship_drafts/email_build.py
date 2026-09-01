@@ -37,6 +37,20 @@ from automations.shared import board_email_html as _beh
 # wider than the boards were drawn before 2x, so nothing a reader could zoom
 # into has been taken away.
 _INLINE_PX = 1800
+
+# WHAT THE ATTACHMENTS ARE ALLOWED TO WEIGH, and why there is a number at all.
+# Gmail refuses a message over 25MB — it FAILS the send rather than delivering
+# a degraded one, so a report that grows past the line does not arrive smaller,
+# it does not arrive. Measured 2026-09-01 on Rafael's (the biggest
+# captainship): weekly PDF 5.5MB + the day's PDFs 7.5MB = 13MB of attachments
+# under ~6MB of inline boards, and base64 adds a third on top of all of it.
+#
+# So the attachments are added in the order Rafael reads them and stop at this
+# budget: the weekly and the captainship-wide day always fit, and the per-owner
+# copies — which are the same boards a third time — are what gives way. When
+# any is left off the body says so, because an attachment that vanishes
+# silently is worse than one that is missing loudly.
+MAX_ATTACH_BYTES = 13 * 1024 * 1024
 from automations.captainship_drafts.config import Captain
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, PHOTO_EMBED_PX, PHOTO_IMG,
@@ -317,6 +331,33 @@ def subject_for(captain: Captain, today: dt.date) -> str:
     return f"{subject_prefix(captain)} {d.month}/{d.day}"
 
 
+def attachments_for(bundle: dict) -> Tuple[List[Tuple], List[str]]:
+    """(what to attach, the names left off) — in the order Rafael reads the
+    report: last week first, then the captainship's day, then each owner's own
+    page (Eve 2026-09-01).
+
+    The first two are never dropped. The per-owner copies are added while the
+    running total is inside MAX_ATTACH_BYTES and skipped after that, so the
+    message cannot cross Gmail's cliff no matter how big a captainship grows —
+    a captain with 13 offices keeps every page, and one with 40 keeps the two
+    that cover everybody plus as many singles as fit."""
+    weekly = bundle.get("weekly_pdf")
+    dailies = list(bundle.get("daily_pdfs") or [])
+    must = ([weekly] if weekly else []) + dailies[:1]
+    kept, dropped, total = [], [], 0
+    for item in must:
+        kept.append(item)
+        total += Path(item[0]).stat().st_size
+    for item in dailies[1:]:
+        size = Path(item[0]).stat().st_size
+        if total + size > MAX_ATTACH_BYTES:
+            dropped.append(item[1])
+            continue
+        kept.append(item)
+        total += size
+    return kept, dropped
+
+
 def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     """Build the draft message for `captain` from its image `bundle`.
 
@@ -350,10 +391,20 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     # Same short/semantic scheme as the section images (see _Images) — the
     # signature photo is just the last part in the same related bundle.
     cid_photo = f"<{len(imgs.pairs) + 1:02d}-signature@{_Images._DOMAIN}>"
+    kept, dropped = attachments_for(bundle)
+    trimmed = ('<div style="font-size:12px;color:#666;margin-top:10px">'
+               f'{len(dropped)} per-owner Daily Knock Dispositions PDF(s) were '
+               'left off to keep this email under the mail size limit: '
+               + _html.escape(", ".join(
+                   n.replace("Daily Knock Dispositions - ", "").rsplit(" - ", 1)[0]
+                   for n in dropped))
+               + '.</div>') if dropped else ''
+
     html = (
         f'<div style="font-family:{_FONT_STACK};color:#000">'
         f'{_intro_html(captain, today)}'
         f'{sections_html}'
+        f'{trimmed}'
         '<br>Kind regards,<br><br>'
         f'{_signature_html(cid_photo)}'
         '</div>'
@@ -394,13 +445,7 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     # image into an attachment; a genuine attachment alongside the container
     # is the shape every mail client expects. It also no longer passes through
     # a Gmail draft rewrite at all — the send is SMTP with this exact MIME.
-    weekly = bundle.get("weekly_pdf")
-    attachments = ([weekly] if weekly else []) + list(
-        bundle.get("daily_pdfs") or [])
-    # Order matters in a mail client's attachment strip, and this is the order
-    # Rafael described the report in (Eve 2026-09-01): last week first, then
-    # the captainship's day, then each owner's own page.
-    for pdf_path, filename in attachments:
+    for pdf_path, filename in kept:
         msg.add_attachment(Path(pdf_path).read_bytes(),
                            maintype="application", subtype="pdf",
                            filename=filename)

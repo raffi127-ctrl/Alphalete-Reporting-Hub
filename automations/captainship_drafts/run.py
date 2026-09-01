@@ -727,8 +727,15 @@ def main(argv=None) -> int:
                 msg.replace_header("To", recipient)
                 _apply_cc(msg, args.cc)
                 _apply_subject_prefix(msg, args.subject_prefix)
+            # The SIZE, every build, because Gmail's 25MB is a cliff: a
+            # message past it fails to send rather than arriving degraded, and
+            # this number is the only warning before that happens (the boards
+            # got PDF copies on 2026-09-01 — see email_build.MAX_ATTACH_BYTES).
+            n_att = sum(1 for _p in msg.iter_attachments()
+                        if _p.get_filename())
             print(f"  built draft: subj={msg['Subject']!r}, "
-                  f"{bundle['_n_imgs']} image(s)")
+                  f"{bundle['_n_imgs']} image(s), {n_att} attachment(s), "
+                  f"{len(bytes(msg)) / (1024 * 1024):.1f} MB")
 
             if args.send and not args.dry_run:
                 if not recipient.strip():
