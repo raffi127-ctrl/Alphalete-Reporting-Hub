@@ -28,8 +28,12 @@ SECTIONS = [
      "emoji": "\U0001F331", "react": "seedling", "kind": "field_status"},
     {"id": "zero_streak", "title": "Zero Streak",
      "emoji": "\U0001F6AB", "react": "no_entry_sign", "kind": "zeros"},
-    {"id": "energy_board", "title": "Energy Sales Board",
-     "emoji": "⚡", "react": "zap", "kind": "energy"},
+    # energy_board ("Energy Sales Board", kind='energy') RETIRED 2026-09-01.
+    # Base Power Energy ended (Rafael, #alphalete-sales: "we're done with that
+    # program"), so the section was a screenshot of a campaign that no longer
+    # sells -- Eve: "tampoco tiene que sacar screenshot y postear en el canal".
+    # The 'energy' recipe in capture.py is LEFT IN PLACE and still works; it is
+    # simply never selected. Re-add this entry here to bring the section back.
     {"id": "team_sales", "title": "Team Sales",
      "emoji": "\U0001F465", "react": "busts_in_silhouette", "kind": "team"},
     {"id": "highrollers", "title": "Highrollers of the Day",

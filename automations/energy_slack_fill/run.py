@@ -48,6 +48,7 @@ import os
 import re
 import ssl
 import sys
+from pathlib import Path
 
 from automations.energy_slack_fill import parse as P
 from automations.energy_slack_fill.parse import TZ
@@ -319,6 +320,17 @@ def run_day(blocks, ws, g, day: dt.date, rows: dict[int, str]):
 
 
 def main(argv=None) -> int:
+    # STOOD DOWN 2026-09-01 — Base Power Energy ended (Rafael), and the column
+    # this fills stopped existing on 2026-08-31 when the per-day 'EN' sub-header
+    # was renamed to 'TK'. Without the marker every run takes the "nowhere to
+    # write, holding" path and returns 75, i.e. closes as FAILED every morning
+    # for a report with nothing to do. Delete DISABLED to bring it back.
+    marker = Path(__file__).resolve().parent / "DISABLED"
+    if marker.exists():
+        _log("[energy_slack_fill] DISABLED — the Base Power Energy program ended "
+             "2026-09-01 and the board's 'EN' column is now 'TK' (knocks). "
+             f"Exiting without reading Slack or the Sheet. ({marker})")
+        return 0
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--date", help="sales day (YYYY-MM-DD); default yesterday")
     ap.add_argument("--week", action="store_true",

@@ -1393,6 +1393,14 @@ PAUSED_REPORTS = {
                         "program ended, so there are no sales to cross-check "
                         "and nobody to tag. energy_crossref/DISABLED stands the "
                         "module down; the Sales Board EN fill still runs."),
+    "energy-slack-fill": ("Retired 2026-09-01 (Eve) — the Energy program ended "
+                          "and the board's per-day 'EN' column became 'TK' "
+                          "(knocks) on 8/31, so this had nowhere left to write. "
+                          "energy_slack_fill/DISABLED stands the module down."),
+    "energy_slack_fill": ("Retired 2026-09-01 (Eve) — the Energy program ended "
+                          "and the board's per-day 'EN' column became 'TK' "
+                          "(knocks) on 8/31, so this had nowhere left to write. "
+                          "energy_slack_fill/DISABLED stands the module down."),
     "tracker_mirror": ("Stood down 2026-08-24 (Carlos, 5d4042b) — the manager "
                        "tabs are on live IMPORTRANGE again, so a ferry pass "
                        "would overwrite those formulas with frozen values."),

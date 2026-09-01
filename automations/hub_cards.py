@@ -2303,7 +2303,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🐺",
         "color": "#6A4C93",
         "category": "📊 Metrics",
-        "description": "Combines Jolie's two manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales AND #alphalete-lvl1-chat: Daily Production, an All Teams Sales Board, an Entry Level (Wk 1–4) board, a Back-to-Back Zeros callout, an Energy-only sales board, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
+        "description": "Combines Jolie's two manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales AND #alphalete-lvl1-chat: Daily Production, an All Teams Sales Board, an Entry Level (Wk 1–4) board, a Back-to-Back Zeros callout, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
         "breakdown": (
             "WHAT IT DOES\n"
             "Takes screenshots the Sales Board tab into clean PNGs and posts "
@@ -2317,12 +2317,13 @@ AUTOMATED_REPORTS = [
             "(drops 5th-wk+ veterans), grouped by team, same trims as #1\n"
             "4. Back-to-Back Zeros — reps who rolled a 0 on both of the last two "
             "mandatory days (Sundays don't count; Monday compares Fri + Sat), by team\n"
-            "5. Energy Sales Board — Campaign = Energy only, ranked by Apps\n"
-            "6. Team Sales — one image per team (auto-counts from the sheet)\n"
-            "7. Highrollers of the Day\n"
-            "8. Total Week Production (Ranking based on Apps)\n"
-            "9. Ranking based on New Internets\n"
-            "10. Ranking based on Wireless\n\n"
+            "5. Team Sales — one image per team (auto-counts from the sheet)\n"
+            "6. Highrollers of the Day\n"
+            "7. Total Week Production (Ranking based on Apps)\n"
+            "8. Ranking based on New Internets\n"
+            "9. Ranking based on Wireless\n\n"
+            "The Energy Sales Board was section 5 until 2026-09-01; it went "
+            "out with the Energy program.\n\n"
             "WHEN IT RUNS\n"
             "Daily, ~4 AM on the mini (before the manual post), into "
             "#alphalete-sales + a mirrored copy in #alphalete-lvl1-chat (Raf 8/23). "
@@ -2336,7 +2337,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Alphalete Production posted — Daily Production, All Teams Sales Board, Entry Level, Back-to-Back Zeros, Energy board, team boards, Highrollers, and the 3 rankings in the dated threads in #alphalete-sales + #alphalete-lvl1-chat.",
+            "message_success": "✅ Alphalete Production posted — Daily Production, All Teams Sales Board, Entry Level, Back-to-Back Zeros, team boards, Highrollers, and the 3 rankings in the dated threads in #alphalete-sales + #alphalete-lvl1-chat.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [

@@ -1,0 +1,21 @@
+STOOD DOWN 2026-09-01 — Base Power Energy is over, and the column is gone.
+
+Eve, 2026-09-01: "no tiene que completar la sales board, tampoco tiene que
+sacar screenshot y postear en el canal, ni hacer crossreference" — after
+Rafael Hidalgo in #alphalete-sales: "we can end the base energy cross
+referencing FYI we're done with that program!".
+
+It was ALREADY a no-op. The per-day 'EN' sub-header on 'Alphalete SALES BOARD
+2025' was renamed to 'TK' (Total Knocks) on 2026-08-31, so metric_col() finds
+no 'EN' column, run_day() takes the "nowhere to write, holding" path and main()
+returns 75 — the run has been closing as FAILED every morning since, without
+writing a single cell. That column belongs to alphalete_production.tk_fill now.
+
+run.py sees this file and exits 0 without reading #alphalete-sales or the
+Sheet, so the card stops going red for a report that has nothing left to do.
+
+To bring it back: delete this file, then in
+automations/day_orchestrator/schedule_config.json flip energy_slack_fill back
+to on_scheduler:true, cadence.weekdays [0..6], drop "standalone_watch": false,
+and remove it from PAUSED_REPORTS in automations/dashboard.py. Note the board
+would ALSO need an 'EN' sub-header again — without one this only ever holds.

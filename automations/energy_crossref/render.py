@@ -33,7 +33,18 @@ def energy_board_png(day: dt.date, out_dir: Path) -> Path:
 
     capture_all frames everything off 'yesterday', so it is handed the day AFTER
     the sale day — that is the same call the 4:33am post makes."""
-    spec = next(s for s in PAGES.SECTIONS if s["id"] == "energy_board")
+    # The section was RETIRED from the daily post on 2026-09-01 along with this
+    # whole report, so SECTIONS no longer carries it — a bare next() would raise
+    # StopIteration with nothing to read. Both modules are stood down, so this
+    # is only reachable by someone deleting energy_crossref/DISABLED for a
+    # backfill; say what to do instead of dying opaquely.
+    spec = next((s for s in PAGES.SECTIONS if s["id"] == "energy_board"), None)
+    if spec is None:
+        raise RuntimeError(
+            "no 'energy_board' section in alphalete_production.pages — it was "
+            "retired 2026-09-01 when the Energy program ended. Re-add the entry "
+            "there (the 'energy' recipe in capture.py is still intact) if you "
+            "need this image again.")
     # capture_all returns (captures, grid, tab title) — only the captures matter
     # here, and each capture is (meta, png path).
     out, _grid, _tab = C.capture_all([spec], day + dt.timedelta(days=1), out_dir)
