@@ -591,3 +591,48 @@ def test_dedupe_respects_the_offices_own_clock():
                               dt.datetime(2026, 9, 1, 20, 0)) is True
     assert R._intraday_covers(dest, east,
                               dt.datetime(2026, 9, 1, 21, 0)) is False
+
+
+# --- enrolling here REMOVES you from knocks_intraday ------------------------
+
+def test_enrolling_removes_the_office_from_knocks_intraday(monkeypatch,
+                                                           tmp_path):
+    """Megan 2026-09-01: "they should just get removed from knocks_intraday
+    since we want them enrolling in the dispositions." One action — enrolling —
+    both wires the office here and stops the other job posting to it."""
+    from automations.knocks_intraday import roster as ros
+    chan = ros.enrolled("eod")[0].channel_id
+    before = len(ros.enrolled("eod"))
+
+    p = tmp_path / "onboarded_offices.json"
+    p.write_text(json.dumps([{"key": "x", "enabled": True, "destinations": [
+        {"kind": "slack", "channel_id": chan, "cadence_min": 60}]}]))
+    monkeypatch.setattr(ros, "_ONBOARDED_JSON", p)
+    assert chan in ros.disposition_channels()
+    assert len(ros.enrolled("eod")) == before - 1
+    assert chan not in {o.channel_id for o in ros.enrolled("eod")}
+
+
+def test_an_office_wired_but_switched_off_still_gets_the_old_board(monkeypatch,
+                                                                   tmp_path):
+    """Wired-but-off means nothing is sending from here yet. Removing it from
+    knocks_intraday too would leave that channel with no board at all."""
+    from automations.knocks_intraday import roster as ros
+    chan = ros.enrolled("eod")[0].channel_id
+    before = len(ros.enrolled("eod"))
+    p = tmp_path / "onboarded_offices.json"
+    p.write_text(json.dumps([{"key": "x", "enabled": False, "destinations": [
+        {"kind": "slack", "channel_id": chan, "cadence_min": 60}]}]))
+    monkeypatch.setattr(ros, "_ONBOARDED_JSON", p)
+    assert ros.disposition_channels() == set()
+    assert len(ros.enrolled("eod")) == before
+
+
+def test_an_unreadable_registry_leaves_the_old_board_posting(monkeypatch,
+                                                             tmp_path):
+    from automations.knocks_intraday import roster as ros
+    before = len(ros.enrolled("eod"))
+    p = tmp_path / "onboarded_offices.json"
+    p.write_text("{ not json")
+    monkeypatch.setattr(ros, "_ONBOARDED_JSON", p)
+    assert len(ros.enrolled("eod")) == before
