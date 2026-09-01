@@ -6,6 +6,14 @@ Daily Bob" — carries a **Rating** column on the SAME ROW as **Ad (Subject
 Line)**, per applicant, per day, per office. That is the same judgement this
 workbook holds, in the system it was typed from, already joined to the ad.
 
+CHECKED, not assumed: the nine BOB rows on AppStream for Mon 2026-08-31 were
+looked up in this workbook. Eight carried the identical rating (3,4,5,3,2,3,3,3);
+the ninth — Jayla Callier — is present here with a BLANK rating where AppStream
+has a 3. Not one disagreed on a value. So it is the same judgement on the same
+scale, and this copy is simply lossier: 864 of Raf's 2,253 rows are unrated.
+(Nine people on one day is a small check — widen it before relying on it for
+anything bigger than choosing a source.)
+
 So this module is reading a hand-typed copy: the same mistake as pulling the
 Focus Report. Tableau / SaraPlus / Sterling / AppStream are truth (Megan
 2026-08-31). Ad quality should come from AppStream, where nothing has to be
