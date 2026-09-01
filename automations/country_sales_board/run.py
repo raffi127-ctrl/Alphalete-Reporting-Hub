@@ -221,14 +221,18 @@ def main() -> int:
     print(f"=== {len(plan.updates)} cell write(s) "
           f"{'planned' if args.dry_run else 'applied'} — done ===")
     # Unmatched board ICDs are WARNED, never a non-zero exit. Verified
-    # 2026-07-27 against the probe week: the 5 that don't match (Edgar Muniz II,
-    # Niko Figueroa, Mason Davis, Mary Maya, Jacob Morgan) are simply absent
-    # from the view's 111 owners and sit at 0 in the VAs' own frozen columns for
-    # both WE 07.19 and WE 07.26 — inactive reps whose board rows nobody
-    # removed. Exiting INCOMPLETE on them would fail this report every single
-    # morning for a permanent, correct 0 (the trap org_sales_board's daily
-    # compare fell into). The warning is the signal; a rep who WAS producing and
-    # suddenly appears here is the case that wants an ICD Aliases row.
+    # 2026-07-27 against the probe week: the 5 that didn't match (Edgar Muniz II,
+    # Niko Figueroa, Mason Davis, Mary Maya, Jacob Morgan) were simply absent
+    # from the view's 111 owners and sat at 0 in the VAs' own frozen columns for
+    # both WE 07.19 and WE 07.26 — inactive reps whose board rows nobody had
+    # removed. Those 5 rows are GONE as of 2026-09-01 (Eve): the two-week zero
+    # rule was applied to this tab for the first time and took them off with 5
+    # others, so the expected unmatched count is now 0 and this warning should
+    # be quiet. Exiting INCOMPLETE on an unmatched row would still be wrong —
+    # it would fail this report every morning for a permanent, correct 0 (the
+    # trap org_sales_board's daily compare fell into). The warning is the
+    # signal; a rep who WAS producing and suddenly appears here is the case that
+    # wants an ICD Aliases row.
     if plan.unmatched:
         print(f"  ⚠ {len(plan.unmatched)} board ICD(s) had no match in the "
               f"pull and were filled 0 — expected for inactive reps, but a "

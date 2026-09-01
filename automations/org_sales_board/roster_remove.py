@@ -299,6 +299,11 @@ def main(argv=None) -> int:
                     help="Pipe-separated rep names, exactly as they read in col B.")
     ap.add_argument("--apply", action="store_true", help="write (default: dry-run)")
     ap.add_argument("--tab", default=SANDBOX_TAB)
+    ap.add_argument("--sheet", default=SHEET_ID,
+                    help="Workbook id. Defaults to the ORG board's. Every table "
+                         "here is found by LABEL, so the same finders cover any "
+                         "board of this shape — the Country Sales Board rides "
+                         "this rather than a second copy of the module.")
     ap.add_argument("--owner", default=None,
                     help="Scope the removal to the blocks whose banner contains "
                          "this text — e.g. --owner eveliz takes a rep off HER "
@@ -311,7 +316,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     names = [n.strip() for n in args.names.split("|") if n.strip()]
 
-    ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(args.tab))
+    ws = _retry(lambda: open_by_key(args.sheet).worksheet(args.tab))
     grid = _retry(lambda: ws.get("A1:ZZ2200", value_render_option="UNFORMATTED_VALUE")) or []
     plan = plan_removals(grid, names)
     if args.owner:

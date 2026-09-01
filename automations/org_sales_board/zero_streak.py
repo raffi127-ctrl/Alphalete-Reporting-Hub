@@ -164,6 +164,31 @@ def streak(vals: dict, closed: list) -> int:
     return n
 
 
+def unrolled_boxes(boxes: list, live_sun: dt.date) -> dict:
+    """{owner/section: newest WE date} for every box whose newest week column is
+    OLDER than the live week — i.e. the board has not rolled yet.
+
+    WHY THIS GUARD EXISTS (Eve, 2026-09-01, applying the rule to the Country
+    Sales Board). These boards roll on TUESDAY, and the rule runs on Tuesday
+    too. Run it before the roll and the newest closed week is still sitting in
+    col C as a FORMULA rather than as the literal the rule is defined on, so a
+    week that has not finished being frozen decides who comes off the board.
+    Worse, `roster_remove` deletes rows, and the roll re-anchors blocks that
+    point at absolute rows (the Country board's Current-vs-Prior block is
+    `=C$174`), so deleting between the snapshot and the roll moves the target
+    out from under it.
+
+    Read off the board's OWN header rather than the clock: "has this tab rolled"
+    is a question about the tab, and the two disagree for exactly the hours this
+    guard is about."""
+    late = {}
+    for b in boxes:
+        newest = max((d for d, _c in b["weeks"]), default=None)
+        if newest and newest < live_sun:
+            late[f"{b['owner']}/{b['section']}"] = newest
+    return late
+
+
 def build_post(flags: list, newbies: list, weeks: list, today: dt.date) -> str:
     """The Slack message. It PROPOSES; it never says anything was removed.
 
@@ -221,6 +246,15 @@ def main(argv=None) -> int:
     ap.add_argument("--weeks", type=int, default=DEFAULT_WEEKS,
                     help=f"closed weeks at 0 to flag on (default {DEFAULT_WEEKS})")
     ap.add_argument("--tab", default=SANDBOX_TAB)
+    ap.add_argument("--sheet", default=SHEET_ID,
+                    help="Workbook id. Defaults to the ORG board's. The rule is "
+                         "board-shaped, not board-specific: any tab with 'WE m.d' "
+                         "leaderboards reads the same, which is how the Country "
+                         "Sales Board is covered without a second copy of this.")
+    ap.add_argument("--allow-unrolled", action="store_true",
+                    help="run even when the board has not rolled into the live "
+                         "week yet (see the roll guard below — you almost never "
+                         "want this)")
     ap.add_argument("--today", default=None, help="YYYY-MM-DD, for a past run")
     ap.add_argument("--commands", action="store_true",
                     help="also print the roster_remove / distro_remove commands")
@@ -230,7 +264,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
 
-    ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(args.tab))
+    ws = _retry(lambda: open_by_key(args.sheet).worksheet(args.tab))
     grid = _retry(lambda: ws.get("A1:ZZ2200", value_render_option="UNFORMATTED_VALUE")) or []
     boxes = read_boxes(grid, today)
     if not boxes:
@@ -238,6 +272,16 @@ def main(argv=None) -> int:
         return 1
 
     live_sun = wk.reporting_sunday(today)
+    unrolled = unrolled_boxes(boxes, live_sun)
+    if unrolled and not args.allow_unrolled:
+        print(f"El board todavía no roleó: su columna viva es "
+              f"WE {max(unrolled.values()):%m.%d}, la semana viva es "
+              f"WE {live_sun:%m.%d}.")
+        print("  Corré esto DESPUÉS del roleo del martes. Antes del roleo la "
+              "semana cerrada más nueva sigue siendo la FÓRMULA de la col C, y "
+              "sacar filas justo antes del roleo le mueve las anclas por fila.")
+        print("  (--allow-unrolled si de verdad querés leerlo igual)")
+        return 2
     all_weeks = sorted({d for b in boxes for d, _c in b["weeks"]}, reverse=True)
     closed = [d for d in all_weeks if d < live_sun]
     print(f"=== zero_streak — {args.tab!r} — {today:%Y-%m-%d %a}")
