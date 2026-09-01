@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 import sys
 from typing import Optional
 
@@ -549,6 +550,27 @@ def is_master_office(name: str) -> bool:
     return _norm_name(name or "") == _norm_name(RAF["name"])
 
 
+# The ownerville page header names the signed-in account and its office id,
+# e.g. "RAFAEL HIDALGO - Owner • ALPHALETE SPECIALIZED MARKETING, INC.-TX
+# (11280)". Reading it is the ONLY way a run can tell which owner's data it is
+# about to publish: the login is a machine-wide credential file, so a session
+# can be a different owner than the report thinks without anything erroring.
+MASTER_OFFICE_ID = "11280"          # rhidalgo — the login IS Raf's office
+_OFFICE_ID_RE = re.compile(r"\((\d{4,6})\)")
+
+
+def logged_in_office(page) -> tuple:
+    """(header_text, office_id) for the account this ownerville session is
+    signed in as. office_id is "" when the header can't be read — an unreadable
+    header must not be treated as a mismatch, only a mismatch is."""
+    try:
+        head = " ".join((page.inner_text("body") or "")[:200].split())
+    except Exception:  # noqa: BLE001 — identity is a check, never the failure
+        return ("", "")
+    m = _OFFICE_ID_RE.search(head)
+    return (head, m.group(1) if m else "")
+
+
 def pull_master_days_on_page(page, targets: "list[dt.date]", *,
                              verbose: bool = True) -> "dict":
     """The master office's rows for SEVERAL days on an ALREADY-OPEN page — no
@@ -562,6 +584,20 @@ def pull_master_days_on_page(page, targets: "list[dt.date]", *,
     on-demand `/knocks` needed the same routing; extracted here so the two
     callers share ONE master scrape instead of keeping two copies in step.
     """
+    # WHO ARE WE? The master path does not impersonate — it publishes whatever
+    # office the session happens to be signed into, under Raf's name. On
+    # 2026-09-01 Lucy 1's ownerville credential file said `chidalgo`, so the
+    # session was Carlos's office 11580 and this function scraped it as Raf's
+    # board with no error anywhere. Wrong numbers under the right title are
+    # worse than no board, so a mismatch stops the pull.
+    head, office_id = logged_in_office(page)
+    if office_id and office_id != MASTER_OFFICE_ID:
+        raise RuntimeError(
+            "ownerville is signed in as office %s, not the master office %s — "
+            "refusing to publish that office's reps as Raf's. Fix the login on "
+            "this machine (ownerville-creds.json must be the rhidalgo account) "
+            "and re-run. Header: %r"
+            % (office_id, MASTER_OFFICE_ID, head[:120]))
     rqst = knocks._capture_rqst(page)
     if not rqst:
         raise RuntimeError("Couldn't capture ownerville rqst token from "
