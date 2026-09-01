@@ -186,6 +186,22 @@ def _build_render_dir() -> Path:
         return Path(tempfile.gettempdir()) / "captainship_drafts_render"
 
 
+def _usable_rows(rows) -> bool:
+    """Are these rep RECORDS, or something that merely parsed?
+
+    A cached day must be a list of dicts. One day stored as a list of strings
+    took down a whole 7-day request on 2026-09-01 — aggregate_days called
+    rec.get() on a str and the requester got "AttributeError: 'str' object has
+    no attribute 'get'", which says nothing about a cache file. The single-day
+    request for a GOOD day worked, so the failure only appeared on a span wide
+    enough to include the bad one, which is what made it look random.
+
+    A wrong-shaped file is treated exactly like a corrupt one: a MISS, so the
+    day gets pulled again rather than poisoning the fold.
+    """
+    return isinstance(rows, list) and all(isinstance(r, dict) for r in rows)
+
+
 def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
     """(rows, source) from disk, or (None, "") — see the module docstring for
     the order. Empty rows are NOT a cache hit: the build stores an empty pull
@@ -195,7 +211,7 @@ def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
     if own.exists():
         try:
             rows = json.loads(own.read_text(encoding="utf-8"))
-            if rows:
+            if rows and _usable_rows(rows):
                 return rows, "cache"
         except Exception:  # noqa: BLE001 — a bad cache file just misses
             pass
@@ -211,7 +227,7 @@ def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
             continue
         png = _owner_png(daily_root, canonical, "total_knocks", target)
         rows = _read_rows(png)
-        if rows:
+        if rows and _usable_rows(rows):
             return rows, "build"
     return None, ""
 
