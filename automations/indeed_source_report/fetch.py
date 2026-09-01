@@ -8,10 +8,12 @@ from __future__ import annotations
 import re
 
 BASE = "https://applicantstream.com/index.cfm"
-# The rqst token CONTAINS HYPHENS. A [A-Za-z0-9]+ pattern truncates it and every
-# page then answers "Your login is timed out", which reads like an auth failure
-# but is really a malformed URL.
-TOKRE = re.compile(r'rqst=([A-Za-z0-9\-]+)')
+# The rqst token CONTAINS HYPHENS — and the ownerville-SSO path mints tokens
+# with UNDERSCORES (seen live 2026-08-31: rqst=7D55E286_A725_...). A pattern
+# missing either separator truncates the token and every page then answers
+# "Your login is timed out", which reads like an auth failure but is really a
+# malformed URL.
+TOKRE = re.compile(r'rqst=([A-Za-z0-9_\-]+)')
 
 
 def token(page):
