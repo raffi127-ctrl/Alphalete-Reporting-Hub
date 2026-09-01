@@ -121,6 +121,15 @@ def request_view() -> None:
     # ---- 2. Owner id -----------------------------------------------------
     st.divider()
     st.markdown("### 2. Your OwnerVille account number")
+    # THE step that decides whether anything can ever be pulled, and the only
+    # one that happens outside this form — in the owner's own OV dashboard and
+    # inbox. Said here, next to the account number, because this is the moment
+    # they are thinking about their OV account.
+    st.warning("⚠️ **If Rafael Hidalgo's OV account does not already have "
+               "access to your account in OV, you will receive a request via "
+               "email as well as on your OV dashboard to accept the request "
+               "for access. Until this is accepted, you will NOT be able to "
+               "receive any dispositions.**")
     ov_account = st.text_input(
         "Your OwnerVille account number *",
         help="It's how we find you for certain when two people share a name.")
