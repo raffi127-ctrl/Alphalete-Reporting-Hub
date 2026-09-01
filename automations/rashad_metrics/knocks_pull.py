@@ -438,6 +438,27 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
         # Energy Wells and gets a separate report for each (Raf: "not
         # combined, 2 separate reports"), which a map keyed by office NAME
         # cannot express — it holds one value per office.
+        # WARM THE GRID BEFORE PINNING. The pin is a no-op on a session that
+        # has not loaded the Disposition grid yet — measured on Lucy 1
+        # 2026-09-01, impersonating Calvin (Energy Wells, campaign 40):
+        #
+        #   impersonate -> pin -> p=89   ->  ID, Rep, ..., Corp - No Opp, ...
+        #                                    (the UNPINNED B2B grid, no VL)
+        #   impersonate -> p=89 -> pin -> p=89  ->  ..., VL, Presentation, ...
+        #
+        # Same call, same campaign id; only the order differs. So the office's
+        # column set — and therefore its BOARD SHAPE — was decided by whatever
+        # had happened to load the grid before it, which is why Calvin rendered
+        # `energywell` in the afternoon and `wireless` after the session was
+        # re-minted, silently losing Chan's comparison line and the average
+        # columns (the wireless renderer accepts neither).
+        #
+        # One extra navigation per office pull, once — not once per day.
+        if targets:
+            try:
+                knocks._navigate(page, rqst, targets[0].strftime("%m/%d/%Y"))
+            except Exception:  # noqa: BLE001 — the pin below is the point;
+                pass           # a warm-up that fails must not kill the pull
         _pin_campaign(page, rqst,
                       campaign if campaign is not None
                       else campaign_for_office(canonical),
