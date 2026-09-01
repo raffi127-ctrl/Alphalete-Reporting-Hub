@@ -259,6 +259,26 @@ def _holder_paused(verbose: bool = True):
                      % (type(e).__name__, uid, plist))
 
 
+def _form_login(verbose: bool = True) -> bool:
+    """Sign in to AppStream by driving the form, and keep what it hands back.
+
+    This is the path that recovers a DEAD session with no human. Verified on
+    Lucy 1 from a cold profile (no saved session): the form completed and the
+    office console rendered. Kept separate from the warm-profile capture so the
+    cheap path stays first and this only runs when there is nothing to warm."""
+    from automations.shared.tableau_patchright import appstream_direct_session
+    try:
+        with appstream_direct_session(verbose=verbose, allow_form_login=True,
+                                      force_form_login=True) as pg:
+            ok = pg.locator("#searchMC").count() > 0
+            _log("form login %s" % ("reached the console" if ok
+                                    else "did NOT reach the console"))
+            return ok
+    except Exception as e:  # noqa: BLE001 — report, never take the timer down
+        _log("form login failed: %s: %s" % (type(e).__name__, str(e)[:160]))
+        return False
+
+
 def refresh_ownerville(verbose: bool = True) -> bool:
     """Sign in to ownerville fresh, unattended, and EXPORT the new rqst.
 
@@ -409,12 +429,21 @@ def main(argv=None) -> int:
             refresh_ownerville(verbose=True)
             ok = renew_from_state(verbose=True, tokens=_ownerville_tokens())
         else:
-            _log("warm-profile capture did not land. NOT re-logging in to "
-                 "ownerville: that swaps this machine's ownerville identity and "
-                 "breaks impersonating reports (2026-09-01). This needs a "
-                 "one-time AppStream seed on this machine instead:")
-            _log("  PYTHONPATH=. .venv/bin/python -m "
-                 "automations.shared.tableau_patchright --appstream-login")
+            # DRIVE THE LOGIN FORM. It works unattended — measured on Lucy 1
+            # from a COLD profile with no saved session, which is the 4am case
+            # exactly: username -> NEXT -> Cloudflare 10s -> password -> submit,
+            # then "#searchMC" with a live console. No human, no Turnstile stop.
+            #
+            # The repo has recorded since 2026-08-20 that this form "cannot
+            # complete unattended", and allow_form_login was defaulted False on
+            # that basis. So for twelve days no scheduled run even TRIED, and
+            # every recovery fell to a person (Megan: "we can't be up at 3am for
+            # this... it needs to run on its own"). The premise was wrong, not
+            # the mechanism. Megan called it: "if you just give it a min and
+            # then hit submit for the PW it clears on its own."
+            _log("warm-profile capture did not land — driving the AppStream "
+                 "login form (proven unattended from a cold profile)")
+            ok = _form_login(verbose=True)
     except Exception as e:  # noqa: BLE001 — never take the timer down
         _log("renew raised %s: %s" % (type(e).__name__, str(e)[:160]))
         ok = False
