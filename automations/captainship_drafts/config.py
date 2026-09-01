@@ -218,6 +218,25 @@ SECTION_DAYS = {
 }
 
 
+# Sections that still RUN but no longer render in the email body — they ship as
+# an attachment instead. Rafael, via Eve 2026-09-01: the Weekly Knock
+# Dispositions boards come out of the body ("saquemos el weekly disposition del
+# cuerpo del mail") and stay only as the PDF that has been attached every day
+# since 2026-08-27 (weekly_pdf).
+#
+# WHY THIS IS NOT JUST DELETING THE KIND. The capture step resolves what to
+# pull through Captain.sections_on, and weekly_pdf prints the PNGs that capture
+# writes. Drop knock_dispo from SECTION_KINDS and Sunday stops pulling the
+# weekly boards at all — the attachment would go with it. So the kind stays in
+# the flavor (capture unchanged, Sun+Mon gate unchanged) and only the BODY
+# skips it, via Captain.body_sections_on.
+#
+# It also takes ~17 board images out of the Sun/Mon message, which was the one
+# near Gmail's 25MB ceiling (weekly_pdf's PAGE_MAX_PX note) — the daily PDFs
+# added the same day spend that headroom.
+ATTACHMENT_ONLY_KINDS = {"knock_dispo"}
+
+
 def kind_runs_on(kind: str, today: "dt.date") -> bool:
     """Does section `kind` build on `today`? True unless SECTION_DAYS says
     that weekday is off."""
@@ -421,6 +440,15 @@ class Captain:
         so on an off day a gated section leaves no trace at all: no heading,
         no pending note, no intro line — and the numbering closes the gap."""
         return [(h, k) for h, k in self.sections if kind_runs_on(k, today)]
+
+    def body_sections_on(self, today: dt.date) -> List[Tuple[str, str]]:
+        """The sections the EMAIL BODY shows on `today` — sections_on minus the
+        attachment-only kinds. email_build numbers headings and intro bullets
+        off this, so a kind that moved to an attachment leaves no heading, no
+        bullet and no gap in the numbering; the capture and the PDF builders
+        keep reading sections_on and are untouched."""
+        return [(h, k) for h, k in self.sections_on(today)
+                if k not in ATTACHMENT_ONLY_KINDS]
 
 
 # Who each captain's report goes to (Eve, 2026-07-27 — copied from the

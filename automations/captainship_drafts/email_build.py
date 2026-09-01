@@ -72,7 +72,8 @@ def _intro_html(captain: Captain, today: dt.date) -> str:
     intro item IS its section's heading (config zips them), filtering the
     sections filters the bullets for free and the two can't drift."""
     greeting, _items = captain.intro
-    lis = "".join(f"<li>{h}</li>" for h, _k in captain.sections_on(today))
+    lis = "".join(f"<li>{h}</li>"
+                  for h, _k in captain.body_sections_on(today))
     return (f'<div style="font-size:14px">{greeting}</div>'
             f'<ol style="font-size:14px;margin:6px 0 16px 0">{lis}</ol>')
 
@@ -327,9 +328,10 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     errors({bundle key: reason}).  Missing keys render as a per-section
     'pending' note, carrying that key's reason when there is one.
 
-    Sections come from captain.sections_on(today) — a day-gated section (the
-    Sun/Mon-only knock_dispo) is simply not in the body OR the intro on its
-    off days, even if its bundle key is populated."""
+    Sections come from captain.body_sections_on(today) — a day-gated section
+    is simply not in the body OR the intro on its off days, even if its bundle
+    key is populated, and an attachment-only kind (knock_dispo since
+    2026-09-01) is never in the body at all: it rides as the weekly PDF."""
     msg = EmailMessage()
     msg["Subject"] = subject_for(captain, today)
     msg["From"] = FROM_ADDR
@@ -342,7 +344,8 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     imgs = _Images()
     sections_html = "".join(
         _section_html(captain, heading, kind, n, bundle, imgs)
-        for n, (heading, kind) in enumerate(captain.sections_on(today), 1))
+        for n, (heading, kind) in enumerate(
+            captain.body_sections_on(today), 1))
 
     # Same short/semantic scheme as the section images (see _Images) — the
     # signature photo is just the last part in the same related bundle.
@@ -392,8 +395,12 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     # is the shape every mail client expects. It also no longer passes through
     # a Gmail draft rewrite at all — the send is SMTP with this exact MIME.
     weekly = bundle.get("weekly_pdf")
-    if weekly:
-        pdf_path, filename = weekly
+    attachments = ([weekly] if weekly else []) + list(
+        bundle.get("daily_pdfs") or [])
+    # Order matters in a mail client's attachment strip, and this is the order
+    # Rafael described the report in (Eve 2026-09-01): last week first, then
+    # the captainship's day, then each owner's own page.
+    for pdf_path, filename in attachments:
         msg.add_attachment(Path(pdf_path).read_bytes(),
                            maintype="application", subtype="pdf",
                            filename=filename)

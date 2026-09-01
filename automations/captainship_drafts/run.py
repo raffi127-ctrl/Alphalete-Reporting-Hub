@@ -465,6 +465,16 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
         from automations.captainship_drafts import weekly_pdf
         bundle["weekly_pdf"] = weekly_pdf.build(captain, today, render_dir,
                                                 logfn=logfn)
+    # And YESTERDAY's boards as PDFs too — one for the whole captainship, one
+    # per owner (Rafael via Eve, 2026-09-01, so a captain can forward an office
+    # its own page). Printed from the same PNGs the body embeds: no pull, no
+    # session, and an empty list when there are none.
+    if "daily_knocks" in {k for _h, k in captain.sections}:
+        from automations.captainship_drafts import daily_pdf
+        from automations.captainship_drafts import knock_dispo_images as _kdi
+        bundle["daily_pdfs"] = daily_pdf.build(
+            captain, today, daily_knocks,
+            day=_kdi.daily_target(today), logfn=logfn)
     # A box that rendered into nothing is a per-slot miss, not a whole-tab
     # failure — say which slot rather than leaving that one section mute.
     for _h, _k in captain.sections_on(today):
