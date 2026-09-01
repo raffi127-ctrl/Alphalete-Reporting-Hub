@@ -157,6 +157,35 @@ MINT_VIA_OWNERVILLE = True
 MINT_MIN_INTERVAL_MIN = 30.0
 _LAST_MINT_ATTEMPT: dict = {"at": 0.0}
 
+# CONSECUTIVE FAILED MINTS BEFORE THE HOLDER RESTARTS ITSELF (Megan 2026-08-31).
+#
+# On 8/31 the mint failed from ~15:05 to 19:21 — every attempt re-keying the
+# SAME token (66F074FE at 16:57 and again at 18:54), because ownerville's warm
+# page keeps handing back the token it already issued. The holder logged "session
+# stale — re-seed once" to itself for four hours and paged a human at 18:43.
+#
+# A RESTART mints. It is in this file's own record: on 8/29 a token reached
+# `1m left` at 08:04, the holder restarted on a code change at 08:10, and by
+# 08:11 it was handing a fresh one to the fleet — "the restart minted what four
+# re-hop cycles could not". A restart builds a fresh context instead of re-reading
+# a cached page, so ownerville issues rather than repeats.
+#
+# So a mint that keeps failing takes the restart path this file already uses for
+# a code change, a dead browser and a stale export. Two failures, not one: mints
+# are throttled to one per MINT_MIN_INTERVAL_MIN and a single miss can be
+# ownerville mid-refresh, which the existing replay fallback rides out. Two in a
+# row inside the re-mint margin means the token is going to die anyway — at that
+# point a restart cannot be worse than doing nothing, which is what four hours of
+# 8/31 actually were.
+MINT_FAILURES_BEFORE_RESTART = 2
+_MINT_FAILURES: dict = {"n": 0}
+
+
+def _note_mint_result(ok: bool) -> int:
+    """Record a mint outcome; returns the consecutive-failure count."""
+    _MINT_FAILURES["n"] = 0 if ok else _MINT_FAILURES["n"] + 1
+    return _MINT_FAILURES["n"]
+
 
 def _this_machine() -> str:
     try:
@@ -612,8 +641,19 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
                 if verbose:
                     print(f"-> rqst token has {left:.0f}m left — minting a fresh "
                           f"one through ownerville", flush=True)
-                if _mint_appstream_via_ownerville(ctx, page, verbose=verbose):
+                _minted = _mint_appstream_via_ownerville(ctx, page,
+                                                          verbose=verbose)
+                _fails = _note_mint_result(_minted)
+                if _minted:
                     return True
+                if _fails >= MINT_FAILURES_BEFORE_RESTART:
+                    # Say it plainly, unconditionally: this is the holder asking
+                    # to be restarted, and a silent one looks identical to the
+                    # four hours of failures it exists to end.
+                    print(f"[{_stamp()}] AppStream mint has failed {_fails}x in a "
+                          f"row — asking for a restart, which is the path that "
+                          f"actually mints.", flush=True)
+                    _MINT_FAILURES["restart_wanted"] = True
                 # Ownerville couldn't mint this cycle (its own session may be
                 # mid-refresh). Fall back to the old replay: it cannot produce a
                 # new token, but it does re-assert the session we still hold.
@@ -835,6 +875,11 @@ def main() -> int:
                     print(f"[{_stamp()}] code changed ({head_at_start[:7]} → "
                           f"{head_now[:7]}) — exiting (rc=1) so launchd relaunches "
                           f"the holder on it.", flush=True)
+                    return 1
+                if _MINT_FAILURES.get("restart_wanted"):
+                    print(f"[{_stamp()}] exiting (rc=1) so launchd relaunches the "
+                          f"holder — a fresh context is what mints a new rqst.",
+                          flush=True)
                     return 1
                 if not _browser_alive(ctx):
                     print(f"[{_stamp()}] browser is gone — exiting (rc=1) so launchd "
