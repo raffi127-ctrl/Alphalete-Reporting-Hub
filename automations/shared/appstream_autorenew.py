@@ -95,7 +95,23 @@ def _push_fleet() -> bool:
     return ok
 
 
-def renew_from_state(verbose: bool = True) -> bool:
+def _ownerville_tokens():
+    """The rqst token(s) ownerville just issued, newest usable first.
+
+    These are what make applicantstream ISSUE; our own saved token only makes it
+    RESTORE. Kept separate from the AppStream cookies on purpose — mixing the two
+    is how three days of re-keys asked the console to re-bless a token it had
+    already expired."""
+    from automations.shared.tableau_patchright import OWNERVILLE_STORAGE_STATE
+    try:
+        blob = json.loads(OWNERVILLE_STORAGE_STATE.read_text())
+    except Exception:  # noqa: BLE001 — no ownerville export is simply "none"
+        return []
+    return [str(c.get("name"))[5:] for c in blob.get("cookies", [])
+            if str(c.get("name") or "").startswith("rqst_")]
+
+
+def renew_from_state(verbose: bool = True, tokens=None) -> bool:
     """Warm the capture profile from the LIVE storage_state, then save what the
     console hands back. No human, no dependence on a profile anyone signed into.
 
@@ -142,10 +158,19 @@ def renew_from_state(verbose: bool = True) -> bool:
             # the empty console as "the session is genuinely dead" while the
             # very same cookies were serving reports on that machine minutes
             # earlier (Lucy 1, 2026-09-01 14:05).
-            toks = [str(c.get("name"))[5:] for c in cookies
-                    if str(c.get("name") or "").startswith("rqst_")]
+            # RE-KEY WITH THE OWNERVILLE TOKEN, NOT OUR OWN.
+            #
+            # Re-keying with the token we already hold only RESTORES the session
+            # — measured twice on Lucy 1: 77 min before, 77 after; 67 before, 67
+            # after. It cannot issue. The token that MAKES applicantstream issue
+            # a new one is the one ownerville just minted, which is exactly what
+            # the holder's mint path passes. Saved tokens stay as the fallback
+            # for when ownerville could not be refreshed.
+            toks = list(tokens or [])
+            toks += [str(c.get("name"))[5:] for c in cookies
+                     if str(c.get("name") or "").startswith("rqst_")]
             if not toks:
-                _log("saved session carries no rqst_ cookie to re-key with")
+                _log("no rqst token available to re-key with")
                 return False
             rendered = False
             for tok in toks:
@@ -286,12 +311,11 @@ def main(argv=None) -> int:
     # re-key with, and only then open the console.
     ok = False
     try:
-        if refresh_ownerville(verbose=True):
-            ok = renew_from_state(verbose=True)
-        else:
+        fresh = refresh_ownerville(verbose=True)
+        if not fresh:
             _log("could not refresh ownerville — trying the saved session "
                  "anyway, in case it still has life in it")
-            ok = renew_from_state(verbose=True)
+        ok = renew_from_state(verbose=True, tokens=_ownerville_tokens())
     except Exception as e:  # noqa: BLE001 — never take the timer down
         _log("renew raised %s: %s" % (type(e).__name__, str(e)[:160]))
         ok = False
