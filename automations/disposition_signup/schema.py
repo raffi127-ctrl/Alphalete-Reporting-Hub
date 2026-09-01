@@ -91,7 +91,7 @@ def dest_label(d: dict) -> str:
 CAMPAIGNS = [
     # --- D2D ---------------------------------------------------------------
     {"id": "3", "key": "att", "family": "D2D", "label": "AT&T",
-     "name": "AT&T Fiber — Internet & Phones", "live": True},
+     "name": "AT&T Fiber (Internet & Phones)", "live": True},
     {"id": "40", "key": "energy", "family": "D2D", "label": "EnergyWell",
      "name": "Energy Wells", "live": True},
     # NDS has no Disposition campaign in OwnerVille yet — that is why Isaiah's
@@ -99,12 +99,20 @@ CAMPAIGNS = [
     # anyway, as a WAITING LIST: an owner who wants it should be able to say so
     # once, not be told to come back later and remember to.
     {"id": "", "key": "nds", "family": "D2D", "label": "NDS",
-     "name": "NDS — Wireless & Phones", "live": False},
+     # "Wireless" alone: on NDS the phones ARE the wireless (Megan 2026-09-01).
+     # office_onboarding spells it "Wireless & Phones"; that reads as two
+     # products to an owner picking one.
+     "name": "NDS Wireless", "live": False},
     # --- B2B ---------------------------------------------------------------
+    # NOT "B2B AT&T SBS" / "B2B-BOX-Energy" — those are OwnerVille's own
+    # dropdown strings, and "SBS" means nothing to the person filling this in
+    # (Megan 2026-09-01: "idk what SBS is"). The family prefix already says
+    # B2B, so the name does not repeat it either. `label` keeps the short tag
+    # that goes on the board itself.
     {"id": "2", "key": "b2b_att", "family": "B2B", "label": "B2B AT&T",
-     "name": "B2B AT&T SBS", "live": True},
+     "name": "AT&T", "live": True},
     {"id": "16", "key": "b2b_box", "family": "B2B", "label": "B2B Box",
-     "name": "B2B Box / Energy", "live": True},
+     "name": "Box Energy", "live": True},
 ]
 
 # Grouped the way an owner thinks about it, and the same four families
