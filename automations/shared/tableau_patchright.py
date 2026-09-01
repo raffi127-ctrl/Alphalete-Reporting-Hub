@@ -92,8 +92,17 @@ _FINAL_SUBMIT_NAME = re.compile(
     r"sign\s*in|log\s*in|submit|continue|enter", re.IGNORECASE
 )
 
+# The 'verify you are human' box on the password step clears ITSELF — but only
+# if you leave it alone long enough. Megan 2026-09-01: "you just wait 30 sec
+# before hitting submit on the PW". At the old 3s the submit landed while the
+# check was still running and the login failed, which is what made ownerville
+# look like it needed a person at the screen: the session holder gave up and
+# opened a window, and Lucy 1 sat with no session for an afternoon.
+#
+# 30s of waiting per login is cheap — a report logs in once and rides the
+# session for hours, and the alternative is a human walking to a Mac mini.
 _CLOUDFLARE_WAIT_MS = 10_000
-_PRE_SUBMIT_PAUSE_MS = 3_000
+_PRE_SUBMIT_PAUSE_MS = 30_000
 
 # Selector for the SSO link on ownerville that opens an authenticated
 # Tableau tab. Matches what _reauth_tableau already targets in opt_phase.
