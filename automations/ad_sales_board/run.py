@@ -293,7 +293,21 @@ def main(argv=None):
     sess = sheet.session(verbose=True)
     if not a.dry_run:
         try:
-            sheet.probe_write(sess)
+            # Three attempts: sheets.googleapis.com read-timeouts come in
+            # bursts (three consecutive runs aborted on one 2026-09-01), and a
+            # transient network blip should not kill a run that hasn't pulled
+            # anything yet. A real permission fault fails all three instantly.
+            for _probe in (1, 2, 3):
+                try:
+                    sheet.probe_write(sess)
+                    break
+                except Exception:  # noqa: BLE001
+                    if _probe == 3:
+                        raise
+                    print("[ad_sales_board] preflight probe failed (attempt "
+                          "%d/3) — retrying in 20s" % _probe, flush=True)
+                    import time as _t
+                    _t.sleep(20)
         except Exception as e:  # noqa: BLE001 — the reason matters more than the trace
             print("[ad_sales_board] ABORT — cannot write the workbook as this "
                   "machine's identity: %s" % str(e)[:200], flush=True)
