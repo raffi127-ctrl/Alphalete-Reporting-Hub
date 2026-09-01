@@ -1,0 +1,13 @@
+# Streamlit Community Cloud deps for the Daily Dispositions sign-up app
+# (entry point: disposition_signup/app.py). Without this file the Cloud deploy
+# never installs gspread/google-auth, so _inject_gs_client() bails at
+# `import gspread` and every submission falls back to a LOCAL DRAFT instead of
+# writing the "Disposition Signup" tab. Mirrors tracker_onboarding/requirements.txt
+# (same Sheets-backed pattern), minus the drag-and-drop ordering — this form has
+# nothing to reorder.
+streamlit>=1.30
+pandas>=2.0
+gspread>=5.10
+google-auth>=2.20
+slack_sdk>=3.21        # corrections ping + Lucy channel-membership check
+certifi>=2023.7        # SSL bundle for the Slack client

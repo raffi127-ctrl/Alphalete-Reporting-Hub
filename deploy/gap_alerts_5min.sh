@@ -36,22 +36,32 @@ HOUR=${HOUR#0}
 # in the morning.
 #
 # HOUR-GRANULAR ON PURPOSE. This gate is a cheap coarse filter, so it keeps the
-# whole hour a boundary falls in (13 and 20 on weekdays) and lets
-# config.in_selling_window make the :30 call. Trying to do minutes in bash would
-# put the real schedule in two places and they would drift.
+# whole hour a boundary falls in and lets Python make the :30 call. Trying to do
+# minutes in bash would put the real schedule in two places and they would drift.
+# TIMEZONES WIDENED THIS ENVELOPE (2026-09-01). Offices now enroll themselves
+# through the dispositions sign-up link and bring their own timezone + field
+# hours, so this gate can no longer be "the schedule" — it is only an ENVELOPE
+# around every supported zone, and config.in_office_window makes the real
+# per-office call. An Eastern office's 1:30pm start is 12:30pm here, which the
+# old `HOUR -lt 13` gate killed before Python ever ran.
+# Envelope = Central hours covering Eastern..Mountain field hours:
+#   weekdays  12:30-23:00   (Eastern 1:30pm start .. Mountain 10pm end)
+#   Saturday   9:45-21:00
+# Pacific is NOT covered (its 10pm would land at midnight Central, a different
+# calendar day) — which is why the sign-up form does not offer it.
 if [ "$DOW" = "6" ]; then
-    [ "$HOUR" -lt 10 ] && exit 0
-    # 18, not 17: Saturday now runs to 6:30pm (Megan 2026-08-30). Same contract as
-    # the weekday branch — generous by an hour so config.in_selling_window makes
-    # the exact 18:30 call. Leaving this at 17 while config said 18:30 would have
-    # silently capped the day at 5pm, since this gate exits before Python runs.
-    [ "$HOUR" -gt 18 ] && exit 0
+    [ "$HOUR" -lt 9 ] && exit 0
+    # The org default Saturday is 10:45am-6:30pm Central (Megan 2026-08-30);
+    # 9 and 21 are the ENVELOPE around it for other zones. This gate exits
+    # before Python runs, so anything it cuts is cut silently — that is how the
+    # 8/29 "texts died at 4:45 PM Saturday" happened when it said 17.
+    [ "$HOUR" -gt 21 ] && exit 0
 else
-    [ "$HOUR" -lt 13 ] && exit 0
-    # 22, not 20: the day now runs to 10pm (Raf 2026-08-28). This gate is
-    # HOUR-granular and deliberately generous — config.in_selling_window makes
-    # the exact 22:00 call, so this only has to avoid cutting the hour short.
-    [ "$HOUR" -gt 22 ] && exit 0
+    [ "$HOUR" -lt 12 ] && exit 0
+    # The org default weekday is 1:30pm-10pm Central (Raf 2026-08-28); 12 and
+    # 23 are the ENVELOPE around it. Still hour-granular and deliberately
+    # generous — Python makes the exact per-office call.
+    [ "$HOUR" -gt 23 ] && exit 0
 fi
 
 # WALL-CLOCK ANCHOR — this is what makes it every TEN minutes.

@@ -678,17 +678,29 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
         from automations.tracker_onboarding import store as _st, apply as _ap
         _st.set_client(gc)
     elif kind in ("disposition", "dispositions"):
-        # No --post branch: the dispositions board is not a once-a-day report
-        # that can be "run now" — it is a tick inside a selling window, and the
-        # next one is at most 15 minutes away. Wiring is the whole job here.
+        # --post here means PREFLIGHT, not "post now": the dispositions board
+        # is not a once-a-day report that can be run early — it is a tick
+        # inside a selling window, and the next one is at most 15 minutes away.
+        # What actually needs doing on this box is proving the office works
+        # (impersonation + the iMessage room) and switching it on, which is the
+        # step that would otherwise be Megan's.
         from automations.disposition_signup import store as _st, apply as _ap
         _st.set_client(gc)
         rc = _ap.main(["--only", key, "--write"])
         if rc != 0:
             return False, f"apply(disposition) failed for {key!r} (rc={rc})"
-        return True, (f"wired {key} into the dispositions run — it joins the "
-                      "next tick (nothing sends if it is wired OFF pending "
-                      "Office Access)")
+        if not post:
+            return True, (f"wired {key} into the dispositions run — it joins "
+                          "the next tick (nothing sends while it is switched "
+                          "off pending preflight)")
+        from automations.disposition_signup import preflight as _pf
+        prc = _pf.main(["--key", key, "--enable", "--notify"])
+        if prc != 0:
+            return False, (f"wired {key}, but preflight FAILED — it stays "
+                           "switched off. See #claudecorrections-and-requests "
+                           "for which check failed.")
+        return True, (f"wired {key} and preflight passed — switched ON, it "
+                      "joins the next tick")
     else:
         return False, (f"unknown kind {kind!r} "
                        "(expected metrics|tracker|disposition)")

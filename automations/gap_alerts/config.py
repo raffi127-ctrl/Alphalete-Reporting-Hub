@@ -164,6 +164,84 @@ JAY_EW = {
 
 OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW]
 
+# --- self-serve enrollments ---------------------------------------------------
+# Offices that signed themselves up through the Daily Dispositions link
+# (disposition_signup/app.py) and that Megan confirmed. The form writes the
+# Sheet; `disposition_signup.apply --write` materializes this file; this merges
+# it. Same shape as the dicts above plus the fields the form asks for that a
+# hardcoded row has never needed:
+#
+#   cadence_min    15 | 30 | 60   — how often THIS office is sent (Raf's
+#                                   question 4). Absent = TICK_MINUTES.
+#   deliver        ["imessage", "email"] — absent = ["imessage"], which is what
+#                                   every hardcoded row does today.
+#   email_to       [addr, ...]     — only read when "email" is in deliver.
+#   slack_channel  "C..."          — this office's own channel for the hourly
+#                                   post. Absent = SLACK_HOURLY_CHANNEL, which
+#                                   is Raf's org's room and must never be the
+#                                   silent default for someone else's board.
+#
+# A hardcoded key always wins: if a form row somehow lands under an existing
+# key, the reviewed code is the truth and the file is ignored for that office.
+ONBOARDED_JSON = Path(__file__).resolve().parent / "onboarded_offices.json"
+
+
+def _merge_onboarded() -> None:
+    import json
+    if not ONBOARDED_JSON.exists():
+        return
+    try:
+        rows = json.loads(ONBOARDED_JSON.read_text())
+    except Exception as e:                           # noqa: BLE001
+        # A broken file must not take the whole report down with it — the
+        # hardcoded offices still have a day to run.
+        print("[gap_alerts.config] ignoring %s: %s: %s"
+              % (ONBOARDED_JSON.name, type(e).__name__, str(e)[:120]))
+        return
+    have = {o.get("key") for o in OFFICES}
+    for r in rows:
+        if not isinstance(r, dict) or not r.get("key") or r["key"] in have:
+            continue
+        OFFICES.append(r)
+        have.add(r["key"])
+
+
+_merge_onboarded()
+
+
+def cadence_for(cfg: Dict) -> int:
+    """How many minutes between this office's sends. Only values that divide
+    60 AND are multiples of TICK_MINUTES survive — anything else drifts across
+    the hour, and the wrapper only wakes Python on the quarter hour anyway, so
+    a stray 20 would fire at :00 and then not again until the next :00."""
+    try:
+        want = int(cfg.get("cadence_min") or TICK_MINUTES)
+    except (TypeError, ValueError):
+        return TICK_MINUTES
+    if want < TICK_MINUTES or want % TICK_MINUTES or 60 % want:
+        return TICK_MINUTES
+    return want
+
+
+def delivers(cfg: Dict, route: str) -> bool:
+    """Does this office get its board by `route` ("imessage" | "email")?
+
+    A row with no `deliver` key is a hardcoded office, and every one of those
+    is iMessage-only — the field arrived with the sign-up form.
+    """
+    routes = cfg.get("deliver")
+    if routes is None:
+        return route == "imessage"
+    return route in routes
+
+
+def slack_channel_for(cfg: Dict) -> str:
+    """The channel this office's hourly board goes to. Per-office first: the
+    module-level default is #alphalete-lvl1-chat, Raf's org's room, and an
+    enrolled office inheriting it would put its numbers in front of another
+    org."""
+    return (cfg.get("slack_channel") or "").strip() or SLACK_HOURLY_CHANNEL
+
 
 def enabled() -> List[Dict]:
     """The offices that actually run. A row with enabled=False is WIRED but
@@ -434,6 +512,122 @@ def _fmt12(hm) -> str:
     # No %-I: Windows has no such format code and every report here has to
     # import on both platforms.
     return "%d:%02d %s" % (h % 12 or 12, m, "AM" if h < 12 else "PM")
+
+
+# --- per-office windows -------------------------------------------------------
+# Everything above is the ORG default, in Lucy 1's own clock (Central). An
+# office that enrolled through the sign-up form brings its own: its timezone,
+# and the hours its reps are actually out. Four offices in this company are
+# EASTERN (see project_cody_knocks_intraday) — one Central window for all of
+# them would text a Boston roster an hour after they went in.
+#
+# Per-office keys, all optional (absent = the org default above):
+#   tz                "America/New_York" — IANA name, never an abbreviation
+#   day_start/day_end  "13:30" / "22:00"  — Mon-Fri, in the OFFICE'S clock
+#   sat_start/sat_end  "10:45" / "18:30"  — Saturday has its own start AND end
+#   weekdays          [0..5] — Python weekday numbers; default Mon-Sat
+DEFAULT_TZ = "America/Chicago"      # Lucy 1's clock, and the company's
+
+
+def _hhmm(text: str, fallback):
+    """'13:30' -> (13, 30). Anything unparseable falls back rather than
+    raising: a typo in one office's row must not take the report down."""
+    try:
+        h, m = str(text).strip().split(":")
+        h, m = int(h), int(m)
+    except Exception:                                # noqa: BLE001
+        return fallback
+    if 0 <= h <= 23 and 0 <= m <= 59:
+        return (h, m)
+    return fallback
+
+
+def office_now(cfg: Dict, now: Optional[dt.datetime] = None) -> dt.datetime:
+    """`now` in the OFFICE'S clock. Falls back to the machine clock when the
+    zone is missing or unknown — Windows has no system tz database unless
+    `tzdata` is installed, and a missing zone must degrade to "Central-ish",
+    never to a crash."""
+    now = now or dt.datetime.now()
+    name = (cfg.get("tz") or "").strip()
+    if not name or name == DEFAULT_TZ:
+        return now
+    try:
+        from zoneinfo import ZoneInfo
+        here = now if now.tzinfo else now.astimezone()
+        return here.astimezone(ZoneInfo(name)).replace(tzinfo=None)
+    except Exception:                                # noqa: BLE001
+        return now
+
+
+def office_window(cfg: Dict, weekday: int):
+    """((start_h, start_m), (end_h, end_m)) for this office on `weekday`, or
+    None if it is not a selling day for them."""
+    days = cfg.get("weekdays")
+    days = tuple(days) if days else WEEKDAYS
+    if weekday not in days:
+        return None
+    if weekday == SATURDAY:
+        return (_hhmm(cfg.get("sat_start"), SATURDAY_START_HHMM),
+                _hhmm(cfg.get("sat_end"), SATURDAY_END_HHMM))
+    return (_hhmm(cfg.get("day_start"), DAY_START_HHMM),
+            _hhmm(cfg.get("day_end"), DAY_END_HHMM))
+
+
+def in_office_window(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
+    """Is this office inside its own selling day, on its own clock?"""
+    local = office_now(cfg, now)
+    win = office_window(cfg, local.weekday())
+    if not win:
+        return False
+    (sh, sm), (eh, em) = win
+    start = local.replace(hour=sh, minute=sm, second=0, microsecond=0)
+    end = local.replace(hour=eh, minute=em, second=0, microsecond=0)
+    return start <= local <= end
+
+
+def office_window_label(cfg: Dict, now: Optional[dt.datetime] = None) -> str:
+    """'1:30 PM-10:00 PM America/New_York' — for the log line that explains a
+    skipped office."""
+    local = office_now(cfg, now)
+    win = office_window(cfg, local.weekday())
+    if not win:
+        return "off today"
+    return "%s-%s %s" % (_fmt12(win[0]), _fmt12(win[1]),
+                         (cfg.get("tz") or DEFAULT_TZ))
+
+
+# Zone abbreviations, spelled the way Megan spells them: CST/EST year-round,
+# never CDT/EDT. The card is read by field reps, not by a clock nerd.
+TZ_ABBREV = {"America/Chicago": "CST", "America/New_York": "EST",
+             "America/Denver": "MST", "America/Phoenix": "MST",
+             "America/Los_Angeles": "PST"}
+
+
+def slot_label_for(cfg: Dict, now: Optional[dt.datetime] = None) -> str:
+    """The clock stamp drawn on THIS office's card — their time, not Lucy 1's.
+
+    An Eastern office reading "4:45 PM" on a board built at 5:45 their time
+    cannot tell a fresh card from one that scrolled up, which is the only thing
+    the stamp is for. Central stays bare (it is the company clock and the vast
+    majority of boards); anywhere else carries its zone.
+    """
+    local = office_now(cfg, now)
+    label = "%d:%02d %s" % (local.hour % 12 or 12, local.minute,
+                            "AM" if local.hour < 12 else "PM")
+    name = (cfg.get("tz") or DEFAULT_TZ).strip()
+    if name and name != DEFAULT_TZ:
+        return "%s %s" % (label, TZ_ABBREV.get(name, ""))
+    return label
+
+
+def any_office_in_window(now: Optional[dt.datetime] = None) -> bool:
+    """Does ANY enabled office want this tick? The job's early exit.
+
+    Was `in_selling_window()` — one Central window for everybody. Once offices
+    bring their own timezone that check would gate an Eastern office's evening
+    against a Central clock and silently cut its last hour.
+    """
+    return any(in_office_window(o, now) for o in enabled())
 
 
 def in_selling_window(now: Optional[dt.datetime] = None) -> bool:

@@ -8533,6 +8533,25 @@ else:  # st.session_state.view == "user"
                     "https://alphaletetrackerintake.streamlit.app",
                     use_container_width=True)
                 st.caption("For Megan & Eve")
+            # ---- Daily Dispositions sign-up (Office Operations) — an OWNER
+            # enrolls their own office in the KNOCKS & DISPOSITIONS board: how
+            # often (15/30/60 min) and where (iMessage, email, hourly Slack).
+            # Their sign-up lands pending + pings the corrections channel; the
+            # ?confirm= link in that ping is where it gets wired.
+            st.markdown("### 🚪 Daily Dispositions Sign-Up")
+            with st.container(border=True):
+                st.markdown(
+                    "**Send an owner this link to enroll their office** — they "
+                    "pick how often they want their knocks and dispositions "
+                    "(every 15 min, 30 min, or hourly) and where it goes "
+                    "(iMessage, email, or their team's Slack channel). You get "
+                    "pinged with a confirm link; nothing sends until you "
+                    "confirm it.")
+                _safe_link_button(
+                    "🚪 Open dispositions sign-up",
+                    "https://alphaletedispositions.streamlit.app",
+                    use_container_width=True)
+                st.caption("Send to an office owner")
             st.markdown("---")
 
         # ---- Personal portfolio: projects this user has claimed / shipped ----

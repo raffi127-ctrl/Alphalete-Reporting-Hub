@@ -229,6 +229,25 @@ def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
     return (header or C.GAP_TEXT_HEADER) + "\n\n" + "\n".join(lines), names
 
 
+def _cadence_due(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
+    """Is THIS office owed a board on this tick?
+
+    The wrapper wakes Python on the quarter hour and every office used to be
+    sent on every wake. The sign-up form asks owners to pick 15 / 30 / 60
+    minutes (Raf's question 4), so an office at 30 takes :00 and :30 and an
+    office at 60 takes :00 only.
+
+    Anchored to the QUARTER HOUR, not to the raw clock minute: a tick fires at
+    :00 but Python reads the clock a minute or two later once the wrapper's
+    gate and the imports are done, and `now.minute % 30` would then be 1 and
+    the office would never be due at all.
+    """
+    now = now or dt.datetime.now()
+    cadence = C.cadence_for(cfg)
+    anchor = now.minute - (now.minute % C.TICK_MINUTES)
+    return (anchor % cadence) == 0
+
+
 def _slack_due(key: str, now: dt.datetime) -> bool:
     """Has this office's board gone to Slack yet THIS clock hour?
 
@@ -258,14 +277,19 @@ def post_slack(cfg: Dict, png: Path, slot: str, day: dt.date,
     who = cfg.get("label") or cfg["name"].split()[0]
     comment = ("*%s — %s*  ·  ranked by total knocks"
                % (C.CARD_TITLE.title(), slot))
+    # Per-office channel: the module default is #alphalete-lvl1-chat, which is
+    # RAF'S org's room. An office that enrolled through the sign-up form brings
+    # its own channel, and inheriting the default would post its numbers in
+    # front of another org.
+    channel = C.slack_channel_for(cfg)
     if dry_run:
-        return {"dry_run": True, "channel": C.SLACK_HOURLY_CHANNEL,
+        return {"dry_run": True, "channel": channel,
                 "comment": comment, "file": png.name}
     from automations.shared import slack_metrics_post as smp
     smp._client().files_upload_v2(
         file_uploads=[{"file": str(png), "filename": png.name}],
-        channel=C.SLACK_HOURLY_CHANNEL, initial_comment=comment)
-    return {"channel": C.SLACK_HOURLY_CHANNEL, "file": png.name, "ok": True}
+        channel=channel, initial_comment=comment)
+    return {"channel": channel, "file": png.name, "ok": True}
 
 
 def _publish_hub_once(day: dt.date) -> None:
@@ -736,7 +760,7 @@ def render(cfg: Dict, pngs, out_dir: Path, slot: str):
 
 
 def tick(day: dt.date, *, send: bool, only: str = "",
-         headless: bool = True) -> List[str]:
+         headless: bool = True, force: bool = False) -> List[str]:
     """One pass. Returns the list of failures (empty = clean).
 
     No browser session is opened here any more: pull_board calls
@@ -753,6 +777,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     out_dir = OUTPUT_DIR / day.strftime("%Y-%m-%d")
 
     from automations.b2b_dispositions import text_post as tp
+    from automations.gap_alerts import email_send
 
     if send and not getattr(C, "SEND_ENABLED", True):
         _log("SENDING IS PAUSED (config.SEND_ENABLED=False) — building and "
@@ -762,8 +787,27 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     failures = []
     seen_names = []
     for cfg in offices:
-        # The guard runs BEFORE the pull. A skipped tick should cost nothing,
+        # Both guards run BEFORE the pull. A skipped tick should cost nothing,
         # and this pull is the expensive half of the run.
+        #
+        # CADENCE FIRST: an office on 30 or 60 minutes is not owed anything on
+        # most ticks, and pulling OwnerVille for a board nobody will be sent is
+        # the one cost this job cannot afford at ~40 wakes a day.
+        # --only/--force is a hand-run and answers to the person typing it.
+        # The stamp on the card is the OFFICE'S clock (see slot_label_for);
+        # `slot` above stays the machine's, for the log.
+        slot = C.slot_label_for(cfg)
+        if not (only or force) and not C.in_office_window(cfg):
+            # Per-office, on the OFFICE'S clock: an enrolled office can sit in
+            # another timezone or keep different field hours, and the job-level
+            # gate only asks whether ANYONE is out right now.
+            _log("%s: outside its window (%s) — skipping"
+                 % (cfg["key"], C.office_window_label(cfg)))
+            continue
+        if not (only or force) and not _cadence_due(cfg):
+            _log("%s: not due at %s (every %d min) — skipping"
+                 % (cfg["key"], slot, C.cadence_for(cfg)))
+            continue
         recent = _sent_too_recently(cfg["key"])
         if recent is not None and send:
             _log("%s: last board went out %.1f min ago — skipping this tick "
@@ -822,46 +866,76 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             except Exception as e:  # noqa: BLE001
                 _log("  preview DM failed: %s: %s"
                      % (type(e).__name__, str(e)[:160]))
-        try:
-            # Resolution runs on a dry run too — it is read-only and it is the
-            # half most likely to be wrong (Lucy removed from the chat, the
-            # room renamed). A preview that skipped it would prove nothing.
-            # ONE send: the gap list as the message text, the board as its
-            # attachment. send_to_group posts the text first, so the names
-            # arrive above the flyer.
-            res = tp.send_to_group(cfg["group"], body, boards, dry_run=not send)
-            _log("  %s -> %r (%s participants)%s"
-                 % ("TEXT" if send else "PREVIEW", res.get("resolved_name"),
-                    res.get("participants"), "" if send else " — nothing sent"))
-            # The hourly Slack post rides the SAME board that was just
-            # built — never its own pull. It is also independent of the text:
-            # a Messages failure must not cost the channel its leaderboard,
-            # and vice versa, so it sits in its own try.
-            if cfg.get("slack_hourly") and boards:
-                now = dt.datetime.now()
-                if _slack_due(cfg["key"], now):
-                    try:
-                        res = post_slack(cfg, boards[0], slot, day,
-                                         dry_run=not send)
-                        _log("  %s -> %s (%s)"
-                             % ("SLACK" if send else "SLACK (preview)",
-                                res.get("channel"), res.get("file")))
-                        if send:
-                            _mark_slack_sent(cfg["key"], now)
-                    except Exception as e:  # noqa: BLE001
-                        _log("  SLACK FAILED: %s: %s"
-                             % (type(e).__name__, str(e)[:200]))
+        # ROUTES ARE INDEPENDENT, and each gets its own try. An office can be
+        # enrolled for iMessage, email, both, or Slack alone (the sign-up form
+        # asks exactly that), and one dead route must never cost the others —
+        # a Messages failure taking the inbox copy with it is how an owner ends
+        # up with nothing while the log says one thing failed.
+        delivered = False
+        if C.delivers(cfg, "imessage") and cfg.get("group"):
+            try:
+                # Resolution runs on a dry run too — it is read-only and it is
+                # the half most likely to be wrong (Lucy removed from the chat,
+                # the room renamed). A preview that skipped it would prove
+                # nothing. ONE send: the gap list as the message text, the
+                # board as its attachment. send_to_group posts the text first,
+                # so the names arrive above the flyer.
+                res = tp.send_to_group(cfg["group"], body, boards,
+                                       dry_run=not send)
+                _log("  %s -> %r (%s participants)%s"
+                     % ("TEXT" if send else "PREVIEW",
+                        res.get("resolved_name"), res.get("participants"),
+                        "" if send else " — nothing sent"))
+                delivered = True
+            except Exception as e:  # noqa: BLE001
+                failures.append("%s text: %s: %s"
+                                % (cfg["key"], type(e).__name__, str(e)[:200]))
+                _log("  TEXT FAILED: %s: %s" % (type(e).__name__, str(e)[:200]))
+        elif C.delivers(cfg, "imessage"):
+            _log("  no iMessage group on %s — text route skipped" % cfg["key"])
 
-            if send:
-                # Both stamped only after Messages actually took it: a failed
-                # send must not block the next retry, and must not consume the
-                # "new" marks — those people would then never be flagged.
-                _mark_sent(cfg["key"])
-                _remember_gap_names(cfg["key"], day, gap_names)
-        except Exception as e:  # noqa: BLE001
-            failures.append("%s text: %s: %s" % (cfg["key"], type(e).__name__,
-                                                 str(e)[:200]))
-            _log("  TEXT FAILED: %s: %s" % (type(e).__name__, str(e)[:200]))
+        if C.delivers(cfg, "email"):
+            try:
+                res = email_send.send(cfg, boards, body, slot, day,
+                                      dry_run=not send)
+                if res.get("skipped"):
+                    _log("  EMAIL skipped: %s" % res["skipped"])
+                else:
+                    _log("  %s -> %s (%s)"
+                         % ("EMAIL" if send else "EMAIL (preview)",
+                            ", ".join(res.get("to") or []),
+                            res.get("subject")))
+                    delivered = True
+            except Exception as e:  # noqa: BLE001
+                failures.append("%s email: %s: %s"
+                                % (cfg["key"], type(e).__name__, str(e)[:200]))
+                _log("  EMAIL FAILED: %s: %s"
+                     % (type(e).__name__, str(e)[:200]))
+
+        # The hourly Slack post rides the SAME board that was just built —
+        # never its own pull.
+        if cfg.get("slack_hourly") and boards:
+            now = dt.datetime.now()
+            if _slack_due(cfg["key"], now):
+                try:
+                    res = post_slack(cfg, boards[0], slot, day,
+                                     dry_run=not send)
+                    _log("  %s -> %s (%s)"
+                         % ("SLACK" if send else "SLACK (preview)",
+                            res.get("channel"), res.get("file")))
+                    if send:
+                        _mark_slack_sent(cfg["key"], now)
+                    delivered = True
+                except Exception as e:  # noqa: BLE001
+                    _log("  SLACK FAILED: %s: %s"
+                         % (type(e).__name__, str(e)[:200]))
+
+        if send and delivered:
+            # Both stamped only after a route actually took it: a failed send
+            # must not block the next retry, and must not consume the "new"
+            # marks — those people would then never be flagged.
+            _mark_sent(cfg["key"])
+            _remember_gap_names(cfg["key"], day, gap_names)
     _terminated_check_once(day, seen_names)
     return failures
 
@@ -1262,15 +1336,19 @@ def main(argv=None) -> int:
             return 1
         return probe(day, cfg, headless=not args.headed)
 
-    if not args.force and not C.in_selling_window():
-        _log("outside today's window (%s) — nothing to do" % C.window_label())
+    if not args.force and not C.any_office_in_window():
+        # ANY office, not the org window: offices bring their own timezone and
+        # hours now, so the job runs whenever somebody's field is out and each
+        # office re-checks its own window in tick().
+        _log("no office is inside its window right now (org default %s) — "
+             "nothing to do" % C.window_label())
         return 0
 
     with Lock() as lock:
         if not lock.held:
             _log("another tick is still running — skipping this one")
             return 0
-        failures = tick(day, send=send, only=args.only,
+        failures = tick(day, send=send, only=args.only, force=args.force,
                         headless=not args.headed)
 
     if failures:
