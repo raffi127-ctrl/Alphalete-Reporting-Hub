@@ -660,7 +660,8 @@ def _clear_failure(report_id: str, report_name: str) -> None:
 
 def publish_done(report_id: str, report_name: str, status: str = "success",
                  run_id: str | None = None, *, alert_on_fail: bool = True,
-                 user: str = "Mini (auto)") -> bool:
+                 user: str = "Mini (auto)",
+                 clear_failure: bool = True) -> bool:
     """Mark a run finished on the Hub. If `run_id` (from publish_running) is given,
     UPDATE that 'started' row in place (Status col 8 + Ended At col 9) so the card
     flips running->done and doesn't leave a dangling yellow pill. With no run_id,
@@ -669,6 +670,15 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
     pulse; only if there's no open row do we append a fresh finished row (the
     reverify / no-prior-start path). Returns True if the Hub was touched, False if
     the report has no Hub card. Best-effort — never raises.
+
+    `clear_failure=False` publishes the run but leaves any open incident ALONE.
+    For a run that deliberately delivered nothing — a --dry-run, or one of the
+    repair handles that only acts with --post. Those exit 0 because they worked,
+    not because the problem is fixed, and the ✅ they used to drop said the
+    opposite: on 2026-09-01 a DRY run of box_order_log_tier_backfill closed
+    `drop-box-order-log` at 08:05, thirteen minutes before the board it was
+    testing actually reached the thread. Anyone reading the channel in between
+    saw a resolved ticket over a hilo that was still short an image.
 
     `user` fills the User column on an appended row. It defaults to the mini so
     every existing caller reads exactly as before; the hand-run hook
@@ -706,12 +716,16 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
         # no-op). The orchestrator passes alert_on_fail=False (its own summary).
         if alert_on_fail and str(status).lower() == "failed":
             _alert_failure(report_id, report_name)
-        elif str(status).lower() == "success":
+        elif str(status).lower() == "success" and clear_failure:
             # …and a clean run CLOSES whatever thread the last failure opened —
             # including a re-run someone kicked off by hand from the Hub, which
             # is how most of these actually get fixed. Runs for the orchestrator
             # too: it closes its own carry-overs at the end of the batch, and
             # closing an already-closed incident is a free local no-op.
+            #
+            # Unless the caller says this run delivered nothing (clear_failure
+            # False) — see the docstring. A probe that exits 0 has proved the
+            # code runs, not that the report is fixed.
             _clear_failure(report_id, report_name)
         return True
     except Exception:

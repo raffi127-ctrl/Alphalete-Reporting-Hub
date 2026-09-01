@@ -452,6 +452,37 @@ def _running_pids(module: str) -> list:
     return proc_guard.running_pids(module)
 
 
+# Flags that mean "this run deliberately delivered NOTHING". A rerun carrying one
+# still publishes to the Hub, but it must not close an incident: exiting 0 proves
+# the code runs, not that the report is fixed. See _probe_reason.
+_PROBE_FLAGS = ("--dry-run", "--dry", "--check", "--inspect")
+
+
+def _probe_reason(raw_report: dict, extra: list) -> str:
+    """Why this rerun should NOT close an incident, or "" when it really ran.
+
+    Two shapes, both real in this repo:
+
+      • an explicit probe flag on the command line (--dry-run and friends);
+      • a handle that is DRY BY DEFAULT and only acts with a flag — the BOX
+        repair tools say so in their own docstrings ("DRY-RUN by default; --post
+        does the work"). The config names that flag as `delivers_only_with`, so
+        the knowledge lives next to the report instead of in a guess here.
+
+    Why it matters (2026-09-01): a DRY run of box_order_log_tier_backfill exited
+    0, and the ✅ that follows a clean run closed `drop-box-order-log` — 13
+    minutes BEFORE the board reached the thread. The ticket said RESOLVED over a
+    thread that was still missing its image.
+    """
+    for f in extra:
+        if f in _PROBE_FLAGS:
+            return f
+    gate = (raw_report or {}).get("delivers_only_with", "")
+    if gate and gate not in extra:
+        return "no {}".format(gate)
+    return ""
+
+
 def _action_rerun(args: str) -> tuple[bool, str]:
     """Re-run one orchestrator report by report_id, plus any EXTRA CLI args after
     it — e.g. 'daily_metrics --only churn' re-runs just that one metric, so a
@@ -579,13 +610,21 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # INCOMPLETE as run (a report that RAN with an acceptable note should show as
     # run, not like it never ran; Megan 2026-07-01) and closes the pill on failure
     # too. Best-effort; a no-op when the report has no Hub card.
+    probe = _probe_reason(
+        (cfg.raw.get("reports", {}) or {}).get(report_id) or {}, extra)
     try:
         from automations.day_orchestrator import hub_publish
         hub_publish.publish_done(
             report_id, getattr(r, "display_name", report_id),
-            status=hub_publish.final_status(report_id, ok), run_id=hub_run_id)
+            status=hub_publish.final_status(report_id, ok), run_id=hub_run_id,
+            clear_failure=not probe)
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         pass
+    if probe and ok:
+        # Say it in the result cell, where the person who queued the row reads:
+        # otherwise "exit 0" on a probe looks exactly like a fix that landed.
+        result += (" · probe run ({}) — nothing delivered, any open "
+                   "incident left OPEN".format(probe))
     return ok, result
 
 

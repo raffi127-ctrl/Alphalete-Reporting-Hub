@@ -7183,6 +7183,7 @@
     },
     "box_order_log_tier_backfill": {
       "on_scheduler": false,
+      "delivers_only_with": "--post",
       "_off_scheduler_note": "ONE-OFF/repair handle, never scheduled: adds the 'Box Tier Bonus Rep Level' board to a BOX Order Log thread that ALREADY posted, and edits that parent's header to list it. Built 2026-08-15, the day the board was wired into box_order_log.run \u2014 that morning's 8:32 thread went out before the change, and Megan asked for the board added to the LIVE thread rather than left for the next day. Runs automations.box_order_log.backfill_tier: finds today's parent by its dated header ('BOX Order Log \u2014 August 15, 2026'), uploads the board as a reply, and chat_update's the header. Fully idempotent \u2014 a board already in the thread is skipped and a header already listing it isn't re-edited, so a second run reports 'nothing to do'. MUST run on LUCY 2: only Lucy's own token can edit Lucy's message, and a laptop run would post as Megan. DRY by default; add --post. Since 2026-09-01 it does EVERY channel in run.TARGETS (#alphalete-gp-sales + #a-players-b2b) in one run, capturing the board once for both — --channel <id> now LIMITS it to one room; --date YYYY-MM-DD for an older thread. Keep for the next time a thread needs an attachment added after the fact. Registered 2026-08-15.",
       "display_name": "BOX Order Log \u2014 add tier board to a posted thread (repair)",
       "source_type": "tableau",
@@ -7202,6 +7203,7 @@
     },
     "box_order_log_repost": {
       "on_scheduler": false,
+      "delivers_only_with": "--post",
       "_off_scheduler_note": "REPAIR handle, never scheduled: re-posts TODAY's BOX Order Log workbook into the thread that ALREADY posted, as a reply \u2014 for the day a formatting change lands after the morning thread went out. Built 2026-08-20, the day Carlos's pending-tab rework shipped (two sections by sales rep; Ready For Booking turned yellow) after the 7:00 thread had already gone. Runs automations.box_order_log.repost_workbook: finds today's parent by its dated header (backfill_tier.find_parent), replies with the workbook, and NEVER starts a second thread. Unlike backfill_tier it re-uploads a filename the thread already carries \u2014 that is the point \u2014 so dedupe is on the caption's marker phrase; a second run reports 'already re-posted'. Build the workbook FIRST with `lucy rerun box_order_log` (base_args --sheet --xlsx, no post). DRY by default; --post uploads. --channel <id> limits it to one room, otherwise it does every channel in run.TARGETS (#alphalete-gp-sales + #a-players-b2b). MUST run on LUCY 2: the reply has to come from Lucy, and a laptop run would post as whoever's token is on the laptop. Registered 2026-08-20.",
       "display_name": "BOX Order Log \u2014 re-post today's workbook into its thread (repair)",
       "source_type": "tableau",
