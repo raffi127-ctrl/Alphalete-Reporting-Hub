@@ -1,36 +1,26 @@
 """ARS — the interviewer's star rating on every first-round applicant.
 
+SUPERSEDED, and kept only until the AppStream harvest replaces it
+(2026-08-31). AppStream's Retention Details report — the popup behind "Total
+Daily Bob" — carries a **Rating** column on the SAME ROW as **Ad (Subject
+Line)**, per applicant, per day, per office. That is the same judgement this
+workbook holds, in the system it was typed from, already joined to the ad.
+
+So this module is reading a hand-typed copy: the same mistake as pulling the
+Focus Report. Tableau / SaraPlus / Sterling / AppStream are truth (Megan
+2026-08-31). Ad quality should come from AppStream, where nothing has to be
+matched up by name and the office and date come for free.
+
+What is still worth taking from here when that lands: nothing about the data,
+only the shape — norm_ad (people type one ad three ways, 305 spellings folded
+to 230), the unrated-is-not-zero rule, and the thin-sample floor that keeps an
+ad with one 5-star applicant off the top of the table. Those apply to the
+AppStream rows unchanged.
+
 Five workbooks, split alphabetically by the owner's FIRST name, one tab per
-ICD, owned by camilahornosk@gmail.com and edited live by the interviewers.
-
-THREE COLUMNS ONLY: Full Name, Ad Title, Star Rating (Megan 2026-08-31).
-The tab also carries Qualify / Answer Call / Booked to 2nd Rd / Showed Up to
-2nd Round / Offered Positon / BOB, and this module deliberately does not read
-them. They are typed by hand into a sheet nobody reconciles, and every one of
-them already has a system-side source we trust more — the Focus Report for the
-funnel, the 2R tab for BOB, the 3am harvest for first sale. Pulling them here
-would quietly create a second, worse version of numbers we already publish.
-
-WHY THE RATING IS WORTH HAVING. Everything else we hold about a job ad counts
-people — applies, BOB, who lasted. This is the only source that says whether
-the people an ad sent were any GOOD, judged by the person who sat across from
-them. An ad can flood the call list and send nobody worth hiring; that ad
-looks fine on every other report and bad only on this one.
-
-HOW FAR IT CAN BE PUSHED. The rating is a human judgement and nothing more:
-treat a low average as "the interviewers did not rate the people this ad
-sent", which is exactly the question being asked, and not as "these people
-would not have signed".
-
-An earlier version of this file claimed 1 star predicted worse outcomes. That
-came from the sheet's OWN outcome columns — the untrusted ones — so it has
-been removed rather than left standing on data we do not rely on. Re-running
-the same test against sources we do trust (the 2R tab's start dates and the
-first-sale map) was inconclusive: only 142 of Raf's 2,253 ARS rows match
-either by name, which leaves single-digit numerators per star and no signal
-in any direction. So there is currently NO evidence here that the scale
-predicts who comes on board. If that matters later, the way to settle it is a
-real name join, not more of this sheet.
+ICD. Reads THREE columns only — Full Name, Ad Title, Star Rating — plus Date
+1st Rd purely to place a row in a week. Its funnel columns are hand-typed and
+every one has a system-side source we trust more.
 """
 from __future__ import annotations
 
