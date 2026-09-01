@@ -551,8 +551,15 @@ def main(argv=None):
     for key in list(fresh):
         tr = [r for r in fresh[key] if r[4] == "TOTAL"]
         was, now = stored_total.get(key), (tr[0][6] if tr else None)
-        if (was and isinstance(now, (int, float)) and now < was
-                and not a.allow_shrink):
+        # Tolerance: AppStream's own history drifts a little as spam and
+        # duplicates are removed server-side — a fresh pull of 1072 against a
+        # stored 1077 is churn, not a short pull, and rejecting it froze
+        # Carlos's Apr 27 week in its over-counted state (2026-09-01). Reject
+        # only a MEANINGFUL shrink: more than 2% AND more than 10 emails.
+        # The wrong-office pulls this guard exists for miss by 30-70%.
+        meaningful = (was and isinstance(now, (int, float))
+                      and (was - now) > max(10, was * 0.02))
+        if meaningful and not a.allow_shrink:
             shrunk.append((key[0], key[1], was, now))
             del fresh[key]                 # keep what is already on the sheet
     if shrunk:
