@@ -158,6 +158,20 @@ class KnockTimesAreAveraged(unittest.TestCase):
         self.assertEqual(out[0][COL_FIRST_KNOCK], "9:05 AM")
         self.assertEqual(out[0][COL_LAST_KNOCK], "5:35 PM")
 
+    def test_a_single_day_is_left_exactly_as_scraped(self):
+        """A ONE-day board must show the day's real times, not an "average"
+        of anything (Megan 2026-09-01: "this shouldn't change the daily 1st
+        and last knock though because that's only one day").
+
+        It holds because the mean of one value is that value — but it is the
+        property people will rely on, so it is pinned rather than reasoned
+        about. The daily boards do not fold at all: aggregate_days has exactly
+        one caller, the /knocks request path.
+        """
+        out = aggregate_days([[house_row(first="1:25 PM", last="10:42 PM")]])
+        self.assertEqual(out[0][COL_FIRST_KNOCK], "1:25 PM")
+        self.assertEqual(out[0][COL_LAST_KNOCK], "10:42 PM")
+
     def test_only_days_the_rep_knocked_count(self):
         """A blank day must not drag the average toward an hour nobody
         worked — the divisor is days KNOCKED, not days in the span."""
