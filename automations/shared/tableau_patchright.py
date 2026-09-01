@@ -485,7 +485,7 @@ def tableau_session(headless: bool = False, verbose: bool = True,
     and was dying on "profile is already in use by another instance of
     Chromium". Login still comes from the shared ownerville storage_state, so a
     fresh profile authenticates the same way."""
-    prof = Path(profile_dir) if profile_dir else PROFILE_DIR
+    prof = Path(profile_dir) if profile_dir else _job_profile_dir()
     prof.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, prof, headless=headless,
@@ -1011,6 +1011,46 @@ _DEAD_CONTEXT_MARKERS = (
 REBUILD_PROFILE_DIR = PROFILE_DIR.parent / ".browser_profile_rebuild"
 
 
+# ONE PROFILE PER JOB, NOT ONE PROFILE PER FLEET (Megan 2026-09-01: "do the
+# profile fix").
+#
+# Every browser report defaulted to the SAME .browser_profile, and Chrome's
+# singleton means concurrent runs evict each other — the survivor keeps the
+# profile and the loser's context dies mid-run as TargetClosedError. Lucy 1
+# routinely has four patchright drivers up at once (orchestrator pass +
+# standalone LaunchAgents + reruns), so this was a standing collision, not an
+# edge case. Measured 08:56 on 2026-09-01: 4 drivers, 8 Chromes on
+# .browser_profile, and org_sales_board losing its delta boxes to
+# "Download.save_as: Target page, context or browser has been closed" in an hour
+# with ZERO Chrome crash reports — the crash wave had already passed; this was
+# pure contention.
+#
+# The remedy is already proven in this file, twice, as a per-job escape hatch:
+# Owner Showdown's 8am preview (2026-08-03, dying on "profile is already in use")
+# and other_office_knocks (2026-08-18, "Opening in existing browser session").
+# Both fixed by handing that job its own profile. This makes the escape hatch
+# the DEFAULT instead of something each job has to remember.
+#
+# Keyed on HUB_REPORT_ID, which both runners already set (run.py sets it for the
+# orchestrator pass, mini_control for every `lucy rerun`) — so the name is stable
+# per report and the profile stays warm across runs instead of paying a cold
+# login every time. Login still comes from the shared ownerville storage_state,
+# so a fresh profile authenticates identically.
+#
+# CONSERVATIVE: with no HUB_REPORT_ID (a hand-run script, a test, the REPL) the
+# behaviour is byte-identical to before — the shared profile. Only labelled jobs
+# get isolated, which is exactly the set that collides.
+def _job_profile_dir() -> Path:
+    """The profile this JOB should use: its own when the runner labelled it."""
+    job = (os.environ.get("HUB_REPORT_ID") or "").strip()
+    if not job:
+        return PROFILE_DIR
+    slug = re.sub(r"[^a-z0-9_-]+", "-", job.lower()).strip("-")[:60]
+    if not slug:
+        return PROFILE_DIR
+    return PROFILE_DIR.parent / (".browser_profile__" + slug)
+
+
 def is_dead_context(exc) -> bool:
     """True when `exc` means the browser/context DIED, not that the page misbehaved.
 
@@ -1362,7 +1402,7 @@ def ownerville_session(headless: bool = False,
     while another session held the shared profile. Login still comes from the
     shared ownerville storage_state, so a fresh profile authenticates the
     same way."""
-    prof = Path(profile_dir) if profile_dir else PROFILE_DIR
+    prof = Path(profile_dir) if profile_dir else _job_profile_dir()
     prof.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, prof, headless=headless,
