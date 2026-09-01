@@ -1469,7 +1469,7 @@ def _cdp_warm(force_fresh: bool = True) -> int:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             # Inject any saved session, then land on the console URL so Cloudflare
             # (if it re-challenges) starts resolving.
-            tp._reuse_appstream_storage_state(ctx, page, True)
+            _reuse_account_session(ctx, page, tp, True)
             try:
                 page.goto("https://applicantstream.com/index.cfm",
                           wait_until="domcontentloaded")
@@ -1603,7 +1603,7 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
         except Exception:  # noqa: BLE001
             pass
 
-        logged = tp._reuse_appstream_storage_state(ctx, page, True)
+        logged = _reuse_account_session(ctx, page, tp, True)
         if logged and page.locator("#searchMC").count() > 0:
             _log("[cdp] logged in via saved session (storage_state).")
         else:
@@ -1620,7 +1620,7 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
                     tp._drive_login_form(page, True, username=user, password=pwd)
                 page.wait_for_timeout(3000)
                 if page.locator("#searchMC").count() == 0:
-                    tp._reuse_appstream_storage_state(ctx, page, True)
+                    _reuse_account_session(ctx, page, tp, True)
                 _persist_appstream_session(ctx, tp)
             except Exception as e:
                 _log("[cdp] form login error: " + str(e)[:160])
@@ -1696,6 +1696,45 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
         _flush_diag(diag_tab)
 
 
+def _account_state_path(tp):
+    """Where THIS account's AppStream session lives.
+
+    The shared .appstream_storage_state.json belongs to the primary login, and on
+    Lucy 2 that is what funnel_board / indeed_source_report / ad_sales_board /
+    daily_update_fill reuse. A scoped account must neither read it nor write it:
+
+      * READING it re-injects the broad login's cookies right after the profile
+        purge, restores the console as that account, and skips the form login
+        entirely — the run then pushes as the broad account with every guard
+        looking satisfied. On 2026-08-31 this only failed to happen because the
+        shared token was dead; a healthy one would have silently taken over.
+      * WRITING it would replace the broad session with a two-office one and
+        break every other AppStream report on the machine.
+
+    So anything that is not "primary" gets its own file beside it."""
+    if APPSTREAM_ACCOUNT == "primary":
+        return tp.APPSTREAM_STORAGE_STATE
+    return tp.APPSTREAM_STORAGE_STATE.with_name(
+        ".appstream_storage_state_%s.json" % APPSTREAM_ACCOUNT)
+
+
+def _reuse_account_session(ctx, page, tp, verbose=True) -> bool:
+    """Restore this ACCOUNT's saved session — never another account's."""
+    path = _account_state_path(tp)
+    if path == tp.APPSTREAM_STORAGE_STATE:
+        return tp._reuse_appstream_storage_state(ctx, page, verbose)
+    if not path.exists():
+        _log("[account] no saved session for %s yet — it must sign in"
+             % APPSTREAM_ACCOUNT)
+        return False
+    real = tp.APPSTREAM_STORAGE_STATE
+    try:
+        tp.APPSTREAM_STORAGE_STATE = path
+        return tp._reuse_appstream_storage_state(ctx, page, verbose)
+    finally:
+        tp.APPSTREAM_STORAGE_STATE = real
+
+
 def _persist_appstream_session(ctx, tp) -> None:
     """Persist the current context's cookies to APPSTREAM_STORAGE_STATE for reuse,
     but only when they carry the ``rqst_*`` SSO cookies that prove a real login (so a
@@ -1706,8 +1745,10 @@ def _persist_appstream_session(ctx, tp) -> None:
         if any(c.get("name", "").startswith("rqst_")
                for c in _st.get("cookies", [])):
             import json as _json
-            tp.APPSTREAM_STORAGE_STATE.write_text(_json.dumps(_st))
-            _log("[cdp] saved a fresh AppStream session for reuse")
+            _path = _account_state_path(tp)
+            _path.write_text(_json.dumps(_st))
+            _log("[cdp] saved a fresh AppStream session for reuse (%s -> %s)"
+                 % (APPSTREAM_ACCOUNT, _path.name))
     except Exception:  # noqa: BLE001
         pass
 
@@ -1806,7 +1847,7 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                 pass
 
             from automations.shared import creds
-            logged = tp._reuse_appstream_storage_state(ctx, page, True)
+            logged = _reuse_account_session(ctx, page, tp, True)
             if logged and page.locator("#searchMC").count() > 0:
                 _log("[cdp] logged in via saved session (storage_state).")
             else:
@@ -1823,7 +1864,7 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                         tp._drive_login_form(page, True, username=user, password=pwd)
                     page.wait_for_timeout(3000)
                     if page.locator("#searchMC").count() == 0:
-                        tp._reuse_appstream_storage_state(ctx, page, True)
+                        _reuse_account_session(ctx, page, tp, True)
                     # persist a fresh session for next time
                     try:
                         _st = ctx.storage_state()

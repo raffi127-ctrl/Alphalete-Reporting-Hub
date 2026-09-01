@@ -210,3 +210,35 @@ class ProfileAccountMarker(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class PerAccountSessionFile(unittest.TestCase):
+    """A scoped account must not touch the primary's session file."""
+
+    def setUp(self):
+        self._prev = rp.APPSTREAM_ACCOUNT
+
+    def tearDown(self):
+        rp.APPSTREAM_ACCOUNT = self._prev
+
+    def test_primary_uses_the_shared_file(self):
+        from automations.shared import tableau_patchright as tp
+        rp.APPSTREAM_ACCOUNT = "primary"
+        self.assertEqual(rp._account_state_path(tp), tp.APPSTREAM_STORAGE_STATE)
+
+    def test_scoped_account_gets_its_own_file(self):
+        # Reading the shared file re-injects the BROAD login's cookies straight
+        # after the profile purge, restores the console as that account and skips
+        # the form login — the run then pushes as the wrong account with every
+        # guard looking satisfied. Writing it would break every other AppStream
+        # report on the machine. So the scoped account is isolated both ways.
+        from automations.shared import tableau_patchright as tp
+        rp.APPSTREAM_ACCOUNT = "lucyresume"
+        path = rp._account_state_path(tp)
+        self.assertNotEqual(path, tp.APPSTREAM_STORAGE_STATE)
+        self.assertIn("lucyresume", path.name)
+        self.assertEqual(path.parent, tp.APPSTREAM_STORAGE_STATE.parent)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
