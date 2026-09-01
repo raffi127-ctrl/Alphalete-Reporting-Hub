@@ -39,7 +39,11 @@ import time
 # as dead NOW rather than dying halfway through the 4am reports.
 MIN_MINUTES_FOR_BATCH = 90.0
 # How long to give the holder to come back with a live token after a restart.
-RECOVER_WAIT_MIN = 8.0
+# 8 minutes was too short: on the first real run the holder was kickstarted at
+# 21:14:26 and the wait expired at 21:22:28 with nothing yet exported. A restart
+# re-seeds ownerville BEFORE it touches AppStream, so the export lands minutes
+# later. At 3:15 this still finishes by ~3:35, leaving the batch 25 minutes.
+RECOVER_WAIT_MIN = 20.0
 POLL_SECONDS = 20
 
 
@@ -118,16 +122,21 @@ def _push_fleet() -> bool:
 
 
 def _alert(reason: str) -> None:
-    """Only ever called when the heal FAILED and a person is actually needed."""
-    try:
-        from automations.shared import alert_thread
-        alert_thread.post_failure(
-            report_id="appstream_selfheal",
-            summary=("AppStream self-heal could not get a live session before "
-                     "the 4am batch: %s" % reason))
-        _log("alerted: %s" % reason)
-    except Exception as e:  # noqa: BLE001 — never let alerting mask the result
-        _log("ALERT FAILED (%s) — original problem: %s" % (str(e)[:80], reason))
+    """Record the failure loudly and let the EXISTING watchers page.
+
+    The first version called alert_thread.post_failure(), which does not exist —
+    so the one path meant to say "a human is genuinely needed" raised
+    AttributeError and said nothing (2026-08-31, caught on the first real run).
+
+    Rather than invent an alerting path, this leans on the machinery that already
+    works: a non-zero exit from a standalone agent is picked up by the didn't-
+    run-clean watcher and posted to #claudecorrections-and-requests. That is
+    demonstrated — the same watcher paged about this module's own probe minutes
+    earlier. One alerting path, already proven, instead of a second one that has
+    to be kept working."""
+    _log("SELF-HEAL FAILED: %s" % reason)
+    _log("exiting non-zero so the didn't-run-clean watcher raises this — a human "
+         "is genuinely needed here.")
 
 
 def main(argv=None) -> int:
