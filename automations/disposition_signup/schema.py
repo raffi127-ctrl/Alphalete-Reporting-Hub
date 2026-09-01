@@ -89,16 +89,48 @@ def dest_label(d: dict) -> str:
 # (feedback_ask_for_the_url); the preflight is what will say whether the grid
 # has the columns the scraper needs.
 CAMPAIGNS = [
-    {"id": "3", "key": "att", "label": "AT&T",
-     "name": "AT&T residential fiber (D2D)"},
-    {"id": "40", "key": "energy", "label": "EnergyWell",
-     "name": "Energy Wells"},
-    {"id": "2", "key": "b2b_att", "label": "B2B AT&T",
-     "name": "B2B AT&T SBS"},
-    {"id": "16", "key": "b2b_box", "label": "B2B Box",
-     "name": "B2B-BOX-Energy"},
-    {"id": "", "key": "nds", "label": "NDS", "name": "NDS wireless"},
+    # --- D2D ---------------------------------------------------------------
+    {"id": "3", "key": "att", "family": "D2D", "label": "AT&T",
+     "name": "AT&T Fiber — Internet & Phones", "live": True},
+    {"id": "40", "key": "energy", "family": "D2D", "label": "EnergyWell",
+     "name": "Energy Wells", "live": True},
+    # NDS has no Disposition campaign in OwnerVille yet — that is why Isaiah's
+    # knock board comes back empty (project_isaiah_legacy_wireless). Offered
+    # anyway, as a WAITING LIST: an owner who wants it should be able to say so
+    # once, not be told to come back later and remember to.
+    {"id": "", "key": "nds", "family": "D2D", "label": "NDS",
+     "name": "NDS — Wireless & Phones", "live": False},
+    # --- B2B ---------------------------------------------------------------
+    {"id": "2", "key": "b2b_att", "family": "B2B", "label": "B2B AT&T",
+     "name": "B2B AT&T SBS", "live": True},
+    {"id": "16", "key": "b2b_box", "family": "B2B", "label": "B2B Box",
+     "name": "B2B Box / Energy", "live": True},
 ]
+
+# Grouped the way an owner thinks about it, and the same four families
+# office_onboarding.CAMPAIGNS uses — the two intake forms should not disagree
+# about what this company sells.
+FAMILIES = ["D2D", "B2B"]
+
+
+def campaigns_in(family: str) -> "List[dict]":
+    return [c for c in CAMPAIGNS if c["family"] == family]
+
+
+def campaign_live(key: str) -> bool:
+    """False = we cannot pull dispositions for it YET. The sign-up is still
+    taken and still lands in front of Megan; it just goes on the waiting list
+    instead of being wired, and apply refuses to materialize it."""
+    c = campaign(key)
+    return bool(c and c.get("live"))
+
+
+def campaign_choice_label(key: str) -> str:
+    c = campaign(key) or {}
+    return "%s — %s%s" % (c.get("family", "?"), c.get("name", key),
+                          "" if c.get("live") else "  (coming soon)")
+
+
 DEFAULT_CAMPAIGN = "att"
 
 

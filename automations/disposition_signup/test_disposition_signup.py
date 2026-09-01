@@ -445,3 +445,54 @@ def test_email_goes_to_that_destinations_addresses(tmp_path):
                  to_addrs=["cody@example.com"], dry_run=True)
     assert res["to"] == ["cody@example.com"]     # the destination's, not the office's
     assert res["attachments"] == ["board.png"]
+
+
+# --- the waiting list -------------------------------------------------------
+
+def test_every_campaign_is_offered_grouped_by_family():
+    assert [c["key"] for c in S.campaigns_in("D2D")] == ["att", "energy", "nds"]
+    assert [c["key"] for c in S.campaigns_in("B2B")] == ["b2b_att", "b2b_box"]
+
+
+def test_coming_soon_is_only_nds():
+    assert S.campaign_live("att") and S.campaign_live("b2b_box")
+    assert not S.campaign_live("nds")
+    assert "(coming soon)" in S.campaign_choice_label("nds")
+    assert "(coming soon)" not in S.campaign_choice_label("att")
+
+
+def test_a_waiting_list_signup_is_still_a_valid_submission():
+    """The whole point: they enroll once, now, and we hold it."""
+    assert S.validate_request(_rec(campaign_key="nds")) == []
+    assert S.validate(_rec(campaign_key="nds", enabled=True)) == []
+
+
+def test_apply_refuses_to_wire_a_waiting_list_office(monkeypatch, capsys):
+    """Wiring it would put an office in the run that fails every single tick —
+    there is nothing in OwnerVille to pull."""
+    monkeypatch.setattr(store, "load_all",
+                        lambda: [_rec(campaign_key="nds", status="wired",
+                                      enabled=True).to_json()])
+    monkeypatch.setattr(store, "existing_registry",
+                        lambda exclude_key=None: {"keys": [], "groups": {}})
+    assert A.plan() == []
+    assert "WAITING LIST" in capsys.readouterr().out
+
+
+def test_a_live_campaign_still_wires(monkeypatch):
+    monkeypatch.setattr(store, "load_all",
+                        lambda: [_rec(campaign_key="b2b_att", status="wired",
+                                      enabled=True).to_json()])
+    monkeypatch.setattr(store, "existing_registry",
+                        lambda exclude_key=None: {"keys": [], "groups": {}})
+    plans = A.plan()
+    assert [p["rec"].key for p in plans] == ["cody"]
+    assert plans[0]["row"]["campaign_id"] == "2"       # B2B AT&T SBS
+
+
+def test_the_ping_says_waiting_list_in_its_one_line():
+    from automations.disposition_signup import request_notify as RN
+    live_title, _ = RN._lines(_rec(campaign_key="att"))
+    wait_title, _ = RN._lines(_rec(campaign_key="nds"))
+    assert "WAITING LIST" not in live_title
+    assert "WAITING LIST" in wait_title

@@ -26,7 +26,8 @@ from typing import Dict, List
 
 from automations.disposition_signup import store
 from automations.disposition_signup.schema import (
-    DEFAULT_HOURS, DEFAULT_TZ as S_DEFAULT_TZ, DispositionRecord, validate,
+    DEFAULT_HOURS, DEFAULT_TZ as S_DEFAULT_TZ, DispositionRecord,
+    campaign_live, validate,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -98,6 +99,15 @@ def plan() -> "List[dict]":
         # nobody checked.
         if rec.status == "pending":
             print("  (skipping %r — pending, not confirmed yet)" % rec.key)
+            continue
+        # A campaign OwnerVille has no dispositions for cannot be pulled at
+        # all. The sign-up is kept — that is the waiting list — but wiring it
+        # would put an office in the run that fails every tick.
+        if not campaign_live(rec.campaign_key):
+            print("  (skipping %r — %s is on the WAITING LIST, no dispositions "
+                  "in OwnerVille yet)"
+                  % (rec.key, (rec.campaign() or {}).get("name",
+                                                         rec.campaign_key)))
             continue
         reg = store.existing_registry(exclude_key=rec.key)
         problems = validate(rec, existing_keys=[k for k in reg["keys"]

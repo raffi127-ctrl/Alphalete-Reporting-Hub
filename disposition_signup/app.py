@@ -127,9 +127,19 @@ def request_view() -> None:
     campaign_key = st.radio(
         "Which campaign are these dispositions for? *",
         [c["key"] for c in S.CAMPAIGNS],
-        format_func=lambda k: (S.campaign(k) or {}).get("name", k),
-        help="If your office runs both, sign up once here and tell us in the "
-             "notes at the bottom — you'll get one report per campaign.")
+        format_func=S.campaign_choice_label,
+        help="If your office runs more than one, sign up once here and tell "
+             "us in the notes at the bottom — you'll get one report per "
+             "campaign.")
+    if not S.campaign_live(campaign_key):
+        # Still take the sign-up. OwnerVille does not carry dispositions for
+        # this campaign yet, so there is nothing to pull — but "come back when
+        # it exists" is a thing nobody comes back for.
+        st.info("⏳ **Coming soon — you'll go on the waiting list.** "
+                "OwnerVille doesn't have the disposition data built for this "
+                "campaign yet. Sign up anyway: we'll hold everything you enter "
+                "below and wire you up the day it's available, without you "
+                "having to do this again.")
 
     # ---- 3. Where it goes ------------------------------------------------
     # MANY destinations, each on its OWN clock (Megan 2026-09-01): the owners'
@@ -336,10 +346,17 @@ def _request_done_view() -> None:
         return
     d = res["rec"]
     st.divider()
-    st.success("🎉 You're signed up%s! Once Megan hooks it up, your knocks and "
-               "dispositions start arriving on their own. Nothing else for you "
-               "to do — go sell something. 🐾🚀"
-               % (" (updated)" if res.get("updated") else ""))
+    if not S.campaign_live(d.get("campaign_key", "")):
+        st.success("🎉 You're on the waiting list%s! OwnerVille doesn't have "
+                   "the disposition data for your campaign built yet. "
+                   "Everything you entered is saved — the day it's available "
+                   "we wire you up, no second form. 🐾"
+                   % (" (updated)" if res.get("updated") else ""))
+    else:
+        st.success("🎉 You're signed up%s! Once Megan hooks it up, your knocks "
+                   "and dispositions start arriving on their own. Nothing else "
+                   "for you to do — go sell something. 🐾🚀"
+                   % (" (updated)" if res.get("updated") else ""))
     st.markdown("**What you'll get, %s:**" % d["_derived"]["cadence"].lower())
     st.caption("During your field hours: %s" % d["_derived"]["hours"])
     for r in d["_derived"]["routes"]:
@@ -509,6 +526,11 @@ def confirm_view(key: str) -> None:
         submitted_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
 
     reg = store.existing_registry(exclude_key=key)
+    if not S.campaign_live(campaign_key):
+        st.warning("⏳ **Waiting list.** OwnerVille has no disposition data for "
+                   "this campaign yet, so apply REFUSES to materialize this "
+                   "office — confirming stores the setup and nothing more. "
+                   "Re-confirm on a live campaign the day it exists.")
     for w in S.warnings(rec2, existing_groups=reg["groups"]):
         st.warning(w)
 

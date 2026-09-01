@@ -24,9 +24,17 @@ FORM_URL = "https://alphaletedispositions.streamlit.app"
 def _lines(rec: DispositionRecord, lucy: "Optional[dict]" = None
            ) -> Tuple[str, List[str]]:
     who = rec.owner or rec.key
-    title = ("New disposition sign-up — {} wants the knocks and dispositions "
-             "board in {} place(s), {}".format(
-                 who, len(rec.destinations), rec.cadence_label().lower()))
+    from automations.disposition_signup.schema import campaign_live
+    if campaign_live(rec.campaign_key):
+        title = ("New disposition sign-up — {} wants the knocks and "
+                 "dispositions board in {} place(s), {}".format(
+                     who, len(rec.destinations), rec.cadence_label().lower()))
+    else:
+        # Say it in the ONE line, not in the thread: this one cannot be wired
+        # today and nobody should open the confirm link expecting to.
+        title = ("Disposition WAITING LIST — {} signed up for {}, which "
+                 "OwnerVille has no dispositions for yet".format(
+                     who, (rec.campaign() or {}).get("name", "?")))
     link = "{}/?confirm={}".format(FORM_URL, rec.key or "")
     thread = ["- Requested by: {}".format(rec.requested_by or who),
               "- ICD (OwnerVille): {}".format(rec.owner or "?"),
