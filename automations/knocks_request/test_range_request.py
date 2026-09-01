@@ -389,18 +389,18 @@ class TheDmSyntax(unittest.TestCase):
 
     def test_no_date_is_yesterday_both_ends(self):
         self.assertEqual(handler.parse_dm("knocks Chan Park"),
-                         ("Chan Park", YESTERDAY, YESTERDAY))
+                         ("Chan Park", YESTERDAY, YESTERDAY, None))
 
     def test_one_iso_date_is_a_single_day(self):
         self.assertEqual(handler.parse_dm("knocks Chan Park 2026-08-21"),
                          ("Chan Park", dt.date(2026, 8, 21),
-                          dt.date(2026, 8, 21)))
+                          dt.date(2026, 8, 21), None))
 
     def test_day_words_still_work(self):
         self.assertEqual(handler.parse_dm("knocks Chan Park today"),
-                         ("Chan Park", TODAY, TODAY))
+                         ("Chan Park", TODAY, TODAY, None))
         self.assertEqual(handler.parse_dm("knocks Chan Park yesterday"),
-                         ("Chan Park", YESTERDAY, YESTERDAY))
+                         ("Chan Park", YESTERDAY, YESTERDAY, None))
 
     def test_the_word_to_makes_a_range(self):
         for word in ("to", "through", "thru", "until", "-"):
@@ -408,31 +408,45 @@ class TheDmSyntax(unittest.TestCase):
                 self.assertEqual(
                     handler.parse_dm(
                         f"knocks Chan Park 2026-08-18 {word} 2026-08-23"),
-                    ("Chan Park", dt.date(2026, 8, 18), dt.date(2026, 8, 23)))
+                    ("Chan Park", dt.date(2026, 8, 18), dt.date(2026, 8, 23), None))
 
     def test_dot_dot_makes_a_range(self):
         self.assertEqual(
             handler.parse_dm("knocks Chan Park 2026-08-18..2026-08-23"),
-            ("Chan Park", dt.date(2026, 8, 18), dt.date(2026, 8, 23)))
+            ("Chan Park", dt.date(2026, 8, 18), dt.date(2026, 8, 23), None))
 
     def test_day_words_can_be_range_ends(self):
         self.assertEqual(
             handler.parse_dm("knocks Chan Park 2026-08-18 to today"),
-            ("Chan Park", dt.date(2026, 8, 18), TODAY))
+            ("Chan Park", dt.date(2026, 8, 18), TODAY, None))
 
     def test_a_backwards_dm_range_is_kept_as_typed(self):
         # parse_dm reports what was said; check_span is what refuses it. If
         # the parser "helpfully" swapped them, the refusal could never fire.
         self.assertEqual(
             handler.parse_dm("knocks Chan Park 2026-08-23 to 2026-08-18"),
-            ("Chan Park", dt.date(2026, 8, 23), dt.date(2026, 8, 18)))
+            ("Chan Park", dt.date(2026, 8, 23), dt.date(2026, 8, 18), None))
 
     def test_a_name_that_is_not_a_date_stays_in_the_name(self):
         self.assertEqual(handler.parse_dm("knocks Chan Park the third"),
-                         ("Chan Park the third", YESTERDAY, YESTERDAY))
+                         ("Chan Park the third", YESTERDAY, YESTERDAY, None))
+
+    def test_a_campaign_word_is_peeled_off_a_multi_campaign_office(self):
+        """Jay knocks two campaigns, so "… jay turnage energywell" names the
+        REQUEST, not an office called that."""
+        self.assertEqual(handler.parse_dm("knocks Jay Turnage energywell"),
+                         ("Jay Turnage", YESTERDAY, YESTERDAY, "40"))
+        self.assertEqual(handler.parse_dm("knocks Jay Turnage att"),
+                         ("Jay Turnage", YESTERDAY, YESTERDAY, "3"))
+
+    def test_a_trailing_word_stays_in_the_name_for_everyone_else(self):
+        """The peel only happens when the office HAS a campaign by that word,
+        so a single-campaign office is never mangled."""
+        self.assertEqual(handler.parse_dm("knocks Chan Park energywell"),
+                         ("Chan Park energywell", YESTERDAY, YESTERDAY, None))
 
     def test_a_bare_trigger_asks_who(self):
-        self.assertEqual(handler.parse_dm("knocks"), ("", YESTERDAY, YESTERDAY))
+        self.assertEqual(handler.parse_dm("knocks"), ("", YESTERDAY, YESTERDAY, None))
 
     def test_a_dm_that_is_not_about_knocks_is_left_alone(self):
         # This inbox is also how /dd takes a corrected rep name.

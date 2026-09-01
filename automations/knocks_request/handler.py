@@ -172,8 +172,8 @@ def _pop_span(rest: list) -> Tuple[list, Optional[dt.date], Optional[dt.date]]:
     return rest, None, None
 
 
-def parse_dm(text: str) -> Optional[Tuple[str, dt.date, dt.date]]:
-    """(office, start, end) for a DM like `knocks Chan Park` / `knocks chan
+def parse_dm(text: str) -> Optional[Tuple[str, dt.date, dt.date, "str | None"]]:
+    """(office, start, end, campaign) for a DM like `knocks Chan Park` / `knocks chan
     park 2026-08-21` / `knocks Chan Park yesterday` / `knocks Chan Park
     2026-08-18 to 2026-08-23` / `knocks Chan Park 2026-08-18..2026-08-23`,
     else None. `end` equals `start` for a single day.
@@ -187,7 +187,19 @@ def parse_dm(text: str) -> Optional[Tuple[str, dt.date, dt.date]]:
     rest, start, end = _pop_span(words[1:])
     if start is None:
         start = end = service.default_target()
-    return " ".join(rest).strip(), start, end
+    name = " ".join(rest).strip()
+    # A trailing campaign word ("… jay turnage energywell") belongs to the
+    # REQUEST, not the name. Peeled only when the office actually has a
+    # campaign by that word, so an office genuinely called "... Energy" is
+    # never mangled.
+    campaign = None
+    if len(rest) > 1:
+        from automations.rashad_metrics.knocks_pull import campaign_by_keyword
+        head = " ".join(rest[:-1]).strip()
+        cid = campaign_by_keyword(service.resolve_office(head), rest[-1])
+        if cid:
+            name, campaign = head, cid
+    return name, start, end, campaign
 
 
 def handle_dm(web, user_id: str, text: str) -> None:
@@ -196,7 +208,7 @@ def handle_dm(web, user_id: str, text: str) -> None:
     parsed = parse_dm(text)
     if parsed is None:
         return
-    office, target, end = parsed
+    office, target, end, campaign = parsed
     if not office:
         try:
             chan = web.conversations_open(users=user_id)["channel"]["id"]
@@ -204,11 +216,11 @@ def handle_dm(web, user_id: str, text: str) -> None:
                 ":door: Tell me whose office — e.g. `knocks Chan Park`, or "
                 "`knocks Chan Park 2026-08-21` for a specific day, or "
                 "`knocks Chan Park 2026-08-18 to 2026-08-23` for a stretch of "
-                "days. (Yesterday is the default.)"))
+                "days. (Today is the default.)"))
         except Exception:  # noqa: BLE001
             pass
         return
-    process(web, user_id, office, target, end)
+    process(web, user_id, office, target, end, campaign=campaign)
 
 
 def is_knocks_submission(payload: dict) -> bool:
@@ -265,6 +277,19 @@ def process(web, user_id: str, office: str, target: dt.date,
         say(":warning: I need whose office — run `/knocks` again and fill in "
             "the name.")
         return
+
+    # AN OFFICE WITH TWO CAMPAIGNS IS ASKED ABOUT, not guessed at. Silently
+    # picking one would hand back half of Jay's day as though it were all of
+    # it. Everyone else — one campaign, which is everyone — never sees this.
+    if campaign is None:
+        from automations.rashad_metrics.knocks_pull import campaigns_for
+        options = campaigns_for(service.resolve_office(office))
+        if options:
+            say(f":grey_question: *{office}* runs {len(options)} campaigns — "
+                "which one?\n"
+                + "\n".join(f"• `knocks {office} {key}`  ({label})"
+                             for label, _cid, key in options))
+            return
 
     pretty = service.pretty_span(target, end)
     # Refused before any work: a future day comes back from Ownerville as an
