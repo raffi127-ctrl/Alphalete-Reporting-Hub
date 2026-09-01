@@ -95,6 +95,78 @@ def _push_fleet() -> bool:
     return ok
 
 
+def renew_from_state(verbose: bool = True) -> bool:
+    """Warm the capture profile from the LIVE storage_state, then save what the
+    console hands back. No human, no dependence on a profile anyone signed into.
+
+    This is the piece that was missing. The unattended re-capture works only on a
+    profile holding a live session, and the SERVERS never had one — they
+    authenticate from the pushed storage_state file, not from a browser session,
+    so their capture profile has always been cold. That is why every renewal fell
+    to a person on a laptop (Megan, 2026-09-01, three logins before noon).
+
+    But the cookies in that pushed file DO work on those machines: it is exactly
+    what every AppStream report reuses, all day, successfully. So seed the
+    profile with them, open the office console the same way a report does, and
+    export whatever the console returns. A live session renewing itself, instead
+    of a cold profile waiting for a human to restart it.
+
+    Returns True only when a token actually came back."""
+    from automations.shared.tableau_patchright import (
+        APPSTREAM_PROFILE_DIR, APPSTREAM_STORAGE_STATE, _launch_persistent)
+    from patchright.sync_api import sync_playwright
+    try:
+        cookies = json.loads(APPSTREAM_STORAGE_STATE.read_text()).get("cookies", [])
+    except Exception as e:  # noqa: BLE001
+        _log("no saved session to warm from: %s" % str(e)[:120])
+        return False
+    if not cookies:
+        _log("saved session has no cookies — nothing to warm from")
+        return False
+
+    APPSTREAM_PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+    with sync_playwright() as p:
+        ctx = _launch_persistent(p, APPSTREAM_PROFILE_DIR, headless=False,
+                                 label="appstream_autorenew", verbose=verbose)
+        try:
+            try:
+                ctx.add_cookies(cookies)
+            except Exception as e:  # noqa: BLE001 — a bad cookie must not abort
+                _log("add_cookies partial (%s) — continuing" % type(e).__name__)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto("https://applicantstream.com/index.cfm?p=701",
+                      wait_until="domcontentloaded")
+            page.wait_for_timeout(4000)
+            if page.locator("#searchMC").count() == 0:
+                # Give the console a moment: it is the same wait a report does.
+                page.wait_for_timeout(6000)
+            if page.locator("#searchMC").count() == 0:
+                _log("console did not render from the saved session — it is "
+                     "genuinely dead, not merely old")
+                return False
+            state = ctx.storage_state()
+            ap = [c for c in state.get("cookies", [])
+                  if "applicantstream" in (c.get("domain") or "")]
+            n_rqst = sum(1 for c in ap
+                         if str(c.get("name") or "").startswith("rqst"))
+            if not n_rqst:
+                # NEVER clobber a good export with a tokenless one — the same
+                # guard _export_appstream has, for the same reason.
+                _log("console rendered but carried no rqst token — keeping the "
+                     "existing export untouched")
+                return False
+            APPSTREAM_STORAGE_STATE.write_text(
+                json.dumps({"cookies": ap, "origins": []}))
+            _log("console warm — exported %d cookie(s), %d rqst token(s)"
+                 % (len(ap), n_rqst))
+            return True
+        finally:
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
@@ -121,11 +193,10 @@ def main(argv=None) -> int:
 
     _log("re-capturing while the profile session is still warm "
          "(this is the whole point: a cold profile is what needs a human)")
-    from automations.shared.tableau_patchright import _capture_appstream_state
     try:
-        ok = _capture_appstream_state(verbose=True)
+        ok = renew_from_state(verbose=True)
     except Exception as e:  # noqa: BLE001 — never take the timer down
-        _log("capture raised %s: %s" % (type(e).__name__, str(e)[:160]))
+        _log("renew raised %s: %s" % (type(e).__name__, str(e)[:160]))
         ok = False
 
     after = token_minutes_left()
