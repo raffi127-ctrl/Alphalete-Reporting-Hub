@@ -482,6 +482,11 @@ RECIPIENTS: dict = {
         # keeps "ATT Fiber Owners": still an ATT fiber ICD, just not Raf's.
         "trang.lecanavan@gmail.com",
         "kesslerzadrian@gmail.com",
+        # IN 2026-09-01 (Eve): Chan Park recibe tambien las capitanias de
+        # Raf y de Wayne, no solo la suya. Agregado primero al grupo VIVO
+        # (apply_adds, aditivo) y despues aca, para que seed_groups no lo
+        # marque para SACAR — el caso de Juan Botero el 2026-08-28.
+        "parkwchan19@gmail.com",
     ],
     "wayne": [
         "iraffi127@icloud.com",
@@ -490,6 +495,11 @@ RECIPIENTS: dict = {
         "maudmiller4@gmail.com",
         "alistacquisition@gmail.com", "raffi127@gmail.com",
         "sykes.meridian@gmail.com", "elitestrategicsolutions@gmail.com",
+        # IN 2026-09-01 (Eve): Chan Park recibe tambien las capitanias de
+        # Raf y de Wayne, no solo la suya. Agregado primero al grupo VIVO
+        # (apply_adds, aditivo) y despues aca, para que seed_groups no lo
+        # marque para SACAR — el caso de Juan Botero el 2026-08-28.
+        "parkwchan19@gmail.com",
     ],
     "starr": [
         "iraffi127@icloud.com",
