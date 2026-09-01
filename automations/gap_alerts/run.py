@@ -235,7 +235,8 @@ def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
     return (header or C.GAP_TEXT_HEADER) + "\n\n" + "\n".join(lines), names
 
 
-def _dest_due(dest: Dict, now: Optional[dt.datetime] = None) -> bool:
+def _dest_due(dest: Dict, now: Optional[dt.datetime] = None,
+              cfg: Optional[Dict] = None) -> bool:
     """Is THIS destination owed a board on this tick?
 
     Cadence lives on the destination, not the office: one office can want its
@@ -243,9 +244,21 @@ def _dest_due(dest: Dict, now: Optional[dt.datetime] = None) -> bool:
 
     Anchored to the QUARTER HOUR for the same reason _cadence_due is — the tick
     fires at :00 but Python reads the clock a minute or two later.
+
+    FIXED TIMES (cadence 0) are matched against the OFFICE'S OWN clock, the way
+    knocks_intraday fires Cody's three slots: a 2 PM "first knocks" board is
+    about 2 PM where the reps are, not 2 PM in Texas.
     """
     now = now or dt.datetime.now()
+    slots = C.dest_slots(dest)
+    if slots:
+        local = C.office_now(cfg or {}, now)
+        anchor = "%02d:%02d" % (local.hour,
+                                local.minute - (local.minute % C.TICK_MINUTES))
+        return anchor in slots
     cadence = C.dest_cadence(dest)
+    if cadence <= 0:                    # slots mode with no usable slot left
+        return False
     anchor = now.minute - (now.minute % C.TICK_MINUTES)
     return (anchor % cadence) == 0
 
@@ -817,13 +830,17 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         # the one cost this job cannot afford at ~40 wakes a day.
         dests = C.destinations(cfg)
         due = [d for d in dests
-               if (only or force) or _dest_due(d)]
+               if (only or force) or _dest_due(d, cfg=cfg)]
         if not due:
             _log("%s: nothing due at %s (%s) — skipping"
                  % (cfg["key"], slot,
-                    ", ".join("%s every %dm" % (C.dest_label(d),
-                                                C.dest_cadence(d))
-                              for d in dests) or "no destinations"))
+                    ", ".join(
+                        "%s at %s" % (C.dest_label(d),
+                                      "/".join(C.dest_slots(d)))
+                        if C.dest_slots(d)
+                        else "%s every %dm" % (C.dest_label(d),
+                                               C.dest_cadence(d))
+                        for d in dests) or "no destinations"))
             continue
         recent = _sent_too_recently(cfg["key"])
         if recent is not None and send:

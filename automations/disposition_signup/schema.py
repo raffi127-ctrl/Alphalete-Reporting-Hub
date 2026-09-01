@@ -25,6 +25,49 @@ CADENCE_LABELS = {15: "Every 15 minutes", 30: "Every 30 minutes",
                   60: "Once an hour"}
 DEFAULT_CADENCE = 60
 
+# A destination can also run on FIXED TIMES instead of an interval — Cody
+# Cannon's setup (Megan 2026-09-01), the same three moments knocks_intraday
+# already posts: "2pm to track first knocks / 5:15 to track knocks into the
+# start of money lap / 9pm to track eod knocks" (Cody's DM, 2026-08-24).
+#
+# cadence_min == SLOT_CADENCE means "read `slots`, ignore the interval".
+SLOT_CADENCE = 0
+
+
+def _cody_slots():
+    """[(hh:mm, label)] — READ FROM knocks_intraday so the two cannot drift.
+    That module is the one that already posts these boards; if Cody ever moves
+    his money lap, this follows. Falls back to the known three if the import
+    fails (a Cloud deploy missing the package should not break the form)."""
+    try:
+        from automations.knocks_intraday.schedule import SLOTS
+        return [("%02d:%02d" % (s.hour, s.minute), s.label) for s in SLOTS]
+    except Exception:                                # noqa: BLE001
+        return [("14:00", "First Knocks"), ("17:15", "Money Lap"),
+                ("21:00", "End of Day")]
+
+
+CODY_SLOTS = [t for t, _ in _cody_slots()]
+CODY_SLOT_LABELS = dict(_cody_slots())
+
+
+def slots_label(slots: "Optional[List[str]]" = None) -> str:
+    """'1st knock 2:00 PM · money lap 5:15 PM · last knock 9:00 PM'."""
+    slots = slots or CODY_SLOTS
+    return " · ".join("%s %s" % (CODY_SLOT_LABELS.get(t, t).lower(), _ampm(t))
+                      for t in slots)
+
+
+# What the "How often?" picker offers. SLOT_CADENCE last: an interval is what
+# most offices want, and the fixed-times option is the considered choice.
+CADENCE_PICKER = CADENCE_CHOICES + [SLOT_CADENCE]
+
+
+def cadence_picker_label(minutes: int) -> str:
+    if int(minutes) == SLOT_CADENCE:
+        return "Set times — %s" % slots_label()
+    return CADENCE_LABELS.get(int(minutes), "every %s minutes" % minutes)
+
 # Question 3. "Both" is not a third value — it is both boxes checked, so the
 # record carries a LIST and the runner asks "is email in here?" rather than
 # unpacking a mode string.
@@ -45,10 +88,14 @@ DELIVERY_LABELS = {"imessage": "iMessage text", "slack": "Slack channel",
 
 
 def destination(kind: str, *, name: str = "", channel_id: str = "",
-                emails=None, cadence_min: int = DEFAULT_CADENCE) -> dict:
-    return {"kind": kind, "name": (name or "").strip(),
-            "channel_id": (channel_id or "").strip(),
-            "emails": list(emails or []), "cadence_min": int(cadence_min)}
+                emails=None, cadence_min: int = DEFAULT_CADENCE,
+                slots=None) -> dict:
+    d = {"kind": kind, "name": (name or "").strip(),
+         "channel_id": (channel_id or "").strip(),
+         "emails": list(emails or []), "cadence_min": int(cadence_min)}
+    if int(cadence_min) == SLOT_CADENCE:
+        d["slots"] = list(slots or CODY_SLOTS)
+    return d
 
 
 def dest_label(d: dict) -> str:
@@ -58,9 +105,11 @@ def dest_label(d: dict) -> str:
         where = ", ".join(d.get("emails") or []) or "?"
     else:
         where = d.get("name") or d.get("channel_id") or "?"
-    return "%s — %s, %s" % (
-        DELIVERY_LABELS.get(kind, kind), where,
-        CADENCE_LABELS.get(int(d.get("cadence_min") or 0), "?").lower())
+    if int(d.get("cadence_min") or 0) == SLOT_CADENCE:
+        when = "at " + slots_label(d.get("slots"))
+    else:
+        when = CADENCE_LABELS.get(int(d.get("cadence_min") or 0), "?").lower()
+    return "%s — %s, %s" % (DELIVERY_LABELS.get(kind, kind), where, when)
 
 # The campaign the board is pulled for. The campaign is a STICKY session-global
 # in OwnerVille that any other job on the box can move, so gap_alerts re-pins it
@@ -242,9 +291,12 @@ class DispositionRecord:
                        for d in self.destinations})
         if not mins:
             return "no cadence set"
+        if mins == [SLOT_CADENCE]:
+            return "at set times"
         if len(mins) == 1:
             return CADENCE_LABELS.get(mins[0], "every %d minutes" % mins[0])
-        return " / ".join(CADENCE_LABELS.get(m, "every %d min" % m).lower()
+        return " / ".join(("at set times" if m == SLOT_CADENCE
+                           else CADENCE_LABELS.get(m, "every %d min" % m).lower())
                           for m in mins)
 
     def office_name(self) -> str:
@@ -322,9 +374,22 @@ def _common(rec: DispositionRecord, problems: "List[str]") -> None:
         if kind not in DELIVERY_CHOICES:
             problems.append("Unknown destination type %r." % kind)
             continue
-        if int(d.get("cadence_min") or 0) not in CADENCE_CHOICES:
+        cad = int(d.get("cadence_min") or 0)
+        if cad == SLOT_CADENCE:
+            slots = d.get("slots") or []
+            if not slots:
+                problems.append("Pick the times for %s%s."
+                                % (DELIVERY_LABELS[kind], tag))
+            for t in slots:
+                # The job only wakes on the quarter hour, so a 5:20 slot would
+                # simply never fire — refuse it rather than promise it.
+                if not _HHMM_RE.match(str(t)) or int(str(t)[3:]) % 15:
+                    problems.append("%s isn't a time we can send at%s — it has "
+                                    "to land on the quarter hour."
+                                    % (t, tag))
+        elif cad not in CADENCE_CHOICES:
             problems.append("Pick how often for %s%s: every 15 minutes, "
-                            "30 minutes, or once an hour."
+                            "30 minutes, once an hour, or set times."
                             % (DELIVERY_LABELS[kind], tag))
         if kind == "imessage" and not (d.get("name") or "").strip():
             problems.append("Name the group chat to text%s — exactly as it "

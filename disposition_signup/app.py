@@ -159,7 +159,9 @@ def request_view() -> None:
     st.markdown("### 3. Where should it go?")
     st.caption("Add every chat, channel and inbox that should get it. Each one "
                "gets its own timing — your owners' chat can run every 15 "
-               "minutes while your rep channel gets it once an hour.")
+               "minutes while your rep channel gets it once an hour. Or pick "
+               "**Set times** for three boards a day at first knocks, money "
+               "lap and end of day, the way Cody Cannon's office runs it.")
     st.info("**Add Megan Hidalgo to EVERY Slack channel or iMessage chat you "
             "want postings in.** She'll leave once it's set up.\n\n"
             "Her number for the iMessage chats: **419-769-7114**")
@@ -176,10 +178,10 @@ def request_view() -> None:
                 "Name of the group chat *", placeholder="Alphalete Partners",
                 key="chat_name_%d" % i,
                 help="The chat's name exactly as it shows on your phone.")
-            cad = st.radio("How often? *", S.CADENCE_CHOICES,
-                           index=S.CADENCE_CHOICES.index(S.DEFAULT_CADENCE),
-                           format_func=lambda m: S.CADENCE_LABELS[m],
-                           horizontal=True, key="chat_cad_%d" % i)
+            cad = st.radio("How often? *", S.CADENCE_PICKER,
+                           index=S.CADENCE_PICKER.index(S.DEFAULT_CADENCE),
+                           format_func=S.cadence_picker_label,
+                           key="chat_cad_%d" % i)
             destinations.append(S.destination("imessage", name=nm,
                                               cadence_min=cad))
 
@@ -197,10 +199,10 @@ def request_view() -> None:
                                 help=ui.CHANNEL_ID_HELP)
             if i == 0:
                 ui.channel_id_help_expander(SLACK_ID_IMG)
-            cad = st.radio("How often? *", S.CADENCE_CHOICES,
-                           index=S.CADENCE_CHOICES.index(60),
-                           format_func=lambda m: S.CADENCE_LABELS[m],
-                           horizontal=True, key="slack_cad_%d" % i)
+            cad = st.radio("How often? *", S.CADENCE_PICKER,
+                           index=S.CADENCE_PICKER.index(60),
+                           format_func=S.cadence_picker_label,
+                           key="slack_cad_%d" % i)
             st.caption("Once an hour is what we'd suggest for a channel of "
                        "reps — four times an hour is one they learn to scroll "
                        "past.")
@@ -215,10 +217,10 @@ def request_view() -> None:
                 "Email address(es) *", placeholder="you@example.com",
                 help="One per line, or separated by commas. Everyone listed "
                      "gets the same email.")
-            cad = st.radio("How often? *", S.CADENCE_CHOICES,
-                           index=S.CADENCE_CHOICES.index(60),
-                           format_func=lambda m: S.CADENCE_LABELS[m],
-                           horizontal=True, key="email_cad")
+            cad = st.radio("How often? *", S.CADENCE_PICKER,
+                           index=S.CADENCE_PICKER.index(60),
+                           format_func=S.cadence_picker_label,
+                           key="email_cad")
             destinations.append(S.destination(
                 "email", emails=S.parse_emails(email_raw), cadence_min=cad))
 
@@ -483,14 +485,15 @@ def confirm_view(key: str) -> None:
                     cid = st.text_input("Channel ID",
                                         value=d.get("channel_id", ""),
                                         key="cf_cid_%d" % i)
-            cad_now = int(d.get("cadence_min") or S.DEFAULT_CADENCE)
+            _raw = d.get("cadence_min")
+            cad_now = (S.DEFAULT_CADENCE if _raw is None or _raw == ""
+                       else int(_raw))
             cad = st.radio(
-                "How often", S.CADENCE_CHOICES,
-                index=(S.CADENCE_CHOICES.index(cad_now)
-                       if cad_now in S.CADENCE_CHOICES
-                       else S.CADENCE_CHOICES.index(S.DEFAULT_CADENCE)),
-                format_func=lambda m: S.CADENCE_LABELS[m], horizontal=True,
-                key="cf_cad_%d" % i)
+                "How often", S.CADENCE_PICKER,
+                index=(S.CADENCE_PICKER.index(cad_now)
+                       if cad_now in S.CADENCE_PICKER
+                       else S.CADENCE_PICKER.index(S.DEFAULT_CADENCE)),
+                format_func=S.cadence_picker_label, key="cf_cad_%d" % i)
             if kind == "slack":
                 ck = "_lucy_%s_%d" % (key, i)
                 if ck not in st.session_state:
@@ -506,7 +509,7 @@ def confirm_view(key: str) -> None:
                 dests.append(S.destination(
                     kind, name=nm, channel_id=cid,
                     emails=S.parse_emails(addrs) if kind == "email" else None,
-                    cadence_min=cad))
+                    cadence_min=cad, slots=d.get("slots")))
 
     # ---- the two things the form can't know ------------------------------
     st.divider()

@@ -496,3 +496,58 @@ def test_the_ping_says_waiting_list_in_its_one_line():
     wait_title, _ = RN._lines(_rec(campaign_key="nds"))
     assert "WAITING LIST" not in live_title
     assert "WAITING LIST" in wait_title
+
+
+# --- fixed times (Cody's schedule) ------------------------------------------
+
+def test_cody_slots_come_from_the_module_that_already_posts_them():
+    from automations.knocks_intraday.schedule import SLOTS
+    assert S.CODY_SLOTS == ["%02d:%02d" % (s.hour, s.minute) for s in SLOTS]
+    assert S.CODY_SLOTS == ["14:00", "17:15", "21:00"]
+
+
+def test_set_times_is_offered_alongside_the_intervals():
+    assert S.CADENCE_PICKER == [15, 30, 60, S.SLOT_CADENCE]
+    assert "Set times" in S.cadence_picker_label(S.SLOT_CADENCE)
+    assert "money lap 5:15 PM" in S.cadence_picker_label(S.SLOT_CADENCE)
+
+
+def test_a_set_times_destination_carries_its_slots():
+    d = S.destination("imessage", name="Crew", cadence_min=S.SLOT_CADENCE)
+    assert d["slots"] == ["14:00", "17:15", "21:00"]
+    assert S.validate_request(_rec(destinations=[d])) == []
+    assert "money lap" in S.dest_label(d)
+
+
+def test_an_off_quarter_slot_is_refused():
+    """The job only wakes on the quarter hour, so 5:20 would never fire."""
+    d = S.destination("imessage", name="Crew", cadence_min=S.SLOT_CADENCE,
+                      slots=["17:20"])
+    assert any("quarter hour" in p
+               for p in S.validate_request(_rec(destinations=[d])))
+
+
+def test_zero_is_a_real_cadence_not_a_missing_one():
+    """`cadence_min or 15` reads 0 as unset and turns three boards a day into
+    ninety — the bug this test exists to keep dead."""
+    d = {"kind": "imessage", "cadence_min": 0, "slots": ["14:00"]}
+    assert C.dest_cadence(d) == 0
+    assert C.dest_slots(d) == ["14:00"]
+    assert C.dest_cadence({}) == C.TICK_MINUTES        # genuinely unset
+
+
+def test_set_times_fires_only_at_its_slots():
+    d = {"kind": "imessage", "cadence_min": 0,
+         "slots": ["14:00", "17:15", "21:00"]}
+    for hh, mm, due in [(13, 45, False), (14, 0, True), (14, 2, True),
+                        (17, 15, True), (21, 0, True), (21, 30, False)]:
+        assert R._dest_due(d, dt.datetime(2026, 9, 1, hh, mm)) is due
+
+
+def test_set_times_uses_the_offices_own_clock():
+    """A 2 PM 'first knocks' board is about 2 PM where the reps are — the same
+    rule knocks_intraday follows for the four Eastern offices."""
+    d = {"kind": "imessage", "cadence_min": 0, "slots": ["14:00"]}
+    east = {"tz": "America/New_York"}
+    assert R._dest_due(d, dt.datetime(2026, 9, 1, 13, 0), cfg=east) is True
+    assert R._dest_due(d, dt.datetime(2026, 9, 1, 14, 0), cfg=east) is False

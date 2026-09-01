@@ -263,15 +263,51 @@ def destinations(cfg: Dict) -> List[Dict]:
     return out
 
 
+# A destination with cadence_min == 0 runs at FIXED TIMES (its `slots`), not
+# on an interval — Cody Cannon's shape: first knocks, money lap, end of day.
+SLOT_CADENCE = 0
+
+
+def dest_slots(dest: Dict) -> List[str]:
+    """['14:00', '17:15', ...] for a fixed-times destination, else []. Only
+    quarter-hour slots survive: the job wakes on the quarter hour, so a 17:20
+    would never fire and silently promising it is worse than dropping it."""
+    # `x or default` would swallow this: SLOT_CADENCE is 0, which is falsy,
+    # so a fixed-times destination read that way looks like "no cadence set"
+    # and quietly becomes a 15-minute one — ninety boards a day instead of
+    # three.
+    raw = dest.get("cadence_min")
+    if raw is None or int(raw) != SLOT_CADENCE:
+        return []
+    out = []
+    for t in dest.get("slots") or []:
+        t = str(t).strip()
+        try:
+            h, m = [int(x) for x in t.split(":")]
+        except Exception:                            # noqa: BLE001
+            continue
+        if 0 <= h <= 23 and 0 <= m <= 59 and m % TICK_MINUTES == 0:
+            out.append("%02d:%02d" % (h, m))
+    return out
+
+
 def dest_cadence(dest: Dict) -> int:
     """This destination's cadence, clamped the same way an office's is: it must
     divide 60 AND be a multiple of TICK_MINUTES, or it drifts across the hour
     and the wrapper — which only wakes Python on the quarter hour — would fire
     it at :00 and then not again until the next :00."""
+    raw = dest.get("cadence_min")
+    if raw is None or raw == "":
+        return TICK_MINUTES
     try:
-        want = int(dest.get("cadence_min") or TICK_MINUTES)
+        want = int(raw)                  # NOT `raw or TICK_MINUTES`: 0 is real
     except (TypeError, ValueError):
         return TICK_MINUTES
+    # Fixed-times mode is NOT an interval and must not be clamped up to the
+    # tick — 0 is a real value here, and rounding it to 15 would turn Cody's
+    # three boards a day into ninety.
+    if want == SLOT_CADENCE:
+        return SLOT_CADENCE
     if want < TICK_MINUTES or want % TICK_MINUTES or 60 % want:
         return TICK_MINUTES
     return want
