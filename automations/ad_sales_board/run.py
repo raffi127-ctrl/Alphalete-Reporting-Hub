@@ -75,7 +75,26 @@ def ads_for_week(html):
     return parse.ads_for_month(names.WRAPPER.sub("", html))
 
 
-def pull_day(page, tok, d, agnostic):
+def _owner_expect():
+    """office id -> the owner name AppStream prints for it (roster spelling)."""
+    from automations.funnel_board.roster import CAPTAINSHIP, ORG
+    return {str(o): w for n, o, w in list(ORG) + list(CAPTAINSHIP)}
+
+
+def _same_owner(got, want):
+    """True when two owner spellings name the same person.
+
+    Token overlap, not equality: the roster carries AppStream's own spelling
+    and it varies in case and form ('CARLOS HIDALGO' vs 'Carlos Hidalgo',
+    Salik's office listed under 'Muhammad UI Haque'). Any shared name token
+    passes; a completely different person shares none.
+    """
+    a = {w for w in str(got).lower().split() if w.isalpha()}
+    b = {w for w in str(want).lower().split() if w.isalpha()}
+    return bool(a and b and (a & b))
+
+
+def pull_day(page, tok, d, agnostic, want_owner=None):
     """Received-per-ad for ONE day: (pieces, day total).
 
     An AppStream day report that comes back with a header but no data rows is
@@ -88,8 +107,14 @@ def pull_day(page, tok, d, agnostic):
     over a day it could not read.
     """
     for attempt in (1, 2):
-        html, _owner, _n = fetch.source_report(
+        html, owner, _n = fetch.source_report(
             page, tok, weeks.fmt_mdY(d), weeks.fmt_mdY(d))
+        if want_owner and not _same_owner(owner, want_owner):
+            raise RuntimeError(
+                "WRONG OFFICE on %s: asked for %r, the report came back for "
+                "%r. Another job sharing this AppStream session switched the "
+                "office mid-run; refusing to attribute one office's emails to "
+                "another." % (d.isoformat(), want_owner, owner))
         ads, _flags = ads_for_week(html)
         if agnostic:
             ads = parse.merge_across_cities(ads)
@@ -315,6 +340,7 @@ def main(argv=None):
     from automations.shared.tableau_patchright import appstream_direct_session
     fresh, failures = {}, []      # fresh[(manager, label)] = data rows
     rescued_total = 0
+    expect = _owner_expect()
     empty_days = []               # (manager, date) a day report would not read
     # allow_form_login ONLY when a human asked for a headed run. AppStream put an
     # interactive human-check on the login form in v2026.08.20.1, so unattended
@@ -331,10 +357,17 @@ def main(argv=None):
             try:
                 fetch.select_office(page, tok, oid)
                 agnostic = name in CITY_AGNOSTIC
+                want_owner = expect.get(str(oid))
                 weekly = []
                 for label, start, end in wins:
-                    html, _owner, nrows = fetch.source_report(
+                    html, owner, nrows = fetch.source_report(
                         page, tok, weeks.fmt_mdY(start), weeks.fmt_mdY(end))
+                    if want_owner and not _same_owner(owner, want_owner):
+                        raise RuntimeError(
+                            "WRONG OFFICE for %s: asked for %r, the report came "
+                            "back for %r. Another job sharing this AppStream "
+                            "session switched the office mid-run."
+                            % (label, want_owner, owner))
                     rescued = len(names.WRAPPER.findall(html))
                     rescued_total += rescued
                     ads, _flags = ads_for_week(html)
@@ -377,7 +410,7 @@ def main(argv=None):
                 for d in sorted(set(day_targets) | set(heal)):
                     anc = weeks.anchor_for(d)
                     dlabel = weeks.window(anc)[0]
-                    dads, dtotal = pull_day(page, tok, d, agnostic)
+                    dads, dtotal = pull_day(page, tok, d, agnostic, want_owner)
                     if not dtotal:
                         # Blank, not zero: a day we could not read must stay
                         # visibly missing so the heal pass retries it.
