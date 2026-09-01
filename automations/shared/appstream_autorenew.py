@@ -320,19 +320,37 @@ def main(argv=None) -> int:
     # this file's own history is three days of re-keying a token that died on
     # 8/29. So refresh ownerville FIRST so there is a genuinely new token to
     # re-key with, and only then open the console.
+    # THE WARM PROFILE IS WHAT ACTUALLY RENEWS. Measured on Lucy 1 the day this
+    # was built: a capture against the profile a human had seeded came back with
+    # a FULL 120 minutes (15:17), while re-keying from cookies only maintained
+    # what we already had (110 -> 104). Re-keying restores a session; only a
+    # capture on a live profile makes AppStream issue.
+    #
+    # So try the profile first, and keep the ownerville refresh + re-key as the
+    # fallback for a machine whose profile has genuinely gone cold — that path
+    # still fixed the three-day-stale ownerville file, which was poisoning
+    # everything, so it earns its place even though it cannot issue on its own.
     ok = False
     try:
-        fresh = refresh_ownerville(verbose=True)
-        if not fresh:
-            _log("could not refresh ownerville — trying the saved session "
-                 "anyway, in case it still has life in it")
-        ok = renew_from_state(verbose=True, tokens=_ownerville_tokens())
+        from automations.shared.tableau_patchright import _capture_appstream_state
+        ok = _capture_appstream_state(verbose=False)
+        if ok:
+            _log("renewed from the warm profile")
+        else:
+            _log("warm-profile capture did not land — falling back to a fresh "
+                 "ownerville token + re-key")
+            refresh_ownerville(verbose=True)
+            ok = renew_from_state(verbose=True, tokens=_ownerville_tokens())
     except Exception as e:  # noqa: BLE001 — never take the timer down
         _log("renew raised %s: %s" % (type(e).__name__, str(e)[:160]))
         ok = False
 
     after = token_minutes_left()
-    if not ok or after <= left:
+    # Judge on whether the session is HEALTHY, not on whether the number went up
+    # by a minute. A renew that lands at a full TTL is a success even when the
+    # clock ticked during it, and demanding a strict increase reported real
+    # renewals as failures (Lucy 1, 2026-09-01).
+    if not ok or after < a.under:
         _log("UNATTENDED RENEW FAILED (%.0f min on the token) — the profile has "
              "gone cold, so this one genuinely needs a human seed:" % after)
         _log("  PYTHONPATH=. .venv/bin/python -m "
