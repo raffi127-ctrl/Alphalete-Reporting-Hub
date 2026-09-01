@@ -211,6 +211,53 @@ def gap_header(cfg: Dict) -> str:
     return C.GAP_TEXT_HEADER + "".join(" — %s" % b for b in bits if b)
 
 
+def _norm_rep(name) -> str:
+    return " ".join(str(name or "").split()).strip().lower()
+
+
+def _own_reps_only(cfg: Dict, gaps: List[Dict], rows: List[Dict]) -> List[Dict]:
+    """Keep only gap rows for people who are ON THIS OFFICE'S BOARD.
+
+    The gap list and the board are two separate pulls. The board pull
+    impersonates per office; the gap pull walks every office in ONE session
+    reusing a session-level token — and ownerville hands an impersonated
+    session the SAME rqst as master, so nothing in the token says which office
+    a fetch answered for. When an impersonation exit does not take, the next
+    office reads the previous one's reps and nothing errors.
+
+    That shipped on 2026-09-01: Calvin's seven reps went out in Raf's Alphalete
+    Partners chat under Raf's header, next to a board image that was correctly
+    Raf's. Someone in the chat asked "who are these?" — which is the only
+    reason it was caught. The people in that room were being asked to chase
+    reps who are not theirs.
+
+    The board rows are the trustworthy half, so they are the check: a gap list
+    for this office can only contain names the board carries. A total mismatch
+    drops the section (the board still goes — it is the thing Raf asked for);
+    a partial one drops the strays and says so.
+    """
+    if not gaps or not rows:
+        return gaps
+    board = {_norm_rep(r.get("Rep") or r.get("rep")) for r in rows}
+    board.discard("")
+    if not board:
+        return gaps
+    keep = [r for r in gaps if _norm_rep(r.get("name")) in board]
+    if len(keep) == len(gaps):
+        return gaps
+    stray = [str(r.get("name") or "").strip() for r in gaps
+             if _norm_rep(r.get("name")) not in board]
+    if not keep:
+        _log("  gap list DROPPED — none of its %d rep(s) are on %s's board "
+             "(%s). Another office's numbers reached this pull; the board is "
+             "unaffected and still goes."
+             % (len(gaps), cfg["key"], ", ".join(stray[:6])))
+        return []
+    _log("  gap list: dropped %d rep(s) not on %s's board (%s)"
+         % (len(stray), cfg["key"], ", ".join(stray[:6])))
+    return keep
+
+
 def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
              header: str = ""):
     """The message Raf asked for, and the set of names on it.
@@ -695,6 +742,33 @@ def to_pdf(panel_paths, out_pdf: Path) -> Path:
     return out_pdf
 
 
+def _exit_imp_always(page) -> None:
+    """Leave any impersonation, ignoring failure — a best-effort reset."""
+    try:
+        from automations.focus_office_att.run_all_owners import _exit_impersonation
+        _exit_impersonation(page)
+    except Exception:  # noqa: BLE001 — the assertions below are the real guard
+        pass
+
+
+def _assert_master(page, cfg: Dict) -> None:
+    """Raise unless the session really is on the master office.
+
+    The master path does not impersonate: it publishes whatever office the
+    session is on, under this office's name. That is how Raf's chat got
+    Calvin's reps on 2026-09-01 — nothing in the token or the response says
+    which office answered, so the only signal is the page's own header.
+    """
+    from automations.rashad_metrics.knocks_pull import (
+        MASTER_OFFICE_ID, logged_in_office)
+    head, office_id = logged_in_office(page)
+    if office_id and office_id != MASTER_OFFICE_ID:
+        raise RuntimeError(
+            "gap pull for %r is on office %s, not the master office %s — "
+            "another office's session is still active. Header: %r"
+            % (cfg.get("key"), office_id, MASTER_OFFICE_ID, head[:100]))
+
+
 def gap_rows_many(offices: List[Dict], day: dt.date) -> Dict:
     """The gap list for EVERY due office, in ONE ownerville session.
     -> {key: (rows, error_or_None)}
@@ -724,7 +798,18 @@ def gap_rows_many(offices: List[Dict], day: dt.date) -> Dict:
         for cfg in offices:
             impersonated = False
             try:
-                office_rqst = rqst
+                # ALWAYS START FROM MASTER. A previous office's exit may not
+                # have taken, and ownerville gives an impersonated session the
+                # same rqst as master, so the token cannot tell us. Exiting
+                # unconditionally costs one call and is the difference between
+                # this office's reps and the last one's.
+                _exit_imp_always(page)
+                office_rqst = rqst = cap.capture_rqst(page) or rqst
+                if (cfg.get("ov") or "") != "impersonate":
+                    # The master office publishes whatever the session is on.
+                    # Check it IS master before believing its rows — the same
+                    # assertion knocks_pull makes for the board pull.
+                    _assert_master(page, cfg)
                 if cfg.get("ov") == "impersonate":
                     from automations.focus_office_att.aliases import load_aliases
                     from automations.focus_office_att.run_all_owners import (
@@ -873,6 +958,57 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
                                              slot), rows, None)
         except Exception as e:  # noqa: BLE001 — one board, not the pass
             out[cfg["key"]] = ([], rows, e)
+    return _drop_duplicate_offices(out, plan)
+
+
+def _drop_duplicate_offices(out: Dict, plan: List) -> Dict:
+    """Two offices cannot legitimately have the SAME reps. Fail the impostor.
+
+    Impersonation can fall THROUGH to the master office instead of raising:
+    ownerville hands the impersonated session the same rqst as master, so a
+    confirmImpersonate that does not take leaves the pull reading Raf's office
+    while believing it is somewhere else. On 2026-09-01 Jay's board came back
+    with Raf's exact 37 reps and his exact gap list, and posted into the Energy
+    Wells chat titled "Jay — AT&T". Nothing raised, and unlike a blank board
+    nobody reading it could tell.
+
+    Identity cannot be read off the session, so it is read off the DATA: if two
+    offices in one pass return an identical set of rep ids, at most one of them
+    is real. The master office is verified separately (knocks_pull refuses a
+    master pull whose signed-in office is not 11280), so it is the one kept and
+    the impersonated collider is dropped. Two impersonated offices colliding
+    means neither can be trusted, so both go.
+    """
+    # plan entries are (cfg, slot) here and (cfg, slot, due) in the tick —
+    # only the cfg matters, so read position 0 and ignore the rest.
+    by_key = {entry[0]["key"]: entry[0] for entry in plan}
+
+    def _ids(rows):
+        got = {str(r.get("ID") or r.get("id") or "").strip() for r in rows}
+        got.discard("")
+        return frozenset(got)
+
+    groups: Dict = {}
+    for key, (pngs, rows, err) in out.items():
+        if err is not None or not rows:
+            continue
+        groups.setdefault(_ids(rows), []).append(key)
+    for ids, keys in groups.items():
+        if len(keys) < 2:
+            continue
+        masters = [k for k in keys
+                   if (by_key.get(k, {}).get("ov") or "") != "impersonate"]
+        losers = [k for k in keys if k not in masters[:1]]
+        for k in losers:
+            names = ", ".join(sorted(keys))
+            out[k] = ([], [], RuntimeError(
+                "%s returned the SAME %d rep(s) as %s — impersonation fell "
+                "through to another office, so these numbers are not this "
+                "office's. Refusing to publish them."
+                % (k, len(ids), names)))
+        _log("  ⚠ identical rep set across %s — kept %s, dropped %s"
+             % (", ".join(sorted(keys)),
+                masters[0] if masters else "(none)", ", ".join(losers)))
     return out
 
 
@@ -1106,13 +1242,17 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                 gaps = []
                 _log("  gap list SKIPPED (%s: %s)"
                      % (type(gap_err).__name__, str(gap_err)[:160]))
+        gaps = _own_reps_only(cfg, gaps, rows)
         previous, first_of_day = _previous_gap_names(cfg["key"], day)
         body, gap_names = gap_text(gaps, previous, first_of_day,
                                    header=gap_header(cfg))
         newly = ([] if first_of_day
                  else [n for n in gap_names if n not in previous])
-        _log("  %d rep(s) over %d min, %d new%s"
-             % (len(gap_names), C.GAP_THRESHOLD_MIN, len(newly),
+        # NAME THE OFFICE. Without it the tick log read perfectly while the
+        # chats were wrong: two "7 rep(s) over 15 min" lines in a pass say
+        # nothing about WHOSE reps they were (2026-09-01).
+        _log("  %s: %d rep(s) over %d min, %d new%s"
+             % (cfg["key"], len(gap_names), C.GAP_THRESHOLD_MIN, len(newly),
                 (" (" + ", ".join(newly) + ")") if newly else ""))
         boards = render(cfg, pngs, out_dir, slot)
         if PREVIEW_DM:

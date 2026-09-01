@@ -162,15 +162,20 @@ JAY_EW = {
     "compare": True,
 }
 
-# JAY IS OUT OF ROTATION (2026-09-01, mid-evening). Impersonating him falls
-# through to the MASTER office instead of failing: his board came back with
-# Raf's exact rep count (37) and Raf's exact gap list — Alyssa Moreno, Zoria
-# Johnson, Sydney Agnew, Noemi Ontiveros, Nima Aweida, Giovanna Santos — and
-# posted it to the Energy Wells chat under Jay's name. Raf's numbers wearing
-# Jay's title is worse than no board, and unlike a blank one nobody reading it
-# can tell. Put him back only once an impersonated pull is PROVEN to carry his
-# office's own reps.
-OFFICES: List[Dict] = [RAF, CALVIN]
+# Jay is BACK IN, behind a guard rather than on trust (2026-09-01). Earlier
+# that evening impersonating him fell THROUGH to the master office instead of
+# failing: his board carried Raf's exact 37 reps and Raf's exact gap list and
+# posted to the Energy Wells chat titled "Jay — AT&T". Raf's numbers wearing
+# Jay's title is worse than a blank board, because nobody reading it can tell.
+#
+# What makes him safe to list again is not a fix to impersonation — ownerville
+# gives an impersonated session the same rqst as master, so a fall-through
+# cannot be detected from the session at all. It is that run.py now checks
+# IDENTITY IN THE DATA: two offices returning the same rep ids cannot both be
+# real, and a gap list whose people are not on this office's board is not this
+# office's gap list. A fall-through now produces NO board for Jay instead of
+# Raf's board with Jay's name on it.
+OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW]
 
 # --- self-serve enrollments ---------------------------------------------------
 # Offices that signed themselves up through the Daily Dispositions link
