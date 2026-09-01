@@ -38,19 +38,24 @@ from automations.shared import board_email_html as _beh
 # into has been taken away.
 _INLINE_PX = 1800
 
-# WHAT THE ATTACHMENTS ARE ALLOWED TO WEIGH, and why there is a number at all.
-# Gmail refuses a message over 25MB — it FAILS the send rather than delivering
-# a degraded one, so a report that grows past the line does not arrive smaller,
-# it does not arrive. Measured 2026-09-01 on Rafael's (the biggest
-# captainship): weekly PDF 5.5MB + the day's PDFs 7.5MB = 13MB of attachments
-# under ~6MB of inline boards, and base64 adds a third on top of all of it.
+# HOW BIG THE WHOLE MESSAGE MAY GET, and why the number is on the MESSAGE and
+# not on the attachments. Gmail refuses anything over 25MB — it FAILS the send
+# rather than delivering a degraded copy — so a report that grows past the line
+# does not arrive smaller, it does not arrive.
 #
-# So the attachments are added in the order Rafael reads them and stop at this
-# budget: the weekly and the captainship-wide day always fit, and the per-owner
-# copies — which are the same boards a third time — are what gives way. When
-# any is left off the body says so, because an attachment that vanishes
-# silently is worse than one that is missing loudly.
-MAX_ATTACH_BYTES = 13 * 1024 * 1024
+# EVERY PAGE STAYS AT THE STANDARD WIDTH (Eve, 2026-09-01: "el ancho de pixeles
+# tiene que ser igual para todos, por algo se llevo a una medida estandar, y lo
+# mas importante: LEGIBLE"). Shrinking one report's pages to buy room was tried
+# and reverted the same day: a board nobody can read is not a smaller report,
+# it is a lost one. So legibility is fixed and the SIZE is what adapts.
+#
+# Measured 2026-09-01 on Rafael's, the biggest captainship: 22.8MB with all 15
+# attachments — it fits, and every owner keeps their page. A budget guessed
+# against the attachments alone sat 0.3MB from trimming him on a normal day,
+# which is why this is measured on the assembled message instead: the per-owner
+# copies are added while the real byte count stays under the cap, so nothing is
+# ever dropped for a size the message did not actually reach.
+MAX_MESSAGE_BYTES = 24 * 1024 * 1024
 from automations.captainship_drafts.config import Captain
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, PHOTO_EMBED_PX, PHOTO_IMG,
@@ -331,31 +336,54 @@ def subject_for(captain: Captain, today: dt.date) -> str:
     return f"{subject_prefix(captain)} {d.month}/{d.day}"
 
 
-def attachments_for(bundle: dict) -> Tuple[List[Tuple], List[str]]:
-    """(what to attach, the names left off) — in the order Rafael reads the
-    report: last week first, then the captainship's day, then each owner's own
-    page (Eve 2026-09-01).
+def _attach(msg: EmailMessage, pdf_path, filename: str) -> None:
+    msg.add_attachment(Path(pdf_path).read_bytes(), maintype="application",
+                       subtype="pdf", filename=filename)
 
-    The first two are never dropped. The per-owner copies are added while the
-    running total is inside MAX_ATTACH_BYTES and skipped after that, so the
-    message cannot cross Gmail's cliff no matter how big a captainship grows —
-    a captain with 13 offices keeps every page, and one with 40 keeps the two
-    that cover everybody plus as many singles as fit."""
+
+def attach_within_limit(msg: EmailMessage, bundle: dict) -> List[str]:
+    """Attach the PDFs in the order Rafael reads the report — last week, then
+    the captainship's day, then each owner's own page (Eve 2026-09-01) — and
+    return the names of any that did not fit.
+
+    The first two are never dropped: between them they cover everybody. The
+    per-owner copies are added while the ASSEMBLED message stays under
+    MAX_MESSAGE_BYTES, measured after each one rather than estimated, because
+    the inline boards in the body weigh as much as the attachments do and a
+    fixed attachment budget cannot see them.
+
+    Dropping is the last resort and should stay unreached — say so in the body
+    when it happens (build does), since an attachment that vanishes silently is
+    worse than one that is missing loudly."""
     weekly = bundle.get("weekly_pdf")
     dailies = list(bundle.get("daily_pdfs") or [])
-    must = ([weekly] if weekly else []) + dailies[:1]
-    kept, dropped, total = [], [], 0
-    for item in must:
-        kept.append(item)
-        total += Path(item[0]).stat().st_size
-    for item in dailies[1:]:
-        size = Path(item[0]).stat().st_size
-        if total + size > MAX_ATTACH_BYTES:
-            dropped.append(item[1])
-            continue
-        kept.append(item)
-        total += size
-    return kept, dropped
+    for item in ([weekly] if weekly else []) + dailies[:1]:
+        _attach(msg, *item)
+    dropped: List[str] = []
+    for pdf_path, filename in dailies[1:]:
+        _attach(msg, pdf_path, filename)
+        if len(bytes(msg)) > MAX_MESSAGE_BYTES:
+            # Undo: the parts list is the only place it landed.
+            msg.get_payload().pop()
+            dropped.append(filename)
+    return dropped
+
+
+def _note_dropped(msg: EmailMessage, dropped: List[str]) -> None:
+    """Append the 'these did not fit' line to the message's HTML body."""
+    who = ", ".join(n.replace("Daily Knock Dispositions - ", "")
+                    .rsplit(" - ", 1)[0] for n in dropped)
+    note = ('<div style="font-size:12px;color:#666;margin-top:10px">'
+            f'{len(dropped)} per-owner Daily Knock Dispositions PDF(s) were '
+            'left off to keep this email under the mail size limit: '
+            f'{_html.escape(who)}.</div>')
+    for part in msg.walk():
+        if part.get_content_type() == "text/html":
+            body = part.get_content()
+            part.set_content(body.replace("<br>Kind regards,",
+                                          note + "<br>Kind regards,", 1),
+                             subtype="html")
+            return
 
 
 def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
@@ -391,20 +419,10 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     # Same short/semantic scheme as the section images (see _Images) — the
     # signature photo is just the last part in the same related bundle.
     cid_photo = f"<{len(imgs.pairs) + 1:02d}-signature@{_Images._DOMAIN}>"
-    kept, dropped = attachments_for(bundle)
-    trimmed = ('<div style="font-size:12px;color:#666;margin-top:10px">'
-               f'{len(dropped)} per-owner Daily Knock Dispositions PDF(s) were '
-               'left off to keep this email under the mail size limit: '
-               + _html.escape(", ".join(
-                   n.replace("Daily Knock Dispositions - ", "").rsplit(" - ", 1)[0]
-                   for n in dropped))
-               + '.</div>') if dropped else ''
-
     html = (
         f'<div style="font-family:{_FONT_STACK};color:#000">'
         f'{_intro_html(captain, today)}'
         f'{sections_html}'
-        f'{trimmed}'
         '<br>Kind regards,<br><br>'
         f'{_signature_html(cid_photo)}'
         '</div>'
@@ -445,8 +463,9 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     # image into an attachment; a genuine attachment alongside the container
     # is the shape every mail client expects. It also no longer passes through
     # a Gmail draft rewrite at all — the send is SMTP with this exact MIME.
-    for pdf_path, filename in kept:
-        msg.add_attachment(Path(pdf_path).read_bytes(),
-                           maintype="application", subtype="pdf",
-                           filename=filename)
+    dropped = attach_within_limit(msg, bundle)
+    if dropped:
+        # Said in the body, not just in a log nobody reads: the captain has to
+        # know an office's page is missing rather than assume it never existed.
+        _note_dropped(msg, dropped)
     return msg

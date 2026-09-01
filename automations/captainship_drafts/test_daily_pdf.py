@@ -137,10 +137,12 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class AttachmentBudgetTests(unittest.TestCase):
-    """Gmail's 25MB is a cliff, not a slope — a message past it FAILS. So the
-    per-owner copies, which are the same boards a third time, are what gives
-    way, and the body says which."""
+class AttachmentLimitTests(unittest.TestCase):
+    """Gmail's 25MB is a cliff, not a slope — a message past it FAILS. Every
+    page keeps the standard width (Eve 2026-09-01: legibility first), so the
+    per-owner copies, which are the same boards a third time, are the only
+    thing that can give way — and only when the assembled message really would
+    not send."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -150,7 +152,7 @@ class AttachmentBudgetTests(unittest.TestCase):
         p.write_bytes(b"0" * size)
         return p
 
-    def _bundle(self, owner_sizes, weekly=1_000_000, combined=1_000_000):
+    def _bundle(self, owner_sizes, weekly=200_000, combined=200_000):
         dailies = [(self._file("combined.pdf", combined),
                     "Daily Knock Dispositions - Raf's Captainship - Aug 31, 2026.pdf")]
         for i, sz in enumerate(owner_sizes):
@@ -158,38 +160,40 @@ class AttachmentBudgetTests(unittest.TestCase):
                             f"Daily Knock Dispositions - Owner {i} - Aug 31, 2026.pdf"))
         return {"weekly_pdf": (self._file("weekly.pdf", weekly),
                                "Weekly - Aug 24-29, 2026.pdf"),
-                "daily_pdfs": dailies}
+                "daily_pdfs": dailies, "daily_knocks": [], "errors": {}}
 
-    def test_everything_fits_when_it_fits(self):
-        kept, dropped = email_build.attachments_for(
-            self._bundle([200_000] * 13))
-        self.assertEqual(len(kept), 15)
-        self.assertEqual(dropped, [])
+    def _names(self, msg):
+        return [p.get_filename() for p in msg.iter_attachments()
+                if p.get_filename()]
 
-    def test_per_owner_copies_are_what_gives_way(self):
-        big = email_build.MAX_ATTACH_BYTES // 4
-        kept, dropped = email_build.attachments_for(self._bundle([big] * 8))
-        self.assertLess(len(kept), 10)
-        self.assertTrue(dropped)
-        # the weekly and the captainship-wide day survive no matter what
-        self.assertIn("Weekly", kept[0][1])
-        self.assertIn("Captainship", kept[1][1])
+    def test_a_normal_report_keeps_every_owner(self):
+        msg = email_build.build(_rafael(), self._bundle([200_000] * 13),
+                                dt.date(2026, 9, 1))
+        self.assertEqual(len(self._names(msg)), 15)
+        self.assertNotIn("left off to keep this email", _html_of(msg))
 
-    def test_the_two_that_cover_everyone_are_never_dropped(self):
-        huge = email_build.MAX_ATTACH_BYTES
-        kept, dropped = email_build.attachments_for(
-            self._bundle([huge], weekly=huge, combined=huge))
-        self.assertEqual([n for _p, n in kept],
-                         ["Weekly - Aug 24-29, 2026.pdf",
-                          "Daily Knock Dispositions - Raf's Captainship - Aug 31, 2026.pdf"])
-        self.assertEqual(len(dropped), 1)
+    def test_only_the_per_owner_copies_give_way(self):
+        big = email_build.MAX_MESSAGE_BYTES // 3
+        msg = email_build.build(_rafael(), self._bundle([big] * 8),
+                                dt.date(2026, 9, 1))
+        names = self._names(msg)
+        self.assertLess(len(names), 10)
+        self.assertIn("Weekly", names[0])            # never dropped
+        self.assertIn("Captainship", names[1])       # never dropped
 
     def test_the_body_names_what_was_left_off(self):
-        big = email_build.MAX_ATTACH_BYTES // 2
-        bundle = self._bundle([big, big])
-        bundle.update({"daily_knocks": [], "errors": {}})
-        msg = email_build.build(_rafael(), bundle, dt.date(2026, 9, 1))
+        big = email_build.MAX_MESSAGE_BYTES // 2
+        msg = email_build.build(_rafael(), self._bundle([big, big]),
+                                dt.date(2026, 9, 1))
         html = _html_of(msg)
         self.assertIn("left off to keep this email under the mail size limit",
                       html)
         self.assertIn("Owner 1", html)
+        # …and the note sits with the report, above the signature.
+        self.assertLess(html.index("left off"), html.index("Kind regards"))
+
+    def test_every_page_keeps_the_standard_width(self):
+        # The one knob nobody may turn per report (Eve 2026-09-01).
+        from automations.captainship_drafts import pdf_pages
+        self.assertEqual(pdf_pages.PAGE_MAX_PX, 1800)
+        self.assertFalse(hasattr(pdf_pages, "DAILY_MAX_PX"))
