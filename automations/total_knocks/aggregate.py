@@ -105,6 +105,24 @@ def hours_between(first, last, total_gaps) -> Optional[int]:
     return max(l - f - (int(gaps) if gaps.isdigit() else 0), 0)
 
 
+def _avg_time(mins: list) -> int:
+    """The AVERAGE of a rep's daily knock times, or NO_TIME when they never
+    knocked in the span.
+
+    Not the earliest/latest (Megan 2026-09-01: "shouldn't this be an average to
+    get a true idea of each rep?"). Over a week, min/max answers "what is the
+    earliest this rep EVER started", which one keen Tuesday sets and no amount
+    of late starts moves — the opposite of a true idea of the rep. The average
+    is what the weekly board has shown since 2026-08-22, and the two land in
+    front of the same reader.
+
+    Averaged over the days the rep KNOCKED, not the days in the span: a rep who
+    worked three of six days is described by those three, and dividing by six
+    would drag every one of them toward an hour they were not there.
+    """
+    return round(sum(mins) / len(mins)) if mins else NO_TIME
+
+
 def day_hours(rec: dict) -> Optional[int]:
     """`hours_between` for one scraped record."""
     return hours_between(rec.get(COL_FIRST_KNOCK), rec.get(COL_LAST_KNOCK),
@@ -168,7 +186,7 @@ def aggregate_days(days: Iterable[List[dict]]) -> List[dict]:
             slot = acc.get(key)
             if slot is None:
                 slot = acc[key] = {"ident": {}, "nums": {}, "text": {},
-                                   "first": NO_TIME, "last": NO_TIME,
+                                   "firsts": [], "lasts": [],
                                    "hours": [], "cols": []}
                 order.append(key)
             for col, val in rec.items():
@@ -179,13 +197,12 @@ def aggregate_days(days: Iterable[List[dict]]) -> List[dict]:
                         slot["ident"][col] = val
                     continue
                 if col in _TIME_COLS:
+                    # COLLECTED, not min/maxed — see the fold below. Only days
+                    # the rep actually knocked contribute a time.
                     t = knock_time_key(val)
                     if t < 24 * 60:
-                        if col == COL_FIRST_KNOCK:
-                            slot["first"] = min(slot["first"], t)
-                        else:
-                            slot["last"] = (t if slot["last"] >= 24 * 60
-                                            else max(slot["last"], t))
+                        slot["firsts" if col == COL_FIRST_KNOCK
+                             else "lasts"].append(t)
                     continue
                 n = _as_number(val)
                 if n is None:
@@ -213,9 +230,9 @@ def aggregate_days(days: Iterable[List[dict]]) -> List[dict]:
             if col in _IDENTITY_COLS:
                 rec[col] = slot["ident"].get(col, "")
             elif col == COL_FIRST_KNOCK:
-                rec[col] = fmt_time(slot["first"])
+                rec[col] = fmt_time(_avg_time(slot["firsts"]))
             elif col == COL_LAST_KNOCK:
-                rec[col] = fmt_time(slot["last"])
+                rec[col] = fmt_time(_avg_time(slot["lasts"]))
             elif col in slot["nums"]:
                 total = slot["nums"][col]
                 n = int(total) if float(total).is_integer() else total

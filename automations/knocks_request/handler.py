@@ -319,7 +319,7 @@ def process(web, user_id: str, office: str, target: dt.date,
         # message — so what the numbers mean has to ride on the post itself.
         # Kept SHORT: the long version buried the part people actually needed.
         cap += (f"\n_{board.days} days added together — First and Last Knock "
-                "are the earliest and latest in the stretch._")
+                "are each rep's average over the days they knocked._")
 
     # WHY the apps columns are there, or why they are not (Megan 2026-09-01).
     # Three columns appearing and disappearing between requests reads as a bug
