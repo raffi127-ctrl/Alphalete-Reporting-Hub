@@ -5989,6 +5989,32 @@ def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     return True, "stored %s and verified: %s" % (user, tail)
 
 
+def _action_appstream_whoami(args: str) -> tuple[bool, str]:
+    """WHICH AppStream account is this machine's SAVED session? READ ONLY.
+
+      appstream_whoami [office,office,...]
+
+    No login, no --force: it reads the console banner off the session the
+    SCHEDULED reports actually reuse. That is the only way to answer "is the
+    fleet really running as the new login?" — the AppStream activity log records
+    applicant actions, not report pulls, so a 4am read leaves no trace there
+    (Megan 2026-08-31).
+
+    Deliberately distinct from appstream_whoami_account, which drives a fresh
+    login as a named account: that proves the account WORKS, this proves what the
+    fleet IS. Retiring the old shared login needs the second answer."""
+    import shlex
+    cmd = [sys.executable, "-m", "automations.shared.appstream_whoami"]
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception:  # noqa: BLE001
+        parts = []
+    if parts:
+        cmd += ["--offices", parts[0]]
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60, log_name="appstream-whoami.log")
+    return ok, res.split("·")[-1].strip()[:400]
+
+
 def _action_appstream_whoami_account(args: str) -> tuple[bool, str]:
     """Which AppStream account is a NAMED login, and what can it see? READ ONLY.
 
@@ -6546,6 +6572,7 @@ ACTIONS = {
     "set_appstream_alt_creds": _action_set_appstream_alt_creds,
     "set_appstream_account": _action_set_appstream_account,
     "appstream_whoami_account": _action_appstream_whoami_account,
+    "appstream_whoami": _action_appstream_whoami,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_tracker_mirror": _action_install_tracker_mirror,
     "install_day_orchestrator": _action_install_day_orchestrator,
