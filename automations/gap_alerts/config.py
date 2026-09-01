@@ -162,7 +162,15 @@ JAY_EW = {
     "compare": True,
 }
 
-OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW]
+# JAY IS OUT OF ROTATION (2026-09-01, mid-evening). Impersonating him falls
+# through to the MASTER office instead of failing: his board came back with
+# Raf's exact rep count (37) and Raf's exact gap list — Alyssa Moreno, Zoria
+# Johnson, Sydney Agnew, Noemi Ontiveros, Nima Aweida, Giovanna Santos — and
+# posted it to the Energy Wells chat under Jay's name. Raf's numbers wearing
+# Jay's title is worse than no board, and unlike a blank one nobody reading it
+# can tell. Put him back only once an impersonated pull is PROVEN to carry his
+# office's own reps.
+OFFICES: List[Dict] = [RAF, CALVIN]
 
 # --- self-serve enrollments ---------------------------------------------------
 # Offices that signed themselves up through the Daily Dispositions link
