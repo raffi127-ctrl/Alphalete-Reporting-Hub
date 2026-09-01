@@ -473,7 +473,9 @@ def _manifest_id(cfg, rs) -> str:
 # for both is how the audit's findings went out as "it did NOT post" for a week.
 _FINDING_KINDS = {
     "finding": {
-        "title": "{n} open data-quality finding(s)",
+        # {subjects} = ": Edgar Camunez RT, Aracely Diaz" when the findings are
+        # short enough to name, "" when they would be a wall of text.
+        "title": "{n} open data-quality finding(s){subjects}",
         "parent": "*Found:* {n} board data-quality issue(s) — details in "
                   "thread. Logged to the board's ‘Report an Issue’ tab.",
         "detail_header": "*Open findings:*",
@@ -522,6 +524,37 @@ def _is_findings_report(cfg, rs) -> bool:
     return _finding_spec(cfg, rs) is not None
 
 
+# NAME WHAT IT FOUND, WHEN NAMING IT STILL FITS (Megan 2026-09-01: "we just
+# should have that spelled out clearly with the rep names").
+#
+# The header was a bare count — "found 3 open board data-quality findings" —
+# which tells you something is wrong and nothing about what, so every one of
+# them cost a thread-open to triage. The count stayed bare on purpose, though:
+# Megan 2026-08-02, the Vantura audit "is too long in the channel", and dumping
+# three full finding sentences into a header is exactly that wall of text.
+#
+# So: name them when the names FIT, fall back to the count when they don't.
+# Three missing reps read fine in a header; three paragraph-long formula
+# findings do not, and those keep the old behaviour and their thread detail.
+# 80 chars: a header has to stay scannable next to the report name. Three
+# rep names land around 45; four long ones overflow and belong in the thread.
+_SUBJECTS_MAX = 80
+_SUBJECTS_MAX_ITEMS = 4
+
+
+def _finding_subjects(missing) -> str:
+    """': a, b, c' when the findings are short enough to name in the header."""
+    items = [str(f).strip() for f in (missing or []) if str(f).strip()]
+    if not items or len(items) > _SUBJECTS_MAX_ITEMS:
+        return ""
+    # A "finding" that is really a sentence gets left to the thread — the header
+    # names subjects (rep names, tab names), not prose.
+    if any(len(i) > 48 or i.count(" ") > 6 for i in items):
+        return ""
+    joined = ", ".join(items)
+    return "" if len(joined) > _SUBJECTS_MAX else ": " + joined
+
+
 def _post_findings_corrections(cfg, rs, label, dry_run, day=None):
     """A finding → a CONCISE parent (name + what it found, 'details in thread')
     and a threaded reply with the list. No re-run/paste-to-Claude: these are
@@ -530,7 +563,8 @@ def _post_findings_corrections(cfg, rs, label, dry_run, day=None):
     spec = _finding_spec(cfg, rs) or _FINDING_KINDS["finding"]
     n = len(rs.missing)
     fmt = {"n": n or "some", "s": "" if n == 1 else "s",
-           "items": ", ".join(rs.missing) or "—"}
+           "items": ", ".join(rs.missing) or "—",
+           "subjects": _finding_subjects(rs.missing)}
     title = f"{spec['icon']} *{label}* — " + spec["title"].format(**fmt)
     parent = [spec["parent"].format(**fmt)]
     reply = [spec["detail_header"]]

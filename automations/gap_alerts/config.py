@@ -164,13 +164,218 @@ JAY_EW = {
 
 OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW]
 
+# --- self-serve enrollments ---------------------------------------------------
+# Offices that signed themselves up through the Daily Dispositions link
+# (disposition_signup/app.py) and that Megan confirmed. The form writes the
+# Sheet; `disposition_signup.apply --write` materializes this file; this merges
+# it. Same shape as the dicts above plus the fields the form asks for that a
+# hardcoded row has never needed:
+#
+#   cadence_min    15 | 30 | 60   — how often THIS office is sent (Raf's
+#                                   question 4). Absent = TICK_MINUTES.
+#   deliver        ["imessage", "email"] — absent = ["imessage"], which is what
+#                                   every hardcoded row does today.
+#   email_to       [addr, ...]     — only read when "email" is in deliver.
+#   slack_channel  "C..."          — this office's own channel for the hourly
+#                                   post. Absent = SLACK_HOURLY_CHANNEL, which
+#                                   is Raf's org's room and must never be the
+#                                   silent default for someone else's board.
+#
+# A hardcoded key always wins: if a form row somehow lands under an existing
+# key, the reviewed code is the truth and the file is ignored for that office.
+ONBOARDED_JSON = Path(__file__).resolve().parent / "onboarded_offices.json"
+
+
+def _merge_onboarded() -> None:
+    import json
+    if not ONBOARDED_JSON.exists():
+        return
+    try:
+        rows = json.loads(ONBOARDED_JSON.read_text())
+    except Exception as e:                           # noqa: BLE001
+        # A broken file must not take the whole report down with it — the
+        # hardcoded offices still have a day to run.
+        print("[gap_alerts.config] ignoring %s: %s: %s"
+              % (ONBOARDED_JSON.name, type(e).__name__, str(e)[:120]))
+        return
+    have = {o.get("key") for o in OFFICES}
+    for r in rows:
+        if not isinstance(r, dict) or not r.get("key") or r["key"] in have:
+            continue
+        OFFICES.append(r)
+        have.add(r["key"])
+
+
+_merge_onboarded()
+
+
+def cadence_for(cfg: Dict) -> int:
+    """How many minutes between this office's sends. Only values that divide
+    60 AND are multiples of TICK_MINUTES survive — anything else drifts across
+    the hour, and the wrapper only wakes Python on the quarter hour anyway, so
+    a stray 20 would fire at :00 and then not again until the next :00."""
+    try:
+        want = int(cfg.get("cadence_min") or TICK_MINUTES)
+    except (TypeError, ValueError):
+        return TICK_MINUTES
+    if want < TICK_MINUTES or want % TICK_MINUTES or 60 % want:
+        return TICK_MINUTES
+    return want
+
+
+def destinations(cfg: Dict) -> List[Dict]:
+    """Every place this office's board goes, each with its own cadence.
+
+    {kind: "imessage"|"slack"|"email", name, channel_id, emails, cadence_min}
+
+    An office can now list SEVERAL — the owners' room every 15 minutes and the
+    rep channel once an hour (Megan 2026-09-01) — which is why cadence lives on
+    the destination and not on the office.
+
+    A HARDCODED row has no `destinations` key, and its shape is translated here
+    rather than in four call sites: its `group` at the office cadence, plus the
+    org Slack channel hourly when slack_hourly is set. That is exactly what Raf,
+    Calvin and Jay have had, so nothing about their sends changes.
+    """
+    listed = cfg.get("destinations")
+    if listed:
+        out = []
+        for d in listed:
+            if not isinstance(d, dict) or not d.get("kind"):
+                continue
+            d = dict(d)
+            d.setdefault("cadence_min", TICK_MINUTES)
+            out.append(d)
+        return out
+    out = []
+    if (cfg.get("group") or "").strip():
+        out.append({"kind": "imessage", "name": cfg["group"].strip(),
+                    "cadence_min": cadence_for(cfg)})
+    if cfg.get("slack_hourly"):
+        out.append({"kind": "slack", "name": "",
+                    "channel_id": (cfg.get("slack_channel") or "").strip()
+                                  or SLACK_HOURLY_CHANNEL,
+                    "cadence_min": 60})
+    for addr_key in ("email_to",):
+        if cfg.get(addr_key):
+            out.append({"kind": "email", "emails": list(cfg[addr_key]),
+                        "cadence_min": cadence_for(cfg)})
+    return out
+
+
+# A destination with cadence_min == 0 runs at FIXED TIMES (its `slots`), not
+# on an interval — Cody Cannon's shape: first knocks, money lap, end of day.
+SLOT_CADENCE = 0
+
+
+def dest_slots(dest: Dict) -> List[str]:
+    """['14:00', '17:15', ...] for a fixed-times destination, else []. Only
+    quarter-hour slots survive: the job wakes on the quarter hour, so a 17:20
+    would never fire and silently promising it is worse than dropping it."""
+    # `x or default` would swallow this: SLOT_CADENCE is 0, which is falsy,
+    # so a fixed-times destination read that way looks like "no cadence set"
+    # and quietly becomes a 15-minute one — ninety boards a day instead of
+    # three.
+    raw = dest.get("cadence_min")
+    if raw is None or int(raw) != SLOT_CADENCE:
+        return []
+    out = []
+    for t in dest.get("slots") or []:
+        t = str(t).strip()
+        try:
+            h, m = [int(x) for x in t.split(":")]
+        except Exception:                            # noqa: BLE001
+            continue
+        if 0 <= h <= 23 and 0 <= m <= 59 and m % TICK_MINUTES == 0:
+            out.append("%02d:%02d" % (h, m))
+    return out
+
+
+def dest_cadence(dest: Dict) -> int:
+    """This destination's cadence, clamped the same way an office's is: it must
+    divide 60 AND be a multiple of TICK_MINUTES, or it drifts across the hour
+    and the wrapper — which only wakes Python on the quarter hour — would fire
+    it at :00 and then not again until the next :00."""
+    raw = dest.get("cadence_min")
+    if raw is None or raw == "":
+        return TICK_MINUTES
+    try:
+        want = int(raw)                  # NOT `raw or TICK_MINUTES`: 0 is real
+    except (TypeError, ValueError):
+        return TICK_MINUTES
+    # Fixed-times mode is NOT an interval and must not be clamped up to the
+    # tick — 0 is a real value here, and rounding it to 15 would turn Cody's
+    # three boards a day into ninety.
+    if want == SLOT_CADENCE:
+        return SLOT_CADENCE
+    if want < TICK_MINUTES or want % TICK_MINUTES or 60 % want:
+        return TICK_MINUTES
+    return want
+
+
+def dest_channel(dest: Dict) -> str:
+    """The Slack channel this destination posts to. NEVER falls back to the
+    module default for a form-built destination: SLACK_HOURLY_CHANNEL is Raf's
+    org's room, and inheriting it silently would put one office's numbers in
+    front of another."""
+    return (dest.get("channel_id") or "").strip()
+
+
+def dest_label(dest: Dict) -> str:
+    kind = dest.get("kind", "?")
+    if kind == "email":
+        where = ", ".join(dest.get("emails") or []) or "?"
+    else:
+        where = dest.get("name") or dest.get("channel_id") or "?"
+    return "%s:%s" % (kind, where)
+
+
+# WHOSE OwnerVille login each box is supposed to be carrying. Lucy 1 is Raf's,
+# Lucy 2 is Carlos's — the standing rule, now written where the code can check
+# it instead of only in someone's memory.
+#
+# 2026-09-01: Lucy 1's session was switched to Carlos to look at a B2B office.
+# Nothing errored. `is_master_office` compares the name in CONFIG, not the name
+# actually logged in, so Raf's board was pulled from Carlos's office and came
+# back empty, and every impersonation target vanished because Carlos's Office
+# Access list is not Raf's. Boards silently stopped for 40 minutes.
+MACHINE_OWNER = {"Lucy 1": "Rafael Hidalgo", "Lucy 2": "Carlos Hidalgo"}
+
+
+def expected_owner(machine: str = "") -> str:
+    return MACHINE_OWNER.get((machine or this_machine()).strip(), "")
+
+
+def this_machine() -> str:
+    """This box's profile name — the same marker mini_control reads. A laptop
+    with no marker is 'Lucy 1', which is what it has always been."""
+    try:
+        from automations.day_orchestrator.mini_control import _machine_profile
+        return _machine_profile()
+    except Exception:                                # noqa: BLE001
+        return "Lucy 1"
+
+
+def for_this_machine(offices: List[Dict]) -> List[Dict]:
+    """Only the offices THIS box can actually reach.
+
+    An office is impersonated from the machine whose OwnerVille login has
+    access to it — Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's (B2B) — so the
+    same registry is read by both runners and each takes its own half. A row
+    with no `machine` is a hardcoded office and belongs to Lucy 1, which is
+    where every one of them has always run.
+    """
+    here = this_machine()
+    return [o for o in offices
+            if (o.get("machine") or "Lucy 1").strip() == here]
+
 
 def enabled() -> List[Dict]:
     """The offices that actually run. A row with enabled=False is WIRED but
     switched off — Jay's two are waiting on Office Access, and a live row we
     cannot impersonate would fail every tick and open incidents instead of
     posting."""
-    return [o for o in OFFICES if o.get("enabled", True)]
+    return for_this_machine([o for o in OFFICES if o.get("enabled", True)])
 
 
 def office(key: str) -> Optional[Dict]:
@@ -376,6 +581,40 @@ SATURDAY = 5
 # for why that reasoning was the 2026-08-27 bug.
 TICK_MINUTES = 15
 
+# HOW OFTEN PYTHON GETS TO DECIDE, as opposed to how often any one office is
+# sent. Every office still gets its exact cadence; they just do not all land on
+# the same anchor (Megan 2026-09-01: "1 ICD could go out at 1:15 1:30 1:45, 2nd
+# could go out at 1:20 1:35 1:55 — that would be fine, just as long as it's
+# every 15 min").
+#
+# THIS IS WHAT MAKES TWENTY OWNERS FIT. Un-staggered, every office on a
+# 15-minute cadence is due at :00, :15, :30, :45 — twenty offices scraped in
+# one burst, 1-4 minutes each, inside a 15-minute window. The pid lock would
+# then SKIP the overrun, so boards would quietly stop arriving rather than
+# erroring. Spread across three 5-minute buckets, each wake carries about a
+# third of them.
+#
+# MUST DIVIDE every cadence in CADENCE_CHOICES, and the wrapper's minute gate
+# has to match it (deploy/gap_alerts_5min.sh: MINUTE % 5).
+WAKE_MINUTES = 5
+
+
+def office_offset(cfg: Dict) -> int:
+    """This office's stagger, a stable 0 / 5 / 10 derived from its key.
+
+    Deterministic across processes — hashlib, NOT hash(), whose salt changes
+    every interpreter start and would move an office's slot on every tick.
+    Derived rather than configured so nobody has to hand out offsets, and so
+    adding an office cannot collide two of them on purpose.
+    """
+    import hashlib
+    key = str(cfg.get("key") or "")
+    if not key:
+        return 0
+    buckets = max(1, TICK_MINUTES // WAKE_MINUTES)
+    digest = hashlib.sha1(key.encode("utf-8")).digest()
+    return (digest[0] % buckets) * WAKE_MINUTES
+
 # A card is REFUSED if this office got one less than this many minutes ago.
 #
 # WHY IT EXISTS. The pid lock stops two ticks OVERLAPPING; it does nothing
@@ -434,6 +673,122 @@ def _fmt12(hm) -> str:
     # No %-I: Windows has no such format code and every report here has to
     # import on both platforms.
     return "%d:%02d %s" % (h % 12 or 12, m, "AM" if h < 12 else "PM")
+
+
+# --- per-office windows -------------------------------------------------------
+# Everything above is the ORG default, in Lucy 1's own clock (Central). An
+# office that enrolled through the sign-up form brings its own: its timezone,
+# and the hours its reps are actually out. Four offices in this company are
+# EASTERN (see project_cody_knocks_intraday) — one Central window for all of
+# them would text a Boston roster an hour after they went in.
+#
+# Per-office keys, all optional (absent = the org default above):
+#   tz                "America/New_York" — IANA name, never an abbreviation
+#   day_start/day_end  "13:30" / "22:00"  — Mon-Fri, in the OFFICE'S clock
+#   sat_start/sat_end  "10:45" / "18:30"  — Saturday has its own start AND end
+#   weekdays          [0..5] — Python weekday numbers; default Mon-Sat
+DEFAULT_TZ = "America/Chicago"      # Lucy 1's clock, and the company's
+
+
+def _hhmm(text: str, fallback):
+    """'13:30' -> (13, 30). Anything unparseable falls back rather than
+    raising: a typo in one office's row must not take the report down."""
+    try:
+        h, m = str(text).strip().split(":")
+        h, m = int(h), int(m)
+    except Exception:                                # noqa: BLE001
+        return fallback
+    if 0 <= h <= 23 and 0 <= m <= 59:
+        return (h, m)
+    return fallback
+
+
+def office_now(cfg: Dict, now: Optional[dt.datetime] = None) -> dt.datetime:
+    """`now` in the OFFICE'S clock. Falls back to the machine clock when the
+    zone is missing or unknown — Windows has no system tz database unless
+    `tzdata` is installed, and a missing zone must degrade to "Central-ish",
+    never to a crash."""
+    now = now or dt.datetime.now()
+    name = (cfg.get("tz") or "").strip()
+    if not name or name == DEFAULT_TZ:
+        return now
+    try:
+        from zoneinfo import ZoneInfo
+        here = now if now.tzinfo else now.astimezone()
+        return here.astimezone(ZoneInfo(name)).replace(tzinfo=None)
+    except Exception:                                # noqa: BLE001
+        return now
+
+
+def office_window(cfg: Dict, weekday: int):
+    """((start_h, start_m), (end_h, end_m)) for this office on `weekday`, or
+    None if it is not a selling day for them."""
+    days = cfg.get("weekdays")
+    days = tuple(days) if days else WEEKDAYS
+    if weekday not in days:
+        return None
+    if weekday == SATURDAY:
+        return (_hhmm(cfg.get("sat_start"), SATURDAY_START_HHMM),
+                _hhmm(cfg.get("sat_end"), SATURDAY_END_HHMM))
+    return (_hhmm(cfg.get("day_start"), DAY_START_HHMM),
+            _hhmm(cfg.get("day_end"), DAY_END_HHMM))
+
+
+def in_office_window(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
+    """Is this office inside its own selling day, on its own clock?"""
+    local = office_now(cfg, now)
+    win = office_window(cfg, local.weekday())
+    if not win:
+        return False
+    (sh, sm), (eh, em) = win
+    start = local.replace(hour=sh, minute=sm, second=0, microsecond=0)
+    end = local.replace(hour=eh, minute=em, second=0, microsecond=0)
+    return start <= local <= end
+
+
+def office_window_label(cfg: Dict, now: Optional[dt.datetime] = None) -> str:
+    """'1:30 PM-10:00 PM America/New_York' — for the log line that explains a
+    skipped office."""
+    local = office_now(cfg, now)
+    win = office_window(cfg, local.weekday())
+    if not win:
+        return "off today"
+    return "%s-%s %s" % (_fmt12(win[0]), _fmt12(win[1]),
+                         (cfg.get("tz") or DEFAULT_TZ))
+
+
+# Zone abbreviations, spelled the way Megan spells them: CST/EST year-round,
+# never CDT/EDT. The card is read by field reps, not by a clock nerd.
+TZ_ABBREV = {"America/Chicago": "CST", "America/New_York": "EST",
+             "America/Denver": "MST", "America/Phoenix": "MST",
+             "America/Los_Angeles": "PST"}
+
+
+def slot_label_for(cfg: Dict, now: Optional[dt.datetime] = None) -> str:
+    """The clock stamp drawn on THIS office's card — their time, not Lucy 1's.
+
+    An Eastern office reading "4:45 PM" on a board built at 5:45 their time
+    cannot tell a fresh card from one that scrolled up, which is the only thing
+    the stamp is for. Central stays bare (it is the company clock and the vast
+    majority of boards); anywhere else carries its zone.
+    """
+    local = office_now(cfg, now)
+    label = "%d:%02d %s" % (local.hour % 12 or 12, local.minute,
+                            "AM" if local.hour < 12 else "PM")
+    name = (cfg.get("tz") or DEFAULT_TZ).strip()
+    if name and name != DEFAULT_TZ:
+        return "%s %s" % (label, TZ_ABBREV.get(name, ""))
+    return label
+
+
+def any_office_in_window(now: Optional[dt.datetime] = None) -> bool:
+    """Does ANY enabled office want this tick? The job's early exit.
+
+    Was `in_selling_window()` — one Central window for everybody. Once offices
+    bring their own timezone that check would gate an Eastern office's evening
+    against a Central clock and silently cut its last hour.
+    """
+    return any(in_office_window(o, now) for o in enabled())
 
 
 def in_selling_window(now: Optional[dt.datetime] = None) -> bool:

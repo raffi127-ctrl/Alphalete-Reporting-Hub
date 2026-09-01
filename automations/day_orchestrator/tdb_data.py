@@ -56,7 +56,8 @@ ALIAS        = {"Andrew Sanborn Roadtrip": "Andrew Sanborn", "Randy Amoo": "Rand
                 "Chole Johnson": "Chloe Johnson",
 
                 "Drew": "Andrew Sanborn", "D": "Deavion Allen", "Zoey": "Zoria Johnson",
-                "Al": "Algemar Kennel"}
+                "Al": "Algemar Kennel", "Bas": "Basil Elhassan",
+                "Keiah": "Lakeaih Gregory"}
 
 PROMOTIONS_BY_MONTH = {
     "2026-07": [
@@ -67,6 +68,17 @@ PROMOTIONS_BY_MONTH = {
 }
 SOLO_LEADERS_BY_MONTH = {
 }
+
+# Leaders who run a crew and no longer sell. They have NO row on the sales board,
+# and the board's column B IS the roster — so they were invisible to every point
+# that isn't a sale: Break-a-Leader, 2nd rounds, new starts, adjustments all land
+# through resolve_roster() against that roster. Basil Elhassan promoted two reps
+# in August 2026 and scored nothing (his row left the board on 'WE 7.26', the
+# same month he started promoting). Listed here, they join with a zeroed board
+# line and everything else pays normally.
+NON_SELLING_LEADERS = [
+    "Basil Elhassan",
+]
 CAR_RIDE_LEADERS_BY_MONTH = {
     "2026-07": [
         "Jordan Ruiz",
@@ -112,6 +124,15 @@ DTV_OFF    = 4
 NL_OFF     = 3
 ENERGY_OFF = 2
 DAY_OFF    = 7
+
+# Header text -> the day-block metric it feeds. Each 'Roll Call' column closes a
+# 7-cell day block (Apps / Int / Int Up / DTV / NL / EN / Cx); we locate the four
+# we score BY HEADER, because the offsets are not stable: on the 'Sales Board
+# WE 9.6' tab the 6th cell was renamed EN (energy sales) -> TK (total knocks),
+# and reading it positionally scored ~200 knocks/day as ~200 energy points
+# (2026-09-01 — it re-ranked the whole final August board). 'TK' is deliberately
+# absent from this map: an unmapped header scores NOTHING instead of guessing.
+DAY_COL_HEADERS = {"int": "int", "dtv": "dtv", "nl": "nl", "en": "energy"}
 
 def norm(name):
     n = re.sub(r"\([^)]*\)", " ", str(name))
@@ -238,6 +259,26 @@ def find_chrome():
             return c
     sys.exit("ERROR: Google Chrome not found. Install Chrome, then re-run.")
 
+def day_block_cols(hdr, rc):
+    """The scored columns of the day block closing at Roll Call column `rc`,
+    located by HEADER TEXT (see DAY_COL_HEADERS) -> {'int','dtv','nl','energy'}.
+
+    A metric whose header isn't in the block is simply ABSENT from the result
+    (the caller scores it 0) — that's how a renamed column stops paying points
+    for the wrong number. Only when the block has NO recognizable header at all
+    (an old tab, a blank header row) do we fall back to the fixed offsets."""
+    out = {}
+    for j in range(max(0, rc - DAY_OFF), rc):
+        c = hdr[j] if j < len(hdr) else None
+        if isinstance(c, str):
+            key = DAY_COL_HEADERS.get(c.strip().lower())
+            if key and key not in out:
+                out[key] = j
+    if not out:
+        return {"int": rc - INT_OFF, "dtv": rc - DTV_OFF,
+                "nl": rc - NL_OFF, "energy": rc - ENERGY_OFF}
+    return out
+
 def sales_week_tabs(wb):
     tabs = [n for n in wb.sheetnames if re.match(r"Sales Board WE \d", n)]
     def k(n):
@@ -281,7 +322,9 @@ def read_sales(sales_file):
         label2date = {d.day: d for d in dates}
 
         rc_date = {}
+        rc_cmap = {}
         for i, rc in enumerate(rc_cols):
+            rc_cmap[rc] = day_block_cols(rows[shr], rc)
             lbl = daterow[rc - DAY_OFF] if rc - DAY_OFF >= 0 else None
             dt = None
             if lbl is not None:
@@ -308,8 +351,12 @@ def read_sales(sales_file):
                 if dt >= today:
                     continue
                 is_sun = dt.weekday() == 6
-                dayint = numv(r[rc - INT_OFF]); dayeng = numv(r[rc - ENERGY_OFF])
-                daydtv = numv(r[rc - DTV_OFF]); daynl = numv(r[rc - NL_OFF])
+                cm = rc_cmap[rc]
+                def _cell(key, _r=r, _cm=cm):
+                    j = _cm.get(key)
+                    return numv(_r[j]) if (j is not None and j < len(_r)) else 0.0
+                dayint = _cell("int"); dayeng = _cell("energy")
+                daydtv = _cell("dtv"); daynl = _cell("nl")
                 rec["int"] += dayint; rec["dtv"] += daydtv; rec["nl"] += daynl
                 rec["energy"] += dayeng
                 if dayint >= 3:
@@ -607,6 +654,20 @@ def build_board(sales_file, recruit_file):
             "acc": 0.0, "show": 0.0, "acc_p": 0.0, "show_p": 0.0, "brk_p": 0.0, "car_p": 0.0,
             "adj_p": 0.0,
         }
+    # Crew leaders with no board row join with a zeroed sales line (see
+    # NON_SELLING_LEADERS) so the non-sales points can find them. A leader who is
+    # excluded, terminated, or already on the board is left alone.
+    for _nm in NON_SELLING_LEADERS:
+        _k = akey(_nm)
+        if _k in EXCLUDE or _k in removed or _k in rized:
+            continue
+        rized[_k] = {
+            "name": _k, "int_p": 0.0, "dtv_p": 0.0, "nl_p": 0.0, "eng_p": 0.0,
+            "att_p": 0.0, "here_p": 0.0, "late_p": 0.0, "off_p": 0.0,
+            "i3_p": 0.0, "e5_p": 0.0,
+            "acc": 0.0, "show": 0.0, "acc_p": 0.0, "show_p": 0.0, "brk_p": 0.0,
+            "car_p": 0.0, "adj_p": 0.0,
+        }
     ci = {k.lower(): k for k in rized}
     for rn, (acc, show) in recruit.items():
         key = akey(rn)
@@ -618,9 +679,17 @@ def build_board(sales_file, recruit_file):
         rized[key]["acc_p"] += acc * 5; rized[key]["show_p"] += show * SHOW_PTS
     unmatched = []
     for promoter, newleader in promotions:
+        # A pair whose two sides resolve to the SAME rep is a solo promotion, not
+        # a Break-a-Leader: the board's Trainer cell named the rep themself (or a
+        # nickname of them). Paying both sides handed them +30 for one promotion
+        # — Edgar Camunez and Juan Pablo Deleon in August 2026.
+        paid = set()
         for nm in (promoter, newleader):
             key = resolve_roster(nm, rized)
             if key:
+                if key in paid:
+                    continue
+                paid.add(key)
                 rized[key]["brk_p"] += 15
             elif str(nm).strip():
                 unmatched.append(nm)

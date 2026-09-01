@@ -138,16 +138,50 @@ class CountsAddUp(unittest.TestCase):
         self.assertEqual(out[0][COL_TOTAL_KNOCKS], 150)
 
 
-class KnockTimesAreEarliestAndLatest(unittest.TestCase):
+class KnockTimesAreAveraged(unittest.TestCase):
+    """A folded board shows the rep's AVERAGE start and finish, not the
+    earliest and latest in the span (Megan 2026-09-01).
 
-    def test_first_is_earliest_and_last_is_latest(self):
+    Over a week, min/max answers "what is the earliest this rep EVER started" —
+    one keen Tuesday sets it and no amount of late starts moves it, which is
+    the opposite of a true idea of the rep. The weekly board has averaged since
+    2026-08-22 and the two land in front of the same reader.
+    """
+
+    def test_first_and_last_are_averages(self):
         out = aggregate_days([
             [house_row(first="9:00 AM", last="5:00 PM")],
             [house_row(first="8:15 AM", last="4:00 PM")],
             [house_row(first="10:00 AM", last="7:45 PM")],
         ])
-        self.assertEqual(out[0][COL_FIRST_KNOCK], "8:15 AM")
-        self.assertEqual(out[0][COL_LAST_KNOCK], "7:45 PM")
+        # 9:00 + 8:15 + 10:00 -> 9:05 ; 5:00 + 4:00 + 7:45 -> 5:35
+        self.assertEqual(out[0][COL_FIRST_KNOCK], "9:05 AM")
+        self.assertEqual(out[0][COL_LAST_KNOCK], "5:35 PM")
+
+    def test_a_single_day_is_left_exactly_as_scraped(self):
+        """A ONE-day board must show the day's real times, not an "average"
+        of anything (Megan 2026-09-01: "this shouldn't change the daily 1st
+        and last knock though because that's only one day").
+
+        It holds because the mean of one value is that value — but it is the
+        property people will rely on, so it is pinned rather than reasoned
+        about. The daily boards do not fold at all: aggregate_days has exactly
+        one caller, the /knocks request path.
+        """
+        out = aggregate_days([[house_row(first="1:25 PM", last="10:42 PM")]])
+        self.assertEqual(out[0][COL_FIRST_KNOCK], "1:25 PM")
+        self.assertEqual(out[0][COL_LAST_KNOCK], "10:42 PM")
+
+    def test_only_days_the_rep_knocked_count(self):
+        """A blank day must not drag the average toward an hour nobody
+        worked — the divisor is days KNOCKED, not days in the span."""
+        out = aggregate_days([
+            [house_row(first="9:00 AM", last="5:00 PM")],
+            [house_row(first="", last="")],
+            [house_row(first="10:00 AM", last="6:00 PM")],
+        ])
+        self.assertEqual(out[0][COL_FIRST_KNOCK], "9:30 AM")
+        self.assertEqual(out[0][COL_LAST_KNOCK], "5:30 PM")
 
     def test_a_folded_time_reparses_to_what_went_in(self):
         # fmt_time is the inverse of knock_time_key, or the board's own sort
@@ -270,8 +304,11 @@ class GapsOnlyOfficesFoldToo(unittest.TestCase):
         self.assertNotIn(COL_TOTAL_KNOCKS, out[0])
         self.assertEqual(render.knocks_shape(out), render.SHAPE_GAPS_ONLY)
         self.assertEqual(out[0][COL_TOTAL_GAPS], 45)
-        self.assertEqual(out[0][COL_FIRST_KNOCK], "8:30 AM")
-        self.assertEqual(out[0][COL_LAST_KNOCK], "5:30 PM")
+        # Averaged like every other folded board: 9:00+8:30 -> 8:45,
+        # 4:00+5:30 -> 4:45. Gaps-only offices are described by their knock
+        # TIMES above all, so an average matters more here, not less.
+        self.assertEqual(out[0][COL_FIRST_KNOCK], "8:45 AM")
+        self.assertEqual(out[0][COL_LAST_KNOCK], "4:45 PM")
 
     def test_blank_when_zero_columns_stay_blank(self):
         # The live p=510 table leaves zeros empty; a fold of nothing but zeros

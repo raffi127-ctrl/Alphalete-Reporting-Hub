@@ -3322,7 +3322,7 @@
       "_note": "Fills the 'All Campaigns Org Sales Board' tab's per-person 'All Units' daily section. It's a campaign-AGNOSTIC product-totals ranking: unlike the ORG Sales Board it does NOT split a rep by campaign \u2014 one line per person = SUM across every campaign. Reads the already-filled 'Alphalete ORG Sales Board' tab's eight daily sections (Retail NL, ATT Fiber Team, Retail JE, ATT NDS Team, B2B, BOX, Frontier, Retail Internet), sums each rep by normalized name across all of them, and writes the Mon-Sun day cells via the ORG board's fill_section engine. Everything else on the tab is formula-driven (running total =SUM, leaderboard =SUMIF, Product Summary/vs-Prior) and auto-derives. `after` org_sales_board (SOFT: runs once the board reaches ANY terminal state, so a board INCOMPLETE \u2014 which is common \u2014 never strands this) rather than depends_on. base_args '--apply' = LIVE write. Validated + ROLLED OUT LIVE 2026-07-24 (Megan): aggregated grand-total-per-day matched the Copy tab's Grand Total row exactly; 38/38 board rows matched, 0 unmatched. Auto-fires daily (weekdays [0..6]) right after the board. TUESDAY ROLLOVER (base_args '--enable-rollover', validated + approved by Megan 2026-07-24): same fixed-window system as the Copy tab \u2014 self-heals off the leaderboard week header, so it rolls on the first run of the new reporting week (Tuesday) and is a no-op otherwise. NO columns/rows grow: the weekly leaderboard shifts C(this wk value)->D->..->G with the oldest week DROPPED; the daily per-rep running total shifts J->K->L (L lost); the WE-history rows shift down (oldest dropped); the delta box freezes this-week->last-week; then day cells clear + the date anchor advances. Snapshots to backup_pre_rollover_allcampaigns first. `lucy rerun all_campaigns_board` runs it on demand. Exits 75 (INCOMPLETE) if a board rep never matched the pull, or a producing rep has no board row (flagged, never silently dropped).",
       "display_name": "All Campaigns Org Sales Board",
       "source_type": "tableau",
-      "_data_sources_note": "GATED ON THE BOARD ITSELF, not just on the board's exit code (Eve 2026-09-01). `after: org_sales_board` is soft ordering and treats INCOMPLETE as terminal, so on a morning where the board exits 'partial' BEFORE it has actually written yesterday's column this fill runs ~30 min later against an empty source, writes a whole day of ZEROS, exits 0 (a 0 is non-blank, so `verify` passes too), is recorded DONE and never runs again. It happened on Tue 2026-09-01: org_sales_board partial 04:27, this ran 05:01, and because Tuesday ALSO rolls the week, the tab spent the morning showing 0 for every rep on the new week while the board's later passes (07:18 / 08:36 / 09:39) filled the ORG tab and nothing re-filled this one. sheet:org_board_yesterday -> readiness._probe_org_board_filled -> org_sales_board.data_gate.gate(): ready once YESTERDAY's column on 'Alphalete ORG Sales Board' is filled for every section but the day-behind ones (data_gate.LAGGING_SECTIONS), and it FAILS OPEN past data_gate.SEND_ANYWAY_AFTER, so a board that never fills cannot also cost the day's fill. Gating in READINESS keeps a late board STILL_TRYING — re-probed every pass, no burnt retries, no red pill — instead of one early DONE nobody can see. Same gate the org board email used before it moved to slack:org_board_posted.",
+      "_data_sources_note": "GATED ON THE BOARD ITSELF, not just on the board's exit code (Eve 2026-09-01). `after: org_sales_board` is soft ordering and treats INCOMPLETE as terminal, so on a morning where the board exits 'partial' BEFORE it has actually written yesterday's column this fill runs ~30 min later against an empty source, writes a whole day of ZEROS, exits 0 (a 0 is non-blank, so `verify` passes too), is recorded DONE and never runs again. It happened on Tue 2026-09-01: org_sales_board partial 04:27, this ran 05:01, and because Tuesday ALSO rolls the week, the tab spent the morning showing 0 for every rep on the new week while the board's later passes (07:18 / 08:36 / 09:39) filled the ORG tab and nothing re-filled this one. sheet:org_board_yesterday -> readiness._probe_org_board_filled -> org_sales_board.data_gate.gate(): ready once YESTERDAY's column on 'Alphalete ORG Sales Board' is filled for every section but the day-behind ones (data_gate.LAGGING_SECTIONS), and it FAILS OPEN past data_gate.SEND_ANYWAY_AFTER, so a board that never fills cannot also cost the day's fill. Gating in READINESS keeps a late board STILL_TRYING \u2014 re-probed every pass, no burnt retries, no red pill \u2014 instead of one early DONE nobody can see. Same gate the org board email used before it moved to slack:org_board_posted.",
       "data_sources": [
         "sheet:org_board_yesterday"
       ],
@@ -3365,7 +3365,7 @@
     "org_board_zero_streak": {
       "order": 26,
       "on_scheduler": false,
-      "_off_scheduler_note": "RETIRED AS A CARD 2026-09-01 (Eve: \u0027incluilo en el proceso de roleo de los martes, no le crees tarjeta aparte\u0027). The rule now runs INSIDE the Tuesday rollover of each board \u2014 org_sales_board/run.py calls zero_streak.after_rollover right after run_rollover, and country_sales_board/run.py does the same. That makes the precondition the trigger instead of an ordering nobody could see: this card only ever read closed literals because its order (26) happened to sit after org_sales_board (15), an invariant invisible from either entry \u2014 and one that did not exist at all for the Country board, which rolls at order 40. Hung off the roll it also runs on a SELF-HEALED roll (a missed Tuesday that rolls Wednesday), which a weekdays:[1] cadence would have skipped outright. Still PROPOSE-ONLY: it posts the list to #revision-emails and removes nothing; the removal tools (org_sales_board.roster_remove --sheet/--tab, all_campaigns_board.roster_remove, org_sales_board.distro_remove) stay a human call. By hand: python -m automations.org_sales_board.zero_streak --post. on_scheduler:false, so registry.load_config drops it and it never enters the morning batch, which is the point. An explicit `lucy rerun org_board_zero_streak` still resolves through registry.resolve_report, which reads the raw config on purpose, so the hand-run handle survives; retired rather than deleted for exactly that \u2014 that is the point.",
+      "_off_scheduler_note": "RETIRED AS A CARD 2026-09-01 (Eve: 'incluilo en el proceso de roleo de los martes, no le crees tarjeta aparte'). The rule now runs INSIDE the Tuesday rollover of each board \u2014 org_sales_board/run.py calls zero_streak.after_rollover right after run_rollover, and country_sales_board/run.py does the same. That makes the precondition the trigger instead of an ordering nobody could see: this card only ever read closed literals because its order (26) happened to sit after org_sales_board (15), an invariant invisible from either entry \u2014 and one that did not exist at all for the Country board, which rolls at order 40. Hung off the roll it also runs on a SELF-HEALED roll (a missed Tuesday that rolls Wednesday), which a weekdays:[1] cadence would have skipped outright. Still PROPOSE-ONLY: it posts the list to #revision-emails and removes nothing; the removal tools (org_sales_board.roster_remove --sheet/--tab, all_campaigns_board.roster_remove, org_sales_board.distro_remove) stay a human call. By hand: python -m automations.org_sales_board.zero_streak --post. on_scheduler:false, so registry.load_config drops it and it never enters the morning batch, which is the point. An explicit `lucy rerun org_board_zero_streak` still resolves through registry.resolve_report, which reads the raw config on purpose, so the hand-run handle survives; retired rather than deleted for exactly that \u2014 that is the point.",
       "_note": "Two-week zero rule (Eve, 2026-08-19): a rep at a literal 0 for TWO consecutive CLOSED weeks comes off that campaign's boxes. This step only DETECTS and posts the list to #revision-emails, next to the new-owners notices \u2014 taking someone off the board is irreversible for them, so the removal itself stays a human call, like every other gate here. The removal tools are org_sales_board.roster_remove + all_campaigns_board.roster_remove + org_sales_board.distro_remove, and `--commands` prints the exact steps. TUESDAY, after org_sales_board: the board rolls Tuesday, so that is the first run where the week just ended reads as CLOSED. Blank is not a zero, so a new hire with no history lands in a separate 'decidir a mano' bucket instead of being proposed for removal.",
       "display_name": "Two-week zero rule \u2014 quien sale del board",
       "source_type": "sheet",
@@ -7094,7 +7094,7 @@
     "box_order_log_tier_backfill": {
       "on_scheduler": false,
       "delivers_only_with": "--post",
-      "_off_scheduler_note": "ONE-OFF/repair handle, never scheduled: adds the 'Box Tier Bonus Rep Level' board to a BOX Order Log thread that ALREADY posted, and edits that parent's header to list it. Built 2026-08-15, the day the board was wired into box_order_log.run \u2014 that morning's 8:32 thread went out before the change, and Megan asked for the board added to the LIVE thread rather than left for the next day. Runs automations.box_order_log.backfill_tier: finds today's parent by its dated header ('BOX Order Log \u2014 August 15, 2026'), uploads the board as a reply, and chat_update's the header. Fully idempotent \u2014 a board already in the thread is skipped and a header already listing it isn't re-edited, so a second run reports 'nothing to do'. MUST run on LUCY 2: only Lucy's own token can edit Lucy's message, and a laptop run would post as Megan. DRY by default; add --post. Since 2026-09-01 it does EVERY channel in run.TARGETS (#alphalete-gp-sales + #a-players-b2b) in one run, capturing the board once for both — --channel <id> now LIMITS it to one room; --date YYYY-MM-DD for an older thread. Keep for the next time a thread needs an attachment added after the fact. Registered 2026-08-15.",
+      "_off_scheduler_note": "ONE-OFF/repair handle, never scheduled: adds the 'Box Tier Bonus Rep Level' board to a BOX Order Log thread that ALREADY posted, and edits that parent's header to list it. Built 2026-08-15, the day the board was wired into box_order_log.run \u2014 that morning's 8:32 thread went out before the change, and Megan asked for the board added to the LIVE thread rather than left for the next day. Runs automations.box_order_log.backfill_tier: finds today's parent by its dated header ('BOX Order Log \u2014 August 15, 2026'), uploads the board as a reply, and chat_update's the header. Fully idempotent \u2014 a board already in the thread is skipped and a header already listing it isn't re-edited, so a second run reports 'nothing to do'. MUST run on LUCY 2: only Lucy's own token can edit Lucy's message, and a laptop run would post as Megan. DRY by default; add --post. Since 2026-09-01 it does EVERY channel in run.TARGETS (#alphalete-gp-sales + #a-players-b2b) in one run, capturing the board once for both \u2014 --channel <id> now LIMITS it to one room; --date YYYY-MM-DD for an older thread. Keep for the next time a thread needs an attachment added after the fact. Registered 2026-08-15.",
       "display_name": "BOX Order Log \u2014 add tier board to a posted thread (repair)",
       "source_type": "tableau",
       "data_sources": [],
@@ -9385,6 +9385,51 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 35
+    },
+    "knocks_selftest": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false - never runs on its own. Present so /knocks can be exercised END TO END from the queue without Slack: `lucy rerun knocks_selftest \"Rafael Hidalgo\" --date 2026-08-25`. Same board_for() call the Jiraiya popup makes. It exists because the apps wiring broke /knocks TWICE on 2026-09-01 and both breaks were invisible to the unit tests - those exercise functions, and the failures were in how the real path calls them. Add --cache-only to check the plumbing without opening ownerville.",
+      "machine": "Lucy 1",
+      "display_name": "/knocks self-test (no Slack)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.knocks_request.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": {
+        "type": "not_configured"
+      }
+    },
+    "gap_alerts_b2b": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_machine_note": "Lucy 1 because that is the machine iMessage is set up on (Megan 2026-08-26) -- the 7-person 'Alphalete Partners' chat only exists in Lucy 1's Messages (alphaletereporting@, the account Megan added to the room on 8/26). Same constraint that pins alphalete_sales_board there. Load is fenced instead: own browser profile (automations/uploaded/.browser_profile_gap_alerts), headless, one JSON call per tick, pid lock, and nothing before 13:30 on a weekday -- long after the 4am batch's browser-heavy wave is through.",
+      "display_name": "Knocks & Dispositions \u2014 B2B (Lucy 2)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.gap_alerts.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 10,
+      "verify": {
+        "type": "not_configured"
+      },
+      "_note": "The B2B half of the self-serve dispositions run (Megan 2026-09-01: \"it's fine to split them, just make sure there's a hub card for each\"). SAME code as gap_alerts, different box: an office is impersonated from the machine whose OwnerVille login can see it -- Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's (B2B) -- and config.for_this_machine gives each runner only its own offices from the one shared registry. iMessage exists on both boxes under different Apple IDs, so the texts follow the pull. on_scheduler:false for the same reason gap_alerts is: it runs itself from its own LaunchAgent, not the 4am batch. NOT INSTALLED YET -- the agent on Lucy 2 is still to be created, and until it is this entry exists so the Hub card has a report id to hang on rather than being invisible."
     }
   },
   "read_only_standalone": {

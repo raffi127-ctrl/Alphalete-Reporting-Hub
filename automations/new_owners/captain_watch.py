@@ -95,31 +95,57 @@ def sibling_reports(captain: str, exclude: str = "") -> List[str]:
             if _norm(r) != _norm(exclude)]
 
 
+def board_names(captain: str, *, ss=None, aliases=None):
+    """(aliases, [every rep name in that captainship's boxes]) — ONE read of the
+    copy tab. Raises on any lookup problem; the two callers below decide what a
+    failure means for them."""
+    from automations.recruiting_report.fill import open_by_key, _retry
+    from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB
+    from automations.org_sales_board import captainship as cap
+    from automations.focus_office_att.aliases import load_aliases
+    aliases = aliases if aliases is not None else load_aliases()
+    ss = ss if ss is not None else open_by_key(SHEET_ID)
+    grid = _retry(ss.worksheet(SANDBOX_TAB).get_all_values)
+    short = _norm(captain_name(captain))
+    out = []
+    for title, _hint in cap.discover_captainships(grid):
+        if _norm(captain_name(title)) != short:
+            continue
+        for _variant, anc in cap.find_captainship_boxes(grid, title):
+            out += [nm for _r, nm in anc.daily + anc.leaderboard]
+    return aliases, out
+
+
 def on_org_board(captain: str, name: str, *, ss=None, aliases=None) -> bool:
     """Does this rep have a row in that captainship's boxes on the board's copy
     tab? Read-only; False on any lookup problem (the notice then says 'check
     it', which is the safe direction)."""
     try:
-        from automations.recruiting_report.fill import open_by_key, _retry
-        from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB
-        from automations.org_sales_board import captainship as cap
         from automations.org_sales_board import fill_section as fs
-        from automations.focus_office_att.aliases import load_aliases
-        aliases = aliases if aliases is not None else load_aliases()
-        ss = ss if ss is not None else open_by_key(SHEET_ID)
-        grid = _retry(ss.worksheet(SANDBOX_TAB).get_all_values)
+        aliases, have = board_names(captain, ss=ss, aliases=aliases)
         want = fs._candidates_for(name, aliases)
-        short = _norm(captain_name(captain))
-        for title, _hint in cap.discover_captainships(grid):
-            if _norm(captain_name(title)) != short:
-                continue
-            for _variant, anc in cap.find_captainship_boxes(grid, title):
-                for _r, nm in anc.daily + anc.leaderboard:
-                    if fs._candidates_for(nm, aliases) & want:
-                        return True
-        return False
+        return any(fs._candidates_for(nm, aliases) & want for nm in have)
     except Exception:  # noqa: BLE001 — read-only probe, never fails a caller
         return False
+
+
+def already_on_board(captain: str, names, *, ss=None, aliases=None) -> set:
+    """Which of `names` ALREADY have a row in that captainship's boxes.
+
+    Alias-aware (the board says 'Jeff Starr', Tableau says 'Jeffrey Starr') and
+    one tab read for the whole list, because its caller is the ✅ gate and a
+    per-name probe would re-read the board once per rep.
+
+    Empty set on any lookup problem: not knowing must fall back to ASKING, never
+    to swallowing a genuinely new rep."""
+    try:
+        from automations.org_sales_board import fill_section as fs
+        aliases, have = board_names(captain, ss=ss, aliases=aliases)
+    except Exception:  # noqa: BLE001
+        return set()
+    on_board = [fs._candidates_for(nm, aliases) for nm in have]
+    return {n for n in (names or [])
+            if any(c & fs._candidates_for(n, aliases) for c in on_board)}
 
 
 def observe(names: List[str], *, captain: str, source: str,

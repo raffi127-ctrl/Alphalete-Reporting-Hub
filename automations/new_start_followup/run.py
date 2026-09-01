@@ -63,6 +63,16 @@ def _run_funnel(args, funnel, monday, when) -> int:
         rec = report_mod.build(monday=monday,
                                allow_sheet_roster=args.allow_sheet_roster,
                                funnel=funnel)
+    except roster_mod.RosterNotPostedYet as exc:
+        # WAITING, NOT BROKEN. The thread-scan agent runs every 30 minutes all
+        # day; treating "this week's roster isn't up yet" as a failure raised a
+        # fresh incident on every tick — 7 follow-ups on one thread by
+        # mid-afternoon on 2026-09-01, none of them actionable. It clears when a
+        # person posts the roster, and nothing is wrong until then.
+        print("WAITING — {}".format(exc))
+        print("Nothing posted. This clears itself once the roster is up; no "
+              "action needed and nothing to re-run.")
+        return 0
     except RuntimeError as exc:
         if not funnel["required"]:
             # A week with no 2nd-funnel post just means no 2nd-funnel starts.

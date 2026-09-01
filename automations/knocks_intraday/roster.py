@@ -25,6 +25,8 @@ token — so a key here needs no second config.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import List
 
 from automations.office_metrics.offices import OFFICES, Office
@@ -90,6 +92,51 @@ RAF_OFFICE = Office(
 )
 
 
+# --- offices that moved to the dispositions sign-up ---------------------------
+# An office that enrolls through the Daily Dispositions link picks its own
+# channels AND its own times, so this module must stop posting to it — otherwise
+# the room gets two identical boards seconds apart (Megan 2026-09-01: "they
+# should just get removed from knocks_intraday since we want them enrolling in
+# the dispositions").
+#
+# DERIVED, not a hand-kept list: read straight from the same
+# gap_alerts/onboarded_offices.json that apply writes, so enrolling an office is
+# the ONE action that both wires it there and removes it here. A hand-kept
+# BLOCKED entry would be a second place to remember.
+#
+# Matched on CHANNEL ID, not office key: the two registries key offices
+# differently (this one by office_metrics key, that one by the owner's first
+# name), and the thing that must not receive two boards is the channel.
+_ONBOARDED_JSON = (Path(__file__).resolve().parents[1] / "gap_alerts"
+                   / "onboarded_offices.json")
+
+
+def disposition_channels() -> set:
+    """Slack channel ids owned by a LIVE dispositions enrollment. Best-effort:
+    an unreadable file means this module keeps posting exactly as it did, which
+    is the safe direction — a duplicate board is noise, a board that silently
+    stops is a report nobody notices died."""
+    out = set()
+    try:
+        rows = json.loads(_ONBOARDED_JSON.read_text())
+    except Exception:                                # noqa: BLE001
+        return out
+    for r in rows:
+        if not isinstance(r, dict) or not r.get("enabled", False):
+            continue          # wired-but-off offices are not posting yet
+        for d in r.get("destinations") or []:
+            if d.get("kind") == "slack" and (d.get("channel_id") or "").strip():
+                out.add(d["channel_id"].strip())
+    return out
+
+
+def _drop_enrolled(offices: List[Office]) -> List[Office]:
+    taken = disposition_channels()
+    if not taken:
+        return offices
+    return [o for o in offices if o.channel_id not in taken]
+
+
 def enrolled(slot_key: str) -> List[Office]:
     """Offices owed `slot_key`'s board, in registry order.
 
@@ -98,13 +145,14 @@ def enrolled(slot_key: str) -> List[Office]:
     if slot_key == "eod":
         # Raf rides the 9 PM slot only, and is appended rather than merged into
         # OFFICES so nothing else in the codebase inherits him. See RAF_OFFICE.
-        return ([OFFICES[k] for k in OFFICES if k not in BLOCKED]
-                + [RAF_OFFICE])
+        return _drop_enrolled([OFFICES[k] for k in OFFICES if k not in BLOCKED]
+                              + [RAF_OFFICE])
     elif slot_key in ("first", "money"):
         keys = list(INTRADAY_KEYS)
     else:
         return []
-    return [OFFICES[k] for k in keys if k in OFFICES and k not in BLOCKED]
+    return _drop_enrolled([OFFICES[k] for k in keys
+                           if k in OFFICES and k not in BLOCKED])
 
 
 def everyone() -> List[Office]:

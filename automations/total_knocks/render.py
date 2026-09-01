@@ -343,8 +343,16 @@ ENERGYWELL_KNOCKS_HEADERS = _with_derived(ENERGYWELL_KNOCKS_COLUMNS)
 
 # Wireless (NDS) Total Knocks: the house board's shape, with the wireless
 # disposition set — one Not Interested bucket, no Talk-To split, no Sale.
+# GAPS + TOTAL GAPS ARE IN THIS LIST for the same reason they are in the
+# Energy Wells one: needs_time_gaps() asks the COLUMN LIST whether a separate
+# Time Gaps image is still owed, so carrying them here retires that second post
+# and the office gets ONE board (Megan 2026-09-01: "get calvin on 1 chart",
+# after his grid came back wireless-shaped and split into two images — the same
+# merge she asked for on the Energy Wells board on 2026-08-30, "these 2 should
+# be combined just like we have for Raf's").
 WIRELESS_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
                            COL_TOTAL_KNOCKS, COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                           COL_GAPS, COL_TOTAL_GAPS,
                            COL_NO_ANSWER, COL_NOT_INTERESTED, COL_COME_BACK,
                            COL_INACCESSIBLE, COL_DO_NOT_KNOCK]
 

@@ -168,6 +168,12 @@ DAILY_AUTORUN_CAP = 100
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
                     "restart_orchestrator",
+                    # Reloads the Jiraiya listener's CODE. Plumbing for the
+                    # same reason as the two below: `update` alone leaves that
+                    # long-lived process serving pre-update modules, and the
+                    # rerun that used to be the only fix is capped — so a
+                    # cap-hit day left Slack stale with no way out.
+                    "restart_jiraiya",
                     # Installs the read lane. Plumbing, so a cap-hit day — the
                     # exact day you most want fast reads — can still deploy it.
                     "install_mini_control_read",
@@ -678,17 +684,29 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
         from automations.tracker_onboarding import store as _st, apply as _ap
         _st.set_client(gc)
     elif kind in ("disposition", "dispositions"):
-        # No --post branch: the dispositions board is not a once-a-day report
-        # that can be "run now" — it is a tick inside a selling window, and the
-        # next one is at most 15 minutes away. Wiring is the whole job here.
+        # --post here means PREFLIGHT, not "post now": the dispositions board
+        # is not a once-a-day report that can be run early — it is a tick
+        # inside a selling window, and the next one is at most 15 minutes away.
+        # What actually needs doing on this box is proving the office works
+        # (impersonation + the iMessage room) and switching it on, which is the
+        # step that would otherwise be Megan's.
         from automations.disposition_signup import store as _st, apply as _ap
         _st.set_client(gc)
         rc = _ap.main(["--only", key, "--write"])
         if rc != 0:
             return False, f"apply(disposition) failed for {key!r} (rc={rc})"
-        return True, (f"wired {key} into the dispositions run — it joins the "
-                      "next tick (nothing sends if it is wired OFF pending "
-                      "Office Access)")
+        if not post:
+            return True, (f"wired {key} into the dispositions run — it joins "
+                          "the next tick (nothing sends while it is switched "
+                          "off pending preflight)")
+        from automations.disposition_signup import preflight as _pf
+        prc = _pf.main(["--key", key, "--enable", "--notify"])
+        if prc != 0:
+            return False, (f"wired {key}, but preflight FAILED — it stays "
+                           "switched off. See #claudecorrections-and-requests "
+                           "for which check failed.")
+        return True, (f"wired {key} and preflight passed — switched ON, it "
+                      "joins the next tick")
     else:
         return False, (f"unknown kind {kind!r} "
                        "(expected metrics|tracker|disposition)")
@@ -866,6 +884,41 @@ def _action_restart_orchestrator(args: str) -> tuple[bool, str]:
                   f"{' (FORCED — a running report was killed)' if force else ''}"
                   f" — it re-reads today's state and resumes; terminal reports "
                   f"are skipped")
+
+
+JIRAIYA_LABEL = "com.alphalete.jiraiya-bot"
+
+
+def _action_restart_jiraiya(args: str) -> tuple[bool, str]:
+    """Kickstart the Jiraiya Socket Mode listener so it reloads its own code.
+
+    PLUMBING, and it has to be. Jiraiya is a long-lived KeepAlive process:
+    `update` pulls the files and the running listener keeps the OLD modules in
+    memory, so /dd and /knocks answer with pre-update code until something
+    restarts it. Until now the only way was `rerun install_jiraiya_bot_agent`,
+    which the daily cap BLOCKS — so on a cap-hit day Slack served stale code
+    with no route to fix it (2026-09-01, cap reached with the knock-board
+    buttons deployed but not running). That is the same argument that already
+    made install_pinned_chrome and install_mini_control_read plumbing: the day
+    you hit the cap is the day you most need to deploy.
+
+    A kickstart, not a reinstall: this reloads CODE. When the PLIST itself
+    changed, `rerun install_jiraiya_bot_agent` is still the right command.
+
+    Detached after a short delay, like restart_poller — kickstart -k SIGKILLs
+    the target, and this action must return its result first."""
+    label = JIRAIYA_LABEL
+    try:
+        subprocess.Popen(
+            ["/bin/sh", "-c",
+             f"sleep 3; launchctl kickstart -k gui/{os.getuid()}/{label}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't kickstart {label}: {str(e)[:140]}"
+    return True, (f"restart scheduled for {label} (~3s) — the listener reloads "
+                  "its code; /dd and /knocks answer with the new version from "
+                  "the next request")
 
 
 def _action_restart_poller(args: str) -> tuple[bool, str]:
@@ -6684,6 +6737,7 @@ ACTIONS = {
     "restart_hub": _action_restart_hub,
     "install_hub_watch": _action_install_hub_watch,
     "install_mini_control_read": _action_install_mini_control_read,
+    "restart_jiraiya": _action_restart_jiraiya,
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
     "install_jiraiya": _action_install_jiraiya,

@@ -89,6 +89,8 @@ class Board:
     partial: bool = False        # the span runs to today: it isn't over yet
     compared_to: str = ""        # office whose teal TOTAL line rides the board
     days: int = 1                # how many days were folded into it
+    apps_reps: int = 0           # reps with apps on the board; 0 = no columns
+    apps_skipped: str = ""       # why they are absent: "current_week" | "no_harvest"
 
     @property
     def is_range(self) -> bool:
@@ -101,8 +103,20 @@ def central_today() -> dt.date:
 
 
 def default_target() -> dt.date:
-    """Yesterday, Central — the day this morning's board covers."""
-    return central_today() - dt.timedelta(days=1)
+    """TODAY, Central.
+
+    It was yesterday, because that is the day this morning's board covers. But
+    somebody asking Jiraiya at 2pm is almost always asking how TODAY is going,
+    and the popup was changed to open on today earlier (Megan 2026-09-01) — so
+    a bare `knocks Rafael Hidalgo` DM answering with YESTERDAY meant two doors
+    to the same feature handing back different days. That is the kind of
+    difference nobody notices until they have acted on the wrong board.
+
+    A today request explains itself: the reply carries "Today so far — the day
+    isn't over, these numbers will grow", and, today being in the current week,
+    it also says the apps columns are not final yet.
+    """
+    return central_today()
 
 
 def span_days(start: dt.date, end: Optional[dt.date] = None) -> List[dt.date]:
@@ -186,6 +200,22 @@ def _build_render_dir() -> Path:
         return Path(tempfile.gettempdir()) / "captainship_drafts_render"
 
 
+def _usable_rows(rows) -> bool:
+    """Are these rep RECORDS, or something that merely parsed?
+
+    A cached day must be a list of dicts. One day stored as a list of strings
+    took down a whole 7-day request on 2026-09-01 — aggregate_days called
+    rec.get() on a str and the requester got "AttributeError: 'str' object has
+    no attribute 'get'", which says nothing about a cache file. The single-day
+    request for a GOOD day worked, so the failure only appeared on a span wide
+    enough to include the bad one, which is what made it look random.
+
+    A wrong-shaped file is treated exactly like a corrupt one: a MISS, so the
+    day gets pulled again rather than poisoning the fold.
+    """
+    return isinstance(rows, list) and all(isinstance(r, dict) for r in rows)
+
+
 def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
     """(rows, source) from disk, or (None, "") — see the module docstring for
     the order. Empty rows are NOT a cache hit: the build stores an empty pull
@@ -195,7 +225,7 @@ def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
     if own.exists():
         try:
             rows = json.loads(own.read_text(encoding="utf-8"))
-            if rows:
+            if rows and _usable_rows(rows):
                 return rows, "cache"
         except Exception:  # noqa: BLE001 — a bad cache file just misses
             pass
@@ -211,7 +241,7 @@ def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
             continue
         png = _owner_png(daily_root, canonical, "total_knocks", target)
         rows = _read_rows(png)
-        if rows:
+        if rows and _usable_rows(rows):
             return rows, "build"
     return None, ""
 
@@ -334,12 +364,21 @@ def _norm(name: str) -> str:
 def board_for(office: str, target: Optional[dt.date] = None,
               end: Optional[dt.date] = None, *,
               allow_live: bool = True,
+              campaign: Optional[str] = None,
               wait_timeout_s: int = WAIT_TIMEOUT_S,
               logfn: Callable[[str], None] = print) -> Board:
     """The whole request: cache, else pull, then draw. Raises only on a real
     failure (no such office, a bad span, ownerville still busy, a broken pull)
     — a span with genuinely no knocks comes back as a Board with png=None and
     a note.
+
+    `campaign` (optional): pin this invD2DClientId for OUR office instead of
+    letting the per-office map choose. For an owner who runs more than one
+    campaign the map cannot answer — it holds one value per office — so the
+    requester says which (Raf 2026-09-01: "we might have to have a dropdown
+    for what campaign they're in. Unless it can just tell what campaign the
+    owner is from" — it can, for everyone who runs exactly one, and that stays
+    the default).
 
     `end` (optional) makes it a RANGE, start and end inclusive. Every day is
     fetched on its own — from the cache where we have it, in one shared
@@ -425,12 +464,21 @@ def board_for(office: str, target: Optional[dt.date] = None,
             # pull_office_knocks impersonates unconditionally, so asking it for
             # Raf reports his own office as an access gap.
             from automations.rashad_metrics.knocks_pull import pull_offices_days
-            jobs = ([(canonical, need)] if need else [])
+            # The campaign rides WITH our job. None = let the per-office map
+            # decide, which is right for every office that runs one campaign;
+            # an explicit pick is for an owner who runs more than one (Jay
+            # Turnage knocks AT&T and Energy Wells) or an office whose campaign
+            # the map does not know yet.
+            jobs = ([(canonical, need, campaign)] if need else [])
             if compare_need:
+                # The comparison office keeps its OWN campaign — it is a
+                # different office and the pick was about ours.
                 jobs.append((compare, compare_need))
+            # job is (name, days) or (name, days, campaign) — index, don't
+            # unpack, or adding the campaign silently crashes the pull here.
             logfn("pulling " + ", ".join(
-                f"{n} ({len(ds)} day{'s' if len(ds) != 1 else ''})"
-                for n, ds in jobs) + " from ownerville…")
+                f"{j[0]} ({len(j[1])} day{'s' if len(j[1]) != 1 else ''})"
+                for j in jobs) + " from ownerville…")
             # Indexed by name, not by position: `jobs` may hold the comparison
             # office ALONE when our own days were all cached.
             got = {n: (rows_by_day, err) for n, rows_by_day, err in
@@ -492,7 +540,9 @@ def board_for(office: str, target: Optional[dt.date] = None,
 
     from automations.total_knocks import render as knocks_render
     extra = [(compare, chan_rows)] if chan_rows else []
-    apps = _apps_for(canonical, days, logfn=logfn)
+    apps, apps_skipped = _apps_for(canonical, days, logfn=logfn)
+    b.apps_reps = len(apps or {})
+    b.apps_skipped = "" if apps else apps_skipped
     # An NDS office gets a PAIR of boards and no comparison line; the shape
     # decides, so a fiber office that goes wireless needs no config change.
     b.pngs, b.shape = knocks_render.render_knocks_boards(
@@ -506,7 +556,9 @@ def board_for(office: str, target: Optional[dt.date] = None,
 
 
 def _apps_for(canonical: str, days: "list", *, logfn=print):
-    """{rep: apps} for this office over `days`, or None to leave the columns off.
+    """(apps or None, reason) — the reason names WHY the columns are absent, so
+    the reply can say so instead of leaving a reader wondering where three
+    columns went.
 
     READS THE SAVED CROSSTAB. NEVER DOWNLOADS. Raf 2026-09-01: "have it where
     Lucy pulls the product sales summary for everybody for last week … it's
@@ -534,7 +586,7 @@ def _apps_for(canonical: str, days: "list", *, logfn=print):
         if len(weeks) != 1:
             logfn("apps: the span crosses a week boundary — columns left off "
                   "rather than counting part of one week")
-            return None
+            return None, "crossed_weeks"
         we_sunday = weeks.pop()
         # A COMPLETED WEEK ONLY. That is the actual rule (Megan 2026-09-01):
         # "if the date isn't from the current week, then it doesn't need to be
@@ -552,22 +604,47 @@ def _apps_for(canonical: str, days: "list", *, logfn=print):
             logfn(f"apps: week ending {we_sunday} is the CURRENT week — not "
                   "final, and nothing is pulled fresh on a request, so the "
                   "apps columns stay off")
-            return None
+            return None, "current_week"
         # The path apps.download writes; we only ever READ it.
         pss_path = A.OUT_DIR / f"pss_rep_{we_sunday.isoformat()}.csv"
         if not pss_path.exists():
             logfn(f"apps: no saved crosstab for the week ending {we_sunday} "
                   f"— columns left off (nothing is downloaded on a request)")
-            return None
+            return None, "no_harvest"
         got = A.rep_apps_for_owner(pss_path, canonical, load_aliases(),
                                    days=[A.day_name(d) for d in days])
         logfn(f"apps: {len(got)} rep(s) from the saved crosstab "
               f"(week ending {we_sunday})")
-        return got or None
+        return (got, "") if got else (None, "no_harvest")
     except Exception as e:  # noqa: BLE001 — apps never cost the board
         logfn(f"apps: unavailable ({type(e).__name__}: {str(e)[:160]}) — "
               "board goes out without the apps columns")
-        return None
+        return None, "no_harvest"
+
+
+def ownerville_near_matches(exc: BaseException) -> list:
+    """The names OWNERVILLE itself offered when it couldn't find the one we
+    asked for, or [].
+
+    The impersonation search already collects them — `_not_found_reason`
+    writes "name not found in ownerville - it lists: 'muhammad ui haque'; ..."
+    — and every caller then threw them away. Raf asked for "Hammad" and got
+    "I don't have an office called Hammad on the roster" while the exception in
+    hand was holding the two Muhammads it had found (2026-09-01: "I have access
+    to jacob dovers ownerville, weird"). He has access; the NAME was the
+    problem, and the answer was already in the error.
+    """
+    msg = str(exc or "")
+    marker = "it lists:"
+    if marker not in msg:
+        return []
+    tail = msg.split(marker, 1)[1]
+    out = []
+    for chunk in tail.split(";"):
+        name = chunk.strip().strip("'\"").strip()
+        if name:
+            out.append(name)
+    return out[:6]
 
 
 def access_gap(exc: BaseException) -> bool:

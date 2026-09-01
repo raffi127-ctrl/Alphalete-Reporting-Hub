@@ -66,9 +66,10 @@ class CampaignForOffice(unittest.TestCase):
         # 2026-08-29 — so the rule is now "only observed entries", not "none".
         self.assertEqual(set(KP.CAMPAIGN_OVERRIDES.values()), {"40"},
                          "every override must be an observed campaign id")
-        for name in ("Calvin Ribera", "Calvin Rivera"):
-            self.assertEqual(KP.campaign_for_office(name), "40",
-                             "both spellings of Calvin must pin Energy Wells")
+        # The CANONICAL name only. "Calvin Rivera" is the alias sheet's job —
+        # every caller resolves it before this map is consulted — and listing
+        # it here too would be the per-report patch aliases exist to replace.
+        self.assertEqual(KP.campaign_for_office("Calvin Ribera"), "40")
 
     def test_everyone_else_still_gets_the_default(self):
         # The override map must not leak onto offices that never asked.

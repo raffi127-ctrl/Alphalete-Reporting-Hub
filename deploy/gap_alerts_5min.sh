@@ -7,7 +7,8 @@
 # much traffic in the room). The name is deliberately NOT being fixed: the
 # installed plist on Lucy 1 points at this exact path, so renaming would mean
 # reinstalling the agent on that box to change a cadence that is pure code.
-# The number that rules is MINUTE % 15, below.
+# The number that rules is MINUTE % 5, below — the WAKE. The per-office cadence
+# lives in the enrollment, and Python picks who is owed a board on each wake.
 #
 #   bash deploy/gap_alerts_5min.sh                # PREVIEW, texts nothing
 #   bash deploy/gap_alerts_5min.sh --send         # live
@@ -36,22 +37,32 @@ HOUR=${HOUR#0}
 # in the morning.
 #
 # HOUR-GRANULAR ON PURPOSE. This gate is a cheap coarse filter, so it keeps the
-# whole hour a boundary falls in (13 and 20 on weekdays) and lets
-# config.in_selling_window make the :30 call. Trying to do minutes in bash would
-# put the real schedule in two places and they would drift.
+# whole hour a boundary falls in and lets Python make the :30 call. Trying to do
+# minutes in bash would put the real schedule in two places and they would drift.
+# TIMEZONES WIDENED THIS ENVELOPE (2026-09-01). Offices now enroll themselves
+# through the dispositions sign-up link and bring their own timezone + field
+# hours, so this gate can no longer be "the schedule" — it is only an ENVELOPE
+# around every supported zone, and config.in_office_window makes the real
+# per-office call. An Eastern office's 1:30pm start is 12:30pm here, which the
+# old `HOUR -lt 13` gate killed before Python ever ran.
+# Envelope = Central hours covering Eastern..Mountain field hours:
+#   weekdays  12:30-23:00   (Eastern 1:30pm start .. Mountain 10pm end)
+#   Saturday   9:45-21:00
+# Pacific is NOT covered (its 10pm would land at midnight Central, a different
+# calendar day) — which is why the sign-up form does not offer it.
 if [ "$DOW" = "6" ]; then
-    [ "$HOUR" -lt 10 ] && exit 0
-    # 18, not 17: Saturday now runs to 6:30pm (Megan 2026-08-30). Same contract as
-    # the weekday branch — generous by an hour so config.in_selling_window makes
-    # the exact 18:30 call. Leaving this at 17 while config said 18:30 would have
-    # silently capped the day at 5pm, since this gate exits before Python runs.
-    [ "$HOUR" -gt 18 ] && exit 0
+    [ "$HOUR" -lt 9 ] && exit 0
+    # The org default Saturday is 10:45am-6:30pm Central (Megan 2026-08-30);
+    # 9 and 21 are the ENVELOPE around it for other zones. This gate exits
+    # before Python runs, so anything it cuts is cut silently — that is how the
+    # 8/29 "texts died at 4:45 PM Saturday" happened when it said 17.
+    [ "$HOUR" -gt 21 ] && exit 0
 else
-    [ "$HOUR" -lt 13 ] && exit 0
-    # 22, not 20: the day now runs to 10pm (Raf 2026-08-28). This gate is
-    # HOUR-granular and deliberately generous — config.in_selling_window makes
-    # the exact 22:00 call, so this only has to avoid cutting the hour short.
-    [ "$HOUR" -gt 22 ] && exit 0
+    [ "$HOUR" -lt 12 ] && exit 0
+    # The org default weekday is 1:30pm-10pm Central (Raf 2026-08-28); 12 and
+    # 23 are the ENVELOPE around it. Still hour-granular and deliberately
+    # generous — Python makes the exact per-office call.
+    [ "$HOUR" -gt 23 ] && exit 0
 fi
 
 # WALL-CLOCK ANCHOR — this is what makes it every TEN minutes.
@@ -83,7 +94,15 @@ MINUTE=$((10#$MINUTE))
 # THIS is the cadence, not config.TICK_MINUTES — that constant only labels
 # copy. Change both together or the card says one thing and the job does
 # another.
-[ $((MINUTE % 15)) -gt 1 ] && exit 0
+# EVERY 5 MINUTES, not every 15 (2026-09-01). This is now only the WAKE — it
+# is Python that decides which offices are owed a board on each one. Offices
+# are staggered across the quarter hour (config.office_offset) so twenty of
+# them on a 15-minute cadence do not all get scraped at :00: each still gets
+# its exact spacing, on its own offset. Waking here 3x as often costs three
+# Python starts that mostly exit immediately; NOT waking is what would silently
+# drop an office's board, because the pid lock skips an overrunning pass.
+# config.WAKE_MINUTES must equal the 5 here.
+[ $((MINUTE % 5)) -gt 1 ] && exit 0
 
 VENV_PY=".venv/bin/python"
 [ -x "$VENV_PY" ] || VENV_PY="python3"

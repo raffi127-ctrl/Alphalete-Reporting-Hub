@@ -1,5 +1,5 @@
-"""Auto-commit confirmed enrollments (trackers AND metrics) so they survive
-the morning pull.
+"""Auto-commit confirmed enrollments (trackers, metrics AND dispositions) so
+they survive the morning pull.
 
 The gap this closes: a confirmed enrollment is applied into the RUNNER'S
 WORKING TREE only (posts start next morning), but the morning orchestrator
@@ -12,6 +12,10 @@ What it does (idempotent, safe to run any time):
   1. Tracker leg — reads the 'Tracker Onboarding' tab (WIRED rows only;
      pending requests are hard-skipped) and regenerates
      automations/tableau_screenshots/onboarded_trackers.json.
+  1b. Dispositions leg — reads the 'Disposition Signup' tab (WIRED rows only)
+     and regenerates automations/gap_alerts/onboarded_offices.json, so an
+     office that signed itself up for the KNOCKS & DISPOSITIONS board keeps
+     getting it after the next `lucy update`.
   2. Metrics leg — reads the 'Office Onboarding' tab and regenerates
      automations/office_metrics/onboarded_offices.json +
      automations/b2b_metrics/onboarded_offices.json via
@@ -58,6 +62,8 @@ TARGETS = [
     # apply pins owner -> OwnerVille account number here (knocks/Time Gaps
     # office resolution) — same durability need as the registries.
     "automations/recruiting_report/icd_office_mappings.json",
+    # the dispositions sign-up's registry — same story as the two above.
+    "automations/gap_alerts/onboarded_offices.json",
     # only ever changed by the ADD-ONLY schedule self-heal (leg 3).
     SCHEDULE_CONFIG,
 ]
@@ -169,6 +175,21 @@ def _run() -> int:
                            "above)")
     except Exception as e:                            # noqa: BLE001
         blocked.append(f"metrics: {type(e).__name__}: {e}")
+
+    # --- dispositions leg ------------------------------------------------
+    # The KNOCKS & DISPOSITIONS sign-up (disposition_signup) materializes into
+    # gap_alerts/onboarded_offices.json. Same durability need as the other two:
+    # a confirmed office lives only in the runner's working tree until it is
+    # committed, and `lucy update` autostashes that away — which is exactly how
+    # nii and drew silently dropped out of the metrics runs.
+    try:
+        from automations.disposition_signup import apply as DA, store as DS
+        DS.set_client(_client())
+        if DA.main(["--write"]) != 0:
+            blocked.append("dispositions: apply refused (validation problems "
+                           "above)")
+    except Exception as e:                            # noqa: BLE001
+        blocked.append(f"dispositions: {type(e).__name__}: {e}")
 
     # --- schedule self-heal leg (add-only; no-op when nothing is missing) --
     # RETRY, and do not let a rate limit fail the run. The 17:30 pass failed

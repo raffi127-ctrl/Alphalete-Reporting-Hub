@@ -236,18 +236,59 @@ KNOCKS_CAMPAIGN_ID = os.environ.get("KNOCKS_CAMPAIGN_ID", "3")
 # ZERO rows for days that plainly had four reps on them — the exact
 # silently-blank-board failure this dict exists to prevent.
 CAMPAIGN_OVERRIDES: "dict[str, str]" = {
+    # ONE row, keyed by the CANONICAL name. "Calvin Rivera" is not listed and
+    # does not need to be: the alias sheet already resolves it, and every
+    # caller runs alias_to_canonical BEFORE asking this map (Megan 2026-09-01:
+    # "we already have the alias added - both those calvins are the same").
+    # A second spelling here would be the per-report patch the alias sheet
+    # exists to replace, and two places to update the next time a name drifts.
     "calvin ribera": "40",
-    # BOTH spellings. Ownerville has "Ribera", everyone says "Rivera", and the
-    # alias sheet resolves one to the other — but this lookup happens on
-    # whatever name the caller passed. Missing here, the wrong spelling would
-    # fall through to the RES AT&T default and blank his board, which is the
-    # failure that cost days.
-    "calvin rivera": "40",
 }
+
+
+# An office that knocks MORE THAN ONE campaign, keyed by canonical name:
+# [(label, invD2DClientId, keyword), ...]. CAMPAIGN_OVERRIDES holds one value
+# per office and cannot describe these at all.
+#
+# This is what lets a request ASK instead of guessing (Megan 2026-09-01: "maybe
+# it's a response to that request instead of everyone having to pick on each
+# request"). A picker on every /knocks would tax the many for the few; a
+# follow-up only when the name is genuinely ambiguous costs nothing to anyone
+# else.
+#
+# Jay Turnage knocks both and gets a separate report for each, so a /knocks
+# that silently picked one would hand back half his day as if it were all of
+# it. Ids read off the live picker: 3 = RES AT&T, 40 = RES-ENERGYWELL.
+MULTI_CAMPAIGN: "dict[str, list]" = {
+    "jay turnage": [("AT&T", "3", "att"),
+                    ("Energy Wells", "40", "energywell")],
+}
+
+
+def campaigns_for(name: str) -> list:
+    """[(label, id, keyword)] when this office runs more than one campaign,
+    else []. Canonical name, same as campaign_for_office."""
+    from automations.focus_office_att.aliases import _norm_name
+    return list(MULTI_CAMPAIGN.get(_norm_name(name or ""), []))
+
+
+def campaign_by_keyword(name: str, word: str) -> "str | None":
+    """The invD2DClientId for a spoken campaign word ("att", "energywell"),
+    or None when it names none of this office's campaigns."""
+    w = (word or "").strip().lower().replace("-", "").replace(" ", "")
+    for _label, cid, key in campaigns_for(name):
+        if w == key:
+            return cid
+    return None
 
 
 def campaign_for_office(name: str) -> str:
     """The TeleMapper campaign to pin for `name`. "" would mean DON'T pin.
+
+    PASS THE CANONICAL NAME. This map is keyed by it, and resolving aliases
+    here would mean a Sheet read on every call; the callers already canonicalise
+    (pull_offices_days and pull_office_days_on_page both run
+    alias_to_canonical first), so an alias never reaches this lookup.
 
     Everyone gets the default unless CAMPAIGN_OVERRIDES says otherwise.
 

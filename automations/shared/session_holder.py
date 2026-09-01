@@ -338,10 +338,48 @@ def _export_appstream(ctx) -> int:
     cookies = ctx.storage_state().get("cookies", [])
     ap = [c for c in cookies if "applicantstream" in (c.get("domain") or "")]
     n_rqst = sum(1 for c in ap if (c.get("name") or "").lower().startswith("rqst"))
-    if ap and n_rqst:
-        APPSTREAM_STORAGE_STATE.write_text(json.dumps({"cookies": ap, "origins": []}))
-        return len(ap)
-    return 0
+    if not (ap and n_rqst):
+        return 0
+    # NEVER OVERWRITE A FRESHER SESSION THAN OUR OWN (2026-09-01).
+    #
+    # The holder re-exports its context every cycle. Its context can be holding
+    # an OLD token — one pushed to it hours ago — while something else has just
+    # put a genuinely newer one on disk. Then this line clobbers the new session
+    # with the stale one, every six minutes, and the renewal silently evaporates.
+    #
+    # Watched live: Lucy 1 self-renewed to a full 120 minutes at 15:17, and
+    # seconds later the file was back to AE4BC60A with 10 minutes on it — the
+    # token the holder had been carrying since a 13:28 push. That is why
+    # renewals "worked" and then were gone, and why a person kept being asked to
+    # log in again.
+    #
+    # The rule is simply: an export must move the session FORWARD.
+    try:
+        mine = _best_rqst_minutes(ap)
+        theirs = _best_rqst_minutes(
+            json.loads(APPSTREAM_STORAGE_STATE.read_text()).get("cookies", []))
+    except Exception:  # noqa: BLE001 — unreadable/missing disk state: ours wins
+        mine, theirs = 1.0, 0.0
+    if theirs > mine + 1.0:
+        print(f"[{_stamp()}] not exporting — the saved session has "
+              f"{theirs:.0f}m left and ours only {mine:.0f}m; keeping the "
+              f"fresher one", flush=True)
+        return 0
+    APPSTREAM_STORAGE_STATE.write_text(json.dumps({"cookies": ap, "origins": []}))
+    return len(ap)
+
+
+def _best_rqst_minutes(cookies) -> float:
+    """Minutes on the longest-lived rqst cookie in `cookies` (0.0 = none)."""
+    now = time.time()
+    best = 0.0
+    for c in cookies or ():
+        if not str(c.get("name") or "").lower().startswith("rqst"):
+            continue
+        e = c.get("expires")
+        if isinstance(e, (int, float)) and e > 0:
+            best = max(best, (e - now) / 60.0)
+    return best
 
 
 def _ctx_rqst_count(ctx) -> int:

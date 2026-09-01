@@ -54,8 +54,22 @@ except Exception:  # noqa: BLE001
 from automations.b2b_dispositions import capture as cap
 from automations.gap_alerts import config as C
 
-HUB_CARD_ID = "gap-alerts"
-HUB_CARD_NAME = "Rep Gap Alerts (15-min gaps -> Partners chat)"
+# Only ever used when a caller hands post_slack no channel at all — the
+# hardcoded offices' org room. A form-built destination always brings its own;
+# see config.dest_channel for why it must never inherit this one.
+SLACK_FALLBACK_CHANNEL = None   # set below, after config import resolves
+
+# ONE CODEBASE, TWO CARDS. The same run happens on Lucy 1 (D2D, Raf's login)
+# and Lucy 2 (B2B, Carlos's), each handling only the offices its login can
+# reach — so each box publishes to its OWN Hub card, or the two would overwrite
+# each other's pill and one of them would look like it never ran.
+# The card id must slug-match the report id [[reference_hub_card_rendering_rules]].
+_HUB_CARDS = {
+    "Lucy 2": ("gap-alerts-b2b", "Knocks & Dispositions — B2B (Lucy 2)"),
+}
+HUB_CARD_ID, HUB_CARD_NAME = _HUB_CARDS.get(
+    C.this_machine(), ("gap-alerts", "Knocks & Dispositions (self-serve)"))
+SLACK_FALLBACK_CHANNEL = C.SLACK_HOURLY_CHANNEL
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "gap_alerts"
 PREVIEW_DM = False   # set by --preview-dm
 RATES_OVERRIDE = None  # set by --rates: force the rate columns on for ONE run
@@ -229,25 +243,137 @@ def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
     return (header or C.GAP_TEXT_HEADER) + "\n\n" + "\n".join(lines), names
 
 
-def _slack_due(key: str, now: dt.datetime) -> bool:
-    """Has this office's board gone to Slack yet THIS clock hour?
+def _dest_due(dest: Dict, now: Optional[dt.datetime] = None,
+              cfg: Optional[Dict] = None) -> bool:
+    """Is THIS destination owed a board on this tick?
 
-    Keyed on the hour itself rather than "minutes since the last post", so the
-    post lands on the first tick of each hour and cannot drift later and later
-    across the day the way an elapsed-time check would.
+    Cadence lives on the destination, not the office: one office can want its
+    owners' chat every 15 minutes and its rep channel once an hour.
+
+    Anchored to the QUARTER HOUR for the same reason _cadence_due is — the tick
+    fires at :00 but Python reads the clock a minute or two later.
+
+    FIXED TIMES (cadence 0) are matched against the OFFICE'S OWN clock, the way
+    knocks_intraday fires Cody's three slots: a 2 PM "first knocks" board is
+    about 2 PM where the reps are, not 2 PM in Texas.
     """
-    stamp = (_state().get("_slack_hour") or {}).get(key)
-    return stamp != now.strftime("%Y-%m-%dT%H")
+    now = now or dt.datetime.now()
+    slots = C.dest_slots(dest)
+    if slots:
+        # FIXED TIMES ARE NOT STAGGERED. "First Knocks 2:00 PM" means 2:00,
+        # not 2:05 — the moment is the point of the board.
+        local = C.office_now(cfg or {}, now)
+        anchor = "%02d:%02d" % (local.hour,
+                                local.minute - (local.minute % C.WAKE_MINUTES))
+        return anchor in slots
+    cadence = C.dest_cadence(dest)
+    if cadence <= 0:                    # slots mode with no usable slot left
+        return False
+    # Staggered: the office keeps its exact spacing, on its own offset, so
+    # twenty offices do not all land on :00. See config.office_offset.
+    mins = now.hour * 60 + now.minute
+    anchor = mins - (mins % C.WAKE_MINUTES)
+    return (anchor - C.office_offset(cfg or {})) % cadence == 0
 
 
-def _mark_slack_sent(key: str, now: dt.datetime) -> None:
-    data = _state()
-    data.setdefault("_slack_hour", {})[key] = now.strftime("%Y-%m-%dT%H")
-    _save_state(data)
+def _wrong_account(plan: List, boards: Dict) -> bool:
+    """Does this box look like it is logged into the WRONG OwnerVille account?
+
+    The signature, watched live on 2026-09-01: EVERY office we meant to
+    impersonate comes back "not found in ownerville", because the account we
+    are on has a different Office Access list. On the right account they
+    resolve; on the wrong one none of them do.
+
+    This matters far beyond the missing boards. The MASTER office is whoever is
+    logged in — `is_master_office` compares the name in config, not the session
+    — so on the wrong account that office's board is pulled from a stranger's
+    numbers and labelled with our owner's name. Silence is the good outcome;
+    sending is the bad one. So when this fires the whole tick is abandoned,
+    master office included.
+
+    Needs at least two DISTINCT OwnerVille NAMES to call it, not two office
+    rows. Jay Turnage is two offices — jay_att and jay_ew — under ONE name, so
+    a tick whose only impersonation targets are his two is one person's alias
+    problem, not a session problem. Counting rows instead of names made this
+    guard suppress Raf's board on 2026-09-01 minutes after it shipped, which is
+    exactly the harm it was written to prevent, pointed the wrong way.
+    """
+    imp = [c for c, _s, _d in plan if c.get("ov") == "impersonate"]
+    missed_names = set()
+    for cfg in imp:
+        err = boards.get(cfg["key"], ([], [], None))[2]
+        if err is None:
+            return False          # one resolved, so the session is fine
+        if "not found" in str(err).lower():
+            missed_names.add((cfg.get("name") or cfg["key"]).strip().lower())
+        else:
+            return False          # a timeout is not a wrong-account signal
+    return len(missed_names) >= 2
 
 
+def _intraday_covers(dest: Dict, cfg: Optional[Dict] = None,
+                     now: Optional[dt.datetime] = None) -> bool:
+    """Is knocks_intraday ALREADY posting this exact board to this exact Slack
+    channel at this exact moment?
+
+    It posts End of Day (9 PM) to every enrolled office's channel and First
+    Knocks / Money Lap to Cody's, on the office's own clock — the same board,
+    from the same pull, drawn by the same renderer. An office that enrolls here
+    for a 9 PM Slack post and is already on that roster would get two identical
+    images seconds apart, which reads as a broken alert rather than a thorough
+    one (Megan 2026-09-01: "they should only get 1").
+
+    iMessage and email are never covered: knocks_intraday only posts to Slack.
+
+    Best-effort — if the roster can't be read we send. A duplicate is annoying;
+    a board that silently stops arriving is the failure that matters.
+    """
+    if dest.get("kind") != "slack":
+        return False
+    channel = C.dest_channel(dest)
+    if not channel:
+        return False
+    try:
+        from automations.knocks_intraday import roster as _ros
+        from automations.knocks_intraday.schedule import SLOTS
+    except Exception:  # noqa: BLE001
+        return False
+    local = C.office_now(cfg or {}, now or dt.datetime.now())
+    anchor = (local.hour, local.minute - (local.minute % C.TICK_MINUTES))
+    slot = next((s for s in SLOTS if (s.hour, s.minute) == anchor), None)
+    if slot is None:
+        return False
+    try:
+        return channel in {o.channel_id for o in _ros.enrolled(slot.key)}
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _cadence_due(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
+    """Is THIS office owed a board on this tick?
+
+    The wrapper wakes Python on the quarter hour and every office used to be
+    sent on every wake. The sign-up form asks owners to pick 15 / 30 / 60
+    minutes (Raf's question 4), so an office at 30 takes :00 and :30 and an
+    office at 60 takes :00 only.
+
+    Anchored to the QUARTER HOUR, not to the raw clock minute: a tick fires at
+    :00 but Python reads the clock a minute or two later once the wrapper's
+    gate and the imports are done, and `now.minute % 30` would then be 1 and
+    the office would never be due at all.
+    """
+    now = now or dt.datetime.now()
+    cadence = C.cadence_for(cfg)
+    anchor = now.minute - (now.minute % C.TICK_MINUTES)
+    return (anchor % cadence) == 0
+
+
+# The old _slack_due/_mark_slack_sent pair is gone: "once this clock hour" was
+# how the single hourly Slack post avoided drifting later across the day, and a
+# destination's own cadence anchored to the quarter hour says the same thing
+# without a second piece of state to keep in sync.
 def post_slack(cfg: Dict, png: Path, slot: str, day: dt.date,
-               dry_run: bool = True) -> Dict:
+               channel: str = "", dry_run: bool = True) -> Dict:
     """Put the board in #alphalete-lvl1-chat, once an hour (Raf 2026-08-29).
 
     The board only — not the gap list. The gap list is a to-text list for the
@@ -258,14 +384,19 @@ def post_slack(cfg: Dict, png: Path, slot: str, day: dt.date,
     who = cfg.get("label") or cfg["name"].split()[0]
     comment = ("*%s — %s*  ·  ranked by total knocks"
                % (C.CARD_TITLE.title(), slot))
+    # Per-office channel: the module default is #alphalete-lvl1-chat, which is
+    # RAF'S org's room. An office that enrolled through the sign-up form brings
+    # its own channel, and inheriting the default would post its numbers in
+    # front of another org.
+    channel = (channel or "").strip() or SLACK_FALLBACK_CHANNEL
     if dry_run:
-        return {"dry_run": True, "channel": C.SLACK_HOURLY_CHANNEL,
+        return {"dry_run": True, "channel": channel,
                 "comment": comment, "file": png.name}
     from automations.shared import slack_metrics_post as smp
     smp._client().files_upload_v2(
         file_uploads=[{"file": str(png), "filename": png.name}],
-        channel=C.SLACK_HOURLY_CHANNEL, initial_comment=comment)
-    return {"channel": C.SLACK_HOURLY_CHANNEL, "file": png.name, "ok": True}
+        channel=channel, initial_comment=comment)
+    return {"channel": channel, "file": png.name, "ok": True}
 
 
 def _publish_hub_once(day: dt.date) -> None:
@@ -564,6 +695,71 @@ def to_pdf(panel_paths, out_pdf: Path) -> Path:
     return out_pdf
 
 
+def gap_rows_many(offices: List[Dict], day: dt.date) -> Dict:
+    """The gap list for EVERY due office, in ONE ownerville session.
+    -> {key: (rows, error_or_None)}
+
+    WHY THIS EXISTS. gap_rows opens its own session per office, and pull_board
+    opens another — two logins per office per tick. At one office that was
+    invisible; at twenty owners on a 15-minute cadence it is forty logins every
+    fifteen minutes, which does not fit in the window at all (a run takes 1-4
+    minutes). The tick would not error, either: the pid lock SKIPS an
+    overrunning pass, so boards would simply stop arriving for some offices and
+    nothing would say so.
+
+    One office failing does NOT abort the rest — its error rides in the tuple,
+    the same contract pull_offices_days uses.
+
+    The rqst token is re-captured after every impersonation exit: it belongs to
+    the session's current identity, and reusing the pre-impersonation one for
+    the next office is how one office ends up reading another's numbers.
+    """
+    from automations.shared.tableau_patchright import ownerville_session
+    out: Dict = {}
+    if not offices:
+        return out
+    with ownerville_session(headless=True, verbose=False,
+                            profile_dir=C.PROFILE_DIR) as page:
+        rqst = cap.capture_rqst(page)
+        for cfg in offices:
+            impersonated = False
+            try:
+                office_rqst = rqst
+                if cfg.get("ov") == "impersonate":
+                    from automations.focus_office_att.aliases import load_aliases
+                    from automations.focus_office_att.run_all_owners import (
+                        _exit_impersonation, _find_owner_and_impersonate,
+                        _navigate_to_office_access)
+                    _exit_impersonation(page)
+                    _navigate_to_office_access(page)
+                    office_rqst, reason = _find_owner_and_impersonate(
+                        page, cfg["name"], load_aliases())
+                    if not office_rqst:
+                        raise RuntimeError("Couldn't impersonate %r: %s"
+                                           % (cfg["name"], reason))
+                    impersonated = True
+                try:
+                    _pin_campaign(page, office_rqst,
+                                  cfg.get("campaign_id", ""))
+                    rows = cap.fetch_time_tracking(page, office_rqst,
+                                                   day.strftime("%m/%d/%Y"))
+                finally:
+                    if impersonated:
+                        from automations.focus_office_att.run_all_owners import (
+                            _exit_impersonation)
+                        _exit_impersonation(page)
+                        # Back to the master identity — and to a NEW token.
+                        rqst = cap.capture_rqst(page)
+                over = [r for r in rows
+                        if cap._int(r.get("minutesSinceLastKnock"))
+                        > C.GAP_THRESHOLD_MIN]
+                over.sort(key=lambda r: -cap._int(r.get("minutesSinceLastKnock")))
+                out[cfg["key"]] = (over, None)
+            except Exception as e:  # noqa: BLE001 — one office, not the pass
+                out[cfg["key"]] = ([], e)
+    return out
+
+
 def gap_rows(cfg: Dict, day: dt.date) -> List[Dict]:
     """Reps over the gap threshold right now, longest-dark first.
 
@@ -573,43 +769,15 @@ def gap_rows(cfg: Dict, day: dt.date) -> List[Dict]:
     the day's CUMULATIVE gap totals, this is who is dark at this minute. One is
     a scorecard, the other is the alert, and merging them would lose the alert.
 
-    Its own short ownerville session, because pull_board's session belongs to
-    pull_offices_days and is already closed by the time we get here.
+    Kept as the ONE-OFFICE entry point (probes, --only re-runs). The tick uses
+    gap_rows_many, which does the same work for every due office in a single
+    session; this delegates to it so there is one implementation of the
+    impersonate / pin / fetch dance, not two that can drift.
     """
-    from automations.shared.tableau_patchright import ownerville_session
-    with ownerville_session(headless=True, verbose=False,
-                            profile_dir=C.PROFILE_DIR) as page:
-        rqst = cap.capture_rqst(page)
-        impersonated = False
-        if cfg.get("ov") == "impersonate":
-            # Dead for Raf (his login IS office 11280) and live the day a
-            # second office is added. ALWAYS exited in the finally, or the next
-            # office reads the previous one's numbers.
-            from automations.focus_office_att.aliases import load_aliases
-            from automations.focus_office_att.run_all_owners import (
-                _exit_impersonation, _find_owner_and_impersonate,
-                _navigate_to_office_access)
-            _exit_impersonation(page)
-            _navigate_to_office_access(page)
-            rqst, reason = _find_owner_and_impersonate(page, cfg["name"],
-                                                       load_aliases())
-            if not rqst:
-                raise RuntimeError("Couldn't impersonate %r: %s"
-                                   % (cfg["name"], reason))
-            impersonated = True
-        try:
-            _pin_campaign(page, rqst, cfg.get("campaign_id", ""))
-            rows = cap.fetch_time_tracking(page, rqst,
-                                           day.strftime("%m/%d/%Y"))
-        finally:
-            if impersonated:
-                from automations.focus_office_att.run_all_owners import (
-                    _exit_impersonation)
-                _exit_impersonation(page)
-    over = [r for r in rows
-            if cap._int(r.get("minutesSinceLastKnock")) > C.GAP_THRESHOLD_MIN]
-    over.sort(key=lambda r: -cap._int(r.get("minutesSinceLastKnock")))
-    return over
+    rows, err = gap_rows_many([cfg], day).get(cfg["key"], ([], None))
+    if err is not None:
+        raise err
+    return rows
 
 
 def _date_text(day: dt.date) -> str:
@@ -621,6 +789,94 @@ def _date_text(day: dt.date) -> str:
     both.
     """
     return "%d/%d (%s)" % (day.month, day.day, day.strftime("%A"))
+
+
+def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
+    """Every due office's board, from ONE ownerville session. -> {key: (pngs,
+    rows, err)}
+
+    `plan` is [(cfg, slot), ...]. pull_offices_days has always been able to
+    scrape several offices in one session — gap_alerts just never asked it to,
+    handing it a one-office job list per office per tick. At twenty owners that
+    is twenty logins a tick on top of twenty more for the gap list, inside a
+    window that cannot hold them.
+
+    Results are matched BY INDEX, not by name: Jay Turnage is two offices
+    (jay_att and jay_ew) with one OwnerVille name and two campaigns, so a
+    name-keyed dict would collide them and hand both reports the same rows.
+    """
+    from automations.rashad_metrics.knocks_pull import pull_offices_days
+    from automations.knocks_intraday.run import compare_office
+
+    out: Dict = {}
+    if not plan:
+        return out
+    jobs, order = [], []
+    for cfg, _slot in plan:
+        jobs.append((cfg["name"], [day], cfg.get("campaign_id") or None))
+        order.append(cfg["key"])
+    # Chan's comparison line, pulled ONCE for every office that carries it —
+    # never once per office. It keeps its own campaign (he is fiber), so no
+    # third element.
+    compare = compare_office() if any(C.compares(c) for c, _ in plan) else ""
+    compare_i = None
+    if compare and compare.strip().lower() not in {
+            c["name"].strip().lower() for c, _ in plan}:
+        compare_i = len(jobs)
+        jobs.append((compare, [day]))
+
+    pulled = pull_offices_days(jobs, verbose=False,
+                               profile_dir=str(C.PROFILE_DIR))
+    chan_rows: List = []
+    if compare_i is not None and compare_i < len(pulled):
+        _name, _days, _err = pulled[compare_i]
+        if _err is not None:
+            _log("  ⚠ %s comparison pull failed (%s: %s) — boards go out "
+                 "without the line"
+                 % (compare, type(_err).__name__, str(_err)[:300]))
+        else:
+            chan_rows = (_days or {}).get(day) or []
+
+    for i, (cfg, slot) in enumerate(plan):
+        if i >= len(pulled):
+            out[cfg["key"]] = ([], [], RuntimeError("no result for this job"))
+            continue
+        _name, by_day, err = pulled[i]
+        if err is not None:
+            out[cfg["key"]] = ([], [], err)
+            continue
+        rows = (by_day or {}).get(day) or []
+        if not rows:
+            out[cfg["key"]] = ([], [], None)
+            continue
+        extra = [(compare, chan_rows)] if (chan_rows and C.compares(cfg)) else []
+        try:
+            out[cfg["key"]] = (_render_board(cfg, rows, extra, day, out_dir,
+                                             slot), rows, None)
+        except Exception as e:  # noqa: BLE001 — one board, not the pass
+            out[cfg["key"]] = ([], rows, e)
+    return out
+
+
+def _render_board(cfg: Dict, rows: List, extra: List, day: dt.date,
+                  out_dir: Path, slot: str) -> List[Path]:
+    """The drawing half of pull_board — no network, so it runs per office
+    after the one shared pull."""
+    from automations.total_knocks import render as knocks_render
+    from automations.knocks_intraday.run import first_name
+    _who = " — ".join(x for x in (cfg.get("campaign_label"),
+                                  first_name(cfg.get("label") or cfg["name"]))
+                      if x)
+    _when = _date_text(day) + (" — %s" % slot if slot else "")
+    pngs, shape = knocks_render.render_knocks_boards(
+        day, rows=rows, out_dir=out_dir / cfg["key"],
+        title_suffix=_who, date_text=_when, extra_totals=extra,
+        rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
+                      else RATES_OVERRIDE),
+        knocks_green_at=C.KNOCKS_GREEN_AT, sort_by="knocks")
+    _log("  %s: %d rep(s) -> %s (%s)"
+         % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
+    return list(pngs)
 
 
 def pull_board(cfg: Dict, day: dt.date, out_dir: Path,
@@ -643,83 +899,11 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path,
     impersonating yourself fails — that check is why this works for him and why
     the WKD probe never could.
     """
-    from automations.rashad_metrics.knocks_pull import pull_offices_days
-    from automations.total_knocks import render as knocks_render
-    from automations.knocks_intraday.run import first_name
-
-    # Chan's TOTAL rides the board as the teal comparison line (Raf,
-    # 2026-08-28: "can we have it compare to chans every 15 minutes"). It is
-    # the same line his Slack boards already carry, and it is pulled in the
-    # SAME session as Raf — a comparison is a nicety and must never cost its
-    # own login, which at four ticks an hour would be a real bill.
-    from automations.knocks_intraday.run import compare_office
-    compare = compare_office() if C.compares(cfg) else ""
-    # The office's campaign travels WITH the job. Without this the pull falls
-    # back to CAMPAIGN_OVERRIDES, which is keyed by office NAME and so holds
-    # one campaign per office — no good for Jay Turnage, who knocks AT&T AND
-    # Energy Wells and gets a separate report for each.
-    jobs = [(cfg["name"], [day], cfg.get("campaign_id") or None)]
-    if compare and compare.strip().lower() != cfg["name"].strip().lower():
-        # The comparison office keeps its OWN campaign (Chan is fiber), so no
-        # third element — the map decides for him.
-        jobs.append((compare, [day]))
-
-    pulled = pull_offices_days(jobs, verbose=False,
-                               profile_dir=str(C.PROFILE_DIR))
-    by_name = {name: (days, err) for name, days, err in pulled}
-    by_day, err = by_name.get(cfg["name"], ({}, None))
+    pngs, rows, err = pull_boards_many([(cfg, slot)], day, out_dir).get(
+        cfg["key"], ([], [], None))
     if err is not None:
         raise err
-    rows = by_day.get(day) or []
-    if not rows:
-        return [], []
-
-    # NO SORT HERE. Ranking is the RENDERER's job (sort_by="knocks" below):
-    # _combined_sub re-orders whatever rows it is handed, so sorting them here
-    # was thrown away and the board kept coming out alphabetical while this
-    # code looked like it had already fixed it (2026-08-28 -> 29). One place
-    # decides the order.
-
-    # A failed comparison costs ONE LINE, never the board.
-    extra = []
-    if compare:
-        chan_days, chan_err = by_name.get(compare, ({}, None))
-        chan_rows = (chan_days or {}).get(day) or []
-        if chan_err is not None:
-            # The MESSAGE, not just the type. This line said "(RuntimeError)"
-            # and nothing else, and the pull runs verbose=False so its own
-            # detail never reached the log either — which left "Chan's numbers
-            # are gone" undiagnosable twice over. An error we chose to swallow
-            # still has to say why.
-            _log("  ⚠ %s comparison pull failed (%s: %s) — board goes out "
-                 "without the line"
-                 % (compare, type(chan_err).__name__, str(chan_err)[:300]))
-        elif chan_rows:
-            extra.append((compare, chan_rows))
-        else:
-            _log("  no %s rows for %s — board goes out without the line"
-                 % (compare, day))
-
-    # ONE header, not two. The board draws its own title band, and gap_alerts
-    # used to draw a second one above it saying almost the same thing —
-    # "KNOCKS & DISPOSITIONS — EnergyWell — Calvin — 11:32 AM" stacked on
-    # "TOTAL KNOCKS — CALVIN — 8/29 (Saturday)" (Megan 2026-08-30: "this has 2
-    # redundant headers"). The campaign and the clock now go INTO the board's
-    # title and the wrapper is gone.
-    _who = " — ".join(x for x in (cfg.get("campaign_label"),
-                                  first_name(cfg.get("label") or cfg["name"]))
-                      if x)
-    _when = _date_text(day) + (" — %s" % slot if slot else "")
-    pngs, shape = knocks_render.render_knocks_boards(
-        day, rows=rows, out_dir=out_dir / cfg["key"],
-        title_suffix=_who, date_text=_when, extra_totals=extra,
-        rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
-                      else RATES_OVERRIDE),
-        knocks_green_at=C.KNOCKS_GREEN_AT, sort_by="knocks")
-
-    _log("  %s: %d rep(s) -> %s (%s)"
-         % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
-    return list(pngs), rows
+    return pngs, rows
 
 
 def render(cfg: Dict, pngs, out_dir: Path, slot: str):
@@ -736,7 +920,7 @@ def render(cfg: Dict, pngs, out_dir: Path, slot: str):
 
 
 def tick(day: dt.date, *, send: bool, only: str = "",
-         headless: bool = True) -> List[str]:
+         headless: bool = True, force: bool = False) -> List[str]:
     """One pass. Returns the list of failures (empty = clean).
 
     No browser session is opened here any more: pull_board calls
@@ -753,6 +937,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     out_dir = OUTPUT_DIR / day.strftime("%Y-%m-%d")
 
     from automations.b2b_dispositions import text_post as tp
+    from automations.gap_alerts import email_send
 
     if send and not getattr(C, "SEND_ENABLED", True):
         _log("SENDING IS PAUSED (config.SEND_ENABLED=False) — building and "
@@ -761,23 +946,107 @@ def tick(day: dt.date, *, send: bool, only: str = "",
 
     failures = []
     seen_names = []
+
+    # PASS ONE — who is owed a board, decided with no network at all. Every
+    # guard here is arithmetic; the pulls below are the expensive half, and
+    # they now happen ONCE for the whole tick instead of twice per office.
+    plan = []
     for cfg in offices:
-        # The guard runs BEFORE the pull. A skipped tick should cost nothing,
+        # Both guards run BEFORE the pull. A skipped tick should cost nothing,
         # and this pull is the expensive half of the run.
+        #
+        # CADENCE FIRST: an office on 30 or 60 minutes is not owed anything on
+        # most ticks, and pulling OwnerVille for a board nobody will be sent is
+        # the one cost this job cannot afford at ~40 wakes a day.
+        # --only/--force is a hand-run and answers to the person typing it.
+        # The stamp on the card is the OFFICE'S clock (see slot_label_for);
+        # `slot` above stays the machine's, for the log.
+        slot = C.slot_label_for(cfg)
+        if not (only or force) and not C.in_office_window(cfg):
+            # Per-office, on the OFFICE'S clock: an enrolled office can sit in
+            # another timezone or keep different field hours, and the job-level
+            # gate only asks whether ANYONE is out right now.
+            _log("%s: outside its window (%s) — skipping"
+                 % (cfg["key"], C.office_window_label(cfg)))
+            continue
+        # WHICH destinations want this tick. If none do, the office is not
+        # pulled at all — driving OwnerVille for a board nobody will be sent is
+        # the one cost this job cannot afford at ~40 wakes a day.
+        dests = C.destinations(cfg)
+        due = [d for d in dests
+               if (only or force) or _dest_due(d, cfg=cfg)]
+        # Drop anything the intraday job is about to post to that same channel.
+        # Checked even on a hand-run: --only is for re-sending a board, never
+        # for sending the room two of them.
+        _dupes = [d for d in due if _intraday_covers(d, cfg)]
+        for d in _dupes:
+            _log("%s: %s already gets this board from knocks_intraday right "
+                 "now — skipping so the channel only gets one"
+                 % (cfg["key"], C.dest_label(d)))
+        due = [d for d in due if d not in _dupes]
+        if not due:
+            _log("%s: nothing due at %s (%s) — skipping"
+                 % (cfg["key"], slot,
+                    ", ".join(
+                        "%s at %s" % (C.dest_label(d),
+                                      "/".join(C.dest_slots(d)))
+                        if C.dest_slots(d)
+                        else "%s every %dm" % (C.dest_label(d),
+                                               C.dest_cadence(d))
+                        for d in dests) or "no destinations"))
+            continue
         recent = _sent_too_recently(cfg["key"])
         if recent is not None and send:
             _log("%s: last board went out %.1f min ago — skipping this tick "
                  "(min gap %d min). The room already has this."
                  % (cfg["key"], recent, C.MIN_SEND_GAP_MINUTES))
             continue
+        plan.append((cfg, slot, due))
 
-        try:
-            pngs, rows = pull_board(cfg, day, out_dir, slot)
-        except Exception as e:  # noqa: BLE001
-            failures.append("%s: %s: %s" % (cfg["key"], type(e).__name__,
-                                            str(e)[:200]))
+    if not plan:
+        _terminated_check_once(day, seen_names)
+        return failures
+
+    # PASS TWO — the network, once. Two sessions for the whole tick (boards,
+    # then the gap lists) instead of two per office.
+    _log("pulling %d office(s) in one session: %s"
+         % (len(plan), ", ".join(c["key"] for c, _s, _d in plan)))
+    # NOT `boards`: the per-office rendered images are assigned to `boards`
+    # inside the send loop below, which rebound this dict after the first
+    # office and made the second iteration crash with
+    # "'list' object has no attribute 'get'" (2026-09-01, live).
+    pulled_boards = pull_boards_many([(c, s) for c, s, _d in plan],
+                                     day, out_dir)
+    # A BACKDATED RUN GETS NO GAP LIST. "minutesSinceLastKnock" is measured
+    # from RIGHT NOW, so for any past day every rep reads as inactive for a
+    # thousand-plus minutes — a wall of red that says nothing except that
+    # yesterday ended. The board is history and travels fine; the gap list is a
+    # live signal and does not.
+    gaps_by_key = (gap_rows_many([c for c, _s, _d in plan], day)
+                   if day == dt.date.today() else {})
+
+    # THE SESSION IDENTITY CHECK, before anything is sent. See _wrong_account.
+    if _wrong_account(plan, pulled_boards):
+        who = C.expected_owner() or "this machine's owner"
+        msg = ("WRONG OWNERVILLE ACCOUNT on %s — every office we tried to "
+               "impersonate came back 'not found'. This box must be logged in "
+               "as %s. NOTHING was sent this tick, including the master "
+               "office's board: on the wrong account that board is another "
+               "office's numbers under our owner's name."
+               % (C.this_machine(), who))
+        _log(msg)
+        failures.append(msg)
+        _terminated_check_once(day, seen_names)
+        return failures
+
+    # PASS THREE — render and send. No network except the sending itself.
+    for cfg, slot, due in plan:
+        pngs, rows, pull_err = pulled_boards.get(cfg["key"], ([], [], None))
+        if pull_err is not None:
+            failures.append("%s: %s: %s" % (cfg["key"], type(pull_err).__name__,
+                                            str(pull_err)[:200]))
             _log("%s PULL FAILED: %s: %s"
-                 % (cfg["key"], type(e).__name__, str(e)[:200]))
+                 % (cfg["key"], type(pull_err).__name__, str(pull_err)[:200]))
             continue
 
         if not pngs:
@@ -800,12 +1069,13 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             _log("  gap list SKIPPED — %s is not today, and 'minutes since "
                  "last knock' is only meaningful live" % day)
         else:
-            try:
-                gaps = gap_rows(cfg, day)
-            except Exception as e:  # noqa: BLE001
+            gaps, gap_err = gaps_by_key.get(cfg["key"], ([], None))
+            if gap_err is not None:
+                # A failed gap pull costs the SECTION, never the board — the
+                # board is already in hand.
                 gaps = []
                 _log("  gap list SKIPPED (%s: %s)"
-                     % (type(e).__name__, str(e)[:160]))
+                     % (type(gap_err).__name__, str(gap_err)[:160]))
         previous, first_of_day = _previous_gap_names(cfg["key"], day)
         body, gap_names = gap_text(gaps, previous, first_of_day,
                                    header=gap_header(cfg))
@@ -822,46 +1092,73 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             except Exception as e:  # noqa: BLE001
                 _log("  preview DM failed: %s: %s"
                      % (type(e).__name__, str(e)[:160]))
-        try:
-            # Resolution runs on a dry run too — it is read-only and it is the
-            # half most likely to be wrong (Lucy removed from the chat, the
-            # room renamed). A preview that skipped it would prove nothing.
-            # ONE send: the gap list as the message text, the board as its
-            # attachment. send_to_group posts the text first, so the names
-            # arrive above the flyer.
-            res = tp.send_to_group(cfg["group"], body, boards, dry_run=not send)
-            _log("  %s -> %r (%s participants)%s"
-                 % ("TEXT" if send else "PREVIEW", res.get("resolved_name"),
-                    res.get("participants"), "" if send else " — nothing sent"))
-            # The hourly Slack post rides the SAME board that was just
-            # built — never its own pull. It is also independent of the text:
-            # a Messages failure must not cost the channel its leaderboard,
-            # and vice versa, so it sits in its own try.
-            if cfg.get("slack_hourly") and boards:
-                now = dt.datetime.now()
-                if _slack_due(cfg["key"], now):
-                    try:
-                        res = post_slack(cfg, boards[0], slot, day,
-                                         dry_run=not send)
+        # ROUTES ARE INDEPENDENT, and each gets its own try. An office can be
+        # enrolled for several chats, several channels and email at once (the
+        # sign-up form asks exactly that), and one dead route must never cost
+        # the others — a Messages failure taking the inbox copy with it is how
+        # an owner ends up with nothing while the log says one thing failed.
+        delivered = False
+        for dest in due:
+            kind = dest.get("kind")
+            where = C.dest_label(dest)
+            try:
+                if kind == "imessage":
+                    if not (dest.get("name") or "").strip():
+                        _log("  %s has no chat name — skipped" % where)
+                        continue
+                    # Resolution runs on a dry run too — it is read-only and it
+                    # is the half most likely to be wrong (Lucy removed from the
+                    # chat, the room renamed). A preview that skipped it would
+                    # prove nothing. ONE send: the gap list as the message text,
+                    # the board as its attachment. send_to_group posts the text
+                    # first, so the names arrive above the flyer.
+                    res = tp.send_to_group(dest["name"], body, boards,
+                                           dry_run=not send)
+                    _log("  %s -> %r (%s participants)%s"
+                         % ("TEXT" if send else "PREVIEW",
+                            res.get("resolved_name"), res.get("participants"),
+                            "" if send else " — nothing sent"))
+                    delivered = True
+                elif kind == "email":
+                    res = email_send.send(cfg, boards, body, slot, day,
+                                          to_addrs=dest.get("emails") or [],
+                                          dry_run=not send)
+                    if res.get("skipped"):
+                        _log("  EMAIL skipped: %s" % res["skipped"])
+                    else:
                         _log("  %s -> %s (%s)"
-                             % ("SLACK" if send else "SLACK (preview)",
-                                res.get("channel"), res.get("file")))
-                        if send:
-                            _mark_slack_sent(cfg["key"], now)
-                    except Exception as e:  # noqa: BLE001
-                        _log("  SLACK FAILED: %s: %s"
-                             % (type(e).__name__, str(e)[:200]))
+                             % ("EMAIL" if send else "EMAIL (preview)",
+                                ", ".join(res.get("to") or []),
+                                res.get("subject")))
+                        delivered = True
+                elif kind == "slack":
+                    channel = C.dest_channel(dest)
+                    if not channel:
+                        _log("  %s has no channel id — skipped" % where)
+                        continue
+                    if not boards:
+                        continue
+                    res = post_slack(cfg, boards[0], slot, day,
+                                     channel=channel, dry_run=not send)
+                    _log("  %s -> %s (%s)"
+                         % ("SLACK" if send else "SLACK (preview)",
+                            res.get("channel"), res.get("file")))
+                    delivered = True
+                else:
+                    _log("  unknown destination kind %r — skipped" % kind)
+            except Exception as e:  # noqa: BLE001
+                failures.append("%s %s: %s: %s"
+                                % (cfg["key"], where, type(e).__name__,
+                                   str(e)[:200]))
+                _log("  %s FAILED: %s: %s"
+                     % (where, type(e).__name__, str(e)[:200]))
 
-            if send:
-                # Both stamped only after Messages actually took it: a failed
-                # send must not block the next retry, and must not consume the
-                # "new" marks — those people would then never be flagged.
-                _mark_sent(cfg["key"])
-                _remember_gap_names(cfg["key"], day, gap_names)
-        except Exception as e:  # noqa: BLE001
-            failures.append("%s text: %s: %s" % (cfg["key"], type(e).__name__,
-                                                 str(e)[:200]))
-            _log("  TEXT FAILED: %s: %s" % (type(e).__name__, str(e)[:200]))
+        if send and delivered:
+            # Both stamped only after a route actually took it: a failed send
+            # must not block the next retry, and must not consume the "new"
+            # marks — those people would then never be flagged.
+            _mark_sent(cfg["key"])
+            _remember_gap_names(cfg["key"], day, gap_names)
     _terminated_check_once(day, seen_names)
     return failures
 
@@ -1262,15 +1559,19 @@ def main(argv=None) -> int:
             return 1
         return probe(day, cfg, headless=not args.headed)
 
-    if not args.force and not C.in_selling_window():
-        _log("outside today's window (%s) — nothing to do" % C.window_label())
+    if not args.force and not C.any_office_in_window():
+        # ANY office, not the org window: offices bring their own timezone and
+        # hours now, so the job runs whenever somebody's field is out and each
+        # office re-checks its own window in tick().
+        _log("no office is inside its window right now (org default %s) — "
+             "nothing to do" % C.window_label())
         return 0
 
     with Lock() as lock:
         if not lock.held:
             _log("another tick is still running — skipping this one")
             return 0
-        failures = tick(day, send=send, only=args.only,
+        failures = tick(day, send=send, only=args.only, force=args.force,
                         headless=not args.headed)
 
     if failures:

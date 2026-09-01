@@ -108,9 +108,13 @@ class BoardForWalksTheDays(unittest.TestCase):
             return (rows, "build") if rows else (None, "")
 
         def fake_pull(jobs, verbose=True, profile_dir=None):
-            self.pulled.append([(n, list(days)) for n, days in jobs])
-            return [(n, {d: rows_for(d) for d in days}, None)
-                    for n, days in jobs]
+            # A job is (name, days) or (name, days, campaign) — the third
+            # element pins the campaign for an office that runs more than one.
+            # Mirrors the real pull_offices_days, which reads job[0]/job[1] and
+            # treats a missing third as "let the per-office map decide".
+            self.pulled.append([(j[0], list(j[1]),
+                                 j[2] if len(j) > 2 else None) for j in jobs])
+            return [(j[0], {d: rows_for(d) for d in j[1]}, None) for j in jobs]
 
         def fake_render(target, **kw):
             self.rendered = dict(kw, target=target)
@@ -174,7 +178,7 @@ class BoardForWalksTheDays(unittest.TestCase):
         b = service.board_for("Rafael Hidalgo", start, end,
                               logfn=lambda m: None)
         self.assertEqual(len(self.pulled), 1)
-        jobs = dict((n, days) for n, days in self.pulled[0])
+        jobs = dict((n, days) for n, days, _camp in self.pulled[0])
         self.assertEqual(jobs["Rafael Hidalgo"],
                          [dt.date(2026, 8, 22), dt.date(2026, 8, 23)])
         # Chan is complete on disk, so he is not in the session at all.
@@ -230,7 +234,7 @@ class BoardForWalksTheDays(unittest.TestCase):
         b = service.board_for("Rafael Hidalgo", start, end,
                               logfn=lambda m: None)
         # A session opened for Chan ALONE — our days needed nothing.
-        jobs = dict((n, days) for n, days in self.pulled[0])
+        jobs = dict((n, days) for n, days, _camp in self.pulled[0])
         self.assertNotIn("Rafael Hidalgo", jobs)
         self.assertEqual(jobs["Chan Park"], [dt.date(2026, 8, 23),
                                              dt.date(2026, 8, 24)])
@@ -290,7 +294,7 @@ class BoardForWalksTheDays(unittest.TestCase):
         start, end = dt.date(2026, 8, 22), dt.date(2026, 8, 24)
         b = service.board_for("Rafael Hidalgo", start, end,
                               logfn=lambda m: None)
-        jobs = dict((n, days) for n, days in self.pulled[0])
+        jobs = dict((n, days) for n, days, _camp in self.pulled[0])
         self.assertEqual(jobs["Rafael Hidalgo"], service.span_days(start, end))
         self.assertEqual(jobs["Chan Park"], service.span_days(start, end))
         self.assertEqual(b.compared_to, "Chan Park")
@@ -306,7 +310,8 @@ class BoardForWalksTheDays(unittest.TestCase):
     # ---- nothing to show --------------------------------------------------
     def test_an_empty_span_is_an_answer_not_a_crash(self):
         def empty_pull(jobs, verbose=True, profile_dir=None):
-            return [(n, {d: [] for d in days}, None) for n, days in jobs]
+            # (name, days) or (name, days, campaign) — index, don't unpack.
+            return [(j[0], {d: [] for d in j[1]}, None) for j in jobs]
 
         with mock.patch(
                 "automations.rashad_metrics.knocks_pull.pull_offices_days",
@@ -384,18 +389,18 @@ class TheDmSyntax(unittest.TestCase):
 
     def test_no_date_is_yesterday_both_ends(self):
         self.assertEqual(handler.parse_dm("knocks Chan Park"),
-                         ("Chan Park", YESTERDAY, YESTERDAY))
+                         ("Chan Park", YESTERDAY, YESTERDAY, None))
 
     def test_one_iso_date_is_a_single_day(self):
         self.assertEqual(handler.parse_dm("knocks Chan Park 2026-08-21"),
                          ("Chan Park", dt.date(2026, 8, 21),
-                          dt.date(2026, 8, 21)))
+                          dt.date(2026, 8, 21), None))
 
     def test_day_words_still_work(self):
         self.assertEqual(handler.parse_dm("knocks Chan Park today"),
-                         ("Chan Park", TODAY, TODAY))
+                         ("Chan Park", TODAY, TODAY, None))
         self.assertEqual(handler.parse_dm("knocks Chan Park yesterday"),
-                         ("Chan Park", YESTERDAY, YESTERDAY))
+                         ("Chan Park", YESTERDAY, YESTERDAY, None))
 
     def test_the_word_to_makes_a_range(self):
         for word in ("to", "through", "thru", "until", "-"):
@@ -403,31 +408,76 @@ class TheDmSyntax(unittest.TestCase):
                 self.assertEqual(
                     handler.parse_dm(
                         f"knocks Chan Park 2026-08-18 {word} 2026-08-23"),
-                    ("Chan Park", dt.date(2026, 8, 18), dt.date(2026, 8, 23)))
+                    ("Chan Park", dt.date(2026, 8, 18), dt.date(2026, 8, 23), None))
 
     def test_dot_dot_makes_a_range(self):
         self.assertEqual(
             handler.parse_dm("knocks Chan Park 2026-08-18..2026-08-23"),
-            ("Chan Park", dt.date(2026, 8, 18), dt.date(2026, 8, 23)))
+            ("Chan Park", dt.date(2026, 8, 18), dt.date(2026, 8, 23), None))
 
     def test_day_words_can_be_range_ends(self):
         self.assertEqual(
             handler.parse_dm("knocks Chan Park 2026-08-18 to today"),
-            ("Chan Park", dt.date(2026, 8, 18), TODAY))
+            ("Chan Park", dt.date(2026, 8, 18), TODAY, None))
 
     def test_a_backwards_dm_range_is_kept_as_typed(self):
         # parse_dm reports what was said; check_span is what refuses it. If
         # the parser "helpfully" swapped them, the refusal could never fire.
         self.assertEqual(
             handler.parse_dm("knocks Chan Park 2026-08-23 to 2026-08-18"),
-            ("Chan Park", dt.date(2026, 8, 23), dt.date(2026, 8, 18)))
+            ("Chan Park", dt.date(2026, 8, 23), dt.date(2026, 8, 18), None))
 
     def test_a_name_that_is_not_a_date_stays_in_the_name(self):
         self.assertEqual(handler.parse_dm("knocks Chan Park the third"),
-                         ("Chan Park the third", YESTERDAY, YESTERDAY))
+                         ("Chan Park the third", YESTERDAY, YESTERDAY, None))
+
+    def test_a_button_click_runs_that_exact_request(self):
+        """The click carries office, span and campaign, so it needs no memory
+        of the conversation and nothing is retyped."""
+        seen = {}
+        value = handler._pick_value("Jay Turnage", dt.date(2026, 9, 1),
+                                    dt.date(2026, 9, 1), "40")
+        with mock.patch.object(handler, "process",
+                               lambda *a, **k: seen.update(a=a, k=k)):
+            handler.handle_action(None, {
+                "type": "block_actions", "user": {"id": "U1"},
+                "actions": [{"action_id": "knocks_pick_0", "value": value}]})
+        self.assertEqual(seen["a"][2:], ("Jay Turnage", dt.date(2026, 9, 1),
+                                         dt.date(2026, 9, 1)))
+        self.assertEqual(seen["k"], {"campaign": "40"})
+
+    def test_only_our_buttons_are_claimed(self):
+        """The listener hands every block_actions payload to both handlers, so
+        claiming someone else's button would hijack the Promotion Check-In."""
+        self.assertFalse(handler.is_knocks_action(
+            {"type": "block_actions", "actions": [{"action_id": "promo_yes"}]}))
+        self.assertTrue(handler.is_knocks_action(
+            {"type": "block_actions",
+             "actions": [{"action_id": "knocks_pick_2"}]}))
+
+    def test_a_malformed_button_value_answers_rather_than_crashes(self):
+        with mock.patch.object(handler, "process",
+                               lambda *a, **k: self.fail("should not run")):
+            handler.handle_action(None, {
+                "type": "block_actions", "user": {"id": "U1"},
+                "actions": [{"action_id": "knocks_pick_0", "value": "{oops"}]})
+
+    def test_a_campaign_word_is_peeled_off_a_multi_campaign_office(self):
+        """Jay knocks two campaigns, so "… jay turnage energywell" names the
+        REQUEST, not an office called that."""
+        self.assertEqual(handler.parse_dm("knocks Jay Turnage energywell"),
+                         ("Jay Turnage", YESTERDAY, YESTERDAY, "40"))
+        self.assertEqual(handler.parse_dm("knocks Jay Turnage att"),
+                         ("Jay Turnage", YESTERDAY, YESTERDAY, "3"))
+
+    def test_a_trailing_word_stays_in_the_name_for_everyone_else(self):
+        """The peel only happens when the office HAS a campaign by that word,
+        so a single-campaign office is never mangled."""
+        self.assertEqual(handler.parse_dm("knocks Chan Park energywell"),
+                         ("Chan Park energywell", YESTERDAY, YESTERDAY, None))
 
     def test_a_bare_trigger_asks_who(self):
-        self.assertEqual(handler.parse_dm("knocks"), ("", YESTERDAY, YESTERDAY))
+        self.assertEqual(handler.parse_dm("knocks"), ("", YESTERDAY, YESTERDAY, None))
 
     def test_a_dm_that_is_not_about_knocks_is_left_alone(self):
         # This inbox is also how /dd takes a corrected rep name.
@@ -445,15 +495,46 @@ class ThePopup(unittest.TestCase):
         # A pre-filled end date would silently turn every request into a range.
         self.assertNotIn("initial_date", through[0]["element"])
 
-    def test_the_from_field_still_defaults_to_yesterday(self):
+    def test_the_from_field_defaults_to_today(self):
+        """TODAY, not yesterday (Megan 2026-09-01).
+
+        It opened on yesterday because the morning report is about yesterday.
+        But somebody running /knocks in the afternoon is usually asking how
+        TODAY is going, so the old default was wrong more often than right.
+        """
         blocks = handler.modal(TODAY)["blocks"]
         day = [b for b in blocks if b.get("block_id") == "day"][0]
-        self.assertEqual(day["element"]["initial_date"], YESTERDAY.isoformat())
+        self.assertEqual(day["element"]["initial_date"], TODAY.isoformat())
+
+    def test_last_full_week_is_the_completed_mon_sun(self):
+        """Whatever day it is asked on, the same finished week — never the one
+        in progress, and never a rolling last-7-days."""
+        for day in (dt.date(2026, 9, 1), dt.date(2026, 9, 6),
+                    dt.date(2026, 8, 31)):
+            self.assertEqual(handler.last_full_week(day),
+                             (dt.date(2026, 8, 24), dt.date(2026, 8, 30)))
+
+    def test_the_week_checkbox_overrides_the_datepickers(self):
+        """Its hint promises the dates are ignored; a request cannot be both
+        spans, and honouring the pickers instead would be the silent wrong
+        answer."""
+        seen = {}
+        payload = self._payload("2026-08-24", None)
+        payload["view"]["state"]["values"]["week"] = {
+            "v": {"selected_options": [{"value": handler.LAST_WEEK_VALUE}]}}
+        with mock.patch.object(handler, "process",
+                               lambda *a, **k: seen.update(args=a, kw=k)):
+            with mock.patch.object(handler, "last_full_week",
+                                   lambda *a: (dt.date(2026, 8, 24),
+                                               dt.date(2026, 8, 30))):
+                handler.handle_submission(None, payload)
+        self.assertEqual(seen["args"][3:], (dt.date(2026, 8, 24),
+                                            dt.date(2026, 8, 30)))
 
     def test_a_blank_through_submits_as_a_single_day(self):
         seen = {}
         with mock.patch.object(handler, "process",
-                               lambda *a: seen.update(args=a)):
+                               lambda *a, **k: seen.update(args=a, kw=k)):
             handler.handle_submission(None, self._payload("2026-08-24", None))
         self.assertEqual(seen["args"][2:], ("Chan Park",
                                             dt.date(2026, 8, 24),
@@ -462,7 +543,7 @@ class ThePopup(unittest.TestCase):
     def test_a_filled_through_submits_as_a_range(self):
         seen = {}
         with mock.patch.object(handler, "process",
-                               lambda *a: seen.update(args=a)):
+                               lambda *a, **k: seen.update(args=a, kw=k)):
             handler.handle_submission(
                 None, self._payload("2026-08-18", "2026-08-23"))
         self.assertEqual(seen["args"][2:], ("Chan Park",
