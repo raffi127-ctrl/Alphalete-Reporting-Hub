@@ -838,6 +838,10 @@ def test_the_batch_dict_is_not_clobbered_by_the_rendered_images():
     src = inspect.getsource(R.tick)
     assert "pulled_boards = pull_boards_many(" in src
     assert "pulled_boards.get(" in src
-    # the per-office render still uses its own name, and never the dict's
+    # the per-office render still uses its own name, and never the dict's.
+    # WORD BOUNDARY: "pulled_boards.get(" contains "boards.get(" as a
+    # substring, so a plain `in` check here can never fail and would police
+    # nothing.
+    import re as _re
     assert "boards = render(" in src
-    assert "boards.get(" not in src
+    assert not _re.search(r"(?<![\w.])boards\.get\(", src)
