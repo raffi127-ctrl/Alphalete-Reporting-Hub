@@ -50,7 +50,11 @@ DINNER_TIME_DEFAULT = ""
 
 LEADERS_STATE = os.path.expanduser("~/recruiting-report/output/texas_de_brazil_leaders_state.json")
 
-EXCLUDE      = {"Rafael Hidalgo", "Joshua Mascorro"}   # not competing reps (owners/mgmt)
+# Not competing reps (owners/mgmt). A name here scores nothing and never shows
+# on the board — not even through Break-a-Leader (their promoted rep still gets
+# paid; only the excluded side is skipped).
+EXCLUDE      = {"Rafael Hidalgo", "Joshua Mascorro",
+                "Basil Elhassan"}   # Bas doesn't compete (Eve, 2026-09-01)
 ALIAS        = {"Andrew Sanborn Roadtrip": "Andrew Sanborn", "Randy Amoo": "Randy Amoa",
                 "Sebastian Guerrero": "SABASTIN GUERRERO",
                 "Chole Johnson": "Chloe Johnson",
@@ -72,12 +76,10 @@ SOLO_LEADERS_BY_MONTH = {
 # Leaders who run a crew and no longer sell. They have NO row on the sales board,
 # and the board's column B IS the roster — so they were invisible to every point
 # that isn't a sale: Break-a-Leader, 2nd rounds, new starts, adjustments all land
-# through resolve_roster() against that roster. Basil Elhassan promoted two reps
-# in August 2026 and scored nothing (his row left the board on 'WE 7.26', the
-# same month he started promoting). Listed here, they join with a zeroed board
-# line and everything else pays normally.
+# through resolve_roster() against that roster. Listed here, they join with a
+# zeroed board line and everything else pays normally.
+# (Basil Elhassan was here for August 2026; he's in EXCLUDE now — doesn't compete.)
 NON_SELLING_LEADERS = [
-    "Basil Elhassan",
 ]
 CAR_RIDE_LEADERS_BY_MONTH = {
     "2026-07": [
@@ -685,6 +687,8 @@ def build_board(sales_file, recruit_file):
         # — Edgar Camunez and Juan Pablo Deleon in August 2026.
         paid = set()
         for nm in (promoter, newleader):
+            if akey(nm) in EXCLUDE:
+                continue   # excluded side pays nothing and isn't an unmatched name
             key = resolve_roster(nm, rized)
             if key:
                 if key in paid:
