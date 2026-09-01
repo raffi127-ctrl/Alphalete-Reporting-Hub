@@ -517,7 +517,12 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # of them died on that wait and the Country Trackers reached no channel all
     # morning. A rerun fired into a run that's already going doesn't heal the
     # morning, it doubles the damage.
-    busy = _running_pids(r.command[0])
+    # duplicate_guard False = the module is shared with another job on this box
+    # and the report holds no browser profile, so a running copy is not a
+    # collision — asking here would block the very rerun that repairs the
+    # morning (country_sales_board_email vs the 15-minute approval checker,
+    # Eve 2026-09-01). See registry.Report.duplicate_guard.
+    busy = _running_pids(r.command[0]) if getattr(r, "duplicate_guard", True) else []
     if busy:
         return False, (f"{report_id} is ALREADY running here (pid "
                        f"{', '.join(busy)}) — not starting a second copy: two "

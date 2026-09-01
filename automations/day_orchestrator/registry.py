@@ -58,6 +58,21 @@ class Report:
     # INCOMPLETE / FAILED / MISSED — any outcome). Unlike depends_on, a FAILED
     # `after` dep does NOT block us — it just means "wait your turn behind it, but
     # never get stranded if it glitches" (daily_rep_breakdown after org_sales_board).
+    duplicate_guard: bool = True
+    # "A copy of this module is already running here" = a COLLISION worth
+    # standing down for? True for every browser report: two of them fight over
+    # the shared Chrome profile and both die at their timeouts (what the guard
+    # was built for, 2026-08-24). Set FALSE for a report whose module is ALSO
+    # run by something else on the same box for a DIFFERENT job, and that holds
+    # no browser profile — the guard identifies a run by module NAME alone
+    # (proc_guard anchors its pattern right after the module, so arguments are
+    # invisible to it), so it cannot tell the two apart and kills the one it
+    # should not. country_sales_board_email is the case (Eve 2026-09-01): its
+    # module board_emails.review_gate is what the 15-minute approval checker in
+    # deploy/org_board_email_review.sh runs all day, so the daily --post lost a
+    # 3-second race to a --check tick and the review link never went up.
+    # review_gate opens no browser at all: it reads the Sheet over OAuth and
+    # exports PDFs.
     scoped_rerun_cmd: Optional[str] = None
     # SURGICAL re-run prefix for a report whose INCOMPLETE misses are named UNITS
     # (owners / ICDs) rather than the whole report — e.g. "lucy focus_owner". When
@@ -96,6 +111,7 @@ def _build_report(rid: str, r: dict) -> Report:
         idempotency=r.get("idempotency", {}),
         machine=r.get("machine", DEFAULT_MACHINE),
         order=r.get("order"),
+        duplicate_guard=bool(r.get("duplicate_guard", True)),
         scoped_rerun_cmd=r.get("scoped_rerun_cmd"),
     )
 

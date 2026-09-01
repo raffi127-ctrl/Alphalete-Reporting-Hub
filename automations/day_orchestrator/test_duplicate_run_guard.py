@@ -39,17 +39,19 @@ MODULE = "automations.captainship_drafts.run"
 
 
 class _Report:
-    def __init__(self, report_id="captainship_drafts", source_type="tableau"):
+    def __init__(self, report_id="captainship_drafts", source_type="tableau",
+                 duplicate_guard=True, command=None, base_args=None):
         self.report_id = report_id
         self.display_name = "Captainship Reports"
         self.source_type = source_type
-        self.command = [MODULE]
-        self.base_args = ["--dry-run"]
+        self.command = command or [MODULE]
+        self.base_args = ["--dry-run"] if base_args is None else base_args
         self.timeout_minutes = 120
         self.verify = {}
         self.depends_on = []
         self.after = []
         self.not_before = None
+        self.duplicate_guard = duplicate_guard
 
 
 class _Hub:
@@ -382,3 +384,92 @@ class PidProbe(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class SharedModuleOptOut(_GuardBase):
+    """`duplicate_guard: false` — a report whose MODULE is shared with another
+    job on the same box and that holds no browser profile.
+
+    WHY (Eve 2026-09-01). country_sales_board_email runs
+    `automations.board_emails.review_gate --post --board country`. The SAME
+    module is what deploy/org_board_email_review.sh runs every 15 minutes, all
+    day, to poll for the approval checkmark. proc_guard builds its pgrep
+    pattern from command[0] and anchors it right after the module name, so the
+    arguments — the only thing telling a --post from a --check — are invisible
+    to it: the two jobs are one process to the guard.
+
+    That morning the daily post lost a 3-second race to a checker tick. The
+    pre-launch guard cleared at 08:54:53; the LAST-LINE-OF-DEFENCE guard inside
+    _run_report failed the report at 08:54:56. That path returns a hard FAILURE
+    rather than the pre-launch deferral, so the attempt burned, the incident
+    fired, no log was written at all, and the review link never went up — on a
+    board that had filled perfectly. review_gate opens no browser (it reads the
+    Sheet over OAuth and exports PDFs), so the Chrome-profile collision the
+    guard exists to prevent cannot happen to it.
+
+    Both guards must be off for such a report, and ONLY for it.
+    """
+
+    def _opted_out(self):
+        return _Report(report_id="country_sales_board_email",
+                       source_type="local", duplicate_guard=False,
+                       command=["automations.board_emails.review_gate"],
+                       base_args=["--post", "--board", "country"])
+
+    def test_a_busy_module_does_not_defer_the_opted_out_report(self):
+        self._busy(["64070"])                      # the 15-minute checker
+        r = self._opted_out()
+        ds, rs = self._fresh(r)
+        outcome = R._attempt_report(ds, r, rs, TARGET, dry_run=False,
+                                    simulate=False)
+        self.assertEqual(outcome, "done")
+        self.assertEqual(self.runs, [r.report_id])
+        self.assertEqual(rs.status, state.DONE)
+
+    def test_the_last_line_of_defence_is_skipped_too(self):
+        """The pre-launch check is not enough on its own: the 2026-09-01 kill
+        came from the second guard, inside _run_report."""
+        import tempfile
+        from pathlib import Path
+
+        class _Proc:
+            def wait(self, timeout=None):
+                return 0
+
+        r = self._opted_out()
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(R, "_already_running",
+                                   lambda module: ["64070"]),                  mock.patch.object(R, "LOG_DIR", Path(tmp)),                  mock.patch.object(R.subprocess, "Popen",
+                                   lambda *a, **kw: _Proc()):
+                ok, detail = R._run_report(r, TARGET, dry_run=False,
+                                           simulate=False)
+        self.assertTrue(ok, detail)
+        self.assertNotIn("already running", detail)
+
+    def test_an_ordinary_report_still_defers(self):
+        """The opt-out is per report — it must not weaken the default."""
+        self._busy(["1234"])
+        r = _Report()                              # duplicate_guard defaults True
+        ds, rs = self._fresh(r)
+        outcome = R._attempt_report(ds, r, rs, TARGET, dry_run=False,
+                                    simulate=False)
+        self.assertEqual(outcome, "deferred")
+        self.assertEqual(self.runs, [])
+
+    def test_a_report_object_without_the_field_is_guarded(self):
+        """getattr default: an older/stub report is guarded, not exempt."""
+        r = _Report()
+        del r.duplicate_guard
+        self._busy(["1234"])
+        ds, rs = self._fresh(r)
+        outcome = R._attempt_report(ds, r, rs, TARGET, dry_run=False,
+                                    simulate=False)
+        self.assertEqual(outcome, "deferred")
+
+    def test_the_live_config_opts_out_exactly_one_report(self):
+        """A blanket opt-out would put the fleet back where 2026-08-24 started."""
+        from automations.day_orchestrator import registry
+        cfg = registry.load_config()
+        off = sorted(rid for rid, rep in cfg.reports.items()
+                     if not rep.duplicate_guard)
+        self.assertEqual(off, ["country_sales_board_email"])

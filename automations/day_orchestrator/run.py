@@ -674,7 +674,10 @@ def _attempt_report_inner(ds, r, rs, target, *, dry_run, simulate) -> str:
     # dry_run/simulate skip the check entirely: neither launches anything real,
     # so a live process is none of their business (and a simulate pass must stay
     # runnable while the real batch is mid-report).
-    if not (dry_run or simulate):
+    # duplicate_guard False = this report's module is shared with a different
+    # job on this box and it holds no browser profile, so "a copy is running"
+    # is not a collision (see registry.Report.duplicate_guard).
+    if not (dry_run or simulate) and getattr(r, "duplicate_guard", True):
         busy = _already_running(r.command[0])
         if busy:
             ds.set(r.report_id, state.STILL_TRYING,
@@ -1243,11 +1246,16 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
     # timeout kills it (2026-08-19: five overlapping tableau_screenshots runs,
     # no trackers posted anywhere). Yield: the run that's already going is the
     # one with a chance of finishing, and this report stays retryable.
-    busy = _already_running(r.command[0])
-    if busy:
-        return False, ("already running here (pid {}) — a second copy would "
-                       "collide on the browser profile and both would time out"
-                       .format(", ".join(busy)))
+    # Skipped for a report that opted out above: this is the same question, and
+    # asking it again here is exactly how country_sales_board_email died on
+    # 2026-09-01 — it cleared the pre-launch check at 08:54:53 and lost to an
+    # approval-checker tick that started in the 3 seconds before this line.
+    if getattr(r, "duplicate_guard", True):
+        busy = _already_running(r.command[0])
+        if busy:
+            return False, ("already running here (pid {}) — a second copy would "
+                           "collide on the browser profile and both would time out"
+                           .format(", ".join(busy)))
     # -u is load-bearing, not tidiness. The child's stdout is this log FILE, so
     # Python block-buffers it — and a timeout SIGKILL discards whatever is still
     # in that buffer. applicant_sync_morning timed out on 2026-08-18 and left a
