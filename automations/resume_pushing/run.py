@@ -91,6 +91,33 @@ OFFICE_HINT = "CARLOS HIDALGO"
 APPSTREAM_ACCOUNT = "lucyresume"
 
 
+def _login_form_present(page, tp) -> bool:
+    """Is an actual LOGIN FORM on screen — not the console that merely looks like one?
+
+    WHY (Megan 2026-08-31, from a screenshot of the console with the username
+    typed into the office search box). _APPSTREAM_USERNAME_SELECTOR ends in the
+    catch-all `input[type="text"]`, and #searchMC — the OFFICE SWITCHER on the
+    logged-in console — is a text input. So "is there a username field?" answers
+    yes on a page where we are already signed in, and the caller then drives a
+    login form into the office switcher: username typed into #searchMC, NEXT
+    clicked, console disturbed. The office switch that follows has to fight the
+    text it left behind.
+
+    #searchMC is the console's own marker — every other path in this module uses
+    its presence to mean "logged in". So its presence is decisive here too: if
+    the console is up, there is no login form, whatever the text inputs say.
+
+    A password field is real evidence; a bare text box is not."""
+    try:
+        if page.locator("#searchMC").count() > 0:
+            return False
+        if page.locator(tp._PASSWORD_SELECTOR).count() > 0:
+            return True
+        return page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0
+    except Exception:  # noqa: BLE001 — a detached frame is not a login form
+        return False
+
+
 def _account_creds():
     """(username, password) for the account this run is declared to use.
 
@@ -1484,9 +1511,7 @@ def _cdp_warm(force_fresh: bool = True) -> int:
             while _t.time() < deadline:
                 if page.locator("#searchMC").count() > 0:
                     break
-                if not drove_login and (
-                        page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                        or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                if not drove_login and _login_form_present(page, tp):
                     try:
                         tp._drive_login_form(page, True,
                                              *_account_creds())
@@ -1615,8 +1640,7 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
                 page.goto("https://applicantstream.com/",
                           wait_until="domcontentloaded")
                 page.wait_for_timeout(3000)
-                if (page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                        or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                if _login_form_present(page, tp):
                     tp._drive_login_form(page, True, username=user, password=pwd)
                 page.wait_for_timeout(3000)
                 if page.locator("#searchMC").count() == 0:
@@ -1633,9 +1657,7 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
             while _t.time() < _deadline:
                 if page.locator("#searchMC").count() > 0:
                     break
-                if not _drove and (
-                        page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                        or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                if not _drove and _login_form_present(page, tp):
                     try:
                         tp._drive_login_form(page, True,
                                              *_account_creds())
@@ -1859,8 +1881,7 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                     page.goto("https://applicantstream.com/",
                               wait_until="domcontentloaded")
                     page.wait_for_timeout(3000)
-                    if (page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                            or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                    if _login_form_present(page, tp):
                         tp._drive_login_form(page, True, username=user, password=pwd)
                     page.wait_for_timeout(3000)
                     if page.locator("#searchMC").count() == 0:
@@ -1891,9 +1912,7 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                 while _t2.time() < _deadline:
                     if page.locator("#searchMC").count() > 0:
                         break
-                    if not _drove and (
-                            page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                            or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                    if not _drove and _login_form_present(page, tp):
                         try:
                             tp._drive_login_form(page, True,
                                                  *_account_creds())

@@ -242,3 +242,58 @@ class PerAccountSessionFile(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class LoginFormDetection(unittest.TestCase):
+    """The office switcher is not a login form."""
+
+    class _Loc:
+        def __init__(self, n): self._n = n
+        def count(self): return self._n
+
+    class _P:
+        def __init__(self, searchmc=0, password=0, username=0):
+            self._m = {"#searchMC": searchmc}
+            self._pw, self._un = password, username
+        def locator(self, sel):
+            if sel in self._m:
+                return LoginFormDetection._Loc(self._m[sel])
+            if "password" in sel:
+                return LoginFormDetection._Loc(self._pw)
+            return LoginFormDetection._Loc(self._un)
+
+    def setUp(self):
+        from automations.shared import tableau_patchright as tp
+        self.tp = tp
+
+    def test_console_is_never_a_login_form(self):
+        # The bug: _APPSTREAM_USERNAME_SELECTOR ends in the catch-all
+        # input[type="text"], and #searchMC — the OFFICE SWITCHER — is one. So a
+        # logged-in console answered "yes, there's a username field" and the
+        # caller typed the username into the office search box, clicked NEXT and
+        # disturbed the console the run had just established.
+        page = self._P(searchmc=1, password=0, username=3)
+        self.assertFalse(rp._login_form_present(page, self.tp))
+
+    def test_console_wins_even_if_a_password_field_is_somehow_present(self):
+        page = self._P(searchmc=1, password=1, username=1)
+        self.assertFalse(rp._login_form_present(page, self.tp))
+
+    def test_real_login_form_is_still_detected(self):
+        page = self._P(searchmc=0, password=1, username=1)
+        self.assertTrue(rp._login_form_present(page, self.tp))
+
+    def test_username_step_of_a_two_step_form_is_detected(self):
+        # The form asks for the username first and only then the password, so a
+        # username field with no password field is still a real login form —
+        # provided the console is not up.
+        page = self._P(searchmc=0, password=0, username=1)
+        self.assertTrue(rp._login_form_present(page, self.tp))
+
+    def test_blank_page_is_not_a_login_form(self):
+        page = self._P(searchmc=0, password=0, username=0)
+        self.assertFalse(rp._login_form_present(page, self.tp))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

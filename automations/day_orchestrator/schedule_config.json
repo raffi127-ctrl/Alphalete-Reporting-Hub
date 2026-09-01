@@ -783,24 +783,26 @@
       "machine": "Lucy 3"
     },
     "headshots_fix_note": {
-   "on_scheduler": false,
-   "_note": "Edit a stale OwnerVille line on the bot's own headshot post in this week's thread — for when an upload actually went through (or a retry fixed it) but the thread still says \"upload didn't go through\". `lucy rerun headshots_fix_note --name \"Luis Valenzuela\" --machine \"Lucy 3\"`; --dry-run shows the before/after without editing. Must run on Lucy 3: chat.update only works with the app that posted.",
-   "display_name": "Headshot thread — fix a stale OV line",
-   "source_type": "local",
-   "data_sources": [],
-   "command": [
-    "automations.headshots.fix_note"
-   ],
-   "base_args": [],
-   "cadence": {"weekdays": []},
-   "priority": "P3",
-   "freshness_target": null,
-   "depends_on": [],
-   "verify": null,
-   "timeout_minutes": 5,
-   "machine": "Lucy 3"
-  },
-  "headshots_sheet_mark_one": {
+      "on_scheduler": false,
+      "_note": "Edit a stale OwnerVille line on the bot's own headshot post in this week's thread \u2014 for when an upload actually went through (or a retry fixed it) but the thread still says \"upload didn't go through\". `lucy rerun headshots_fix_note --name \"Luis Valenzuela\" --machine \"Lucy 3\"`; --dry-run shows the before/after without editing. Must run on Lucy 3: chat.update only works with the app that posted.",
+      "display_name": "Headshot thread \u2014 fix a stale OV line",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.headshots.fix_note"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
+      "machine": "Lucy 3"
+    },
+    "headshots_sheet_mark_one": {
       "on_scheduler": false,
       "_note": "Tick ONE person's \"Headshot Photo\" box on the OBCL sheet, on demand \u2014 the retry path when a headshot was uploaded but the sheet mark missed (e.g. their week's dated tab had already rolled over). Searches the newest dated tab, then older dated tabs, then the rolling \"D2D OBCL\" stack. `lucy rerun headshots_sheet_mark_one --name \"Ivan Soto\" --machine \"Lucy 3\"`; add --dry-run to see where it WOULD mark without writing.",
       "display_name": "OBCL Headshot box \u2014 mark one person",
@@ -2044,39 +2046,39 @@
       "verify": null
     },
     "box_daily_calvin": {
-   "on_scheduler": true,
-   "order": 39.1,
-   "machine": "Lucy 3",
-   "_note": "DAILY fill of Calvin Ribero's BOX numbers on the ATT Program - Focus Report (tab 'Calvin Ribera (BOX)', renamed from 'Calvin Ribero (B2B)' on 2026-08-31). REPLACED b2b_backfill_calvin on 2026-08-31: he is not a B2B ICD - Vernon, Inc. (ownerville office 22162, Chicago IL) is not provisioned for B2B AT&T SBS and is in no B2B crosstab, which is why that job wrote 0 cells every Monday. He sells BOX. Source is B2BBOXEnergyTracker -> view **BoxDailyTracker** (worksheets 'Daily Tracker Sales' + 'Daily Tracker Metrics'), and it has to be that view: the Box workbook has 11 published views and each one's Owner Name list is its own - BoxSalesMetrics, which opt_box reads, is scoped to three owners and does not carry him, and Box Order Log / Tier Bonus show four. BoxDailyTracker shows ten, Calvin among them. DAILY rather than Mondays because the tracker is a CURRENT-WEEK snapshot whose week cannot be pinned, so a run can only ever fill the week it is in; running every day keeps the open week current and rolls onto the new column by itself. Fills Total Box CX's, Active Selling Heads, AVG Kwh Usage Per CX, AVG Sales per Leader and the two National AVGs. Accepted % / Completed % / WTD KwH / Scorecard Ranking / Personal Production and the churn + financial blocks have NO source in this view and stay blank on purpose - never estimate them. Older weeks were backfilled by hand on 2026-08-31 (18 weeks, WE 5/3 - 8/30, 622 sales) off the same view with its week filter at (All), which is the only state that exports history. Two traps if you touch this: the Owner Name filter is EXCLUSIVE (a `?Owner Name=` URL slice REMOVES that owner), and a failed Crosstab dialog stays open and hangs every later click. Runs dry by default; --write is what makes it write.",
-   "display_name": "BOX fill - Calvin Ribero",
-   "source_type": "tableau",
-   "data_sources": [],
-   "command": [
-    "automations.alphalete_org_report.opt_box_daily"
-   ],
-   "base_args": [
-    "--write"
-   ],
-   "cadence": {
-    "weekdays": [
-     0,
-     1,
-     2,
-     3,
-     4,
-     5,
-     6
-    ]
-   },
-   "after": [
-    "alphalete_org_focus"
-   ],
-   "priority": "P3",
-   "freshness_target": null,
-   "depends_on": [],
-   "verify": null
-  },
-  "sunday_coverage": {
+      "on_scheduler": true,
+      "order": 39.1,
+      "machine": "Lucy 3",
+      "_note": "DAILY fill of Calvin Ribero's BOX numbers on the ATT Program - Focus Report (tab 'Calvin Ribera (BOX)', renamed from 'Calvin Ribero (B2B)' on 2026-08-31). REPLACED b2b_backfill_calvin on 2026-08-31: he is not a B2B ICD - Vernon, Inc. (ownerville office 22162, Chicago IL) is not provisioned for B2B AT&T SBS and is in no B2B crosstab, which is why that job wrote 0 cells every Monday. He sells BOX. Source is B2BBOXEnergyTracker -> view **BoxDailyTracker** (worksheets 'Daily Tracker Sales' + 'Daily Tracker Metrics'), and it has to be that view: the Box workbook has 11 published views and each one's Owner Name list is its own - BoxSalesMetrics, which opt_box reads, is scoped to three owners and does not carry him, and Box Order Log / Tier Bonus show four. BoxDailyTracker shows ten, Calvin among them. DAILY rather than Mondays because the tracker is a CURRENT-WEEK snapshot whose week cannot be pinned, so a run can only ever fill the week it is in; running every day keeps the open week current and rolls onto the new column by itself. Fills Total Box CX's, Active Selling Heads, AVG Kwh Usage Per CX, AVG Sales per Leader and the two National AVGs. Accepted % / Completed % / WTD KwH / Scorecard Ranking / Personal Production and the churn + financial blocks have NO source in this view and stay blank on purpose - never estimate them. Older weeks were backfilled by hand on 2026-08-31 (18 weeks, WE 5/3 - 8/30, 622 sales) off the same view with its week filter at (All), which is the only state that exports history. Two traps if you touch this: the Owner Name filter is EXCLUSIVE (a `?Owner Name=` URL slice REMOVES that owner), and a failed Crosstab dialog stays open and hangs every later click. Runs dry by default; --write is what makes it write.",
+      "display_name": "BOX fill - Calvin Ribero",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.alphalete_org_report.opt_box_daily"
+      ],
+      "base_args": [
+        "--write"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "after": [
+        "alphalete_org_focus"
+      ],
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "sunday_coverage": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY diagnostic. `lucy rerun sunday_coverage` pulls each ORG board CROSSTAB source on Lucy 1 and prints whether last Sunday's data is actually in the extract at pull time \u2014 diagnoses the 2026-07-13 Monday undercount (board missing the just-completed Sunday). Read-only.",
       "display_name": "Sunday coverage check (org board sources)",
@@ -4845,8 +4847,8 @@
     "production_tk_fill": {
       "hand_run_only": true,
       "on_scheduler": true,
-      "_note": "Manual handle for the TK (Total Knocks) column on the Alphalete SALES BOARD 2025 — `lucy rerun production_tk_fill --machine \"Lucy 3\"`. NOT a scheduled report and NOT a Hub card (Eve 2026-08-31: \"tiene que entrar dentro del batch de producción, es un agregado, no un reporte nuevo\"): it fires from com.alphalete.production-tk (StartInterval 900), which refreshes today's TK cells every 15 minutes while reps are knocking. Source is ownerville Disposition by Rep for RAF'S LOCAL OFFICE, column Total Knocks, for TODAY in Central. The fill ONLY EVER RAISES and never touches a cell holding something non-numeric, so a re-run can neither double-count nor eat a hand-typed mark. base_args --apply because the module previews by default. Quiet hours (6-23 CT) and the one-session-per-account deferral live in tk_fill.py, not in the plist. cadence.weekdays [] so the 4am orchestrator never fires it; hand_run_only so the didn't-run watcher does not invent a schedule from it.",
-      "display_name": "Sales Board TK column — refill now",
+      "_note": "Manual handle for the TK (Total Knocks) column on the Alphalete SALES BOARD 2025 \u2014 `lucy rerun production_tk_fill --machine \"Lucy 3\"`. NOT a scheduled report and NOT a Hub card (Eve 2026-08-31: \"tiene que entrar dentro del batch de producci\u00f3n, es un agregado, no un reporte nuevo\"): it fires from com.alphalete.production-tk (StartInterval 900), which refreshes today's TK cells every 15 minutes while reps are knocking. Source is ownerville Disposition by Rep for RAF'S LOCAL OFFICE, column Total Knocks, for TODAY in Central. The fill ONLY EVER RAISES and never touches a cell holding something non-numeric, so a re-run can neither double-count nor eat a hand-typed mark. base_args --apply because the module previews by default. Quiet hours (6-23 CT) and the one-session-per-account deferral live in tk_fill.py, not in the plist. cadence.weekdays [] so the 4am orchestrator never fires it; hand_run_only so the didn't-run watcher does not invent a schedule from it.",
+      "display_name": "Sales Board TK column \u2014 refill now",
       "machine": "Lucy 3",
       "command": [
         "automations.alphalete_production.tk_fill"
@@ -4867,7 +4869,7 @@
     },
     "install_production_tk_agent": {
       "on_scheduler": true,
-      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_production_tk_agent --machine \"Lucy 3\"` (same pattern as install_knocks_intraday_agent). Bootstraps com.alphalete.production-tk on LUCY 3, which is where the ownerville session holder runs. It TICKS every 15 minutes (StartInterval 900) and refills today's TK column on the Alphalete SALES BOARD 2025. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",
+      "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_production_tk_agent --machine \"Lucy 3\"` (same pattern as install_knocks_intraday_agent). Bootstraps com.alphalete.production-tk on LUCY 3, which is where the ownerville session holder runs. It TICKS every 15 minutes (StartInterval 900) and refills today's TK column on the Alphalete SALES BOARD 2025. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",
       "display_name": "Install: Sales Board TK LaunchAgent (Lucy 3)",
       "command": [
         "automations.day_orchestrator.install_agent"
@@ -8845,13 +8847,13 @@
       "source_type": "local",
       "data_sources": [],
       "command": [
-       "automations.day_orchestrator.disable_agent"
+        "automations.day_orchestrator.disable_agent"
       ],
       "base_args": [
-       "digi-docs-send"
+        "digi-docs-send"
       ],
       "cadence": {
-       "weekdays": []
+        "weekdays": []
       },
       "priority": "P2",
       "freshness_target": null,
@@ -8933,11 +8935,11 @@
       "source_type": "browser",
       "data_sources": [],
       "command": [
-       "automations.digi_docs.roster_check"
+        "automations.digi_docs.roster_check"
       ],
       "base_args": [],
       "cadence": {
-       "weekdays": []
+        "weekdays": []
       },
       "priority": "P3",
       "freshness_target": null,
@@ -8953,11 +8955,11 @@
       "source_type": "browser",
       "data_sources": [],
       "command": [
-       "automations.digi_docs.campaign_probe"
+        "automations.digi_docs.campaign_probe"
       ],
       "base_args": [],
       "cadence": {
-       "weekdays": []
+        "weekdays": []
       },
       "priority": "P3",
       "freshness_target": null,
@@ -8973,11 +8975,11 @@
       "source_type": "browser",
       "data_sources": [],
       "command": [
-       "automations.digi_docs.attest_probe"
+        "automations.digi_docs.attest_probe"
       ],
       "base_args": [],
       "cadence": {
-       "weekdays": []
+        "weekdays": []
       },
       "priority": "P3",
       "freshness_target": null,
@@ -9419,6 +9421,28 @@
       "depends_on": [],
       "verify": null,
       "_note": "Retire standalone Ad Sales Board agent (now inside the recruiting chain)"
+    },
+    "install_appstream_selfheal_agent": {
+      "on_scheduler": true,
+      "machine": "Lucy 2",
+      "_note": "Installs com.alphalete.appstream-selfheal on Lucy 2 (the sole AppStream holder). The 3:15am job checks whether the saved rqst token will survive the 4am batch and, only if it will not, restarts the holder to mint a new one and pushes it to all three machines. Silent on a healthy night; alerts ONLY when it could not recover, so the page means 'a human is genuinely needed' rather than '3am happened'. Megan 2026-08-31: \"I'm not up at 3:30 which is why this can't be a manual thing all the dang time\".",
+      "display_name": "Install: AppStream pre-batch self-heal agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "appstream-selfheal"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10
     }
   },
   "read_only_standalone": {
