@@ -802,6 +802,20 @@ def test_a_single_impersonated_office_is_never_enough_to_call_it():
     assert R._wrong_account(plan, boards) is False
 
 
+def test_two_offices_of_the_SAME_person_are_not_a_wrong_account():
+    """Jay Turnage is two offices under ONE OwnerVille name. Both failing is
+    his alias problem — counting rows instead of names made this guard
+    suppress Raf's board minutes after it shipped (2026-09-01)."""
+    plan = [({"key": "jay_att", "name": "Jay Turnage", "ov": "impersonate"},
+             "", []),
+            ({"key": "jay_ew", "name": "Jay Turnage", "ov": "impersonate"},
+             "", [])]
+    boards = {}
+    boards.update(_notfound("jay_att"))
+    boards.update(_notfound("jay_ew"))
+    assert R._wrong_account(plan, boards) is False
+
+
 def test_a_real_pull_error_is_not_mistaken_for_the_wrong_account():
     plan = _plan_with("impersonate", "impersonate")
     boards = {"k0": ([], [], TimeoutError("nav timeout")),

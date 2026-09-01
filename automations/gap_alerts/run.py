@@ -291,20 +291,24 @@ def _wrong_account(plan: List, boards: Dict) -> bool:
     sending is the bad one. So when this fires the whole tick is abandoned,
     master office included.
 
-    Needs at least two impersonation targets to call it: one office failing is
-    an office problem, every office failing is a session problem.
+    Needs at least two DISTINCT OwnerVille NAMES to call it, not two office
+    rows. Jay Turnage is two offices — jay_att and jay_ew — under ONE name, so
+    a tick whose only impersonation targets are his two is one person's alias
+    problem, not a session problem. Counting rows instead of names made this
+    guard suppress Raf's board on 2026-09-01 minutes after it shipped, which is
+    exactly the harm it was written to prevent, pointed the wrong way.
     """
     imp = [c for c, _s, _d in plan if c.get("ov") == "impersonate"]
-    if len(imp) < 2:
-        return False
-    misses = 0
+    missed_names = set()
     for cfg in imp:
         err = boards.get(cfg["key"], ([], [], None))[2]
         if err is None:
             return False          # one resolved, so the session is fine
         if "not found" in str(err).lower():
-            misses += 1
-    return misses == len(imp)
+            missed_names.add((cfg.get("name") or cfg["key"]).strip().lower())
+        else:
+            return False          # a timeout is not a wrong-account signal
+    return len(missed_names) >= 2
 
 
 def _intraday_covers(dest: Dict, cfg: Optional[Dict] = None,
