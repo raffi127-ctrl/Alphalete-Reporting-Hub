@@ -134,6 +134,69 @@ _CHAN_DAILY_CACHE: Dict[str, list] = {}
 _CHAN_WEEKLY_CACHE: Dict[str, tuple] = {}
 
 
+# The week's PSS crosstab, cached PER PROCESS keyed by the week-ending Sunday —
+# same shape, and for the same reason, as _CHAN_DAILY_CACHE above (Eve,
+# 2026-09-01). `capture()` runs once per CAPTAIN and six captains build in one
+# run.py process, so the identical org-wide crosstab was downloaded SIX times
+# per build. That is not just waste: a Tableau session dies after ~8 downloads
+# and takes every later one with it (measured 2026-08-18), so the 6th pull of
+# the same file is exactly what pushes a build over the edge. On 2026-09-01 two
+# consecutive rebuilds came out 3 saved / 3 `TargetClosedError` and half the
+# captains shipped with blank Total Apps columns.
+#
+# Failures are NOT cached, so a later captain still retries — same rule as
+# _CHAN_DAILY_CACHE.
+_PSS_CACHE: Dict[str, Path] = {}
+
+
+def _pss_crosstab(we_sunday: dt.date, *, logfn=print) -> Optional[Path]:
+    """The week's rep-level PSS crosstab: downloaded ONCE per process, with the
+    file already on disk as the safety net.
+
+    THE DISK FALLBACK, and why it is guarded: a download that dies mid-save
+    leaves the PREVIOUS good copy at the same fixed path
+    (output/weekly_knock_dispositions/pss_rep_<we_sunday>.csv), so a captain
+    whose pull crashed can still read the copy an earlier captain in the same
+    build downloaded — apps columns filled instead of blank.
+
+    But that path is keyed by WEEK, not by day, and the daily board reads ONE
+    weekday column out of it. A copy downloaded on an earlier day of the same
+    week is missing the days after it: on Tuesday it would have no Monday
+    column at all, and mid-week it would quietly under-report. So the fallback
+    is accepted ONLY when the file was written TODAY. An older copy is ignored
+    and the board goes blank-and-flagged, which is the honest outcome — a wrong
+    apps number is worse than a visibly missing one.
+    """
+    from automations.weekly_knock_dispositions import apps as A
+
+    key = we_sunday.isoformat()
+    hit = _PSS_CACHE.get(key)
+    if hit is not None and hit.exists():
+        return hit
+    try:
+        path = Path(A.download(we_sunday))
+    except Exception as e:  # noqa: BLE001
+        path = A.OUT_DIR / f"pss_rep_{key}.csv"
+        fresh = False
+        try:
+            fresh = (path.stat().st_size > 0
+                     and dt.date.fromtimestamp(path.stat().st_mtime)
+                     == dt.date.today())
+        except OSError:
+            fresh = False
+        if fresh:
+            logfn(f"  ↺ PSS crosstab pull failed ({type(e).__name__}) — "
+                  f"using today's copy already on disk ({path.name})")
+            _PSS_CACHE[key] = path
+            return path
+        logfn(f"  ⚠ PSS crosstab failed ({type(e).__name__}: "
+              f"{str(e)[:160]}) — apps columns blank, boards flagged "
+              "INCOMPLETE")
+        return None
+    _PSS_CACHE[key] = path
+    return path
+
+
 # An owner on the captainship roster who has NO ownerville office at all —
 # not a name-spelling drift an alias could fix (Megan checked Office Access
 # on Raf's login for Michael Murphy, 2026-08-24: absent under his name, his
@@ -882,9 +945,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     except Exception:  # noqa: BLE001
         pass
 
-    # The org-wide rep-level PSS crosstab, ONCE for every owner (the download
-    # helper dedupes same-day pulls when the cache env is set, but one call per
-    # build is the contract either way). BOTH sections read it since Raf's
+    # The org-wide rep-level PSS crosstab, ONCE PER PROCESS: _pss_crosstab
+    # caches it across the captains this run builds (it used to be one download
+    # per captain). BOTH sections read it since Raf's
     # "Total Apps" ask (2026-08-26): the weekly board sums Mon–Sat, the daily
     # board reads the single weekday column for `target`. One download covers
     # both because they are the same Mon–Sun week by construction — week_window
@@ -892,13 +955,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # we_sunday. Failure = apps columns blank / absent, boards flagged
     # INCOMPLETE in their sub-heading — fill-but-flag, never a dead section.
     from automations.weekly_knock_dispositions import apps as A
-    pss_path = None
-    try:
-        pss_path = A.download(we_sunday)
-    except Exception as e:  # noqa: BLE001
-        logfn(f"  ⚠ PSS crosstab failed ({type(e).__name__}: "
-              f"{str(e)[:160]}) — apps columns blank, boards flagged "
-              "INCOMPLETE")
+    pss_path = _pss_crosstab(we_sunday, logfn=logfn)
     # The daily board wants ONE weekday column out of that crosstab. Read it
     # once per office below; a crosstab that doesn't carry the day at all
     # (a period-boundary week, a view that stops at Saturday) is logged ONCE
