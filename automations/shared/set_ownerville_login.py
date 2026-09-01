@@ -23,6 +23,11 @@ logins in the same file are left exactly as they are.
 
 Then it clears the stale cookie blob, because that blob is still the OLD
 account and would be injected over the new login on the very next run.
+
+It does NOT get you a session. Ownerville's login form is behind a "verify you
+are human" check, so the holder opens a window and waits for a person; these
+credentials are what makes that login STICK, not what performs it. Between
+running this and logging in at the machine, it has no ownerville session at all.
 """
 from __future__ import annotations
 
@@ -132,10 +137,24 @@ def main() -> int:
     print("✓ ownerville login: %s → %s" % (was, username))
     print("✓ cleared the saved session blob"
           if clear_saved_session() else "· no saved session blob to clear")
-    print("✓ session holder restarted — it will log in as %s" % username
-          if restart_holder() else
-          "⚠ couldn't restart the session holder; run Session Check on this box")
-    print("\nVerify with:  PYTHONPATH=. .venv/bin/python -m "
+    # The holder does NOT log in from these credentials — ownerville's login
+    # form sits behind a 'verify you are human' check that cannot be cleared
+    # headless, so the holder opens a window and WAITS for a person. Saying
+    # "restarted, it will log in" reads as done-and-dusted and leaves the
+    # machine with no session at all: the blob was just cleared, and nothing
+    # will refill it until someone logs in. Say what is actually needed.
+    if restart_holder():
+        print("✓ session holder restarted — its login window is open on this "
+              "machine's screen")
+    else:
+        print("⚠ couldn't restart the session holder; run Session Check on "
+              "this box")
+    print("\n→ NOT DONE YET: log into ownerville as %s in that window (screen"
+          " share to this machine), clearing the 'verify you're human' box."
+          % username)
+    print("  Nothing here can do that step — the login form is behind a human "
+          "check. Until it is done this machine has NO ownerville session.")
+    print("\nThen verify with:  PYTHONPATH=. .venv/bin/python -m "
           "automations.shared.session_check")
     return 0
 
