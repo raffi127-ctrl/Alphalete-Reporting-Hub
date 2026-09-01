@@ -274,6 +274,17 @@ def request_view() -> None:
                 missing.append("the Slack Channel ID%s" % n)
         if d["kind"] == "email" and not d["emails"]:
             missing.append("an email address")
+    # SECOND reminder, right at the button (Megan 2026-09-01) — the same place
+    # the tracker sign-up puts it. The one up in section 3 is read while they
+    # are picking destinations; this one is read while they are committing, and
+    # it is the step that decides whether anything can post at all.
+    _rooms = [d for d in destinations if d["kind"] in ("imessage", "slack")]
+    if _rooms:
+        st.info("🔔 **Reminder:** add **Megan Hidalgo** to every chat and "
+                "channel you listed above **BEFORE HITTING SUBMIT** — we "
+                "can't start your postings without it! Her number for the "
+                "iMessage chats is **419-769-7114**. She'll leave once it's "
+                "set up.")
     if missing:
         st.warning("⚠️ **Still needed before you can submit:** "
                    + ", ".join(missing) + ".")
