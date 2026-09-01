@@ -46,6 +46,10 @@ def main(argv=None):
     ap.add_argument("--accounts", action="store_true",
                     help="list which AppStream accounts this machine can use, "
                          "then exit (names only — never a password)")
+    ap.add_argument("--account", metavar="NAME",
+                    help="use a NAMED account from appstream-accounts.json "
+                         "(e.g. 'lucyresume') — resolves the password on the "
+                         "machine so it never travels through a queue row")
     ap.add_argument("--alt", action="store_true",
                     help="use the stored ALTERNATE account "
                          "(set_appstream_alt_creds) instead of the primary")
@@ -56,6 +60,15 @@ def main(argv=None):
 
     from automations.shared import creds
 
+    if a.account:
+        # Named account: resolve locally. Deliberately separate from --user/--pass
+        # so checking a scoped login never puts its password in a Sheet cell.
+        try:
+            a.user, a.pw = creds.appstream_account(a.account)
+        except Exception as e:  # noqa: BLE001
+            print("cannot use account %r: %s" % (a.account, str(e)[:200]))
+            return 3
+        print("account %r resolves to username %s" % (a.account, a.user))
     if a.alt:
         # Resolve the second login from where set_appstream_alt_creds stored
         # it, so a remote verify never has to put the password in a queue row.

@@ -57,6 +57,12 @@ class FocusOffice:
     channel_id: str     # Slack channel the thread is started in
     channel_name: str   # display only — the ID is what posts
     timezone: str = "America/Chicago"
+    # Slack user ids tagged on the REPLY (the image message), which is the
+    # message that sits in the thread — Raf 2026-08-31: "can I get tagged every
+    # time this gets posted? In the thread please." Tagging the parent instead
+    # would notify from the channel, not from inside the thread. Per office, so
+    # a new office tags its OWN owner rather than inheriting Raf.
+    tag_user_ids: tuple = ()
 
 
 # Raf's office. The channel is PRIVATE and was renamed from
@@ -72,6 +78,7 @@ RAF = FocusOffice(
     channel_id="C0AUAS88FGW",
     channel_name="#rafs-office-recruiting-11280",
     timezone="America/Chicago",
+    tag_user_ids=("U045Z8N0ZQC",),   # Rafael Hidalgo
 )
 
 # ENROLLED — start with Raf alone (his explicit ask: "I would like it for my

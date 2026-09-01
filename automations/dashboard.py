@@ -1383,6 +1383,24 @@ FINDINGS_REPORTS = {"vantura_board_audit", "vantura-board-audit",
 # laptop, so the card went on showing "07:30 CST" and reading as overdue for a job
 # that must not run. Running it would have been the wrong thing to do.
 PAUSED_REPORTS = {
+    # Both spellings on purpose: the library card is hyphenated, schedule_config
+    # uses the underscored id, and _paused_reason() looks the card id up as-is.
+    "energy-crossref": ("Retired 2026-09-01 (Rafael) — the Base Power Energy "
+                        "program ended, so there are no sales to cross-check "
+                        "and nobody to tag. energy_crossref/DISABLED stands the "
+                        "module down; the Sales Board EN fill still runs."),
+    "energy_crossref": ("Retired 2026-09-01 (Rafael) — the Base Power Energy "
+                        "program ended, so there are no sales to cross-check "
+                        "and nobody to tag. energy_crossref/DISABLED stands the "
+                        "module down; the Sales Board EN fill still runs."),
+    "energy-slack-fill": ("Retired 2026-09-01 (Eve) — the Energy program ended "
+                          "and the board's per-day 'EN' column became 'TK' "
+                          "(knocks) on 8/31, so this had nowhere left to write. "
+                          "energy_slack_fill/DISABLED stands the module down."),
+    "energy_slack_fill": ("Retired 2026-09-01 (Eve) — the Energy program ended "
+                          "and the board's per-day 'EN' column became 'TK' "
+                          "(knocks) on 8/31, so this had nowhere left to write. "
+                          "energy_slack_fill/DISABLED stands the module down."),
     "tracker_mirror": ("Stood down 2026-08-24 (Carlos, 5d4042b) — the manager "
                        "tabs are on live IMPORTRANGE again, so a ferry pass "
                        "would overwrite those formulas with frozen values."),
@@ -8386,11 +8404,6 @@ else:  # st.session_state.view == "user"
             # 2026-08-03 when it became a two-phase card (build → Slack ✅ send):
             # it now rides the universal phase ramp like Country Sales Board —
             # orange after the build, green once the reports send. (Megan 8/3)
-            # August Owner Showdown — TEMP competition card. Force its pill
-            # BRIGHT YELLOW at rest so it reads as "temporary / competition"; the
-            # :not(ok):not(fail) guard lets it still turn GREEN on a real run (and
-            # red on failure). Remove with the card after 2026-08-31. (Raf 7/29)
-            "[class*='owner-showdown__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCF3B8!important;color:#6B5A0A!important;border-color:#EAB308!important;opacity:1!important;animation:none!important}"
             # Org Sales Board — LIVE daily report: no pin, it greens on a real run
             # and reds on failure like any other batch report. (Megan 2026-07-29)
             # Car-Rides Cleanup / Sales Board Fill / New-Start Follow-Up are

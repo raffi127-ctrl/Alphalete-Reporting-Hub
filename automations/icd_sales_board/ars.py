@@ -1,0 +1,244 @@
+"""ARS — the interviewer's star rating on every first-round applicant.
+
+THE LIVE SHEET IS THE SOURCE FOR RATINGS, and stays that way (Megan
+2026-08-31, asked and answered directly). This is the one deliberate exception
+to "Tableau / SaraPlus / Sterling / AppStream are truth": everything else on
+the recruiting page moves onto the AppStream Source Report, the rating does
+not. Do not "fix" this later by repointing it — it is a decision, not an
+oversight.
+
+For the record, since the comparison was run: AppStream's Retention Details
+popup also carries a Rating, on the same row as the ad. Checked against the
+nine BOB rows for Mon 2026-08-31 — eight identical, the ninth blank HERE where
+AppStream had a 3, none disagreeing on a value. So AppStream is the same scale
+and slightly fuller, and it was still the right call to stay here: this
+workbook is where the interviewers actually work.
+
+Five workbooks, split alphabetically by the owner's FIRST name, one tab per
+ICD, edited live by the interviewers.
+
+THREE COLUMNS ONLY: Full Name, Ad Title, Star Rating — plus Date 1st Rd, read
+purely to place a row in a week so the page can show a window. The tab also
+carries Qualify / Answer Call / Booked to 2nd Rd / Showed Up to 2nd Round /
+Offered Positon / BOB, and this module deliberately does not read them: they
+are hand-typed, and every one has a system-side source we trust more. BOB in
+particular is AppStream's, never this sheet's.
+
+HOW FAR THE RATING CAN BE PUSHED. It is a human judgement and nothing more:
+read a low average as "the interviewers did not rate the people this ad sent",
+which is exactly the question being asked, and not as "these people would not
+have signed". There is no evidence here that the scale predicts who comes on
+board — tested against the 2R start dates and the first-sale map, only 142 of
+Raf's 2,253 rows match either by name, which leaves single-digit numerators
+per star and no signal in any direction.
+"""
+from __future__ import annotations
+
+import collections
+import datetime as dt
+import re
+
+# Alphabetical by the owner's FIRST name — 'Rafael Hidalgo' is in R to Z.
+WORKBOOKS = [
+    ("1BltgRTW_tm-Y0AlUIVxqHHqh3cpSUwWc5F1Ako01gVw", "A to C", "ABC"),
+    ("1U5GZyzuXmzeNRKDL8V_lvCpzEtpjxuy4LLCDT3gDKcQ", "D to I", "DEFGHI"),
+    ("1sq_0VY-y1kzcQ8SAOmqs4VLE_2bPSJpCLTFufcUtQW4", "J to L", "JKL"),
+    ("12zye9tduziss1w-EdZKkPJ2DE-dg-xB0aqvC2H3cLao", "M to Q", "MNOPQ"),
+    ("16UruNs3bHGJ_pBvmD6T9KEqMAtDNNyuKArA_es6f0LE", "R to Z", "RSTUVWXYZ"),
+]
+
+# Found by HEADER, never by index — these sheets are hand-kept and a new
+# column in the middle would silently shift every read.
+COLUMNS = {
+    "name": "Full Name",
+    "ad": "Ad Title",
+    "star": "Star Rating",
+    # Hand-entered like the rest, and read for ONE purpose: putting a row in a
+    # week so the page can show a window instead of all time (Megan
+    # 2026-08-31). That is a much smaller thing to trust than an outcome —
+    # a wrong date moves somebody between weeks, where a wrong "BOB" invents a
+    # hire. It is never reported as a number, only used to filter.
+    "date": "Date 1st Rd",
+}
+
+_STAR = re.compile(r"^\s*([1-5])\s*star", re.I)
+
+
+def parse_date(value):
+    """'7/20/2026' -> date. None when it is missing or unreadable, and those
+    rows are DROPPED from a windowed view rather than swept into it: a row
+    with no date belongs to no week, and defaulting it into the current one
+    would quietly pad whichever window is on screen."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m-%d-%Y"):
+        try:
+            return dt.datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def in_window(rows: list, start=None, end=None) -> tuple:
+    """(rows inside the window, how many were dropped for having no date).
+
+    The count comes back so the page can own up to it — a quality table that
+    silently drops a third of its rows is worse than one that says so."""
+    if start is None and end is None:
+        return list(rows), 0
+    kept, undated = [], 0
+    for r in rows:
+        d = r.get("on")
+        if d is None:
+            undated += 1
+            continue
+        if (start is None or d >= start) and (end is None or d <= end):
+            kept.append(r)
+    return kept, undated
+
+
+def star(value) -> int | None:
+    """'4 Star' -> 4. Anything else -> None, which means UNRATED, not zero:
+    864 of Raf's 2,253 rows have no rating and counting those as a 0 would
+    invent the worst possible score for an applicant nobody scored."""
+    m = _STAR.match(str(value or ""))
+    return int(m.group(1)) if m else None
+
+
+def norm_ad(title: str) -> str:
+    """A matching key for an ad title, which people type inconsistently.
+
+    The same ad appears as 'Client Solutions Specialist - AT&T Services,
+    Frisco, TX,' / '... Frisco TX' / '... Frisco, TX'. Left raw, one ad splits
+    into three and each fragment gets its own average off a third of the
+    sample. Normalising collapsed 305 spellings to 230 on Raf's tab.
+
+    Folds '?', en-dash and '·' to the same separator — see display_ad for
+    where the '?' comes from."""
+    t = re.sub(r"[?–—·|]+", " - ", str(title or ""))
+    t = re.sub(r"\s+at Alphalete Marketing.*$", "", t, flags=re.I)
+    t = t.replace(",", " ")
+    t = re.sub(r"\s*-\s*", " - ", t)
+    return re.sub(r"\s+", " ", t).strip(" -,").lower()
+
+
+def display_ad(title: str) -> str:
+    """Tidy a title for the screen, without changing which ad it is.
+
+    The '?' is a separator that did not survive being typed in: the job boards
+    write 'AT&T Sales Associate (Spanish Required) – Balch Springs TX' with an
+    en-dash (some rows still carry a real '·'), and when the interviewer pastes
+    it through something that cannot encode that character it lands as a
+    literal question mark. The same ad reaches us from the 2R tab as
+    '…(Spanish Required), Balch Springs, TX' — plain ASCII, comma — which is
+    how we know what the '?' replaced.
+
+    Grouping never cared, since norm_ad folds ?, – and · to one key. This is
+    only so the table does not show a row that looks like a typo."""
+    t = re.sub(r"\s*\?\s*", " - ", str(title or ""))
+    t = re.sub(r"\s*[·|]\s*", " - ", t)
+    t = re.sub(r"\s*,\s*(?=,|$)", "", t)
+    return re.sub(r"\s+", " ", t).strip(" -,")
+
+
+def load(owner: str) -> list:
+    """Every ARS row for one ICD as {name, ad, star, stars}.
+
+    Routed to a workbook by first letter, then falling back to a scan of the
+    rest: the split is by first name today, but nothing enforces that, and a
+    quiet miss here would read as 'this office has no ratings'."""
+    from automations.recruiting_report.fill import open_by_key
+    from automations.focus_office_att import aliases as _al
+
+    try:
+        names = _al.get_search_candidates(owner, _al.load_aliases())
+    except Exception:
+        names = [owner]
+    wanted = {n.strip().lower() for n in names if n}
+
+    first = (owner or " ").strip()[:1].upper()
+    ordered = ([w for w in WORKBOOKS if first in w[2]]
+               + [w for w in WORKBOOKS if first not in w[2]])
+
+    for sheet_id, _label, _letters in ordered:
+        try:
+            sh = open_by_key(sheet_id)
+            ws = next((w for w in sh.worksheets()
+                       if w.title.strip().lower() in wanted), None)
+        except Exception:
+            continue
+        if ws is None:
+            continue
+        return _parse(ws.get("A1:M4000"))
+    return []
+
+
+def _parse(grid: list) -> list:
+    if not grid:
+        return []
+    header = [str(h).strip() for h in grid[0]]
+    idx = {}
+    for key, label in COLUMNS.items():
+        want = label.strip().lower()
+        idx[key] = next((i for i, h in enumerate(header)
+                         if h.lower() == want), None)
+
+    out = []
+    name_i = idx.get("name")
+    for row in grid[1:]:
+        if name_i is None or len(row) <= name_i or not row[name_i].strip():
+            continue
+        rec = {k: (row[i].strip() if i is not None and len(row) > i else "")
+               for k, i in idx.items()}
+        rec["stars"] = star(rec.get("star"))
+        rec["on"] = parse_date(rec.get("date"))
+        out.append(rec)
+    return out
+
+
+def distribution(rows: list) -> dict:
+    """{1..5: count, 'unrated': count} — the shape of the scale for an office."""
+    c = collections.Counter(r["stars"] for r in rows)
+    out = {n: c.get(n, 0) for n in range(1, 6)}
+    out["unrated"] = c.get(None, 0)
+    return out
+
+
+def by_ad(rows: list, min_rated: int = 8) -> list:
+    """Ad quality, best first: average star, and the share at each end.
+
+    `min_rated` keeps ads nobody has rated more than a handful of times off a
+    ranking that would otherwise be topped by an ad with one 5-star applicant.
+    Ads below the floor are still returned, flagged `thin`, so a real ad is
+    never silently dropped — it just cannot win.
+
+    Display name is the spelling used most often for that ad, so the table
+    reads the way the sheet does rather than showing a normalised key."""
+    per = collections.defaultdict(list)
+    spellings = collections.defaultdict(collections.Counter)
+    for r in rows:
+        key = norm_ad(r.get("ad"))
+        if not key:
+            continue
+        spellings[key][str(r.get("ad")).strip()] += 1
+        if r["stars"]:
+            per[key].append(r["stars"])
+
+    out = []
+    for key, stars in per.items():
+        n = len(stars)
+        out.append({
+            "Ad": display_ad(spellings[key].most_common(1)[0][0]),
+            "Rated": n,
+            "Avg star": round(sum(stars) / n, 2),
+            # All THREE bands, so the row adds to 100%. Showing only the two
+            # ends hid the largest group — 3 star is 47% of Raf's ratings —
+            # and left the percentages looking like they did not sum.
+            "1-2 star": f"{sum(1 for s in stars if s <= 2) / n:.0%}",
+            "3 star": f"{sum(1 for s in stars if s == 3) / n:.0%}",
+            "4-5 star": f"{sum(1 for s in stars if s >= 4) / n:.0%}",
+            "thin": n < min_rated,
+        })
+    out.sort(key=lambda r: (r["thin"], -r["Avg star"], -r["Rated"]))
+    return out

@@ -95,6 +95,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
+import pathlib
 import re
 import shlex
 import subprocess
@@ -171,7 +172,11 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # exact day you most want fast reads — can still deploy it.
                     "install_mini_control_read",
                     "install_enrollment_pending",
-                    "pip_install", "playwright_install", "set_applicant_service_account",
+                    "pip_install", "playwright_install",
+                    # Pinning Chrome is deploy plumbing: it must run on a
+                    # cap-hit day, which is exactly the day Chrome broke.
+                    "install_pinned_chrome",
+                    "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     # Writes a one-line identity marker, whitelisted and
                     # idempotent — re-running it is a no-op, not a second write.
@@ -246,6 +251,7 @@ def _lane_owns(action: str, lane: str) -> bool:
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
+                  "set_appstream_account",
                   "set_doubleentry_creds",
                   # The applicant_tracker service-account PRIVATE KEY rides the
                   # Args cell as base64. It relied on hand-redaction — and on
@@ -451,6 +457,37 @@ def _running_pids(module: str) -> list:
     return proc_guard.running_pids(module)
 
 
+# Flags that mean "this run deliberately delivered NOTHING". A rerun carrying one
+# still publishes to the Hub, but it must not close an incident: exiting 0 proves
+# the code runs, not that the report is fixed. See _probe_reason.
+_PROBE_FLAGS = ("--dry-run", "--dry", "--check", "--inspect")
+
+
+def _probe_reason(raw_report: dict, extra: list) -> str:
+    """Why this rerun should NOT close an incident, or "" when it really ran.
+
+    Two shapes, both real in this repo:
+
+      • an explicit probe flag on the command line (--dry-run and friends);
+      • a handle that is DRY BY DEFAULT and only acts with a flag — the BOX
+        repair tools say so in their own docstrings ("DRY-RUN by default; --post
+        does the work"). The config names that flag as `delivers_only_with`, so
+        the knowledge lives next to the report instead of in a guess here.
+
+    Why it matters (2026-09-01): a DRY run of box_order_log_tier_backfill exited
+    0, and the ✅ that follows a clean run closed `drop-box-order-log` — 13
+    minutes BEFORE the board reached the thread. The ticket said RESOLVED over a
+    thread that was still missing its image.
+    """
+    for f in extra:
+        if f in _PROBE_FLAGS:
+            return f
+    gate = (raw_report or {}).get("delivers_only_with", "")
+    if gate and gate not in extra:
+        return "no {}".format(gate)
+    return ""
+
+
 def _action_rerun(args: str) -> tuple[bool, str]:
     """Re-run one orchestrator report by report_id, plus any EXTRA CLI args after
     it — e.g. 'daily_metrics --only churn' re-runs just that one metric, so a
@@ -485,7 +522,12 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # of them died on that wait and the Country Trackers reached no channel all
     # morning. A rerun fired into a run that's already going doesn't heal the
     # morning, it doubles the damage.
-    busy = _running_pids(r.command[0])
+    # duplicate_guard False = the module is shared with another job on this box
+    # and the report holds no browser profile, so a running copy is not a
+    # collision — asking here would block the very rerun that repairs the
+    # morning (country_sales_board_email vs the 15-minute approval checker,
+    # Eve 2026-09-01). See registry.Report.duplicate_guard.
+    busy = _running_pids(r.command[0]) if getattr(r, "duplicate_guard", True) else []
     if busy:
         return False, (f"{report_id} is ALREADY running here (pid "
                        f"{', '.join(busy)}) — not starting a second copy: two "
@@ -578,13 +620,21 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # INCOMPLETE as run (a report that RAN with an acceptable note should show as
     # run, not like it never ran; Megan 2026-07-01) and closes the pill on failure
     # too. Best-effort; a no-op when the report has no Hub card.
+    probe = _probe_reason(
+        (cfg.raw.get("reports", {}) or {}).get(report_id) or {}, extra)
     try:
         from automations.day_orchestrator import hub_publish
         hub_publish.publish_done(
             report_id, getattr(r, "display_name", report_id),
-            status=hub_publish.final_status(report_id, ok), run_id=hub_run_id)
+            status=hub_publish.final_status(report_id, ok), run_id=hub_run_id,
+            clear_failure=not probe)
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         pass
+    if probe and ok:
+        # Say it in the result cell, where the person who queued the row reads:
+        # otherwise "exit 0" on a probe looks exactly like a fix that landed.
+        result += (" · probe run ({}) — nothing delivered, any open "
+                   "incident left OPEN".format(probe))
     return ok, result
 
 
@@ -594,7 +644,8 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     the office joins the morning run — and, with --post, immediately run its
     report so it posts to its channel.
 
-    <kind> = 'metrics' (D2D/B2B office metrics) | 'tracker' (Tableau trackers).
+    <kind> = 'metrics' (D2D/B2B office metrics) | 'tracker' (Tableau trackers)
+    | 'disposition' (the KNOCKS & DISPOSITIONS board, gap_alerts).
     The onboarding forms enqueue this on submit (wire only) and from their 'Post
     now' button (--post). apply reads the 'Office/Tracker Onboarding' tab (the
     source of truth), so the office need not be committed yet — this is the same
@@ -610,7 +661,8 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     dry = "--dry-run" in parts
     parts = [p for p in parts if not p.startswith("--")]
     if len(parts) < 2:
-        return False, "onboard_apply needs '<kind> <key>' (kind=metrics|tracker)"
+        return False, ("onboard_apply needs '<kind> <key>' "
+                       "(kind=metrics|tracker|disposition)")
     kind, key = parts[0].strip().lower(), parts[1].strip()
 
     try:
@@ -625,8 +677,21 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     elif kind in ("tracker", "trackers"):
         from automations.tracker_onboarding import store as _st, apply as _ap
         _st.set_client(gc)
+    elif kind in ("disposition", "dispositions"):
+        # No --post branch: the dispositions board is not a once-a-day report
+        # that can be "run now" — it is a tick inside a selling window, and the
+        # next one is at most 15 minutes away. Wiring is the whole job here.
+        from automations.disposition_signup import store as _st, apply as _ap
+        _st.set_client(gc)
+        rc = _ap.main(["--only", key, "--write"])
+        if rc != 0:
+            return False, f"apply(disposition) failed for {key!r} (rc={rc})"
+        return True, (f"wired {key} into the dispositions run — it joins the "
+                      "next tick (nothing sends if it is wired OFF pending "
+                      "Office Access)")
     else:
-        return False, f"unknown kind {kind!r} (expected metrics|tracker)"
+        return False, (f"unknown kind {kind!r} "
+                       "(expected metrics|tracker|disposition)")
 
     rc = _ap.main(["--only", key, "--write"])
     if rc != 0:
@@ -2547,6 +2612,74 @@ def _action_playwright_install(args: str) -> tuple[bool, str]:
         return False, f"playwright_install refused {browser!r}; allowed: chromium, firefox, webkit"
     return _run_cmd([sys.executable, "-m", "playwright", "install", browser],
                     timeout_s=10 * 60)
+
+
+def _action_install_pinned_chrome(args: str) -> tuple[bool, str]:
+    """Install the PINNED Chrome (Chrome for Testing) on THIS runner.
+
+      install_pinned_chrome                 # default 151.0.7922.138
+      install_pinned_chrome 151.0.7922.138  # an explicit build
+
+    WHY (2026-09-01). Chrome auto-updated to 152.0.7977.65 at 01:45 and began
+    crashing — EXC_BREAKPOINT in ChromeMain on macOS 26.6.2, 26 crashes that day
+    against ZERO on every prior day. One crash took harvest_prime from 17/17 to
+    1/17; the same TargetClosedError killed the captainship reports,
+    fiber_activations, the B2B tracker boards and org_sales_board's delta boxes.
+    tableau_patchright now launches a pinned build when one is installed.
+
+    THIS ACTION EXISTS BECAUSE LUCY 2 AND LUCY 3 TAKE NO SSH. Lucy 1 was fixed
+    by hand in minutes; the other two had no route at all, so the fix reached one
+    of three machines and the trackers (Lucy 3) stayed exposed. A queue action is
+    the only way in.
+
+    Downloads Google's official Chrome for Testing zip (~179 MB) into
+    ~/chrome-for-testing, beside the team's own Chrome — nothing in
+    /Applications is touched and nobody's browser changes. Also stops Keystone
+    re-updating Chrome underneath us. Idempotent: a matching build already
+    present is left alone."""
+    import platform
+    ver = (args or "151.0.7922.138").strip() or "151.0.7922.138"
+    if not re.fullmatch(r"[0-9]+(\.[0-9]+){3}", ver):
+        return False, f"refusing version {ver!r} — expected N.N.N.N"
+    arch = "mac-arm64" if platform.machine() == "arm64" else "mac-x64"
+    root = pathlib.Path.home() / "chrome-for-testing"
+    exe = (root / f"chrome-{arch}" / "Google Chrome for Testing.app"
+           / "Contents" / "MacOS" / "Google Chrome for Testing")
+    if exe.exists():
+        cur = subprocess.run([str(exe), "--version"], capture_output=True,
+                             text=True, timeout=60).stdout.strip()
+        if ver in cur:
+            return True, f"already installed: {cur} ({arch}) — nothing to do"
+    url = ("https://storage.googleapis.com/chrome-for-testing-public/"
+           f"{ver}/{arch}/chrome-{arch}.zip")
+    root.mkdir(parents=True, exist_ok=True)
+    zp = root / f"cft-{ver}.zip"
+    r = subprocess.run(["curl", "-sSL", "--max-time", "900", "-o", str(zp), url],
+                       capture_output=True, text=True, timeout=16 * 60)
+    if r.returncode != 0 or not zp.exists() or zp.stat().st_size < 50_000_000:
+        return False, (f"download failed rc={r.returncode} "
+                       f"size={zp.stat().st_size if zp.exists() else 0} "
+                       f"{(r.stderr or '')[:120]}")
+    mb = zp.stat().st_size / 1048576
+    u = subprocess.run(["unzip", "-qo", str(zp), "-d", str(root)],
+                       capture_output=True, text=True, timeout=10 * 60)
+    if u.returncode != 0 or not exe.exists():
+        return False, f"unzip failed rc={u.returncode} {(u.stderr or '')[:140]}"
+    got = subprocess.run([str(exe), "--version"], capture_output=True,
+                         text=True, timeout=60).stdout.strip()
+    try:
+        zp.unlink()
+    except Exception:  # noqa: BLE001 — the zip is a leftover, not the deliverable
+        pass
+    # Stop Keystone moving Chrome again. Reversible:
+    #   defaults delete com.google.Keystone.Agent checkInterval
+    ks = subprocess.run(["defaults", "write", "com.google.Keystone.Agent",
+                         "checkInterval", "0"], capture_output=True, text=True,
+                        timeout=60)
+    ks_note = "auto-update OFF" if ks.returncode == 0 else "auto-update UNCHANGED"
+    ok = ver in got
+    return ok, (f"{'installed' if ok else 'MISMATCH'}: {got} ({arch}, "
+                f"{mb:.0f} MB) · {ks_note} · reports use it on their next run")
 
 
 def _action_set_applicant_service_account(args: str) -> tuple[bool, str]:
@@ -5988,6 +6121,133 @@ def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     return True, "stored %s and verified: %s" % (user, tail)
 
 
+def _action_appstream_whoami(args: str) -> tuple[bool, str]:
+    """WHICH AppStream account is this machine's SAVED session? READ ONLY.
+
+      appstream_whoami [office,office,...]
+
+    No login, no --force: it reads the console banner off the session the
+    SCHEDULED reports actually reuse. That is the only way to answer "is the
+    fleet really running as the new login?" — the AppStream activity log records
+    applicant actions, not report pulls, so a 4am read leaves no trace there
+    (Megan 2026-08-31).
+
+    Deliberately distinct from appstream_whoami_account, which drives a fresh
+    login as a named account: that proves the account WORKS, this proves what the
+    fleet IS. Retiring the old shared login needs the second answer."""
+    import shlex
+    cmd = [sys.executable, "-m", "automations.shared.appstream_whoami"]
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception:  # noqa: BLE001
+        parts = []
+    if parts:
+        cmd += ["--offices", parts[0]]
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60, log_name="appstream-whoami.log")
+    return ok, res.split("·")[-1].strip()[:400]
+
+
+def _action_appstream_whoami_account(args: str) -> tuple[bool, str]:
+    """Which AppStream account is a NAMED login, and what can it see? READ ONLY.
+
+      appstream_whoami_account <name> [office,office,...]
+
+    Drives a real login as that account and reports the Account No it lands on
+    plus which offices answer. The password is resolved ON the machine from
+    appstream-accounts.json, so it never travels through a queue row.
+
+    WHY (Megan 2026-08-31): the scoped push login showed no activity stamps in
+    AppStream, and the run log could say only that no console ever rendered —
+    which cannot tell "the account does not exist", "wrong password", "no office
+    access" and "Cloudflare blocked it" apart. Those need different fixes, so
+    guessing between them is worse than asking."""
+    import shlex
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]})"
+    if not parts:
+        return False, "need: appstream_whoami_account <name> [office,office,...]"
+    cmd = [sys.executable, "-m", "automations.shared.appstream_whoami",
+           "--account", parts[0], "--force"]
+    if len(parts) > 1:
+        cmd += ["--offices", parts[1]]
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60,
+                       log_name="appstream-whoami-account.log")
+    return ok, res.split("·")[-1].strip()[:400]
+
+
+def _action_set_appstream_account(args: str) -> tuple[bool, str]:
+    """Install a NAMED AppStream login on THIS machine.
+
+      set_appstream_account <name> <username> <password>
+
+    WHY A THIRD MECHANISM (Megan 2026-08-31): primary + alt is two slots, and
+    Lucy 2 needs three kinds of access at once — a broad account for funnel_board
+    / indeed_source_report / ad_sales_board / daily_update_fill, whatever already
+    occupies the alt slot, and now LucyResume, scoped to the only two offices
+    Applicant Push may touch. Overwriting either existing slot to make room is
+    how you trade an over-push for four broken reports.
+
+    Writes ~/.config/recruiting-report/appstream-accounts.json — OUTSIDE the repo,
+    which is public. Merges, so installing one account never disturbs another.
+    NEVER echoes the password; in SECRET_ACTIONS so the poller blanks the Args
+    cell as soon as the row finishes.
+
+    Deliberately does NOT verify by logging in. The verify in
+    set_appstream_creds drives the patchright form, which has been human-gated
+    since 2026-08-20 — on a scoped account that check would fail on a perfectly
+    good credential and read as a broken install. The real proof is
+    `lucy rerun applicant_push --dry-run`, which signs in on the real-Chrome path
+    the report actually uses and records the account number for the send-time
+    identity assert."""
+    import json as _json
+    import pathlib as _pathlib   # this module imports os, not pathlib
+    import shlex
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]}) — quote the password"
+    if len(parts) != 3:
+        return False, ("set_appstream_account needs `<name> <username> <password>` "
+                       f"(quote the password if it has spaces) — got {len(parts)}")
+    name, user, pw = parts[0].strip().lower(), parts[1].strip(), parts[2]
+    if name in ("primary", "alt"):
+        return False, ("%r is a built-in slot — use set_appstream_creds or "
+                       "set_appstream_alt_creds for that one" % name)
+    if not name or not user or not pw:
+        return False, "name, username and password must all be non-empty"
+    path = (_pathlib.Path.home() / ".config" / "recruiting-report"
+            / "appstream-accounts.json")
+    blob = {}
+    if path.exists():
+        try:
+            blob = _json.loads(path.read_text())
+        except Exception:  # noqa: BLE001 — unreadable starts clean, same as creds.py
+            blob = {}
+    if not isinstance(blob, dict):
+        blob = {}
+    existing = blob.get(name) if isinstance(blob.get(name), dict) else {}
+    entry = {"username": user, "password": pw}
+    # Drop any recorded account_no when the USERNAME changes — a fingerprint from
+    # the previous login would make the send-time assert vouch for the wrong one.
+    if existing.get("username") == user and existing.get("account_no"):
+        entry["account_no"] = existing["account_no"]
+    blob[name] = entry
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_json.dumps(blob, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+        _creds_cache_bust()
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    others = sorted(k for k in blob if k != name)
+    return True, ("stored AppStream account %r as %s (untouched: %s). NOT verified "
+                  "here — prove it with `lucy rerun applicant_push --dry-run`, "
+                  "which also records the account number the live send asserts "
+                  "against." % (name, user, ", ".join(others) or "none"))
+
+
 def _action_set_appstream_creds(args: str) -> tuple[bool, str]:
     """Install the PRIMARY AppStream login on THIS machine.
 
@@ -6383,6 +6643,7 @@ ACTIONS = {
     "probe_knocks": _action_probe_knocks,
     "pip_install": _action_pip_install,
     "playwright_install": _action_playwright_install,
+    "install_pinned_chrome": _action_install_pinned_chrome,
     "set_applicant_service_account": _action_set_applicant_service_account,
     "applicant_key": _action_applicant_key,
     "rerun": _action_rerun,
@@ -6442,6 +6703,9 @@ ACTIONS = {
     "funnel_board_unlock": _action_funnel_board_unlock,
     "appstream_clear_session": _action_appstream_clear_session,
     "set_appstream_alt_creds": _action_set_appstream_alt_creds,
+    "set_appstream_account": _action_set_appstream_account,
+    "appstream_whoami_account": _action_appstream_whoami_account,
+    "appstream_whoami": _action_appstream_whoami,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_tracker_mirror": _action_install_tracker_mirror,
     "install_day_orchestrator": _action_install_day_orchestrator,

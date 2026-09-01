@@ -215,8 +215,26 @@ def _ov_upload_note(name: str, photo, act: dict) -> str:
     if not _cfg.OV_UPLOAD_ENABLED:
         return ""
     try:
+        import time as _t
+
         from automations.headshots.ov_upload import upload
-        res = upload(name, photo, dry_run=False, headless=True, verbose=True)
+        # Back-to-back uploads in one tick share the persistent browser
+        # profile, and Chromium's ProcessSingleton lock does not always clear
+        # between them ("profile is already in use"). That threw on Luis
+        # Valenzuela and Miley Aragon on 2026-08-31 and told the thread the
+        # upload had failed when a plain retry worked — so settle, then retry
+        # ONCE before believing it.
+        _t.sleep(3)
+        try:
+            res = upload(name, photo, dry_run=False, headless=True,
+                         verbose=True)
+        except Exception as first:  # noqa: BLE001
+            print(f"  OV attempt 1 failed for {name} ({type(first).__name__}:"
+                  f" {str(first)[:100]}) — settling 20s and retrying once")
+            _t.sleep(20)
+            res = upload(name, photo, dry_run=False, headless=True,
+                         verbose=True)
+            print(f"  OV retry succeeded for {name}")
         act["ov"] = res
         # A forgiven typo must be VISIBLE — say whose profile it landed on.
         as_who = (f" (matched to *{res['matched_as']}* in OwnerVille)"

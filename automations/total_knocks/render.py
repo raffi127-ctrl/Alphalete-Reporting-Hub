@@ -120,6 +120,20 @@ COL_TOTAL_APPS = "Total Apps"
 # board divides by, and the very count Total # of Reps Knocking prints — one
 # denominator behind all three, sitting in plain sight on the same row.
 COL_AVG_APP_PER_REP = "Average App per Rep"
+# "Avg Talk To's per App" (Megan 2026-08-31, "we need it added asap") — the
+# column the WEEKLY board has carried since 2026-08-22 and the daily/knock
+# boards never got, so the two read differently in front of the same person.
+#
+# TOTAL talk-tos ÷ apps, Raf's definition, settled on his own worked example:
+# "should have been Total Too's / Total apps, my bad" — 83 ÷ 6 = 13.83, the
+# how-many-talk-tos-does-an-app-cost read. Two decimals, as the weekly board
+# prints it.
+#
+# Filled on EVERY row that has both numbers, rep rows included: a rep's own
+# talk-tos-per-app is a different figure from the office's and is exactly what
+# a reader compares down the column. Blank — never 0.00 — when the row has no
+# apps, since dividing by nothing is not a zero.
+COL_TALK_TO_PER_APP = "Avg Talk To's per App"
 # "% Talk To's per Knocks" (Eve, 2026-08-28) — Total Talk To ÷ Total Knocks,
 # one decimal (Chan 2026-08-27: 1043 / 5466 = 19.1%). It sits immediately after
 # the Total Talk To it divides, ahead of Talk To's per Rep, so the funnel reads
@@ -246,6 +260,23 @@ def _with_derived(cols: list) -> list:
     out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PCT)
     out.insert(out.index(COL_TOTAL_GAPS) + 1, COL_HRS_KNOCKING)
     return out
+
+
+# The GOALS row's fill — a muted slate, deliberately NOT green. Green on this
+# board means "this rep hit the number"; a green goals row would read as the
+# office having hit it (Megan 2026-08-30 asked for the row "between chan and
+# the total", i.e. inside the summary block, where that misread is easy).
+def _reps_cell(knocking: int, listed: int) -> str:
+    """"0 of 3" — reps at the knocking bar, of reps in the field.
+
+    Megan 2026-08-30, on Calvin's board: "the total reps aren't correct, calvin
+    has 3 in the field but 0 in his totals". The bare count was right by its own
+    rule and useless as printed: at 1pm nobody has 21 knocks yet, so an intraday
+    board read 0 all afternoon under a header promising a rep count. Showing
+    both numbers keeps the divisor visible (the first one, which Talk To's per
+    Rep and Average App per Rep divide by) AND answers "how many are out".
+    Same shape the weekly board uses for the same reason."""
+    return f"{knocking} of {listed}"
 
 
 def _is_num(v) -> bool:
@@ -667,7 +698,13 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
                 d.rectangle([x, y, x + col_w[ci], y + ROW_H], fill=_cbg)
             val = r[ci] if ci < len(r) else ""
             font = f_name if (ci == name_col or is_total) else f_cell
-            fg = (HEADER_FG if is_total
+            # A highlighted row normally draws reversed (white on a dark
+            # fill). Pick by LUMINANCE instead of assuming: the GOAL row is
+            # deliberately light, and white on it is unreadable. Every
+            # existing dark totals fill stays above the threshold, so nothing
+            # else changes.
+            _rev = (0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]) < 150
+            fg = ((HEADER_FG if _rev else TEXT) if is_total
                   else NAME_FG if ci == name_col else TEXT)
             # EVERY cell centres (Megan 2026-08-30, "let's center all text to
             # cell"), which is the house standard these boards are supposed to
@@ -762,7 +799,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         apps: "dict[str, int] | None" = None,
                         rate_columns: bool = True,
                         knocks_green_at: "int | None" = None,
-                        sort_by: str = "rep",
+                        sort_by: str = "knocks",
                         base_cols: "list | None" = None,
                         out_cols: "list | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
@@ -783,11 +820,23 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     filename. The ROWS must already be folded (total_knocks.aggregate) — this
     only labels them. None / same-as-target renders exactly as it always did.
 
-    `sort_by` (optional): "rep" (default, alphabetical — every existing board
-    unchanged) or "knocks", highest Total Knocks first, for a board read as a
-    leaderboard (Raf 2026-08-29). It has to live HERE: this function re-sorts
-    the rows it is given, so a caller that pre-sorts its own list silently has
-    that order discarded.
+    `apps` (optional): {rep: apps} — forwarded to the house board, which is
+    where Total Apps / Average App per Rep / Avg Talk To's per App live. THIS
+    ROUTER accepts it because callers reach the boards through here; passing it
+    to render_total_knocks only meant /knocks raised
+    "render_knocks_boards() got an unexpected keyword argument 'apps'" the
+    moment it was wired (2026-08-31). Wireless and gaps-only shapes have no
+    talk-to block to divide, so they ignore it.
+
+    `sort_by`: "knocks" (DEFAULT since 2026-08-31) puts the highest Total
+    Knocks first; "rep" is alphabetical. These boards are read as
+    leaderboards — Raf asked for the ranking on his, and Megan pointed at
+    Cody's still coming out A-Z ("shouldn't this be ordered by total knocks
+    high to low?"), so it is now the default everywhere rather than something
+    each caller opts into and most forget.
+
+    It has to live HERE: this function re-sorts the rows it is given, so a
+    caller that pre-sorts its own list silently has that order discarded.
 
     `hide_columns` (optional): columns to leave OFF this board. For a derived
     column that only carries a number on the TOTAL row — Talk To's per Rep is
@@ -941,11 +990,20 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
             _v = str(_row[_ci]).strip()
             if _v and _hit(_v):
                 _cell_bgs[(_ri, _ci)] = GREEN_HIT
+
+    # NO goals row (Raf, 2026-08-30 — added and removed the same day). The
+    # TARGETS live on: they are what turns a cell green, they just aren't
+    # printed as a row of their own any more.
+    _n_summary = len(extra_rows) + 1      # comparison rows + our TOTAL
     # The reps-knocking count for each summary line, in the order those rows
     # are drawn (comparison offices first, then this office's TOTAL), so they
     # land in the "#" column instead of a column of their own.
-    number_rows(cols, disp, table, first=1 + len(extra_rows),
-                summary_values=list(extra_knockers) + [n_knockers])
+    # summary_values covers the rows OUTSIDE the numbering window, in order:
+    # the comparison offices, then GOALS (its bar, not a count), then ours.
+    number_rows(cols, disp, table, first=_n_summary,
+                summary_values=[_reps_cell(k, n) for k, n in
+                                zip(extra_knockers, extra_listed)]
+                + [_reps_cell(n_knockers, len(sub))])
     if _cell_bgs:
         # number_rows inserted a "#" column at 0, so every recorded column
         # index shifts one right. Done here rather than at record time so the
@@ -965,7 +1023,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                  THEME_AMBER,
                  out_dir / f"total_knocks_{_file_span(target, end)}.png",
                  name_col=1, wrap_headers=True,
-                 highlight_first_row=1 + len(extra_rows),
+                 highlight_first_row=_n_summary,
                  top_row_colors=_colors, cell_bgs=_cell_bgs or None,
                  col_min_w=_min_w or None)
 
@@ -1191,13 +1249,26 @@ def _insert_apps_column(cols: list, disp: list, table: list,
         n = n_knockers if i == n_extra else (divisors[i] if i < len(divisors)
                                              else 0)
         avgs.append(f"{int(v) / n:.1f}" if str(v).isdigit() and n else "")
+    # Talk-tos per app, from the Total Talk to already on the row and the apps
+    # column as drawn — so it can never disagree with the two numbers beside it.
+    tt_at = cols.index(COL_TOTAL_TALK_TO) if COL_TOTAL_TALK_TO in cols else None
+    per_app: list = []
+    for row, v in zip(table, values):
+        tt = str(row[tt_at]).strip() if tt_at is not None else ""
+        per_app.append(f"{int(tt) / int(v):.2f}"
+                       if tt.isdigit() and str(v).isdigit() and int(v)
+                       else "")
+
     cols.insert(at, COL_TOTAL_APPS)
     disp.insert(at, COL_TOTAL_APPS)
     cols.insert(at + 1, COL_AVG_APP_PER_REP)
     disp.insert(at + 1, COL_AVG_APP_PER_REP)
-    for row, v, a in zip(table, values, avgs):
+    cols.insert(at + 2, COL_TALK_TO_PER_APP)
+    disp.insert(at + 2, COL_TALK_TO_PER_APP)
+    for row, v, a, pa in zip(table, values, avgs, per_app):
         row.insert(at, v)
         row.insert(at + 1, a)
+        row.insert(at + 2, pa)
 
 
 def _gap_min(v: str) -> int:
@@ -1482,7 +1553,7 @@ def render_energywell_total_knocks(target: dt.date, *, rows: list[dict],
                                    title_suffix: str = "",
                                    end: "dt.date | None" = None,
                                    date_text: str = "",
-                                   sort_by: str = "rep",
+                                   sort_by: str = "knocks",
                                    knocks_green_at: "int | None" = None) -> Path:
     """TOTAL KNOCKS for an Energy Wells office — the wireless board with
     Presentation, VL and a Total Talk to column."""
@@ -1498,7 +1569,7 @@ def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
                                  end: "dt.date | None" = None,
                                  date_text: str = "",
                                  columns: "list | None" = None,
-                                 sort_by: str = "rep",
+                                 sort_by: str = "knocks",
                                  knocks_green_at: "int | None" = None) -> Path:
     """TOTAL KNOCKS for a WIRELESS (NDS) office — same amber board as the
     house one, but the wireless disposition column set (one Not Interested
@@ -1598,7 +1669,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          extra_totals=None,
                          rate_columns: bool = True,
                          knocks_green_at: "int | None" = None,
-                         sort_by: str = "rep"
+                         sort_by: str = "knocks",
+                         apps: "dict | None" = None
                          ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
@@ -1649,7 +1721,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      rate_columns=rate_columns,
                                      knocks_green_at=knocks_green_at,
-                                     sort_by=sort_by,
+                                     sort_by=sort_by, apps=apps,
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,
                                      extra_totals=extra_totals)], shape)

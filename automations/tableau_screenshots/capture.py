@@ -15,6 +15,7 @@ clear) and add a retry + a tolerant Image-menu / export-dialog path.
 """
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 from pathlib import Path
@@ -600,28 +601,49 @@ def capture_page(page, spec: dict, out_dir: Path, *,
     out_path = out_dir / f"{_sanitize(spec['title'])}.png"
     if verbose:
         print(f"-> [{spec['id']}] {spec['url']}", flush=True)
+    from automations.shared.tableau_patchright import (is_dead_context,
+                                                       tableau_session)
     last = None
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            _download_once(page, spec, out_path, hydrate_ms=hydrate_ms,
-                           verbose=verbose, after_load=after_load)
-            kb = out_path.stat().st_size // 1024
-            if verbose:
-                print(f"   ✓ Download→Image  {out_path.name}  "
-                      f"{_dims(out_path)}px  {kb} KB", flush=True)
-            # Side-channel only: record what the rendered board is showing. Runs
-            # AFTER the image is safely on disk, and swallows everything, so the
-            # one check that reads the picture can never cost us the picture.
-            probe_rendered_dates(page, spec, verbose=verbose)
-            return out_path
-        except Exception as e:
-            last = e
-            if verbose:
-                print(f"   attempt {attempt}/{MAX_ATTEMPTS} failed: "
-                      f"{type(e).__name__}: {str(e).splitlines()[0][:110]}",
-                      flush=True)
-            if attempt < MAX_ATTEMPTS:
-                time.sleep(BACKOFF_S)
+    # A crashed browser is not a Tableau flake: re-issuing the navigation into a
+    # closed context reproduces the same TargetClosedError on every attempt, so
+    # the ladder used to burn all three in milliseconds and lose the board. On
+    # 2026-09-01 that cost the B2B/Box tracker boards two full catch-up runs
+    # ("Captured nothing"), while a FRESH process captured four other boards on
+    # its first try. Rebuild instead of retrying into the corpse.
+    with contextlib.ExitStack() as stack:
+        pg = page
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                _download_once(pg, spec, out_path, hydrate_ms=hydrate_ms,
+                               verbose=verbose, after_load=after_load)
+                kb = out_path.stat().st_size // 1024
+                if verbose:
+                    print(f"   ✓ Download→Image  {out_path.name}  "
+                          f"{_dims(out_path)}px  {kb} KB", flush=True)
+                # Side-channel only: record what the rendered board is showing.
+                # Runs AFTER the image is safely on disk, and swallows
+                # everything, so the one check that reads the picture can never
+                # cost us the picture.
+                probe_rendered_dates(pg, spec, verbose=verbose)
+                return out_path
+            except Exception as e:
+                last = e
+                if verbose:
+                    print(f"   attempt {attempt}/{MAX_ATTEMPTS} failed: "
+                          f"{type(e).__name__}: {str(e).splitlines()[0][:110]}",
+                          flush=True)
+                if attempt < MAX_ATTEMPTS:
+                    if is_dead_context(e):
+                        # Fail fast. An in-process rebuild is impossible — it
+                        # nests sync_playwright() inside a running one, which
+                        # Playwright refuses (5 fired / 5 failed / 0 recovered,
+                        # 2026-09-01). A fresh PROCESS is what actually recovers
+                        # a board; see tableau_patchright for the measurements.
+                        if verbose:
+                            print("   ✗ the browser died — failing fast so this "
+                                  "board retries on a fresh run", flush=True)
+                        break
+                    time.sleep(BACKOFF_S)
     raise RuntimeError(
         f"{spec['id']}: Download→Image failed after {MAX_ATTEMPTS} attempts "
         f"({type(last).__name__}: {str(last).splitlines()[0][:120]})")

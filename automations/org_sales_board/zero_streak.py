@@ -164,6 +164,31 @@ def streak(vals: dict, closed: list) -> int:
     return n
 
 
+def unrolled_boxes(boxes: list, live_sun: dt.date) -> dict:
+    """{owner/section: newest WE date} for every box whose newest week column is
+    OLDER than the live week — i.e. the board has not rolled yet.
+
+    WHY THIS GUARD EXISTS (Eve, 2026-09-01, applying the rule to the Country
+    Sales Board). These boards roll on TUESDAY, and the rule runs on Tuesday
+    too. Run it before the roll and the newest closed week is still sitting in
+    col C as a FORMULA rather than as the literal the rule is defined on, so a
+    week that has not finished being frozen decides who comes off the board.
+    Worse, `roster_remove` deletes rows, and the roll re-anchors blocks that
+    point at absolute rows (the Country board's Current-vs-Prior block is
+    `=C$174`), so deleting between the snapshot and the roll moves the target
+    out from under it.
+
+    Read off the board's OWN header rather than the clock: "has this tab rolled"
+    is a question about the tab, and the two disagree for exactly the hours this
+    guard is about."""
+    late = {}
+    for b in boxes:
+        newest = max((d for d, _c in b["weeks"]), default=None)
+        if newest and newest < live_sun:
+            late[f"{b['owner']}/{b['section']}"] = newest
+    return late
+
+
 def build_post(flags: list, newbies: list, weeks: list, today: dt.date) -> str:
     """The Slack message. It PROPOSES; it never says anything was removed.
 
@@ -216,40 +241,23 @@ def post_slack(flags: list, newbies: list, weeks: list, today: dt.date,
         logfn(f"  Slack: NO se posteó ({type(e).__name__}: {e}). El texto era:\n{text}")
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="org_sales_board.zero_streak")
-    ap.add_argument("--weeks", type=int, default=DEFAULT_WEEKS,
-                    help=f"closed weeks at 0 to flag on (default {DEFAULT_WEEKS})")
-    ap.add_argument("--tab", default=SANDBOX_TAB)
-    ap.add_argument("--today", default=None, help="YYYY-MM-DD, for a past run")
-    ap.add_argument("--commands", action="store_true",
-                    help="also print the roster_remove / distro_remove commands")
-    ap.add_argument("--csv", default=None, help="output path (default output/…)")
-    ap.add_argument("--post", action="store_true",
-                    help="post the list to Slack (the scheduled Tuesday run does this)")
-    args = ap.parse_args(argv)
-    today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
-
-    ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(args.tab))
-    grid = _retry(lambda: ws.get("A1:ZZ2200", value_render_option="UNFORMATTED_VALUE")) or []
-    boxes = read_boxes(grid, today)
-    if not boxes:
-        print("no se encontró ningún leaderboard — ¿cambió el tab?")
-        return 1
-
-    live_sun = wk.reporting_sunday(today)
-    all_weeks = sorted({d for b in boxes for d, _c in b["weeks"]}, reverse=True)
-    closed = [d for d in all_weeks if d < live_sun]
-    print(f"=== zero_streak — {args.tab!r} — {today:%Y-%m-%d %a}")
-    print(f"    semana viva WE {live_sun:%m.%d} (se ignora) · "
-          f"cerradas más recientes: {', '.join(f'WE {d:%m.%d}' for d in closed[:4])}")
-    print(f"    umbral: {args.weeks} semana(s) cerradas en 0\n")
-
+def score(boxes: list, live_sun: dt.date, weeks: int = DEFAULT_WEEKS):
+    """(flags, newbies) for an already-read board. Split out of main() so the
+    post-rollover hook scores exactly what the CLI scores — one rule, one
+    implementation, with no second copy to drift."""
     # The guard against pulling a rep who just CHANGED campaigns: where is this
     # person still selling RIGHT NOW? Recent means the live week or the last
     # closed one — a positive number from two years ago says nothing about
     # whether they moved, and counting it would flag every veteran as "active".
-    recent = [d for d in ([live_sun] + closed[:1])]
+    #
+    # STRUCTURALLY BLIND ON A ONE-BOX TAB. `elsewhere` can only see the OTHER
+    # boxes on the SAME tab, so on a board with a single leaderboard (the
+    # Country Sales Board) it is always empty and the warning that saved Kobe
+    # Cireus cannot fire. There the cross-check has to be done by hand against
+    # captain_gate.EXCLUDE / roster_sync.EXCLUDE / distro_remove.REMOVALS.
+    closed_all = sorted({d for b in boxes for d, _c in b["weeks"] if d < live_sun},
+                        reverse=True)
+    recent = [live_sun] + closed_all[:1]
     active = set()
     for b in boxes:
         for rep in b["reps"]:
@@ -258,13 +266,13 @@ def main(argv=None) -> int:
     active_names = {n for n, _o, _s in active}
     excluded = {norm(x) for x in roster_sync.EXCLUDE}
 
-    flags, newbies, rows = [], [], []
+    flags, newbies = [], []
     for b in boxes:
         box_closed = [d for d, _c in b["weeks"] if d < live_sun]
         for rep in b["reps"]:
             key = norm(rep["name"])
             n = streak(rep["vals"], box_closed)
-            if n < args.weeks:
+            if n < weeks:
                 continue
             ever = [d for d in box_closed if (rep["vals"].get(d) or 0) > 0]
             item = {"name": rep["name"], "row": rep["row"], "owner": b["owner"],
@@ -278,6 +286,119 @@ def main(argv=None) -> int:
                                          and (o, s) != (b["owner"], b["section"])}),
                     "excluded": key in excluded}
             (newbies if not ever and key not in active_names else flags).append(item)
+    return flags, newbies
+
+
+def after_rollover(sheet_id: str, tab: str, *, today=None,
+                   weeks: int = DEFAULT_WEEKS, dry_run: bool = False,
+                   logfn=print) -> int:
+    """Score a board that has JUST rolled and post the proposal. Returns how many
+    rows were flagged. NEVER raises — the caller is a board fill.
+
+    WHY IT HANGS OFF THE ROLL (Eve, 2026-09-01): "incluilo en el proceso de roleo
+    de los martes, no le crees tarjeta aparte". A separate Tuesday card had to
+    GUESS that the board had already rolled; it only worked because its `order`
+    happened to sit after the board's, an ordering invisible from either entry
+    and one that did not exist at all for a second board. Hanging it off the roll
+    makes the precondition the trigger: the rule reads the board in the one state
+    it is defined on — the freshly-frozen literals — and a week the board never
+    rolled is a week the rule never runs on stale columns.
+
+    It PROPOSES ONLY. Nothing here removes a row; `roster_remove` stays a
+    separate, deliberate step, which is exactly what the Slack post says."""
+    try:
+        today = today or dt.date.today()
+        ws = _retry(lambda: open_by_key(sheet_id).worksheet(tab))
+        grid = _retry(lambda: ws.get("A1:ZZ2200",
+                                     value_render_option="UNFORMATTED_VALUE")) or []
+        boxes = read_boxes(grid, today)
+        if not boxes:
+            logfn("  zero-rule: no leaderboard on %r — skipped" % (tab,))
+            return 0
+        live_sun = wk.reporting_sunday(today)
+        late = unrolled_boxes(boxes, live_sun)
+        if late:
+            # Called right after a roll, so this should be impossible. When it
+            # is not, the roll did not land, and scoring would read a live
+            # formula as a closed week. Say so and post nothing.
+            logfn("  zero-rule: %r still reads WE %s (live is WE %s) — the roll "
+                  "did not land, not scoring"
+                  % (tab, max(late.values()).strftime("%m.%d"),
+                     live_sun.strftime("%m.%d")))
+            return 0
+        flags, newbies = score(boxes, live_sun, weeks)
+        closed = sorted({d for b in boxes for d, _c in b["weeks"] if d < live_sun},
+                        reverse=True)
+        logfn("  zero-rule: %d fila(s) para sacar, %d sin historial"
+              % (len(flags), len(newbies)))
+        for f in sorted(flags, key=lambda x: (-x["streak"], x["name"])):
+            logfn("     %-24s %-26s %d sem · últ. venta %s"
+                  % (f["name"][:24], f["section"][:26], f["streak"], f["last_sale"]))
+        if dry_run:
+            logfn("  zero-rule: dry-run — no se postea")
+            return len(flags)
+        post_slack(flags, newbies, closed[:weeks], today, logfn=logfn)
+        return len(flags)
+    except Exception as e:                  # noqa: BLE001 — advisory, never fatal
+        logfn("  zero-rule: SALTEADO (%s: %s) — el roleo y el fill ya quedaron"
+              % (type(e).__name__, str(e)[:120]))
+        return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="org_sales_board.zero_streak")
+    ap.add_argument("--weeks", type=int, default=DEFAULT_WEEKS,
+                    help=f"closed weeks at 0 to flag on (default {DEFAULT_WEEKS})")
+    ap.add_argument("--tab", default=SANDBOX_TAB)
+    ap.add_argument("--sheet", default=SHEET_ID,
+                    help="Workbook id. Defaults to the ORG board's. The rule is "
+                         "board-shaped, not board-specific: any tab with 'WE m.d' "
+                         "leaderboards reads the same, which is how the Country "
+                         "Sales Board is covered without a second copy of this.")
+    ap.add_argument("--allow-unrolled", action="store_true",
+                    help="run even when the board has not rolled into the live "
+                         "week yet (see the roll guard below — you almost never "
+                         "want this)")
+    ap.add_argument("--today", default=None, help="YYYY-MM-DD, for a past run")
+    ap.add_argument("--commands", action="store_true",
+                    help="also print the roster_remove / distro_remove commands")
+    ap.add_argument("--csv", default=None, help="output path (default output/…)")
+    ap.add_argument("--post", action="store_true",
+                    help="post the list to Slack (the scheduled Tuesday run does this)")
+    args = ap.parse_args(argv)
+    today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
+
+    ws = _retry(lambda: open_by_key(args.sheet).worksheet(args.tab))
+    grid = _retry(lambda: ws.get("A1:ZZ2200", value_render_option="UNFORMATTED_VALUE")) or []
+    boxes = read_boxes(grid, today)
+    if not boxes:
+        print("no se encontró ningún leaderboard — ¿cambió el tab?")
+        return 1
+
+    live_sun = wk.reporting_sunday(today)
+    unrolled = unrolled_boxes(boxes, live_sun)
+    if unrolled and not args.allow_unrolled:
+        print(f"El board todavía no roleó: su columna viva es "
+              f"WE {max(unrolled.values()):%m.%d}, la semana viva es "
+              f"WE {live_sun:%m.%d}.")
+        print("  Corré esto DESPUÉS del roleo del martes. Antes del roleo la "
+              "semana cerrada más nueva sigue siendo la FÓRMULA de la col C, y "
+              "sacar filas justo antes del roleo le mueve las anclas por fila.")
+        print("  (--allow-unrolled si de verdad querés leerlo igual)")
+        return 2
+    all_weeks = sorted({d for b in boxes for d, _c in b["weeks"]}, reverse=True)
+    closed = [d for d in all_weeks if d < live_sun]
+    print(f"=== zero_streak — {args.tab!r} — {today:%Y-%m-%d %a}")
+    print(f"    semana viva WE {live_sun:%m.%d} (se ignora) · "
+          f"cerradas más recientes: {', '.join(f'WE {d:%m.%d}' for d in closed[:4])}")
+    print(f"    umbral: {args.weeks} semana(s) cerradas en 0\n")
+
+    # The guard against pulling a rep who just CHANGED campaigns: where is this
+    # person still selling RIGHT NOW? Recent means the live week or the last
+    # closed one — a positive number from two years ago says nothing about
+    # whether they moved, and counting it would flag every veteran as "active".
+    flags, newbies = score(boxes, live_sun, args.weeks)
+    rows = []
 
     def show(items, title):
         if not items:

@@ -157,3 +157,4 @@ automations/slack_skool_email/.slack_profile*
 
 # The Slack + Skool links themselves live in slack-skool-creds.json, already
 # covered by the *-creds.json* rule at the top.
+.appstream_last_mint_attempt

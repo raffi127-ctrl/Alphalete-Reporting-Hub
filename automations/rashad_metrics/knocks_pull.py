@@ -107,8 +107,15 @@ def _is_energywell_dispo(idx: dict) -> bool:
     """Energy-Wells-shaped Disposition: the VL column is the signature — no
     other campaign's grid carries it. Checked BEFORE the wireless test, which
     this shape would otherwise satisfy (it has no Talk-To split either)."""
+    # AND NOT the house Talk-To split. VL alone is not enough: a fiber grid
+    # that also carries a VL column would be claimed here and then fail the
+    # Energy Wells scrape on the columns it does not have — which is exactly
+    # what killed Chan Park's comparison line on 2026-08-31 ("this one doesn't
+    # have chans numbers?"). The campaign shapes are told apart by what they
+    # LACK as much as by what they have, the same way the wireless test works.
     return (knocks._norm(knocks.COL_TOTAL_KNOCKS) in idx
-            and knocks._norm(knocks.COL_VL) in idx)
+            and knocks._norm(knocks.COL_VL) in idx
+            and knocks._norm(knocks.COL_TALK_TO_NI) not in idx)
 
 
 def _scrape_energywell_rows(page, idx: dict) -> list[dict]:
@@ -146,13 +153,11 @@ def _scrape_shaped_rows(page, idx: dict, columns: list, counts: set,
     different column list, and a second copy of a pagination loop is how the
     two drift. `label` only names the shape in errors.
     """
-    want = {c: idx.get(knocks._norm(c)) for c in columns}
-    missing = [c for c, i in want.items() if i is None]
-    if missing:
-        raise RuntimeError(
-            f"{label} disposition table is missing expected column(s): "
-            + ", ".join(missing)
-            + ". Live headers were: " + ", ".join(sorted(idx)) + ".")
+    # Same tolerance as the house walk: only ID / Rep / Total Knocks are
+    # required, every other bucket is optional because the disposition
+    # vocabulary is per-office (knocks._resolve_columns).
+    want, absent = knocks._resolve_columns(idx, columns,
+                                           label=f"{label} disposition")
 
     table = page.locator("#table-dispositions")
     try:
@@ -181,6 +186,10 @@ def _scrape_shaped_rows(page, idx: dict, columns: list, counts: set,
             for col, i in want.items():
                 raw = cells[i]
                 rec[col] = knocks._to_int(raw) if col in counts else raw
+            # A bucket this office's page doesn't carry: zero doors went into
+            # it (blank for the text columns), so the board still renders.
+            for col in absent:
+                rec[col] = 0 if col in counts else ""
             rid = str(rec.get(knocks.COL_ID, "")).strip()
             if rid and rid in seen_ids:
                 continue
@@ -327,7 +336,8 @@ def pull_office_knocks(office_name: Optional[str] = None,
 
 def pull_office_days_on_page(page, canonical: str, aliases_raw,
                              targets: "list[dt.date]", *,
-                             verbose: bool = True) -> "dict":
+                             verbose: bool = True,
+                             campaign: "str | None" = None) -> "dict":
     """SEVERAL days for one office on an ALREADY-OPEN page: impersonate
     `canonical` ONCE, scrape each day in `targets`, exit impersonation once.
     Returns {date: rows}.
@@ -381,7 +391,14 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
         # Sticky-campaign guard — see KNOCKS_CAMPAIGN_ID above. Pinned once
         # for the impersonated session, not once per day: the campaign is a
         # property of the session, and re-pinning would cost a navigation a day.
-        _pin_campaign(page, rqst, campaign_for_office(canonical),
+        # `campaign` overrides the per-office map for THIS pull. Needed the
+        # moment one office runs TWO campaigns: Jay Turnage knocks AT&T and
+        # Energy Wells and gets a separate report for each (Raf: "not
+        # combined, 2 separate reports"), which a map keyed by office NAME
+        # cannot express — it holds one value per office.
+        _pin_campaign(page, rqst,
+                      campaign if campaign is not None
+                      else campaign_for_office(canonical),
                       verbose=verbose)
 
         for target in targets:
@@ -545,7 +562,11 @@ def pull_offices_days(jobs, verbose: bool = True, profile_dir=None):
     aliases_raw = load_aliases()
     out: list = []
     with ownerville_session(verbose=verbose, profile_dir=profile_dir) as page:
-        for name, targets in jobs:
+        for job in jobs:
+            # (name, days) or (name, days, campaign) — the third element pins
+            # THIS pull's campaign, for an office that runs more than one.
+            name, targets = job[0], job[1]
+            campaign = job[2] if len(job) > 2 else None
             targets = sorted(set(targets))
             canonical = alias_to_canonical(name, aliases_raw)
             if verbose and canonical != name:
@@ -562,7 +583,8 @@ def pull_offices_days(jobs, verbose: bool = True, profile_dir=None):
                 else:
                     days = pull_office_days_on_page(page, canonical,
                                                     aliases_raw, targets,
-                                                    verbose=verbose)
+                                                    verbose=verbose,
+                                                    campaign=campaign)
                 out.append((name, days, None))
             except Exception as e:  # noqa: BLE001 — one office must not kill the rest
                 if verbose:

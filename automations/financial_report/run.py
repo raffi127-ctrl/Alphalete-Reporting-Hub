@@ -96,7 +96,11 @@ def _name_bridge() -> dict:
             for c in (list(data.get("confirmed", []))
                       + list(data.get("sales_only", []))):
                 ao, tab = c.get("as_owner"), c.get("sheet_tab")
-                if ao and tab:
+                # Skip a tab whose as_owner is ANOTHER ICD — a shared-office
+                # placeholder (`owner_lookup_shared`). Bridging it would file
+                # that ICD's financial statement onto this tab (Ja Mosley was
+                # getting Francisco Castillo's, Eve 2026-08-31).
+                if ao and tab and not c.get("owner_lookup_shared"):
                     # Key on the FULL tab title and on the title minus its
                     # ' - <campaign>' suffix: _match_owner looks the bridge up
                     # both ways, and the org sheet's tabs all carry a suffix.

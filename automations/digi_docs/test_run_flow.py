@@ -615,21 +615,156 @@ class AttestationFailureIsNotAFailedSendTest(_NoNetwork):
                        dry=False, added=[], done=done, refused=refused)
         return done, refused
 
-    def test_an_attestation_failure_leaves_the_rep_unresolved(self):
-        """Not done, not tinted. The success banner was the only evidence the
-        bundle generated, and on 2026-08-31 people with that banner in the log
-        had no documents in OwnerVille — so this line must not decide it."""
+    def test_a_sent_bundle_is_tinted_even_when_attestations_fail(self):
+        """Megan 2026-08-31: "no cells are turned green for those the digi doc
+        bundle sent to". The banner confirms the bundle generated and
+        generating IS the send, so the cell must say sent. A blank cell reads
+        as never-sent and sends somebody hunting for a bundle already gone."""
         done, refused = self._run_one(tick_raises=True)
-        self.assertEqual([], done, "a tint here would claim a send we cannot "
-                                   "prove happened")
+        self.assertEqual(1, len(done))
+        self.assertEqual("Bianca Mendez", done[0][0])
+        self.assertEqual([], done[0][2], "no boxes were ticked")
 
-    def test_the_alert_says_where_it_stopped_and_what_to_check(self):
+    def test_the_alert_says_sent_and_that_no_re_send_is_needed(self):
         _, refused = self._run_one(tick_raises=True)
         self.assertEqual(1, len(refused))
-        self.assertIn("attestation boxes", refused[0])
-        self.assertIn("CHECK OwnerVille", refused[0])
+        self.assertIn("bundle SENT", refused[0])
+        self.assertIn("does NOT need a re-send", refused[0])
 
     def test_a_clean_run_is_unchanged(self):
         done, refused = self._run_one(tick_raises=False)
         self.assertEqual([], refused)
         self.assertEqual(["a box"], done[0][2])
+
+
+class UnrecognisedDocsStateIsLoudTest(_NoNetwork):
+    """PENDING made people invisible. Only "finished" may be silent.
+
+    2026-08-31: the check was "REQUIRED ACTION or skip", so any other state
+    meant no send, no retry and no alert — on every run, forever. A cohort sat
+    in PENDING all morning while each run walked past them without a word, and
+    the only reason anyone noticed was Megan opening OwnerVille by hand.
+
+    COMPLETED is genuinely finished and stays quiet. Everything else is
+    reported, because this code cannot tell whether PENDING means "packet out,
+    awaiting signature" or "started and never delivered" — and a state it
+    cannot interpret is the last thing that should pass silently.
+    """
+
+    def _send_one(self, state):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import config as _cfg, run as _run
+
+        class _OV:
+            Refused = RuntimeError
+            config = _cfg
+
+            def open_set_status(self, page, name):
+                return object(), name
+
+            def docs_row_state(self, modal):
+                return state
+
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        done, refused = [], []
+        person = type("C", (), {"name": "Brittany Brandon"})()
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True):
+            _run._work(_OV(), page_ctx=contextlib.nullcontext(object()),
+                       do_add=False, do_send=True, send=[person], add_list=[],
+                       dry=False, added=[], done=done, refused=refused)
+        return refused
+
+    def test_pending_is_treated_as_already_generated(self):
+        """Megan 2026-08-31: "that more than likely means they were already
+        generated" — the packet is out, waiting on a signature. It behaves that
+        way too: people she sent by hand moved OUT of PENDING as their bundles
+        landed. If that read is ever wrong, take PENDING out of
+        config.DOCS_DONE_STATES and the send treats them as sendable again."""
+        from automations.digi_docs import config
+        self.assertIn("PENDING", config.DOCS_DONE_STATES)
+        self.assertEqual([], self._send_one("PENDING"))
+
+    def test_completed_stays_quiet(self):
+        # noqa: kept alongside the PENDING case above
+        self.assertEqual([], self._send_one("COMPLETED"))
+
+    def test_an_unreadable_state_is_reported_too(self):
+        refused = self._send_one("")
+        self.assertEqual(1, len(refused))
+        self.assertIn("unreadable", refused[0])
+
+    def test_a_state_nobody_has_seen_before_is_reported(self):
+        refused = self._send_one("ON HOLD")
+        self.assertEqual(1, len(refused))
+        self.assertIn("ON HOLD", refused[0])
+
+
+class FastAddOnlyTrustsAProvenRosterTest(_NoNetwork):
+    """One roster read is the speed-up; PROVING it is the safety.
+
+    2026-08-31, in order: the add ran a whole-site search per person (~2 min
+    each, two runs died on their timeout partway); the first roster read fixed
+    that by reading ONE page per campaign and reporting 29 real people as
+    missing; and then Megan found that adding a rep MAILS them their onboarding
+    email. So a partial read is not a cosmetic bug — "absent" being wrong is a
+    duplicate welcome to a real person.
+
+    Hence: trust the roster only when it proved complete, and otherwise fall
+    all the way back to asking per person.
+    """
+
+    def _add(self, roster, complete):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import ownerville as _real, run as _run
+
+        class _OV:
+            Refused = RuntimeError
+            present = staticmethod(_real.present)
+
+            def __init__(s):
+                s.asked, s.known_absent_flags = [], []
+
+            def snapshot(s, page, **kw):
+                return roster, complete
+
+            def add_sales_rep(s, page, name, *, dry_run=True, employee_id=None,
+                              known_absent=False):
+                s.asked.append(name)
+                s.known_absent_flags.append(known_absent)
+                return "added"
+
+        ov = _OV()
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        people = [type("C", (), {"name": n})()
+                  for n in ("Ana Lopez", "Bo Diaz")]
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True):
+            _run._work(ov, page_ctx=contextlib.nullcontext(object()),
+                       do_add=True, do_send=False, send=[], add_list=people,
+                       dry=False, added=[], done=[], refused=[])
+        return ov
+
+    def test_a_proven_roster_skips_the_present_and_fast_paths_the_rest(self):
+        ov = self._add({"1 ana lopez rep"}, True)
+        self.assertEqual(["Bo Diaz"], ov.asked, "Ana is already there")
+        self.assertTrue(all(ov.known_absent_flags))
+
+    def test_an_incomplete_roster_is_not_trusted_at_all(self):
+        """Even though Ana is in it — a read that could not prove itself must
+        not decide who is absent, because absent means MAIL THEM."""
+        ov = self._add({"1 ana lopez rep"}, False)
+        self.assertEqual(["Ana Lopez", "Bo Diaz"], ov.asked)
+        self.assertFalse(any(ov.known_absent_flags))
+
+    def test_an_empty_roster_falls_back_rather_than_adding_everyone(self):
+        ov = self._add(set(), True)
+        self.assertEqual(["Ana Lopez", "Bo Diaz"], ov.asked)
+        self.assertFalse(any(ov.known_absent_flags),
+                         "empty means unread, never 'nobody is here'")

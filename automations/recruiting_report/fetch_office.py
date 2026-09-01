@@ -127,8 +127,67 @@ def _reload_console(page: Page) -> None:
     page.wait_for_timeout(1500)
 
 
-def _switch_office(page: Page, office_id: str, owner_hint: str = "") -> bool:
-    """Type into searchMC and select the matching office. Wait for page load."""
+def _office_in_account(page: Page, office_id: str) -> Optional[bool]:
+    """Does this AppStream account's own office list contain `office_id`?
+
+    True/False when the switcher carries a PRELOADED source array — the same
+    array list_all_offices scrapes, i.e. the account's own list of offices — so
+    it answers the question without depending on the dropdown having painted.
+    None when the autocomplete is server-side and there is no local list to ask.
+
+    Read-only: never types, clicks or navigates."""
+    try:
+        ids = page.evaluate(
+            """
+            () => {
+              if (typeof jQuery === 'undefined') return null;
+              const inst = jQuery('#searchMC').autocomplete('instance');
+              if (!inst) return null;
+              const src = inst.options.source;
+              if (!Array.isArray(src)) return null;
+              return src.map(it => {
+                if (it && typeof it === 'object') {
+                  const id = it.id ?? it.value ?? it.label ?? '';
+                  return String(id).split('
+')[0].trim();
+                }
+                return String(it ?? '').split('
+')[0].trim();
+              });
+            }
+            """
+        )
+    except Exception:  # noqa: BLE001 — a probe must never break the switch
+        return None
+    if not ids:
+        return None
+    return str(office_id).strip() in {str(i).strip() for i in ids}
+
+
+def _switch_office(page: Page, office_id: str, owner_hint: str = "",
+                   *, confirm_denial: bool = False) -> bool:
+    """Type into searchMC and select the matching office. Wait for page load.
+
+    Returns False when the office is not reachable from the logged-in AppStream
+    account — which the recruiting callers turn into "needs access".
+
+    confirm_denial=True: never return False on a guess. The 2026-08-29 fix below
+    made the dropdown WAIT instead of snapshotting it, which killed the common
+    race — but it still returns False when the dropdown never answers at all,
+    and "the account can't reach this office" is not the same fact as "nothing
+    rendered in 16s". On 2026-09-01 that posted Frank Matos, Jose Velasquez and
+    Joseph Delgado to #claudecorrections as "AppStream refused these — needs
+    access"; all three had pulled clean the day before and carry a full previous
+    week on Colten Wright's tab. daily_focus files a denial under `denied`,
+    which is deliberately NEVER retried, so a false one costs the day's data and
+    sends somebody off requesting access they already have.
+
+    So under this flag a no-match is only reported as a denial when something
+    actually says so — the account's own office list lacks the office, or a
+    dropdown really did answer without it. Otherwise we raise, which the callers
+    already read as transient and retry. Off by default so the single-office
+    callers (resume_pushing, oat_processing, funnel_board, recruiter_retention)
+    keep the plain True/False contract they were written against."""
     _dismiss_overlays(page)
     if not _focus_search_box(page):
         # #searchMC absent — the page drifted off the AppStream console. Reload
@@ -150,6 +209,7 @@ def _switch_office(page: Page, office_id: str, owner_hint: str = "") -> bool:
     # ~8s, and retype once before giving up — only an ANSWERED dropdown with no
     # matching row means the office truly isn't on this account.
     target_item = None
+    answered = False        # did the dropdown ever come back with ANY row?
     for attempt in range(2):
         page.locator("#searchMC").fill("")
         page.locator("#searchMC").type(office_id, delay=30)
@@ -163,13 +223,24 @@ def _switch_office(page: Page, office_id: str, owner_hint: str = "") -> bool:
                         break
                 except Exception:  # noqa: BLE001 — item detached mid-read
                     continue
+            if items:
+                answered = True
             if target_item is not None or items:
                 break
         if target_item is not None:
             break
     if not target_item:
-        # The dropdown answered and held no row for this id — a real access gap.
-        return False
+        if not confirm_denial or answered:
+            # The dropdown answered and held no row for this id — a real access
+            # gap. (Callers without confirm_denial keep the old contract.)
+            return False
+        # It never answered. That is not the same fact, so ask the switcher's
+        # own office list before letting anyone post "needs access".
+        if _office_in_account(page, office_id) is False:
+            return False
+        raise PWTimeout(
+            "office %s: the switcher never answered after 2 attempts — not "
+            "reporting that as an access denial" % office_id)
 
     # Click the item — this triggers AppStream's office-switch (page reload).
     # 30s + domcontentloaded (was 15s + "load"): ApplicantStream's report page is
@@ -436,7 +507,7 @@ def _parse_value(raw: str, type_: str) -> Optional[float]:
 
 def fetch_one(page: Page, office_id: str, owner_hint: str, week_start: dt.date) -> Dict[str, Optional[float]]:
     """Switch to one office + week and return the 19 weekly-total metrics."""
-    if not _switch_office(page, office_id, owner_hint):
+    if not _switch_office(page, office_id, owner_hint, confirm_denial=True):
         return {}
     _ensure_on_retention_report(page)
     _set_week_and_submit(page, week_start)
@@ -535,8 +606,9 @@ def _scrape_metrics_per_day(page: Page) -> Dict[str, Dict[str, Optional[float]]]
 
 def fetch_one_daily(page: Page, office_id: str, owner_hint: str, week_start: dt.date):
     """Like fetch_one but returns per-day breakdown instead of weekly totals.
-    Returns {} if office not accessible."""
-    if not _switch_office(page, office_id, owner_hint):
+    Returns {} if the office is not accessible — a CONFIRMED denial (see
+    _switch_office's confirm_denial), never a dropdown that stayed silent."""
+    if not _switch_office(page, office_id, owner_hint, confirm_denial=True):
         return {}
     _ensure_on_retention_report(page)
     _set_week_and_submit(page, week_start)

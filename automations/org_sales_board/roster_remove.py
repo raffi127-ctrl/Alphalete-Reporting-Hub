@@ -53,6 +53,19 @@ The campaign half is different: `new_owners/hook.py` only adds someone a human
 banked AND who then sold, so a campaign row cannot come back on its own.
 [[project_org-board-roster-selfheal-resurrects-deletions]]
 
+IT FOLLOWS THROUGH TO ALL CAMPAIGNS (Eve, 2026-09-01: "cuando se eliminen owners
+de la org sales board ... que lógicamente los elimines también de All Campaigns
+Org Sales Board"). Same workbook, different tab, different module, different
+EXCLUDE list, and neither knew about the other — so an owner cleared here used
+to stay on a live board nobody fills any more.
+
+ONLY for a name left with NO rows on this board, and that condition is the whole
+design: one All Campaigns line is the person's total across EVERY campaign, so
+cascading a per-campaign removal would erase the campaigns they still sell. A
+name that still has rows is reported and skipped, which is why an --owner-scoped
+removal almost never cascades. `--no-cascade` opts out; another board reached
+through --sheet/--tab (the Country Sales Board) never cascades at all.
+
     python -m automations.org_sales_board.roster_remove --names "A|B"   # dry-run
     python -m automations.org_sales_board.roster_remove --names "A|B" --apply
 """
@@ -293,25 +306,98 @@ def _pinned(name: str, rows) -> bool:
     return all(cg._excluded(c, name) for c in caps) if caps else True
 
 
+def _cascade_all_campaigns(names, remaining, args) -> None:
+    """Follow an ORG-board removal through to the All Campaigns tab.
+
+    WHY (Eve, 2026-09-01): "cuando se eliminen owners de la org sales board
+    (como hicimos con lizette el otro día) que lógicamente los elimines también
+    de All Campaigns Org Sales Board". They are two tabs of the SAME workbook
+    with two modules and two EXCLUDE lists, and neither knows about the other,
+    so an owner cleared here used to sit on a live board nobody fills any more.
+
+    ONLY FOR A NAME THAT IS NOW COMPLETELY OFF THIS BOARD, and that condition is
+    the whole design. One All Campaigns line is a person's total across EVERY
+    campaign, so deleting it for someone who merely went cold in one box would
+    erase the campaigns they still sell — the exact per-campaign scoping the
+    two-week rule is built on. So: cascade when `remaining` is empty for that
+    name, skip (loudly) when it is not. `--owner`-scoped removals therefore
+    almost never cascade, which is correct.
+
+    Never cascades off a different board: the Country Sales Board reaches this
+    module through --sheet/--tab, and its reps have nothing to do with the All
+    Campaigns roster.
+
+    Best-effort. The ORG rows are already gone by the time this runs, so a
+    failure here must report and return, never raise — it would look like the
+    removal itself failed."""
+    if args.no_cascade:
+        print("  cascade: saltada (--no-cascade)")
+        return
+    if args.sheet != SHEET_ID or norm(args.tab) != norm(SANDBOX_TAB):
+        print(f"  cascade: {args.tab!r} no es el ORG board — All Campaigns no "
+              f"se toca")
+        return
+    still = {norm(h["asked"]) for h in remaining}
+    gone = [n for n in names if norm(n) not in still]
+    kept = [n for n in names if norm(n) in still]
+    if kept:
+        print(f"  cascade: {', '.join(kept)} sigue(n) con filas en el ORG board "
+              f"— NO se tocan en All Campaigns (una línea allá es el total de "
+              f"TODAS sus campañas)")
+    if not gone:
+        return
+    try:
+        from automations.all_campaigns_board import roster_remove as _ac
+        from automations.all_campaigns_board import roster as _acr
+        missing = [n for n in gone if norm(n) not in _acr.EXCLUDE]
+        if missing:
+            # Its --apply aborts on this by design (the auto-add would put them
+            # straight back). Say what to do instead of showing a bare exit 2.
+            print(f"  cascade: ABORTA — falta(n) en "
+                  f"all_campaigns_board.roster.EXCLUDE: {', '.join(missing)}. "
+                  f"Agregalos ahí y corré: python -m "
+                  f"automations.all_campaigns_board.roster_remove "
+                  f"--names \"{'|'.join(gone)}\" --apply")
+            return
+        print(f"  cascade: → All Campaigns para {', '.join(gone)}")
+        rc = _ac.main(["--names", "|".join(gone), "--apply"])
+        print(f"  cascade: all_campaigns roster_remove exit {rc}")
+    except Exception as e:                  # noqa: BLE001 — ORG rows already gone
+        print(f"  cascade: FALLÓ ({type(e).__name__}: {str(e)[:120]}). Las filas "
+              f"del ORG board YA se borraron — corré la mitad de All Campaigns "
+              f"a mano: python -m automations.all_campaigns_board.roster_remove "
+              f"--names \"{'|'.join(gone)}\" --apply")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="org_sales_board.roster_remove")
     ap.add_argument("--names", required=True,
                     help="Pipe-separated rep names, exactly as they read in col B.")
     ap.add_argument("--apply", action="store_true", help="write (default: dry-run)")
     ap.add_argument("--tab", default=SANDBOX_TAB)
+    ap.add_argument("--sheet", default=SHEET_ID,
+                    help="Workbook id. Defaults to the ORG board's. Every table "
+                         "here is found by LABEL, so the same finders cover any "
+                         "board of this shape — the Country Sales Board rides "
+                         "this rather than a second copy of the module.")
     ap.add_argument("--owner", default=None,
                     help="Scope the removal to the blocks whose banner contains "
                          "this text — e.g. --owner eveliz takes a rep off HER "
                          "captainship (leaderboard + daily + delta box) and "
                          "leaves her rows in the org's own campaign sections "
                          "alone. Default: every table on the tab.")
+    ap.add_argument("--no-cascade", action="store_true",
+                    help="do NOT follow through to the All Campaigns tab. The "
+                         "cascade only fires for a name that ends up with NO "
+                         "rows left on this board (see below), so you rarely "
+                         "want this.")
     ap.add_argument("--allow-unexcluded", action="store_true",
                     help="delete even for a captainship rep not pinned in "
                          "captain_gate.EXCLUDE (the gate WILL offer them back)")
     args = ap.parse_args(argv)
     names = [n.strip() for n in args.names.split("|") if n.strip()]
 
-    ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(args.tab))
+    ws = _retry(lambda: open_by_key(args.sheet).worksheet(args.tab))
     grid = _retry(lambda: ws.get("A1:ZZ2200", value_render_option="UNFORMATTED_VALUE")) or []
     plan = plan_removals(grid, names)
     if args.owner:
@@ -359,10 +445,12 @@ def main(argv=None) -> int:
     if ranks:
         _retry(lambda: ws.batch_update(ranks, value_input_option="USER_ENTERED"))
     print(f"  ranks renumerados en {len(ranks)} tabla(s)")
-    left = [h for h in plan_removals(grid2, names)
+    remaining = plan_removals(grid2, names)
+    left = [h for h in remaining
             if not args.owner or norm(args.owner) in norm(h["owner"])]
     print(f"  quedan {len(left)} fila(s) con esos nombres "
           f"{'— revisar' if left else '(ok)'}")
+    _cascade_all_campaigns(names, remaining, args)
     return 0
 
 

@@ -5,16 +5,25 @@
 #
 #   --add        the morning pass. Adds every eligible person on the newest
 #                "D2D OBCL <m.d>" tab (every chart on it) to OwnerVille.
-#                MAILS NOBODY. Monday 8:00am, in the quiet 8-10 window.
+#                SENDS THE ONBOARDING EMAIL for the campaign they are added
+#                under -- see the warning below. 11:00am.
 #
-#   --send-tick  the day pass. Fires repeatedly and sends only the people whose
-#                start time is within the next 30 minutes, so somebody starting
-#                at 1:00 gets their bundle at 12:30. Reads the Start Time
-#                column. Opens no browser at all when nobody is due.
+#   --send-tick  the day pass. Fires repeatedly between 06:00 and 16:00 and
+#                sends only the people whose start time is within the next 30
+#                minutes, so somebody starting at 1:00 gets their bundle at
+#                12:30. Reads the Start Time column. Opens no browser at all
+#                when nobody is due. NOTHING STARTING AFTER 16:30 IS SENT.
 #
-# The split is not tidiness. Adding early is free because it mails nobody, and
-# adding late is not: somebody starting at 1pm has to EXIST in OwnerVille
-# before their 12:30 send comes round.
+# The split is not tidiness: somebody starting at 1pm has to EXIST in
+# OwnerVille before their 12:30 send comes round.
+#
+# ADDING IS NOT FREE (Megan 2026-08-31). Every note in this repo used to say
+# this pass "mails nobody". It does: OwnerVille sends the new start their
+# ONBOARDING EMAIL the moment they are added, for the campaign they are added
+# under. That is how an entire cohort received the Water/Primo welcome instead
+# of the AT&T one -- the wrong-campaign bug was not just wrong placement, it
+# mailed the wrong email to every one of them. Treat --add with the same care
+# as --send-tick: it is a send, and there is no unsend.
 #
 # Generating the bundle IS the send — OwnerVille mails the nine documents
 # itself. There is no separate send step and no unsend.
@@ -47,8 +56,23 @@ cd "$(dirname "$0")/.." || exit 1
 # that — one cheap read, and it stops before opening a browser.
 for _a in "$@"; do
     if [ "$_a" = "--send-tick" ]; then
+        # 06:00-15:59 CENTRAL (Lucy 3 is Central, and so is every time on the
+        # tab). Was 06:00-20:59 until 2026-08-31.
+        #
+        # WHY IT ENDS AT 4 (Megan): a person whose start time has PASSED still
+        # counts as due, so once the day's cohort is done the tick spent every
+        # five minutes until 9pm re-opening all eighteen of their modals just
+        # to skip each one as COMPLETED or PENDING. Pointless work, and it held
+        # the shared Chrome profile the whole time — which is what kept locking
+        # other Lucy 3 jobs out that afternoon.
+        #
+        # THE COST, stated plainly: a send goes 30 minutes before a start, so
+        # nothing starting after 16:30 gets an automated bundle any more. The
+        # latest start on 2026-08-31 was 1:30pm, so there is real room — but if
+        # a cohort ever starts later than that, raise this hour or those people
+        # get nothing and no run says so.
         _HR="$(date +%H)"
-        if [ "$_HR" -lt 6 ] || [ "$_HR" -gt 20 ]; then
+        if [ "$_HR" -lt 6 ] || [ "$_HR" -ge 16 ]; then
             exit 0
         fi
         # QUIET DAY BACKOFF. A previous tick already read the sheet and found

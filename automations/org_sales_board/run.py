@@ -239,6 +239,17 @@ def main(argv=None) -> int:
                       f"{_tgt!r} — rolling before the fill ---")
                 _ro.run_rollover(ws, dry_run=False)
                 ws = open_by_key(SHEET_ID).worksheet(tab)   # re-open post-roll
+                # TWO-WEEK ZERO RULE, hung off the roll (Eve 2026-09-01:
+                # "incluilo en el proceso de roleo de los martes, no le crees
+                # tarjeta aparte"). The week the roll just closed is now a
+                # LITERAL column, which is the only state the rule is defined
+                # on — before the roll it is still col C's live formula. The
+                # standalone Tuesday card had to guess that, and only worked
+                # because its `order` sat after this report's; that ordering was
+                # invisible from either entry. It PROPOSES in Slack and removes
+                # nothing, and it can never sink the fill.
+                from automations.org_sales_board import zero_streak as _zs
+                _zs.after_rollover(SHEET_ID, tab)
             else:
                 print(f"--- weekly rollover: board already on {_cur!r} — no roll ---")
         _summary = orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,

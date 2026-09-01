@@ -157,6 +157,93 @@ MINT_VIA_OWNERVILLE = True
 MINT_MIN_INTERVAL_MIN = 30.0
 _LAST_MINT_ATTEMPT: dict = {"at": 0.0}
 
+# THE THROTTLE HAS TO SURVIVE A RELAUNCH (2026-09-01, third lesson of the day).
+#
+# _LAST_MINT_ATTEMPT is module state, so it resets to 0.0 every time launchd
+# relaunches the holder. Once the tokenless escalation below started asking for
+# restarts, that produced a LOOP: fresh process -> throttle looks unset -> mint
+# -> fail -> ask for restart -> exit(1) -> relaunch -> repeat, every ~45s.
+# Measured on Lucy 2 while the session was dead:
+#
+#   07:59:55  exiting (rc=1) so launchd relaunches the holder
+#   08:00:49  exiting (rc=1) ...
+#   08:02:00  exiting (rc=1) ...
+#   08:02:41  exiting (rc=1) ...
+#
+# Escalating once is the fix; escalating every 45 seconds is a hot loop against
+# ownerville's SSO, which is exactly the kind of traffic that got the fleet
+# flagged before [[project_tableau_access_budget]]. Persisting the timestamp
+# makes MINT_MIN_INTERVAL_MIN mean what it says across process boundaries, so a
+# tokenless night costs one restart per interval instead of eighty an hour.
+_MINT_STAMP = Path(__file__).resolve().parent / ".appstream_last_mint_attempt"
+
+
+def _last_mint_attempt() -> float:
+    """Epoch of the last REAL mint attempt, surviving a holder relaunch.
+
+    The on-disk stamp is consulted ONLY inside the holder's own loop (main()
+    sets `holder_loop`). Library callers and tests set _LAST_MINT_ATTEMPT
+    directly and mean it literally — reading a stamp left by some other process
+    underneath them made five existing remint tests fail and, worse, would let a
+    stale file suppress a mint that a caller had explicitly asked for."""
+    if _LAST_MINT_ATTEMPT["at"]:
+        return float(_LAST_MINT_ATTEMPT["at"])
+    if not _MINT_FAILURES.get("holder_loop"):
+        return 0.0
+    try:
+        return float(_MINT_STAMP.read_text().strip())
+    except Exception:  # noqa: BLE001 — no stamp yet is simply "never attempted"
+        return 0.0
+
+
+def _record_mint_attempt(now: float) -> None:
+    _LAST_MINT_ATTEMPT["at"] = now
+    if not _MINT_FAILURES.get("holder_loop"):
+        return                      # library/test use leaves no trace on disk
+    try:
+        _MINT_STAMP.write_text(str(now))
+    except Exception:  # noqa: BLE001 — best effort; in-memory still throttles
+        pass
+
+# CONSECUTIVE FAILED MINTS BEFORE THE HOLDER RESTARTS ITSELF (Megan 2026-08-31).
+#
+# On 8/31 the mint failed from ~15:05 to 19:21 — every attempt re-keying the
+# SAME token (66F074FE at 16:57 and again at 18:54), because ownerville's warm
+# page keeps handing back the token it already issued. The holder logged "session
+# stale — re-seed once" to itself for four hours and paged a human at 18:43.
+#
+# A RESTART mints. It is in this file's own record: on 8/29 a token reached
+# `1m left` at 08:04, the holder restarted on a code change at 08:10, and by
+# 08:11 it was handing a fresh one to the fleet — "the restart minted what four
+# re-hop cycles could not". A restart builds a fresh context instead of re-reading
+# a cached page, so ownerville issues rather than repeats.
+#
+# So a mint that keeps failing takes the restart path this file already uses for
+# a code change, a dead browser and a stale export. Two failures, not one: mints
+# are throttled to one per MINT_MIN_INTERVAL_MIN and a single miss can be
+# ownerville mid-refresh, which the existing replay fallback rides out. Two in a
+# row inside the re-mint margin means the token is going to die anyway — at that
+# point a restart cannot be worse than doing nothing, which is what four hours of
+# 8/31 actually were.
+MINT_FAILURES_BEFORE_RESTART = 2
+_MINT_FAILURES: dict = {"n": 0}
+
+
+def _note_mint_result(ok: bool) -> int:
+    """Record a mint outcome; returns the consecutive-failure count."""
+    _MINT_FAILURES["n"] = 0 if ok else _MINT_FAILURES["n"] + 1
+    return _MINT_FAILURES["n"]
+
+
+def _mint_is_throttled() -> bool:
+    """True when MINT_MIN_INTERVAL_MIN has not elapsed, so a False from
+    _mint_appstream_via_ownerville means 'did not try', not 'tried and failed'.
+
+    Callers that escalate on failure MUST check this first: the mint returns
+    False for both, and treating the throttle as a failure turns the holder's
+    restart ladder into a relaunch loop driven by nothing but the clock."""
+    return (time.time() - _last_mint_attempt()) / 60.0 < MINT_MIN_INTERVAL_MIN
+
 
 def _this_machine() -> str:
     try:
@@ -418,6 +505,30 @@ def _ctx_rqst_minutes_left(ctx) -> float | None:
 
 _RQST_RE = re.compile(r"rqst=([A-Za-z0-9_-]+)")
 
+# TOKENS THIS PROCESS HAS ALREADY PROVED DEAD (Megan 2026-09-01).
+#
+# Ownerville's warm page re-serves the SAME token id for hours — 66F074FE was
+# handed back at 8/31 16:57, 8/31 18:54, 9/1 04:33 and 9/1 05:36, i.e. the same
+# id across two days and every mint attempt in between. Each of those attempts
+# navigated the console tab to `?rqst=66F074FE&p=701`, got no #searchMC, and
+# logged "ownerville hop landed without a console" — which reads like an
+# AppStream/Turnstile fault when it is really a stale READ on our side.
+#
+# Remembering the ids we have already burned turns that into an honest, instant
+# "ownerville re-served a dead token" instead of a wasted console navigation and
+# a misleading log line. Process-local on purpose: a RESTART is what mints (see
+# MINT_FAILURES_BEFORE_RESTART), so a fresh process must start with a clean
+# slate and be free to accept whatever ownerville issues it.
+_DEAD_TOKENS: set = set()
+
+
+def _tok8(tok) -> str:
+    """The 8-char upper-case id form `_rqst_id` uses, so a freshly scraped token
+    (full length) and a context token (already truncated) can be compared at
+    all. Without this the "did ownerville hand back the same one?" check silently
+    never matches, which is how the repeat went unnoticed for two days."""
+    return (tok or "")[:8].upper()
+
 
 def _fresh_rqst_from_ownerville(ctx) -> str | None:
     """A NEW rqst token, read from the warm ownerville session in its OWN tab.
@@ -429,11 +540,26 @@ def _fresh_rqst_from_ownerville(ctx) -> str | None:
     ownerville's own page; the token is then applied to the console tab by the
     caller, the same way the reuse path applies a saved one.
 
+    CACHE-BUSTED (2026-09-01). This used to `goto(OWNERVILLE_V2_URL)` on a
+    context that has been alive for days, so the SSO link could be read straight
+    out of the browser's cached copy of the dashboard — the same href, carrying
+    the same long-dead token, every time. That is the difference between this
+    path and a RESTART, which mints reliably precisely because a fresh context
+    has nothing cached and must fetch the page for real. A unique query param
+    plus a cache-ignoring reload makes the warm process fetch it for real too.
+
     None on any failure — a mint we cannot do is a missed cycle, never a raise."""
     page = None
     try:
         page = ctx.new_page()
-        page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
+        _bust = f"{OWNERVILLE_V2_URL}?_cb={int(time.time())}"
+        page.goto(_bust, wait_until="domcontentloaded")
+        # Belt and braces: even with a unique URL, ask for a hard reload so any
+        # intermediate/disk cache is bypassed rather than revalidated.
+        try:
+            page.reload(wait_until="domcontentloaded")
+        except Exception:  # noqa: BLE001 — the goto above is the load that matters
+            pass
         page.wait_for_timeout(5_000)
         m = _RQST_RE.search(page.url or "")
         if not m:
@@ -499,9 +625,9 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     if not MINT_VIA_OWNERVILLE:
         return False
     now = time.time()
-    if (now - _LAST_MINT_ATTEMPT["at"]) / 60.0 < MINT_MIN_INTERVAL_MIN:
+    if (now - _last_mint_attempt()) / 60.0 < MINT_MIN_INTERVAL_MIN:
         return False
-    _LAST_MINT_ATTEMPT["at"] = now
+    _record_mint_attempt(now)
     before = _rqst_id(ctx)
     # FETCH THE TOKEN IN A SEPARATE TAB. This is the whole fix. The first
     # version called _sso_to_appstream(page), which navigates THIS tab to
@@ -518,6 +644,28 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     if not tok:
         print(f"[{_stamp()}] AppStream mint FAILED — no rqst token on the warm "
               f"ownerville session (is ownerville logged in?)", flush=True)
+        return False
+    # CHECK FOR A REPEAT *BEFORE* SPENDING THE CONSOLE NAVIGATION (2026-09-01).
+    #
+    # There is already an `after == before` check below, but it fires only after
+    # the hop has run — so a token we have provably burned still costs a full
+    # re-key of the live console tab, and when it fails the log blames
+    # AppStream ("hop landed without a console") rather than the stale read that
+    # actually happened. On 8/31->9/1 that misattribution repeated for hours on
+    # one id, 66F074FE.
+    #
+    # Re-keying the console to a DEAD token is not free either: it drops a
+    # session that still had minutes on it. Refusing here keeps the token we
+    # hold, names the real cause, and returns False so the caller's restart
+    # ladder — the path this file documents as the one that actually mints —
+    # gets its failure honestly.
+    _t8 = _tok8(tok)
+    if _t8 == _tok8(before) or _t8 in _DEAD_TOKENS:
+        print(f"[{_stamp()}] AppStream mint FAILED — ownerville re-served the "
+              f"same token {_t8} we already hold/burned (its warm page is "
+              f"repeating, not issuing) — not re-keying the console with it.",
+              flush=True)
+        _DEAD_TOKENS.add(_t8)
         return False
     try:
         page.goto(f"{APPSTREAM_BASE}?rqst={tok}&p=701",
@@ -548,6 +696,10 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
                     continue
                 except Exception:  # noqa: BLE001
                     pass
+            # Remember it: this token has now demonstrably failed to open a
+            # console, so a later cycle that scrapes the same id off ownerville's
+            # cached page can refuse it up front instead of repeating this.
+            _DEAD_TOKENS.add(_tok8(tok))
             print(f"[{_stamp()}] AppStream mint FAILED — ownerville hop landed "
                   f"without a console (#searchMC absent after {attempt} "
                   f"attempt(s), at {url[:100]})", flush=True)
@@ -558,6 +710,7 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
               f"context carries NO rqst token", flush=True)
         return False
     if after == before:
+        _DEAD_TOKENS.add(_tok8(after))
         print(f"[{_stamp()}] AppStream mint FAILED — ownerville handed back the "
               f"SAME token {after} (it re-used our session instead of issuing "
               f"a new one)", flush=True)
@@ -612,8 +765,19 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
                 if verbose:
                     print(f"-> rqst token has {left:.0f}m left — minting a fresh "
                           f"one through ownerville", flush=True)
-                if _mint_appstream_via_ownerville(ctx, page, verbose=verbose):
+                _minted = _mint_appstream_via_ownerville(ctx, page,
+                                                          verbose=verbose)
+                _fails = _note_mint_result(_minted)
+                if _minted:
                     return True
+                if _fails >= MINT_FAILURES_BEFORE_RESTART:
+                    # Say it plainly, unconditionally: this is the holder asking
+                    # to be restarted, and a silent one looks identical to the
+                    # four hours of failures it exists to end.
+                    print(f"[{_stamp()}] AppStream mint has failed {_fails}x in a "
+                          f"row — asking for a restart, which is the path that "
+                          f"actually mints.", flush=True)
+                    _MINT_FAILURES["restart_wanted"] = True
                 # Ownerville couldn't mint this cycle (its own session may be
                 # mid-refresh). Fall back to the old replay: it cannot produce a
                 # new token, but it does re-assert the session we still hold.
@@ -650,10 +814,47 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
             return True
     except Exception:
         pass
+    # COUNT THE OUTCOME HERE TOO (2026-09-01) — this was the hole.
+    #
+    # Until now this path minted and threw the result away. Only the in-margin
+    # branch called _note_mint_result, so `restart_wanted` could be set ONLY
+    # while a token was still alive. The moment the token actually died — the
+    # emergency the restart ladder exists for — the holder minted, failed, and
+    # asked for nothing, cycle after cycle.
+    #
+    # That is the 2026-09-01 overnight shape exactly: the rqst expired at 22:15
+    # and session_holder.out.log printed "warm ✓ — 6 ownerville cookies" every
+    # six minutes until 05:49, when a human logged in. Seven hours in which the
+    # one recovery this file documents as working ("the restart minted what four
+    # re-hop cycles could not") was never requested. Same shape as the ten-hour
+    # 2026-08-27 outage named above; that fix added the mint here but not the
+    # bookkeeping that turns a failing mint into a restart.
+    #
+    # ONE failure is enough here, not MINT_FAILURES_BEFORE_RESTART. That
+    # threshold exists to keep a needless restart from disturbing a LIVE token;
+    # with no live token there is nothing to protect, and this file's own
+    # argument applies at full strength: "a restart cannot be worse than doing
+    # nothing, which is what four hours of 8/31 actually were."
+    #
+    # A THROTTLED call is not a failure. _mint_appstream_via_ownerville returns
+    # False both when it genuinely fails and when MINT_MIN_INTERVAL_MIN has not
+    # elapsed; counting the latter would restart the holder every loop cycle on
+    # nothing but the throttle, which is a relaunch loop, not a recovery.
+    throttled = _mint_is_throttled()
     try:
-        return _mint_appstream_via_ownerville(ctx, page, verbose=verbose)
+        minted = _mint_appstream_via_ownerville(ctx, page, verbose=verbose)
     except Exception:
-        return False
+        minted = False
+    if minted:
+        _note_mint_result(True)
+        return True
+    if not throttled:
+        _note_mint_result(False)
+        print(f"[{_stamp()}] no live rqst token and the mint failed — asking for "
+              f"a restart, which is the path that actually mints (nothing live "
+              f"to lose here).", flush=True)
+        _MINT_FAILURES["restart_wanted"] = True
+    return False
 
 
 def main() -> int:
@@ -666,6 +867,10 @@ def main() -> int:
                     help="Minutes to wait for the human to log in on first start.")
     args = ap.parse_args()
 
+    # From here on we ARE the holder loop, so the mint throttle may persist to
+    # disk and survive a launchd relaunch (see _last_mint_attempt). Nothing
+    # outside this entry point reads or writes that stamp.
+    _MINT_FAILURES["holder_loop"] = True
     HOLDER_PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     # A crashed Chrome leaves a stale Singleton* lock in the profile that makes
     # the next launch fail with "profile already in use" — which would defeat the
@@ -835,6 +1040,11 @@ def main() -> int:
                     print(f"[{_stamp()}] code changed ({head_at_start[:7]} → "
                           f"{head_now[:7]}) — exiting (rc=1) so launchd relaunches "
                           f"the holder on it.", flush=True)
+                    return 1
+                if _MINT_FAILURES.get("restart_wanted"):
+                    print(f"[{_stamp()}] exiting (rc=1) so launchd relaunches the "
+                          f"holder — a fresh context is what mints a new rqst.",
+                          flush=True)
                     return 1
                 if not _browser_alive(ctx):
                     print(f"[{_stamp()}] browser is gone — exiting (rc=1) so launchd "

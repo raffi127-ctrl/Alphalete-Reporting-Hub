@@ -1489,8 +1489,14 @@ def _download_fiber_bulk(icd_names: List[str], out_path: Path,
     same CSV format as the legacy per-ICD path."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        # `owner_lookup_shared` = this tab's as_owner is ANOTHER ICD (a tab
+        # borrowing someone else's AppStream office until it gets its own).
+        # Feeding it to the Fiber owner lookup hands that ICD's penetration /
+        # Total Leads / Expected Fiber Sales to this tab — which is exactly
+        # what happened to Ja Mosley (Francisco Castillo's office 22532).
         as_owner_map = {c["sheet_tab"]: c.get("as_owner", "")
-                        for c in fill.load_mapping()["confirmed"]}
+                        for c in fill.load_mapping()["confirmed"]
+                        if not c.get("owner_lookup_shared")}
     except Exception:
         as_owner_map = {}
     try:
@@ -1591,8 +1597,14 @@ def _download_fiber_legacy(icd_names: List[str], out_path: Path = FIBER_PATH,
     from urllib.parse import quote
     out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        # `owner_lookup_shared` = this tab's as_owner is ANOTHER ICD (a tab
+        # borrowing someone else's AppStream office until it gets its own).
+        # Feeding it to the Fiber owner lookup hands that ICD's penetration /
+        # Total Leads / Expected Fiber Sales to this tab — which is exactly
+        # what happened to Ja Mosley (Francisco Castillo's office 22532).
         as_owner_map = {c["sheet_tab"]: c.get("as_owner", "")
-                        for c in fill.load_mapping()["confirmed"]}
+                        for c in fill.load_mapping()["confirmed"]
+                        if not c.get("owner_lookup_shared")}
     except Exception:
         as_owner_map = {}
     try:

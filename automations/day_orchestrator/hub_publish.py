@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 import socket
 import uuid
+from pathlib import Path
 
 from automations.recruiting_report import fill as _fill
 
@@ -546,6 +547,45 @@ def _find_open_row_for_card(ws, card: str, report_name: str = ""):
 _REALERT_AFTER_S = 45 * 60
 
 
+def _why_path(report_id: str) -> "Path":
+    """output/logs/.<report_id>-why, beside every other marker this repo uses."""
+    return (Path(__file__).resolve().parents[2] / "output" / "logs"
+            / f".{report_id}-why")
+
+
+def _failure_reason(report_id: str) -> str:
+    """One line saying WHY, if the report left one.
+
+    A report knows why it failed; the alert did not carry it, so
+    #claudecorrections only ever said "closed a run with status FAILED" and
+    whoever read it had to go open the Hub card to learn anything. On
+    2026-08-31 that turned "the 'Start Time' column is not on this tab — 31
+    people cannot be scheduled" into a generic red alert nobody could act on
+    (Megan: "when that's the error - it needs to say that").
+
+    A report opts in by writing output/logs/.<report_id>-why on its way down.
+    Absent is normal and means the alert reads exactly as it used to."""
+    try:
+        path = _why_path(report_id)
+        line = path.read_text(encoding="utf-8").strip().splitlines()[0]
+        return line[:300]
+    except Exception:                                       # noqa: BLE001
+        return ""
+
+
+def write_failure_reason(report_id: str, reason: str) -> None:
+    """Leave the WHY for the next _alert_failure. Best-effort, never raises."""
+    try:
+        path = _why_path(report_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if reason:
+            path.write_text(str(reason).strip()[:300], encoding="utf-8")
+        elif path.exists():
+            path.unlink()                   # a clean run must not leave a stale why
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
 def _alert_failure(report_id: str, report_name: str) -> None:
     """Post a failure alert to #claudecorrections-and-requests when a report
     closes 'failed' — so a silently-failing standalone agent (whose wrapper
@@ -571,9 +611,11 @@ def _alert_failure(report_id: str, report_name: str) -> None:
         from automations.day_orchestrator import notify
         notify.post_alert(
             f"❌ {report_name} failed",
-            [f"`{report_id}` closed a run with status **FAILED** on "
-             f"{socket.gethostname()}.",
-             "Open its Hub card for the log, then re-run it."],
+            ([f"`{report_id}` closed a run with status **FAILED** on "
+              f"{socket.gethostname()}."]
+             + ([f"*Why:* {_failure_reason(report_id)}"]
+                if _failure_reason(report_id) else [])
+             + ["Open its Hub card for the log, then re-run it."]),
             tag=f"failalert-{report_id}",
             incident=f"failure-{report_id}", label=report_name)
         marker.parent.mkdir(parents=True, exist_ok=True)
@@ -618,7 +660,8 @@ def _clear_failure(report_id: str, report_name: str) -> None:
 
 def publish_done(report_id: str, report_name: str, status: str = "success",
                  run_id: str | None = None, *, alert_on_fail: bool = True,
-                 user: str = "Mini (auto)") -> bool:
+                 user: str = "Mini (auto)",
+                 clear_failure: bool = True) -> bool:
     """Mark a run finished on the Hub. If `run_id` (from publish_running) is given,
     UPDATE that 'started' row in place (Status col 8 + Ended At col 9) so the card
     flips running->done and doesn't leave a dangling yellow pill. With no run_id,
@@ -627,6 +670,15 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
     pulse; only if there's no open row do we append a fresh finished row (the
     reverify / no-prior-start path). Returns True if the Hub was touched, False if
     the report has no Hub card. Best-effort — never raises.
+
+    `clear_failure=False` publishes the run but leaves any open incident ALONE.
+    For a run that deliberately delivered nothing — a --dry-run, or one of the
+    repair handles that only acts with --post. Those exit 0 because they worked,
+    not because the problem is fixed, and the ✅ they used to drop said the
+    opposite: on 2026-09-01 a DRY run of box_order_log_tier_backfill closed
+    `drop-box-order-log` at 08:05, thirteen minutes before the board it was
+    testing actually reached the thread. Anyone reading the channel in between
+    saw a resolved ticket over a hilo that was still short an image.
 
     `user` fills the User column on an appended row. It defaults to the mini so
     every existing caller reads exactly as before; the hand-run hook
@@ -664,12 +716,16 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
         # no-op). The orchestrator passes alert_on_fail=False (its own summary).
         if alert_on_fail and str(status).lower() == "failed":
             _alert_failure(report_id, report_name)
-        elif str(status).lower() == "success":
+        elif str(status).lower() == "success" and clear_failure:
             # …and a clean run CLOSES whatever thread the last failure opened —
             # including a re-run someone kicked off by hand from the Hub, which
             # is how most of these actually get fixed. Runs for the orchestrator
             # too: it closes its own carry-overs at the end of the batch, and
             # closing an already-closed incident is a free local no-op.
+            #
+            # Unless the caller says this run delivered nothing (clear_failure
+            # False) — see the docstring. A probe that exits 0 has proved the
+            # code runs, not that the report is fixed.
             _clear_failure(report_id, report_name)
         return True
     except Exception:

@@ -192,3 +192,34 @@ class NoDataDayPostsOnce(unittest.TestCase):
         )
         self.assertIn(POST_TOTAL_KNOCKS[0], posted[0])
         self.assertNotIn(POST_TIME_GAPS[0], posted[0])
+
+
+class EnergyWellsShapeDetection(unittest.TestCase):
+    """A fiber grid that happens to carry VL must NOT be read as Energy Wells.
+
+    On 2026-08-31 it was, and the Energy Wells scrape then raised on the
+    columns fiber does not have — which silently cost Chan Park's comparison
+    line on Raf's board ("this one doesn't have chans numbers?"). The shapes
+    are told apart by what they LACK as much as by what they carry.
+    """
+
+    @staticmethod
+    def _idx(*cols):
+        from automations.total_knocks import pull as k
+        return {k._norm(c): i for i, c in enumerate(cols)}
+
+    def test_energy_wells_grid_is_detected(self):
+        from automations.total_knocks import pull as k
+        idx = self._idx(k.COL_TOTAL_KNOCKS, k.COL_VL, k.COL_NOT_INTERESTED)
+        self.assertTrue(KP._is_energywell_dispo(idx))
+
+    def test_fiber_grid_with_a_vl_column_is_not(self):
+        from automations.total_knocks import pull as k
+        idx = self._idx(k.COL_TOTAL_KNOCKS, k.COL_VL, k.COL_TALK_TO_NI)
+        self.assertFalse(KP._is_energywell_dispo(idx),
+                         "a fiber grid carrying VL must still scrape as fiber")
+
+    def test_plain_fiber_grid_is_not(self):
+        from automations.total_knocks import pull as k
+        idx = self._idx(k.COL_TOTAL_KNOCKS, k.COL_TALK_TO_NI)
+        self.assertFalse(KP._is_energywell_dispo(idx))

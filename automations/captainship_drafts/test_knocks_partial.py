@@ -286,10 +286,18 @@ class TotalAppsColumn(unittest.TestCase):
             at = cols.index(R.COL_AVG_APP_PER_REP)
             self.assertEqual(cols[at - 1], R.COL_TOTAL_APPS)
             # fila 0 = TOTAL de la oficina (8 apps / 2 reps), luego los reps.
+            # La fila GOAL existio unas horas el 2026-08-30 y Raf la saco.
             self.assertEqual(table[0][at], "4.0")
             self.assertEqual([r[at] for r in table[1:]], ["", ""])
         finally:
             R._draw = old
+
+    def test_the_reps_cell_shows_the_bar_AND_the_field_count(self):
+        """Megan 2026-08-30, sobre Calvin: "3 in the field but 0 in his
+        totals". El bare count era correcto por su regla e inutil impreso."""
+        from automations.total_knocks import render as R
+        self.assertEqual(R._reps_cell(0, 3), "0 of 3")
+        self.assertEqual(R._reps_cell(5, 5), "5 of 5")
 
     def test_average_app_per_rep_never_reaches_a_board_without_apps(self):
         """Los hilos de metricas, los slots intraday y /knocks no la pidieron:

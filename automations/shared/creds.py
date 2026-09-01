@@ -50,6 +50,7 @@ def reload() -> None:
     a good install, and a genuinely bad password would look identical."""
     _file.cache_clear()
     _alt_file.cache_clear()
+    _accounts_file.cache_clear()
 
 
 def _resolve(key: str, env: str) -> str:
@@ -174,3 +175,137 @@ def has_appstream_alt() -> bool:
         return bool(appstream_alt_username() and appstream_alt_password())
     except Exception:  # noqa: BLE001 — missing is a normal state, not an error
         return False
+
+
+# --- Named AppStream accounts ------------------------------------------------
+# WHY A NAMED MAP (Megan 2026-08-31). primary+alt is two slots, and Lucy 2 needs
+# three kinds of access at once: a broad account for funnel_board /
+# indeed_source_report / ad_sales_board / daily_update_fill, whatever is already
+# in the alt slot, and now LucyResume — an account deliberately scoped to the two
+# offices Applicant Push is allowed to touch.
+#
+# The scoping is the POINT. On 2026-08-30 the push sent to ~22 offices instead of
+# 2: it bounds itself with an office SWITCH, but the v2 batch grid's select-all →
+# Send To AI reaches what the ACCOUNT can see, and the shared 'Raf – Captain'
+# login sees all 28. Send-to-AI is irreversible. An account that cannot see
+# office 3 cannot push office 3 — that is a guarantee a UI control isn't.
+#
+# Lives OUTSIDE the repo (the repo is public) beside appstream-alt.json:
+#   ~/.config/recruiting-report/appstream-accounts.json
+#     {"lucyresume": {"username": "LucyResume", "password": "..."}}
+#
+# 'primary' and 'alt' resolve to the existing slots, so a caller can name any
+# account without caring which storage mechanism holds it.
+_ACCOUNTS_PATH = (Path.home() / ".config" / "recruiting-report"
+                  / "appstream-accounts.json")
+
+
+@lru_cache(maxsize=1)
+def _accounts_file() -> dict:
+    try:
+        blob = json.loads(_ACCOUNTS_PATH.read_text())
+    except Exception:  # noqa: BLE001 — absent is normal on most machines
+        return {}
+    return blob if isinstance(blob, dict) else {}
+
+
+def appstream_accounts() -> list:
+    """Every account name usable on this machine. NAMES ONLY — never a password.
+
+    'primary' is always present; 'alt' only when one is configured. Used by the
+    error path below and by appstream_whoami --accounts, so a machine can say
+    what it has without anyone opening a credentials file."""
+    names = ["primary"]
+    if has_appstream_alt():
+        names.append("alt")
+    names.extend(sorted(k for k in _accounts_file()
+                        if k not in ("primary", "alt")))
+    return names
+
+
+def appstream_account(name: str) -> tuple:
+    """(username, password) for a named AppStream account.
+
+    Resolution: the named map → the primary/alt slots. Raises with the list of
+    names this machine actually has, because the failure we care about is a
+    report asking for a scoped account on a box where nobody installed it — and
+    the wrong answer there is falling back to a broader account and pushing to
+    offices the report was never allowed to touch. Never fall back. Fail."""
+    key = (name or "primary").strip().lower()
+    entry = _accounts_file().get(key)
+    if isinstance(entry, dict):
+        user = str(entry.get("username") or "").strip()
+        pw = str(entry.get("password") or "")
+        if user and pw:
+            return user, pw
+        raise RuntimeError(
+            "AppStream account %r in %s is missing a username or password."
+            % (key, _ACCOUNTS_PATH.name))
+    if key == "primary":
+        return appstream_username(), appstream_password()
+    if key == "alt":
+        if not has_appstream_alt():
+            raise RuntimeError(
+                "AppStream account 'alt' asked for, but no alternate login is "
+                "configured on this machine (set_appstream_alt_creds).")
+        return appstream_alt_username(), appstream_alt_password()
+    raise RuntimeError(
+        "No AppStream account named %r on this machine. Configured: %s. Install "
+        "it with the mini-control action set_appstream_account, and do NOT fall "
+        "back to another account — a broader login can push offices this job is "
+        "not allowed to touch." % (key, ", ".join(appstream_accounts())))
+
+
+def appstream_account_fingerprint(name: str):
+    """The AppStream 'Account No:' this named account is KNOWN to log in as, or
+    None if nobody has recorded it yet."""
+    entry = _accounts_file().get((name or "primary").strip().lower())
+    if isinstance(entry, dict):
+        val = str(entry.get("account_no") or "").strip()
+        return val or None
+    return None
+
+
+def record_appstream_account_fingerprint(name: str, account_no: str) -> bool:
+    """Remember which AppStream account number a named login lands on.
+
+    WHY (Megan 2026-08-31): scoping LucyResume to two offices bounds what the
+    push CAN reach, but only while the push is actually signed in as it. Carlos's
+    worry is a different failure — the run attaching to a Chrome that another
+    report already has open, which carries the BROAD login's cookies. The scoped
+    credential is never used there, so the permission bound never applies.
+
+    So the run also asserts identity on the page before it sends. That needs
+    something to compare against, and the account number is the only stable thing
+    the console shows. It gets recorded on a --dry-run (which sends nothing) and
+    asserted on a live run — which matches the rule that a dry-run always
+    precedes a live one."""
+    key = (name or "primary").strip().lower()
+    num = str(account_no or "").strip()
+    if not num:
+        return False
+    blob = {}
+    try:
+        blob = json.loads(_ACCOUNTS_PATH.read_text())
+    except Exception:  # noqa: BLE001 — absent/unreadable starts clean
+        blob = {}
+    if not isinstance(blob, dict):
+        blob = {}
+    entry = blob.get(key)
+    if not isinstance(entry, dict):
+        # Only ever ANNOTATE an account that already exists. Creating one here
+        # would invent a credential-less entry that appstream_account() then
+        # rejects, which reads like a corrupt install.
+        return False
+    if str(entry.get("account_no") or "").strip() == num:
+        return True
+    entry["account_no"] = num
+    blob[key] = entry
+    _ACCOUNTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _ACCOUNTS_PATH.write_text(json.dumps(blob, indent=2))
+    try:
+        os.chmod(_ACCOUNTS_PATH, 0o600)
+    except Exception:  # noqa: BLE001
+        pass
+    _accounts_file.cache_clear()
+    return True

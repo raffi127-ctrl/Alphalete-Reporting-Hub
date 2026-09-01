@@ -1,0 +1,15 @@
+STOOD DOWN 2026-09-01 — Base Power Energy is over.
+
+Rafael Hidalgo, #alphalete-sales 2026-09-01: "we can end the base energy cross
+referencing FYI we're done with that program!" (on the 8.31 check, which came
+back clean: Slack 1 / Board 0 / Webform 1, all accounted for).
+
+Nothing to fix here — there are no more Energy sales to audit, so the check has
+nothing to count and nobody to tag. run.py sees this file and exits 0 without
+reading Slack, the Sales Board or the webform, and without touching the day's
+:wolf: Production thread.
+
+To bring it back: delete this file, then in
+automations/day_orchestrator/schedule_config.json flip energy_crossref back to
+on_scheduler:true, cadence.weekdays [0..6], drop "standalone_watch": false, and
+remove it from PAUSED_REPORTS in automations/dashboard.py.

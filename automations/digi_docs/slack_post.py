@@ -153,9 +153,17 @@ def _already_alerted(line: str) -> bool:
     would ping Alisson, Tiff and Aimee roughly 150 times before lunch, and the
     third time is already the point where people mute the channel.
 
-    Keyed on the whole line, so the SAME problem stays quiet while a new one
-    still gets through immediately.
+    Keyed on the line with its NUMBERS removed, so the same problem stays quiet
+    while a new one still gets through immediately.
+
+    The numbers have to go (2026-08-31). "the 'Start Time' column is not on
+    this tab — 31 people cannot be scheduled" is one problem, but the count
+    moves as the chart is edited, and a key that includes it makes 30 and 31
+    two different problems: the tick re-posted the same missing column all
+    afternoon while Megan deleted them. Same sentence, different number, same
+    problem.
     """
+    import re as _re
     import json
     import os
     path = _alerted_today_path()
@@ -164,9 +172,10 @@ def _already_alerted(line: str) -> bool:
             seen = set(json.load(fh))
     except Exception:                                       # noqa: BLE001
         seen = set()
-    if line in seen:
+    key = _re.sub(r"\d+", "#", line)
+    if key in seen:
         return True
-    seen.add(line)
+    seen.add(key)      # store the KEY, not the line, or nothing dedupes
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as fh:
@@ -192,7 +201,19 @@ def alert_failure(line: str, *, dry_run: bool = True) -> bool:
     if not dry_run and _already_alerted(line):
         print(f"  (already alerted today, not repeating: {line[:60]})")
         return False
-    body = f"*Digi Docs — could not send* {_tags()}\n• {line}"
+    # THE HEADLINE HAS TO MATCH THE LINE (Megan 2026-08-31). Every alert said
+    # "could not send", including the ones whose body said the bundle WAS sent
+    # and only the attestation boxes failed — a headline contradicting its own
+    # first line is how a day of "nothing went out" got believed. The line
+    # knows what happened; read it.
+    low = (line or "").lower()
+    if "bundle sent" in low:
+        head = "Digi Docs — SENT, but the attestation boxes are not ticked"
+    elif "not sent and not finished" in low:
+        head = "Digi Docs — not sent, and nothing will retry it"
+    else:
+        head = "Digi Docs — could not send"
+    body = f"*{head}* {_tags()}\n• {line}"
     if dry_run:
         print(f"\n--- Slack ALERT (dry run, NOT posted) -> {CHANNEL} ---")
         print(body)

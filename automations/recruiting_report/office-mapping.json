@@ -1,7 +1,7 @@
 {
-  "confirmed_count": 56,
+  "confirmed_count": 57,
   "needs_review_count": 0,
-  "skip_count": 28,
+  "skip_count": 29,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -382,6 +382,7 @@
       "as_company": "Imperium Consultants, Inc.",
       "confidence": 1.0,
       "temporary_shared_office": true,
+      "owner_lookup_shared": true,
       "note": "TEMPORARY (Eve 2026-07-27): Ja Mosley has no AppStream office of his own yet, so his recruiting funnel mirrors Francisco Castillo's office 22532. Swap office_id + as_owner the moment his own office code exists. OPT/sales half is NOT shared \u2014 it fills from Tableau under his own name."
     },
     {
@@ -416,10 +417,25 @@
       "as_owner": "Thomas Campion",
       "as_company": "Next Wave Promotions, Inc.",
       "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Calvin Ribera (BOX)",
+      "office_id": "22162",
+      "as_owner": "Calvin Ribera",
+      "as_company": "Vernon, Inc.",
+      "confidence": 1.0,
+      "promoted_from_sales_only": true,
+      "was_sales_only_reason": "B2B ICD (Vernon, Inc., ownerville office 22162) \u2014 tab added 2026-08-30 from Carlos's 'B2B Template'; the '(B2B)' suffix is Eve's, so it doesn't read as one more fiber ICD, not 'Template Fiber'. No AppStream office under Raf's login yet, so the recruiting funnel (rows 2-20) stays blank until access lands; promote_when_visible flips him to confirmed the run after it does. opt_source=b2b keeps Raf's OPT phase off the tab \u2014 his OPT block is filled by alphalete_org_report.opt_b2b. as_owner is ownerville's spelling ('Ribera'); the tab is Eve's ('Ribero').",
+      "opt_source": "b2b"
     }
   ],
   "needs_review": [],
   "skip": [
+    {
+      "sheet_tab": "Calvin Ribero (B2B)",
+      "reason": "duplicate of 'Calvin Ribera (BOX)' — that tab is the live one (renamed 2026-08-31 when he moved off the B2B template to BOX); this copy keeps its data and is hidden",
+      "retired": "2026-08-31"
+    },
     {
       "sheet_tab": "Edgar Muniz II",
       "reason": "terminated 2026-07-22 (keeps filled tab; excluded from pull)"
@@ -541,14 +557,7 @@
     {
       "sheet_tab": "Jesus Hawthorne",
       "reason": "no AppStream office (sales-only, no recruiting) \u2014 present in the Tableau ATT/INT/Metrics views as 'Jesus Hawthorne', so the OPT half fills; added 2026-07-27 after his tab sat untargeted"
-    },
-    {
-      "sheet_tab": "Calvin Ribero (B2B)",
-      "as_owner": "Calvin Ribera",
-      "opt_source": "b2b",
-      "promote_when_visible": true,
-      "reason": "B2B ICD (Vernon, Inc., ownerville office 22162) \u2014 tab added 2026-08-30 from Carlos's 'B2B Template'; the '(B2B)' suffix is Eve's, so it doesn't read as one more fiber ICD, not 'Template Fiber'. No AppStream office under Raf's login yet, so the recruiting funnel (rows 2-20) stays blank until access lands; promote_when_visible flips him to confirmed the run after it does. opt_source=b2b keeps Raf's OPT phase off the tab \u2014 his OPT block is filled by alphalete_org_report.opt_b2b. as_owner is ownerville's spelling ('Ribera'); the tab is Eve's ('Ribero')."
     }
   ],
-  "sales_only_count": 3
+  "sales_only_count": 2
 }

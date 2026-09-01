@@ -30,6 +30,7 @@ interactive/debug use only.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import datetime as _dt
 import hashlib
 import json
@@ -342,6 +343,61 @@ def _hold_profile_lock_until_close(ctx, lock_fd, verbose):
     return ctx
 
 
+# PIN CHROME, DON'T RIDE WHATEVER GOOGLE SHIPPED LAST NIGHT (Megan 2026-09-01).
+#
+# Chrome auto-updated to 152.0.7977.65 at 01:45 and started crashing:
+# EXC_BREAKPOINT in ChromeMain on macOS 26.6.2, 26 crashes that day against zero
+# on every prior day. One crash took harvest_prime from 17/17 to 1/17; the same
+# error killed the captainship reports, fiber_activations, the B2B tracker boards
+# and org_sales_board's delta boxes. It is the single root cause of that morning.
+#
+# Rolling the app back is not available to us: Google publishes no old stable
+# installer, the framework symlink alone does not downgrade (the launcher reads
+# CFBundleShortVersionString from Info.plist), and two of the three runners take
+# no SSH. Chrome for Testing is the supported answer — Google's own versioned
+# builds, published for exactly this, installed BESIDE the team's Chrome so
+# nobody's browser is touched.
+#
+# Install (per machine, ~179 MB):
+#   mkdir -p ~/chrome-for-testing && cd ~/chrome-for-testing
+#   curl -sSLO https://storage.googleapis.com/chrome-for-testing-public/\
+#              151.0.7922.138/mac-arm64/chrome-mac-arm64.zip
+#   unzip -q chrome-mac-arm64.zip
+#
+# CONSERVATIVE: with no pinned build installed this returns channel="chrome" and
+# the launch is byte-identical to before, so a machine that has not been set up
+# keeps working exactly as it did. CHROME_BINARY overrides for a one-off test.
+_CFT_DIRS = ("chrome-mac-arm64", "chrome-mac-x64")
+
+
+def _pinned_chrome() -> Optional[str]:
+    """Path to a pinned Chrome build, or None to use the system channel."""
+    env = (os.environ.get("CHROME_BINARY") or "").strip()
+    if env and Path(env).exists():
+        return env
+    root = Path.home() / "chrome-for-testing"
+    for d in _CFT_DIRS:
+        exe = (root / d / "Google Chrome for Testing.app" / "Contents"
+               / "MacOS" / "Google Chrome for Testing")
+        if exe.exists():
+            return str(exe)
+    return None
+
+
+def _chrome_launch_kwargs(base: dict, verbose: bool = False) -> dict:
+    """base + either a pinned executable_path or the system chrome channel.
+
+    executable_path and channel are mutually exclusive in Playwright, so this
+    picks exactly one."""
+    kw = dict(base)
+    exe = _pinned_chrome()
+    if exe:
+        kw["executable_path"] = exe
+    else:
+        kw["channel"] = "chrome"
+    return kw
+
+
 def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                        verbose: bool = True, window_size: tuple = (1680, 1280),
                        device_scale: float | None = None,
@@ -409,7 +465,8 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                     try:
                         return _hold_profile_lock_until_close(
                             p.chromium.launch_persistent_context(
-                                channel="chrome", **base), lock_fd, verbose)
+                                **_chrome_launch_kwargs(base, verbose)),
+                            lock_fd, verbose)
                     except Exception as e:
                         if _is_profile_in_use(e):
                             raise  # bundled won't help (same profile); wait+retry
@@ -484,7 +541,7 @@ def tableau_session(headless: bool = False, verbose: bool = True,
     and was dying on "profile is already in use by another instance of
     Chromium". Login still comes from the shared ownerville storage_state, so a
     fresh profile authenticates the same way."""
-    prof = Path(profile_dir) if profile_dir else PROFILE_DIR
+    prof = Path(profile_dir) if profile_dir else _job_profile_dir()
     prof.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, prof, headless=headless,
@@ -960,6 +1017,111 @@ def _xtab_cache_prune(root: Path, keep_days: int = 3) -> None:
         pass
 
 
+# A DEAD BROWSER IS NOT A PAGE FLAKE (2026-09-01).
+#
+# Every retry ladder in this repo was built for a transient Tableau
+# load/render flake, which a fresh navigation clears. It cannot clear a
+# browser that has EXITED: re-issuing page.goto into a closed context can only
+# reproduce the same TargetClosedError, so all three attempts burn in
+# milliseconds and the caller sees a hard failure.
+#
+# That is exactly what Chrome 152.0.7977.65 did on 2026-09-01 (auto-updated
+# 01:45, 22 crashes that day, zero on any prior day — EXC_BREAKPOINT in
+# ChromeMain on macOS 26.6.2). harvest_prime lost 17/17 pulls to ONE crash,
+# because harvester.py opens one session per isolation group and every need in
+# the group then retried into the corpse. The tracker boards lost the same way.
+#
+# The tell that this is recoverable: a FRESH PROCESS succeeded on the first
+# try (the --only re-capture of four tracker boards, 06:34 the same morning).
+# The crash is intermittent; only our reuse of the dead context was
+# deterministic. So the ladders now rebuild the session instead of retrying
+# into a corpse, and a crash costs one relaunch rather than a whole report.
+#
+# Deliberately NOT a Chrome pin: the runners' Chrome auto-updates, one of them
+# (Lucy 3) takes no SSH, and the same crash-mid-run can arrive with any future
+# version. This heals the class, not the version.
+_DEAD_CONTEXT_MARKERS = (
+    "target page, context or browser has been closed",
+    "target closed",
+    "browser has been closed",
+    "browser closed",
+    "connection closed",
+)
+
+
+# WHERE A REBUILD RELAUNCHES (2026-09-01, same morning, second lesson).
+#
+# The first cut of the rebuild reopened tableau_session() on the SHARED profile
+# — the one the crashed Chrome was using. That cannot work: a crashed Chrome
+# leaves its Singleton* lock behind, so the relaunch hits "profile is already in
+# use" and the recovery fails at the moment it is needed. Observed live on Lucy 1
+# minutes after deploy, in org_sales_board:
+#
+#   ↻ browser died — rebuilding the session for the remaining attempt(s)
+#   (rebuild failed: Error) — reporting the original failure
+#
+# tableau_session already documents the way out: "give a job its OWN profile so
+# it never queues behind the morning batch. Different profiles don't block each
+# other — only same-profile runs do." The login still comes from the shared
+# ownerville storage_state, so a fresh profile authenticates identically.
+REBUILD_PROFILE_DIR = PROFILE_DIR.parent / ".browser_profile_rebuild"
+
+
+# ONE PROFILE PER JOB, NOT ONE PROFILE PER FLEET (Megan 2026-09-01: "do the
+# profile fix").
+#
+# Every browser report defaulted to the SAME .browser_profile, and Chrome's
+# singleton means concurrent runs evict each other — the survivor keeps the
+# profile and the loser's context dies mid-run as TargetClosedError. Lucy 1
+# routinely has four patchright drivers up at once (orchestrator pass +
+# standalone LaunchAgents + reruns), so this was a standing collision, not an
+# edge case. Measured 08:56 on 2026-09-01: 4 drivers, 8 Chromes on
+# .browser_profile, and org_sales_board losing its delta boxes to
+# "Download.save_as: Target page, context or browser has been closed" in an hour
+# with ZERO Chrome crash reports — the crash wave had already passed; this was
+# pure contention.
+#
+# The remedy is already proven in this file, twice, as a per-job escape hatch:
+# Owner Showdown's 8am preview (2026-08-03, dying on "profile is already in use")
+# and other_office_knocks (2026-08-18, "Opening in existing browser session").
+# Both fixed by handing that job its own profile. This makes the escape hatch
+# the DEFAULT instead of something each job has to remember.
+#
+# Keyed on HUB_REPORT_ID, which both runners already set (run.py sets it for the
+# orchestrator pass, mini_control for every `lucy rerun`) — so the name is stable
+# per report and the profile stays warm across runs instead of paying a cold
+# login every time. Login still comes from the shared ownerville storage_state,
+# so a fresh profile authenticates identically.
+#
+# CONSERVATIVE: with no HUB_REPORT_ID (a hand-run script, a test, the REPL) the
+# behaviour is byte-identical to before — the shared profile. Only labelled jobs
+# get isolated, which is exactly the set that collides.
+def _job_profile_dir() -> Path:
+    """The profile this JOB should use: its own when the runner labelled it."""
+    job = (os.environ.get("HUB_REPORT_ID") or "").strip()
+    if not job:
+        return PROFILE_DIR
+    slug = re.sub(r"[^a-z0-9_-]+", "-", job.lower()).strip("-")[:60]
+    if not slug:
+        return PROFILE_DIR
+    return PROFILE_DIR.parent / (".browser_profile__" + slug)
+
+
+def is_dead_context(exc) -> bool:
+    """True when `exc` means the browser/context DIED, not that the page misbehaved.
+
+    Matched on the exception's class name AND its text: patchright raises
+    TargetClosedError for a crash, but the same condition surfaces through
+    wrapped/re-raised errors whose type is generic while the message still
+    names the closed target."""
+    if exc is None:
+        return False
+    if type(exc).__name__ in ("TargetClosedError", "BrowserClosedError"):
+        return True
+    msg = str(exc).lower()
+    return any(m in msg for m in _DEAD_CONTEXT_MARKERS)
+
+
 def download_crosstab_patchright(
     view_url: str,
     crosstab_sheet: str,
@@ -1045,11 +1207,38 @@ def download_crosstab_patchright(
         return result
 
     if page is not None:
-        # Caller owns the browser: retry on their page, no login either way.
+        # Caller owns the browser: retry on their page, no login either way —
+        # UNLESS the browser itself died. See is_dead_context: retrying into a
+        # closed context reproduces the same error every time, which is how ONE
+        # Chrome crash cost harvest_prime all 17 pulls on 2026-09-01. A rebuild
+        # costs one login and is only reached on a crash, so the happy path and
+        # the ordinary-flake path are both byte-identical to before.
         for attempt in range(1, MAX_ATTEMPTS + 1):
             r = _try(page, attempt)
             if r is not None:
                 return r
+            if is_dead_context(last_err[0]):
+                # FAIL FAST — do not spend the rest of the ladder on a corpse.
+                #
+                # An in-process rebuild is IMPOSSIBLE here, and the first cut of
+                # this tried anyway: tableau_session opens its own
+                # sync_playwright(), and starting one INSIDE a running one raises
+                # "It looks like you are using Playwright Sync API inside the
+                # asyncio loop." Measured 2026-09-01: 5 rebuilds fired, 5 failed,
+                # 0 recovered — while printing a generic "Error" that read like a
+                # transient and hid the real reason for two hours.
+                #
+                # The recovery that DOES work is a fresh PROCESS, which the
+                # orchestrator already provides as a whole-report retry and which
+                # carried every recovery that day: harvest_prime 1/17 -> 17/17,
+                # the four tracker boards, captainship churn, abp_6days. Failing
+                # fast hands the run back to that sooner, instead of burning two
+                # more attempts against a browser that is already gone.
+                if verbose:
+                    print("  ✗ the browser died — this run cannot recover in "
+                          "process; failing fast so the report retries on a "
+                          "fresh one", flush=True)
+                break
         raise last_err[0]
 
     if shared_session_enabled():
@@ -1277,7 +1466,7 @@ def ownerville_session(headless: bool = False,
     while another session held the shared profile. Login still comes from the
     shared ownerville storage_state, so a fresh profile authenticates the
     same way."""
-    prof = Path(profile_dir) if profile_dir else PROFILE_DIR
+    prof = Path(profile_dir) if profile_dir else _job_profile_dir()
     prof.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, prof, headless=headless,

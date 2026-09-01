@@ -523,12 +523,6 @@ def _tableau_box_card() -> dict:
         ],
     }
 AUTOMATED_REPORTS = [
-    # 🏆 TEMP COMPETITION CARD — August Owner Showdown (Raf, 2026-07-29).
-    # Two $5,000 battles for August only: personal new-internet sales (daily)
-    # + rep-count growth (Sundays). Remove this card after 2026-08-31. Pill is
-    # forced BRIGHT YELLOW (temp) via the calstat CSS override below (search
-    # 'owner-showdown__calstat'); it still turns GREEN when the day's run
-    # succeeds. Fills the KTS tab; Sunday digest emails Raf only.
     # Intraday knock boards — its own LaunchAgent (com.alphalete.knocks-intraday)
     # ticking every 5 min, NOT the 4am batch, so self_scheduled puts it under
     # ⏰ TIME SET REPORTS with its real times on the pill (Megan 2026-08-25).
@@ -640,66 +634,6 @@ AUTOMATED_REPORTS = [
             "message_success": "✅ Intraday Knocks — every due office posted.",
             "message_failed": "❌ Intraday Knocks failed — see the log above.",
         },
-    },
-    {
-        "id": "owner-showdown",
-        "name": "August Owner Showdown 🏆",
-        "creator": "Raf & Claude",
-        "emoji": "🏆",
-        # Bright yellow accent — temporary competition card.
-        "color": "#EAB308",
-        "assignees": ["Lucy 1"],
-        "run_machine": "Lucy 1",
-        "run_rerun_id": "owner_showdown",
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
-                      "?gid=893154737#gid=893154737"),
-        # It does NOT run in the 4am batch — it has its own agent,
-        # com.alphalete.owner-showdown-daily, firing at 09:00. self_scheduled
-        # puts it under ⏰ TIME SET REPORTS with its real time on the pill
-        # instead of sitting in the morning batch claiming "4 AM"
-        # (Megan 2026-08-19).
-        "self_scheduled": True,
-        "schedule": {
-            "frequency": "daily",
-            "time": "9:00 AM",
-            "time_label": "9 AM",
-            "estimated_minutes": 3,
-        },
-        "description": (
-            "August-only competition tracker. Fills the KTS tab daily: each "
-            "owner's personal NEW-INTERNET sales (daily) and active rep-count "
-            "growth (Sundays), both sorted highest→lowest. Sunday digest emails "
-            "Raf the standings. $5,000 to each of the two winners."
-        ),
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "**•** **Personal Sales** — every new-internet sale in each owner's "
-            "own codes (Aug 1–31), pulled daily from Tableau and written into "
-            "the KTS 'Personal Production' table. 0 entered on a day with no "
-            "sale. TOTALS = month-to-date, sorted most→least.\n"
-            "**•** **Rep Count Growth** — active rep count pulled on Sundays "
-            "(8/2, 8/9, 8/16, 8/23, 8/30) into the 'Rep Count' table. "
-            "TOTALS = growth vs the 8/2 baseline, sorted most→least.\n"
-            "**•** **Sunday email** — standings digest to Raf only, first Sun "
-            "Aug 2, last Sun Aug 30.\n"
-            "**•** Temp card — retired after Aug 31."
-        ),
-        "post_run": {
-            "message_success": "✅ Owner Showdown updated — KTS tab filled and sorted.",
-            "message_failed": "❌ Owner Showdown run failed — see the log above.",
-        },
-        "checklist": [],
-        "actions": [
-            {
-                "label": "Run Now",
-                "icon": "▶",
-                "primary": True,
-                "help": "Pulls the latest numbers and refills the KTS competition tables now.",
-                "module": "automations.owner_showdown.run",
-                "args_fn": (lambda: []),
-            },
-        ],
     },
     # 🏢 Office Operations — New-Hire Swag Texts. Renders a custom upload →
     # preflight → send UI via the report-id hook in _render_report_card (not
@@ -2303,7 +2237,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🐺",
         "color": "#6A4C93",
         "category": "📊 Metrics",
-        "description": "Combines Jolie's two manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales AND #alphalete-lvl1-chat: Daily Production, an All Teams Sales Board, an Entry Level (Wk 1–4) board, a Back-to-Back Zeros callout, an Energy-only sales board, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
+        "description": "Combines Jolie's two manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales AND #alphalete-lvl1-chat: Daily Production, an All Teams Sales Board, an Entry Level (Wk 1–4) board, a Back-to-Back Zeros callout, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
         "breakdown": (
             "WHAT IT DOES\n"
             "Takes screenshots the Sales Board tab into clean PNGs and posts "
@@ -2317,12 +2251,13 @@ AUTOMATED_REPORTS = [
             "(drops 5th-wk+ veterans), grouped by team, same trims as #1\n"
             "4. Back-to-Back Zeros — reps who rolled a 0 on both of the last two "
             "mandatory days (Sundays don't count; Monday compares Fri + Sat), by team\n"
-            "5. Energy Sales Board — Campaign = Energy only, ranked by Apps\n"
-            "6. Team Sales — one image per team (auto-counts from the sheet)\n"
-            "7. Highrollers of the Day\n"
-            "8. Total Week Production (Ranking based on Apps)\n"
-            "9. Ranking based on New Internets\n"
-            "10. Ranking based on Wireless\n\n"
+            "5. Team Sales — one image per team (auto-counts from the sheet)\n"
+            "6. Highrollers of the Day\n"
+            "7. Total Week Production (Ranking based on Apps)\n"
+            "8. Ranking based on New Internets\n"
+            "9. Ranking based on Wireless\n\n"
+            "The Energy Sales Board was section 5 until 2026-09-01; it went "
+            "out with the Energy program.\n\n"
             "WHEN IT RUNS\n"
             "Daily, ~4 AM on the mini (before the manual post), into "
             "#alphalete-sales + a mirrored copy in #alphalete-lvl1-chat (Raf 8/23). "
@@ -2336,7 +2271,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Alphalete Production posted — Daily Production, All Teams Sales Board, Entry Level, Back-to-Back Zeros, Energy board, team boards, Highrollers, and the 3 rankings in the dated threads in #alphalete-sales + #alphalete-lvl1-chat.",
+            "message_success": "✅ Alphalete Production posted — Daily Production, All Teams Sales Board, Entry Level, Back-to-Back Zeros, team boards, Highrollers, and the 3 rankings in the dated threads in #alphalete-sales + #alphalete-lvl1-chat.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -5115,15 +5050,16 @@ AUTOMATED_REPORTS = [
             "Digi Docs on the OBCL tab."),
         "breakdown": (
             "WHAT IT DOES\n"
-            "Two passes on Monday over the newest dated **`D2D OBCL <m.d>`** "
-            "tab (every **chart** on it — Monday's has two):\n"
-            "**1. Add — 8:00am.** Anyone eligible who isn't in **OwnerVille** "
-            "yet is added (Onboard → View Progress → + Add Sales Rep). "
-            "This pass mails nobody and ticks nothing, which is why it can run "
-            "early.\n"
+            "Two passes over the newest dated **`D2D OBCL <m.d>`** "
+            "tab (every **chart** on it):\n"
+            "**1. Add — 11:00am.** Anyone eligible who isn't in **OwnerVille** "
+            "yet is added (Onboard → View Progress → + Add Sales Rep) on the "
+            "**RES-AT&T** campaign. Adding **sends them the onboarding email** "
+            "for that campaign, so this is a people-facing time.\n"
             "**2. Send — 30 minutes before each person's own start time.** "
             "Read from the **Start Time** column, so somebody starting at 1:00 "
-            "gets their bundle at 12:30. A tick checks every 5 minutes through "
+            "gets their bundle at 12:30. A tick checks every 5 minutes from 6am "
+            "to 4pm Central — nothing starting after 4:30 is sent — through "
             "the morning. For each rep still showing **Onboarding Documents = "
             "REQUIRED ACTION**, it opens their Digital Doc Portal, picks the "
             "**Base (Door to Door/Business to Business)** bundle type and the "
@@ -5175,11 +5111,26 @@ AUTOMATED_REPORTS = [
         # as daily_runs, NOT `phases`: a chain of two different ids
         # auto-registers a phantom library card for the second one.
         "daily_runs": 2,
+        # DAILY, NOT MONDAY (Megan 2026-08-31). The card said weekly/[0] while
+        # both agents on Lucy 3 fire every day — the add at 8:00 with no
+        # Weekday key, the send tick every five minutes — and run.py decides
+        # from the DATE WRITTEN ABOVE A CHART, not the weekday. Those dates
+        # being Mondays is how the sheet gets filled in, not a rule. So a chart
+        # dated for a Tuesday would run while the Hub showed nothing due, which
+        # is the same blind spot as a report nobody can see never running.
+        # The label still describes the normal week, because that is the honest
+        # human answer to "when does this go out".
         "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0],
-            "time": "8:00 AM",
-            "time_label": "Raf's Office · Mon 8am, then 30 min before each start",
+            "frequency": "daily",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
+            "time": "11:00 AM",
+            # NOT "Mon 8am" (Megan 2026-08-31: "these pills shouldn't all say
+            # monday"). Once the card went daily that label repeated on every
+            # column, so Tuesday's pill claimed Monday. The report fires on the
+            # DATE WRITTEN ABOVE A CHART, so the honest label names no weekday
+            # at all — 8am for the add, then each person 30 minutes before
+            # their own start.
+            "time_label": "Raf's Office · 11am, then 30 min before each start",
             "estimated_minutes": 25,
         },
         "checklist": [],

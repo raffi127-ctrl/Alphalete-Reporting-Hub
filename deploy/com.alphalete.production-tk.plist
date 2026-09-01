@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.alphalete.production-tk</string>
+    <!-- PATHS ARE MEGAN'S LAPTOP. install_agent rewrites them to THIS machine's
+         repo, so never copy this plist by hand — a plist pointing at a
+         directory that isn't there fails silently and nobody finds out. -->
+    <key>ProgramArguments</key>
+    <array><string>/bin/bash</string><string>/Users/megan/1st Claude Folder/deploy/production_tk_fill.sh</string><string>--apply</string></array>
+    <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
+    <!-- EVERY 15 MINUTES, which is the refresh Eve asked for (2026-08-31). An
+         interval job, not a calendar one: this fleet has been bitten by launchd
+         caching a timezone and firing +2h, and an interval has no calendar to
+         cache. The quiet hours are NOT here — tk_fill.py holds them (6-23 CT),
+         so a night tick exits in a second without opening a browser. -->
+    <key>StartInterval</key><integer>900</integer>
+    <key>StandardOutPath</key><string>/tmp/com.alphalete.production-tk.out</string>
+    <key>StandardErrorPath</key><string>/tmp/com.alphalete.production-tk.err</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>

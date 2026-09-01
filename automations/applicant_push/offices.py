@@ -34,6 +34,13 @@ OFFICES = {
         "owner": "Carlos Hidalgo",
         "label": "office 11580 · Carlos Hidalgo — ATT Program",
         "short": "office 11580, Carlos",
+        # Scoped account (Megan 2026-08-31). The two ROTATION offices sign in
+        # as LucyResume, which can see ONLY these two. On 8/30 the push sent to
+        # ~22 offices: it bounds itself with an office SWITCH, but the v2 batch
+        # select-all -> Send To AI reaches whatever the ACCOUNT can see, and the
+        # shared Raf-Captain login sees all 28. Send-to-AI is irreversible, so
+        # the bound has to be a permission, not a UI control.
+        "account": "lucyresume",
         # EMPTY = Carlos's existing filenames stay byte-identical. Do not change.
         "suffix": "",
         "cdp_profile": "/tmp/rp_cdp_profile",
@@ -70,6 +77,13 @@ OFFICES = {
         "owner": "Atef Choudhury",
         "label": "office 23467 · Atef Choudhury — Domin8 Acquisitions",
         "short": "office 23467, Atef",
+        # Scoped account (Megan 2026-08-31). The two ROTATION offices sign in
+        # as LucyResume, which can see ONLY these two. On 8/30 the push sent to
+        # ~22 offices: it bounds itself with an office SWITCH, but the v2 batch
+        # select-all -> Send To AI reaches whatever the ACCOUNT can see, and the
+        # shared Raf-Captain login sees all 28. Send-to-AI is irreversible, so
+        # the bound has to be a permission, not a UI control.
+        "account": "lucyresume",
         "suffix": "-23467",
         "cdp_profile": "/tmp/rp_cdp_23467",
         "cdp_port": "9247",
@@ -105,6 +119,11 @@ OFFICES = {
         "owner": "Jamis Garay",
         "label": "office 19592 · Jamis Garay — MIDSPIRE INC",
         "short": "office 19592, Jamis",
+        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
+        # here needs the broad account. Stated rather than inherited — the whole
+        # point of the key is that no row is silently signed in as an account
+        # wider than it needs.
+        "account": "primary",
         "suffix": "-19592",
         "cdp_profile": "/tmp/rp_cdp_19592",
         "cdp_port": "9248",
@@ -133,6 +152,11 @@ OFFICES = {
         "owner": "Rashad Reed",
         "label": "office 23411 · Rashad Reed — Elevate Specialized Acquisitions, Inc",
         "short": "office 23411, Rashad",
+        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
+        # here needs the broad account. Stated rather than inherited — the whole
+        # point of the key is that no row is silently signed in as an account
+        # wider than it needs.
+        "account": "primary",
         "suffix": "-23411",
         "cdp_profile": "/tmp/rp_cdp_23411",
         "cdp_port": "9249",
@@ -156,6 +180,11 @@ OFFICES = {
         "owner": "Haytham Nagi",
         "label": "office 22524 · Haytham Nagi — Horizon Edge Alliance, Inc.",
         "short": "office 22524, Haytham",
+        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
+        # here needs the broad account. Stated rather than inherited — the whole
+        # point of the key is that no row is silently signed in as an account
+        # wider than it needs.
+        "account": "primary",
         "suffix": "-22524",
         "cdp_profile": "/tmp/rp_cdp_22524",
         "cdp_port": "9250",
@@ -179,6 +208,11 @@ OFFICES = {
         "owner": "Cyrus Wade",
         "label": "office 22815 · Cyrus Wade — Ambient Marketing, Inc.",
         "short": "office 22815, Cyrus",
+        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
+        # here needs the broad account. Stated rather than inherited — the whole
+        # point of the key is that no row is silently signed in as an account
+        # wider than it needs.
+        "account": "primary",
         "suffix": "-22815",
         "cdp_profile": "/tmp/rp_cdp_22815",
         "cdp_port": "9251",
@@ -202,6 +236,11 @@ OFFICES = {
         "owner": "Cody Cannon",
         "label": "office 21151 · Cody Cannon — Aeon Specialized Consulting, Inc",
         "short": "office 21151, Cody",
+        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
+        # here needs the broad account. Stated rather than inherited — the whole
+        # point of the key is that no row is silently signed in as an account
+        # wider than it needs.
+        "account": "primary",
         "suffix": "-21151",
         "cdp_profile": "/tmp/rp_cdp_21151",
         "cdp_port": "9252",
@@ -225,6 +264,11 @@ OFFICES = {
         "owner": "Rafael Hidalgo",
         "label": "office 11280 · Rafael Hidalgo — ALPHALETE MARKETING, INC.",
         "short": "office 11280, Rafael",
+        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
+        # here needs the broad account. Stated rather than inherited — the whole
+        # point of the key is that no row is silently signed in as an account
+        # wider than it needs.
+        "account": "primary",
         "suffix": "-11280",
         "cdp_profile": "/tmp/rp_cdp_11280",
         "cdp_port": "9253",
@@ -282,6 +326,12 @@ def activate(office_id: str) -> dict:
     from automations.oat_processing import summary as oat_summary
 
     o = get(office_id)
+
+    # WHICH AppStream login this office signs in as. Read with [] not .get():
+    # a row that forgot to state its account must fail loudly here, not quietly
+    # inherit the broad one and become able to push offices it was never meant
+    # to touch. That is the 2026-08-30 over-push, and it is irreversible.
+    rp.APPSTREAM_ACCOUNT = o["account"]
 
     rp.OFFICE_ID = o["office_id"]
     rp.OFFICE_HINT = o["hint"]

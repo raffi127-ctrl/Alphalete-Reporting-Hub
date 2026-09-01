@@ -66,6 +66,12 @@ RAF = {
     "slack_hourly": True,
 }
 
+# RES-ENERGYWELL. Megan read it off the live URL 2026-08-29
+# (…index.cfm?p=89&…&invD2DClientId=40) after a long and useless hunt through
+# the campaign picker — see feedback_ask_for_the_url.
+ENERGY_WELLS_CAMPAIGN_ID = "40"
+
+
 # Calvin Ribera — ENERGY WELLS, added 2026-08-28 (Raf's Loom).
 #
 # NAME: ownerville spells him "Calvin RIBERA" (office 22162, Vernon Inc.);
@@ -96,7 +102,7 @@ CALVIN = {
     # office to 3 (RES AT&T) unless listed — this field alone does NOT reach
     # it, which is why Calvin returned zero rows even after it was set. Both
     # say 40; change them together.
-    "campaign_id": "40",
+    "campaign_id": ENERGY_WELLS_CAMPAIGN_ID,
     "group": "ENERGY WELLS DOMINATION",
     "label": "Calvin",
     # Shown in the post's header (Megan 2026-08-30). Raf's office runs one
@@ -120,14 +126,17 @@ CALVIN = {
 # TWO SEPARATE reports, not combined (Raf: "not combined, 2 separate reports,
 # knocks posted for each").
 #
-# enabled=False until Office Access is GRANTED. As of 2026-08-28 the request
-# shows "Request Sent" — he exists, we cannot impersonate him yet, and a live
-# row would fail every 15 minutes and open incidents rather than post.
+# LIVE 2026-08-30 — Office Access granted.
 #
 # BOTH need an explicit campaign pin, unlike Calvin. Calvin is Energy-Wells-
 # only so his post-impersonation default is already the right campaign; Jay
 # runs both, so whichever he happens to land on would silently decide which
-# report is which. ENERGY_WELLS_CAMPAIGN_ID below is the missing half.
+# report is which.
+#
+# ONE OFFICE, TWO CAMPAIGNS is also why the campaign now travels with the PULL
+# JOB. CAMPAIGN_OVERRIDES in knocks_pull is keyed by office NAME and holds one
+# value per office, so it cannot express this at all — putting Jay there would
+# quietly give both of his reports the same campaign.
 #
 # 144 reps is three times Raf's roster — worth an eye on the first board for
 # how the image reads at that length before assuming the layout holds.
@@ -137,34 +146,21 @@ JAY_ATT = {
     "ov": "impersonate",
     "campaign_id": "3",              # RES AT&T, same id Raf's office pins
     "group": "ENERGY WELLS DOMINATION",
-    "label": "Jay (AT&T)",
-    "compare": False,
-    "enabled": False,
+    "label": "Jay",
+    "campaign_label": "AT&T",
+    "compare": True,
 }
 
 JAY_EW = {
     "key": "jay_ew",
     "name": "Jay Turnage",
     "ov": "impersonate",
-    "campaign_id": "",               # <- ENERGY_WELLS_CAMPAIGN_ID once known
+    "campaign_id": ENERGY_WELLS_CAMPAIGN_ID,
     "group": "ENERGY WELLS DOMINATION",
-    "label": "Jay (Energy Wells)",
-    "compare": False,
-    "enabled": False,
+    "label": "Jay",
+    "campaign_label": "EnergyWell",
+    "compare": True,
 }
-
-# STILL UNKNOWN, and deliberately not guessed. Calvin's page links carry two
-# ids, 3 and 39; 3 is RES AT&T, so 39 looks like Energy Wells — but loading
-# either id while impersonated bounced the session back to the Office Access
-# owner list, so neither could be NAMED. An id that is "probably right" would
-# hand Jay's Energy Wells report another campaign's numbers on a board that
-# looks completely normal.
-#
-# READ IT OFF JAY'S OWN SESSION when his access lands. That is the better probe
-# anyway: he runs BOTH campaigns, so his switcher shows both with their labels,
-# where Calvin's session can only ever show one. Until then this blocks nothing
-# — Calvin needs no pin (EW is his only campaign) and Jay cannot run at all.
-ENERGY_WELLS_CAMPAIGN_ID = ""
 
 OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW]
 
@@ -203,7 +199,7 @@ PANEL_GAPS = "REPS OVER 15 MIN GAP"
 #
 # Clock, not fire (Megan 2026-08-28) — fire already means a SALE in the sales
 # board texts these same people read, and a gap is the opposite of a sale.
-GAP_TEXT_HEADER = "15 minutes of gaps"
+GAP_TEXT_HEADER = "15 min of gaps"
 GAP_NEW_EMOJI = "\u23F0"
 
 # --- send gate ----------------------------------------------------------------

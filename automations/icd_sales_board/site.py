@@ -1390,7 +1390,15 @@ def zero_streaks(week, overrides: dict, team: str = ALL_TEAMS,
 SECTIONS = [
     ("Sales", "icd_sales_board (this module)", True,
      "Board, production, zero streaks, week over week."),
-    ("Recruiting", "recruiting_report → ATT Program - Focus Report", True,
+    # NOT LIVE, whatever it currently renders. Tableau / SaraPlus / Sterling /
+    # AppStream are truth (Megan 2026-08-31); the Focus Report is a hand-typed
+    # transcription of AppStream and is explicitly not a feed. The nine
+    # metrics all exist at AppStream p=701 — Sent to Call List, Interviews
+    # Booked, Total First Interviews, First Interviews Showed Up, Total Second
+    # Interviews, Second Interviews Showed Up, Offered Job From Second Round,
+    # Total Daily Bob — so this is a repoint onto a harvest, not new mapping.
+    ("Recruiting", "AppStream p=701 (today: Focus Report — being repointed)",
+     False,
      "The nine tracked funnel metrics, with each office's own goals."),
     ("Knocks", "knocks_run → AUTOMATION MASTER 'Knocks Daily'", False,
      "Day over day per ICD, and combined per captainship. Now being logged."),
@@ -1578,7 +1586,38 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
         st.subheader("Recruiting")
         st.info("No filled weeks yet for this office.", icon="🗓️")
         return
-    latest = filled[-1]
+    # PICK THE WEEK, like the sales board does (Megan 2026-08-31). Newest
+    # first, because that is the one being asked about nearly every time, and
+    # only weeks that HAVE data are offered — a dropdown listing empty future
+    # weeks invites picking one and reading its blanks as zeros.
+    choices = list(reversed(filled))
+    latest = st.sidebar.selectbox(
+        "Week Ending", choices, key=f"recwk_{office_key}",
+        format_func=lambda d: (f"{d.strftime('%b')} {_ord(d.day)}, "
+                               f"{d.year}"))
+
+    # ONE DATE CONTROL, IN THE SIDEBAR (Megan 2026-08-31). The breakdowns used
+    # to carry their own windows — a day-slider on one, a week-slider on
+    # another, a range on a third — so three sections on one page could each
+    # be describing a different stretch of time without saying so. They all
+    # read this now.
+    # Weeks-to-show sits further down the page, so its value comes from state:
+    # 8 on a first visit, whatever was picked last after that.
+    weeks_back = int(st.session_state.get("rec_n", 8))
+    win_start = latest - dt.timedelta(days=weeks_back * 7 - 1)
+    win_end = latest
+    if st.sidebar.radio("Dates", ["Weeks shown", "Custom range"],
+                        key=f"recspan_{office_key}") == "Custom range":
+        picked = st.sidebar.date_input(
+            "From / to", value=(win_start, win_end),
+            key=f"recdate_{office_key}")
+        # A half-finished range comes back as one date; keep the last full
+        # window until the second date is chosen rather than showing one day.
+        if isinstance(picked, (list, tuple)) and len(picked) == 2:
+            win_start, win_end = picked
+        else:
+            st.sidebar.caption("Pick the end of the range too.")
+
     # THE WEEK IS PART OF THE TITLE (Megan 2026-08-31). Nine big numbers with
     # no period on them read as "how the office is doing" — they are one week,
     # Monday through Sunday, and usually NOT the week we are standing in: the
@@ -1591,6 +1630,15 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
                  f"{_ord(latest.day)}")
     if (dt.date.today() - latest).days > 7:
         st.caption("Most recent week with data — nothing filled in since.")
+
+    # Say where these came from, because it is not where they should come
+    # from. Left unlabelled they read as truth, and somebody would set a goal
+    # against a number that is about to change underneath them.
+    st.warning(
+        "These nine are still read from the ATT Program - Focus Report, which "
+        "is a hand-typed copy. The truth is AppStream p=701 and every row "
+        "exists there; the harvest that repoints them isn't built yet. Treat "
+        "the numbers as indicative until it is.", icon="⚠️")
 
     # ---- the nine, three to a row
     for chunk in range(0, len(F.TRACKED), 3):
@@ -1618,26 +1666,44 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
         '<div style="height:1.2rem"></div>', unsafe_allow_html=True)
 
     with st.expander("Sent to call list — which job ads it came from"):
-        ads_breakdown(icd)
+        ads_breakdown(icd, win_start, win_end)
 
     with st.expander("BOB — which ads and locations bring people on board"):
-        bob_breakdown(icd)
+        bob_breakdown(icd, win_start, win_end)
 
     # REFERENCE ONLY, and only where a board exists (Megan 2026-08-31). Most
     # offices have no sales board for us to read, so ad quality can never be a
     # column in the tables above — those have to mean the same thing for every
     # office. It sits in its own block that simply is not there when there is
     # no board to reference.
+    with st.expander("Ad quality — how interviewers rated who each ad sent"):
+        ars_breakdown(icd, win_start, win_end)
+
     if has_board(icd):
+        # LOADED ON DEMAND. Streamlit runs an expander's body even while it is
+        # collapsed, and this one reads every week tab of the board — thirteen
+        # full reads of a 247-column sheet, which by itself took the page from
+        # seconds to minutes. Everything else here is one sheet read and stays
+        # eager; this is reference material behind a click.
         with st.expander("Reference — who from each ad got past 3 weeks"):
-            quality_breakdown(icd)
+            if st.button("Load", key=f"loadq_{icd}") or \
+                    st.session_state.get(f"q_shown_{icd}"):
+                st.session_state[f"q_shown_{icd}"] = True
+                quality_breakdown(icd)
+            else:
+                st.caption("Cross-references every week of the sales board, "
+                           "so it is a slow read — click Load to run it.")
 
     st.markdown('<div style="height:.6rem"></div>', unsafe_allow_html=True)
     st.divider()
     st.markdown("**Week over week**")
     n = st.slider("Weeks to show", 4, max(4, min(26, len(filled))),
                   min(8, max(4, len(filled))), key="rec_n")
-    shown_weeks = filled[-n:]
+    # The history ENDS at the week being viewed. Running it to today while the
+    # vitals describe an earlier week would put columns on screen that the
+    # cards above are not talking about.
+    upto = [w for w in filled if w <= latest]
+    shown_weeks = upto[-n:]
 
     rows, goals = [], []
     for label, row, is_rate in F.TRACKED:
@@ -1735,11 +1801,9 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
         st.caption("Clear a goal and the Focus Report's own takes over again.")
 
 @st.cache_data(ttl=1800, show_spinner="Reading the applicant tracker…")
-def _ads(icd: str, days: int) -> list:
+def _ads(icd: str, start, end) -> list:
     from automations.icd_sales_board import job_ads as JA
-    rows = JA.load_rows()
-    since = dt.date.today() - dt.timedelta(days=days)
-    return JA.breakdown(rows, owner=icd, since=since)
+    return JA.breakdown(JA.load_rows(), owner=icd, since=start, until=end)
 
 
 def has_board(icd: str) -> bool:
@@ -1752,9 +1816,82 @@ def has_board(icd: str) -> bool:
 
 
 @st.cache_data(ttl=1800, show_spinner="Reading interviews…")
-def _bob(icd: str, key: str, weeks: int) -> tuple:
+def _bob(icd: str, key: str, start, end) -> tuple:
     from automations.icd_sales_board import job_ads as JA
-    return JA.bob_weekly(JA.load_2r(), key=key, owner=icd, weeks=weeks)
+    weeks = max(1, ((end - start).days // 7) + 1)
+    return JA.bob_weekly(JA.load_2r(), key=key, owner=icd, weeks=weeks,
+                         today=end)
+
+
+@st.cache_data(ttl=1800, show_spinner="Reading interviewer ratings…")
+def _ars(icd: str) -> list:
+    from automations.icd_sales_board import ars as A2
+    return A2.load(icd)
+
+
+def ars_breakdown(icd: str, start=None, end=None) -> None:
+    """Star rating per ad — the only source that says whether an ad's people
+    were any GOOD, rather than how many of them there were.
+
+    ONLY the rating, the ad and the name are read from that sheet; its funnel
+    columns are hand-typed and every one of them has a system-side source we
+    trust more (see ars.py). Ads with too few ratings are shown separately
+    rather than ranked, so one 5-star applicant cannot top the table."""
+    from automations.icd_sales_board import ars as A2
+    try:
+        rows = _ars(icd)
+    except Exception as e:
+        st.warning(f"Couldn't read the ARS report: {e}")
+        return
+    if not rows:
+        st.caption(f"No ARS rows for {icd}. The five ARS workbooks carry one "
+                   "tab per ICD, split alphabetically by first name.")
+        return
+
+    rows, undated = A2.in_window(rows, start, end)
+    if not rows:
+        st.caption("No interviews in that range.")
+        return
+
+    dist = A2.distribution(rows)
+    rated = sum(dist[n] for n in range(1, 6))
+    if not rated:
+        st.caption(f"{len(rows)} interviews on file for {icd}, none rated yet.")
+        return
+
+    cols = st.columns(5, gap="small")
+    avg = sum(n * dist[n] for n in range(1, 6)) / rated
+    _vital(cols[0], "Average star", f"{avg:.2f}", None)
+    _vital(cols[1], "Rated", f"{rated:,}", None)
+    _vital(cols[2], "1–2 star",
+           f"{sum(dist[n] for n in (1, 2)) / rated:.0%}", None)
+    _vital(cols[3], "3 star", f"{dist[3] / rated:.0%}", None)
+    _vital(cols[4], "4–5 star",
+           f"{sum(dist[n] for n in (4, 5)) / rated:.0%}", None)
+
+    ads = A2.by_ad(rows)
+    solid = [{k: v for k, v in a.items() if k != "thin"}
+             for a in ads if not a["thin"]]
+    thin = [a for a in ads if a["thin"]]
+    if solid:
+        st.dataframe(solid, use_container_width=True, hide_index=True,
+                     column_config=_centered(solid[0]),
+                     height=_grid_height(min(len(solid), 16)))
+    span_txt = ""
+    if start and end:
+        span_txt = (f"{start.strftime('%b')} {_ord(start.day)} – "
+                    f"{end.strftime('%b')} {_ord(end.day)}, {end.year} · ")
+    st.caption(
+        span_txt
+        + f"{len(solid)} ads with enough ratings to rank, best first"
+        + (f" · {len(thin)} more have too few to judge" if thin else "")
+        + f" · {dist['unrated']:,} interviews carry no rating at all"
+        + (f" · {undated:,} dropped for having no date" if undated else "")
+        + ". "
+        "This is the interviewer's judgement of the people an ad sent, and "
+        "only that — nothing here says whether they would have signed. Read "
+        "the 1–2 star share next to the average: an ad can hold a fair mean "
+        "while sending a lot of people nobody rated.")
 
 
 @st.cache_data(ttl=1800, show_spinner="Checking who stayed…")
@@ -1797,7 +1934,7 @@ def quality_breakdown(icd: str) -> None:
         "in the match, and anyone hired recently has not had three weeks yet.")
 
 
-def bob_breakdown(icd: str) -> None:
+def bob_breakdown(icd: str, start=None, end=None) -> None:
     """BOB by ad and by location, week over week.
 
     Same week boundary as the sales board (ending Sunday) so a BOB week lines
@@ -1805,9 +1942,8 @@ def bob_breakdown(icd: str) -> None:
     actually came on board, not when they were offered."""
     key = st.radio("Break down by", ["Ad", "Location"], horizontal=True,
                    key=f"bobkey_{icd}")
-    weeks = st.slider("Weeks", 4, 16, 8, key=f"bobwk_{icd}")
     try:
-        wk, rows = _bob(icd, "ad" if key == "Ad" else "city", weeks)
+        wk, rows = _bob(icd, "ad" if key == "Ad" else "city", start, end)
     except Exception as e:
         st.warning(f"Couldn't read the tracker: {e}")
         return
@@ -1824,28 +1960,30 @@ def bob_breakdown(icd: str) -> None:
     st.dataframe(rows, use_container_width=True, hide_index=True,
                  column_config=_centered(rows[0]),
                  height=_grid_height(min(len(rows), 16)))
+    st.warning("Sourced from the tracker's 2R tab, which is not the truth "
+               "for BOB — AppStream is, and its BOB rows carry the ad the "
+               "person was hired from. Don't kill an ad on this table yet.",
+               icon="⚠️")
     st.caption("BOB = a filled Start Date — coming on board, not being "
                "offered. Ranked by total, but read the weekly columns before "
                "killing an ad: the biggest ad by applies is not the best "
                "converter.")
 
 
-def ads_breakdown(icd: str) -> None:
+def ads_breakdown(icd: str, start=None, end=None) -> None:
     """Which job ads the call-list applies came from.
 
     Volume alone can't decide anything — an ad can send hundreds of applies and
     hire nobody — so this is built to sit next to a hire count. Until hires are
     matched in, the Hired column reads 'not matched yet' rather than 0: an ad
     with no hire DATA is not an ad with no hires, and a 0 would get one killed."""
-    days = st.select_slider("Window", [30, 60, 90, 180],
-                            value=90, key=f"adwin_{icd}")
     try:
-        rows = _ads(icd, days)
+        rows = _ads(icd, start, end)
     except Exception as e:
         st.warning(f"Couldn't read the applicant tracker: {e}")
         return
     if not rows:
-        st.caption(f"No call-list applies recorded for {icd} in {days} days.")
+        st.caption(f"No call-list applies recorded for {icd} in that range.")
         return
 
     total = sum(r["Applies"] for r in rows)
@@ -1860,7 +1998,7 @@ def ads_breakdown(icd: str) -> None:
     st.dataframe(show, use_container_width=True, hide_index=True,
                  column_config=_centered(show[0]),
                  height=_grid_height(min(len(show), 18)))
-    st.caption(f"{len(rows)} ads over {days} days, busiest first. Titles keep "
+    st.caption(f"{len(rows)} ads in range, busiest first. Titles keep "
                "their location — the same ad in two markets is two ads with "
                "two costs. Hires aren't matched in yet, so nothing here should "
                "be killed on volume alone.")

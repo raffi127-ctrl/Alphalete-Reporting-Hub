@@ -90,7 +90,7 @@ ADD_PASS_TIME = "08:00"
 # and there is no signal at all. This guard clears itself, and until it does it
 # says so on every run.
 #
-# It gates the ADD pass too. That pass mails nobody, so it is not dangerous —
+# It gates the ADD pass too. That pass DOES mail (the onboarding email) —
 # but "not live until Monday" is a plain instruction and reading it as "except
 # the half I judged safe" is how software surprises people.
 #
@@ -254,6 +254,28 @@ ADD_CAMPAIGN = "RES-AT&T"
 # saying out loud, instead of being the expected noise of every re-run.
 DOCS_ROW = "ONBOARDING DOCUMENTS"
 DOCS_NEEDED_STATE = "REQUIRED ACTION"
+
+# States that mean this person is genuinely finished and owes nothing. ONLY
+# these are skipped quietly.
+#
+# Everything else — PENDING above all — is skipped but REPORTED (Megan
+# 2026-08-31). The check used to be "REQUIRED ACTION or skip", so any other
+# state made a person invisible: no send, no retry, no alert, on every run
+# forever. That is how a cohort sat in PENDING all morning while each run
+# walked past them in silence. Whether PENDING means "packet out, awaiting
+# signature" or "started and never delivered" is not something this code can
+# tell, and that is exactly why it must not decide alone.
+DOCS_DONE_STATES = ("COMPLETED", "PENDING")
+# PENDING added 2026-08-31 on Megan's read: "that more than likely means they
+# were already generated" — i.e. the packet is out and waiting on a signature,
+# not stalled. The behaviour of the row agrees: the people she sent by hand
+# that afternoon moved out of PENDING as their bundles landed.
+#
+# IF THAT READ IS WRONG, the cost is people who never get their contracts and
+# no run that says so — which is why it is written down here rather than
+# assumed. The tell would be somebody sitting in PENDING with no documents in
+# OwnerVille; take PENDING back out of this tuple and the send treats them as
+# sendable again.
 
 # --- Onboarding Quizzes: NOT automated (Megan 2026-08-25) -----------------
 # No completion sweep, unlike Blue Ink's signed-packet check. The six rows below

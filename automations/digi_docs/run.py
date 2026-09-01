@@ -289,7 +289,7 @@ def _phases(args) -> int:
 
     # The ADD pass takes everyone starting today, due or not: somebody starting
     # at 1pm still has to exist in OwnerVille by the time their 12:30 send comes
-    # round, and adding them early costs nothing because it mails nobody.
+    # round. NOTE adding is itself a send: it mails the onboarding email.
     add_list = list(send)
     no_time = []
     if args.due_now and do_send:
@@ -367,17 +367,36 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
 
     `add_list` is the whole cohort and `send` is only who is DUE — they are
     different lists now that each person's bundle goes 30 minutes before
-    their own start time. Adding early is free (it mails nobody) and adding
-    late is not: somebody starting at 1pm has to exist in OwnerVille before
-    their 12:30 send comes round."""
+    their own start time. Adding is NOT free -- it mails the onboarding email
+    for the campaign the person lands on (Megan 2026-08-31) -- but adding late
+    is worse: somebody starting at 1pm has to exist in OwnerVille before their
+    12:30 send comes round."""
     with page_ctx as page:
         if do_add:
             print("PHASE: add reps")
+            # ONE roster read for the cohort instead of a whole-site search per
+            # person (~2 min each: two runs died on their timeout partway on
+            # 2026-08-31). It is only trusted when the read PROVED it was
+            # complete against the table's own entry count — a partial read
+            # reports real people as absent, and since adding MAILS them their
+            # onboarding email, absent-when-wrong is a duplicate welcome to a
+            # real person. Not complete, or empty, means fall straight back to
+            # asking per person, which is slow and right.
+            roster, complete = ov.snapshot(page)
+            trust = bool(roster and complete)
+            if not trust:
+                print("  roster not proven complete — checking each person "
+                      "individually (slower, and the safe way round)",
+                      flush=True)
             for c in add_list:
                 try:
+                    if trust and ov.present(roster, c.name):
+                        print(f"  {c.name}: already in OwnerVille")
+                        continue
                     outcome = ov.add_sales_rep(
                         page, c.name, dry_run=dry,
-                        employee_id=getattr(args_ns, "employee_id", "") or None)
+                        employee_id=getattr(args_ns, "employee_id", "") or None,
+                        known_absent=trust)
                     if outcome in ("added", "dry"):
                         added.append(c.name)
                 except ov.Refused as e:
@@ -397,9 +416,31 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     modal, matched = ov.open_set_status(page, c.name)
                     state = ov.docs_row_state(modal)
                     if state != ov.config.DOCS_NEEDED_STATE:
-                        print(f"  · {c.name}: skipped — Onboarding Documents "
-                              f"is {state or 'unreadable'}, not "
-                              f"{ov.config.DOCS_NEEDED_STATE}")
+                        shown = state or "unreadable"
+                        done_states = getattr(ov.config, "DOCS_DONE_STATES",
+                                              ("COMPLETED",))
+                        if shown in done_states:
+                            # Finished. Nothing owed, nothing to say.
+                            print(f"  · {c.name}: skipped — Onboarding "
+                                  f"Documents is {shown}")
+                        else:
+                            # RECORDED, NOT PAGED. Any other state — PENDING
+                            # above all — used to make a person invisible, so
+                            # it has to be reported. But NOT one Slack alert
+                            # each: the send pass is a five-minute tick and
+                            # there are dozens of them, which floods the
+                            # channel the first time it runs (2026-08-31, and
+                            # it was this line that did it). It goes in the
+                            # run's summary instead, once, with everyone else.
+                            print(f"  ⚠ {c.name}: NOT SENT and not finished — "
+                                  f"Onboarding Documents is {shown}; nothing "
+                                  f"will pick this person up on its own")
+                            refused.append(
+                                f"{c.name}: NOT SENT and not finished — "
+                                f"Onboarding Documents is {shown}, which this "
+                                f"report does not act on. Nothing will pick "
+                                f"this person up on its own; check them in "
+                                f"OwnerVille.")
                         continue
                     tab = ov.open_docs_portal(page, modal)
                     ov.generate_bundle(tab, c.name, dry_run=dry)
@@ -417,22 +458,28 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     try:
                         ticked = ov.tick_attestations(page, modal, dry_run=dry)
                     except Exception as e:              # noqa: BLE001
-                        # NOT counted as done, and NOT tinted. The banner is
-                        # the only evidence the bundle generated, and on
-                        # 2026-08-31 it was not evidence enough: the log said
-                        # twelve bundles generated and Megan found people in
-                        # OwnerVille with no documents at all. Until that gap
-                        # is understood, an attestation failure leaves the rep
-                        # UNRESOLVED — check the record, do not assume either
-                        # way from this line.
+                        # STILL TINTED (Megan 2026-08-31: "no cells are turned
+                        # green for those the digi doc bundle sent to"). The
+                        # success banner above is confirmation the bundle
+                        # generated, and generating IS the send — so the cell
+                        # has to say sent. Ticking the attestation boxes is a
+                        # separate obligation that failed, and it is raised as
+                        # its own alert rather than by withholding the tint,
+                        # because a blank cell reads as "never sent" and sends
+                        # somebody looking for a bundle that already went.
+                        #
+                        # The reason to distrust the banner earlier was the
+                        # WRONG CAMPAIGN: reps were being added under
+                        # Water/Primo, so bundles generated against the wrong
+                        # campaign's list. That is fixed at the source now.
+                        ticked = []
                         _refuse(refused,
-                                f"{c.name}: stopped after the bundle step, at "
-                                f"the attestation boxes ({type(e).__name__}: "
-                                f"{str(e).splitlines()[0][:80]}). CHECK "
-                                f"OwnerVille for this person: if the documents "
-                                f"are there they only need their boxes ticked, "
-                                f"if not they need a re-send.", dry)
-                        continue
+                                f"{c.name}: bundle SENT (success banner "
+                                f"confirmed) — but the attestation boxes were "
+                                f"not ticked ({type(e).__name__}: "
+                                f"{str(e).splitlines()[0][:70]}). Tick them in "
+                                f"OwnerVille; this person does NOT need a "
+                                f"re-send.", dry)
                     done.append((c.name, matched, ticked))
                 except ov.Refused as e:
                     _refuse(refused, str(e), dry)
@@ -461,7 +508,7 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
     so in Slack. Never the name, never the checkbox.
 
     SEND PHASE ONLY. Both of these ran unconditionally, so `--add-only --live`
-    -- a phase that deliberately mails nobody and ticks nothing -- would still
+    -- a phase that ticks nothing and sends no BUNDLE -- would still
     have posted "*0* new starts sent digi docs" into #rafs-office-recruiting-11280 off an empty
     `done`. Adding reps is not a send and must not announce itself as one.
     """
@@ -477,6 +524,20 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
         slack_post.post(len(done), refused, done, fatal=fatal, dry_run=dry)
     else:
         print("\n(add phase — no tint, no Slack: nothing was sent)")
+
+    # LEAVE THE WHY WHERE THE ALERT WILL FIND IT (Megan 2026-08-31: "when
+    # that's the error - it needs to say that on slack corrections channel").
+    # hub_publish's failure alert only ever said "closed a run with status
+    # FAILED", so "the 'Start Time' column is not on this tab — 31 people
+    # cannot be scheduled" reached the channel as a generic red nobody could
+    # act on. A clean run clears it, so a stale reason can never outlive the
+    # failure it described.
+    try:
+        from automations.day_orchestrator import hub_publish as _hp
+        _hp.write_failure_reason(
+            "digi_docs", (fatal or (refused[0] if refused else "")))
+    except Exception:                                   # noqa: BLE001
+        pass
 
     print(f"\nadded {len(added)} · sent {len(done)} · tinted {tinted} · "
           f"refused {len(refused)}")

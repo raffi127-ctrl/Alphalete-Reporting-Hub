@@ -70,6 +70,64 @@ from automations.recruiting_report import fetch_office
 
 OFFICE_ID = "11580"
 OFFICE_HINT = "CARLOS HIDALGO"
+
+# WHICH AppStream login this run signs in as. Rebound per office by
+# offices.activate(), and by the --office override in main().
+#
+# The default is the SCOPED account, not "primary" (Megan 2026-08-31: "the resume
+# pusher needs to use the resume login and all others the new reporting login").
+# It has to be: this module IS the resume pusher, and every path that reaches it
+# without offices.activate() — `lucy rerun resume_pushing`, the --warm job, a
+# bare python -m — would otherwise sign in as the fleet reporting login, which
+# sees all 28 offices. That is the 8/30 over-push exactly. A default of "primary"
+# here means the safe behaviour depends on being called the right way.
+#
+# WHY THIS EXISTS (Megan 2026-08-31): on 8/30 the push sent to ~22 offices when it
+# is allowed two. The office SWITCH below scopes the console, but the v2 batch
+# grid's select-all -> Send To AI reaches whatever the ACCOUNT can see, and the
+# shared 'Raf - Captain' login sees all 28. Send-to-AI is irreversible, so the
+# real bound is the account's own permissions: an account that cannot see an
+# office cannot push it.
+APPSTREAM_ACCOUNT = "lucyresume"
+
+
+def _login_form_present(page, tp) -> bool:
+    """Is an actual LOGIN FORM on screen — not the console that merely looks like one?
+
+    WHY (Megan 2026-08-31, from a screenshot of the console with the username
+    typed into the office search box). _APPSTREAM_USERNAME_SELECTOR ends in the
+    catch-all `input[type="text"]`, and #searchMC — the OFFICE SWITCHER on the
+    logged-in console — is a text input. So "is there a username field?" answers
+    yes on a page where we are already signed in, and the caller then drives a
+    login form into the office switcher: username typed into #searchMC, NEXT
+    clicked, console disturbed. The office switch that follows has to fight the
+    text it left behind.
+
+    #searchMC is the console's own marker — every other path in this module uses
+    its presence to mean "logged in". So its presence is decisive here too: if
+    the console is up, there is no login form, whatever the text inputs say.
+
+    A password field is real evidence; a bare text box is not."""
+    try:
+        if page.locator("#searchMC").count() > 0:
+            return False
+        if page.locator(tp._PASSWORD_SELECTOR).count() > 0:
+            return True
+        return page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0
+    except Exception:  # noqa: BLE001 — a detached frame is not a login form
+        return False
+
+
+def _account_creds():
+    """(username, password) for the account this run is declared to use.
+
+    Raises rather than falling back to the primary. A fallback here is exactly
+    the failure we are fixing: a scoped job quietly signing in as a broader
+    account and pushing offices it was never allowed to touch."""
+    from automations.shared import creds   # imported per-function in this module
+    return creds.appstream_account(APPSTREAM_ACCOUNT)
+
+
 TABLE = "#table-batch-resume"        # v2 DataTable id (from the Cowork skill)
 
 # Per-cycle wait for the Resume-Helper popup to flip to 'Reset'. A healthy batch
@@ -600,9 +658,154 @@ def send_once(page, dry_run: bool, limit: int = 0):
     return (sent if sent is not None else 0), done, before
 
 
+class WrongAppStreamAccount(RuntimeError):
+    """The console is signed in as an account this run was not declared to use."""
+
+
+def _page_account_no(page):
+    """The 'Account No:' the console is currently showing, or None.
+
+    Reuses appstream_whoami's scrape rather than a second copy of the regex —
+    that module is the one already proven against this page."""
+    try:
+        from automations.shared.appstream_whoami import identity
+        import re as _re
+        raw = identity(page)
+        num = _re.search(r"account_no=(\d+)", raw)
+        # The account number is the COMPANY (23981 = Alphalete Marketing Call
+        # Center) and is IDENTICAL for every login under it — Lucy Reports and
+        # Lucy Resume Pushing both report 23981 (measured 2026-08-31). Comparing
+        # it alone would wave through exactly the swap this guard exists to
+        # catch, so the USER label is what makes the fingerprint identifying.
+        lab = _re.search(r"label=['\"](.*?)['\"]", raw)
+        who = (lab.group(1) if lab else "").strip()
+        # No account number = no identity. identity() falls back to the first
+        # 60 chars of the body when the banner is absent, so accepting a label
+        # on its own would manufacture a fingerprint out of whatever text
+        # happened to be on a page that never rendered the console.
+        if not num:
+            return None
+        return "%s/%s" % (num.group(1), who or "?")
+    except Exception as e:  # noqa: BLE001
+        _log("[account] could not read the console identity: " + str(e)[:120])
+        return None
+
+
+# The account number observed on the CLASSIC console, stashed for the assert.
+#
+# WHY STASHED (Megan 2026-08-31): the assert sits in front of the send, and by
+# then the flow is on the v2 "Explore Appstream AI" dashboard, which does not
+# render the "Account No:" banner. Read there it returns nothing — the first
+# dry-run of the cutover recorded no identity at all, and a live run would have
+# refused every send while looking like a working guard. The console DOES carry
+# it, right after the office switch, so it is captured there and asserted later.
+_OBSERVED_ACCOUNT_NO = None
+
+
+def _capture_account_identity(page) -> None:
+    """Remember the Account No the classic console is showing."""
+    global _OBSERVED_ACCOUNT_NO
+    got = _page_account_no(page)
+    if got:
+        _OBSERVED_ACCOUNT_NO = got
+        _log("[account] console identity: Account No %s (declared account: %s)"
+             % (got, APPSTREAM_ACCOUNT))
+    else:
+        _log("[account][WARN] console rendered but no Account No could be read — "
+             "a live send will refuse rather than guess")
+
+
+def _assert_account(page, dry_run: bool) -> None:
+    """Refuse to send unless the console is the account this run declared.
+
+    WHY THIS IS NOT REDUNDANT with scoping the account's office access (Megan
+    2026-08-31): scoping bounds what LucyResume can reach, but only while the run
+    is actually signed in as LucyResume. Carlos's failure mode is different — the
+    run attaching over CDP to a Chrome another report already has open, carrying
+    the BROAD login's cookies. The scoped credential is never used on that
+    screen, so its permissions never apply, and select-all -> Send To AI reaches
+    every office that other login can see. That is irreversible.
+
+    A --dry-run RECORDS the account number (it sends nothing, so there is nothing
+    to protect); a live run ASSERTS it. Dry-run-before-live is already the rule
+    for this report, so the fingerprint is always in place by the time it matters.
+
+    An unrecorded account on a LIVE run is not waved through: unknown identity is
+    exactly the state we cannot distinguish from the wrong one."""
+    from automations.shared import creds   # imported per-function in this module
+    want = creds.appstream_account_fingerprint(APPSTREAM_ACCOUNT)
+    # Prefer what the CONSOLE showed; the v2 page the send runs on has no banner.
+    got = _OBSERVED_ACCOUNT_NO or _page_account_no(page)
+    if dry_run:
+        if got and not want:
+            if creds.record_appstream_account_fingerprint(APPSTREAM_ACCOUNT, got):
+                _log("[account] recorded %s = Account No %s (dry-run). A live run "
+                     "will now refuse any other account."
+                     % (APPSTREAM_ACCOUNT, got))
+        elif got and want and got != want:
+            # LEGACY FINGERPRINT UPGRADE. Fingerprints recorded before the user
+            # label was added are the bare company number ("23981"), which can
+            # never equal the new "<number>/<user>" form — so a dry-run refused
+            # to overwrite it and live sends refused forever. Same account, just
+            # a richer name for it: upgrade in place. Anything where the NUMBER
+            # differs is a genuine mismatch and is still left alone.
+            if "/" not in want and got.split("/")[0] == want:
+                if creds.record_appstream_account_fingerprint(APPSTREAM_ACCOUNT, got):
+                    _log("[account] upgraded the recorded fingerprint for %s from "
+                         "%s to %s (the number alone is the COMPANY and cannot "
+                         "tell two logins apart)" % (APPSTREAM_ACCOUNT, want, got))
+                    return
+            _log("[account][WARN] dry-run is on %s but %s is recorded as %s — "
+                 "NOT overwriting. Live sends will refuse."
+                 % (got, APPSTREAM_ACCOUNT, want))
+        return
+    if not got:
+        raise WrongAppStreamAccount(
+            "could not read the console's Account No, so the account driving "
+            "this send cannot be verified. Refusing to send. Run --dry-run and "
+            "check the console rendered.")
+    if not want:
+        raise WrongAppStreamAccount(
+            "no Account No recorded for the %r AppStream account, so a live send "
+            "cannot be verified as coming from it. Run --dry-run once (it sends "
+            "nothing and records the identity), then re-run live."
+            % APPSTREAM_ACCOUNT)
+    # ENFORCE ON THE NUMBER, REPORT ON THE LABEL (Megan 2026-08-31).
+    #
+    # The user label would be the identifying half — 23981 is the COMPANY and is
+    # the same for Lucy Reports and Lucy Resume Pushing. But identity() falls
+    # back to the first 60 chars of the body when its own label regex misses, so
+    # what actually came back on Lucy 2 was
+    # "0 Alphalete Marketing\xa0Call Center (Account No: 23981)   Adva" — page
+    # text, not a user. Gating irreversible sends on that means a refusal every
+    # time the page wording shifts, which is an outage this guard would be
+    # causing rather than preventing.
+    #
+    # So the number is enforced and the label is logged loudly on a mismatch.
+    # That is weaker than it should be, and it is NOT the thing keeping the push
+    # to two offices — the account's own permissions are (it cannot see a third),
+    # backed by the per-account session file and the cookie purge. Extract the
+    # real signed-in user against the live DOM and this becomes enforcing again.
+    if got.split("/")[0] != want.split("/")[0]:
+        raise WrongAppStreamAccount(
+            "console is signed in as Account No %s, but this run is declared to "
+            "use %r (Account No %s). Refusing to send — this is the wrong-screen "
+            "case: a session opened by another report can see offices this job "
+            "must never push." % (got, APPSTREAM_ACCOUNT, want))
+    if got != want:
+        _log("[account][WARN] account number matches (%s) but the console text "
+             "differs from what was recorded. Not blocking — the label is not "
+             "reliably the signed-in user yet. recorded=%r now=%r"
+             % (got.split("/")[0], want, got))
+    _log("[account] verified: %s = Account No %s" % (APPSTREAM_ACCOUNT, got))
+
+
 def send_loop(page, dry_run: bool, limit: int = 0) -> int:
     """Repeat send passes until the status says 0 sent / no applicants, or the
     record count stops dropping, or the safety cap. Returns total sent."""
+    # Before ANY send — including the --limit single pass. Send-to-AI cannot be
+    # undone, so the identity check has to sit in front of every path.
+    _assert_account(page, dry_run)
     if dry_run:
         sent, _, _ = send_once(page, dry_run=True, limit=limit)
         return 0
@@ -1138,6 +1341,25 @@ def _copy_default_profile(force_fresh: bool = False) -> str:
     subprocess.run(["pkill", "-f", _CDP_KILL_PAT], capture_output=True)
     _t.sleep(2)
     reuse = (not force_fresh) and os.path.exists(_CDP_SEED_MARKER)
+    # A warm profile carries the session of whoever it was last used as. Reusing
+    # it across an account change is how the 2026-08-31 cutover silently kept
+    # running as the old login: the seed marker was present, so nothing was
+    # re-copied, nothing was purged, and the declared credential was never used.
+    # The profile therefore records WHICH account it belongs to, and a mismatch
+    # forces a fresh seed (which purges the inherited cookies below).
+    if reuse:
+        marker = os.path.join(dst, ".rp_account")
+        was = ""
+        try:
+            with open(marker) as fh:
+                was = fh.read().strip()
+        except Exception:  # noqa: BLE001 — absent marker = pre-cutover profile
+            was = ""
+        if was != APPSTREAM_ACCOUNT:
+            _log("[account] warm profile belongs to %r but this run is %r — "
+                 "re-seeding so the declared account has to sign in"
+                 % (was or "(unrecorded)", APPSTREAM_ACCOUNT))
+            reuse = False
     if reuse:
         for lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
             subprocess.run(["rm", "-f", f"{dst}/{lock}"], capture_output=True)
@@ -1156,12 +1378,61 @@ def _copy_default_profile(force_fresh: bool = False) -> str:
          "--exclude", "Application Cache", "--exclude", "Service Worker/CacheStorage",
          f"{src}/Default/", f"{dst}/Default/"],
         capture_output=True)
+    # A scoped account must not inherit whoever this machine's everyday Chrome
+    # happens to be logged in as.
+    if APPSTREAM_ACCOUNT != "primary":
+        _purge_appstream_session_cookies(dst)
+    try:
+        with open(os.path.join(dst, ".rp_account"), "w") as fh:
+            fh.write(APPSTREAM_ACCOUNT)
+    except Exception:  # noqa: BLE001 — an unstamped profile just re-seeds next run
+        pass
     # Mark it seeded so subsequent runs reuse it (keeping the Cloudflare clearance).
     try:
         open(_CDP_SEED_MARKER, "w").close()
     except Exception:
         pass
     return dst
+
+
+def _purge_appstream_session_cookies(profile: str) -> int:
+    """Drop the copied profile's applicantstream LOGIN cookies. Returns the count.
+
+    WHY (Megan 2026-08-31): this profile is rsync'd from the machine's everyday
+    Chrome, so it arrives carrying that human's live AppStream session. The login
+    form below only fires when a password field appears — and it never appears,
+    because the inherited cookies render the console already signed in. The run
+    then proceeds as whoever that was, silently, no matter which account it was
+    declared to use. That is how a job allowed two offices ends up able to reach
+    28.
+
+    cf_clearance is deliberately KEPT: it is Cloudflare's challenge clearance,
+    not a login, and dropping it would force a fresh managed challenge on every
+    seed — the exact cold-profile stall this copy exists to avoid.
+
+    Best-effort. A profile whose cookie DB can't be opened still runs; the
+    identity assert in front of the send is what makes the wrong account fatal,
+    not this."""
+    import os          # this module imports os per-function, not at the top
+    import sqlite3
+    removed = 0
+    for rel in ("Default/Cookies", "Default/Network/Cookies"):
+        db = os.path.join(profile, rel)
+        if not os.path.exists(db):
+            continue
+        try:
+            con = sqlite3.connect(db)
+            cur = con.execute(
+                "DELETE FROM cookies WHERE host_key LIKE ? AND name != ?",
+                ("%applicantstream%", "cf_clearance"))
+            removed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+            con.commit()
+            con.close()
+        except Exception as e:  # noqa: BLE001
+            _log("[account] could not purge cookies in %s: %s" % (rel, str(e)[:100]))
+    _log("[account] purged %d inherited applicantstream cookie(s) — %s must sign "
+         "in itself (cf_clearance kept)" % (removed, APPSTREAM_ACCOUNT))
+    return removed
 
 
 def _invalidate_cdp_profile() -> None:
@@ -1272,7 +1543,7 @@ def _cdp_warm(force_fresh: bool = True) -> int:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             # Inject any saved session, then land on the console URL so Cloudflare
             # (if it re-challenges) starts resolving.
-            tp._reuse_appstream_storage_state(ctx, page, True)
+            _reuse_account_session(ctx, page, tp, True)
             try:
                 page.goto("https://applicantstream.com/index.cfm",
                           wait_until="domcontentloaded")
@@ -1287,13 +1558,10 @@ def _cdp_warm(force_fresh: bool = True) -> int:
             while _t.time() < deadline:
                 if page.locator("#searchMC").count() > 0:
                     break
-                if not drove_login and (
-                        page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                        or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                if not drove_login and _login_form_present(page, tp):
                     try:
                         tp._drive_login_form(page, True,
-                                             username=creds.appstream_username(),
-                                             password=creds.appstream_password())
+                                             *_account_creds())
                         drove_login = True
                     except Exception as e:  # noqa: BLE001
                         _log("[warm] form login error: " + str(e)[:140])
@@ -1407,7 +1675,7 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
         except Exception:  # noqa: BLE001
             pass
 
-        logged = tp._reuse_appstream_storage_state(ctx, page, True)
+        logged = _reuse_account_session(ctx, page, tp, True)
         if logged and page.locator("#searchMC").count() > 0:
             _log("[cdp] logged in via saved session (storage_state).")
         else:
@@ -1415,17 +1683,15 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
             # passes Cloudflare cleanly), then hop to the office switcher.
             _log("[cdp] saved session had no #searchMC — driving the form login")
             try:
-                user = creds.appstream_username()
-                pwd = creds.appstream_password()
+                user, pwd = _account_creds()
                 page.goto("https://applicantstream.com/",
                           wait_until="domcontentloaded")
                 page.wait_for_timeout(3000)
-                if (page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                        or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                if _login_form_present(page, tp):
                     tp._drive_login_form(page, True, username=user, password=pwd)
                 page.wait_for_timeout(3000)
                 if page.locator("#searchMC").count() == 0:
-                    tp._reuse_appstream_storage_state(ctx, page, True)
+                    _reuse_account_session(ctx, page, tp, True)
                 _persist_appstream_session(ctx, tp)
             except Exception as e:
                 _log("[cdp] form login error: " + str(e)[:160])
@@ -1438,13 +1704,10 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
             while _t.time() < _deadline:
                 if page.locator("#searchMC").count() > 0:
                     break
-                if not _drove and (
-                        page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                        or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                if not _drove and _login_form_present(page, tp):
                     try:
                         tp._drive_login_form(page, True,
-                                             username=creds.appstream_username(),
-                                             password=creds.appstream_password())
+                                             *_account_creds())
                         _drove = True
                     except Exception:  # noqa: BLE001
                         pass
@@ -1455,6 +1718,8 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
                 _persist_appstream_session(ctx, tp)
         mc = page.locator("#searchMC").count()
         _log(f"[cdp] logged_in check: #searchMC={mc}")
+        if mc:
+            _capture_account_identity(page)
         if mc == 0:
             # Warm profile didn't log in. Drop the seed marker so the NEXT run
             # re-copies a fresh profile from the everyday Default (self-heals the
@@ -1500,6 +1765,45 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
         _flush_diag(diag_tab)
 
 
+def _account_state_path(tp):
+    """Where THIS account's AppStream session lives.
+
+    The shared .appstream_storage_state.json belongs to the primary login, and on
+    Lucy 2 that is what funnel_board / indeed_source_report / ad_sales_board /
+    daily_update_fill reuse. A scoped account must neither read it nor write it:
+
+      * READING it re-injects the broad login's cookies right after the profile
+        purge, restores the console as that account, and skips the form login
+        entirely — the run then pushes as the broad account with every guard
+        looking satisfied. On 2026-08-31 this only failed to happen because the
+        shared token was dead; a healthy one would have silently taken over.
+      * WRITING it would replace the broad session with a two-office one and
+        break every other AppStream report on the machine.
+
+    So anything that is not "primary" gets its own file beside it."""
+    if APPSTREAM_ACCOUNT == "primary":
+        return tp.APPSTREAM_STORAGE_STATE
+    return tp.APPSTREAM_STORAGE_STATE.with_name(
+        ".appstream_storage_state_%s.json" % APPSTREAM_ACCOUNT)
+
+
+def _reuse_account_session(ctx, page, tp, verbose=True) -> bool:
+    """Restore this ACCOUNT's saved session — never another account's."""
+    path = _account_state_path(tp)
+    if path == tp.APPSTREAM_STORAGE_STATE:
+        return tp._reuse_appstream_storage_state(ctx, page, verbose)
+    if not path.exists():
+        _log("[account] no saved session for %s yet — it must sign in"
+             % APPSTREAM_ACCOUNT)
+        return False
+    real = tp.APPSTREAM_STORAGE_STATE
+    try:
+        tp.APPSTREAM_STORAGE_STATE = path
+        return tp._reuse_appstream_storage_state(ctx, page, verbose)
+    finally:
+        tp.APPSTREAM_STORAGE_STATE = real
+
+
 def _persist_appstream_session(ctx, tp) -> None:
     """Persist the current context's cookies to APPSTREAM_STORAGE_STATE for reuse,
     but only when they carry the ``rqst_*`` SSO cookies that prove a real login (so a
@@ -1510,8 +1814,10 @@ def _persist_appstream_session(ctx, tp) -> None:
         if any(c.get("name", "").startswith("rqst_")
                for c in _st.get("cookies", [])):
             import json as _json
-            tp.APPSTREAM_STORAGE_STATE.write_text(_json.dumps(_st))
-            _log("[cdp] saved a fresh AppStream session for reuse")
+            _path = _account_state_path(tp)
+            _path.write_text(_json.dumps(_st))
+            _log("[cdp] saved a fresh AppStream session for reuse (%s -> %s)"
+                 % (APPSTREAM_ACCOUNT, _path.name))
     except Exception:  # noqa: BLE001
         pass
 
@@ -1610,7 +1916,7 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                 pass
 
             from automations.shared import creds
-            logged = tp._reuse_appstream_storage_state(ctx, page, True)
+            logged = _reuse_account_session(ctx, page, tp, True)
             if logged and page.locator("#searchMC").count() > 0:
                 _log("[cdp] logged in via saved session (storage_state).")
             else:
@@ -1618,17 +1924,15 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                 # passes Cloudflare cleanly), then hop to the office switcher.
                 _log("[cdp] saved session had no #searchMC — driving the form login")
                 try:
-                    user = creds.appstream_username()
-                    pwd = creds.appstream_password()
+                    user, pwd = _account_creds()
                     page.goto("https://applicantstream.com/",
                               wait_until="domcontentloaded")
                     page.wait_for_timeout(3000)
-                    if (page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                            or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                    if _login_form_present(page, tp):
                         tp._drive_login_form(page, True, username=user, password=pwd)
                     page.wait_for_timeout(3000)
                     if page.locator("#searchMC").count() == 0:
-                        tp._reuse_appstream_storage_state(ctx, page, True)
+                        _reuse_account_session(ctx, page, tp, True)
                     # persist a fresh session for next time
                     try:
                         _st = ctx.storage_state()
@@ -1655,13 +1959,10 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                 while _t2.time() < _deadline:
                     if page.locator("#searchMC").count() > 0:
                         break
-                    if not _drove and (
-                            page.locator(tp._PASSWORD_SELECTOR).count() > 0
-                            or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                    if not _drove and _login_form_present(page, tp):
                         try:
                             tp._drive_login_form(page, True,
-                                                 username=creds.appstream_username(),
-                                                 password=creds.appstream_password())
+                                                 *_account_creds())
                             _drove = True
                         except Exception:  # noqa: BLE001
                             pass
@@ -1679,6 +1980,8 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                         pass
             mc = page.locator("#searchMC").count()
             _log(f"[cdp] logged_in check: #searchMC={mc}")
+            if mc:
+                _capture_account_identity(page)
             if mc == 0:
                 # Warm profile didn't log in (stale clearance/session or a genuine
                 # Cloudflare challenge). Drop the seed marker so the NEXT q10min run
@@ -2242,6 +2545,21 @@ def main() -> int:
     if args.office:
         globals()["OFFICE_ID"] = args.office
         globals()["OFFICE_HINT"] = args.office_hint or ""
+        # The account follows the OFFICE, not the flag order. A one-off on a
+        # diagnostic office needs the broad login (LucyResume cannot see it);
+        # a one-off on a rotation office must stay scoped. An office this table
+        # has never heard of keeps the scoped default — the narrow guess is the
+        # safe one, and it fails visibly instead of pushing something it should
+        # not be able to reach.
+        try:
+            from automations.applicant_push import offices as _offices
+            _row = _offices.OFFICES.get(str(args.office))
+            if _row and _row.get("account"):
+                globals()["APPSTREAM_ACCOUNT"] = _row["account"]
+        except Exception as _e:  # noqa: BLE001
+            _log("[office] could not resolve an account for %s (%s) — staying on %s"
+                 % (args.office, str(_e)[:60], APPSTREAM_ACCOUNT))
+        _log("[office] account for this one-off: " + APPSTREAM_ACCOUNT)
         # Isolate the CDP browser so a one-off never collides with the live 11580
         # launchd job (both otherwise share /tmp/rp_cdp_profile + port 9245, and
         # each pkills that profile on start — the collision that zeroed the first
