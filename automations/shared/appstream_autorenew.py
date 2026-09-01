@@ -253,7 +253,18 @@ def refresh_ownerville(verbose: bool = True) -> bool:
                     timeout=20_000)
             except Exception:  # noqa: BLE001 — already signed in is fine too
                 pass
-            _drive_login_form(page, verbose=verbose)
+            # ALREADY SIGNED IN IS NOT A FAILURE. ownerville can redirect
+            # straight past the form (…/index.cfm?p=9197), and then filling the
+            # password times out after 30s — which the first cut reported as
+            # "renew raised TimeoutError" and gave up on, throwing away a
+            # perfectly live session (Lucy 1, 2026-09-01 15:27). Try the form,
+            # but judge on whether the SESSION is live, not on whether we got to
+            # type into it.
+            try:
+                _drive_login_form(page, verbose=verbose)
+            except Exception as e:  # noqa: BLE001 — the check below is the judge
+                _log("login form not driven (%s) — checking whether we are "
+                     "already signed in" % type(e).__name__)
             if not _ownerville_session_valid(page, verbose=verbose):
                 _log("ownerville login did NOT reach a live session")
                 return False
