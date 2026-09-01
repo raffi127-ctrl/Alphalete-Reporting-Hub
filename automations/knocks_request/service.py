@@ -530,16 +530,29 @@ def _apps_for(canonical: str, days: "list", *, logfn=print):
     from automations.focus_office_att.aliases import load_aliases
     from automations.shared.report_week import week_ending
     try:
-        if central_today() in set(days):
-            logfn("apps: span includes today — the product sales summary is "
-                  "not updated for today, so the apps columns stay off")
-            return None
         weeks = {week_ending(d) for d in days}
         if len(weeks) != 1:
             logfn("apps: the span crosses a week boundary — columns left off "
                   "rather than counting part of one week")
             return None
         we_sunday = weeks.pop()
+        # A COMPLETED WEEK ONLY. That is the actual rule (Megan 2026-09-01):
+        # "if the date isn't from the current week, then it doesn't need to be
+        # a fresh pull … it could be from a predone harvest, from a fully
+        # completed week." A finished week is final, so the saved crosstab is
+        # as good as a live pull and costs nothing. The CURRENT week is still
+        # moving — its harvest either does not exist yet or is already stale —
+        # and re-pulling it per request is the Tableau cost this was rewritten
+        # to remove, so those days get the board without the apps columns.
+        #
+        # This also covers Raf's own case ("if I'm checking for today only, it
+        # doesn't need to pull … it's not updated for today") without treating
+        # today as a special case: today is in the current week by definition.
+        if we_sunday >= week_ending(central_today()):
+            logfn(f"apps: week ending {we_sunday} is the CURRENT week — not "
+                  "final, and nothing is pulled fresh on a request, so the "
+                  "apps columns stay off")
+            return None
         # The path apps.download writes; we only ever READ it.
         pss_path = A.OUT_DIR / f"pss_rep_{we_sunday.isoformat()}.csv"
         if not pss_path.exists():
