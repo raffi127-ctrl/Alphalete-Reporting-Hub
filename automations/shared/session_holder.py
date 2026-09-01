@@ -187,6 +187,16 @@ def _note_mint_result(ok: bool) -> int:
     return _MINT_FAILURES["n"]
 
 
+def _mint_is_throttled() -> bool:
+    """True when MINT_MIN_INTERVAL_MIN has not elapsed, so a False from
+    _mint_appstream_via_ownerville means 'did not try', not 'tried and failed'.
+
+    Callers that escalate on failure MUST check this first: the mint returns
+    False for both, and treating the throttle as a failure turns the holder's
+    restart ladder into a relaunch loop driven by nothing but the clock."""
+    return (time.time() - _LAST_MINT_ATTEMPT["at"]) / 60.0 < MINT_MIN_INTERVAL_MIN
+
+
 def _this_machine() -> str:
     try:
         v = _MACHINE_MARKER.read_text().strip()
@@ -690,10 +700,47 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
             return True
     except Exception:
         pass
+    # COUNT THE OUTCOME HERE TOO (2026-09-01) — this was the hole.
+    #
+    # Until now this path minted and threw the result away. Only the in-margin
+    # branch called _note_mint_result, so `restart_wanted` could be set ONLY
+    # while a token was still alive. The moment the token actually died — the
+    # emergency the restart ladder exists for — the holder minted, failed, and
+    # asked for nothing, cycle after cycle.
+    #
+    # That is the 2026-09-01 overnight shape exactly: the rqst expired at 22:15
+    # and session_holder.out.log printed "warm ✓ — 6 ownerville cookies" every
+    # six minutes until 05:49, when a human logged in. Seven hours in which the
+    # one recovery this file documents as working ("the restart minted what four
+    # re-hop cycles could not") was never requested. Same shape as the ten-hour
+    # 2026-08-27 outage named above; that fix added the mint here but not the
+    # bookkeeping that turns a failing mint into a restart.
+    #
+    # ONE failure is enough here, not MINT_FAILURES_BEFORE_RESTART. That
+    # threshold exists to keep a needless restart from disturbing a LIVE token;
+    # with no live token there is nothing to protect, and this file's own
+    # argument applies at full strength: "a restart cannot be worse than doing
+    # nothing, which is what four hours of 8/31 actually were."
+    #
+    # A THROTTLED call is not a failure. _mint_appstream_via_ownerville returns
+    # False both when it genuinely fails and when MINT_MIN_INTERVAL_MIN has not
+    # elapsed; counting the latter would restart the holder every loop cycle on
+    # nothing but the throttle, which is a relaunch loop, not a recovery.
+    throttled = _mint_is_throttled()
     try:
-        return _mint_appstream_via_ownerville(ctx, page, verbose=verbose)
+        minted = _mint_appstream_via_ownerville(ctx, page, verbose=verbose)
     except Exception:
-        return False
+        minted = False
+    if minted:
+        _note_mint_result(True)
+        return True
+    if not throttled:
+        _note_mint_result(False)
+        print(f"[{_stamp()}] no live rqst token and the mint failed — asking for "
+              f"a restart, which is the path that actually mints (nothing live "
+              f"to lose here).", flush=True)
+        _MINT_FAILURES["restart_wanted"] = True
+    return False
 
 
 def main() -> int:
