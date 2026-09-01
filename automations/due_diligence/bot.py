@@ -259,6 +259,19 @@ def _handler(client, req):
                                  daemon=True).start()
         except Exception as e:                # noqa: BLE001 — never crash the listener
             print(f"[promo] dispatch failed {type(e).__name__}: {e}", flush=True)
+        try:
+            # The knock-board buttons: a name suggestion or a "which campaign"
+            # prompt. Clicking one re-runs the request with the exact name and
+            # campaign we matched, so nothing has to be retyped and a near-miss
+            # cannot become a second near-miss.
+            from automations.knocks_request import handler as knocks
+            if knocks.is_knocks_action(req.payload):
+                threading.Thread(target=knocks.handle_action,
+                                 args=(client.web_client, req.payload),
+                                 daemon=True).start()
+        except Exception as e:                # noqa: BLE001 — never crash the listener
+            print(f"[knocks] action dispatch failed {type(e).__name__}: {e}",
+                  flush=True)
         return
     # ack anything else so Slack doesn't retry
     client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))

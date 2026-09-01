@@ -223,6 +223,60 @@ def handle_dm(web, user_id: str, text: str) -> None:
     process(web, user_id, office, target, end, campaign=campaign)
 
 
+PICK_ACTION = "knocks_pick"
+
+
+def _pick_value(office: str, target: dt.date, end: "dt.date | None",
+                campaign: "str | None") -> str:
+    """What a button carries: everything needed to run the request, so the
+    click needs no memory of the conversation. Slack caps a value at 2000
+    chars; these are a name and two dates."""
+    import json
+    return json.dumps({"o": office, "t": target.isoformat(),
+                       "e": (end or target).isoformat(), "c": campaign})
+
+
+def _say_buttons(web, chan: str, text: str, choices: list) -> None:
+    """One message: the question, then a button per choice."""
+    blocks = [{"type": "section",
+               "text": {"type": "mrkdwn", "text": text}},
+              {"type": "actions",
+               "elements": [
+                   {"type": "button", "action_id": f"{PICK_ACTION}_{i}",
+                    "text": {"type": "plain_text", "text": label[:75]},
+                    "value": value}
+                   for i, (label, value) in enumerate(choices[:5])]}]
+    try:
+        web.chat_postMessage(channel=chan, text=text, blocks=blocks)
+    except Exception:  # noqa: BLE001 — a lost prompt must not raise
+        pass
+
+
+def is_knocks_action(payload: dict) -> bool:
+    """True when this block_actions payload is one of OUR buttons."""
+    if payload.get("type") != "block_actions":
+        return False
+    return any(str(a.get("action_id", "")).startswith(PICK_ACTION)
+               for a in payload.get("actions", []))
+
+
+def handle_action(web, payload: dict) -> None:
+    """A click on one of the buttons above — run exactly that request."""
+    import json
+    act = next((a for a in payload.get("actions", [])
+                if str(a.get("action_id", "")).startswith(PICK_ACTION)), None)
+    if not act:
+        return
+    try:
+        d = json.loads(act.get("value") or "{}")
+        target = dt.date.fromisoformat(d["t"])
+        end = dt.date.fromisoformat(d["e"])
+    except Exception:  # noqa: BLE001 — a malformed value answers, never crashes
+        return
+    process(web, payload["user"]["id"], d.get("o", ""), target, end,
+            campaign=d.get("c"))
+
+
 def is_knocks_submission(payload: dict) -> bool:
     return (payload.get("type") == "view_submission"
             and payload.get("view", {}).get("callback_id") == CALLBACK)
@@ -285,10 +339,12 @@ def process(web, user_id: str, office: str, target: dt.date,
         from automations.rashad_metrics.knocks_pull import campaigns_for
         options = campaigns_for(service.resolve_office(office))
         if options:
-            say(f":grey_question: *{office}* runs {len(options)} campaigns — "
-                "which one?\n"
-                + "\n".join(f"• `knocks {office} {key}`  ({label})"
-                             for label, _cid, key in options))
+            _say_buttons(
+                web, chan,
+                f":grey_question: *{office}* runs {len(options)} campaigns — "
+                "which one?",
+                [(label, _pick_value(office, target, end, cid))
+                 for label, cid, _key in options])
             return
 
     pretty = service.pretty_span(target, end)
@@ -350,16 +406,21 @@ def process(web, user_id: str, office: str, target: dt.date,
             # the spelling was wrong.
             near = service.ownerville_near_matches(e)
             if near:
+                # BUTTONS, not commands to retype (Megan 2026-09-01: "instead
+                # of free typing so that it can't be messed up and goes back to
+                # Jiraiya right away"). A click carries the exact name we
+                # matched, so a near-miss cannot become a second near-miss.
                 # READY-TO-SEND COMMANDS, not bare names. A DM only counts as
                 # a request when it LEADS with "knocks" — parse_dm returns None
                 # for "muhammad ui haque" — so "send me one of those exactly"
                 # was an instruction that quietly does nothing (Megan
                 # 2026-09-01: "if someone responds to this with the correct
                 # name, is Jiraiya going to read it?"). No.
-                say(f":grey_question: I couldn't find *{office}* in "
-                    "Ownerville. These are close — send one back and I'll "
-                    "pull it:\n"
-                    + "\n".join(f"• `knocks {n}`" for n in near))
+                _say_buttons(
+                    web, chan,
+                    f":grey_question: I couldn't find *{office}* in "
+                    "Ownerville. Did you mean:",
+                    [(n, _pick_value(n, target, end, None)) for n in near])
                 return
             hint = service.suggest_office(office)
             say(f":grey_question: I don't have an office called *{office}* on "

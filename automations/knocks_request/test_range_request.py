@@ -431,6 +431,37 @@ class TheDmSyntax(unittest.TestCase):
         self.assertEqual(handler.parse_dm("knocks Chan Park the third"),
                          ("Chan Park the third", YESTERDAY, YESTERDAY, None))
 
+    def test_a_button_click_runs_that_exact_request(self):
+        """The click carries office, span and campaign, so it needs no memory
+        of the conversation and nothing is retyped."""
+        seen = {}
+        value = handler._pick_value("Jay Turnage", dt.date(2026, 9, 1),
+                                    dt.date(2026, 9, 1), "40")
+        with mock.patch.object(handler, "process",
+                               lambda *a, **k: seen.update(a=a, k=k)):
+            handler.handle_action(None, {
+                "type": "block_actions", "user": {"id": "U1"},
+                "actions": [{"action_id": "knocks_pick_0", "value": value}]})
+        self.assertEqual(seen["a"][2:], ("Jay Turnage", dt.date(2026, 9, 1),
+                                         dt.date(2026, 9, 1)))
+        self.assertEqual(seen["k"], {"campaign": "40"})
+
+    def test_only_our_buttons_are_claimed(self):
+        """The listener hands every block_actions payload to both handlers, so
+        claiming someone else's button would hijack the Promotion Check-In."""
+        self.assertFalse(handler.is_knocks_action(
+            {"type": "block_actions", "actions": [{"action_id": "promo_yes"}]}))
+        self.assertTrue(handler.is_knocks_action(
+            {"type": "block_actions",
+             "actions": [{"action_id": "knocks_pick_2"}]}))
+
+    def test_a_malformed_button_value_answers_rather_than_crashes(self):
+        with mock.patch.object(handler, "process",
+                               lambda *a, **k: self.fail("should not run")):
+            handler.handle_action(None, {
+                "type": "block_actions", "user": {"id": "U1"},
+                "actions": [{"action_id": "knocks_pick_0", "value": "{oops"}]})
+
     def test_a_campaign_word_is_peeled_off_a_multi_campaign_office(self):
         """Jay knocks two campaigns, so "… jay turnage energywell" names the
         REQUEST, not an office called that."""
