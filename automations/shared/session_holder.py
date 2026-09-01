@@ -457,6 +457,30 @@ def _ctx_rqst_minutes_left(ctx) -> float | None:
 
 _RQST_RE = re.compile(r"rqst=([A-Za-z0-9_-]+)")
 
+# TOKENS THIS PROCESS HAS ALREADY PROVED DEAD (Megan 2026-09-01).
+#
+# Ownerville's warm page re-serves the SAME token id for hours — 66F074FE was
+# handed back at 8/31 16:57, 8/31 18:54, 9/1 04:33 and 9/1 05:36, i.e. the same
+# id across two days and every mint attempt in between. Each of those attempts
+# navigated the console tab to `?rqst=66F074FE&p=701`, got no #searchMC, and
+# logged "ownerville hop landed without a console" — which reads like an
+# AppStream/Turnstile fault when it is really a stale READ on our side.
+#
+# Remembering the ids we have already burned turns that into an honest, instant
+# "ownerville re-served a dead token" instead of a wasted console navigation and
+# a misleading log line. Process-local on purpose: a RESTART is what mints (see
+# MINT_FAILURES_BEFORE_RESTART), so a fresh process must start with a clean
+# slate and be free to accept whatever ownerville issues it.
+_DEAD_TOKENS: set = set()
+
+
+def _tok8(tok) -> str:
+    """The 8-char upper-case id form `_rqst_id` uses, so a freshly scraped token
+    (full length) and a context token (already truncated) can be compared at
+    all. Without this the "did ownerville hand back the same one?" check silently
+    never matches, which is how the repeat went unnoticed for two days."""
+    return (tok or "")[:8].upper()
+
 
 def _fresh_rqst_from_ownerville(ctx) -> str | None:
     """A NEW rqst token, read from the warm ownerville session in its OWN tab.
@@ -468,11 +492,26 @@ def _fresh_rqst_from_ownerville(ctx) -> str | None:
     ownerville's own page; the token is then applied to the console tab by the
     caller, the same way the reuse path applies a saved one.
 
+    CACHE-BUSTED (2026-09-01). This used to `goto(OWNERVILLE_V2_URL)` on a
+    context that has been alive for days, so the SSO link could be read straight
+    out of the browser's cached copy of the dashboard — the same href, carrying
+    the same long-dead token, every time. That is the difference between this
+    path and a RESTART, which mints reliably precisely because a fresh context
+    has nothing cached and must fetch the page for real. A unique query param
+    plus a cache-ignoring reload makes the warm process fetch it for real too.
+
     None on any failure — a mint we cannot do is a missed cycle, never a raise."""
     page = None
     try:
         page = ctx.new_page()
-        page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
+        _bust = f"{OWNERVILLE_V2_URL}?_cb={int(time.time())}"
+        page.goto(_bust, wait_until="domcontentloaded")
+        # Belt and braces: even with a unique URL, ask for a hard reload so any
+        # intermediate/disk cache is bypassed rather than revalidated.
+        try:
+            page.reload(wait_until="domcontentloaded")
+        except Exception:  # noqa: BLE001 — the goto above is the load that matters
+            pass
         page.wait_for_timeout(5_000)
         m = _RQST_RE.search(page.url or "")
         if not m:
@@ -558,6 +597,28 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
         print(f"[{_stamp()}] AppStream mint FAILED — no rqst token on the warm "
               f"ownerville session (is ownerville logged in?)", flush=True)
         return False
+    # CHECK FOR A REPEAT *BEFORE* SPENDING THE CONSOLE NAVIGATION (2026-09-01).
+    #
+    # There is already an `after == before` check below, but it fires only after
+    # the hop has run — so a token we have provably burned still costs a full
+    # re-key of the live console tab, and when it fails the log blames
+    # AppStream ("hop landed without a console") rather than the stale read that
+    # actually happened. On 8/31->9/1 that misattribution repeated for hours on
+    # one id, 66F074FE.
+    #
+    # Re-keying the console to a DEAD token is not free either: it drops a
+    # session that still had minutes on it. Refusing here keeps the token we
+    # hold, names the real cause, and returns False so the caller's restart
+    # ladder — the path this file documents as the one that actually mints —
+    # gets its failure honestly.
+    _t8 = _tok8(tok)
+    if _t8 == _tok8(before) or _t8 in _DEAD_TOKENS:
+        print(f"[{_stamp()}] AppStream mint FAILED — ownerville re-served the "
+              f"same token {_t8} we already hold/burned (its warm page is "
+              f"repeating, not issuing) — not re-keying the console with it.",
+              flush=True)
+        _DEAD_TOKENS.add(_t8)
+        return False
     try:
         page.goto(f"{APPSTREAM_BASE}?rqst={tok}&p=701",
                   wait_until="domcontentloaded")
@@ -587,6 +648,10 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
                     continue
                 except Exception:  # noqa: BLE001
                     pass
+            # Remember it: this token has now demonstrably failed to open a
+            # console, so a later cycle that scrapes the same id off ownerville's
+            # cached page can refuse it up front instead of repeating this.
+            _DEAD_TOKENS.add(_tok8(tok))
             print(f"[{_stamp()}] AppStream mint FAILED — ownerville hop landed "
                   f"without a console (#searchMC absent after {attempt} "
                   f"attempt(s), at {url[:100]})", flush=True)
@@ -597,6 +662,7 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
               f"context carries NO rqst token", flush=True)
         return False
     if after == before:
+        _DEAD_TOKENS.add(_tok8(after))
         print(f"[{_stamp()}] AppStream mint FAILED — ownerville handed back the "
               f"SAME token {after} (it re-used our session instead of issuing "
               f"a new one)", flush=True)
