@@ -184,6 +184,75 @@ def renew_from_state(verbose: bool = True) -> bool:
                 pass
 
 
+def refresh_ownerville(verbose: bool = True) -> bool:
+    """Sign in to ownerville fresh, unattended, and EXPORT the new rqst.
+
+    THIS IS THE ROOT-CAUSE FIX (2026-09-01). `.ownerville_storage_state.json`
+    had been frozen on rqst_43A275AE… since 2026-08-29 — the same eight
+    characters in every `mint FAILED` line for three days. The holder kept
+    re-keying the AppStream console with a token that died on the 29th, which is
+    why the mint "always failed" and why every recovery fell to a human login.
+    Ownerville's page was not "repeating"; we were replaying a stale FILE.
+
+    Ownerville's Cloudflare auto-passes automation — measured again on Lucy 1
+    the same afternoon: "ownerville form login reached a LIVE session
+    UNATTENDED (rqst present)". The existing --ownerville-form-login proves the
+    login but is a smoke test: it never exports, so the stale file survived it.
+    This does the same login and writes the result.
+
+    Its OWN throwaway profile: a profile already signed in resumes instead of
+    logging in, which is exactly how a stale identity persists."""
+    import shutil
+    from automations.shared.tableau_patchright import (
+        LOGIN_URL, OWNERVILLE_STORAGE_STATE, PROFILE_DIR, _drive_login_form,
+        _launch_persistent, _ownerville_session_valid, _PASSWORD_SELECTOR,
+        _USERNAME_SELECTOR)
+    from patchright.sync_api import sync_playwright
+
+    prof = PROFILE_DIR.parent / ".ov_autorenew"
+    # EMPTY EVERY TIME. A profile that is already signed in auto-resumes and the
+    # login never runs, so the "fresh" session would be the stale one again.
+    shutil.rmtree(prof, ignore_errors=True)
+    prof.mkdir(parents=True, exist_ok=True)
+
+    with sync_playwright() as p:
+        ctx = _launch_persistent(p, prof, headless=False,
+                                 label="ov_autorenew", verbose=verbose)
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            page.wait_for_timeout(3_000)
+            try:
+                page.wait_for_selector(
+                    "%s, %s" % (_PASSWORD_SELECTOR, _USERNAME_SELECTOR),
+                    timeout=20_000)
+            except Exception:  # noqa: BLE001 — already signed in is fine too
+                pass
+            _drive_login_form(page, verbose=verbose)
+            if not _ownerville_session_valid(page, verbose=verbose):
+                _log("ownerville login did NOT reach a live session")
+                return False
+            cookies = [c for c in ctx.storage_state().get("cookies", [])
+                       if "ownerville" in (c.get("domain") or "")]
+            toks = [c for c in cookies
+                    if str(c.get("name") or "").startswith("rqst")]
+            if not toks:
+                # Never clobber a good export with a tokenless one.
+                _log("ownerville session carried no rqst — keeping the existing "
+                     "export untouched")
+                return False
+            OWNERVILLE_STORAGE_STATE.write_text(
+                json.dumps({"cookies": cookies, "origins": []}))
+            _log("ownerville refreshed — %d cookie(s), token %s"
+                 % (len(cookies), str(toks[0].get("name"))[5:13]))
+            return True
+        finally:
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
@@ -210,8 +279,19 @@ def main(argv=None) -> int:
 
     _log("re-capturing while the profile session is still warm "
          "(this is the whole point: a cold profile is what needs a human)")
+    # ORDER MATTERS. Re-keying from the SAVED token only RESTORES a session — it
+    # never issues a new one (measured on Lucy 1: 77 min before, 77 after), and
+    # this file's own history is three days of re-keying a token that died on
+    # 8/29. So refresh ownerville FIRST so there is a genuinely new token to
+    # re-key with, and only then open the console.
+    ok = False
     try:
-        ok = renew_from_state(verbose=True)
+        if refresh_ownerville(verbose=True):
+            ok = renew_from_state(verbose=True)
+        else:
+            _log("could not refresh ownerville — trying the saved session "
+                 "anyway, in case it still has life in it")
+            ok = renew_from_state(verbose=True)
     except Exception as e:  # noqa: BLE001 — never take the timer down
         _log("renew raised %s: %s" % (type(e).__name__, str(e)[:160]))
         ok = False
