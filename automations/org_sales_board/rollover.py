@@ -579,6 +579,30 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     # board (Eve 2026-08-11). Costs one metadata read when nothing is wrong.
     hid = apply_history_row_visibility(ws, grid, dry_run=dry_run, logfn=logfn)
     summary["history_rows_rehidden"] = len(hid)
+
+    # 7/7 FORMATTING, and last because it moves no value: an insertDimension
+    # carries neither the WE row's A:B merge nor the data-cell borders, and the
+    # leaderboard's new right-hand column is virgin. rollover_format has repaired
+    # exactly that since 2026-07-21 — but nothing ever CALLED it (its own
+    # docstring said "let run_rollover call apply_all() as its final step"; no
+    # one did), so every Tuesday reopened the same defects and they were fixed by
+    # hand. Measured 2026-09-01, the morning after the roll: 'WE 8.30' carried
+    # LR only on C..I where every settled row below it had TBLR, and five WE rows
+    # (Sahil/Colten/Jairo/Luis/Atef) sat unmerged next to fourteen merged ones —
+    # "que el historico semanal de la fila se combine la celda y se vea como los
+    # demas, y que haya bordes en el desglose diario" (Eve). Idempotent, so a
+    # re-run is a no-op. BEST-EFFORT: a cosmetic repair must never fail a
+    # rollover whose values all landed correctly.
+    try:
+        from automations.org_sales_board import rollover_format as _rf
+        counts = _rf.apply_all(ws, dry_run=dry_run, logfn=logfn)
+        summary["format_requests"] = counts.get("total", 0)
+    except Exception as e:  # noqa: BLE001
+        summary["format_requests"] = 0
+        logfn(f"  ⚠ 7/7 formatting repair SKIPPED ({type(e).__name__}: {e}) — "
+              f"the values are correct; repair the look with "
+              f"`python -m automations.org_sales_board.rollover_format --apply`")
+
     logfn("=== rollover done ===")
     return summary
 
@@ -1787,6 +1811,49 @@ def _captain_for_row(grid: List[List[str]], row1: int) -> str:
     return "?"
 
 
+def we_row_format_requests(sheet_id: int, top_row: int,
+                           last_col: int) -> List[dict]:
+    """Make a just-INSERTED WE history row look like the settled rows under it.
+
+    An insertDimension / insert_row carries neither the `A:B` merge every WE row
+    in a stack uses nor, reliably, the data-cell borders — `inherit_from_before=
+    False` takes the row after, and the borders still land partial. Measured on
+    'WE 8.30' the morning after the 2026-09-01 roll: C..I carried LR where every
+    settled row below had TBLR, and on the All Campaigns tab the new row sat
+    unmerged under eight merged ones. Eve: "que el historico semanal de la fila
+    se combine la celda y se vea como los demas, y que haya bordes en el
+    desglose diario".
+
+    Two requests, in this order:
+      • merge A{top}:B{top} — the caller must have JUST created the row, so the
+        merge cannot collide with an existing one (a repeat merge ERRORS; the
+        whole-board repair in rollover_format checks first for that reason);
+      • PASTE_FORMAT from row top+1 across A..last_col — the settled week
+        directly below is the only honest template for borders/fill/alignment.
+
+    Shared by every board that grows a WE stack: the ORG board and the All
+    Campaigns board (both via _roll_one_product_summary) and the Country Sales
+    Board (its own insert_row). `last_col` is 1-based and INCLUSIVE, and differs
+    per board — the ORG stacks end at their Grand-Total column, Country's carry
+    two more (LAST WEEK'S / PREVIOUS WEEK'S TOTALS) — so each caller passes its
+    own, found by label. [[feedback_no_hardcoded_columns]]"""
+    return [
+        {"mergeCells": {"range": {
+            "sheetId": sheet_id,
+            "startRowIndex": top_row - 1, "endRowIndex": top_row,
+            "startColumnIndex": 0, "endColumnIndex": 2},
+            "mergeType": "MERGE_ALL"}},
+        {"copyPaste": {
+            "source": {"sheetId": sheet_id,
+                       "startRowIndex": top_row, "endRowIndex": top_row + 1,
+                       "startColumnIndex": 0, "endColumnIndex": last_col},
+            "destination": {"sheetId": sheet_id,
+                            "startRowIndex": top_row - 1, "endRowIndex": top_row,
+                            "startColumnIndex": 0, "endColumnIndex": last_col},
+            "pasteType": "PASTE_FORMAT", "pasteOrientation": "NORMAL"}},
+    ]
+
+
 def _roll_one_product_summary(ws, b: dict, label: str) -> dict:
     """Apply ONE WE-stack insert + re-anchor using b's CURRENT (freshly-read)
     row numbers. Caller must pass row numbers read AFTER any prior insert."""
@@ -1820,6 +1887,13 @@ def _roll_one_product_summary(ws, b: dict, label: str) -> dict:
             updates.append({"range": f"{X}{b['avg_row']}",
                             "values": [[f"=AVERAGE({X}${top}:{X}${top + 3})"]]})
     ws.batch_update(updates, value_input_option="USER_ENTERED")
+    # 4) LOOK like the rows below it — the merge and the borders the insert
+    #    dropped. Runs for the ORG board AND the All Campaigns board, which
+    #    reuses this engine (all_campaigns_board.rollover step 4/6).
+    #    rollover_format.plan_we_stack_requests still repairs stacks rolled
+    #    before this existed; re-applying it is a no-op.
+    ws.spreadsheet.batch_update(
+        {"requests": we_row_format_requests(ws.id, top, gtc)})
     return {**b, "label": label, "frozen": list(tot_vals)}
 
 

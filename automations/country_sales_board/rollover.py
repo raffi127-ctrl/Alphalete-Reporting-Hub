@@ -182,21 +182,26 @@ def plan_leaderboard_shift(grid, lb: dict, new_label: str) -> List[dict]:
     return updates
 
 
+def _col_by_header(grid, anchor, label: str) -> Optional[int]:
+    """1-based column whose day-block header starts with `label`, else None.
+    By label, never by index — the block's columns move. Shared by the K/L shift
+    and the WE-row format repair."""
+    hdr = anchor.header_row
+    for c in range(1, len(grid[hdr - 1]) + 1):
+        if _cell(grid, hdr, c).upper().startswith(label):
+            return c
+    return None
+
+
 def plan_kl_shift(grid, anchor) -> List[dict]:
     """Day block: PREVIOUS WEEK'S TOTALS <- LAST WEEK'S <- RUNNING WEEK TOTALS.
 
     All three are per-rep; J is a formula, K and L are static, so we move
     COMPUTED values rightwards. Columns are found off the header row by label,
     not by index."""
-    hdr = anchor.header_row
-    def col_of(label):
-        for c in range(1, len(grid[hdr - 1]) + 1):
-            if _cell(grid, hdr, c).upper().startswith(label):
-                return c
-        return None
     j = anchor.running_total_col
-    k = col_of("LAST WEEK'S TOTAL")
-    l = col_of("PREVIOUS WEEK'S TOTAL")
+    k = _col_by_header(grid, anchor, "LAST WEEK'S TOTAL")
+    l = _col_by_header(grid, anchor, "PREVIOUS WEEK'S TOTAL")
     if not (k and l):
         return []
     updates = []
@@ -351,6 +356,29 @@ def run_rollover(sh, ws, *, today: Optional[dt.date] = None,
         ws.insert_row(new_row, index=stack["top_row"],
                       value_input_option="USER_ENTERED",
                       inherit_from_before=False)
+        # 4a — and make it LOOK like the weeks under it. inherit_from_before=
+        # False gets the row below's fill but not its A:B merge, and the borders
+        # land partial. Same repair the ORG / All Campaigns stacks get inside
+        # apply_product_summary_rollover (Eve 2026-09-01). This stack is TWO
+        # columns wider than theirs — it carries LAST WEEK'S / PREVIOUS WEEK'S
+        # TOTALS past the running total — so the paste runs out to whichever of
+        # those three sits furthest right, found by header label like
+        # plan_kl_shift does. Best-effort: a cosmetic repair must never abort a
+        # roll whose values all landed.
+        last_col = max([c for c in (anchor.running_total_col,
+                                    _col_by_header(grid, anchor,
+                                                   "LAST WEEK'S TOTAL"),
+                                    _col_by_header(grid, anchor,
+                                                   "PREVIOUS WEEK'S TOTAL"))
+                        if c])
+        try:
+            ws.spreadsheet.batch_update({"requests": org_ro.we_row_format_requests(
+                ws.id, stack["top_row"], last_col)})
+            logfn(f"  WE stack: row {stack['top_row']} merged A:B + format "
+                  f"<- row {stack['top_row'] + 1} (A..{rowcol_to_a1(1, last_col)[:-1]})")
+        except Exception as e:  # noqa: BLE001
+            logfn(f"  ⚠ WE stack: formatting repair SKIPPED "
+                  f"({type(e).__name__}: {e}) — values are correct")
         fgrid = _retry(lambda: ws.get_all_values(
             value_render_option="FORMULA"))
         cvp = find_cvp_anchors(fgrid)
