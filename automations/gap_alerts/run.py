@@ -686,8 +686,14 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path,
         chan_days, chan_err = by_name.get(compare, ({}, None))
         chan_rows = (chan_days or {}).get(day) or []
         if chan_err is not None:
-            _log("  ⚠ %s comparison pull failed (%s) — board goes out without "
-                 "the line" % (compare, type(chan_err).__name__))
+            # The MESSAGE, not just the type. This line said "(RuntimeError)"
+            # and nothing else, and the pull runs verbose=False so its own
+            # detail never reached the log either — which left "Chan's numbers
+            # are gone" undiagnosable twice over. An error we chose to swallow
+            # still has to say why.
+            _log("  ⚠ %s comparison pull failed (%s: %s) — board goes out "
+                 "without the line"
+                 % (compare, type(chan_err).__name__, str(chan_err)[:300]))
         elif chan_rows:
             extra.append((compare, chan_rows))
         else:
