@@ -334,12 +334,21 @@ def _norm(name: str) -> str:
 def board_for(office: str, target: Optional[dt.date] = None,
               end: Optional[dt.date] = None, *,
               allow_live: bool = True,
+              campaign: Optional[str] = None,
               wait_timeout_s: int = WAIT_TIMEOUT_S,
               logfn: Callable[[str], None] = print) -> Board:
     """The whole request: cache, else pull, then draw. Raises only on a real
     failure (no such office, a bad span, ownerville still busy, a broken pull)
     — a span with genuinely no knocks comes back as a Board with png=None and
     a note.
+
+    `campaign` (optional): pin this invD2DClientId for OUR office instead of
+    letting the per-office map choose. For an owner who runs more than one
+    campaign the map cannot answer — it holds one value per office — so the
+    requester says which (Raf 2026-09-01: "we might have to have a dropdown
+    for what campaign they're in. Unless it can just tell what campaign the
+    owner is from" — it can, for everyone who runs exactly one, and that stays
+    the default).
 
     `end` (optional) makes it a RANGE, start and end inclusive. Every day is
     fetched on its own — from the cache where we have it, in one shared
@@ -425,12 +434,21 @@ def board_for(office: str, target: Optional[dt.date] = None,
             # pull_office_knocks impersonates unconditionally, so asking it for
             # Raf reports his own office as an access gap.
             from automations.rashad_metrics.knocks_pull import pull_offices_days
-            jobs = ([(canonical, need)] if need else [])
+            # The campaign rides WITH our job. None = let the per-office map
+            # decide, which is right for every office that runs one campaign;
+            # an explicit pick is for an owner who runs more than one (Jay
+            # Turnage knocks AT&T and Energy Wells) or an office whose campaign
+            # the map does not know yet.
+            jobs = ([(canonical, need, campaign)] if need else [])
             if compare_need:
+                # The comparison office keeps its OWN campaign — it is a
+                # different office and the pick was about ours.
                 jobs.append((compare, compare_need))
+            # job is (name, days) or (name, days, campaign) — index, don't
+            # unpack, or adding the campaign silently crashes the pull here.
             logfn("pulling " + ", ".join(
-                f"{n} ({len(ds)} day{'s' if len(ds) != 1 else ''})"
-                for n, ds in jobs) + " from ownerville…")
+                f"{j[0]} ({len(j[1])} day{'s' if len(j[1]) != 1 else ''})"
+                for j in jobs) + " from ownerville…")
             # Indexed by name, not by position: `jobs` may hold the comparison
             # office ALONE when our own days were all cached.
             got = {n: (rows_by_day, err) for n, rows_by_day, err in
@@ -492,16 +510,82 @@ def board_for(office: str, target: Optional[dt.date] = None,
 
     from automations.total_knocks import render as knocks_render
     extra = [(compare, chan_rows)] if chan_rows else []
+    apps = _apps_for(canonical, days, logfn=logfn)
     # An NDS office gets a PAIR of boards and no comparison line; the shape
     # decides, so a fiber office that goes wireless needs no config change.
     b.pngs, b.shape = knocks_render.render_knocks_boards(
         target, rows=rows, out_dir=OUT_DIR / _slug(canonical),
-        title_suffix=canonical, end=end, extra_totals=extra)
+        title_suffix=canonical, end=end, extra_totals=extra, apps=apps)
     b.png = b.pngs[0]
     if extra and b.shape == knocks_render.SHAPE_HOUSE:
         b.compared_to = compare
     logfn(f"board -> {b.png}")
     return b
+
+
+def _apps_for(canonical: str, days: "list", *, logfn=print):
+    """{rep: apps} for this office over `days`, or None to leave the columns off.
+
+    READS THE SAVED CROSSTAB. NEVER DOWNLOADS. Raf 2026-09-01: "have it where
+    Lucy pulls the product sales summary for everybody for last week … it's
+    just checking the saved report that it pulled for everybody."
+
+    The first version pulled Tableau per request. That is one Tableau hit every
+    time somebody types /knocks — the access budget Grant flagged — and Megan
+    measured it at 5-7 minutes added to the reply. The weekly board already
+    downloads this exact org-wide crosstab once a week for every owner, so the
+    file is sitting there; the request just reads it.
+
+    NO APPS FOR TODAY, by Raf's own reasoning: "if I'm checking for today only,
+    then it doesn't need to pull the product sales summary because obviously
+    it's not updated for today." A today-shaped span gets the board without the
+    columns rather than three columns of stale or empty numbers.
+
+    None on anything unexpected — a missing file, a week not yet pulled, a
+    parse failure. Apps are an enrichment; the knock board is the answer.
+    """
+    from automations.weekly_knock_dispositions import apps as A
+    from automations.focus_office_att.aliases import load_aliases
+    from automations.shared.report_week import week_ending
+    try:
+        weeks = {week_ending(d) for d in days}
+        if len(weeks) != 1:
+            logfn("apps: the span crosses a week boundary — columns left off "
+                  "rather than counting part of one week")
+            return None
+        we_sunday = weeks.pop()
+        # A COMPLETED WEEK ONLY. That is the actual rule (Megan 2026-09-01):
+        # "if the date isn't from the current week, then it doesn't need to be
+        # a fresh pull … it could be from a predone harvest, from a fully
+        # completed week." A finished week is final, so the saved crosstab is
+        # as good as a live pull and costs nothing. The CURRENT week is still
+        # moving — its harvest either does not exist yet or is already stale —
+        # and re-pulling it per request is the Tableau cost this was rewritten
+        # to remove, so those days get the board without the apps columns.
+        #
+        # This also covers Raf's own case ("if I'm checking for today only, it
+        # doesn't need to pull … it's not updated for today") without treating
+        # today as a special case: today is in the current week by definition.
+        if we_sunday >= week_ending(central_today()):
+            logfn(f"apps: week ending {we_sunday} is the CURRENT week — not "
+                  "final, and nothing is pulled fresh on a request, so the "
+                  "apps columns stay off")
+            return None
+        # The path apps.download writes; we only ever READ it.
+        pss_path = A.OUT_DIR / f"pss_rep_{we_sunday.isoformat()}.csv"
+        if not pss_path.exists():
+            logfn(f"apps: no saved crosstab for the week ending {we_sunday} "
+                  f"— columns left off (nothing is downloaded on a request)")
+            return None
+        got = A.rep_apps_for_owner(pss_path, canonical, load_aliases(),
+                                   days=[A.day_name(d) for d in days])
+        logfn(f"apps: {len(got)} rep(s) from the saved crosstab "
+              f"(week ending {we_sunday})")
+        return got or None
+    except Exception as e:  # noqa: BLE001 — apps never cost the board
+        logfn(f"apps: unavailable ({type(e).__name__}: {str(e)[:160]}) — "
+              "board goes out without the apps columns")
+        return None
 
 
 def access_gap(exc: BaseException) -> bool:
