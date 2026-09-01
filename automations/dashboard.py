@@ -1383,6 +1383,16 @@ FINDINGS_REPORTS = {"vantura_board_audit", "vantura-board-audit",
 # laptop, so the card went on showing "07:30 CST" and reading as overdue for a job
 # that must not run. Running it would have been the wrong thing to do.
 PAUSED_REPORTS = {
+    # Both spellings on purpose: the library card is hyphenated, schedule_config
+    # uses the underscored id, and _paused_reason() looks the card id up as-is.
+    "energy-crossref": ("Retired 2026-09-01 (Rafael) — the Base Power Energy "
+                        "program ended, so there are no sales to cross-check "
+                        "and nobody to tag. energy_crossref/DISABLED stands the "
+                        "module down; the Sales Board EN fill still runs."),
+    "energy_crossref": ("Retired 2026-09-01 (Rafael) — the Base Power Energy "
+                        "program ended, so there are no sales to cross-check "
+                        "and nobody to tag. energy_crossref/DISABLED stands the "
+                        "module down; the Sales Board EN fill still runs."),
     "tracker_mirror": ("Stood down 2026-08-24 (Carlos, 5d4042b) — the manager "
                        "tabs are on live IMPORTRANGE again, so a ferry pass "
                        "would overwrite those formulas with frozen values."),

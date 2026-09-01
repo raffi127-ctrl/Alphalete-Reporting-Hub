@@ -2740,8 +2740,10 @@
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "energy_crossref": {
+      "_retired_note": "RETIRADO 2026-09-01 - se acabo el programa. Rafael Hidalgo en #alphalete-sales, sobre el chequeo del 8.31 (que salio limpio: Slack 1 / Board 0 / Webform 1, all accounted for): \"we can end the base energy cross referencing FYI we're done with that program!\". Sin ventas de Energy no hay nada que auditar ni a quien etiquetar, y este post ademas TAGUEA REPS REALES cada manana, asi que dejarlo prendido era mandar un nudge diario por un programa cerrado. Tres candados, no uno: (1) automations/energy_crossref/DISABLED - run.py sale 0 sin leer Slack, la Sales Board ni el webform, asi que un `lucy rerun energy_crossref` a mano tampoco postea; (2) on_scheduler:false + cadence.weekdays [] - el batch de las 4am no lo corre Y hub_coverage deja de rearmarle la card de la Report Library (weekdays [] solo no alcanza: on_scheduler:true lo mantiene en _scheduler_reports() y la card vuelve diciendo DUE TODAY todos los dias, igual que knocks_access_watch el 2026-08-26); (3) standalone_watch:false - sin eso machine_digest lo pierde de vista al pasar a on_scheduler:false, cae al baseline historico y postea \"didn't run today\" una vez por dia por ~una semana (lo que paso con indeed-source-report el 2026-08-28). NO hay LaunchAgent que descargar: esto vivia dentro del batch de las 4am (order 7, depends_on alphalete_production), no en un agente propio, asi que no hay `uninstall_...` que encolar. Nadie depende de el: ningun otro entry lo lista en depends_on/after. El codigo NO se toca y `lucy rerun energy_crossref` sigue resolviendo (registry.resolve_report cae al config crudo). SIGUEN VIVOS Y NO SE TOCARON: energy_slack_fill (llena la columna EN de la Sales Board desde Slack) y la seccion Energy Sales Board del post de alphalete_production - si Energy tambien deja de aparecer en el board de la noche, esos dos se bajan aparte. Para volver atras: borrar el archivo DISABLED, on_scheduler:true, weekdays [0..6], sacar standalone_watch y sacarlo de PAUSED_REPORTS en automations/dashboard.py.",
       "order": 7,
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "standalone_watch": false,
       "_note": "Posts the morning Energy webform check as a reply in that day's ':wolf: Alphalete Production MM/DD/YYYY' thread in #alphalete-sales - which is why order is 4.1, right after alphalete_production (4) creates that thread. It FINDS the thread and never starts one. Counts yesterday's Energy sales three ways: the last running board of the night in #alphalete-sales (same parser as energy_slack_fill), the 'EN' column of 'Alphalete SALES BOARD 2025', and the 'Base Power Energy' Google Form (1wwvSEQ...wa50, tab 'Form Responses 1') filtered on col J 'Date of Sale' - NOT the timestamp, reps file days late. Every rep owes ONE form per sale and is asked for the HIGHER of their two sale counts; whoever is short gets tagged, plus Rafael Hidalgo and Dylan Twaddle always. A rep who filed the SAME sale twice (same phone or same customer) is not covered twice. Carries two images: the Energy Sales Board re-rendered (the 4:34am one predates the board's own fill) and the day's webform rows. Replaces what Evelyn posted by hand - it reproduces her 8/13 post word for word and tag for tag.",
       "_warn": "Posts AS Evelyn (the Slack user token) and TAGS REAL REPS. Preview any day without posting: `python -m automations.energy_crossref.run --date YYYY-MM-DD` - prints the rep-by-rep table and the exact message. HOLDS (exit 75, posts nothing) when neither source has a single Energy sale, or when the day's wolf thread isn't up yet. Exit 75 AFTER posting means it went out but the day wasn't clean: a rep with no Slack account (named in bold instead of tagged), a Slack line matching nobody, or a tally that didn't close. Slack ids are PINNED in energy_crossref/roster.py - the token has no users:read and two active accounts are both 'Miguel Vargas'; add a new rep there.",
       "display_name": "Energy Cross-reference (webform check)",
@@ -2754,15 +2756,7 @@
         "--post"
       ],
       "cadence": {
-        "weekdays": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6
-        ]
+        "weekdays": []
       },
       "priority": "P2",
       "freshness_target": null,

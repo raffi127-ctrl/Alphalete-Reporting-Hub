@@ -103,6 +103,16 @@ def report(res: X.Result) -> None:
 
 
 def main(argv=None) -> int:
+    # STOOD DOWN 2026-09-01 — Base Power Energy ended, so there is nothing left
+    # to cross-reference (Rafael, #alphalete-sales: "we can end the base energy
+    # cross referencing... we're done with that program"). The marker file, not
+    # a code change, is what stops it: delete DISABLED to bring the check back.
+    marker = Path(__file__).resolve().parent / "DISABLED"
+    if marker.exists():
+        _log("[energy_crossref] DISABLED — the Base Power Energy program ended "
+             "2026-09-01, so there are no sales to audit and nobody to tag. "
+             f"Exiting without reading anything. ({marker})")
+        return 0
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--date", help="sales day (YYYY-MM-DD); default yesterday")
     ap.add_argument("--post", action="store_true",
