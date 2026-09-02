@@ -261,9 +261,14 @@ def test_the_matching_grid_passes():
 
 def test_it_refuses_only_what_it_can_prove_wrong():
     """No pin, or a campaign whose grid has no signature we recognise, is not
-    checked — never guessed at. Fiber and Energy Wells pin campaigns whose grids
-    this map says nothing about."""
-    for campaign in (None, "", "3", "40", "39"):
+    checked — never guessed at.
+
+    "40" LEFT THIS LIST ON 2026-09-02. Energy Wells does have a signature we
+    recognise — the VL column — and leaving it unchecked is what let Calvin's
+    B2B-Box-shaped grid publish to his chat as ENERGYWELL. "3" stays: it is
+    KNOCKS_CAMPAIGN_ID, the default for every un-overridden office, and a
+    wireless office renders a wireless grid under it legitimately."""
+    for campaign in (None, "", "3", "39"):
         K.assert_campaign_grid(ATT, campaign)
         K.assert_campaign_grid(HOUSE, campaign)
 
@@ -274,3 +279,32 @@ def test_a_non_b2b_grid_under_a_b2b_pin_is_also_refused():
     with pytest.raises(KnocksPullFailed) as e:
         K.assert_campaign_grid(HOUSE, "2")
     assert "not a B2B grid at all" in str(e.value)
+
+
+# --- Energy Wells joined the table 2026-09-02 ---------------------------------
+
+def test_energywell_pin_refuses_a_box_grid():
+    """The live failure: Calvin is pinned to 40 and his 2:55 PM board came
+    back B2B Box-shaped, then went to ENERGY WELLS DOMINATION titled
+    "ENERGYWELL — CALVIN" with eight reps. It published because this map knew
+    only the two B2B ids."""
+    import pytest
+    box = {K.knocks._norm(c): i for i, c in enumerate(K._B2B_BOX_COLUMNS)}
+    with pytest.raises(K.KnocksPullFailed) as e:
+        K.assert_campaign_grid(box, "40")
+    assert "RES-ENERGYWELL" in str(e.value)
+    assert "did not take" in str(e.value)
+
+
+def test_energywell_pin_accepts_an_energywell_grid():
+    ew = {K.knocks._norm(c): i for i, c in enumerate(K._ENERGYWELL_COLUMNS)}
+    K.assert_campaign_grid(ew, "40")          # must not raise
+
+
+def test_res_att_stays_out_of_the_table():
+    """3 is KNOCKS_CAMPAIGN_ID — the default every un-overridden office gets,
+    including wireless offices whose grid is legitimately wireless-shaped.
+    An entry for it would refuse all of them."""
+    assert "3" not in K.CAMPAIGN_EXPECTED_SHAPE
+    wireless = {K.knocks._norm(c): i for i, c in enumerate(K._WIRELESS_COLUMNS)}
+    K.assert_campaign_grid(wireless, "3")     # must not raise

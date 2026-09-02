@@ -245,6 +245,23 @@ def is_b2b_dispo(idx: dict) -> bool:
 CAMPAIGN_EXPECTED_SHAPE = {
     "2": ("B2B AT&T SBS", _is_b2b_att_dispo),
     "16": ("B2B-BOX-Energy", _is_b2b_box_dispo),
+    # RES-ENERGYWELL. Added 2026-09-02 after the failure this table was built
+    # for happened again, to a D2D office: Calvin is pinned to 40 and his
+    # 2:55 PM board came back B2B BOX-SHAPED — Carlos's Box campaign — and
+    # went to ENERGY WELLS DOMINATION as "TOTAL KNOCKS — ENERGYWELL — CALVIN"
+    # with eight reps and three gap alerts. Nobody in that chat could have
+    # told. It published because this map only knew the two B2B ids, so a
+    # pin that did not take on any OTHER campaign was unchecked.
+    #
+    # Energy Wells has a signature worth checking: the VL column, which no
+    # other campaign's grid carries.
+    "40": ("RES-ENERGYWELL", _is_energywell_dispo),
+    # DELIBERATELY NOT "3" (RES AT&T). It is KNOCKS_CAMPAIGN_ID, the default
+    # every office without an override gets, and a wireless office pinned to
+    # it renders a wireless grid perfectly legitimately — Isaiah's does. An
+    # entry here would refuse all of them. Jay's AT&T board, which comes back
+    # Energy-Wells-shaped under this pin, is caught instead by the identical
+    # rep set it shares with his Energy Wells board.
 }
 
 
