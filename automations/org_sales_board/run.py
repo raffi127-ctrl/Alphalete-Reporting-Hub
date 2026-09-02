@@ -270,6 +270,16 @@ def main(argv=None) -> int:
             # VAs do by hand each day (Eve 2026-06-04).
             from automations.org_sales_board import sort as _sort
             _sort.apply_sort(ws, dry_run=args.dry_run)
+            # The DELTA boxes, which apply_sort deliberately will not touch:
+            # writing their rows back as values freezes the live cells (the
+            # per-day =SUMIFs, the Delta %, the =F+I total) and every total
+            # still balances afterwards, so nobody sees it — that is the
+            # 2026-08-25 incident. They get Sheets-native sortRange instead,
+            # which moves cells and re-points formulas. Until today nothing
+            # sorted them at all, on any captainship (Eve 2026-09-02: "las
+            # cajas de delta las tenes que ordenar todos los dias").
+            from automations.org_sales_board import delta_sort as _dsort
+            _dsort.apply_delta_sort(ws, dry_run=args.dry_run)
             from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
             apply_elapsed_totals(ws, dry_run=args.dry_run)
             # The delta-box rows with NO daily table to sum. A cross-cutting
