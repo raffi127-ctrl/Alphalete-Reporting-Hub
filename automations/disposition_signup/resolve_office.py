@@ -244,6 +244,21 @@ def resolve(page, rec, *, save: bool = True) -> Dict:
                                                     aliases)
         if imp_rqst:
             try:
+                # LAND ON A PAGE THAT HAS THE PICKER FIRST. Impersonation leaves
+                # the session wherever confirmImpersonate redirected it, and the
+                # campaign control is a TeleMapper-page header — read from the
+                # wrong page it finds nothing and reports "couldn't read", which
+                # is a FAIL, so this silently blocked every enrollment until it
+                # was caught by an end-to-end run against Isaiah's office.
+                from automations.focus_office_att.step5_fill_one_owner import (
+                    page_rqst)
+                imp_rqst = page_rqst(page) or imp_rqst
+                # NO invD2DClientId on this URL, deliberately — see the scan
+                # note above: a pinned id floods the links and the answer stops
+                # being "what does this office run".
+                page.goto("https://v2.ownerville.com/index.cfm?p=89&rqst=%s"
+                          % imp_rqst, wait_until="networkidle", timeout=45000)
+                page.wait_for_timeout(2000)
                 campaign = read_campaigns(page)
             finally:
                 _exit_impersonation(page)
@@ -271,63 +286,62 @@ def resolve(page, rec, *, save: bool = True) -> Dict:
 # one is not, yet — and finding that out at enrollment is the difference between
 # telling the owner now and them wondering for a week why nothing arrives.
 
-# Read off the PICKER, not off the page's links. A link-scan counts whatever id
-# was last pinned as well as the office's own, so it cannot answer "how many
-# does this office have". The picker is the top-right control whose label IS the
-# current campaign. Ported from gap_alerts.run.probe_campaigns, which learned
-# the hard way that grabbing the first [data-toggle=dropdown] gets the
-# NOTIFICATIONS BELL — every "this office only has RES AT&T" reading came from
-# reading the wrong menu.
-_OPEN_PICKER_JS = r"""() => {
-  const rx = /^\s*[★*]?\s*(RES[-\w &]*|BASE [-\w &]*|B2B[-\w &]*)\s*$/i;
-  const cands = [...document.querySelectorAll('a,button,span,div')]
-    .filter(e => rx.test((e.innerText || '').trim())
-                 && (e.innerText || '').trim().length < 30
-                 && e.offsetParent !== null);
-  if (!cands.length) return {clicked: false, label: ''};
-  cands.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
-  const el = cands[0];
-  const label = (el.innerText || '').trim();
-  (el.closest('[data-toggle="dropdown"],a,button') || el).click();
-  const dd = el.closest('.dropdown,.btn-group,li,div');
-  if (dd) { dd.classList.add('open','show');
-            const m = dd.querySelector('.dropdown-menu');
-            if (m) { m.classList.add('show'); m.style.display='block'; } }
-  return {clicked: true, label};
+# READ THE IDS OFF THE PAGE'S OWN LINKS, ON AN UNPINNED PAGE.
+#
+# The obvious approach — click the campaign control and read the menu — does not
+# survive contact: the control this page offers to a click matches "Reset", and
+# gap_alerts.run.probe_campaigns records the same trap from the other side (the
+# first [data-toggle=dropdown] is the NOTIFICATIONS BELL, which is where every
+# "this office only has RES AT&T" misreading came from). Ported straight, it
+# returned nothing for Isaiah and failed his enrollment.
+#
+# Every campaign-scoped link the page builds carries invD2DClientId, and the
+# picker's own entries are links — so the DISTINCT ids on the page are exactly
+# the campaigns this office runs. Verified 2026-09-02 on three offices:
+#   Isaiah Revelle      -> {1}            (NDS, RES AT&T OOF)
+#   Roshan Amin Ahmad   -> {16}           (B2B Box only)
+#   Carlos Hidalgo      -> {2, 16, 39}    (three — the un-pinnable case)
+#
+# IT MUST BE UNPINNED. Load p=89 with an invD2DClientId and that id floods the
+# links (Isaiah pinned to 3 reads as `3 x13, 1 x1`), so a pinned scan answers
+# "what did I just ask for" rather than "what does this office run".
+_SCAN_CAMPAIGN_IDS_JS = """() => {
+  const out = {};
+  for (const a of document.querySelectorAll('a[href]')) {
+    const m = a.href.match(/invD2DClientId=(\\d+)/);
+    if (m) { out[m[1]] = (out[m[1]] || 0) + 1; }
+  }
+  return out;
 }"""
 
-_READ_PICKER_JS = r"""() => [...document.querySelectorAll('a,li,span,button')]
-     .filter(e => e.offsetParent !== null)
-     .map(e => {
-       const t = (e.innerText || '').replace(/\s+/g,' ').trim();
-       const blob = [e.getAttribute('href'), e.getAttribute('onclick'),
-                     e.getAttribute('data-id')].filter(Boolean).join(' ');
-       const m = blob.match(/invD2DClientId\D{0,3}(\d{1,6})/i);
-       return (t && t.length < 40 && m) ? (m[1] + '\t' + t) : null;
-     }).filter(Boolean)"""
+
+def _campaign_label(cid: str) -> str:
+    """The name this repo knows for an id, else "" — a label is for reading, and
+    an id we have never seen is still a campaign that counts."""
+    try:
+        from automations.disposition_signup.schema import CAMPAIGNS
+        for c in CAMPAIGNS:
+            if c.get("id") == cid:
+                return c.get("name", "")
+    except Exception:                                # noqa: BLE001
+        pass
+    return {"1": "RES AT&T OOF", "3": "RES AT&T", "39": "BASE Energy",
+            "40": "RES-ENERGYWELL"}.get(cid, "")
 
 
 def read_campaigns(page) -> "List[dict]":
-    """[{id, label}] for the office this session is currently on, deduped.
+    """[{id, label}] — every campaign the office this session is on can run.
 
-    [] when the picker cannot be read — which is NOT the same as "one campaign",
-    and the caller must not treat it as proof of anything.
+    The page must ALREADY be on an unpinned TeleMapper page for this office.
+    [] means "could not read", which is not the same as "one campaign" and the
+    caller must not treat it as proof of anything.
     """
     try:
-        page.evaluate(_OPEN_PICKER_JS)
-        page.wait_for_timeout(2000)
-        items = page.evaluate(_READ_PICKER_JS) or []
+        ids = page.evaluate(_SCAN_CAMPAIGN_IDS_JS) or {}
     except Exception:                                # noqa: BLE001
         return []
-    out, seen = [], set()
-    for raw in items:
-        cid, _, label = str(raw).partition("\t")
-        cid = cid.strip()
-        if not cid or cid in seen:
-            continue
-        seen.add(cid)
-        out.append({"id": cid, "label": label.strip()})
-    return out
+    return [{"id": str(cid), "label": _campaign_label(str(cid))}
+            for cid in sorted(ids, key=lambda x: int(x))]
 
 
 def campaign_check(campaigns: "List[dict]", want_id: str,
