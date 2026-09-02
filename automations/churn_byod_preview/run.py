@@ -71,8 +71,14 @@ def _sheet_rows(rng: str, sheet_id: str = SHEET_ID, tab: str = TAB):
     return r.json().get("values", [])
 
 
-def collect(sheet_id: str = SHEET_ID, tab: str = TAB) -> dict:
-    ctrl = _sheet_rows("A4:F12", sheet_id, tab)
+def collect(sheet_id: str = SHEET_ID, tab: str = TAB, rows_of=None) -> dict:
+    """rows_of(rng) -> values overrides the default funnel_board-auth fetch —
+    b2b_metrics passes the office board's already-open gspread worksheet
+    (Lucy 2's funnel_board credential can't read every office board; its
+    gspread one can — Atef 403, 2026-09-01)."""
+    if rows_of is None:
+        rows_of = lambda rng: _sheet_rows(rng, sheet_id, tab)  # noqa: E731
+    ctrl = rows_of("A4:F12")
     prods = {}
     for row in ctrl:
         row += [""] * (6 - len(row))
@@ -81,7 +87,7 @@ def collect(sheet_id: str = SHEET_ID, tab: str = TAB) -> dict:
             prods[name.title()] = {
                 "act": row[1], "disc": row[2], "churn": row[3],
                 "act30": row[4], "act3160": row[5]}
-    roll = _sheet_rows("A15:L80", sheet_id, tab)
+    roll = rows_of("A15:L80")
     rows = []
     for row in roll[1:]:
         row += [""] * (12 - len(row))
@@ -287,11 +293,16 @@ td {{ border:1px solid #b9c2cf; padding:4px 7px; }}
 
 
 def render_office_png(sheet_id: str, tab: str, out_png: Path, *,
-                      label: str = "", office_key: str = "") -> Path:
+                      label: str = "", office_key: str = "", ws=None) -> Path:
     """Render the new-comp churn image for one office board — the entry point
     b2b_metrics' customer_churn capture calls. Raises on any problem so the
-    caller can fall back to the plain sheet screenshot."""
-    data = collect(sheet_id, tab)
+    caller can fall back to the plain sheet screenshot. Pass `ws` (an open
+    gspread worksheet on that tab) to reuse its authorized client instead of
+    the funnel_board session."""
+    rows_of = None
+    if ws is not None:
+        rows_of = lambda rng: ws.get(rng)  # noqa: E731
+    data = collect(sheet_id, tab, rows_of=rows_of)
     if not data["rows"] or not data["prods"]:
         raise ValueError(f"no churn data on {tab!r} (rows={len(data['rows'])})")
     html_txt = build_html(data, label=label,

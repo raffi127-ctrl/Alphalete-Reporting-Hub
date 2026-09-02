@@ -169,7 +169,7 @@ def churn_tab_image(o: B2BOffice, which: str, out_dir: Path, log=print) -> Path:
             try:
                 from automations.churn_byod_preview.run import render_office_png
                 return render_office_png(o.sheet_id, ws.title, out,
-                                         label=o.label, office_key=o.key)
+                                         label=o.label, office_key=o.key, ws=ws)
             except Exception as e:  # noqa: BLE001
                 log(f"  new-comp churn render failed ({str(e).splitlines()[0][:120]})"
                     " — falling back to sheet screenshot")
