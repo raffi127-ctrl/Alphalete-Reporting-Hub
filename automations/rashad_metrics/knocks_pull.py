@@ -131,6 +131,53 @@ def _scrape_energywell_rows(page, idx: dict) -> list[dict]:
     return rows
 
 
+# B2B. The two B2B campaigns (invD2DClientId 2 = B2B AT&T SBS, 16 =
+# B2B-BOX-Energy) have their OWN Disposition grid, and this module does not
+# know its column set — nobody has ever pulled one. It only knows the grid
+# exists and one column name off it: "Corp - No Opp", seen on Lucy 1 on
+# 2026-09-01 when a pin arrived before the grid was warm and the session fell
+# back to an unpinned B2B campaign.
+#
+# THAT ONE COLUMN IS WHY THIS GUARD EXISTS. A B2B grid carries Total Knocks and
+# no house Talk-To split, so _is_wireless_dispo below claims it — and the
+# wireless scrape is tolerant by design (only ID / Rep / Total Knocks are
+# required, every other bucket is zero-filled). So a B2B office would render a
+# clean, plausible WIRELESS board with 0 in every disposition column while its
+# reps' real outcomes sat in B2B buckets nobody read. Silent and wrong is the
+# one outcome this repo keeps paying for, so B2B raises instead.
+#
+# TO MAP IT: on LUCY 2 (Carlos's login is the one that can see B2B), outside
+# the b2b_dispositions hours (Mon-Sat 12-7pm), run
+#
+#   python -m automations.gap_alerts.run --probe-campaigns \
+#          --office "<b2b owner>" --campaign 2      # and again with 16
+#
+# and read the "headers (N):" line. Then add _B2B_COLUMNS / _B2B_COUNTS /
+# _B2B_TALK_TO_PARTS beside the Energy Wells set above, a SHAPE_B2B in
+# total_knocks.render, and delete this guard. The campaign MUST be passed —
+# it is a sticky session-global, so an unpinned probe dumps whatever campaign
+# the box was last left on.
+_B2B_SIGNATURE = "Corp - No Opp"
+
+
+def _is_b2b_dispo(idx: dict) -> bool:
+    """A B2B-shaped Disposition grid, told apart by a disposition only B2B has.
+    Detection only — there is no B2B scrape yet, on purpose."""
+    return knocks._norm(_B2B_SIGNATURE) in idx
+
+
+def _refuse_b2b(idx: dict) -> None:
+    raise KnocksPullFailed(
+        "This is a B2B Disposition grid (it carries a %r column) and the B2B "
+        "column set has never been mapped, so there is nothing safe to scrape "
+        "from it. Refusing rather than rendering a wireless-shaped board with "
+        "every disposition zeroed. Map it from Lucy 2 with: "
+        "python -m automations.gap_alerts.run --probe-campaigns "
+        "--office \"<owner>\" --campaign 2   (and 16 for Box Energy). "
+        "Live headers seen: %s"
+        % (_B2B_SIGNATURE, ", ".join(sorted(idx)[:30]) or "(none)"))
+
+
 def _is_wireless_dispo(idx: dict) -> bool:
     """Wireless-shaped Disposition: has Total Knocks but not the house
     Talk-To split — the signature that separates the two table shapes."""
@@ -566,7 +613,11 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
     # scrape it with the wireless column set instead of letting the house
     # scrape raise "missing expected column(s)". The wireless rows keep
     # COL_TOTAL_KNOCKS, so knocks_run renders a real Total Knocks board.
-    if _is_energywell_dispo(idx):
+    if _is_b2b_dispo(idx):
+        # BEFORE every other test: a B2B grid satisfies the wireless one and
+        # would come back as a board of zeros. There is no B2B scrape yet.
+        _refuse_b2b(idx)
+    elif _is_energywell_dispo(idx):
         # BEFORE the wireless test: Energy Wells has no Talk-To split either,
         # so the wireless check would claim it and drop VL and Presentation.
         rows = _scrape_energywell_rows(page, idx)

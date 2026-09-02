@@ -164,8 +164,7 @@ def existing_registry(exclude_key: "Optional[str]" = None) -> "Dict[str, object]
             if not k or k == exclude_key:
                 continue
             keys.append(k)
-            grp = (o.get("group") or "").strip().lower()
-            if grp:
+            for grp in _imessage_names(o):
                 groups.setdefault(grp, k)
     except Exception:                                # noqa: BLE001
         pass
@@ -175,7 +174,29 @@ def existing_registry(exclude_key: "Optional[str]" = None) -> "Dict[str, object]
             continue
         if k not in keys:
             keys.append(k)
-        grp = (d.get("imessage_group") or "").strip().lower()
-        if grp:
+        for grp in _imessage_names(d):
             groups.setdefault(grp, k)
     return {"keys": keys, "groups": groups}
+
+
+def _imessage_names(row: dict) -> "List[str]":
+    """Every iMessage room this office texts, lowercased.
+
+    Reads `destinations` FIRST and the legacy single `group` second. This used
+    to read a field called `imessage_group`, which no record has carried since
+    destinations landed — so `groups` came back empty for every form-built
+    office and the "this chat already gets another office's board" warning
+    silently never fired. That warning is the one thing standing between two
+    owners and one room.
+    """
+    out = []
+    for d in (row.get("destinations") or []):
+        if not isinstance(d, dict) or d.get("kind") != "imessage":
+            continue
+        nm = (d.get("name") or "").strip().lower()
+        if nm:
+            out.append(nm)
+    legacy = (row.get("group") or "").strip().lower()
+    if legacy:
+        out.append(legacy)
+    return out

@@ -114,11 +114,27 @@ def test_all_campaigns_are_offered_with_proven_ids():
     assert by_key["b2b_box"] == "16"     # B2B-BOX-Energy
 
 
-def test_nds_carries_no_pin():
-    """A wireless/NDS owner has no Disposition campaign today, so there is
-    nothing to pin — and an empty id means 'whatever impersonation lands on'."""
-    assert S.campaign("nds")["id"] == ""
-    assert A._row(_rec(campaign_key="nds"))["campaign_id"] == ""
+def test_nds_pins_res_att():
+    """NDS names the BUSINESS, not the campaign. Megan read Isaiah Revelle's own
+    OwnerVille picker on 2026-08-25 — BASE Energy / RES AT&T / RES-ENERGYWELL —
+    and his reps knock RES AT&T like everyone else, which is the same default
+    knocks_pull carries for "fiber D2D and NDS wireless".
+
+    An EMPTY id here would not mean "this office's own campaign": the campaign
+    is a sticky session-global, so it means "whatever the office before it in
+    the batch pinned". That is the drift that returned Calvin zero rows.
+    """
+    assert S.campaign("nds")["id"] == "3"
+    assert A._row(_rec(campaign_key="nds"))["campaign_id"] == "3"
+
+
+def test_nds_says_on_the_form_that_its_board_may_be_gaps_only():
+    """NDS reps mostly knock without dispositioning, so p=89 comes back empty
+    and the board is the Time Gaps half. Better heard while they are picking
+    the campaign than discovered after the first one lands."""
+    note = S.campaign("nds").get("note") or ""
+    assert "Time Gaps" in note
+    assert not (S.campaign("att").get("note") or "")
 
 
 # --- Megan's confirm --------------------------------------------------------
@@ -456,15 +472,27 @@ def test_every_campaign_is_offered_grouped_by_family():
     assert [c["key"] for c in S.campaigns_in("B2B")] == ["b2b_att", "b2b_box"]
 
 
-def test_coming_soon_is_only_nds():
-    assert S.campaign_live("att") and S.campaign_live("b2b_box")
-    assert not S.campaign_live("nds")
+def test_nothing_is_on_the_waiting_list_today():
+    """NDS came off it on 2026-09-02 when it got its pin. The list itself stays
+    — the tests below keep the machinery honest — but no campaign is on it."""
+    assert all(S.campaign_live(c["key"]) for c in S.CAMPAIGNS)
+    assert "(coming soon)" not in S.campaign_choice_label("nds")
+
+
+def _waiting(monkeypatch, key="nds"):
+    """Put one campaign back on the waiting list for the length of a test."""
+    monkeypatch.setitem(S.campaign(key), "live", False)
+
+
+def test_a_not_live_campaign_is_labelled_coming_soon(monkeypatch):
+    _waiting(monkeypatch)
     assert "(coming soon)" in S.campaign_choice_label("nds")
     assert "(coming soon)" not in S.campaign_choice_label("att")
 
 
-def test_a_waiting_list_signup_is_still_a_valid_submission():
+def test_a_waiting_list_signup_is_still_a_valid_submission(monkeypatch):
     """The whole point: they enroll once, now, and we hold it."""
+    _waiting(monkeypatch)
     assert S.validate_request(_rec(campaign_key="nds")) == []
     assert S.validate(_rec(campaign_key="nds", enabled=True)) == []
 
@@ -472,6 +500,7 @@ def test_a_waiting_list_signup_is_still_a_valid_submission():
 def test_apply_refuses_to_wire_a_waiting_list_office(monkeypatch, capsys):
     """Wiring it would put an office in the run that fails every single tick —
     there is nothing in OwnerVille to pull."""
+    _waiting(monkeypatch)
     monkeypatch.setattr(store, "load_all",
                         lambda: [_rec(campaign_key="nds", status="wired",
                                       enabled=True).to_json()])
@@ -492,7 +521,21 @@ def test_a_live_campaign_still_wires(monkeypatch):
     assert plans[0]["row"]["campaign_id"] == "2"       # B2B AT&T SBS
 
 
-def test_the_ping_says_waiting_list_in_its_one_line():
+def test_an_nds_signup_wires_like_any_other(monkeypatch):
+    """It is a normal office now: pinned, materialized, on Lucy 1."""
+    monkeypatch.setattr(store, "load_all",
+                        lambda: [_rec(campaign_key="nds", status="wired",
+                                      enabled=True).to_json()])
+    monkeypatch.setattr(store, "existing_registry",
+                        lambda exclude_key=None: {"keys": [], "groups": {}})
+    plans = A.plan()
+    assert [p["rec"].key for p in plans] == ["cody"]
+    assert plans[0]["row"]["campaign_id"] == "3"
+    assert plans[0]["row"]["machine"] == "Lucy 1"
+
+
+def test_the_ping_says_waiting_list_in_its_one_line(monkeypatch):
+    _waiting(monkeypatch)
     from automations.disposition_signup import request_notify as RN
     live_title, _ = RN._lines(_rec(campaign_key="att"))
     wait_title, _ = RN._lines(_rec(campaign_key="nds"))
@@ -845,3 +888,83 @@ def test_the_batch_dict_is_not_clobbered_by_the_rendered_images():
     import re as _re
     assert "boards = render(" in src
     assert not _re.search(r"(?<![\w.])boards\.get\(", src)
+
+
+# --- what is still in the way of B2B (2026-09-02) ---------------------------
+
+def test_b2b_confirm_says_the_three_things_that_stop_it_posting():
+    """A confirmed B2B office would sit switched on and send nothing: no
+    LaunchAgent on Lucy 2, no mapped B2B disposition grid, and no iMessage from
+    a wrapper on that box. Warnings, not errors — the setup is correct and goes
+    live the day the runner does."""
+    rec = _rec(campaign_key="b2b_att", enabled=True,
+               destinations=[_dest("imessage", name="ATT B2B Leaders")])
+    blockers = S.b2b_blockers(rec)
+    assert len(blockers) == 3
+    assert all(b.startswith("B2B not running yet") for b in blockers)
+    assert any("LaunchAgent" in b for b in blockers)
+    assert any("--probe-campaigns" in b for b in blockers)
+    assert any("consent" in b for b in blockers)
+    assert set(blockers) <= set(S.warnings(rec))
+
+
+def test_the_imessage_blocker_is_only_for_offices_that_want_texts():
+    rec = _rec(campaign_key="b2b_box", enabled=True,
+               destinations=[_dest("slack", name="#b2b", channel_id="C1")])
+    assert len(S.b2b_blockers(rec)) == 2
+
+
+def test_d2d_has_no_b2b_blockers():
+    for key in ("att", "energy", "nds"):
+        assert S.b2b_blockers(_rec(campaign_key=key, enabled=True)) == []
+
+
+# --- the duplicate-room check reads destinations ----------------------------
+
+def test_existing_rooms_come_off_destinations_not_a_dead_field():
+    """This used to read `imessage_group`, which no record has carried since
+    destinations landed — so the 'that chat already gets another office's
+    board' warning silently never fired for a form-built office."""
+    row = {"destinations": [{"kind": "imessage", "name": "Alphalete Partners"},
+                            {"kind": "slack", "name": "#not-a-room"}],
+           "group": "Legacy Room"}
+    assert store._imessage_names(row) == ["alphalete partners", "legacy room"]
+    assert store._imessage_names({"destinations": []}) == []
+
+
+def test_a_second_office_claiming_the_same_room_is_warned_about(monkeypatch):
+    monkeypatch.setattr(store, "load_all", lambda: [
+        _rec(key="calvin", destinations=[
+            _dest("imessage", name="ENERGY WELLS DOMINATION")]).to_json()])
+    reg = store.existing_registry(exclude_key="jay")
+    assert reg["groups"].get("energy wells domination") == "calvin"
+
+
+# --- Slack + email only on the form (Megan 2026-09-02) ----------------------
+
+def test_the_form_offers_slack_and_email_only():
+    """Not iMessage: an owner cannot create a texting route any more, which is
+    why the form no longer asks for a chat name or prints Megan's number."""
+    assert S.FORM_DELIVERY_CHOICES == ["slack", "email"]
+    assert set(S.FORM_DELIVERY_CHOICES) < set(S.DELIVERY_CHOICES)
+
+
+def test_the_runner_still_knows_how_to_text():
+    """Every hardcoded office does — Raf's board goes to Alphalete Partners.
+    Dropping imessage from the schema would break them, not just the form."""
+    assert "imessage" in S.DELIVERY_CHOICES
+    rec = _rec(destinations=[_dest("imessage", name="Alphalete Partners")],
+               enabled=True)
+    assert S.validate(rec) == []
+
+
+def test_the_form_source_has_no_imessage_option_and_no_phone_number():
+    """The copy is the deliverable here, so it is asserted rather than trusted:
+    a stray 'iMessage chats?' input or a leftover number is exactly the kind of
+    thing an edit elsewhere in the file puts back."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[2]
+           / "disposition_signup" / "app.py").read_text()
+    assert "419-769-7114" not in src
+    assert 'S.destination("imessage"' not in src
+    assert "How many iMessage chats?" not in src

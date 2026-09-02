@@ -1,10 +1,16 @@
 """Alphalete Reporting by Lucy — daily dispositions sign-up (owner self-serve).
 
 Raf's #11280 thread 2026-09-01: owners sign up to get their daily disposition
-data every 15 / 30 / 60 minutes, by email or iMessage or both, plus an optional
-hourly post to their team's Slack channel. Megan's answer — "we have enrollment
-links not web forms" — is why this is the same shape as the tracker sign-up
-rather than a new kind of thing.
+data every 15 / 30 / 60 minutes, in their team's Slack channel or by email or
+both. Megan's answer — "we have enrollment links not web forms" — is why this is
+the same shape as the tracker sign-up rather than a new kind of thing.
+
+SLACK AND EMAIL ONLY (Megan 2026-09-02: "take the option they have of getting an
+iMessage out of this form... my number can also be removed"). The RUNNER still
+texts — Raf, Calvin and Jay's hardcoded rows are all iMessage, and
+schema.DELIVERY_CHOICES still carries it — but nothing an owner fills in here
+can create a texting route, so no owner is asked for a phone number and Megan is
+not asked to join a group chat.
 
 Megan sends an owner this link. They answer five questions and submit. The
 request lands on the 'Disposition Signup' tab as status=PENDING and pings Megan
@@ -75,8 +81,8 @@ def _enqueue_onboard(key: str, *, preflight: bool = True,
     """Drop a mini_control `onboard_apply disposition <key>` job so the runner
     materializes the office into its working tree — it then joins the next
     tick. With `preflight` (the default) it also adds --post, which on this
-    kind means: impersonate the office, resolve its iMessage room, and switch
-    it on if both hold. Reuses the form's own Sheets client (the queue is a tab
+    kind means: impersonate the office and switch it on if that holds (and, on
+    an older sign-up that still carries one, resolve its iMessage room). Reuses the form's own Sheets client (the queue is a tab
     on this same master sheet). Best-effort; returns (ok, note)."""
     gc = store.get_client()
     if gc is None:
@@ -120,8 +126,7 @@ def request_view() -> None:
         help="Exactly as OwnerVille shows it. This is how we find your office.")
     knocks_office = st.text_input(
         "Company name as it appears in OwnerVille *",
-        help="Type it exactly as OwnerVille shows it. If OwnerVille lists your "
-             "office under your own name, put that.")
+        help="Type it exactly as OwnerVille shows it.")
 
     # ---- 2. Owner id -----------------------------------------------------
     st.divider()
@@ -145,6 +150,13 @@ def request_view() -> None:
         help="If your office runs more than one, sign up once here and tell "
              "us in the notes at the bottom — you'll get one report per "
              "campaign.")
+    # What THIS campaign's board actually looks like, when it differs from the
+    # default expectation. NDS is the case that needs it: those reps mostly
+    # knock without dispositioning, so the board is the Time Gaps half — better
+    # heard here than discovered after the first one lands.
+    _camp_note = (S.campaign(campaign_key) or {}).get("note")
+    if _camp_note:
+        st.caption(_camp_note)
     if not S.campaign_live(campaign_key):
         # Still take the sign-up. OwnerVille does not carry dispositions for
         # this campaign yet, so there is nothing to pull — but "come back when
@@ -162,38 +174,23 @@ def request_view() -> None:
     # its channels — proven, and it needs no drag-and-drop component.
     st.divider()
     st.markdown("### 3. Where should it go?")
-    st.caption("Add every chat, channel and inbox that should get it. Each one "
-               "gets its own timing — your owners' chat can run every 15 "
+    st.caption("Add every channel and inbox that should get it. Each one "
+               "gets its own timing — your owners' channel can run every 15 "
                "minutes while your rep channel gets it once an hour. Or pick "
                "**Set times** for three boards a day at first knocks, money "
                "lap and end of day, the way Cody Cannon's office runs it.")
-    st.info("**Add Megan Hidalgo to EVERY Slack channel or iMessage chat you "
-            "want postings in.** She'll leave once it's set up.\n\n"
-            "Her number for the iMessage chats: **419-769-7114**")
+    st.info("**Add Megan Hidalgo to EVERY Slack channel you want postings "
+            "in.** She'll leave once it's set up.")
 
     destinations: list = []
 
-    st.markdown("#### 📱 iMessage chats")
-    n_chat = int(st.number_input(
-        "How many iMessage chats?", 0, 5, 1, key="n_chat",
-        help="0 if you don't want texts."))
-    for i in range(n_chat):
-        with st.container(border=True):
-            nm = st.text_input(
-                "Name of the group chat *", placeholder="Alphalete Partners",
-                key="chat_name_%d" % i,
-                help="The chat's name exactly as it shows on your phone.")
-            cad = st.radio("How often? *", S.CADENCE_PICKER,
-                           index=S.CADENCE_PICKER.index(S.DEFAULT_CADENCE),
-                           format_func=S.cadence_picker_label,
-                           key="chat_cad_%d" % i)
-            destinations.append(S.destination("imessage", name=nm,
-                                              cadence_min=cad))
-
+    # NO iMESSAGE OPTION (Megan 2026-09-02). The runner can still text — every
+    # hardcoded office does — but this form does not offer it, so an owner is
+    # never asked for a chat name and Megan is never asked to join one.
     st.markdown("#### 💬 Slack channels")
     n_slack = int(st.number_input(
-        "How many Slack channels?", 0, 5, 0, key="n_slack",
-        help="0 if you don't want it in Slack."))
+        "How many Slack channels?", 0, 5, 1, key="n_slack",
+        help="0 if you only want it by email."))
     for i in range(n_slack):
         with st.container(border=True):
             nm = st.text_input(
@@ -292,8 +289,6 @@ def request_view() -> None:
         missing.append("at least one place to send it")
     for i, d in enumerate(destinations):
         n = "" if len(destinations) == 1 else " #%d" % (i + 1)
-        if d["kind"] == "imessage" and not d["name"]:
-            missing.append("the group chat name%s" % n)
         if d["kind"] == "slack":
             if not d["name"]:
                 missing.append("the Slack channel name%s" % n)
@@ -305,13 +300,11 @@ def request_view() -> None:
     # the tracker sign-up puts it. The one up in section 3 is read while they
     # are picking destinations; this one is read while they are committing, and
     # it is the step that decides whether anything can post at all.
-    _rooms = [d for d in destinations if d["kind"] in ("imessage", "slack")]
+    _rooms = [d for d in destinations if d["kind"] == "slack"]
     if _rooms:
-        st.info("🔔 **Reminder:** add **Megan Hidalgo** to every chat and "
-                "channel you listed above **BEFORE HITTING SUBMIT** — we "
-                "can't start your postings without it! Her number for the "
-                "iMessage chats is **419-769-7114**. She'll leave once it's "
-                "set up.")
+        st.info("🔔 **Reminder:** add **Megan Hidalgo** to every Slack channel "
+                "you listed above **BEFORE HITTING SUBMIT** — we can't start "
+                "your postings without it! She'll leave once it's set up.")
     if missing:
         st.warning("⚠️ **Still needed before you can submit:** "
                    + ", ".join(missing) + ".")
@@ -381,11 +374,19 @@ def _request_done_view() -> None:
     st.caption("During your field hours: %s" % d["_derived"]["hours"])
     for r in d["_derived"]["routes"]:
         st.markdown("- %s" % r)
-    lucy = res.get("lucy") or {}
-    if lucy and lucy.get("status") in ("not_member", "not_found"):
-        st.warning("⚠️ One last thing: Lucy isn't in **%s** yet. Add **Megan "
-                   "Hidalgo** to it and she'll get the posting started."
-                   % (lucy.get("channel_name") or "your channel"))
+    # A LIST, one entry per Slack destination — an office can list several now.
+    # This used to call .get() straight on it, which is an AttributeError on the
+    # thank-you page of every sign-up that named a Slack channel: the row was
+    # saved and Megan was pinged, and the owner saw a Streamlit traceback and no
+    # confirmation. Say it once per channel that still needs her.
+    for res_ck in (res.get("lucy") or []):
+        if not isinstance(res_ck, dict):
+            continue
+        if res_ck.get("status") in ("not_member", "not_found"):
+            st.warning("⚠️ One last thing: Lucy isn't in **%s** yet. Add "
+                       "**Megan Hidalgo** to it and she'll get the posting "
+                       "started."
+                       % (res_ck.get("channel_name") or "your channel"))
     ping_ok, ping_note = res.get("ping", (False, ""))
     if res["where"] == "sheet" and not ping_ok:
         st.warning("Your sign-up is saved, but the automatic heads-up to Megan "
@@ -524,12 +525,12 @@ def confirm_view(key: str) -> None:
     # ---- the two things the form can't know ------------------------------
     st.divider()
     st.markdown("#### Before it can actually run")
-    st.caption("Two things decide whether this office can run, and neither is "
-               "visible from here: whether Office Access is granted for the "
-               "owner, and whether Lucy is in that iMessage room. Confirming "
-               "hands both to the runner — it impersonates the office, "
-               "resolves the chat, and switches the office on only if both "
-               "hold. You get the result in the corrections channel.")
+    st.caption("Office Access is the thing that decides whether this office "
+               "can run, and it is not visible from here. Confirming hands it "
+               "to the runner — it impersonates the office, and switches the "
+               "office on only if that holds (plus the chat, on the older "
+               "sign-ups that still carry an iMessage route). You get the "
+               "result in the corrections channel.")
     enabled = st.checkbox(
         "Skip the check — switch it on now",
         value=rec.enabled,
@@ -598,9 +599,9 @@ def _confirm_done_view() -> None:
                            "preflight). Live on the next tick, ~1–2 min.")
             else:
                 st.success("✅ Handed to the runner — it's impersonating the "
-                           "office and resolving the iMessage room now. If "
-                           "both check out it switches itself on and joins the "
-                           "next tick; either way you get the result in "
+                           "office now. If that checks out it switches itself "
+                           "on and joins the next tick; either way you get "
+                           "the result in "
                            "#claudecorrections-and-requests in a minute or "
                            "two. Nothing else for you to do.")
             st.caption("The nightly auto-commit keeps it — no manual commit "
