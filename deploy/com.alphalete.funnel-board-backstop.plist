@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.funnel-board-backstop</string>
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to THIS
+         machine's repo path:
+           lucy rerun install_funnel_board_backstop_agent (machine: Lucy 2)
+         RUNS ON LUCY 2, where the 1am recruiting chain runs.
+
+         The retry funnel_board does not otherwise have: it is step 1 of
+         com.alphalete.recruiting-chain-1am, the 4am orchestrator skips it
+         (cadence.weekdays []), and com.alphalete.funnel-board-hourly is not
+         loaded here. Steps 2 and 3 are covered by the 1pm refresh chain; step 1
+         was covered by nobody, so a chain killed at 1 AM cost the whole day
+         (9/1 and 9/2 2026) until a person ran it by hand at 10. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/funnel_board_backstop.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 06:15, once a day. Late enough that the 1am chain has long since finished
+         or died, early enough to beat the morning read of the board and the ~10 AM
+         "didn't run today" alert. It is NOT a second cadence: the script exits in
+         seconds on any morning that already has a clean pass. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>15</integer>
+    </dict>
+
+    <!-- A missed window (machine off) must not fire this on every reboot. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/funnel-board-backstop.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/funnel-board-backstop.err</string>
+</dict>
+</plist>

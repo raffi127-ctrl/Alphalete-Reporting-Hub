@@ -8305,6 +8305,29 @@
       "machine": "Lucy 2",
       "_off_scheduler_note": ""
     },
+    "install_funnel_board_backstop_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.funnel-board-backstop on Lucy 2 (deploy/funnel_board_backstop.sh, 06:15 daily). THE RETRY funnel_board DID NOT HAVE: it is step 1 of com.alphalete.recruiting-chain-1am, the 4am orchestrator skips it (cadence.weekdays []), and com.alphalete.funnel-board-hourly is not loaded on Lucy 2 (disabled 2026-08-31). Steps 2 and 3 of the chain get a second chance from the 1pm refresh; step 1 got none, so when the chain was killed inside funnel_board's AppStream login on 2026-09-01 AND 2026-09-02 the Board/Trend tabs sat on the previous day's numbers until a person read the 10am alert and ran it by hand. NOT a second cadence: the script re-runs ONLY when no log from today contains 'build exited 0' (a PARTIAL still counts as delivered - the Sheet was written), otherwise it exits in seconds. It frees stray/orphan Chrome first (the 2026-09-02 root cause, including funnel_board's OWN .appstream_profile_funnel), caps the pass at 30 min so a hung AppStream login cannot hold the run lock all morning, clears a lock left by a killed pass, and publishes the funnel_board Hub run that the chain path never published. Run via `lucy rerun install_funnel_board_backstop_agent --machine \"Lucy 2\"` after `lucy update`; add --now to fire it immediately for a test. Test without writing: `bash deploy/funnel_board_backstop.sh --force --dry-run`.",
+      "display_name": "Install Funnel Board backstop agent (06:15 retry)",
+      "source_type": "none",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "funnel-board-backstop"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 15,
+      "machine": "Lucy 2",
+      "_off_scheduler_note": ""
+    },
     "install_dd_gross_revenue_agent": {
       "on_scheduler": false,
       "_note": "One-shot installer for com.alphalete.dd-gross-revenue on Lucy 1 (auto-pull 1st & 15th at 12:00 noon CST; deploy/dd_gross_revenue.sh -> python -m automations.pay_structure.dd_pull --write). Run via `lucy rerun install_dd_gross_revenue_agent` after `lucy update`. install_agent only reloads the plist (race-free bootout+bootstrap).",
