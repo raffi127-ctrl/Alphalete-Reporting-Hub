@@ -125,6 +125,111 @@ class UnattendedLoginTest(unittest.TestCase):
                 sh._unattended_ownerville_login(_Ctx(), page, verbose=False))
 
 
+class _ASPage:
+    """AppStream page fake. `.locator(...).count()` must return a real int —
+    Playwright does, and `MagicMock > 0` raises TypeError."""
+
+    def __init__(self, form_present=True, goto_raises=None,
+                 console_raises=None):
+        self.form_present = form_present
+        self.goto_raises = goto_raises
+        self.console_raises = console_raises
+
+    def goto(self, url, **kw):
+        if self.goto_raises:
+            raise self.goto_raises
+
+    def wait_for_timeout(self, ms):
+        pass
+
+    def wait_for_selector(self, sel, **kw):
+        if self.console_raises:
+            raise self.console_raises
+
+    def locator(self, sel):
+        present = self.form_present
+
+        class _L:
+            def count(self_inner):
+                return 1 if present else 0
+        return _L()
+
+
+class AppStreamTypesItsOwnLoginTest(unittest.TestCase):
+    """Megan 2026-09-02: "I SHOULD NOT HAVE TO RESEED - YOU CAN TYPE IN THE
+    LOGINS."
+
+    The ownerville hop has never once minted. Lucy 1: 15 "mint FAILED" lines,
+    ZERO "MINTED a fresh rqst", since both messages were added together on
+    2026-08-29 (be91e7f). Lucy 2 the same. Every token this fleet has carried
+    came from a person typing the login — while creds.appstream_username() and
+    appstream_password() sat right there, and appstream_autorenew._form_login
+    already recorded the typed login working "on Lucy 1 from a cold profile"."""
+
+    def setUp(self):
+        sh._MINT_FAILURES.clear()
+
+    def test_a_failed_hop_types_the_login_before_asking_for_a_restart(self):
+        src = inspect.getsource(sh)
+        tokenless = src.split("A THROTTLED call is not a failure")[1]
+        self.assertIn("_appstream_form_login", tokenless)
+        self.assertLess(
+            tokenless.index("_appstream_form_login"),
+            tokenless.index('_MINT_FAILURES["restart_wanted"] = True'),
+            "the typed login must be tried BEFORE escalating to a restart — a "
+            "restart just re-runs the hop that has failed 15/15")
+
+    def _creds(self):
+        from automations.shared import creds
+        return (mock.patch.object(creds, "appstream_username", return_value="u"),
+                mock.patch.object(creds, "appstream_password", return_value="p"))
+
+    def test_the_console_without_a_token_is_a_failure(self):
+        """Never clobber a good export with a console carrying no rqst."""
+        cu, cp = self._creds()
+        with mock.patch.object(sh, "_drive_login_form"), cu, cp, \
+             mock.patch.object(sh, "_rqst_id", return_value=None):
+            self.assertFalse(
+                sh._appstream_form_login(mock.MagicMock(), _ASPage(),
+                                         verbose=False))
+
+    def test_a_live_console_with_a_token_is_a_success(self):
+        cu, cp = self._creds()
+        with mock.patch.object(sh, "_drive_login_form"), cu, cp, \
+             mock.patch.object(sh, "_rqst_id", return_value="D9F04FAF"), \
+             mock.patch.object(sh, "_ctx_rqst_minutes_left", return_value=118.0):
+            self.assertTrue(
+                sh._appstream_form_login(mock.MagicMock(), _ASPage(),
+                                         verbose=False))
+
+    def test_an_already_signed_in_console_needs_no_form(self):
+        """No form on the page is not a failure — judge the CONSOLE."""
+        cu, cp = self._creds()
+        with mock.patch.object(sh, "_drive_login_form") as drive, cu, cp, \
+             mock.patch.object(sh, "_rqst_id", return_value="D9F04FAF"), \
+             mock.patch.object(sh, "_ctx_rqst_minutes_left", return_value=90.0):
+            ok = sh._appstream_form_login(
+                mock.MagicMock(), _ASPage(form_present=False), verbose=False)
+        self.assertTrue(ok)
+        drive.assert_not_called()
+
+    def test_a_console_that_never_renders_is_a_failure(self):
+        cu, cp = self._creds()
+        with mock.patch.object(sh, "_drive_login_form"), cu, cp:
+            self.assertFalse(sh._appstream_form_login(
+                mock.MagicMock(),
+                _ASPage(console_raises=TimeoutError("#searchMC")),
+                verbose=False))
+
+    def test_missing_credentials_never_crash_the_holder(self):
+        """creds.* RAISES when unconfigured (as on a laptop with no keychain
+        entry). That must degrade to False, not take the holder down mid-loop."""
+        self.assertFalse(sh._appstream_form_login(
+            mock.MagicMock(),
+            _ASPage(goto_raises=RuntimeError("Missing AppStream credential")),
+            verbose=False))
+
+
 class TheRecoveryPathsActuallyCallItTest(unittest.TestCase):
     """The helper existing is worth nothing if main() still prints a prompt and
     waits — which is exactly how two earlier holder fixes came to sit inert."""

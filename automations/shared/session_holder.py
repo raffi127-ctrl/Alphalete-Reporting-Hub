@@ -878,6 +878,54 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     return True
 
 
+def _appstream_form_login(ctx, page, verbose: bool = False) -> bool:
+    """Sign in to AppStream by TYPING THE CREDENTIALS, in the holder's own
+    context. Returns True only when the office console actually renders.
+
+    This is what makes a re-seed unnecessary. It is the same form
+    appstream_direct_session drives (tableau_patchright, the
+    _APPSTREAM_USERNAME_SELECTOR branch), run on the page the holder already
+    has open rather than in a second browser — the holder is inside
+    sync_playwright(), so it cannot call appstream_autorenew._form_login (that
+    opens its own and a nested sync_playwright cannot start).
+
+    THROTTLED with the mint, deliberately: this runs only on the tokenless path,
+    after the hop has already failed, so it inherits that path's pacing instead
+    of adding a second login loop of its own."""
+    from automations.shared import creds
+    from automations.shared.tableau_patchright import (
+        _APPSTREAM_USERNAME_SELECTOR, _PASSWORD_SELECTOR)
+    print(f"[{_stamp()}] AppStream — typing the login (no re-seed, no human).",
+          flush=True)
+    try:
+        page.goto("https://applicantstream.com/", wait_until="domcontentloaded")
+        page.wait_for_timeout(3_000)
+        # ALREADY SIGNED IN IS NOT A FAILURE — same judgment the ownerville side
+        # had to learn: decide on the CONSOLE, not on whether a form appeared.
+        if (page.locator(_PASSWORD_SELECTOR).count() > 0
+                or page.locator(_APPSTREAM_USERNAME_SELECTOR).count() > 0):
+            _drive_login_form(page, verbose,
+                              username=creds.appstream_username(),
+                              password=creds.appstream_password())
+        page.wait_for_selector("#searchMC", timeout=20_000)
+    except Exception as e:  # noqa: BLE001 — never break the holder over a login
+        print(f"[{_stamp()}] AppStream typed login did NOT reach the console: "
+              f"{type(e).__name__}: {str(e)[:140]}", flush=True)
+        return False
+    tok = _rqst_id(ctx)
+    if not tok:
+        # Never clobber a good export with a console that carries no token.
+        print(f"[{_stamp()}] AppStream typed login rendered the console but the "
+              f"context carries NO rqst token — keeping the existing export.",
+              flush=True)
+        return False
+    left = _ctx_rqst_minutes_left(ctx)
+    print(f"[{_stamp()}] AppStream ✓ TYPED LOGIN minted {tok}"
+          + (f", {left:.0f}m left" if left is not None else "")
+          + " — no human, no re-seed.", flush=True)
+    return True
+
+
 def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
     """Keep the AppStream (applicantstream) console session alive in the holder's
     context so unattended reports reuse it. Reload the open console to refresh the
@@ -1004,11 +1052,29 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
     if minted:
         _note_mint_result(True)
         return True
+    # THE HOP IS NOT THE ONLY WAY IN — TYPE THE LOGIN (Megan 2026-09-02: "I
+    # SHOULD NOT HAVE TO RESEED - YOU CAN TYPE IN THE LOGINS").
+    #
+    # The ownerville hop has never once worked. Measured on Lucy 1: 15
+    # "mint FAILED" lines and ZERO "MINTED a fresh rqst" since the two messages
+    # were added together on 2026-08-29 (be91e7f), every failure the same
+    # "#searchMC absent". Lucy 2 is the same. So every token this fleet has ever
+    # carried came from a person typing the login — and the code could have
+    # typed it the whole time: creds.appstream_username()/appstream_password()
+    # are right there, and appstream_autorenew._form_login records it working
+    # "on Lucy 1 from a cold profile (no saved session): the form completed and
+    # the office console rendered."
+    #
+    # Asking for a restart instead was the mistake: a restart re-runs the same
+    # hop that has failed 15/15, then tells a human to --appstream-login. This
+    # tries the login FIRST and keeps the restart as the last resort.
     if not throttled:
+        if _appstream_form_login(ctx, page, verbose=verbose):
+            _note_mint_result(True)
+            return True
         _note_mint_result(False)
-        print(f"[{_stamp()}] no live rqst token and the mint failed — asking for "
-              f"a restart, which is the path that actually mints (nothing live "
-              f"to lose here).", flush=True)
+        print(f"[{_stamp()}] no live rqst token, the ownerville hop failed AND "
+              f"the typed login failed — asking for a restart.", flush=True)
         _MINT_FAILURES["restart_wanted"] = True
     return False
 
