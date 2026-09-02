@@ -332,10 +332,14 @@ ENERGYWELL_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
                              COL_FIRST_KNOCK, COL_LAST_KNOCK,
                              COL_GAPS, COL_TOTAL_GAPS, COL_NO_ANSWER,
                              COL_NOT_INTERESTED, COL_PRESENTATION,
-                             COL_COME_BACK, COL_DO_NOT_KNOCK]
-# NO INACCESSIBLE COLUMN either (Megan 2026-08-30: "is inaccessible even an
-# option for EW?"). It EXISTS in the grid but came through empty for all four
-# reps on a full day, so it reads as a disposition these reps never pick. It is
+                             COL_COME_BACK, COL_INACCESSIBLE,
+                             COL_DO_NOT_KNOCK]
+# INACCESSIBLE IS BACK (Megan 2026-09-01: "we should have the same columns as
+# much as we can fo all campaigns"). It had been dropped on 2026-08-30 ("is
+# inaccessible even an option for EW?") because it came through empty for all
+# four reps on a full day. It EXISTS in the grid, so keeping it costs an
+# occasionally-zero column and buys one board shape across every campaign —
+# which is the standing ask. The original reasoning, for whoever revisits it:
 # still scraped, and it changes no arithmetic — talk-tos exclude Inaccessible on
 # every shape — so restoring it is one line if it ever gets used.
 #
