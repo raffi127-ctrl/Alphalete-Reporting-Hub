@@ -10,7 +10,8 @@ import datetime as dt
 import unittest
 
 from automations.machine_digest.run import (_historical_expected, _handrun_only_ids,
-                                            _offday_standalone_ids)
+                                            _offday_standalone_ids,
+                                            _event_logged_ids)
 
 
 def _rows(card, days, hour=7, name=None, machine="Lucys-MacBook-Neo.local"):
@@ -264,6 +265,71 @@ class HandRunOnlyIds(unittest.TestCase):
         for rid in ("alphalete_org_b2b", "alphalete_org_box", "alphalete_org_retail"):
             self.assertIn(rid, ids)
         self.assertNotIn("alphalete_org_je", ids)
+
+
+class EventLoggedIds(unittest.TestCase):
+    """Regression cover for 2026-09-01: `sara_down` polls #saraplus-issues every 5
+    minutes 24/7 but calls publish_done ONLY on a real escalation, so the Activity
+    log holds one row per ISSUE (8 in six weeks), not one per run. Escalations on
+    Tue 8/11 and Tue 8/25 17:42 taught _historical_expected "Tuesday ~17:00
+    report", and it posted "didn't run today on the mini · usually starts ~17:00"
+    while the poller had ticked every 5 min all day, exit 0."""
+
+    def _ids(self, reports):
+        return _event_logged_ids(_Cfg(reports))
+
+    def test_declared_poller_is_exempt(self):
+        ids = self._ids({"sara_down": {
+            "logs_on_event_only": True, "cadence": {"weekdays": []}}})
+        self.assertIn("sara_down", ids)
+
+    def test_undeclared_poller_keeps_the_historical_guess(self):
+        ids = self._ids({"sara_down": {"cadence": {"weekdays": []}}})
+        self.assertEqual(ids, set())
+
+    def test_flag_is_ignored_when_the_orchestrator_can_fire_it(self):
+        """The narrow half: a stray flag on something with a real cadence must
+        never silence it."""
+        ids = self._ids({"daily_focus": {
+            "logs_on_event_only": True, "cadence": {"weekdays": [0, 1, 2, 3, 4]}}})
+        self.assertEqual(ids, set())
+
+    def test_missing_cadence_is_not_exempt(self):
+        """Same bias-to-under-exempting rule as hand_run_only: no cadence key is
+        not a declared-empty one."""
+        self.assertEqual(self._ids({"sara_down": {"logs_on_event_only": True}}), set())
+
+    def test_real_reports_are_never_exempt(self):
+        ids = self._ids({
+            "stf_field_check": {"cadence": {"weekdays": []}},
+            "bg_check_sync": {"cadence": {"weekdays": []}},
+            "daily_focus": {"cadence": {"weekdays": [0, 1, 2, 3, 4]}},
+        })
+        self.assertEqual(ids, set())
+
+    def test_live_config_exempts_sara_and_nothing_scheduled(self):
+        """Pins the live schedule_config: sara_down carries the flag under all
+        three id spellings the Activity log can use, and no report the
+        orchestrator fires ever gets swept in."""
+        from automations.day_orchestrator import registry as _reg
+        ids = _event_logged_ids(_reg.load_config())
+        for rid in ("sara_down", "sara-plus-issues"):
+            self.assertIn(rid, ids)
+        for rid in ("daily_focus", "office_metrics", "stf_field_check"):
+            self.assertNotIn(rid, ids)
+
+    def test_sara_is_expected_today_which_is_why_the_flag_is_needed(self):
+        """The flag is the ONLY thing standing between sara_down and a false
+        alarm: the historical baseline still says "expected today", exactly as it
+        did on 9/1. If this ever stops being true the flag is dead weight and the
+        exemption should be reconsidered rather than left silently covering
+        nothing."""
+        tue = dt.date(2026, 9, 1)
+        rows = (_rows("sara-plus-issues", [dt.date(2026, 8, 11)], hour=11)
+                + _rows("sara-plus-issues", [dt.date(2026, 8, 25)], hour=17))
+        exp = _historical_expected(rows, tue)
+        self.assertIn("sara-plus-issues", exp)
+        self.assertEqual(exp["sara-plus-issues"]["start_hour"], 17)
 
 
 if __name__ == "__main__":

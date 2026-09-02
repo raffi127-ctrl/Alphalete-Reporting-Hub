@@ -1821,6 +1821,8 @@
       "cadence": {
         "weekdays": []
       },
+      "logs_on_event_only": true,
+      "_event_log_note": "logs_on_event_only: the 5-min poller calls publish_done ONLY when it actually escalates a screenshot (never on a quiet tick), so the Hub Activity log holds one row per ISSUE, not one per run \u2014 8 rows in six weeks. Without this flag machine_digest._historical_expected reads those rows as the CADENCE: escalations on Tue 8/11 and Tue 8/25 17:42 taught it \"Tuesday ~17:00 report\" and it posted \"didn't run today on the mini \u00b7 usually starts ~17:00\" on Tue 2026-09-01 while the poller had ticked every 5 min all day, exit 0 (mini log sara-down-2026-09-01.log). Exempts the DIDN'T-RUN guess ONLY \u2014 a tick that fails / runs partial / hangs still alerts exactly as before. Honoured only while cadence.weekdays is empty.",
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],

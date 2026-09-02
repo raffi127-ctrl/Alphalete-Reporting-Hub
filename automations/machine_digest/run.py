@@ -379,6 +379,74 @@ def _handrun_only_ids(cfg) -> set:
     return ids
 
 
+def _event_logged_ids(cfg) -> set:
+    """Registry ids DECLARED `logs_on_event_only: true` — a report whose clock ticks
+    constantly but which only writes an Activity row when it actually DID something.
+
+    WHY (Megan 2026-09-01). `sara_down` polls #saraplus-issues every 5 minutes,
+    24/7, from com.alphalete.sara-down (StartInterval 300), and calls publish_done
+    ONLY on a real escalation — deliberately, so the log records issues escalated
+    instead of 288 heartbeats a day. But _historical_expected reads that same log as
+    the cadence: escalations landed on Tue 8/11 and Tue 8/25 at 17:42, which is two
+    of the last three Tuesdays WITH the recency gate satisfied, so the watcher
+    concluded "Tuesday ~17:00 report" and posted "didn't run today on the mini ·
+    usually starts ~17:00" on Tue 9/1 — while the poller had in fact run every 5
+    minutes all day, exit 0, last tick 20:45 (verified in the mini's own
+    output/logs/sara-down-2026-09-01.log). Nobody had posted a Sara+ screenshot,
+    which is the card's documented healthy state: "a quiet card is the normal,
+    healthy state".
+
+    This is the same class of bug as `standalone_weekdays` and `hand_run_only` fix —
+    the log is not the schedule — but a DIFFERENT shape, and neither existing flag
+    covers it: the report is neither weekday-pinned (it runs today, and every day)
+    nor hand-run-only (a real clock fires it constantly). What is untrue for it is
+    narrower: an ABSENT row is not evidence of a miss, because a present row was
+    never evidence of a tick.
+
+    WHY A DECLARATION AND NOT A GUESS. Nothing in the Activity log distinguishes
+    "logged once per event" from "logged once per run" — an event-logged report with
+    a busy week looks exactly like a healthy daily one, and a genuinely dead daily
+    report looks exactly like a quiet event-logged one. Row COUNT can't separate
+    them either: sara_down wrote 8 rows in six weeks, but so would a weekly report.
+    Only the module knows, so the module's registry entry says so.
+
+    DELIBERATELY NARROW, the same two ways as _handrun_only_ids:
+
+      * Honoured ONLY when `cadence.weekdays` is empty, so the flag can never
+        silence something the 4am orchestrator really does fire.
+      * The caller applies it to the "didn't run" check ONLY (it goes in `offday`,
+        not `skip`). A tick that FAILS, runs PARTIAL or hangs still alerts exactly
+        as it does today — logging on events is not a reason to stop watching for
+        errors, and sara_down's 8/11 failures are precisely what must keep coming
+        through.
+
+    The cost of the flag is real and worth stating: a report carrying it can go
+    silently dead and this watcher will not say so. That is acceptable only for a
+    module whose own failures alert loudly through the ERRORED path above, which is
+    why it is opt-in per report and not inferred. Matched by the same
+    id/card-alias fan-out as _orchestrator_ids, since Activity rows are written
+    under the CARD id."""
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
+    ids = set()
+    for rid, rep_raw in (cfg.raw.get("reports", {}) or {}).items():
+        if not rep_raw.get("logs_on_event_only"):
+            continue
+        wdays = ((rep_raw.get("cadence") or {}).get("weekdays"))
+        if not (isinstance(wdays, list) and not wdays):
+            continue   # the orchestrator CAN fire it → the flag doesn't apply
+        ids.add(rid)
+        for cand in (_HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):
+            if cand:
+                ids.add(cand)
+    return ids
+
 def _retired_ids() -> set:
     """Ids hub_coverage._RETIRED declares dead. A name in that set is a promise
     the report DOES NOT RUN, so it must not alert either.
@@ -747,7 +815,8 @@ def _retract_false_alarms(cfg, target_date, dry_run: bool, ts: str) -> int:
     `alphalete_org_b2b` ran by hand once on 8/17 at 16:00 and it began posting
     "didn't run today on Lucy 2 · usually starts ~16:00" every day after. The
     cure for that is a DECLARATION (`hand_run_only`, `standalone_weekdays`,
-    `standalone_monthdays`), and adding one does stop the next alert — but
+    `standalone_monthdays`, `logs_on_event_only`), and adding one does stop the
+    next alert — but
     nothing ever went back for the one already on the board. Worse, this class
     can't self-close: _close_recovered_incidents closes a thread when the report
     RUNS CLEAN, and a hand-run-only handle may simply never run again. So
@@ -758,10 +827,11 @@ def _retract_false_alarms(cfg, target_date, dry_run: bool, ts: str) -> int:
     A retraction is only ever safe when we can prove BOTH halves:
 
       1) The report is now DECLARED exempt from the didn't-run check — either
-         structurally (nothing on a clock runs it at all) or for the specific day
-         the alert was raised. Today's off-day list can't answer for an alert
-         raised last Thursday, so the off-day case is asked against the incident's
-         OWN opened date and skipped when we can't date it.
+         structurally (nothing on a clock runs it at all, or its clock ticks but
+         only writes a row when it had work — `logs_on_event_only`) or for the
+         specific day the alert was raised. Today's off-day list can't answer
+         for an alert raised last Thursday, so the off-day case is asked against
+         the incident's OWN opened date and skipped when we can't date it.
       2) The open thread is actually a DIDN'T-RUN alert. This is the sharp edge:
          `standalone-<id>` is the key for every standalone alert kind — ERROR,
          INCOMPLETE and STUCK share it with MISSED (notify.send_standalone_alert
@@ -789,6 +859,16 @@ def _retract_false_alarms(cfg, target_date, dry_run: bool, ts: str) -> int:
         structural = _handrun_only_ids(cfg) | _oneshot_utility_ids(cfg)
     except Exception:  # noqa: BLE001
         structural = set()
+    # Kept SEPARATE from `structural` on purpose: both are permanent exemptions
+    # from the didn't-run check, but they are exempt for opposite reasons, and the
+    # retraction says WHY out loud in the channel. "Nothing on a clock runs this
+    # one" is simply false about sara_down — its clock ticks every 5 minutes — and
+    # a retraction that misdescribes a live poller as hand-run-only teaches the
+    # team the wrong thing about a report they rely on.
+    try:
+        event_logged = _event_logged_ids(cfg)
+    except Exception:  # noqa: BLE001
+        event_logged = set()
     idx = {}
     try:
         idx = inc._load_index() or {}
@@ -805,6 +885,10 @@ def _retract_false_alarms(cfg, target_date, dry_run: bool, ts: str) -> int:
         if rid in structural:
             why = ("Nothing on a clock runs this one — it only runs when "
                    "somebody starts it by hand.")
+        elif rid in event_logged:
+            why = ("This one runs constantly and only logs when it actually has "
+                   "something to do — a quiet day is it working normally, not a "
+                   "missed run.")
         else:
             # Off-day, asked against the day the alert was RAISED.
             opened = (idx.get(key) or {}).get("opened") if isinstance(
@@ -940,6 +1024,10 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     # exempt from the "didn't run" GUESS only, still fully watched for a failed /
     # partial / stuck hand-run. See _handrun_only_ids.
     offday = offday | _handrun_only_ids(cfg)
+    # And for reports that only WRITE a row when they had something to do: a
+    # missing row is not a missing run. Same narrow treatment — the "didn't run"
+    # guess only, never a real failure. See _event_logged_ids.
+    offday = offday | _event_logged_ids(cfg)
     already = _load_alerted(day)
     ran_ids = {(r.get("report_id") or r.get("name") or "?") for r in reports}
     newly = set()
