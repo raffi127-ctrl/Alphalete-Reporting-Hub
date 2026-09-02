@@ -52,6 +52,12 @@ _HUB_CARD = {
     "captainship_raf_metrics": "captainship-raf-metrics",
     "owners_metrics_churn": "owners-metrics-churn",
     "recruiter_retention_daily": "daily-1st-round-recruiter-percent",
+    # The audit's registry key was renamed underscore -> hyphen on 2026-09-02 to
+    # match the id run.py actually writes. Its card SELF-REGISTERED under the old
+    # underscore id, so without this line the rename would resolve to a brand new
+    # `vantura-board-audit` card and orphan the one carrying all its history.
+    # The card id is not the report id and does not have to follow it.
+    "vantura-board-audit": "vantura_board_audit",
     "recruiter_retention_weekly": "ongoing-1st-round-recruiter-retention",
     "country_metrics": "country-metrics",
     "int_wow_penetration": "int-wow-penetration",

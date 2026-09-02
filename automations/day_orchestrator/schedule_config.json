@@ -973,7 +973,7 @@
       },
       "machine": "Lucy 2"
     },
-    "vantura_board_audit": {
+    "vantura-board-audit": {
       "on_scheduler": true,
       "machine": "Lucy 2",
       "_note": "Vantura Sales Board daily data-quality audit (Carlos, 2026-07-19). Runs in LUCY 2's 4am batch (moved off Lucy 1 2026-08-02 \u2014 Vantura is Carlos's, so it lives on his machine; it's pure Sheets API with no browser/session, so it runs the same on either): (1) flags board reps with NO Roll Call row (off-menu adds -> frozen tenure tags; name cols are hard-protected but protection editors can bypass), (2) flags stats-range drift (summary formulas not ending at the true last rep row). Appends NEW findings to the board's 'Report an Issue' tab, deduped. Read-only except that tab. Pure API \u2014 no browser, no sessions.",
