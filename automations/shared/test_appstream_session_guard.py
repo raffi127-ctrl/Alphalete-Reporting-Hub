@@ -25,8 +25,10 @@ Two rules came out of that. The second still holds; the FIRST was reversed on
 """
 from __future__ import annotations
 
+import inspect
 import os
 import unittest
+from unittest import mock
 
 from automations.shared import tableau_patchright as tp
 
@@ -155,6 +157,78 @@ class ReseedError(unittest.TestCase):
         self.assertNotIn("Missing AppStream credential", first_line)
         # …while the detail is still there for whoever wants it.
         self.assertIn("Missing AppStream credential", str(err))
+
+
+class ReseedErrorNamesTheRightMachine(unittest.TestCase):
+    """A CONSUMER must never be told to --appstream-login.
+
+    Lucy 1, 2026-09-02: this error named the re-seed command on a machine that
+    only consumes the pushed session, and a human ran that login five times
+    between 06:36 and 07:22 while the actual fix was a push from Lucy 2. Worse
+    than useless — a fresh login on a consumer invalidates the token the whole
+    fleet is holding, which session_holder already warns about in its own log.
+
+    Both branches are pinned here because _appstream_consumer_of() answers from
+    THIS machine's marker, so whichever branch the test host happens to take,
+    the other still has to be correct."""
+
+    def _msg(self, donor):
+        with mock.patch.object(tp, "_appstream_consumer_of",
+                               return_value=donor):
+            return str(tp._appstream_reseed_error("the token is stale"))
+
+    def test_consumer_is_warned_off_the_reseed(self):
+        msg = self._msg("Lucy 2")
+        self.assertIn("CONSUMER", msg)
+        self.assertIn("Lucy 2", msg)
+        self.assertIn("Do NOT run --appstream-login", msg)
+        self.assertIn("--appstream-push-fleet", msg)
+
+    def test_holder_still_gets_the_reseed_command(self):
+        msg = self._msg(None)
+        self.assertIn(tp.APPSTREAM_RESEED_CMD.strip(), msg)
+        self.assertNotIn("CONSUMER", msg)
+
+    def test_both_branches_keep_the_invariants(self):
+        # The reason owns line 1 (the alert quotes it as "Likely cause"), and
+        # both say the unattended path was already tried so nobody just re-runs
+        # it and waits.
+        for donor in ("Lucy 2", None):
+            with self.subTest(donor=donor):
+                msg = self._msg(donor)
+                self.assertEqual(
+                    msg.splitlines()[0],
+                    "AppStream session is not usable: the token is stale")
+                self.assertIn("unattended", msg)
+
+    def test_unplaceable_machine_falls_back_to_the_holder_message(self):
+        # _this_machine() raising must not crash a run that is already failing;
+        # answering "holder" keeps the pre-existing message.
+        with mock.patch.object(tp, "session_holder", create=True):
+            with mock.patch(
+                    "automations.shared.session_holder._this_machine",
+                    side_effect=RuntimeError("no marker")):
+                self.assertIsNone(tp._appstream_consumer_of())
+
+
+class ForcedFormLoginStartsAFreshSession(unittest.TestCase):
+    """A forced form login must not resume the session already in the profile.
+
+    Lucy 1, 2026-09-02: the renew drove the form, reached a live console, and
+    reported success — but applicantstream had RESUMED the profile's existing
+    rcaptain session rather than issuing, so the saved token carried the old
+    expiry (16 min left, not ~2h). The 4am batch then died on a token that had
+    just been 'renewed'. refresh_ownerville had already learned this for
+    ownerville ('EMPTY EVERY TIME'); the AppStream side gated the clear behind
+    an explicit `username` override, so a forced renew never got it."""
+
+    def test_source_clears_cookies_on_forced_login(self):
+        src = inspect.getsource(tp.appstream_direct_session.__wrapped__)
+        self.assertIn("elif force_form_login:", src)
+        # The clear has to happen on the forced path, before the form drive.
+        forced = src.split("elif force_form_login:", 1)[1]
+        before_drive = forced.split("if not _restored:", 1)[0]
+        self.assertIn("clear_cookies()", before_drive)
 
 
 class FleetPushCoversEveryMachine(unittest.TestCase):

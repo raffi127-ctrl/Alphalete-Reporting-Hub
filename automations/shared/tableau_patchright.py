@@ -1677,6 +1677,23 @@ APPSTREAM_RESEED_CMD = ("    PYTHONPATH=. .venv/bin/python -m "
                         "automations.shared.tableau_patchright --appstream-login")
 
 
+def _appstream_consumer_of() -> Optional[str]:
+    """The holder this machine CONSUMES AppStream from, or None if it holds it.
+
+    Lazy import on purpose: session_holder imports this module, so a top-level
+    import would be circular. Any failure answers None — "assume holder" keeps
+    the old message, which is the safe direction for a machine we can't place."""
+    try:
+        from automations.shared import session_holder as _sh
+        me = _sh._this_machine()
+        holders = _sh.APPSTREAM_HOLD_MACHINES
+        if me not in holders:
+            return holders[0] if holders else None
+    except Exception:  # noqa: BLE001 — never let a diagnosis crash the caller
+        pass
+    return None
+
+
 def _appstream_reseed_error(reason: str,
                             detail: str = "") -> RuntimeError:
     """The ONE message every dead-session path must give.
@@ -1697,14 +1714,36 @@ def _appstream_reseed_error(reason: str,
     what the alert quotes as "Likely cause" — the whole point is that the line
     the channel shows is about the session. Anything longer (a wrapped
     exception, a page dump) belongs in `detail`, which trails the message."""
-    msg = (
-        f"AppStream session is not usable: {reason}\n"
-        "Re-seed it with a one-time human login (since 2026-09-02 an unattended "
-        "form login is tried first, so reaching this means that failed too):\n"
-        f"{APPSTREAM_RESEED_CMD}\n"
-        "(a browser opens; clear the check + log in as rcaptain once, and it "
-        "saves the session). The session holder then keeps it warm for "
-        "scheduled runs.")
+    # NAME THE RIGHT FIX FOR THIS MACHINE. On a consumer the re-seed command is
+    # not just useless, it is HARMFUL: a fresh login here invalidates the token
+    # the whole fleet is holding (session_holder says the same thing in as many
+    # words — "do NOT --appstream-login here"). On 2026-09-02 Lucy 1 raised this
+    # error and a human chased that command through five manual logins between
+    # 06:36 and 07:22 while the real answer was a push from Lucy 2.
+    _donor = _appstream_consumer_of()
+    if _donor:
+        msg = (
+            f"AppStream session is not usable: {reason}\n"
+            "(an unattended form login is tried first, so reaching this means "
+            "that failed too)\n"
+            f"This machine is a CONSUMER — {_donor} holds the AppStream session "
+            "and pushes it here. Do NOT run --appstream-login on this machine: "
+            "a fresh login here invalidates the token the rest of the fleet is "
+            "using.\n"
+            f"Fix it on {_donor} (re-seed there if its own session is dead), "
+            "then push to the fleet:\n"
+            "    PYTHONPATH=. .venv/bin/python -m "
+            "automations.shared.tableau_patchright --appstream-push-fleet")
+    else:
+        msg = (
+            f"AppStream session is not usable: {reason}\n"
+            "Re-seed it with a one-time human login (since 2026-09-02 an "
+            "unattended form login is tried first, so reaching this means that "
+            "failed too):\n"
+            f"{APPSTREAM_RESEED_CMD}\n"
+            "(a browser opens; clear the check + log in as rcaptain once, and "
+            "it saves the session). The session holder then keeps it warm for "
+            "scheduled runs.")
     if detail:
         msg += f"\n\nWhat it tripped over on the way down:\n{detail}"
     return RuntimeError(msg)
@@ -1969,6 +2008,36 @@ def appstream_direct_session(headless: bool = False,
                             break
                         except Exception:
                             continue
+            elif force_form_login:
+                # A FORCED form login must START A NEW SESSION, not resume the
+                # one already in the profile. Without this the renew is a no-op
+                # that reports success (Lucy 1, 2026-09-02): the profile still
+                # held live rcaptain cookies, so applicantstream resumed that
+                # session instead of issuing a new one, the save below wrote the
+                # SAME cookies back, and the "renewed" token carried the OLD
+                # expiry — 16 minutes, not the ~2h a real login gets. The whole
+                # 4am batch then died on a token that had just been "renewed".
+                #
+                # This is the identical lesson refresh_ownerville records for
+                # ownerville ("EMPTY EVERY TIME. A profile that is already
+                # signed in auto-resumes and the login never runs, so the
+                # 'fresh' session would be the stale one again") — it had simply
+                # never been applied to the AppStream side, where the clear was
+                # gated behind an explicit `username` override.
+                #
+                # Cookies only: the profile itself (and its cached extensions)
+                # stays put, so this costs nothing but the login it forces.
+                try:
+                    ctx.clear_cookies()
+                    if verbose:
+                        print("-> forced form login — cleared the profile's "
+                              "cookies so AppStream issues a NEW token instead "
+                              "of resuming the old session", flush=True)
+                except Exception as _e:
+                    if verbose:
+                        print(f"-> couldn't clear cookies ({_e}) — the login may "
+                              "resume the old session and re-hand its expiry",
+                              flush=True)
             if not _restored:
                 if verbose:
                     print("-> [allow_form_login] driving AppStream login form",

@@ -75,6 +75,24 @@ def token_minutes_left() -> float:
     return max(0.0, best)
 
 
+def _consumer_of() -> str:
+    """The machine that holds AppStream for us, or "" if this machine holds it.
+
+    Used only to name the right remedy in a failure line — a consumer must never
+    be told to --appstream-login, because that invalidates the token the whole
+    fleet is holding. Any failure answers "" (assume holder), which keeps the
+    old message for a machine we cannot place."""
+    try:
+        from automations.shared import session_holder as _sh
+        me = _sh._this_machine()
+        holders = _sh.APPSTREAM_HOLD_MACHINES
+        if me not in holders and holders:
+            return holders[0]
+    except Exception:  # noqa: BLE001 — a diagnosis must never crash the timer
+        pass
+    return ""
+
+
 def _push_fleet() -> bool:
     """Hand the fresh session to every machine that runs AppStream reports."""
     from automations.shared.tableau_patchright import APPSTREAM_STORAGE_STATE
@@ -488,10 +506,33 @@ def main(argv=None) -> int:
     # clock ticked during it, and demanding a strict increase reported real
     # renewals as failures (Lucy 1, 2026-09-01).
     if not ok or after < a.under:
-        _log("UNATTENDED RENEW FAILED (%.0f min on the token) — the profile has "
-             "gone cold, so this one genuinely needs a human seed:" % after)
-        _log("  PYTHONPATH=. .venv/bin/python -m "
-             "automations.shared.tableau_patchright --appstream-login")
+        # SAY WHICH FAILURE THIS IS. "The profile has gone cold" was printed for
+        # both of these, and on 2026-09-02 it was printed at a renew that had
+        # just driven the form and reached a live console — the profile was
+        # perfectly warm. That sent a human through five manual logins chasing a
+        # cold profile that did not exist. The two cases need different fixes:
+        if not ok:
+            _log("UNATTENDED RENEW FAILED (%.0f min on the token) — never "
+                 "reached a live console." % after)
+        else:
+            # Reached the console, but the token came back short. That is the
+            # mint-resumed-the-old-session bug: a forced form login against a
+            # profile that still held live cookies re-handed the OLD expiry
+            # instead of issuing. appstream_direct_session now clears cookies
+            # before a forced login; seeing this again means it did not take.
+            _log("UNATTENDED RENEW FAILED — the login reached a live console "
+                 "but the token came back with only %.0f min (expected ~120). "
+                 "The mint resumed an existing session instead of issuing a new "
+                 "one." % after)
+        _donor = _consumer_of()
+        if _donor:
+            _log("  This machine is a CONSUMER — %s holds the AppStream session."
+                 % _donor)
+            _log("  Do NOT --appstream-login here (it invalidates the fleet's "
+                 "token). Fix it on %s, then: --appstream-push-fleet" % _donor)
+        else:
+            _log("  PYTHONPATH=. .venv/bin/python -m "
+                 "automations.shared.tableau_patchright --appstream-login")
         return 1
 
     _log("renewed: %.0f min on the new token" % after)
