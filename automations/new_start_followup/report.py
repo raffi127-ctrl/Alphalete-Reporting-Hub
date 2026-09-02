@@ -236,6 +236,17 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
                              if funnel["key"] == "main" else {},
                              poster=poster)
         if not allow_sheet_roster:
+            # "This week's roster isn't up yet" is WAITING, not broken — run.py
+            # catches RosterNotPostedYet and exits 0. Flattening it into a
+            # generic RuntimeError here is what kept that guard from EVER
+            # firing: the thread-scan agent ticks every 30 minutes all week, so
+            # from Tuesday (when upcoming_monday rolls to the NEXT Monday) until
+            # the roster is posted on Friday, every tick logged a failure — 30
+            # of them on 2026-09-01 and the same again on 09-02. A real read
+            # failure (the vision 400, a token without files:read) still raises
+            # below; that one deserves the noise, this one never did.
+            if isinstance(exc, screenshot_roster.RosterNotPostedYet):
+                raise
             raise RuntimeError(
                 "Couldn't read the {} roster screenshot ({}). Refusing to build "
                 "the roll call from the OBCL sheet -- it carries not-moving-"
