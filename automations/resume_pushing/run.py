@@ -74,13 +74,17 @@ OFFICE_HINT = "CARLOS HIDALGO"
 # WHICH AppStream login this run signs in as. Rebound per office by
 # offices.activate(), and by the --office override in main().
 #
-# The default is the SCOPED account, not "primary" (Megan 2026-08-31: "the resume
-# pusher needs to use the resume login and all others the new reporting login").
-# It has to be: this module IS the resume pusher, and every path that reaches it
-# without offices.activate() — `lucy rerun resume_pushing`, the --warm job, a
-# bare python -m — would otherwise sign in as the fleet reporting login, which
-# sees all 28 offices. That is the 8/30 over-push exactly. A default of "primary"
-# here means the safe behaviour depends on being called the right way.
+# NOT A DEFAULT — THE ONLY VALUE (Megan 2026-09-02: "the resume pushing can ONLY
+# HAPPEN on the Resume pushing login"). Every path that reaches this module —
+# offices.activate(), `lucy rerun resume_pushing`, the --warm job, --office, a
+# bare python -m — signs in as Lucy Resume Pushing or does not run.
+#
+# It has to be this absolute. The office SWITCH does not bound the push: the v2
+# batch grid's select-all -> Send To AI reaches whatever the ACCOUNT can see, and
+# the fleet reporting login sees all 28. That is the 2026-08-30 over-push (2
+# offices intended, ~22 reached), and send-to-AI cannot be undone. An account
+# that cannot see an office cannot push it — the one guarantee a UI control is
+# not. Anything that can widen this value is a hole through that guarantee.
 #
 # WHY THIS EXISTS (Megan 2026-08-31): on 8/30 the push sent to ~22 offices when it
 # is allowed two. The office SWITCH below scopes the console, but the v2 batch
@@ -2545,21 +2549,29 @@ def main() -> int:
     if args.office:
         globals()["OFFICE_ID"] = args.office
         globals()["OFFICE_HINT"] = args.office_hint or ""
-        # The account follows the OFFICE, not the flag order. A one-off on a
-        # diagnostic office needs the broad login (LucyResume cannot see it);
-        # a one-off on a rotation office must stay scoped. An office this table
-        # has never heard of keeps the scoped default — the narrow guess is the
-        # safe one, and it fails visibly instead of pushing something it should
-        # not be able to reach.
-        try:
-            from automations.applicant_push import offices as _offices
-            _row = _offices.OFFICES.get(str(args.office))
-            if _row and _row.get("account"):
-                globals()["APPSTREAM_ACCOUNT"] = _row["account"]
-        except Exception as _e:  # noqa: BLE001
-            _log("[office] could not resolve an account for %s (%s) — staying on %s"
-                 % (args.office, str(_e)[:60], APPSTREAM_ACCOUNT))
-        _log("[office] account for this one-off: " + APPSTREAM_ACCOUNT)
+        # THE ACCOUNT DOES NOT FOLLOW THE OFFICE. It is fixed.
+        #
+        # This used to read the office's row and adopt whatever account it named,
+        # "because a one-off on a diagnostic office needs the broad login
+        # (LucyResume cannot see it)". Megan 2026-09-02: "the resume pushing can
+        # ONLY HAPPEN on the Resume pushing login. If that's not correct, then
+        # get it fixed."
+        #
+        # Not seeing an office IS the guarantee. The scoped account is what
+        # bounds an irreversible send-to-AI — the office SWITCH does not, because
+        # the v2 batch grid's select-all reaches whatever the ACCOUNT can see.
+        # A --office flag that can widen the login is a hole straight through
+        # that guarantee, reachable from a command line at 2am.
+        #
+        # So a one-off on an office the resume login cannot see now FAILS. That
+        # is the correct outcome, not a limitation to route around.
+        if APPSTREAM_ACCOUNT != "lucyresume":
+            raise SystemExit(
+                "[office] refusing to run: the resume pusher may only sign in "
+                "as the Lucy Resume Pushing account, and this process is set to "
+                "%r." % APPSTREAM_ACCOUNT)
+        _log("[office] account for this one-off: " + APPSTREAM_ACCOUNT
+             + " (fixed — the resume pusher has no other login)")
         # Isolate the CDP browser so a one-off never collides with the live 11580
         # launchd job (both otherwise share /tmp/rp_cdp_profile + port 9245, and
         # each pkills that profile on start — the collision that zeroed the first

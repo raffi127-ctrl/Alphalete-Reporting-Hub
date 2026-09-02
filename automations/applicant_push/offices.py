@@ -27,6 +27,13 @@ from __future__ import annotations  # Lucy 2 runs Python 3.9
 # Port 9246 is deliberately skipped: resume_pushing's one-off `--office` override
 # claims it, so a human running a manual one-off can never collide with a
 # scheduled office here.
+# THE ONLY LOGIN THIS JOB MAY USE (Megan 2026-09-02: "the resume pushing can
+# ONLY HAPPEN on the Resume pushing login"). Every row states it, activate()
+# enforces it, and test_offices pins it. The account is scoped to the offices the
+# push is allowed to touch, and that permission — not a UI control, not a table —
+# is what bounds an irreversible send.
+RESUME_ACCOUNT = "lucyresume"
+
 OFFICES = {
     "11580": {
         "office_id": "11580",
@@ -119,11 +126,13 @@ OFFICES = {
         "owner": "Jamis Garay",
         "label": "office 19592 · Jamis Garay — MIDSPIRE INC",
         "short": "office 19592, Jamis",
-        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
-        # here needs the broad account. Stated rather than inherited — the whole
-        # point of the key is that no row is silently signed in as an account
-        # wider than it needs.
-        "account": "primary",
+        # THE RESUME LOGIN, like every other row (Megan 2026-09-02: "the resume
+        # pushing can ONLY HAPPEN on the Resume pushing login"). This said
+        # "primary" because Lucy Resume Pushing cannot SEE this office — but
+        # that is the guarantee working, not a reason to go around it. An
+        # office the resume login cannot see is an office the pusher cannot
+        # push, and send-to-AI is irreversible. The run fails here instead.
+        "account": "lucyresume",
         "suffix": "-19592",
         "cdp_profile": "/tmp/rp_cdp_19592",
         "cdp_port": "9248",
@@ -152,11 +161,13 @@ OFFICES = {
         "owner": "Rashad Reed",
         "label": "office 23411 · Rashad Reed — Elevate Specialized Acquisitions, Inc",
         "short": "office 23411, Rashad",
-        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
-        # here needs the broad account. Stated rather than inherited — the whole
-        # point of the key is that no row is silently signed in as an account
-        # wider than it needs.
-        "account": "primary",
+        # THE RESUME LOGIN, like every other row (Megan 2026-09-02: "the resume
+        # pushing can ONLY HAPPEN on the Resume pushing login"). This said
+        # "primary" because Lucy Resume Pushing cannot SEE this office — but
+        # that is the guarantee working, not a reason to go around it. An
+        # office the resume login cannot see is an office the pusher cannot
+        # push, and send-to-AI is irreversible. The run fails here instead.
+        "account": "lucyresume",
         "suffix": "-23411",
         "cdp_profile": "/tmp/rp_cdp_23411",
         "cdp_port": "9249",
@@ -180,11 +191,13 @@ OFFICES = {
         "owner": "Haytham Nagi",
         "label": "office 22524 · Haytham Nagi — Horizon Edge Alliance, Inc.",
         "short": "office 22524, Haytham",
-        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
-        # here needs the broad account. Stated rather than inherited — the whole
-        # point of the key is that no row is silently signed in as an account
-        # wider than it needs.
-        "account": "primary",
+        # THE RESUME LOGIN, like every other row (Megan 2026-09-02: "the resume
+        # pushing can ONLY HAPPEN on the Resume pushing login"). This said
+        # "primary" because Lucy Resume Pushing cannot SEE this office — but
+        # that is the guarantee working, not a reason to go around it. An
+        # office the resume login cannot see is an office the pusher cannot
+        # push, and send-to-AI is irreversible. The run fails here instead.
+        "account": "lucyresume",
         "suffix": "-22524",
         "cdp_profile": "/tmp/rp_cdp_22524",
         "cdp_port": "9250",
@@ -208,11 +221,13 @@ OFFICES = {
         "owner": "Cyrus Wade",
         "label": "office 22815 · Cyrus Wade — Ambient Marketing, Inc.",
         "short": "office 22815, Cyrus",
-        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
-        # here needs the broad account. Stated rather than inherited — the whole
-        # point of the key is that no row is silently signed in as an account
-        # wider than it needs.
-        "account": "primary",
+        # THE RESUME LOGIN, like every other row (Megan 2026-09-02: "the resume
+        # pushing can ONLY HAPPEN on the Resume pushing login"). This said
+        # "primary" because Lucy Resume Pushing cannot SEE this office — but
+        # that is the guarantee working, not a reason to go around it. An
+        # office the resume login cannot see is an office the pusher cannot
+        # push, and send-to-AI is irreversible. The run fails here instead.
+        "account": "lucyresume",
         "suffix": "-22815",
         "cdp_profile": "/tmp/rp_cdp_22815",
         "cdp_port": "9251",
@@ -236,11 +251,13 @@ OFFICES = {
         "owner": "Cody Cannon",
         "label": "office 21151 · Cody Cannon — Aeon Specialized Consulting, Inc",
         "short": "office 21151, Cody",
-        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
-        # here needs the broad account. Stated rather than inherited — the whole
-        # point of the key is that no row is silently signed in as an account
-        # wider than it needs.
-        "account": "primary",
+        # THE RESUME LOGIN, like every other row (Megan 2026-09-02: "the resume
+        # pushing can ONLY HAPPEN on the Resume pushing login"). This said
+        # "primary" because Lucy Resume Pushing cannot SEE this office — but
+        # that is the guarantee working, not a reason to go around it. An
+        # office the resume login cannot see is an office the pusher cannot
+        # push, and send-to-AI is irreversible. The run fails here instead.
+        "account": "lucyresume",
         "suffix": "-21151",
         "cdp_profile": "/tmp/rp_cdp_21151",
         "cdp_port": "9252",
@@ -264,11 +281,13 @@ OFFICES = {
         "owner": "Rafael Hidalgo",
         "label": "office 11280 · Rafael Hidalgo — ALPHALETE MARKETING, INC.",
         "short": "office 11280, Rafael",
-        # DIAGNOSTIC office: LucyResume cannot see it, so a manual --office run
-        # here needs the broad account. Stated rather than inherited — the whole
-        # point of the key is that no row is silently signed in as an account
-        # wider than it needs.
-        "account": "primary",
+        # THE RESUME LOGIN, like every other row (Megan 2026-09-02: "the resume
+        # pushing can ONLY HAPPEN on the Resume pushing login"). This said
+        # "primary" because Lucy Resume Pushing cannot SEE this office — but
+        # that is the guarantee working, not a reason to go around it. An
+        # office the resume login cannot see is an office the pusher cannot
+        # push, and send-to-AI is irreversible. The run fails here instead.
+        "account": "lucyresume",
         "suffix": "-11280",
         "cdp_profile": "/tmp/rp_cdp_11280",
         "cdp_port": "9253",
@@ -327,10 +346,27 @@ def activate(office_id: str) -> dict:
 
     o = get(office_id)
 
-    # WHICH AppStream login this office signs in as. Read with [] not .get():
-    # a row that forgot to state its account must fail loudly here, not quietly
-    # inherit the broad one and become able to push offices it was never meant
-    # to touch. That is the 2026-08-30 over-push, and it is irreversible.
+    # THE RESUME PUSHER SIGNS IN AS THE RESUME LOGIN. Only. Ever.
+    #
+    # Megan 2026-09-02: "the resume pushing can ONLY HAPPEN on the Resume
+    # pushing login." Not a default, not a per-row preference — a property of
+    # the job. Four diagnostic rows carried "primary" so a manual --office run
+    # could reach offices the scoped account cannot see; that is the 2026-08-30
+    # over-push written down as configuration, and send-to-AI is irreversible.
+    #
+    # Still read with [] not .get(), so a row that forgot to state its account
+    # fails loudly — but the value is now CHECKED rather than trusted. A table
+    # is edited by people; a rule this expensive should not be one row's typo
+    # away from being broken.
+    if o["account"] != RESUME_ACCOUNT:
+        raise SystemExit(
+            "[push] office %s is configured to sign in as %r, but the resume "
+            "pusher may only ever use %r — the 'Lucy Resume Pushing' login "
+            "(Megan 2026-09-02). An office the "
+            "resume login cannot see is an office this job cannot push — that "
+            "is the guarantee, not a problem to route around. Fix the row in "
+            "automations/applicant_push/offices.py."
+            % (o["office_id"], o["account"], RESUME_ACCOUNT))
     rp.APPSTREAM_ACCOUNT = o["account"]
 
     rp.OFFICE_ID = o["office_id"]

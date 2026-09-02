@@ -127,20 +127,43 @@ def _resolve_as(key: str, env: str, keychain_service: str) -> str:
 # is printed — a silent fix is how the drift comes back.
 _CANONICAL_APPSTREAM_USERNAMES = ("Lucy Reports", "Lucy Resume Pushing")
 
+# WRONG SPELLINGS THAT ARE NOT JUST BAD SPACING. Squash-matching catches
+# `LucyReports` -> `Lucy Reports`, but it cannot catch a name that is also
+# TRUNCATED. `LucyResume` squashes to "lucyresume", which is not "lucyresume
+# pushing", so it sails straight through.
+#
+# It was sitting in appstream-accounts.json on Lucy 2 the whole time. Megan
+# confirmed the real login on 2026-09-02 by screenshot: `Lucy Resume Pushing`.
+# Same silent failure as the reporting account — the form submits, the console
+# renders off CFID/CFTOKEN, no token is minted, and every layer above calls it a
+# success — except this one pushes resumes, and send-to-AI is irreversible.
+#
+# Add to this map only a spelling somebody has CONFIRMED against the real login
+# screen. Guessing here installs a wrong username on purpose.
+_APPSTREAM_USERNAME_ALIASES = {
+    "lucyresume": "Lucy Resume Pushing",
+}
+
 
 def canonical_appstream_username(value: str) -> str:
-    """Repair a known AppStream username whose spacing has been mangled.
+    """Repair a known AppStream username whose spelling has been mangled.
 
     Matching ignores case and every space/underscore/hyphen, so `LucyReports`,
-    `lucy_reports` and `LUCY  REPORTS` all resolve to `Lucy Reports`. A username
-    that matches nothing we know is returned untouched — this corrects a spelling
-    we are certain of, it does not invent accounts."""
+    `lucy_reports` and `LUCY  REPORTS` all resolve to `Lucy Reports`. Truncated
+    forms are handled by _APPSTREAM_USERNAME_ALIASES above, since squashing
+    alone cannot see that `LucyResume` is missing a word. A username that
+    matches nothing we know is returned untouched — this corrects spellings we
+    are certain of, it does not invent accounts."""
     raw = str(value or "").strip()
     if not raw:
         return raw
     squashed = re.sub(r"[\s_-]+", "", raw).lower()
-    for canon in _CANONICAL_APPSTREAM_USERNAMES:
-        if squashed == re.sub(r"[\s_-]+", "", canon).lower():
+    for canon in list(_CANONICAL_APPSTREAM_USERNAMES) + [
+            _APPSTREAM_USERNAME_ALIASES.get(squashed)]:
+        if not canon:
+            continue
+        if (squashed == re.sub(r"[\s_-]+", "", canon).lower()
+                or _APPSTREAM_USERNAME_ALIASES.get(squashed) == canon):
             if raw != canon:
                 print("[creds] AppStream username %r is misspelled — using %r "
                       "(the space matters: a wrong username reaches a console "
