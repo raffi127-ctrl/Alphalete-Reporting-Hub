@@ -388,6 +388,29 @@ def subject(key: str) -> Optional[str]:
             return "finding:" + root if root else None
     return None
 
+def same_alert(a: str, b: str) -> bool:
+    """Are these two keys the SAME alert, differing only in how the id is spelt?
+
+    Deliberately narrow. It is NOT "same report": one outage legitimately has
+    several WITNESSES — box_order_log dropped its pull and 13 minutes later the
+    post-watch reported no post, so `drop-box-order-log` and
+    `failure-box_order_log__watch` belong in one thread AND the status line
+    should name them both, because "the pull dropped" and "nothing posted" are
+    two different facts. That is the 2026-08-17 design and it stays.
+
+    What this catches is one witness reached under two SPELLINGS of one id. The
+    Vantura audit is keyed `vantura_board_audit` in the config and writes
+    `vantura-board-audit` from run.py, so a lookup under either finds the
+    other's thread via_family and got filed as a sibling — the report named as
+    its own domino, "Also failed today: `finding-vantura_board_audit`", inside
+    its own thread (Megan 2026-09-02).
+
+    _canon does the whole job: it lowercases and maps '_' to '-', so the two
+    spellings collapse while a different prefix or a `__watch` suffix keeps them
+    apart."""
+    return _canon(a) == _canon(b)
+
+
 def marker(key: str, state: str = "open", day: Optional[dt.date] = None) -> str:
     return "_incident · {} · {} {}_".format(key, state,
                                             (day or dt.date.today()).isoformat())
@@ -1013,7 +1036,13 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
         # re-runs and names the other offices/reports that fell with it, so the
         # domino case is one always-current line rather than a pile of replies.
         opened = inc.get("opened") or day.isoformat()
-        st = _bump_today(key, day, sibling=bool(inc.get("via_family")),
+        # A family hit is a SIBLING — a second witness worth naming — unless it
+        # is this very alert under a different SPELLING of its id, which would
+        # make the status line read "Also failed today: <itself>". See
+        # same_alert(); different witnesses of one outage still count.
+        _sib = bool(inc.get("via_family")) and not same_alert(
+            key, inc.get("marker_key") or key)
+        st = _bump_today(key, day, sibling=_sib,
                          label=label or "`{}`".format(key))
         ok = _put_status(client, channel, key, inc, st, day)
         if ok and details and inc.get("via_family") and not _spoken_before(key):
