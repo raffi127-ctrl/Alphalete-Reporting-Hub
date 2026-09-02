@@ -120,13 +120,46 @@ def install(name: str) -> tuple[bool, str]:
                   "(race-free: old job confirmed gone before bootstrap)" + card_note)
 
 
+def kick(name: str) -> tuple[bool, str]:
+    """Fire an installed agent RIGHT NOW, on its own schedule's terms.
+
+    WHY (Megan 2026-09-02). A job that only runs at 1:00 AM could not be tested
+    at all: `lucy rerun` runs a report_id from schedule_config, so it reaches the
+    MODULE but never the wrapper — and the recruiting chain's two-night failure
+    was IN the wrapper. The only ways left were editing RunAtLoad in the plist
+    and reinstalling (which leaves a job that fires on every reboot) or waiting
+    until 1 AM to find out. `launchctl kickstart -k` runs the real job, with the
+    real environment launchd gives it, which is the whole point of the test.
+
+    -k restarts it if a copy is somehow already running, so this can't stack two
+    chains; the wrapper's own overlap guard is the second line of defence."""
+    target = f"gui/{os.getuid()}/com.alphalete.{name}"
+    p = subprocess.run(["launchctl", "kickstart", "-k", target],
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0:
+        return False, (f"kickstart {target} failed (exit {p.returncode}): "
+                       f"{(p.stdout + p.stderr).strip()[:180]}")
+    return True, (f"kickstarted {target} — it is running NOW; watch its own log "
+                  f"(`lucy logtail <name>`), not this result")
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
-        print("usage: python -m automations.day_orchestrator.install_agent <name>")
+        print("usage: python -m automations.day_orchestrator.install_agent "
+              "<name> [--now]")
         return 2
-    ok, msg = install(args[0])
+    # --now = install (refresh the plist), THEN run it immediately. Install
+    # first, always: kicking the OLD job would test code that is about to be
+    # replaced, which is the same false pass as running a report on a runner
+    # that hasn't pulled. [[reference_lucy_update_before_testing]]
+    now = "--now" in args
+    name = next((a for a in args if not a.startswith("-")), "")
+    ok, msg = install(name)
     print(msg, flush=True)
+    if ok and now:
+        ok, msg = kick(name)
+        print(msg, flush=True)
     if ok:
         print("=== done ===", flush=True)   # clean-run sentinel for the poller
     return 0 if ok else 1
