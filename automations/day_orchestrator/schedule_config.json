@@ -9430,6 +9430,28 @@
         "type": "not_configured"
       },
       "_note": "The B2B half of the self-serve dispositions run (Megan 2026-09-01: \"it's fine to split them, just make sure there's a hub card for each\"). SAME code as gap_alerts, different box: an office is impersonated from the machine whose OwnerVille login can see it -- Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's (B2B) -- and config.for_this_machine gives each runner only its own offices from the one shared registry. iMessage exists on both boxes under different Apple IDs, so the texts follow the pull. on_scheduler:false for the same reason gap_alerts is: it runs itself from its own LaunchAgent, not the 4am batch. NOT INSTALLED YET -- the agent on Lucy 2 is still to be created, and until it is this entry exists so the Hub card has a report id to hang on rather than being invisible."
+    },
+    "churn_byod_preview": {
+      "on_scheduler": false,
+      "_note": "One-shot preview of Carlos's LUCY CHURN top section under the 9/7/26 BYOD/Non-BYOD comp change, DM'd to Carlos (Carlos 2026-09-01). Manual only: `lucy rerun churn_byod_preview` DMs Carlos; `-- --channel` posts to #alphalete-gp-sales; `-- --dry-run` renders only.",
+      "display_name": "Churn BYOD comp-change preview (DM)",
+      "source_type": "local",
+      "data_sources": [
+        "Vantura Master Sales Board"
+      ],
+      "command": [
+        "automations.churn_byod_preview.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10,
+      "machine": "Lucy 2"
     }
   },
   "read_only_standalone": {
