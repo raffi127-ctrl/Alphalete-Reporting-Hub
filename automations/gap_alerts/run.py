@@ -819,12 +819,30 @@ def gap_rows_many(offices: List[Dict], day: dt.date) -> Dict:
                         _navigate_to_office_access)
                     _exit_impersonation(page)
                     _navigate_to_office_access(page)
+                    aliases_raw = load_aliases()
                     office_rqst, reason = _find_owner_and_impersonate(
-                        page, cfg["name"], load_aliases())
+                        page, cfg["name"], aliases_raw)
                     if not office_rqst:
                         raise RuntimeError("Couldn't impersonate %r: %s"
                                            % (cfg["name"], reason))
                     impersonated = True
+                    # PROVE THE SWITCH, exactly as the board pull does.
+                    # _find_owner_and_impersonate only means confirmImpersonate
+                    # was called; ownerville hands an impersonated session the
+                    # same rqst as master, so nothing in the token says which
+                    # office answered. Until this call the gap list was
+                    # UNVERIFIED and its only check was _own_reps_only, which
+                    # compares it against the board — so a gap list could only
+                    # be trusted when a board existed to check it against.
+                    # That is why an office whose board comes back empty could
+                    # not have its gaps posted at all: nothing could attribute
+                    # them, and an unattributable gap list is the "who are
+                    # these?" post (Calvin's reps in Raf's chat, 2026-09-01).
+                    # Asserting here makes the gap list stand on its own.
+                    from automations.rashad_metrics.knocks_pull import (
+                        assert_impersonating)
+                    assert_impersonating(page, office_rqst, cfg["name"],
+                                         aliases_raw, verbose=False)
                 try:
                     _pin_campaign(page, office_rqst,
                                   cfg.get("campaign_id", ""))
@@ -1237,11 +1255,27 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             # line could not tell which). The probe that would answer it is a
             # `rerun`, which the daily cap blocks, so the scheduled tick has to
             # answer for itself.
-            _log("%s: no rows yet at %s — nothing sent "
-                 "(office=%r ov=%s campaign=%s day=%s)"
+            _log("%s: no board rows at %s (office=%r ov=%s campaign=%s "
+                 "day=%s) — trying the gap list on its own"
                  % (cfg["key"], slot, cfg["name"], cfg.get("ov"),
                     cfg.get("campaign_id") or "(map default)", day))
-            continue
+
+        # AN EMPTY BOARD NO LONGER COSTS THE GAP LIST (Megan 2026-09-02:
+        # "let's make sure at least gaps are getting posted in the chat").
+        # This used to `continue`, so an office whose Disposition grid came
+        # back empty went completely silent — which is what Calvin and Jay's
+        # chats saw all day while the gap feed itself was fine. The two are
+        # different pulls off different pages (p=89 board, p=510 time
+        # tracker); a campaign that blanks one does not necessarily blank the
+        # other, and the gap list is the ALERT half — the part somebody acts
+        # on. It travels alone, as text with no flyer attached.
+        #
+        # Safe only because gap_rows_many now asserts the impersonated office
+        # itself. _own_reps_only, the check that catches a gap list belonging
+        # to another office, compares it against the BOARD — with no board it
+        # passes everything through, so before that assert this would have
+        # posted exactly the unattributable list it exists to stop.
+        board_empty = not pngs
 
         seen_names += [str(r.get("Rep") or r.get("rep") or "").strip()
                        for r in rows]
@@ -1276,8 +1310,16 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         _log("  %s: %d rep(s) over %d min, %d new%s"
              % (cfg["key"], len(gap_names), C.GAP_THRESHOLD_MIN, len(newly),
                 (" (" + ", ".join(newly) + ")") if newly else ""))
-        boards = render(cfg, pngs, out_dir, slot)
-        if PREVIEW_DM:
+        if board_empty:
+            # Nothing to say at all — no board AND nobody over the threshold.
+            # That is the ordinary quiet case, not a fault: never post blank.
+            if not body:
+                _log("  %s: no board and no gaps — nothing sent" % cfg["key"])
+                continue
+            _log("  %s: board empty — sending the gap list alone (no flyer)"
+                 % cfg["key"])
+        boards = [] if board_empty else render(cfg, pngs, out_dir, slot)
+        if PREVIEW_DM and boards:
             try:
                 _log("  preview DM -> Megan: %s"
                      % preview_dm(boards[0], slot)["file"])
@@ -1325,7 +1367,8 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                     # the board as its attachment. send_to_group posts the text
                     # first, so the names arrive above the flyer.
                     res = tp.send_to_group(dest["name"], body, boards,
-                                           dry_run=not send)
+                                           dry_run=not send,
+                                           allow_textonly=board_empty)
                     _log("  %s -> %r (%s participants)%s"
                          % ("TEXT" if send else "PREVIEW",
                             res.get("resolved_name"), res.get("participants"),
@@ -1349,6 +1392,12 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                         _log("  %s has no channel id — skipped" % where)
                         continue
                     if not boards:
+                        # The Slack post is the board image — there is no
+                        # text-only form of it, unlike the iMessage leg. Said
+                        # out loud: a route that drops in silence is how an
+                        # office ends up with nothing while the log looks fine.
+                        _log("  %s skipped — no board image to post (the gap "
+                             "list went to iMessage as text)" % where)
                         continue
                     res = post_slack(cfg, boards[0], slot, day,
                                      channel=channel, dry_run=not send)
