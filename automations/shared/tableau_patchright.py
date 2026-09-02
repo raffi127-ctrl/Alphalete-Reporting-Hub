@@ -116,6 +116,11 @@ _FINAL_SUBMIT_NAME = re.compile(
 # 2026-08-20" for twelve days. The check clears itself — it just needs longer
 # than we were giving it. Costs 20 extra seconds on a path that runs at most
 # a couple of times an hour.
+# Set once a process has already tried to self-heal the ownerville session, so
+# a bad credential produces ONE failed login and a clear error rather than a
+# retry loop against the account.
+_OV_SELFHEAL_TRIED = False
+
 _CLOUDFLARE_WAIT_MS = 30_000
 _PRE_SUBMIT_PAUSE_MS = 30_000
 
@@ -802,6 +807,43 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
             print("-> ownerville session reused from profile (rqst present)",
                   flush=True)
         return
+
+    # (2b) SELF-HEAL: mint a new session rather than fail.
+    #
+    # This step did not exist because the form login was believed impossible
+    # unattended ("the Cloudflare 'verify you are human' check can't be cleared
+    # headless"). It can: the box clears ITSELF if you leave it alone before
+    # submitting. Megan, 2026-09-01: "you can clear it without a human..you
+    # just wait 30 sec before hitting submit on the PW". At the old 3s pause
+    # the submit landed mid-check and the login failed, which is what made the
+    # whole fleet believe a person was required.
+    #
+    # The cost of not having this was an entire evening. The ownerville token
+    # died twice; each time every board stopped, the log filled with "session
+    # expired or missing", and it stayed dead until a human re-minted it by
+    # hand. A fresh mint is good for ~60 hours, so this should fire rarely —
+    # but when it does, nobody should have to be awake for it.
+    #
+    # ONCE PER PROCESS. A wrong password must produce one failed login and a
+    # clear error, never a retry loop against the account.
+    global _OV_SELFHEAL_TRIED
+    if not _OV_SELFHEAL_TRIED:
+        _OV_SELFHEAL_TRIED = True
+        if verbose:
+            print("-> ownerville session dead — minting a new one", flush=True)
+        try:
+            from automations.shared.appstream_autorenew import refresh_ownerville
+            if refresh_ownerville(verbose=verbose) and \
+                    _reuse_ownerville_storage_state(page.context, page, verbose):
+                if verbose:
+                    print("-> ownerville session re-minted and restored",
+                          flush=True)
+                return
+        except Exception as e:  # noqa: BLE001 — fall through to the real error
+            if verbose:
+                print("-> re-mint failed (%s: %s)"
+                      % (type(e).__name__, str(e).splitlines()[0][:120]),
+                      flush=True)
 
     # (3) Unattended default: fail loud + clear, pointing at the real remedy.
     if not allow_form_login:
