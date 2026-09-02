@@ -6391,6 +6391,82 @@ def _action_set_appstream_account(args: str) -> tuple[bool, str]:
                   "against." % (name, user, ", ".join(others) or "none"))
 
 
+def _action_set_appstream_username(args: str) -> tuple[bool, str]:
+    """Fix ONLY the AppStream username on THIS machine, leaving the password.
+
+      set_appstream_username "Lucy Reports"
+
+    WHY (Megan 2026-09-02). The username was stored as `LucyReports` — no space —
+    where the real account is `Lucy Reports` (23981). A wrong username here does
+    NOT fail loudly: the unattended form login fills it, clears Cloudflare,
+    submits, and then reports "form login reached the console" and "saved fresh
+    AppStream session". It never authenticated. The console rendered off
+    CFID/CFTOKEN from the previously saved state re-injected on the ?rqst=&p=701
+    hop, carrying no new token — so every layer above read a dead session as a
+    live one. On Lucy 1 that took out the whole 4am batch (daily_focus,
+    applicant_sync_morning, recruiter_retention_daily) and cost a morning of
+    wrong diagnoses before anyone checked the username.
+
+    set_appstream_creds already exists but demands `<username> <password>`, so
+    correcting a typo meant re-sending the password through the Sheet — and on a
+    never-touch runner (Lucy 3 takes no SSH) there was no other way in. This
+    changes the one field that is not a secret, which is why it is NOT in
+    SECRET_ACTIONS: the Args cell should stay readable so the fix is auditable.
+
+    Merges — the ownerville pair every Tableau report needs lives in the same
+    file — and backs up first. Verifies with appstream_whoami, which prints
+    `configured=` next to the session's real account label, so a mismatch is
+    visible in one line."""
+    import json as _json
+    import shlex
+    import shutil
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]}) — quote the username"
+    user = " ".join(parts).strip()
+    if not user:
+        return False, ('set_appstream_username needs the username, quoted if it '
+                       'has a space — e.g. set_appstream_username "Lucy Reports"')
+    path = REPO_ROOT / "ownerville-creds.json"
+    if not path.exists():
+        return False, (f"{path.name} does not exist — there is no password to "
+                       "keep, so use set_appstream_creds <username> <password>")
+    try:
+        data = _json.loads(path.read_text())
+    except Exception as e:  # noqa: BLE001
+        # Refuse rather than start clean: unlike set_appstream_creds we have no
+        # password in hand, so replacing an unreadable file would leave the
+        # machine with a username and NO credential at all.
+        return False, (f"{path.name} is unreadable ({str(e).splitlines()[0][:60]}) "
+                       "— fix it with set_appstream_creds, which can rebuild it")
+    if not str(data.get("appstream_password") or "").strip():
+        return False, (f"{path.name} has no appstream_password to keep — use "
+                       "set_appstream_creds <username> <password> instead")
+    old = data.get("appstream_username")
+    if old == user:
+        return True, f"appstream_username was already {user!r} — nothing to change"
+    stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+    try:
+        shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+    except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+        pass
+    data["appstream_username"] = user
+    try:
+        path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+        _creds_cache_bust()
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    ok, res = _run_cmd([sys.executable, "-m", "automations.shared.appstream_whoami"],
+                       timeout_s=20 * 60, log_name="appstream-username-verify.log")
+    tail = res.split("·")[-1].strip()[:200]
+    if not ok:
+        return False, (f"set appstream_username {old!r} -> {user!r} but the "
+                       f"verify FAILED: {tail}")
+    return True, f"appstream_username {old!r} -> {user!r}, verified: {tail}"
+
+
 def _action_set_appstream_creds(args: str) -> tuple[bool, str]:
     """Install the PRIMARY AppStream login on THIS machine.
 
@@ -6802,6 +6878,7 @@ ACTIONS = {
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
     "set_appstream_creds": _action_set_appstream_creds,
+    "set_appstream_username": _action_set_appstream_username,
     "set_appstream_state": _action_set_appstream_state,
     "set_appstream_alt_state": _action_set_appstream_alt_state,
     "appstream_promote_alt": _action_appstream_promote_alt,
