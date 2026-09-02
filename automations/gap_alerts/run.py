@@ -53,6 +53,7 @@ except Exception:  # noqa: BLE001
 
 from automations.b2b_dispositions import capture as cap
 from automations.gap_alerts import config as C
+from automations.shared.tableau_patchright import OwnervilleBusy
 
 # Only ever used when a caller hands post_slack no channel at all — the
 # hardcoded offices' org room. A form-built destination always brings its own;
@@ -793,7 +794,8 @@ def gap_rows_many(offices: List[Dict], day: dt.date) -> Dict:
     if not offices:
         return out
     with ownerville_session(headless=True, verbose=False,
-                            profile_dir=C.PROFILE_DIR) as page:
+                            profile_dir=C.PROFILE_DIR,
+                            session_wait_s=C.OWNERVILLE_SESSION_WAIT_S) as page:
         rqst = cap.capture_rqst(page)
         for cfg in offices:
             impersonated = False
@@ -921,7 +923,8 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
         jobs.append((compare, [day], campaign_for_office(compare)))
 
     pulled = pull_offices_days(jobs, verbose=False,
-                               profile_dir=str(C.PROFILE_DIR))
+                               profile_dir=str(C.PROFILE_DIR),
+                               session_wait_s=C.OWNERVILLE_SESSION_WAIT_S)
     chan_rows: List = []
     if compare_i is not None and compare_i < len(pulled):
         _name, _days, _err = pulled[compare_i]
@@ -1169,15 +1172,34 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     # inside the send loop below, which rebound this dict after the first
     # office and made the second iteration crash with
     # "'list' object has no attribute 'get'" (2026-09-01, live).
-    pulled_boards = pull_boards_many([(c, s) for c, s, _d in plan],
-                                     day, out_dir)
+    try:
+        pulled_boards = pull_boards_many([(c, s) for c, s, _d in plan],
+                                         day, out_dir)
+    except OwnervilleBusy as e:
+        # NOT a failure — a skipped tick. One ownerville session per machine
+        # (a private Chrome profile is not a private session), and the long
+        # scheduled builds hold it for as much as two hours. Running anyway is
+        # what this lock exists to stop: two runs on one session impersonate
+        # over each other and neither can tell whose reps it read. Another tick
+        # is five minutes away, so this says so and stands down rather than
+        # queueing behind the build and firing a pile of stale alerts at once.
+        _log("SKIPPED this tick — %s" % str(e)[:220])
+        _terminated_check_once(day, seen_names)
+        return failures
     # A BACKDATED RUN GETS NO GAP LIST. "minutesSinceLastKnock" is measured
     # from RIGHT NOW, so for any past day every rep reads as inactive for a
     # thousand-plus minutes — a wall of red that says nothing except that
     # yesterday ended. The board is history and travels fine; the gap list is a
     # live signal and does not.
-    gaps_by_key = (gap_rows_many([c for c, _s, _d in plan], day)
-                   if day == dt.date.today() else {})
+    try:
+        gaps_by_key = (gap_rows_many([c for c, _s, _d in plan], day)
+                       if day == dt.date.today() else {})
+    except OwnervilleBusy as e:
+        # The boards are already pulled and are worth sending; only the live
+        # gap list is missing, and it degrades to absent exactly as it does on
+        # a backdated run.
+        _log("  ⚠ gap list skipped — %s" % str(e)[:180])
+        gaps_by_key = {}
 
     # THE SESSION IDENTITY CHECK, before anything is sent. See _wrong_account.
     if _wrong_account(plan, pulled_boards):

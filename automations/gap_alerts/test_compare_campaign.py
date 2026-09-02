@@ -26,8 +26,12 @@ class ComparePinsItsOwnCampaign(unittest.TestCase):
         self.jobs = None
         self.day = dt.date(2026, 9, 1)
 
-    def _capture(self, jobs, verbose=True, profile_dir=None):
+    def _capture(self, jobs, verbose=True, profile_dir=None, **kw):
+        # **kw so a new keyword on the real function (session_wait_s, added
+        # 2026-09-02 with the machine-wide ownerville session lock) doesn't
+        # fail this as a TypeError — this test is about the JOBS list.
         self.jobs = list(jobs)
+        self.kw = dict(kw)
         return [(j[0], {}, None) for j in jobs]
 
     def _run(self, cfg):
@@ -38,6 +42,17 @@ class ComparePinsItsOwnCampaign(unittest.TestCase):
             R.pull_boards_many([(cfg, "6:00 PM")], self.day, R.Path("/tmp"))
         finally:
             KP.pull_offices_days = real
+
+    def test_the_pull_queues_for_the_session_on_a_tick_sized_budget(self):
+        """gap_alerts runs every 5 minutes and the scheduled builds hold
+        ownerville for as much as two hours, so it queues briefly and skips
+        rather than stacking ticks that all fire at once."""
+        self._run(C.CALVIN)
+        self.assertEqual(self.kw.get("session_wait_s"),
+                         C.OWNERVILLE_SESSION_WAIT_S)
+        self.assertLessEqual(C.OWNERVILLE_SESSION_WAIT_S,
+                             C.MIN_SEND_GAP_MINUTES * 60,
+                             "a tick may not queue past its own cadence")
 
     def test_the_compare_job_carries_a_campaign(self):
         """Three elements, not two — the third is the pin."""

@@ -1,11 +1,14 @@
 """The engine behind `/knocks`: one office + one day (or a range of days) ->
 the knock board PNG.
 
-CACHE FIRST, AND THAT IS THE WHOLE DESIGN. Not because ownerville is
-one-session-per-account — it is NOT, sessions parallelise fine and impersonation
-is scoped to the session (Megan 2026-08-24) — but because a pull that opens a
-browser on the SHARED Chrome profile fights the morning build for that profile,
-and because the answer is usually already on disk anyway. The build leaves what
+CACHE FIRST, AND THAT IS THE WHOLE DESIGN. The reason recorded here used to be
+"ownerville sessions parallelise fine and impersonation is scoped to the
+session" — that is FALSE, corrected 2026-09-02. Every process on this machine
+restores the same storage_state, so they are all ONE server session, and
+impersonation is a property of it: a second run switching offices retargets the
+first one's scrape, silently. So a live pull now queues for a machine-wide lock
+(tableau_patchright.OWNERVILLE_SESSION_LOCK) and the cache is what keeps most
+requests out of that queue entirely — the answer is usually already on disk. The build leaves what
 it pulled on
 disk: `captainship_drafts.knock_dispo_images` writes each owner's board PNG
 plus a `rows_*.json` sidecar of the very records it scraped. So for the day
@@ -51,9 +54,16 @@ from typing import Callable, List, Optional
 
 OUT_DIR = Path("output") / "knocks_request"
 
-# Modules that hold the SHARED Chrome profile while they run. A live pull on
-# that profile waits for all of them (a run on its own profile_dir need not). Names are `python -m` module paths, which is what
-# proc_guard matches on.
+# Modules that hold the SHARED Chrome profile while they run. Kept only to NAME
+# the thing a requester is waiting on ("waiting for captainship_drafts") — the
+# actual exclusion is the session lock inside ownerville_session(), which no
+# caller can be left off.
+#
+# THIS LIST IS NOT A SAFETY MECHANISM AND MUST NOT BE TREATED AS ONE. It is
+# hand-kept and it guards the shared PROFILE, so gap_alerts — which has its own
+# profile_dir — was never on it and never blocked, while sharing the very
+# session it would spoil. That is how /knocks Khalil Mansour came back with
+# Raf's 38 reps on 2026-09-02.
 OWNERVILLE_MODULES = (
     "automations.captainship_drafts.run",
     "automations.captainship_drafts.knocks_capture",
@@ -264,12 +274,23 @@ def save_rows(canonical: str, target: dt.date, rows: list) -> None:
 
 # ----------------------------------------------------------- ownerville ----
 def ownerville_busy() -> List[str]:
-    """Modules currently holding the ownerville session on this machine.
+    """Whatever currently holds the ownerville session on this machine.
 
-    [] on Windows and anywhere pgrep is missing (proc_guard's documented
-    limit) — there the request just goes, which is what a laptop test wants."""
+    The LOCK is asked first, because it sees every holder — including the ones
+    no list knows about. The module names are then added for readability, since
+    "captainship_drafts" tells a requester more than "pid 4412 (Python)".
+
+    [] on Windows and anywhere pgrep/flock is missing — there the request just
+    goes, which is what a laptop test wants."""
     from automations.day_orchestrator import proc_guard
+    from automations.shared.tableau_patchright import ownerville_session_holder
     busy = []
+    try:
+        held = ownerville_session_holder()
+        if held and held != "this run":
+            busy.append(held)
+    except Exception:  # noqa: BLE001 — a guard must never raise
+        pass
     for mod in OWNERVILLE_MODULES:
         try:
             if proc_guard.running_pids(mod):

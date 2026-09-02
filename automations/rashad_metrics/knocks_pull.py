@@ -988,7 +988,8 @@ def pull_master_on_page(page, target: dt.date, *, verbose: bool = True) -> list:
         target, [])
 
 
-def pull_offices_days(jobs, verbose: bool = True, profile_dir=None):
+def pull_offices_days(jobs, verbose: bool = True, profile_dir=None,
+                      session_wait_s=None):
     """Scrape SEVERAL offices, each for its OWN list of days, in ONE session.
 
     `jobs`: [(office_name, [date, ...]), ...]. Per-office date lists rather
@@ -1005,7 +1006,12 @@ def pull_offices_days(jobs, verbose: bool = True, profile_dir=None):
     """
     aliases_raw = load_aliases()
     out: list = []
-    with ownerville_session(verbose=verbose, profile_dir=profile_dir) as page:
+    # session_wait_s: how long to queue for the machine-wide ownerville session
+    # (tableau_patchright.OWNERVILLE_SESSION_LOCK). None = the default
+    # share-of-your-own-deadline budget. A short-cadence caller passes a small
+    # number and handles OwnervilleBusy by skipping its tick.
+    with ownerville_session(verbose=verbose, profile_dir=profile_dir,
+                            session_wait_s=session_wait_s) as page:
         for job in jobs:
             # (name, days) or (name, days, campaign) — the third element pins
             # THIS pull's campaign, for an office that runs more than one.

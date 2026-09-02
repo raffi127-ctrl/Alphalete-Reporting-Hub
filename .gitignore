@@ -166,3 +166,7 @@ automations/slack_skool_email/.slack_profile*
 # The Slack + Skool links themselves live in slack-skool-creds.json, already
 # covered by the *-creds.json* rule at the top.
 .appstream_last_mint_attempt
+# Machine-wide ownerville SESSION lock (flock target). Local runtime state,
+# never shared: one per machine, meaningless anywhere else.
+.ownerville_session.lock
+automations/shared/.ownerville_session.lock

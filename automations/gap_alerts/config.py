@@ -672,6 +672,18 @@ def office_offset(cfg: Dict) -> int:
 # hand-run stacked on the schedule.
 MIN_SEND_GAP_MINUTES = 5
 
+# How long a tick may queue for the machine-wide ownerville session
+# (tableau_patchright.OWNERVILLE_SESSION_LOCK) before giving the tick up.
+#
+# SHORT ON PURPOSE. This runs every 5 minutes; the captainship build can hold
+# ownerville for ~2h. Queueing behind it would stack ticks that all fire at
+# once when it finishes, against a clock that has moved on. Skipping is the
+# right answer for a job that gets another go in five minutes — and the thing
+# it replaces is worse: gap_alerts used to run UNSERIALISED because it had its
+# own Chrome profile, which is not its own session, so it and the build read
+# each other's offices (2026-09-02).
+OWNERVILLE_SESSION_WAIT_S = 120
+
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_state.json"
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts.lock"
 

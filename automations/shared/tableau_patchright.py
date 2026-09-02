@@ -70,6 +70,129 @@ OWNERVILLE_STORAGE_STATE = (
     Path(__file__).resolve().parent / ".ownerville_storage_state.json"
 )
 
+# ONE OWNERVILLE SESSION PER MACHINE — and it is not the profile that is shared.
+#
+# Every process here restores the SAME storage_state, so they are all the same
+# ownerville SERVER session no matter which Chrome profile they launched. And
+# impersonation is a property of that server session: whoever calls
+# confirmImpersonate last wins, for everyone, and _exit_impersonation is just as
+# loud — it drops the shared session back to MASTER, so a job merely FINISHING
+# retargets someone else's in-flight scrape at Raf's office.
+#
+# Measured on Lucy 1 2026-09-02, four reads of Khalil's 09/01 inside ONE
+# impersonation while gap_alerts ran its own offices in its OWN profile:
+#   7 reps (KHALIL MANSOUR) -> 7 -> 39 (Chan Park) -> 39, nothing raising.
+# That is the board that went out titled KHALIL MANSOUR carrying Raf's 38 reps.
+#
+# The old guard was `proc_guard` + a hand-kept list of module names in
+# knocks_request, and it protected the shared PROFILE. gap_alerts was exempt on
+# the strength of having its own profile — exactly backwards. This lock is on
+# the SESSION, it lives in ownerville_session() so no caller can be forgotten,
+# and a profile_dir buys no exemption from it.
+OWNERVILLE_SESSION_LOCK = (
+    Path(__file__).resolve().parent / ".ownerville_session.lock"
+)
+
+
+class OwnervilleBusy(RuntimeError):
+    """Another run on this machine holds the ownerville session.
+
+    RAISED, where the profile lock merely warns and proceeds. Proceeding is the
+    bug: two runs on one session read each other's offices and neither can
+    tell. A caller that would rather skip than wait catches this."""
+
+
+# REENTRANT WITHIN A PROCESS. flock is keyed to the open file DESCRIPTION, so a
+# second os.open() of the same file in the SAME process blocks on the first —
+# i.e. one run that nests two ownerville_session() calls would deadlock against
+# itself, forever, with a log line blaming "another run". Nothing nests today,
+# but a deadlock is not the failure mode to leave lying around for whoever does
+# it next. Depth-counted instead: the outermost session owns the fd.
+_OV_LOCK_DEPTH = 0
+_OV_LOCK_FD = None
+
+
+def _acquire_session_lock(*, wait_s: float, verbose: bool, label: str):
+    """Exclusive machine-wide lock on the ownerville session. Returns an fd to
+    hold, or None where locking is unavailable (Windows has no flock — those
+    machines keep the old behaviour rather than losing the report entirely).
+
+    No orphan sweep, unlike the profile lock: flock is released by the kernel
+    when the holder dies, so a killed run cannot leave this stuck.
+    """
+    global _OV_LOCK_DEPTH, _OV_LOCK_FD
+    if _OV_LOCK_DEPTH > 0:          # already ours — see _OV_LOCK_DEPTH above
+        _OV_LOCK_DEPTH += 1
+        return _OV_LOCK_FD
+    if _fcntl is None:
+        return None
+    try:
+        fd = os.open(str(OWNERVILLE_SESSION_LOCK), os.O_CREAT | os.O_RDWR, 0o644)
+    except Exception:          # noqa: BLE001 — never let the lock be the failure
+        return None
+    start = time.monotonic()
+    announced = False
+    while True:
+        try:
+            _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            if announced and verbose:
+                print(f"[{label}] ownerville session free — acquired, launching",
+                      flush=True)
+            _OV_LOCK_DEPTH, _OV_LOCK_FD = 1, fd
+            return fd
+        except OSError:
+            if time.monotonic() - start >= wait_s:
+                who = _lock_holder(OWNERVILLE_SESSION_LOCK)
+                try:
+                    os.close(fd)
+                except Exception:  # noqa: BLE001
+                    pass
+                raise OwnervilleBusy(
+                    "another run on this machine has held the ownerville "
+                    f"session for the whole {int(wait_s)}s this run could wait"
+                    + (f" ({who})" if who else "")
+                    + " — nothing was pulled. Two runs on one session read "
+                      "each other's offices, so this refuses rather than "
+                      "guessing whose numbers it got.")
+            if not announced:
+                who = _lock_holder(OWNERVILLE_SESSION_LOCK)
+                how_long = (f"{int(wait_s // 60)}m" if wait_s >= 60
+                            else f"{int(wait_s)}s")
+                print(f"[{label}] another run holds the ownerville session"
+                      + (f" ({who})" if who else "")
+                      + f" — waiting up to {how_long} for it "
+                      + "(one session per machine; a separate Chrome profile "
+                        "is not a separate session)", flush=True)
+                announced = True
+            time.sleep(_PROFILE_LOCK_POLL_S)
+
+
+def ownerville_session_holder() -> str:
+    """'pid 1234 (Python)' for whoever holds the machine-wide ownerville
+    session, or "" when it is free. Diagnostic only — a caller that needs the
+    session takes the lock; this is for saying WHY someone is waiting.
+
+    Reads the lock file rather than a list of module names. The list was the
+    bug: it had to be kept up to date by hand, and gap_alerts was never on it.
+    """
+    if _OV_LOCK_DEPTH > 0:
+        return "this run"
+    return _lock_holder(OWNERVILLE_SESSION_LOCK)
+
+
+def _release_session_lock(lock_fd) -> None:
+    """Release + close the session lock. Never raises. Only the OUTERMOST
+    holder actually lets go — see _OV_LOCK_DEPTH."""
+    global _OV_LOCK_DEPTH, _OV_LOCK_FD
+    if lock_fd is None:
+        return
+    if _OV_LOCK_DEPTH > 1:
+        _OV_LOCK_DEPTH -= 1
+        return
+    _OV_LOCK_DEPTH, _OV_LOCK_FD = 0, None
+    _release_profile_lock(lock_fd)
+
+
 LOGIN_URL = "https://ownerville.com"
 # v2 is the internal dashboard that holds the 'Login to Tableau' SSO
 # link. The CDP-attached path (opt_phase._reauth_tableau) navigates
@@ -1570,7 +1693,9 @@ def ownerville_session(headless: bool = False,
                       allow_form_login: bool = False,
                       profile_dir=None,
                       device_scale: float | None = None,
-                      window_size: tuple = (1680, 1280)) -> Iterator[Page]:
+                      window_size: tuple = (1680, 1280),
+                      session_lock: bool = True,
+                      session_wait_s: "float | None" = None) -> Iterator[Page]:
     """Yield a Page logged into ownerville.com via patchright — WITHOUT the
     Tableau SSO hop. For reports that scrape ownerville's own pages (e.g.
     focus_office_att rep breakdowns). Same login + shared profile +
@@ -1585,22 +1710,49 @@ def ownerville_session(headless: bool = False,
     other_office_knocks kept dying on "Opening in existing browser session"
     while another session held the shared profile. Login still comes from the
     shared ownerville storage_state, so a fresh profile authenticates the
-    same way."""
+    same way — WHICH IS THE CATCH, and why profile_dir is no longer an
+    exemption from anything that matters. See OWNERVILLE_SESSION_LOCK: a
+    private profile is not a private session, and two runs sharing the session
+    read each other's offices.
+
+    session_lock (default True): hold the machine-wide ownerville session for
+    the life of this context. Raises OwnervilleBusy if another run holds it for
+    longer than this run can wait. Pass False ONLY for something that neither
+    impersonates nor reads office-scoped data (the keepalive holder, a login
+    probe) — every report wants the lock.
+
+    session_wait_s: how long to wait for it. Default is _profile_wait_budget(),
+    the same share-of-your-own-deadline rule the profile lock uses, so a run
+    cannot spend its whole timeout queueing. A short-cadence job (gap_alerts,
+    every 5 minutes) passes a small number and SKIPS the tick on OwnervilleBusy
+    — skipping one tick is recoverable, publishing another office's reps is
+    not."""
     prof = Path(profile_dir) if profile_dir else _job_profile_dir()
     prof.mkdir(exist_ok=True, parents=True)
-    with sync_playwright() as p:
-        ctx = _launch_persistent(p, prof, headless=headless,
-                                 label="ownerville_session", verbose=verbose,
-                                 device_scale=device_scale,
-                                 window_size=window_size)
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        try:
-            _ensure_ownerville_logged_in(page, verbose=verbose,
-                                         allow_form_login=allow_form_login,
-                                         profile_dir=profile_dir)
-            yield page
-        finally:
-            ctx.close()
+    wait_s = (_profile_wait_budget() if session_wait_s is None
+              else float(session_wait_s))
+    sess_fd = (_acquire_session_lock(wait_s=wait_s, verbose=verbose,
+                                     label="ownerville_session")
+               if session_lock else None)
+    try:
+        with sync_playwright() as p:
+            ctx = _launch_persistent(p, prof, headless=headless,
+                                     label="ownerville_session", verbose=verbose,
+                                     device_scale=device_scale,
+                                     window_size=window_size)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                _ensure_ownerville_logged_in(page, verbose=verbose,
+                                             allow_form_login=allow_form_login,
+                                             profile_dir=profile_dir)
+                yield page
+            finally:
+                ctx.close()
+    finally:
+        # Released only once the context is closed, so the lock spans the whole
+        # session rather than the launch — the impersonation this protects
+        # lives for the duration, not the first second.
+        _release_session_lock(sess_fd)
 
 
 # Dedicated profile for the DIRECT AppStream login, kept separate from the
