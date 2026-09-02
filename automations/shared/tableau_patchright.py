@@ -2068,7 +2068,8 @@ def appstream_direct_session(headless: bool = False,
 
 
 def _capture_appstream_state(verbose: bool = True,
-                             account: Optional[str] = None) -> bool:
+                             account: Optional[str] = None,
+                             wait_min: float = 5.0) -> bool:
     """One-time interactive capture of the AppStream session. Opens a HEADED
     browser on the persistent .appstream_profile; the human clears the
     Cloudflare check + logs in as rcaptain. Once the office console (#searchMC)
@@ -2083,7 +2084,12 @@ def _capture_appstream_state(verbose: bool = True,
     capture profile (a clean profile shows the login form; the rcaptain
     profile would silently auto-resume as rcaptain) and its own state file
     (.appstream_storage_state_<account>.json), which --appstream-push-primary
-    --account <name> then ships to the runner."""
+    --account <name> then ships to the runner.
+
+    wait_min: how long to watch for the office console before giving up
+    (default 5, unchanged for every existing caller). Raise it when the person
+    signing in is remote or intermittent — three seeds were lost on 2026-09-02
+    to a 5-minute ceiling nobody was standing at."""
     if account:
         profile = APPSTREAM_PROFILE_DIR.parent / f".appstream_profile_cap_{account}"
         state_path = APPSTREAM_STORAGE_STATE.with_name(
@@ -2113,10 +2119,11 @@ def _capture_appstream_state(verbose: bool = True,
         print(f"  • sign in as {who}")
         print("  • THEN go to:  applicantstream.com/index.cfm?p=701")
         print("    (that loads the office search box — which is what gets saved)")
-        print("  Waiting for the office console to load (up to 5 min)…")
+        print(f"  Waiting for the office console to load (up to {wait_min:g} min)…")
         print("=" * 64 + "\n", flush=True)
         seen = False
-        for _ in range(60):
+        # 5s per tick; at least one tick so wait_min=0 still probes once.
+        for _ in range(max(1, int(round(wait_min * 12)))):
             try:
                 if page.locator("#searchMC").count() > 0:
                     seen = True
@@ -2131,8 +2138,9 @@ def _capture_appstream_state(verbose: bool = True,
                 pass
             page.wait_for_timeout(5_000)
         if not seen:
-            print("❌ Didn't detect the office console (#searchMC) within 5 min — "
-                  "nothing saved. Re-run and finish the login.", flush=True)
+            print(f"❌ Didn't detect the office console (#searchMC) within "
+                  f"{wait_min:g} min — nothing saved. Re-run and finish the "
+                  f"login (--wait-min N buys more time).", flush=True)
             ctx.close()
             return False
         state = ctx.storage_state()
@@ -2160,6 +2168,10 @@ if __name__ == "__main__":
     ap.add_argument("--appstream-login", action="store_true",
                     help="One-time interactive AppStream login → saves the "
                          "session for unattended runs.")
+    ap.add_argument("--wait-min", type=float, default=5.0, metavar="N",
+                    help="With --appstream-login: minutes to wait for the "
+                         "office console before giving up (default 5). Raise "
+                         "it when the person signing in is remote.")
     ap.add_argument("--appstream-check", action="store_true",
                     help="REUSE-ONLY probe: does the SAVED session still "
                          "authenticate from THIS machine? Never logs in, so a "
@@ -2407,7 +2419,8 @@ if __name__ == "__main__":
     if args.appstream_login:
         import sys as _sys
         _sys.exit(0 if _capture_appstream_state(verbose=True,
-                                                account=args.account) else 1)
+                                                account=args.account,
+                                                wait_min=args.wait_min) else 1)
     if args.ownerville_form_login:
         import sys as _sys
         # Throwaway profile so we NEVER touch the holder's / reports' shared
