@@ -744,9 +744,35 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
                       verbose=verbose)
 
         for target in targets:
-            out[target] = _scrape_day_on_page(page, rqst, target,
-                                              verbose=verbose,
-                                              expect_campaign=campaign)
+            rows = _scrape_day_on_page(page, rqst, target, verbose=verbose,
+                                       expect_campaign=campaign)
+            # CHECK AGAIN, AFTER EVERY DAY. Impersonation is a property of the
+            # ownerville SERVER session, and every process on this machine
+            # restores the SAME storage_state — so they are all one session,
+            # whatever Chrome profile they launched. Whoever calls
+            # confirmImpersonate (or _exit_impersonation, which drops the
+            # session back to MASTER = Raf) last wins, for everyone.
+            #
+            # Measured on Lucy 1, 2026-09-02, scraping Khalil's 09/01 four
+            # times inside ONE impersonation while gap_alerts ran its own
+            # offices in its own Chrome profile:
+            #   read 1   7 reps   label: KHALIL MANSOUR (11901)
+            #   read 2   7 reps   label: ""            <- mid-switch
+            #   read 3  39 reps   label: Chan Park (19588)
+            #   read 4  39 reps
+            # Nothing errored, and the pull still called them Khalil's. That is
+            # the board that went out at 13:43 titled KHALIL MANSOUR carrying
+            # Raf's 38 reps, and — same mechanism, not a "silent
+            # confirmImpersonate" — Kash Rai showing Calvin's seven reps and
+            # Jay Turnage's chat getting Raf's 37 on 2026-09-01.
+            #
+            # Checking once before the loop cannot see this: the drift happens
+            # BETWEEN days, and on a single-day pull between that check and the
+            # scrape. So a day's rows are kept only once the session is
+            # confirmed to STILL be on the office we asked for.
+            assert_impersonating(page, rqst, canonical, aliases_raw,
+                                 verbose=False)
+            out[target] = rows
     finally:
         # ALWAYS exit impersonation before the session closes so the
         # next run / other reports start from master, not a stuck
@@ -923,6 +949,19 @@ def pull_master_days_on_page(page, targets: "list[dt.date]", *,
     out: dict = {}
     for target in targets:
         rows = _scrape_day_on_page(page, rqst, target, verbose=verbose)
+        # The master path drifts too, and in the more dangerous direction:
+        # another process impersonating mid-scrape leaves THIS run publishing
+        # someone else's reps as Raf's. Same shared-server-session mechanism as
+        # the impersonated loop above; re-read the header rather than trust the
+        # one taken before the first day.
+        head, office_id = logged_in_office(page)
+        if office_id and office_id != MASTER_OFFICE_ID:
+            raise RuntimeError(
+                "the ownerville session moved to office %s part-way through "
+                "the master pull (%s) — another run on this machine shares "
+                "this session and impersonated over it. Refusing to publish "
+                "its reps as Raf's. Header: %r"
+                % (office_id, target, head[:120]))
         if verbose:
             print(f"-> master office {target}: {len(rows)} rep(s)", flush=True)
         out[target] = rows

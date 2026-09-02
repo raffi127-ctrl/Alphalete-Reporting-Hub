@@ -28,8 +28,14 @@ ALIASES = {"Kash Rai": ["Akashdeep Rai"],
 
 
 class _Page:
-    def __init__(self, label):
-        self._label = label
+    """`label` is what beOffice reads; a LIST is one entry per read attempt, so
+    a test can make the first read flake and the second succeed. `header` is
+    what the page body says when the guard falls back to reading it."""
+
+    def __init__(self, label, header=""):
+        self._labels = list(label) if isinstance(label, list) else [label]
+        self._header = header
+        self.reads = 0
         self.url = ""
 
     def goto(self, url, **kw):
@@ -38,10 +44,19 @@ class _Page:
     def wait_for_timeout(self, _ms):
         pass
 
+    def wait_for_selector(self, _sel, **kw):
+        pass
+
+    def inner_text(self, _sel):
+        return self._header
+
     def eval_on_selector(self, _sel, _fn):
-        if self._label is None:
+        i = min(self.reads, len(self._labels) - 1)
+        self.reads += 1
+        label = self._labels[i]
+        if label is None:
             raise RuntimeError("select not found")
-        return self._label
+        return label
 
 
 class AssertImpersonating(unittest.TestCase):
@@ -67,15 +82,45 @@ class AssertImpersonating(unittest.TestCase):
         self.assertIn("Calvin Ribera", msg)
         self.assertIn("Kash Rai", msg)
 
-    def test_an_unreadable_label_is_not_a_mismatch(self):
-        """A check that fails closed on its own flakiness would take every
-        board down for a reason that is not real."""
-        KP.assert_impersonating(_Page(None), "RQ", "Kash Rai", ALIASES,
-                                verbose=False)
+    def test_a_flaky_read_is_retried_rather_than_believed(self):
+        """The read that failed for Khalil answered correctly seconds later.
+        One empty read is flakiness, not an answer."""
+        page = _Page([None, "", "Akashdeep Rai (22177 - Palace Acquisitions, Inc.)"])
+        KP.assert_impersonating(page, "RQ", "Kash Rai", ALIASES, verbose=False)
+        self.assertEqual(page.reads, 3)
 
-    def test_a_blank_label_is_not_a_mismatch(self):
-        KP.assert_impersonating(_Page(""), "RQ", "Kash Rai", ALIASES,
-                                verbose=False)
+    def test_an_unreadable_label_raises_instead_of_passing(self):
+        """2026-09-02: `/knocks Khalil Mansour` came back with Raf's 38 reps
+        under the title KHALIL MANSOUR. The guard had not decided the office
+        was right — the beOffice read returned empty once, and "unreadable is
+        not a mismatch" waved it through. Nothing in the board said so.
+
+        A request that errors is recoverable; a board of the wrong office's
+        numbers under the right name is not, because the reader cannot tell.
+        """
+        page = _Page(None, header="some page with no office id in it")
+        with self.assertRaises(RuntimeError) as cm:
+            KP.assert_impersonating(page, "RQ", "Kash Rai", ALIASES,
+                                    verbose=False)
+        self.assertIn("Kash Rai", str(cm.exception))
+
+    def test_an_unreadable_label_names_master_when_that_is_where_it_is(self):
+        """The failure that actually happens: the switch didn't take, so the
+        session is still Raf's office and the pull would publish his reps."""
+        page = _Page(None, header=("Rafael Hidalgo - ICD • Alphalete "
+                                   "Marketing, INC. (11280) Logout"))
+        with self.assertRaises(RuntimeError) as cm:
+            KP.assert_impersonating(page, "RQ", "Khalil Mansour", ALIASES,
+                                    verbose=False)
+        msg = str(cm.exception)
+        self.assertIn("11280", msg)
+        self.assertIn("Khalil Mansour", msg)
+
+    def test_a_blank_label_raises_too(self):
+        page = _Page("", header="")
+        with self.assertRaises(RuntimeError):
+            KP.assert_impersonating(page, "RQ", "Kash Rai", ALIASES,
+                                    verbose=False)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,14 @@ class CampaignPinOrder(unittest.TestCase):
         self._patch("_find_owner_and_impersonate",
                     lambda page, name, aliases: ("RQST123", "ok"))
         self._patch("page_rqst", lambda page: "RQST123")
+        # The identity guard is REAL work in the sequence, not scenery — since
+        # 2026-09-02 it raises rather than shrugging when it can't read the
+        # office, so a stub page that answers nothing would fail this test for
+        # a reason that has nothing to do with pin order. Recorded, so the
+        # order test also pins that the guard runs before anything is scraped.
+        self._patch("assert_impersonating",
+                    lambda page, rqst, canonical, aliases, verbose=True:
+                        self.calls.append(("assert", canonical)))
         self._patch("_pin_campaign",
                     lambda page, rqst, camp, verbose=True:
                         self.calls.append(("pin", camp)))
@@ -78,6 +86,36 @@ class CampaignPinOrder(unittest.TestCase):
         self._run([dt.date(2026, 9, 1)])
         kinds = [c[0] for c in self.calls]
         self.assertLess(kinds.index("pin"), kinds.index("scrape"))
+
+    def test_identity_is_proved_before_a_single_number_is_read(self):
+        """Khalil Mansour, 2026-09-02: the guard was skipped and /knocks
+        published Raf's reps under his name. Nothing may be scraped first."""
+        self._run([dt.date(2026, 9, 1)])
+        kinds = [c[0] for c in self.calls]
+        self.assertIn("assert", kinds)
+        self.assertLess(kinds.index("assert"), kinds.index("scrape"))
+
+    def test_every_day_is_re_checked_because_the_session_drifts(self):
+        """One ownerville SERVER session is shared by every process on the
+        machine, whatever Chrome profile each launched, so another run's
+        impersonation — or its exit, which drops the session back to Raf —
+        lands mid-pull. Measured on Lucy 1 2026-09-02: four reads of Khalil's
+        09/01 inside ONE impersonation went 7, 7, 39, 39 reps, the last two
+        being Chan Park's, with nothing raising.
+
+        So the check runs once up front AND after each day's rows, and a day
+        is kept only if the session is still on the right office.
+        """
+        days = [dt.date(2026, 8, 31), dt.date(2026, 9, 1), dt.date(2026, 9, 2)]
+        self._run(days)
+        kinds = [c[0] for c in self.calls]
+        self.assertEqual(kinds.count("assert"), len(days) + 1)
+        # ... and each one lands AFTER the scrape whose rows it vouches for.
+        for i, kind in enumerate(kinds):
+            if kind == "scrape":
+                self.assertEqual(kinds[i + 1], "assert",
+                                 "a day's rows were kept without re-checking "
+                                 "which office answered for them")
 
     def test_the_warm_up_happens_once_not_once_per_day(self):
         """A week must not pay seven extra navigations."""
