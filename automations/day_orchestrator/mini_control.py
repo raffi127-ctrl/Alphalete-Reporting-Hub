@@ -64,6 +64,11 @@ Actions:
                         machine? `remove` deletes it + every .bak copy. Never
                         prints key material. Re-push with
                         set_applicant_service_account.
+  set_ownerville_state <json>  install an ownerville browser session
+                        exported on another machine (the contents of
+                        .ownerville_storage_state.json). Unpauses a runner
+                        whose session went stale WITHOUT anyone getting to
+                        its screen. Verified reuse-only; Args auto-redacted.
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
   sheets_login [check]  the Sales Board screenshot profile: 'check' probes it
@@ -196,7 +201,8 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
-                    "set_credico_state", "set_alphalete_app_password",
+                    "set_credico_state", "set_ownerville_state",
+                    "set_alphalete_app_password",
                     "set_appstream_state", "set_appstream_alt_state",
                     "appstream_promote_alt",
                     "post_note",
@@ -276,6 +282,8 @@ SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
                   # A live Credico browser session — same class of secret as a
                   # token, and it transits the Args cell to reach Lucy 1.
                   "set_credico_state",
+                  # The ownerville login cookie — same class of secret.
+                  "set_ownerville_state",
                   # A live AppStream session: same class of secret, same transit
                   # through the Args cell (Eve 2026-08-24).
                   "set_appstream_state",
@@ -4148,6 +4156,88 @@ def _action_set_gmail_token(args: str) -> tuple[bool, str]:
     return True, f"Gmail token installed + verified: mailbox {who}"
 
 
+def _action_set_ownerville_state(args: str) -> tuple[bool, str]:
+    """Install an ownerville browser session on THIS machine. Args is the
+    CONTENTS of automations/shared/.ownerville_storage_state.json, exported on a
+    machine where a HUMAN did the login (output/_scratch_ownerville_export_state.py).
+
+    WHY THIS EXISTS. A stale ownerville session PAUSES EVERY report on the
+    machine — the readiness check is machine-wide, not per-report — and the only
+    documented fix was "log back in on that machine's session-holder window".
+    That needs someone at (or screen-shared into) the runner, which is the same
+    wall set_credico_state was built to get around. 2026-09-02: Lucy 1 sat
+    paused with 542 minutes of stale session while the person who could fix it
+    was on another continent.
+
+    No password travels — an ownerville session is the ColdFusion login cookie.
+    The ephemeral rqst SSO token is NOT replayed; v2.ownerville re-mints it from
+    the login cookie on the next load, which is exactly what
+    _reuse_ownerville_storage_state already does for every report.
+
+    A Playwright storage_state is plain JSON with no OS key in it, so it replays
+    on another machine — unlike a Chrome profile (Keychain/DPAPI), which is why
+    sheets_login still needs a human at the screen.
+
+    Backs up any existing state, writes it 0600, then VERIFIES with the real
+    reuse-only loader (--ownerville-check never touches the login form, so a
+    session bound to the exporting browser fails here instead of looking
+    installed and dying on the next report). NEVER echoes the state; in
+    SECRET_ACTIONS, so the Args cell blanks the moment the row ends."""
+    import json
+    import shlex
+    import shutil
+    # Same two delivery paths as set_credico_state: `lucy` shlex-JOINS its args,
+    # while enqueue() writes the cell verbatim. Raw text first — shlex on raw
+    # JSON eats the quotes — then fall back to un-shlexing.
+    raw = (args or "").strip()
+    parsed = None
+    for cand in (raw, *([shlex.split(raw)[0]] if _safe_shlex_first(raw) else [])):
+        cand = (cand or "").strip()
+        if not cand.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(cand)
+            break
+        except Exception:  # noqa: BLE001 — try the next candidate
+            continue
+    if parsed is None:
+        return False, ("set_ownerville_state needs the CONTENTS of "
+                       ".ownerville_storage_state.json (a JSON object) as Args")
+    cookies = parsed.get("cookies") or []
+    if not cookies:
+        return False, ("no cookies in this state — ownerville keeps its login "
+                       "there, so the export ran before the login completed. "
+                       "Re-export once the ownerville page is fully on screen.")
+
+    from automations.shared.tableau_patchright import (
+        OWNERVILLE_STORAGE_STATE as path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=1), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    ok, res = _run_cmd([sys.executable, "-m",
+                        "automations.shared.tableau_patchright",
+                        "--ownerville-check"],
+                       timeout_s=5 * 60, log_name="ownerville-set-state.log")
+    head = f"{len(cookies)} cookie(s) installed · "
+    if ok:
+        return True, head + ("session VERIFIED here — the readiness gate should "
+                             "clear on the next orchestrator pass")
+    return False, (head + "but ownerville REJECTED it on this machine: " +
+                   res[:150] + " — full log: lucy logtail ownerville-set-state")
+
+
 def _action_set_credico_state(args: str) -> tuple[bool, str]:
     """Install a Credico browser session on THIS machine so the DD pull can run
     unattended. Args is the CONTENTS of the .credico_storage_state.json produced
@@ -6728,6 +6818,7 @@ ACTIONS = {
     "set_gdocs_token": _action_set_gdocs_token,
     "set_gmail_token": _action_set_gmail_token,
     "set_credico_state": _action_set_credico_state,
+    "set_ownerville_state": _action_set_ownerville_state,
     "set_appstream_state": _action_set_appstream_state,
     "set_contacts_token": _action_set_contacts_token,
     "set_contacts_ro_token": _action_set_contacts_ro_token,

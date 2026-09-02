@@ -2167,6 +2167,11 @@ if __name__ == "__main__":
     ap.add_argument("--appstream-form-login", action="store_true",
                     help="Test the UNATTENDED rcaptain form login (now that "
                          "Cloudflare auto-passes) → real console + save session.")
+    ap.add_argument("--ownerville-check", action="store_true",
+                    help="REUSE-ONLY probe: does the SAVED ownerville session "
+                         "still mint an rqst FROM THIS MACHINE? Never touches "
+                         "the login form, so a dead session fails instead of "
+                         "silently re-seeding. The twin of --appstream-check.")
     ap.add_argument("--ownerville-form-login", action="store_true",
                     help="Test whether ownerville's Cloudflare auto-passes now: "
                          "drive the OV login in a THROWAWAY profile, unattended.")
@@ -2437,6 +2442,27 @@ if __name__ == "__main__":
             finally:
                 _ctx.close()
         _sys.exit(0 if _ok else 1)
+    if args.ownerville_check:
+        # Reuse-only ON PURPOSE (allow_form_login=False): a dead session RAISES
+        # instead of quietly driving the Turnstile, so this answers the one
+        # question a SHIPPED session poses — does it authenticate from THIS
+        # machine, or was it bound to the browser that logged in? The twin of
+        # --appstream-check, and what set_ownerville_state verifies with.
+        try:
+            with ownerville_session(verbose=True,
+                                    allow_form_login=False) as pg:
+                url = pg.url or ""
+                ok = "ownerville.com" in url
+            print("✅ ownerville session VALID from this machine" if ok else
+                  "❌ landed on a non-ownerville page: " + url[:90])
+            raise SystemExit(0 if ok else 1)
+        except SystemExit:
+            raise
+        except Exception as e:
+            print(f"❌ ownerville session REJECTED here: "
+                  f"{type(e).__name__}: {str(e).splitlines()[0][:160]}")
+            raise SystemExit(1)
+
     if args.appstream_check:
         # Reuse-only ON PURPOSE: allow_form_login=False means a dead session
         # RAISES instead of quietly re-driving the login, so this answers the
