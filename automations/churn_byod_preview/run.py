@@ -30,6 +30,13 @@ GP_SALES = ("#alphalete-gp-sales", "C07J46MQNUX")
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BYOD_BASE_SHARE = 0.40                   # assumed until the order-log split is built
 
+# Captain payout decelerator (new comp, first applied WE 08/22): brackets on
+# 0-30 day churn, applied at the WORSE of team vs personal (office) churn.
+DECEL = [("<4%", "100%"), ("4-4.9%", "75%"), ("5-5.9%", "50%"),
+         ("6-6.9%", "25%"), ("7%+", "0%")]
+DECEL_EDGES = [4.0, 5.0, 6.0, 7.0]           # bracket upper bounds (strict)
+TEAM_CHURN_REF = ("4.70%", "WE 08/22")       # latest weekly bonus email; update by hand
+
 NONBYOD_TIERS = [("6", "≤1.0%", "$30"), ("5", "1.0–2.0%", "$10"),
                  ("4", "2.0–2.5%", "$0"), ("3", "2.5–3.0%", "($10)"),
                  ("2", "3.0–3.5%", "($20)"), ("1", ">3.5%", "($30)")]
@@ -159,6 +166,58 @@ def build_html(data: dict) -> str:
 
     air = data["prods"].get("Air", {})
     net = data["prods"].get("Internet", {})
+
+    # ---- captain decelerator block (under the customer list) ----
+    tot_act = tot_disc = 0
+    for v in data["prods"].values():
+        try:
+            tot_act += int(v.get("act") or 0)
+            tot_disc += int(v.get("disc") or 0)
+        except ValueError:
+            pass
+    office_pct = 100.0 * tot_disc / tot_act if tot_act else 0.0
+    d_ix = 0
+    for i, e in enumerate(DECEL_EDGES):
+        if office_pct >= e:
+            d_ix = i + 1
+    cells = []
+    for i, (rng, mult) in enumerate(DECEL):
+        hot = i == d_ix
+        style = ("background:#e24b4a;color:#fff;font-weight:700;outline:3px solid #c00;"
+                 if hot else "background:#eef2f8;")
+        cells.append(f"<td style=\"text-align:center;{style}\">{rng}<br>"
+                     f"<span style=\"font-size:15px\">{mult}</span>"
+                     f"{' ◀' if hot else ''}</td>")
+    climbs = []
+    import math
+    for e, mult in ((7.0, "25%"), (6.0, "50%"), (5.0, "75%"), (4.0, "100%")):
+        if office_pct < e:
+            continue
+        allowed = math.ceil(tot_act * e / 100.0) - 1
+        need = max(0, tot_disc - allowed)
+        # estimated date: walk the wireless rolloff list until `need` lines aged off
+        cum, when = 0, None
+        for r in rows:
+            cum += r["lines"]
+            if cum >= need:
+                when = r["date"]
+                break
+        when_s = f" (≈ after {when})" if when else ""
+        climbs.append(f"<li>&lt;{e:g}% → {mult}: {need} lines must roll off{when_s}</li>")
+    climb_html = ("<ul style=\"margin:4px 0 0 18px;padding:0\">" + "".join(climbs) + "</ul>"
+                  if climbs else "<p class=\"note\">already in the best bracket</p>")
+    decel_html = f"""<div style=\"margin-top:14px;border:1px solid #ccd\">
+<div class=\"hdr\">Captain decelerator — payout multiplier (worse of team vs yours)</div>
+<div style=\"display:grid;grid-template-columns:1.6fr 1fr;gap:10px;padding:10px\">
+<div><table><tr>{''.join(cells)}</tr></table>
+<p class=\"note\">Your office 0-30 (all products): <b>{office_pct:.1f}%</b>
+ ({tot_disc} of {tot_act}) · Team churn {TEAM_CHURN_REF[0]}
+ ({TEAM_CHURN_REF[1]} bonus email) — the decelerator uses the WORSE of the two,
+ so your office number is the one to beat.</p></div>
+<div><div style=\"font-size:12.5px;font-weight:600\">Lines to climb a bracket</div>
+<div style=\"font-size:12.5px\">{climb_html}</div>
+<p class=\"note\">Dates estimated from the wireless rolloff schedule only.</p></div>
+</div></div>"""
     today = dt.date.today().strftime("%a %-m/%-d/%y")
     return f"""<meta charset="utf-8"><title>Churn preview</title><style>
 body {{ font-family: -apple-system, Helvetica, Arial, sans-serif; background:#fff;
@@ -213,6 +272,7 @@ td {{ border:1px solid #b9c2cf; padding:4px 7px; }}
 <td>Lines (N/B)*</td><td>After: Non-BYOD</td><td>After: BYOD</td><td>Customer</td>
 <td>Sales Rep</td><td>Ordered</td><td>Activated</td><td>CRU/IRU</td>
 <td>Phone / BYOD</td></tr>{''.join(body)}</table>
+{decel_html}
 <p class="foot">Lines (N/B) = non-BYOD / BYOD lines in the group; rows marked *
  mix BYOD and financed phones so the split is approximate. Base split assumes
  {int(BYOD_BASE_SHARE*100)}% BYOD activations. ◀ marks today's tier in each chart.</p>"""
