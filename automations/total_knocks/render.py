@@ -358,7 +358,13 @@ ENERGYWELL_KNOCKS_HEADERS = _with_derived(ENERGYWELL_KNOCKS_COLUMNS)
 # after his grid came back wireless-shaped and split into two images — the same
 # merge she asked for on the Energy Wells board on 2026-08-30, "these 2 should
 # be combined just like we have for Raf's").
-WIRELESS_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
+# NO REP ID COLUMN, like the house and Energy Wells sets. Raf dropped it from
+# his board (see gap_alerts.pull_board: "No Rep ID column; he dropped it"), and
+# the other two followed — this one kept it, so an office whose grid came back
+# wireless-shaped got a board one column wider than everyone else's. Megan
+# 2026-09-01, on the Energy Wells layout: "we don't have the ID number either
+# though?" — the answer is that EW is right and this was the outlier.
+WIRELESS_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
                            COL_TOTAL_KNOCKS, COL_FIRST_KNOCK, COL_LAST_KNOCK,
                            COL_GAPS, COL_TOTAL_GAPS,
                            COL_NO_ANSWER, COL_NOT_INTERESTED, COL_COME_BACK,

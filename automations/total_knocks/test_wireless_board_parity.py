@@ -71,3 +71,23 @@ class WirelessBoardTakesTheExtras(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoRepIdColumnAnywhere(unittest.TestCase):
+    """Raf dropped the Rep ID column from his board; house and Energy Wells
+    followed. The wireless set kept it, so an office whose grid came back
+    wireless-shaped got a board one column wider than everyone else's — which
+    is what Megan spotted on 2026-09-01 ("we don't have the ID number either
+    though?"). All three agree now."""
+
+    def test_no_layout_carries_a_rep_id_column(self):
+        for name, cols in (("house", R.COMBINED_KNOCKS_HEADERS),
+                           ("energywell", R.ENERGYWELL_KNOCKS_HEADERS),
+                           ("wireless", R.WIRELESS_KNOCKS_HEADERS)):
+            self.assertNotIn(R.COL_ID, cols, name)
+
+    def test_every_layout_leads_with_the_rep(self):
+        for name, cols in (("house", R.COMBINED_KNOCKS_HEADERS),
+                           ("energywell", R.ENERGYWELL_KNOCKS_HEADERS),
+                           ("wireless", R.WIRELESS_KNOCKS_HEADERS)):
+            self.assertEqual(cols[0], R.COL_REP, name)
