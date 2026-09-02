@@ -74,6 +74,8 @@ CAPTAIN_TEAM = {
     "chan":  "Chan's Team",
     "tony":  "Tony's Team",
     "sahil": "Sahil's Team",
+    "pat":   "Pat's Team",
+    "jess":  "Jess's Team",
 }
 
 # One download per PROCESS, shared by all five captains — run.py calls the

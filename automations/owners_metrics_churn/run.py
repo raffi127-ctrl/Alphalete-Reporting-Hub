@@ -161,6 +161,18 @@ REPORTS = [
      pull.fetch_fiber_wireless_org, fill.open_ws_wl_sahil,
      "owners_fiber_wireless_org.csv", pull.make_wireless_parser("sahil"),
      pull.PERIODS),
+    # Pat y Jess (2026-09-02). Solo el wireless: comparten el mismo pull
+    # org-wide y se cortan por equipo. Sus tabs de NEW INTERNET existen pero
+    # no se pueden llenar hasta que haya una vista custom de Tableau por
+    # capitan, como la que tienen los otros cinco.
+    ("pat-wl", "Pat Thompson (ATT Fiber) — Wireless",
+     pull.fetch_fiber_wireless_org, fill.open_ws_wl_pat,
+     "owners_fiber_wireless_org.csv", pull.make_wireless_parser("pat"),
+     pull.PERIODS),
+    ("jess-wl", "Jess Lieberman (ATT Fiber) — Wireless",
+     pull.fetch_fiber_wireless_org, fill.open_ws_wl_jess,
+     "owners_fiber_wireless_org.csv", pull.make_wireless_parser("jess"),
+     pull.PERIODS),
     # ----- B2B (Phase 2) -----
     ("carlos", "Carlos Hidalgo (B2B)",
      pull.fetch_b2b_carlos, fill.open_ws_b2b_carlos,

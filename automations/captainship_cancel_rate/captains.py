@@ -47,6 +47,9 @@ CAPTAINS: list[Captain] = [
     Captain("chan",  "Cancel Rate - Chan (ATT Fiber)",  2086894353, "Chan's Team"),
     Captain("tony",  "Cancel Rate - Tony (ATT Fiber)",  797904270,  "Tony's Team"),
     Captain("sahil", "Cancel Rate - Sahil (ATT Fiber)", 367210987,  "Sahil's Team"),
+    # 2026-09-02: las dos capitanias de fiber nuevas.
+    Captain("pat",   "Cancel Rate - Pat (ATT Fiber)",   418983115,  "Pat's Team"),
+    Captain("jess",  "Cancel Rate - Jess (ATT Fiber)",  2094760493, "Jess's Team"),
 ]
 
 BY_SLUG = {c.slug: c for c in CAPTAINS}
