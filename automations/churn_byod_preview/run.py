@@ -35,7 +35,12 @@ BYOD_BASE_SHARE = 0.40                   # assumed until the order-log split is 
 DECEL = [("<4%", "100%"), ("4-4.9%", "75%"), ("5-5.9%", "50%"),
          ("6-6.9%", "25%"), ("7%+", "0%")]
 DECEL_EDGES = [4.0, 5.0, 6.0, 7.0]           # bracket upper bounds (strict)
-TEAM_CHURN_REF = ("4.70%", "WE 08/22")       # latest weekly bonus email; update by hand
+# Latest weekly "Captains Bonus Breakdown" team churn, per office key —
+# update by hand when the Wednesday email lands. None -> line omitted.
+TEAM_CHURN_REF = {
+    "carlos": ("4.70%", "WE 08/22"),
+    "atef": ("3.10%", "WE 08/22"),
+}
 
 NONBYOD_TIERS = [("6", "≤1.0%", "$30"), ("5", "1.0–2.0%", "$10"),
                  ("4", "2.0–2.5%", "$0"), ("3", "2.5–3.0%", "($10)"),
@@ -57,17 +62,17 @@ def _tier_ix(pct: float, edges) -> int:
     return 5
 
 
-def _sheet_rows(rng: str):
+def _sheet_rows(rng: str, sheet_id: str = SHEET_ID, tab: str = TAB):
     from automations.funnel_board.auth import session
     S = session()
-    r = S.get(f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/"
-              f"'{TAB}'!{rng}", params={"valueRenderOption": "FORMATTED_VALUE"})
+    r = S.get(f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/"
+              f"'{tab}'!{rng}", params={"valueRenderOption": "FORMATTED_VALUE"})
     r.raise_for_status()
     return r.json().get("values", [])
 
 
-def collect() -> dict:
-    ctrl = _sheet_rows("A4:F12")
+def collect(sheet_id: str = SHEET_ID, tab: str = TAB) -> dict:
+    ctrl = _sheet_rows("A4:F12", sheet_id, tab)
     prods = {}
     for row in ctrl:
         row += [""] * (6 - len(row))
@@ -76,7 +81,7 @@ def collect() -> dict:
             prods[name.title()] = {
                 "act": row[1], "disc": row[2], "churn": row[3],
                 "act30": row[4], "act3160": row[5]}
-    roll = _sheet_rows("A15:L80")
+    roll = _sheet_rows("A15:L80", sheet_id, tab)
     rows = []
     for row in roll[1:]:
         row += [""] * (12 - len(row))
@@ -103,7 +108,7 @@ def collect() -> dict:
     return {"prods": prods, "rows": rows}
 
 
-def build_html(data: dict) -> str:
+def build_html(data: dict, *, label: str = "", team_ref=None) -> str:
     wl = data["prods"].get("Wireless", {})
     try:
         act = int(wl.get("act") or 0)
@@ -176,6 +181,10 @@ def build_html(data: dict) -> str:
         except ValueError:
             pass
     office_pct = 100.0 * tot_disc / tot_act if tot_act else 0.0
+    team_line = (f" · Team churn {team_ref[0]} ({team_ref[1]} bonus email) —"
+                 f" the decelerator uses the WORSE of the two, so keep both down."
+                 if team_ref else
+                 " · decelerator uses the WORSE of team vs office churn.")
     d_ix = 0
     for i, e in enumerate(DECEL_EDGES):
         if office_pct >= e:
@@ -210,15 +219,14 @@ def build_html(data: dict) -> str:
 <div class=\"hdr\">Captain decelerator — payout multiplier (worse of team vs yours)</div>
 <div style=\"display:grid;grid-template-columns:1.6fr 1fr;gap:10px;padding:10px\">
 <div><table><tr>{''.join(cells)}</tr></table>
-<p class=\"note\">Your office 0-30 (all products): <b>{office_pct:.1f}%</b>
- ({tot_disc} of {tot_act}) · Team churn {TEAM_CHURN_REF[0]}
- ({TEAM_CHURN_REF[1]} bonus email) — the decelerator uses the WORSE of the two,
- so your office number is the one to beat.</p></div>
+<p class=\"note\">Office 0-30 (all products): <b>{office_pct:.1f}%</b>
+ ({tot_disc} of {tot_act}){team_line}</p></div>
 <div><div style=\"font-size:12.5px;font-weight:600\">Lines to climb a bracket</div>
 <div style=\"font-size:12.5px\">{climb_html}</div>
 <p class=\"note\">Dates estimated from the wireless rolloff schedule only.</p></div>
 </div></div>"""
     today = dt.date.today().strftime("%a %-m/%-d/%y")
+    label_sfx = f" — {html.escape(label)}" if label else ""
     return f"""<meta charset="utf-8"><title>Churn preview</title><style>
 body {{ font-family: -apple-system, Helvetica, Arial, sans-serif; background:#fff;
        color:#1a1a1a; width: 1560px; margin: 24px; }}
@@ -241,7 +249,7 @@ td {{ border:1px solid #b9c2cf; padding:4px 7px; }}
 .dev {{ max-width:330px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }}
 .foot {{ font-size:11.5px; color:#667; margin-top:10px; }}
 </style>
-<div class="banner">0–30 Day Rolloff List — new comp preview · {today}</div>
+<div class="banner">0–30 Day Rolloff List{label_sfx} · new comp · {today}</div>
 <div class="subban">BYOD / Non-BYOD churn tiers go live SALE DATE 9/7/26
  (B2B ATT Comp Change Details, 8/19). Splits marked * are approximated —
  the live rebuild reads each line's BYOD flag from the order log.</div>
@@ -276,6 +284,22 @@ td {{ border:1px solid #b9c2cf; padding:4px 7px; }}
 <p class="foot">Lines (N/B) = non-BYOD / BYOD lines in the group; rows marked *
  mix BYOD and financed phones so the split is approximate. Base split assumes
  {int(BYOD_BASE_SHARE*100)}% BYOD activations. ◀ marks today's tier in each chart.</p>"""
+
+
+def render_office_png(sheet_id: str, tab: str, out_png: Path, *,
+                      label: str = "", office_key: str = "") -> Path:
+    """Render the new-comp churn image for one office board — the entry point
+    b2b_metrics' customer_churn capture calls. Raises on any problem so the
+    caller can fall back to the plain sheet screenshot."""
+    data = collect(sheet_id, tab)
+    if not data["rows"] or not data["prods"]:
+        raise ValueError(f"no churn data on {tab!r} (rows={len(data['rows'])})")
+    html_txt = build_html(data, label=label,
+                          team_ref=TEAM_CHURN_REF.get(office_key))
+    html_path = out_png.with_suffix(".html")
+    html_path.write_text(html_txt, encoding="utf-8")
+    render_png(html_path, out_png)
+    return out_png
 
 
 def render_png(html_path: Path, png_path: Path) -> None:
@@ -338,7 +362,9 @@ def main() -> int:
     out.mkdir(exist_ok=True)
     html_path = out / "preview.html"
     png_path = out / "churn_byod_preview.png"
-    html_path.write_text(build_html(data), encoding="utf-8")
+    html_path.write_text(
+        build_html(data, label="Carlos's B2B Office",
+                   team_ref=TEAM_CHURN_REF.get("carlos")), encoding="utf-8")
     print("Rendering PNG...")
     render_png(html_path, png_path)
     print(f"  {png_path} ({png_path.stat().st_size:,} bytes)")

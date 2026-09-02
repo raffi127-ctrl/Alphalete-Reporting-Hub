@@ -142,6 +142,11 @@ def _assert_rolloff_has_data(ws, o: B2BOffice) -> None:
         "an empty template".format(ws.title))
 
 
+# Offices whose #6 Customer Churn posts the rendered new-comp image (BYOD /
+# Non-BYOD churn tiers + captain decelerator) instead of the raw tab shot.
+NEW_COMP_CHURN_OFFICES = {"carlos", "atef"}
+
+
 def churn_tab_image(o: B2BOffice, which: str, out_dir: Path, log=print) -> Path:
     """#6 customer_churn = the tab's main block (0-30 Day Rolloff List); #7
     activation_by_rep = the rep chart at AE:AF. Both via the Sheets export
@@ -155,8 +160,20 @@ def churn_tab_image(o: B2BOffice, which: str, out_dir: Path, log=print) -> Path:
     ws = worksheet_ci(open_by_key(o.sheet_id), o.churn_tab)
     if which == "customer_churn":
         _assert_rolloff_has_data(ws, o)
-        rng = shot.visible_range(ws)
         out = out_dir / "customer_churn.png"
+        # New-comp rendered image (BYOD/Non-BYOD tiers + captain decelerator,
+        # Carlos 2026-09-01: "make sure Lucy2 does it like this ... have him
+        # [Atef] do the exact same thing"). Falls back to the plain sheet
+        # screenshot on ANY failure so the 7am thread never goes without #6.
+        if o.key in NEW_COMP_CHURN_OFFICES:
+            try:
+                from automations.churn_byod_preview.run import render_office_png
+                return render_office_png(o.sheet_id, ws.title, out,
+                                         label=o.label, office_key=o.key)
+            except Exception as e:  # noqa: BLE001
+                log(f"  new-comp churn render failed ({str(e).splitlines()[0][:120]})"
+                    " — falling back to sheet screenshot")
+        rng = shot.visible_range(ws)
     elif which == "activation_by_rep":
         col = ws.get("AE1:AE200")
         last = max((i for i, r in enumerate(col, 1) if r and r[0].strip()),
