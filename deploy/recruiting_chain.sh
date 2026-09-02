@@ -76,6 +76,29 @@ hub_publish.publish_done('recruiting_chain', sys.argv[1], sys.argv[2])" \
         "$PHASE_NAME" "$1" >> "$LOG" 2>&1 || true
 }
 
+# HOLD THE MACHINE AWAKE FOR THE LENGTH OF THE CHAIN (Megan 2026-09-01).
+# On 2026-09-01 the 1am chain fired dead on time (01:00:03), got through one of
+# funnel_board's 14 managers, and vanished at 01:00:57 -- no exit line, empty
+# stderr, nothing after. That is not a crash, it is a machine going to sleep
+# underneath a running job. The morning data was not lost (the mini re-ran all
+# three reports at 06:45) but the chain never finished, and the 1pm pass, which
+# skips funnel_board and is short, ran fine at 13:00:01 -- which is why only the
+# overnight one looked broken.
+#
+# com.alphalete.keep-awake IS loaded here, but it asserts `caffeinate -s`, and
+# -s holds ONLY ON AC POWER. That was written for the mini. Lucy 2 is a LAPTOP,
+# so the fleet-wide assertion buys this chain nothing the moment it is on
+# battery. -i asserts against IDLE sleep whatever the power source, and `-w $$`
+# ties it to this script: it releases itself when the chain exits, however it
+# exits, so a wedged chain cannot leave the machine pinned awake all night.
+#
+# This cannot save a chain from a CLOSED LID -- clamshell sleep is not an idle
+# assertion and no flag overrides it. If the overnight run keeps dying, the lid
+# (or AC) is the next thing to check, not this.
+if [ -x /usr/bin/caffeinate ]; then
+    /usr/bin/caffeinate -i -w $$ >/dev/null 2>&1 &
+fi
+
 echo "[$(date)] recruiting-chain START mode=$MODE steps=${#STEPS[@]}" | tee -a "$LOG"
 FAILED=()
 for s in "${STEPS[@]}"; do
