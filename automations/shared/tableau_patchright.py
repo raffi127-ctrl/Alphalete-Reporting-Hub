@@ -599,6 +599,9 @@ def _ensure_tableau_authenticated(page: Page, verbose: bool = True,
          subsequent goto() to a Tableau view URL will load the viz
          instead of bouncing to login.
     """
+    # No profile_dir here: this helper does not take one, and passing an
+    # undefined name would NameError. The default in the message is right for
+    # this path, which runs on the shared profile.
     _ensure_ownerville_logged_in(page, verbose=verbose,
                                  allow_form_login=allow_form_login)
     _sso_to_tableau(page, verbose=verbose)
@@ -777,7 +780,8 @@ def _reuse_ownerville_storage_state(ctx, page: Page, verbose: bool) -> bool:
 
 
 def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
-                                 allow_form_login: bool = False) -> None:
+                                 allow_form_login: bool = False,
+                                 profile_dir=None) -> None:
     """Guarantee a LIVE ownerville session.
 
     Auth path (since 2026-06-17): restore a manually-exported session
@@ -851,7 +855,12 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
             f"ownerville session expired or missing — {_ownerville_seed_hint()} "
             "(storage_state reuse path; the login form is disabled because its "
             "Cloudflare 'verify you are human' check can't be cleared "
-            f"unattended.) Profile: {PROFILE_DIR}")
+            # NAME THE PROFILE ACTUALLY IN USE. This printed the module-level
+            # default whatever profile the caller passed, so a gap_alerts
+            # failure pointed at `.browser_profile` while the poisoned profile
+            # was `.browser_profile_gap_alerts` — an hour of looking at the
+            # wrong directory on 2026-09-01.
+            f"unattended.) Profile: {profile_dir or PROFILE_DIR}")
 
     # (4) Legacy opt-in form-drive — interactive/debug ONLY (hits the Turnstile).
     if verbose:
@@ -1502,6 +1511,8 @@ def appstream_session(headless: bool = False, verbose: bool = True,
                                  label="appstream_session", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
+            # This context launches on PROFILE_DIR itself, so the default in
+            # the error message is already the profile in use.
             _ensure_ownerville_logged_in(page, verbose=verbose,
                                          allow_form_login=allow_form_login)
             _sso_to_appstream(page, verbose=verbose)
@@ -1542,7 +1553,8 @@ def ownerville_session(headless: bool = False,
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             _ensure_ownerville_logged_in(page, verbose=verbose,
-                                         allow_form_login=allow_form_login)
+                                         allow_form_login=allow_form_login,
+                                         profile_dir=profile_dir)
             yield page
         finally:
             ctx.close()
