@@ -656,6 +656,16 @@ _INFRA_AGENTS = {
     "lucy2-digest", "bg-check-watchdog", "harvest-proof-1pm", "board-probe",
     "social-scanner",
     "appstream-morning", "weather-6am", "brand-audit-noon", "recruiting-report",
+    # The AppStream session RENEWAL (Megan 2026-09-01). deploy/appstream_autorenew.sh
+    # re-captures the rqst token every 30 minutes and pushes it to all three
+    # runners, so nobody has to re-seed a login by hand ("this CANNOT keep
+    # happening / it cost us a whole day"). It is session plumbing of exactly the
+    # same kind as session-holder and keep-awake, which are already here: it
+    # fires 48 times a day, has never written an Activity row, and publishes
+    # nothing a card could ever colour. It was the last agent the launchd sync
+    # wanted to auto-card, and carding it would have produced precisely the
+    # permanently-white "no run logged" tile this set exists to prevent.
+    "appstream-autorenew",
     # The Sales Board sweep's privileged iMessage READER (Megan 2026-09-01).
     # deploy/sales_text_read_chat.py reads new lines out of the "Alphalete
     # Partners" chat and writes them to a file — no Sheets, no Slack, no send.
