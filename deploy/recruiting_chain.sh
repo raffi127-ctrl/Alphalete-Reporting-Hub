@@ -45,6 +45,37 @@ case "$MODE" in
   *) echo "unknown mode '$MODE' (want: full | refresh)" | tee -a "$LOG"; exit 2 ;;
 esac
 
+# HUB PILL. The chain is one card ("Recruiting Chain") that colours in two
+# PHASES: amber after the 1am chain, green after the 1pm refresh. Both passes
+# publish under the SAME report id, with DIFFERENT names -- the card is
+# phase_runs, which counts DISTINCT names, so re-running the 1am chain counts
+# once and can never tick the afternoon's box.
+#
+# Before this the wrapper published nothing at all. The steps each published
+# their own run, but the chain itself was invisible, so hub_coverage auto-carded
+# the two PLISTS instead and the Hub carried two permanently-white cards reading
+# "scheduled 1:00 AM, no run logged" every day while the chain ran perfectly
+# (Megan 2026-09-01: "recruiting chain is on here twice? also erroring").
+VENV_PY=".venv/bin/python3.14"
+[ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
+[ -x "$VENV_PY" ] || VENV_PY="python3"
+case "$MODE" in
+  full)    PHASE_NAME="Recruiting Chain - 1 AM full (funnel > indeed > ad sales)" ;;
+  refresh) PHASE_NAME="Recruiting Chain - 1 PM refresh (indeed > ad sales)" ;;
+esac
+# A --dry-run rehearsal publishes nothing: it delivered no data, and a green
+# pill for a rehearsal is the same lie as a green pill for a skipped run.
+PUBLISH=1
+case " ${EXTRA[*]:-} " in *" --dry-run "*) PUBLISH=0 ;; esac
+
+_publish() {  # _publish <status>
+    [ "$PUBLISH" -eq 1 ] || return 0
+    "$VENV_PY" -c "import sys
+from automations.day_orchestrator import hub_publish
+hub_publish.publish_done('recruiting_chain', sys.argv[1], sys.argv[2])" \
+        "$PHASE_NAME" "$1" >> "$LOG" 2>&1 || true
+}
+
 echo "[$(date)] recruiting-chain START mode=$MODE steps=${#STEPS[@]}" | tee -a "$LOG"
 FAILED=()
 for s in "${STEPS[@]}"; do
@@ -64,7 +95,9 @@ done
 
 if [ "${#FAILED[@]}" -gt 0 ]; then
     echo "[$(date)] recruiting-chain FINISHED with ${#FAILED[@]} failure(s): ${FAILED[*]}" | tee -a "$LOG"
+    _publish failed
     exit 1
 fi
 echo "[$(date)] recruiting-chain FINISHED clean" | tee -a "$LOG"
+_publish success
 exit 0

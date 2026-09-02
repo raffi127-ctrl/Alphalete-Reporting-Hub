@@ -6004,6 +6004,70 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "recruiting-chain",
+        "name": "Recruiting Chain",
+        "creator": "Carlos",
+        "emoji": "\U0001F517",
+        "color": "#8B5CF6",
+        "category": "\U0001F3AF Recruiting",
+        "self_scheduled": True,
+        "description": "Runs the three AppStream recruiting pulls back-to-back "
+                       "instead of on competing timers \u2014 Funnel Board, then "
+                       "Indeed Source Report, then Ad Sales Board. One AppStream "
+                       "login is live at a time, and each step starts only when "
+                       "the one before it has actually finished.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Three reports write the Alphalete Recruiting Dashboard and all "
+            "three log into AppStream. On separate timers they overlapped, "
+            "fought over the AppStream session, and (with the resume pusher "
+            "also logging in) tripped Cloudflare. This runs them in sequence:\n"
+            "**\u2022** **1:00 AM \u2014 full chain:** Funnel Board \u2192 Indeed "
+            "Source Report \u2192 Ad Sales Board.\n"
+            "**\u2022** **1:00 PM \u2014 refresh:** Indeed Source Report \u2192 "
+            "Ad Sales Board.\n\n"
+            "TWO PHASES, ONE CARD\n"
+            "Amber after the 1 AM chain, green once the 1 PM refresh lands. The "
+            "two passes log under different names, so re-running the 1 AM chain "
+            "counts once and can never tick the afternoon's box.\n\n"
+            "EACH STEP STILL OWNS ITS OWN CARD\n"
+            "This card says the CHAIN ran. Funnel Board, Source Report - Indeed "
+            "and Ad Sales Board each publish their own run and keep their own "
+            "history \u2014 open those for a step's detail or to re-run one on "
+            "its own.\n\n"
+            "IF A STEP FAILS\n"
+            "The chain keeps going: skipping the rest would silently cost a "
+            "whole day of data on reports that do not depend on each other. The "
+            "failed step reds its own card, and the chain finishes red so this "
+            "card shows the pass was not clean.\n\n"
+            "OVERLAP GUARD\n"
+            "A chain that is somehow still running blocks the next one from "
+            "starting \u2014 that skip publishes nothing, so a skipped pass "
+            "never paints a false green."
+        ),
+        "assignees": ["Lucy 2"],
+        "run_machine": "Lucy 2",
+        # PHASE card, same shape as owner-chat-texts / applicant-tracker-sync:
+        # the wrapper publishes both passes under THIS card id with different
+        # Report Names, and phase_runs counts DISTINCT names so a re-run of the
+        # 1 AM chain cannot green the card with the 1 PM refresh still due.
+        "daily_runs": 2,
+        "phase_runs": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "1:00 AM",
+            "time_label": "1:00 AM full chain \u00b7 1:00 PM refresh",
+            "estimated_minutes": 20,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Recruiting chain finished clean.",
+            "message_failed": "\u274c A step in the chain failed \u2014 open that "
+                              "step's own card for its log, fix, then re-run "
+                              "the step or the chain.",
+        },
+    },
+    {
         "id": "social-media-posting",
         # Non-breaking spaces keep "(12 + 4 CST Daily)" together so the cadence
         # wraps as one clean unit onto line 2 of the strip pill (same trick as

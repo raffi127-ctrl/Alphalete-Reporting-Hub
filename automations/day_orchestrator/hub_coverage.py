@@ -656,23 +656,21 @@ _INFRA_AGENTS = {
     "lucy2-digest", "bg-check-watchdog", "harvest-proof-1pm", "board-probe",
     "social-scanner",
     "appstream-morning", "weather-6am", "brand-audit-noon", "recruiting-report",
+    # The Sales Board sweep's privileged iMessage READER (Megan 2026-09-01).
+    # deploy/sales_text_read_chat.py reads new lines out of the "Alphalete
+    # Partners" chat and writes them to a file — no Sheets, no Slack, no send.
+    # It exists as its own launchd job only because Full Disk Access is granted
+    # to a BINARY: it must run under the granted Python.app, not the venv's bash
+    # wrapper. It publishes nothing, fires every 5 minutes (288 times a day),
+    # and everything that acts on those lines lives in the sweep, which owns the
+    # 'alphalete-sales-board' card. Same shape as blueink_completed_sweep: a
+    # card here can only ever say "no run logged". [[project_alphalete_sales_board_sweep]]
+    "sales-text-reader",
     # frontier-sunday-6pm is just the Sunday timer that runs opt_frontier --email;
     # opt_frontier already owns the curated 'Frontier OPT Data Pull' card, so this
     # wrapper is deliberately card-less. Without this it registered a duplicate
     # ('Frontier Sunday 6Pm') that confused the two — deleted 2026-08-02.
     "frontier-sunday-6pm",
-    # The two recruiting-chain timers (Carlos 2026-08-29). deploy/recruiting_chain.sh
-    # is a SEQUENCER, not a report: it runs funnel_board -> indeed_source_report ->
-    # ad_sales_board (1am) / indeed -> ad sales (1pm) back-to-back so only one
-    # AppStream login is live at a time. All three steps already own their own
-    # cards and publish their own runs; the wrapper publishes nothing, by design.
-    # So the auto-carding branch gave it two permanently-white cards that
-    # advertised the plist times and said "scheduled 1:00 AM, no run logged"
-    # every day (attributed to Lucy 1 — the default for a card with no
-    # schedule_config report behind it — while the chain actually runs on
-    # Lucy 2). Same phantom-card shape as blueink_completed_sweep and
-    # org_board_box_repull. Megan 2026-09-01: "recruiting chain is on here twice?"
-    "recruiting-chain-1am", "recruiting-chain-1pm",
     # deploy/com.alphalete.harvest-3am.plist is COMMITTED but deliberately NOT
     # installed on any machine yet (Megan 2026-08-17: build it, prove it, then
     # flip). sync_launchd_system scans deploy/*.plist, not what launchd actually
@@ -728,14 +726,24 @@ def _load_plist(plist_path: Path) -> Optional[dict]:
 
 
 def _wrapper_for_plist(plist_path: Path) -> Optional[Path]:
-    """The deploy/*.sh a plist runs (mapped into our repo, ignoring the committed
-    laptop path placeholder)."""
+    """The deploy/ script a plist runs (mapped into our repo, ignoring the
+    committed laptop path placeholder).
+
+    .py COUNTS, not just .sh (Megan 2026-09-01). Most agents run a shell
+    wrapper, but a plist may name a script directly — sales-text-reader runs
+    deploy/sales_text_read_chat.py with the Full-Disk-Access-granted Python.app
+    binary ON PURPOSE, because the venv python3.9 is a bash wrapper and macOS
+    attributes the grant to bash. Matching only '.sh' meant this reader came
+    back 'no-wrapper', which is the exact reason code that manufactures a
+    phantom card, and it duly grew one. Same failure as the plist comments that
+    broke plistlib: a reader that disagrees with launchd decides the Hub off the
+    wrong picture. [[reference_plist_double_hyphen]]"""
     d = _load_plist(plist_path)
     if d is None:
         return None
     args = d.get("ProgramArguments", [])
     for a in args:
-        if isinstance(a, str) and a.endswith(".sh"):
+        if isinstance(a, str) and (a.endswith(".sh") or a.endswith(".py")):
             cand = DEPLOY_DIR / Path(a).name
             return cand if cand.exists() else None
     return None
@@ -778,13 +786,31 @@ def _agent_report_id(agent_name: str) -> Tuple[Optional[str], str]:
     if m:
         rid = m.group(1)
         return (None, "internal") if is_internal(rid) else (rid, "publish-id")
+    # Scan PAST the boilerplate. Nearly every wrapper carries its own install
+    # line in the header comment ("# python -m
+    # automations.day_orchestrator.install_agent ad-sales-board"), and that is a
+    # module which maps to a real (internal) schedule_config report — so the
+    # first-match-wins loop resolved the AGENT to install_*, called it internal,
+    # and returned None. rid None sent it to sync_launchd_system's generic
+    # branch, which carded the plist in its own right: that is where the
+    # duplicate 'ad_sales_board' card came from, alongside the real
+    # 'ad-sales-board' one, and why deleting the duplicate never stuck.
+    # Internal matches no longer end the search; they are only the answer when
+    # nothing real turns up. (Megan 2026-09-01)
+    saw_internal = False
     for mod in _WRAPPER_MODULE_RE.findall(text):
         if any(p in mod for p in _PREP_MODULES):
             continue
+        if mod.endswith("day_orchestrator.install_agent"):
+            continue                      # header boilerplate, not what it runs
         rid = _module_to_report_id(mod)
-        if rid:
-            return (None, "internal") if is_internal(rid) else (rid, "module-match")
-    return None, "unresolved"
+        if not rid:
+            continue
+        if is_internal(rid):
+            saw_internal = True           # remember, but keep looking
+            continue
+        return rid, "module-match"
+    return (None, "internal") if saw_internal else (None, "unresolved")
 
 
 def audit_agents() -> Dict[str, list]:
