@@ -2378,7 +2378,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📇",
         "color": "#4A90D9",
         "category": "📊 Metrics",
-        "description": "Takes yesterday's B2B sales out of SaraPlus and adds each customer to RingCentral as a contact — business name, phone, and the rep's name in the notes — then checks Taylor's line and posts the customers nobody texted into the metrics thread in #a-players-b2b and #alphalete-gp-sales.",
+        "description": "Takes yesterday's B2B sales out of SaraPlus and adds each customer to Taylor's RingCentral contacts — business name, phone, and the rep's name in the notes — then checks Taylor's line and posts the customers nobody texted into the metrics thread in #a-players-b2b and #alphalete-gp-sales.",
         "breakdown": (
             "WHY IT MATTERS\n"
             "A B2B customer who was sold yesterday and never texted is a "
@@ -2392,7 +2392,9 @@ AUTOMATED_REPORTS = [
             "'Business Name' column, and the phone is the 'Primary Phone' on "
             "that row's View Customer card.\n\n"
             "WHAT IT WRITES\n"
-            "One RingCentral contact per customer in Carlos's address book:\n"
+            "One RingCentral contact per customer in Taylor's address book "
+            "— the line that texts them, so a reply comes in with a name on "
+            "it instead of an unknown number:\n"
             "• Company = the business name\n"
             "• Phone = the primary phone, labelled Mobile\n"
             "• Notes = 'Rep Name: <the rep>'\n"
@@ -2400,14 +2402,14 @@ AUTOMATED_REPORTS = [
             "checked by phone number first, so a re-run, a repeat customer, "
             "or a contact somebody already added by hand is left alone.\n\n"
             "THE FOLLOW-UP CHECK\n"
-            "It then reads Taylor Miller's RingCentral texts for yesterday. "
+            "It then reads that same line's texts for yesterday. "
             "Any customer with no message on that line — matched by phone "
             "number, and as a backstop by customer or business name — is "
             "named in ONE post in the day's metrics thread, grouped under the "
             "rep who sold them.\n\n"
             "WHEN IT RUNS\n"
-            "Every morning on Lucy 2 (Carlos's machine, Carlos's SaraPlus and "
-            "RingCentral logins). A bare run is a DRY RUN and writes nothing."
+            "Every morning on Lucy 2 — Carlos's SaraPlus login, Taylor's "
+            "RingCentral login. A bare run is a DRY RUN and writes nothing."
         ),
         "assignees": ["Lucy 2"],
         # Both credentials live on Lucy 2 and nowhere else, so a Hub button
@@ -2423,7 +2425,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ Yesterday's B2B customers are in RingCentral, and the un-texted ones were posted in the metrics thread.",
-            "message_failed": "❌ Something didn't land. The log names it. The usual causes: the SaraPlus password changed (it must be CARLOS's login), or the RingCentral token can't read Taylor's messages — that one needs a JWT minted on Taylor's own user.",
+            "message_failed": "❌ Something didn't land. The log names it. The usual causes: the SaraPlus password changed (it must be CARLOS's login), or the RingCentral token isn't Taylor's — the report stops rather than writing into the wrong address book.",
         },
         "actions": [
             {
