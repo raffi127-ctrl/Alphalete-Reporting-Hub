@@ -37,8 +37,9 @@ export NO_PROXY='*'
 export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
-# NOTE: no HEADLESS=1. headless trips a Cloudflare re-challenge on the rcaptain
+# NOTE: no HEADLESS=1. headless trips a Cloudflare re-challenge on the AppStream
 # login (see BUILD_NOTES) — this report has to run headed even when scheduled.
+# The account is LucyReports (23981) fleet-wide since 2026-08-31, not rcaptain.
 
 if pgrep -f "automations.funnel_board.run" > /dev/null 2>&1; then
     echo "[$(date)] funnel_board/hourly SKIPPED — a previous pass is still running"

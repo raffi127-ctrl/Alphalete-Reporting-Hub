@@ -444,8 +444,11 @@ def main():
         guard.resolved(log, dry_run=a.dry_run)
 
     fresh, failed = {}, []
-    # headless=True trips a Cloudflare re-challenge on the rcaptain login;
+    # headless=True trips a Cloudflare re-challenge on the AppStream login;
     # every successful pull has been headed. Lucy 2 runs with a display.
+    # (The account is whatever creds.appstream_username() resolves to —
+    # LucyReports/23981 fleet-wide since the 2026-08-31 migration, not the
+    # retired rcaptain this comment used to name.)
     #
     # OWN PROFILE (2026-08-10). Lucy 2 dropped the SAME five offices on every
     # single run since it went on the scheduler — 19717, 23607, 22177, 23411,
