@@ -579,12 +579,32 @@ def _enqueue_rerun(report_id: str, dry_run: bool,
 def _reseed_alert_text(stale, when: str) -> str:
     """Build the re-seed DM. `stale` is [(status, reseed_cmd), ...]; `when` frames
     the urgency (evening 'tonight' vs the 3am '~1h before the batch')."""
-    lines = [f"⚠️ *Session re-seed needed* {when}."]
+    # DO NOT CLAIM AN AUTOMATED RECOVERY THAT NEVER HAPPENED, and do not send
+    # anyone to clear a Cloudflare check (2026-09-02).
+    #
+    # This used to say "The automated login already tried and could NOT recover
+    # this one" for BOTH sessions. For ownerville that was simply false: it
+    # reaches this list on the stored file's timestamp alone — no probe, no
+    # login attempt — so the sentence invented a failed recovery. And "clear the
+    # check once" is left over from the twelve days we believed the Cloudflare
+    # box needed a person; it clears itself given ~30s before submit.
+    #
+    # Both halves point away from the real cause. On 2026-09-02 the actual fault
+    # was a DISABLED session-holder LaunchAgent on Lucy 1 — the ownerville token
+    # had 48h left and nothing needed re-seeding at all. An alert that names a
+    # remedy it has not tried is worse than one that says less.
+    lines = [f"⚠️ *Session holder needs attention* {when}."]
     for stt, reseed in stale:
         lines.append(f"\n• *{stt['what']}*: {stt['reason']}\n"
-                     f"  The automated login already tried and could NOT recover "
-                     f"this one. Fix from any machine you're at (clear the check "
-                     f"once):\n```{reseed}```")
+                     f"  Nobody needs to clear a Cloudflare check — both logins "
+                     f"sign themselves in. Check the holder is actually RUNNING "
+                     f"first (a disabled LaunchAgent looks exactly like this, "
+                     f"and `kickstart` will say \"could not find service\"):\n"
+                     f"```launchctl print-disabled gui/$(id -u) | grep alphalete\n"
+                     f"launchctl enable gui/$(id -u)/com.alphalete.session-holder\n"
+                     f"launchctl kickstart -k gui/$(id -u)/com.alphalete.session-holder```\n"
+                     f"  Then confirm BOTH logins on that machine:\n"
+                     f"```{reseed}```")
     lines.append("\nThe moment it's healthy I'll auto-run what I can — "
                  "you don't have to touch anything else.")
     return "\n".join(lines)
@@ -600,8 +620,11 @@ def _real_failure_text(failures, reseed: str) -> str:
              f"today and did NOT fill:"]
     for rid, reason in failures:
         lines.append(f"\n• *{rid}* — {reason[:200]}")
-    lines.append(f"\nRe-seed from any machine you're at (clear the check once):"
-                 f"\n```{reseed}```")
+    # Same correction as _reseed_alert_text: no "clear the check once". The
+    # login is unattended; if it failed, the cause is the credential, the
+    # profile, or a holder that is not running — not a missing human.
+    lines.append(f"\nFix on THAT machine (no check to clear — the login is "
+                 f"unattended):\n```{reseed}```")
     lines.append("The moment it's healthy I'll auto-re-run these — "
                  "you don't have to touch anything else.")
     return "\n".join(lines)

@@ -96,11 +96,36 @@ def install(name: str) -> tuple[bool, str]:
                        "won't release it (may need `launchctl remove` or a reboot); "
                        "reload aborted, schedule UNCHANGED")
 
+    # ENABLE BEFORE BOOTSTRAP. A DISABLED label cannot be bootstrapped at all,
+    # and launchd says so in the least helpful way available: `bootstrap` returns
+    # exit 5 "Input/output error" and `kickstart` returns "Could not find service
+    # … in domain for user gui: 501" — as if the job had never been installed.
+    # Nothing in either message contains the word "disabled".
+    #
+    # WHAT THAT COST (2026-09-02). Lucy 1's session-holder was disabled. On a
+    # code change it exited for its usual relaunch, launchd declined to bring a
+    # disabled job back, and it stayed down — through the evening, with the
+    # ownerville export frozen at the last good copy. The 6pm watch read the
+    # stale export and paged "Session re-seed needed", which sent everyone at a
+    # perfectly healthy 48h token. install_agent could not fix it either: it
+    # failed with the EIO above, so the one command that should have recovered
+    # the machine looked like a broken installer.
+    #
+    # `launchctl enable` is idempotent and a no-op on an already-enabled label,
+    # and the disabled state persists across reboots — so this belongs on every
+    # install, not behind a retry. Its failure is non-fatal: bootstrap's own
+    # error is the better diagnostic if something else is wrong.
+    en = subprocess.run(["launchctl", "enable", target],
+                        capture_output=True, text=True, timeout=30)
     boot = subprocess.run(["launchctl", "bootstrap", domain, str(dest)],
                           capture_output=True, text=True, timeout=30)
     if boot.returncode != 0 or not _loaded():
+        hint = ""
+        if boot.returncode == 5:
+            hint = (" — exit 5 is usually a DISABLED label; `launchctl enable "
+                    f"{target}` was attempted first (exit {en.returncode})")
         return False, (f"{label}: bootstrap failed (exit {boot.returncode}): "
-                       f"{(boot.stdout + boot.stderr).strip()[:180]}")
+                       f"{(boot.stdout + boot.stderr).strip()[:180]}{hint}")
     # Guarantee the newly-installed agent has a Hub card, so a scheduled
     # automation can never run invisibly ("we keep losing automations" fix,
     # 2026-07-27). Confident-only (publish-id / module match) — never guesses a
