@@ -279,6 +279,19 @@ def _form_login(verbose: bool = True) -> bool:
         return False
 
 
+def _inside_playwright_loop() -> bool:
+    """True when a sync_playwright() is already running in this thread.
+
+    Playwright's sync API refuses to start a second one, so anything that opens
+    its own must check first or it turns the caller's real error into a generic
+    Playwright message."""
+    try:
+        import greenlet
+        return greenlet.getcurrent().parent is not None
+    except Exception:  # noqa: BLE001 — can't tell, so don't block the caller
+        return False
+
+
 def refresh_ownerville(verbose: bool = True) -> bool:
     """Sign in to ownerville fresh, unattended, and EXPORT the new rqst.
 
@@ -303,6 +316,27 @@ def refresh_ownerville(verbose: bool = True) -> bool:
         _launch_persistent, _ownerville_session_valid, _PASSWORD_SELECTOR,
         _USERNAME_SELECTOR)
     from patchright.sync_api import sync_playwright
+
+    # CANNOT RUN INSIDE ANOTHER PLAYWRIGHT LOOP. tableau_session's ownerville
+    # self-heal calls this from INSIDE its own sync_playwright(), and starting a
+    # second one raises "It looks like you are using Playwright Sync API inside
+    # the asyncio loop." Seen on Lucy 1 2026-09-01 19:31: a Tableau run whose
+    # ownerville session had expired reported "re-mint failed (Error: ...)"
+    # instead of the real cause, turning a clear "session expired" into a
+    # confusing Playwright error.
+    #
+    # Say so and decline, so the caller reports ITS diagnosis rather than ours.
+    # (The same nesting rule killed the browser-crash rebuild earlier that day —
+    # 5 attempts, 5 failures, 0 recoveries.)
+    try:
+        import greenlet  # noqa: F401 — presence alone proves nothing; the probe is below
+    except Exception:  # noqa: BLE001
+        pass
+    if _inside_playwright_loop():
+        _log("refresh_ownerville called from inside a running Playwright loop — "
+             "declining (a nested sync_playwright cannot start). The caller's "
+             "own error is the real one.")
+        return False
 
     prof = PROFILE_DIR.parent / ".ov_autorenew"
     # EMPTY EVERY TIME. A profile that is already signed in auto-resumes and the
