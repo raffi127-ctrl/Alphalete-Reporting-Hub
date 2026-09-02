@@ -264,6 +264,7 @@ def _lane_owns(action: str, lane: str) -> bool:
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
+                  "set_ownerville_creds",
                   "set_appstream_account",
                   "set_doubleentry_creds",
                   # The applicant_tracker service-account PRIVATE KEY rides the
@@ -6240,6 +6241,73 @@ def _action_appstream_whoami(args: str) -> tuple[bool, str]:
     return ok, res[:900]
 
 
+def _action_set_ownerville_creds(args: str) -> tuple[bool, str]:
+    """Install THIS machine's ownerville login.
+
+      set_ownerville_creds <username> <password>
+
+    WHY IT HAD TO EXIST (2026-09-02). `login_check` found Lucy 3 running with NO
+    ownerville credential at all. Nothing looked wrong — its saved session was
+    live, so every ownerville report worked. But a session lasts ~60h and a
+    machine with no credential cannot log itself back in when one dies, so it
+    was a machine that would fail silently at some future 4am and could not
+    self-heal. Lucy 3 takes no SSH, and every other credential already had a
+    queue action; this one did not, so there was no way to fix it remotely.
+
+    Ownerville and AppStream are SEPARATE logins — this touches ONLY the two
+    ownerville_* keys, exactly like set_ownerville_login does on the console.
+    The AppStream and Double Entry logins in the same file are left alone.
+
+    In SECRET_ACTIONS, so the poller blanks the Args cell the moment the row
+    finishes. Backs the file up first, and verifies by driving a real login
+    rather than by trusting that a write succeeded — a stored credential that
+    cannot log in is worse than none, because it looks configured."""
+    import json as _json
+    import shlex
+    import shutil
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, "couldn't read Args (%s) — quote the password" % str(e)[:80]
+    if len(parts) != 2:
+        return False, ("need: set_ownerville_creds <username> <password> "
+                       "(quote the password if it has spaces)")
+    user, pw = parts[0], parts[1]
+
+    path = REPO_ROOT / "ownerville-creds.json"
+    data: dict = {}
+    if path.exists():
+        try:
+            data = _json.loads(path.read_text())
+        except Exception as e:  # noqa: BLE001
+            return False, "couldn't read %s: %s" % (path.name, str(e).splitlines()[0][:120])
+        shutil.copy2(path, path.with_suffix(
+            ".json.bak.%s" % dt.datetime.now().strftime("%Y%m%d-%H%M%S")))
+    kept = sorted(k for k in data if not k.startswith("ownerville_"))
+    data["ownerville_username"] = user
+    data["ownerville_password"] = pw
+    try:
+        path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+        _creds_cache_bust()
+    except Exception as e:  # noqa: BLE001
+        return False, "couldn't write %s: %s" % (path.name, str(e).splitlines()[0][:120])
+
+    # PROVE IT. The Cloudflare check clears itself given ~30s before submit, so
+    # this really does log in unattended — no human, no window.
+    ok, res = _run_cmd(
+        [sys.executable, "-c",
+         "from automations.shared.appstream_autorenew import refresh_ownerville;"
+         " raise SystemExit(0 if refresh_ownerville(verbose=True) else 1)"],
+        timeout_s=10 * 60, log_name="ownerville-creds-verify.log")
+    tail = str(res).split("\n")[-1][:200]
+    if not ok:
+        return False, ("stored %s in %s (kept: %s) but the LOGIN FAILED: %s"
+                       % (user, path.name, ", ".join(kept) or "none", tail))
+    return True, ("ownerville creds installed for %s + login verified (kept: %s) · %s"
+                  % (user, ", ".join(kept) or "none", tail))
+
+
 def _action_purge_retired_appstream_creds(args: str) -> tuple[bool, str]:
     """Delete retired AppStream credentials from THIS machine.
 
@@ -7069,6 +7137,7 @@ ACTIONS = {
     "push_appstream_fleet": _action_push_appstream_fleet,
     "login_check": _action_login_check,
     "purge_retired_appstream_creds": _action_purge_retired_appstream_creds,
+    "set_ownerville_creds": _action_set_ownerville_creds,
     "appstream_renew_probe": _action_appstream_renew_probe,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
