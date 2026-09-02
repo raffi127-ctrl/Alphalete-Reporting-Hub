@@ -120,6 +120,16 @@ CALVIN = {
     # VL where fiber has Talk To - Not Interested / Presentation - Not
     # Interested / Sale, so the fixed fiber column list raised on it). Both the
     # scrape and the board now detect the shape by its VL column.
+    # OFF 2026-09-02 (Megan: "I just need Raf's posting"). Not a decision about
+    # the office — a decision about the TICK. Neither of these can publish today:
+    # the campaign pin does not take under impersonation, so Calvin's grid comes
+    # back B2B Box-shaped and both of Jay's come back holding the same 2 reps,
+    # and the guards refuse all three. What they still cost is REAL — they are
+    # pulled in the same session as Raf, and the 15:00 tick took 5m34s against a
+    # 5-minute wake. An overrunning pass is SKIPPED by the pid lock, which is
+    # how Raf's boards thin out without anything erroring.
+    # Turn back on with the campaign, not before: [[project_gap_alerts]].
+    "enabled": False,
 }
 
 # Jay Turnage — Clear View Consultants, Inc., account 21959, 144 sales reps.
@@ -149,6 +159,16 @@ JAY_ATT = {
     "label": "Jay",
     "campaign_label": "AT&T",
     "compare": True,
+    # OFF 2026-09-02 (Megan: "I just need Raf's posting"). Not a decision about
+    # the office — a decision about the TICK. Neither of these can publish today:
+    # the campaign pin does not take under impersonation, so Calvin's grid comes
+    # back B2B Box-shaped and both of Jay's come back holding the same 2 reps,
+    # and the guards refuse all three. What they still cost is REAL — they are
+    # pulled in the same session as Raf, and the 15:00 tick took 5m34s against a
+    # 5-minute wake. An overrunning pass is SKIPPED by the pid lock, which is
+    # how Raf's boards thin out without anything erroring.
+    # Turn back on with the campaign, not before: [[project_gap_alerts]].
+    "enabled": False,
 }
 
 JAY_EW = {
@@ -160,6 +180,16 @@ JAY_EW = {
     "label": "Jay",
     "campaign_label": "EnergyWell",
     "compare": True,
+    # OFF 2026-09-02 (Megan: "I just need Raf's posting"). Not a decision about
+    # the office — a decision about the TICK. Neither of these can publish today:
+    # the campaign pin does not take under impersonation, so Calvin's grid comes
+    # back B2B Box-shaped and both of Jay's come back holding the same 2 reps,
+    # and the guards refuse all three. What they still cost is REAL — they are
+    # pulled in the same session as Raf, and the 15:00 tick took 5m34s against a
+    # 5-minute wake. An overrunning pass is SKIPPED by the pid lock, which is
+    # how Raf's boards thin out without anything erroring.
+    # Turn back on with the campaign, not before: [[project_gap_alerts]].
+    "enabled": False,
 }
 
 # Jay is BACK IN, behind a guard rather than on trust (2026-09-01). Earlier
