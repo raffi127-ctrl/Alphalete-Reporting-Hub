@@ -179,6 +179,22 @@ _RETIRED: frozenset = frozenset({
     # note with the whole story. The module stays on disk: reviving it is one
     # GUID and two flags if the view ever comes back.
     "att_cancels",
+    # August Owner Showdown. A TEMP competition card by design (Raf 2026-07-29)
+    # for a competition that ran Aug 1–31; the champions email went out 9/1 at
+    # 09:00 to 48 owners and that was the last thing it will ever do. Torn down
+    # the same day: card, pill override, schedule entry + its 3 helpers, both
+    # LaunchAgents, both deploy/ files. The module stays on disk — run.py
+    # window-guards itself to Aug 1–Sep 1, so it no-ops where it sits.
+    #
+    # BOTH id spellings on purpose: the run feed logs the kebab CARD id, which
+    # is what the orphan check in dashboard._card_problems() compares, while
+    # schedule_config/module callers use the underscore one. Without the kebab
+    # form the teardown showed up on the Hub as a red "card wiring issue —
+    # runs logged under `owner-showdown` but NO card has that id" for two days
+    # after removal, which reads as a broken report rather than a finished one.
+    # Same false alarm _is_offboarded() exists to stop for offices.
+    "owner-showdown",
+    "owner_showdown",
 })
 
 
@@ -645,6 +661,18 @@ _INFRA_AGENTS = {
     # wrapper is deliberately card-less. Without this it registered a duplicate
     # ('Frontier Sunday 6Pm') that confused the two — deleted 2026-08-02.
     "frontier-sunday-6pm",
+    # The two recruiting-chain timers (Carlos 2026-08-29). deploy/recruiting_chain.sh
+    # is a SEQUENCER, not a report: it runs funnel_board -> indeed_source_report ->
+    # ad_sales_board (1am) / indeed -> ad sales (1pm) back-to-back so only one
+    # AppStream login is live at a time. All three steps already own their own
+    # cards and publish their own runs; the wrapper publishes nothing, by design.
+    # So the auto-carding branch gave it two permanently-white cards that
+    # advertised the plist times and said "scheduled 1:00 AM, no run logged"
+    # every day (attributed to Lucy 1 — the default for a card with no
+    # schedule_config report behind it — while the chain actually runs on
+    # Lucy 2). Same phantom-card shape as blueink_completed_sweep and
+    # org_board_box_repull. Megan 2026-09-01: "recruiting chain is on here twice?"
+    "recruiting-chain-1am", "recruiting-chain-1pm",
     # deploy/com.alphalete.harvest-3am.plist is COMMITTED but deliberately NOT
     # installed on any machine yet (Megan 2026-08-17: build it, prove it, then
     # flip). sync_launchd_system scans deploy/*.plist, not what launchd actually
