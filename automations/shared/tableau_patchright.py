@@ -101,7 +101,22 @@ _FINAL_SUBMIT_NAME = re.compile(
 #
 # 30s of waiting per login is cheap — a report logs in once and rides the
 # session for hours, and the alternative is a human walking to a Mac mini.
-_CLOUDFLARE_WAIT_MS = 10_000
+# 30s, NOT 10 (Megan 2026-09-01: "ownerville can work the same way as app
+# stream you just have to wait 30 seconds before submitting PW for the
+# cloudfare to clear").
+#
+# At 10s the form submitted BEFORE Cloudflare had cleared, so the login looked
+# like it worked — "-> Submitting" with no error — and then the session came
+# back invalid. That is exactly what happened driving ownerville into the
+# holder profile on Lucy 1 that evening: the whole form ran, then
+# "SESSION VALID: False". It reads as a credential or gating problem and is
+# neither; the check simply had not finished.
+#
+# This is the same mechanism that made AppStream look "human-gated since
+# 2026-08-20" for twelve days. The check clears itself — it just needs longer
+# than we were giving it. Costs 20 extra seconds on a path that runs at most
+# a couple of times an hour.
+_CLOUDFLARE_WAIT_MS = 30_000
 _PRE_SUBMIT_PAUSE_MS = 30_000
 
 # Selector for the SSO link on ownerville that opens an authenticated
