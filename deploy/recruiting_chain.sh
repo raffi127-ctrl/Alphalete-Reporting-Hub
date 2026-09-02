@@ -68,13 +68,27 @@ esac
 PUBLISH=1
 case " ${EXTRA[*]:-} " in *" --dry-run "*) PUBLISH=0 ;; esac
 
+REPORTED=0
 _publish() {  # _publish <status>
+    REPORTED=1
     [ "$PUBLISH" -eq 1 ] || return 0
     "$VENV_PY" -c "import sys
 from automations.day_orchestrator import hub_publish
 hub_publish.publish_done('recruiting_chain', sys.argv[1], sys.argv[2])" \
         "$PHASE_NAME" "$1" >> "$LOG" 2>&1 || true
 }
+
+# A CHAIN THAT DIES HAS TO SAY SO (Megan 2026-09-02). Two nights running, the
+# chain was killed mid-step and published NOTHING, so the card read "scheduled
+# 1:00 AM, no run logged" -- the same thing it says when a job never fired at
+# all. Those are opposite problems and they must not look identical: one is a
+# missing agent, the other is a run that started and was cut off. This trap reds
+# the card on any exit that did not already report itself, so the next morning
+# says "failed" and points at the log. Deliberately installed AFTER the overlap
+# guard's exit, which still publishes nothing: a skipped pass delivered no data
+# and must never paint a colour of any kind.
+trap '[ "$REPORTED" -eq 1 ] || _publish failed' EXIT
+trap 'exit 143' TERM HUP INT   # so a signalled chain still runs the EXIT trap
 
 # HOLD THE MACHINE AWAKE FOR THE LENGTH OF THE CHAIN (Megan 2026-09-01).
 # On 2026-09-01 the 1am chain fired dead on time (01:00:03), got through one of
@@ -98,6 +112,29 @@ hub_publish.publish_done('recruiting_chain', sys.argv[1], sys.argv[2])" \
 if [ -x /usr/bin/caffeinate ]; then
     /usr/bin/caffeinate -i -w $$ >/dev/null 2>&1 &
 fi
+
+# FREE THE SHARED CHROME PROFILE BEFORE STEP 1 (Megan 2026-09-02).
+# The chain fired dead on time on 9/1 (01:00:03) and 9/2 (01:00:02), got into
+# funnel_board's AppStream login both nights -- 9/2's last line is "-> Filling
+# password" -- and then vanished: no exception, no "<-- exit=" line, and
+# recruiting-chain-1am.err EMPTY, 0 bytes. That is a browser that never came up,
+# not code that failed.
+#
+# Every OTHER launcher that runs outside the 4am window already guards for this:
+# texas_de_brazil_745, stf_field_check_11pm, raf/carlos_captainship_*,
+# due_diligence_harvest, att_churn_daily. The chain -- the one job that runs at
+# 1 AM, as far from the 4am window as it is possible to be -- was the only one
+# that did not. Both paths that DO succeed do it: the orchestrator (run.py:331)
+# and `lucy rerun` (mini_control.py:553), which is exactly why the same
+# funnel_board that died at 01:00 ran clean at 09:27 by hand.
+#
+# --unstick is the half a bare `--close` was missing: --close removes a HUMAN's
+# Chrome, unstick_profile removes OUR OWN browser orphaned by an earlier killed
+# report, which still holds the profile's ProcessSingleton. It is orphans-only
+# (PPID 1), so it cannot touch a live report's Chrome. Once per chain, not per
+# step: all three steps share the one profile.
+"$VENV_PY" -u -m automations.day_orchestrator.chrome_guard --close --unstick \
+    >> "$LOG" 2>&1 || true
 
 echo "[$(date)] recruiting-chain START mode=$MODE steps=${#STEPS[@]}" | tee -a "$LOG"
 FAILED=()
