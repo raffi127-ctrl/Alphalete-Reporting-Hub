@@ -178,26 +178,85 @@ def find_stf_cells(ws, target: dt.date) -> list[dict]:
 
 # ---- Ownerville scrape (mini only) --------------------------------------
 
-def scrape_knocks(target: dt.date, verbose: bool = True) -> list[dict]:
-    """Live Time Tracker scrape for `target`, Raf's master view (no
-    impersonation). Returns the raw rep dicts from scrape_day.
+def _knock_time(v) -> str:
+    """Normalise a Time Tracker knock stamp into the 'H:MM AM/PM' shape
+    _clock_key() understands, from whatever the JSON endpoint returns.
 
-    Raises RuntimeError if the session has no rqst token, or if the Time
-    Tracker won't confirm `target` (so we never write off wrong-day data)."""
+    THIS IS LOAD-BEARING. worked_minutes() reads an unparseable stamp as
+    "no usable knock pair" -> None -> the rep looks like a no-show and gets
+    flipped to X. So a stamp we cannot read must come back BLANK and be caught
+    by the all-blank guard in scrape_knocks, never be quietly treated as a
+    rep who did not work.
+
+    Formats built by hand, not strftime: '%-I' is glibc-only and these reports
+    have to run on Windows too.
+    """
+    txt = str(v or "").strip()
+    if not txt:
+        return ""
+    # Already a clock string ('2:45 PM', '2:45:00 PM', '14:45') — hand back
+    # a canonical form so _clock_key's first pattern always hits.
+    for fmt in ("%I:%M %p", "%I:%M:%S %p", "%H:%M", "%H:%M:%S"):
+        try:
+            t = dt.datetime.strptime(txt.upper(), fmt).time()
+            return "%d:%02d %s" % (t.hour % 12 or 12, t.minute,
+                                   "AM" if t.hour < 12 else "PM")
+        except ValueError:
+            pass
+    # A full datetime ('2026-09-01 14:45:00', ISO, or ColdFusion's
+    # 'September, 01 2026 14:45:00') — keep only the time of day.
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M",
+                "%B, %d %Y %H:%M:%S", "%b %d, %Y %I:%M:%S %p",
+                "%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %I:%M %p",
+                "%m/%d/%Y %H:%M:%S"):
+        try:
+            t = dt.datetime.strptime(txt, fmt).time()
+            return "%d:%02d %s" % (t.hour % 12 or 12, t.minute,
+                                   "AM" if t.hour < 12 else "PM")
+        except ValueError:
+            pass
+    return ""
+
+
+def scrape_knocks(target: dt.date, verbose: bool = True) -> list[dict]:
+    """Time Tracker rows for `target` on Raf's master view (no impersonation),
+    from OwnerVille's own JSON endpoint. Returns rep dicts shaped the way
+    index_knocks()/decide() expect: name / first_knock / last_knock.
+
+    WHY JSON AND NOT THE RENDERED TABLE (2026-09-01). This used to drive the
+    p=510 DataTable and read its <td>s through
+    focus_office_att.step5_fill_one_owner.scrape_day. On 2026-09-01 at 23:00
+    that returned 0 rows for a day that demonstrably had 38 — same date, same
+    box, same session, verified by re-running it the next morning — and the
+    ABORT guard below correctly refused to mark 4 reps absent off an empty
+    scrape. The rendered view is known-unreliable under patchright; gap_alerts
+    and total_knocks both read this endpoint for exactly that reason.
+
+    That path also could not tell a QUIET DAY from a BROKEN SCRAPE: its
+    _scrape_current_view returns [] for both (deliberately — an empty day must
+    not abort a whole owner backfill, its original caller's problem). For STF
+    the difference decides whether four people get an X. _fetch_time_tracker
+    (required=True) raises on anything but a clean 200, and a 200 carrying no
+    rows is a verified quiet day.
+
+    No datepicker either: the endpoint takes dateToSearch explicitly, so the
+    "table silently stayed on the default day" race the old path had to verify
+    against cannot happen here.
+    """
     # Imported lazily so the offline/dry-run+injected path never needs patchright.
     from automations.shared.tableau_patchright import ownerville_session
-    from automations.focus_office_att.step5_fill_one_owner import (
-        scrape_day, page_rqst, _active_datepicker_value, _same_mdy,
-    )
+    from automations.focus_office_att.step5_fill_one_owner import page_rqst
+    from automations.total_knocks.pull import _fetch_time_tracker
 
-    target_mdy = target.strftime("%m/%d/%Y")
+    mdy = target.strftime("%m/%d/%Y")
     with ownerville_session(headless=True, verbose=verbose) as page:
         # page_rqst reads the token from the DOM/URL — NOT the site's rqstValue
-        # JS global, which is invisible to patchright's isolated evaluate world
-        # (that read returns null -> rqst=None -> lands off Time Tracker -> 0 rows).
+        # JS global, which is invisible to patchright's isolated evaluate world.
         rqst = page_rqst(page)
         if not rqst:
             raise RuntimeError("no ownerville rqst token — session not logged in")
+        # Land on the Time Tracker before fetching: the endpoint call below is
+        # a same-origin fetch riding this page's session cookies.
         tt_url = f"https://v2.ownerville.com/index.cfm?p=510&rqst={rqst}"
         for attempt in (1, 2):
             try:
@@ -206,13 +265,34 @@ def scrape_knocks(target: dt.date, verbose: bool = True) -> list[dict]:
             except Exception:
                 if attempt == 2:
                     raise
-        reps = scrape_day(page, target)
-        shown = _active_datepicker_value(page)
-        if not _same_mdy(shown, target_mdy):
-            raise RuntimeError(
-                f"Time Tracker would not confirm {target_mdy} (showing {shown!r}); "
-                f"refusing to act on possibly-wrong-day knocks")
-        return reps
+        rows = _fetch_time_tracker(page, rqst, mdy, required=True,
+                                   verbose=verbose)
+
+    reps = []
+    for row in rows:
+        name = (row.get("name") or "").strip()
+        if not name:
+            continue
+        reps.append({
+            "name": name,
+            "first_knock": _knock_time(row.get("firstKnockDate")),
+            "last_knock": _knock_time(row.get("lastKnockDate")),
+            "gaps": row.get("gaps") or "",
+            "total_gaps": str(row.get("totalGapMinutes") or ""),
+        })
+
+    # FORMAT-REGRESSION GUARD. Rows came back, but not one carries a knock time
+    # we can read — that is the endpoint changing shape on us, not a day where
+    # nobody knocked. Left alone it would read as every rep no-showing and flip
+    # the lot to X, which is the single worst thing this report can do. Fail
+    # loudly instead; the nightly alert is cheap, a wrongly-Xed board is not.
+    if reps and not any(r["first_knock"] or r["last_knock"] for r in reps):
+        raise RuntimeError(
+            f"Time Tracker returned {len(reps)} row(s) for {mdy} but no readable "
+            f"knock times (first seen: "
+            f"{str(rows[0].get('firstKnockDate'))[:40]!r}) — the endpoint's date "
+            f"format changed. Refusing to treat this as a mass no-show.")
+    return reps
 
 
 # ---- main ---------------------------------------------------------------
