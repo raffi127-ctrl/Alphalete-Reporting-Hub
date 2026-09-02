@@ -199,6 +199,26 @@ _NO_ACTION_LINE = ("*Nothing to do.* An upstream Tableau feed is serving older "
                    "data than it should. The report that pulled it ran and sent "
                    "normally. It clears when the feed catches up.")
 
+# INCIDENTS THAT ARE FINDINGS, NOT FAILURES (Megan 2026-09-02). A `finding-` key
+# means the run did its WHOLE job and is reporting what it noticed on the board —
+# vantura_board_audit's stalled trainees, the cancel-rate's unfilled ICDs.
+# notify.py already posts these correctly ("the run itself was fine … nothing to
+# re-run and nothing is missing"), and then the generic branches below
+# contradicted it inside its own thread: "It failed and the reason isn't in the
+# log" (6), "It did not finish" (4). Both are false, and they sat directly under
+# a post that had just said the opposite — which teaches people that the triage
+# line is noise.
+#
+# It IS a person's, so NEEDS_YOU stays right; only the sentence was wrong. Like
+# the notices above this runs BEFORE the age rule, because a finding also stays
+# open for days by its nature: nothing re-runs it, and a re-run would not clear
+# it — the audit only ever detects, it never edits the board.
+_FINDING_PREFIXES = ("finding-",)
+_FINDING_LINE = ("*Needs one of you.* The run itself was fine — this is what it "
+                 "FOUND, and it is fixed on the board, not in the code. "
+                 "Re-running will not clear it: the audit only detects, it never "
+                 "edits. What it found is listed in this thread.")
+
 # After this hour a "waiting on the source" is no longer waiting, it is a
 # no-show — the orchestrator has stopped retrying and it is a person's problem.
 BACKSTOP_HOUR = 12
@@ -353,6 +373,13 @@ def classify(key: str, *, day: Optional[dt.date] = None,
         return Verdict(key, WAITING,
                        "An upstream Tableau feed is running behind.",
                        line=_NO_ACTION_LINE)
+
+    # 0b) Findings, not failures. Must also precede the age rule: it stays open
+    #     until a person corrects the board, and no re-run can close it.
+    if key.startswith(_FINDING_PREFIXES):
+        return Verdict(key, NEEDS_YOU,
+                       "The run was fine; it found something to fix on the board.",
+                       line=_FINDING_LINE)
 
     # 1) Open since a previous day. A full morning of retries already lost.
     age = inc._days_open(opened, day) if opened else 0
