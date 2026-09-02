@@ -698,21 +698,44 @@ def _ownerville_session_valid(page: Page, verbose: bool = True) -> bool:
     in-page SSO link). A 'reused from profile' landing page with no rqst is a
     STALE cookie, not a live session — the bug behind the 'no rqst' glitches
     (Eve rows 38/69). This is the same token _sso_to_tableau relies on."""
-    try:
-        page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(4_000)
-    except Exception:
-        return False
-    if re.search(r"rqst=([A-Za-z0-9_]+)", page.url or ""):
-        return True
-    try:
-        href = page.evaluate(
-            "() => { const a=[...document.querySelectorAll('a')]"
-            ".find(x=>/rqst=/.test(x.getAttribute('href')||'')); "
-            "return a?a.getAttribute('href'):''; }")
-        return bool(re.search(r"rqst=([A-Za-z0-9_]+)", href or ""))
-    except Exception:
-        return False
+    # CHECK BOTH DOMAINS, v2 FIRST (2026-09-01, Megan: "the V2 has a secondary
+    # pass encryption on it").
+    #
+    # This only ever looked at v2.ownerville.com — the page behind the extra
+    # password check — so a session established on ownerville.com could be
+    # perfectly live and still read as dead. That is not theoretical: on the
+    # evening of 9/1 Megan signed in at the holder's window three times and the
+    # holder rejected every one, sitting at "waiting for ownerville login" while
+    # a good session existed. One accepted seed at 19:05 was declared STALE six
+    # minutes later by this same check.
+    #
+    # The signal is unchanged — a real rqst SSO token, in the URL or an in-page
+    # link. Only the set of pages we look on widens, so this can accept sessions
+    # it used to reject and can never accept one with no token at all.
+    for url in (OWNERVILLE_V2_URL, LOGIN_URL):
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(4_000)
+        except Exception:  # noqa: BLE001 — try the other domain
+            continue
+        if re.search(r"rqst=([A-Za-z0-9_]+)", page.url or ""):
+            if verbose:
+                print(f"-> ownerville session valid (rqst in URL at {url})",
+                      flush=True)
+            return True
+        try:
+            href = page.evaluate(
+                "() => { const a=[...document.querySelectorAll('a')]"
+                ".find(x=>/rqst=/.test(x.getAttribute('href')||'')); "
+                "return a?a.getAttribute('href'):''; }")
+            if re.search(r"rqst=([A-Za-z0-9_]+)", href or ""):
+                if verbose:
+                    print(f"-> ownerville session valid (rqst link at {url})",
+                          flush=True)
+                return True
+        except Exception:  # noqa: BLE001 — try the other domain
+            continue
+    return False
 
 
 def _ownerville_seed_hint() -> str:
