@@ -19,8 +19,12 @@ import unittest
 
 from automations.rashad_metrics import knocks_pull as KP
 
-# alias -> canonical, the shape load_aliases returns.
-ALIASES = {"Akashdeep Rai": "Kash Rai", "Calvin Rivera": "Calvin Ribera"}
+# THE REAL SHAPE load_aliases() returns: {canonical_sheet_tab: [aliases]}.
+# The first cut of this test encoded the opposite guess, so it passed while the
+# guard was refusing the right office in production. Check the shape, do not
+# assume it.
+ALIASES = {"Kash Rai": ["Akashdeep Rai"],
+           "Calvin Ribera": ["Calvin Rivera"]}
 
 
 class _Page:
@@ -76,3 +80,26 @@ class AssertImpersonating(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AliasShapeIsTheRealOne(unittest.TestCase):
+    """Pin the shape itself, so a future reader cannot re-guess it.
+
+    The guard's first cut iterated load_aliases() as {alias: canonical}. It is
+    {canonical: [aliases]}. The set of names it would accept therefore never
+    contained the alias, and it rejected the correct office in production while
+    the unit test — carrying the same wrong guess — passed.
+    """
+
+    def test_load_aliases_returns_canonical_to_alias_list(self):
+        import inspect
+        from automations.focus_office_att import aliases as A
+        sig = str(inspect.signature(A.load_aliases))
+        self.assertIn("dict[str, list[str]]", sig + (A.load_aliases.__doc__ or ""),
+                      "load_aliases no longer returns {canonical: [aliases]} — "
+                      "assert_impersonating reads it that way")
+
+    def test_the_guard_accepts_the_ownerville_spelling(self):
+        page = _Page("Akashdeep Rai (22177 - Palace Acquisitions, Inc.)")
+        KP.assert_impersonating(page, "RQ", "Kash Rai",
+                                {"Kash Rai": ["Akashdeep Rai"]}, verbose=False)

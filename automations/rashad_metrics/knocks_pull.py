@@ -379,9 +379,17 @@ def assert_impersonating(page, rqst: str, canonical: str, aliases_raw,
     label = impersonated_office_label(page, rqst)
     if not label:
         return                      # unreadable is not a mismatch
+    # load_aliases() returns {canonical_sheet_tab: [aliases]} — NOT
+    # {alias: canonical}. Reading it the other way round built an alias set
+    # that never contained the alias, so this refused the RIGHT office: on
+    # 2026-09-01 it told Raf "impersonation landed on 'Akashdeep Rai (22177 -
+    # Palace Acquisitions, Inc.)', not 'Kash Rai'" — which is the same office,
+    # under the spelling ownerville uses.
     want = {_norm_office(canonical)}
-    for alias, canon in (aliases_raw or {}).items():
-        if _norm_office(canon) == _norm_office(canonical):
+    for canon, alias_list in (aliases_raw or {}).items():
+        if _norm_office(canon) != _norm_office(canonical):
+            continue
+        for alias in (alias_list or []):
             want.add(_norm_office(alias))
     got = _norm_office(label)
     if any(w and w in got for w in want):
