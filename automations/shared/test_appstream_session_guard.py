@@ -211,26 +211,6 @@ class ReseedErrorNamesTheRightMachine(unittest.TestCase):
                 self.assertIsNone(tp._appstream_consumer_of())
 
 
-class ForcedFormLoginStartsAFreshSession(unittest.TestCase):
-    """A forced form login must not resume the session already in the profile.
-
-    Lucy 1, 2026-09-02: the renew drove the form, reached a live console, and
-    reported success — but applicantstream had RESUMED the profile's existing
-    rcaptain session rather than issuing, so the saved token carried the old
-    expiry (16 min left, not ~2h). The 4am batch then died on a token that had
-    just been 'renewed'. refresh_ownerville had already learned this for
-    ownerville ('EMPTY EVERY TIME'); the AppStream side gated the clear behind
-    an explicit `username` override, so a forced renew never got it."""
-
-    def test_source_clears_cookies_on_forced_login(self):
-        src = inspect.getsource(tp.appstream_direct_session.__wrapped__)
-        self.assertIn("elif force_form_login:", src)
-        # The clear has to happen on the forced path, before the form drive.
-        forced = src.split("elif force_form_login:", 1)[1]
-        before_drive = forced.split("if not _restored:", 1)[0]
-        self.assertIn("clear_cookies()", before_drive)
-
-
 class FleetPushCoversEveryMachine(unittest.TestCase):
     """Every machine that runs AppStream reports must be in the fleet push.
 

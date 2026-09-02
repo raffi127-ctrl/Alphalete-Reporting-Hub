@@ -6,6 +6,15 @@ now appears on a FRESH login even in a normal browser, on every machine. There i
 no headless way past a forced interactive challenge, and the vendors won't expose
 an API. The only thing that ALWAYS works unattended is to NEVER do a fresh login.
 
+SUPERSEDED FOR OWNERVILLE (2026-09-02). The paragraph above is still true of
+AppStream, but ownerville's Cloudflare now auto-passes automation — measured on
+Lucy 1 2026-09-01: "ownerville form login reached a LIVE session UNATTENDED (rqst
+present)". So NO HUMAN IS REQUIRED to bring this session back. Keeping the warm
+session is still the fast path and still what this file is for; the difference is
+that every recovery path now DRIVES THE LOGIN FORM (_unattended_ownerville_login)
+before it will ever ask a person. It asks a human only after that fails.
+A cold Lucy is a fault, not a constraint. [[feedback_lucys_always_warm]]
+
 ownerville is the session this holds warm: with a fresh exported ownerville
 storage_state, a HEADLESS run reaches Tableau via ownerville SSO. So the holder
 keeps ownerville logged in — that one session covers every Tableau/ownerville
@@ -29,9 +38,10 @@ SEED is non-disruptive: a SEPARATE validation page polls v2.ownerville for a liv
 rqst token while the human logs in on the login page — it never navigates the
 human's page out from under them (the bug in the first cut).
 
-DEGRADES SAFELY: if the session goes stale it does NOT drive the form (that hits
-the Turnstile). It alerts loudly, keeps the last good export, and the human logs
-back in RIGHT THERE — same warm window, no new escalation.
+DEGRADES SAFELY: if the session goes stale it logs back in UNATTENDED, keeps the
+last good export until that succeeds, and only alerts for a human if the login
+itself fails. (Before 2026-09-02 it refused to drive the form at all and just
+alerted — which reads fine at 2pm and is an outage at midnight.)
 
 Run on the always-on schedule machine (Mac mini; a laptop works while awake):
 
@@ -86,7 +96,24 @@ _MACHINE_MARKER = Path(__file__).resolve().parents[2] / ".machine-profile"
 # tokens age out) and wrong about the CURE: what those machines needed was the
 # donor's session pushed to them, which they now get, not a competing console of
 # their own.
-APPSTREAM_HOLD_MACHINES = ("Lucy 2",)
+#
+# EVERY LUCY HOLDS ITS OWN AGAIN, 2026-09-02 (Megan: "All 3 lucy's should each
+# hold their own and not rely on each other — we've proven the last 2 weeks that
+# doesn't work"). The single-holder design above is REVERSED. Two weeks of it is
+# the evidence: a machine whose only source of a session is somebody else's push
+# is dark for as long as that push is late, and on 2026-09-02 Lucy 1 sat with an
+# expired token through the whole 4am batch — daily_focus, applicant_sync_morning
+# and recruiter_retention_daily all died — with no inbound push all morning while
+# a human drove five manual logins.
+#
+# WHAT ABOUT THE MUTUAL-INVALIDATION MECHANISM the 8/29 note describes? It is
+# real, and it is a same-ACCOUNT problem, not a same-design problem: three
+# consoles re-hopping one rcaptain login invalidate each other's tokens. The fix
+# is the per-person login migration (each Lucy signs in as its OWN account), not
+# making two machines depend on a third. Until every Lucy has its own account,
+# expect some token churn here — that is the known cost of this trade, and it is
+# strictly better than a machine that cannot recover on its own.
+APPSTREAM_HOLD_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
 # Back-compat for anything importing the old singular name.
 APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[0]
 
@@ -258,12 +285,14 @@ from patchright.sync_api import sync_playwright
 
 from automations.shared.tableau_patchright import (
     PROFILE_DIR,
+    _drive_login_form,
     _launch_persistent,
     _ownerville_session_valid,
     _reuse_appstream_storage_state,
     _sso_to_appstream,
     OWNERVILLE_STORAGE_STATE,
     APPSTREAM_STORAGE_STATE,
+    LOGIN_URL,
     OWNERVILLE_V2_URL,
     APPSTREAM_BASE,
 )
@@ -317,6 +346,79 @@ def _export_ownerville(ctx) -> int:
     ov = [c for c in cookies if "ownerville" in (c.get("domain") or "")]
     OWNERVILLE_STORAGE_STATE.write_text(json.dumps({"cookies": ov, "origins": []}))
     return len(ov)
+
+
+# NO HUMAN IS REQUIRED TO LOG THIS SESSION BACK IN (Megan 2026-09-02).
+#
+# This file was written in June on a premise that has since been MEASURED FALSE:
+# "there is no headless way past a forced interactive challenge, so never do a
+# fresh login." Ownerville's Cloudflare auto-passes automation — measured on
+# Lucy 1 2026-09-01: "ownerville form login reached a LIVE session UNATTENDED
+# (rqst present)", which is why appstream_autorenew.refresh_ownerville exists and
+# works. The holder never picked that up, so both of its recovery paths still
+# ended at a prompt in a window nobody is sitting in front of.
+#
+# That cost the night of 2026-09-01: the mint failed at 23:48, the holder exited
+# for a relaunch at 23:54, printed "SEED: log into ownerville in the window" at
+# 23:54:31, and waited. Nobody was there at midnight. Ownerville stayed dark
+# through the 4am batch (applicant_sync_morning, recruiter_retention_daily and
+# daily_focus all failed) until a human logged in at 08:26. The relaunch ladder
+# above CANNOT fix this on its own: it re-seeds from the persistent profile's
+# cookies, and last night those cookies were themselves dead.
+#
+# So: drive the form. A cold session is a fault, not a constraint.
+# [[feedback_lucys_always_warm]]
+LOGIN_MIN_INTERVAL_MIN = 15.0
+_LAST_LOGIN_ATTEMPT: dict = {}
+
+
+def _unattended_ownerville_login(ctx, page, verbose: bool = True) -> bool:
+    """Log ownerville back in WITHOUT a human, in the holder's own profile.
+
+    Returns True only when the session is genuinely live afterwards (a real rqst
+    — `_ownerville_session_valid`, not merely a page that rendered).
+
+    THROTTLED. A failing login retried every 6-minute cycle would hammer the
+    form all night and is exactly the kind of loop that earns a challenge; one
+    attempt per LOGIN_MIN_INTERVAL_MIN is plenty against a 25-minute
+    no-export deadline, and the passive human check still runs every cycle.
+
+    Runs in the CALLER's playwright loop by design — the holder is already
+    inside sync_playwright(), so it cannot call refresh_ownerville (that starts
+    its own and declines; see appstream_autorenew._inside_playwright_loop). This
+    is the same login refresh_ownerville drives, minus the throwaway profile:
+    we WANT the session to land in the holder's persistent profile."""
+    last = _LAST_LOGIN_ATTEMPT.get("at", 0.0)
+    if last and (time.time() - last) / 60 < LOGIN_MIN_INTERVAL_MIN:
+        return False
+    _LAST_LOGIN_ATTEMPT["at"] = time.time()
+    print(f"[{_stamp()}] ownerville cold — driving the login form UNATTENDED "
+          f"(no human needed; retry no sooner than {LOGIN_MIN_INTERVAL_MIN:g} min).",
+          flush=True)
+    try:
+        page.goto(LOGIN_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(3_000)
+        # ALREADY SIGNED IN IS NOT A FAILURE — ownerville can redirect straight
+        # past the form, and then filling the password times out on a session
+        # that is perfectly live. Judge on the SESSION, not on whether we got to
+        # type into it (the mistake refresh_ownerville had to correct 2026-09-01).
+        try:
+            _drive_login_form(page, verbose=verbose)
+        except Exception as e:  # noqa: BLE001 — the validity check below judges
+            print(f"[{_stamp()}] login form not driven ({type(e).__name__}) — "
+                  f"checking whether we are already signed in", flush=True)
+        if not _ownerville_session_valid(page, verbose=False):
+            print(f"[{_stamp()}] unattended login did NOT reach a live session — "
+                  f"a human login in the window would still fix it.", flush=True)
+            return False
+        ovn = _export_ownerville(ctx)
+        print(f"[{_stamp()}] unattended login ✓ — session live again, exported "
+              f"{ovn} ownerville cookies. No human was involved.", flush=True)
+        return True
+    except Exception as e:  # noqa: BLE001 — never take the holder down for this
+        print(f"[{_stamp()}] unattended login error: {type(e).__name__}: "
+              f"{str(e)[:160]}", flush=True)
+        return False
 
 
 # --------------------------------------------------------------------------- #
@@ -510,10 +612,21 @@ def _push_token_to_fleet(verbose: bool = True, urgent: bool = False) -> None:
             return          # never distribute a session that can't open a console
         from automations.day_orchestrator import mini_control as mc
         me = _this_machine()
-        # FLEET, not HOLD: the donor is the only holder now, so pushing to the
-        # hold list would push to nobody. Every runner that RUNS AppStream
-        # reports needs the session, whether or not it holds one.
-        sent = [m for m in APPSTREAM_FLEET_MACHINES if m != me]
+        # ONLY TO MACHINES THAT DON'T HOLD ONE (Megan 2026-09-02: "each hold
+        # their own and not rely on each other"). Pushing to a fellow HOLDER is
+        # the reliance she is rejecting, and it actively destroys work: the
+        # receiving side installs the payload over whatever it has, so a machine
+        # that just minted a healthy session of its own gets it replaced by
+        # another machine's — on the same rcaptain account that is precisely how
+        # the fleet converged on "everyone holding something dead that still
+        # reads valid" (the 8/29 note above).
+        #
+        # With all three holding, this list is normally EMPTY and no push
+        # happens at all. It stays here for a machine added to the fleet before
+        # it can hold its own — and `--appstream-push-fleet` is still the
+        # deliberate operator hand-off after a human re-seed.
+        sent = [m for m in APPSTREAM_FLEET_MACHINES
+                if m != me and m not in APPSTREAM_HOLD_MACHINES]
         for m in sent:
             mc.enqueue("set_appstream_state", blob, by="holder-renewal", machine=m)
         _LAST_FLEET_PUSH["at"] = now
@@ -924,38 +1037,50 @@ def main() -> int:
                                  label="session_holder", verbose=False)
         login_page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
-        # --- Seed: open ownerville for the human; poll a separate page for a
-        #     live session. The holder never drives the form or navigates the
-        #     human's page — a pure human login is what keeps Cloudflare quiet. ---
+        # --- Seed. THE HOLDER SEEDS ITSELF (2026-09-02). Order matters:
+        #       1. the persistent profile usually auto-resumes — free, no login;
+        #       2. if it doesn't, DRIVE THE FORM unattended;
+        #       3. only if that fails do we fall back to asking a human.
+        #     Step 2 is the one that was missing. Without it a relaunch onto a
+        #     profile whose cookies are dead — the exact 2026-09-01 midnight case
+        #     — lands on the prompt below and stays there until morning. ---
         try:
             login_page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
         except Exception:
             pass
-        print(f"[{_stamp()}] SEED: log into ownerville in the window and clear any "
-              f"'verify you're human' box. (This one session covers every "
-              f"Tableau/ownerville report.) Waiting up to {args.seed_timeout:g} min…",
-              flush=True)
-        waited, deadline = 0, args.seed_timeout * 60
-        seeded = False
-        while waited < deadline:
-            # PASSIVE detection — read the login page's URL (a property read, NO
-            # navigation) so we never re-trigger Cloudflare while the human is
-            # mid-login. The old cut polled by NAVIGATING a check page every 15s,
-            # which kept the Turnstile alive and fought the login (Megan
-            # 2026-06-18). The post-login redirect lands on v2 with an rqst token.
-            if "rqst=" in (login_page.url or ""):
-                seeded = True
-                break
-            time.sleep(5)
-            waited += 5
+        seeded = "rqst=" in (login_page.url or "")
+        if seeded:
+            print(f"[{_stamp()}] profile resumed a live ownerville session — "
+                  f"no login needed.", flush=True)
+        else:
+            seeded = _unattended_ownerville_login(ctx, login_page, verbose=False)
+        if not seeded:
+            print(f"[{_stamp()}] unattended seed failed — falling back to a human. "
+                  f"SEED: log into ownerville in the window and clear any "
+                  f"'verify you're human' box. (This one session covers every "
+                  f"Tableau/ownerville report.) Waiting up to {args.seed_timeout:g} min…",
+                  flush=True)
+            waited, deadline = 0, args.seed_timeout * 60
+            while waited < deadline:
+                # PASSIVE detection — read the login page's URL (a property read,
+                # NO navigation) so we never re-trigger Cloudflare while the human
+                # is mid-login. The old cut polled by NAVIGATING a check page every
+                # 15s, which kept the Turnstile alive and fought the login (Megan
+                # 2026-06-18). The post-login redirect lands on v2 with an rqst.
+                if "rqst=" in (login_page.url or ""):
+                    seeded = True
+                    break
+                time.sleep(5)
+                waited += 5
         if seeded:
             ovn = _export_ownerville(ctx)
             print(f"[{_stamp()}] seeded ✓ — exported {ovn} ownerville cookies. "
                   f"Keep-alive every {args.interval:g} min. Leave running. Ctrl-C to stop.",
                   flush=True)
         else:
-            print(f"[{_stamp()}] not seeded within {args.seed_timeout:g} min — will keep "
-                  f"checking; finish logging in in the window.", flush=True)
+            print(f"[{_stamp()}] not seeded within {args.seed_timeout:g} min — the "
+                  f"keep-alive loop will retry the unattended login on its own "
+                  f"cadence; a human login in the window also works.", flush=True)
 
         # --- AppStream warming (OPT-IN, RESTORED 2026-08-05): only if this machine
         #     has been seeded (`--appstream-login` wrote APPSTREAM_STORAGE_STATE).
@@ -965,13 +1090,12 @@ def main() -> int:
         #     console so the batch/resume side rides a held session instead of a
         #     flaky fresh login. All AppStream work is try/except-contained so it
         #     can never crash the ownerville holder. ---
-        # Gate on BOTH a seed file AND this being THE AppStream-hold machine
-        # (see APPSTREAM_HOLD_MACHINES — back to one holder on 2026-08-29). A
-        # non-holder runner still gets the session pushed to it; it just doesn't
-        # keep a competing console on the same account, which is what made the
-        # three holders invalidate each other. The machine check also stops a box
-        # carrying a stale .appstream_storage_state.json from before the
-        # 2026-06-30 removal silently re-activating warming.
+        # Gate on BOTH a seed file AND this being an AppStream-hold machine (see
+        # APPSTREAM_HOLD_MACHINES — every Lucy holds its own again since
+        # 2026-09-02, so on the fleet this is normally True everywhere). The
+        # machine check still earns its place: it stops a box carrying a stale
+        # .appstream_storage_state.json from before the 2026-06-30 removal from
+        # silently re-activating warming.
         as_enabled = (APPSTREAM_STORAGE_STATE.exists()
                       and _this_machine() in APPSTREAM_HOLD_MACHINES)
         appstream_page = None
@@ -1097,16 +1221,28 @@ def main() -> int:
                           flush=True)
                     return 1
                 if awaiting_login:
-                    # Human is (re)logging in on the tab — DON'T navigate it.
+                    # PASSIVE CHECK FIRST, ALWAYS. If a human IS mid-login on this
+                    # tab, driving the form would navigate out from under them
+                    # (the 2026-06-18 bug). A property read never does that.
                     if _passive_rqst():
                         awaiting_login = False
                         ovn = _export_ownerville(ctx)
                         last_export_ok = time.time()
                         print(f"[{_stamp()}] re-seeded ✓ — exported {ovn} ownerville "
                               f"cookies.", flush=True)
+                    # NO HUMAN NEEDED (2026-09-02). This branch used to do nothing
+                    # but print "waiting…" every cycle — for HOURS overnight, which
+                    # is how the 4am batch found a dead session. Retry the
+                    # unattended login instead; it is throttled to one attempt per
+                    # LOGIN_MIN_INTERVAL_MIN, so between attempts we still just
+                    # watch the tab for a human who may be logging in anyway.
+                    elif _unattended_ownerville_login(ctx, login_page, verbose=False):
+                        awaiting_login = False
+                        last_export_ok = time.time()
                     else:
-                        print(f"[{_stamp()}]  ⏳ waiting for ownerville login in the "
-                              f"window…", flush=True)
+                        print(f"[{_stamp()}]  ⏳ ownerville still cold — unattended "
+                              f"login will retry; a human login in the window also "
+                              f"works.", flush=True)
                 else:
                     # Healthy → navigate the one tab to keep the session warm.
                     if _ownerville_session_valid(login_page, verbose=False):
@@ -1114,10 +1250,18 @@ def main() -> int:
                         last_export_ok = time.time()
                         print(f"[{_stamp()}] warm ✓ — {ovn} ownerville cookies "
                               f"(stale = kept last good export)", flush=True)
+                    # STALE → LOG BACK IN, don't announce it and wait. Recovering
+                    # on the FIRST stale cycle is the whole point: the fallback
+                    # ladder below (25-min no-export exit → relaunch) only re-seeds
+                    # from the profile's cookies, which in this state are dead.
+                    elif _unattended_ownerville_login(ctx, login_page, verbose=False):
+                        last_export_ok = time.time()
                     else:
                         awaiting_login = True
-                        print(f"[{_stamp()}]  ⚠️ ownerville STALE — log back in in the "
-                              f"window (kept last good export).", flush=True)
+                        print(f"[{_stamp()}]  ⚠️ ownerville STALE and the unattended "
+                              f"login did not take — will retry (kept last good "
+                              f"export). A human login in the window also works.",
+                              flush=True)
                     # AppStream keep-alive (seeded machines only). FULLY CONTAINED:
                     # its own try/except means a stale/challenged applicantstream
                     # console only logs a nudge — it never raises into the holder's

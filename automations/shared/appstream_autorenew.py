@@ -515,15 +515,18 @@ def main(argv=None) -> int:
             _log("UNATTENDED RENEW FAILED (%.0f min on the token) — never "
                  "reached a live console." % after)
         else:
-            # Reached the console, but the token came back short. That is the
-            # mint-resumed-the-old-session bug: a forced form login against a
-            # profile that still held live cookies re-handed the OLD expiry
-            # instead of issuing. appstream_direct_session now clears cookies
-            # before a forced login; seeing this again means it did not take.
-            _log("UNATTENDED RENEW FAILED — the login reached a live console "
-                 "but the token came back with only %.0f min (expected ~120). "
-                 "The mint resumed an existing session instead of issuing a new "
-                 "one." % after)
+            # Reached a console, but no usable token came back. MEASURED on
+            # Lucy 1 2026-09-02: this is what a form-login-only recovery looks
+            # like. The applicantstream form authenticates the ACCOUNT; it does
+            # not mint an rqst — that comes from the OWNERVILLE SSO hop
+            # (_sso_to_appstream / _ownerville_tokens, "what makes applicantstream
+            # ISSUE, while our own saved token only makes it RESTORE"). A console
+            # that renders on a re-injected old token reads as success here and
+            # is not one.
+            _log("UNATTENDED RENEW FAILED — reached a console but the token came "
+                 "back with only %.0f min (expected ~120). The applicantstream "
+                 "form does not mint an rqst; that comes from the ownerville SSO "
+                 "hop, so check the OWNERVILLE session first." % after)
         _donor = _consumer_of()
         if _donor:
             _log("  This machine is a CONSUMER — %s holds the AppStream session."

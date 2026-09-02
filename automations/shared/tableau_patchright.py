@@ -2008,36 +2008,21 @@ def appstream_direct_session(headless: bool = False,
                             break
                         except Exception:
                             continue
-            elif force_form_login:
-                # A FORCED form login must START A NEW SESSION, not resume the
-                # one already in the profile. Without this the renew is a no-op
-                # that reports success (Lucy 1, 2026-09-02): the profile still
-                # held live rcaptain cookies, so applicantstream resumed that
-                # session instead of issuing a new one, the save below wrote the
-                # SAME cookies back, and the "renewed" token carried the OLD
-                # expiry — 16 minutes, not the ~2h a real login gets. The whole
-                # 4am batch then died on a token that had just been "renewed".
-                #
-                # This is the identical lesson refresh_ownerville records for
-                # ownerville ("EMPTY EVERY TIME. A profile that is already
-                # signed in auto-resumes and the login never runs, so the
-                # 'fresh' session would be the stale one again") — it had simply
-                # never been applied to the AppStream side, where the clear was
-                # gated behind an explicit `username` override.
-                #
-                # Cookies only: the profile itself (and its cached extensions)
-                # stays put, so this costs nothing but the login it forces.
-                try:
-                    ctx.clear_cookies()
-                    if verbose:
-                        print("-> forced form login — cleared the profile's "
-                              "cookies so AppStream issues a NEW token instead "
-                              "of resuming the old session", flush=True)
-                except Exception as _e:
-                    if verbose:
-                        print(f"-> couldn't clear cookies ({_e}) — the login may "
-                              "resume the old session and re-hand its expiry",
-                              flush=True)
+            # DO NOT clear cookies on a forced form login. Tried on 2026-09-02
+            # and MEASURED WRONG on Lucy 1: the theory was that applicantstream
+            # was resuming the profile's session instead of issuing, so clearing
+            # would force a real mint. It does force the form to render — and
+            # the login still produces NO rqst_ cookie, because the applicantstream
+            # form does not mint one. The rqst token comes from OWNERVILLE SSO
+            # (_sso_to_appstream: ownerville ?p=701 → applicantstream), which is
+            # why _ownerville_tokens() is described as what makes applicantstream
+            # ISSUE while our own saved token only makes it RESTORE.
+            #
+            # So clearing deleted the only working token and minted nothing: the
+            # save below found zero rqst_ cookies and skipped, and the run only
+            # reached a console because the hop re-injected the OLD saved state.
+            # A forced login re-authenticates the ACCOUNT; the token still has to
+            # come from the ownerville hop.
             if not _restored:
                 if verbose:
                     print("-> [allow_form_login] driving AppStream login form",
