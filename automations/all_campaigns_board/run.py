@@ -131,8 +131,10 @@ def run(*, dry_run: bool = True, today: dt.date = None,
     stale_days = [d.isoformat() for d in fs.missing_day_columns(anchor, today)]
     if stale_days:
         logfn(f"  ⚠ {len(stale_days)} completed day(s) have NO column in "
-              f"{TARGET_SECTION!r} — DROPPED: {stale_days}. The day-number row "
-              f"is frozen: fix the cell to '=<prev cell>+1' and re-run.")
+              f"{TARGET_SECTION!r} — DROPPED: {stale_days}. The day-number "
+              f"row does not match real dates: run `python -m automations."
+              f"org_sales_board.daynum_repair --apply` (it covers this tab "
+              f"too), then re-run.")
 
     fs.apply_plan(tgt_ws, plan, dry_run=dry_run, logfn=logfn)
 

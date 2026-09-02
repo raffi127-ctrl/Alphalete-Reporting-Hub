@@ -559,8 +559,13 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
         idx = _WD_INDEX.get(wd)
         start = (new_monday - dt.timedelta(days=(7 - idx) % 7)
                  if idx is not None else new_monday)
+        # Rewrite the WHOLE row, not just this cell. D..I used to be a
+        # `=<prev>+1` chain hanging off it, and that chain dies at a month end
+        # (31 + 1 = 32): Mon 8/31 rolled to 31 32 33 34 35 36 37 and every
+        # section dropped 9/1 (Eve 2026-09-02). Seven literals can't.
+        upd = fs.daynum_row_update(a, start)
         if not dry_run:
-            ws.update(cell, [[start.day]], value_input_option="USER_ENTERED")
+            ws.batch_update([upd], value_input_option="USER_ENTERED")
         anchors.append((label, cell, start))
     if anchors:
         summary["daily_anchors"] = [(c, s.isoformat()) for _l, c, s in anchors]

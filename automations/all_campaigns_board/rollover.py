@@ -349,8 +349,12 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     new_monday = _wk.reporting_sunday(today) - dt.timedelta(days=6)
     first_col = min(anchor.day_col_by_daynum.values())
     cell = f"{a1col(first_col)}{anchor.daynum_row}"
+    # Whole row, not just the anchor cell: D..I was a `=<prev>+1` chain and it
+    # breaks at every month end (31 + 1 = 32 — Eve 2026-09-02, the week of Mon
+    # 8/31 read 31…37 here too and this tab dropped 9/1 with the ORG board).
     if not dry_run:
-        ws.update(cell, [[new_monday.day]], value_input_option="USER_ENTERED")
+        ws.batch_update([fs.daynum_row_update(anchor, new_monday)],
+                        value_input_option="USER_ENTERED")
     logfn(f"  6/6 daily date anchor {cell} → {new_monday.day} "
           f"(week of {new_monday.isoformat()})")
     logfn("=== rollover done ===")

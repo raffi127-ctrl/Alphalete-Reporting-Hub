@@ -34,6 +34,10 @@ except Exception:
     pass
 
 SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
+# What to tell a human whose board dropped a day. NOT '=<prev>+1'
+# any more: that chain IS the bug — it dies at every month end
+# (31 + 1 = 32 lost 9/1 across seven sections, Eve 2026-09-02).
+DAYNUM_FIX_CMD = "python -m automations.org_sales_board.daynum_repair --apply"
 from automations.org_sales_board.tabs import BOARD_TAB, ARCHIVED_VA_TAB
 
 # Both names live in tabs.py now — a rename is one line there, not six here.
@@ -500,8 +504,9 @@ def main(argv=None) -> int:
                             or not _compare_clean or _missing_reps or _dropped):
                         _failed_all = (
                             [f"section: {s}" for s in _skipped]
-                            + [f"dropped day — {d}; its day-number row is "
-                               "frozen, fix the cell to '=<prev cell>+1'"
+                            + [f"dropped day — {d}; its day-number row does "
+                               f"not match real dates — run "
+                               f"`{DAYNUM_FIX_CMD}`"
                                for d in _dropped]
                             + [f"program: {c}" for c in _failed_prog]
                             + [f"captainship: {c}" for c in _failed_caps]
