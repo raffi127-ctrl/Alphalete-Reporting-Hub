@@ -6240,6 +6240,62 @@ def _action_appstream_whoami(args: str) -> tuple[bool, str]:
     return ok, res[:900]
 
 
+def _action_purge_retired_appstream_creds(args: str) -> tuple[bool, str]:
+    """Delete retired AppStream credentials from THIS machine.
+
+    Only two logins exist (Megan 2026-09-02): 'Lucy Reports' for every report and
+    'Lucy Resume Pushing' for the resume pusher. The code already refuses to
+    SELECT anything else, but a retired credential sitting on disk is still worth
+    removing: it is a live login for an account nobody audits, and every call
+    site that could reach it is one edit away from existing again.
+
+    Removes ~/.config/recruiting-report/appstream-alt.json (the CarlosNLR slot)
+    and any non-allowed entry in appstream-accounts.json. Backs each up beside
+    itself with a .retired suffix rather than destroying it — an account we turn
+    out to still need is recoverable, and nothing here is the only copy.
+
+    Read-only against the two accounts that remain: it never touches
+    ownerville-creds.json, so the reporting login and its password are untouched."""
+    import json as _json
+    cfg = Path.home() / ".config" / "recruiting-report"
+    removed, kept = [], []
+
+    alt = cfg / "appstream-alt.json"
+    if alt.exists():
+        bak = alt.with_suffix(".json.retired")
+        alt.replace(bak)
+        removed.append("appstream-alt.json (backed up as %s)" % bak.name)
+
+    acc = cfg / "appstream-accounts.json"
+    if acc.exists():
+        try:
+            blob = _json.loads(acc.read_text())
+        except Exception as e:  # noqa: BLE001
+            return False, "appstream-accounts.json is unreadable: %s" % str(e)[:120]
+        if isinstance(blob, dict):
+            from automations.shared import creds as _creds
+            bad = [k for k in blob if k not in _creds.ALLOWED_APPSTREAM_ACCOUNTS]
+            if bad:
+                (cfg / "appstream-accounts.json.retired").write_text(
+                    _json.dumps(blob, indent=2))
+                for k in bad:
+                    blob.pop(k, None)
+                acc.write_text(_json.dumps(blob, indent=2))
+                try:
+                    os.chmod(acc, 0o600)
+                except OSError:
+                    pass
+                removed.extend("account %r" % k for k in bad)
+            kept = sorted(blob)
+
+    _creds_cache_bust()
+    if not removed:
+        return True, ("nothing retired on this machine · accounts: %s"
+                      % (", ".join(kept) or "primary only"))
+    return True, ("removed: %s · accounts remaining: %s"
+                  % ("; ".join(removed), ", ".join(kept) or "primary only"))
+
+
 def _action_login_check(args: str) -> tuple[bool, str]:
     """Are BOTH logins live on THIS machine — ownerville AND AppStream?
 
@@ -7012,6 +7068,7 @@ ACTIONS = {
     "reseed_appstream": _action_reseed_appstream,
     "push_appstream_fleet": _action_push_appstream_fleet,
     "login_check": _action_login_check,
+    "purge_retired_appstream_creds": _action_purge_retired_appstream_creds,
     "appstream_renew_probe": _action_appstream_renew_probe,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
