@@ -84,12 +84,29 @@ class TheContextProbe(unittest.TestCase):
 class ARenderingConsoleIsNotEnough(unittest.TestCase):
 
     def test_console_with_no_token_falls_through_to_the_state_file(self):
-        """THE BUG. This is how a pushed token reaches the live context."""
+        """THE BUG: a console that RENDERS must not short-circuit the recovery.
+
+        #searchMC renders off CFID/CFTOKEN alone and the holder's own 6-minute
+        reload keeps those alive indefinitely, so an early return on "the
+        console is there" left the holder warming a tokenless session, exporting
+        nothing, and printing ✓ every cycle (Lucy 1, all morning 2026-08-25).
+
+        What the fall-through is FOR has changed. It used to be how a fleet push
+        reached this process — a donor's token landed in the file and the holder
+        picked it up. Nothing pushes between Lucys any more (2026-09-02: each
+        signs in as its own account, so a push is an identity swap). The file is
+        still re-read every call, which is how a re-seed run ON THIS MACHINE
+        reaches the already-running holder. Same mechanism, local reason.
+
+        The verdict follows the TOKEN, not the reuse: reuse returning True while
+        the context still holds no rqst is not a live session, and saying it is
+        would re-introduce the exact lie above."""
         with mock.patch.object(sh, "_reuse_appstream_storage_state",
                                return_value=True) as reuse:
             ok = sh._warm_appstream(_ctx(rqst=0), _page(), verbose=False)
-        self.assertTrue(ok)
-        reuse.assert_called_once()
+        reuse.assert_called()          # the recovery path WAS reached
+        self.assertFalse(ok, "a tokenless context is not a warm session, "
+                             "however the storage_state replay reported")
 
     def test_console_with_a_token_short_circuits(self):
         """The healthy path must stay cheap — no re-read every 6 minutes."""
@@ -280,13 +297,29 @@ class TheLogCanTellRenewedFromStillAlive(unittest.TestCase):
         self.assertEqual(sh._rqst_note(ctx), "")
 
 
-class ARenewedTokenIsHandedToTheFleet(unittest.TestCase):
-    """THE ANSWER TO "I should not have to ever re-seed" (Megan 2026-08-27).
-    Lucy 1 and Lucy 3 were tokenless for ten hours while Lucy 2 held a live
-    session six minutes stale. Same account, same session, works on any of them
-    — and the only route between them ran through a person clearing a Turnstile
-    that did not need clearing. A renewal is now handed to the other machines,
-    so it takes ALL of them failing at once to need a human."""
+class ARenewedTokenIsNeverHandedToAnotherLucy(unittest.TestCase):
+    """A renewal stays on the machine that minted it. REVERSED 2026-09-02.
+
+    This class used to assert the opposite — that Lucy 2's renewal was pushed to
+    Lucy 1 and Lucy 3 — and both premises under that have since failed:
+
+      * "Same account, same session, works on any of them." Not any more. Each
+        Lucy signs in as its OWN login, so installing one machine's session on
+        another does not refresh it, it REPLACES WHO THAT MACHINE IS, and every
+        office lookup behind it silently becomes the wrong account's.
+      * "The only route between them ran through a person clearing a Turnstile."
+        There is no such person and never needed to be: the check clears itself
+        given ~30s before submit, so a tokenless machine logs ITSELF back in.
+
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down." The old design was exactly that dependency — three
+    machines living off one donor's token.
+
+    What is pinned now: the sender filters out every fellow hold machine, so
+    with all three holding their own the push list is EMPTY and nothing goes out.
+    The guard against distributing a tokenless file is kept as-is — it still
+    protects the one remaining case, a machine added to the fleet before it has
+    a login of its own."""
 
     def setUp(self):
         sh._LAST_RQST["id"] = None
@@ -306,7 +339,8 @@ class ARenewedTokenIsHandedToTheFleet(unittest.TestCase):
             "sys.modules", {"automations.day_orchestrator": mock.Mock(mini_control=mc),
                             "automations.day_orchestrator.mini_control": mc})
 
-    def test_the_other_hold_machines_get_the_new_session(self):
+    def test_no_fellow_hold_machine_is_sent_the_session(self):
+        """The whole point: with all three holding their own, nothing goes out."""
         mc, patch_mc = self._mc()
         with patch_mc, \
              mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
@@ -315,7 +349,28 @@ class ARenewedTokenIsHandedToTheFleet(unittest.TestCase):
                                    return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
             self._renew()
         sent = [c.kwargs.get("machine") for c in mc.enqueue.call_args_list]
-        self.assertEqual(sorted(sent), ["Lucy 1", "Lucy 3"])
+        self.assertEqual(sent, [],
+                         "a renewal must not be pushed to a machine that holds "
+                         "its own session — that is an identity swap")
+
+    def test_a_non_holder_in_the_fleet_would_still_be_covered(self):
+        """The filter is 'holds its own', not 'is a Lucy'.
+
+        A machine added to APPSTREAM_FLEET_MACHINES before it has a login of its
+        own has no other way to get a session, and that is the one case the push
+        still exists for. Pinning it stops the filter being tightened into 'never
+        push at all', which would strand such a machine silently."""
+        mc, patch_mc = self._mc()
+        with patch_mc, \
+             mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_FLEET_MACHINES",
+                               ("Lucy 1", "Lucy 2", "Lucy 3", "Newbox")), \
+             mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
+                               mock.Mock(read_text=mock.Mock(
+                                   return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):
+            self._renew()
+        sent = [c.kwargs.get("machine") for c in mc.enqueue.call_args_list]
+        self.assertEqual(sent, ["Newbox"])
 
     def test_it_never_hands_itself_the_session(self):
         mc, patch_mc = self._mc()
@@ -339,15 +394,21 @@ class ARenewedTokenIsHandedToTheFleet(unittest.TestCase):
             self._renew()
         mc.enqueue.assert_not_called()
 
-    def test_a_renewal_goes_out_even_inside_the_hourly_floor(self):
+    def test_a_renewal_bypasses_the_hourly_floor_for_a_machine_that_needs_it(self):
         """THE DEFECT (2026-08-28 19:47). Renewing invalidates the token the
-        other machines are holding, so throttling THIS push leaves them on a
-        dead one that still reads valid — Lucy 1 and Lucy 3 both on EA30849A
-        showing "18m left" while Lucy 2 had moved to EC854530. An hour's delay
-        here is an hour of false health, not an hour of staleness."""
+        receiving machine is holding, so throttling THIS push leaves it on a dead
+        one that still reads valid — Lucy 1 and Lucy 3 both on EA30849A showing
+        "18m left" while Lucy 2 had moved to EC854530. An hour's delay is an hour
+        of false health, not an hour of staleness.
+
+        Still pinned, now against the only recipient that can exist: a fleet
+        machine with no login of its own. Between Lucys nothing is sent at all,
+        so the floor has nothing to throttle."""
         mc, patch_mc = self._mc()
         with patch_mc, \
              mock.patch.object(sh, "_this_machine", return_value="Lucy 2"), \
+             mock.patch.object(sh, "APPSTREAM_FLEET_MACHINES",
+                               ("Lucy 1", "Lucy 2", "Lucy 3", "Newbox")), \
              mock.patch.object(sh, "APPSTREAM_STORAGE_STATE",
                                mock.Mock(read_text=mock.Mock(
                                    return_value='{"cookies":[{"name":"rqst_NEW"}]}'))):

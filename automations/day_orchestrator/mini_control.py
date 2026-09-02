@@ -231,6 +231,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # `update` still succeeds and the queue looks alive while every rerun sits at
 # "queued" for hours. Reading a log should never spend a fix.
 READONLY_ACTIONS = {"push_appstream_fleet",
+                    "login_check",
                     "logtail", "daystate", "git_status", "git_diff",
                     "slack_channel", "slack_find", "slack_thread"}
 
@@ -1400,6 +1401,33 @@ def _action_appstream_renew_probe(args: str) -> tuple[bool, str]:
 
 
 def _action_push_appstream_fleet(args: str) -> tuple[bool, str]:
+    """RETIRED — a machine does not get its AppStream session from another one.
+
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down."
+
+    Its premise held while every runner shared the rcaptain login: then a pushed
+    storage_state was the same session, only fresher. Since the per-person
+    migration it is an IDENTITY SWAP — Lucy 1 is 'Lucy Reports', the resume
+    pusher is 'Lucy Resume Pushing', and installing one machine's cookies on
+    another makes that machine somebody else for every office lookup behind it.
+
+    Its second premise is gone too: it existed because a tokenless machine could
+    only be rescued by "asking a person to clear a Turnstile". That check clears
+    itself given ~30s before submit, so a tokenless machine logs ITSELF back in.
+
+    Refused, not deleted — a queued row from before this change should say why
+    it did nothing rather than quietly overwriting three machines' identities."""
+    return False, (
+        "RETIRED (Megan 2026-09-02). Pushing a session swaps the destination "
+        "machine's IDENTITY, and a fleet fed by one donor dies with the donor. "
+        "Each Lucy logs itself in — the Cloudflare check clears itself. On the "
+        "machine that needs a session: `--appstream-login`, then verify BOTH "
+        "logins with `login_check` (ownerville and AppStream are separate and "
+        "one passing says nothing about the other).")
+
+
+def _dead_action_push_appstream_fleet(args: str) -> tuple[bool, str]:
     """Push THIS machine's live AppStream session to every runner — no human.
 
     Why this exists (Megan 2026-08-27: "I should not have to ever re-seed").
@@ -1588,6 +1616,12 @@ def _action_set_appstream_state(args: str) -> tuple[bool, str]:
 
 
 def _action_appstream_promote_alt(args: str) -> tuple[bool, str]:
+    """RETIRED — there is no alternate account left to promote (see
+    _RETIRED_ALT_MSG). Kept so a queued row explains itself."""
+    return False, _RETIRED_ALT_MSG
+
+
+def _dead_action_appstream_promote_alt(args: str) -> tuple[bool, str]:
     """Make the ALTERNATE AppStream login this machine's PRIMARY — copy the
     alt credentials (appstream-alt.json, installed by set_appstream_alt_creds)
     into the primary keys of ownerville-creds.json. Runs entirely on THIS
@@ -1640,6 +1674,16 @@ def _action_appstream_promote_alt(args: str) -> tuple[bool, str]:
 
 
 def _action_set_appstream_alt_state(args: str) -> tuple[bool, str]:
+    """RETIRED — no alternate account, so no alternate session to replay.
+
+    Its premise is also gone twice over: it existed because the 2026-08-20
+    release was believed to have put a permanent human check on the login form.
+    It had not — the check clears itself given ~30s before submit — so a machine
+    signs itself in rather than being handed somebody else's session."""
+    return False, _RETIRED_ALT_MSG
+
+
+def _dead_action_set_appstream_alt_state(args: str) -> tuple[bool, str]:
     """Seed the ALTERNATE AppStream account's live session onto THIS machine
     from a storage-state JSON exported where a human cleared the login.
 
@@ -6196,6 +6240,26 @@ def _action_appstream_whoami(args: str) -> tuple[bool, str]:
     return ok, res[:900]
 
 
+def _action_login_check(args: str) -> tuple[bool, str]:
+    """Are BOTH logins live on THIS machine — ownerville AND AppStream?
+
+      login_check           read the stored sessions (fast, no browser)
+      login_check --deep    also open the AppStream console and read back which
+                            account it is actually signed in as
+
+    WHY IT IS A QUEUE ACTION: Lucy 2 and Lucy 3 have no SSH, so this is the only
+    way to audit them, and auditing them SEPARATELY is the point — Megan
+    2026-09-02: "Ownerville and App stream ARE NOT the same login and should not
+    be considered fixed if only one of them works."
+
+    Read-only. It reads session files and, with --deep, opens a console and
+    reads the page back. Nothing is written, nothing is pushed anywhere: each
+    machine answers for itself."""
+    cmd = [sys.executable, "-m", "automations.shared.login_check"] + (args or "").split()
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60, log_name="login-check.log")
+    return ok, res[:900]
+
+
 def _action_funnel_board_unlock(args: str) -> tuple[bool, str]:
     """Clear a stale funnel_board run lock left by a killed run.
 
@@ -6221,22 +6285,31 @@ def _action_funnel_board_unlock(args: str) -> tuple[bool, str]:
     return not lock.exists(), "cleared a %.0f min old lock (no funnel_board running)" % age
 
 
+_RETIRED_ALT_MSG = (
+    "RETIRED (Megan 2026-09-02). There are exactly two AppStream logins: "
+    "'Lucy Reports' — every report on every Lucy — and 'Lucy Resume Pushing' — "
+    "the resume pusher. rcaptain and the CarlosNLR 'alt' slot are gone. "
+    "Use set_appstream_creds / set_appstream_username for the reporting login, "
+    "or set_appstream_account lucyresume for the resume login. This action is "
+    "kept only so an old queued row gets this sentence instead of quietly "
+    "installing a third account.")
+
+
 def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
-    """Install a SECOND AppStream login on THIS machine, beside the primary.
+    """RETIRED — installing a third AppStream login is no longer allowed.
 
-      set_appstream_alt_creds <username> <password>
+    It used to write a second credential beside the primary, because Lucy 2
+    signed in as CarlosNLR and could not see six of the 28 offices while
+    rcaptain could. Both accounts are gone; every Lucy signs in as
+    'Lucy Reports' and reaches all of them.
 
-    Why a second one rather than replacing: Lucy 2 runs as CarlosNLR, which
-    cannot see six of the 28 offices, while rcaptain can. Other reports on that
-    machine already depend on the primary account and its saved session, so the
-    alternate is stored separately and jobs choose per run
-    (funnel_board --account alt). The alternate also gets its OWN browser profile
-    so its cookies never overwrite the primary's session.
+    It refuses rather than being deleted because the danger is a QUEUED row: the
+    queue outlives a deploy, and a row landing after this change should say why
+    it did nothing, not install an account no report is allowed to select."""
+    return False, _RETIRED_ALT_MSG
 
-    Writes to ~/.config/recruiting-report/appstream-alt.json (chmod 600) and
-    verifies by actually logging in and reading the account back. NEVER echoes
-    the password. In SECRET_ACTIONS, so the poller blanks the Args cell the
-    moment the row ends."""
+
+def _dead_action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     import json as _json
     parts = (args or "").split()
     if len(parts) < 2:
@@ -6938,6 +7011,7 @@ ACTIONS = {
     "post_nsf_correction": _action_post_nsf_correction,
     "reseed_appstream": _action_reseed_appstream,
     "push_appstream_fleet": _action_push_appstream_fleet,
+    "login_check": _action_login_check,
     "appstream_renew_probe": _action_appstream_renew_probe,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,

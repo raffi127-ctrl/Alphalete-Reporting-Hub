@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -73,7 +75,13 @@ def ownerville_password() -> str:
     return _resolve("ownerville_password", "OWNERVILLE_PASSWORD")
 
 
-# --- AppStream (ApplicantStream) recruiting login (account: rcaptain) ---------
+# --- AppStream (ApplicantStream) recruiting login ----------------------------
+# ONLY TWO APPSTREAM ACCOUNTS EXIST (Megan 2026-09-02): "Lucy Reports" — every
+# report on every Lucy — and "Lucy Resume Pushing" — the resume pusher, and
+# nothing else. `rcaptain` is RETIRED; so is the old CarlosNLR 'alt' slot. If you
+# are reading a comment somewhere that names another account, the comment is
+# stale, not the code.
+#
 # Source order: gitignored creds file → env → macOS keychain (where it already
 # lives via `security add-generic-password -a applicantstream -s applicantstream-
 # <field>`). Never hardcoded — the repo was public.
@@ -102,9 +110,51 @@ def _resolve_as(key: str, env: str, keychain_service: str) -> str:
     return val
 
 
+# THE USERNAME HAS A SPACE IN IT. "Lucy Reports", not "LucyReports".
+#
+# WHY THIS IS CODE AND NOT A NOTE (Megan 2026-09-02): the creds file held
+# `LucyReports` and nothing failed loudly. The form filled it, cleared
+# Cloudflare, submitted — and the console still RENDERED, off the CFID/CFTOKEN
+# pair re-injected on the `?rqst=…&p=701` hop. It carried no token. Every layer
+# above read that as success: autorenew reported the token "renewed" and blamed
+# a cold profile, and the whole 4am batch (daily_focus, applicant_sync_morning,
+# recruiter_retention_daily) died on it. It cost a morning of wrong diagnoses
+# before anyone looked at the username. With the space it minted 2h on the first
+# try.
+#
+# A typo that silent must not be able to reach the form again, so the spelling
+# is repaired here, at the one place every caller goes through, and the repair
+# is printed — a silent fix is how the drift comes back.
+_CANONICAL_APPSTREAM_USERNAMES = ("Lucy Reports", "Lucy Resume Pushing")
+
+
+def canonical_appstream_username(value: str) -> str:
+    """Repair a known AppStream username whose spacing has been mangled.
+
+    Matching ignores case and every space/underscore/hyphen, so `LucyReports`,
+    `lucy_reports` and `LUCY  REPORTS` all resolve to `Lucy Reports`. A username
+    that matches nothing we know is returned untouched — this corrects a spelling
+    we are certain of, it does not invent accounts."""
+    raw = str(value or "").strip()
+    if not raw:
+        return raw
+    squashed = re.sub(r"[\s_-]+", "", raw).lower()
+    for canon in _CANONICAL_APPSTREAM_USERNAMES:
+        if squashed == re.sub(r"[\s_-]+", "", canon).lower():
+            if raw != canon:
+                print("[creds] AppStream username %r is misspelled — using %r "
+                      "(the space matters: a wrong username reaches a console "
+                      "that renders with NO token). Fix it at the source with "
+                      "`lucy set_appstream_username`." % (raw, canon),
+                      file=sys.stderr, flush=True)
+            return canon
+    return raw
+
+
 def appstream_username() -> str:
-    return _resolve_as("appstream_username", "APPLICANTSTREAM_USERNAME",
-                       "applicantstream-username")
+    return canonical_appstream_username(
+        _resolve_as("appstream_username", "APPLICANTSTREAM_USERNAME",
+                    "applicantstream-username"))
 
 
 def appstream_password() -> str:
@@ -140,11 +190,22 @@ def doubleentry_password() -> str:
     return _resolve_de("doubleentry_password", "DOUBLEENTRY_PASSWORD")
 
 
-# --- Alternate AppStream account -------------------------------------------
-# A machine may need a SECOND AppStream login: Lucy 2 runs as CarlosNLR, which
-# cannot see six of the 28 offices, while rcaptain can. Rather than overwrite the
-# primary (other reports on that machine depend on it), the alternate lives
-# beside it and each job picks the account it needs.
+# --- RETIRED: the alternate AppStream account -------------------------------
+# THIS SLOT IS CLOSED (Megan 2026-09-02: "We should NOT be using any other app
+# stream logins anymore other than the Lucy Reports & Lucy Resume Pushing ones —
+# Rcaptain is RETIRED").
+#
+# It existed because Lucy 2 signed in as CarlosNLR, which could not see six of
+# the 28 offices, while rcaptain could — so a job picked whichever account it
+# needed. Both of those accounts are gone. Every report now signs in as
+# 'Lucy Reports'; the resume pusher signs in as 'Lucy Resume Pushing'. There is
+# no third answer, and a slot that can hold one is a way for a report to end up
+# quietly running as somebody else — the 2026-08-20 failure where Lucy 2's
+# "rcaptain" verify actually ran as Carlos Hidalgo.
+#
+# The readers stay so an old install carrying appstream-alt.json degrades to
+# "no alternate" instead of crashing, but nothing may SELECT it: `has_appstream_
+# alt()` is hard-False and appstream_account('alt') raises.
 _ALT_PATH = Path.home() / ".config" / "recruiting-report" / "appstream-alt.json"
 
 
@@ -170,11 +231,20 @@ def appstream_alt_password() -> str:
 
 
 def has_appstream_alt() -> bool:
-    """True if this machine has a second AppStream account configured."""
-    try:
-        return bool(appstream_alt_username() and appstream_alt_password())
-    except Exception:  # noqa: BLE001 — missing is a normal state, not an error
-        return False
+    """Always False — the alternate account is retired (see above).
+
+    Hard-coded rather than deleted: several callers ask this before offering an
+    'alt' path, and the answer they need now is no. A machine with a leftover
+    appstream-alt.json must not light that path back up."""
+    return False
+
+
+def appstream_alt_installed() -> bool:
+    """Is a retired appstream-alt.json still sitting on this machine?
+
+    Not used to SELECT the account — only so the login preflight can say
+    'there is a stale credential file here, delete it'."""
+    return bool(str(_alt_file().get("appstream_alt_username") or "").strip())
 
 
 # --- Named AppStream accounts ------------------------------------------------
@@ -192,7 +262,10 @@ def has_appstream_alt() -> bool:
 #
 # Lives OUTSIDE the repo (the repo is public) beside appstream-alt.json:
 #   ~/.config/recruiting-report/appstream-accounts.json
-#     {"lucyresume": {"username": "LucyResume", "password": "..."}}
+#     {"lucyresume": {"username": "Lucy Resume Pushing", "password": "..."}}
+#
+# SPELL THE USERNAME THE WAY THE ACCOUNT IS SPELLED, spaces included — see
+# canonical_appstream_username() above for what a mangled one costs.
 #
 # 'primary' and 'alt' resolve to the existing slots, so a caller can name any
 # account without caring which storage mechanism holds it.
@@ -209,18 +282,37 @@ def _accounts_file() -> dict:
     return blob if isinstance(blob, dict) else {}
 
 
+# THE ONLY TWO ACCOUNTS THERE ARE. 'primary' is the reporting login
+# ("Lucy Reports"); 'lucyresume' is the resume pusher ("Lucy Resume Pushing").
+# Anything else — 'alt', 'rcaptain', a name someone adds to the accounts file —
+# is refused by appstream_account() rather than used.
+ALLOWED_APPSTREAM_ACCOUNTS = ("primary", "lucyresume")
+
+
 def appstream_accounts() -> list:
     """Every account name usable on this machine. NAMES ONLY — never a password.
 
-    'primary' is always present; 'alt' only when one is configured. Used by the
-    error path below and by appstream_whoami --accounts, so a machine can say
-    what it has without anyone opening a credentials file."""
+    'primary' is always present. 'lucyresume' appears once the scoped resume
+    login is installed. Nothing else is listed, even if the accounts file holds
+    it: a name that appears here reads as a name a report may ask for, and there
+    are exactly two (Megan 2026-09-02)."""
     names = ["primary"]
-    if has_appstream_alt():
-        names.append("alt")
-    names.extend(sorted(k for k in _accounts_file()
-                        if k not in ("primary", "alt")))
+    if "lucyresume" in _accounts_file():
+        names.append("lucyresume")
     return names
+
+
+def unexpected_appstream_accounts() -> list:
+    """Retired account names still installed on this machine, if any.
+
+    Reported by the login preflight so a leftover 'alt'/rcaptain credential gets
+    deleted rather than sitting there waiting to be selected by an old call
+    site."""
+    extra = sorted(k for k in _accounts_file()
+                   if k not in ALLOWED_APPSTREAM_ACCOUNTS)
+    if appstream_alt_installed():
+        extra.append("alt (appstream-alt.json)")
+    return extra
 
 
 def appstream_account(name: str) -> tuple:
@@ -232,9 +324,21 @@ def appstream_account(name: str) -> tuple:
     the wrong answer there is falling back to a broader account and pushing to
     offices the report was never allowed to touch. Never fall back. Fail."""
     key = (name or "primary").strip().lower()
+    # REFUSE A RETIRED ACCOUNT OUTRIGHT. Only 'Lucy Reports' (primary) and
+    # 'Lucy Resume Pushing' (lucyresume) exist (Megan 2026-09-02). A caller still
+    # asking for 'alt' or 'rcaptain' is running on a stale assumption, and the
+    # dangerous version of that is a job signing in as an account with wider
+    # office access than it is allowed to push — the 8/30 over-push exactly. Fail
+    # where the name is chosen, not somewhere downstream.
+    if key not in ALLOWED_APPSTREAM_ACCOUNTS:
+        raise RuntimeError(
+            "AppStream account %r is RETIRED. There are exactly two logins: "
+            "'primary' (Lucy Reports — every report) and 'lucyresume' "
+            "(Lucy Resume Pushing — the resume pusher only). Point this caller "
+            "at one of those; do not re-install %r." % (key, key))
     entry = _accounts_file().get(key)
     if isinstance(entry, dict):
-        user = str(entry.get("username") or "").strip()
+        user = canonical_appstream_username(entry.get("username") or "")
         pw = str(entry.get("password") or "")
         if user and pw:
             return user, pw
@@ -243,12 +347,6 @@ def appstream_account(name: str) -> tuple:
             % (key, _ACCOUNTS_PATH.name))
     if key == "primary":
         return appstream_username(), appstream_password()
-    if key == "alt":
-        if not has_appstream_alt():
-            raise RuntimeError(
-                "AppStream account 'alt' asked for, but no alternate login is "
-                "configured on this machine (set_appstream_alt_creds).")
-        return appstream_alt_username(), appstream_alt_password()
     raise RuntimeError(
         "No AppStream account named %r on this machine. Configured: %s. Install "
         "it with the mini-control action set_appstream_account, and do NOT fall "

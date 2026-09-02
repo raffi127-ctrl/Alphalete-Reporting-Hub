@@ -216,30 +216,32 @@ def _donation_age_min() -> float | None:
 
 
 def fleet_is_feeding_us() -> tuple[bool, str]:
-    """Is the AppStream holder still handing THIS machine fresh tokens?
+    """Always (False, why). NOTHING FEEDS THIS MACHINE — it mints its own.
 
-    Whenever it is, a human re-seed is the wrong answer and the page should not
-    go out. Only the console-using machine can mint; a consumer's copy is MEANT
-    to lapse between handoffs; and a fresh login here would invalidate the token
-    the whole fleet is holding — session_holder tells anyone reading its log the
-    same thing ("do NOT --appstream-login here"). So the question that decides
-    whether to wake someone is not "is my copy old", which is old on purpose. It
-    is the one this module's docstring already names: has the MINTER stopped?"""
-    try:
-        from automations.shared import session_holder as _sh
-        holders = _sh.APPSTREAM_HOLD_MACHINES
-    except Exception:                       # noqa: BLE001 — never break the watch
-        return False, "cannot tell who holds AppStream"
-    if _this_machine() in holders:
-        return False, "this machine IS the AppStream holder"
-    age = _donation_age_min()
-    if age is None:
-        return False, "no fleet handoff has ever landed here"
-    if age <= FLEET_HANDOFF_GRACE_MIN:
-        return True, (f"the holder handed this machine a session {age:.0f}m ago "
-                      f"— a fresh one is due, no re-seed can help")
-    return False, (f"no fleet handoff in {age:.0f}m — the holder has stopped, "
-                   f"which IS the case a human fixes")
+    This was a page-SUPPRESSION rule, and it earned its place: on 2026-08-31 the
+    watch woke Megan at 03:01 over a token with 0.1h left on a machine that was
+    being handed a fresh one hourly, and the re-seed it asked for would have
+    invalidated the token the whole fleet was holding. While one machine minted
+    and the rest consumed, "my copy is nearly expired" genuinely was not an
+    outage — it was a copy that is old on purpose.
+
+    THE ARRANGEMENT IT SUPPRESSED FOR IS GONE (Megan 2026-09-02: "one machine
+    CANNOT depend on another, we don't want 1 taking them all down"). Every Lucy
+    signs in as its own account and mints its own token. There is no donor, no
+    trough, and nothing that is old on purpose.
+
+    So the suppression has to go with it — and this is the direction that
+    matters. A suppression whose premise has quietly expired does not fail
+    loudly; it swallows the page on the morning the session is genuinely dead,
+    which is the same shape as the 4am batch dying on a token that had just been
+    "renewed". A dead session now always pages, on the machine it is dead on,
+    because that is the only machine that can fix it.
+
+    Kept as a stub rather than deleted so the caller keeps its explanatory
+    string — the log line says WHY it is not suppressing."""
+    return False, ("this machine mints its own AppStream session — nothing "
+                   "donates one to it, so a dead session here is real and "
+                   "actionable HERE")
 
 
 def _this_machine() -> str:
@@ -683,14 +685,16 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
         # batch). Before pinging, ask the only question that matters: can a
         # report open the console RIGHT NOW, on the path a report actually uses?
         probe_failed = False
-        # THE MINTER, NOT THE COPY (2026-08-31). This machine consumes a token
-        # Lucy 2 mints and pushes hourly; between pushes its copy is short or
-        # expired BY DESIGN, and no login here can shorten that wait — it would
-        # only invalidate what the fleet is holding. So while the handoffs are
-        # still arriving, there is nothing to page anyone about. Checked before
-        # the probe because the probe is what turns this into a page, and at
-        # 03:01 it correctly reported a dead copy four minutes before the
-        # replacement landed.
+        # THE MINTER, NOT THE COPY (2026-08-31) — a suppression that NO LONGER
+        # FIRES (2026-09-02). It existed because this machine consumed a token
+        # Lucy 2 minted and pushed hourly, so between pushes its copy was short
+        # or expired BY DESIGN and no login here could shorten the wait. Every
+        # Lucy now mints its own, so there is no trough and nothing is old on
+        # purpose: fleet_is_feeding_us() is hard-False and a dead session pages,
+        # on the machine that can actually fix it. The call stays because its
+        # reason string is what the log shows for why nothing was suppressed —
+        # and because a silently-deleted suppression is harder to notice than a
+        # stubbed one if this ever needs revisiting.
         fleet_fed = False
         if key == "appstream" and not healthy:
             fleet_fed, why_fed = fleet_is_feeding_us()

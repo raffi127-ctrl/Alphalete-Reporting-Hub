@@ -807,19 +807,29 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
                                  profile_dir=None) -> None:
     """Guarantee a LIVE ownerville session.
 
-    Auth path (since 2026-06-17): restore a manually-exported session
-    (OWNERVILLE_STORAGE_STATE) rather than driving the login form. ownerville's
-    form hits a Cloudflare 'verify you are human' check that can't be cleared
-    unattended, so a missing/expired session FAILS FAST with a clear error
-    (see _ownerville_seed_hint for the per-machine remedy) instead of stalling
-    on the check.
+    Auth path: reuse a saved session where there is one, and LOG IN when there
+    is not. The Cloudflare 'verify you are human' box on ownerville's password
+    step clears ITSELF — type the username, NEXT, let the check run, fill the
+    password, wait ~30s, submit (Megan 2026-09-01, and again 2026-09-02: "the
+    delay causes the human box to auto check"). Nobody has to be at the screen.
+
+    THE OLD DOCSTRING SAID THE OPPOSITE and it was measured wrong, not merely
+    out of date: "the form hits a Cloudflare check that can't be cleared
+    unattended" was a conclusion drawn from a 3-SECOND pre-submit pause. The
+    submit landed while the check was still running, the login failed, and that
+    read as "impossible" instead of "too fast". The whole fleet was built around
+    that sentence — the form disabled by default, the holder opening a window
+    and waiting for a person — and it is the same mistake that made AppStream
+    look human-gated for twelve days.
 
     Steps:
       1. Reuse the exported storage_state (inject cookies → rqst check).
       2. Failing that, try whatever cookie the persistent profile already holds.
-      3. Unless allow_form_login=True, fail fast — never touch the Turnstile.
-      4. allow_form_login=True re-enables the legacy two-step form-drive
-         (interactive/debug ONLY — it hits the Turnstile and stalls unattended).
+      3. Failing that, MINT A NEW SESSION by driving the login form unattended
+         (refresh_ownerville, once per process so a bad password costs one
+         attempt and not a loop against the account).
+      4. Only then fail — with the remedy, not with a claim that a human is
+         required.
     """
     # (1) Primary automated path: exported session, no form / Turnstile.
     if _reuse_ownerville_storage_state(page.context, page, verbose):
@@ -872,23 +882,33 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
                       % (type(e).__name__, str(e).splitlines()[0][:120]),
                       flush=True)
 
-    # (3) Unattended default: fail loud + clear, pointing at the real remedy.
+    # (3) Everything above failed. Fail loud + clear, pointing at the real
+    # remedy — and NOT at a human. The old text here said the login form "is
+    # disabled because its Cloudflare check can't be cleared unattended", which
+    # is false (step 2b just tried it) and sends whoever reads it looking for
+    # somebody to go clear a checkbox instead of at the actual failure: a wrong
+    # credential, a poisoned profile, or ownerville itself being down.
     if not allow_form_login:
         raise RuntimeError(
-            f"ownerville session expired or missing — {_ownerville_seed_hint()} "
-            "(storage_state reuse path; the login form is disabled because its "
-            "Cloudflare 'verify you are human' check can't be cleared "
+            f"ownerville session expired or missing, and the unattended login "
+            f"at {LOGIN_URL} did not reach a live session either — "
+            f"{_ownerville_seed_hint()} "
+            "(the Cloudflare check clears itself given ~30s before submit, so "
+            "reaching here means something else failed: check the credential "
+            "first, then the profile.) "
             # NAME THE PROFILE ACTUALLY IN USE. This printed the module-level
             # default whatever profile the caller passed, so a gap_alerts
             # failure pointed at `.browser_profile` while the poisoned profile
             # was `.browser_profile_gap_alerts` — an hour of looking at the
             # wrong directory on 2026-09-01.
-            f"unattended.) Profile: {profile_dir or PROFILE_DIR}")
+            f"Profile: {profile_dir or PROFILE_DIR}")
 
-    # (4) Legacy opt-in form-drive — interactive/debug ONLY (hits the Turnstile).
+    # (4) Opt-in form-drive on THIS page, for a caller that wants the login
+    # driven here rather than in refresh_ownerville's throwaway profile.
     if verbose:
-        print("-> [allow_form_login] driving ownerville login form (hits the "
-              "Cloudflare check — interactive use only)", flush=True)
+        print("-> [allow_form_login] driving ownerville login form "
+              "(the Cloudflare check clears itself — see _drive_login_form)",
+              flush=True)
     page.goto(LOGIN_URL, wait_until="domcontentloaded")
     page.wait_for_timeout(3_000)
     try:
@@ -1678,19 +1698,28 @@ APPSTREAM_RESEED_CMD = ("    PYTHONPATH=. .venv/bin/python -m "
 
 
 def _appstream_consumer_of() -> Optional[str]:
-    """The holder this machine CONSUMES AppStream from, or None if it holds it.
+    """Always None. NO MACHINE CONSUMES ANOTHER'S AppStream SESSION.
 
-    Lazy import on purpose: session_holder imports this module, so a top-level
-    import would be circular. Any failure answers None — "assume holder" keeps
-    the old message, which is the safe direction for a machine we can't place."""
-    try:
-        from automations.shared import session_holder as _sh
-        me = _sh._this_machine()
-        holders = _sh.APPSTREAM_HOLD_MACHINES
-        if me not in holders:
-            return holders[0] if holders else None
-    except Exception:  # noqa: BLE001 — never let a diagnosis crash the caller
-        pass
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down." Every Lucy signs in as its own account and mints its
+    own token; there is no donor and no consumer.
+
+    WHY THE FUNCTION SURVIVES AS A STUB rather than being deleted with its
+    callers: what it used to return went into an ERROR MESSAGE, and that message
+    told whoever read it "Do NOT run --appstream-login on this machine". Once
+    each Lucy holds its own, that sentence is not merely obsolete — it talks a
+    person out of the one command that fixes their machine. It already did:
+    on 2026-09-02 Lucy 1 raised it and a human chased a phantom donor through
+    five manual logins between 06:36 and 07:22.
+
+    It also used to guess. `_this_machine()` answers a hostname, and any box not
+    in APPSTREAM_HOLD_MACHINES — Megan's laptop, a renamed Lucy, a machine whose
+    .machine-profile marker is missing — was declared a CONSUMER of whatever
+    machine happened to be first in the tuple. A wrong guess there produces that
+    same do-not-log-in instruction on a machine nobody is donating to.
+
+    Returning None is the honest answer for every machine now, so the callers
+    give the one remedy that works everywhere: log in here."""
     return None
 
 
@@ -1720,30 +1749,25 @@ def _appstream_reseed_error(reason: str,
     # words — "do NOT --appstream-login here"). On 2026-09-02 Lucy 1 raised this
     # error and a human chased that command through five manual logins between
     # 06:36 and 07:22 while the real answer was a push from Lucy 2.
-    _donor = _appstream_consumer_of()
-    if _donor:
-        msg = (
-            f"AppStream session is not usable: {reason}\n"
-            "(an unattended form login is tried first, so reaching this means "
-            "that failed too)\n"
-            f"This machine is a CONSUMER — {_donor} holds the AppStream session "
-            "and pushes it here. Do NOT run --appstream-login on this machine: "
-            "a fresh login here invalidates the token the rest of the fleet is "
-            "using.\n"
-            f"Fix it on {_donor} (re-seed there if its own session is dead), "
-            "then push to the fleet:\n"
-            "    PYTHONPATH=. .venv/bin/python -m "
-            "automations.shared.tableau_patchright --appstream-push-fleet")
-    else:
-        msg = (
-            f"AppStream session is not usable: {reason}\n"
-            "Re-seed it with a one-time human login (since 2026-09-02 an "
-            "unattended form login is tried first, so reaching this means that "
-            "failed too):\n"
-            f"{APPSTREAM_RESEED_CMD}\n"
-            "(a browser opens; clear the check + log in as rcaptain once, and "
-            "it saves the session). The session holder then keeps it warm for "
-            "scheduled runs.")
+    # ONE REMEDY, ON THIS MACHINE. There is no donor to defer to (see
+    # _appstream_consumer_of) — every Lucy holds its own session, so the fix is
+    # always here, and naming the account by its configured value rather than a
+    # literal keeps this line from going stale the way "log in as rcaptain" did.
+    try:
+        _who = creds.appstream_username()
+    except Exception:  # noqa: BLE001 — a diagnosis must not need a credential
+        _who = "the configured AppStream account"
+    msg = (
+        f"AppStream session is not usable: {reason}\n"
+        "(an unattended form login is tried first — username, NEXT, the "
+        "Cloudflare wait, password, submit — so reaching this means that "
+        "failed too, and the credential itself is the first thing to check)\n"
+        f"Fix it HERE, on this machine — re-seed the session:\n"
+        f"{APPSTREAM_RESEED_CMD}\n"
+        f"(a browser opens; sign in as {_who}). Confirm with:\n"
+        "    PYTHONPATH=. .venv/bin/python -m "
+        "automations.shared.appstream_whoami\n"
+        "The session holder then keeps it warm for scheduled runs.")
     if detail:
         msg += f"\n\nWhat it tripped over on the way down:\n{detail}"
     return RuntimeError(msg)
@@ -2125,20 +2149,28 @@ def _capture_appstream_state(verbose: bool = True,
                              account: Optional[str] = None,
                              wait_min: float = 5.0) -> bool:
     """One-time interactive capture of the AppStream session. Opens a HEADED
-    browser on the persistent .appstream_profile; the human clears the
-    Cloudflare check + logs in as rcaptain. Once the office console (#searchMC)
-    appears, the session (cookies incl. CFID/CFTOKEN + the rqst_<TOKEN> SSO
-    cookies) is written to APPSTREAM_STORAGE_STATE for the unattended runs to
-    reuse. AppStream's own Cloudflare can't be cleared headlessly, so this
-    interactive seed is the only way to (re)establish the session; the session
-    holder keeps it warm afterward.
+    browser on the persistent .appstream_profile and signs in as whatever
+    account THIS machine is configured for (see `who` below — never a literal;
+    a hardcoded account name here sent two re-seeds down a retired login on
+    2026-09-02). Once the office console (#searchMC) appears, the session
+    (cookies incl. CFID/CFTOKEN + the rqst_<TOKEN> SSO cookies) is written to
+    APPSTREAM_STORAGE_STATE for the unattended runs to reuse.
 
-    account: capture a DIFFERENT account's session (e.g. 'carlos' for Lucy 2's
-    CarlosNLR primary) without touching the default rcaptain slot — its own
-    capture profile (a clean profile shows the login form; the rcaptain
-    profile would silently auto-resume as rcaptain) and its own state file
-    (.appstream_storage_state_<account>.json), which --appstream-push-primary
-    --account <name> then ships to the runner.
+    THIS IS NO LONGER THE ONLY WAY IN. The docstring used to say "AppStream's
+    own Cloudflare can't be cleared headlessly, so this interactive seed is the
+    only way to (re)establish the session". It is not: the check clears itself
+    given ~30s before submit, and appstream_direct_session drives the form
+    unattended (measured from a cold profile on Lucy 1, 2026-09-02). This stays
+    as the deliberate hands-on path — for a first install, or when a login is
+    failing and you want to watch it.
+
+    account: capture a DIFFERENT account's session into its own capture profile
+    and state file (.appstream_storage_state_<account>.json), which
+    --appstream-push-primary --account <name> then ships to the runner. A clean
+    profile is used because the default one would silently auto-resume as
+    whoever last signed in there. NOTE there are only two accounts left —
+    'Lucy Reports' and 'Lucy Resume Pushing' (Megan 2026-09-02); rcaptain and
+    the CarlosNLR slot are retired.
 
     wait_min: how long to watch for the office console before giving up
     (default 5, unchanged for every existing caller). Raise it when the person
@@ -2272,21 +2304,65 @@ if __name__ == "__main__":
                          "set_appstream_alt_state, not by hand.")
     ap.add_argument("--appstream-push-primary", nargs="?", const="Lucy 1",
                     metavar="MACHINE", default=None,
-                    help="Push THIS machine's saved AppStream session to another "
-                         "machine as its PRIMARY session (default: Lucy 1, whose "
-                         "primary account is rcaptain). Run right after "
-                         "--appstream-login.")
+                    help="DISCOURAGED — hands THIS machine's saved AppStream "
+                         "session to another machine. Since every Lucy signs in "
+                         "as its own account that REPLACES who that machine is. "
+                         "Needs --i-know-this-swaps-identity.")
     ap.add_argument("--appstream-push-fleet", action="store_true",
-                    help="One shot after --appstream-login: push the saved "
-                         "session everywhere it belongs — Lucy 1 primary + "
-                         "Lucy 2 alternate. This is the daily re-seed's second "
-                         "half; the login is the first.")
+                    help="DISCOURAGED — pushes the saved session to the whole "
+                         "fleet. Each Lucy logs itself in; use --appstream-login "
+                         "on the machine that needs one. Needs "
+                         "--i-know-this-swaps-identity.")
+    ap.add_argument("--i-know-this-swaps-identity", action="store_true",
+                    help="Required to actually perform a session push. Read the "
+                         "refusal text first — this is almost never what you want.")
     ap.add_argument("--account", metavar="NAME", default=None,
                     help="With --appstream-login / --appstream-push-primary: "
-                         "capture/push a DIFFERENT account's session (e.g. "
-                         "'carlos' for Lucy 2's CarlosNLR primary) in its own "
-                         "slot, never touching the rcaptain one.")
+                         "capture/push a NAMED account's session in its own "
+                         "slot. Only two accounts exist: the reporting login "
+                         "(default) and 'lucyresume'.")
     args = ap.parse_args()
+
+    # PUSHING A SESSION IS AN IDENTITY SWAP, NOT A FAVOUR (Megan 2026-09-02:
+    # "one machine CANNOT depend on another, we don't want 1 taking them all
+    # down").
+    #
+    # These two flags are the last cross-machine dependency in the AppStream
+    # path. They were built when all three boxes shared one rcaptain login, and
+    # then a pushed storage_state really was just a fresher copy of the same
+    # session. It is not that any more: Lucy 1 authenticates as 'Lucy Reports',
+    # the resume pusher as 'Lucy Resume Pushing', and handing one machine's
+    # cookies to another does not top up its session — it makes that machine
+    # somebody else, silently, for every office lookup behind it. That is the
+    # same class of failure as Lucy 2's "rcaptain" verify actually running as
+    # Carlos Hidalgo (2026-08-20).
+    #
+    # They also create the outage this is meant to remove: a fleet that gets its
+    # session from one donor is a fleet that dies when the donor does.
+    #
+    # Refused rather than deleted, because deleting them would just move the
+    # question to whoever finds the old command in a runbook. The refusal names
+    # the command that does work.
+    if (args.appstream_push_primary is not None or args.appstream_push_fleet) \
+            and not args.i_know_this_swaps_identity:
+        import sys as _sys
+        print("❌ Refusing to push an AppStream session to another machine.\n"
+              "   Every Lucy signs in as its OWN account now, so a push does not\n"
+              "   refresh the other machine's session — it REPLACES WHO THAT\n"
+              "   MACHINE IS, and every office lookup behind it becomes the\n"
+              "   wrong account's. It also rebuilds the single point of failure\n"
+              "   we just removed: one donor down takes the fleet down.\n"
+              "\n"
+              "   Fix the machine that has no session, ON that machine:\n"
+              "       PYTHONPATH=. .venv/bin/python -m "
+              "automations.shared.tableau_patchright --appstream-login\n"
+              "   or queue it without SSH:  lucy appstream_whoami --machine \"<name>\"\n"
+              "   Then confirm BOTH logins there:\n"
+              "       PYTHONPATH=. .venv/bin/python -m automations.shared.login_check\n"
+              "\n"
+              "   If you genuinely mean to overwrite another machine's identity,\n"
+              "   re-run with --i-know-this-swaps-identity.")
+        _sys.exit(1)
     if args.appstream_push_primary is not None or args.appstream_push_fleet:
         import sys as _sys
         _state_path = (APPSTREAM_STORAGE_STATE if not args.account else

@@ -137,10 +137,15 @@ class ReseedError(unittest.TestCase):
             str(err).splitlines()[0],
             "AppStream session is not usable: the token is stale")
 
-    def test_says_a_human_is_required(self):
-        # The one fact that stops somebody re-running it and waiting: no
-        # unattended run can clear the 8/20 human-check.
-        self.assertIn("unattended", str(tp._appstream_reseed_error("x")))
+    def test_says_the_unattended_login_was_already_tried(self):
+        # This used to be named "says a human is required", asserting the 8/20
+        # human-check. That check was never real — it clears itself given ~30s
+        # before submit — so the fact worth stating is the opposite one: the
+        # unattended login ALREADY ran and failed, so re-running and waiting
+        # will not help and the credential is what to look at.
+        msg = str(tp._appstream_reseed_error("x"))
+        self.assertIn("unattended", msg)
+        self.assertIn("credential", msg)
 
     def test_credential_failure_still_leads_with_the_reseed(self):
         # The 8/24 shape: creds.appstream_username() raises, and the wrapped
@@ -159,56 +164,62 @@ class ReseedError(unittest.TestCase):
         self.assertIn("Missing AppStream credential", str(err))
 
 
-class ReseedErrorNamesTheRightMachine(unittest.TestCase):
-    """A CONSUMER must never be told to --appstream-login.
+class ReseedErrorNamesThisMachine(unittest.TestCase):
+    """The remedy is ALWAYS "log in HERE". There is no donor to defer to.
 
-    Lucy 1, 2026-09-02: this error named the re-seed command on a machine that
-    only consumes the pushed session, and a human ran that login five times
-    between 06:36 and 07:22 while the actual fix was a push from Lucy 2. Worse
-    than useless — a fresh login on a consumer invalidates the token the whole
-    fleet is holding, which session_holder already warns about in its own log.
+    THIS CLASS USED TO ASSERT THE OPPOSITE, and the reversal is the point.
 
-    Both branches are pinned here because _appstream_consumer_of() answers from
-    THIS machine's marker, so whichever branch the test host happens to take,
-    the other still has to be correct."""
+    It pinned a CONSUMER branch: a machine not in APPSTREAM_HOLD_MACHINES was
+    told "X holds the AppStream session — Do NOT run --appstream-login here",
+    because on a shared rcaptain account a fresh login really did invalidate the
+    token the fleet was holding. Since 2026-09-02 every Lucy signs in as its own
+    account and holds its own session, so that sentence is not merely obsolete:
+    it talks whoever reads it out of the one command that fixes their machine.
 
-    def _msg(self, donor):
-        with mock.patch.object(tp, "_appstream_consumer_of",
-                               return_value=donor):
-            return str(tp._appstream_reseed_error("the token is stale"))
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down."
 
-    def test_consumer_is_warned_off_the_reseed(self):
-        msg = self._msg("Lucy 2")
-        self.assertIn("CONSUMER", msg)
-        self.assertIn("Lucy 2", msg)
-        self.assertIn("Do NOT run --appstream-login", msg)
-        self.assertIn("--appstream-push-fleet", msg)
+    The branch was also a guess. _appstream_consumer_of() answered from
+    _this_machine(), which silently defaults to "Lucy 1" when the
+    .machine-profile marker is missing — so any unmarked box got the
+    do-not-log-in instruction naming a donor nobody was donating from."""
 
-    def test_holder_still_gets_the_reseed_command(self):
-        msg = self._msg(None)
-        self.assertIn(tp.APPSTREAM_RESEED_CMD.strip(), msg)
+    def _msg(self):
+        return str(tp._appstream_reseed_error("the token is stale"))
+
+    def test_there_is_no_consumer_branch_left(self):
+        self.assertIsNone(tp._appstream_consumer_of(),
+                          "no machine consumes another's AppStream session")
+
+    def test_never_warns_anyone_off_their_own_login(self):
+        msg = self._msg()
         self.assertNotIn("CONSUMER", msg)
+        self.assertNotIn("Do NOT run --appstream-login", msg)
+        # The push is the cross-machine dependency being removed; the error must
+        # not send anyone back to it.
+        self.assertNotIn("--appstream-push-fleet", msg)
 
-    def test_both_branches_keep_the_invariants(self):
-        # The reason owns line 1 (the alert quotes it as "Likely cause"), and
-        # both say the unattended path was already tried so nobody just re-runs
-        # it and waits.
-        for donor in ("Lucy 2", None):
-            with self.subTest(donor=donor):
-                msg = self._msg(donor)
-                self.assertEqual(
-                    msg.splitlines()[0],
-                    "AppStream session is not usable: the token is stale")
-                self.assertIn("unattended", msg)
+    def test_always_gives_the_local_reseed_command(self):
+        msg = self._msg()
+        self.assertIn(tp.APPSTREAM_RESEED_CMD.strip(), msg)
+        self.assertIn("this machine", msg.lower())
 
-    def test_unplaceable_machine_falls_back_to_the_holder_message(self):
-        # _this_machine() raising must not crash a run that is already failing;
-        # answering "holder" keeps the pre-existing message.
-        with mock.patch.object(tp, "session_holder", create=True):
-            with mock.patch(
-                    "automations.shared.session_holder._this_machine",
-                    side_effect=RuntimeError("no marker")):
-                self.assertIsNone(tp._appstream_consumer_of())
+    def test_keeps_the_invariants(self):
+        # The reason owns line 1 (the alert quotes it as "Likely cause"), and the
+        # message says the unattended path was already tried so nobody just
+        # re-runs it and waits.
+        msg = self._msg()
+        self.assertEqual(msg.splitlines()[0],
+                         "AppStream session is not usable: the token is stale")
+        self.assertIn("unattended", msg)
+
+    def test_missing_credential_does_not_break_the_diagnosis(self):
+        # The message names the configured account. A machine with no credential
+        # is exactly the one most likely to be raising this, so resolving it must
+        # not be able to throw out of an error path.
+        with mock.patch.object(tp.creds, "appstream_username",
+                               side_effect=RuntimeError("no credential")):
+            self.assertIn("the configured AppStream account", self._msg())
 
 
 class FleetPushCoversEveryMachine(unittest.TestCase):

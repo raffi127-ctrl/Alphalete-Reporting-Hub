@@ -47,14 +47,18 @@ def main() -> int:
     print(f"  {'✅' if ov_survives else '⚠️ '} Ownerville / Tableau")
     print(f"      {s['reason']}\n")
 
-    # AppStream does NOT self-heal (Eve 2026-08-24). Between 2026-06-30 and the
-    # 2026-08-20 release Cloudflare auto-passed, so each report drove its own
-    # rcaptain login and this button had nothing to say. That release put the
-    # form login back behind an interactive check: an unattended run now dies
-    # with "Re-seed it with a one-time human login". On 8/24 that cost four runs
-    # and nobody knew until they failed, because this screen still said it
-    # self-heals. A button that reports a session it never reads is worse than
-    # no button.
+    # APPSTREAM SELF-HEALS AGAIN (2026-09-02) — the note that used to sit here
+    # said it did not, and that was drawn from a premise since measured wrong.
+    # The story: between 2026-06-30 and the 2026-08-20 release Cloudflare
+    # auto-passed and each report drove its own login. The 8/20 release looked
+    # like it had put an interactive check in front of the form, so this screen
+    # was rewritten to say a human re-seed was the only way back. It had not.
+    # The check clears itself given ~30s before submit; at the 3s pause we were
+    # using, the submit landed mid-check and the login failed, which read as
+    # "gated" instead of "too fast". Twelve days of believing that is why four
+    # runs died on 8/24 with nobody able to do anything but wait for a person.
+    # Reporting the session is still right — a button that reports a session it
+    # never reads is worse than no button — but the remedy is no longer a human.
     # Judged in the PRESENT TENSE, unlike ownerville above. AppStream's rqst TTL
     # is ~2h, so it can NEVER reach `threshold` (next 4am + 90 min) — this button
     # asked an impossible question and answered "⚠️ needs a fresh login" every

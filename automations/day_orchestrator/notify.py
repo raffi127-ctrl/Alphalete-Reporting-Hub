@@ -933,15 +933,27 @@ def _diagnose(rs, cfg, date):
     low = _log_tail(rs.report_id, date)
     if ("appstream session expired" in low or "no live token" in low
             or "0 rqst token" in low):
-        return ("ApplicantStream session expired — Cloudflare timed it out; "
-                "needs a one-time re-seed (log in as rcaptain, clear the check), "
-                "then re-run.", True, rerun)
+        # NO ACCOUNT NAME, NO HUMAN. This said "log in as rcaptain, clear the
+        # check" — an account retired 2026-09-02, and a check that clears itself
+        # given ~30s before submit. Both halves sent whoever picked up the ticket
+        # somewhere useless. Say what to run instead, on the machine that failed.
+        return ("ApplicantStream session expired on this machine — it signs "
+                "itself back in (no human, no checkbox), so if it is still "
+                "failing, check the login: `login_check` for both sessions, "
+                "`appstream_whoami` for which account it lands on. Then re-run.",
+                True, rerun)
     if ("invalid_grant" in low or "token has been expired" in low
             or "refresherror" in low):
         return ("Google auth token expired — re-auth, then re-run.", False, rerun)
     if "turnstile" in low or "ownerville session is stale" in low:
-        return ("Ownerville session stale — re-seed it in the session-holder "
-                "window on the mini, then re-run.", False, rerun)
+        # Ownerville and AppStream are SEPARATE logins (Megan 2026-09-02) —
+        # never point an ownerville failure at an AppStream remedy, or vice
+        # versa. Ownerville re-mints itself unattended from ownerville.com.
+        return ("Ownerville session stale — it re-mints itself unattended "
+                "(refresh_ownerville, via https://ownerville.com/). If it is "
+                "still failing, run `login_check` ON THAT MACHINE: ownerville "
+                "and AppStream are different logins and one being fine says "
+                "nothing about the other. Then re-run.", False, rerun)
     return (rs.last_reason or rs.status or "failed — see the log.", False, rerun)
 
 

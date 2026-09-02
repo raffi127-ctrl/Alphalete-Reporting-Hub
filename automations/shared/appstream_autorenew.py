@@ -76,44 +76,19 @@ def token_minutes_left() -> float:
 
 
 def _consumer_of() -> str:
-    """The machine that holds AppStream for us, or "" if this machine holds it.
+    """Always "". No machine holds AppStream for another one.
 
-    Used only to name the right remedy in a failure line — a consumer must never
-    be told to --appstream-login, because that invalidates the token the whole
-    fleet is holding. Any failure answers "" (assume holder), which keeps the
-    old message for a machine we cannot place."""
-    try:
-        from automations.shared import session_holder as _sh
-        me = _sh._this_machine()
-        holders = _sh.APPSTREAM_HOLD_MACHINES
-        if me not in holders and holders:
-            return holders[0]
-    except Exception:  # noqa: BLE001 — a diagnosis must never crash the timer
-        pass
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down." Each Lucy signs in as its own account, so the remedy
+    for a dead session is always "log in HERE" — see
+    tableau_patchright._appstream_consumer_of for the longer note on why this
+    stays as a stub instead of being deleted."""
     return ""
 
 
-def _push_fleet() -> bool:
-    """Hand the fresh session to every machine that runs AppStream reports."""
-    from automations.shared.tableau_patchright import APPSTREAM_STORAGE_STATE
-    from automations.shared.session_holder import APPSTREAM_FLEET_MACHINES
-    from automations.day_orchestrator import mini_control as mc
-    try:
-        blob = APPSTREAM_STORAGE_STATE.read_text()
-    except Exception as e:  # noqa: BLE001
-        _log("cannot read the session to push: %s" % str(e)[:120])
-        return False
-    ok = True
-    for machine in APPSTREAM_FLEET_MACHINES:
-        try:
-            mc.enqueue("set_appstream_state", blob, by="appstream-autorenew",
-                       machine=machine)
-            _log("queued session -> %s" % machine)
-        except Exception as e:  # noqa: BLE001
-            _log("could not queue to %s: %s" % (machine, str(e)[:120]))
-            ok = False
-    return ok
-
+# _push_fleet() DELETED 2026-09-02 — see the note at the renewal site. A fresh
+# session belongs to the account that minted it; handing it to another Lucy swaps
+# that machine's identity instead of refreshing its session.
 
 def _ownerville_tokens():
     """The rqst token(s) ownerville just issued, newest usable first.
@@ -527,22 +502,17 @@ def main(argv=None) -> int:
                  "back with only %.0f min (expected ~120). The applicantstream "
                  "form does not mint an rqst; that comes from the ownerville SSO "
                  "hop, so check the OWNERVILLE session first." % after)
-        _donor = _consumer_of()
-        if _donor:
-            _log("  This machine is a CONSUMER — %s holds the AppStream session."
-                 % _donor)
-            _log("  Do NOT --appstream-login here (it invalidates the fleet's "
-                 "token). Fix it on %s, then: --appstream-push-fleet" % _donor)
-        else:
-            _log("  PYTHONPATH=. .venv/bin/python -m "
-                 "automations.shared.tableau_patchright --appstream-login")
+        _log("  PYTHONPATH=. .venv/bin/python -m "
+             "automations.shared.tableau_patchright --appstream-login")
         return 1
 
     _log("renewed: %.0f min on the new token" % after)
-    if not _push_fleet():
-        _log("renewed but could not push to the whole fleet")
-        return 1
-    _log("fleet pushed — no human was needed")
+    # NOT PUSHED ANYWHERE. This renewal is for THIS machine's own account. Every
+    # Lucy runs its own renewal on its own login, so there is no fleet to hand it
+    # to — and handing it over would replace the other machine's identity with
+    # ours, not refresh it (Megan 2026-09-02: "one machine CANNOT depend on
+    # another, we don't want 1 taking them all down").
+    _log("renewed for this machine — no human was needed, nothing pushed")
     return 0
 
 

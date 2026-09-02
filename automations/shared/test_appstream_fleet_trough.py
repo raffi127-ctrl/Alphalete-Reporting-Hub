@@ -1,4 +1,21 @@
-"""The trough between fleet handoffs is not an outage.
+"""There is no trough, because nothing hands this machine a session.
+
+REVERSED 2026-09-02 — read the original reasoning below, then this.
+
+The suppression this file was written to pin is now OFF. It was correct while
+one machine minted and the rest consumed; since every Lucy signs in as its own
+account and mints its own token, no copy is old on purpose and a short token is
+never somebody else's business. Megan: "one machine CANNOT depend on another, we
+don't want 1 taking them all down."
+
+The direction of the risk flipped with it. A suppression that fires on a stale
+premise does not fail loudly — it swallows the page on the morning the session
+is really dead. So the tests below now pin that NO machine, in any marker state,
+is ever reported as fleet-fed.
+
+--- the original reasoning, kept because it is why the code looks like this ---
+
+The trough between fleet handoffs is not an outage.
 
 Run:  PYTHONPATH=. .venv/bin/python -m unittest \
           automations.shared.test_appstream_fleet_trough
@@ -53,39 +70,36 @@ class FleetIsFeedingUsTest(unittest.TestCase):
         when = time.time() - minutes_ago * 60
         os.utime(self.marker, (when, when))
 
-    def test_the_0301_trough_does_not_page(self):
-        """The real one: last handoff 49m ago (02:12), next due at 03:09."""
-        self._handoff_landed(49)
-        fed, why = w.fleet_is_feeding_us()
-        self.assertTrue(fed, why)
-        self.assertIn("49m ago", why)
+    def test_no_machine_is_ever_reported_as_fleet_fed(self):
+        """The suppression is OFF for every machine and every marker state.
 
-    def test_a_stopped_holder_still_pages(self):
-        """The case a human ACTUALLY fixes — nothing has arrived in hours."""
-        self._handoff_landed(260)
-        fed, why = w.fleet_is_feeding_us()
-        self.assertFalse(fed)
-        self.assertIn("the holder has stopped", why)
+        Whatever the donation marker says — fresh, stale, absent — the answer is
+        the same, because nothing donates a session any more. Enumerated rather
+        than asserted once, since the old bug was a suppression firing in a state
+        nobody had thought about."""
+        for machine in ("Lucy 1", "Lucy 2", "Lucy 3", "", "Newbox"):
+            for minutes in (1, 49, 260, None):
+                with self.subTest(machine=machine, handoff_min_ago=minutes):
+                    self._be(machine)
+                    if minutes is None:
+                        self.marker.unlink(missing_ok=True)
+                    else:
+                        self._handoff_landed(minutes)
+                    fed, why = w.fleet_is_feeding_us()
+                    self.assertFalse(fed, why)
+                    self.assertTrue(why.strip(), "must say why it did not suppress")
 
-    def test_the_holder_itself_is_never_fleet_fed(self):
-        """Lucy 2 mints its own; a dead session THERE is the real page."""
-        self._be("Lucy 2")
+    def test_a_dead_session_is_never_explained_away_by_another_machine(self):
+        """The reason names THIS machine, never a donor.
+
+        This is the whole rule (Megan 2026-09-02: "one machine CANNOT depend on
+        another"). A page suppressed — or a failure explained — by the health of
+        a different box is how one machine takes the fleet down quietly."""
         self._handoff_landed(1)
-        fed, why = w.fleet_is_feeding_us()
-        self.assertFalse(fed)
-        self.assertIn("IS the AppStream holder", why)
-
-    def test_a_machine_no_handoff_ever_reached_is_not_covered(self):
-        """Fail CLOSED: never having been fed is not the same as being fed."""
-        self.assertFalse(self.marker.exists())
-        fed, why = w.fleet_is_feeding_us()
-        self.assertFalse(fed)
-        self.assertIn("has ever landed here", why)
-
-    def test_the_grace_is_longer_than_the_handoff_interval(self):
-        """Handoffs ran hourly on 2026-08-31; a grace under that would page in
-        every single trough, which is the bug this file exists for."""
-        self.assertGreater(w.FLEET_HANDOFF_GRACE_MIN, 60.0)
+        _, why = w.fleet_is_feeding_us()
+        self.assertIn("this machine", why.lower())
+        for donor_word in ("Lucy 1", "Lucy 2", "Lucy 3", "handed", "handoff"):
+            self.assertNotIn(donor_word, why)
 
 
 if __name__ == "__main__":

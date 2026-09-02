@@ -81,7 +81,13 @@ _MACHINE_MARKER = Path(__file__).resolve().parents[2] / ".machine-profile"
 # and every other runner simply consumed the session it pushed. The re-seeding
 # began after that commit, not before.
 #
-# WHY THREE HOLDERS EAT THEMSELVES. All three run the same rcaptain account, and
+# WHY THREE HOLDERS ATE THEMSELVES — PAST TENSE SINCE 2026-09-02. It was true
+# while all three ran the SAME shared rcaptain account; each now signs in as its
+# own login, so the mutual invalidation below no longer applies. Kept because it
+# explains why the fleet was ever built donor-and-consumer, and because the
+# mechanism returns the moment two machines share an account again. Read the
+# paragraph after it for what actually holds today. All three ran the same
+# rcaptain account, and
 # this module already records the mechanism a few lines down in
 # _push_token_to_fleet: "Renewing appears to INVALIDATE the token the donor
 # handed out last time — which every other machine is still holding. So an
@@ -563,9 +569,17 @@ def _rqst_note(ctx) -> str:
 #
 # Today Lucy 1 and Lucy 3 sat tokenless for ten hours while Lucy 2's holder was
 # exporting a LIVE session the entire time, never more than six minutes stale.
-# All three run the same rcaptain account, and one machine's session works on
+# All three ran the same rcaptain account, and one machine's session worked on
 # any of them — the fix was already on the fleet, and the only way to move it
 # was to ask a person to clear a Turnstile that did not need clearing.
+#
+# BOTH HALVES OF THAT ARE NOW FALSE (2026-09-02), which is why the handoff below
+# never fires between Lucys any more. Each machine signs in as its OWN account,
+# so one machine's session does NOT work on another — installing it makes that
+# machine the wrong person. And nobody has to clear a Turnstile: the check
+# clears itself given ~30s before submit, so a tokenless machine logs ITSELF
+# back in. The answer to "Lucy 1 has no token" is a login on Lucy 1, not a
+# donation from Lucy 2.
 #
 # So a holder that RENEWS its token hands the new one to the other hold
 # machines. A machine whose own renewal fails is then carried by whichever one
@@ -1257,10 +1271,18 @@ def main() -> int:
                       f"ownerville-only. (Seed once with --appstream-login, then "
                       f"--appstream-push-fleet.)", flush=True)
             else:
-                print(f"[{_stamp()}] AppStream: this machine is a CONSUMER, not "
-                      f"the holder ({APPSTREAM_HOLD_MACHINE} holds it) — "
-                      f"ownerville-only here, by design. Its session arrives by "
-                      f"fleet push; do NOT --appstream-login here.", flush=True)
+                # Seeded, but this machine is not in APPSTREAM_HOLD_MACHINES —
+                # i.e. we could not place it. This used to print "this machine
+                # is a CONSUMER … do NOT --appstream-login here", which since
+                # every Lucy holds its own is both wrong AND the most expensive
+                # kind of wrong: it talks whoever reads the log out of the one
+                # command that fixes the box. Name the real condition instead.
+                print(f"[{_stamp()}] AppStream: this machine "
+                      f"({_this_machine()!r}) is not in APPSTREAM_HOLD_MACHINES "
+                      f"{APPSTREAM_HOLD_MACHINES} — warming is OFF here. If it "
+                      f"IS a runner, its .machine-profile marker is wrong; fix "
+                      f"that, then --appstream-login on THIS machine. Nothing "
+                      f"donates a session to it.", flush=True)
 
         # --- Continuous keep-alive + export loop, ONE ownerville tab. When the
         #     session is healthy we navigate that tab to keep it warm; when it

@@ -4196,7 +4196,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                     f"<b>{_names}</b></div>"
                                     "<div style='margin-top:8px; font-size:0.95rem;'>"
                                     "AppStream refused these ICDs for the logged-in "
-                                    "account. Request rcaptain access (or switch to "
+                                    "account. Request Lucy Reports access (or switch to "
                                     "an AppStream account that already has it) and "
                                     "click the button below to re-pull."
                                     "</div></div>",
@@ -4235,10 +4235,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                 "<div style='margin-top:6px; font-size:0.95rem;'>"
                                 f"<b>{_names}</b></div>"
                                 "<div style='margin-top:8px; font-size:0.95rem;'>"
-                                "Either rcaptain has no AppStream access yet, or "
+                                "Either the Lucy Reports login has no AppStream access yet, or "
                                 "the pull hit a transient error. Try the retry "
                                 "button below first — if it still fails, request "
-                                "rcaptain access for these ICDs."
+                                "Lucy Reports access for these ICDs."
                                 "</div></div>",
                                 unsafe_allow_html=True,
                             )
@@ -7693,7 +7693,7 @@ with st.sidebar:
                     _request_hub_restart()
 
     # Chrome status check removed 2026-05-26: every report now runs through
-    # patchright's unattended login (rcaptain on AppStream, ownerville on
+    # patchright's unattended login (Lucy Reports on AppStream, ownerville on
     # Tableau), so there's no debug-port Chrome for the user to keep open.
     # `chrome_ok` (referenced elsewhere) is force-true so any leftover gates
     # don't block runs; clean those out in a follow-up if anything reads it.
