@@ -146,46 +146,55 @@ def dest_label(d: dict) -> str:
 # The B2B two are spelled the way the OwnerVille dropdown spells them on
 # Carlos's screen, so an owner is picking the words they already see.
 #
-# NDS PINS 3 (RES AT&T), the same id as fiber, and it used to carry no id at
-# all. Both halves of that were wrong (fixed 2026-09-02):
+# NDS PINS 1 — "RES AT&T OOF", its own campaign. Read off the live picker on
+# BOTH of this org's NDS offices, 2026-09-02: Isaiah Revelle (19717) and Drew
+# Tepper (22583) each list exactly ONE campaign and it is id 1. "OOF" is Out Of
+# Footprint, which is what NDS sells — the same name the NDS Tableau workbook
+# carries, "NDS-SN (RES-ATT-OOF)".
 #
-#   * "NDS has no campaign" conflated the BUSINESS with the campaign. Megan read
-#     Isaiah Revelle's own OwnerVille picker on 2026-08-25: it offers BASE
-#     Energy / RES AT&T / RES-ENERGYWELL, and his reps knock RES AT&T like
-#     everyone else. knocks_pull.campaign_for_office carries the same finding
-#     and the same default — "the campaign all current knocks offices (fiber
-#     D2D and NDS wireless) knock under".
+# IT IS NOT 3. This said 3 (RES AT&T, fiber's id) for most of 2026-09-02, on the
+# strength of a 2026-08-25 reading of Isaiah's picker that no longer holds — his
+# office offers only id 1 today. Pinning 3 did not break anything, because an
+# office cannot be pinned to a campaign it does not have and falls back to its
+# own; but a pin that silently does not apply is the exact drift this repo keeps
+# paying for, and it would land wrong the moment an NDS office gained a second
+# campaign.
+#
+# AND AN NDS BOARD IS THE ORDINARY ONE. This also claimed NDS reps knock without
+# dispositioning, so their board would be Time-Gaps-only. That was true of
+# Isaiah on 2026-08-22 and is not true now: on 2026-09-02 both NDS offices
+# return the full house disposition grid — "scraper would WORK AS-IS, missing:
+# nothing" — with real Talk To / Presentation / Sale / No answer counts and real
+# rows (Isaiah 10 reps on 9/1, Drew 3 on 8/31). Their board is SHAPE_HOUSE, the
+# same one Raf gets.
+#
+# The two earlier corrections this replaces, kept because both were live bugs:
+#
+#   * "NDS has no campaign" conflated the BUSINESS with the campaign. NDS is a
+#     business; RES AT&T OOF is its campaign, and it has an id like any other.
 #   * An EMPTY id does not mean "this office's own campaign". The campaign is a
 #     sticky session-global, so no pin means "whatever the office before it in
 #     the batch left it on" — the exact silent-drift failure that returned
 #     Calvin zero rows for days and blanked Chan's comparison line.
 #
-# What an NDS office actually gets is a smaller board, not no board: NDS reps
-# clock in and knock without dispositioning, so p=89 can come back empty. When
-# it does, knocks_pull builds the rows from the Time Tracker instead and the
-# renderer draws the Time Gaps board alone (render.SHAPE_GAPS_ONLY). That is
-# the half gap_alerts exists for anyway, so the enrollment is real either way.
+# The gaps-only path still exists and still matters — when a p=89 grid genuinely
+# comes back empty, knocks_pull builds rows from the Time Tracker and the
+# renderer draws Time Gaps alone (render.SHAPE_GAPS_ONLY). It is just not what
+# an NDS office gets by default any more.
 CAMPAIGNS = [
     # --- D2D ---------------------------------------------------------------
     {"id": "3", "key": "att", "family": "D2D", "label": "AT&T",
      "name": "AT&T Fiber (Internet & Phones)", "live": True},
     {"id": "40", "key": "energy", "family": "D2D", "label": "EnergyWell",
      "name": "Energy Wells", "live": True},
-    # LIVE since 2026-09-02, pinned to RES AT&T like every other knocks office
-    # (see the note above). An NDS office whose reps don't disposition gets the
-    # Time Gaps half of the board, which is the half this report is named for.
-    {"id": "3", "key": "nds", "family": "D2D", "label": "NDS",
+    # LIVE since 2026-09-02, pinned to its OWN campaign — RES AT&T OOF, id 1,
+    # read off the live picker on both NDS offices. Its board is the ordinary
+    # house board: these offices do disposition.
+    {"id": "1", "key": "nds", "family": "D2D", "label": "NDS",
      # "Wireless" alone: on NDS the phones ARE the wireless (Megan 2026-09-01).
      # office_onboarding spells it "Wireless & Phones"; that reads as two
      # products to an owner picking one.
-     "name": "NDS Wireless", "live": True,
-     # Said on the form, at the moment they pick it: an NDS board can be gaps
-     # only, and an owner expecting a disposition breakdown should hear that
-     # from us before the first one lands, not after.
-     "note": "Most NDS offices knock without dispositioning — when that's the "
-             "case your board shows who's out and who's gone quiet (the Time "
-             "Gaps half), and fills in the disposition columns automatically "
-             "if your reps start using them."},
+     "name": "NDS Wireless", "live": True},
     # --- B2B ---------------------------------------------------------------
     # NOT "B2B AT&T SBS" / "B2B-BOX-Energy" — those are OwnerVille's own
     # dropdown strings, and "SBS" means nothing to the person filling this in

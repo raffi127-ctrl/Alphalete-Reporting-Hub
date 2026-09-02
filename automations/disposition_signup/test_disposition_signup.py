@@ -114,27 +114,33 @@ def test_all_campaigns_are_offered_with_proven_ids():
     assert by_key["b2b_box"] == "16"     # B2B-BOX-Energy
 
 
-def test_nds_pins_res_att():
-    """NDS names the BUSINESS, not the campaign. Megan read Isaiah Revelle's own
-    OwnerVille picker on 2026-08-25 — BASE Energy / RES AT&T / RES-ENERGYWELL —
-    and his reps knock RES AT&T like everyone else, which is the same default
-    knocks_pull carries for "fiber D2D and NDS wireless".
+def test_nds_pins_its_own_campaign_not_fibers():
+    """RES AT&T OOF, id 1 — read off the live picker on BOTH of this org's NDS
+    offices on 2026-09-02 (Isaiah Revelle 19717, Drew Tepper 22583), each
+    listing exactly that one campaign. "OOF" is Out Of Footprint, the same name
+    the NDS Tableau workbook carries.
 
-    An EMPTY id here would not mean "this office's own campaign": the campaign
-    is a sticky session-global, so it means "whatever the office before it in
-    the batch pinned". That is the drift that returned Calvin zero rows.
+    NOT 3. That is fiber's id, and it was here for most of 2026-09-02 on the
+    strength of a reading that no longer holds. It did not break anything --
+    an office cannot be pinned to a campaign it does not have and falls back to
+    its own -- but a pin that silently does not apply is the drift this repo
+    keeps paying for.
+
+    An EMPTY id would be wrong too: the campaign is a sticky session-global, so
+    no pin means "whatever the office before it in the batch left it on".
     """
-    assert S.campaign("nds")["id"] == "3"
-    assert A._row(_rec(campaign_key="nds"))["campaign_id"] == "3"
+    assert S.campaign("nds")["id"] == "1"
+    assert S.campaign("nds")["id"] != S.campaign("att")["id"]
+    assert A._row(_rec(campaign_key="nds"))["campaign_id"] == "1"
 
 
-def test_nds_says_on_the_form_that_its_board_may_be_gaps_only():
-    """NDS reps mostly knock without dispositioning, so p=89 comes back empty
-    and the board is the Time Gaps half. Better heard while they are picking
-    the campaign than discovered after the first one lands."""
-    note = S.campaign("nds").get("note") or ""
-    assert "Time Gaps" in note
-    assert not (S.campaign("att").get("note") or "")
+def test_nds_promises_nothing_about_a_smaller_board():
+    """It used to carry a note saying an NDS board is usually Time-Gaps-only
+    because those reps don't disposition. True of Isaiah on 2026-08-22, false
+    on 2026-09-02: both NDS offices return the full house grid ("missing:
+    nothing") with real Talk To / Presentation / Sale counts. A promise about
+    someone's board has to be re-earned, not inherited."""
+    assert not (S.campaign("nds").get("note") or "")
 
 
 # --- Megan's confirm --------------------------------------------------------
@@ -557,7 +563,7 @@ def test_an_nds_signup_wires_like_any_other(monkeypatch):
                         lambda exclude_key=None: {"keys": [], "groups": {}})
     plans = A.plan()
     assert [p["rec"].key for p in plans] == ["cody"]
-    assert plans[0]["row"]["campaign_id"] == "3"
+    assert plans[0]["row"]["campaign_id"] == "1"     # RES AT&T OOF
     assert plans[0]["row"]["machine"] == "Lucy 1"
 
 
@@ -913,7 +919,11 @@ def test_the_batch_dict_is_not_clobbered_by_the_rendered_images():
     # substring, so a plain `in` check here can never fail and would police
     # nothing.
     import re as _re
-    assert "boards = render(" in src
+    # Matched as "assigned to `boards`, from render()" rather than as one
+    # literal: a concurrent session made this `boards = [] if board_empty else
+    # render(...)`, which keeps the variable and the source exactly as this
+    # test intends while breaking a substring check.
+    assert _re.search(r"\bboards\s*=.*\brender\(", src)
     assert not _re.search(r"(?<![\w.])boards\.get\(", src)
 
 
