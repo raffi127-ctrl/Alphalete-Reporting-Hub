@@ -612,19 +612,24 @@ def _push_token_to_fleet(verbose: bool = True, urgent: bool = False) -> None:
             return          # never distribute a session that can't open a console
         from automations.day_orchestrator import mini_control as mc
         me = _this_machine()
-        # ONLY TO MACHINES THAT DON'T HOLD ONE (Megan 2026-09-02: "each hold
-        # their own and not rely on each other"). Pushing to a fellow HOLDER is
-        # the reliance she is rejecting, and it actively destroys work: the
-        # receiving side installs the payload over whatever it has, so a machine
-        # that just minted a healthy session of its own gets it replaced by
-        # another machine's — on the same rcaptain account that is precisely how
-        # the fleet converged on "everyone holding something dead that still
-        # reads valid" (the 8/29 note above).
+        # NEVER TO A MACHINE THAT HOLDS ITS OWN. Once each Lucy signs in as its
+        # OWN account, a push is not a favour — it is an identity swap. Lucy 1
+        # authenticates as 'Lucy Reports' (account 23981, 8 offices); Lucy 2 is
+        # Carlos. Handing one machine's storage_state to the other replaces WHO
+        # that machine is, and every office lookup behind it silently becomes the
+        # wrong account's — the same class of failure as Lucy 2's "rcaptain"
+        # verify actually running as Carlos Hidalgo (2026-08-20).
         #
-        # With all three holding, this list is normally EMPTY and no push
-        # happens at all. It stays here for a machine added to the fleet before
-        # it can hold its own — and `--appstream-push-fleet` is still the
-        # deliberate operator hand-off after a human re-seed.
+        # That is the real content of "each hold their own and not rely on each
+        # other" (Megan 2026-09-02), and it is why the filter is here at the
+        # SENDER rather than a freshness check at the receiver: the objection is
+        # not that the pushed session is stale, it is that it belongs to somebody
+        # else.
+        #
+        # With all three holding, this list is normally empty and no automatic
+        # push happens at all. It stays for a machine added to the fleet before
+        # it has its own login, and `--appstream-push-fleet` remains the
+        # deliberate operator hand-off.
         sent = [m for m in APPSTREAM_FLEET_MACHINES
                 if m != me and m not in APPSTREAM_HOLD_MACHINES]
         for m in sent:
