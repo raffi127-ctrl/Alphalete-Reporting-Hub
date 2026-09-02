@@ -232,6 +232,50 @@ class BothLoginsAreCheckedSeparately(unittest.TestCase):
         with mock.patch.object(sh, "_MACHINE_MARKER", missing):
             self.assertIn("ASSUMED", lc._machine())
 
+    def test_the_ownerville_account_is_asserted_per_machine(self):
+        """Presence was never the question — WHICH account is.
+
+        On 2026-09-01 Lucy 1's file said `chidalgo` and nothing errored: Raf's
+        board came back empty, Calvin and Jay vanished as "name not found in
+        ownerville", and it cost an afternoon. A check reporting "ownerville
+        credential: present" passes that run."""
+        self.assertEqual(lc.EXPECTED_OWNERVILLE_ACCOUNT,
+                         {"Lucy 1": "rhidalgo", "Lucy 2": "chidalgo",
+                          "Lucy 3": "rhidalgo"})
+        with mock.patch.object(lc, "_expected_ownerville_account",
+                               return_value="rhidalgo"), \
+             mock.patch.object(creds, "ownerville_username",
+                               return_value="chidalgo"), \
+             mock.patch.object(creds, "appstream_username",
+                               return_value="Lucy Reports"), \
+             mock.patch.object(creds, "unexpected_appstream_accounts",
+                               return_value=[]):
+            res = lc.check_accounts()
+        self.assertFalse(res["ok"])
+        self.assertIn("chidalgo", res["detail"])
+        self.assertIn("rhidalgo", res["detail"])
+
+    def test_the_right_ownerville_account_passes(self):
+        with mock.patch.object(lc, "_expected_ownerville_account",
+                               return_value="rhidalgo"), \
+             mock.patch.object(creds, "ownerville_username",
+                               return_value="Rhidalgo"), \
+             mock.patch.object(creds, "appstream_username",
+                               return_value="Lucy Reports"), \
+             mock.patch.object(creds, "unexpected_appstream_accounts",
+                               return_value=[]):
+            # Case must not matter — the login screen shows it capitalised.
+            self.assertTrue(lc.check_accounts()["ok"])
+
+    def test_an_unmarked_machine_asserts_nothing(self):
+        """Otherwise every laptop fails, and someone 'fixes' it by installing
+        Raf's login on a box that should not have it."""
+        from automations.shared import session_holder as sh
+        import pathlib as _pl
+        with mock.patch.object(sh, "_MACHINE_MARKER",
+                               _pl.Path("/nonexistent/.machine-profile")):
+            self.assertIsNone(lc._expected_ownerville_account())
+
     def test_the_machine_name_is_plain_when_the_marker_is_real(self):
         from automations.shared import session_holder as sh
         with mock.patch.object(sh, "_this_machine", return_value="Lucy 3"), \

@@ -51,6 +51,27 @@ import sys
 # "healthy" means is how a green check precedes a red batch.
 MIN_MINUTES_FOR_BATCH = 90.0
 
+# WHICH OWNERVILLE ACCOUNT EACH MACHINE MUST BE (Megan 2026-09-02: "For
+# Ownerville it should be Rhidalgo for 1 & 3, Chidalgo for 2").
+#
+# NOT the same as the AppStream account, which is 'Lucy Reports' everywhere.
+# OwnerVille is per-person and it decides whether a report's numbers are RIGHT,
+# not merely whether it runs: reports built on someone's saved views, the
+# "master office", and each account's Office Access list all follow the login.
+#
+# WHY THIS IS ASSERTED AND NOT JUST PRINTED. On 2026-09-01 Lucy 1's file said
+# `chidalgo` (it had been `rhidalgo` through Aug 25) and NOTHING errored — Raf's
+# gap board came back empty, Calvin and Jay vanished as "name not found in
+# ownerville", and the boards simply stopped. It cost an afternoon, and Megan
+# re-logged in by hand three times while the holder put the file's account back
+# minutes later. A check that says "ownerville credential: present" would have
+# passed every one of those runs. Presence was never the question.
+EXPECTED_OWNERVILLE_ACCOUNT = {
+    "Lucy 1": "rhidalgo",   # Raf
+    "Lucy 2": "chidalgo",   # Carlos
+    "Lucy 3": "rhidalgo",   # Raf
+}
+
 
 def _machine() -> str:
     """This machine's name, and whether it actually claims one.
@@ -70,6 +91,18 @@ def _machine() -> str:
         return name if marked else "%s (ASSUMED — no .machine-profile marker)" % name
     except Exception:  # noqa: BLE001 — a label must never fail the check
         return "<unknown>"
+
+
+def _expected_ownerville_account():
+    """The ownerville account THIS machine must use, or None if we cannot place
+    it. Reads the marker directly rather than _this_machine(), whose "Lucy 1"
+    fallback would make an unmarked machine assert somebody else's login."""
+    try:
+        from automations.shared import session_holder as sh
+        name = sh._MACHINE_MARKER.read_text().strip()
+    except Exception:  # noqa: BLE001 — unmarked is "don't know", not a failure
+        return None
+    return EXPECTED_OWNERVILLE_ACCOUNT.get(name)
 
 
 def _is_appstream_runner() -> bool:
@@ -177,8 +210,19 @@ def check_accounts() -> dict:
     except Exception:  # noqa: BLE001
         pass
     try:
-        creds.ownerville_username()
-        notes.append("ownerville credential: present")
+        ov_user = creds.ownerville_username()
+        notes.append("ownerville account: %r" % ov_user)
+        # Only assert on a machine that actually claims a name. _this_machine()
+        # defaults to "Lucy 1" with no .machine-profile marker, and asserting
+        # Raf's login on an unmarked box would fail every laptop and, worse,
+        # invite someone to "fix" it by installing the wrong account.
+        expected = _expected_ownerville_account()
+        if expected and ov_user.strip().lower() != expected.lower():
+            problems.append(
+                "ownerville account is %r but this machine must run as %r. "
+                "OwnerVille is per-person: the wrong one does not error, it "
+                "returns another owner's numbers under this machine's reports."
+                % (ov_user, expected))
     except Exception as e:  # noqa: BLE001
         problems.append("no ownerville credential on this machine: %s"
                         % str(e).splitlines()[0][:140])
