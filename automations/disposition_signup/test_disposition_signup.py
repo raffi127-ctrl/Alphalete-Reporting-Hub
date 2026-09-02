@@ -928,10 +928,10 @@ def test_b2b_confirm_says_the_three_things_that_stop_it_posting():
     blockers = S.b2b_blockers(rec)
     assert len(blockers) == 3
     assert all(b.startswith("B2B not running yet") for b in blockers)
-    # the agent exists but is not installed; no real board has been rendered;
-    # and that box cannot text from a LaunchAgent.
+    # the agent exists but is not installed; not every B2B office serves its
+    # campaign's grid; and that box cannot text from a LaunchAgent.
     assert any("install_gap_alerts_b2b_agent" in b for b in blockers)
-    assert any("ever been rendered" in b for b in blockers)
+    assert any("serves its campaign's grid" in b for b in blockers)
     assert any("control Messages" in b for b in blockers)
     assert set(blockers) <= set(S.warnings(rec))
 

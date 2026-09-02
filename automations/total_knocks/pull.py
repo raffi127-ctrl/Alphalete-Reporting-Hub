@@ -66,6 +66,10 @@ COL_PRESENTATION        = "Presentation"
 # produced it); both header dumps are kept in
 # output/probes/b2b-disposition-headers-campaign{2,16}-2026-09-02.log.
 #
+# Both sets are CONFIRMED against a real office that runs the campaign, not just
+# against the master account's view of it: AT&T on Carlos Hidalgo (11580) and
+# Box on Roshan Amin Ahmad (19833), each pulling real rep rows on 2026-09-02.
+#
 # B2B AT&T SBS (invD2DClientId=2), 22 headers. Note "Talked To" (past tense) and
 # "Presentation" WITHOUT the house's "Talk To - " prefix: near-identical English
 # to the fiber columns, different strings, which is exactly why the house scrape

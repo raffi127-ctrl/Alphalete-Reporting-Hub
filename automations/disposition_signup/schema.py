@@ -575,11 +575,13 @@ B2B_BLOCKERS = [
     "`lucy rerun install_gap_alerts_b2b_agent --machine \"Lucy 2\"`, nothing "
     "on that box ticks — a B2B office wired today would sit switched on and "
     "send nothing, silently.",
-    "No B2B board has ever been rendered from real OwnerVille rows. The column "
-    "sets came off a live header probe and the board draws correctly from "
-    "synthetic rows, but the first office through is the first real one — "
-    "worth looking at before it goes to an owner, especially the width (B2B "
-    "Box has eleven disposition buckets to fiber's five).",
+    "Not every B2B office serves its campaign's grid. Carlos Hidalgo (11580) "
+    "pinned to Box returns the AT&T-shaped table holding AT&T's reps, while "
+    "Roshan Amin Ahmad (19833) returns the real Box grid — so a campaign is "
+    "only as good as the office it is pulled from. `assert_campaign_grid` "
+    "refuses that mismatch rather than posting a Box-titled board of AT&T "
+    "numbers, but it means an enrolling office still has to be checked against "
+    "the campaign it claims.",
     "iMessage cannot send from a LaunchAgent on Lucy 2. macOS granted "
     "\"control Messages\" there to the poller's executable identity "
     "(.venv/bin/python), not to a /bin/bash wrapper — which is why "

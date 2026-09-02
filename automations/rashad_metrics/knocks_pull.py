@@ -225,12 +225,18 @@ def is_b2b_dispo(idx: dict) -> bool:
 # are distinguishable on sight are listed — a pin we cannot verify is not
 # checked, rather than guessed at.
 #
-# THIS EXISTS BECAUSE THE PIN DOES NOT ALWAYS TAKE (observed 2026-09-02).
-# Impersonating Carlos Hidalgo (11580) and pinning invD2DClientId=16 returned
-# the 22-header B2B AT&T grid, not Box's 24-header one — in a FRESH session, so
-# not sticky state from an earlier pull, and with the grid warmed first as the
-# code already does. The same pin on the master account DID serve the Box grid.
-# So under impersonation the campaign can silently stay where it was.
+# THIS EXISTS BECAUSE A PINNED CAMPAIGN DOES NOT ALWAYS PRODUCE ITS OWN GRID
+# (observed 2026-09-02). Impersonating Carlos Hidalgo (11580) and pinning
+# invD2DClientId=16 returned the 22-header B2B AT&T grid, not Box's 24-header
+# one — in a fresh session, grid warmed first, and with the page genuinely on
+# 16 (54 of its links carried it, and his picker lists B2B-BOX-Energy).
+#
+# IT IS THE OFFICE, NOT IMPERSONATION. Roshan Amin Ahmad (19833, Sapphire
+# Marketing) is impersonated exactly the same way and his campaign-16 pull
+# serves the full Box grid and real Box rows. Carlos's office simply does not
+# render a Box-shaped disposition table, whatever its picker offers — so a
+# campaign-16 pull against it comes back holding AT&T's reps and AT&T's numbers
+# under a Box heading.
 #
 # Left unchecked that is the worst failure this repo has: a board titled "B2B
 # Box" carrying AT&T's reps and AT&T's numbers, which — unlike a blank board —
@@ -491,7 +497,10 @@ def _pin_campaign(page, rqst: str, campaign_id: Optional[str] = None,
                   "continuing with the session's current campaign", flush=True)
 
 
-def impersonated_office_label(page, rqst: str) -> str:
+_BE_OFFICE_SEL = "select[name=beOffice], #beOffice"
+
+
+def impersonated_office_label(page, rqst: str, *, attempts: int = 3) -> str:
     """The office the session is ACTUALLY on, read off p=88's `beOffice` select
     — e.g. "Calvin Ribera (22162 - Vernon, Inc.)".
 
@@ -500,18 +509,38 @@ def impersonated_office_label(page, rqst: str) -> str:
     confirmImpersonate that silently fails leaves every later fetch answering
     for the wrong office with nothing raising (verified 2026-09-01).
 
-    "" when it can't be read — an unreadable label must never be treated as a
-    mismatch, only a positive mismatch counts.
+    RETRIED, because "" is no longer a free pass. A single flaky read is what
+    put Raf's 38 reps on a board titled KHALIL MANSOUR (2026-09-02, /knocks):
+    the read came back empty once, assert_impersonating took that as "not a
+    mismatch", and the pull scraped whatever office the session was on. The
+    same read, re-run against the same office minutes later, took 1-4s and
+    answered "KHALIL MANSOUR (11901 - ALPHALETE MANAGEMENT GROUP, INC.)" every
+    time — so it is transient, and a retry costs a few seconds against a board
+    of someone else's numbers.
+
+    Waits for the SELECT, not for networkidle: the element is in the initial
+    HTML, while the grid behind it keeps loading — on the biggest offices
+    (11280, 11901) that is the difference between a 1s read and a timeout.
     """
-    try:
-        page.goto("https://v2.ownerville.com/index.cfm?p=88&rqst=%s" % rqst,
-                  wait_until="networkidle", timeout=45000)
-        page.wait_for_timeout(800)
-        return page.eval_on_selector(
-            "select[name=beOffice], #beOffice",
-            "e => (e.options[e.selectedIndex] || {}).text || ''") or ""
-    except Exception:  # noqa: BLE001 — a check must never be the failure
-        return ""
+    last = ""
+    for i in range(max(1, attempts)):
+        try:
+            page.goto("https://v2.ownerville.com/index.cfm?p=88&rqst=%s" % rqst,
+                      wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_selector(_BE_OFFICE_SEL, timeout=20000)
+            last = page.eval_on_selector(
+                _BE_OFFICE_SEL,
+                "e => (e.options[e.selectedIndex] || {}).text || ''") or ""
+            if last.strip():
+                return last
+        except Exception:  # noqa: BLE001 — a check must never be the failure
+            pass
+        if i + 1 < max(1, attempts):
+            try:
+                page.wait_for_timeout(1500)
+            except Exception:  # noqa: BLE001
+                pass
+    return last
 
 
 def assert_impersonating(page, rqst: str, canonical: str, aliases_raw,
@@ -524,10 +553,43 @@ def assert_impersonating(page, rqst: str, canonical: str, aliases_raw,
     chat. Nothing errored in either case. A board with the right title and
     another office's numbers is worse than no board: unlike a blank one, the
     person reading it cannot tell.
+
+    AND WHY IT NOW RAISES ON AN UNREADABLE OFFICE. The first cut let an
+    unreadable label through — "only a positive mismatch counts" — which is a
+    guard that stands down the moment it is inconvenienced. 2026-09-02:
+    `/knocks Khalil Mansour` drew Raf's 38 reps under KHALIL MANSOUR, and the
+    log for that one office is missing its "✓ Confirmed" line while Chan,
+    Kash, Cyrus and Isaiah all carry theirs from the same session. The guard
+    never decided anything; the read came back empty once and it stepped
+    aside. So: retry, then take a second opinion off the page header, then
+    refuse. A request that errors can be re-asked.
     """
     label = impersonated_office_label(page, rqst)
     if not label:
-        return                      # unreadable is not a mismatch
+        # UNREADABLE IS NOT A PASS. It used to be — "only a positive mismatch
+        # counts" — and that is the hole Khalil Mansour fell through on
+        # 2026-09-02: one empty read, no "✓ Confirmed" line, and /knocks handed
+        # back Raf's 38 reps under the title KHALIL MANSOUR. Every other office
+        # in the same session confirmed normally, so the guard was not wrong
+        # about the office; it simply never got to ask.
+        #
+        # Second opinion before giving up: while impersonating, p=901 renders
+        # the office-access LIST and the header carries no office id, so an id
+        # here at all means the session is still on master and the switch
+        # plainly did not take. Named separately because it is the failure that
+        # actually happens, and "still on Raf" is worth saying out loud.
+        head, office_id = logged_in_office(page)
+        if office_id == MASTER_OFFICE_ID:
+            raise RuntimeError(
+                "impersonation of %r did not take — the session is still on "
+                "the master office %s, and every number from it would be "
+                "Raf's. Header: %r"
+                % (canonical, MASTER_OFFICE_ID, head[:120]))
+        raise RuntimeError(
+            "couldn't read which office the session is on after impersonating "
+            "%r (p=88 gave no beOffice value in any of its tries) — "
+            "refusing to publish numbers nobody can attribute. Ask again; "
+            "this read is transient." % (canonical,))
     # load_aliases() returns {canonical_sheet_tab: [aliases]} — NOT
     # {alias: canonical}. Reading it the other way round built an alias set
     # that never contained the alias, so this refused the RIGHT office: on
