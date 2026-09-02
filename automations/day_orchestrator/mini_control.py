@@ -5512,6 +5512,9 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
                 runs total_knocks.pull instead, which is the exact path his
                 daily report uses.
         date    default: yesterday (Central), same as the daily run.
+        force   run even inside the gap_alerts selling window. REFUSED there
+                by default: this takes the machine-wide ownerville session,
+                and a slow probe silently eats Raf's boards (2026-09-02).
         campaign=<id>    pin a different TeleMapper campaign for this probe
         campaign=none    skip the pin entirely (what an NDS office gets in
                          weekly_knock_dispositions). Lets the "is the pin
@@ -5540,8 +5543,12 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
     office = parts[0].strip()
     date_arg = None
     campaign = None                      # None = leave the default pin alone
+    force = False
     for raw in parts[1:]:
         arg = raw.strip()
+        if arg.lower() in ("force", "--force"):
+            force = True
+            continue
         if arg.lower().startswith("campaign="):
             val = arg.split("=", 1)[1].strip()
             # 'none' / '' both mean DON'T pin — knocks_pull skips the pin on
@@ -5554,6 +5561,39 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
             dt.datetime.strptime(date_arg, "%Y-%m-%d")
         except ValueError:
             return False, f"probe_knocks: date must be YYYY-MM-DD, got {date_arg!r}"
+
+    # NOT DURING THE SELLING WINDOW, unless you say so on purpose.
+    #
+    # This action is read-only to the DATA and anything but read-only to the
+    # SESSION. On 2026-09-02 one `probe_knocks "Jay Turnage"` broke Raf's live
+    # gap_alerts twice inside an hour: it stranded the impersonation (his 2:05
+    # board came out as another office's grid), and it held the machine-wide
+    # ownerville lock for ten minutes, which ate the 2:30 and 2:40 boards
+    # outright — gap_alerts waits 120s, then logs "SKIPPED this tick" and
+    # exits 0, so a starved report looks healthy.
+    #
+    # A separate Chrome profile is NOT a separate session: every job restores
+    # the same storage_state, so they share one server-side session and
+    # impersonation lives there. See
+    # [[reference_ownerville_one_session_per_machine]].
+    #
+    # `force` is the deliberate override, because sometimes the thing you need
+    # to debug only happens while the field is out.
+    if not force:
+        try:
+            from automations.gap_alerts import config as _gc
+            _now = dt.datetime.now()
+            if _gc.in_selling_window(_now):
+                return False, (
+                    "probe_knocks refused: it is %s, inside the gap_alerts "
+                    "selling window, and this probe takes the machine-wide "
+                    "ownerville session — a slow one silently eats Raf's "
+                    "boards (2026-09-02). Run it after the window, or add "
+                    "`force` to override on purpose."
+                    % _now.strftime("%I:%M %p").lstrip("0"))
+        except Exception:  # noqa: BLE001 — a guard must never block the action
+            pass
+
     # Same guard the other browser actions use — a human Chrome left open on the
     # mini single-instances with patchright's and breaks the scrape.
     try:
