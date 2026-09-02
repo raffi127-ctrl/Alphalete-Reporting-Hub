@@ -2167,7 +2167,17 @@ def _capture_appstream_state(verbose: bool = True,
     else:
         profile = APPSTREAM_PROFILE_DIR
         state_path = APPSTREAM_STORAGE_STATE
-        who = "rcaptain"
+        # NAME THE ACCOUNT THIS MACHINE IS ACTUALLY CONFIGURED FOR. This said
+        # "rcaptain" unconditionally, long after the migration to per-person
+        # logins — so the seed prompt told the human to sign in as a RETIRED
+        # account, and the success line claimed "rcaptain console reached" no
+        # matter who had signed in. On 2026-09-02 that string sent a re-seed
+        # down the wrong account twice and misdirected the incident diagnosis.
+        # Fall back to the literal only if no credential resolves.
+        try:
+            who = creds.appstream_username() or "the configured account"
+        except Exception:  # noqa: BLE001 — a missing credential is not fatal here
+            who = "the configured account"
     profile.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, profile, headless=False,
@@ -2246,7 +2256,8 @@ if __name__ == "__main__":
                          "authenticate from THIS machine? Never logs in, so a "
                          "dead session fails instead of silently re-seeding.")
     ap.add_argument("--appstream-form-login", action="store_true",
-                    help="Test the UNATTENDED rcaptain form login (now that "
+                    help="Test the UNATTENDED AppStream form login as this "
+                         "machine's configured account (now that "
                          "Cloudflare auto-passes) → real console + save session.")
     ap.add_argument("--ownerville-check", action="store_true",
                     help="REUSE-ONLY probe: does the SAVED ownerville session "
@@ -2474,12 +2485,17 @@ if __name__ == "__main__":
                     APPSTREAM_STORAGE_STATE.write_text(json.dumps(_st))
                     _nr = sum(1 for c in _st.get("cookies", [])
                               if c.get("name", "").startswith("rqst_"))
-                    print(f"✅ rcaptain console reached UNATTENDED — saved session "
+                    # Report the account actually used, not a hardcoded name.
+                    try:
+                        _who = creds.appstream_username() or "configured account"
+                    except Exception:  # noqa: BLE001
+                        _who = "configured account"
+                    print(f"✅ {_who} console reached UNATTENDED — saved session "
                           f"({len(_st.get('cookies', []))} cookies, {_nr} rqst) "
                           f"→ {APPSTREAM_STORAGE_STATE.name}")
                     _ok = _nr > 0
                 else:
-                    print("❌ did NOT reach the rcaptain console (#searchMC) — "
+                    print("❌ did NOT reach the AppStream console (#searchMC) — "
                           "Cloudflare may still be challenging the form, or the "
                           "login didn't submit. Nothing saved.")
         except Exception as _e:
