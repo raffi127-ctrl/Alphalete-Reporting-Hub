@@ -60,8 +60,18 @@ from automations.shared import session_holder as h
 @contextlib.contextmanager
 def _mint_enabled():
     """Clear the throttle (and force the flag on) so a test exercises the mint
-    itself rather than the once-per-30-min gate."""
+    itself rather than the once-per-30-min gate.
+
+    _DEAD_TOKENS is isolated too. It is module-level and PROCESS-LOCAL by design
+    (a restart must start with a clean slate), which makes it shared state
+    between tests: the "same/burned token" branch records the default token, and
+    every later test reusing that token was then rejected up front — so
+    `test_success_says_so_too` and `test_it_waits_rather_than_using_count`
+    passed alone and failed in the suite, purely on execution order. That is the
+    test harness leaking, not the code, but it cost two permanently-red tests
+    that everyone had learned to scroll past."""
     with mock.patch.object(h, "MINT_VIA_OWNERVILLE", True), \
+         mock.patch.object(h, "_DEAD_TOKENS", set()), \
          mock.patch.dict(h._LAST_MINT_ATTEMPT, {"at": 0.0}):
         yield
 
@@ -246,6 +256,79 @@ class AFailedMintIsNeverSilent(unittest.TestCase):
                 self.assertIn("mint FAILED", out)
 
     def test_success_says_so_too(self):
+        ok, _, out = _mint()
+        self.assertTrue(ok)
+        self.assertIn("MINTED", out)
+
+
+class AnIdentityWithoutProgram701StopsTryingAndStopsShouting(unittest.TestCase):
+    """A PERMANENT condition must not be reported as a per-cycle failure.
+
+    Lucy 1's ownerville login is Rafael Hidalgo (ICD, 11280) and is not offered
+    program 701, so the SSO hop can never reach the console there. Before this,
+    every cycle hopped, failed, and logged "mint FAILED — ownerville hop landed
+    without a console" — a line written for a real fault, printed forever for
+    something no retry can change. 2026-09-02 showed the cost of exactly that
+    kind of noise: it sat beside genuine alerts all morning while the actual
+    fault (a mistyped AppStream username) went unlooked at."""
+
+    def setUp(self):
+        self._saved = dict(h._OV_APPSTREAM)
+        h._OV_APPSTREAM.update({"offered": False, "announced": False})
+
+    def tearDown(self):
+        h._OV_APPSTREAM.clear()
+        h._OV_APPSTREAM.update(self._saved)
+
+    def test_it_does_not_re_key_the_console(self):
+        page = _Page()
+        with _mint_enabled(), contextlib.redirect_stdout(io.StringIO()), \
+             mock.patch.object(h, "_stamp", return_value="T"), \
+             mock.patch.object(h, "_fresh_rqst_from_ownerville",
+                               return_value="NEWTOKEN"), \
+             mock.patch.object(h, "_rqst_id", return_value="OLD"):
+            ok = h._mint_appstream_via_ownerville(object(), page, verbose=False)
+        self.assertFalse(ok)
+        self.assertEqual(page.gotos, [],
+                         "a structurally impossible mint must not spend a "
+                         "console navigation")
+
+    def test_it_says_so_once_and_then_goes_quiet(self):
+        outs = []
+        for _ in range(3):
+            buf = io.StringIO()
+            with _mint_enabled(), contextlib.redirect_stdout(buf), \
+                 mock.patch.object(h, "_stamp", return_value="T"), \
+                 mock.patch.object(h, "_fresh_rqst_from_ownerville",
+                                   return_value="NEWTOKEN"), \
+                 mock.patch.object(h, "_rqst_id", return_value="OLD"):
+                h._mint_appstream_via_ownerville(object(), page=_Page(),
+                                                 verbose=False)
+            outs.append(buf.getvalue())
+        self.assertIn("NOT AVAILABLE", outs[0])
+        self.assertIn("program 701", outs[0])
+        self.assertNotIn("mint FAILED", outs[0],
+                         "structural: must not read as a failure")
+        self.assertEqual(outs[1].strip(), "", "must not repeat every cycle")
+        self.assertEqual(outs[2].strip(), "")
+
+    def test_the_one_line_names_the_actual_fix(self):
+        buf = io.StringIO()
+        with _mint_enabled(), contextlib.redirect_stdout(buf), \
+             mock.patch.object(h, "_stamp", return_value="T"), \
+             mock.patch.object(h, "_fresh_rqst_from_ownerville",
+                               return_value="NEWTOKEN"), \
+             mock.patch.object(h, "_rqst_id", return_value="OLD"):
+            h._mint_appstream_via_ownerville(object(), _Page(), verbose=False)
+        out = buf.getvalue()
+        self.assertIn("appstream_autorenew", out,
+                      "must say where AppStream DOES come from here")
+        self.assertIn("restart", out, "granting p=701 needs a holder restart")
+
+    def test_an_unknown_verdict_still_mints(self):
+        """Only a page that listed OTHER programs and no 701 is conclusive. An
+        inconclusive read must never disable minting."""
+        h._OV_APPSTREAM.update({"offered": None, "announced": False})
         ok, _, out = _mint()
         self.assertTrue(ok)
         self.assertIn("MINTED", out)

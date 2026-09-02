@@ -677,6 +677,25 @@ _RQST_RE = re.compile(r"rqst=([A-Za-z0-9_-]+)")
 # slate and be free to accept whatever ownerville issues it.
 _DEAD_TOKENS: set = set()
 
+# DOES THIS MACHINE'S OWNERVILLE IDENTITY EVEN HAVE APPSTREAM? (2026-09-02)
+#
+# The ownerville hop can only mint where the signed-in ownerville identity is
+# offered program 701. On Lucy 1 it is NOT: that login is Rafael Hidalgo (ICD,
+# office 11280), and a read of the dashboard lists ~90 program codes — p=81
+# (Tableau) among them, p=701 absent. So every mint attempt there hops, gets no
+# console, and logs "AppStream mint FAILED — ownerville hop landed without a
+# console" — once per cycle, forever, for a condition no retry can change.
+#
+# That line is indistinguishable from the real failure it was written for, and
+# today proved what a misleading log line costs: this one sat next to genuine
+# alerts all morning while the actual fault (a mistyped username) went unlooked
+# at. So decide the question ONCE from the dashboard itself, say so once in
+# plain terms, and stop attempting.
+#
+# Process-local, like _DEAD_TOKENS: a restart re-checks, so granting the account
+# p=701 takes effect on the next holder start with no code change.
+_OV_APPSTREAM: dict = {"offered": None, "announced": False}
+
 
 def _tok8(tok) -> str:
     """The 8-char upper-case id form `_rqst_id` uses, so a freshly scraped token
@@ -717,6 +736,24 @@ def _fresh_rqst_from_ownerville(ctx) -> str | None:
         except Exception:  # noqa: BLE001 — the goto above is the load that matters
             pass
         page.wait_for_timeout(5_000)
+        # Answer "is p=701 offered to this identity?" HERE, off the page we are
+        # already loading, so the check costs no extra navigation. A dashboard
+        # that lists other programs but no 701 is the structural case; a page
+        # with no program links at all is inconclusive (still loading, or a
+        # redirect), so leave the verdict unset rather than latch a false
+        # negative that would disable minting until the next restart.
+        try:
+            _n701, _nprog = page.evaluate(
+                "() => { const a=[...document.querySelectorAll('a')]"
+                ".map(x=>x.getAttribute('href')||'');"
+                " return [a.filter(h=>/p=701/.test(h)).length,"
+                "         a.filter(h=>/[?&#]p=\\d+/.test(h)).length]; }")
+            if _n701:
+                _OV_APPSTREAM["offered"] = True
+            elif _nprog:
+                _OV_APPSTREAM["offered"] = False
+        except Exception:  # noqa: BLE001 — a diagnosis must never break the mint
+            pass
         m = _RQST_RE.search(page.url or "")
         if not m:
             href = page.evaluate(
@@ -815,6 +852,23 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     # hold, names the real cause, and returns False so the caller's restart
     # ladder — the path this file documents as the one that actually mints —
     # gets its failure honestly.
+    # STRUCTURAL, NOT A FAILURE. Ownerville handed us a token, but this identity
+    # is not offered program 701, so the hop below cannot land a console no
+    # matter how fresh the token is. Say it once, in terms that name the fix
+    # (grant the ownerville login AppStream, or let this machine's own
+    # applicantstream login carry it), then stay quiet — the alternative is one
+    # false alarm every cycle for a condition retrying cannot change.
+    if _OV_APPSTREAM.get("offered") is False:
+        if not _OV_APPSTREAM["announced"]:
+            _OV_APPSTREAM["announced"] = True
+            print(f"[{_stamp()}] AppStream mint via ownerville is NOT AVAILABLE "
+                  f"on this machine — its ownerville identity is not offered "
+                  f"program 701, so the SSO hop can never reach the console. "
+                  f"This is not a fault and will not be retried; AppStream here "
+                  f"comes from this machine's own applicantstream login "
+                  f"(appstream_autorenew). Grant that ownerville login p=701 to "
+                  f"re-enable minting, then restart the holder.", flush=True)
+        return False
     _t8 = _tok8(tok)
     if _t8 == _tok8(before) or _t8 in _DEAD_TOKENS:
         print(f"[{_stamp()}] AppStream mint FAILED — ownerville re-served the "
