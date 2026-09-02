@@ -256,7 +256,7 @@ def request_view() -> None:
     st.divider()
     notes = st.text_area(
         "Anything else we should know?",
-        placeholder="e.g. I run two campaigns, or only text me on weekdays",
+        placeholder="e.g. I run two campaigns, or only send it on weekdays",
         help="Optional.")
 
     # ---- submit ----------------------------------------------------------
