@@ -688,22 +688,35 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
         raise RuntimeError(
             "Couldn't reach the ownerville Office Access page (?p=901) to "
             f"impersonate {canonical!r}.")
-    # _find_owner_and_impersonate returns the FRESH rqst for the
-    # impersonated session (the server hands back a new token), so we
-    # don't need to re-capture it separately.
-    rqst, reason = _find_owner_and_impersonate(page, canonical, aliases_raw)
-    if not rqst:
-        raise RuntimeError(
-            f"Couldn't impersonate {canonical!r} in ownerville: {reason}")
-    if verbose:
-        print(f"  ✓ Impersonated {canonical!r}; rqst={rqst[:8]}…",
-              flush=True)
-    # PROVE IT. "Impersonated" above only means confirmImpersonate was called,
-    # not that ownerville switched — and the token cannot tell us, so this asks
-    # the page which office it is actually on.
-    assert_impersonating(page, rqst, canonical, aliases_raw, verbose=verbose)
-
+    # THE `try` OPENS HERE, BEFORE confirmImpersonate IS CALLED — not after
+    # the identity check below. Impersonation is SERVER-side state on the
+    # shared ownerville session, so anything that raises between the switch and
+    # the finally leaves the session stuck on the wrong office for every LATER
+    # run, including the master one. 2026-09-02: a `probe_knocks "Jay Turnage"`
+    # failed its assert_impersonating (it had landed on Chan Park), the raise
+    # skipped the exit because the check sat OUTSIDE this block, and the next
+    # gap_alerts ticks pulled Raf's own board off an impersonated grid — his
+    # card went to Alphalete Partners as `gaps_only` ("TELEMAPPER KNOCKS")
+    # instead of the house board, and Calvin's pull came back as Jay Turnage.
+    # The guard that refuses to publish another office's numbers must not
+    # itself be what strands the session on that office.
     try:
+        # _find_owner_and_impersonate returns the FRESH rqst for the
+        # impersonated session (the server hands back a new token), so we
+        # don't need to re-capture it separately.
+        rqst, reason = _find_owner_and_impersonate(page, canonical, aliases_raw)
+        if not rqst:
+            raise RuntimeError(
+                f"Couldn't impersonate {canonical!r} in ownerville: {reason}")
+        if verbose:
+            print(f"  ✓ Impersonated {canonical!r}; rqst={rqst[:8]}…",
+                  flush=True)
+        # PROVE IT. "Impersonated" above only means confirmImpersonate was
+        # called, not that ownerville switched — and the token cannot tell us,
+        # so this asks the page which office it is actually on.
+        assert_impersonating(page, rqst, canonical, aliases_raw,
+                             verbose=verbose)
+
         # Defensive: prefer the live page's rqst if the post-impersonate
         # navigation landed on a URL with a newer token. page_rqst falls
         # back to the value we already have.
