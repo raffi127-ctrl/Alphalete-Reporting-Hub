@@ -525,6 +525,11 @@ RECIPIENTS: dict = {
         "marcial.enrique@yahoo.com", "maudmiller4@gmail.com",
         "nweldon0130@gmail.com", "raffi127@gmail.com",
         "samjpark1497@gmail.com",
+        # Jay ("Ja") Mosley joined Chan's captainship 2026-09-01 (Eve). Added to
+        # the "Chan's Captainship" contact group the same day; this line only
+        # keeps the fallback in sync so he isn't dropped if Contacts is
+        # unreachable at send time.
+        "jamosleybiz@gmail.com",
     ],
     "tony": [
         "kingslegacyconsultants@gmail.com",
