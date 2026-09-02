@@ -35,6 +35,11 @@ from automations.total_knocks.pull import (
     COL_NO_ANSWER, COL_TALK_TO_NI, COL_PRES_NI, COL_SALE,
     COL_NOT_INTERESTED, COL_COME_BACK, COL_INACCESSIBLE, COL_DO_NOT_KNOCK,
     COL_VL, COL_PRESENTATION,
+    COL_B2B_TALKED_TO_NI, COL_B2B_PRES_NI, COL_B2B_CORP_LOCAL,
+    COL_B2B_CORP_NO_OPP, COL_B2B_NONE, COL_B2B_INACCURATE_LEAD,
+    COL_BOX_TALKED_TO, COL_BOX_OWNER_TALKED_TO, COL_BOX_CONTRACT_SIGNED,
+    COL_BOX_BILL_NO_SALE, COL_BOX_AM_COME_BACK, COL_BOX_CORP_NO_OPP,
+    COL_BOX_DO_NOT_DISTURB,
     SHEET_COLUMNS,
     _norm,
 )
@@ -374,6 +379,37 @@ WIRELESS_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
                            COL_NO_ANSWER, COL_NOT_INTERESTED, COL_COME_BACK,
                            COL_INACCESSIBLE, COL_DO_NOT_KNOCK]
 WIRELESS_KNOCKS_HEADERS = _with_derived(WIRELESS_KNOCKS_COLUMNS)
+
+# B2B. TWO boards, because the two campaigns are two vocabularies — see the
+# column sets in rashad_metrics.knocks_pull for the live header dumps they came
+# from (2026-09-02). Same shape rules as the others: no Rep ID column, and Gaps
+# + Total Gaps carried IN the list so needs_time_gaps() retires the separate
+# Time Gaps post and the office gets ONE board.
+#
+# These are the WIDEST boards in the repo (B2B Box has eleven disposition
+# buckets to fiber's five), so the first real render is worth looking at against
+# Megan's fit-to-screen rule before this goes to an owner.
+B2B_ATT_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
+                          COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
+                          COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                          COL_GAPS, COL_TOTAL_GAPS,
+                          COL_B2B_TALKED_TO_NI, COL_B2B_PRES_NI, COL_SALE,
+                          COL_COME_BACK, COL_B2B_CORP_LOCAL,
+                          COL_B2B_CORP_NO_OPP, COL_DO_NOT_KNOCK,
+                          COL_B2B_INACCURATE_LEAD, COL_B2B_NONE]
+B2B_ATT_KNOCKS_HEADERS = _with_derived(B2B_ATT_KNOCKS_COLUMNS)
+
+B2B_BOX_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
+                          COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
+                          COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                          COL_GAPS, COL_TOTAL_GAPS,
+                          COL_BOX_TALKED_TO, COL_BOX_OWNER_TALKED_TO,
+                          COL_NOT_INTERESTED, COL_BOX_CONTRACT_SIGNED,
+                          COL_BOX_BILL_NO_SALE, COL_COME_BACK,
+                          COL_BOX_AM_COME_BACK, COL_BOX_CORP_NO_OPP,
+                          COL_BOX_DO_NOT_DISTURB, COL_INACCESSIBLE,
+                          COL_B2B_INACCURATE_LEAD]
+B2B_BOX_KNOCKS_HEADERS = _with_derived(B2B_BOX_KNOCKS_COLUMNS)
 
 # ---- layout ----
 # EVERY BOARD IS DRAWN AT 2x DENSITY (Megan's standing rule, 2026-08-30:
@@ -1657,6 +1693,8 @@ SHAPE_ENERGYWELL = "energywell"  # RES-ENERGYWELL: wireless + Presentation + VL
 SHAPE_HOUSE = "house"          # fiber: full disposition columns
 SHAPE_WIRELESS = "wireless"    # NDS disposition shape: counts, no Talk-To split
 SHAPE_GAPS_ONLY = "gaps_only"  # no disposition page at all: Time Tracker only
+SHAPE_B2B_ATT = "b2b_att"      # B2B AT&T SBS (2): Corp Franchise buckets
+SHAPE_B2B_BOX = "b2b_box"      # B2B-BOX-Energy (16): Owner Talked To, Contract
 
 
 def knocks_shape(rows: "list[dict]") -> str:
@@ -1672,7 +1710,15 @@ def knocks_shape(rows: "list[dict]") -> str:
     first = rows[0]
     if COL_TOTAL_KNOCKS not in first:
         return SHAPE_GAPS_ONLY
-    # Energy Wells FIRST: it has no Talk-To split either, so the wireless test
+    # B2B FIRST, both of them: their grids carry Total Knocks and no house
+    # Talk-To split, so the wireless test below claims either one — and the
+    # wireless BOARD has no column for a single B2B bucket, so the office would
+    # get a plausible-looking card with every disposition blank.
+    if COL_B2B_CORP_NO_OPP in first:
+        return SHAPE_B2B_ATT
+    if COL_BOX_OWNER_TALKED_TO in first or COL_BOX_CORP_NO_OPP in first:
+        return SHAPE_B2B_BOX
+    # Energy Wells NEXT: it has no Talk-To split either, so the wireless test
     # below would claim it and its board would lose VL and Presentation.
     if COL_VL in first:
         return SHAPE_ENERGYWELL
@@ -1684,6 +1730,8 @@ _SHAPE_COLUMNS = {
     SHAPE_HOUSE: COMBINED_KNOCKS_HEADERS,
     SHAPE_WIRELESS: WIRELESS_KNOCKS_COLUMNS,
     SHAPE_GAPS_ONLY: TELEMAPPER_KNOCKS_COLUMNS,
+    SHAPE_B2B_ATT: B2B_ATT_KNOCKS_HEADERS,
+    SHAPE_B2B_BOX: B2B_BOX_KNOCKS_HEADERS,
 }
 
 
@@ -1749,6 +1797,26 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             extra_totals=extra_totals,
             base_cols=ENERGYWELL_KNOCKS_COLUMNS,
             out_cols=ENERGYWELL_KNOCKS_HEADERS)], shape)
+    elif shape in (SHAPE_B2B_ATT, SHAPE_B2B_BOX):
+        # Through the SAME renderer as every other shape, for the reason the
+        # Energy Wells and wireless shapes were moved here: the shape decides
+        # the COLUMNS and nothing else. A B2B office gets the totals row, Talk
+        # To %, Talk To's per Rep, Avg Hrs Knocking and the rate columns like
+        # everybody, on its own campaign's disposition vocabulary.
+        #
+        # NO extra_totals: the comparison line is Chan Park, who is fiber. His
+        # numbers have no column to sit under on a B2B board (config.compares
+        # is False for form-enrolled offices anyway, so this is belt and
+        # braces).
+        base = (B2B_ATT_KNOCKS_COLUMNS if shape == SHAPE_B2B_ATT
+                else B2B_BOX_KNOCKS_COLUMNS)
+        out = (B2B_ATT_KNOCKS_HEADERS if shape == SHAPE_B2B_ATT
+               else B2B_BOX_KNOCKS_HEADERS)
+        return ([render_total_knocks(
+            target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
+            knocks_green_at=knocks_green_at, sort_by=sort_by,
+            title_suffix=title_suffix, end=end, date_text=date_text,
+            base_cols=base, out_cols=out)], shape)
     elif shape == SHAPE_WIRELESS:
         # THROUGH THE SAME RENDERER as the house and Energy Wells boards, for
         # the reason the Energy Wells shape was moved here on 2026-08-30

@@ -50,19 +50,36 @@ HOUR=${HOUR#0}
 #   Saturday   9:45-21:00
 # Pacific is NOT covered (its 10pm would land at midnight Central, a different
 # calendar day) — which is why the sign-up form does not offer it.
+# TWO ENVELOPES, ONE WRAPPER. B2B knocks BUSINESSES, in business hours -- the
+# D2D envelope starts at noon because a D2D field is out 1:30pm-10pm, and it
+# would silently cut a B2B office's entire morning. GAP_ALERTS_ENVELOPE=b2b (set
+# by com.alphalete.gap-alerts-b2b.plist on Lucy 2) widens it instead of forking
+# this file: a second copy of the wake logic is how the two drift, and the wake
+# arithmetic below is the part that has already been got wrong twice.
+#
+# Still only an ENVELOPE either way -- config.in_office_window makes the real
+# per-office call from the office's OWN timezone and field hours, so these just
+# have to be generous enough not to cut anyone before Python ever runs.
+#   d2d  weekdays 12:00-23:00, Sat 09:00-21:00  (Eastern 1:30pm .. Mountain 10pm)
+#   b2b  weekdays 07:00-20:00, Sat 08:00-18:00  (Eastern 8am .. Mountain 6pm)
+case "${GAP_ALERTS_ENVELOPE:-d2d}" in
+    b2b) WK_LO=7;  WK_HI=20; SAT_LO=8; SAT_HI=18 ;;
+    *)   WK_LO=12; WK_HI=23; SAT_LO=9; SAT_HI=21 ;;
+esac
+
 if [ "$DOW" = "6" ]; then
-    [ "$HOUR" -lt 9 ] && exit 0
+    [ "$HOUR" -lt "$SAT_LO" ] && exit 0
     # The org default Saturday is 10:45am-6:30pm Central (Megan 2026-08-30);
     # 9 and 21 are the ENVELOPE around it for other zones. This gate exits
     # before Python runs, so anything it cuts is cut silently — that is how the
     # 8/29 "texts died at 4:45 PM Saturday" happened when it said 17.
-    [ "$HOUR" -gt 21 ] && exit 0
+    [ "$HOUR" -gt "$SAT_HI" ] && exit 0
 else
-    [ "$HOUR" -lt 12 ] && exit 0
+    [ "$HOUR" -lt "$WK_LO" ] && exit 0
     # The org default weekday is 1:30pm-10pm Central (Raf 2026-08-28); 12 and
     # 23 are the ENVELOPE around it. Still hour-granular and deliberately
     # generous — Python makes the exact per-office call.
-    [ "$HOUR" -gt 23 ] && exit 0
+    [ "$HOUR" -gt "$WK_HI" ] && exit 0
 fi
 
 # WALL-CLOCK ANCHOR — this is what makes it every TEN minutes.
@@ -109,7 +126,9 @@ VENV_PY=".venv/bin/python"
 
 LOG_DIR="output/logs"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/gap-alerts-$(date +%Y-%m-%d).log"
+# Own log per envelope, so Lucy 2's B2B pass and Lucy 1's D2D pass read
+# apart when both are copied off for a post-mortem.
+LOG_FILE="$LOG_DIR/gap-alerts${GAP_ALERTS_ENVELOPE:+-$GAP_ALERTS_ENVELOPE}-$(date +%Y-%m-%d).log"
 
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 export NO_PROXY='*'

@@ -58,6 +58,36 @@ COL_NOT_INTERESTED      = "Not Interested"
 # is also a talk-to."
 COL_VL                  = "VL"
 COL_PRESENTATION        = "Presentation"
+# --- B2B ---------------------------------------------------------------------
+# The two B2B campaigns knock BUSINESSES, and their disposition vocabularies are
+# their own — not the fiber set, not the wireless set, and NOT each other's.
+# Read live off p=89 on 2026-09-02 with the campaign pinned (the campaign is a
+# sticky session-global, so an unpinned dump proves nothing about which campaign
+# produced it); both header dumps are kept in
+# output/probes/b2b-disposition-headers-campaign{2,16}-2026-09-02.log.
+#
+# B2B AT&T SBS (invD2DClientId=2), 22 headers. Note "Talked To" (past tense) and
+# "Presentation" WITHOUT the house's "Talk To - " prefix: near-identical English
+# to the fiber columns, different strings, which is exactly why the house scrape
+# raised "missing: No answer, Talk To - Not Interested, Inaccessible" on it.
+# It has NO No-answer and NO Inaccessible bucket at all.
+COL_B2B_TALKED_TO_NI    = "Talked To - Not Interested"
+COL_B2B_PRES_NI         = "Presentation - Not Interested"
+COL_B2B_CORP_LOCAL      = "Corp Franchise Local"
+COL_B2B_CORP_NO_OPP     = "Corp Franchise No Opp"
+COL_B2B_NONE            = "None"           # knocked, no disposition recorded
+# B2B Box Energy (invD2DClientId=16), 24 headers. Shares only the spine and
+# Come Back / Inaccurate Lead with AT&T above.
+COL_BOX_TALKED_TO       = "Talked To"
+COL_BOX_OWNER_TALKED_TO = "Owner Talked To"
+COL_BOX_CONTRACT_SIGNED = "Contract Signed"
+COL_BOX_BILL_NO_SALE    = "Bill Collected - No Sale"
+COL_BOX_AM_COME_BACK    = "AM Come Back"
+COL_BOX_CORP_NO_OPP     = "Corp - No Opp"
+COL_BOX_DO_NOT_DISTURB  = "Do Not Disturb"
+# Both B2B grids carry this one, and it is NOT a talk-to: the lead was wrong,
+# so there was nobody there to talk to.
+COL_B2B_INACCURATE_LEAD = "Inaccurate Lead"
 # From Time Tracker (p=510 JSON), merged onto the disposition rows by badge ID.
 COL_GAPS                = "Gaps"               # count of gaps
 COL_TOTAL_GAPS          = "Total Gaps (min)"   # total gap minutes (int)

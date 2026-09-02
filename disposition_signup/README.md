@@ -143,37 +143,56 @@ mostly knock without dispositioning, so `p=89` comes back empty, `knocks_pull`
 builds the rows from the Time Tracker instead and the renderer draws the Time
 Gaps board alone (`render.SHAPE_GAPS_ONLY`). The form says so where they pick it.
 
-**B2B takes sign-ups but cannot post yet.** Three things are in the way, and
-`schema.b2b_blockers` prints all three on the confirm view so the decision is
-made with them in front of you:
+**B2B is built. One command away from running.**
 
-1. **No runner.** `gap_alerts` has one LaunchAgent — `com.alphalete.gap-alerts`
-   on Lucy 1. The `gap_alerts_b2b` schedule entry and Hub card exist so the
-   report has an id to hang on, but nothing on Lucy 2 ticks.
-2. **The B2B Disposition grid has never been mapped.** `knocks_pull` knows the
-   fiber, wireless and Energy Wells column sets. A B2B grid carries Total
-   Knocks and no house Talk-To split, so it *satisfies* `_is_wireless_dispo`,
-   and the wireless scrape is tolerant by design — which means it would have
-   rendered a clean, plausible board with `0` in every disposition column. It
-   now raises instead (`_is_b2b_dispo`, keyed on the B2B-only `Corp - No Opp`
-   column). To map it, from **Lucy 2**, outside the b2b_dispositions hours
-   (Mon-Sat 12-7pm):
+```bash
+lucy rerun install_gap_alerts_b2b_agent --machine "Lucy 2"
+```
 
-   ```bash
-   python -m automations.gap_alerts.run --probe-campaigns --office "<owner>" --campaign 2
-   ```
+That installs `com.alphalete.gap-alerts-b2b`, which runs the SAME wrapper as
+Lucy 1's agent with `GAP_ALERTS_ENVELOPE=b2b`. The envelope is the only thing
+that differs: B2B knocks *businesses*, so the pre-Python hour gate opens at
+07:00 rather than noon (weekdays 07:00-20:00, Saturday 08:00-18:00 Central).
+It is still only an envelope — `config.in_office_window` makes the real
+per-office call from that office's own timezone and hours.
 
-   (and again with `--campaign 16`), then add `_B2B_COLUMNS` / `_B2B_COUNTS` /
-   `_B2B_TALK_TO_PARTS` beside the Energy Wells set, a `SHAPE_B2B` in
-   `total_knocks.render`, and delete the guard. Pass `--campaign` — unpinned,
-   the probe dumps whatever campaign the box was last left on.
-3. **iMessage does not work from a LaunchAgent on Lucy 2.** macOS granted
-   "control Messages" there to the poller's executable identity
-   (`.venv/bin/python`), not to a `/bin/bash` wrapper — which is why
-   `b2b_dispositions` hands its sends to the poller through a manifest.
-   `gap_alerts` texts inline, so that route would block on an unattended
-   consent dialog. Moot for new sign-ups now that the form is Slack + email
-   only; it still matters for any B2B row added by hand.
+**The two B2B grids are mapped** (probed live 2026-09-02, dumps under
+`output/probes/`), and they are two vocabularies, not one:
+
+| | AT&T SBS (`2`) | Box Energy (`16`) |
+|---|---|---|
+| headers | 22 | 24 |
+| talk-to buckets | Talked To - Not Interested, Presentation - Not Interested, Sale, Come Back, Corp Franchise Local, Corp Franchise No Opp, Do Not Knock | Talked To, Owner Talked To, Not Interested, Contract Signed, Bill Collected - No Sale, Come Back, AM Come Back, Corp - No Opp, Do Not Disturb |
+| not a talk-to | None, Inaccurate Lead | Inaccessible, Inaccurate Lead |
+| no bucket for | No answer, Inaccessible | No answer |
+
+They share only the spine, Come Back and Inaccurate Lead — which is why there
+are two shapes (`SHAPE_B2B_ATT` / `SHAPE_B2B_BOX`) rather than one union board
+seventeen mostly-empty columns wide.
+
+Why they needed shapes at all: a B2B grid carries Total Knocks and no house
+Talk-To split, so it *satisfies* `_is_wireless_dispo`, and that scrape only
+requires ID/Rep/Total Knocks and zero-fills the rest. B2B therefore rendered a
+clean, plausible board with `0` under every disposition. The near-miss English
+is what makes it so easy to miss: AT&T's grid says `Talked To - Not Interested`
+where fiber says `Talk To - Not Interested`.
+
+⚠ **Two things to look at on the first real office.** The talk-to sums are the
+house rule (everything except the buckets nobody was spoken in) applied to each
+vocabulary — but Box carries `Talked To`, `Owner Talked To` AND `Not Interested`
+as separate columns, and summing them is right only if they are mutually
+exclusive the way every other grid's are. **Carlos should confirm.** And these
+are the widest boards in the repo (Box has eleven disposition buckets to fiber's
+five), so check it against the fit-to-screen rule before it goes to an owner.
+
+**iMessage does not work from a LaunchAgent on Lucy 2.** macOS granted "control
+Messages" there to the poller's executable identity (`.venv/bin/python`), not to
+a `/bin/bash` wrapper — which is why `b2b_dispositions` hands its sends to the
+poller through a manifest. `gap_alerts` texts inline, so an unconsented send
+would *block* on a dialog nobody clicks, five minutes a tick. `config.can_text()`
+is False on that box and the send loop skips texting routes out loud. Slack and
+email are unaffected, and the form is Slack + email only — this can only bite a
+row added by hand.
 
 ## Timezones changed the wrapper
 

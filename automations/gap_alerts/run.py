@@ -1276,6 +1276,26 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                     if not (dest.get("name") or "").strip():
                         _log("  %s has no chat name — skipped" % where)
                         continue
+                    if not C.can_text():
+                        # NOT a failure of this office's setup, and it must not
+                        # be retried into a hang: macOS grants "control
+                        # Messages" per executable identity, and on a box whose
+                        # Allow went to the poller rather than to this wrapper
+                        # the send BLOCKS on a dialog nobody will click — about
+                        # five minutes, every tick. Said out loud each time,
+                        # because a silently dropped route is how an owner ends
+                        # up with nothing while the log looks fine.
+                        _log("  %s SKIPPED — %s cannot send iMessage from a "
+                             "LaunchAgent (Messages consent belongs to the "
+                             "poller's identity on this box, not this "
+                             "wrapper). Slack and email are unaffected."
+                             % (where, C.this_machine()))
+                        failures.append(
+                            "%s %s: no iMessage from a LaunchAgent on %s — "
+                            "route it through Slack or email, or hand the send "
+                            "to the poller the way b2b_dispositions does"
+                            % (cfg["key"], where, C.this_machine()))
+                        continue
                     # Resolution runs on a dry run too — it is read-only and it
                     # is the half most likely to be wrong (Lucy removed from the
                     # chat, the room renamed). A preview that skipped it would

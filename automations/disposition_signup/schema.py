@@ -559,28 +559,35 @@ def warnings(rec: DispositionRecord, *,
     return out
 
 
-# The B2B half of this run is WIRED BUT NOT RUNNING (2026-09-02). Three things
-# stand between a confirmed B2B office and its first board, and none of them is
-# visible from the form — so they are said here, at the moment Megan decides,
-# rather than discovered as silence a week later.
+# The B2B half of this run went from "wired but not running" to "built, not yet
+# installed" on 2026-09-02. What is left is said here, at the moment Megan
+# decides, rather than discovered as silence a week later.
+#
+# RESOLVED the same day, kept in the record because both were live hazards:
+#  * the B2B Disposition grid is MAPPED. Both campaigns were probed live
+#    (invD2DClientId 2 and 16) and they are two different vocabularies, not one
+#    — knocks_pull carries a column set, a talk-to rule and a board shape for
+#    each. Before that a B2B grid satisfied the tolerant wireless scrape and
+#    rendered a plausible board with 0 under every disposition.
+#  * the LaunchAgent exists (deploy/com.alphalete.gap-alerts-b2b.plist).
 B2B_BLOCKERS = [
-    "No B2B runner yet. gap_alerts has ONE LaunchAgent "
-    "(com.alphalete.gap-alerts, Lucy 1). The `gap_alerts_b2b` schedule entry "
-    "and Hub card exist so the report has an id to hang on, but nothing on "
-    "Lucy 2 ticks — a B2B office wired today would sit switched on and send "
-    "nothing, silently.",
-    "The B2B Disposition grid has never been mapped. knocks_pull knows the "
-    "fiber, wireless and Energy Wells column sets; a B2B grid now RAISES "
-    "rather than rendering a wireless-shaped board with every disposition "
-    "zeroed. Map it from Lucy 2, outside the b2b_dispositions hours "
-    "(Mon-Sat 12-7pm): `python -m automations.gap_alerts.run "
-    "--probe-campaigns --office \"<owner>\" --campaign 2` (and 16).",
-    "iMessage on Lucy 2 does not work from a LaunchAgent. macOS granted "
-    "\"control Messages\" there to the POLLER's executable identity "
+    "The Lucy 2 agent is BUILT but not installed yet. Until someone runs "
+    "`lucy rerun install_gap_alerts_b2b_agent --machine \"Lucy 2\"`, nothing "
+    "on that box ticks — a B2B office wired today would sit switched on and "
+    "send nothing, silently.",
+    "No B2B board has ever been rendered from real OwnerVille rows. The column "
+    "sets came off a live header probe and the board draws correctly from "
+    "synthetic rows, but the first office through is the first real one — "
+    "worth looking at before it goes to an owner, especially the width (B2B "
+    "Box has eleven disposition buckets to fiber's five).",
+    "iMessage cannot send from a LaunchAgent on Lucy 2. macOS granted "
+    "\"control Messages\" there to the poller's executable identity "
     "(.venv/bin/python), not to a /bin/bash wrapper — which is why "
     "b2b_dispositions hands its sends to the poller through a manifest. "
-    "gap_alerts texts inline, so a B2B iMessage route would block on an "
-    "unattended consent dialog. Slack and email legs are unaffected.",
+    "gap_alerts texts inline, so `config.can_text()` is False on that box and "
+    "the send loop skips texting routes out loud. Slack and email are "
+    "unaffected; the form is Slack + email only, so this can only bite a row "
+    "added by hand.",
 ]
 
 

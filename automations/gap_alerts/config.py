@@ -369,6 +369,28 @@ def this_machine() -> str:
         return "Lucy 1"
 
 
+# WHICH BOXES CAN ACTUALLY SEND AN iMESSAGE FROM A LaunchAgent.
+#
+# Not a preference and not a capability of the machine — a macOS CONSENT, and it
+# is granted per EXECUTABLE IDENTITY. On Lucy 1 the Allow was clicked for
+# /bin/bash on a wrapper, which is the identity this job runs as, so it texts.
+# On Lucy 2 the Allow was clicked for the mini_control poller (.venv/bin/python,
+# 2026-08-03) and NOT for a wrapper — which is precisely why b2b_dispositions
+# never sends from its scheduled job and queues its texts to the poller instead.
+#
+# An unconsented send does not raise. It BLOCKS on a dialog nobody is there to
+# click, for about five minutes, every tick. So the send loop asks this first
+# and skips the route out loud rather than hanging the pass.
+#
+# To put texting on a new box: send once from the identity the agent runs as,
+# with someone at the keyboard to click Allow, then add the machine here.
+TEXTING_MACHINES = {"Lucy 1"}
+
+
+def can_text(machine: str = "") -> bool:
+    return (machine or this_machine()).strip() in TEXTING_MACHINES
+
+
 def for_this_machine(offices: List[Dict]) -> List[Dict]:
     """Only the offices THIS box can actually reach.
 

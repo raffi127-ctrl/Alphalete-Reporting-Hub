@@ -920,18 +920,19 @@ def test_the_batch_dict_is_not_clobbered_by_the_rendered_images():
 # --- what is still in the way of B2B (2026-09-02) ---------------------------
 
 def test_b2b_confirm_says_the_three_things_that_stop_it_posting():
-    """A confirmed B2B office would sit switched on and send nothing: no
-    LaunchAgent on Lucy 2, no mapped B2B disposition grid, and no iMessage from
-    a wrapper on that box. Warnings, not errors — the setup is correct and goes
-    live the day the runner does."""
+    """The grid is mapped and the agent is built, but it is not installed — so a
+    confirmed B2B office would still sit switched on and send nothing. Warnings,
+    not errors: the setup is correct and goes live the day the agent does."""
     rec = _rec(campaign_key="b2b_att", enabled=True,
                destinations=[_dest("imessage", name="ATT B2B Leaders")])
     blockers = S.b2b_blockers(rec)
     assert len(blockers) == 3
     assert all(b.startswith("B2B not running yet") for b in blockers)
-    assert any("LaunchAgent" in b for b in blockers)
-    assert any("--probe-campaigns" in b for b in blockers)
-    assert any("consent" in b for b in blockers)
+    # the agent exists but is not installed; no real board has been rendered;
+    # and that box cannot text from a LaunchAgent.
+    assert any("install_gap_alerts_b2b_agent" in b for b in blockers)
+    assert any("ever been rendered" in b for b in blockers)
+    assert any("control Messages" in b for b in blockers)
     assert set(blockers) <= set(S.warnings(rec))
 
 

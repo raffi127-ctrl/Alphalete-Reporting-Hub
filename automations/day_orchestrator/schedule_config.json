@@ -9519,7 +9519,7 @@
     "gap_alerts_b2b": {
       "on_scheduler": false,
       "machine": "Lucy 2",
-      "_machine_note": "Lucy 1 because that is the machine iMessage is set up on (Megan 2026-08-26) -- the 7-person 'Alphalete Partners' chat only exists in Lucy 1's Messages (alphaletereporting@, the account Megan added to the room on 8/26). Same constraint that pins alphalete_sales_board there. Load is fenced instead: own browser profile (automations/uploaded/.browser_profile_gap_alerts), headless, one JSON call per tick, pid lock, and nothing before 13:30 on a weekday -- long after the 4am batch's browser-heavy wave is through.",
+      "_machine_note": "Lucy 2 because an office can only be impersonated from the machine whose ownerville login can see it: Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's (B2B). config.for_this_machine hands each runner only its own offices from the one shared registry, so neither box can post the other's board. NOTE iMessage does NOT work from this agent -- macOS granted 'control Messages' on Lucy 2 to the poller's identity (.venv/bin/python), not to a /bin/bash wrapper, so config.can_text() is False here and the send loop skips texting routes out loud. Slack and email are unaffected, and the sign-up form is Slack + email only.",
       "display_name": "Knocks & Dispositions \u2014 B2B (Lucy 2)",
       "source_type": "local",
       "data_sources": [],
@@ -9537,7 +9537,7 @@
       "verify": {
         "type": "not_configured"
       },
-      "_note": "The B2B half of the self-serve dispositions run (Megan 2026-09-01: \"it's fine to split them, just make sure there's a hub card for each\"). SAME code as gap_alerts, different box: an office is impersonated from the machine whose OwnerVille login can see it -- Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's (B2B) -- and config.for_this_machine gives each runner only its own offices from the one shared registry. iMessage exists on both boxes under different Apple IDs, so the texts follow the pull. on_scheduler:false for the same reason gap_alerts is: it runs itself from its own LaunchAgent, not the 4am batch. NOT INSTALLED YET -- the agent on Lucy 2 is still to be created, and until it is this entry exists so the Hub card has a report id to hang on rather than being invisible."
+      "_note": "The B2B half of the self-serve dispositions run (Megan 2026-09-01: \"it's fine to split them, just make sure there's a hub card for each\"). SAME code as gap_alerts, different box: an office is impersonated from the machine whose OwnerVille login can see it -- Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's (B2B) -- and config.for_this_machine gives each runner only its own offices from the one shared registry. iMessage exists on both boxes under different Apple IDs, so the texts follow the pull. on_scheduler:false for the same reason gap_alerts is: it runs itself from its own LaunchAgent, not the 4am batch. The agent is deploy/com.alphalete.gap-alerts-b2b.plist; install it with `lucy rerun install_gap_alerts_b2b_agent --machine \"Lucy 2\"`."
     },
     "churn_byod_preview": {
       "on_scheduler": false,
@@ -9560,6 +9560,29 @@
       "verify": null,
       "timeout_minutes": 10,
       "machine": "Lucy 2"
+    },
+    "install_gap_alerts_b2b_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_gap_alerts_b2b_agent --machine \"Lucy 2\"` can install or refresh the standalone com.alphalete.gap-alerts-b2b LaunchAgent on LUCY 2 -- the B2B half of the dispositions run. Every LaunchAgent in this repo needs one of these; the one agent that had no install_* entry is how a fully-provisioned runner still ran nothing. install_agent only rewrites and reloads the plist -- it touches no Sheet and no report data. Re-run after any change to the plist. SAME wrapper as Lucy 1's agent (deploy/gap_alerts_5min.sh); the plist passes GAP_ALERTS_ENVELOPE=b2b, which widens the pre-Python hour gate to business hours because B2B knocks businesses.",
+      "machine": "Lucy 2",
+      "display_name": "Install Knocks & Dispositions B2B agent (Lucy 2)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "gap-alerts-b2b"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {

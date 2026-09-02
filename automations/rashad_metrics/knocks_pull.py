@@ -131,51 +131,108 @@ def _scrape_energywell_rows(page, idx: dict) -> list[dict]:
     return rows
 
 
-# B2B. The two B2B campaigns (invD2DClientId 2 = B2B AT&T SBS, 16 =
-# B2B-BOX-Energy) have their OWN Disposition grid, and this module does not
-# know its column set — nobody has ever pulled one. It only knows the grid
-# exists and one column name off it: "Corp - No Opp", seen on Lucy 1 on
-# 2026-09-01 when a pin arrived before the grid was warm and the session fell
-# back to an unpinned B2B campaign.
+# B2B. TWO campaigns, TWO grids, and they are not each other's — B2B AT&T SBS
+# (invD2DClientId=2) and B2B-BOX-Energy (16) share only the spine (ID / Rep /
+# Total Leads Knocked / Total Knocks / First / Last Knock) plus Come Back and
+# Inaccurate Lead. Both column sets were read LIVE off p=89 on 2026-09-02 with
+# the campaign pinned — an unpinned dump proves nothing, the campaign being a
+# sticky session-global — and both header dumps are kept under output/probes/.
 #
-# THAT ONE COLUMN IS WHY THIS GUARD EXISTS. A B2B grid carries Total Knocks and
-# no house Talk-To split, so _is_wireless_dispo below claims it — and the
-# wireless scrape is tolerant by design (only ID / Rep / Total Knocks are
-# required, every other bucket is zero-filled). So a B2B office would render a
-# clean, plausible WIRELESS board with 0 in every disposition column while its
-# reps' real outcomes sat in B2B buckets nobody read. Silent and wrong is the
-# one outcome this repo keeps paying for, so B2B raises instead.
+# WHY THEY NEEDED THEIR OWN SHAPES RATHER THAN THE TOLERANT WIRELESS SCRAPE.
+# A B2B grid carries Total Knocks and no house Talk-To split, so
+# _is_wireless_dispo claims it; the wireless scrape only REQUIRES ID/Rep/Total
+# Knocks and zero-fills the rest. So B2B used to render a clean, plausible board
+# with 0 under every disposition while the reps' real outcomes sat in buckets
+# nobody read. The near-miss English is what makes it so easy: AT&T's grid says
+# "Talked To - Not Interested" where fiber says "Talk To - Not Interested", and
+# "Presentation - Not Interested" where fiber writes the en-dash version.
 #
-# TO MAP IT: on LUCY 2 (Carlos's login is the one that can see B2B), outside
-# the b2b_dispositions hours (Mon-Sat 12-7pm), run
+# NEITHER B2B GRID HAS A "No answer" BUCKET, and only Box has Inaccessible.
+_B2B_ATT_COLUMNS = [
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_TOTAL_LEADS_KNOCKED,
+    knocks.COL_TOTAL_KNOCKS, knocks.COL_FIRST_KNOCK, knocks.COL_LAST_KNOCK,
+    knocks.COL_B2B_TALKED_TO_NI, knocks.COL_B2B_PRES_NI, knocks.COL_SALE,
+    knocks.COL_COME_BACK, knocks.COL_B2B_CORP_LOCAL,
+    knocks.COL_B2B_CORP_NO_OPP, knocks.COL_DO_NOT_KNOCK,
+    knocks.COL_B2B_INACCURATE_LEAD, knocks.COL_B2B_NONE,
+]
+_B2B_ATT_COUNTS = set(_B2B_ATT_COLUMNS) - {
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_FIRST_KNOCK,
+    knocks.COL_LAST_KNOCK}
+
+_B2B_BOX_COLUMNS = [
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_TOTAL_LEADS_KNOCKED,
+    knocks.COL_TOTAL_KNOCKS, knocks.COL_FIRST_KNOCK, knocks.COL_LAST_KNOCK,
+    knocks.COL_BOX_TALKED_TO, knocks.COL_BOX_OWNER_TALKED_TO,
+    knocks.COL_NOT_INTERESTED, knocks.COL_BOX_CONTRACT_SIGNED,
+    knocks.COL_BOX_BILL_NO_SALE, knocks.COL_COME_BACK,
+    knocks.COL_BOX_AM_COME_BACK, knocks.COL_BOX_CORP_NO_OPP,
+    knocks.COL_BOX_DO_NOT_DISTURB, knocks.COL_INACCESSIBLE,
+    knocks.COL_B2B_INACCURATE_LEAD,
+]
+_B2B_BOX_COUNTS = set(_B2B_BOX_COLUMNS) - {
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_FIRST_KNOCK,
+    knocks.COL_LAST_KNOCK}
+
+# TALK-TO = every bucket except the ones where nobody was spoken to. That is the
+# house rule (fiber excludes No answer and Inaccessible, and counts Do Not
+# Knock), applied to each B2B vocabulary:
+#   AT&T  excludes None (knocked, no disposition) and Inaccurate Lead (the lead
+#         was wrong, so there was nobody there). It has no No-answer bucket.
+#   Box   excludes Inaccessible and Inaccurate Lead, and counts Do Not Disturb
+#         the way fiber counts Do Not Knock.
 #
-#   python -m automations.gap_alerts.run --probe-campaigns \
-#          --office "<b2b owner>" --campaign 2      # and again with 16
-#
-# and read the "headers (N):" line. Then add _B2B_COLUMNS / _B2B_COUNTS /
-# _B2B_TALK_TO_PARTS beside the Energy Wells set above, a SHAPE_B2B in
-# total_knocks.render, and delete this guard. The campaign MUST be passed —
-# it is a sticky session-global, so an unpinned probe dumps whatever campaign
-# the box was last left on.
-_B2B_SIGNATURE = "Corp - No Opp"
+# ⚠ CARLOS SHOULD CONFIRM THE BOX LIST. It carries "Talked To" AND "Owner Talked
+# To" AND "Not Interested" as separate columns, and this sums them — right if
+# they are mutually exclusive dispositions the way every other grid's are, and
+# double-counting if a knock can land in two. Nobody has been asked yet. The
+# same open question the Energy Wells "VL is also a talk-to" line records: the
+# standard sum stands until somebody points at what is really meant.
+_B2B_ATT_TALK_TO_PARTS = [
+    knocks.COL_B2B_TALKED_TO_NI, knocks.COL_B2B_PRES_NI, knocks.COL_SALE,
+    knocks.COL_COME_BACK, knocks.COL_B2B_CORP_LOCAL,
+    knocks.COL_B2B_CORP_NO_OPP, knocks.COL_DO_NOT_KNOCK,
+]
+_B2B_BOX_TALK_TO_PARTS = [
+    knocks.COL_BOX_TALKED_TO, knocks.COL_BOX_OWNER_TALKED_TO,
+    knocks.COL_NOT_INTERESTED, knocks.COL_BOX_CONTRACT_SIGNED,
+    knocks.COL_BOX_BILL_NO_SALE, knocks.COL_COME_BACK,
+    knocks.COL_BOX_AM_COME_BACK, knocks.COL_BOX_CORP_NO_OPP,
+    knocks.COL_BOX_DO_NOT_DISTURB,
+]
 
 
-def _is_b2b_dispo(idx: dict) -> bool:
-    """A B2B-shaped Disposition grid, told apart by a disposition only B2B has.
-    Detection only — there is no B2B scrape yet, on purpose."""
-    return knocks._norm(_B2B_SIGNATURE) in idx
+def _is_b2b_att_dispo(idx: dict) -> bool:
+    """B2B AT&T SBS. "Corp Franchise No Opp" is the signature — no other grid
+    carries a Corp column, and Box spells its own one "Corp - No Opp"."""
+    return knocks._norm(knocks.COL_B2B_CORP_NO_OPP) in idx
 
 
-def _refuse_b2b(idx: dict) -> None:
-    raise KnocksPullFailed(
-        "This is a B2B Disposition grid (it carries a %r column) and the B2B "
-        "column set has never been mapped, so there is nothing safe to scrape "
-        "from it. Refusing rather than rendering a wireless-shaped board with "
-        "every disposition zeroed. Map it from Lucy 2 with: "
-        "python -m automations.gap_alerts.run --probe-campaigns "
-        "--office \"<owner>\" --campaign 2   (and 16 for Box Energy). "
-        "Live headers seen: %s"
-        % (_B2B_SIGNATURE, ", ".join(sorted(idx)[:30]) or "(none)"))
+def _is_b2b_box_dispo(idx: dict) -> bool:
+    """B2B Box Energy. "Owner Talked To" is unique to it; the Corp column is
+    checked too so a grid that renames one still lands here rather than being
+    claimed by the tolerant wireless scrape."""
+    return (knocks._norm(knocks.COL_BOX_OWNER_TALKED_TO) in idx
+            or knocks._norm(knocks.COL_BOX_CORP_NO_OPP) in idx)
+
+
+def is_b2b_dispo(idx: dict) -> bool:
+    return _is_b2b_att_dispo(idx) or _is_b2b_box_dispo(idx)
+
+
+def _scrape_b2b_rows(page, idx: dict) -> list[dict]:
+    """B2B rows for whichever of the two grids this is, with Total Talk to
+    summed over that campaign's own parts."""
+    att = _is_b2b_att_dispo(idx)
+    cols, counts, parts, label = (
+        (_B2B_ATT_COLUMNS, _B2B_ATT_COUNTS, _B2B_ATT_TALK_TO_PARTS, "B2B AT&T")
+        if att else
+        (_B2B_BOX_COLUMNS, _B2B_BOX_COUNTS, _B2B_BOX_TALK_TO_PARTS, "B2B Box"))
+    rows = _scrape_shaped_rows(page, idx, cols, counts, label)
+    for rec in rows:
+        rec[knocks.COL_TOTAL_TALK_TO] = sum(
+            int(rec.get(c) or 0) for c in parts)
+    return rows
 
 
 def _is_wireless_dispo(idx: dict) -> bool:
@@ -613,10 +670,14 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
     # scrape it with the wireless column set instead of letting the house
     # scrape raise "missing expected column(s)". The wireless rows keep
     # COL_TOTAL_KNOCKS, so knocks_run renders a real Total Knocks board.
-    if _is_b2b_dispo(idx):
-        # BEFORE every other test: a B2B grid satisfies the wireless one and
-        # would come back as a board of zeros. There is no B2B scrape yet.
-        _refuse_b2b(idx)
+    if is_b2b_dispo(idx):
+        # BEFORE every other test: both B2B grids satisfy the wireless one (they
+        # carry Total Knocks and no house Talk-To split), and the wireless
+        # scrape zero-fills what it cannot find — so B2B would come back as a
+        # plausible board with every disposition at 0.
+        rows = _scrape_b2b_rows(page, idx)
+        if verbose:
+            print(f"-> B2B-shaped disposition: {len(rows)} rep(s)", flush=True)
     elif _is_energywell_dispo(idx):
         # BEFORE the wireless test: Energy Wells has no Talk-To split either,
         # so the wireless check would claim it and drop VL and Presentation.
