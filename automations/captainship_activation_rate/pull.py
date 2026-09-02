@@ -176,6 +176,10 @@ def parse(csv_path: Path, team_value: Optional[str] = None,
             continue
         team = (r[team_i] or "").strip()
         owner = (r[owner_i] or "").strip()
+        # Read an ICD onto the captain they actually report to when Tableau
+        # still files them under the old team — see captainship_pins.ADOPTED.
+        # Feeds this report AND captainship_abp_6days, which reuses this parser.
+        team = _pins.route_team(team, owner)
         # Keep ONLY the owner-level subtotal. Without this every individual
         # rep row under an owner is read as that owner, and the last one wins —
         # which silently writes one rep's rate into the owner's cell.

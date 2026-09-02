@@ -82,6 +82,11 @@ COL_OWNER = "ICD Owner Name (rep)"
 COL_REP = "Rep Name"
 COL_CANCEL_030 = "0-30 day New Internet cancel rate"
 COL_ACT_3060 = "30-60 day New Internet activation rate"
+# OPTIONAL count columns behind the 0-30 rate. Present in the view today; the
+# parse degrades to rates-only if they ever disappear, because the only thing
+# that needs them is the adopted-rep average recompute in `for_team`.
+COL_CANCELS_030 = "0-30 day new internet cancels"
+COL_SALES_030 = "0-30 day new internet sales"
 
 # Extra header spellings we'll accept for the two DIMENSION columns, so a
 # cosmetic rename in Tableau doesn't hard-fail the whole run. Deliberately
@@ -216,6 +221,8 @@ def parse(path: Path, alias_raw: Optional[dict] = None) -> dict:
     # is already collapsed to owner level, so every row IS a roll-up.
     rep_idx = _col_index(header, COL_REP)
     shape = "rep-expanded" if rep_idx is not None else "owner-collapsed"
+    cnt_i = _col_index(header, COL_CANCELS_030)
+    sal_i = _col_index(header, COL_SALES_030)
 
     last_col = max(list(idx.values()) + ([rep_idx] if rep_idx is not None else []))
     teams: dict = {}
@@ -227,10 +234,21 @@ def parse(path: Path, alias_raw: Optional[dict] = None) -> dict:
         rep = (r[rep_idx] or "").strip() if rep_idx is not None else "Total"
         if not team or rep != "Total":
             continue          # per-rep detail rows — the tabs are owner-level
+        # An ICD whose captain changed in real life before SmartCircle re-filed
+        # the team value is read onto the captain they actually report to. No-op
+        # for every other row; the team's own 'Total' row can't match (it is
+        # keyed on the owner name). See captainship_pins.ADOPTED.
+        team = _pins.route_team(team, owner)
         slot = {
             P_030: (r[idx[P_030]] or "").strip(),
             P_3060: _invert(r[idx["act3060"]]),
         }
+        # Counts behind the 0-30 rate, when the view exports them. Only the
+        # adopted-rep recompute reads these; nothing else changes.
+        if cnt_i is not None and sal_i is not None and len(r) > max(cnt_i, sal_i):
+            n, d = _pct_to_float(r[cnt_i]), _pct_to_float(r[sal_i])
+            if n is not None and d is not None:
+                slot["counts_030"] = (n, d)
         bucket = teams.setdefault(team, {"avg": {}, "reps": {}})
         if owner == "Total":
             bucket["avg"] = slot
@@ -241,6 +259,26 @@ def parse(path: Path, alias_raw: Optional[dict] = None) -> dict:
             "shape": shape}
 
 
+def _recomputed_030_avg(reps: dict) -> Optional[str]:
+    """0-30 cancel rate for a slice, from its own cancels/sales counts.
+
+    Returns None unless EVERY rep in the slice carries counts — a partial sum
+    would be a rate over the wrong denominator, which is worse than Tableau's
+    slightly-off total. Verified against the view 2026-09-01: Chan's eight
+    owners sum to 229/2,264 = 10.1%, the exact text of Tableau's own Total row.
+    """
+    if not reps:
+        return None
+    pairs = [d.get("counts_030") for d in reps.values()]
+    if not all(pairs):
+        return None
+    num = sum(n for n, _ in pairs)
+    denom = sum(d for _, d in pairs)
+    if not denom:
+        return None
+    return f"{round(100.0 * num / denom, 1)}%"
+
+
 def for_team(parsed: dict, team: str) -> dict:
     """One captain's slice: {"avg": {...}, "reps": {name: {...}}}.
 
@@ -248,7 +286,31 @@ def for_team(parsed: dict, team: str) -> dict:
     fill appends a row for every owner in the slice, so the pin has to land
     before it. `avg` is Tableau's own team row and still carries them; see
     automations/shared/captainship_pins.py.
+
+    ONE EXCEPTION, added 2026-09-01: when the slice carries an ADOPTED rep
+    (someone Tableau still files under another captain — captainship_pins.
+    ADOPTED), Tableau's own Total row cannot know about them, so the 0-30
+    average is recomputed from the slice's cancels/sales counts. That is an
+    exact arithmetic identity, not an average of averages, and it reproduces
+    Tableau's own number when nobody is adopted. The 30-60 rate is left alone:
+    the view exports no counts behind it, so there is nothing honest to sum.
     """
     slice_ = parsed.get("teams", {}).get(team, {"avg": {}, "reps": {}})
     slice_["reps"] = _pins.drop_reps(slice_.get("reps", {}), team, logfn=print)
+    adopted = [n for n in slice_["reps"] if _pins.adopted_from(team, n)]
+    if adopted:
+        avg = _recomputed_030_avg(slice_["reps"])
+        if avg:
+            was = (slice_.get("avg") or {}).get(P_030)
+            slice_.setdefault("avg", {})[P_030] = avg
+            print(f"  ↺ {team}: 0-30 Captainship Avg recomputed {was} -> {avg} "
+                  f"(includes adopted {', '.join(sorted(adopted))})")
+        else:
+            print(f"  ⚠ {team}: adopted rep(s) {', '.join(sorted(adopted))} are "
+                  f"in the slice but the view exported no cancels/sales counts "
+                  f"— Captainship Avg left as Tableau's (excludes them)")
+    # The counts have done their job; drop them so every remaining value in the
+    # slice is a display string, which is all the fill ever expects.
+    for slot in [slice_.get("avg") or {}] + list(slice_["reps"].values()):
+        slot.pop("counts_030", None)
     return slice_

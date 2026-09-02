@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright as _dcp
+from automations.shared import captainship_pins as _pins
 
 
 def _dl(view_url, crosstab_sheet, out_path, verbose=False, page=None, pre_export=None):
@@ -231,6 +232,11 @@ def parse_wireless_team(csv_path: Path, team_value: Optional[str] = None) -> dic
         if raw_name == "Grand Total":
             continue                       # org-wide total — recomputed below
         team = r[team_i].strip() if len(r) > team_i else ""
+        # Route an adopted ICD onto their real captain's slice (the wireless
+        # pull is org-wide and sliced here, so it can honour it; the per-captain
+        # NEW INTERNET views filter server-side and cannot).
+        # See captainship_pins.ADOPTED.
+        team = _pins.route_team(team, raw_name)
         if team_value is not None and team != team_value:
             continue
         matched_rows += 1

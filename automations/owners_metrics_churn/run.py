@@ -38,6 +38,7 @@ from automations.shared.tableau_patchright import (
     tableau_session, download_crosstab_patchright)
 from automations.owners_metrics_churn import pull, fill
 from automations.shared import captainship_pins as _pins
+from automations.new_internet_churn import pull as _ni_pull
 from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 
 
@@ -367,6 +368,24 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
             parsed["reps"][nm] = periods_data
             print(f"  ↳ backfilled {nm} from {program} all-teams churn "
                   f"(moved captainships — kept on this tab)")
+        # An ADOPTED rep (captainship_pins.ADOPTED — Tableau still files them
+        # under another captain) is not in this captain's Tableau Total row
+        # either, so the tab's "Captainship Avg" would name them in a rep row
+        # and leave them out of the average right above it. Churn is the one
+        # metric where that is fixable exactly: the view exports the disconnect
+        # count and the activation count per owner, so the captainship rate is
+        # sum(num)/sum(denom) — an arithmetic identity, never an average of
+        # averages. Recomputed only when every rep in the slice carries both
+        # counts; otherwise Tableau's own total is left alone.
+        adopted_back = [nm for nm in backfilled if _pins.adopted_from(slug, nm)]
+        if adopted_back:
+            recomputed = _ni_pull._recompute_office_total(parsed.get("reps", {}))
+            if recomputed:
+                was = {k: v.get("pct") for k, v in (parsed.get("office_total") or {}).items()}
+                parsed["office_total"] = recomputed
+                now = {k: v.get("pct") for k, v in recomputed.items()}
+                print(f"  ↺ Captainship Avg recomputed to include adopted "
+                      f"{', '.join(sorted(adopted_back))}: {was} -> {now}")
         if backfilled:
             # Re-detect: backfilled reps are now present in `parsed`, so they
             # clear. Re-apply _drop_aliased_present too — a raw re-detect puts
