@@ -571,17 +571,22 @@ def warnings(rec: DispositionRecord, *,
 #    rendered a plausible board with 0 under every disposition.
 #  * the LaunchAgent exists (deploy/com.alphalete.gap-alerts-b2b.plist).
 B2B_BLOCKERS = [
-    "The Lucy 2 agent is BUILT but not installed yet. Until someone runs "
-    "`lucy rerun install_gap_alerts_b2b_agent --machine \"Lucy 2\"`, nothing "
-    "on that box ticks — a B2B office wired today would sit switched on and "
-    "send nothing, silently.",
-    "Not every B2B office serves its campaign's grid. Carlos Hidalgo (11580) "
-    "pinned to Box returns the AT&T-shaped table holding AT&T's reps, while "
-    "Roshan Amin Ahmad (19833) returns the real Box grid — so a campaign is "
-    "only as good as the office it is pulled from. `assert_campaign_grid` "
-    "refuses that mismatch rather than posting a Box-titled board of AT&T "
-    "numbers, but it means an enrolling office still has to be checked against "
-    "the campaign it claims.",
+    "No B2B office has ever run through the live agent. "
+    "com.alphalete.gap-alerts-b2b is installed and ticking on Lucy 2 (2026-09-"
+    "02), but zero offices route there, so every tick so far has woken, found "
+    "nothing and exited. The first enrollment is the first real run.",
+    "AN OFFICE THAT RUNS MORE THAN ONE CAMPAIGN CANNOT BE PINNED. Megan's read "
+    "(2026-09-02): OwnerVille's top-right campaign picker defaults for a "
+    "multi-campaign ICD and the invD2DClientId pin cannot move it. It fits "
+    "every case seen — Carlos Hidalgo (11580, three campaigns) pinned to Box "
+    "returns the AT&T grid holding AT&T's reps, while Roshan Amin Ahmad "
+    "(19833, Box only) and Calvin (Energy Wells only) both pull correctly. It "
+    "also explains Jay Turnage, the repo's other multi-campaign office, coming "
+    "back EMPTY on both campaigns on 2026-09-01 while Raf and Calvin posted. "
+    "`assert_campaign_grid` refuses the mismatch rather than posting a "
+    "Box-titled board of AT&T numbers, so a multi-campaign office fails loudly "
+    "instead of lying — but it cannot be served until this is solved. Carlos "
+    "has been asked.",
     "iMessage cannot send from a LaunchAgent on Lucy 2. macOS granted "
     "\"control Messages\" there to the poller's executable identity "
     "(.venv/bin/python), not to a /bin/bash wrapper — which is why "

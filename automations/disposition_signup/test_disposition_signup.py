@@ -793,7 +793,7 @@ def test_the_tick_pulls_every_due_office_in_one_session(monkeypatch):
     called ONCE with every due office, not once per office."""
     calls = []
 
-    def _fake_pull(jobs, verbose=True, profile_dir=None):
+    def _fake_pull(jobs, verbose=True, profile_dir=None, **kw):
         calls.append(list(jobs))
         return [(name, {}, None) for name, *_ in jobs]
 
@@ -817,7 +817,7 @@ def test_two_offices_sharing_one_ownerville_name_are_not_confused(monkeypatch):
     the same rows."""
     day = dt.date(2026, 9, 1)
 
-    def _fake_pull(jobs, verbose=True, profile_dir=None):
+    def _fake_pull(jobs, verbose=True, profile_dir=None, **kw):
         # Distinct rows per JOB, in the order given.
         return [(name, {day: [{"Rep": "%s-%d" % (name, i)}]}, None)
                 for i, (name, *_rest) in enumerate(jobs)]
@@ -928,10 +928,10 @@ def test_b2b_confirm_says_the_three_things_that_stop_it_posting():
     blockers = S.b2b_blockers(rec)
     assert len(blockers) == 3
     assert all(b.startswith("B2B not running yet") for b in blockers)
-    # the agent exists but is not installed; not every B2B office serves its
-    # campaign's grid; and that box cannot text from a LaunchAgent.
-    assert any("install_gap_alerts_b2b_agent" in b for b in blockers)
-    assert any("serves its campaign's grid" in b for b in blockers)
+    # the agent is live but untried; a multi-campaign office cannot be pinned;
+    # and that box cannot text from a LaunchAgent.
+    assert any("run through the live agent" in b for b in blockers)
+    assert any("MORE THAN ONE CAMPAIGN" in b for b in blockers)
     assert any("control Messages" in b for b in blockers)
     assert set(blockers) <= set(S.warnings(rec))
 
