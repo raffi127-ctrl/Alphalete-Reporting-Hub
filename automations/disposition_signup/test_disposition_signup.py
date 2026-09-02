@@ -367,6 +367,27 @@ def test_a_broken_time_string_falls_back_instead_of_raising():
 
 # --- preflight --------------------------------------------------------------
 
+def _stub_office(monkeypatch, P, *, ok=True, state="granted", note="found"):
+    """The OwnerVille office lookup, stubbed. It opens a REAL browser session
+    otherwise — every preflight test paid ~17s launching one only to watch it
+    fail before this existed."""
+    monkeypatch.setattr(P, "_check_office",
+                        lambda rec, save=True: {"name": "OwnerVille office",
+                                                "ok": ok, "state": state,
+                                                "note": note})
+
+
+def _no_lock_wait(monkeypatch, P):
+    """The pid lock, granted instantly — the real one is a live-process check
+    against gap_alerts' lockfile and has nothing to say in a unit test."""
+    class _L:
+        held = True
+
+        def __exit__(self, *a):
+            pass
+    monkeypatch.setattr(P, "_wait_for_tick_lock", lambda seconds=180: _L())
+
+
 def test_preflight_refuses_a_row_that_is_still_pending(monkeypatch):
     from automations.disposition_signup import preflight as P
     monkeypatch.setattr(store, "load_one",
@@ -389,6 +410,8 @@ def test_preflight_checks_every_chat_not_just_one(monkeypatch):
             raise RuntimeError("no iMessage group named 'Leaders'")
         return {"name": name, "participants": 7}
 
+    _stub_office(monkeypatch, P)
+    _no_lock_wait(monkeypatch, P)
     import automations.b2b_dispositions.text_post as tp
     monkeypatch.setattr(tp, "resolve_group", _fake_resolve)
     monkeypatch.setattr(P, "_check_board",
@@ -405,6 +428,8 @@ def test_preflight_passes_and_reports_both_checks(monkeypatch):
     from automations.disposition_signup import preflight as P
     monkeypatch.setattr(store, "load_one",
                         lambda k: _rec(status="wired").to_json())
+    _stub_office(monkeypatch, P)
+    _no_lock_wait(monkeypatch, P)
     monkeypatch.setattr(P, "_check_groups",
                         lambda rec: [{"name": "iMessage 'Cody's Crew'",
                                       "ok": True, "note": "resolved (7)"}])
@@ -421,6 +446,8 @@ def test_preflight_failure_leaves_the_office_off(monkeypatch):
     from automations.disposition_signup import preflight as P
     monkeypatch.setattr(store, "load_one",
                         lambda k: _rec(status="wired").to_json())
+    _stub_office(monkeypatch, P)
+    _no_lock_wait(monkeypatch, P)
     monkeypatch.setattr(P, "_check_groups",
                         lambda rec: [{"name": "iMessage", "ok": True,
                                       "note": "ok"}])
@@ -968,3 +995,189 @@ def test_the_form_source_has_no_imessage_option_and_no_phone_number():
     assert "419-769-7114" not in src
     assert 'S.destination("imessage"' not in src
     assert "How many iMessage chats?" not in src
+
+
+# --- the office lookup that makes an enrollment self-resolving --------------
+
+def test_a_pending_access_request_is_a_retry_not_a_failure(monkeypatch):
+    """The owner has not accepted the OwnerVille request yet. Nothing is wrong
+    with the setup, so the corrections post must not send Megan to check one —
+    and the board pull is skipped, because there is nothing to impersonate."""
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(store, "load_one",
+                        lambda k: _rec(status="wired").to_json())
+    _stub_office(monkeypatch, P, ok=False, state="pending",
+                 note="Cody Cannon (#22999) — pending, found by account")
+    _no_lock_wait(monkeypatch, P)
+    monkeypatch.setattr(P, "_check_groups", lambda rec: [])
+    pulled = []
+    monkeypatch.setattr(P, "_check_board",
+                        lambda *a, **k: pulled.append(1) or {"ok": True})
+    res = P.check("cody")
+    assert res["ok"] is False and res["retry"] is True
+    assert pulled == []                     # never opened a second session
+    assert "WAITING" in _title(P, res)
+
+
+def test_a_missing_office_is_a_real_failure(monkeypatch):
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(store, "load_one",
+                        lambda k: _rec(status="wired").to_json())
+    _stub_office(monkeypatch, P, ok=False, state="missing",
+                 note="account #22999 is not in Rafael's Office Access list")
+    _no_lock_wait(monkeypatch, P)
+    monkeypatch.setattr(P, "_check_groups", lambda rec: [])
+    res = P.check("cody")
+    assert res["ok"] is False and not res.get("retry")
+    assert "failed" in _title(P, res)
+
+
+def test_a_tick_holding_the_session_is_also_a_retry(monkeypatch):
+    """Never open a second OwnerVille session behind a live capture — minting an
+    rqst at the root drops the running pull back onto the master office."""
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(store, "load_one",
+                        lambda k: _rec(status="wired").to_json())
+    monkeypatch.setattr(P, "_wait_for_tick_lock", lambda seconds=180: None)
+    opened = []
+    monkeypatch.setattr(P, "_check_office",
+                        lambda rec, save=True: opened.append(1))
+    res = P.check("cody")
+    assert res["retry"] is True and opened == []
+
+
+def _title(P, res, enabled=False):
+    """The one-line corrections title, without posting it."""
+    import types
+    captured = {}
+
+    def _fake_client():
+        class _C:
+            def chat_postMessage(self, **kw):
+                captured.setdefault("lines", []).append(kw.get("text", ""))
+                return {"ts": "1"}
+        return _C()
+    import automations.shared.slack_metrics_post as smp
+    orig = smp._client
+    smp._client = _fake_client
+    try:
+        P.notify("cody", res, enabled=enabled)
+    finally:
+        smp._client = orig
+    return (captured.get("lines") or [""])[0]
+
+
+# --- the retry that makes "it switches itself on" true ----------------------
+
+def _pc():
+    from automations.disposition_signup import pending_check as PC
+    return PC
+
+
+def test_only_confirmed_but_switched_off_offices_are_retried(monkeypatch):
+    """A pending row is not ours (Megan hasn't confirmed it) and a live one is
+    already on. Neither should cost a browser session every hour."""
+    PC = _pc()
+    monkeypatch.setattr(store, "load_all", lambda: [
+        _rec(key="waiting", status="wired", enabled=False).to_json(),
+        _rec(key="live", status="wired", enabled=True).to_json(),
+        _rec(key="unconfirmed", status="pending", enabled=False).to_json(),
+    ])
+    assert [r.key for r in PC.waiting()] == ["waiting"]
+
+
+def test_a_waiting_list_campaign_is_not_retried(monkeypatch):
+    """Nothing to pull, so a retry burns a session to fail on something no
+    amount of retrying fixes."""
+    PC = _pc()
+    _waiting(monkeypatch)
+    monkeypatch.setattr(store, "load_all", lambda: [
+        _rec(key="nds_office", campaign_key="nds", status="wired",
+             enabled=False).to_json()])
+    assert PC.waiting() == []
+
+
+def test_nothing_waiting_opens_nothing(monkeypatch):
+    PC = _pc()
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [])
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(P, "check", lambda k: (_ for _ in ()).throw(
+        AssertionError("must not run a preflight with nothing waiting")))
+    assert PC.run() == 0
+
+
+def test_an_office_that_came_good_is_switched_on(monkeypatch):
+    PC = _pc()
+    from automations.disposition_signup import preflight as P
+    rec = _rec(key="cody", status="wired", enabled=False)
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [rec.to_json()])
+    monkeypatch.setattr(PC, "_state", lambda: {"cody": "waiting:pending"})
+    saved = {}
+    monkeypatch.setattr(PC, "_save_state", lambda d: saved.update(d))
+    monkeypatch.setattr(P, "check",
+                        lambda k: {"ok": True, "rec": rec, "checks": []})
+    turned, posted = [], []
+    monkeypatch.setattr(P, "enable", lambda r: turned.append(r.key))
+    monkeypatch.setattr(P, "notify",
+                        lambda k, res, enabled: posted.append((k, enabled)))
+    PC.run()
+    assert turned == ["cody"]
+    assert posted == [("cody", True)]
+    assert "cody" not in saved          # live now; stop tracking it
+
+
+def test_an_unchanged_wait_says_nothing(monkeypatch):
+    """Three days waiting on an owner's inbox is ONE post, not seventy-two."""
+    PC = _pc()
+    from automations.disposition_signup import preflight as P
+    rec = _rec(key="cody", status="wired", enabled=False)
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [rec.to_json()])
+    monkeypatch.setattr(PC, "_state", lambda: {"cody": "waiting:pending"})
+    monkeypatch.setattr(PC, "_save_state", lambda d: None)
+    monkeypatch.setattr(P, "check", lambda k: {
+        "ok": False, "retry": True, "rec": rec,
+        "checks": [{"name": "OwnerVille office", "ok": False,
+                    "state": "pending", "note": "Request Sent"}]})
+    posted = []
+    monkeypatch.setattr(P, "notify",
+                        lambda k, res, enabled: posted.append(k))
+    PC.run()
+    assert posted == []
+
+
+def test_a_wait_that_turns_into_a_failure_does_say_so(monkeypatch):
+    PC = _pc()
+    from automations.disposition_signup import preflight as P
+    rec = _rec(key="cody", status="wired", enabled=False)
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [rec.to_json()])
+    monkeypatch.setattr(PC, "_state", lambda: {"cody": "waiting:pending"})
+    monkeypatch.setattr(PC, "_save_state", lambda d: None)
+    monkeypatch.setattr(P, "check", lambda k: {
+        "ok": False, "rec": rec,
+        "checks": [{"name": "OwnerVille office", "ok": False,
+                    "state": "missing", "note": "gone from the access list"}]})
+    posted = []
+    monkeypatch.setattr(P, "notify",
+                        lambda k, res, enabled: posted.append(k))
+    PC.run()
+    assert posted == ["cody"]
+
+
+def test_dry_run_never_opens_a_preflight(monkeypatch):
+    PC = _pc()
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [
+        _rec(key="cody", status="wired", enabled=False).to_json()])
+    monkeypatch.setattr(P, "check", lambda k: (_ for _ in ()).throw(
+        AssertionError("--dry-run must not run a preflight")))
+    assert PC.run(dry_run=True) == 0

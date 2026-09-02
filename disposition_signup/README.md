@@ -82,6 +82,45 @@ runner's.
   preflight's board pull is what proves the grid has the columns the scraper
   needs.
 
+## What makes an enrollment wire itself
+
+Two things used to stand between "Megan clicks confirm" and "the board is
+arriving", and both needed a human who remembered.
+
+**1. The name.** Impersonation matches on an EXACT string — the Office Access
+search accepts a row only when `row[2] == candidate`, with the ICD alias sheet
+supplying the candidates. So any spelling drift was a dead enrollment
+("Calvin Rivera" for OwnerVille's "Calvin Ribera", "Kash Rai" for "Akashdeep
+Rai") that only a person could fix. Meanwhile the form *required* the OwnerVille
+account number and nothing read it — and the access table's first column IS that
+number. `disposition_signup.resolve_office` now matches on the number, reads
+OwnerVille's own spelling off the row, and files it to the ICD Aliases sheet, so
+the fix lands once and every other report inherits it. Name matching stays as
+the fallback: this can only find more offices than before, never fewer.
+
+**2. Office Access is the owner's move, not ours.** They accept the request in
+their own OwnerVille dashboard, minutes or days after filling the form. The
+confirm-time preflight used to be the only one there ever was: it found
+"Request Sent", left the office off, and everyone believed it was enrolled.
+Now a `Request Sent` row is a **retry**, not a failure — the corrections post
+says WAITING instead of failed — and `disposition_signup.pending_check` re-runs
+the preflight hourly (in `deploy/enrollment_pending_hourly.sh`, beside the
+office-onboarding check) and switches the office on the moment it comes good.
+It posts on a CHANGE of state only: three days waiting on an inbox is one post,
+not seventy-two. With nothing waiting it opens no browser and takes no lock,
+which is what lets it sit next to the 5-minute ticks.
+
+```bash
+python -m automations.disposition_signup.pending_check --dry-run
+```
+
+**One OwnerVille session per account.** Reading the access table navigates to
+the site root to mint an `rqst`, which re-establishes the account's single
+session in MASTER mode — under a live capture that silently drops the pull onto
+the master office. So the preflight takes `gap_alerts`' own pid lock and *waits*
+for it (a tick is minutes; corrupting one is worse), and uses that job's browser
+profile. A tick that never lets go is itself a retry, not a failure.
+
 ## Campaigns, and what is not wired yet
 
 | Campaign | `invD2DClientId` | Box | State |
