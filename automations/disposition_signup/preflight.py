@@ -169,7 +169,18 @@ def check(key: str, *, headless: bool = True,
         # ACCOUNT NUMBER and files OwnerVille's spelling to the alias sheet, so
         # the name-matching impersonation underneath it stops missing.
         office = _check_office(rec)
-        checks: List[Dict] = [office] + list(_check_groups(rec))
+        checks: List[Dict] = [office]
+        # HOW MANY CAMPAIGNS THIS OFFICE RUNS, read off its own picker while we
+        # were in there. More than one and it is not servable: the picker
+        # defaults and the pin cannot move it, so whichever campaign it lands on
+        # is the one we would report under the other's name.
+        if office.get("campaign") is not None:
+            from automations.disposition_signup import resolve_office as RO
+            camp = rec.campaign() or {}
+            checks.append(RO.campaign_check(office["campaign"],
+                                            rec.campaign_id(),
+                                            camp.get("name", "")))
+        checks += list(_check_groups(rec))
         # A pending access request makes the board pull pointless — there is
         # nothing to impersonate yet, and trying costs a browser session to
         # learn what the table already told us. It is a RETRY, not a failure.

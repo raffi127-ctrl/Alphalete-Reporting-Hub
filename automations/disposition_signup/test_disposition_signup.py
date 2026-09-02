@@ -743,9 +743,20 @@ def test_a_runner_only_takes_the_offices_it_can_reach():
 
 
 def test_the_hardcoded_offices_stay_on_lucy_1():
-    """Raf, Calvin and Jay have always run there and carry no machine key."""
-    assert {o["key"] for o in C.enabled()} == {"rafael", "calvin", "jay_att",
-                                              "jay_ew"}
+    """Raf, Calvin and Jay have always run there and carry no machine key, so
+    for_this_machine has to read a missing key as Lucy 1.
+
+    Asked of OFFICES, not enabled(): whether a hardcoded office is switched ON
+    is a rotation decision that moves (Calvin and Jay went out on 2026-09-02,
+    "I just need Raf's posting"), while which BOX can reach it is the thing
+    this test is actually about."""
+    hardcoded = {o["key"] for o in C.OFFICES
+                 if o.get("source") != "disposition_signup"}
+    assert hardcoded == {"rafael", "calvin", "jay_att", "jay_ew"}
+    assert all(o.get("machine") in (None, "Lucy 1") for o in C.OFFICES
+               if o["key"] in hardcoded)
+    assert {o["key"] for o in C.for_this_machine(
+        [o for o in C.OFFICES if o["key"] in hardcoded])} == hardcoded
 
 
 # --- staggering -------------------------------------------------------------
@@ -1192,3 +1203,44 @@ def test_dry_run_never_opens_a_preflight(monkeypatch):
     monkeypatch.setattr(P, "check", lambda k: (_ for _ in ()).throw(
         AssertionError("--dry-run must not run a preflight")))
     assert PC.run(dry_run=True) == 0
+
+
+# --- the campaign check that decides whether an office can be served ---------
+
+def _camp_check(campaigns, want, name=""):
+    from automations.disposition_signup import resolve_office as RO
+    return RO.campaign_check(campaigns, want, name)
+
+
+def test_a_single_campaign_office_is_servable():
+    """Isaiah, Drew (RES AT&T OOF only), Roshan (Box only), Calvin (Energy
+    Wells only) — nothing for the picker to default to."""
+    res = _camp_check([{"id": "1", "label": "RES AT&T OOF"}], "1")
+    assert res["ok"] and "pinnable" in res["note"]
+
+
+def test_a_multi_campaign_office_is_refused_whatever_it_signed_up_for():
+    """Carlos Hidalgo runs three. OwnerVille's picker defaults for a
+    multi-campaign ICD and invD2DClientId cannot move it, so whichever campaign
+    it lands on is the one we would report under the other's name — which is
+    how his Box pull came back holding AT&T's reps."""
+    three = [{"id": "2", "label": "B2B AT&T SBS"},
+             {"id": "16", "label": "B2B-BOX-Energy"},
+             {"id": "39", "label": "BASE Energy"}]
+    for want in ("2", "16", "39"):
+        res = _camp_check(three, want)
+        assert res["ok"] is False
+        assert "3 campaigns" in res["note"]
+
+
+def test_signing_up_for_a_campaign_the_office_does_not_run_is_caught():
+    res = _camp_check([{"id": "1", "label": "RES AT&T OOF"}], "40",
+                      "Energy Wells")
+    assert res["ok"] is False
+    assert "but this office runs" in res["note"]
+
+
+def test_an_unreadable_picker_is_not_a_pass():
+    """"Could not check" must never be recorded as "checked and fine"."""
+    res = _camp_check([], "1")
+    assert res["ok"] is False and "couldn't read" in res["note"]

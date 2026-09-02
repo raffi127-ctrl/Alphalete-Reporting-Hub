@@ -227,4 +227,141 @@ def resolve(page, rec, *, save: bool = True) -> Dict:
     if state == PENDING:
         note += (" — the owner has NOT accepted the access request yet, so "
                  "nothing can be pulled. This retries on its own")
-    return {"name": name, "ok": state == GRANTED, "state": state, "note": note}
+        return {"name": name, "ok": False, "state": state, "note": note,
+                "campaign": None}
+
+    # SAME SESSION, second fact: how many campaigns this office runs. The page
+    # is already on the Office Access table with its row in hand, so
+    # impersonating from here costs no extra login — and a campaign check is
+    # meaningless from master, because the picker belongs to the office.
+    campaign = None
+    try:
+        from automations.focus_office_att.run_all_owners import (
+            _find_owner_and_impersonate, _exit_impersonation)
+        from automations.focus_office_att.aliases import load_aliases
+        aliases = load_aliases()
+        imp_rqst, why = _find_owner_and_impersonate(page, rec.office_name(),
+                                                    aliases)
+        if imp_rqst:
+            try:
+                campaign = read_campaigns(page)
+            finally:
+                _exit_impersonation(page)
+        else:
+            note += "; couldn't impersonate to read the campaign picker (%s)" % why
+    except Exception as e:                           # noqa: BLE001
+        note += ("; campaign picker unread (%s: %s)"
+                 % (type(e).__name__, str(e)[:120]))
+    return {"name": name, "ok": state == GRANTED, "state": state, "note": note,
+            "campaign": campaign}
+
+
+# --- which campaigns this office actually runs -------------------------------
+# THE FAILURE THIS CATCHES. An office that runs MORE THAN ONE campaign cannot be
+# pinned: OwnerVille's top-right picker defaults for a multi-campaign ICD and
+# invD2DClientId does not move it (Megan, 2026-09-02). Every case seen fits —
+# Carlos Hidalgo (11580, three campaigns) pinned to Box serves the AT&T grid,
+# while Roshan Amin Ahmad (Box only), Calvin (Energy Wells only) and both NDS
+# offices (RES AT&T OOF only) all pull correctly. It also explains Jay Turnage,
+# the repo's other multi-campaign office, returning EMPTY on both campaigns on
+# 2026-09-01 while Raf and Calvin posted.
+#
+# So the one thing an enrollment must know about an office, beyond "can we
+# impersonate it", is HOW MANY CAMPAIGNS IT OFFERS. One is servable. More than
+# one is not, yet — and finding that out at enrollment is the difference between
+# telling the owner now and them wondering for a week why nothing arrives.
+
+# Read off the PICKER, not off the page's links. A link-scan counts whatever id
+# was last pinned as well as the office's own, so it cannot answer "how many
+# does this office have". The picker is the top-right control whose label IS the
+# current campaign. Ported from gap_alerts.run.probe_campaigns, which learned
+# the hard way that grabbing the first [data-toggle=dropdown] gets the
+# NOTIFICATIONS BELL — every "this office only has RES AT&T" reading came from
+# reading the wrong menu.
+_OPEN_PICKER_JS = r"""() => {
+  const rx = /^\s*[★*]?\s*(RES[-\w &]*|BASE [-\w &]*|B2B[-\w &]*)\s*$/i;
+  const cands = [...document.querySelectorAll('a,button,span,div')]
+    .filter(e => rx.test((e.innerText || '').trim())
+                 && (e.innerText || '').trim().length < 30
+                 && e.offsetParent !== null);
+  if (!cands.length) return {clicked: false, label: ''};
+  cands.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+  const el = cands[0];
+  const label = (el.innerText || '').trim();
+  (el.closest('[data-toggle="dropdown"],a,button') || el).click();
+  const dd = el.closest('.dropdown,.btn-group,li,div');
+  if (dd) { dd.classList.add('open','show');
+            const m = dd.querySelector('.dropdown-menu');
+            if (m) { m.classList.add('show'); m.style.display='block'; } }
+  return {clicked: true, label};
+}"""
+
+_READ_PICKER_JS = r"""() => [...document.querySelectorAll('a,li,span,button')]
+     .filter(e => e.offsetParent !== null)
+     .map(e => {
+       const t = (e.innerText || '').replace(/\s+/g,' ').trim();
+       const blob = [e.getAttribute('href'), e.getAttribute('onclick'),
+                     e.getAttribute('data-id')].filter(Boolean).join(' ');
+       const m = blob.match(/invD2DClientId\D{0,3}(\d{1,6})/i);
+       return (t && t.length < 40 && m) ? (m[1] + '\t' + t) : null;
+     }).filter(Boolean)"""
+
+
+def read_campaigns(page) -> "List[dict]":
+    """[{id, label}] for the office this session is currently on, deduped.
+
+    [] when the picker cannot be read — which is NOT the same as "one campaign",
+    and the caller must not treat it as proof of anything.
+    """
+    try:
+        page.evaluate(_OPEN_PICKER_JS)
+        page.wait_for_timeout(2000)
+        items = page.evaluate(_READ_PICKER_JS) or []
+    except Exception:                                # noqa: BLE001
+        return []
+    out, seen = [], set()
+    for raw in items:
+        cid, _, label = str(raw).partition("\t")
+        cid = cid.strip()
+        if not cid or cid in seen:
+            continue
+        seen.add(cid)
+        out.append({"id": cid, "label": label.strip()})
+    return out
+
+
+def campaign_check(campaigns: "List[dict]", want_id: str,
+                   want_name: str = "") -> Dict:
+    """Can this office be served for `want_id`? -> a preflight-shaped check.
+
+    Three answers, and the middle one is the point:
+      * one campaign, and it is theirs      -> fine
+      * MORE THAN ONE                       -> not servable yet, whatever it is
+      * one campaign, but not the one asked -> the wrong campaign was picked
+    """
+    name = "Campaign"
+    want_id = str(want_id or "").strip()
+    if not campaigns:
+        # Unreadable is not a verdict. Say so rather than passing an office we
+        # could not check.
+        return {"name": name, "ok": False, "note":
+                "couldn't read this office's campaign picker — re-run the "
+                "preflight rather than assume it is fine"}
+    listed = ", ".join("%s (%s)" % (c["label"] or "?", c["id"])
+                       for c in campaigns)
+    if len(campaigns) > 1:
+        return {"name": name, "ok": False, "note":
+                "this office runs %d campaigns — %s. OwnerVille's picker "
+                "defaults for a multi-campaign office and the pin cannot move "
+                "it, so whichever one it lands on is the one we would report, "
+                "under the other's name. Not servable until that is solved."
+                % (len(campaigns), listed)}
+    only = campaigns[0]
+    if want_id and only["id"] != want_id:
+        return {"name": name, "ok": False, "note":
+                "signed up for %s (id %s), but this office runs %s (id %s) — "
+                "confirm it on the right campaign."
+                % (want_name or "that campaign", want_id,
+                   only["label"] or "?", only["id"])}
+    return {"name": name, "ok": True, "note":
+            "runs one campaign, %s — pinnable" % listed}
