@@ -9,10 +9,15 @@ only ever wanted by the form-login fallback, which the 2026-08-20 release put a
 human-check on. So an unattended run walked into a door it cannot open and
 reported the doorknob.
 
-Two rules come out of that, and both are tested here:
+Two rules came out of that. The second still holds; the FIRST was reversed on
+2026-09-02, because the premise under it was measured wrong:
 
-  1. A run nobody asked to drive the login form must NOT drive it. Scheduled
-     reports pass no flags, so the default has to be "reuse only".
+  1. WAS "a run nobody asked to drive the login form must NOT drive it".
+     Megan proved on 2026-09-01 (appstream_autorenew) that the form completes
+     unattended from a cold profile, so a scheduled run driving it is a
+     self-heal, not a door it cannot open. Reuse still comes first; the form is
+     now the fallback, and APPSTREAM_NO_FORM_LOGIN=1 is the way back to
+     reuse-only.
   2. Whatever a dead session trips over on the way down, the message the channel
      gets must name the RE-SEED. Never a credential lookup as the headline.
 
@@ -20,24 +25,52 @@ Two rules come out of that, and both are tested here:
 """
 from __future__ import annotations
 
+import os
 import unittest
 
 from automations.shared import tableau_patchright as tp
 
 
 class FormLoginAllowed(unittest.TestCase):
-    """Who may fall through to the (human-gated) login form."""
+    """Who may fall through to the login form."""
 
-    def test_scheduled_run_may_not(self):
+    def setUp(self):
+        # The kill switch is read from the environment, so no test may inherit
+        # whatever the machine running it happens to have set.
+        self._saved = os.environ.pop("APPSTREAM_NO_FORM_LOGIN", None)
+
+    def tearDown(self):
+        os.environ.pop("APPSTREAM_NO_FORM_LOGIN", None)
+        if self._saved is not None:
+            os.environ["APPSTREAM_NO_FORM_LOGIN"] = self._saved
+
+    def test_scheduled_run_may_self_heal(self):
         # Every 4am report calls appstream_direct_session(verbose=True) and
-        # nothing else. That must be reuse-only.
-        self.assertFalse(tp._appstream_form_login_allowed(
+        # nothing else. Since 2026-09-02 that run may sign itself back in when
+        # the saved session is dead — reuse is still tried first, upstream.
+        self.assertTrue(tp._appstream_form_login_allowed(
             allow_form_login=False, force_form_login=False,
             username=None, password=None))
 
-    def test_default_signature_is_reuse_only(self):
-        # The regression itself: allow_form_login defaulted True, so the guard
-        # above never fired for the reports that needed it most.
+    def test_kill_switch_puts_a_machine_back_to_reuse_only(self):
+        for val in ("1", "true", "YES", "on"):
+            with self.subTest(value=val):
+                os.environ["APPSTREAM_NO_FORM_LOGIN"] = val
+                self.assertFalse(tp._appstream_form_login_allowed(
+                    allow_form_login=False, force_form_login=False,
+                    username=None, password=None))
+
+    def test_kill_switch_is_off_unless_actually_set(self):
+        # An empty or unrelated value must not silently disable the self-heal.
+        for val in ("", "0", "false", "  "):
+            with self.subTest(value=val):
+                os.environ["APPSTREAM_NO_FORM_LOGIN"] = val
+                self.assertTrue(tp._appstream_form_login_allowed(
+                    allow_form_login=False, force_form_login=False,
+                    username=None, password=None))
+
+    def test_default_signature_is_reuse_first(self):
+        # Reuse stays the primary path: nothing may default to skipping it.
         import inspect
         sig = inspect.signature(tp.appstream_direct_session)
         self.assertIs(sig.parameters["allow_form_login"].default, False)
@@ -59,14 +92,25 @@ class FormLoginAllowed(unittest.TestCase):
             username="alt@example.com", password="s3cret"))
 
     def test_half_a_credential_is_not_an_opt_in(self):
-        # A username with no password can't complete a form login; treating it
-        # as consent would put us back in the "fails somewhere downstream" hole.
+        # A username with no password can't complete an alt-account form login;
+        # treating it as consent would put us back in the "fails somewhere
+        # downstream" hole. Measured against the kill switch, which is where
+        # "did anyone actually ask for this?" is still the whole question.
+        os.environ["APPSTREAM_NO_FORM_LOGIN"] = "1"
         for user, pwd in (("alt@example.com", None), (None, "s3cret"),
                           ("alt@example.com", ""), ("", "s3cret")):
             with self.subTest(username=user, password=pwd):
                 self.assertFalse(tp._appstream_form_login_allowed(
                     allow_form_login=False, force_form_login=False,
                     username=user, password=pwd))
+
+    def test_a_full_credential_beats_the_kill_switch(self):
+        # --alt-appstream signs in as another account on purpose: reuse cannot
+        # serve it, so opting a machine out of the self-heal must not disarm it.
+        os.environ["APPSTREAM_NO_FORM_LOGIN"] = "1"
+        self.assertTrue(tp._appstream_form_login_allowed(
+            allow_form_login=False, force_form_login=False,
+            username="alt@example.com", password="s3cret"))
 
 
 class ReseedError(unittest.TestCase):

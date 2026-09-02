@@ -1699,9 +1699,8 @@ def _appstream_reseed_error(reason: str,
     exception, a page dump) belongs in `detail`, which trails the message."""
     msg = (
         f"AppStream session is not usable: {reason}\n"
-        "Re-seed it with a one-time human login (the form login is gated by an "
-        "interactive check since the 2026-08-20 release, so no unattended run "
-        "can do this for you):\n"
+        "Re-seed it with a one-time human login (since 2026-09-02 an unattended "
+        "form login is tried first, so reaching this means that failed too):\n"
         f"{APPSTREAM_RESEED_CMD}\n"
         "(a browser opens; clear the check + log in as rcaptain once, and it "
         "saves the session). The session holder then keeps it warm for "
@@ -1723,12 +1722,36 @@ def _appstream_form_login_allowed(*, allow_form_login: bool,
       • explicit username+password — daily_focus --alt-appstream, whose whole
         point is signing in as a DIFFERENT account than the saved session
 
-    A scheduled report passes none of them, which is why the default is now
-    False: since 2026-08-20 the form is human-gated, so for an unattended run
-    "fall through to the form" is not a self-heal, it's a slower and much more
-    confusing way to fail. [[reference_appstream_turnstile]]"""
-    return bool(allow_form_login or force_form_login
-                or (username and password))
+    A scheduled report passes none of them, and until 2026-09-02 that meant
+    "reuse or die": the premise was that the 2026-08-20 release put a human
+    check on the form, so an unattended fall-through was only "a slower and
+    much more confusing way to fail". [[reference_appstream_turnstile]]
+
+    THAT PREMISE WAS MEASURED WRONG (Megan, 2026-09-01). appstream_autorenew
+    drives this same form as its last-resort recovery and it completes with
+    nobody at the browser — verified on Lucy 1 from a COLD profile with no
+    saved session, which is the 4am case exactly: username -> NEXT -> the
+    Cloudflare wait -> password -> submit -> a live #searchMC. Her note there
+    says it in as many words: "The premise was wrong, not the mechanism."
+
+    So a scheduled run may try the form too. What it buys: on 2026-09-02
+    recruiter_retention_daily and applicant_sync_morning both died at 04:00
+    because the token had expired at 21:33 the night before and the renewal
+    timer runs on ONE machine (deploy/com.alphalete.appstream-autorenew.plist
+    is Megan's Mac, and it was asleep). With the form allowed, the first report
+    of the batch signs itself back in, saves the session, and the ones behind
+    it reuse it — instead of four reports waiting on a person at 4am.
+
+    The fallback is unchanged: the form drive is bounded (it gives up when
+    #searchMC never renders) and _appstream_reseed_error is what a failed
+    attempt raises, so a genuinely dead login still pages exactly as before.
+
+    KILL SWITCH: APPSTREAM_NO_FORM_LOGIN=1 puts a machine back to reuse-only,
+    for the day the provider really does gate the form."""
+    if allow_form_login or force_form_login or (username and password):
+        return True
+    return (os.environ.get("APPSTREAM_NO_FORM_LOGIN", "").strip().lower()
+            not in ("1", "true", "yes", "on"))
 
 
 @contextmanager
@@ -1868,13 +1891,14 @@ def appstream_direct_session(headless: bool = False,
                     print("-> reused AppStream session has no #searchMC (stale "
                           "token)", flush=True)
 
-            # No live session. Since 2026-08-20 the login form is human-gated,
-            # so falling through to it is only right when a human asked for it
-            # (see _appstream_form_login_allowed). For everything else — every
-            # scheduled report — this is where the run STOPS, saying the one
-            # thing that fixes it. The ownerville SSO URL hop is not an option
-            # either: it lands on the ownerville report view, not the rcaptain
-            # console.
+            # No live session. Drive the login form — including on a scheduled
+            # run, which is the 2026-09-02 change: the form completes unattended
+            # (appstream_autorenew measured it from a cold profile), so this is
+            # a real self-heal and not a slower way to fail. Only a machine that
+            # opted out with APPSTREAM_NO_FORM_LOGIN=1 stops here, saying the
+            # one thing that fixes it (see _appstream_form_login_allowed). The
+            # ownerville SSO URL hop is not an option either: it lands on the
+            # ownerville report view, not the rcaptain console.
             if not _appstream_form_login_allowed(
                     allow_form_login=allow_form_login,
                     force_form_login=force_form_login,
@@ -1883,7 +1907,8 @@ def appstream_direct_session(headless: bool = False,
                     "the saved session (.appstream_storage_state.json) has no "
                     "live token, and this run may not drive the login form")
 
-            # Opt-in form-drive (interactive/debug — it hits the human-check).
+            # The form drive itself: reached by an opt-in caller, or by a
+            # scheduled run whose saved session went stale.
             try:
                 user = username or creds.appstream_username()
                 pwd  = password or creds.appstream_password()
