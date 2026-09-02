@@ -116,6 +116,20 @@ def test_talk_to_excludes_only_the_buckets_nobody_was_spoken_to_in():
     assert knocks.COL_B2B_INACCURATE_LEAD in box_out
 
 
+def test_box_keeps_its_three_talk_to_columns_separate():
+    """Megan 2026-09-02, asked whether summing them double-counts: "they should
+    be each their own column." So they are three distinct dispositions — each
+    gets its own column on the board, and each counts once toward Total Talk to.
+    Collapsing any two of them would lose a bucket Carlos's office reads."""
+    three = [knocks.COL_BOX_TALKED_TO, knocks.COL_BOX_OWNER_TALKED_TO,
+             knocks.COL_NOT_INTERESTED]
+    for col in three:
+        assert col in K._B2B_BOX_COLUMNS          # scraped
+        assert col in K._B2B_BOX_TALK_TO_PARTS    # counted, once each
+        assert col in R.B2B_BOX_KNOCKS_COLUMNS    # and shown on the board
+    assert len(set(three)) == 3
+
+
 def test_do_not_knock_and_do_not_disturb_both_count_as_talk_tos():
     """The house rule counts Do Not Knock; Box's Do Not Disturb is the same
     thing said in B2B."""
@@ -171,3 +185,92 @@ def test_every_board_column_is_one_the_scrape_or_the_merge_supplies():
 def test_the_board_drops_the_rep_id_like_every_other_shape():
     assert knocks.COL_ID not in R.B2B_ATT_KNOCKS_COLUMNS
     assert knocks.COL_ID not in R.B2B_BOX_KNOCKS_COLUMNS
+
+
+# --- the collision that draws a column blank ---------------------------------
+
+def test_no_board_column_normalizes_onto_another():
+    """A whole CLASS of silent-blank bug, not one instance.
+
+    render._records_to_table seeds its header with SHEET_COLUMNS (fiber's set)
+    and appends any extra key the records carry; the header is then indexed by
+    NORMALIZED name, first-wins. So two columns that are different strings but
+    normalize the same collapse onto one position — and the second one draws
+    blank for every rep with 0 in the totals, which reads exactly like a bucket
+    nobody used.
+
+    That is how B2B AT&T's "Presentation - Not Interested" (hyphen) vanished
+    behind the house "Presentation – Not Interested" (en-dash) on 2026-09-02.
+    """
+    from automations.total_knocks.pull import SHEET_COLUMNS
+    for name, cols in (("b2b_att", R.B2B_ATT_KNOCKS_COLUMNS),
+                       ("b2b_box", R.B2B_BOX_KNOCKS_COLUMNS),
+                       ("energywell", R.ENERGYWELL_KNOCKS_COLUMNS),
+                       ("wireless", R.WIRELESS_KNOCKS_COLUMNS)):
+        seen = {}
+        for col in list(SHEET_COLUMNS) + list(cols):
+            key = knocks._norm(col)
+            if key in seen and seen[key] != col:
+                raise AssertionError(
+                    "%s: %r and %r both normalize to %r — the second draws "
+                    "blank for every rep" % (name, seen[key], col, key))
+            seen[key] = col
+
+
+def test_b2b_att_uses_the_house_presentation_column():
+    """One constant for one column. The scrape resolves by normalized name, so
+    the house spelling matches B2B's live header on its own."""
+    assert knocks.COL_PRES_NI in K._B2B_ATT_COLUMNS
+    assert knocks.COL_PRES_NI in K._B2B_ATT_TALK_TO_PARTS
+    assert knocks._norm(knocks.COL_PRES_NI) in LIVE_2
+    assert not hasattr(knocks, "COL_B2B_PRES_NI")
+
+
+def test_talked_to_not_interested_does_NOT_collide():
+    """It must stay its own constant: _is_wireless_dispo keys on the HOUSE
+    "Talk To - Not Interested" being absent, which is what tells a B2B grid
+    apart in the first place."""
+    assert (knocks._norm(knocks.COL_B2B_TALKED_TO_NI)
+            != knocks._norm(knocks.COL_TALK_TO_NI))
+    assert knocks._norm(knocks.COL_TALK_TO_NI) not in LIVE_2
+
+
+# --- the pin that did not take (2026-09-02) ---------------------------------
+
+def test_a_pinned_campaign_must_produce_its_own_grid():
+    """Impersonating Carlos Hidalgo and pinning invD2DClientId=16 returned the
+    22-header B2B AT&T grid, not Box's 24-header one — in a FRESH session, grid
+    warmed first, and the same pin on the master account DID serve Box. So the
+    campaign can silently stay where it was under impersonation.
+
+    Unchecked, that is a board titled "B2B Box" carrying AT&T's reps and AT&T's
+    numbers, which nobody reading it can tell is wrong."""
+    import pytest
+    from automations.total_knocks.pull import KnocksPullFailed
+    with pytest.raises(KnocksPullFailed) as e:
+        K.assert_campaign_grid(ATT, "16")
+    assert "did not take" in str(e.value)
+    with pytest.raises(KnocksPullFailed):
+        K.assert_campaign_grid(BOX, "2")
+
+
+def test_the_matching_grid_passes():
+    K.assert_campaign_grid(ATT, "2")
+    K.assert_campaign_grid(BOX, "16")
+
+
+def test_it_refuses_only_what_it_can_prove_wrong():
+    """No pin, or a campaign whose grid has no signature we recognise, is not
+    checked — never guessed at. Fiber and Energy Wells pin campaigns whose grids
+    this map says nothing about."""
+    for campaign in (None, "", "3", "40", "39"):
+        K.assert_campaign_grid(ATT, campaign)
+        K.assert_campaign_grid(HOUSE, campaign)
+
+
+def test_a_non_b2b_grid_under_a_b2b_pin_is_also_refused():
+    import pytest
+    from automations.total_knocks.pull import KnocksPullFailed
+    with pytest.raises(KnocksPullFailed) as e:
+        K.assert_campaign_grid(HOUSE, "2")
+    assert "not a B2B grid at all" in str(e.value)

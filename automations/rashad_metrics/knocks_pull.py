@@ -151,7 +151,7 @@ def _scrape_energywell_rows(page, idx: dict) -> list[dict]:
 _B2B_ATT_COLUMNS = [
     knocks.COL_ID, knocks.COL_REP, knocks.COL_TOTAL_LEADS_KNOCKED,
     knocks.COL_TOTAL_KNOCKS, knocks.COL_FIRST_KNOCK, knocks.COL_LAST_KNOCK,
-    knocks.COL_B2B_TALKED_TO_NI, knocks.COL_B2B_PRES_NI, knocks.COL_SALE,
+    knocks.COL_B2B_TALKED_TO_NI, knocks.COL_PRES_NI, knocks.COL_SALE,
     knocks.COL_COME_BACK, knocks.COL_B2B_CORP_LOCAL,
     knocks.COL_B2B_CORP_NO_OPP, knocks.COL_DO_NOT_KNOCK,
     knocks.COL_B2B_INACCURATE_LEAD, knocks.COL_B2B_NONE,
@@ -182,14 +182,15 @@ _B2B_BOX_COUNTS = set(_B2B_BOX_COLUMNS) - {
 #   Box   excludes Inaccessible and Inaccurate Lead, and counts Do Not Disturb
 #         the way fiber counts Do Not Knock.
 #
-# ⚠ CARLOS SHOULD CONFIRM THE BOX LIST. It carries "Talked To" AND "Owner Talked
-# To" AND "Not Interested" as separate columns, and this sums them — right if
-# they are mutually exclusive dispositions the way every other grid's are, and
-# double-counting if a knock can land in two. Nobody has been asked yet. The
-# same open question the Energy Wells "VL is also a talk-to" line records: the
-# standard sum stands until somebody points at what is really meant.
+# BOX'S THREE TALK-TO COLUMNS ARE THREE DISPOSITIONS, not one counted thrice.
+# Asked and answered (Megan 2026-09-02): "they should be each their own column."
+# So "Talked To", "Owner Talked To" and "Not Interested" are mutually exclusive
+# the way every other grid's buckets are — a knock lands in exactly one, the
+# board shows all three, and summing them into Total Talk to is a sum over
+# distinct doors rather than the double-count it would be if a knock could hold
+# two of them at once. Do not "simplify" this by collapsing them.
 _B2B_ATT_TALK_TO_PARTS = [
-    knocks.COL_B2B_TALKED_TO_NI, knocks.COL_B2B_PRES_NI, knocks.COL_SALE,
+    knocks.COL_B2B_TALKED_TO_NI, knocks.COL_PRES_NI, knocks.COL_SALE,
     knocks.COL_COME_BACK, knocks.COL_B2B_CORP_LOCAL,
     knocks.COL_B2B_CORP_NO_OPP, knocks.COL_DO_NOT_KNOCK,
 ]
@@ -218,6 +219,50 @@ def _is_b2b_box_dispo(idx: dict) -> bool:
 
 def is_b2b_dispo(idx: dict) -> bool:
     return _is_b2b_att_dispo(idx) or _is_b2b_box_dispo(idx)
+
+
+# WHAT GRID EACH PINNED CAMPAIGN MUST PRODUCE. Only the campaigns whose grids
+# are distinguishable on sight are listed — a pin we cannot verify is not
+# checked, rather than guessed at.
+#
+# THIS EXISTS BECAUSE THE PIN DOES NOT ALWAYS TAKE (observed 2026-09-02).
+# Impersonating Carlos Hidalgo (11580) and pinning invD2DClientId=16 returned
+# the 22-header B2B AT&T grid, not Box's 24-header one — in a FRESH session, so
+# not sticky state from an earlier pull, and with the grid warmed first as the
+# code already does. The same pin on the master account DID serve the Box grid.
+# So under impersonation the campaign can silently stay where it was.
+#
+# Left unchecked that is the worst failure this repo has: a board titled "B2B
+# Box" carrying AT&T's reps and AT&T's numbers, which — unlike a blank board —
+# nobody reading it can tell is wrong. Same family as the impersonation
+# fall-through that put Raf's 37 reps in Jay Turnage's chat.
+CAMPAIGN_EXPECTED_SHAPE = {
+    "2": ("B2B AT&T SBS", _is_b2b_att_dispo),
+    "16": ("B2B-BOX-Energy", _is_b2b_box_dispo),
+}
+
+
+def assert_campaign_grid(idx: dict, campaign_id: "Optional[str]") -> None:
+    """Raise unless the grid on screen is the one this campaign should serve.
+
+    No-op when nothing was pinned, or when the campaign's grid has no signature
+    we can recognise — this refuses what it can PROVE wrong, never what it
+    merely cannot confirm.
+    """
+    want = CAMPAIGN_EXPECTED_SHAPE.get(str(campaign_id or "").strip())
+    if not want:
+        return
+    name, matches = want
+    if matches(idx):
+        return
+    got = ("B2B AT&T-shaped" if _is_b2b_att_dispo(idx)
+           else "B2B Box-shaped" if _is_b2b_box_dispo(idx)
+           else "not a B2B grid at all")
+    raise KnocksPullFailed(
+        "campaign %s (%s) was pinned, but the Disposition grid on screen is %s "
+        "— the pin did not take and every number from it belongs to another "
+        "campaign. Refusing to publish them. Headers seen: %s"
+        % (campaign_id, name, got, ", ".join(sorted(idx)[:24])))
 
 
 def _scrape_b2b_rows(page, idx: dict) -> list[dict]:
@@ -638,7 +683,8 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
 
         for target in targets:
             out[target] = _scrape_day_on_page(page, rqst, target,
-                                              verbose=verbose)
+                                              verbose=verbose,
+                                              expect_campaign=campaign)
     finally:
         # ALWAYS exit impersonation before the session closes so the
         # next run / other reports start from master, not a stuck
@@ -653,7 +699,8 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
 
 
 def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
-                        verbose: bool = True) -> list:
+                        verbose: bool = True,
+                        expect_campaign: "Optional[str]" = None) -> list:
     """ONE day's rows on a page that is already impersonating the right office
     with its campaign pinned — Disposition by Rep merged with Time Tracker
     gaps, exactly as pull_office_on_page always did inline. Extracted so the
@@ -666,6 +713,11 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
               flush=True)
     knocks._navigate(page, rqst, mdy)
     idx = knocks._header_index(page)
+    # PROVE THE PIN TOOK, before a single number is read off this grid. Under
+    # impersonation the campaign can silently stay where it was, and a board
+    # with the right title and another campaign's numbers is worse than no
+    # board — nobody reading it can tell.
+    assert_campaign_grid(idx, expect_campaign)
     # A WIRELESS (NDS) office's Disposition table has its own shape —
     # scrape it with the wireless column set instead of letting the house
     # scrape raise "missing expected column(s)". The wireless rows keep

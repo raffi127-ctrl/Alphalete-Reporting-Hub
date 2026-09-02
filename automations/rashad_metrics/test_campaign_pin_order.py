@@ -42,8 +42,11 @@ class CampaignPinOrder(unittest.TestCase):
         self._patch("_pin_campaign",
                     lambda page, rqst, camp, verbose=True:
                         self.calls.append(("pin", camp)))
+        # **kw so a new keyword on the real function (expect_campaign, added
+        # 2026-09-02 to prove the pin took) doesn't fail this as a TypeError —
+        # this test is about ORDER, not signature.
         self._patch("_scrape_day_on_page",
-                    lambda page, rqst, target, verbose=True:
+                    lambda page, rqst, target, verbose=True, **kw:
                         self.calls.append(("scrape", target)) or [])
         self._saved["nav"] = KP.knocks._navigate
         KP.knocks._navigate = (lambda page, rqst, mdy, **kw:

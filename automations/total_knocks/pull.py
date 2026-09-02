@@ -72,7 +72,21 @@ COL_PRESENTATION        = "Presentation"
 # raised "missing: No answer, Talk To - Not Interested, Inaccessible" on it.
 # It has NO No-answer and NO Inaccessible bucket at all.
 COL_B2B_TALKED_TO_NI    = "Talked To - Not Interested"
-COL_B2B_PRES_NI         = "Presentation - Not Interested"
+# NO COL_B2B_PRES_NI. B2B AT&T's "Presentation - Not Interested" (hyphen) and
+# the house COL_PRES_NI (en-dash) are different STRINGS that _norm() flattens to
+# the same key, and that is not a cosmetic clash — render._records_to_table
+# seeds its header with SHEET_COLUMNS (fiber's set) and appends any extra key
+# the records carry, then indexes it by normalized name FIRST-WINS. So the B2B
+# column resolved to the house column's position, which no B2B row fills, and
+# the board drew Presentation blank for every rep with 0 in the totals. Exactly
+# the failure the comment in _records_to_table already records for Energy Wells,
+# arriving by a different route (2026-09-02, caught by rendering realistic
+# numbers rather than a fixture where every bucket held the same value).
+#
+# The scrape resolves columns by _norm, so the house constant matches B2B's live
+# header on its own. Note COL_B2B_TALKED_TO_NI above does NOT collide —
+# "talked to not interested" vs "talk to not interested" — and must stay its own
+# constant, because _is_wireless_dispo keys on the house one being ABSENT.
 COL_B2B_CORP_LOCAL      = "Corp Franchise Local"
 COL_B2B_CORP_NO_OPP     = "Corp Franchise No Opp"
 COL_B2B_NONE            = "None"           # knocked, no disposition recorded
