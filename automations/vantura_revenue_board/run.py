@@ -402,9 +402,16 @@ def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
 
 
 # ------------------------------------------------------------------ slack --
-def post(png: Path, plain: str, caption: str, dm_user: str = "") -> int:
-    from automations.sales_boards.run import (_already_replied, find_thread_ts,
-                                              header_title)
+def post(png: Path, plain: str, caption: str, kind: str,
+         dm_user: str = "") -> int:
+    """kind='b2b' -> the day's B2B Metrics thread (created if absent — the
+    5:10 sales_boards pass normally already did); kind='box' -> the day's BOX
+    Order Log thread (never created here; missing = hold 75). Both channels
+    (#alphalete-gp-sales + #a-players-b2b), per the 2026-08-30 restructure —
+    the standalone Vantura Production thread is retired."""
+    from automations.sales_boards.run import (TARGETS, _already_replied,
+                                              box_thread_ts,
+                                              metrics_thread_ts)
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
     today = dt.date.today()
@@ -416,21 +423,24 @@ def post(png: Path, plain: str, caption: str, dm_user: str = "") -> int:
                                initial_comment=caption)
         print(f"posted {plain!r} to DM {dm_user}")
         return 0
-    cid = CHANNEL[1]
-    ts = find_thread_ts(client, cid, today)
-    if not ts:
-        print(f"HOLD: no {header_title(today)!r} thread in {CHANNEL[0]} yet "
-              "(sales-boards posts it at 5:10) — retrying later")
-        return 75
-    if _already_replied(client, cid, ts, plain):
-        print(f"'{plain}' already in the thread — nothing to do")
-        return 0
-    client.files_upload_v2(channel=cid, thread_ts=ts,
-                           file_uploads=[{"file": str(png),
-                                          "filename": f"{plain}.png"}],
-                           initial_comment=caption)
-    print(f"posted {plain!r} into {CHANNEL[0]} thread {ts}")
-    return 0
+    held = False
+    for name, cid, _wz in TARGETS:
+        ts = (box_thread_ts(client, cid, today) if kind == "box"
+              else metrics_thread_ts(client, cid, today))
+        if ts is None:
+            print(f"HOLD: no BOX Order Log thread in {name} yet "
+                  "(box_order_log posts it at 7:00) — retrying later")
+            held = True
+            continue
+        if _already_replied(client, cid, ts, plain):
+            print(f"'{plain}' already in the {name} thread — nothing to do")
+            continue
+        client.files_upload_v2(channel=cid, thread_ts=ts,
+                               file_uploads=[{"file": str(png),
+                                              "filename": f"{plain}.png"}],
+                               initial_comment=caption)
+        print(f"posted {plain!r} into {name} thread {ts}")
+    return 75 if held else 0
 
 
 def main(argv=None) -> int:
@@ -492,7 +502,7 @@ def main(argv=None) -> int:
                 print(f"  unpriced: {dict(unpriced)}")
             png = render(rows, office, monday, upto,
                          OUT_DIR / f"revenue_board_{upto}.png")
-            boards.append((png, f"Revenue Board {tag}",
+            boards.append((png, "b2b", f"Revenue Board {tag}",
                            f":moneybag: *Revenue Board {tag}* — per-day AT&T "
                            "revenue on the office comp sheet (incl. ABP / plan "
                            "add-ons; Week Total includes the Tiered Volume "
@@ -545,7 +555,7 @@ def main(argv=None) -> int:
                 png_b = render(rows_b, office_b, monday, upto,
                                OUT_DIR / f"box_revenue_board_{upto}.png",
                                board_name="Vantura BOX Revenue")
-                boards.append((png_b, f"Box Revenue Board {tag}",
+                boards.append((png_b, "box", f"Box Revenue Board {tag}",
                                f":package: *Box Revenue Board {tag}* — per-day "
                                "BOX revenue on the New Compensation grid "
                                "(base by BF tier, Electric vs Ancillary + "
@@ -555,14 +565,28 @@ def main(argv=None) -> int:
             else:
                 print("BOX: no counted sales this week — nothing to render")
 
-    for png, _plain, _cap in boards:
+    for png, _kind, _plain, _cap in boards:
         print(f"rendered {png}")
     if a.no_post:
         print("--no-post — not posting")
         return 75 if held else 0
     if a.post or a.dm:
-        for png, plain, caption in boards:
-            rc = post(png, plain, caption, dm_user=a.dm or "")
+        # The BOX SALES BOARD images ride this same pass (Carlos 2026-08-30:
+        # they belong in the BOX Order Log thread, which exists from ~7:00 —
+        # and by 7:25 the 7:15 order-log confirm has corrected the board, so
+        # the images render right the first time). sales_boards routes
+        # --program BOX there and dedups itself.
+        if any(k == "box" for _p, k, _pl, _c in boards) and not a.dm:
+            import subprocess
+            r = subprocess.run(
+                [sys.executable, "-m", "automations.sales_boards.run",
+                 "--program", "BOX", "--post"],
+                capture_output=True, text=True, timeout=900)
+            for line in (r.stdout or "").splitlines()[-6:]:
+                print(f"  sales_boards: {line}")
+            held = held or r.returncode == 75
+        for png, kind, plain, caption in boards:
+            rc = post(png, plain, caption, kind, dm_user=a.dm or "")
             held = held or rc == 75
         return 75 if held else 0
     print("dry-run — --post to reply in the thread")
