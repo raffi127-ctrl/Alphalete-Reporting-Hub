@@ -371,8 +371,8 @@ def attach_within_limit(msg: EmailMessage, bundle: dict) -> List[str]:
 
 def _note_dropped(msg: EmailMessage, dropped: List[str]) -> None:
     """Append the 'these did not fit' line to the message's HTML body."""
-    who = ", ".join(n.replace("Daily Knock Dispositions - ", "")
-                    .rsplit(" - ", 1)[0] for n in dropped)
+    from automations.captainship_drafts.daily_pdf import owner_of
+    who = ", ".join(owner_of(n) for n in dropped)
     note = ('<div style="font-size:12px;color:#666;margin-top:10px">'
             f'{len(dropped)} per-owner Daily Knock Dispositions PDF(s) were '
             'left off to keep this email under the mail size limit: '
