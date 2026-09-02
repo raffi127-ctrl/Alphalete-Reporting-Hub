@@ -35,8 +35,12 @@ SHA_A = "a" * 40
 SHA_B = "b" * 40
 
 
-def _health(*, local, remote, behind, ahead, supervised=False):
-    """Run _git_health with its `git` calls stubbed to the given repo state."""
+def _health(*, local, remote, behind, ahead, supervised=False,
+            blocked=(False, "")):
+    """Run _git_health with its `git` calls stubbed to the given repo state.
+
+    `blocked` stubs _update_blocked (the launcher's pull-refused marker) so
+    these tests never depend on a real marker file on the running machine."""
     def fake_git(*args, **kw):
         a = list(args)
         if a[:2] == ["rev-parse", "--short"]:
@@ -59,6 +63,8 @@ def _health(*, local, remote, behind, ahead, supervised=False):
     # _git_health is @st.cache_data-wrapped; __wrapped__ is the plain function.
     fn = getattr(dashboard._git_health, "__wrapped__", dashboard._git_health)
     with mock.patch("subprocess.run") as sp, \
+            mock.patch.object(dashboard, "_update_blocked",
+                              return_value=blocked), \
             mock.patch.dict("os.environ", env, clear=False):
         sp.side_effect = lambda cmd, **kw: mock.Mock(
             stdout=fake_git(*cmd[1:]))
@@ -193,6 +199,49 @@ class AnAuditsFindingsAreNotAFailure(unittest.TestCase):
                          "these write a finding-kind manifest but are missing "
                          "from dashboard.FINDINGS_REPORTS, so their partial "
                          "still pages Megan every morning: %s" % offenders)
+
+
+class BlockedUpdateSaysSo(unittest.TestCase):
+    """THE OTHER LOOP (Megan, 2026-09-02). On a dev machine the launcher pulls
+    --ff-only, so an uncommitted edit to a file origin/main also touches aborts
+    it every launch. git said so only in the Terminal window behind the Hub, so
+    the banner went on prescribing "click Update & restart" — a click git
+    refuses — and 7 commits sat unpulled for days. Same rule as AheadIsNotStale:
+    never print a remedy that cannot clear the state."""
+
+    def test_blocked_names_the_file_and_drops_the_button(self):
+        h = _health(local=SHA_A, remote=SHA_B, behind="7", ahead="0",
+                    supervised=True,
+                    blocked=(True, "tableau_patchright.py"))
+        self.assertTrue(h["blocked"])
+        self.assertIn("7 update(s) behind", h["label"])
+        self.assertIn("BLOCKED", h["detail"])
+        self.assertIn("tableau_patchright.py", h["detail"])
+        # The remedy must be the one that works, NOT the button.
+        self.assertNotIn("Update & restart", h["detail"])
+        self.assertIn("stash", h["detail"])
+
+    def test_not_blocked_still_offers_the_button(self):
+        h = _health(local=SHA_A, remote=SHA_B, behind="7", ahead="0",
+                    supervised=True, blocked=(False, ""))
+        self.assertFalse(h.get("blocked"))
+        self.assertIn("Update & restart", h["detail"])
+
+    def test_blocked_without_filenames_still_flags_it(self):
+        """Marker present but the file list couldn't be computed — say it's
+        blocked anyway rather than falling back to the useless button."""
+        h = _health(local=SHA_A, remote=SHA_B, behind="3", ahead="0",
+                    supervised=True, blocked=(True, ""))
+        self.assertTrue(h["blocked"])
+        self.assertIn("BLOCKED", h["detail"])
+        self.assertNotIn("Update & restart", h["detail"])
+
+    def test_on_latest_is_never_reported_as_blocked(self):
+        """A stale marker must not manufacture a warning on a healthy repo."""
+        h = _health(local=SHA_A, remote=SHA_A, behind="0", ahead="0",
+                    blocked=(True, "whatever.py"))
+        self.assertTrue(h["ok"])
+        self.assertEqual(h["label"], "On latest")
 
 
 if __name__ == "__main__":
