@@ -342,6 +342,62 @@ def _pin_campaign(page, rqst: str, campaign_id: Optional[str] = None,
                   "continuing with the session's current campaign", flush=True)
 
 
+def impersonated_office_label(page, rqst: str) -> str:
+    """The office the session is ACTUALLY on, read off p=88's `beOffice` select
+    — e.g. "Calvin Ribera (22162 - Vernon, Inc.)".
+
+    This is the only readout that tracks impersonation. The rqst token does NOT:
+    ownerville hands an impersonated session the SAME token as master, so a
+    confirmImpersonate that silently fails leaves every later fetch answering
+    for the wrong office with nothing raising (verified 2026-09-01).
+
+    "" when it can't be read — an unreadable label must never be treated as a
+    mismatch, only a positive mismatch counts.
+    """
+    try:
+        page.goto("https://v2.ownerville.com/index.cfm?p=88&rqst=%s" % rqst,
+                  wait_until="networkidle", timeout=45000)
+        page.wait_for_timeout(800)
+        return page.eval_on_selector(
+            "select[name=beOffice], #beOffice",
+            "e => (e.options[e.selectedIndex] || {}).text || ''") or ""
+    except Exception:  # noqa: BLE001 — a check must never be the failure
+        return ""
+
+
+def assert_impersonating(page, rqst: str, canonical: str, aliases_raw,
+                         *, verbose: bool = True) -> None:
+    """Raise unless the session is really on `canonical`'s office.
+
+    WHY THIS IS NOT OPTIONAL. On 2026-09-01 `/knocks Kash Rai` came back with
+    Calvin Ribera's seven Energy Wells reps under the heading "TOTAL KNOCKS —
+    KASH RAI", and the same fall-through put Raf's 37 reps in Jay Turnage's
+    chat. Nothing errored in either case. A board with the right title and
+    another office's numbers is worse than no board: unlike a blank one, the
+    person reading it cannot tell.
+    """
+    label = impersonated_office_label(page, rqst)
+    if not label:
+        return                      # unreadable is not a mismatch
+    want = {_norm_office(canonical)}
+    for alias, canon in (aliases_raw or {}).items():
+        if _norm_office(canon) == _norm_office(canonical):
+            want.add(_norm_office(alias))
+    got = _norm_office(label)
+    if any(w and w in got for w in want):
+        if verbose:
+            print("  ✓ Confirmed on %s" % label.strip(), flush=True)
+        return
+    raise RuntimeError(
+        "impersonation landed on %r, not %r — ownerville did not switch office "
+        "and every number from this session would belong to someone else."
+        % (label.strip()[:80], canonical))
+
+
+def _norm_office(name) -> str:
+    return " ".join(str(name or "").split()).strip().lower()
+
+
 def pull_office_knocks(office_name: Optional[str] = None,
                        target: Optional[dt.date] = None,
                        verbose: bool = True) -> tuple[dt.date, list[dict]]:
@@ -423,6 +479,10 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
     if verbose:
         print(f"  ✓ Impersonated {canonical!r}; rqst={rqst[:8]}…",
               flush=True)
+    # PROVE IT. "Impersonated" above only means confirmImpersonate was called,
+    # not that ownerville switched — and the token cannot tell us, so this asks
+    # the page which office it is actually on.
+    assert_impersonating(page, rqst, canonical, aliases_raw, verbose=verbose)
 
     try:
         # Defensive: prefer the live page's rqst if the post-impersonate
