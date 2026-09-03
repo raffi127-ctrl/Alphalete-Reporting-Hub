@@ -733,6 +733,28 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_own.open_ws_wl_sahil, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("sahil")),
+    # Pat y Jess, 2026-09-03: las dos capitanias de fiber nuevas. Sus seis
+    # cuadros salen igual que los de los otros cinco (mismos libros, cortados
+    # por su slug), asi que `_fiber_boxes` alcanza.
+    #
+    # LLEVAN SOLO EL CHURN WIRELESS. El de New Internet lee una vista custom de
+    # Tableau POR CAPITAN y las de ellos dos todavia no existen; su pestana esta
+    # creada y vacia esperandola. El dia que exista: agregar la ChurnSource de
+    # New Internet ARRIBA de esta y ponerle brand_title=False a la wireless,
+    # como en los otros cuatro.
+    #
+    # `to=""` a proposito: el destinatario real es el grupo de contactos
+    # 'Captainship - <Nombre>', que todavia no existe para ellos, y un `to`
+    # vacio hace que --send los SALTEE en vez de mandarle el reporte a quien no
+    # corresponde. Los borradores igual se arman.
+    Captain("pat", "Pat", "fiber", title_bg="#9BA820", to="", churn=[
+        ChurnSource(_own.open_ws_wl_pat, _wl_render, "Wireless Churn",
+                    brand_title=False),
+    ], boxes=_fiber_boxes("pat")),
+    Captain("jess", "Jess", "fiber", title_bg="#6F8691", to="", churn=[
+        ChurnSource(_own.open_ws_wl_jess, _wl_render, "Wireless Churn",
+                    brand_title=False),
+    ], boxes=_fiber_boxes("jess")),
     # ----- B2B (5 buckets incl 120) -----
     Captain("carlos", "Carlos", "b2b", title_bg="#4CAF4F", to=_to("carlos"), churn=[
         ChurnSource(_own.open_ws_b2b_carlos, _ni_render, "Wireless Churn",
