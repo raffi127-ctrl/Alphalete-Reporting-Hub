@@ -37,8 +37,9 @@ DOWNLOADS_DIR = Path.home() / "Downloads"
 
 def _deliver(sh, today, *, want_drive: bool, dry_run: bool) -> None:
     """Render the 6 PNGs, save them to Downloads, and (optionally) upload to
-    Drive. Drive is best-effort: a failure (e.g. Drive API not enabled) is
-    logged and SWALLOWED so the run still succeeds with the local copies."""
+    Drive. BOTH deliveries are best-effort: a failure (Drive API not enabled,
+    macOS refusing the Downloads folder) is logged and SWALLOWED so the run
+    still succeeds. The rendered PNGs stay in OUTPUT_DIR either way."""
     print("\n--- Render PNGs (cols A–L minus K for captains; Q–Z for country) ---")
     imgs, skipped = CR.render_all(sh, today, OUTPUT_DIR)
     for label, path in imgs.items():
@@ -51,17 +52,46 @@ def _deliver(sh, today, *, want_drive: bool, dry_run: bool) -> None:
                 print(f"   would-upload: {name}")
         return skipped
 
-    # Always save locally to Downloads.
-    DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    # Save locally to Downloads — a CONVENIENCE MIRROR, and NEVER fatal.
+    # By the time we get here the sheet is already filled and the PNGs already
+    # rendered; Drive (below) is the copy the captains actually read. A run that
+    # wrote 7/7 tabs must not end FAILED over a file copy — and worse, dying
+    # here skipped the Drive upload entirely. macOS returns EPERM ("Operation
+    # not permitted") on this copy when the process has no Downloads consent:
+    # TCC is granted per launchd job, so the 4am scheduled run can save fine
+    # while a `lucy rerun` of the SAME report on the SAME machine cannot
+    # (2026-09-03, captainship_activations).
     print(f"\n--- Save {len(imgs)} PNGs to {DOWNLOADS_DIR} ---")
-    for path in imgs.values():
-        dest = DOWNLOADS_DIR / Path(path).name
-        shutil.copy2(path, dest)
-        print(f"   saved -> {dest}")
+    copy_errs = []
+    try:
+        DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        for path in imgs.values():
+            dest = DOWNLOADS_DIR / Path(path).name
+            try:
+                shutil.copy2(path, dest)
+            except OSError as e:
+                copy_errs.append((Path(path).name,
+                                  f"{type(e).__name__}: {e.strerror or e}"))
+                continue
+            print(f"   saved -> {dest}")
+    except OSError as e:  # the folder itself is unreachable — same treatment
+        copy_errs.append((str(DOWNLOADS_DIR),
+                          f"{type(e).__name__}: {e.strerror or e}"))
+
+    if copy_errs:
+        print(f"  ⚠ Downloads copy skipped for {len(copy_errs)}/{len(imgs)} "
+              f"PNG(s) — {copy_errs[0][1]}")
+        for name, _ in copy_errs:
+            print(f"    • {name}")
+        print(f"    (Not fatal — the PNGs are in {OUTPUT_DIR}, and in Drive "
+              "unless the upload is off. 'Operation not permitted' on macOS "
+              "means the launchd job running this has no Downloads access: "
+              "grant it under System Settings > Privacy & Security > Files and "
+              "Folders (or Full Disk Access).)")
 
     if not want_drive:
         print("\n  (Drive upload OFF — pass --drive to also upload. PNGs are in "
-              "Downloads.)")
+              f"{OUTPUT_DIR}.)")
         return skipped
 
     # Optional Drive upload — never fatal.
@@ -72,9 +102,10 @@ def _deliver(sh, today, *, want_drive: bool, dry_run: bool) -> None:
             print(f"   {status:8s} {name}")
     except Exception as e:
         print(f"  ⚠ Drive upload skipped — {type(e).__name__}: {str(e)[:200]}")
-        print("    (PNGs are saved in Downloads. Most likely the one-time Drive "
-              "token is missing — authorize ONCE as alphaletereporting@gmail.com "
-              "on this machine:  python -m automations.fiber_activations.drive_auth)")
+        print(f"    (PNGs are saved in {OUTPUT_DIR}. Most likely the one-time "
+              "Drive token is missing — authorize ONCE as "
+              "alphaletereporting@gmail.com on this machine:  "
+              "python -m automations.fiber_activations.drive_auth)")
     return skipped
 
 # Windows consoles default to cp1252; emoji status lines would crash AFTER the
