@@ -10,9 +10,11 @@ in between saw a RESOLVED ticket over a thread still missing its image.
 from __future__ import annotations
 
 import json
+import sys
 import unittest
 from pathlib import Path
 
+from automations.day_orchestrator import mini_control
 from automations.day_orchestrator.mini_control import _probe_reason
 
 CONFIG = (Path(__file__).resolve().parent / "schedule_config.json")
@@ -45,6 +47,55 @@ class ProbeReason(unittest.TestCase):
         raw = json.loads(CONFIG.read_text(encoding="utf-8"))["reports"]
         for rid in ("box_order_log_tier_backfill", "box_order_log_repost"):
             self.assertEqual(raw[rid].get("delivers_only_with"), "--post", rid)
+
+
+class _FakeHubPublish:
+    """Stands in for day_orchestrator.hub_publish inside _publish_rerun_done."""
+
+    def __init__(self):
+        self.kwargs = None
+
+    def final_status(self, report_id, ok):
+        return "success" if ok else "failed"
+
+    def publish_done(self, report_id, display_name, **kw):
+        self.kwargs = kw
+        return True
+
+
+class ProbePublish(unittest.TestCase):
+    """A probe is silent in BOTH directions — it can neither close an incident
+    nor open one. 2026-09-03: a `--dry-run` of owners_metrics_churn timed out on
+    a Tableau locator and posted "closed a run with status FAILED" to
+    #claudecorrections nine minutes after the real run had been resolved."""
+
+    def _publish(self, ok, probe):
+        fake = _FakeHubPublish()
+        real = sys.modules.get("automations.day_orchestrator.hub_publish")
+        sys.modules["automations.day_orchestrator.hub_publish"] = fake
+        try:
+            mini_control._publish_rerun_done("r", "R", ok, "run-1", probe)
+        finally:
+            if real is None:
+                sys.modules.pop("automations.day_orchestrator.hub_publish", None)
+            else:
+                sys.modules["automations.day_orchestrator.hub_publish"] = real
+        return fake.kwargs
+
+    def test_failing_probe_opens_no_incident(self):
+        kw = self._publish(ok=False, probe="--dry-run")
+        self.assertEqual(kw["status"], "failed")      # the Hub pill still goes red
+        self.assertFalse(kw["alert_on_fail"])         # …but the channel stays quiet
+
+    def test_clean_probe_still_closes_nothing(self):
+        kw = self._publish(ok=True, probe="--dry-run")
+        self.assertFalse(kw["clear_failure"])
+
+    def test_a_real_rerun_still_alerts_and_still_closes(self):
+        kw = self._publish(ok=False, probe="")
+        self.assertTrue(kw["alert_on_fail"])
+        kw = self._publish(ok=True, probe="")
+        self.assertTrue(kw["clear_failure"])
 
 
 if __name__ == "__main__":

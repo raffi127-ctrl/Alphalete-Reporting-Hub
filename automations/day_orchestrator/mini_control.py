@@ -638,20 +638,45 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # too. Best-effort; a no-op when the report has no Hub card.
     probe = _probe_reason(
         (cfg.raw.get("reports", {}) or {}).get(report_id) or {}, extra)
+    _publish_rerun_done(report_id, getattr(r, "display_name", report_id),
+                        ok, hub_run_id, probe)
+    if probe:
+        # Say it in the result cell, where the person who queued the row reads:
+        # otherwise "exit 0" on a probe looks exactly like a fix that landed —
+        # and "exit 1" looks like a report that just broke.
+        result += (" · probe run ({}) — nothing delivered, any open "
+                   "incident left OPEN".format(probe) if ok else
+                   " · probe run ({}) — nothing delivered, NOT posted to "
+                   "#claudecorrections".format(probe))
+    return ok, result
+
+
+def _publish_rerun_done(report_id: str, display_name: str, ok: bool,
+                        hub_run_id, probe: str) -> None:
+    """Close the Hub pill for a rerun — and keep a PROBE silent in BOTH
+    directions.
+
+    A probe already didn't close an incident on exit 0 (see _probe_reason). On
+    exit 1 it must not OPEN one either: it delivered nothing, so its failure
+    says nothing about the report.
+
+    2026-09-03: `rerun owners_metrics_churn --only carlos --dry-run` hit a 120s
+    Tableau locator timeout and posted "closed a run with status FAILED" to
+    #claudecorrections — nine minutes after the real run of that report had been
+    ✅'d. The identical probe eight minutes later exited 0 and, correctly, left
+    the ticket open. So the channel carried an open incident for a report that
+    was fine, and nothing but a hand `--resolve-report` could ever close it.
+
+    Best-effort: Hub publishing must never fail the rerun."""
     try:
         from automations.day_orchestrator import hub_publish
         hub_publish.publish_done(
-            report_id, getattr(r, "display_name", report_id),
+            report_id, display_name,
             status=hub_publish.final_status(report_id, ok), run_id=hub_run_id,
+            alert_on_fail=not probe,
             clear_failure=not probe)
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         pass
-    if probe and ok:
-        # Say it in the result cell, where the person who queued the row reads:
-        # otherwise "exit 0" on a probe looks exactly like a fix that landed.
-        result += (" · probe run ({}) — nothing delivered, any open "
-                   "incident left OPEN".format(probe))
-    return ok, result
 
 
 def _action_onboard_apply(args: str) -> tuple[bool, str]:
