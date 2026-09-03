@@ -20,6 +20,10 @@ from typing import Optional
 TEAM_FOR_KEY = {
     "wayne": "Wayne", "starr": "Starr", "chan": "Chan",
     "tony": "Tony", "sahil": "Sahil",
+    # Pat y Jess, 2026-09-03. Un capitan que falta ACA no da error: la funcion
+    # devuelve None y el mail sale sin la seccion de Fiber Activations, en
+    # silencio. Fue exactamente lo que paso con el primer sample de los dos.
+    "pat": "Pat", "jess": "Jess",
 }
 
 
