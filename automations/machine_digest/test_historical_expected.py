@@ -301,6 +301,20 @@ class HandRunOnlyIds(unittest.TestCase):
             self.assertIn(rid, ids)
         self.assertNotIn("alphalete_org_je", ids)
 
+    def test_live_config_flags_the_two_BOX_repair_handles(self):
+        """2026-09-03: `box_order_log_repost` is a REPAIR handle — no plist ever
+        fires it — but five hand-runs (Thu 8/20 x2, Fri 8/21, Wed 8/26, Thu 8/27)
+        left rows on two of the last three Thursdays, so _historical_expected
+        called it a "Thursday ~13:00 report on Lucy 2" and posted "did not run
+        today" on Thu 9/3. Its twin `box_order_log_tier_backfill` is the same
+        shape. The scheduled `box_order_log` (com.alphalete.box-order-log.plist,
+        7:00 + 8:30 daily) must stay watched."""
+        from automations.day_orchestrator import registry as _reg
+        ids = _handrun_only_ids(_reg.load_config())
+        for rid in ("box_order_log_repost", "box_order_log_tier_backfill"):
+            self.assertIn(rid, ids)
+        self.assertNotIn("box_order_log", ids)
+
 
 class EventLoggedIds(unittest.TestCase):
     """Regression cover for 2026-09-01: `sara_down` polls #saraplus-issues every 5
