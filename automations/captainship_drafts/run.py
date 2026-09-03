@@ -626,6 +626,12 @@ def main(argv=None) -> int:
                     help="Prepend TEXT to the Subject of what goes out, e.g. "
                          "--subject-prefix Sample, so a preview copy is not "
                          "read as a duplicate of the morning's report.")
+    ap.add_argument("--note", default=None, metavar="TEXT",
+                    help="One line rendered in BOLD above the greeting, e.g. "
+                         "--note \"Please consider this last update...\". For "
+                         "the day a draft is rebuilt after its first version "
+                         "already reached the captains, so they know which "
+                         "copy to read. Off by default.")
     ap.add_argument("--distro-check", action="store_true",
                     help="Print where each captain's recipients come from "
                          "(their 'Captainship - <Name>' contact group vs the "
@@ -634,6 +640,9 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
+    # Set before ANY message is built: email_build reads it while rendering.
+    if args.note:
+        email_build.NOTICE = args.note
     keys = ({k.strip() for k in args.only.split(",")} if args.only
             else {c.key for c in config.CAPTAINS})
     unknown = keys - {c.key for c in config.CAPTAINS}
