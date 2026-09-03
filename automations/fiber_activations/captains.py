@@ -42,6 +42,13 @@ CAPTAINS: list[Captain] = [
     Captain("Chan Park's Captainship Activations",        4058901,    "Chan",  "#AC8B75"),
     Captain("Tony Chavez's Captainship Activations",      119759434,  "Tony",  "#7A95C9"),
     Captain("Sahil Multani's Captainship Activations",    1136991542, "Sahil", "#D58196"),
+    # Pat y Jess, 2026-09-02. El dashboard Captain's Bonus ya ofrece sus hojas
+    # ('CB Activations (Pat)' / '(Jess)' y sus 'CB Appr + Churn'), verificado
+    # con discover_teams ese dia, asi que no hay nada que crear del lado de
+    # Tableau. a_hex es el color de su banda en el Org Sales Board, el mismo
+    # que llevan sus pestanas.
+    Captain("Pat Thompson's Captainship Activations",     1655147128, "Pat",   "#9BA820"),
+    Captain("Jess Lieberman's Captainship Activations",   877862349,  "Jess",  "#6F8691"),
 ]
 
 # team -> Captain, for quick lookup when iterating the Tableau pull.
