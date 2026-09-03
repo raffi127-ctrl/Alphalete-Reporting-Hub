@@ -737,21 +737,21 @@ CAPTAINS: List[Captain] = [
     # cuadros salen igual que los de los otros cinco (mismos libros, cortados
     # por su slug), asi que `_fiber_boxes` alcanza.
     #
-    # LLEVAN SOLO EL CHURN WIRELESS. El de New Internet lee una vista custom de
-    # Tableau POR CAPITAN y las de ellos dos todavia no existen; su pestana esta
-    # creada y vacia esperandola. El dia que exista: agregar la ChurnSource de
-    # New Internet ARRIBA de esta y ponerle brand_title=False a la wireless,
-    # como en los otros cuatro.
+    # Llevan los DOS bloques de churn, como el resto de fiber: Eve guardo sus
+    # vistas custom de New Internet en Tableau el 2026-09-03, que era lo unico
+    # que faltaba.
     #
     # `to=""` a proposito: el destinatario real es el grupo de contactos
     # 'Captainship - <Nombre>', que todavia no existe para ellos, y un `to`
     # vacio hace que --send los SALTEE en vez de mandarle el reporte a quien no
     # corresponde. Los borradores igual se arman.
     Captain("pat", "Pat", "fiber", title_bg="#9BA820", to="", churn=[
+        ChurnSource(_own.open_ws_fiber_pat, _ni_render, "New Internet Churn"),
         ChurnSource(_own.open_ws_wl_pat, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("pat")),
     Captain("jess", "Jess", "fiber", title_bg="#6F8691", to="", churn=[
+        ChurnSource(_own.open_ws_fiber_jess, _ni_render, "New Internet Churn"),
         ChurnSource(_own.open_ws_wl_jess, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("jess")),
@@ -828,6 +828,7 @@ _BLOCKS: List[Block] = [
     Block("fiber-1", "Fiber 1", ("rafael",)),
     Block("fiber-2", "Fiber 2", ("wayne", "starr")),
     Block("fiber-3", "Fiber 3", ("tony", "chan", "sahil")),
+    Block("fiber-4", "Fiber 4", ("pat", "jess")),
     Block("b2b", "B2B", ("carlos", "eveliz", "luis", "atef")),
     Block("nds", "NDS", ("khalil", "colten", "jairo")),
 ]

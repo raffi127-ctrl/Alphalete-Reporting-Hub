@@ -67,6 +67,10 @@ CAPTAIN_TOKEN = {
     # email came out carrying Atef's tables. Same failure the Khalil/Sahil note
     # below describes.
     "atef": "atef",
+    # Pat y Jess, 2026-09-03. Sin su token aca su bloque del board es invisible
+    # para este modulo: el draft sale sin la seccion 1 y `owner_names` no puede
+    # leer su roster, asi que tampoco hay boards de knocks.
+    "pat": "pat", "jess": "jess",
 }
 
 _DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
