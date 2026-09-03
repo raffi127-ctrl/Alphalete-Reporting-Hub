@@ -6376,23 +6376,6 @@ def _action_install_day_orchestrator(args: str) -> tuple[bool, str]:
     return ok, msg[:400]
 
 
-def _action_appstream_whoami(args: str) -> tuple[bool, str]:
-    """Which AppStream account is THIS machine using, and which offices can it see?
-
-      appstream_whoami                 as it runs today (reuses the saved session)
-      appstream_whoami --force         ignore the saved session, log in fresh
-      appstream_whoami --offices 1,2   probe specific office ids
-
-    Read-only: it switches office and reads the page back, nothing is written.
-    Exists because a stale .appstream_storage_state.json keeps a session minted by
-    a DIFFERENT login working forever — so the configured username is never used
-    and the machine silently sees fewer offices than it should."""
-    cmd = [sys.executable, "-m", "automations.shared.appstream_whoami"] + (args or "").split()
-    ok, res = _run_cmd(cmd, timeout_s=20 * 60,
-                       log_name="appstream-whoami.log")
-    return ok, res[:900]
-
-
 def _action_set_ownerville_creds(args: str) -> tuple[bool, str]:
     """Install THIS machine's ownerville login.
 
@@ -6617,6 +6600,13 @@ def _action_appstream_whoami(args: str) -> tuple[bool, str]:
     """WHICH AppStream account is this machine's SAVED session? READ ONLY.
 
       appstream_whoami [office,office,...]
+
+    QUOTE the office list when you queue this from a laptop —
+    `appstream_whoami '"23221,22434,20788,22524"'`. An unquoted comma-grouped
+    all-digit string is read by the Google Sheet as a NUMBER, and comes back with
+    the commas stripped (enqueue already sends value_input_option="RAW"; that is
+    NOT enough). Verified 2026-09-03: quoted → reachable=4/4, denied=none;
+    unquoted → reachable=0/1, "did not land on 23221224342078822524".
 
     No login, no --force: it reads the console banner off the session the
     SCHEDULED reports actually reuse. That is the only way to answer "is the
@@ -7271,7 +7261,6 @@ ACTIONS = {
     "git_push_setup": _action_git_push_setup,
     "git_push_check": _action_git_push_check,
     "install_tracker_auto_commit": _action_install_tracker_auto_commit,
-    "appstream_whoami": _action_appstream_whoami,
     "funnel_board_unlock": _action_funnel_board_unlock,
     "appstream_clear_session": _action_appstream_clear_session,
     "set_appstream_alt_creds": _action_set_appstream_alt_creds,
