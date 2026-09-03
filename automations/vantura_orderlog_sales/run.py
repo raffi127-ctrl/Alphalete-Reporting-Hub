@@ -52,7 +52,7 @@ import sys
 from automations.vantura_slack_sales.run import (
     SHEET_ID, TAB, NAME_COL, TZ,
     _cell, _log, _md, _norm,
-    board_grid, campaign_rows, day_column, week_ok,
+    board_grid, campaign_rows, day_column, ensure_board_shape, week_ok,
 )
 
 DATA_TAB_ATT = "Lucy At&t Data"
@@ -384,6 +384,8 @@ def main(argv=None) -> int:
             _log(f"  wrote {len(plan)} cell(s)")
             if res["campaign"] == "BOX" and res["day"] == today - dt.timedelta(days=1):
                 box_corrected = True
+    if a.yes:
+        ensure_board_shape(sh, g)
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
 

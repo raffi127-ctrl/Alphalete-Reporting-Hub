@@ -118,7 +118,7 @@ KNOWN_USERS = {
     # (2026-07-31). Teammates tag EITHER id in the shout-out list, never both
     # in one post, which is the tell that they are one person; the thread on
     # each of those posts is "MONICA MONICA MONICA".
-    "U0B4FJABKPF": "Esmeralda",            # BOX; thread hype "ESMEEEEEE"
+    "U0B4FJABKPF": "Esmeralda Gonzalez",            # BOX; thread hype "ESMEEEEEE"
     # BOX through 7/14, then nothing. She has NO row on the board — not even a
     # 'T' one, though every other terminated rep keeps theirs — and Roll Call
     # carries her as Terminated (wk 4.26 BOX, and a 4.12 B2B row stamped
@@ -445,6 +445,44 @@ def totals_row(g) -> int:
     raise SystemExit(f"totals block ({TOTALS_TOP!r}) not found on the tab")
 
 
+def ensure_board_shape(sh, g, log=_log) -> None:
+    """Heal what goes stale when a human appends a rep row (Carlos 2026-09-03:
+    rows 43-46 sat outside the VA's basic filter with no grid borders, so
+    filtering by campaign silently skipped them).
+
+    * basic filter: header row 4 through the LAST rep row, cols B:Q — reset
+      ONLY when the range is wrong, because a reset drops the active criteria.
+    * borders: the rep block's solid grid, repainted every pass (idempotent).
+    """
+    from automations.recruiting_report.fill import _retry
+    last_rep = totals_row(g) - 1
+    meta = sh.fetch_sheet_metadata(
+        {"fields": "sheets(properties(title,sheetId),basicFilter)"})
+    sheet = next((s for s in meta["sheets"]
+                  if s["properties"]["title"] == TAB), None)
+    if not sheet:
+        return
+    sid = sheet["properties"]["sheetId"]
+    want = {"sheetId": sid, "startRowIndex": DAY_HEADER_ROW - 1,
+            "endRowIndex": last_rep, "startColumnIndex": 1,
+            "endColumnIndex": 17}
+    have = sheet.get("basicFilter", {}).get("range", {})
+    reqs = []
+    if {k: have.get(k) for k in want} != want:
+        reqs.append({"setBasicFilter": {"filter": {"range": want}}})
+        log(f"board shape: filter was rows {have.get('startRowIndex', 0) + 1}"
+            f"-{have.get('endRowIndex', '?')} — reset to "
+            f"{DAY_HEADER_ROW}-{last_rep} (criteria cleared)")
+    side = {"style": "SOLID", "width": 1}
+    reqs.append({"updateBorders": {
+        "range": {"sheetId": sid, "startRowIndex": DAY_HEADER_ROW,
+                  "endRowIndex": last_rep, "startColumnIndex": 1,
+                  "endColumnIndex": 17},
+        "top": side, "bottom": side, "left": side, "right": side,
+        "innerHorizontal": side, "innerVertical": side}})
+    _retry(sh.batch_update, {"requests": reqs})
+
+
 def campaign_rows(g, campaign: str) -> dict[str, int]:
     """{normalised rep name: row} for one campaign.
 
@@ -746,6 +784,8 @@ def main(argv=None) -> int:
                    [{"range": a1, "values": [[int(new)]]}
                     for _rep, a1, _cur, new, _note in plan])
             _log(f"  wrote {len(plan)} cell(s)")
+    if a.yes:
+        ensure_board_shape(ws.spreadsheet, g)
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
 
