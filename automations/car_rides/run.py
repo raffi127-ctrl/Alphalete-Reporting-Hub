@@ -79,9 +79,11 @@ STATIONS_GID = 1999003555
 # read the STATUS as the leader, the real leader as Rep #1, and dropped Rep #4
 # entirely. Widened through G so "Rep List" is visible to the header scan (and
 # explicitly excluded — it is a spill formula, not a car-ride rider).
+# Stations tab re-laid-out 2026-09-03 (Carlos): stations stacked UNDER the
+# car rides, Rep #4 dropped, boxes tightened. Headers still found by name.
 BOXES = {
-    "att": {"range": "A5:G25",  "campaign": "B2B AT&T SBS"},
-    "box": {"range": "A28:G38", "campaign": "B2B-BOX-Energy"},
+    "att": {"range": "A5:E13",  "campaign": "B2B AT&T SBS"},
+    "box": {"range": "A30:E39", "campaign": "B2B-BOX-Energy"},
 }
 LEADER_HDR_RE = re.compile(r"leader", re.I)
 # "Rep #1".."Rep #4" — the trailing digit is what keeps "Rep List" out.
