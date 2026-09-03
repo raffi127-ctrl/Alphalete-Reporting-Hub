@@ -67,7 +67,7 @@ from automations.sales_boards.zeros import we_label
 
 WEEKDATA, STATIONS = "WeekData", "Stations"
 WE_CELL = "B2"                  # gold week selector
-STATIONS_WE = "S2"              # Stations' copy of the same week label
+STATIONS_WE = "Q2"              # Stations' week label (S2 until the 9/3 re-layout dropped two columns)
 WD_DAY_COLS = "BCDEFGH"         # WeekData Mon..Sun, parallel to the board's E..K
 PICKER_ROWS = 11                # weeks kept in WeekData!J:K (and the dropdown)
 EPOCH = dt.date(1899, 12, 30)   # Sheets serial 0
