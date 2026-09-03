@@ -127,6 +127,27 @@ def _is_ps_header(b: str, token: str) -> bool:
     return token in b and "captai" in b and "team" in b
 
 
+def _opens_some_block(text: str) -> bool:
+    """Does this row open SOMEBODY's Product Summary block — anyone's, not just
+    a captain this report mails?
+
+    `_is_ps_header` only recognises the keys in CAPTAIN_TOKEN, so a captainship
+    that exists on the board but gets no daily email is invisible to it. On
+    2026-09-02 Pat's and Jess's blocks were added between Atef's (the LAST of
+    ours) and the units region, and Atef's span — which falls back to "run to
+    the units region" — swallowed all four of their blocks. His §1 went out
+    with 'Pat's Captain Team' and 'Jess's Captain Team' pasted under his own
+    (Eve, 2026-09-03). The fix is a boundary that does not need to know who the
+    neighbour is.
+
+    A NAME HAS TO PRECEDE IT. The bare label "CAPTAIN TEAM" is the leaderboard
+    header INSIDE every block (rows 1628, 1680, … on 2026-09-03), so matching
+    "captai"+"team" alone would cut Atef's block fourteen rows into itself.
+    Real block headers read "ATEF'S CAPTAIN TEAM" / "Pat's Captain Team"."""
+    t = text.strip().lower()
+    return "captai" in t and "team" in t and not t.startswith("captai")
+
+
 # The banner strip that sits ABOVE a team header on the fiber/Rafael blocks:
 # "📶 NEW INTERNET PERFORMANCE" over "Raf's Captainship Team" (and, mid-block,
 # "🛜ALL UNITS PERFORMANCE" over the second sub-block). It carries no captain
@@ -284,6 +305,18 @@ def discover_blocks() -> Dict[str, CaptainBlocks]:
                 if re.search(r"(?i)\bORG\b", cell(r, 2)):
                     end = r - 1
                     break
+        # …and never past the next block that belongs to SOMEBODY ELSE, even a
+        # captainship this report does not mail. Backed up over that block's own
+        # PERFORMANCE banner, or the neighbour's band rides along at the bottom
+        # of this screenshot. Skips the captain's OWN repeated header, which is
+        # how Rafael's two-part block stays one span.
+        mine = CAPTAIN_TOKEN[key]
+        for r in range(start + 1, end + 1):
+            texts = [cell(r, 2), cell(r, 1)]
+            if any(_opens_some_block(t) for t in texts) \
+                    and not any(mine in t.lower() for t in texts if t):
+                end = min(end, _banner_start(cell, r) - 1)
+                break
         end = _trim_trailing_blank(vals, start, end, 11)
         blocks[key] = CaptainBlocks(ps_start=start, ps_end=end, units=[])
 
