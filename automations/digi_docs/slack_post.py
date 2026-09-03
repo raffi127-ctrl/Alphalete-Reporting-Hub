@@ -14,7 +14,29 @@ from automations.digi_docs import config
 # #rafs-office-recruiting-11280 — confirmed by Megan
 # 2026-08-25, not just inherited from blueink_docs because it sits next
 # to it. Same room as the other two new-start steps.
+#
+# THIS IS THE CHANNEL FOR WORK, NOT FOR FAULTS. It is an OFFICE channel: the
+# people in it act on "here is who still needs doing by hand". They are not the
+# people who fix a crashed run.
 CHANNEL = os.environ.get("DIGI_DOCS_SLACK_CHANNEL", "C0AUAS88FGW")
+
+# WHERE FAILURES GO (Megan 2026-09-02: "if something is an error it goes into
+# the correct channel"). #claudecorrections-and-requests — the standing home for
+# the day's failures, where they are triaged, marked :pending: while someone
+# works them, and closed with a ✅.
+#
+# WHAT WENT WRONG. alert_failure() posted to CHANNEL, so on 2026-09-02 a crashed
+# run put "Digi Docs — could not send @Alisson Rodriguez @tiff @Aimee Garibay •
+# the run was killed before it could report — exit 1, see output/logs/…" into
+# Raf's office channel, @-ing three people over a log file on a machine they do
+# not have. In an office channel a stack-trace-shaped message is noise that
+# trains people to stop reading the room where their actual to-do list lands —
+# and the send pass is a 5-minute tick, so a persistent fault would have kept
+# doing it (only _already_alerted held it to one).
+#
+# The end-of-run SUMMARY still goes to the office channel: "3 people still need
+# doing by hand" is work for the people in that room. Only faults move.
+ALERT_CHANNEL = os.environ.get("DIGI_DOCS_ALERT_CHANNEL", "C0BK5PRG259")
 HEADER = "🗂️ Digi Docs"
 
 
@@ -213,14 +235,32 @@ def alert_failure(line: str, *, dry_run: bool = True) -> bool:
         head = "Digi Docs — not sent, and nothing will retry it"
     else:
         head = "Digi Docs — could not send"
+    # NAME THE REPORT. In the office channel the thread header said "Digi Docs"
+    # for us; in the corrections channel this sits among every other report's
+    # failures, so the line has to identify itself.
     body = f"*{head}* {_tags()}\n• {line}"
     if dry_run:
-        print(f"\n--- Slack ALERT (dry run, NOT posted) -> {CHANNEL} ---")
+        print(f"\n--- Slack ALERT (dry run, NOT posted) -> {ALERT_CHANNEL} ---")
         print(body)
         return False
     from automations.shared import slack_metrics_post as smp
-    smp.post_reply_text_only(body, thread_ts=_thread_ts(smp),
-                             channel_id=CHANNEL)
+    # A FAULT GOES TO THE FAULT CHANNEL, as its OWN top-level message — not
+    # threaded under the office channel's Digi Docs header, which is where it
+    # used to land. Top-level because that is the corrections channel's
+    # convention: one message per failure, so it can be triaged, marked
+    # :pending: while somebody works it, and closed with a ✅.
+    #
+    # chat_postMessage direct, the same way appstream_watch._alert posts there:
+    # slack_metrics_post's helpers are all thread-reply shaped, and there is no
+    # thread to reply to here.
+    try:
+        smp._client().chat_postMessage(channel=ALERT_CHANNEL, text=body)
+    except Exception as e:  # noqa: BLE001
+        # NEVER let a failed alert take down the run it is reporting on — but do
+        # not swallow it either: an alert nobody sees is the same as no alert.
+        print(f"  (Digi Docs alert to {ALERT_CHANNEL} FAILED: "
+              f"{type(e).__name__}: {str(e)[:120]})")
+        return False
     _mark_reported()
     return True
 
