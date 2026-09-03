@@ -3745,6 +3745,15 @@ _CRED_FILES = {
     # is PUBLIC), so `lucy update` will never carry it.
     "saraplus-creds":
         lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds.json",
+    # CARLOS's SaraPlus login, for the B2B Customer Contacts report on Lucy 2
+    # (rc_contact_sync.config.creds). Deliberately NOT the key above: that one
+    # is alphaletemarketing@gmail.com, a different dealer whose Detail Reports
+    # return rows -- just not the B2B rows this report is for (Megan
+    # 2026-09-02: "ONLY using Carlos' sara plus login"). One key per account,
+    # so a rotation on one can never hand the other report the wrong orders.
+    # Lives in ~/.config, outside the repo, so `lucy update` never carries it.
+    "saraplus-creds-b2b":
+        lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds-b2b.json",
     # Blue Ink private API key + envelope template id. The SEND itself goes
     # through the web app, but the pre-send dedupe (blueink_docs.recent) reads
     # Blue Ink's own bundle history over the API and needs this key. Lucy 2 --

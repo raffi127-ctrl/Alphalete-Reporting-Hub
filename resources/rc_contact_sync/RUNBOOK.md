@@ -40,32 +40,46 @@ Module: `automations/rc_contact_sync/` · Hub card: **B2B Customer Contacts
 
 ### a) Carlos's SaraPlus login
 
-`~/.config/recruiting-report/saraplus-creds-b2b.json` on Lucy 2:
+On a Mac that has the password, run:
 
-```json
-{"email": "carhi1816@gmail.com", "password": "..."}
+```bash
+python -m automations.rc_contact_sync.set_credentials --push "Lucy 2"
 ```
 
-Its **own** file on purpose. `saraplus-creds.json` is
+It asks for the email (Enter keeps `carhi1816@gmail.com`), then the password
+twice at a **hidden** prompt — a terminal prompt if there is a terminal, a
+native macOS dialog if there isn't. It writes
+`~/.config/recruiting-report/saraplus-creds-b2b.json` at mode 600 and `--push`
+hands it to Lucy 2 through mini_control's redacted transit. The password is
+never echoed, never a command-line argument, and so never reaches shell
+history, a log, a chat, or the Mini Control sheet (`set_cred_file` is in
+`SECRET_ACTIONS`, so the Args cell is blanked the moment the row finishes).
+
+Already on another runner? Move it without retyping:
+
+```bash
+lucy push_cred_file saraplus-creds-b2b "Lucy 2" --machine "Lucy 1"
+```
+
+**Its own file, on purpose.** `saraplus-creds.json` is
 `alphaletemarketing@gmail.com` — the Alphalete Sales Board sweep's login, a
 different dealer. Megan, 2026-09-02: *"make sure you're ONLY using Carlos'
 sara plus login to access."* Reusing that file would return rows — just not
 these rows, and nothing would look wrong.
 
-**The code email matters as much as the password.** Confirm SaraPlus's
-verification code still lands in alphaletereporting@gmail.com and that
-`~/.config/recruiting-report/gmail-app-password` exists on Lucy 2 — that app
-password is how the report reads the inbox. If the code arrives from a sender
-or with wording the search misses, the run stops with "no SaraPlus
-verification code reached …" and nothing is typed in; open the mailbox, find
-the real email, and tighten `VERIFY_QUERY` in `config.py` (e.g.
-`from:noreply@saraplus.com`).
-
-Push it to Lucy 2 with:
+**The code email matters as much as the password.** SaraPlus's verification
+code has to keep landing in alphaletereporting@gmail.com, and Lucy 2 needs
+`~/.config/recruiting-report/gmail-app-password` — that app password is how the
+report reads the inbox. Push it with:
 
 ```bash
-lucy push_cred_file saraplus-creds-b2b "Lucy 2" --machine "<the box that has it>"
+lucy push_cred_file gmail-app-password "Lucy 2"
 ```
+
+If the code arrives from a sender or with wording the search misses, the run
+stops with "no SaraPlus verification code reached …" and types nothing in; open
+the mailbox, find the real email, and tighten `VERIFY_QUERY` in `config.py`
+(e.g. `from:noreply@saraplus.com`).
 
 ### b) A RingCentral app + JWT for **Taylor's** login
 

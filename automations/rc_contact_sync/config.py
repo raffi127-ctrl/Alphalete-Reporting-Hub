@@ -18,6 +18,9 @@ LOGIN_URL = "https://ui.saraplus.com"
 # 2026-09-02: "make sure you're ONLY using Carlos' sara plus login to access".
 # Two files means a password change on one account can never quietly hand this
 # report the other dealer's orders.
+#   python -m automations.rc_contact_sync.set_credentials --push "Lucy 2"
+# (hidden prompt, mode 600, redacted transit -- the password never reaches
+# shell history, a log or the Mini Control sheet), or move an existing copy:
 #   lucy push_cred_file saraplus-creds-b2b "Lucy 2" --machine "<box that has it>"
 # File shape: {"email": "carhi1816@gmail.com", "password": "..."}
 CREDS_PATH = CONFIG_DIR / "saraplus-creds-b2b.json"
@@ -140,9 +143,12 @@ def creds() -> Dict[str, str]:
             "no B2B SaraPlus credentials at %s. This report must run on "
             "CARLOS's SaraPlus login (carhi1816@gmail.com) -- the sales "
             "board's saraplus-creds.json is a different dealer and is "
-            "deliberately not used here. Push them with `lucy push_cred_file "
-            "saraplus-creds-b2b \"Lucy 2\" --machine \"<box that has them>\"`, "
-            "or export SARA_PLUS_B2B_EMAIL / SARA_PLUS_B2B_PASSWORD."
+            "deliberately not used here. Put them on the machine that has "
+            "the password with `python -m automations.rc_contact_sync."
+            "set_credentials --push \"Lucy 2\"` (hidden prompt, nothing "
+            "echoed), move an existing copy with `lucy push_cred_file "
+            "saraplus-creds-b2b \"Lucy 2\" --machine \"<box that has "
+            "them>\"`, or export SARA_PLUS_B2B_EMAIL / SARA_PLUS_B2B_PASSWORD."
             % CREDS_PATH)
     data = json.loads(CREDS_PATH.read_text())
     missing = [k for k in ("email", "password") if not data.get(k)]
