@@ -196,6 +196,19 @@ def drop_names(names: Iterable[str], captain_or_team: str,
 # Take them out the day either one sells fiber.
 NOT_IN_SOURCE: Dict[str, tuple] = {
     "tony": ("Kobe Cireus", "Melik El Jaiez"),
+    # Gary Whitaker II — Eve 2026-09-03. Absent from Carlos's B2B churn view AND
+    # from the org-wide B2B pull that the went-dark backfill falls back on, so he
+    # is in this source under no captain at all. Eve: no sales this week and none
+    # last week, so the blanks are right — "dejémoslo por ahora, pero en blanco".
+    # His rows stay (his history is real: 0/35, 0/48, 0/113 activations with zero
+    # disconnects) and stop being reported as a failure every morning.
+    # SELF-HEALING: this only silences the went-dark check. The day he sells
+    # wireless again the pull returns him and his rows fill on their own — so if
+    # his numbers are back, delete this entry rather than trusting it.
+    # Not the same call as Kevin Driggs / Ryan Kabbes, whose rows were DELETED
+    # from that tab the same day: those two do not belong to the captainship,
+    # Gary does.
+    "carlos": ("Gary Whitaker II",),
 }
 
 
