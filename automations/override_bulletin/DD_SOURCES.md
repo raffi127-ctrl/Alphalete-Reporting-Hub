@@ -842,3 +842,55 @@ manual figure? `lucy rerun dd_name_search` downloads the ORG DD Detail crosstab,
 searches it for Justin / Marcos / Karrington / Milan, and dumps the result to the
 `_dd_search` tab (read-only). If found, they can be wired as excluded-but-tracked
 rows and get full history like Jacob Dover; if not, the `—` is the honest thing.
+
+### OUT 2026-09-03 — Marcos Barbosa and Milan Godbolt are off the page entirely
+
+Eve, 2026-09-03: *"hay que sacar a marcos barbosa y milan godbolt del
+bulletin."* The two removals above (both 2026-08-27) only took them off
+`Lucy Org Tree` — out of Colten's podium list and out of the `Org Tree` node
+grid. Their hand-typed rows in the DD tab's **`ICD (Special Cases)`** block were
+left alone on purpose, and those rows are what kept printing them under
+**Tracked Separately** every week since ($0.00 for both on 8.30.26).
+
+**This one IS in code**, unlike the two before it: `dd_data.RETIRED_SPECIAL`
+names them and `load()` skips those rows while parsing the block. The rows stay
+on the tab — that block is Eve's own weekly typing and the only place their DD
+history lives, and blanking column A there would *truncate the block at that
+row* (`load` ends it at the first blank name), silently dropping Karrington and
+Justin too. To bring someone back, take the name out of the tuple; nothing on
+the Sheet changes either way.
+
+It is their whole presence on the page: neither is in a podium list any more,
+neither is an `Active ICD` YES row, and the headline / AVG DD / Active Owners
+never contained them. Measured on WE 8.30.26, before and after:
+
+- **Tracked Separately: 4 rows → 2** (Karrington Moody, Justin Fermin).
+- **ORG. TOTAL DD unchanged** at $1,107,071.55, and every podium figure
+  unchanged — both rows were $0.00 this week, and the special block sits outside
+  the headline anyway. In a week where Marcos has a figure it would move Colten
+  down and Rafael up by that amount, the same arithmetic as the 08-27 note.
+- The "special rows carry $X MORE" note now reads **2 rows / $22,550.00**.
+- `dd_search.py` `TARGETS` still names all four — that is the one-shot July
+  diagnostic, not a live report.
+
+### The review link carries THREE pages (2026-09-03)
+
+Eve, same day: *"quiero que empieces a incluir el preview de Up and coming NCs
+and RCs en el link del bulletin."* `review_gate.build_preview` now appends
+`rcs_ncs_build.build()` to the two bulletin pages, so the PDF behind the
+#revision-emails link is bulletin p1 → bulletin p2 → the companion infographic,
+and Evelyn approves everything that goes out from one link.
+
+- **Nothing about the SEND changed.** The companion is still a separate email
+  fired by `send_companion` after the DD send, to the same distro rule; the
+  bulletin email still carries its own two pages. This only widened what gets
+  reviewed.
+- The companion page is **best-effort**: it reads a second tab (`Org Tree`), and
+  a failure there prints, lands in `problems`, and leaves a 2-page PDF. It never
+  reaches `blocking`/`hard_block` — the page carries no money.
+- `build_pdf` now takes each sheet's width from `document.body.scrollWidth`
+  instead of a fixed 1180px: the companion body is 1000px and printing it at
+  1180 left a white strip down the side (the dark background is painted on
+  `<body>`, not on `<html>`). The bulletin pages measure 1180 and are unchanged.
+- It reuses the `dd_data.load()` result already in hand — no second read of the
+  DD tab, which is what the 60-reads-a-minute ceiling cares about.
