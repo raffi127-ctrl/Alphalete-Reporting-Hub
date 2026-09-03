@@ -1227,7 +1227,8 @@ DELTA_PCT_COL = 5
 
 def check_delta_live_formulas(grid: List[List[str]], ws=None) -> List[tuple]:
     """Tripwire: every LIVE cell on every delta box must still be a FORMULA —
-    the seven per-day 'This week' =SUMIFs AND the row's Delta % beside them.
+    the seven per-day 'This week' =SUMIFs, the seven per-day Delta % beside
+    them, AND the row's weekly Delta %.
     Returns [(box_title, a1_cell, rep_name, what_is_there)].
 
     BOTH COLUMNS, because the same event took both. The 2026-08-26 clobber was
@@ -1280,7 +1281,10 @@ def check_delta_live_formulas(grid: List[List[str]], ws=None) -> List[tuple]:
     # from the Delta column (E, beside 'Total this week') out to the last
     # per-day 'This week' — one read covering both live columns.
     c0 = min([DELTA_PCT_COL] + [min(t["this_cols"]) for t in tables])
-    c1 = max(max(t["this_cols"]) for t in tables)
+    # +2 to reach the DELTA cell of the LAST day's triplet. Stopping at the
+    # last 'This week' column is what left the per-day Delta cells unwatched
+    # until 2026-09-03 — see the per-day note below.
+    c1 = max(max(t["this_cols"]) for t in tables) + 2
     span = f"{a1col(c0)}{r0}:{a1col(c1)}{r1}"
     block = ws.get(span, value_render_option="FORMULA") or []
 
@@ -1302,8 +1306,24 @@ def check_delta_live_formulas(grid: List[List[str]], ws=None) -> List[tuple]:
             # their Delta % is not: it is row-local arithmetic over their own C
             # and D, so it stays a formula like everybody else's. Skipping the
             # whole row would have left that one cell unwatched.
-            cols = [DELTA_PCT_COL] if rep.strip().lower() in manual \
-                else list(t["this_cols"]) + [DELTA_PCT_COL]
+            # THE PER-DAY DELTA CELLS (each day's third column) BELONG HERE
+            # TOO. Watching only DELTA_PCT_COL — the single WEEKLY Delta beside
+            # 'Total this week' — is how 616 frozen per-day percentages went
+            # unseen from the 2026-08-26 clobber until Eve found them by eye on
+            # 2026-09-03: every fiber box read '-100%' from Tuesday to Friday
+            # (the state they froze in on a Monday) while their totals still
+            # balanced. German Lopez's Wednesday said -100% on a day he sold 10
+            # against 5. `delta_formula_repair` reported '0 to rewrite' on the
+            # same board because it, and this check, both looked past them.
+            #
+            # A hand-filled rep's per-day 'This week' cells are literals BY
+            # DESIGN, but no Delta cell ever is: they are row-local arithmetic
+            # over the two cells to their left, so they stay formulas for
+            # everybody. That is also why they can be repaired on a box with no
+            # daily table at all.
+            pct_cols = [DELTA_PCT_COL] + [c + 2 for c in t["this_cols"]]
+            cols = pct_cols if rep.strip().lower() in manual \
+                else list(t["this_cols"]) + pct_cols
             for c in cols:
                 v = _f(r, c)
                 if not v.startswith("="):

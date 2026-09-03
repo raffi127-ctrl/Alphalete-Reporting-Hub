@@ -134,13 +134,28 @@ DELTA_PCT_COL = 5                 # col E — the row's Delta %
 
 def plan_delta_pct(grid: List[List[str]], formulas: List[List[str]]
                    ) -> List[dict]:
-    """[{range, values}] for every Delta % cell that is a frozen value.
+    """[{range, values}] for every Delta % cell that is a frozen value — the
+    WEEKLY one in col E and the SEVEN PER-DAY ones, each the third cell of its
+    day's THIS WEEK / LAST WEEK / DELTA triplet.
 
     Row-local arithmetic ('=Iferror((C-D)/D,0)'), so unlike the per-day SUMIFs
     it needs no daily table and applies to EVERY delta box — the cross-cutting
     ones (RAF SPECIAL TEAM, TRANG'S ORG) included, and to a hand-filled rep's
     row too: their C and D are typed in, but the percentage between them is
-    still computed. A cell that is already a formula is never rewritten."""
+    still computed. A cell that is already a formula is never rewritten.
+
+    THE PER-DAY HALF WAS MISSING UNTIL 2026-09-03, and it is the whole reason
+    Eve asked for this to be a standing rule rather than a repair somebody
+    remembers to run: 616 of those cells across the twelve FIBER boxes had been
+    frozen since the 2026-08-26 clobber, showing '-100%' from Tuesday to Friday
+    (the state of a Monday morning) while every total still balanced. 292 of
+    them were printing a number that contradicted their own row — German Lopez's
+    Wednesday said -100% on a day he sold 10 against 5 — and they went into the
+    captains' daily emails that way. Nothing could see it: this planner looked
+    only at col E, and so did `rollover.check_delta_live_formulas`.
+
+    Case-insensitive on the function name: one row carries '=iferror(' in lower
+    case, which is just as live, and rewriting it would be churn."""
     updates: List[dict] = []
     for t in ro.find_delta_tables(grid):
         rows = list(t["data_rows"])
@@ -148,11 +163,53 @@ def plan_delta_pct(grid: List[List[str]], formulas: List[List[str]]
         if _cell(grid, tail, 3):                  # label-less totals row
             rows.append(tail)
         for r in rows:
-            if _cell(formulas, r, DELTA_PCT_COL).startswith("="):
-                continue
-            updates.append({"range": f"{ro.a1col(DELTA_PCT_COL)}{r}",
-                            "values": [[f"=Iferror((C{r}-D{r})/D{r},0)"]]})
+            # (delta cell, the two cells it compares) — weekly first, then one
+            # per day. The per-day triplet is THIS WEEK / LAST WEEK / DELTA, so
+            # the delta sits at c+2 over c (this) and c+1 (last).
+            cells = [(DELTA_PCT_COL, 3, 4)]
+            cells += [(c + 2, c, c + 1) for c in sorted(t["this_cols"])]
+            for cd, c_this, c_last in cells:
+                if _cell(formulas, r, cd).casefold().startswith("=iferror("):
+                    continue
+                a, b = ro.a1col(c_this), ro.a1col(c_last)
+                updates.append({
+                    "range": f"{ro.a1col(cd)}{r}",
+                    "values": [[f"=Iferror(({a}{r}-{b}{r})/{b}{r},0)"]]})
     return updates
+
+
+def apply_delta_pct(ws, *, dry_run: bool = False, logfn=print) -> int:
+    """Put every frozen Delta % back to a formula. Returns the cells written.
+
+    WIRED INTO THE DAILY FILL (Eve, 2026-09-03: "aplicalo como regla para que no
+    se vuelva a romper la semana que viene ... tiene que ser formula y tiene que
+    ir variando segun la comparacion de ventas de la semana en curso vs la
+    semana anterior, no puede ser valor fijo"). It runs right after
+    `delta_sort`, which is the step that can freeze them, so the board heals the
+    same morning instead of waiting for somebody to notice a wrong percentage in
+    a captain's email.
+
+    Safe to run unconditionally, every day: it only ever writes a cell that is
+    NOT already an =Iferror, the formula is row-local (no daily table, no
+    Tableau, no ordering assumptions), and a Delta cell is never a legitimate
+    literal on any box — not even on the hand-filled rows, whose C and D are
+    typed in but whose percentage is still computed. So it is idempotent and
+    the steady state is zero writes."""
+    grid = _retry(ws.get_all_values)
+    formulas = _retry(lambda: ws.get_all_values(value_render_option="FORMULA"))
+    pct = plan_delta_pct(grid, formulas)
+    if not pct:
+        logfn("  [ok] cajas delta: las celdas Delta siguen siendo formulas")
+        return 0
+    logfn(f"  [!] cajas delta: {len(pct)} celda(s) Delta eran valores "
+          f"congelados{' (dry-run)' if dry_run else ''} — "
+          f"{', '.join(u['range'] for u in pct[:6])}"
+          f"{' ...' if len(pct) > 6 else ''}")
+    if dry_run:
+        return 0
+    _retry(lambda: ws.batch_update(pct, value_input_option="USER_ENTERED"))
+    logfn(f"  [OK] {len(pct)} celda(s) Delta vueltas a formula")
+    return len(pct)
 
 
 def plan(grid: List[List[str]], formulas: List[List[str]],

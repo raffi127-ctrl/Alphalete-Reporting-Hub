@@ -280,6 +280,26 @@ def main(argv=None) -> int:
             # cajas de delta las tenes que ordenar todos los dias").
             from automations.org_sales_board import delta_sort as _dsort
             _dsort.apply_delta_sort(ws, dry_run=args.dry_run)
+            # And immediately put any frozen Delta % back to a formula. HERE
+            # because the sort above is the operation that can freeze them, and
+            # because a Delta cell is never legitimately a literal: it is
+            # row-local arithmetic over the two cells to its left, so it can be
+            # rebuilt with no daily table and no Tableau. Idempotent — the
+            # steady state is zero writes.
+            #
+            # Eve, 2026-09-03, after finding 616 of them frozen since 8/26:
+            # "aplicalo como regla para que no se vuelva a romper la semana que
+            # viene ... no puede ser valor fijo". The tripwire further down
+            # ALERTS; this is what actually fixes it, the same morning.
+            try:
+                from automations.org_sales_board import (
+                    delta_formula_repair as _dfr)
+                _dfr.apply_delta_pct(ws, dry_run=args.dry_run)
+            except Exception as _epct:  # noqa: BLE001 — a self-heal that fails
+                # must not take down the fill it rides on; the tripwire below
+                # still reports what is frozen.
+                print(f"  [!] auto-reparacion de las celdas Delta salteada "
+                      f"({type(_epct).__name__}: {str(_epct)[:80]})", flush=True)
             from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
             apply_elapsed_totals(ws, dry_run=args.dry_run)
             # The delta-box rows with NO daily table to sum. A cross-cutting
