@@ -148,6 +148,14 @@ DAILY_SUMMARY_DISPO_DISPLAY = {
 
 DAILY_SUMMARY_HEADERS = [
     "ICD", "Total # of Reps Knocking", "Total Leads Knocked", "Total Knocks",
+    # "AVG knocks / HR" (Rafael 2026-09-03, on the mockup he had just approved:
+    # "I think this is missing"). The per-owner DAILY boards right below this
+    # one have carried it since 2026-08-28 (render.COL_KNOCKS_PER_HR) and only
+    # the summary never aggregated it. Same name and same slot as there —
+    # between Total Knocks and Avg Doors / Rep, so the row reads knocks → how
+    # fast → how many each, and a column that means the same thing is spelled
+    # and placed the same way on both boards of the one email.
+    "Avg Knocks / Hr",
     # The weekly board's "Avg Doors / Day", in this board's own vocabulary
     # (Rafael 2026-09-02). Same position — right after Total Knocks — and the
     # same rule Raf corrected it to on 2026-08-30: only the QUALIFYING reps'
@@ -474,6 +482,44 @@ def _avg_hrs(rows: list) -> str:
     return _fmt_hm(str(round(sum(hrs) / len(hrs)))) if hrs else ""
 
 
+def _avg_knocks_per_hr(rows: list) -> str:
+    """The ICD's 'Avg Knocks / Hr' cell: the MEAN of its reps' OWN rates, over
+    the reps that have one. That is exactly what the OFFICE TOTAL line of that
+    office's own board prints (`render._insert_rate_columns` averages the rep
+    rates), so an ICD's line here equals its board below — the same contract
+    `_avg_hrs` keeps for the column beside it.
+
+    A rep's rate is their knocks over the RAW span, first knock to last —
+    NOT 'Avg. Hrs Knocking', which is that span minus gaps. Raf and Megan
+    settled that on 2026-08-28: the raw span answers "over the stretch you
+    were out, how fast did you knock", and the gap-adjusted one flatters a rep
+    who took long breaks.
+
+    NOT total knocks ÷ the ICD's average span. That shortcut is a bug that
+    already shipped once: a summary row carries the AVERAGE of the reps' first
+    and last knock, so early in the day the span is a couple of minutes and the
+    rate explodes — Raf's 10:45 board read 480.0 next to reps of 40 (Megan
+    2026-08-29, "not adding correctly").
+
+    Blank, never '0.0', when no rep has a readable span: a rep with one knock
+    has no rate. Pure."""
+    from automations.total_knocks import pull as knocks
+    from automations.total_knocks.render import _knock_time_key
+
+    rates = []
+    for rec in rows:
+        first = _knock_time_key(str(rec.get(knocks.COL_FIRST_KNOCK) or ""))
+        last = _knock_time_key(str(rec.get(knocks.COL_LAST_KNOCK) or ""))
+        if first >= 24 * 60 or last >= 24 * 60 or last <= first:
+            continue
+        v = rec.get(knocks.COL_TOTAL_KNOCKS)
+        n = v if isinstance(v, int) else knocks._to_int(str(v or ""))
+        if not n:
+            continue
+        rates.append(n / ((last - first) / 60.0))
+    return f"{sum(rates) / len(rates):.1f}" if rates else ""
+
+
 def daily_summary_row(label: str, rows: list,
                       apps: Optional[int] = None) -> List[str]:
     """One daily-summary board row aggregating `rows` (one owner's reps,
@@ -513,6 +559,9 @@ def daily_summary_row(label: str, rows: list,
         str(knocking),
         str(sum(_i(r, knocks.COL_TOTAL_LEADS_KNOCKED) for r in rows)),
         str(total_knocks),
+        # Avg Knocks / Hr — the mean of the reps' own rates, so this cell
+        # equals the OFFICE TOTAL line on this ICD's own board below.
+        _avg_knocks_per_hr(rows),
         # Avg Doors / Rep — the ICD's doors over the reps KNOCKING, the same
         # denominator Talk To's per Rep and Average App per Rep use two and
         # four cells to the right, and the very count printed two cells to the
