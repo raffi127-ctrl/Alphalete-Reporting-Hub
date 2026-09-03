@@ -82,6 +82,33 @@ def test_unknown_owner_still_raises():
     except RuntimeError:
         check("an owner with no rows RAISES", True, True)
 
+def test_missing_owner_raises_the_SOURCE_type_not_a_bare_parse_error():
+    # run.py skips this office and lets the others write; a plain RuntimeError
+    # (a broken export) still aborts everything. Subclass, so any existing
+    # `except RuntimeError` keeps working.
+    try:
+        _parse(GRID, owner="NOBODY AT ALL")
+        check("missing owner -> OwnerNotInCrosstab", "no raise", "raise")
+    except pull.OwnerNotInCrosstab as e:
+        check("missing owner -> OwnerNotInCrosstab", True, True)
+        check("it names the owners the export DOES carry",
+              "CARLOS HIDALGO" in str(e) and "Grand Total" in str(e), True)
+    check("OwnerNotInCrosstab is a RuntimeError",
+          issubclass(pull.OwnerNotInCrosstab, RuntimeError), True)
+
+def test_a_structural_break_is_NOT_the_source_type():
+    # No '0-30 Day' column = the pull itself is wrong; nobody's numbers are
+    # usable, so this must stay a hard failure and never be mistaken for one
+    # office dropping out of the dashboard.
+    try:
+        _parse([["Owner & Office", "", ""], [OWNER, "Red", "1"]])
+        check("no '0-30 Day' column RAISES", "no raise", "raise")
+    except pull.OwnerNotInCrosstab:
+        check("no '0-30 Day' column is NOT a source gap", "source gap",
+              "plain RuntimeError")
+    except RuntimeError:
+        check("no '0-30 Day' column is NOT a source gap", True, True)
+
 for fn in [v for k, v in sorted(globals().items()) if k.startswith("test_")]:
     print(fn.__name__)
     fn()

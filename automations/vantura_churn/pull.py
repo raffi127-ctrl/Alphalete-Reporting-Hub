@@ -51,6 +51,22 @@ _MEASURES = (("Activated SPE/SP", "Calculation1 (1)", "Churn Rate")
              + _DISCONNECT_MEASURES)
 
 
+class OwnerNotInCrosstab(RuntimeError):
+    """The export parsed fine — it just carries no rows for this owner.
+
+    A DISTINCT type because the two failures need opposite handling. A parse
+    error (no '0-30 Day' column, an unreadable file) means the pull is broken
+    and nobody's numbers can be trusted. This one means the DASHBOARD lost one
+    owner while the rest of the crosstab is intact: that office simply cannot
+    be reconciled today, and holding the other offices' writes hostage to it
+    ([[feedback_dead-source-pings-not-fails-the-card]]) costs them a whole day
+    of stale tabs, plus whatever b2b_metrics (depends_on: vantura_churn) does
+    with a dependency that never went green. 2026-09-03 is what raised it:
+    CARLOS stopped appearing in ALLTEAMCHURN, this raise escaped main(), and
+    the run died at exit 1 three times over — taking ATEF, JAMIS and SABRINA
+    down with it, though their halves of the crosstab were fine."""
+
+
 def _to_num(v):
     """Crosstab cell -> float, or None when it isn't a plain number."""
     t = str(v if v is not None else "").replace(",", "").replace("%", "").strip()
@@ -192,8 +208,17 @@ def parse_churnrates(path: Path, owner_prefix: str) -> dict:
                 if n is not None:
                     sums[measure] = sums.get(measure, 0.0) + n
     if not raw:
-        raise RuntimeError(
-            f"CHURNRATES crosstab: no rows for owner '{owner_prefix}'")
+        seen = []
+        for r in grid[hdr_row + 1:]:
+            v = (str((r[0] if r else None) or "").splitlines() or [""])[0].strip()
+            if v and v not in seen:
+                seen.append(v)
+            if len(seen) >= 12:
+                break
+        raise OwnerNotInCrosstab(
+            f"CHURNRATES crosstab: no rows for owner '{owner_prefix}' — the "
+            f"export carries {len(seen)}{'+' if len(seen) >= 12 else ''} "
+            f"owner(s): {', '.join(seen) or 'NONE'}")
 
     def _num(v):
         s = str(v if v is not None else "").replace(",", "").replace("%", "").strip()

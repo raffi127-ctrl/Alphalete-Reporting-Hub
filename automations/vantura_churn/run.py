@@ -625,6 +625,20 @@ def main(argv=None) -> int:
     # ------------------------------------------------- compute + reconcile
     results = {}
     problems: list[str] = []
+    # An office the CHURNRATES export no longer carries. NOT the same thing as
+    # an office whose numbers disagree with it: there is nothing to disagree
+    # with. See pull.OwnerNotInCrosstab — this office is dropped from the run
+    # (its tabs keep yesterday's numbers) and pinged by manifest, while every
+    # other office reconciles and writes exactly as it always did.
+    #
+    # This is NOT the split state the all-or-nothing rule below guards against.
+    # That rule is about MISMATCHES, where one office disagreeing is evidence
+    # the pull may be wrong for everyone, so nobody's numbers are trusted. A
+    # missing owner is provably scoped to that owner — the rest of the crosstab
+    # parsed and reconciled — and the module already takes exactly this line for
+    # the activation rates a few blocks down ("one office's rep/office mismatch
+    # is not a reason to leave three churn tabs stale").
+    churn_source_down: dict = {}
     for key, prefix, _sid, tab, _has_act in owners:
         lines = compute.load_orderlog(files[key], prefix)
         summary = compute.churn_summary(lines, today)
@@ -638,7 +652,17 @@ def main(argv=None) -> int:
             f"{d['Internet']}  ({summary['disc_total']}/"
             f"{summary['base_total']})")
         if not args.skip_reconcile:
-            dash = pull.parse_churnrates(churnrates_path, prefix)
+            try:
+                dash = pull.parse_churnrates(churnrates_path, prefix)
+            except pull.OwnerNotInCrosstab as e:
+                # The dashboard lost this owner. Un-reconcilable, so this
+                # office is skipped — but a re-run cannot fix it and the other
+                # offices' numbers are unaffected, so it must not abort them.
+                churn_source_down[key] = str(e)
+                log(f"  ⚠ {key.upper()} CHURN SOURCE GAP — {e}")
+                log(f"    {key} is skipped: its tabs keep yesterday's numbers "
+                    "(stale, not wrong).")
+                continue
             # Same Order Log, older 0-30 cutoffs: what the dashboard would say
             # if it were a day (or two) behind on rolling its window forward.
             # Only used to decide WHO is stale — never written.
@@ -648,6 +672,44 @@ def main(argv=None) -> int:
                     lines, today - dt.timedelta(days=1)),
                 prev2_summary=compute.churn_summary(
                     lines, today - dt.timedelta(days=2)))
+
+    if churn_source_down:
+        owners = [o for o in owners if o[0] not in churn_source_down]
+        ar_paths = {k: v for k, v in ar_paths.items()
+                    if k not in churn_source_down}
+        if not owners:
+            # EVERY owner missing is not "the dashboard dropped an office" —
+            # it is a broken pull (wrong view, an export that came back as the
+            # default dashboard, a truncated download). Fail loudly: there is
+            # nothing to write and nothing partial to protect.
+            return _abort(
+                sorted(churn_source_down.values()),
+                "The CHURNRATES export carried NONE of the offices this report "
+                "reconciles — that is a broken pull, not a source gap: "
+                + "; ".join(f"{k}: {v}" for k, v in sorted(
+                    churn_source_down.items())),
+                log, args.dry_run,
+                fix="A re-run will NOT clear this. Nothing is wrong with the "
+                    "numbers — the export simply has no rows for any of our "
+                    "offices, so there is nothing to reconcile against. Open "
+                    "ATT TRACKER - B2B / CHURN RATES / ALLTEAMCHURN and put "
+                    "the OWNER filter back to (All): the log line above names "
+                    "the owner(s) the export does carry, and when that is one "
+                    "unrelated name, someone saved the shared view filtered to "
+                    "them. 2026-09-03 is the case — att_churn's ALLTEAMSEXP, "
+                    "the sibling view in this same workbook, came back holding "
+                    "exactly one owner, CODY LOWERY, and ALLTEAMCHURN lost "
+                    "every one of ours the same morning (one fault, two "
+                    "tickets; ALLTEAMCHURN also came back WITHOUT its "
+                    "'Product Type (Broken Out)' column, which is the saved "
+                    "view falling back to an older state). Check what a view "
+                    "carries without opening Tableau with the READ-ONLY probe "
+                    "on Lucy 2 — `lucy rerun att_churn --probe-owners "
+                    "--dry-run --only wireless --url <view url>` — but note it "
+                    "only reads views that carry a 'Rep Name' column, so it "
+                    "fits ALLTEAMSEXP and not ALLTEAMCHURN. Re-run "
+                    "vantura_churn once the owners are back; the boards are "
+                    "stale, not wrong, meanwhile.")
 
     # ------------------------------------------- activation rates (per office)
     rates_by_office: dict = {}
@@ -817,8 +879,20 @@ def main(argv=None) -> int:
     if rate_keys and need_tableau and not args.dry_run:
         _rate_source_manifest(rate_source_down, log=log)
 
+    # ------------------------------- churn source down (also a PING, not a fail)
+    # Same rule, one level up: an office the dashboard no longer carries costs
+    # that office's CELLS, not the report. Its own manifest id so a clean run
+    # closes it by itself and _ok_manifest() can't erase it.
+    if not args.skip_reconcile and need_tableau and not args.dry_run:
+        _churn_source_manifest(churn_source_down, log=log)
+
     _ok_manifest()
     log("✓ Vantura churn & activations update complete.")
+    if churn_source_down:
+        log("  ⚠ churn NOT refreshed for: "
+            + ", ".join(sorted(churn_source_down))
+            + " — not in the CHURNRATES export, so those tabs are stale, "
+              "not wrong.")
     if rate_source_down:
         log("  ⚠ activation rates NOT refreshed for: "
             + ", ".join(sorted(rate_source_down))
@@ -842,25 +916,31 @@ def main(argv=None) -> int:
 # alert with it — but make it a Slack post, not mail.
 
 
-def _abort(problems: list[str], detail: str, log, dry_run: bool) -> int:
+def _abort(problems: list[str], detail: str, log, dry_run: bool,
+           fix: str | None = None) -> int:
     """One exit for every "we will not write" verdict: log the reasons, record
     the manifest, exit 2. Shared so the structural check can't drift into a
-    quieter failure than the reconciliation one."""
+    quieter failure than the reconciliation one.
+
+    `fix` overrides the remediation paragraph. The default one is written for a
+    RECONCILIATION mismatch (tolerances, the roll-off race) and reads as noise
+    on a caller whose failure is nothing like that — and the remediation text
+    is what a human actually acts on in the incident thread."""
     log("\n✗ NOTHING WRITTEN:")
     for p in problems:
         log(f"   {p}")
-    _fail_manifest(detail)
+    _fail_manifest(detail, fix=fix)
     return 2
 
 
-def _fail_manifest(msg: str) -> None:
+def _fail_manifest(msg: str, fix: str | None = None) -> None:
     try:
         from automations.shared import run_manifest as _rm
         _rm.write_manifest(
             REPORT_ID, failed=["vantura_churn"], kind="report", note=msg,
             remediation=_rm.make_remediation(
                 reason=msg,
-                fix=f"A re-run probably will NOT clear this. The gate already "
+                fix=fix or f"A re-run probably will NOT clear this. The gate already "
                     f"tolerates normal refresh drift (base ±{BASE_TOL_PCT:.0%},"
                     f" churn ±{RATE_TOL_PP * 100:.1f}pp) AND a CHURNRATES that "
                     "is one day behind on rolling its 0-30 window forward "
@@ -956,6 +1036,61 @@ def _rate_source_manifest(down: dict, log=print) -> None:
                         "stale."))
     except Exception as e:  # noqa: BLE001 — alerting never breaks a good run
         log(f"  ⚠ couldn't record the activation-source manifest "
+            f"({type(e).__name__}: {str(e)[:120]})")
+
+
+CHURN_SOURCE_ID = "vantura_churn_source"
+
+
+def _churn_source_manifest(down: dict, log=print) -> None:
+    """Ping (or clear) the notice for an office the CHURNRATES export dropped.
+
+    2026-09-03 is why this exists. CARLOS HIDALGO stopped appearing in
+    ATTTRACKER-B2B/CHURNRATES at all, `parse_churnrates` raised out of main(),
+    and the run died at exit 1 — three times. Nothing was written for ATEF,
+    JAMIS or SABRINA either, though their halves of the crosstab were fine.
+    One office missing from a shared dashboard now costs exactly that office's
+    cells — and b2b_metrics (depends_on: vantura_churn) gets a dependency that
+    actually goes green.
+    """
+    try:
+        from automations.shared import run_manifest as _rm
+        if not down:
+            _rm.mark_clean(CHURN_SOURCE_ID, kind="source")
+            return
+        who = ", ".join(sorted(down))
+        _rm.write_manifest(
+            CHURN_SOURCE_ID, failed=sorted(down), kind="source",
+            note=("The Churn Rates dashboard carries no rows for: " + who
+                  + ". Those offices were skipped — their churn tabs hold the "
+                    "previous run's numbers (stale, not wrong). Every other "
+                    "office wrote normally."),
+            remediation=_rm.make_remediation(
+                reason="; ".join(f"{k}: {v[:200]}"
+                                 for k, v in sorted(down.items())),
+                fix="A re-run will NOT fix this — the office is not in the "
+                    "export, so there is nothing to reconcile against. Open "
+                    "ATTTRACKER-B2B / CHURN RATES / ALLTEAMCHURN and check the "
+                    "owner filter: it has to be (All). A workbook republish "
+                    "resets saved views to the default filter, which is how "
+                    "an owner disappears overnight "
+                    "([[project_broken-custom-view-failure-mode]]). The same "
+                    "morning the same owner usually drops out of ALLTEAMSEXP "
+                    "too, which is att_churn's source — one fault, two "
+                    "tickets. That view CAN be checked without opening "
+                    "Tableau, with the READ-ONLY probe on Lucy 2: `lucy rerun "
+                    "att_churn --probe-owners --dry-run --only wireless --url "
+                    "<view url>` (it needs a 'Rep Name' column, so it reads "
+                    "ALLTEAMSEXP but not ALLTEAMCHURN). Re-run vantura_churn "
+                    "once the owner is back.",
+                link="https://us-east-1.online.tableau.com/#/site/sci/views/"
+                     "ATTTRACKER-B2B/CHURNRATES",
+                message="The B2B Churn Rates dashboard stopped showing " + who
+                        + ". Could the owner filter on the CHURN RATES views "
+                          "go back to (All)? Until it does, that office's "
+                          "churn tab can't be refreshed."))
+    except Exception as e:  # noqa: BLE001 — alerting never breaks a good run
+        log(f"  ⚠ couldn't record the churn-source manifest "
             f"({type(e).__name__}: {str(e)[:120]})")
 
 

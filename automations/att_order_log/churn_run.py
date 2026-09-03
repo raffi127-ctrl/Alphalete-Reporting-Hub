@@ -73,8 +73,22 @@ _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 # products: 1 pull/day total, down from 3. Probed live before wiring (see
 # churn_shape.PRODUCT_TYPES for the value mapping and how it was verified).
 # Same three tab names on every office board, so tab lives here, not per office.
+#
+# RE-POINTED 2026-09-03, same name, new GUID. The old ALLTEAMSEXP
+# (982d0e4e-d8ed-4574-8a4c-86fdbc345b5c) came back that morning holding ONE
+# owner — CODY LOWERY, nobody of ours — so every office logged a SOURCE GAP and
+# all 12 feeds went empty. Someone had saved the shared view with the Owner
+# filter narrowed; it is the same fault that emptied vantura_churn's sibling
+# view ALLTEAMCHURN the same morning (one fault, two tickets).
+# Eve rebuilt it as Rafael with Owner back on (All) and Tableau saved it under a
+# NEW id rather than overwriting. VERIFIED before wiring, read-only, under the
+# automation's own identity — `lucy rerun att_churn --probe-owners --dry-run
+# --only wireless --url <this url>` on Lucy 2 returned 92 distinct owners with
+# CARLOS HIDALGO / ATEF CHOUDHURY / JAMIS GARAY / SABRINA ALICEA all PRESENT.
+# That probe is the check to repeat before ever swapping this constant: a view
+# the runner cannot see, or one still filtered, fails exactly the same way.
 EXPANDED_URL = (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                "982d0e4e-d8ed-4574-8a4c-86fdbc345b5c/ALLTEAMSEXP?:iid=1")
+                "69278d36-a246-4a4e-a058-a369e020f3a2/ALLTEAMSEXP?:iid=1")
 
 PRODUCTS = {
     "wireless": {"label": "Wireless Churn", "tab": "Lucy Wireless Churn",
