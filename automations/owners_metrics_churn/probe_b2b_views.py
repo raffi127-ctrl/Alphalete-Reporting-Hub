@@ -52,12 +52,12 @@ BASE_VIEW_URL = f"{_SITE}{_WB}?:iid=1"
 
 # The two that dropped, exactly as pull.py holds them today.
 BROKEN = [
-    ("carlos", "CarlosCaptainship", pull.B2B_CARLOS_URL),
-    ("luis", "LuissCaptainship", pull.B2B_LUIS_URL),
+    ("carlos", "B2BCarlos_Churn", pull.B2B_CARLOS_URL),
+    ("luis", "B2BLuis_Churn", pull.B2B_LUIS_URL),
 ]
 # The sibling that still works — the control. If this one ALSO looks wrong here,
 # the problem is the probe, not the views.
-CONTROL = ("eveliz", "EvelizWOVan", pull.B2B_EVELIZ_URL)
+CONTROL = ("eveliz", "B2BEveliz_Churn", pull.B2B_EVELIZ_URL)
 
 # Candidate captain filter fields, most likely first. 'B2B Captain's Teams
 # (SFDC)' is the field the captainship drafts filter B2B1-PAGER_CaptainView on,

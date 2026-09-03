@@ -400,21 +400,35 @@ def _wireless(url: str) -> str:
     return url + ("&" if "?" in url else "?") + _B2B_PRODUCT_PARAM
 
 
+# RE-CREATED 2026-09-03 (Eve). The previous four B2B captainship custom views
+# died on this workbook — Tableau itself said so, naming them in a banner the
+# production pulls throw away: "An error occurred while loading the custom view
+# Carlos Captainship. Re-create the custom view if this error persists." Carlos
+# and Luis dropped three runs in a row that morning (06:24 / 06:49 / 07:12 CT,
+# the initial pass plus both auto-retries) with an identical
+# "Couldn't find the 'ICD Churn' sheet in the Crosstab dialog"; Eveliz's view
+# survived, which is what ruled out the workbook. Third time this has happened
+# (2026-08-13, and again here), so if a B2B churn pull fails this way, check the
+# error banner before touching WORKSHEET — the sheet name is almost never what
+# changed. Diagnostic: automations/owners_metrics_churn/probe_b2b_views.py
+# (`lucy rerun b2b_views_probe`).
 B2B_CARLOS_URL = _wireless(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/"
-    "77b888d4-dec2-45c9-bdce-5511f6055084/CarlosCaptainship?:iid=1"
+    "0482736c-3d78-4c45-9e60-e8c2052030ec/B2BCarlos_Churn?:iid=1"
 )
-# Eveliz's view excludes Van (custom view "EvelizWOVan"). FRAGILITY:
-# if the filter is a fixed include-list of names, any ICD added to
-# Eveliz's captainship in Tableau will NOT show up here until megan
-# updates the view. If it's an exclude-list ("exclude Van"), new ICDs
-# auto-flow through. Megan flagged this 2026-05-29 — verify the
-# filter type and re-save as exclude if needed.
+# Re-created by Eve 2026-09-03 as "B2BEveliz_Churn", replacing "EvelizWOVan"
+# (867f88d3) when Carlos's and Luis's views on this workbook died — see
+# B2B_CARLOS_URL. Hers was the one that never broke, so it is also the control
+# that proves a pull failure is the view and not the workbook. FRAGILITY, still
+# open from 2026-05-29: if her filter is a fixed include-list of names, an ICD
+# added to her captainship in Tableau will NOT appear here until the view is
+# re-saved; an exclude-list ("exclude Van") lets new ICDs flow through on their
+# own.
 B2B_EVELIZ_URL = _wireless(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/"
-    "867f88d3-4026-4c70-b275-330208a4053c/EvelizWOVan?:iid=1"
+    "07fa54fe-2921-47ab-9e15-80c557f73341/B2BEveliz_Churn?:iid=1"
 )
 
 # Luis Salazar — same B2B workbook, view filtered to his captainship team
@@ -422,7 +436,7 @@ B2B_EVELIZ_URL = _wireless(
 B2B_LUIS_URL = _wireless(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/"
-    "2d2a9ec0-8088-4e4e-8ada-ed370f4b9d8f/LuissCaptainship?:iid=1"
+    "96ad6582-3f14-4874-a6cb-7175c6518ced/B2BLuis_Churn?:iid=1"
 )
 
 # All-teams B2B churn view (team filter = All) — every B2B owner regardless of
@@ -443,6 +457,25 @@ B2B_ALLTEAM_URL = _wireless(
     "ATTTRACKER-B2B/CHURNRATES/"
     "f800acd5-c7aa-4600-9a8c-522cd61af026/ALLTEAMWireless?:iid=1"
 )
+
+
+# Atef Choudhury, RE-CREATED 2026-09-03 (Eve) — his FIRST own view. Until now he
+# had none (he was not in the Tableau captain dropdown), so his tab rode the
+# all-teams pull narrowed to his three reps in Python, with the Captainship Avg
+# recomputed from them because the file's Grand Total is the whole B2B org. With
+# a real per-captain view that slicing is gone: parse_b2b reads his Grand Total
+# as his captainship average directly, the way it does for the other three.
+B2B_ATEF_URL = _wireless(
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER-B2B/CHURNRATES/"
+    "529e5c84-9f96-4de6-a1f7-e61537589ee7/B2BAtef_Churn?:iid=1"
+)
+
+
+def fetch_b2b_atef(out_path=None, verbose: bool = False, page=None):
+    out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_atef.csv"
+    _dl(B2B_ATEF_URL, WORKSHEET, out_path, verbose=verbose, page=page)
+    return out_path
 
 
 def fetch_b2b_allteams(out_path: Optional[Path] = None,

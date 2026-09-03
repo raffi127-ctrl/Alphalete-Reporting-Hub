@@ -150,9 +150,10 @@ NEED_NDS_ALLTEAM = DataNeed(_NDS, _T + _NDS + "/3c48ac2a-0ccf-4fa8-9a88-efb59f75
 NEED_B2B_ALLTEAM = DataNeed(_B2B, _T + _B2B + "/429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN?:iid=1", _ICD, org_wide=True, label="Owners B2B — ALL TEAMS (org-wide)")
 
 # Owners B2B (different workbook, 120-day bucket; Grand-Total row — hardest case)
-NEED_OWN_CARLOS = DataNeed(_B2B, _T + _B2B + "/77b888d4-dec2-45c9-bdce-5511f6055084/CarlosCaptainship?:iid=1", _ICD, label="Owners B2B — Carlos")
-NEED_OWN_EVELIZ = DataNeed(_B2B, _T + _B2B + "/867f88d3-4026-4c70-b275-330208a4053c/EvelizWOVan?:iid=1", _ICD, label="Owners B2B — Eveliz")
-NEED_OWN_LUIS = DataNeed(_B2B, _T + _B2B + "/2d2a9ec0-8088-4e4e-8ada-ed370f4b9d8f/LuissCaptainship?:iid=1", _ICD, label="Owners B2B — Luis")
+NEED_OWN_CARLOS = DataNeed(_B2B, _T + _B2B + "/0482736c-3d78-4c45-9e60-e8c2052030ec/B2BCarlos_Churn?:iid=1", _ICD, label="Owners B2B — Carlos")
+NEED_OWN_EVELIZ = DataNeed(_B2B, _T + _B2B + "/07fa54fe-2921-47ab-9e15-80c557f73341/B2BEveliz_Churn?:iid=1", _ICD, label="Owners B2B — Eveliz")
+NEED_OWN_LUIS = DataNeed(_B2B, _T + _B2B + "/96ad6582-3f14-4874-a6cb-7175c6518ced/B2BLuis_Churn?:iid=1", _ICD, label="Owners B2B — Luis")
+NEED_OWN_ATEF = DataNeed(_B2B, _T + _B2B + "/529e5c84-9f96-4de6-a1f7-e61537589ee7/B2BAtef_Churn?:iid=1", _ICD, label="Owners B2B — Atef")
 
 # Owners NDS (different workbook AND worksheet)
 NEED_OWN_KHALIL = DataNeed(_NDS, _T + _NDS + "/5c5501aa-98b3-48c5-b260-a8b405a16412/KhalilsCaptainship?:iid=1", _NDS_WS, label="Owners NDS — Khalil")

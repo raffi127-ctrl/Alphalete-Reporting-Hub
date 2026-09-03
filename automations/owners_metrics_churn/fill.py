@@ -99,9 +99,9 @@ TAB_B2B_EVELIZ = "Churn - Eveliz Wright (B2B)"
 TAB_B2B_LUIS   = "Churn - Luis Salazar (B2B)"   # renamed to match the others 2026-05-30
 # Atef's captainship split off Carlos' on 2026-08-18 (Atef + Sabrina Alicea +
 # Dhey Patel). The tab was created as a copy of Carlos' and then cut down to
-# those three. It fills off the ALL-TEAMS view for now — see
-# pull.make_b2b_captainship_parser: Atef is not in the Tableau captain dropdown
-# yet, so there is no per-captain view to point at.
+# those three. It filled off the ALL-TEAMS view sliced to that roster until
+# 2026-09-03, when he finally got his own Tableau view (B2B_ATEF_URL) and
+# started reading it like the other three captainships.
 TAB_B2B_ATEF   = "Churn - Atef Choudhury (B2B)"
 
 
