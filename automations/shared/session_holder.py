@@ -1037,18 +1037,39 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
                 if verbose:
                     print(f"-> rqst token has {left:.0f}m left — minting a fresh "
                           f"one through ownerville", flush=True)
+                # A THROTTLED CALL IS NOT A FAILURE — check before counting.
+                #
+                # This is the rule _mint_is_throttled's own docstring states
+                # ("callers that escalate on failure MUST check this first"),
+                # and the recovery path below obeys it. This branch did not, and
+                # the arithmetic made that fire every single token cycle:
+                # the holder wakes every 6 min, REMINT_MARGIN_MIN is 30, so a
+                # draining token gets ~5 in-margin cycles — while
+                # MINT_MIN_INTERVAL_MIN is also 30, so only the FIRST of those
+                # genuinely tries. Cycles 2-5 return False because they were
+                # throttled, got counted as failures, hit
+                # MINT_FAILURES_BEFORE_RESTART, and asked for a restart the
+                # session did not need. Measured on Lucy 2 and Lucy 3.
+                _throttled = _mint_is_throttled()
                 _minted = _mint_appstream_via_ownerville(ctx, page,
                                                           verbose=verbose)
-                _fails = _note_mint_result(_minted)
                 if _minted:
+                    _note_mint_result(True)
                     return True
-                if _fails >= MINT_FAILURES_BEFORE_RESTART:
-                    # Say it plainly, unconditionally: this is the holder asking
-                    # to be restarted, and a silent one looks identical to the
-                    # four hours of failures it exists to end.
-                    print(f"[{_stamp()}] AppStream mint has failed {_fails}x in a "
-                          f"row — asking for a restart, which is the path that "
-                          f"actually mints.", flush=True)
+                _fails = _MINT_FAILURES["n"] if _throttled else _note_mint_result(False)
+                if not _throttled and _fails >= MINT_FAILURES_BEFORE_RESTART:
+                    # NAME WHAT ACTUALLY MINTS. This line used to say the restart
+                    # "is the path that actually mints", and that is measurably
+                    # untrue: the ownerville hop has never minted a token once
+                    # (0 successes against 23k log lines on Lucy 2), and what
+                    # produces every token this fleet carries is the TYPED login
+                    # on the tokenless path below — "TYPED LOGIN minted …, 120m
+                    # left", like clockwork every ~2h. A restart only helps
+                    # because a fresh process reaches that same typed login.
+                    print(f"[{_stamp()}] AppStream: the ownerville hop failed "
+                          f"{_fails}x in a row. Not fatal — the typed login on "
+                          f"the tokenless path is what mints, and it runs next. "
+                          f"Asking for a restart as the backstop.", flush=True)
                     _MINT_FAILURES["restart_wanted"] = True
                 # Ownerville couldn't mint this cycle (its own session may be
                 # mid-refresh). Fall back to the old replay: it cannot produce a

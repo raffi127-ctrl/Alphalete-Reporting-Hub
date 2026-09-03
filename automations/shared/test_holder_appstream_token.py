@@ -474,3 +474,62 @@ class ZeroIsNotSuccess(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AThrottledMintIsNotAFailure(unittest.TestCase):
+    """The in-margin branch must not ask for a restart on the clock alone.
+
+    THE ARITHMETIC THAT MADE THIS FIRE EVERY TOKEN CYCLE (measured on Lucy 2 and
+    Lucy 3, 2026-09-03). The holder wakes every 6 min; REMINT_MARGIN_MIN is 30,
+    so a draining token gets about five in-margin cycles. MINT_MIN_INTERVAL_MIN
+    is also 30, so only the FIRST of those actually attempts a mint — the rest
+    return False because they were throttled. Counting those as failures reached
+    MINT_FAILURES_BEFORE_RESTART every time and asked for a restart on a session
+    that was about to renew itself normally.
+
+    _mint_is_throttled's docstring already stated the rule ("callers that
+    escalate on failure MUST check this first") and the tokenless path below it
+    obeyed it. This branch did not."""
+
+    def setUp(self):
+        sh._MINT_FAILURES["n"] = 0
+        sh._MINT_FAILURES["restart_wanted"] = False
+
+    def _cycle(self, *, throttled):
+        """One in-margin cycle whose hop fails, as it always does in reality."""
+        page = _page()
+        with mock.patch.object(sh, "_ctx_rqst_minutes_left", return_value=5.0), \
+             mock.patch.object(sh, "_mint_is_throttled", return_value=throttled), \
+             mock.patch.object(sh, "_mint_appstream_via_ownerville",
+                               return_value=False), \
+             mock.patch.object(sh, "_reuse_appstream_storage_state",
+                               return_value=False):
+            sh._warm_appstream(_ctx(rqst=1), page, verbose=False)
+
+    def test_throttled_cycles_never_ask_for_a_restart(self):
+        for _ in range(6):
+            self._cycle(throttled=True)
+        self.assertFalse(sh._MINT_FAILURES["restart_wanted"],
+                         "a restart was requested on the throttle clock alone")
+        self.assertEqual(sh._MINT_FAILURES["n"], 0,
+                         "a throttled call must not count as a failure")
+
+    def test_real_failures_still_escalate(self):
+        """The backstop has to survive the fix — two genuine misses still ask."""
+        for _ in range(sh.MINT_FAILURES_BEFORE_RESTART):
+            self._cycle(throttled=False)
+        self.assertTrue(sh._MINT_FAILURES["restart_wanted"])
+
+    def test_the_message_does_not_credit_the_restart_with_minting(self):
+        """The hop has never minted; the TYPED login is what does.
+
+        The old line said the restart "is the path that actually mints", which
+        sent diagnosis at the restart ladder instead of at the login."""
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            for _ in range(sh.MINT_FAILURES_BEFORE_RESTART):
+                self._cycle(throttled=False)
+        out = buf.getvalue()
+        self.assertNotIn("path that actually mints", out)
+        self.assertIn("typed login", out.lower())
