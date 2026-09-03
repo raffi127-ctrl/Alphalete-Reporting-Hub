@@ -563,7 +563,13 @@
       "as_owner": "Christian Esposito",
       "reason": "tab added by Eve 2026-09-01. No AppStream office \u2014 the knocks access sweep classified him as not in the office directory (output/knocks-ownerville-access-2026-08-24.md) and all-offices.json has no match, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Christian Esposito' (Wayne's captainship, fiber), so the OPT + metrics half fills.",
       "promote_when_visible": true
+    },
+    {
+      "sheet_tab": "Austin Eldredge",
+      "as_owner": "Austin Eldredge",
+      "reason": "tab added 2026-09-02 (Pat's captainship, fiber; Supreme Impact Inc dba Eclipse California). No AppStream office yet, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Austin Eldredge', so the OPT + metrics half fills.",
+      "promote_when_visible": true
     }
   ],
-  "sales_only_count": 3
+  "sales_only_count": 4
 }
