@@ -11,6 +11,7 @@ import unittest
 from automations.rc_contact_sync import ringcentral as RC
 from automations.rc_contact_sync import run as R
 from automations.rc_contact_sync import sara
+from automations.rc_contact_sync import verify_code as VC
 
 # The header row and four rows exactly as the live grid showed them
 # (Carlos's Loom, 2026-09-02).
@@ -169,12 +170,17 @@ class TestGridParsing(unittest.TestCase):
 
 
 class TestSlackMessage(unittest.TestCase):
-    DAY = dt.date(2026, 9, 1)
+    """A header post carrying Carlos's wording, and the names in ITS thread."""
 
-    def test_all_texted_says_so(self):
-        msg = R.missing_text_message(self.DAY, [], 4)
-        self.assertIn("All 4 customers", msg)
-        self.assertIn("September 1, 2026", msg)
+    def test_the_header_carries_no_markup_of_its_own(self):
+        """ensure_named_thread bolds the title and appends the date; markup
+        here would render as **double** stars."""
+        self.assertNotIn("*", R.thread_title())
+        self.assertIn("wrap up text", R.thread_title())
+
+    def test_all_messaged_says_so(self):
+        self.assertIn("All 4 customers were messaged",
+                      R.missing_names_reply([], 4))
 
     def test_missing_are_grouped_under_their_rep(self):
         missing = [
@@ -183,19 +189,65 @@ class TestSlackMessage(unittest.TestCase):
             {"rep": "FERNANDO SALAZAR", "business": "DAS FINANCIAL SERVICES",
              "customer_name": "", "phone": ""},
         ]
-        msg = R.missing_text_message(self.DAY, missing, 5)
+        msg = R.missing_names_reply(missing, 5)
         self.assertIn("2 of 5 customers", msg)
         self.assertEqual(msg.count("*Fernando Salazar*"), 1)
         self.assertIn("Baber Gaut Shops — Jose Gaut — (214) 845-6450", msg)
         self.assertIn("no phone on file", msg)
 
+    def test_reps_are_bold_text_never_mentions(self):
+        """A name lookup in this workspace eventually tags the wrong person."""
+        msg = R.missing_names_reply(
+            [{"rep": "FERNANDO SALAZAR", "business": "X SHOP", "phone": ""}], 1)
+        self.assertNotIn("<@", msg)
+        self.assertNotIn("@Fernando", msg)
+
     def test_an_order_with_no_rep_still_gets_reported(self):
-        msg = R.missing_text_message(
-            self.DAY, [{"rep": "", "business": "X SHOP", "phone": ""}], 1)
-        self.assertIn("(no rep on the order)", msg)
+        msg = R.missing_names_reply(
+            [{"rep": "", "business": "X SHOP", "phone": ""}], 1)
+        self.assertIn(R.NO_REP, msg)
 
     def test_singular_grammar(self):
-        self.assertIn("1 customer from", R.missing_text_message(self.DAY, [], 1))
+        self.assertIn("The 1 customer was messaged", R.missing_names_reply([], 1))
+        self.assertIn("1 of 2 customers never got a message",
+                      R.missing_names_reply([{"rep": "A B", "business": "X"}], 2))
+
+
+class TestVerificationCode(unittest.TestCase):
+    """Pulling the SaraPlus login code out of an email. No IMAP here."""
+
+    def test_labelled_forms(self):
+        for text, want in [
+            ("Your SaraPlus verification code is 481920", "481920"),
+            ("Security code: 4820", "4820"),
+            ("392014 is your SaraPlus login code", "392014"),
+            ("One-time code\n\n  228841", "228841"),
+        ]:
+            self.assertEqual(VC.extract_code(text), want, text)
+
+    def test_a_labelled_code_wins_over_a_stray_six_digit_run(self):
+        """An order id or a phone number in the footer must not be read as
+        the code."""
+        text = ("Order 269931 shipped.\nYour verification code is 481920.\n"
+                "Call 2148456450.")
+        self.assertEqual(VC.extract_code(text), "481920")
+
+    def test_no_code_is_none_not_a_guess(self):
+        self.assertIsNone(VC.extract_code("Order DSI269931154 shipped"))
+        self.assertIsNone(VC.extract_code(""))
+
+    def test_html_mail_is_flattened_before_matching(self):
+        import email as _email
+        msg = _email.message_from_string(
+            "Subject: SaraPlus\nContent-Type: text/html\n\n"
+            "<p>Your <b>verification code</b> is <span>481920</span></p>")
+        self.assertEqual(VC.extract_code(VC._body_text(msg)), "481920")
+
+    def test_the_subject_line_is_searched_too(self):
+        import email as _email
+        msg = _email.message_from_string(
+            "Subject: 481920 is your SaraPlus login code\n\nThanks.")
+        self.assertEqual(VC.extract_code(VC._body_text(msg)), "481920")
 
 
 if __name__ == "__main__":

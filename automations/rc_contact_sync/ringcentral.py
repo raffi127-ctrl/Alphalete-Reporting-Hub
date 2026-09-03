@@ -195,19 +195,23 @@ def create_contact(token: str, ext_id: str, *, first: str, last: str,
 
 # --- messages -----------------------------------------------------------------
 
-def sms_for_day(token: str, ext_id: str, day: dt.date) -> List[dict]:
-    """Every SMS in that extension's store for ONE local day.
+def sms_since(token: str, ext_id: str, day: dt.date) -> List[dict]:
+    """Every SMS in that extension's store from `day` up to NOW.
 
-    The window is sent as UTC instants around the day's local bounds and then
-    re-filtered locally, because a text at 6pm Central is 'tomorrow' in UTC
-    and would otherwise be counted against the wrong day."""
+    OPEN-ENDED ON PURPOSE. The question is "was this customer ever messaged
+    on RingCentral" (Megan 2026-09-03), not "was one sent inside the sale's
+    own calendar day" -- a customer sold at 5:55pm and messaged the next
+    morning HAS been contacted, and a day-shaped window would name them in
+    the thread anyway. Starting at the sale day rather than at all time is
+    the only bound, and it is there so the pull stays small.
+
+    The start is the local midnight expressed as a UTC instant: 6pm Central
+    is already 'tomorrow' in UTC, so a naive date string moves the boundary
+    by six hours."""
     start = dt.datetime.combine(day, dt.time.min).astimezone()
-    end = start + dt.timedelta(days=1)
     params = {"messageType": "SMS", "perPage": 250,
               "dateFrom": start.astimezone(dt.timezone.utc)
-                               .strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "dateTo": end.astimezone(dt.timezone.utc)
-                           .strftime("%Y-%m-%dT%H:%M:%SZ")}
+                               .strftime("%Y-%m-%dT%H:%M:%SZ")}
     out, page = [], 1
     while True:
         params["page"] = page

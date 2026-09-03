@@ -2789,7 +2789,8 @@
       "verify": {
         "type": "manifest",
         "report_id": "rc_contact_sync"
-      }
+      },
+      "_note": "Posts to #a-players-b2b ONLY (Carlos 2026-09-02, narrowing the Loom's 'the A players and the B2B chat'); no iMessage ('we dont need a text. slack works'). TWO messages: a HEADER post carrying Carlos's own sentence -- 'Customers who didn't receive wrap up text' -- and the names as a REPLY in that header's thread, grouped by rep (Megan 2026-09-03). The header is top-level, not a reply inside the day's Metrics thread: Slack has no thread inside a thread. THE CHECK IS 'was this customer EVER messaged on that line', not 'did a wrap-up go out' -- Carlos's sentence names the post, it does not narrow the test (Megan corrected that reading 2026-09-03). The message window opens on the sale day and runs to now, so a customer sold at 5:55pm and messaged next morning counts as contacted. Reps are bold text, never @mentions -- no rep -> Slack-id map exists and this workspace has duplicate first names. LOGIN: SaraPlus emails a verification code, filtered to alphaletereporting@gmail.com; the run reads it from that inbox (rc_contact_sync.verify_code) and only accepts mail that arrived AFTER the submit, so Lucy 2 also needs ~/.config/recruiting-report/gmail-app-password."
     },
     "weekly_knock_dispositions": {
       "order": 36.5,

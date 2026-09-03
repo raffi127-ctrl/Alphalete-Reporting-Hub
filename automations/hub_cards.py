@@ -2378,13 +2378,20 @@ AUTOMATED_REPORTS = [
         "emoji": "📇",
         "color": "#4A90D9",
         "category": "📊 Metrics",
-        "description": "Takes yesterday's B2B sales out of SaraPlus and adds each customer to Taylor's RingCentral contacts — business name, phone, and the rep's name in the notes — then checks Taylor's line and posts the customers nobody texted into the metrics thread in #a-players-b2b and #alphalete-gp-sales.",
+        "description": "Takes yesterday's B2B sales out of SaraPlus and adds each customer to Taylor's RingCentral contacts — business name, phone, and the rep's name in the notes — then posts a 'Customers who didn't receive wrap up text' header in #a-players-b2b with the customers nobody ever messaged listed in its thread.",
         "breakdown": (
             "WHY IT MATTERS\n"
             "A B2B customer who was sold yesterday and never texted is a "
             "customer nobody is following up with. Carlos was adding these "
             "contacts by hand, one form at a time, and the only way to notice "
             "a missed follow-up was to remember it.\n\n"
+            "SIGNING IN\n"
+            "SaraPlus asks for an emailed verification code. Carlos has it "
+            "filtered to alphaletereporting@gmail.com, so the report submits "
+            "the password, reads the code out of that inbox and carries on — "
+            "no one has to be at the machine. It only accepts a code that "
+            "arrived AFTER it pressed the button; an older one is somebody "
+            "else's login or already expired.\n\n"
             "WHERE THE NUMBERS COME FROM\n"
             "SaraPlus (Carlos's login) → Analytics → Detail Reports → Sales "
             "Order History → date range set to yesterday, Customer Type "
@@ -2402,11 +2409,16 @@ AUTOMATED_REPORTS = [
             "checked by phone number first, so a re-run, a repeat customer, "
             "or a contact somebody already added by hand is left alone.\n\n"
             "THE FOLLOW-UP CHECK\n"
-            "It then reads that same line's texts for yesterday. "
-            "Any customer with no message on that line — matched by phone "
-            "number, and as a backstop by customer or business name — is "
-            "named in ONE post in the day's metrics thread, grouped under the "
-            "rep who sold them.\n\n"
+            "It then asks, for each customer, whether they were EVER messaged "
+            "on that line — matched by phone number, and as a backstop by "
+            "customer or business name. The window starts on the day of the "
+            "sale and runs to now, so a customer sold at 5:55pm and messaged "
+            "the next morning counts as contacted.\n\n"
+            "It posts two messages in #a-players-b2b: a header — "
+            "\"Customers who didn't receive wrap up text\" — and, in that "
+            "header's thread, the names grouped under the rep who sold them. "
+            "A re-run replies to the same header instead of posting a second "
+            "one.\n\n"
             "WHEN IT RUNS\n"
             "Every morning on Lucy 2 — Carlos's SaraPlus login, Taylor's "
             "RingCentral login. A bare run is a DRY RUN and writes nothing."
@@ -2425,7 +2437,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ Yesterday's B2B customers are in RingCentral, and the un-texted ones were posted in the metrics thread.",
-            "message_failed": "❌ Something didn't land. The log names it. The usual causes: the SaraPlus password changed (it must be CARLOS's login), or the RingCentral token isn't Taylor's — the report stops rather than writing into the wrong address book.",
+            "message_failed": "❌ Something didn't land. The log names it. The usual causes: the SaraPlus verification code never reached alphaletereporting@gmail.com, the SaraPlus password changed (it must be CARLOS's login), or the RingCentral token isn't Taylor's — the report stops rather than writing into the wrong address book.",
         },
         "actions": [
             {

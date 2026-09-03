@@ -28,9 +28,9 @@ import datetime as dt
 import re
 from typing import Dict, List, Optional
 
-from automations.alphalete_sales_board.sara import (SaraError, _login,
-                                                    _set_telerik_date)
+from automations.alphalete_sales_board.sara import SaraError, _set_telerik_date
 from automations.rc_contact_sync import config as C
+from automations.rc_contact_sync import verify_code as VC
 
 
 # --- small helpers ------------------------------------------------------------
@@ -60,6 +60,120 @@ def page_state(page) -> str:
             pass
     return "url=%s | title=%r | found: %s" % (
         page.url, title, ", ".join(marks) or "NONE of the expected landmarks")
+
+
+def _code_field(page):
+    """The verification-code input, or None if this login didn't ask for one.
+
+    Found by LABEL, not by id: the sales board's login never reaches this
+    page so no id has ever been read off it, and a guessed id would report
+    'no code step' on a page that is asking for one -- which reads as a wrong
+    password. Anything that looks like a one-field code prompt counts."""
+    return page.evaluate(
+        """() => {
+             const els = [...document.querySelectorAll('input')];
+             for (const e of els) {
+               if (e.type === 'hidden' || e.type === 'password') continue;
+               const hay = [e.id, e.name, e.placeholder,
+                            e.getAttribute('aria-label') || ''].join(' ').toLowerCase();
+               if (/code|otp|verif|token|pin/.test(hay)) return e.id || e.name || '';
+             }
+             // No named hint: a lone visible text box on a page that talks
+             // about a code is still the code box.
+             const body = (document.body.innerText || '').toLowerCase();
+             if (!/verification|security code|one-time|enter the code/.test(body))
+               return null;
+             const visible = els.filter(e => e.type !== 'hidden' &&
+                                             e.offsetParent !== null &&
+                                             (e.type === 'text' || e.type === 'tel' ||
+                                              e.type === 'number' || !e.type));
+             return visible.length === 1 ? (visible[0].id || visible[0].name || '') : null;
+           }""")
+
+
+def _submit_code(page, field: str, code: str) -> None:
+    """Type the code and press whatever continues. Typed character by
+    character like the password: this is the same old ASP.NET form, and it
+    drops a value that arrives in one paste-like event."""
+    sel = ("#%s" % field) if field else "input[type=text]:visible"
+    box = page.locator(sel).first
+    box.click()
+    if hasattr(box, "press_sequentially"):
+        box.press_sequentially(code, delay=60)
+    else:
+        box.type(code, delay=60)
+    clicked = page.evaluate(
+        """() => {
+             const btns = [...document.querySelectorAll(
+               'input[type=submit],input[type=button],button,a')];
+             const want = /verify|submit|continue|confirm|log ?in|next/i;
+             const b = btns.find(e => want.test((e.value || e.innerText || '').trim()));
+             if (b) { b.click(); return true; }
+             return false;
+           }""")
+    if not clicked:
+        page.keyboard.press("Enter")
+    page.wait_for_load_state("networkidle", timeout=C.NAV_TIMEOUT_MS)
+    page.wait_for_timeout(1000)
+
+
+def login(page, email: str, password: str, log=print) -> str:
+    """Sign in -- password, then the emailed verification code if asked --
+    and return the DealerPages base url.
+
+    A silent bounce back to the login page is how a whole day of runs reads
+    as 'no orders' instead of 'not logged in', so landing anywhere other than
+    DealerPages raises."""
+    page.goto(C.LOGIN_URL, wait_until="networkidle", timeout=C.NAV_TIMEOUT_MS)
+    page.click('a:has-text("LOGIN")')
+    page.fill(C.FIELD_USERNAME, email)
+    page.wait_for_selector(C.FIELD_PASSWORD, state="visible")
+    # Character by character on purpose: this is old ASP.NET and its field
+    # handlers drop a value that arrives in one paste-like event.
+    page.click(C.FIELD_PASSWORD)
+    field = page.locator(C.FIELD_PASSWORD)
+    if hasattr(field, "press_sequentially"):
+        field.press_sequentially(password, delay=50)
+    else:
+        field.type(password, delay=50)
+
+    # Stamped BEFORE the click, and deliberately a little early: this clock
+    # and Gmail's are not identical, and a code thrown away for being one
+    # second too old looks exactly like a code that never arrived.
+    since = dt.datetime.now().astimezone() - dt.timedelta(seconds=30)
+    try:
+        with page.expect_navigation(timeout=C.NAV_TIMEOUT_MS):
+            page.click(C.BUTTON_LOGIN)
+    except Exception:                                      # noqa: BLE001
+        # Some skins do the code step without a full navigation.
+        page.wait_for_timeout(2000)
+
+    field_id = _code_field(page)
+    if field_id is not None:
+        log("  SaraPlus asked for a verification code — reading %s"
+            % VC._ing.ACCOUNT)
+        code = VC.wait_for_code(since, timeout_s=C.VERIFY_TIMEOUT_S,
+                                poll_s=C.VERIFY_POLL_S, query=C.VERIFY_QUERY,
+                                log=log)
+        _submit_code(page, field_id, code)
+        if _code_field(page) is not None:
+            raise SaraError(
+                "SaraPlus is still asking for a verification code after one "
+                "was entered. The code that was read had already expired, or "
+                "it belonged to a different login attempt. %s"
+                % page_state(page))
+
+    url = page.url
+    if "login" in url.lower():
+        raise SaraError(
+            "SaraPlus login failed -- still on the login page after submit. "
+            "Check the credentials in %s (a password change is the usual "
+            "cause); nothing was written. %s" % (C.CREDS_PATH, page_state(page)))
+    if "DealerPages/" not in url:
+        raise SaraError("logged in but landed somewhere unexpected: %s" % url)
+    # The DEALER ROOT -- everything up to and including the session segment.
+    # The Reporting Hub is a SIBLING of DealerPages, not a child of it.
+    return url.split("DealerPages/")[0]
 
 
 def _click_tab(page, label: str) -> None:
@@ -369,7 +483,7 @@ def scrape(day: Optional[dt.date] = None, *, headless: bool = True,
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
-                base = _login(page, cr["email"], cr["password"])
+                base = login(page, cr["email"], cr["password"], log=log)
             except SaraError as e:
                 raise SaraError(
                     "%s (credentials read from %s -- this report uses CARLOS's "
@@ -421,7 +535,7 @@ def probe(day: Optional[dt.date] = None, *, headless: bool = True,
             str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = _login(page, cr["email"], cr["password"])
+            base = login(page, cr["email"], cr["password"], log=log)
             info["base"] = base
             page.goto(base + C.HUB_PATH, wait_until="networkidle",
                       timeout=C.NAV_TIMEOUT_MS)

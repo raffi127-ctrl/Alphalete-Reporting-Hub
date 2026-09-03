@@ -28,6 +28,22 @@ CREDS_PATH = CONFIG_DIR / "saraplus-creds-b2b.json"
 # [[reference_chrome_collision_guard]]
 PROFILE_DIR = REPO_ROOT / "automations" / "uploaded" / ".saraplus_b2b_profile"
 
+# --- the login verification code ---------------------------------------------
+# SaraPlus emails a code on login; Carlos has it filtered to the reporting
+# inbox so an unattended run can read it (Megan 2026-09-03). The Gmail search
+# is config because nobody has told us what SaraPlus sends FROM -- if the
+# report says it never saw a code, open alphaletereporting@gmail.com, find
+# the real email and tighten this (e.g. 'from:noreply@saraplus.com').
+VERIFY_QUERY = "saraplus OR sara+ newer_than:1d"
+VERIFY_TIMEOUT_S = 180
+VERIFY_POLL_S = 10
+
+# Login page fields. The code step's own field is found by LABEL at run time
+# (its id is unknown and an unknown id is not worth guessing at).
+FIELD_USERNAME = "#ctl00_MainContent_txtUserName"
+FIELD_PASSWORD = "#ctl00_MainContent_txtPassword"
+BUTTON_LOGIN = "#MainContent_btnLogin"
+
 HUB_PATH = "Reports/ReportingHub.aspx"
 
 # Tabs are clicked BY LABEL (Telerik RadTabStrip renders them as divs with no
@@ -77,17 +93,34 @@ SELF_EXTENSION = "~"
 # The label RingCentral puts on the phone number of a created contact.
 PHONE_LABEL = "mobile"
 
+
 # --- Slack --------------------------------------------------------------------
-# Carlos: "have Lucy send the message on the A players and the B2B chat, and it
-# can send it in the metrics thread." Both of his channels, same as
-# b2b_dispositions posts to.
-CHANNELS = ["C0AJQA8P716", "C07J46MQNUX"]
+# ONE CHANNEL. The Loom said "the A players and the B2B chat", which read as
+# both of Carlos's channels; asked directly he narrowed it (2026-09-02): "it
+# can be posted in the aplayers slack in the b2b metrics thread". So
+# #alphalete-gp-sales is deliberately NOT in this list -- b2b_dispositions
+# posts to both, this does not.
+CHANNELS = ["C0AJQA8P716"]
 CHANNEL_LABEL = {
     "C0AJQA8P716": "#a-players-b2b",
-    "C07J46MQNUX": "#alphalete-gp-sales",
 }
 
-SLACK_HEADER = ":telephone_receiver: *No Text Sent To Customer*"
+# No iMessage. Carlos, same thread: "we dont need a text. slack works."
+
+# THE POST'S WORDING, IN CARLOS'S WORDS. Asked "what do you want the message
+# to say" he answered with this one sentence (2026-09-02), so it is the
+# heading and nothing else is invented around it.
+#
+# It says "wrap up text" and the CHECK is still the Loom's -- "see if there
+# was a text message received with that customer's phone number, name, or
+# business name". Those texts are the wrap-ups; he is naming the message, not
+# narrowing the test. Don't "fix" the mismatch by making the check
+# wrap-up-only (Megan corrected exactly that reading, 2026-09-03).
+# NO ASTERISKS: ensure_named_thread bolds the title itself and appends the
+# date, so markup here would render as **double** stars.
+# Emoji-then-title is the house format for a Slack post.
+# [[feedback_metrics_slack_format]]
+SLACK_HEADER = ":telephone_receiver: Customers who didn\'t receive wrap up text"
 
 # --- state --------------------------------------------------------------------
 # Order ids already turned into a contact. Creating a RingCentral contact is

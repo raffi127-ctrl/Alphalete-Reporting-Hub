@@ -11,6 +11,13 @@ Module: `automations/rc_contact_sync/` · Hub card: **B2B Customer Contacts
 
 ## What it does, in order
 
+0. **Signs in through the emailed verification code.** SaraPlus asks for a code
+   at login; Carlos has it filtered to **alphaletereporting@gmail.com**, so the
+   report submits the password, polls that inbox for a code that arrived
+   *after* the submit, types it, and continues. An older code is somebody
+   else's login or an expired one — it would be entered confidently and fail as
+   "wrong password", so anything predating the attempt is ignored.
+   Read-only: the mailbox is opened readonly and nothing is marked or moved.
 1. **SaraPlus** (Carlos's login) → Analytics → Detail Reports → **Sales Order
    History** → date range set to yesterday on both ends, Customer Type
    **Both**, Submit.
@@ -21,9 +28,11 @@ Module: `automations/rc_contact_sync/` · Hub card: **B2B Customer Contacts
    book per customer:
    `Company` = business name · phone = primary phone (Mobile) ·
    `Notes` = `Rep Name: <rep>`.
-4. **RingCentral** → reads that same line's texts for yesterday. Customers
-   with no message on it are posted, grouped by rep, into the day's metrics
-   thread in **#a-players-b2b** and **#alphalete-gp-sales**.
+4. **RingCentral** → reads that same line's texts for yesterday and asks, per
+   customer, **did the wrap up go out to them?** — not "were they texted at
+   all". The ones missing it are posted, grouped by rep, into the **B2B
+   metrics thread in #a-players-b2b** (that channel only). No text message —
+   Carlos: *"we dont need a text. slack works."*
 
 ---
 
@@ -42,6 +51,15 @@ Its **own** file on purpose. `saraplus-creds.json` is
 different dealer. Megan, 2026-09-02: *"make sure you're ONLY using Carlos'
 sara plus login to access."* Reusing that file would return rows — just not
 these rows, and nothing would look wrong.
+
+**The code email matters as much as the password.** Confirm SaraPlus's
+verification code still lands in alphaletereporting@gmail.com and that
+`~/.config/recruiting-report/gmail-app-password` exists on Lucy 2 — that app
+password is how the report reads the inbox. If the code arrives from a sender
+or with wording the search misses, the run stops with "no SaraPlus
+verification code reached …" and nothing is typed in; open the mailbox, find
+the real email, and tighten `VERIFY_QUERY` in `config.py` (e.g.
+`from:noreply@saraplus.com`).
 
 Push it to Lucy 2 with:
 
@@ -129,6 +147,31 @@ default, so `lucy rerun rc_contact_sync` will always preview rather than write.
 
 ---
 
+## The wrap-up phrase list — check this before arming
+
+Carlos, asked what the post should say (2026-09-02): *"Customers who didn't
+receive wrap up text."* That is the spec, not just the wording — the check is
+for the **wrap-up**, not for any message.
+
+What counts as a wrap-up is `rc_autoread.WRAP_UP_PHRASES` — the 96-phrase list
+Dylan's RingCentral auto-read already matches on, reused rather than
+re-derived. **It is residential-flavoured** (AT&T fiber, DirecTV, self-install
+kits). If the B2B wrap-up is worded differently, every customer comes back as
+"no wrap up text" and the post chases every rep.
+
+So a dry run prints `N of them wrap-ups` for the day, and shouts if there were
+messages but **not one** matched. If that shout appears, get one real B2B
+wrap-up text from Carlos and add its distinctive phrase to
+`B2B_WRAP_UP_PHRASES` in `automations/rc_contact_sync/config.py` — it is
+checked *in addition to* the shared list, never instead of it.
+
+The log also separates "texted but never wrapped up" from "never contacted at
+all" (it prints how many other messages exist with that customer). The post
+treats both as owed a follow-up; the log is there for when a rep says "but I
+did text them".
+
+---
+
 ## Things that will bite
 
 - **A dry run is the default and that is deliberate.** A RingCentral contact
@@ -157,7 +200,22 @@ default, so `lucy rerun rc_contact_sync` will always preview rather than write.
 
 1. **What time in the morning?** Currently slotted in the Lucy 2 4am batch
    (order 11.5). Anything before the reps start texting works.
-2. **Taylor's personal contacts, or shared with the team?** Built as personal
+
+2. **Should the rep be @-mentioned?** Megan floated *"@repname, please reach
+   out to your customer…"*. Built with the rep in **bold text**, not an
+   @mention: there is no rep-name → Slack-user-id map for the B2B reps, and
+   this workspace has enough duplicate first names that a name lookup
+   eventually tags the wrong person in a leaders' channel. Wiring real
+   mentions needs a one-time list of rep → Slack id.
+
+3. **Dylan Twaddle already has something adjacent.** Megan flagged it in the
+   thread: his RingCentral auto-read (`automations/rc_autoread/`) scans the
+   same extension for unread SMS and marks a thread read once it hits a
+   wrap-up. This report *reuses that module's phrase list* but does not
+   overlap with it — one marks threads read, the other reports who never got
+   a wrap-up. If Carlos wants Dylan's responding tool too, that is a separate
+   piece.
+4. **Taylor's personal contacts, or shared with the team?** Built as personal
    contacts on Taylor's login, matching the Loom (Source: *RingCentral
    (default)*). If Carlos, Mayra and the reps should all see them too, they
    need to go to the company directory instead — different endpoint, different

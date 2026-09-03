@@ -38,29 +38,36 @@ NO_REP = "(no rep on the order)"
 
 # --- the Slack message --------------------------------------------------------
 
-def missing_text_message(day: dt.date, missing: List[Dict[str, str]],
-                         total: int) -> str:
-    """One post naming the customers nobody texted, grouped by rep — the rep
-    is the person who has to do something about it, so the rep is the heading
-    rather than a column somebody has to scan for their own name."""
-    # Built by hand, not with %-d: that flag is a no-op on Windows and every
-    # report here has to run on both. [[feedback_cross_platform_reports]]
-    head = "%s — %s %d, %d" % (C.SLACK_HEADER, day.strftime("%B"),
-                               day.day, day.year)
+def thread_title() -> str:
+    """The header post, in Carlos's own words (2026-09-02, answering 'what do
+    you want the message to say'). ensure_named_thread bolds it and appends
+    the date."""
+    return C.SLACK_HEADER
+
+
+def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
+    """The REPLY that goes in the header's thread — just the names.
+
+    Megan 2026-09-03: "we're just looking to see if that customer was ever
+    messaged by ring[central] and if not, putting those names in the thread
+    of that header message." So the header carries the wording and this
+    carries the list; grouped by the rep who sold them, because the rep is
+    the person who has to do something about it."""
     if not missing:
-        return ("%s\nAll %d customer%s from yesterday were texted. :white_check_mark:"
-                % (head, total, "" if total == 1 else "s"))
+        return ("The 1 customer was messaged. :white_check_mark:" if total == 1
+                else "All %d customers were messaged. :white_check_mark:" % total)
     by_rep: Dict[str, List[Dict[str, str]]] = {}
     for m in missing:
-        # An order with no rep on it is still somebody's customer — it gets its
-        # own heading rather than being dropped or filed under a guess.
+        # An order with no rep on it is still somebody's customer — it gets
+        # its own heading rather than being dropped or filed under a guess.
         by_rep.setdefault(titlecase_name(m.get("rep", "")) or NO_REP,
                           []).append(m)
-    lines = ["%s\n%d of %d customer%s from yesterday %s no text on %s's line:"
-             % (head, len(missing), total, "" if total == 1 else "s",
-                "has" if len(missing) == 1 else "have",
-                C.WATCH_OWNER_NAME.split()[0])]
+    lines = ["%d of %d customer%s never got a message:"
+             % (len(missing), total, "" if total == 1 else "s")]
     for rep in sorted(by_rep):
+        # Bold text, NOT an @mention: there is no rep-name -> Slack-user-id
+        # map for the B2B reps, and this workspace has enough duplicate first
+        # names that a lookup eventually tags the wrong person.
         lines.append("*%s*" % rep)
         for m in by_rep[rep]:
             who = titlecase_name(m.get("business", "")) or \
@@ -74,23 +81,35 @@ def missing_text_message(day: dt.date, missing: List[Dict[str, str]],
 
 def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
                  *, dry_run: bool, log=print) -> List[str]:
-    """Post into today's metrics thread in BOTH of Carlos's channels.
+    """Post the header, then the names as a reply IN ITS THREAD.
 
-    A channel that has no metrics thread yet is reported and skipped, not
-    retried into the channel top level: an alert that lands outside the thread
-    reads as a different report and gets ignored."""
+    Two messages, not one: Megan 2026-09-03 asked for the names to sit in the
+    header's thread. That also means the header is a TOP-LEVEL post in
+    #a-players-b2b rather than a reply inside the day's Metrics thread —
+    Slack has no thread inside a thread, so a reply cannot own one.
+    ensure_named_thread finds today's header if it already exists, so a
+    re-run adds a reply instead of a second header."""
     from automations.shared import slack_metrics_post as smp
 
-    text = missing_text_message(day, missing, total)
+    title = thread_title()
+    body = missing_names_reply(missing, total)
     failed: List[str] = []
     for chan in C.CHANNELS:
         label = C.CHANNEL_LABEL.get(chan, chan)
         if dry_run:
-            log("  [dry-run] would post to %s:\n%s" % (label, text))
+            log("  [dry-run] would post to %s:\n    header: %s — %s\n%s"
+                % (label, title, day, "\n".join("      " + ln
+                                                 for ln in body.split("\n"))))
             continue
         try:
-            res = smp.post_reply_text_only(text, channel_id=chan)
-            log("  posted to %s (ts=%s)" % (label, res.get("ts")))
+            head = smp.ensure_named_thread(title, day, channel_id=chan)
+            ts = head.get("thread_ts")
+            if not ts:
+                raise RuntimeError("no thread_ts came back: %s" % head)
+            res = smp.post_reply_text_only(body, thread_ts=ts, channel_id=chan)
+            log("  posted to %s (%s header, reply ts=%s)"
+                % (label, "existing" if head.get("existed") else "new",
+                   res.get("ts")))
         except Exception as e:                             # noqa: BLE001
             log("  ✗ %s: %s: %s" % (label, type(e).__name__, str(e)[:200]))
             failed.append(label)
@@ -186,12 +205,13 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
     watch_token = token
     if creds.get("watch_jwt"):
         watch_token = RC.token(creds, jwt=creds["watch_jwt"])
-    msgs = RC.sms_for_day(watch_token, watch_ext, day)
-    log("%s's line: %d SMS on %s" % (C.WATCH_OWNER_NAME, len(msgs), day))
+    msgs = RC.sms_since(watch_token, watch_ext, day)
+    log("%s's line: %d SMS since %s" % (C.WATCH_OWNER_NAME, len(msgs), day))
     missing = [c for c in customers
                if not RC.texted(msgs, c["phone"],
-                                [c.get("customer_name", ""), c.get("business", "")])]
-    log("un-texted: %d of %d" % (len(missing), len(customers)))
+                                [c.get("customer_name", ""),
+                                 c.get("business", "")])]
+    log("never messaged: %d of %d" % (len(missing), len(customers)))
 
     slack_failed: List[str] = []
     if skip_slack:
@@ -202,7 +222,7 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
 
     failed = failed_rows + slack_failed
     _manifest(failed, dry_run=dry_run,
-              note="%d customers, %d contacts added, %d un-texted"
+              note="%d customers, %d contacts added, %d never messaged"
                    % (len(customers), len(added), len(missing)))
     print("[rc_contact_sync] %s Finished%s"
           % ("⚠" if failed else "✅",

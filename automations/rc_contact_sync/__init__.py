@@ -3,6 +3,12 @@ alert (Carlos, 3 Looms 2026-09-02).
 
 Every morning, for YESTERDAY's B2B sales:
 
+  0. SaraPlus asks for an emailed VERIFICATION CODE at login. Carlos has it
+     filtered to alphaletereporting@gmail.com, so the login submits the
+     password, reads the code out of that inbox (only mail that arrived AFTER
+     the submit -- an older code is somebody else's, already expired, and
+     would be typed in with total confidence and fail as "wrong password"),
+     types it, and carries on. verify_code.py.
   1. SaraPlus -> Analytics -> Detail Reports -> Sales Order History, date range
      = yesterday, Customer Type = Both, Submit. Each row gives the rep
      (User Name) and the Business Name; 'View Customer' gives the customer's
@@ -12,9 +18,23 @@ Every morning, for YESTERDAY's B2B sales:
         First/Last= customer name
         Phone     = primary phone (Mobile)
         Notes     = "Rep Name: <the rep>"
-  3. RingCentral -> read Taylor Miller's (ext 134) SMS for yesterday. Any
-     customer with NO message to/from that line gets named in one Slack post
-     into the day's metrics thread in #a-players-b2b and #alphalete-gp-sales.
+  3. RingCentral -> was each customer EVER messaged on that line? (Megan
+     2026-09-03: "we're just looking to see if that customer was ever
+     messaged by ring[central] and if not, putting those names in the thread
+     of that header message.") Matched by phone, and as a backstop by
+     customer or business name. The window opens at the sale day and runs to
+     now, not just the sale's own calendar day: a customer sold at 5:55pm and
+     messaged next morning HAS been contacted.
+
+     Two Slack messages, in #a-players-b2b only ("we dont need a text. slack
+     works"): a HEADER post carrying Carlos's own sentence -- "Customers who
+     didn't receive wrap up text" -- and the names as a REPLY in that
+     header's thread, grouped by the rep who sold them.
+
+     THE HEADER SAYS 'WRAP UP TEXT' AND THE CHECK IS 'ANY MESSAGE'. That is
+     not a bug to tidy up. Asked what he wanted the message to SAY, Carlos
+     answered with that sentence; he was naming the post, not narrowing the
+     test. (Megan corrected exactly that misreading on 2026-09-03.)
 
 RUNS ON LUCY 2 (Carlos's box) -- his SaraPlus login and his RingCentral account.
 
