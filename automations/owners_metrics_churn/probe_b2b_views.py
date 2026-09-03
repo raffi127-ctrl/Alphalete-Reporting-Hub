@@ -161,7 +161,7 @@ def _try_download(url: str, tag: str) -> dict:
         download_crosstab_patchright(url, pull.WORKSHEET, out, verbose=False)
         res["downloaded"] = True
     except Exception as e:
-        res["error"] = str(e).splitlines()[0][:200]
+        res["error"] = " ".join(str(e).split())[:600]
         return res
     try:
         parsed = pull.parse_b2b(out)
@@ -179,17 +179,29 @@ def main() -> int:
 
     with tableau_session(verbose=False) as pg:
         log("=== 1. what each view LOADS ===")
+        # The first pass scraped the Crosstab thumbnails by selector and got []
+        # for ALL FOUR views — including Eveliz, which production pulls fine. A
+        # check that fails on the control proves nothing about the others, so
+        # the load test is now the production driver itself: ask each view for
+        # 'ICD Churn' exactly as the real pull does. Eveliz is the control — if
+        # SHE fails here too, the probe is broken, not the views.
         for tag, url in ([("BASE (no custom view)", BASE_VIEW_URL)]
                          + [(f"{n} ({s})", u) for s, n, u in BROKEN]
                          + [(f"{CONTROL[1]} ({CONTROL[0]}) — control", CONTROL[2])]):
-            info = _thumbs_and_toast(pg, url, tag.split()[0].lower())
-            info["tag"] = tag
-            report["loads"].append(info)
-            has = pull.WORKSHEET in info["thumbs"]
-            log(f"  • {tag}: toolbar={info['ok']} "
-                f"'{pull.WORKSHEET}' present={has} thumbs={info['thumbs']}")
-            if info["toast"]:
-                log(f"      TOAST: {info['toast']}")
+            slug = tag.split()[0].lower().strip("(")
+            toast = _thumbs_and_toast(pg, url, slug)
+            res = _try_download(url, f"load_{slug}")
+            res["tag"] = tag
+            res["toast"] = toast.get("toast", "")
+            res["toolbar"] = toast.get("ok")
+            report["loads"].append(res)
+            log(f"  • {tag}: toolbar={res['toolbar']} "
+                f"'{pull.WORKSHEET}' downloaded={res['downloaded']} "
+                f"owners={len(res.get('owners') or [])}")
+            if not res["downloaded"]:
+                log(f"      ERROR: {res.get('error', '')}")
+            if res["toast"]:
+                log(f"      TOAST: {res['toast']}")
 
         log("\n=== 2. custom views still registered on this workbook (as Raf) ===")
         try:
@@ -229,9 +241,17 @@ def main() -> int:
                     for v in o:
                         harvest(v)
             harvest(report["custom_views"])
+            log(f"  vizportal returned {len(names)} name/id record(s)")
+            if not names:
+                log("  !! EMPTY — 'still listed? False' below would be a probe "
+                    "artifact, not a deleted view. Read custom_views_raw.json.")
             for nm, vid in names:
                 log(f"  • {nm!r}  id={vid}")
-            for _s, wanted, url in BROKEN:
+            # CONTROL first: Eveliz's view demonstrably works, so if HER GUID is
+            # not listed either, this whole check is worthless and says nothing
+            # about Carlos and Luis.
+            for wanted, url in ([(CONTROL[1] + " (CONTROL)", CONTROL[2])]
+                                + [(n, u) for _s, n, u in BROKEN]):
                 guid = url.split("CHURNRATES/")[1].split("/")[0]
                 log(f"  -> {wanted} ({guid}) still listed? "
                     f"{any(guid == v for _n, v in names)}")
@@ -256,9 +276,9 @@ def main() -> int:
     (OUT / "report.json").write_text(json.dumps(report, indent=2, default=str),
                                      encoding="utf-8")
     log("\n=== VERDICT ===")
-    base = next((l for l in report["loads"] if l["tag"].startswith("BASE")), {})
-    log(f"  BASE view carries '{pull.WORKSHEET}': "
-        f"{pull.WORKSHEET in base.get('thumbs', [])}")
+    for l in report["loads"]:
+        log(f"  {l['tag']}: '{pull.WORKSHEET}' downloaded={l.get('downloaded')}"
+            f" owners={len(l.get('owners') or [])}")
     for slug in CAPTAIN_VALUES:
         hit = next((r for r in report["url_filter"]
                     if r["slug"] == slug and r.get("owners")), None)
