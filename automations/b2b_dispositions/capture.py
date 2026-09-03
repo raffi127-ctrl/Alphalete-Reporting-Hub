@@ -77,7 +77,33 @@ _CAMPAIGN_LABEL_JS = (
 
 
 def _goto(page, url: str) -> None:
-    page.goto(url, wait_until="networkidle", timeout=30000)
+    """Load an OwnerVille panel and give its rows a beat to paint.
+
+    networkidle FIRST, because these ColdFusion/DataTables panels resolve their
+    XHR and only then paint, and SETTLE_MS is calibrated against that moment.
+
+    But networkidle waits for 500ms of TOTAL network silence, and these panels
+    POLL — a busy one never goes quiet, so Page.goto raises at 30s and takes the
+    whole run with it. That is how b2b_dispositions died on 2026-09-02: a
+    territoryStats page timed out 454 log lines in, after every earlier panel had
+    loaded fine. The navigation itself had almost certainly finished; only the
+    idle wait had not.
+
+    So a timeout is no longer fatal. We fall through to the load state that HAS
+    landed and pay an extra settle for the XHR guarantee we just gave up. A page
+    that really is broken still fails — the caller's own row checks decide that,
+    and they are the ones that know what "empty" means for that panel."""
+    try:
+        page.goto(url, wait_until="networkidle", timeout=30000)
+    except Exception:
+        # Don't re-navigate: the goto usually DID load the document and only the
+        # idle condition timed out. Re-issuing it would throw the loaded page
+        # away and risk timing out again the same way.
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=10000)
+        except Exception:
+            pass
+        page.wait_for_timeout(SETTLE_MS)
     page.wait_for_timeout(SETTLE_MS)
 
 

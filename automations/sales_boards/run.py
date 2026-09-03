@@ -1,16 +1,20 @@
 """Program Sales Boards — daily Slack thread (VA-replacement Items 5-8).
 
-Replaces the VA's per-program Sales Board posts in #alphalete-gp-sales with ONE
-dated thread (Megan 2026-07-17):
+RESTRUCTURED 2026-08-30 (Carlos): the standalone "Vantura Production" thread
+is RETIRED. Each board's TWO images — (a) the weekly ranking and (b) the
+Highrollers cut for yesterday, titled with YESTERDAY's date — now reply into
+the thread where their audience already reads:
 
-    *Vantura Production 07/18/2026*
-    :briefcase: B2B Sales Board
-    :zap: Base Sales Board
-    :package: BOX Sales Board
+    :briefcase: B2B Sales Board  -> the day's B2B METRICS thread (this run
+        creates it at 5:10 if the metrics runner hasn't yet — which is what
+        makes the board the thread's FIRST screenshot), followed at 5:20 by
+        the :moneybag: Revenue Board (vantura_revenue_board).
+    :package: BOX Sales Board    -> the day's BOX ORDER LOG thread (7:00) —
+        posted by vantura_revenue_board's 7:25 pass (--program BOX here),
+        after the 7:15 order-log confirm has corrected the cells.
 
-…then each board's TWO images as a threaded reply — (a) the weekly ranking and
-(b) the Highrollers cut for yesterday. Titled with YESTERDAY's date, matching the
-VA (posted Sat 7/18 -> "BOX Sales Board 7.17").
+Both in #alphalete-gp-sales AND #a-players-b2b; Zero Streaks ride the
+A-Players B2B Metrics thread.
 
 Rendering lives in render.py — see its header for why we duplicate the tab and
 hide rows per campaign instead of cropping ranges (campaigns are NOT contiguous).
@@ -231,11 +235,68 @@ def _replies(imgs: dict, zeros: dict, tag: str, want_zeros: bool,
     return out
 
 
+# ------------------------------------------------------------ thread routing
+# RESTRUCTURE (Carlos 2026-08-30): the standalone "Vantura Production" thread
+# is RETIRED. The B2B Sales Board images open (or join) the day's B2B METRICS
+# thread — same parent b2b_metrics uses, coordinated through b2b_quality's
+# thread_state.json so whoever posts first creates it and the metrics runner
+# appends its sections after — and the BOX images go into the day's BOX ORDER
+# LOG thread (box_order_log's 7:00 post; we reply by title). Both in the same
+# two rooms as before: #alphalete-gp-sales + #a-players-b2b.
+
+def metrics_thread_ts(client, chan: str, today) -> str:
+    """ts of the day's 'B2B Metrics' thread in `chan`, creating the parent if
+    nobody has yet (5:10 normally beats the metrics runner, which is exactly
+    what puts the Sales Board FIRST in the thread — Carlos 2026-08-30)."""
+    import automations.b2b_quality.run as bq
+    state = bq._load_state(today, chan)
+    ts = state.get("thread_ts")
+    if ts:
+        return ts
+    from automations.b2b_metrics import offices as MO
+    from automations.b2b_metrics import runner as MR
+    o = MO.OFFICES["carlos"]
+    header = MR.header_text(o, today)
+    lines = header.split("\n")
+    # The board + revenue ride ahead of the metrics sections in the thread, so
+    # the parent's contents list says so too.
+    lines[1:1] = [":briefcase: B2B Sales Board", ":moneybag: Revenue Board"]
+    ts = client.chat_postMessage(channel=chan, text="\n".join(lines)).get("ts")
+    bq._save_state(today, chan, ts, list(state.get("posted") or []))
+    print(f"    opened B2B Metrics thread in {chan} ts={ts}")
+    return ts
+
+
+def box_thread_ts(client, chan: str, today):
+    """ts of the day's 'BOX Order Log — <Month D, YYYY>' thread in `chan`, or
+    None — box_order_log posts it at 7:00 (8:30 fallback); we never create it."""
+    needle = "BOX Order Log — {}".format(today.strftime("%B %d, %Y"))
+    alt = "BOX Order Log — {}".format(
+        today.strftime("%B %d, %Y").replace(" 0", " "))
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    try:
+        resp = client.conversations_history(channel=chan, oldest=str(oldest),
+                                            limit=200)
+    except Exception as e:  # noqa: BLE001
+        print(f"    (box-thread lookup unavailable in {chan} — "
+              f"{type(e).__name__})")
+        return None
+    import html as _html
+    for m in resp.get("messages", []):
+        text = _html.unescape(m.get("text") or "")
+        if needle in text or alt in text:
+            return m.get("thread_ts") or m.get("ts")
+    return None
+
+
 def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
                 dm_user: str = "", corrected: bool = False) -> list:
-    """Find-or-create today's parent in EACH target channel, then post the replies.
-    dm_user routes one thread into a DM instead — same code path, used to prove the
-    multi-image threaded upload before pointing it at a channel."""
+    """Route each program's images into ITS thread (Carlos 2026-08-30):
+    B2B -> the day's B2B Metrics thread (created here if absent, so the board
+    is the thread's first screenshot); BOX -> the day's BOX Order Log thread
+    (never created here — box_order_log owns it; missing = hold). Zero Streaks
+    ride the A-Players B2B Metrics thread, where their audience already is.
+    dm_user still routes everything into one DM for a test."""
     tag = f"{yday.month}.{yday.day}"
     scratch = os.environ.get("SALES_BOARD_CHANNEL_ID")
     targets = ([(f"scratch ({scratch})", scratch, True)] if scratch
@@ -243,7 +304,7 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
 
     if dry_run:
         return [{"dry_run": True, "channel": name, "id": cid,
-                 "header": header_text(day, zeros if wz else None, tag),
+                 "header": "(joins B2B Metrics / BOX Order Log threads)",
                  "replies": [(cap, [f for _, f in ups])
                              for _, cap, ups in _replies(imgs, zeros, tag, wz,
                                                          corrected)]}
@@ -253,44 +314,46 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
     client = smp._client()
     if dm_user:      # a DM test gets the full set, zeros included
         targets = [(f"DM to {dm_user}",
-                    client.conversations_open(users=dm_user)["channel"]["id"], True)]
+                    client.conversations_open(users=dm_user)["channel"]["id"],
+                    True)]
 
     out = []
+    held = False
     for name, cid, wz in targets:
-        ts = find_thread_ts(client, cid, day)
-        created = False
-        header = header_text(day, zeros if wz else None, tag)
-        if not ts:
-            ts = client.chat_postMessage(channel=cid, text=header).get("ts")
-            created = True
-        elif wz and zeros:
-            # The parent may have been posted on an EARLIER pass before the zeros
-            # existed (Saturday's 0s land late, or a --only-zeros backfill), so its
-            # text is missing the Zero Streak summary line while the replies are in
-            # the thread. Refresh it to match — chat_update is idempotent and only
-            # Lucy (the author) can edit Lucy's message, so this no-ops off-mini.
-            # Best-effort: a failed edit must never block the replies below.
-            try:
-                client.chat_update(channel=cid, ts=ts, text=header)
-            except Exception as e:  # noqa: BLE001
-                print(f"    (parent header not refreshed on {name} — {type(e).__name__})")
-        out.append({"channel": name, "thread_ts": ts, "created_parent": created})
+        ts_cache = {}
+
+        def _ts_for(plain: str):
+            if dm_user:
+                return "dm"
+            kind = "box" if plain.startswith("BOX ") else "b2b"
+            if kind not in ts_cache:
+                if kind == "box":
+                    ts_cache[kind] = box_thread_ts(client, cid, day)
+                else:
+                    ts_cache[kind] = metrics_thread_ts(client, cid, day)
+            return ts_cache[kind]
+
         for plain, caption, ups in _replies(imgs, zeros, tag,
                                             wz and not corrected, corrected):
-            # dedupe on the PLAIN text — Slack may store the emoji as a shortcode
-            # or the rendered character, so matching the caption verbatim is
-            # unreliable. Checked per channel: a reply landing in one channel says
-            # nothing about the other.
-            if _already_replied(client, cid, ts, plain):
-                out.append({"channel": name, "reply": plain, "skipped": "already in thread"})
+            ts = _ts_for(plain)
+            if ts is None:
+                out.append({"channel": name, "reply": plain,
+                            "held": "no BOX Order Log thread yet"})
+                held = True
+                continue
+            if ts != "dm" and _already_replied(client, cid, ts, plain):
+                out.append({"channel": name, "reply": plain,
+                            "skipped": "already in thread"})
                 continue
             r = client.files_upload_v2(
-                channel=cid, thread_ts=ts,
+                channel=cid, thread_ts=None if ts == "dm" else ts,
                 file_uploads=[{"file": str(p), "filename": f} for p, f in ups],
                 initial_comment=caption)
             out.append({"channel": name, "reply": plain,
                         "images": len(ups), "ok": r.get("ok")})
             time.sleep(1)
+    if held:
+        out.append({"held": True})
     return out
 
 
@@ -340,16 +403,26 @@ def _day_already_posted(day, yday) -> bool:
     tag = f"{yday.month}.{yday.day}"
     try:
         from automations.shared import slack_metrics_post as smp
+        import automations.b2b_quality.run as bq
         client = smp._client()
         for name, cid, _wz in targets:
-            ts = find_thread_ts(client, cid, day)
-            if not ts:
-                print(f"    ({name}: no thread for {header_title(day)!r} today)")
-                return False
-            for p in PROGRAMS:
-                plain = f"{p} Sales Board {tag}"
+            # Post-restructure the boards live in TWO threads: B2B in the B2B
+            # Metrics thread (ts from the shared state file — never create it
+            # from a checker), BOX in the BOX Order Log thread.
+            for prog in [p for p in PROGRAMS if p != "BOX"]:
+                ts = bq._load_state(day, cid).get("thread_ts")
+                if not ts:
+                    print(f"    ({name}: no B2B Metrics thread today)")
+                    return False
+                plain = f"{prog} Sales Board {tag}"
                 if not _already_replied(client, cid, ts, plain):
                     print(f"    ({name}: {plain!r} is not in today's thread)")
+                    return False
+            if "BOX" in PROGRAMS:
+                ts = box_thread_ts(client, cid, day)
+                plain = f"BOX Sales Board {tag}"
+                if not ts or not _already_replied(client, cid, ts, plain):
+                    print(f"    ({name}: {plain!r} not posted yet)")
                     return False
     except Exception as e:  # noqa: BLE001 — unknown means "still might be missing"
         print(f"    (posted-check unavailable — {type(e).__name__}: {str(e)[:80]})")
@@ -434,7 +507,13 @@ def main(argv=None) -> int:
 
     today = dt.date.today()
     yday = today - dt.timedelta(days=1)
-    programs = [args.program] if args.program else PROGRAMS
+    # The 5:10 run posts B2B only: the BOX images move to the BOX Order Log
+    # thread, which doesn't exist until box_order_log's 7:00 post — the
+    # vantura_revenue_board 7:25 pass posts them (with corrected data, since
+    # the 7:15 order-log confirm has run by then). --program BOX still works
+    # for that pass and for the corrected re-post.
+    programs = [args.program] if args.program else \
+        [p for p in PROGRAMS if p != "BOX"]
 
     sh = open_by_key(SHEET_ID)
     src = _retry(lambda: sh.worksheet(TAB))
@@ -515,9 +594,10 @@ def main(argv=None) -> int:
         raise
     for r in results:
         print(f"    {r}")
+    held = any(r.get("held") for r in results if isinstance(r, dict))
     if not args.dm:                  # a DM test shouldn't touch the Hub card
-        _publish_hub("success")
-    return 0
+        _publish_hub("partial" if held else "success")
+    return 75 if held else 0
 
 
 if __name__ == "__main__":

@@ -39,6 +39,12 @@ TABS = {
     "chan":  "Activation Rate - Chan (ATT Fiber)",
     "tony":  "Activation Rate - Tony (ATT Fiber)",
     "sahil": "Activation Rate - Sahil (ATT Fiber)",
+    # Pat y Jess, 2026-09-02: capitanias de fiber nuevas. Su pestana se creo
+    # copiando la de Chan y vaciando las filas de rep — el llenado inserta el
+    # roster que falta pero no saca a nadie, asi que una copia sin vaciar
+    # habria arrastrado a los reps de Chan para siempre.
+    "pat":   "Activation Rate - Pat (ATT Fiber)",
+    "jess":  "Activation Rate - Jess (ATT Fiber)",
 }
 
 # Box key -> marker substring in col A (uppercase, whitespace-normalized).

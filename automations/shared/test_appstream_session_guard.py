@@ -9,10 +9,15 @@ only ever wanted by the form-login fallback, which the 2026-08-20 release put a
 human-check on. So an unattended run walked into a door it cannot open and
 reported the doorknob.
 
-Two rules come out of that, and both are tested here:
+Two rules came out of that. The second still holds; the FIRST was reversed on
+2026-09-02, because the premise under it was measured wrong:
 
-  1. A run nobody asked to drive the login form must NOT drive it. Scheduled
-     reports pass no flags, so the default has to be "reuse only".
+  1. WAS "a run nobody asked to drive the login form must NOT drive it".
+     Megan proved on 2026-09-01 (appstream_autorenew) that the form completes
+     unattended from a cold profile, so a scheduled run driving it is a
+     self-heal, not a door it cannot open. Reuse still comes first; the form is
+     now the fallback, and APPSTREAM_NO_FORM_LOGIN=1 is the way back to
+     reuse-only.
   2. Whatever a dead session trips over on the way down, the message the channel
      gets must name the RE-SEED. Never a credential lookup as the headline.
 
@@ -20,24 +25,54 @@ Two rules come out of that, and both are tested here:
 """
 from __future__ import annotations
 
+import inspect
+import os
 import unittest
+from unittest import mock
 
 from automations.shared import tableau_patchright as tp
 
 
 class FormLoginAllowed(unittest.TestCase):
-    """Who may fall through to the (human-gated) login form."""
+    """Who may fall through to the login form."""
 
-    def test_scheduled_run_may_not(self):
+    def setUp(self):
+        # The kill switch is read from the environment, so no test may inherit
+        # whatever the machine running it happens to have set.
+        self._saved = os.environ.pop("APPSTREAM_NO_FORM_LOGIN", None)
+
+    def tearDown(self):
+        os.environ.pop("APPSTREAM_NO_FORM_LOGIN", None)
+        if self._saved is not None:
+            os.environ["APPSTREAM_NO_FORM_LOGIN"] = self._saved
+
+    def test_scheduled_run_may_self_heal(self):
         # Every 4am report calls appstream_direct_session(verbose=True) and
-        # nothing else. That must be reuse-only.
-        self.assertFalse(tp._appstream_form_login_allowed(
+        # nothing else. Since 2026-09-02 that run may sign itself back in when
+        # the saved session is dead — reuse is still tried first, upstream.
+        self.assertTrue(tp._appstream_form_login_allowed(
             allow_form_login=False, force_form_login=False,
             username=None, password=None))
 
-    def test_default_signature_is_reuse_only(self):
-        # The regression itself: allow_form_login defaulted True, so the guard
-        # above never fired for the reports that needed it most.
+    def test_kill_switch_puts_a_machine_back_to_reuse_only(self):
+        for val in ("1", "true", "YES", "on"):
+            with self.subTest(value=val):
+                os.environ["APPSTREAM_NO_FORM_LOGIN"] = val
+                self.assertFalse(tp._appstream_form_login_allowed(
+                    allow_form_login=False, force_form_login=False,
+                    username=None, password=None))
+
+    def test_kill_switch_is_off_unless_actually_set(self):
+        # An empty or unrelated value must not silently disable the self-heal.
+        for val in ("", "0", "false", "  "):
+            with self.subTest(value=val):
+                os.environ["APPSTREAM_NO_FORM_LOGIN"] = val
+                self.assertTrue(tp._appstream_form_login_allowed(
+                    allow_form_login=False, force_form_login=False,
+                    username=None, password=None))
+
+    def test_default_signature_is_reuse_first(self):
+        # Reuse stays the primary path: nothing may default to skipping it.
         import inspect
         sig = inspect.signature(tp.appstream_direct_session)
         self.assertIs(sig.parameters["allow_form_login"].default, False)
@@ -59,14 +94,25 @@ class FormLoginAllowed(unittest.TestCase):
             username="alt@example.com", password="s3cret"))
 
     def test_half_a_credential_is_not_an_opt_in(self):
-        # A username with no password can't complete a form login; treating it
-        # as consent would put us back in the "fails somewhere downstream" hole.
+        # A username with no password can't complete an alt-account form login;
+        # treating it as consent would put us back in the "fails somewhere
+        # downstream" hole. Measured against the kill switch, which is where
+        # "did anyone actually ask for this?" is still the whole question.
+        os.environ["APPSTREAM_NO_FORM_LOGIN"] = "1"
         for user, pwd in (("alt@example.com", None), (None, "s3cret"),
                           ("alt@example.com", ""), ("", "s3cret")):
             with self.subTest(username=user, password=pwd):
                 self.assertFalse(tp._appstream_form_login_allowed(
                     allow_form_login=False, force_form_login=False,
                     username=user, password=pwd))
+
+    def test_a_full_credential_beats_the_kill_switch(self):
+        # --alt-appstream signs in as another account on purpose: reuse cannot
+        # serve it, so opting a machine out of the self-heal must not disarm it.
+        os.environ["APPSTREAM_NO_FORM_LOGIN"] = "1"
+        self.assertTrue(tp._appstream_form_login_allowed(
+            allow_form_login=False, force_form_login=False,
+            username="alt@example.com", password="s3cret"))
 
 
 class ReseedError(unittest.TestCase):
@@ -91,10 +137,15 @@ class ReseedError(unittest.TestCase):
             str(err).splitlines()[0],
             "AppStream session is not usable: the token is stale")
 
-    def test_says_a_human_is_required(self):
-        # The one fact that stops somebody re-running it and waiting: no
-        # unattended run can clear the 8/20 human-check.
-        self.assertIn("unattended", str(tp._appstream_reseed_error("x")))
+    def test_says_the_unattended_login_was_already_tried(self):
+        # This used to be named "says a human is required", asserting the 8/20
+        # human-check. That check was never real — it clears itself given ~30s
+        # before submit — so the fact worth stating is the opposite one: the
+        # unattended login ALREADY ran and failed, so re-running and waiting
+        # will not help and the credential is what to look at.
+        msg = str(tp._appstream_reseed_error("x"))
+        self.assertIn("unattended", msg)
+        self.assertIn("credential", msg)
 
     def test_credential_failure_still_leads_with_the_reseed(self):
         # The 8/24 shape: creds.appstream_username() raises, and the wrapped
@@ -111,6 +162,64 @@ class ReseedError(unittest.TestCase):
         self.assertNotIn("Missing AppStream credential", first_line)
         # …while the detail is still there for whoever wants it.
         self.assertIn("Missing AppStream credential", str(err))
+
+
+class ReseedErrorNamesThisMachine(unittest.TestCase):
+    """The remedy is ALWAYS "log in HERE". There is no donor to defer to.
+
+    THIS CLASS USED TO ASSERT THE OPPOSITE, and the reversal is the point.
+
+    It pinned a CONSUMER branch: a machine not in APPSTREAM_HOLD_MACHINES was
+    told "X holds the AppStream session — Do NOT run --appstream-login here",
+    because on a shared rcaptain account a fresh login really did invalidate the
+    token the fleet was holding. Since 2026-09-02 every Lucy signs in as its own
+    account and holds its own session, so that sentence is not merely obsolete:
+    it talks whoever reads it out of the one command that fixes their machine.
+
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down."
+
+    The branch was also a guess. _appstream_consumer_of() answered from
+    _this_machine(), which silently defaults to "Lucy 1" when the
+    .machine-profile marker is missing — so any unmarked box got the
+    do-not-log-in instruction naming a donor nobody was donating from."""
+
+    def _msg(self):
+        return str(tp._appstream_reseed_error("the token is stale"))
+
+    def test_there_is_no_consumer_branch_left(self):
+        self.assertIsNone(tp._appstream_consumer_of(),
+                          "no machine consumes another's AppStream session")
+
+    def test_never_warns_anyone_off_their_own_login(self):
+        msg = self._msg()
+        self.assertNotIn("CONSUMER", msg)
+        self.assertNotIn("Do NOT run --appstream-login", msg)
+        # The push is the cross-machine dependency being removed; the error must
+        # not send anyone back to it.
+        self.assertNotIn("--appstream-push-fleet", msg)
+
+    def test_always_gives_the_local_reseed_command(self):
+        msg = self._msg()
+        self.assertIn(tp.APPSTREAM_RESEED_CMD.strip(), msg)
+        self.assertIn("this machine", msg.lower())
+
+    def test_keeps_the_invariants(self):
+        # The reason owns line 1 (the alert quotes it as "Likely cause"), and the
+        # message says the unattended path was already tried so nobody just
+        # re-runs it and waits.
+        msg = self._msg()
+        self.assertEqual(msg.splitlines()[0],
+                         "AppStream session is not usable: the token is stale")
+        self.assertIn("unattended", msg)
+
+    def test_missing_credential_does_not_break_the_diagnosis(self):
+        # The message names the configured account. A machine with no credential
+        # is exactly the one most likely to be raising this, so resolving it must
+        # not be able to throw out of an error path.
+        with mock.patch.object(tp.creds, "appstream_username",
+                               side_effect=RuntimeError("no credential")):
+            self.assertIn("the configured AppStream account", self._msg())
 
 
 class FleetPushCoversEveryMachine(unittest.TestCase):

@@ -73,8 +73,14 @@ def main(argv=None):
         # Resolve the second login from where set_appstream_alt_creds stored
         # it, so a remote verify never has to put the password in a queue row.
         if not creds.has_appstream_alt():
-            print("no alternate AppStream login on this machine — set one "
-                  "with the mini-control action set_appstream_alt_creds")
+            # RETIRED, not merely absent. "Set one with set_appstream_alt_creds"
+            # sent whoever read it off to install a third account — which is the
+            # thing that must not happen, since a broader login can push offices
+            # a job was never allowed to touch.
+            print("the alternate AppStream login is RETIRED (Megan 2026-09-02). Only "
+                  "two accounts exist: 'Lucy Reports' (every report) and "
+                  "'Lucy Resume Pushing' (the resume pusher). Do NOT install "
+                  "a third — check this machine with `login_check`.")
             return 3
         a.user, a.pw = creds.appstream_alt_username(), creds.appstream_alt_password()
     from automations.shared.tableau_patchright import (
@@ -139,8 +145,10 @@ def main(argv=None):
 
     if a.alt and not (a.user and a.pw):
         if not creds.has_appstream_alt():
-            print("no ALTERNATE account configured on this machine "
-                  "(set one with the set_appstream_alt_creds action)")
+            print("the alternate AppStream login is RETIRED (Megan 2026-09-02). Only "
+                  "two accounts exist: 'Lucy Reports' (every report) and "
+                  "'Lucy Resume Pushing' (the resume pusher). Do NOT install "
+                  "a third — check this machine with `login_check`.")
             return 5
         a.user, a.pw = creds.appstream_alt_username(), creds.appstream_alt_password()
 

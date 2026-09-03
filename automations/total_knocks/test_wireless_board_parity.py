@@ -71,3 +71,53 @@ class WirelessBoardTakesTheExtras(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoRepIdColumnAnywhere(unittest.TestCase):
+    """Raf dropped the Rep ID column from his board; house and Energy Wells
+    followed. The wireless set kept it, so an office whose grid came back
+    wireless-shaped got a board one column wider than everyone else's — which
+    is what Megan spotted on 2026-09-01 ("we don't have the ID number either
+    though?"). All three agree now."""
+
+    def test_no_layout_carries_a_rep_id_column(self):
+        for name, cols in (("house", R.COMBINED_KNOCKS_HEADERS),
+                           ("energywell", R.ENERGYWELL_KNOCKS_HEADERS),
+                           ("wireless", R.WIRELESS_KNOCKS_HEADERS)):
+            self.assertNotIn(R.COL_ID, cols, name)
+
+    def test_every_layout_leads_with_the_rep(self):
+        for name, cols in (("house", R.COMBINED_KNOCKS_HEADERS),
+                           ("energywell", R.ENERGYWELL_KNOCKS_HEADERS),
+                           ("wireless", R.WIRELESS_KNOCKS_HEADERS)):
+            self.assertEqual(cols[0], R.COL_REP, name)
+
+
+class ColumnsAgreeAcrossCampaigns(unittest.TestCase):
+    """Megan 2026-09-01: "we should have the same columns as much as we can fo
+    all campaigns. We don't need the ID on any of them."
+
+    "As much as we can" is the operative bound — the remaining differences are
+    columns ownerville's grid genuinely does not return for that campaign (the
+    wireless grid has no Talk-To column at all), not choices. Anything that
+    EXISTS in a grid should be on the board even when it reads zero.
+    """
+
+    def test_inaccessible_is_on_every_layout_that_has_it_in_the_grid(self):
+        """Dropped from Energy Wells on 8/30 for coming through empty; it is in
+        the grid, so it is back."""
+        for name, cols in (("house", R.COMBINED_KNOCKS_HEADERS),
+                           ("energywell", R.ENERGYWELL_KNOCKS_HEADERS),
+                           ("wireless", R.WIRELESS_KNOCKS_HEADERS)):
+            self.assertIn(R.COL_INACCESSIBLE, cols, name)
+
+    def test_the_shared_core_is_identical_everywhere(self):
+        core = [R.COL_REP, R.COL_TOTAL_LEADS_KNOCKED, R.COL_TOTAL_KNOCKS,
+                R.COL_FIRST_KNOCK, R.COL_LAST_KNOCK, R.COL_GAPS,
+                R.COL_TOTAL_GAPS, R.COL_HRS_KNOCKING, R.COL_NO_ANSWER,
+                R.COL_COME_BACK, R.COL_DO_NOT_KNOCK]
+        for name, cols in (("house", R.COMBINED_KNOCKS_HEADERS),
+                           ("energywell", R.ENERGYWELL_KNOCKS_HEADERS),
+                           ("wireless", R.WIRELESS_KNOCKS_HEADERS)):
+            for c in core:
+                self.assertIn(c, cols, "%s missing %s" % (name, c))

@@ -57,15 +57,35 @@ class OfficeScope(unittest.TestCase):
         for oid in offices.ROTATION:
             self.assertEqual(offices.OFFICES[oid]["account"], "lucyresume")
 
-    def test_diagnostic_offices_are_not_on_the_scoped_account(self):
-        # LucyResume cannot see them; a manual --office run there needs the broad
-        # login. If one of these ever says 'lucyresume', the scoped account has
-        # been widened — which is the thing this whole change exists to prevent.
-        for oid in offices.OFFICES:
-            if oid not in offices.ROTATION:
-                with self.subTest(office=oid):
-                    self.assertNotEqual(offices.OFFICES[oid]["account"],
-                                        "lucyresume")
+    def test_every_office_uses_the_resume_account(self):
+        """REVERSED 2026-09-02. This used to assert the OPPOSITE for the
+        diagnostic rows — that they must NOT be on the scoped account, because
+        "LucyResume cannot see them; a manual --office run there needs the broad
+        login".
+
+        Megan: "I'm telling you the resume pushing can ONLY HAPPEN on the Resume
+        pushing login. If that's not correct, then get it fixed."
+
+        The old test's reasoning was also backwards on its own terms. It read a
+        row saying 'lucyresume' as evidence "the scoped account has been widened
+        — the thing this whole change exists to prevent". A row cannot widen an
+        account; permissions live on the account, not in this table. All the row
+        decides is which login the run signs in as. Setting a diagnostic office
+        to 'lucyresume' does not grant access to it — it makes that office
+        UNREACHABLE, which is the guarantee doing its job."""
+        for oid, row in offices.OFFICES.items():
+            with self.subTest(office=oid):
+                self.assertEqual(row["account"], offices.RESUME_ACCOUNT)
+
+    def test_activate_refuses_a_row_that_names_another_account(self):
+        """A table is edited by people. The rule must not be one typo away."""
+        from unittest import mock
+        bad = dict(offices.OFFICES[offices.DEFAULT_OFFICE], account="primary")
+        with mock.patch.dict(offices.OFFICES,
+                             {offices.DEFAULT_OFFICE: bad}, clear=False):
+            with self.assertRaises(SystemExit) as cm:
+                offices.activate(offices.DEFAULT_OFFICE)
+        self.assertIn("Resume Pushing", str(cm.exception))
 
 
 class StandaloneDefault(unittest.TestCase):

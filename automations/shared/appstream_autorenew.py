@@ -75,27 +75,20 @@ def token_minutes_left() -> float:
     return max(0.0, best)
 
 
-def _push_fleet() -> bool:
-    """Hand the fresh session to every machine that runs AppStream reports."""
-    from automations.shared.tableau_patchright import APPSTREAM_STORAGE_STATE
-    from automations.shared.session_holder import APPSTREAM_FLEET_MACHINES
-    from automations.day_orchestrator import mini_control as mc
-    try:
-        blob = APPSTREAM_STORAGE_STATE.read_text()
-    except Exception as e:  # noqa: BLE001
-        _log("cannot read the session to push: %s" % str(e)[:120])
-        return False
-    ok = True
-    for machine in APPSTREAM_FLEET_MACHINES:
-        try:
-            mc.enqueue("set_appstream_state", blob, by="appstream-autorenew",
-                       machine=machine)
-            _log("queued session -> %s" % machine)
-        except Exception as e:  # noqa: BLE001
-            _log("could not queue to %s: %s" % (machine, str(e)[:120]))
-            ok = False
-    return ok
+def _consumer_of() -> str:
+    """Always "". No machine holds AppStream for another one.
 
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down." Each Lucy signs in as its own account, so the remedy
+    for a dead session is always "log in HERE" — see
+    tableau_patchright._appstream_consumer_of for the longer note on why this
+    stays as a stub instead of being deleted."""
+    return ""
+
+
+# _push_fleet() DELETED 2026-09-02 — see the note at the renewal site. A fresh
+# session belongs to the account that minted it; handing it to another Lucy swaps
+# that machine's identity instead of refreshing its session.
 
 def _ownerville_tokens():
     """The rqst token(s) ownerville just issued, newest usable first.
@@ -488,17 +481,38 @@ def main(argv=None) -> int:
     # clock ticked during it, and demanding a strict increase reported real
     # renewals as failures (Lucy 1, 2026-09-01).
     if not ok or after < a.under:
-        _log("UNATTENDED RENEW FAILED (%.0f min on the token) — the profile has "
-             "gone cold, so this one genuinely needs a human seed:" % after)
+        # SAY WHICH FAILURE THIS IS. "The profile has gone cold" was printed for
+        # both of these, and on 2026-09-02 it was printed at a renew that had
+        # just driven the form and reached a live console — the profile was
+        # perfectly warm. That sent a human through five manual logins chasing a
+        # cold profile that did not exist. The two cases need different fixes:
+        if not ok:
+            _log("UNATTENDED RENEW FAILED (%.0f min on the token) — never "
+                 "reached a live console." % after)
+        else:
+            # Reached a console, but no usable token came back. MEASURED on
+            # Lucy 1 2026-09-02: this is what a form-login-only recovery looks
+            # like. The applicantstream form authenticates the ACCOUNT; it does
+            # not mint an rqst — that comes from the OWNERVILLE SSO hop
+            # (_sso_to_appstream / _ownerville_tokens, "what makes applicantstream
+            # ISSUE, while our own saved token only makes it RESTORE"). A console
+            # that renders on a re-injected old token reads as success here and
+            # is not one.
+            _log("UNATTENDED RENEW FAILED — reached a console but the token came "
+                 "back with only %.0f min (expected ~120). The applicantstream "
+                 "form does not mint an rqst; that comes from the ownerville SSO "
+                 "hop, so check the OWNERVILLE session first." % after)
         _log("  PYTHONPATH=. .venv/bin/python -m "
              "automations.shared.tableau_patchright --appstream-login")
         return 1
 
     _log("renewed: %.0f min on the new token" % after)
-    if not _push_fleet():
-        _log("renewed but could not push to the whole fleet")
-        return 1
-    _log("fleet pushed — no human was needed")
+    # NOT PUSHED ANYWHERE. This renewal is for THIS machine's own account. Every
+    # Lucy runs its own renewal on its own login, so there is no fleet to hand it
+    # to — and handing it over would replace the other machine's identity with
+    # ours, not refresh it (Megan 2026-09-02: "one machine CANNOT depend on
+    # another, we don't want 1 taking them all down").
+    _log("renewed for this machine — no human was needed, nothing pushed")
     return 0
 
 

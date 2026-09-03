@@ -169,8 +169,9 @@ _KINDS = {
         "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
         "tail_headline": "the board filled, but SHORT.",
         "label": "Missing",
-        "fix": "fix the frozen day-number cell to '=<prev cell>+1', then re-run "
-               "`{report_id}` — the fill is idempotent.",
+        "fix": "the day-number row does not match real dates — run `python -m "
+               "automations.org_sales_board.daynum_repair --apply` (both "
+               "boards), then re-run `{report_id}`; the fill is idempotent.",
         "tail": "Every total on that board is undercounting until it's re-run.",
     },
     # A Tableau SOURCE that didn't download. The tab still fills from the other

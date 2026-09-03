@@ -300,8 +300,9 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
                     days = [d.isoformat() for d in _stale]
                     logfn(f"  ⚠ section {sec.label!r}: {len(days)} completed "
                           f"day(s) have NO column — DROPPED: {days}. Its "
-                          f"day-number row is frozen; fix the cell to "
-                          f"'=<prev cell>+1' and re-run the section.")
+                          f"day-number row does not match real dates; run "
+                          f"`python -m automations.org_sales_board."
+                          f"daynum_repair --apply`, then re-run the section.")
                     summary["dropped_days"].append(f"{sec.label}: {days}")
                 fs.apply_plan(ws, plan, dry_run=dry_run, logfn=logfn)
                 summary["filled"].append(sec.label)

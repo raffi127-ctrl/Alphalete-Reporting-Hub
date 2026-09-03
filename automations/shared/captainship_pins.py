@@ -230,3 +230,66 @@ def drop_expected_absent(went_dark: dict, slug: str, logfn=None) -> dict:
               f"{', '.join(sorted(set(hushed)))} — they sell nothing this "
               f"source measures (shared/captainship_pins.NOT_IN_SOURCE)")
     return out
+
+
+# --------------------------------------------------------------------------
+# THE MIRROR CASE: a rep Tableau files under captain A whose numbers have to
+# be READ ON captain B's report, because the move already happened in real
+# life and SmartCircle has not re-filed the `Captain's Bonus Teams` value yet.
+#
+# NOT_ON_TEAM above solves "Tableau gives us someone who isn't ours". This
+# solves "the person is ours and Tableau still hands them to someone else" —
+# without it the ICD simply has no metrics anywhere on their real captain's
+# report, and there is nothing on the tab to notice that.
+#
+# 2026-09-01 (Eve): Jay ("Ja") Mosley joined CHAN's captainship. Tableau's
+# `Captain's Bonus Teams v2` still files him under "Pat's Team", and Pat's is a
+# COUNTRY captainship with no Org Sales Board block and no daily draft
+# ([[project_pat-thompson-captainship-not-on-org-board]]), so nothing loses him
+# by routing: Eve, "empezá a tomar sus métricas desde la capitanía de Pat hasta
+# que lo transfieran a Chan". Delete the entry the day SmartCircle moves him.
+#
+# WHAT THIS CANNOT FIX — the same limit NOT_ON_TEAM has, in reverse: the
+# "Captainship Avg" / office-total row on each tab is Tableau's OWN per-team
+# roll-up, so it still EXCLUDES an adopted rep (and still includes him in his
+# old captain's). The per-owner rows — the ones the reader names people off —
+# are right. We do not recompute a rate over a denominator we don't have.
+#
+# Only the pulls that slice an ORG-WIDE crosstab in Python can honour this
+# (cancel rate, activation rate, ABP / 6+ days, fiber WIRELESS churn). The
+# per-captain NEW INTERNET churn views filter server-side, so an adopted rep
+# reaches those tabs through the existing went-dark backfill instead
+# (owners_metrics_churn.run._backfill_moved_owners) — which needs the row to
+# already exist on the tab.
+#
+# team the report is BUILDING -> {rep: the team Tableau currently files them under}
+ADOPTED: Dict[str, Dict[str, str]] = {
+    "Chan": {"Ja Mosley": "Pat's Team"},
+}
+
+
+def adopted_from(captain_or_team: str, name: str) -> Optional[str]:
+    """The team Tableau files `name` under, if this captain has adopted them."""
+    key = captain_key(captain_or_team)
+    for capt, reps in ADOPTED.items():
+        if captain_key(capt) != key:
+            continue
+        for rep, src in reps.items():
+            if _k(rep) == _k(name):
+                return src
+    return None
+
+
+def route_team(team: str, owner: str) -> str:
+    """The team `owner`'s row should be FILED under, given Tableau says `team`.
+
+    Call it wherever a pull reads the `Captain's Bonus Teams` cell, right after
+    the owner name — it is a no-op for every row that is not adopted, and the
+    team's own 'Total' row never moves (it is keyed by owner name, and no
+    Total row carries a rep's name).
+    """
+    for capt, reps in ADOPTED.items():
+        for rep, src in reps.items():
+            if _k(rep) == _k(owner) and captain_key(src) == captain_key(team):
+                return f"{capt}'s Team"
+    return team

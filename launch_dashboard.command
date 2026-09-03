@@ -40,6 +40,35 @@ if [ -d .git ]; then git config core.hooksPath deploy/git-hooks 2>/dev/null || t
 #     a stray tracked change (often just Windows CRLF line-endings) or a wrong
 #     branch can NEVER strand them on stale code — the bug that hid every fix
 #     from Eve on 2026-05-25.
+# Why a failed pull needs a marker file: git's refusal only ever printed to this
+# Terminal window, which sits BEHIND the Hub and nobody reads. So the banner kept
+# saying "click Update & restart", the click did nothing, and a relaunch hit the
+# same wall — silently, forever (Megan, 2026-09-02: 7 commits stranded for days
+# because one uncommitted edit overlapped an incoming one). The Hub reads this
+# marker and says what is actually blocking, instead of prescribing a fix that
+# cannot work. Written on failure, removed on success — never left stale.
+UPDATE_BLOCKED_MARKER="$HOME/.config/recruiting-report/.hub-update-blocked"
+
+# note_update_blocked <git-stderr-file>
+# Records the reason + the tracked files whose local edits overlap what's
+# incoming, which is the only detail that tells you what to actually go fix.
+note_update_blocked() {
+  mkdir -p "$(dirname "$UPDATE_BLOCKED_MARKER")" 2>/dev/null || true
+  {
+    # Dirty tracked files that origin/main also touches = the real blockers.
+    git diff --name-only 2>/dev/null | sort > /tmp/.hub_dirty.$$ || true
+    git diff --name-only HEAD origin/main 2>/dev/null | sort > /tmp/.hub_incoming.$$ || true
+    comm -12 /tmp/.hub_dirty.$$ /tmp/.hub_incoming.$$ 2>/dev/null || true
+    rm -f /tmp/.hub_dirty.$$ /tmp/.hub_incoming.$$ 2>/dev/null || true
+  } > "$UPDATE_BLOCKED_MARKER".files 2>/dev/null || true
+  [ -n "$1" ] && [ -s "$1" ] && head -c 2000 "$1" > "$UPDATE_BLOCKED_MARKER" 2>/dev/null \
+    || echo "git pull --ff-only was refused" > "$UPDATE_BLOCKED_MARKER"
+}
+
+clear_update_blocked() {
+  rm -f "$UPDATE_BLOCKED_MARKER" "$UPDATE_BLOCKED_MARKER".files 2>/dev/null || true
+}
+
 if [ -d .git ]; then
   PRE_UPDATE_HEAD="$(git rev-parse @ 2>/dev/null || echo "")"
   DID_UPDATE=0
@@ -56,14 +85,23 @@ if [ -d .git ]; then
     REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "")
     if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
       echo "→ Updates found — pulling..."
-      if git pull --ff-only --quiet origin main; then
+      if git pull --ff-only --quiet origin main 2>/tmp/.hub_pull_err.$$; then
         echo "✅ Updated to latest version"; DID_UPDATE=1
+        clear_update_blocked
       else
+        note_update_blocked /tmp/.hub_pull_err.$$
         echo "⚠️  Auto-update skipped — an incoming update touches a file that"
         echo "    has local edits here. Continuing on current version."
+        if [ -s "$UPDATE_BLOCKED_MARKER".files ]; then
+          echo "    Blocking file(s):"
+          sed 's/^/      • /' "$UPDATE_BLOCKED_MARKER".files
+          echo "    Commit or stash those, then relaunch. The Hub now says this too."
+        fi
       fi
+      rm -f /tmp/.hub_pull_err.$$ 2>/dev/null || true
     else
       echo "✅ Already up to date"
+      clear_update_blocked
     fi
   else
     # --- TEAMMATE machine: force-align to origin/main, every launch ---
@@ -73,7 +111,9 @@ if [ -d .git ]; then
       NEW_HEAD="$(git rev-parse @ 2>/dev/null || echo "")"
       [ "$PRE_UPDATE_HEAD" != "$NEW_HEAD" ] && DID_UPDATE=1
       echo "✅ On latest: $(git log -1 --format='%h %s' 2>/dev/null)"
+      clear_update_blocked
     else
+      note_update_blocked ""
       echo ""
       echo "════════════════════════════════════════════════════════════════"
       echo "⚠️   COULDN'T SYNC TO LATEST — you may be running OLD code."
@@ -295,7 +335,17 @@ while :; do
   [ -f "$RESTART_MARKER" ] || break
   echo ""
   echo "→ Hub asked to restart — pulling latest and starting again…"
-  git pull --ff-only --quiet origin main 2>/dev/null \
-    || echo "⚠️  Pull failed (offline, or an update overlaps a local edit) — restarting on current code"
+  # The button's whole promise is "click this and you're on new code". When the
+  # pull is refused it isn't, so record why — otherwise the restarted Hub comes
+  # back showing the same "N behind" banner with no hint that clicking again
+  # will do exactly nothing.
+  if git pull --ff-only --quiet origin main 2>/tmp/.hub_pull_err.$$; then
+    clear_update_blocked
+  else
+    note_update_blocked /tmp/.hub_pull_err.$$
+    echo "⚠️  Pull failed (offline, or an update overlaps a local edit) — restarting on current code"
+    [ -s "$UPDATE_BLOCKED_MARKER".files ] && sed 's/^/      • /' "$UPDATE_BLOCKED_MARKER".files
+  fi
+  rm -f /tmp/.hub_pull_err.$$ 2>/dev/null || true
   ./.venv/bin/python -m pip install --quiet -r automations/recruiting_report/requirements.txt 2>/dev/null || true
 done

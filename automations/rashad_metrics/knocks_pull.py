@@ -131,6 +131,178 @@ def _scrape_energywell_rows(page, idx: dict) -> list[dict]:
     return rows
 
 
+# B2B. TWO campaigns, TWO grids, and they are not each other's — B2B AT&T SBS
+# (invD2DClientId=2) and B2B-BOX-Energy (16) share only the spine (ID / Rep /
+# Total Leads Knocked / Total Knocks / First / Last Knock) plus Come Back and
+# Inaccurate Lead. Both column sets were read LIVE off p=89 on 2026-09-02 with
+# the campaign pinned — an unpinned dump proves nothing, the campaign being a
+# sticky session-global — and both header dumps are kept under output/probes/.
+#
+# WHY THEY NEEDED THEIR OWN SHAPES RATHER THAN THE TOLERANT WIRELESS SCRAPE.
+# A B2B grid carries Total Knocks and no house Talk-To split, so
+# _is_wireless_dispo claims it; the wireless scrape only REQUIRES ID/Rep/Total
+# Knocks and zero-fills the rest. So B2B used to render a clean, plausible board
+# with 0 under every disposition while the reps' real outcomes sat in buckets
+# nobody read. The near-miss English is what makes it so easy: AT&T's grid says
+# "Talked To - Not Interested" where fiber says "Talk To - Not Interested", and
+# "Presentation - Not Interested" where fiber writes the en-dash version.
+#
+# NEITHER B2B GRID HAS A "No answer" BUCKET, and only Box has Inaccessible.
+_B2B_ATT_COLUMNS = [
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_TOTAL_LEADS_KNOCKED,
+    knocks.COL_TOTAL_KNOCKS, knocks.COL_FIRST_KNOCK, knocks.COL_LAST_KNOCK,
+    knocks.COL_B2B_TALKED_TO_NI, knocks.COL_PRES_NI, knocks.COL_SALE,
+    knocks.COL_COME_BACK, knocks.COL_B2B_CORP_LOCAL,
+    knocks.COL_B2B_CORP_NO_OPP, knocks.COL_DO_NOT_KNOCK,
+    knocks.COL_B2B_INACCURATE_LEAD, knocks.COL_B2B_NONE,
+]
+_B2B_ATT_COUNTS = set(_B2B_ATT_COLUMNS) - {
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_FIRST_KNOCK,
+    knocks.COL_LAST_KNOCK}
+
+_B2B_BOX_COLUMNS = [
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_TOTAL_LEADS_KNOCKED,
+    knocks.COL_TOTAL_KNOCKS, knocks.COL_FIRST_KNOCK, knocks.COL_LAST_KNOCK,
+    knocks.COL_BOX_TALKED_TO, knocks.COL_BOX_OWNER_TALKED_TO,
+    knocks.COL_NOT_INTERESTED, knocks.COL_BOX_CONTRACT_SIGNED,
+    knocks.COL_BOX_BILL_NO_SALE, knocks.COL_COME_BACK,
+    knocks.COL_BOX_AM_COME_BACK, knocks.COL_BOX_CORP_NO_OPP,
+    knocks.COL_BOX_DO_NOT_DISTURB, knocks.COL_INACCESSIBLE,
+    knocks.COL_B2B_INACCURATE_LEAD,
+]
+_B2B_BOX_COUNTS = set(_B2B_BOX_COLUMNS) - {
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_FIRST_KNOCK,
+    knocks.COL_LAST_KNOCK}
+
+# TALK-TO = every bucket except the ones where nobody was spoken to. That is the
+# house rule (fiber excludes No answer and Inaccessible, and counts Do Not
+# Knock), applied to each B2B vocabulary:
+#   AT&T  excludes None (knocked, no disposition) and Inaccurate Lead (the lead
+#         was wrong, so there was nobody there). It has no No-answer bucket.
+#   Box   excludes Inaccessible and Inaccurate Lead, and counts Do Not Disturb
+#         the way fiber counts Do Not Knock.
+#
+# BOX'S THREE TALK-TO COLUMNS ARE THREE DISPOSITIONS, not one counted thrice.
+# Asked and answered (Megan 2026-09-02): "they should be each their own column."
+# So "Talked To", "Owner Talked To" and "Not Interested" are mutually exclusive
+# the way every other grid's buckets are — a knock lands in exactly one, the
+# board shows all three, and summing them into Total Talk to is a sum over
+# distinct doors rather than the double-count it would be if a knock could hold
+# two of them at once. Do not "simplify" this by collapsing them.
+_B2B_ATT_TALK_TO_PARTS = [
+    knocks.COL_B2B_TALKED_TO_NI, knocks.COL_PRES_NI, knocks.COL_SALE,
+    knocks.COL_COME_BACK, knocks.COL_B2B_CORP_LOCAL,
+    knocks.COL_B2B_CORP_NO_OPP, knocks.COL_DO_NOT_KNOCK,
+]
+_B2B_BOX_TALK_TO_PARTS = [
+    knocks.COL_BOX_TALKED_TO, knocks.COL_BOX_OWNER_TALKED_TO,
+    knocks.COL_NOT_INTERESTED, knocks.COL_BOX_CONTRACT_SIGNED,
+    knocks.COL_BOX_BILL_NO_SALE, knocks.COL_COME_BACK,
+    knocks.COL_BOX_AM_COME_BACK, knocks.COL_BOX_CORP_NO_OPP,
+    knocks.COL_BOX_DO_NOT_DISTURB,
+]
+
+
+def _is_b2b_att_dispo(idx: dict) -> bool:
+    """B2B AT&T SBS. "Corp Franchise No Opp" is the signature — no other grid
+    carries a Corp column, and Box spells its own one "Corp - No Opp"."""
+    return knocks._norm(knocks.COL_B2B_CORP_NO_OPP) in idx
+
+
+def _is_b2b_box_dispo(idx: dict) -> bool:
+    """B2B Box Energy. "Owner Talked To" is unique to it; the Corp column is
+    checked too so a grid that renames one still lands here rather than being
+    claimed by the tolerant wireless scrape."""
+    return (knocks._norm(knocks.COL_BOX_OWNER_TALKED_TO) in idx
+            or knocks._norm(knocks.COL_BOX_CORP_NO_OPP) in idx)
+
+
+def is_b2b_dispo(idx: dict) -> bool:
+    return _is_b2b_att_dispo(idx) or _is_b2b_box_dispo(idx)
+
+
+# WHAT GRID EACH PINNED CAMPAIGN MUST PRODUCE. Only the campaigns whose grids
+# are distinguishable on sight are listed — a pin we cannot verify is not
+# checked, rather than guessed at.
+#
+# THIS EXISTS BECAUSE A PINNED CAMPAIGN DOES NOT ALWAYS PRODUCE ITS OWN GRID
+# (observed 2026-09-02). Impersonating Carlos Hidalgo (11580) and pinning
+# invD2DClientId=16 returned the 22-header B2B AT&T grid, not Box's 24-header
+# one — in a fresh session, grid warmed first, and with the page genuinely on
+# 16 (54 of its links carried it, and his picker lists B2B-BOX-Energy).
+#
+# IT IS THE OFFICE, NOT IMPERSONATION. Roshan Amin Ahmad (19833, Sapphire
+# Marketing) is impersonated exactly the same way and his campaign-16 pull
+# serves the full Box grid and real Box rows. Carlos's office simply does not
+# render a Box-shaped disposition table, whatever its picker offers — so a
+# campaign-16 pull against it comes back holding AT&T's reps and AT&T's numbers
+# under a Box heading.
+#
+# Left unchecked that is the worst failure this repo has: a board titled "B2B
+# Box" carrying AT&T's reps and AT&T's numbers, which — unlike a blank board —
+# nobody reading it can tell is wrong. Same family as the impersonation
+# fall-through that put Raf's 37 reps in Jay Turnage's chat.
+CAMPAIGN_EXPECTED_SHAPE = {
+    "2": ("B2B AT&T SBS", _is_b2b_att_dispo),
+    "16": ("B2B-BOX-Energy", _is_b2b_box_dispo),
+    # RES-ENERGYWELL. Added 2026-09-02 after the failure this table was built
+    # for happened again, to a D2D office: Calvin is pinned to 40 and his
+    # 2:55 PM board came back B2B BOX-SHAPED — Carlos's Box campaign — and
+    # went to ENERGY WELLS DOMINATION as "TOTAL KNOCKS — ENERGYWELL — CALVIN"
+    # with eight reps and three gap alerts. Nobody in that chat could have
+    # told. It published because this map only knew the two B2B ids, so a
+    # pin that did not take on any OTHER campaign was unchecked.
+    #
+    # Energy Wells has a signature worth checking: the VL column, which no
+    # other campaign's grid carries.
+    "40": ("RES-ENERGYWELL", _is_energywell_dispo),
+    # DELIBERATELY NOT "3" (RES AT&T). It is KNOCKS_CAMPAIGN_ID, the default
+    # every office without an override gets, and a wireless office pinned to
+    # it renders a wireless grid perfectly legitimately — Isaiah's does. An
+    # entry here would refuse all of them. Jay's AT&T board, which comes back
+    # Energy-Wells-shaped under this pin, is caught instead by the identical
+    # rep set it shares with his Energy Wells board.
+}
+
+
+def assert_campaign_grid(idx: dict, campaign_id: "Optional[str]") -> None:
+    """Raise unless the grid on screen is the one this campaign should serve.
+
+    No-op when nothing was pinned, or when the campaign's grid has no signature
+    we can recognise — this refuses what it can PROVE wrong, never what it
+    merely cannot confirm.
+    """
+    want = CAMPAIGN_EXPECTED_SHAPE.get(str(campaign_id or "").strip())
+    if not want:
+        return
+    name, matches = want
+    if matches(idx):
+        return
+    got = ("B2B AT&T-shaped" if _is_b2b_att_dispo(idx)
+           else "B2B Box-shaped" if _is_b2b_box_dispo(idx)
+           else "not a B2B grid at all")
+    raise KnocksPullFailed(
+        "campaign %s (%s) was pinned, but the Disposition grid on screen is %s "
+        "— the pin did not take and every number from it belongs to another "
+        "campaign. Refusing to publish them. Headers seen: %s"
+        % (campaign_id, name, got, ", ".join(sorted(idx)[:24])))
+
+
+def _scrape_b2b_rows(page, idx: dict) -> list[dict]:
+    """B2B rows for whichever of the two grids this is, with Total Talk to
+    summed over that campaign's own parts."""
+    att = _is_b2b_att_dispo(idx)
+    cols, counts, parts, label = (
+        (_B2B_ATT_COLUMNS, _B2B_ATT_COUNTS, _B2B_ATT_TALK_TO_PARTS, "B2B AT&T")
+        if att else
+        (_B2B_BOX_COLUMNS, _B2B_BOX_COUNTS, _B2B_BOX_TALK_TO_PARTS, "B2B Box"))
+    rows = _scrape_shaped_rows(page, idx, cols, counts, label)
+    for rec in rows:
+        rec[knocks.COL_TOTAL_TALK_TO] = sum(
+            int(rec.get(c) or 0) for c in parts)
+    return rows
+
+
 def _is_wireless_dispo(idx: dict) -> bool:
     """Wireless-shaped Disposition: has Total Knocks but not the house
     Talk-To split — the signature that separates the two table shapes."""
@@ -342,6 +514,126 @@ def _pin_campaign(page, rqst: str, campaign_id: Optional[str] = None,
                   "continuing with the session's current campaign", flush=True)
 
 
+_BE_OFFICE_SEL = "select[name=beOffice], #beOffice"
+
+
+def impersonated_office_label(page, rqst: str, *, attempts: int = 3) -> str:
+    """The office the session is ACTUALLY on, read off p=88's `beOffice` select
+    — e.g. "Calvin Ribera (22162 - Vernon, Inc.)".
+
+    This is the only readout that tracks impersonation. The rqst token does NOT:
+    ownerville hands an impersonated session the SAME token as master, so a
+    confirmImpersonate that silently fails leaves every later fetch answering
+    for the wrong office with nothing raising (verified 2026-09-01).
+
+    RETRIED, because "" is no longer a free pass. A single flaky read is what
+    put Raf's 38 reps on a board titled KHALIL MANSOUR (2026-09-02, /knocks):
+    the read came back empty once, assert_impersonating took that as "not a
+    mismatch", and the pull scraped whatever office the session was on. The
+    same read, re-run against the same office minutes later, took 1-4s and
+    answered "KHALIL MANSOUR (11901 - ALPHALETE MANAGEMENT GROUP, INC.)" every
+    time — so it is transient, and a retry costs a few seconds against a board
+    of someone else's numbers.
+
+    Waits for the SELECT, not for networkidle: the element is in the initial
+    HTML, while the grid behind it keeps loading — on the biggest offices
+    (11280, 11901) that is the difference between a 1s read and a timeout.
+    """
+    last = ""
+    for i in range(max(1, attempts)):
+        try:
+            page.goto("https://v2.ownerville.com/index.cfm?p=88&rqst=%s" % rqst,
+                      wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_selector(_BE_OFFICE_SEL, timeout=20000)
+            last = page.eval_on_selector(
+                _BE_OFFICE_SEL,
+                "e => (e.options[e.selectedIndex] || {}).text || ''") or ""
+            if last.strip():
+                return last
+        except Exception:  # noqa: BLE001 — a check must never be the failure
+            pass
+        if i + 1 < max(1, attempts):
+            try:
+                page.wait_for_timeout(1500)
+            except Exception:  # noqa: BLE001
+                pass
+    return last
+
+
+def assert_impersonating(page, rqst: str, canonical: str, aliases_raw,
+                         *, verbose: bool = True) -> None:
+    """Raise unless the session is really on `canonical`'s office.
+
+    WHY THIS IS NOT OPTIONAL. On 2026-09-01 `/knocks Kash Rai` came back with
+    Calvin Ribera's seven Energy Wells reps under the heading "TOTAL KNOCKS —
+    KASH RAI", and the same fall-through put Raf's 37 reps in Jay Turnage's
+    chat. Nothing errored in either case. A board with the right title and
+    another office's numbers is worse than no board: unlike a blank one, the
+    person reading it cannot tell.
+
+    AND WHY IT NOW RAISES ON AN UNREADABLE OFFICE. The first cut let an
+    unreadable label through — "only a positive mismatch counts" — which is a
+    guard that stands down the moment it is inconvenienced. 2026-09-02:
+    `/knocks Khalil Mansour` drew Raf's 38 reps under KHALIL MANSOUR, and the
+    log for that one office is missing its "✓ Confirmed" line while Chan,
+    Kash, Cyrus and Isaiah all carry theirs from the same session. The guard
+    never decided anything; the read came back empty once and it stepped
+    aside. So: retry, then take a second opinion off the page header, then
+    refuse. A request that errors can be re-asked.
+    """
+    label = impersonated_office_label(page, rqst)
+    if not label:
+        # UNREADABLE IS NOT A PASS. It used to be — "only a positive mismatch
+        # counts" — and that is the hole Khalil Mansour fell through on
+        # 2026-09-02: one empty read, no "✓ Confirmed" line, and /knocks handed
+        # back Raf's 38 reps under the title KHALIL MANSOUR. Every other office
+        # in the same session confirmed normally, so the guard was not wrong
+        # about the office; it simply never got to ask.
+        #
+        # Second opinion before giving up: while impersonating, p=901 renders
+        # the office-access LIST and the header carries no office id, so an id
+        # here at all means the session is still on master and the switch
+        # plainly did not take. Named separately because it is the failure that
+        # actually happens, and "still on Raf" is worth saying out loud.
+        head, office_id = logged_in_office(page)
+        if office_id == MASTER_OFFICE_ID:
+            raise RuntimeError(
+                "impersonation of %r did not take — the session is still on "
+                "the master office %s, and every number from it would be "
+                "Raf's. Header: %r"
+                % (canonical, MASTER_OFFICE_ID, head[:120]))
+        raise RuntimeError(
+            "couldn't read which office the session is on after impersonating "
+            "%r (p=88 gave no beOffice value in any of its tries) — "
+            "refusing to publish numbers nobody can attribute. Ask again; "
+            "this read is transient." % (canonical,))
+    # load_aliases() returns {canonical_sheet_tab: [aliases]} — NOT
+    # {alias: canonical}. Reading it the other way round built an alias set
+    # that never contained the alias, so this refused the RIGHT office: on
+    # 2026-09-01 it told Raf "impersonation landed on 'Akashdeep Rai (22177 -
+    # Palace Acquisitions, Inc.)', not 'Kash Rai'" — which is the same office,
+    # under the spelling ownerville uses.
+    want = {_norm_office(canonical)}
+    for canon, alias_list in (aliases_raw or {}).items():
+        if _norm_office(canon) != _norm_office(canonical):
+            continue
+        for alias in (alias_list or []):
+            want.add(_norm_office(alias))
+    got = _norm_office(label)
+    if any(w and w in got for w in want):
+        if verbose:
+            print("  ✓ Confirmed on %s" % label.strip(), flush=True)
+        return
+    raise RuntimeError(
+        "impersonation landed on %r, not %r — ownerville did not switch office "
+        "and every number from this session would belong to someone else."
+        % (label.strip()[:80], canonical))
+
+
+def _norm_office(name) -> str:
+    return " ".join(str(name or "").split()).strip().lower()
+
+
 def pull_office_knocks(office_name: Optional[str] = None,
                        target: Optional[dt.date] = None,
                        verbose: bool = True) -> tuple[dt.date, list[dict]]:
@@ -413,18 +705,35 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
         raise RuntimeError(
             "Couldn't reach the ownerville Office Access page (?p=901) to "
             f"impersonate {canonical!r}.")
-    # _find_owner_and_impersonate returns the FRESH rqst for the
-    # impersonated session (the server hands back a new token), so we
-    # don't need to re-capture it separately.
-    rqst, reason = _find_owner_and_impersonate(page, canonical, aliases_raw)
-    if not rqst:
-        raise RuntimeError(
-            f"Couldn't impersonate {canonical!r} in ownerville: {reason}")
-    if verbose:
-        print(f"  ✓ Impersonated {canonical!r}; rqst={rqst[:8]}…",
-              flush=True)
-
+    # THE `try` OPENS HERE, BEFORE confirmImpersonate IS CALLED — not after
+    # the identity check below. Impersonation is SERVER-side state on the
+    # shared ownerville session, so anything that raises between the switch and
+    # the finally leaves the session stuck on the wrong office for every LATER
+    # run, including the master one. 2026-09-02: a `probe_knocks "Jay Turnage"`
+    # failed its assert_impersonating (it had landed on Chan Park), the raise
+    # skipped the exit because the check sat OUTSIDE this block, and the next
+    # gap_alerts ticks pulled Raf's own board off an impersonated grid — his
+    # card went to Alphalete Partners as `gaps_only` ("TELEMAPPER KNOCKS")
+    # instead of the house board, and Calvin's pull came back as Jay Turnage.
+    # The guard that refuses to publish another office's numbers must not
+    # itself be what strands the session on that office.
     try:
+        # _find_owner_and_impersonate returns the FRESH rqst for the
+        # impersonated session (the server hands back a new token), so we
+        # don't need to re-capture it separately.
+        rqst, reason = _find_owner_and_impersonate(page, canonical, aliases_raw)
+        if not rqst:
+            raise RuntimeError(
+                f"Couldn't impersonate {canonical!r} in ownerville: {reason}")
+        if verbose:
+            print(f"  ✓ Impersonated {canonical!r}; rqst={rqst[:8]}…",
+                  flush=True)
+        # PROVE IT. "Impersonated" above only means confirmImpersonate was
+        # called, not that ownerville switched — and the token cannot tell us,
+        # so this asks the page which office it is actually on.
+        assert_impersonating(page, rqst, canonical, aliases_raw,
+                             verbose=verbose)
+
         # Defensive: prefer the live page's rqst if the post-impersonate
         # navigation landed on a URL with a newer token. page_rqst falls
         # back to the value we already have.
@@ -465,8 +774,35 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
                       verbose=verbose)
 
         for target in targets:
-            out[target] = _scrape_day_on_page(page, rqst, target,
-                                              verbose=verbose)
+            rows = _scrape_day_on_page(page, rqst, target, verbose=verbose,
+                                       expect_campaign=campaign)
+            # CHECK AGAIN, AFTER EVERY DAY. Impersonation is a property of the
+            # ownerville SERVER session, and every process on this machine
+            # restores the SAME storage_state — so they are all one session,
+            # whatever Chrome profile they launched. Whoever calls
+            # confirmImpersonate (or _exit_impersonation, which drops the
+            # session back to MASTER = Raf) last wins, for everyone.
+            #
+            # Measured on Lucy 1, 2026-09-02, scraping Khalil's 09/01 four
+            # times inside ONE impersonation while gap_alerts ran its own
+            # offices in its own Chrome profile:
+            #   read 1   7 reps   label: KHALIL MANSOUR (11901)
+            #   read 2   7 reps   label: ""            <- mid-switch
+            #   read 3  39 reps   label: Chan Park (19588)
+            #   read 4  39 reps
+            # Nothing errored, and the pull still called them Khalil's. That is
+            # the board that went out at 13:43 titled KHALIL MANSOUR carrying
+            # Raf's 38 reps, and — same mechanism, not a "silent
+            # confirmImpersonate" — Kash Rai showing Calvin's seven reps and
+            # Jay Turnage's chat getting Raf's 37 on 2026-09-01.
+            #
+            # Checking once before the loop cannot see this: the drift happens
+            # BETWEEN days, and on a single-day pull between that check and the
+            # scrape. So a day's rows are kept only once the session is
+            # confirmed to STILL be on the office we asked for.
+            assert_impersonating(page, rqst, canonical, aliases_raw,
+                                 verbose=False)
+            out[target] = rows
     finally:
         # ALWAYS exit impersonation before the session closes so the
         # next run / other reports start from master, not a stuck
@@ -481,7 +817,8 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
 
 
 def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
-                        verbose: bool = True) -> list:
+                        verbose: bool = True,
+                        expect_campaign: "Optional[str]" = None) -> list:
     """ONE day's rows on a page that is already impersonating the right office
     with its campaign pinned — Disposition by Rep merged with Time Tracker
     gaps, exactly as pull_office_on_page always did inline. Extracted so the
@@ -494,11 +831,24 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
               flush=True)
     knocks._navigate(page, rqst, mdy)
     idx = knocks._header_index(page)
+    # PROVE THE PIN TOOK, before a single number is read off this grid. Under
+    # impersonation the campaign can silently stay where it was, and a board
+    # with the right title and another campaign's numbers is worse than no
+    # board — nobody reading it can tell.
+    assert_campaign_grid(idx, expect_campaign)
     # A WIRELESS (NDS) office's Disposition table has its own shape —
     # scrape it with the wireless column set instead of letting the house
     # scrape raise "missing expected column(s)". The wireless rows keep
     # COL_TOTAL_KNOCKS, so knocks_run renders a real Total Knocks board.
-    if _is_energywell_dispo(idx):
+    if is_b2b_dispo(idx):
+        # BEFORE every other test: both B2B grids satisfy the wireless one (they
+        # carry Total Knocks and no house Talk-To split), and the wireless
+        # scrape zero-fills what it cannot find — so B2B would come back as a
+        # plausible board with every disposition at 0.
+        rows = _scrape_b2b_rows(page, idx)
+        if verbose:
+            print(f"-> B2B-shaped disposition: {len(rows)} rep(s)", flush=True)
+    elif _is_energywell_dispo(idx):
         # BEFORE the wireless test: Energy Wells has no Talk-To split either,
         # so the wireless check would claim it and drop VL and Presentation.
         rows = _scrape_energywell_rows(page, idx)
@@ -629,6 +979,19 @@ def pull_master_days_on_page(page, targets: "list[dt.date]", *,
     out: dict = {}
     for target in targets:
         rows = _scrape_day_on_page(page, rqst, target, verbose=verbose)
+        # The master path drifts too, and in the more dangerous direction:
+        # another process impersonating mid-scrape leaves THIS run publishing
+        # someone else's reps as Raf's. Same shared-server-session mechanism as
+        # the impersonated loop above; re-read the header rather than trust the
+        # one taken before the first day.
+        head, office_id = logged_in_office(page)
+        if office_id and office_id != MASTER_OFFICE_ID:
+            raise RuntimeError(
+                "the ownerville session moved to office %s part-way through "
+                "the master pull (%s) — another run on this machine shares "
+                "this session and impersonated over it. Refusing to publish "
+                "its reps as Raf's. Header: %r"
+                % (office_id, target, head[:120]))
         if verbose:
             print(f"-> master office {target}: {len(rows)} rep(s)", flush=True)
         out[target] = rows
@@ -642,7 +1005,8 @@ def pull_master_on_page(page, target: dt.date, *, verbose: bool = True) -> list:
         target, [])
 
 
-def pull_offices_days(jobs, verbose: bool = True, profile_dir=None):
+def pull_offices_days(jobs, verbose: bool = True, profile_dir=None,
+                      session_wait_s=None):
     """Scrape SEVERAL offices, each for its OWN list of days, in ONE session.
 
     `jobs`: [(office_name, [date, ...]), ...]. Per-office date lists rather
@@ -659,7 +1023,12 @@ def pull_offices_days(jobs, verbose: bool = True, profile_dir=None):
     """
     aliases_raw = load_aliases()
     out: list = []
-    with ownerville_session(verbose=verbose, profile_dir=profile_dir) as page:
+    # session_wait_s: how long to queue for the machine-wide ownerville session
+    # (tableau_patchright.OWNERVILLE_SESSION_LOCK). None = the default
+    # share-of-your-own-deadline budget. A short-cadence caller passes a small
+    # number and handles OwnervilleBusy by skipping its tick.
+    with ownerville_session(verbose=verbose, profile_dir=profile_dir,
+                            session_wait_s=session_wait_s) as page:
         for job in jobs:
             # (name, days) or (name, days, campaign) — the third element pins
             # THIS pull's campaign, for an office that runs more than one.

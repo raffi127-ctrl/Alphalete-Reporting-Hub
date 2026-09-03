@@ -15,9 +15,22 @@ it was handing a fresh token to the fleet: "the restart minted what four re-hop
 cycles could not."
 
 So this runs BEFORE the batch, restarts the holder only if the session actually
-needs it, waits for a live token, and pushes it to all three machines. Lucy 2 is
-the sole holder (APPSTREAM_HOLD_MACHINES) and donates to Lucy 1 and Lucy 3, so
-one heal here covers the fleet.
+needs it, and waits for a live token.
+
+IT HEALS THIS MACHINE AND ONLY THIS MACHINE (Megan 2026-09-02: "one machine
+CANNOT depend on another, we don't want 1 taking them all down").
+
+It used to run on Lucy 2 alone and push the result to all three. Two things were
+wrong with that. The first is availability: Lucy 2 asleep, wedged, or simply
+failing to mint meant all three met 4am with a dead token — one box taking the
+whole fleet down, which is the arrangement being removed. The second is
+identity: since the per-person migration each Lucy signs in as its OWN account,
+so handing one machine's storage_state to another does not top up its session,
+it REPLACES WHO THAT MACHINE IS, and every office lookup behind it silently
+becomes the wrong account's.
+
+So this is installed on ALL THREE Lucys and each heals itself. Three cheap
+independent heals beat one shared heal with a single point of failure.
 
 It alerts ONLY if it could not recover. A run that heals is silent — that is the
 point: the alert should mean "a human is genuinely needed", not "3am happened".
@@ -99,26 +112,10 @@ def _uid() -> int:
     return os.getuid()
 
 
-def _push_fleet() -> bool:
-    """Hand the freshly-minted session to every machine that runs AppStream."""
-    from automations.shared.tableau_patchright import APPSTREAM_STORAGE_STATE
-    try:
-        blob = APPSTREAM_STORAGE_STATE.read_text()
-    except Exception as e:  # noqa: BLE001
-        _log("cannot read the session to push: %s" % str(e)[:100])
-        return False
-    from automations.day_orchestrator import mini_control as mc
-    from automations.shared.session_holder import APPSTREAM_FLEET_MACHINES
-    ok = True
-    for machine in APPSTREAM_FLEET_MACHINES:
-        try:
-            mc.enqueue("set_appstream_state", blob, by="appstream-selfheal",
-                       machine=machine)
-            _log("queued session -> %s" % machine)
-        except Exception as e:  # noqa: BLE001
-            _log("could not queue to %s: %s" % (machine, str(e)[:100]))
-            ok = False
-    return ok
+# _push_fleet() DELETED 2026-09-02. It handed this machine's storage_state to
+# every machine in APPSTREAM_FLEET_MACHINES (itself included, with no holder
+# filter at all). With per-person logins that is an identity swap, not a favour —
+# see the module docstring. Each Lucy runs this job and heals itself.
 
 
 def _alert(reason: str) -> None:
@@ -176,10 +173,11 @@ def main(argv=None) -> int:
         left = token_minutes_left()
         if left >= a.min_minutes:
             _log("recovered: %.0f min on the new token" % left)
-            if not _push_fleet():
-                _alert("minted a session but could not push it to the fleet")
-                return 1
-            _log("fleet pushed — 4am can run, no alert needed")
+            # NO FLEET PUSH. This machine healed this machine; the others run
+            # their own copy of this job on their own accounts. Pushing here
+            # would overwrite their identity with ours (see the module docstring).
+            _log("this machine can run the batch — no alert needed. The other "
+                 "Lucys heal themselves; nothing is pushed from here.")
             return 0
 
     _alert("the holder restarted but no live token appeared within %.0f min "

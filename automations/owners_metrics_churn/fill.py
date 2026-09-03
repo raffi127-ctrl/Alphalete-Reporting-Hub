@@ -57,6 +57,12 @@ TAB_WL_STARR = "Wireless Churn - Starr Rodenhurst (ATT Fiber)"
 TAB_WL_CHAN  = "Wireless Churn - Chan Park (ATT Fiber)"
 TAB_WL_TONY  = "Wireless Churn - Tony Chavez (ATT Fiber)"
 TAB_WL_SAHIL = "Wireless Churn - Sahil Multani (ATT Fiber)"
+# Pat y Jess (2026-09-02). Va SOLO el wireless: los cinco comparten un unico
+# pull org-wide que se corta por Captain's Bonus Teams, asi que sumar una
+# capitania es una linea. El de NEW INTERNET no — ese lee una vista custom de
+# Tableau POR CAPITAN (FIBER_<X>_URL) y esas dos vistas todavia no existen.
+TAB_WL_PAT   = "Wireless Churn - Pat Thompson (ATT Fiber)"
+TAB_WL_JESS  = "Wireless Churn - Jess Lieberman (ATT Fiber)"
 
 
 def open_ws_wl_wayne():
@@ -77,6 +83,14 @@ def open_ws_wl_tony():
 
 def open_ws_wl_sahil():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_WL_SAHIL)
+
+
+def open_ws_wl_pat():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_WL_PAT)
+
+
+def open_ws_wl_jess():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_WL_JESS)
 
 
 # ----- B2B tabs (Phase 2) --------------------------------------------

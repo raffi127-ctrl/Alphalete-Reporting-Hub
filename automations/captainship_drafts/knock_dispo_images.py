@@ -111,12 +111,84 @@ CAMPAIGN_ID = "3"
 # strings the per-owner boards under this one use (total_knocks.render) — the
 # two land on one email in front of one reader, and a column that means the
 # same thing has to be spelled the same way on both.
+# The disposition breakdown (Rafael, Slack 2026-09-02: "can we add the same
+# columns that the weekly disposition report has? Except for the rep
+# dispositions, which would be these" — No answer / Talk To - Not Int /
+# Presentation - Not Int / Come Back / Sale / Inaccessible / Do Not Knock).
+#
+# Read that "except" against his 2026-08-30 call, which is why the weekly
+# board has NO disposition columns left to copy: "on the weekly report, let's
+# go ahead and remove every column from 'no answer - Credit check' … it's a
+# lot of un-needed data for the weekly. The daily one can still keep it."
+# So the exception is a SUBSTITUTION, not an omission — the daily family keeps
+# the breakdown, and the seven he listed are exactly the house set
+# total_knocks.pull already scrapes (COL_NO_ANSWER … COL_DO_NOT_KNOCK), the
+# same seven the per-owner DAILY boards under this summary have drawn since
+# 2026-08-22. Nothing new is pulled; the summary simply never aggregated them.
+#
+# Pinning the set by name also drops the office-only buckets some Disposition
+# pages carry ("Already has AT&T", "Bill payer not home", "Credit check") —
+# the sprawl that got the breakdown thrown off the weekly in the first place.
+# Names are the canonical pull keys, spelled as literals so this module keeps
+# importing without the browser stack; test_knocks_partial asserts they still
+# match total_knocks.pull, which is what catches drift.
+DAILY_SUMMARY_DISPO = [
+    "No answer", "Talk To - Not Interested",
+    "Presentation – Not Interested", "Come Back", "Sale",
+    "Inaccessible", "Do Not Knock",
+]
+# Display-only shortening — the SAME map the per-owner boards use
+# (total_knocks.render.COMBINED_KNOCKS_DISPLAY), because the two boards land
+# on ONE email in front of ONE reader and a column that means the same thing
+# has to be spelled the same way on both. Data keys stay canonical.
+DAILY_SUMMARY_DISPO_DISPLAY = {
+    "Talk To - Not Interested": "Talk To - Not Int",
+    "Presentation – Not Interested": "Pres - Not Int",
+}
+
 DAILY_SUMMARY_HEADERS = [
     "ICD", "Total # of Reps Knocking", "Total Leads Knocked", "Total Knocks",
+    # "AVG knocks / HR" (Rafael 2026-09-03, on the mockup he had just approved:
+    # "I think this is missing"). The per-owner DAILY boards right below this
+    # one have carried it since 2026-08-28 (render.COL_KNOCKS_PER_HR) and only
+    # the summary never aggregated it. Same name and same slot as there —
+    # between Total Knocks and Avg Doors / Rep, so the row reads knocks → how
+    # fast → how many each, and a column that means the same thing is spelled
+    # and placed the same way on both boards of the one email.
+    "Avg Knocks / Hr",
+    # The weekly board's "Avg Doors / Day", in this board's own vocabulary
+    # (Rafael 2026-09-02). Same position — right after Total Knocks — and the
+    # same rule Raf corrected it to on 2026-08-30: only the QUALIFYING reps'
+    # own doors over the qualifying reps. Dividing every rep's doors by the few
+    # who cleared the bar is what once printed 4,511 doors per rep for a week,
+    # and it made an office look better the fewer reps qualified. Named per REP
+    # and not per Day because this board IS one day: "/ Day" here would read as
+    # the Total Knocks two cells to its left.
+    "Avg Doors / Rep",
     "Total Talk To", "% Talk To's per Knocks",
     "Talk To's per Rep", "Total Apps", "Average App per Rep",
+    # "Avg Talk To's per App" (Rafael 2026-09-02) — the weekly board's own
+    # column, same formula: TOTAL talk-to's ÷ TOTAL apps, the
+    # how-many-conversations-it-took-to-write-one read (his correction
+    # 2026-08-22: "should have been Total Too's / Total apps"). It closes the
+    # apps block it belongs to, right after the Average App per Rep that
+    # divides the same Total Apps. One decimal like the per-rep columns beside
+    # it — this board's ratios all read to one place.
+    "Avg Talk To's per App",
     "Avg First Knock", "Avg Last Knock", "Gaps", "Total Gaps",
-]
+    # The weekly's "Mon–Fri Avg Hrs Knocking / Day" for one day: (last knock
+    # − first knock) − gaps, averaged over the ICD's reps who have a usable
+    # span. Same name, same formula and same place (right after Total Gaps) as
+    # the per-owner boards below, so an ICD's line here equals the OFFICE TOTAL
+    # line on its own board.
+    "Avg. Hrs Knocking",
+] + [DAILY_SUMMARY_DISPO_DISPLAY.get(c, c) for c in DAILY_SUMMARY_DISPO]
+# NOT carried over from the weekly, on purpose: "Avg Talk To's / Day" and
+# "Mon–Sat Avg Gap / Day" divide by the week's six days — on a ONE-DAY board
+# they would just reprint the totals sitting next to them (and Talk To's per
+# Rep already gives that block its comparable number) — and the whole Saturday
+# block (Sat Clocked In / First / Last / Avg Hrs / Avg Gap) names a weekday
+# this board usually isn't.
 
 # Chan Park's yesterday rows, cached PER PROCESS keyed by the target date's
 # ISO string. Six captains build in one run.py process; Chan's teal
@@ -398,6 +470,56 @@ def daily_apps_for_board(rows: list, office_apps: "dict | None"):
     return out_rows, matched, sum(matched.values())
 
 
+def _avg_hrs(rows: list) -> str:
+    """The ICD's 'Avg. Hrs Knocking' cell: each rep's (last − first) − gaps
+    (total_knocks.aggregate.day_hours — the per-owner boards' formula, so an
+    ICD's summary line matches the OFFICE TOTAL on its own board), averaged
+    over the reps with a usable span and formatted 'Xh Ym'. Blank when no rep
+    has one — nothing to average is not a zero. Pure."""
+    from automations.total_knocks.aggregate import day_hours
+    from automations.total_knocks.render import _fmt_hm
+    hrs = [h for h in (day_hours(r) for r in rows) if h is not None]
+    return _fmt_hm(str(round(sum(hrs) / len(hrs)))) if hrs else ""
+
+
+def _avg_knocks_per_hr(rows: list) -> str:
+    """The ICD's 'Avg Knocks / Hr' cell: the MEAN of its reps' OWN rates, over
+    the reps that have one. That is exactly what the OFFICE TOTAL line of that
+    office's own board prints (`render._insert_rate_columns` averages the rep
+    rates), so an ICD's line here equals its board below — the same contract
+    `_avg_hrs` keeps for the column beside it.
+
+    A rep's rate is their knocks over the RAW span, first knock to last —
+    NOT 'Avg. Hrs Knocking', which is that span minus gaps. Raf and Megan
+    settled that on 2026-08-28: the raw span answers "over the stretch you
+    were out, how fast did you knock", and the gap-adjusted one flatters a rep
+    who took long breaks.
+
+    NOT total knocks ÷ the ICD's average span. That shortcut is a bug that
+    already shipped once: a summary row carries the AVERAGE of the reps' first
+    and last knock, so early in the day the span is a couple of minutes and the
+    rate explodes — Raf's 10:45 board read 480.0 next to reps of 40 (Megan
+    2026-08-29, "not adding correctly").
+
+    Blank, never '0.0', when no rep has a readable span: a rep with one knock
+    has no rate. Pure."""
+    from automations.total_knocks import pull as knocks
+    from automations.total_knocks.render import _knock_time_key
+
+    rates = []
+    for rec in rows:
+        first = _knock_time_key(str(rec.get(knocks.COL_FIRST_KNOCK) or ""))
+        last = _knock_time_key(str(rec.get(knocks.COL_LAST_KNOCK) or ""))
+        if first >= 24 * 60 or last >= 24 * 60 or last <= first:
+            continue
+        v = rec.get(knocks.COL_TOTAL_KNOCKS)
+        n = v if isinstance(v, int) else knocks._to_int(str(v or ""))
+        if not n:
+            continue
+        rates.append(n / ((last - first) / 60.0))
+    return f"{sum(rates) / len(rates):.1f}" if rates else ""
+
+
 def daily_summary_row(label: str, rows: list,
                       apps: Optional[int] = None) -> List[str]:
     """One daily-summary board row aggregating `rows` (one owner's reps,
@@ -437,6 +559,20 @@ def daily_summary_row(label: str, rows: list,
         str(knocking),
         str(sum(_i(r, knocks.COL_TOTAL_LEADS_KNOCKED) for r in rows)),
         str(total_knocks),
+        # Avg Knocks / Hr — the mean of the reps' own rates, so this cell
+        # equals the OFFICE TOTAL line on this ICD's own board below.
+        _avg_knocks_per_hr(rows),
+        # Avg Doors / Rep — the ICD's doors over the reps KNOCKING, the same
+        # denominator Talk To's per Rep and Average App per Rep use two and
+        # four cells to the right, and the very count printed two cells to the
+        # LEFT. One divisor per row, in plain sight: a third per-rep column on
+        # its own denominator is how a reader stops being able to check the
+        # arithmetic. (The weekly's totals row divides by every rep with door
+        # data instead; on a WEEK the bar is a 6-day average and few clear it,
+        # on ONE DAY it is 21 doors and nearly everyone who worked does, so the
+        # two land in the same place without breaking this board's rule.)
+        # Blank, never 0, when nobody cleared the bar.
+        (f"{total_knocks / knocking:.1f}" if knocking else ""),
         str(talk_to),
         # The rate the ICD turned doors into conversations — summed talk-tos
         # over summed knocks, never an average of the reps' rates.
@@ -450,11 +586,21 @@ def daily_summary_row(label: str, rows: list,
         # Apps per rep — blank when there is nothing to divide (no apps
         # pulled, or nobody knocking), never a 0 the ICD didn't earn.
         ("" if apps is None or not knocking else f"{apps / knocking:.1f}"),
+        # Talk-to's per app: how many conversations the ICD spent to write
+        # one. Blank — never 0 — when there is nothing to divide by (apps
+        # never came down, or the ICD wrote none): an ICD with talk-to's and
+        # no apps did not average 0 conversations per app.
+        ("" if not apps else f"{talk_to / apps:.1f}"),
         _avg_knock(rows, knocks.COL_FIRST_KNOCK),
         _avg_knock(rows, knocks.COL_LAST_KNOCK),
         str(sum(_i(r, knocks.COL_GAPS) for r in rows)),
         _fmt_hm(str(sum(_i(r, knocks.COL_TOTAL_GAPS) for r in rows))),
-    ]
+        # Averaged over the reps' own day spans, NOT the ICD's average first
+        # and last knock re-subtracted: those two averages already hide the
+        # reps who started late, and differencing them would hand every ICD a
+        # longer day than anyone worked.
+        _avg_hrs(rows),
+    ] + [str(sum(_i(r, c) for r in rows)) for c in DAILY_SUMMARY_DISPO]
 
 
 def totals_label(n_covered: int, roster_n: Optional[int]) -> str:

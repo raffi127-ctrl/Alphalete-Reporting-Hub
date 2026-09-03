@@ -52,7 +52,7 @@ import sys
 from automations.vantura_slack_sales.run import (
     SHEET_ID, TAB, NAME_COL, TZ,
     _cell, _log, _md, _norm,
-    board_grid, campaign_rows, day_column, week_ok,
+    board_grid, campaign_rows, day_column, ensure_board_shape, week_ok,
 )
 
 DATA_TAB_ATT = "Lucy At&t Data"
@@ -253,7 +253,7 @@ def run_campaign(sh, g, day: dt.date, campaign: str) -> dict:
             _log("  kept as-is (on the board, not in the log): "
                  + ", ".join(kept))
     return {"day": day, "campaign": campaign, "col": col, "rows": rows,
-            "matched": matched, "total": total}
+            "matched": matched, "total": total, "unmatched": unmatched}
 
 
 def fill_plan(g, result):
@@ -384,8 +384,24 @@ def main(argv=None) -> int:
             _log(f"  wrote {len(plan)} cell(s)")
             if res["campaign"] == "BOX" and res["day"] == today - dt.timedelta(days=1):
                 box_corrected = True
+    if a.yes:
+        ensure_board_shape(sh, g)
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
+
+    # A log rep on no board row is a silent hole in the total — and on BOX the
+    # authoritative pass keeps wiping any hand fix (Gary/Jayden, 2026-09-03).
+    # Live passes route the flag to the corrections channel; a clean live pass
+    # closes the thread.
+    if a.yes:
+        from automations.vantura_orderlog_sales import alert
+        unmatched_items = [(name, n, res["campaign"], _md(res["day"]))
+                           for res in results
+                           for name, n in res.get("unmatched", ())]
+        if unmatched_items:
+            alert.alert_unmatched(unmatched_items)
+        else:
+            alert.resolve_unmatched()
 
     # The 5:10am thread already showed BOX as Slack filled it. If the order
     # log just changed the board, the pictures out there are wrong — re-post

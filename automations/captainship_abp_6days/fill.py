@@ -37,6 +37,8 @@ TABS = {
     "chan":  "ABP & 6 days out - Chan (ATT Fiber)",
     "tony":  "ABP & 6 days out - Tony (ATT Fiber)",
     "sahil": "ABP & 6 days out - Sahil (ATT Fiber)",
+    "pat":   "ABP & 6 days out - Pat (ATT Fiber)",
+    "jess":  "ABP & 6 days out - Jess (ATT Fiber)",
     # Rafael, added 2026-07-30. His ABP is the same metric off the same
     # crosstab, but it is NOT in this workbook and his tab carries ONLY the ABP
     # box — his 6-days-out is a separate tab in the same Sheet, filled by

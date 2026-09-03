@@ -83,6 +83,21 @@ PENDING_MARK = "could not be captured on this run"
 NO_DATA_MARK = "no-data::"
 
 
+# A one-off line rendered ABOVE the greeting, set from `run.py --note` (Eve
+# 2026-09-03). It exists for the day a draft is rebuilt AFTER its first version
+# already reached the captains: without it they get two mails and no way to tell
+# which one to read. Empty (the default) renders nothing at all, so the normal
+# daily build is byte-identical to before.
+NOTICE = ""
+
+
+def _notice_html() -> str:
+    if not NOTICE.strip():
+        return ""
+    return ('<div style="font-size:14px;font-weight:bold;margin:0 0 12px 0">'
+            f'{_html.escape(NOTICE.strip())}</div>')
+
+
 def _intro_html(captain: Captain, today: dt.date) -> str:
     """The greeting + numbered list of TODAY'S sections. The items come from
     sections_on(today), not the full flavor list — a day-gated section (the
@@ -371,8 +386,8 @@ def attach_within_limit(msg: EmailMessage, bundle: dict) -> List[str]:
 
 def _note_dropped(msg: EmailMessage, dropped: List[str]) -> None:
     """Append the 'these did not fit' line to the message's HTML body."""
-    who = ", ".join(n.replace("Daily Knock Dispositions - ", "")
-                    .rsplit(" - ", 1)[0] for n in dropped)
+    from automations.captainship_drafts.daily_pdf import owner_of
+    who = ", ".join(owner_of(n) for n in dropped)
     note = ('<div style="font-size:12px;color:#666;margin-top:10px">'
             f'{len(dropped)} per-owner Daily Knock Dispositions PDF(s) were '
             'left off to keep this email under the mail size limit: '
@@ -421,6 +436,7 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     cid_photo = f"<{len(imgs.pairs) + 1:02d}-signature@{_Images._DOMAIN}>"
     html = (
         f'<div style="font-family:{_FONT_STACK};color:#000">'
+        f'{_notice_html()}'
         f'{_intro_html(captain, today)}'
         f'{sections_html}'
         '<br>Kind regards,<br><br>'

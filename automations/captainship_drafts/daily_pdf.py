@@ -69,8 +69,23 @@ def _pretty_day(day: dt.date) -> str:
 
 
 def attachment_name(who: str, day: dt.date) -> str:
+    """'Rafael Hidalgo - Daily Knocks disposition - Aug 31, 2026.pdf'.
+
+    THE NAME COMES FIRST, and that is the whole point of the format (Rafael,
+    2026-09-02, approving the attachments): a phone's mail app shows the start
+    of each file name and truncates the rest, so thirteen files that all began
+    with "Daily Knock Dispositions - " looked identical in the strip and an
+    owner could not pick out their own. Leading with the owner makes the list
+    read as a roster — and sorts it that way too."""
     who = re.sub(r"[^A-Za-z0-9' ]+", "", who).strip()
-    return f"Daily Knock Dispositions - {who} - {_pretty_day(day)}.pdf"
+    return f"{who} - Daily Knocks disposition - {_pretty_day(day)}.pdf"
+
+
+def owner_of(filename: str) -> str:
+    """The owner out of one of those names — the half before the first ' - '.
+    Kept next to attachment_name so the two can't drift (email_build reads it
+    when it has to say whose page did not fit)."""
+    return filename.split(" - ", 1)[0]
 
 
 def pdf_path(captain_key: str, day: dt.date, slug: Optional[str] = None

@@ -120,6 +120,16 @@ CALVIN = {
     # VL where fiber has Talk To - Not Interested / Presentation - Not
     # Interested / Sale, so the fixed fiber column list raised on it). Both the
     # scrape and the board now detect the shape by its VL column.
+    # OFF 2026-09-02 (Megan: "I just need Raf's posting"). Not a decision about
+    # the office — a decision about the TICK. Neither of these can publish today:
+    # the campaign pin does not take under impersonation, so Calvin's grid comes
+    # back B2B Box-shaped and both of Jay's come back holding the same 2 reps,
+    # and the guards refuse all three. What they still cost is REAL — they are
+    # pulled in the same session as Raf, and the 15:00 tick took 5m34s against a
+    # 5-minute wake. An overrunning pass is SKIPPED by the pid lock, which is
+    # how Raf's boards thin out without anything erroring.
+    # Turn back on with the campaign, not before: [[project_gap_alerts]].
+    "enabled": False,
 }
 
 # Jay Turnage — Clear View Consultants, Inc., account 21959, 144 sales reps.
@@ -149,6 +159,16 @@ JAY_ATT = {
     "label": "Jay",
     "campaign_label": "AT&T",
     "compare": True,
+    # OFF 2026-09-02 (Megan: "I just need Raf's posting"). Not a decision about
+    # the office — a decision about the TICK. Neither of these can publish today:
+    # the campaign pin does not take under impersonation, so Calvin's grid comes
+    # back B2B Box-shaped and both of Jay's come back holding the same 2 reps,
+    # and the guards refuse all three. What they still cost is REAL — they are
+    # pulled in the same session as Raf, and the 15:00 tick took 5m34s against a
+    # 5-minute wake. An overrunning pass is SKIPPED by the pid lock, which is
+    # how Raf's boards thin out without anything erroring.
+    # Turn back on with the campaign, not before: [[project_gap_alerts]].
+    "enabled": False,
 }
 
 JAY_EW = {
@@ -160,6 +180,16 @@ JAY_EW = {
     "label": "Jay",
     "campaign_label": "EnergyWell",
     "compare": True,
+    # OFF 2026-09-02 (Megan: "I just need Raf's posting"). Not a decision about
+    # the office — a decision about the TICK. Neither of these can publish today:
+    # the campaign pin does not take under impersonation, so Calvin's grid comes
+    # back B2B Box-shaped and both of Jay's come back holding the same 2 reps,
+    # and the guards refuse all three. What they still cost is REAL — they are
+    # pulled in the same session as Raf, and the 15:00 tick took 5m34s against a
+    # 5-minute wake. An overrunning pass is SKIPPED by the pid lock, which is
+    # how Raf's boards thin out without anything erroring.
+    # Turn back on with the campaign, not before: [[project_gap_alerts]].
+    "enabled": False,
 }
 
 # Jay is BACK IN, behind a guard rather than on trust (2026-09-01). Earlier
@@ -367,6 +397,28 @@ def this_machine() -> str:
         return _machine_profile()
     except Exception:                                # noqa: BLE001
         return "Lucy 1"
+
+
+# WHICH BOXES CAN ACTUALLY SEND AN iMESSAGE FROM A LaunchAgent.
+#
+# Not a preference and not a capability of the machine — a macOS CONSENT, and it
+# is granted per EXECUTABLE IDENTITY. On Lucy 1 the Allow was clicked for
+# /bin/bash on a wrapper, which is the identity this job runs as, so it texts.
+# On Lucy 2 the Allow was clicked for the mini_control poller (.venv/bin/python,
+# 2026-08-03) and NOT for a wrapper — which is precisely why b2b_dispositions
+# never sends from its scheduled job and queues its texts to the poller instead.
+#
+# An unconsented send does not raise. It BLOCKS on a dialog nobody is there to
+# click, for about five minutes, every tick. So the send loop asks this first
+# and skips the route out loud rather than hanging the pass.
+#
+# To put texting on a new box: send once from the identity the agent runs as,
+# with someone at the keyboard to click Allow, then add the machine here.
+TEXTING_MACHINES = {"Lucy 1"}
+
+
+def can_text(machine: str = "") -> bool:
+    return (machine or this_machine()).strip() in TEXTING_MACHINES
 
 
 def for_this_machine(offices: List[Dict]) -> List[Dict]:
@@ -649,6 +701,18 @@ def office_offset(cfg: Dict) -> int:
 # it is for: the :01 catch-up minute after a :00 send, a reinstall fire, a
 # hand-run stacked on the schedule.
 MIN_SEND_GAP_MINUTES = 5
+
+# How long a tick may queue for the machine-wide ownerville session
+# (tableau_patchright.OWNERVILLE_SESSION_LOCK) before giving the tick up.
+#
+# SHORT ON PURPOSE. This runs every 5 minutes; the captainship build can hold
+# ownerville for ~2h. Queueing behind it would stack ticks that all fire at
+# once when it finishes, against a clock that has moved on. Skipping is the
+# right answer for a job that gets another go in five minutes — and the thing
+# it replaces is worse: gap_alerts used to run UNSERIALISED because it had its
+# own Chrome profile, which is not its own session, so it and the build read
+# each other's offices (2026-09-02).
+OWNERVILLE_SESSION_WAIT_S = 120
 
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_state.json"
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts.lock"

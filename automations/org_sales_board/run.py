@@ -34,6 +34,10 @@ except Exception:
     pass
 
 SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
+# What to tell a human whose board dropped a day. NOT '=<prev>+1'
+# any more: that chain IS the bug — it dies at every month end
+# (31 + 1 = 32 lost 9/1 across seven sections, Eve 2026-09-02).
+DAYNUM_FIX_CMD = "python -m automations.org_sales_board.daynum_repair --apply"
 from automations.org_sales_board.tabs import BOARD_TAB, ARCHIVED_VA_TAB
 
 # Both names live in tabs.py now — a rename is one line there, not six here.
@@ -266,6 +270,36 @@ def main(argv=None) -> int:
             # VAs do by hand each day (Eve 2026-06-04).
             from automations.org_sales_board import sort as _sort
             _sort.apply_sort(ws, dry_run=args.dry_run)
+            # The DELTA boxes, which apply_sort deliberately will not touch:
+            # writing their rows back as values freezes the live cells (the
+            # per-day =SUMIFs, the Delta %, the =F+I total) and every total
+            # still balances afterwards, so nobody sees it — that is the
+            # 2026-08-25 incident. They get Sheets-native sortRange instead,
+            # which moves cells and re-points formulas. Until today nothing
+            # sorted them at all, on any captainship (Eve 2026-09-02: "las
+            # cajas de delta las tenes que ordenar todos los dias").
+            from automations.org_sales_board import delta_sort as _dsort
+            _dsort.apply_delta_sort(ws, dry_run=args.dry_run)
+            # And immediately put any frozen Delta % back to a formula. HERE
+            # because the sort above is the operation that can freeze them, and
+            # because a Delta cell is never legitimately a literal: it is
+            # row-local arithmetic over the two cells to its left, so it can be
+            # rebuilt with no daily table and no Tableau. Idempotent — the
+            # steady state is zero writes.
+            #
+            # Eve, 2026-09-03, after finding 616 of them frozen since 8/26:
+            # "aplicalo como regla para que no se vuelva a romper la semana que
+            # viene ... no puede ser valor fijo". The tripwire further down
+            # ALERTS; this is what actually fixes it, the same morning.
+            try:
+                from automations.org_sales_board import (
+                    delta_formula_repair as _dfr)
+                _dfr.apply_delta_pct(ws, dry_run=args.dry_run)
+            except Exception as _epct:  # noqa: BLE001 — a self-heal that fails
+                # must not take down the fill it rides on; the tripwire below
+                # still reports what is frozen.
+                print(f"  [!] auto-reparacion de las celdas Delta salteada "
+                      f"({type(_epct).__name__}: {str(_epct)[:80]})", flush=True)
             from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
             apply_elapsed_totals(ws, dry_run=args.dry_run)
             # The delta-box rows with NO daily table to sum. A cross-cutting
@@ -500,8 +534,9 @@ def main(argv=None) -> int:
                             or not _compare_clean or _missing_reps or _dropped):
                         _failed_all = (
                             [f"section: {s}" for s in _skipped]
-                            + [f"dropped day — {d}; its day-number row is "
-                               "frozen, fix the cell to '=<prev cell>+1'"
+                            + [f"dropped day — {d}; its day-number row does "
+                               f"not match real dates — run "
+                               f"`{DAYNUM_FIX_CMD}`"
                                for d in _dropped]
                             + [f"program: {c}" for c in _failed_prog]
                             + [f"captainship: {c}" for c in _failed_caps]

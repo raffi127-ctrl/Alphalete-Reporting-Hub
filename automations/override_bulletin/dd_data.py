@@ -47,6 +47,24 @@ WOW_WEEKS = 8      # Raf 2026-07-25: show more weeks so the ICD tables fill the
 LEADERS_LABEL = "PODIUM LEADERS"
 LISTS_LABEL = "PODIUM ORG LISTS"
 
+# ---- OFF THE BULLETIN (Eve 2026-09-03: "hay que sacar a marcos barbosa y milan
+# godbolt del bulletin").
+#
+# Both came off Colten's org on 2026-08-27 (see DD_SOURCES.md), but that removal
+# was only the `Lucy Org Tree` side — their hand-typed rows in the DD tab's
+# 'ICD (Special Cases)' block stayed, so both kept printing under *Tracked
+# Separately* every week. This drops them from that block, which is the whole of
+# their presence on the page: they are in no podium list, they are not Active-YES
+# ICDs, and the headline / AVG DD / Active Owners never contained them.
+#
+# CODE and not a Sheet edit ON PURPOSE. The block is Eve's own weekly typing and
+# it is the only place their DD history lives; blanking column A there would also
+# truncate the block at that row (`load` ends it at the first blank name). So the
+# rows stay on the tab and the bulletin stops rendering them. To bring someone
+# back, take the name out of here — nothing on the Sheet has to change.
+# Matched through the ICD Aliases tab, like every other name in this module.
+RETIRED_SPECIAL = ("Marcos Barbosa", "Milan Godbolt")
+
 _WEEK_RE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$")
 _SPLIT_RE = re.compile(r"\(\s*(\d)\s*/\s*(\d)\s*\)")
 
@@ -258,6 +276,7 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     # keeps them out of a leader's ORGANIC line, which is Raf's rule and is
     # about how a figure is LABELLED, not about whether the money exists.
     special, _on = [], False
+    retired = {_key(n, aliases) for n in RETIRED_SPECIAL}
     for r in vals:
         lab = " ".join((r[0] or "").split()).lower()
         if not _on:
@@ -266,6 +285,8 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
         nm = (r[0] or "").strip()
         if not nm:
             break                        # first blank column A ends the block
+        if _key(nm, aliases) in retired:
+            continue                     # RETIRED_SPECIAL — row kept, not shown
         row = {"name": nm, "key": _key(nm, aliases),
                "campaign": (r[2] or "").strip() if len(r) > 2 else "",
                "org": (r[3] or "").strip() if len(r) > 3 else "",

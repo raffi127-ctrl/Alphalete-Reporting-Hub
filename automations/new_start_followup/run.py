@@ -33,6 +33,7 @@ import datetime as dt
 import sys
 
 from automations.new_start_followup import report as report_mod
+from automations.new_start_followup import screenshot_roster as roster_mod
 from automations.shared import slack_metrics_post as smp
 
 

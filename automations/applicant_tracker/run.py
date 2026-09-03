@@ -178,7 +178,8 @@ def clean_owner_name(name: str) -> str:
 
 # ---- MORNING: Call List + 2R Status (reads YESTERDAY) --------------------
 def _morning_office(app, ws_call, ws_2r, office_id: str, header: str,
-                    ad_blank: list, clock: "_Clock") -> None:
+                    ad_blank: list, clock: "_Clock",
+                    skip_call_list: bool = False) -> None:
     clock.check("select office")
     owner = app.select_office(office_id)  # raw owner (Call List keeps the state)
 
@@ -192,8 +193,22 @@ def _morning_office(app, ws_call, ws_2r, office_id: str, header: str,
     h_bob = app.detail_href(L_BOB, header)
 
     # --- Export Call List ---
-    clock.check("scrape Call List")
-    call_rows = app.scrape_at(h_call, N_CALL_COLS)
+    # THE CALL LIST APPENDS AND HAS NO DE-DUPE, so a re-run of an office that
+    # already got past this point writes its rows a SECOND time. That is the
+    # exact shape of a per-office timeout: OFFICE_BUDGET_S abandons the office
+    # wherever it happens to be, and the Call List is the first thing written.
+    # 2026-09-03: Haytham Nagi (22524) logged "Call List +14 (row 82021)" and
+    # then "TIMED OUT ... gave up before 'read 2R roster'" — so the half that
+    # was missing was 2R status, and the obvious `--office 22524` re-run to fix
+    # it would have duplicated 14 rows in Francia's Call List.
+    # [[feedback_dont_touch_user_data]]
+    if skip_call_list:
+        print(f"  [{office_id}] {owner}: Call List SKIPPED (--skip-call-list) "
+              f"— it already landed on the run being resumed", flush=True)
+        call_rows = []
+    else:
+        clock.check("scrape Call List")
+        call_rows = app.scrape_at(h_call, N_CALL_COLS)
     if call_rows:
         clock.check("write Call List")
         start = sheets.first_empty_row_in_column(ws_call, "A")
@@ -210,7 +225,7 @@ def _morning_office(app, ws_call, ws_2r, office_id: str, header: str,
             print(f"  ⚠ [{office_id}] {owner}: every Call List row has a BLANK Ad "
                   f"— the detail table's columns probably moved (N_CALL_COLS)",
                   flush=True)
-    else:
+    elif not skip_call_list:
         print(f"  [{office_id}] {owner}: no Call List for {header}", flush=True)
 
     # --- Update 2R Status ---
@@ -312,7 +327,8 @@ def _names(office_ids: list) -> str:
     return ", ".join(config.label(o) for o in office_ids)
 
 
-def run(phase: str, target: dt.date | None = None) -> None:
+def run(phase: str, target: dt.date | None = None,
+        skip_call_list: bool = False) -> None:
     phase = phase.lower()
     if phase not in ("morning", "evening"):
         raise ValueError(f"phase must be 'morning' or 'evening', got {phase!r}")
@@ -365,7 +381,8 @@ def run(phase: str, target: dt.date | None = None) -> None:
             try:
                 if phase == "morning":
                     _morning_office(app, ws_call, ws_2r, office_id, header,
-                                    ad_blank, clock)
+                                    ad_blank, clock,
+                                    skip_call_list=skip_call_list)
                 else:
                     _evening_office(app, ws_2r, office_id, header, clock)
                 print(f"  [{office_id}] done in {int(clock.elapsed)}s", flush=True)
@@ -522,10 +539,20 @@ if __name__ == "__main__":
     p.add_argument("--office", action="append", metavar="ID",
                    help="limit to office id(s); repeatable")
     p.add_argument("--date", metavar="YYYY-MM-DD", help="override the target date")
+    p.add_argument("--skip-call-list", action="store_true",
+                   help="morning only: do the 2R Status half and leave the Call "
+                        "List alone. Use it to FINISH an office the run "
+                        "abandoned on its 120s budget AFTER its Call List had "
+                        "already been written — the Call List appends with no "
+                        "de-dupe, so a plain re-run would double its rows.")
     a = p.parse_args()
     if a.dry_run:
         sheets.DRY_RUN = True
     if a.office:
         keep = {str(o).strip() for o in a.office}
         config.OFFICE_IDS = [o for o in config.OFFICE_IDS if o in keep]
-    run(a.phase, dt.date.fromisoformat(a.date) if a.date else None)
+    if a.skip_call_list and a.phase != "morning":
+        p.error("--skip-call-list only means anything on the morning phase "
+                "(the evening phase never touches the Call List)")
+    run(a.phase, dt.date.fromisoformat(a.date) if a.date else None,
+        skip_call_list=a.skip_call_list)

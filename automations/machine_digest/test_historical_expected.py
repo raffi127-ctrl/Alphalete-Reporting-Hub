@@ -10,7 +10,8 @@ import datetime as dt
 import unittest
 
 from automations.machine_digest.run import (_historical_expected, _handrun_only_ids,
-                                            _offday_standalone_ids)
+                                            _offday_standalone_ids,
+                                            _event_logged_ids)
 
 
 def _rows(card, days, hour=7, name=None, machine="Lucys-MacBook-Neo.local"):
@@ -128,6 +129,41 @@ class HistoricalExpected(unittest.TestCase):
         rows += _rows("daily-metrics", [target - dt.timedelta(days=1)], hour=14)
         self.assertEqual(
             _historical_expected(rows, target)["daily-metrics"]["start_hour"], 4)
+
+    def test_one_midnight_outlier_day_does_not_drag_the_anchor(self):
+        """THE 9/3 4AM FALSE ALARM. Rep Gap Alerts writes ONE Activity row a day,
+        at its first good tick (~13:30). Three `gap_alerts --send --force` jobs
+        queued 4pm on 9/1 sat behind a long job in Lucy 1's serial lane and
+        drained at 00:00 the next morning, so 9/2's only row read 00:00. The
+        newest-day anchor took that lone row as the schedule and posted "didn't
+        run today on the mini · usually starts ~0:00" at 4am on 9/3 — for a
+        report whose window does not open until 1:30pm. The median floor keeps
+        the anchor at 13, so the earliest it can now be called missing is 3pm."""
+        target = dt.date(2026, 9, 3)
+        rows = _rows("gap-alerts", _span(target, 2, 7), hour=13)
+        rows += _rows("gap-alerts", [target - dt.timedelta(days=1)], hour=0)
+        exp = _historical_expected(rows, target)
+        self.assertEqual(exp["gap-alerts"]["start_hour"], 13)
+
+    def test_a_real_move_to_a_later_hour_still_wins_on_day_one(self):
+        """The case the newest-day anchor exists for must survive the median
+        floor: enrollment_pending_check left the 4am batch for its own 09:00
+        agent, and the watcher must expect 9 the very next morning, not 4."""
+        target = dt.date(2026, 8, 20)
+        rows = _rows("enrollment-pending-check", _span(target, 2, 7), hour=4)
+        rows += _rows("enrollment-pending-check", [target - dt.timedelta(days=1)],
+                      hour=9)
+        exp = _historical_expected(rows, target)
+        self.assertEqual(exp["enrollment-pending-check"]["start_hour"], 9)
+
+    def test_a_settled_move_to_an_earlier_hour_is_followed(self):
+        """The floor is a floor, not a freeze: once the new earlier hour is the
+        window's norm rather than one odd day, the median moves with it."""
+        target = dt.date(2026, 8, 20)
+        rows = _rows("some-report", _span(target, 1, 5), hour=9)
+        rows += _rows("some-report", _span(target, 6, 7), hour=14)
+        exp = _historical_expected(rows, target)
+        self.assertEqual(exp["some-report"]["start_hour"], 9)
 
 
 class _Cfg:
@@ -264,6 +300,71 @@ class HandRunOnlyIds(unittest.TestCase):
         for rid in ("alphalete_org_b2b", "alphalete_org_box", "alphalete_org_retail"):
             self.assertIn(rid, ids)
         self.assertNotIn("alphalete_org_je", ids)
+
+
+class EventLoggedIds(unittest.TestCase):
+    """Regression cover for 2026-09-01: `sara_down` polls #saraplus-issues every 5
+    minutes 24/7 but calls publish_done ONLY on a real escalation, so the Activity
+    log holds one row per ISSUE (8 in six weeks), not one per run. Escalations on
+    Tue 8/11 and Tue 8/25 17:42 taught _historical_expected "Tuesday ~17:00
+    report", and it posted "didn't run today on the mini · usually starts ~17:00"
+    while the poller had ticked every 5 min all day, exit 0."""
+
+    def _ids(self, reports):
+        return _event_logged_ids(_Cfg(reports))
+
+    def test_declared_poller_is_exempt(self):
+        ids = self._ids({"sara_down": {
+            "logs_on_event_only": True, "cadence": {"weekdays": []}}})
+        self.assertIn("sara_down", ids)
+
+    def test_undeclared_poller_keeps_the_historical_guess(self):
+        ids = self._ids({"sara_down": {"cadence": {"weekdays": []}}})
+        self.assertEqual(ids, set())
+
+    def test_flag_is_ignored_when_the_orchestrator_can_fire_it(self):
+        """The narrow half: a stray flag on something with a real cadence must
+        never silence it."""
+        ids = self._ids({"daily_focus": {
+            "logs_on_event_only": True, "cadence": {"weekdays": [0, 1, 2, 3, 4]}}})
+        self.assertEqual(ids, set())
+
+    def test_missing_cadence_is_not_exempt(self):
+        """Same bias-to-under-exempting rule as hand_run_only: no cadence key is
+        not a declared-empty one."""
+        self.assertEqual(self._ids({"sara_down": {"logs_on_event_only": True}}), set())
+
+    def test_real_reports_are_never_exempt(self):
+        ids = self._ids({
+            "stf_field_check": {"cadence": {"weekdays": []}},
+            "bg_check_sync": {"cadence": {"weekdays": []}},
+            "daily_focus": {"cadence": {"weekdays": [0, 1, 2, 3, 4]}},
+        })
+        self.assertEqual(ids, set())
+
+    def test_live_config_exempts_sara_and_nothing_scheduled(self):
+        """Pins the live schedule_config: sara_down carries the flag under all
+        three id spellings the Activity log can use, and no report the
+        orchestrator fires ever gets swept in."""
+        from automations.day_orchestrator import registry as _reg
+        ids = _event_logged_ids(_reg.load_config())
+        for rid in ("sara_down", "sara-plus-issues"):
+            self.assertIn(rid, ids)
+        for rid in ("daily_focus", "office_metrics", "stf_field_check"):
+            self.assertNotIn(rid, ids)
+
+    def test_sara_is_expected_today_which_is_why_the_flag_is_needed(self):
+        """The flag is the ONLY thing standing between sara_down and a false
+        alarm: the historical baseline still says "expected today", exactly as it
+        did on 9/1. If this ever stops being true the flag is dead weight and the
+        exemption should be reconsidered rather than left silently covering
+        nothing."""
+        tue = dt.date(2026, 9, 1)
+        rows = (_rows("sara-plus-issues", [dt.date(2026, 8, 11)], hour=11)
+                + _rows("sara-plus-issues", [dt.date(2026, 8, 25)], hour=17))
+        exp = _historical_expected(rows, tue)
+        self.assertIn("sara-plus-issues", exp)
+        self.assertEqual(exp["sara-plus-issues"]["start_hour"], 17)
 
 
 if __name__ == "__main__":

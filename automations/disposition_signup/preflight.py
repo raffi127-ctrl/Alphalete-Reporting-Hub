@@ -58,6 +58,38 @@ def _check_groups(rec: DispositionRecord) -> "List[Dict]":
     return out
 
 
+def _check_office(rec: DispositionRecord, *, save: bool = True) -> Dict:
+    """Find the office in OwnerVille BY ACCOUNT NUMBER and settle its name.
+
+    This runs FIRST because it is the check that can fix its own failure. The
+    board pull below matches on an exact name string, so a spelling drift used
+    to come back as a flat "couldn't impersonate" that only a human could
+    action. Here the account number — required on the form, never read until
+    now — finds the row regardless of spelling, and OwnerVille's own spelling is
+    filed to the ICD alias sheet so impersonation finds it from then on.
+
+    It also tells "not granted YET" apart from "not found": a row whose action
+    reads Request Sent is waiting on the owner, which is a retry.
+
+    Own session, and it must not overlap a live tick — reading the access table
+    navigates to the root, which re-establishes the account's one session in
+    master mode and would silently drop a running capture onto the master
+    office. The caller holds gap_alerts' pid lock.
+    """
+    from automations.disposition_signup import resolve_office as RO
+    from automations.shared.tableau_patchright import ownerville_session
+    from automations.gap_alerts import config as C
+    try:
+        # gap_alerts' OWN profile, not the shared one: we hold that job's pid
+        # lock, so this is the one profile nothing else can be inside.
+        with ownerville_session(headless=True, verbose=False,
+                                profile_dir=str(C.PROFILE_DIR)) as page:
+            return RO.resolve(page, rec, save=save)
+    except Exception as e:                           # noqa: BLE001
+        return {"name": "OwnerVille office", "ok": False, "state": "",
+                "note": "%s: %s" % (type(e).__name__, str(e)[:220])}
+
+
 def _check_board(rec: DispositionRecord, day: dt.date, *,
                  headless: bool = True) -> Dict:
     """Can we impersonate the office and pull its board? This is the Office
@@ -82,6 +114,30 @@ def _check_board(rec: DispositionRecord, day: dt.date, *,
             "note": "impersonated OK — %d rep row(s) pulled" % len(rows)}
 
 
+def _wait_for_tick_lock(seconds: int = 180):
+    """gap_alerts' pid lock, waited for rather than skipped.
+
+    ownerville allows ONE session per account, so a preflight opening its own
+    while a tick is mid-impersonation pulls the floor out from under the tick —
+    and the access-table read below is the worst version of it, because minting
+    an rqst at the root puts the shared session back in MASTER mode without
+    erroring. A tick is minutes at most; waiting for it beats corrupting it.
+    Returns the held lock, or None if it never came free (the caller decides).
+    """
+    import time
+    from automations.gap_alerts.run import Lock
+    deadline = time.time() + seconds
+    while True:
+        lock = Lock()
+        lock.__enter__()
+        if lock.held:
+            return lock
+        lock.__exit__()
+        if time.time() >= deadline:
+            return None
+        time.sleep(10)
+
+
 def check(key: str, *, headless: bool = True,
           day: "dt.date | None" = None) -> Dict:
     """Run every check for one office. -> {ok, rec, checks:[...]}"""
@@ -96,9 +152,46 @@ def check(key: str, *, headless: bool = True,
                 "checks": [{"name": "sign-up row", "ok": False,
                             "note": "still %r — confirm it on the form first"
                                     % (rec.status or "unset")}]}
-    checks: List[Dict] = list(_check_groups(rec))
-    checks.append(_check_board(rec, day or dt.date.today(),
-                               headless=headless))
+    # ONE OWNERVILLE SESSION PER ACCOUNT. Both browser checks below run inside
+    # gap_alerts' own pid lock so a preflight and a live tick can never hold the
+    # session at once — the access-table read mints an rqst at the site root,
+    # which puts a running capture back on the MASTER office without erroring.
+    lock = _wait_for_tick_lock()
+    if lock is None:
+        return {"ok": False, "rec": rec, "retry": True,
+                "checks": [{"name": "OwnerVille session", "ok": False,
+                            "note": "a gap_alerts tick held the session for "
+                                    "the whole wait — nothing was checked, "
+                                    "and this retries on its own"}]}
+    try:
+        # ORDER MATTERS. The office lookup runs first because it can repair the
+        # thing the board pull would otherwise fail on: it finds the office by
+        # ACCOUNT NUMBER and files OwnerVille's spelling to the alias sheet, so
+        # the name-matching impersonation underneath it stops missing.
+        office = _check_office(rec)
+        checks: List[Dict] = [office]
+        # HOW MANY CAMPAIGNS THIS OFFICE RUNS, read off its own picker while we
+        # were in there. More than one and it is not servable: the picker
+        # defaults and the pin cannot move it, so whichever campaign it lands on
+        # is the one we would report under the other's name.
+        if office.get("campaign") is not None:
+            from automations.disposition_signup import resolve_office as RO
+            camp = rec.campaign() or {}
+            checks.append(RO.campaign_check(office["campaign"],
+                                            rec.campaign_id(),
+                                            camp.get("name", "")))
+        checks += list(_check_groups(rec))
+        # A pending access request makes the board pull pointless — there is
+        # nothing to impersonate yet, and trying costs a browser session to
+        # learn what the table already told us. It is a RETRY, not a failure.
+        if office.get("state") == "pending":
+            return {"ok": False, "rec": rec, "checks": checks, "retry": True}
+        if not office["ok"]:
+            return {"ok": False, "rec": rec, "checks": checks}
+        checks.append(_check_board(rec, day or dt.date.today(),
+                                   headless=headless))
+    finally:
+        lock.__exit__()
     return {"ok": all(c["ok"] for c in checks), "rec": rec, "checks": checks}
 
 
@@ -131,6 +224,13 @@ def notify(key: str, res: Dict, *, enabled: bool) -> None:
         title = ("Dispositions preflight passed for %s — %s"
                  % (who, "switched ON, it joins the next tick" if enabled
                     else "ready to switch on"))
+    elif res.get("retry"):
+        # NOT a failure, and it must not read like one: nothing is wrong with
+        # the enrollment, we are waiting on the owner to accept the OwnerVille
+        # access request (or on a tick to let go of the session). Saying
+        # "failed" here sends Megan to check a setup that is already correct.
+        title = ("Dispositions preflight WAITING for %s — nothing to fix, it "
+                 "retries on its own" % who)
     else:
         title = "Dispositions preflight failed for %s — still switched off" % who
     thread = ["- %s %s: %s" % ("PASS" if c["ok"] else "FAIL", c["name"],

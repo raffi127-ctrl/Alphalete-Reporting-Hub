@@ -114,11 +114,33 @@ def test_all_campaigns_are_offered_with_proven_ids():
     assert by_key["b2b_box"] == "16"     # B2B-BOX-Energy
 
 
-def test_nds_carries_no_pin():
-    """A wireless/NDS owner has no Disposition campaign today, so there is
-    nothing to pin — and an empty id means 'whatever impersonation lands on'."""
-    assert S.campaign("nds")["id"] == ""
-    assert A._row(_rec(campaign_key="nds"))["campaign_id"] == ""
+def test_nds_pins_its_own_campaign_not_fibers():
+    """RES AT&T OOF, id 1 — read off the live picker on BOTH of this org's NDS
+    offices on 2026-09-02 (Isaiah Revelle 19717, Drew Tepper 22583), each
+    listing exactly that one campaign. "OOF" is Out Of Footprint, the same name
+    the NDS Tableau workbook carries.
+
+    NOT 3. That is fiber's id, and it was here for most of 2026-09-02 on the
+    strength of a reading that no longer holds. It did not break anything --
+    an office cannot be pinned to a campaign it does not have and falls back to
+    its own -- but a pin that silently does not apply is the drift this repo
+    keeps paying for.
+
+    An EMPTY id would be wrong too: the campaign is a sticky session-global, so
+    no pin means "whatever the office before it in the batch left it on".
+    """
+    assert S.campaign("nds")["id"] == "1"
+    assert S.campaign("nds")["id"] != S.campaign("att")["id"]
+    assert A._row(_rec(campaign_key="nds"))["campaign_id"] == "1"
+
+
+def test_nds_promises_nothing_about_a_smaller_board():
+    """It used to carry a note saying an NDS board is usually Time-Gaps-only
+    because those reps don't disposition. True of Isaiah on 2026-08-22, false
+    on 2026-09-02: both NDS offices return the full house grid ("missing:
+    nothing") with real Talk To / Presentation / Sale counts. A promise about
+    someone's board has to be re-earned, not inherited."""
+    assert not (S.campaign("nds").get("note") or "")
 
 
 # --- Megan's confirm --------------------------------------------------------
@@ -351,6 +373,27 @@ def test_a_broken_time_string_falls_back_instead_of_raising():
 
 # --- preflight --------------------------------------------------------------
 
+def _stub_office(monkeypatch, P, *, ok=True, state="granted", note="found"):
+    """The OwnerVille office lookup, stubbed. It opens a REAL browser session
+    otherwise — every preflight test paid ~17s launching one only to watch it
+    fail before this existed."""
+    monkeypatch.setattr(P, "_check_office",
+                        lambda rec, save=True: {"name": "OwnerVille office",
+                                                "ok": ok, "state": state,
+                                                "note": note})
+
+
+def _no_lock_wait(monkeypatch, P):
+    """The pid lock, granted instantly — the real one is a live-process check
+    against gap_alerts' lockfile and has nothing to say in a unit test."""
+    class _L:
+        held = True
+
+        def __exit__(self, *a):
+            pass
+    monkeypatch.setattr(P, "_wait_for_tick_lock", lambda seconds=180: _L())
+
+
 def test_preflight_refuses_a_row_that_is_still_pending(monkeypatch):
     from automations.disposition_signup import preflight as P
     monkeypatch.setattr(store, "load_one",
@@ -373,6 +416,8 @@ def test_preflight_checks_every_chat_not_just_one(monkeypatch):
             raise RuntimeError("no iMessage group named 'Leaders'")
         return {"name": name, "participants": 7}
 
+    _stub_office(monkeypatch, P)
+    _no_lock_wait(monkeypatch, P)
     import automations.b2b_dispositions.text_post as tp
     monkeypatch.setattr(tp, "resolve_group", _fake_resolve)
     monkeypatch.setattr(P, "_check_board",
@@ -389,6 +434,8 @@ def test_preflight_passes_and_reports_both_checks(monkeypatch):
     from automations.disposition_signup import preflight as P
     monkeypatch.setattr(store, "load_one",
                         lambda k: _rec(status="wired").to_json())
+    _stub_office(monkeypatch, P)
+    _no_lock_wait(monkeypatch, P)
     monkeypatch.setattr(P, "_check_groups",
                         lambda rec: [{"name": "iMessage 'Cody's Crew'",
                                       "ok": True, "note": "resolved (7)"}])
@@ -405,6 +452,8 @@ def test_preflight_failure_leaves_the_office_off(monkeypatch):
     from automations.disposition_signup import preflight as P
     monkeypatch.setattr(store, "load_one",
                         lambda k: _rec(status="wired").to_json())
+    _stub_office(monkeypatch, P)
+    _no_lock_wait(monkeypatch, P)
     monkeypatch.setattr(P, "_check_groups",
                         lambda rec: [{"name": "iMessage", "ok": True,
                                       "note": "ok"}])
@@ -456,15 +505,27 @@ def test_every_campaign_is_offered_grouped_by_family():
     assert [c["key"] for c in S.campaigns_in("B2B")] == ["b2b_att", "b2b_box"]
 
 
-def test_coming_soon_is_only_nds():
-    assert S.campaign_live("att") and S.campaign_live("b2b_box")
-    assert not S.campaign_live("nds")
+def test_nothing_is_on_the_waiting_list_today():
+    """NDS came off it on 2026-09-02 when it got its pin. The list itself stays
+    — the tests below keep the machinery honest — but no campaign is on it."""
+    assert all(S.campaign_live(c["key"]) for c in S.CAMPAIGNS)
+    assert "(coming soon)" not in S.campaign_choice_label("nds")
+
+
+def _waiting(monkeypatch, key="nds"):
+    """Put one campaign back on the waiting list for the length of a test."""
+    monkeypatch.setitem(S.campaign(key), "live", False)
+
+
+def test_a_not_live_campaign_is_labelled_coming_soon(monkeypatch):
+    _waiting(monkeypatch)
     assert "(coming soon)" in S.campaign_choice_label("nds")
     assert "(coming soon)" not in S.campaign_choice_label("att")
 
 
-def test_a_waiting_list_signup_is_still_a_valid_submission():
+def test_a_waiting_list_signup_is_still_a_valid_submission(monkeypatch):
     """The whole point: they enroll once, now, and we hold it."""
+    _waiting(monkeypatch)
     assert S.validate_request(_rec(campaign_key="nds")) == []
     assert S.validate(_rec(campaign_key="nds", enabled=True)) == []
 
@@ -472,6 +533,7 @@ def test_a_waiting_list_signup_is_still_a_valid_submission():
 def test_apply_refuses_to_wire_a_waiting_list_office(monkeypatch, capsys):
     """Wiring it would put an office in the run that fails every single tick —
     there is nothing in OwnerVille to pull."""
+    _waiting(monkeypatch)
     monkeypatch.setattr(store, "load_all",
                         lambda: [_rec(campaign_key="nds", status="wired",
                                       enabled=True).to_json()])
@@ -492,7 +554,21 @@ def test_a_live_campaign_still_wires(monkeypatch):
     assert plans[0]["row"]["campaign_id"] == "2"       # B2B AT&T SBS
 
 
-def test_the_ping_says_waiting_list_in_its_one_line():
+def test_an_nds_signup_wires_like_any_other(monkeypatch):
+    """It is a normal office now: pinned, materialized, on Lucy 1."""
+    monkeypatch.setattr(store, "load_all",
+                        lambda: [_rec(campaign_key="nds", status="wired",
+                                      enabled=True).to_json()])
+    monkeypatch.setattr(store, "existing_registry",
+                        lambda exclude_key=None: {"keys": [], "groups": {}})
+    plans = A.plan()
+    assert [p["rec"].key for p in plans] == ["cody"]
+    assert plans[0]["row"]["campaign_id"] == "1"     # RES AT&T OOF
+    assert plans[0]["row"]["machine"] == "Lucy 1"
+
+
+def test_the_ping_says_waiting_list_in_its_one_line(monkeypatch):
+    _waiting(monkeypatch)
     from automations.disposition_signup import request_notify as RN
     live_title, _ = RN._lines(_rec(campaign_key="att"))
     wait_title, _ = RN._lines(_rec(campaign_key="nds"))
@@ -667,9 +743,20 @@ def test_a_runner_only_takes_the_offices_it_can_reach():
 
 
 def test_the_hardcoded_offices_stay_on_lucy_1():
-    """Raf, Calvin and Jay have always run there and carry no machine key."""
-    assert {o["key"] for o in C.enabled()} == {"rafael", "calvin", "jay_att",
-                                              "jay_ew"}
+    """Raf, Calvin and Jay have always run there and carry no machine key, so
+    for_this_machine has to read a missing key as Lucy 1.
+
+    Asked of OFFICES, not enabled(): whether a hardcoded office is switched ON
+    is a rotation decision that moves (Calvin and Jay went out on 2026-09-02,
+    "I just need Raf's posting"), while which BOX can reach it is the thing
+    this test is actually about."""
+    hardcoded = {o["key"] for o in C.OFFICES
+                 if o.get("source") != "disposition_signup"}
+    assert hardcoded == {"rafael", "calvin", "jay_att", "jay_ew"}
+    assert all(o.get("machine") in (None, "Lucy 1") for o in C.OFFICES
+               if o["key"] in hardcoded)
+    assert {o["key"] for o in C.for_this_machine(
+        [o for o in C.OFFICES if o["key"] in hardcoded])} == hardcoded
 
 
 # --- staggering -------------------------------------------------------------
@@ -723,7 +810,7 @@ def test_the_tick_pulls_every_due_office_in_one_session(monkeypatch):
     called ONCE with every due office, not once per office."""
     calls = []
 
-    def _fake_pull(jobs, verbose=True, profile_dir=None):
+    def _fake_pull(jobs, verbose=True, profile_dir=None, **kw):
         calls.append(list(jobs))
         return [(name, {}, None) for name, *_ in jobs]
 
@@ -747,7 +834,7 @@ def test_two_offices_sharing_one_ownerville_name_are_not_confused(monkeypatch):
     the same rows."""
     day = dt.date(2026, 9, 1)
 
-    def _fake_pull(jobs, verbose=True, profile_dir=None):
+    def _fake_pull(jobs, verbose=True, profile_dir=None, **kw):
         # Distinct rows per JOB, in the order given.
         return [(name, {day: [{"Rep": "%s-%d" % (name, i)}]}, None)
                 for i, (name, *_rest) in enumerate(jobs)]
@@ -843,5 +930,317 @@ def test_the_batch_dict_is_not_clobbered_by_the_rendered_images():
     # substring, so a plain `in` check here can never fail and would police
     # nothing.
     import re as _re
-    assert "boards = render(" in src
+    # Matched as "assigned to `boards`, from render()" rather than as one
+    # literal: a concurrent session made this `boards = [] if board_empty else
+    # render(...)`, which keeps the variable and the source exactly as this
+    # test intends while breaking a substring check.
+    assert _re.search(r"\bboards\s*=.*\brender\(", src)
     assert not _re.search(r"(?<![\w.])boards\.get\(", src)
+
+
+# --- what is still in the way of B2B (2026-09-02) ---------------------------
+
+def test_b2b_confirm_says_the_three_things_that_stop_it_posting():
+    """The grid is mapped and the agent is built, but it is not installed — so a
+    confirmed B2B office would still sit switched on and send nothing. Warnings,
+    not errors: the setup is correct and goes live the day the agent does."""
+    rec = _rec(campaign_key="b2b_att", enabled=True,
+               destinations=[_dest("imessage", name="ATT B2B Leaders")])
+    blockers = S.b2b_blockers(rec)
+    assert len(blockers) == 3
+    assert all(b.startswith("B2B not running yet") for b in blockers)
+    # the agent is live but untried; a multi-campaign office cannot be pinned;
+    # and that box cannot text from a LaunchAgent.
+    assert any("run through the live agent" in b for b in blockers)
+    assert any("MORE THAN ONE CAMPAIGN" in b for b in blockers)
+    assert any("control Messages" in b for b in blockers)
+    assert set(blockers) <= set(S.warnings(rec))
+
+
+def test_the_imessage_blocker_is_only_for_offices_that_want_texts():
+    rec = _rec(campaign_key="b2b_box", enabled=True,
+               destinations=[_dest("slack", name="#b2b", channel_id="C1")])
+    assert len(S.b2b_blockers(rec)) == 2
+
+
+def test_d2d_has_no_b2b_blockers():
+    for key in ("att", "energy", "nds"):
+        assert S.b2b_blockers(_rec(campaign_key=key, enabled=True)) == []
+
+
+# --- the duplicate-room check reads destinations ----------------------------
+
+def test_existing_rooms_come_off_destinations_not_a_dead_field():
+    """This used to read `imessage_group`, which no record has carried since
+    destinations landed — so the 'that chat already gets another office's
+    board' warning silently never fired for a form-built office."""
+    row = {"destinations": [{"kind": "imessage", "name": "Alphalete Partners"},
+                            {"kind": "slack", "name": "#not-a-room"}],
+           "group": "Legacy Room"}
+    assert store._imessage_names(row) == ["alphalete partners", "legacy room"]
+    assert store._imessage_names({"destinations": []}) == []
+
+
+def test_a_second_office_claiming_the_same_room_is_warned_about(monkeypatch):
+    monkeypatch.setattr(store, "load_all", lambda: [
+        _rec(key="calvin", destinations=[
+            _dest("imessage", name="ENERGY WELLS DOMINATION")]).to_json()])
+    reg = store.existing_registry(exclude_key="jay")
+    assert reg["groups"].get("energy wells domination") == "calvin"
+
+
+# --- Slack + email only on the form (Megan 2026-09-02) ----------------------
+
+def test_the_form_offers_slack_and_email_only():
+    """Not iMessage: an owner cannot create a texting route any more, which is
+    why the form no longer asks for a chat name or prints Megan's number."""
+    assert S.FORM_DELIVERY_CHOICES == ["slack", "email"]
+    assert set(S.FORM_DELIVERY_CHOICES) < set(S.DELIVERY_CHOICES)
+
+
+def test_the_runner_still_knows_how_to_text():
+    """Every hardcoded office does — Raf's board goes to Alphalete Partners.
+    Dropping imessage from the schema would break them, not just the form."""
+    assert "imessage" in S.DELIVERY_CHOICES
+    rec = _rec(destinations=[_dest("imessage", name="Alphalete Partners")],
+               enabled=True)
+    assert S.validate(rec) == []
+
+
+def test_the_form_source_has_no_imessage_option_and_no_phone_number():
+    """The copy is the deliverable here, so it is asserted rather than trusted:
+    a stray 'iMessage chats?' input or a leftover number is exactly the kind of
+    thing an edit elsewhere in the file puts back."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[2]
+           / "disposition_signup" / "app.py").read_text()
+    assert "419-769-7114" not in src
+    assert 'S.destination("imessage"' not in src
+    assert "How many iMessage chats?" not in src
+
+
+# --- the office lookup that makes an enrollment self-resolving --------------
+
+def test_a_pending_access_request_is_a_retry_not_a_failure(monkeypatch):
+    """The owner has not accepted the OwnerVille request yet. Nothing is wrong
+    with the setup, so the corrections post must not send Megan to check one —
+    and the board pull is skipped, because there is nothing to impersonate."""
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(store, "load_one",
+                        lambda k: _rec(status="wired").to_json())
+    _stub_office(monkeypatch, P, ok=False, state="pending",
+                 note="Cody Cannon (#22999) — pending, found by account")
+    _no_lock_wait(monkeypatch, P)
+    monkeypatch.setattr(P, "_check_groups", lambda rec: [])
+    pulled = []
+    monkeypatch.setattr(P, "_check_board",
+                        lambda *a, **k: pulled.append(1) or {"ok": True})
+    res = P.check("cody")
+    assert res["ok"] is False and res["retry"] is True
+    assert pulled == []                     # never opened a second session
+    assert "WAITING" in _title(P, res)
+
+
+def test_a_missing_office_is_a_real_failure(monkeypatch):
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(store, "load_one",
+                        lambda k: _rec(status="wired").to_json())
+    _stub_office(monkeypatch, P, ok=False, state="missing",
+                 note="account #22999 is not in Rafael's Office Access list")
+    _no_lock_wait(monkeypatch, P)
+    monkeypatch.setattr(P, "_check_groups", lambda rec: [])
+    res = P.check("cody")
+    assert res["ok"] is False and not res.get("retry")
+    assert "failed" in _title(P, res)
+
+
+def test_a_tick_holding_the_session_is_also_a_retry(monkeypatch):
+    """Never open a second OwnerVille session behind a live capture — minting an
+    rqst at the root drops the running pull back onto the master office."""
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(store, "load_one",
+                        lambda k: _rec(status="wired").to_json())
+    monkeypatch.setattr(P, "_wait_for_tick_lock", lambda seconds=180: None)
+    opened = []
+    monkeypatch.setattr(P, "_check_office",
+                        lambda rec, save=True: opened.append(1))
+    res = P.check("cody")
+    assert res["retry"] is True and opened == []
+
+
+def _title(P, res, enabled=False):
+    """The one-line corrections title, without posting it."""
+    import types
+    captured = {}
+
+    def _fake_client():
+        class _C:
+            def chat_postMessage(self, **kw):
+                captured.setdefault("lines", []).append(kw.get("text", ""))
+                return {"ts": "1"}
+        return _C()
+    import automations.shared.slack_metrics_post as smp
+    orig = smp._client
+    smp._client = _fake_client
+    try:
+        P.notify("cody", res, enabled=enabled)
+    finally:
+        smp._client = orig
+    return (captured.get("lines") or [""])[0]
+
+
+# --- the retry that makes "it switches itself on" true ----------------------
+
+def _pc():
+    from automations.disposition_signup import pending_check as PC
+    return PC
+
+
+def test_only_confirmed_but_switched_off_offices_are_retried(monkeypatch):
+    """A pending row is not ours (Megan hasn't confirmed it) and a live one is
+    already on. Neither should cost a browser session every hour."""
+    PC = _pc()
+    monkeypatch.setattr(store, "load_all", lambda: [
+        _rec(key="waiting", status="wired", enabled=False).to_json(),
+        _rec(key="live", status="wired", enabled=True).to_json(),
+        _rec(key="unconfirmed", status="pending", enabled=False).to_json(),
+    ])
+    assert [r.key for r in PC.waiting()] == ["waiting"]
+
+
+def test_a_waiting_list_campaign_is_not_retried(monkeypatch):
+    """Nothing to pull, so a retry burns a session to fail on something no
+    amount of retrying fixes."""
+    PC = _pc()
+    _waiting(monkeypatch)
+    monkeypatch.setattr(store, "load_all", lambda: [
+        _rec(key="nds_office", campaign_key="nds", status="wired",
+             enabled=False).to_json()])
+    assert PC.waiting() == []
+
+
+def test_nothing_waiting_opens_nothing(monkeypatch):
+    PC = _pc()
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [])
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(P, "check", lambda k: (_ for _ in ()).throw(
+        AssertionError("must not run a preflight with nothing waiting")))
+    assert PC.run() == 0
+
+
+def test_an_office_that_came_good_is_switched_on(monkeypatch):
+    PC = _pc()
+    from automations.disposition_signup import preflight as P
+    rec = _rec(key="cody", status="wired", enabled=False)
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [rec.to_json()])
+    monkeypatch.setattr(PC, "_state", lambda: {"cody": "waiting:pending"})
+    saved = {}
+    monkeypatch.setattr(PC, "_save_state", lambda d: saved.update(d))
+    monkeypatch.setattr(P, "check",
+                        lambda k: {"ok": True, "rec": rec, "checks": []})
+    turned, posted = [], []
+    monkeypatch.setattr(P, "enable", lambda r: turned.append(r.key))
+    monkeypatch.setattr(P, "notify",
+                        lambda k, res, enabled: posted.append((k, enabled)))
+    PC.run()
+    assert turned == ["cody"]
+    assert posted == [("cody", True)]
+    assert "cody" not in saved          # live now; stop tracking it
+
+
+def test_an_unchanged_wait_says_nothing(monkeypatch):
+    """Three days waiting on an owner's inbox is ONE post, not seventy-two."""
+    PC = _pc()
+    from automations.disposition_signup import preflight as P
+    rec = _rec(key="cody", status="wired", enabled=False)
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [rec.to_json()])
+    monkeypatch.setattr(PC, "_state", lambda: {"cody": "waiting:pending"})
+    monkeypatch.setattr(PC, "_save_state", lambda d: None)
+    monkeypatch.setattr(P, "check", lambda k: {
+        "ok": False, "retry": True, "rec": rec,
+        "checks": [{"name": "OwnerVille office", "ok": False,
+                    "state": "pending", "note": "Request Sent"}]})
+    posted = []
+    monkeypatch.setattr(P, "notify",
+                        lambda k, res, enabled: posted.append(k))
+    PC.run()
+    assert posted == []
+
+
+def test_a_wait_that_turns_into_a_failure_does_say_so(monkeypatch):
+    PC = _pc()
+    from automations.disposition_signup import preflight as P
+    rec = _rec(key="cody", status="wired", enabled=False)
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [rec.to_json()])
+    monkeypatch.setattr(PC, "_state", lambda: {"cody": "waiting:pending"})
+    monkeypatch.setattr(PC, "_save_state", lambda d: None)
+    monkeypatch.setattr(P, "check", lambda k: {
+        "ok": False, "rec": rec,
+        "checks": [{"name": "OwnerVille office", "ok": False,
+                    "state": "missing", "note": "gone from the access list"}]})
+    posted = []
+    monkeypatch.setattr(P, "notify",
+                        lambda k, res, enabled: posted.append(k))
+    PC.run()
+    assert posted == ["cody"]
+
+
+def test_dry_run_never_opens_a_preflight(monkeypatch):
+    PC = _pc()
+    from automations.disposition_signup import preflight as P
+    monkeypatch.setattr(PC, "_client", lambda: object())
+    monkeypatch.setattr(store, "set_client", lambda gc: None)
+    monkeypatch.setattr(store, "load_all", lambda: [
+        _rec(key="cody", status="wired", enabled=False).to_json()])
+    monkeypatch.setattr(P, "check", lambda k: (_ for _ in ()).throw(
+        AssertionError("--dry-run must not run a preflight")))
+    assert PC.run(dry_run=True) == 0
+
+
+# --- the campaign check that decides whether an office can be served ---------
+
+def _camp_check(campaigns, want, name=""):
+    from automations.disposition_signup import resolve_office as RO
+    return RO.campaign_check(campaigns, want, name)
+
+
+def test_a_single_campaign_office_is_servable():
+    """Isaiah, Drew (RES AT&T OOF only), Roshan (Box only), Calvin (Energy
+    Wells only) — nothing for the picker to default to."""
+    res = _camp_check([{"id": "1", "label": "RES AT&T OOF"}], "1")
+    assert res["ok"] and "pinnable" in res["note"]
+
+
+def test_a_multi_campaign_office_is_refused_whatever_it_signed_up_for():
+    """Carlos Hidalgo runs three. OwnerVille's picker defaults for a
+    multi-campaign ICD and invD2DClientId cannot move it, so whichever campaign
+    it lands on is the one we would report under the other's name — which is
+    how his Box pull came back holding AT&T's reps."""
+    three = [{"id": "2", "label": "B2B AT&T SBS"},
+             {"id": "16", "label": "B2B-BOX-Energy"},
+             {"id": "39", "label": "BASE Energy"}]
+    for want in ("2", "16", "39"):
+        res = _camp_check(three, want)
+        assert res["ok"] is False
+        assert "3 campaigns" in res["note"]
+
+
+def test_signing_up_for_a_campaign_the_office_does_not_run_is_caught():
+    res = _camp_check([{"id": "1", "label": "RES AT&T OOF"}], "40",
+                      "Energy Wells")
+    assert res["ok"] is False
+    assert "but this office runs" in res["note"]
+
+
+def test_an_unreadable_picker_is_not_a_pass():
+    """"Could not check" must never be recorded as "checked and fine"."""
+    res = _camp_check([], "1")
+    assert res["ok"] is False and "couldn't read" in res["note"]

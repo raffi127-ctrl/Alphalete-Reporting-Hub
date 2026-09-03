@@ -362,6 +362,48 @@ class NoticesNotWork(unittest.TestCase):
         self.assertEqual(v.bucket, tri.NEEDS_YOU)
 
 
+class FindingsAreNotFailures(unittest.TestCase):
+    """A `finding-` key is a run that did its WHOLE job and is reporting what it
+    noticed on the board. notify.py posts it correctly — "the run itself was
+    fine … nothing to re-run and nothing is missing" — and then the generic
+    branches contradicted that inside its own thread: "It failed and the reason
+    isn't in the log", "It did not finish". Megan 2026-09-02, on the Vantura
+    audit: both false, both sitting under a post that had just said the opposite.
+
+    It still needs a person (the fix is on the BOARD), so NEEDS_YOU is right.
+    Only the sentence was wrong."""
+
+    KEY = "finding-vantura-board-audit"
+
+    def test_still_needs_a_person(self):
+        v = _classify(key=self.KEY, opened="2026-09-02", hour=13)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+
+    def test_never_says_it_failed_or_did_not_finish(self):
+        for hour in (8, 13, 15):
+            line = tri.line_for(_classify(key=self.KEY, opened="2026-09-02",
+                                          hour=hour))
+            self.assertNotIn("It did not finish", line)
+            self.assertNotIn("reason isn't in the log", line)
+            self.assertIn("run itself was fine", line)
+
+    def test_beats_the_age_rule(self):
+        """Stays open until a person corrects the board, so the age rule must not
+        relabel it 'Automatic retries have not fixed it' — nothing retries it."""
+        line = tri.line_for(_classify(key=self.KEY, opened="2026-08-25", hour=15))
+        self.assertNotIn("Automatic retries", line)
+        self.assertIn("run itself was fine", line)
+
+    def test_does_not_promise_a_rerun_will_help(self):
+        line = tri.line_for(_classify(key=self.KEY, opened="2026-09-02"))
+        self.assertIn("Re-running will not clear it", line)
+
+    def test_an_ordinary_failure_key_is_unaffected(self):
+        v = _classify(key="failure-daily_focus", opened="2026-09-02", hour=13)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("It did not finish", tri.line_for(v))
+
+
 class FinishesStrandedMarkers(unittest.TestCase):
     """A post with the ✅ and an `open` marker is closed to a person and open to
     every machine. Triage has always DETECTED that state — it has to, or it

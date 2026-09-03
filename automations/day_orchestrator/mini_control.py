@@ -64,6 +64,11 @@ Actions:
                         machine? `remove` deletes it + every .bak copy. Never
                         prints key material. Re-push with
                         set_applicant_service_account.
+  set_ownerville_state <json>  install an ownerville browser session
+                        exported on another machine (the contents of
+                        .ownerville_storage_state.json). Unpauses a runner
+                        whose session went stale WITHOUT anyone getting to
+                        its screen. Verified reuse-only; Args auto-redacted.
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
   sheets_login [check]  the Sales Board screenshot profile: 'check' probes it
@@ -196,7 +201,8 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
-                    "set_credico_state", "set_alphalete_app_password",
+                    "set_credico_state", "set_ownerville_state",
+                    "set_alphalete_app_password",
                     "set_appstream_state", "set_appstream_alt_state",
                     "appstream_promote_alt",
                     "post_note",
@@ -225,6 +231,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # `update` still succeeds and the queue looks alive while every rerun sits at
 # "queued" for hours. Reading a log should never spend a fix.
 READONLY_ACTIONS = {"push_appstream_fleet",
+                    "login_check",
                     "logtail", "daystate", "git_status", "git_diff",
                     "slack_channel", "slack_find", "slack_thread"}
 
@@ -257,6 +264,7 @@ def _lane_owns(action: str, lane: str) -> bool:
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
+                  "set_ownerville_creds",
                   "set_appstream_account",
                   "set_doubleentry_creds",
                   # The applicant_tracker service-account PRIVATE KEY rides the
@@ -276,6 +284,8 @@ SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
                   # A live Credico browser session — same class of secret as a
                   # token, and it transits the Args cell to reach Lucy 1.
                   "set_credico_state",
+                  # The ownerville login cookie — same class of secret.
+                  "set_ownerville_state",
                   # A live AppStream session: same class of secret, same transit
                   # through the Args cell (Eve 2026-08-24).
                   "set_appstream_state",
@@ -1392,6 +1402,33 @@ def _action_appstream_renew_probe(args: str) -> tuple[bool, str]:
 
 
 def _action_push_appstream_fleet(args: str) -> tuple[bool, str]:
+    """RETIRED — a machine does not get its AppStream session from another one.
+
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down."
+
+    Its premise held while every runner shared the rcaptain login: then a pushed
+    storage_state was the same session, only fresher. Since the per-person
+    migration it is an IDENTITY SWAP — Lucy 1 is 'Lucy Reports', the resume
+    pusher is 'Lucy Resume Pushing', and installing one machine's cookies on
+    another makes that machine somebody else for every office lookup behind it.
+
+    Its second premise is gone too: it existed because a tokenless machine could
+    only be rescued by "asking a person to clear a Turnstile". That check clears
+    itself given ~30s before submit, so a tokenless machine logs ITSELF back in.
+
+    Refused, not deleted — a queued row from before this change should say why
+    it did nothing rather than quietly overwriting three machines' identities."""
+    return False, (
+        "RETIRED (Megan 2026-09-02). Pushing a session swaps the destination "
+        "machine's IDENTITY, and a fleet fed by one donor dies with the donor. "
+        "Each Lucy logs itself in — the Cloudflare check clears itself. On the "
+        "machine that needs a session: `--appstream-login`, then verify BOTH "
+        "logins with `login_check` (ownerville and AppStream are separate and "
+        "one passing says nothing about the other).")
+
+
+def _dead_action_push_appstream_fleet(args: str) -> tuple[bool, str]:
     """Push THIS machine's live AppStream session to every runner — no human.
 
     Why this exists (Megan 2026-08-27: "I should not have to ever re-seed").
@@ -1580,6 +1617,12 @@ def _action_set_appstream_state(args: str) -> tuple[bool, str]:
 
 
 def _action_appstream_promote_alt(args: str) -> tuple[bool, str]:
+    """RETIRED — there is no alternate account left to promote (see
+    _RETIRED_ALT_MSG). Kept so a queued row explains itself."""
+    return False, _RETIRED_ALT_MSG
+
+
+def _dead_action_appstream_promote_alt(args: str) -> tuple[bool, str]:
     """Make the ALTERNATE AppStream login this machine's PRIMARY — copy the
     alt credentials (appstream-alt.json, installed by set_appstream_alt_creds)
     into the primary keys of ownerville-creds.json. Runs entirely on THIS
@@ -1632,6 +1675,16 @@ def _action_appstream_promote_alt(args: str) -> tuple[bool, str]:
 
 
 def _action_set_appstream_alt_state(args: str) -> tuple[bool, str]:
+    """RETIRED — no alternate account, so no alternate session to replay.
+
+    Its premise is also gone twice over: it existed because the 2026-08-20
+    release was believed to have put a permanent human check on the login form.
+    It had not — the check clears itself given ~30s before submit — so a machine
+    signs itself in rather than being handed somebody else's session."""
+    return False, _RETIRED_ALT_MSG
+
+
+def _dead_action_set_appstream_alt_state(args: str) -> tuple[bool, str]:
     """Seed the ALTERNATE AppStream account's live session onto THIS machine
     from a storage-state JSON exported where a human cleared the login.
 
@@ -4148,6 +4201,88 @@ def _action_set_gmail_token(args: str) -> tuple[bool, str]:
     return True, f"Gmail token installed + verified: mailbox {who}"
 
 
+def _action_set_ownerville_state(args: str) -> tuple[bool, str]:
+    """Install an ownerville browser session on THIS machine. Args is the
+    CONTENTS of automations/shared/.ownerville_storage_state.json, exported on a
+    machine where a HUMAN did the login (output/_scratch_ownerville_export_state.py).
+
+    WHY THIS EXISTS. A stale ownerville session PAUSES EVERY report on the
+    machine — the readiness check is machine-wide, not per-report — and the only
+    documented fix was "log back in on that machine's session-holder window".
+    That needs someone at (or screen-shared into) the runner, which is the same
+    wall set_credico_state was built to get around. 2026-09-02: Lucy 1 sat
+    paused with 542 minutes of stale session while the person who could fix it
+    was on another continent.
+
+    No password travels — an ownerville session is the ColdFusion login cookie.
+    The ephemeral rqst SSO token is NOT replayed; v2.ownerville re-mints it from
+    the login cookie on the next load, which is exactly what
+    _reuse_ownerville_storage_state already does for every report.
+
+    A Playwright storage_state is plain JSON with no OS key in it, so it replays
+    on another machine — unlike a Chrome profile (Keychain/DPAPI), which is why
+    sheets_login still needs a human at the screen.
+
+    Backs up any existing state, writes it 0600, then VERIFIES with the real
+    reuse-only loader (--ownerville-check never touches the login form, so a
+    session bound to the exporting browser fails here instead of looking
+    installed and dying on the next report). NEVER echoes the state; in
+    SECRET_ACTIONS, so the Args cell blanks the moment the row ends."""
+    import json
+    import shlex
+    import shutil
+    # Same two delivery paths as set_credico_state: `lucy` shlex-JOINS its args,
+    # while enqueue() writes the cell verbatim. Raw text first — shlex on raw
+    # JSON eats the quotes — then fall back to un-shlexing.
+    raw = (args or "").strip()
+    parsed = None
+    for cand in (raw, *([shlex.split(raw)[0]] if _safe_shlex_first(raw) else [])):
+        cand = (cand or "").strip()
+        if not cand.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(cand)
+            break
+        except Exception:  # noqa: BLE001 — try the next candidate
+            continue
+    if parsed is None:
+        return False, ("set_ownerville_state needs the CONTENTS of "
+                       ".ownerville_storage_state.json (a JSON object) as Args")
+    cookies = parsed.get("cookies") or []
+    if not cookies:
+        return False, ("no cookies in this state — ownerville keeps its login "
+                       "there, so the export ran before the login completed. "
+                       "Re-export once the ownerville page is fully on screen.")
+
+    from automations.shared.tableau_patchright import (
+        OWNERVILLE_STORAGE_STATE as path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=1), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    ok, res = _run_cmd([sys.executable, "-m",
+                        "automations.shared.tableau_patchright",
+                        "--ownerville-check"],
+                       timeout_s=5 * 60, log_name="ownerville-set-state.log")
+    head = f"{len(cookies)} cookie(s) installed · "
+    if ok:
+        return True, head + ("session VERIFIED here — the readiness gate should "
+                             "clear on the next orchestrator pass")
+    return False, (head + "but ownerville REJECTED it on this machine: " +
+                   res[:150] + " — full log: lucy logtail ownerville-set-state")
+
+
 def _action_set_credico_state(args: str) -> tuple[bool, str]:
     """Install a Credico browser session on THIS machine so the DD pull can run
     unattended. Args is the CONTENTS of the .credico_storage_state.json produced
@@ -5377,6 +5512,9 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
                 runs total_knocks.pull instead, which is the exact path his
                 daily report uses.
         date    default: yesterday (Central), same as the daily run.
+        force   run even inside the gap_alerts selling window. REFUSED there
+                by default: this takes the machine-wide ownerville session,
+                and a slow probe silently eats Raf's boards (2026-09-02).
         campaign=<id>    pin a different TeleMapper campaign for this probe
         campaign=none    skip the pin entirely (what an NDS office gets in
                          weekly_knock_dispositions). Lets the "is the pin
@@ -5405,8 +5543,12 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
     office = parts[0].strip()
     date_arg = None
     campaign = None                      # None = leave the default pin alone
+    force = False
     for raw in parts[1:]:
         arg = raw.strip()
+        if arg.lower() in ("force", "--force"):
+            force = True
+            continue
         if arg.lower().startswith("campaign="):
             val = arg.split("=", 1)[1].strip()
             # 'none' / '' both mean DON'T pin — knocks_pull skips the pin on
@@ -5419,6 +5561,39 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
             dt.datetime.strptime(date_arg, "%Y-%m-%d")
         except ValueError:
             return False, f"probe_knocks: date must be YYYY-MM-DD, got {date_arg!r}"
+
+    # NOT DURING THE SELLING WINDOW, unless you say so on purpose.
+    #
+    # This action is read-only to the DATA and anything but read-only to the
+    # SESSION. On 2026-09-02 one `probe_knocks "Jay Turnage"` broke Raf's live
+    # gap_alerts twice inside an hour: it stranded the impersonation (his 2:05
+    # board came out as another office's grid), and it held the machine-wide
+    # ownerville lock for ten minutes, which ate the 2:30 and 2:40 boards
+    # outright — gap_alerts waits 120s, then logs "SKIPPED this tick" and
+    # exits 0, so a starved report looks healthy.
+    #
+    # A separate Chrome profile is NOT a separate session: every job restores
+    # the same storage_state, so they share one server-side session and
+    # impersonation lives there. See
+    # [[reference_ownerville_one_session_per_machine]].
+    #
+    # `force` is the deliberate override, because sometimes the thing you need
+    # to debug only happens while the field is out.
+    if not force:
+        try:
+            from automations.gap_alerts import config as _gc
+            _now = dt.datetime.now()
+            if _gc.in_selling_window(_now):
+                return False, (
+                    "probe_knocks refused: it is %s, inside the gap_alerts "
+                    "selling window, and this probe takes the machine-wide "
+                    "ownerville session — a slow one silently eats Raf's "
+                    "boards (2026-09-02). Run it after the window, or add "
+                    "`force` to override on purpose."
+                    % _now.strftime("%I:%M %p").lstrip("0"))
+        except Exception:  # noqa: BLE001 — a guard must never block the action
+            pass
+
     # Same guard the other browser actions use — a human Chrome left open on the
     # mini single-instances with patchright's and breaks the scrape.
     try:
@@ -5441,6 +5616,84 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
                        log_name=f"probe-knocks-{slug}-{stamp}.log",
                        env=env or None)
     return ok, res
+
+
+def _action_campaign_scan(args: str) -> tuple[bool, str]:
+    """READ-ONLY: which offices run MORE THAN ONE campaign — i.e. who CANNOT be
+    enrolled for daily dispositions yet. Runs
+    `automations.disposition_signup.campaign_scan`, which impersonates each
+    granted office, reads its campaigns off an unpinned p=89, and exits
+    impersonation. No Sheet, no Slack, nothing written to ownerville.
+
+      campaign_scan                     the full list, after-hours guarded
+      campaign_scan "Jay Turnage"       just one office (substring match)
+      campaign_scan limit=5             the first 5, for a smoke test
+      campaign_scan force               run even inside the selling window
+
+    Why it must run HERE and not from the laptop: it needs a live ownerville
+    session, and a laptop runs no session holder — its
+    .ownerville_storage_state.json only ages, so the scan dies on
+    "session expired or missing" before it reads a single office
+    (2026-09-03, the run that prompted this action).
+
+    Why `force` is not the default: the full ~90-office scan takes 30-45
+    minutes and holds the machine-wide ownerville session for all of it (one
+    office at a time — it takes and releases the gap_alerts lock per office, so
+    a tick waits seconds, not half an hour). Inside the selling window that
+    still costs Raf boards, so the underlying script refuses to start there and
+    exits 2. `force` drops --after-hours on purpose.
+
+    Read the full table with `lucy logtail campaign-scan-<stamp>`; the report
+    also lands in output/disposition-campaign-scan-<date>.md and .json."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    only = ""
+    limit = None
+    force = False
+    bare: list[str] = []
+    for raw in parts:
+        arg = raw.strip()
+        if not arg:
+            continue
+        if arg.lower() in ("force", "--force"):
+            force = True
+            continue
+        if arg.lower().startswith("limit="):
+            val = arg.split("=", 1)[1].strip()
+            if not val.isdigit():
+                return False, f"campaign_scan: limit must be a number, got {val!r}"
+            limit = val
+            continue
+        if arg.lower().startswith("only="):
+            only = arg.split("=", 1)[1].strip()
+            continue
+        # A bare name is the office. JOINED, not overwritten: an unquoted
+        # `campaign_scan Jay Turnage` used to scan `--only Turnage` — the last
+        # word silently won, and a substring match on a surname is exactly the
+        # kind of wrong answer nobody double-checks.
+        bare.append(arg)
+    if bare and not only:
+        only = " ".join(bare)
+    # Same guard the other browser actions use — a human Chrome left open on the
+    # mini single-instances with patchright's and breaks the scrape.
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome()
+    except Exception:  # noqa: BLE001 — a guard must never crash the run
+        pass
+    cmd = [sys.executable, "-m", "automations.disposition_signup.campaign_scan"]
+    if not force:
+        cmd.append("--after-hours")
+    if only:
+        cmd += ["--only", only]
+    if limit:
+        cmd += ["--limit", limit]
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    return _run_cmd(cmd, timeout_s=90 * 60,
+                    log_name=f"campaign-scan-{stamp}.log")
 
 
 def _action_set_dd_bot_token(args: str) -> tuple[bool, str]:
@@ -6106,6 +6359,149 @@ def _action_appstream_whoami(args: str) -> tuple[bool, str]:
     return ok, res[:900]
 
 
+def _action_set_ownerville_creds(args: str) -> tuple[bool, str]:
+    """Install THIS machine's ownerville login.
+
+      set_ownerville_creds <username> <password>
+
+    WHY IT HAD TO EXIST (2026-09-02). `login_check` found Lucy 3 running with NO
+    ownerville credential at all. Nothing looked wrong — its saved session was
+    live, so every ownerville report worked. But a session lasts ~60h and a
+    machine with no credential cannot log itself back in when one dies, so it
+    was a machine that would fail silently at some future 4am and could not
+    self-heal. Lucy 3 takes no SSH, and every other credential already had a
+    queue action; this one did not, so there was no way to fix it remotely.
+
+    Ownerville and AppStream are SEPARATE logins — this touches ONLY the two
+    ownerville_* keys, exactly like set_ownerville_login does on the console.
+    The AppStream and Double Entry logins in the same file are left alone.
+
+    In SECRET_ACTIONS, so the poller blanks the Args cell the moment the row
+    finishes. Backs the file up first, and verifies by driving a real login
+    rather than by trusting that a write succeeded — a stored credential that
+    cannot log in is worse than none, because it looks configured."""
+    import json as _json
+    import shlex
+    import shutil
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, "couldn't read Args (%s) — quote the password" % str(e)[:80]
+    if len(parts) != 2:
+        return False, ("need: set_ownerville_creds <username> <password> "
+                       "(quote the password if it has spaces)")
+    user, pw = parts[0], parts[1]
+
+    path = REPO_ROOT / "ownerville-creds.json"
+    data: dict = {}
+    if path.exists():
+        try:
+            data = _json.loads(path.read_text())
+        except Exception as e:  # noqa: BLE001
+            return False, "couldn't read %s: %s" % (path.name, str(e).splitlines()[0][:120])
+        shutil.copy2(path, path.with_suffix(
+            ".json.bak.%s" % dt.datetime.now().strftime("%Y%m%d-%H%M%S")))
+    kept = sorted(k for k in data if not k.startswith("ownerville_"))
+    data["ownerville_username"] = user
+    data["ownerville_password"] = pw
+    try:
+        path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+        _creds_cache_bust()
+    except Exception as e:  # noqa: BLE001
+        return False, "couldn't write %s: %s" % (path.name, str(e).splitlines()[0][:120])
+
+    # PROVE IT. The Cloudflare check clears itself given ~30s before submit, so
+    # this really does log in unattended — no human, no window.
+    ok, res = _run_cmd(
+        [sys.executable, "-c",
+         "from automations.shared.appstream_autorenew import refresh_ownerville;"
+         " raise SystemExit(0 if refresh_ownerville(verbose=True) else 1)"],
+        timeout_s=10 * 60, log_name="ownerville-creds-verify.log")
+    tail = str(res).split("\n")[-1][:200]
+    if not ok:
+        return False, ("stored %s in %s (kept: %s) but the LOGIN FAILED: %s"
+                       % (user, path.name, ", ".join(kept) or "none", tail))
+    return True, ("ownerville creds installed for %s + login verified (kept: %s) · %s"
+                  % (user, ", ".join(kept) or "none", tail))
+
+
+def _action_purge_retired_appstream_creds(args: str) -> tuple[bool, str]:
+    """Delete retired AppStream credentials from THIS machine.
+
+    Only two logins exist (Megan 2026-09-02): 'Lucy Reports' for every report and
+    'Lucy Resume Pushing' for the resume pusher. The code already refuses to
+    SELECT anything else, but a retired credential sitting on disk is still worth
+    removing: it is a live login for an account nobody audits, and every call
+    site that could reach it is one edit away from existing again.
+
+    Removes ~/.config/recruiting-report/appstream-alt.json (the CarlosNLR slot)
+    and any non-allowed entry in appstream-accounts.json. Backs each up beside
+    itself with a .retired suffix rather than destroying it — an account we turn
+    out to still need is recoverable, and nothing here is the only copy.
+
+    Read-only against the two accounts that remain: it never touches
+    ownerville-creds.json, so the reporting login and its password are untouched."""
+    import json as _json
+    cfg = Path.home() / ".config" / "recruiting-report"
+    removed, kept = [], []
+
+    alt = cfg / "appstream-alt.json"
+    if alt.exists():
+        bak = alt.with_suffix(".json.retired")
+        alt.replace(bak)
+        removed.append("appstream-alt.json (backed up as %s)" % bak.name)
+
+    acc = cfg / "appstream-accounts.json"
+    if acc.exists():
+        try:
+            blob = _json.loads(acc.read_text())
+        except Exception as e:  # noqa: BLE001
+            return False, "appstream-accounts.json is unreadable: %s" % str(e)[:120]
+        if isinstance(blob, dict):
+            from automations.shared import creds as _creds
+            bad = [k for k in blob if k not in _creds.ALLOWED_APPSTREAM_ACCOUNTS]
+            if bad:
+                (cfg / "appstream-accounts.json.retired").write_text(
+                    _json.dumps(blob, indent=2))
+                for k in bad:
+                    blob.pop(k, None)
+                acc.write_text(_json.dumps(blob, indent=2))
+                try:
+                    os.chmod(acc, 0o600)
+                except OSError:
+                    pass
+                removed.extend("account %r" % k for k in bad)
+            kept = sorted(blob)
+
+    _creds_cache_bust()
+    if not removed:
+        return True, ("nothing retired on this machine · accounts: %s"
+                      % (", ".join(kept) or "primary only"))
+    return True, ("removed: %s · accounts remaining: %s"
+                  % ("; ".join(removed), ", ".join(kept) or "primary only"))
+
+
+def _action_login_check(args: str) -> tuple[bool, str]:
+    """Are BOTH logins live on THIS machine — ownerville AND AppStream?
+
+      login_check           read the stored sessions (fast, no browser)
+      login_check --deep    also open the AppStream console and read back which
+                            account it is actually signed in as
+
+    WHY IT IS A QUEUE ACTION: Lucy 2 and Lucy 3 have no SSH, so this is the only
+    way to audit them, and auditing them SEPARATELY is the point — Megan
+    2026-09-02: "Ownerville and App stream ARE NOT the same login and should not
+    be considered fixed if only one of them works."
+
+    Read-only. It reads session files and, with --deep, opens a console and
+    reads the page back. Nothing is written, nothing is pushed anywhere: each
+    machine answers for itself."""
+    cmd = [sys.executable, "-m", "automations.shared.login_check"] + (args or "").split()
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60, log_name="login-check.log")
+    return ok, res[:900]
+
+
 def _action_funnel_board_unlock(args: str) -> tuple[bool, str]:
     """Clear a stale funnel_board run lock left by a killed run.
 
@@ -6131,22 +6527,31 @@ def _action_funnel_board_unlock(args: str) -> tuple[bool, str]:
     return not lock.exists(), "cleared a %.0f min old lock (no funnel_board running)" % age
 
 
+_RETIRED_ALT_MSG = (
+    "RETIRED (Megan 2026-09-02). There are exactly two AppStream logins: "
+    "'Lucy Reports' — every report on every Lucy — and 'Lucy Resume Pushing' — "
+    "the resume pusher. rcaptain and the CarlosNLR 'alt' slot are gone. "
+    "Use set_appstream_creds / set_appstream_username for the reporting login, "
+    "or set_appstream_account lucyresume for the resume login. This action is "
+    "kept only so an old queued row gets this sentence instead of quietly "
+    "installing a third account.")
+
+
 def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
-    """Install a SECOND AppStream login on THIS machine, beside the primary.
+    """RETIRED — installing a third AppStream login is no longer allowed.
 
-      set_appstream_alt_creds <username> <password>
+    It used to write a second credential beside the primary, because Lucy 2
+    signed in as CarlosNLR and could not see six of the 28 offices while
+    rcaptain could. Both accounts are gone; every Lucy signs in as
+    'Lucy Reports' and reaches all of them.
 
-    Why a second one rather than replacing: Lucy 2 runs as CarlosNLR, which
-    cannot see six of the 28 offices, while rcaptain can. Other reports on that
-    machine already depend on the primary account and its saved session, so the
-    alternate is stored separately and jobs choose per run
-    (funnel_board --account alt). The alternate also gets its OWN browser profile
-    so its cookies never overwrite the primary's session.
+    It refuses rather than being deleted because the danger is a QUEUED row: the
+    queue outlives a deploy, and a row landing after this change should say why
+    it did nothing, not install an account no report is allowed to select."""
+    return False, _RETIRED_ALT_MSG
 
-    Writes to ~/.config/recruiting-report/appstream-alt.json (chmod 600) and
-    verifies by actually logging in and reading the account back. NEVER echoes
-    the password. In SECRET_ACTIONS, so the poller blanks the Args cell the
-    moment the row ends."""
+
+def _dead_action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     import json as _json
     parts = (args or "").split()
     if len(parts) < 2:
@@ -6299,6 +6704,82 @@ def _action_set_appstream_account(args: str) -> tuple[bool, str]:
                   "here — prove it with `lucy rerun applicant_push --dry-run`, "
                   "which also records the account number the live send asserts "
                   "against." % (name, user, ", ".join(others) or "none"))
+
+
+def _action_set_appstream_username(args: str) -> tuple[bool, str]:
+    """Fix ONLY the AppStream username on THIS machine, leaving the password.
+
+      set_appstream_username "Lucy Reports"
+
+    WHY (Megan 2026-09-02). The username was stored as `LucyReports` — no space —
+    where the real account is `Lucy Reports` (23981). A wrong username here does
+    NOT fail loudly: the unattended form login fills it, clears Cloudflare,
+    submits, and then reports "form login reached the console" and "saved fresh
+    AppStream session". It never authenticated. The console rendered off
+    CFID/CFTOKEN from the previously saved state re-injected on the ?rqst=&p=701
+    hop, carrying no new token — so every layer above read a dead session as a
+    live one. On Lucy 1 that took out the whole 4am batch (daily_focus,
+    applicant_sync_morning, recruiter_retention_daily) and cost a morning of
+    wrong diagnoses before anyone checked the username.
+
+    set_appstream_creds already exists but demands `<username> <password>`, so
+    correcting a typo meant re-sending the password through the Sheet — and on a
+    never-touch runner (Lucy 3 takes no SSH) there was no other way in. This
+    changes the one field that is not a secret, which is why it is NOT in
+    SECRET_ACTIONS: the Args cell should stay readable so the fix is auditable.
+
+    Merges — the ownerville pair every Tableau report needs lives in the same
+    file — and backs up first. Verifies with appstream_whoami, which prints
+    `configured=` next to the session's real account label, so a mismatch is
+    visible in one line."""
+    import json as _json
+    import shlex
+    import shutil
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]}) — quote the username"
+    user = " ".join(parts).strip()
+    if not user:
+        return False, ('set_appstream_username needs the username, quoted if it '
+                       'has a space — e.g. set_appstream_username "Lucy Reports"')
+    path = REPO_ROOT / "ownerville-creds.json"
+    if not path.exists():
+        return False, (f"{path.name} does not exist — there is no password to "
+                       "keep, so use set_appstream_creds <username> <password>")
+    try:
+        data = _json.loads(path.read_text())
+    except Exception as e:  # noqa: BLE001
+        # Refuse rather than start clean: unlike set_appstream_creds we have no
+        # password in hand, so replacing an unreadable file would leave the
+        # machine with a username and NO credential at all.
+        return False, (f"{path.name} is unreadable ({str(e).splitlines()[0][:60]}) "
+                       "— fix it with set_appstream_creds, which can rebuild it")
+    if not str(data.get("appstream_password") or "").strip():
+        return False, (f"{path.name} has no appstream_password to keep — use "
+                       "set_appstream_creds <username> <password> instead")
+    old = data.get("appstream_username")
+    if old == user:
+        return True, f"appstream_username was already {user!r} — nothing to change"
+    stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+    try:
+        shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+    except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+        pass
+    data["appstream_username"] = user
+    try:
+        path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+        _creds_cache_bust()
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    ok, res = _run_cmd([sys.executable, "-m", "automations.shared.appstream_whoami"],
+                       timeout_s=20 * 60, log_name="appstream-username-verify.log")
+    tail = res.split("·")[-1].strip()[:200]
+    if not ok:
+        return False, (f"set appstream_username {old!r} -> {user!r} but the "
+                       f"verify FAILED: {tail}")
+    return True, f"appstream_username {old!r} -> {user!r}, verified: {tail}"
 
 
 def _action_set_appstream_creds(args: str) -> tuple[bool, str]:
@@ -6694,6 +7175,7 @@ ACTIONS = {
     "logtail": _action_logtail,
     "daystate": _action_daystate,
     "probe_knocks": _action_probe_knocks,
+    "campaign_scan": _action_campaign_scan,
     "pip_install": _action_pip_install,
     "playwright_install": _action_playwright_install,
     "install_pinned_chrome": _action_install_pinned_chrome,
@@ -6712,6 +7194,7 @@ ACTIONS = {
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
     "set_appstream_creds": _action_set_appstream_creds,
+    "set_appstream_username": _action_set_appstream_username,
     "set_appstream_state": _action_set_appstream_state,
     "set_appstream_alt_state": _action_set_appstream_alt_state,
     "appstream_promote_alt": _action_appstream_promote_alt,
@@ -6728,6 +7211,7 @@ ACTIONS = {
     "set_gdocs_token": _action_set_gdocs_token,
     "set_gmail_token": _action_set_gmail_token,
     "set_credico_state": _action_set_credico_state,
+    "set_ownerville_state": _action_set_ownerville_state,
     "set_appstream_state": _action_set_appstream_state,
     "set_contacts_token": _action_set_contacts_token,
     "set_contacts_ro_token": _action_set_contacts_ro_token,
@@ -6770,6 +7254,9 @@ ACTIONS = {
     "post_nsf_correction": _action_post_nsf_correction,
     "reseed_appstream": _action_reseed_appstream,
     "push_appstream_fleet": _action_push_appstream_fleet,
+    "login_check": _action_login_check,
+    "purge_retired_appstream_creds": _action_purge_retired_appstream_creds,
+    "set_ownerville_creds": _action_set_ownerville_creds,
     "appstream_renew_probe": _action_appstream_renew_probe,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
@@ -7273,6 +7760,13 @@ def print_help() -> None:
         "                            be impersonated). campaign=none skips the\n"
         "                            TeleMapper pin, to test whether the pin is\n"
         "                            what is blanking an office.\n"
+        '  lucy campaign_scan ["<office>"] [limit=N] [force]\n'
+        "                            READ-ONLY: which offices run more than one\n"
+        "                            campaign, i.e. who CANNOT be enrolled for\n"
+        "                            daily dispositions yet (no Sheet, no Slack).\n"
+        "                            The full ~90-office run takes 30-45 min and\n"
+        "                            refuses to start inside the selling window;\n"
+        "                            `force` overrides that on purpose.\n"
         "  lucy update               git pull the latest code onto the mini\n"
         "  lucy git_status           branch, HEAD, and what's blocking a pull\n"
         "  lucy git_diff [path]      what this machine's uncommitted edits SAY\n"

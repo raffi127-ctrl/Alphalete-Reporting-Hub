@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright as _dcp
+from automations.shared import captainship_pins as _pins
 
 
 def _dl(view_url, crosstab_sheet, out_path, verbose=False, page=None, pre_export=None):
@@ -144,6 +145,8 @@ FIBER_WIRELESS_TEAM = {
     "chan":  "Chan's Team",
     "tony":  "Tony's Team",
     "sahil": "Sahil's Team",
+    "pat":   "Pat's Team",
+    "jess":  "Jess's Team",
 }
 
 # One download per PROCESS, shared by all five wireless reports. run.py calls
@@ -231,6 +234,11 @@ def parse_wireless_team(csv_path: Path, team_value: Optional[str] = None) -> dic
         if raw_name == "Grand Total":
             continue                       # org-wide total — recomputed below
         team = r[team_i].strip() if len(r) > team_i else ""
+        # Route an adopted ICD onto their real captain's slice (the wireless
+        # pull is org-wide and sliced here, so it can honour it; the per-captain
+        # NEW INTERNET views filter server-side and cannot).
+        # See captainship_pins.ADOPTED.
+        team = _pins.route_team(team, raw_name)
         if team_value is not None and team != team_value:
             continue
         matched_rows += 1
@@ -613,6 +621,13 @@ def make_b2b_captainship_parser(roster):
         return {"office_total": office, "reps": reps}
 
     _parse.__name__ = "parse_b2b_captainship"
+    # Read by run._program_of. Without it this closure is not `parse_b2b` by
+    # identity, so it fell through to "fiber" and a went-dark rep on Atef's B2B
+    # tab was looked for in the FIBER all-teams NEW INTERNET view — where a B2B
+    # rep can never be, so she could never be backfilled (and a name that DID
+    # collide would have printed NI churn on a B2B tab). Same trap the wireless
+    # closures already dodge with `is_wireless` (Eve 2026-09-03).
+    _parse.program = "b2b"
     return _parse
 
 

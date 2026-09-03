@@ -70,6 +70,129 @@ OWNERVILLE_STORAGE_STATE = (
     Path(__file__).resolve().parent / ".ownerville_storage_state.json"
 )
 
+# ONE OWNERVILLE SESSION PER MACHINE — and it is not the profile that is shared.
+#
+# Every process here restores the SAME storage_state, so they are all the same
+# ownerville SERVER session no matter which Chrome profile they launched. And
+# impersonation is a property of that server session: whoever calls
+# confirmImpersonate last wins, for everyone, and _exit_impersonation is just as
+# loud — it drops the shared session back to MASTER, so a job merely FINISHING
+# retargets someone else's in-flight scrape at Raf's office.
+#
+# Measured on Lucy 1 2026-09-02, four reads of Khalil's 09/01 inside ONE
+# impersonation while gap_alerts ran its own offices in its OWN profile:
+#   7 reps (KHALIL MANSOUR) -> 7 -> 39 (Chan Park) -> 39, nothing raising.
+# That is the board that went out titled KHALIL MANSOUR carrying Raf's 38 reps.
+#
+# The old guard was `proc_guard` + a hand-kept list of module names in
+# knocks_request, and it protected the shared PROFILE. gap_alerts was exempt on
+# the strength of having its own profile — exactly backwards. This lock is on
+# the SESSION, it lives in ownerville_session() so no caller can be forgotten,
+# and a profile_dir buys no exemption from it.
+OWNERVILLE_SESSION_LOCK = (
+    Path(__file__).resolve().parent / ".ownerville_session.lock"
+)
+
+
+class OwnervilleBusy(RuntimeError):
+    """Another run on this machine holds the ownerville session.
+
+    RAISED, where the profile lock merely warns and proceeds. Proceeding is the
+    bug: two runs on one session read each other's offices and neither can
+    tell. A caller that would rather skip than wait catches this."""
+
+
+# REENTRANT WITHIN A PROCESS. flock is keyed to the open file DESCRIPTION, so a
+# second os.open() of the same file in the SAME process blocks on the first —
+# i.e. one run that nests two ownerville_session() calls would deadlock against
+# itself, forever, with a log line blaming "another run". Nothing nests today,
+# but a deadlock is not the failure mode to leave lying around for whoever does
+# it next. Depth-counted instead: the outermost session owns the fd.
+_OV_LOCK_DEPTH = 0
+_OV_LOCK_FD = None
+
+
+def _acquire_session_lock(*, wait_s: float, verbose: bool, label: str):
+    """Exclusive machine-wide lock on the ownerville session. Returns an fd to
+    hold, or None where locking is unavailable (Windows has no flock — those
+    machines keep the old behaviour rather than losing the report entirely).
+
+    No orphan sweep, unlike the profile lock: flock is released by the kernel
+    when the holder dies, so a killed run cannot leave this stuck.
+    """
+    global _OV_LOCK_DEPTH, _OV_LOCK_FD
+    if _OV_LOCK_DEPTH > 0:          # already ours — see _OV_LOCK_DEPTH above
+        _OV_LOCK_DEPTH += 1
+        return _OV_LOCK_FD
+    if _fcntl is None:
+        return None
+    try:
+        fd = os.open(str(OWNERVILLE_SESSION_LOCK), os.O_CREAT | os.O_RDWR, 0o644)
+    except Exception:          # noqa: BLE001 — never let the lock be the failure
+        return None
+    start = time.monotonic()
+    announced = False
+    while True:
+        try:
+            _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            if announced and verbose:
+                print(f"[{label}] ownerville session free — acquired, launching",
+                      flush=True)
+            _OV_LOCK_DEPTH, _OV_LOCK_FD = 1, fd
+            return fd
+        except OSError:
+            if time.monotonic() - start >= wait_s:
+                who = _lock_holder(OWNERVILLE_SESSION_LOCK)
+                try:
+                    os.close(fd)
+                except Exception:  # noqa: BLE001
+                    pass
+                raise OwnervilleBusy(
+                    "another run on this machine has held the ownerville "
+                    f"session for the whole {int(wait_s)}s this run could wait"
+                    + (f" ({who})" if who else "")
+                    + " — nothing was pulled. Two runs on one session read "
+                      "each other's offices, so this refuses rather than "
+                      "guessing whose numbers it got.")
+            if not announced:
+                who = _lock_holder(OWNERVILLE_SESSION_LOCK)
+                how_long = (f"{int(wait_s // 60)}m" if wait_s >= 60
+                            else f"{int(wait_s)}s")
+                print(f"[{label}] another run holds the ownerville session"
+                      + (f" ({who})" if who else "")
+                      + f" — waiting up to {how_long} for it "
+                      + "(one session per machine; a separate Chrome profile "
+                        "is not a separate session)", flush=True)
+                announced = True
+            time.sleep(_PROFILE_LOCK_POLL_S)
+
+
+def ownerville_session_holder() -> str:
+    """'pid 1234 (Python)' for whoever holds the machine-wide ownerville
+    session, or "" when it is free. Diagnostic only — a caller that needs the
+    session takes the lock; this is for saying WHY someone is waiting.
+
+    Reads the lock file rather than a list of module names. The list was the
+    bug: it had to be kept up to date by hand, and gap_alerts was never on it.
+    """
+    if _OV_LOCK_DEPTH > 0:
+        return "this run"
+    return _lock_holder(OWNERVILLE_SESSION_LOCK)
+
+
+def _release_session_lock(lock_fd) -> None:
+    """Release + close the session lock. Never raises. Only the OUTERMOST
+    holder actually lets go — see _OV_LOCK_DEPTH."""
+    global _OV_LOCK_DEPTH, _OV_LOCK_FD
+    if lock_fd is None:
+        return
+    if _OV_LOCK_DEPTH > 1:
+        _OV_LOCK_DEPTH -= 1
+        return
+    _OV_LOCK_DEPTH, _OV_LOCK_FD = 0, None
+    _release_profile_lock(lock_fd)
+
+
 LOGIN_URL = "https://ownerville.com"
 # v2 is the internal dashboard that holds the 'Login to Tableau' SSO
 # link. The CDP-attached path (opt_phase._reauth_tableau) navigates
@@ -698,21 +821,44 @@ def _ownerville_session_valid(page: Page, verbose: bool = True) -> bool:
     in-page SSO link). A 'reused from profile' landing page with no rqst is a
     STALE cookie, not a live session — the bug behind the 'no rqst' glitches
     (Eve rows 38/69). This is the same token _sso_to_tableau relies on."""
-    try:
-        page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(4_000)
-    except Exception:
-        return False
-    if re.search(r"rqst=([A-Za-z0-9_]+)", page.url or ""):
-        return True
-    try:
-        href = page.evaluate(
-            "() => { const a=[...document.querySelectorAll('a')]"
-            ".find(x=>/rqst=/.test(x.getAttribute('href')||'')); "
-            "return a?a.getAttribute('href'):''; }")
-        return bool(re.search(r"rqst=([A-Za-z0-9_]+)", href or ""))
-    except Exception:
-        return False
+    # CHECK BOTH DOMAINS, v2 FIRST (2026-09-01, Megan: "the V2 has a secondary
+    # pass encryption on it").
+    #
+    # This only ever looked at v2.ownerville.com — the page behind the extra
+    # password check — so a session established on ownerville.com could be
+    # perfectly live and still read as dead. That is not theoretical: on the
+    # evening of 9/1 Megan signed in at the holder's window three times and the
+    # holder rejected every one, sitting at "waiting for ownerville login" while
+    # a good session existed. One accepted seed at 19:05 was declared STALE six
+    # minutes later by this same check.
+    #
+    # The signal is unchanged — a real rqst SSO token, in the URL or an in-page
+    # link. Only the set of pages we look on widens, so this can accept sessions
+    # it used to reject and can never accept one with no token at all.
+    for url in (OWNERVILLE_V2_URL, LOGIN_URL):
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(4_000)
+        except Exception:  # noqa: BLE001 — try the other domain
+            continue
+        if re.search(r"rqst=([A-Za-z0-9_]+)", page.url or ""):
+            if verbose:
+                print(f"-> ownerville session valid (rqst in URL at {url})",
+                      flush=True)
+            return True
+        try:
+            href = page.evaluate(
+                "() => { const a=[...document.querySelectorAll('a')]"
+                ".find(x=>/rqst=/.test(x.getAttribute('href')||'')); "
+                "return a?a.getAttribute('href'):''; }")
+            if re.search(r"rqst=([A-Za-z0-9_]+)", href or ""):
+                if verbose:
+                    print(f"-> ownerville session valid (rqst link at {url})",
+                          flush=True)
+                return True
+        except Exception:  # noqa: BLE001 — try the other domain
+            continue
+    return False
 
 
 def _ownerville_seed_hint() -> str:
@@ -784,19 +930,29 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
                                  profile_dir=None) -> None:
     """Guarantee a LIVE ownerville session.
 
-    Auth path (since 2026-06-17): restore a manually-exported session
-    (OWNERVILLE_STORAGE_STATE) rather than driving the login form. ownerville's
-    form hits a Cloudflare 'verify you are human' check that can't be cleared
-    unattended, so a missing/expired session FAILS FAST with a clear error
-    (see _ownerville_seed_hint for the per-machine remedy) instead of stalling
-    on the check.
+    Auth path: reuse a saved session where there is one, and LOG IN when there
+    is not. The Cloudflare 'verify you are human' box on ownerville's password
+    step clears ITSELF — type the username, NEXT, let the check run, fill the
+    password, wait ~30s, submit (Megan 2026-09-01, and again 2026-09-02: "the
+    delay causes the human box to auto check"). Nobody has to be at the screen.
+
+    THE OLD DOCSTRING SAID THE OPPOSITE and it was measured wrong, not merely
+    out of date: "the form hits a Cloudflare check that can't be cleared
+    unattended" was a conclusion drawn from a 3-SECOND pre-submit pause. The
+    submit landed while the check was still running, the login failed, and that
+    read as "impossible" instead of "too fast". The whole fleet was built around
+    that sentence — the form disabled by default, the holder opening a window
+    and waiting for a person — and it is the same mistake that made AppStream
+    look human-gated for twelve days.
 
     Steps:
       1. Reuse the exported storage_state (inject cookies → rqst check).
       2. Failing that, try whatever cookie the persistent profile already holds.
-      3. Unless allow_form_login=True, fail fast — never touch the Turnstile.
-      4. allow_form_login=True re-enables the legacy two-step form-drive
-         (interactive/debug ONLY — it hits the Turnstile and stalls unattended).
+      3. Failing that, MINT A NEW SESSION by driving the login form unattended
+         (refresh_ownerville, once per process so a bad password costs one
+         attempt and not a loop against the account).
+      4. Only then fail — with the remedy, not with a claim that a human is
+         required.
     """
     # (1) Primary automated path: exported session, no form / Turnstile.
     if _reuse_ownerville_storage_state(page.context, page, verbose):
@@ -849,23 +1005,33 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
                       % (type(e).__name__, str(e).splitlines()[0][:120]),
                       flush=True)
 
-    # (3) Unattended default: fail loud + clear, pointing at the real remedy.
+    # (3) Everything above failed. Fail loud + clear, pointing at the real
+    # remedy — and NOT at a human. The old text here said the login form "is
+    # disabled because its Cloudflare check can't be cleared unattended", which
+    # is false (step 2b just tried it) and sends whoever reads it looking for
+    # somebody to go clear a checkbox instead of at the actual failure: a wrong
+    # credential, a poisoned profile, or ownerville itself being down.
     if not allow_form_login:
         raise RuntimeError(
-            f"ownerville session expired or missing — {_ownerville_seed_hint()} "
-            "(storage_state reuse path; the login form is disabled because its "
-            "Cloudflare 'verify you are human' check can't be cleared "
+            f"ownerville session expired or missing, and the unattended login "
+            f"at {LOGIN_URL} did not reach a live session either — "
+            f"{_ownerville_seed_hint()} "
+            "(the Cloudflare check clears itself given ~30s before submit, so "
+            "reaching here means something else failed: check the credential "
+            "first, then the profile.) "
             # NAME THE PROFILE ACTUALLY IN USE. This printed the module-level
             # default whatever profile the caller passed, so a gap_alerts
             # failure pointed at `.browser_profile` while the poisoned profile
             # was `.browser_profile_gap_alerts` — an hour of looking at the
             # wrong directory on 2026-09-01.
-            f"unattended.) Profile: {profile_dir or PROFILE_DIR}")
+            f"Profile: {profile_dir or PROFILE_DIR}")
 
-    # (4) Legacy opt-in form-drive — interactive/debug ONLY (hits the Turnstile).
+    # (4) Opt-in form-drive on THIS page, for a caller that wants the login
+    # driven here rather than in refresh_ownerville's throwaway profile.
     if verbose:
-        print("-> [allow_form_login] driving ownerville login form (hits the "
-              "Cloudflare check — interactive use only)", flush=True)
+        print("-> [allow_form_login] driving ownerville login form "
+              "(the Cloudflare check clears itself — see _drive_login_form)",
+              flush=True)
     page.goto(LOGIN_URL, wait_until="domcontentloaded")
     page.wait_for_timeout(3_000)
     try:
@@ -1527,7 +1693,9 @@ def ownerville_session(headless: bool = False,
                       allow_form_login: bool = False,
                       profile_dir=None,
                       device_scale: float | None = None,
-                      window_size: tuple = (1680, 1280)) -> Iterator[Page]:
+                      window_size: tuple = (1680, 1280),
+                      session_lock: bool = True,
+                      session_wait_s: "float | None" = None) -> Iterator[Page]:
     """Yield a Page logged into ownerville.com via patchright — WITHOUT the
     Tableau SSO hop. For reports that scrape ownerville's own pages (e.g.
     focus_office_att rep breakdowns). Same login + shared profile +
@@ -1542,22 +1710,49 @@ def ownerville_session(headless: bool = False,
     other_office_knocks kept dying on "Opening in existing browser session"
     while another session held the shared profile. Login still comes from the
     shared ownerville storage_state, so a fresh profile authenticates the
-    same way."""
+    same way — WHICH IS THE CATCH, and why profile_dir is no longer an
+    exemption from anything that matters. See OWNERVILLE_SESSION_LOCK: a
+    private profile is not a private session, and two runs sharing the session
+    read each other's offices.
+
+    session_lock (default True): hold the machine-wide ownerville session for
+    the life of this context. Raises OwnervilleBusy if another run holds it for
+    longer than this run can wait. Pass False ONLY for something that neither
+    impersonates nor reads office-scoped data (the keepalive holder, a login
+    probe) — every report wants the lock.
+
+    session_wait_s: how long to wait for it. Default is _profile_wait_budget(),
+    the same share-of-your-own-deadline rule the profile lock uses, so a run
+    cannot spend its whole timeout queueing. A short-cadence job (gap_alerts,
+    every 5 minutes) passes a small number and SKIPS the tick on OwnervilleBusy
+    — skipping one tick is recoverable, publishing another office's reps is
+    not."""
     prof = Path(profile_dir) if profile_dir else _job_profile_dir()
     prof.mkdir(exist_ok=True, parents=True)
-    with sync_playwright() as p:
-        ctx = _launch_persistent(p, prof, headless=headless,
-                                 label="ownerville_session", verbose=verbose,
-                                 device_scale=device_scale,
-                                 window_size=window_size)
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        try:
-            _ensure_ownerville_logged_in(page, verbose=verbose,
-                                         allow_form_login=allow_form_login,
-                                         profile_dir=profile_dir)
-            yield page
-        finally:
-            ctx.close()
+    wait_s = (_profile_wait_budget() if session_wait_s is None
+              else float(session_wait_s))
+    sess_fd = (_acquire_session_lock(wait_s=wait_s, verbose=verbose,
+                                     label="ownerville_session")
+               if session_lock else None)
+    try:
+        with sync_playwright() as p:
+            ctx = _launch_persistent(p, prof, headless=headless,
+                                     label="ownerville_session", verbose=verbose,
+                                     device_scale=device_scale,
+                                     window_size=window_size)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                _ensure_ownerville_logged_in(page, verbose=verbose,
+                                             allow_form_login=allow_form_login,
+                                             profile_dir=profile_dir)
+                yield page
+            finally:
+                ctx.close()
+    finally:
+        # Released only once the context is closed, so the lock spans the whole
+        # session rather than the launch — the impersonation this protects
+        # lives for the duration, not the first second.
+        _release_session_lock(sess_fd)
 
 
 # Dedicated profile for the DIRECT AppStream login, kept separate from the
@@ -1654,6 +1849,32 @@ APPSTREAM_RESEED_CMD = ("    PYTHONPATH=. .venv/bin/python -m "
                         "automations.shared.tableau_patchright --appstream-login")
 
 
+def _appstream_consumer_of() -> Optional[str]:
+    """Always None. NO MACHINE CONSUMES ANOTHER'S AppStream SESSION.
+
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down." Every Lucy signs in as its own account and mints its
+    own token; there is no donor and no consumer.
+
+    WHY THE FUNCTION SURVIVES AS A STUB rather than being deleted with its
+    callers: what it used to return went into an ERROR MESSAGE, and that message
+    told whoever read it "Do NOT run --appstream-login on this machine". Once
+    each Lucy holds its own, that sentence is not merely obsolete — it talks a
+    person out of the one command that fixes their machine. It already did:
+    on 2026-09-02 Lucy 1 raised it and a human chased a phantom donor through
+    five manual logins between 06:36 and 07:22.
+
+    It also used to guess. `_this_machine()` answers a hostname, and any box not
+    in APPSTREAM_HOLD_MACHINES — Megan's laptop, a renamed Lucy, a machine whose
+    .machine-profile marker is missing — was declared a CONSUMER of whatever
+    machine happened to be first in the tuple. A wrong guess there produces that
+    same do-not-log-in instruction on a machine nobody is donating to.
+
+    Returning None is the honest answer for every machine now, so the callers
+    give the one remedy that works everywhere: log in here."""
+    return None
+
+
 def _appstream_reseed_error(reason: str,
                             detail: str = "") -> RuntimeError:
     """The ONE message every dead-session path must give.
@@ -1674,15 +1895,31 @@ def _appstream_reseed_error(reason: str,
     what the alert quotes as "Likely cause" — the whole point is that the line
     the channel shows is about the session. Anything longer (a wrapped
     exception, a page dump) belongs in `detail`, which trails the message."""
+    # NAME THE RIGHT FIX FOR THIS MACHINE. On a consumer the re-seed command is
+    # not just useless, it is HARMFUL: a fresh login here invalidates the token
+    # the whole fleet is holding (session_holder says the same thing in as many
+    # words — "do NOT --appstream-login here"). On 2026-09-02 Lucy 1 raised this
+    # error and a human chased that command through five manual logins between
+    # 06:36 and 07:22 while the real answer was a push from Lucy 2.
+    # ONE REMEDY, ON THIS MACHINE. There is no donor to defer to (see
+    # _appstream_consumer_of) — every Lucy holds its own session, so the fix is
+    # always here, and naming the account by its configured value rather than a
+    # literal keeps this line from going stale the way "log in as rcaptain" did.
+    try:
+        _who = creds.appstream_username()
+    except Exception:  # noqa: BLE001 — a diagnosis must not need a credential
+        _who = "the configured AppStream account"
     msg = (
         f"AppStream session is not usable: {reason}\n"
-        "Re-seed it with a one-time human login (the form login is gated by an "
-        "interactive check since the 2026-08-20 release, so no unattended run "
-        "can do this for you):\n"
+        "(an unattended form login is tried first — username, NEXT, the "
+        "Cloudflare wait, password, submit — so reaching this means that "
+        "failed too, and the credential itself is the first thing to check)\n"
+        f"Fix it HERE, on this machine — re-seed the session:\n"
         f"{APPSTREAM_RESEED_CMD}\n"
-        "(a browser opens; clear the check + log in as rcaptain once, and it "
-        "saves the session). The session holder then keeps it warm for "
-        "scheduled runs.")
+        f"(a browser opens; sign in as {_who}). Confirm with:\n"
+        "    PYTHONPATH=. .venv/bin/python -m "
+        "automations.shared.appstream_whoami\n"
+        "The session holder then keeps it warm for scheduled runs.")
     if detail:
         msg += f"\n\nWhat it tripped over on the way down:\n{detail}"
     return RuntimeError(msg)
@@ -1700,12 +1937,36 @@ def _appstream_form_login_allowed(*, allow_form_login: bool,
       • explicit username+password — daily_focus --alt-appstream, whose whole
         point is signing in as a DIFFERENT account than the saved session
 
-    A scheduled report passes none of them, which is why the default is now
-    False: since 2026-08-20 the form is human-gated, so for an unattended run
-    "fall through to the form" is not a self-heal, it's a slower and much more
-    confusing way to fail. [[reference_appstream_turnstile]]"""
-    return bool(allow_form_login or force_form_login
-                or (username and password))
+    A scheduled report passes none of them, and until 2026-09-02 that meant
+    "reuse or die": the premise was that the 2026-08-20 release put a human
+    check on the form, so an unattended fall-through was only "a slower and
+    much more confusing way to fail". [[reference_appstream_turnstile]]
+
+    THAT PREMISE WAS MEASURED WRONG (Megan, 2026-09-01). appstream_autorenew
+    drives this same form as its last-resort recovery and it completes with
+    nobody at the browser — verified on Lucy 1 from a COLD profile with no
+    saved session, which is the 4am case exactly: username -> NEXT -> the
+    Cloudflare wait -> password -> submit -> a live #searchMC. Her note there
+    says it in as many words: "The premise was wrong, not the mechanism."
+
+    So a scheduled run may try the form too. What it buys: on 2026-09-02
+    recruiter_retention_daily and applicant_sync_morning both died at 04:00
+    because the token had expired at 21:33 the night before and the renewal
+    timer runs on ONE machine (deploy/com.alphalete.appstream-autorenew.plist
+    is Megan's Mac, and it was asleep). With the form allowed, the first report
+    of the batch signs itself back in, saves the session, and the ones behind
+    it reuse it — instead of four reports waiting on a person at 4am.
+
+    The fallback is unchanged: the form drive is bounded (it gives up when
+    #searchMC never renders) and _appstream_reseed_error is what a failed
+    attempt raises, so a genuinely dead login still pages exactly as before.
+
+    KILL SWITCH: APPSTREAM_NO_FORM_LOGIN=1 puts a machine back to reuse-only,
+    for the day the provider really does gate the form."""
+    if allow_form_login or force_form_login or (username and password):
+        return True
+    return (os.environ.get("APPSTREAM_NO_FORM_LOGIN", "").strip().lower()
+            not in ("1", "true", "yes", "on"))
 
 
 @contextmanager
@@ -1845,13 +2106,14 @@ def appstream_direct_session(headless: bool = False,
                     print("-> reused AppStream session has no #searchMC (stale "
                           "token)", flush=True)
 
-            # No live session. Since 2026-08-20 the login form is human-gated,
-            # so falling through to it is only right when a human asked for it
-            # (see _appstream_form_login_allowed). For everything else — every
-            # scheduled report — this is where the run STOPS, saying the one
-            # thing that fixes it. The ownerville SSO URL hop is not an option
-            # either: it lands on the ownerville report view, not the rcaptain
-            # console.
+            # No live session. Drive the login form — including on a scheduled
+            # run, which is the 2026-09-02 change: the form completes unattended
+            # (appstream_autorenew measured it from a cold profile), so this is
+            # a real self-heal and not a slower way to fail. Only a machine that
+            # opted out with APPSTREAM_NO_FORM_LOGIN=1 stops here, saying the
+            # one thing that fixes it (see _appstream_form_login_allowed). The
+            # ownerville SSO URL hop is not an option either: it lands on the
+            # ownerville report view, not the rcaptain console.
             if not _appstream_form_login_allowed(
                     allow_form_login=allow_form_login,
                     force_form_login=force_form_login,
@@ -1860,7 +2122,8 @@ def appstream_direct_session(headless: bool = False,
                     "the saved session (.appstream_storage_state.json) has no "
                     "live token, and this run may not drive the login form")
 
-            # Opt-in form-drive (interactive/debug — it hits the human-check).
+            # The form drive itself: reached by an opt-in caller, or by a
+            # scheduled run whose saved session went stale.
             try:
                 user = username or creds.appstream_username()
                 pwd  = password or creds.appstream_password()
@@ -1921,6 +2184,21 @@ def appstream_direct_session(headless: bool = False,
                             break
                         except Exception:
                             continue
+            # DO NOT clear cookies on a forced form login. Tried on 2026-09-02
+            # and MEASURED WRONG on Lucy 1: the theory was that applicantstream
+            # was resuming the profile's session instead of issuing, so clearing
+            # would force a real mint. It does force the form to render — and
+            # the login still produces NO rqst_ cookie, because the applicantstream
+            # form does not mint one. The rqst token comes from OWNERVILLE SSO
+            # (_sso_to_appstream: ownerville ?p=701 → applicantstream), which is
+            # why _ownerville_tokens() is described as what makes applicantstream
+            # ISSUE while our own saved token only makes it RESTORE.
+            #
+            # So clearing deleted the only working token and minted nothing: the
+            # save below found zero rqst_ cookies and skipped, and the run only
+            # reached a console because the hop re-injected the OLD saved state.
+            # A forced login re-authenticates the ACCOUNT; the token still has to
+            # come from the ownerville hop.
             if not _restored:
                 if verbose:
                     print("-> [allow_form_login] driving AppStream login form",
@@ -2020,22 +2298,36 @@ def appstream_direct_session(headless: bool = False,
 
 
 def _capture_appstream_state(verbose: bool = True,
-                             account: Optional[str] = None) -> bool:
+                             account: Optional[str] = None,
+                             wait_min: float = 5.0) -> bool:
     """One-time interactive capture of the AppStream session. Opens a HEADED
-    browser on the persistent .appstream_profile; the human clears the
-    Cloudflare check + logs in as rcaptain. Once the office console (#searchMC)
-    appears, the session (cookies incl. CFID/CFTOKEN + the rqst_<TOKEN> SSO
-    cookies) is written to APPSTREAM_STORAGE_STATE for the unattended runs to
-    reuse. AppStream's own Cloudflare can't be cleared headlessly, so this
-    interactive seed is the only way to (re)establish the session; the session
-    holder keeps it warm afterward.
+    browser on the persistent .appstream_profile and signs in as whatever
+    account THIS machine is configured for (see `who` below — never a literal;
+    a hardcoded account name here sent two re-seeds down a retired login on
+    2026-09-02). Once the office console (#searchMC) appears, the session
+    (cookies incl. CFID/CFTOKEN + the rqst_<TOKEN> SSO cookies) is written to
+    APPSTREAM_STORAGE_STATE for the unattended runs to reuse.
 
-    account: capture a DIFFERENT account's session (e.g. 'carlos' for Lucy 2's
-    CarlosNLR primary) without touching the default rcaptain slot — its own
-    capture profile (a clean profile shows the login form; the rcaptain
-    profile would silently auto-resume as rcaptain) and its own state file
-    (.appstream_storage_state_<account>.json), which --appstream-push-primary
-    --account <name> then ships to the runner."""
+    THIS IS NO LONGER THE ONLY WAY IN. The docstring used to say "AppStream's
+    own Cloudflare can't be cleared headlessly, so this interactive seed is the
+    only way to (re)establish the session". It is not: the check clears itself
+    given ~30s before submit, and appstream_direct_session drives the form
+    unattended (measured from a cold profile on Lucy 1, 2026-09-02). This stays
+    as the deliberate hands-on path — for a first install, or when a login is
+    failing and you want to watch it.
+
+    account: capture a DIFFERENT account's session into its own capture profile
+    and state file (.appstream_storage_state_<account>.json), which
+    --appstream-push-primary --account <name> then ships to the runner. A clean
+    profile is used because the default one would silently auto-resume as
+    whoever last signed in there. NOTE there are only two accounts left —
+    'Lucy Reports' and 'Lucy Resume Pushing' (Megan 2026-09-02); rcaptain and
+    the CarlosNLR slot are retired.
+
+    wait_min: how long to watch for the office console before giving up
+    (default 5, unchanged for every existing caller). Raise it when the person
+    signing in is remote or intermittent — three seeds were lost on 2026-09-02
+    to a 5-minute ceiling nobody was standing at."""
     if account:
         profile = APPSTREAM_PROFILE_DIR.parent / f".appstream_profile_cap_{account}"
         state_path = APPSTREAM_STORAGE_STATE.with_name(
@@ -2044,7 +2336,17 @@ def _capture_appstream_state(verbose: bool = True,
     else:
         profile = APPSTREAM_PROFILE_DIR
         state_path = APPSTREAM_STORAGE_STATE
-        who = "rcaptain"
+        # NAME THE ACCOUNT THIS MACHINE IS ACTUALLY CONFIGURED FOR. This said
+        # "rcaptain" unconditionally, long after the migration to per-person
+        # logins — so the seed prompt told the human to sign in as a RETIRED
+        # account, and the success line claimed "rcaptain console reached" no
+        # matter who had signed in. On 2026-09-02 that string sent a re-seed
+        # down the wrong account twice and misdirected the incident diagnosis.
+        # Fall back to the literal only if no credential resolves.
+        try:
+            who = creds.appstream_username() or "the configured account"
+        except Exception:  # noqa: BLE001 — a missing credential is not fatal here
+            who = "the configured account"
     profile.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, profile, headless=False,
@@ -2065,10 +2367,11 @@ def _capture_appstream_state(verbose: bool = True,
         print(f"  • sign in as {who}")
         print("  • THEN go to:  applicantstream.com/index.cfm?p=701")
         print("    (that loads the office search box — which is what gets saved)")
-        print("  Waiting for the office console to load (up to 5 min)…")
+        print(f"  Waiting for the office console to load (up to {wait_min:g} min)…")
         print("=" * 64 + "\n", flush=True)
         seen = False
-        for _ in range(60):
+        # 5s per tick; at least one tick so wait_min=0 still probes once.
+        for _ in range(max(1, int(round(wait_min * 12)))):
             try:
                 if page.locator("#searchMC").count() > 0:
                     seen = True
@@ -2083,8 +2386,9 @@ def _capture_appstream_state(verbose: bool = True,
                 pass
             page.wait_for_timeout(5_000)
         if not seen:
-            print("❌ Didn't detect the office console (#searchMC) within 5 min — "
-                  "nothing saved. Re-run and finish the login.", flush=True)
+            print(f"❌ Didn't detect the office console (#searchMC) within "
+                  f"{wait_min:g} min — nothing saved. Re-run and finish the "
+                  f"login (--wait-min N buys more time).", flush=True)
             ctx.close()
             return False
         state = ctx.storage_state()
@@ -2112,13 +2416,23 @@ if __name__ == "__main__":
     ap.add_argument("--appstream-login", action="store_true",
                     help="One-time interactive AppStream login → saves the "
                          "session for unattended runs.")
+    ap.add_argument("--wait-min", type=float, default=5.0, metavar="N",
+                    help="With --appstream-login: minutes to wait for the "
+                         "office console before giving up (default 5). Raise "
+                         "it when the person signing in is remote.")
     ap.add_argument("--appstream-check", action="store_true",
                     help="REUSE-ONLY probe: does the SAVED session still "
                          "authenticate from THIS machine? Never logs in, so a "
                          "dead session fails instead of silently re-seeding.")
     ap.add_argument("--appstream-form-login", action="store_true",
-                    help="Test the UNATTENDED rcaptain form login (now that "
+                    help="Test the UNATTENDED AppStream form login as this "
+                         "machine's configured account (now that "
                          "Cloudflare auto-passes) → real console + save session.")
+    ap.add_argument("--ownerville-check", action="store_true",
+                    help="REUSE-ONLY probe: does the SAVED ownerville session "
+                         "still mint an rqst FROM THIS MACHINE? Never touches "
+                         "the login form, so a dead session fails instead of "
+                         "silently re-seeding. The twin of --appstream-check.")
     ap.add_argument("--ownerville-form-login", action="store_true",
                     help="Test whether ownerville's Cloudflare auto-passes now: "
                          "drive the OV login in a THROWAWAY profile, unattended.")
@@ -2142,21 +2456,65 @@ if __name__ == "__main__":
                          "set_appstream_alt_state, not by hand.")
     ap.add_argument("--appstream-push-primary", nargs="?", const="Lucy 1",
                     metavar="MACHINE", default=None,
-                    help="Push THIS machine's saved AppStream session to another "
-                         "machine as its PRIMARY session (default: Lucy 1, whose "
-                         "primary account is rcaptain). Run right after "
-                         "--appstream-login.")
+                    help="DISCOURAGED — hands THIS machine's saved AppStream "
+                         "session to another machine. Since every Lucy signs in "
+                         "as its own account that REPLACES who that machine is. "
+                         "Needs --i-know-this-swaps-identity.")
     ap.add_argument("--appstream-push-fleet", action="store_true",
-                    help="One shot after --appstream-login: push the saved "
-                         "session everywhere it belongs — Lucy 1 primary + "
-                         "Lucy 2 alternate. This is the daily re-seed's second "
-                         "half; the login is the first.")
+                    help="DISCOURAGED — pushes the saved session to the whole "
+                         "fleet. Each Lucy logs itself in; use --appstream-login "
+                         "on the machine that needs one. Needs "
+                         "--i-know-this-swaps-identity.")
+    ap.add_argument("--i-know-this-swaps-identity", action="store_true",
+                    help="Required to actually perform a session push. Read the "
+                         "refusal text first — this is almost never what you want.")
     ap.add_argument("--account", metavar="NAME", default=None,
                     help="With --appstream-login / --appstream-push-primary: "
-                         "capture/push a DIFFERENT account's session (e.g. "
-                         "'carlos' for Lucy 2's CarlosNLR primary) in its own "
-                         "slot, never touching the rcaptain one.")
+                         "capture/push a NAMED account's session in its own "
+                         "slot. Only two accounts exist: the reporting login "
+                         "(default) and 'lucyresume'.")
     args = ap.parse_args()
+
+    # PUSHING A SESSION IS AN IDENTITY SWAP, NOT A FAVOUR (Megan 2026-09-02:
+    # "one machine CANNOT depend on another, we don't want 1 taking them all
+    # down").
+    #
+    # These two flags are the last cross-machine dependency in the AppStream
+    # path. They were built when all three boxes shared one rcaptain login, and
+    # then a pushed storage_state really was just a fresher copy of the same
+    # session. It is not that any more: Lucy 1 authenticates as 'Lucy Reports',
+    # the resume pusher as 'Lucy Resume Pushing', and handing one machine's
+    # cookies to another does not top up its session — it makes that machine
+    # somebody else, silently, for every office lookup behind it. That is the
+    # same class of failure as Lucy 2's "rcaptain" verify actually running as
+    # Carlos Hidalgo (2026-08-20).
+    #
+    # They also create the outage this is meant to remove: a fleet that gets its
+    # session from one donor is a fleet that dies when the donor does.
+    #
+    # Refused rather than deleted, because deleting them would just move the
+    # question to whoever finds the old command in a runbook. The refusal names
+    # the command that does work.
+    if (args.appstream_push_primary is not None or args.appstream_push_fleet) \
+            and not args.i_know_this_swaps_identity:
+        import sys as _sys
+        print("❌ Refusing to push an AppStream session to another machine.\n"
+              "   Every Lucy signs in as its OWN account now, so a push does not\n"
+              "   refresh the other machine's session — it REPLACES WHO THAT\n"
+              "   MACHINE IS, and every office lookup behind it becomes the\n"
+              "   wrong account's. It also rebuilds the single point of failure\n"
+              "   we just removed: one donor down takes the fleet down.\n"
+              "\n"
+              "   Fix the machine that has no session, ON that machine:\n"
+              "       PYTHONPATH=. .venv/bin/python -m "
+              "automations.shared.tableau_patchright --appstream-login\n"
+              "   or queue it without SSH:  lucy appstream_whoami --machine \"<name>\"\n"
+              "   Then confirm BOTH logins there:\n"
+              "       PYTHONPATH=. .venv/bin/python -m automations.shared.login_check\n"
+              "\n"
+              "   If you genuinely mean to overwrite another machine's identity,\n"
+              "   re-run with --i-know-this-swaps-identity.")
+        _sys.exit(1)
     if args.appstream_push_primary is not None or args.appstream_push_fleet:
         import sys as _sys
         _state_path = (APPSTREAM_STORAGE_STATE if not args.account else
@@ -2340,12 +2698,17 @@ if __name__ == "__main__":
                     APPSTREAM_STORAGE_STATE.write_text(json.dumps(_st))
                     _nr = sum(1 for c in _st.get("cookies", [])
                               if c.get("name", "").startswith("rqst_"))
-                    print(f"✅ rcaptain console reached UNATTENDED — saved session "
+                    # Report the account actually used, not a hardcoded name.
+                    try:
+                        _who = creds.appstream_username() or "configured account"
+                    except Exception:  # noqa: BLE001
+                        _who = "configured account"
+                    print(f"✅ {_who} console reached UNATTENDED — saved session "
                           f"({len(_st.get('cookies', []))} cookies, {_nr} rqst) "
                           f"→ {APPSTREAM_STORAGE_STATE.name}")
                     _ok = _nr > 0
                 else:
-                    print("❌ did NOT reach the rcaptain console (#searchMC) — "
+                    print("❌ did NOT reach the AppStream console (#searchMC) — "
                           "Cloudflare may still be challenging the form, or the "
                           "login didn't submit. Nothing saved.")
         except Exception as _e:
@@ -2354,7 +2717,8 @@ if __name__ == "__main__":
     if args.appstream_login:
         import sys as _sys
         _sys.exit(0 if _capture_appstream_state(verbose=True,
-                                                account=args.account) else 1)
+                                                account=args.account,
+                                                wait_min=args.wait_min) else 1)
     if args.ownerville_form_login:
         import sys as _sys
         # Throwaway profile so we NEVER touch the holder's / reports' shared
@@ -2389,6 +2753,27 @@ if __name__ == "__main__":
             finally:
                 _ctx.close()
         _sys.exit(0 if _ok else 1)
+    if args.ownerville_check:
+        # Reuse-only ON PURPOSE (allow_form_login=False): a dead session RAISES
+        # instead of quietly driving the Turnstile, so this answers the one
+        # question a SHIPPED session poses — does it authenticate from THIS
+        # machine, or was it bound to the browser that logged in? The twin of
+        # --appstream-check, and what set_ownerville_state verifies with.
+        try:
+            with ownerville_session(verbose=True,
+                                    allow_form_login=False) as pg:
+                url = pg.url or ""
+                ok = "ownerville.com" in url
+            print("✅ ownerville session VALID from this machine" if ok else
+                  "❌ landed on a non-ownerville page: " + url[:90])
+            raise SystemExit(0 if ok else 1)
+        except SystemExit:
+            raise
+        except Exception as e:
+            print(f"❌ ownerville session REJECTED here: "
+                  f"{type(e).__name__}: {str(e).splitlines()[0][:160]}")
+            raise SystemExit(1)
+
     if args.appstream_check:
         # Reuse-only ON PURPOSE: allow_form_login=False means a dead session
         # RAISES instead of quietly re-driving the login, so this answers the

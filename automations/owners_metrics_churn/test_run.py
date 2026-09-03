@@ -51,6 +51,7 @@ if "patchright.sync_api" not in sys.modules:
     sys.modules.setdefault("patchright.sync_api", _pw_api)
 
 from automations.owners_metrics_churn import run as omc  # noqa: E402
+from automations.owners_metrics_churn import pull as omc_pull  # noqa: E402
 
 
 # A single fake REPORTS entry so main() drives exactly one tab and never touches
@@ -259,3 +260,31 @@ class ReconcileRunsBeforeTheWentDarkCheck(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestProgramOf(unittest.TestCase):
+    """A REPORTS parse_fn must resolve to the all-teams view of its OWN program.
+
+    2026-09-03: Atef's tab uses make_b2b_captainship_parser (a closure), which is
+    not `parse_b2b` by identity, so _program_of returned "fiber" and his three
+    went-dark B2B reps were hunted in the FIBER all-teams New Internet view.
+    """
+
+    def test_b2b_captainship_closure_is_b2b(self):
+        fn = omc_pull.make_b2b_captainship_parser(("Atef Choudhury", "Sabrina Alicea"))
+        self.assertEqual(omc._program_of(fn), "b2b")
+
+    def test_wireless_closure_is_fiber_wireless(self):
+        self.assertEqual(
+            omc._program_of(omc_pull.make_wireless_parser("wayne")), "fiber_wireless")
+
+    def test_plain_parsers_unchanged(self):
+        self.assertEqual(omc._program_of(omc_pull.parse_b2b), "b2b")
+        self.assertEqual(omc._program_of(omc_pull.parse_nds), "nds")
+        self.assertEqual(omc._program_of(omc_pull.parse), "fiber")
+
+    def test_every_reports_entry_resolves_to_a_wired_source(self):
+        for slug, label, _f, _o, _c, parse_fn, _p in omc.REPORTS:
+            prog = omc._program_of(parse_fn)
+            self.assertIn(prog, omc_pull.ALLTEAMS_CHURN_SOURCE,
+                          f"{slug} ({label}) -> unknown program {prog!r}")

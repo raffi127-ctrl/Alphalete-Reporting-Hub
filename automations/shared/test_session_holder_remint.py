@@ -60,8 +60,18 @@ from automations.shared import session_holder as h
 @contextlib.contextmanager
 def _mint_enabled():
     """Clear the throttle (and force the flag on) so a test exercises the mint
-    itself rather than the once-per-30-min gate."""
+    itself rather than the once-per-30-min gate.
+
+    _DEAD_TOKENS is isolated too. It is module-level and PROCESS-LOCAL by design
+    (a restart must start with a clean slate), which makes it shared state
+    between tests: the "same/burned token" branch records the default token, and
+    every later test reusing that token was then rejected up front — so
+    `test_success_says_so_too` and `test_it_waits_rather_than_using_count`
+    passed alone and failed in the suite, purely on execution order. That is the
+    test harness leaking, not the code, but it cost two permanently-red tests
+    that everyone had learned to scroll past."""
     with mock.patch.object(h, "MINT_VIA_OWNERVILLE", True), \
+         mock.patch.object(h, "_DEAD_TOKENS", set()), \
          mock.patch.dict(h._LAST_MINT_ATTEMPT, {"at": 0.0}):
         yield
 
@@ -251,6 +261,79 @@ class AFailedMintIsNeverSilent(unittest.TestCase):
         self.assertIn("MINTED", out)
 
 
+class AnIdentityWithoutProgram701StopsTryingAndStopsShouting(unittest.TestCase):
+    """A PERMANENT condition must not be reported as a per-cycle failure.
+
+    Lucy 1's ownerville login is Rafael Hidalgo (ICD, 11280) and is not offered
+    program 701, so the SSO hop can never reach the console there. Before this,
+    every cycle hopped, failed, and logged "mint FAILED — ownerville hop landed
+    without a console" — a line written for a real fault, printed forever for
+    something no retry can change. 2026-09-02 showed the cost of exactly that
+    kind of noise: it sat beside genuine alerts all morning while the actual
+    fault (a mistyped AppStream username) went unlooked at."""
+
+    def setUp(self):
+        self._saved = dict(h._OV_APPSTREAM)
+        h._OV_APPSTREAM.update({"offered": False, "announced": False})
+
+    def tearDown(self):
+        h._OV_APPSTREAM.clear()
+        h._OV_APPSTREAM.update(self._saved)
+
+    def test_it_does_not_re_key_the_console(self):
+        page = _Page()
+        with _mint_enabled(), contextlib.redirect_stdout(io.StringIO()), \
+             mock.patch.object(h, "_stamp", return_value="T"), \
+             mock.patch.object(h, "_fresh_rqst_from_ownerville",
+                               return_value="NEWTOKEN"), \
+             mock.patch.object(h, "_rqst_id", return_value="OLD"):
+            ok = h._mint_appstream_via_ownerville(object(), page, verbose=False)
+        self.assertFalse(ok)
+        self.assertEqual(page.gotos, [],
+                         "a structurally impossible mint must not spend a "
+                         "console navigation")
+
+    def test_it_says_so_once_and_then_goes_quiet(self):
+        outs = []
+        for _ in range(3):
+            buf = io.StringIO()
+            with _mint_enabled(), contextlib.redirect_stdout(buf), \
+                 mock.patch.object(h, "_stamp", return_value="T"), \
+                 mock.patch.object(h, "_fresh_rqst_from_ownerville",
+                                   return_value="NEWTOKEN"), \
+                 mock.patch.object(h, "_rqst_id", return_value="OLD"):
+                h._mint_appstream_via_ownerville(object(), page=_Page(),
+                                                 verbose=False)
+            outs.append(buf.getvalue())
+        self.assertIn("NOT AVAILABLE", outs[0])
+        self.assertIn("program 701", outs[0])
+        self.assertNotIn("mint FAILED", outs[0],
+                         "structural: must not read as a failure")
+        self.assertEqual(outs[1].strip(), "", "must not repeat every cycle")
+        self.assertEqual(outs[2].strip(), "")
+
+    def test_the_one_line_names_the_actual_fix(self):
+        buf = io.StringIO()
+        with _mint_enabled(), contextlib.redirect_stdout(buf), \
+             mock.patch.object(h, "_stamp", return_value="T"), \
+             mock.patch.object(h, "_fresh_rqst_from_ownerville",
+                               return_value="NEWTOKEN"), \
+             mock.patch.object(h, "_rqst_id", return_value="OLD"):
+            h._mint_appstream_via_ownerville(object(), _Page(), verbose=False)
+        out = buf.getvalue()
+        self.assertIn("appstream_autorenew", out,
+                      "must say where AppStream DOES come from here")
+        self.assertIn("restart", out, "granting p=701 needs a holder restart")
+
+    def test_an_unknown_verdict_still_mints(self):
+        """Only a page that listed OTHER programs and no 701 is conclusive. An
+        inconclusive read must never disable minting."""
+        h._OV_APPSTREAM.update({"offered": None, "announced": False})
+        ok, _, out = _mint()
+        self.assertTrue(ok)
+        self.assertIn("MINTED", out)
+
+
 class TheMintIsGatedAndThrottled(unittest.TestCase):
     def test_the_flag_can_switch_it_off_entirely(self):
         page = _Page()
@@ -372,56 +455,51 @@ class TheRecoveryPathCanStillMint(unittest.TestCase):
         self.assertFalse(ok)
 
 
-class ExactlyOneMachineHoldsTheSession(unittest.TestCase):
-    """THE REGRESSION MEGAN NAMED (2026-08-29): "before we added Lucy 3, the
-    other two Lucys were working great and no re-seeding was needed."
+class EveryLucyHoldsItsOwnSession(unittest.TestCase):
+    """REVERSED 2026-09-02 (Megan: "All 3 lucy's should each hold their own and
+    not rely on each other — we've proven the last 2 weeks that doesn't work").
 
-    Until `a965a8a` (8/24 19:08) this was APPSTREAM_HOLD_MACHINE = "Lucy 2" — a
-    single machine held a live console and every other runner consumed the
-    session it pushed. That commit made all three hold one, and the re-seeding
-    started.
+    This class used to assert the opposite — exactly ONE holder — on the 8/29
+    reasoning that three consoles on one rcaptain account invalidate each
+    other's tokens. That mechanism is real, but two weeks of the single-holder
+    design produced the failure it was supposed to prevent: a machine whose only
+    source of a session is somebody else's push is dark for as long as that push
+    is late. On 2026-09-02 Lucy 1 sat with an expired token through the entire
+    4am batch (daily_focus, applicant_sync_morning, recruiter_retention_daily)
+    with no inbound push all morning.
 
-    All three run the SAME rcaptain account, and _push_token_to_fleet already
-    records why that eats itself: "Renewing appears to INVALIDATE the token the
-    donor handed out last time — which every other machine is still holding."
-    One holder is a clean handoff. Three are three consoles on one account
-    invalidating each other every ~6 minutes, ending with all three holding
-    something dead that still reads valid — the 8/29 outage exactly.
+    Worse, the hold list also gates whether the holder warms AppStream AT ALL
+    (`as_enabled` in the run loop), so a non-holder could not mint even when its
+    own ownerville session was perfectly healthy — which is exactly the state
+    Lucy 1 was found in, ownerville valid for 57h and AppStream dead.
 
-    If this test fails because someone re-added a holder, read that comment
-    before deciding the extra holder is the fix. It was tried; it is what
-    brought Megan the re-seeds."""
+    The same-account collision is answered by the per-person login migration
+    (each Lucy signs in as its own account), not by making two machines depend
+    on a third."""
 
-    def test_only_one_machine_holds_a_console(self):
-        self.assertEqual(len(h.APPSTREAM_HOLD_MACHINES), 1,
-                         "more than one holder on the same account — this is the "
-                         "8/24 regression that caused the re-seeding")
+    def test_every_lucy_holds_its_own(self):
+        for m in ("Lucy 1", "Lucy 2", "Lucy 3"):
+            with self.subTest(machine=m):
+                self.assertIn(m, h.APPSTREAM_HOLD_MACHINES)
 
     def test_every_runner_still_receives_the_pushed_session(self):
-        """Holding is restricted; RECEIVING must not be. Lucy 1 and Lucy 3 run
-        AppStream reports and stay alive on the donor's pushes."""
+        """Holding is no longer restricted, but RECEIVING must still cover every
+        runner: --appstream-push-fleet is the deliberate operator hand-off."""
         for m in ("Lucy 1", "Lucy 2", "Lucy 3"):
             self.assertIn(m, h.APPSTREAM_FLEET_MACHINES)
 
-    def test_the_donor_pushes_to_the_others_not_to_nobody(self):
-        """The trap in restricting the hold list: _push_token_to_fleet used to
-        iterate it, so a single-entry hold list would push to NOBODY and quietly
-        strand the other two."""
-        import ast
+    def test_the_auto_push_skips_fellow_holders(self):
+        """A machine that holds its own session must never have it overwritten
+        by another machine's push — that is the reliance Megan rejected, and the
+        receiving side installs the payload over whatever it already has."""
         import inspect
         src = inspect.getsource(h._push_token_to_fleet)
-        self.assertIn("APPSTREAM_FLEET_MACHINES", src)
-        tree = ast.parse(src).body[0]
-        body = tree.body[1:] if ast.get_docstring(tree) else tree.body
-        code = "\n".join(ast.dump(n) for n in body)
-        self.assertNotIn("APPSTREAM_HOLD_MACHINES", code,
-                         "pushing to the hold list strands every non-holder")
+        self.assertIn("APPSTREAM_HOLD_MACHINES", src,
+                      "the auto-push must exclude machines that hold their own")
 
     def test_the_back_compat_singular_name_still_resolves(self):
-        """It was APPSTREAM_HOLD_MACHINES[1] when the tuple had three entries —
-        an IndexError waiting to happen on a one-entry tuple."""
         self.assertEqual(h.APPSTREAM_HOLD_MACHINE, h.APPSTREAM_HOLD_MACHINES[0])
-        self.assertEqual(h.APPSTREAM_HOLD_MACHINE, "Lucy 2")
+        self.assertIn(h.APPSTREAM_HOLD_MACHINE, h.APPSTREAM_HOLD_MACHINES)
 
 
 class ItNeverDrivesTheHumanGatedPaths(unittest.TestCase):

@@ -179,6 +179,22 @@ _RETIRED: frozenset = frozenset({
     # note with the whole story. The module stays on disk: reviving it is one
     # GUID and two flags if the view ever comes back.
     "att_cancels",
+    # August Owner Showdown. A TEMP competition card by design (Raf 2026-07-29)
+    # for a competition that ran Aug 1–31; the champions email went out 9/1 at
+    # 09:00 to 48 owners and that was the last thing it will ever do. Torn down
+    # the same day: card, pill override, schedule entry + its 3 helpers, both
+    # LaunchAgents, both deploy/ files. The module stays on disk — run.py
+    # window-guards itself to Aug 1–Sep 1, so it no-ops where it sits.
+    #
+    # BOTH id spellings on purpose: the run feed logs the kebab CARD id, which
+    # is what the orphan check in dashboard._card_problems() compares, while
+    # schedule_config/module callers use the underscore one. Without the kebab
+    # form the teardown showed up on the Hub as a red "card wiring issue —
+    # runs logged under `owner-showdown` but NO card has that id" for two days
+    # after removal, which reads as a broken report rather than a finished one.
+    # Same false alarm _is_offboarded() exists to stop for offices.
+    "owner-showdown",
+    "owner_showdown",
 })
 
 
@@ -640,6 +656,26 @@ _INFRA_AGENTS = {
     "lucy2-digest", "bg-check-watchdog", "harvest-proof-1pm", "board-probe",
     "social-scanner",
     "appstream-morning", "weather-6am", "brand-audit-noon", "recruiting-report",
+    # The AppStream session RENEWAL (Megan 2026-09-01). deploy/appstream_autorenew.sh
+    # re-captures the rqst token every 30 minutes and pushes it to all three
+    # runners, so nobody has to re-seed a login by hand ("this CANNOT keep
+    # happening / it cost us a whole day"). It is session plumbing of exactly the
+    # same kind as session-holder and keep-awake, which are already here: it
+    # fires 48 times a day, has never written an Activity row, and publishes
+    # nothing a card could ever colour. It was the last agent the launchd sync
+    # wanted to auto-card, and carding it would have produced precisely the
+    # permanently-white "no run logged" tile this set exists to prevent.
+    "appstream-autorenew",
+    # The Sales Board sweep's privileged iMessage READER (Megan 2026-09-01).
+    # deploy/sales_text_read_chat.py reads new lines out of the "Alphalete
+    # Partners" chat and writes them to a file — no Sheets, no Slack, no send.
+    # It exists as its own launchd job only because Full Disk Access is granted
+    # to a BINARY: it must run under the granted Python.app, not the venv's bash
+    # wrapper. It publishes nothing, fires every 5 minutes (288 times a day),
+    # and everything that acts on those lines lives in the sweep, which owns the
+    # 'alphalete-sales-board' card. Same shape as blueink_completed_sweep: a
+    # card here can only ever say "no run logged". [[project_alphalete_sales_board_sweep]]
+    "sales-text-reader",
     # frontier-sunday-6pm is just the Sunday timer that runs opt_frontier --email;
     # opt_frontier already owns the curated 'Frontier OPT Data Pull' card, so this
     # wrapper is deliberately card-less. Without this it registered a duplicate
@@ -700,14 +736,24 @@ def _load_plist(plist_path: Path) -> Optional[dict]:
 
 
 def _wrapper_for_plist(plist_path: Path) -> Optional[Path]:
-    """The deploy/*.sh a plist runs (mapped into our repo, ignoring the committed
-    laptop path placeholder)."""
+    """The deploy/ script a plist runs (mapped into our repo, ignoring the
+    committed laptop path placeholder).
+
+    .py COUNTS, not just .sh (Megan 2026-09-01). Most agents run a shell
+    wrapper, but a plist may name a script directly — sales-text-reader runs
+    deploy/sales_text_read_chat.py with the Full-Disk-Access-granted Python.app
+    binary ON PURPOSE, because the venv python3.9 is a bash wrapper and macOS
+    attributes the grant to bash. Matching only '.sh' meant this reader came
+    back 'no-wrapper', which is the exact reason code that manufactures a
+    phantom card, and it duly grew one. Same failure as the plist comments that
+    broke plistlib: a reader that disagrees with launchd decides the Hub off the
+    wrong picture. [[reference_plist_double_hyphen]]"""
     d = _load_plist(plist_path)
     if d is None:
         return None
     args = d.get("ProgramArguments", [])
     for a in args:
-        if isinstance(a, str) and a.endswith(".sh"):
+        if isinstance(a, str) and (a.endswith(".sh") or a.endswith(".py")):
             cand = DEPLOY_DIR / Path(a).name
             return cand if cand.exists() else None
     return None
@@ -750,13 +796,31 @@ def _agent_report_id(agent_name: str) -> Tuple[Optional[str], str]:
     if m:
         rid = m.group(1)
         return (None, "internal") if is_internal(rid) else (rid, "publish-id")
+    # Scan PAST the boilerplate. Nearly every wrapper carries its own install
+    # line in the header comment ("# python -m
+    # automations.day_orchestrator.install_agent ad-sales-board"), and that is a
+    # module which maps to a real (internal) schedule_config report — so the
+    # first-match-wins loop resolved the AGENT to install_*, called it internal,
+    # and returned None. rid None sent it to sync_launchd_system's generic
+    # branch, which carded the plist in its own right: that is where the
+    # duplicate 'ad_sales_board' card came from, alongside the real
+    # 'ad-sales-board' one, and why deleting the duplicate never stuck.
+    # Internal matches no longer end the search; they are only the answer when
+    # nothing real turns up. (Megan 2026-09-01)
+    saw_internal = False
     for mod in _WRAPPER_MODULE_RE.findall(text):
         if any(p in mod for p in _PREP_MODULES):
             continue
+        if mod.endswith("day_orchestrator.install_agent"):
+            continue                      # header boilerplate, not what it runs
         rid = _module_to_report_id(mod)
-        if rid:
-            return (None, "internal") if is_internal(rid) else (rid, "module-match")
-    return None, "unresolved"
+        if not rid:
+            continue
+        if is_internal(rid):
+            saw_internal = True           # remember, but keep looking
+            continue
+        return rid, "module-match"
+    return (None, "internal") if saw_internal else (None, "unresolved")
 
 
 def audit_agents() -> Dict[str, list]:

@@ -160,11 +160,19 @@ def resolve_group(name: str) -> Dict:
 
 
 def send_to_group(name: str, text: str, image_paths: Sequence,
-                  *, dry_run: bool = True) -> Dict:
+                  *, dry_run: bool = True,
+                  allow_textonly: bool = False) -> Dict:
     """Send one posting — its Slack text, then its image(s) — to a named group.
 
     Text first so the images arrive under a labelled header, matching how Slack
     reads (bold title, images beneath).
+
+    `allow_textonly` lifts the no-image refusal below for a caller whose
+    message is genuinely text. OFF by default because for this module's own
+    posting the image IS the post. gap_alerts is the exception: its "15 min of
+    gaps — <office>" list is a text message that happens to travel under a
+    board flyer, and when an office's board comes back empty the list is still
+    the half somebody acts on (Megan 2026-09-02).
     """
     images = [Path(p) for p in (image_paths or [])]
     missing = [str(p) for p in images if not p.exists()]
@@ -185,10 +193,15 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
         result["ok"] = True
         return result
 
-    if not images:
+    if not images and not allow_textonly:
         raise GroupTextError(
             "refusing to text %r with no image — the posting IS the image; a "
             "bare title would read as a broken send. missing=%s" % (name, missing))
+    if not images and not (text or "").strip():
+        # allow_textonly permits a message with no flyer, never a message with
+        # nothing in it — an empty send is the blank post, by another route.
+        raise GroupTextError(
+            "refusing to text %r with neither an image nor any text" % name)
 
     cid = info["id"].replace("\\", "\\\\").replace('"', '\\"')
 

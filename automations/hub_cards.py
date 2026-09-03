@@ -994,12 +994,12 @@ AUTOMATED_REPORTS = [
             "TO ADD AN ICD\n"
             "**1.**  Add a tab and label it the ICD's name — it must match "
             "the **AppStream name** exactly.\n"
-            "**2.**  Make sure the **rcaptain** AppStream login has access "
+            "**2.**  Make sure the **Lucy Reports** AppStream login has access "
             "to that ICD.\n"
             "✅  Claude auto-adds the template and fills in that ICD's data "
             "on the next run.\n\n"
             "IF AN ICD IS SKIPPED\n"
-            "It most likely isn't in AppStream — check that the **rcaptain** "
+            "It most likely isn't in AppStream — check that the **Lucy Reports** "
             "login can see it."
         ),
         # Deep-links to the Focus Report tab this run fills (same workbook as
@@ -1015,11 +1015,11 @@ AUTOMATED_REPORTS = [
             "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 15,
         },
-        # Fully unattended via patchright (rcaptain AppStream + ownerville
+        # Fully unattended via patchright (Lucy Reports AppStream + ownerville
         # Tableau) — no pre-flight clicks. Empty list hides the section.
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Recruiting report run complete — the rcaptain login reaches every ICD, so it's all done in one run.",
+            "message_success": "✅ Recruiting report run complete — the Lucy Reports login reaches every ICD, so it's all done in one run.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -1098,7 +1098,7 @@ AUTOMATED_REPORTS = [
             "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 15,
         },
-        # Fully unattended via patchright (rcaptain AppStream + ownerville
+        # Fully unattended via patchright (Lucy Reports AppStream + ownerville
         # Tableau) — no pre-flight clicks. Empty list hides the section.
         "checklist": [],
         "post_run": {
@@ -1185,7 +1185,7 @@ AUTOMATED_REPORTS = [
             "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 45,
         },
-        # Fully unattended via patchright (rcaptain AppStream + ownerville
+        # Fully unattended via patchright (Lucy Reports AppStream + ownerville
         # Tableau) — no pre-flight clicks. Empty list hides the section.
         "checklist": [],
         "post_run": {
@@ -1584,7 +1584,7 @@ AUTOMATED_REPORTS = [
             "COLUMN V IS THE LIST — ADD / REMOVE / REORDER\n"
             "The names in **column V** are the source of truth. Each run:\n"
             "• **Adds** a section for any name newly in col V (needs "
-            "**rcaptain** AppStream access + an exact-match name).\n"
+            "**Lucy Reports** AppStream access + an exact-match name).\n"
             "• **Deletes** the section for any name removed from col V.\n"
             "• **Reorders** the sections to match col V's order.\n\n"
             "IF SOMETHING MISSES\n"
@@ -1609,11 +1609,11 @@ AUTOMATED_REPORTS = [
             "time": "4 AM flow, refill 6:30 PM, posts 7 PM",
             "estimated_minutes": 10,
         },
-        # Fully unattended via patchright (rcaptain AppStream) — no pre-flight
+        # Fully unattended via patchright (Lucy Reports AppStream) — no pre-flight
         # clicks. Empty list hides the section.
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Daily Focus run complete — every captainship tab is filled. Any ICD that couldn't be pulled (rcaptain has no AppStream access to it yet) is listed below.",
+            "message_success": "✅ Daily Focus run complete — every captainship tab is filled. Any ICD that couldn't be pulled (the Lucy Reports login has no AppStream access to it yet) is listed below.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
             "again_label": "🔁 Retry the skipped ICDs",
             "again_action": {
@@ -2365,6 +2365,92 @@ AUTOMATED_REPORTS = [
                 "help": "Pulls both offices and saves the images to output/other_office_knocks/ so you can look at them. Posts nothing to Slack.",
                 "module": "automations.other_office_knocks.run",
                 "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
+    {
+        # id matches the scheduler key + the manifest report id
+        # (hub_schedule_status matches '-'/'_' variants), so the card's pill
+        # and its calendar tiles read THIS report's runs and not nothing.
+        "id": "rc-contact-sync",
+        "name": "B2B Customer Contacts (RingCentral)",
+        "creator": "Carlos",
+        "emoji": "📇",
+        "color": "#4A90D9",
+        "category": "📊 Metrics",
+        "description": "Takes yesterday's B2B sales out of SaraPlus and adds each customer to Taylor's RingCentral contacts — business name, phone, and the rep's name in the notes — then checks Taylor's line and posts the customers nobody texted into the metrics thread in #a-players-b2b and #alphalete-gp-sales.",
+        "breakdown": (
+            "WHY IT MATTERS\n"
+            "A B2B customer who was sold yesterday and never texted is a "
+            "customer nobody is following up with. Carlos was adding these "
+            "contacts by hand, one form at a time, and the only way to notice "
+            "a missed follow-up was to remember it.\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "SaraPlus (Carlos's login) → Analytics → Detail Reports → Sales "
+            "Order History → date range set to yesterday, Customer Type "
+            "'Both' → the rep is the 'User Name' column, the business is the "
+            "'Business Name' column, and the phone is the 'Primary Phone' on "
+            "that row's View Customer card.\n\n"
+            "WHAT IT WRITES\n"
+            "One RingCentral contact per customer in Taylor's address book "
+            "— the line that texts them, so a reply comes in with a name on "
+            "it instead of an unknown number:\n"
+            "• Company = the business name\n"
+            "• Phone = the primary phone, labelled Mobile\n"
+            "• Notes = 'Rep Name: <the rep>'\n"
+            "It never creates the same contact twice — the address book is "
+            "checked by phone number first, so a re-run, a repeat customer, "
+            "or a contact somebody already added by hand is left alone.\n\n"
+            "THE FOLLOW-UP CHECK\n"
+            "It then reads that same line's texts for yesterday. "
+            "Any customer with no message on that line — matched by phone "
+            "number, and as a backstop by customer or business name — is "
+            "named in ONE post in the day's metrics thread, grouped under the "
+            "rep who sold them.\n\n"
+            "WHEN IT RUNS\n"
+            "Every morning on Lucy 2 — Carlos's SaraPlus login, Taylor's "
+            "RingCentral login. A bare run is a DRY RUN and writes nothing."
+        ),
+        "assignees": ["Lucy 2"],
+        # Both credentials live on Lucy 2 and nowhere else, so a Hub button
+        # pressed from any other machine QUEUES the run there instead of
+        # failing locally on a missing creds file.
+        "run_machine": "Lucy 2",
+        "schedule": {
+            "frequency": "daily",
+            "time": "4 AM flow",
+            # login + one grid + one customer card per order; ~20 orders/day.
+            "estimated_minutes": 8,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Yesterday's B2B customers are in RingCentral, and the un-texted ones were posted in the metrics thread.",
+            "message_failed": "❌ Something didn't land. The log names it. The usual causes: the SaraPlus password changed (it must be CARLOS's login), or the RingCentral token isn't Taylor's — the report stops rather than writing into the wrong address book.",
+        },
+        "actions": [
+            {
+                "label": "Add Yesterday's Contacts",
+                "icon": "▶",
+                "primary": True,
+                "help": "Reads yesterday's B2B orders, adds any customer who isn't already in RingCentral, and posts the un-texted list into today's metrics thread.",
+                "module": "automations.rc_contact_sync.run",
+                "args_fn": lambda: ["--live"],
+            },
+            {
+                "label": "Preview (writes nothing)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Shows exactly which contacts would be created and what the Slack post would say. Adds no contact and posts nothing.",
+                "module": "automations.rc_contact_sync.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+            {
+                "label": "Check the SaraPlus page",
+                "icon": "🔎",
+                "primary": False,
+                "help": "Read-only. Logs in and dumps what SaraPlus actually shows — the tabs, the date fields, the grid's column headers and the first customer card. Run this if the report says it can't find a column.",
+                "module": "automations.rc_contact_sync.run",
+                "args_fn": lambda: ["--probe"],
             },
         ],
     },
@@ -5955,7 +6041,7 @@ AUTOMATED_REPORTS = [
             "**•** **Confirm First-Day** → 2R **col R** = Y/N. ⚠️ **Dry until "
             "verified** on a real first-day-of-training day.\n\n"
             "HOW IT RUNS\n"
-            "On **Lucy 1** as **rcaptain**. Any office that doesn't sync (error "
+            "On **Lucy 1** as **Lucy Reports**. Any office that doesn't sync (error "
             "or no access) is posted to **#claudecorrections-and-requests**."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
@@ -6002,6 +6088,70 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: ["evening"],
             },
         ],
+    },
+    {
+        "id": "recruiting-chain",
+        "name": "Recruiting Chain",
+        "creator": "Carlos",
+        "emoji": "\U0001F517",
+        "color": "#8B5CF6",
+        "category": "\U0001F3AF Recruiting",
+        "self_scheduled": True,
+        "description": "Runs the three AppStream recruiting pulls back-to-back "
+                       "instead of on competing timers \u2014 Funnel Board, then "
+                       "Indeed Source Report, then Ad Sales Board. One AppStream "
+                       "login is live at a time, and each step starts only when "
+                       "the one before it has actually finished.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Three reports write the Alphalete Recruiting Dashboard and all "
+            "three log into AppStream. On separate timers they overlapped, "
+            "fought over the AppStream session, and (with the resume pusher "
+            "also logging in) tripped Cloudflare. This runs them in sequence:\n"
+            "**\u2022** **1:00 AM \u2014 full chain:** Funnel Board \u2192 Indeed "
+            "Source Report \u2192 Ad Sales Board.\n"
+            "**\u2022** **1:00 PM \u2014 refresh:** Indeed Source Report \u2192 "
+            "Ad Sales Board.\n\n"
+            "TWO PHASES, ONE CARD\n"
+            "Amber after the 1 AM chain, green once the 1 PM refresh lands. The "
+            "two passes log under different names, so re-running the 1 AM chain "
+            "counts once and can never tick the afternoon's box.\n\n"
+            "EACH STEP STILL OWNS ITS OWN CARD\n"
+            "This card says the CHAIN ran. Funnel Board, Source Report - Indeed "
+            "and Ad Sales Board each publish their own run and keep their own "
+            "history \u2014 open those for a step's detail or to re-run one on "
+            "its own.\n\n"
+            "IF A STEP FAILS\n"
+            "The chain keeps going: skipping the rest would silently cost a "
+            "whole day of data on reports that do not depend on each other. The "
+            "failed step reds its own card, and the chain finishes red so this "
+            "card shows the pass was not clean.\n\n"
+            "OVERLAP GUARD\n"
+            "A chain that is somehow still running blocks the next one from "
+            "starting \u2014 that skip publishes nothing, so a skipped pass "
+            "never paints a false green."
+        ),
+        "assignees": ["Lucy 2"],
+        "run_machine": "Lucy 2",
+        # PHASE card, same shape as owner-chat-texts / applicant-tracker-sync:
+        # the wrapper publishes both passes under THIS card id with different
+        # Report Names, and phase_runs counts DISTINCT names so a re-run of the
+        # 1 AM chain cannot green the card with the 1 PM refresh still due.
+        "daily_runs": 2,
+        "phase_runs": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "1:00 AM",
+            "time_label": "1:00 AM full chain \u00b7 1:00 PM refresh",
+            "estimated_minutes": 20,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Recruiting chain finished clean.",
+            "message_failed": "\u274c A step in the chain failed \u2014 open that "
+                              "step's own card for its log, fix, then re-run "
+                              "the step or the chain.",
+        },
     },
     {
         "id": "social-media-posting",

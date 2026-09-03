@@ -1047,5 +1047,46 @@ class ReadingAMarkBack(unittest.TestCase):
         self.assertIsNone(inc.reactions_now(Broken(), "C1", "1.0000"))
 
 
+
+class AnAlertIsNotItsOwnDomino(unittest.TestCase):
+    """The status line's "Also failed today:" names the OTHER witnesses that
+    fired for this outage. The Vantura audit named ITSELF: it is keyed with an
+    underscore in the config and writes the dashed id from run.py, so a lookup
+    under one spelling found the other's thread via_family and was filed as a
+    sibling — "Also failed today: `finding-vantura_board_audit`" posted inside
+    finding-vantura-board-audit's own thread (Megan 2026-09-02).
+
+    The rule is deliberately narrow: only a DIFFERENT SPELLING of the same key
+    is folded away. A second real witness of one outage still gets named — see
+    test_watch_miss_replies_in_the_drop_thread, which is the 2026-08-17 design
+    this must not break."""
+
+    def test_the_two_spellings_are_one_alert(self):
+        self.assertTrue(inc.same_alert("finding-vantura_board_audit",
+                                       "finding-vantura-board-audit"))
+
+    def test_a_watch_twin_is_a_DIFFERENT_witness(self):
+        """"the pull dropped" and "nothing posted" are two facts, not one."""
+        self.assertFalse(inc.same_alert("failure-box_order_log__watch",
+                                        "drop-box-order-log"))
+
+    def test_different_witness_prefixes_stay_separate(self):
+        self.assertFalse(inc.same_alert("drop-daily_metrics",
+                                        "failure-daily_metrics"))
+
+    def test_two_offices_are_still_a_real_domino(self):
+        self.assertFalse(inc.same_alert("failure-daily_focus__marcellus",
+                                        "failure-daily_focus__cody"))
+
+    def test_two_unrelated_reports_are_a_real_domino(self):
+        self.assertFalse(inc.same_alert("failure-b2b_metrics",
+                                        "failure-daily_focus"))
+
+    def test_the_sibling_flag_is_gated_on_it(self):
+        """The call site must consult same_alert, not via_family alone."""
+        src = Path(inc.__file__).read_text(encoding="utf-8")
+        self.assertIn("not same_alert(", src)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

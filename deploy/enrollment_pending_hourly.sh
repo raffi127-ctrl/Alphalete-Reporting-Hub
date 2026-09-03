@@ -51,6 +51,30 @@ fi
 ST=$?
 echo "[$(date)] enrollment_pending finished exit=$ST" >> "$LOG_FILE"
 
+# SECOND CHECK, same hour, same idea: a dispositions sign-up that Megan already
+# confirmed but that is still switched OFF, because its preflight is waiting on
+# the OWNER to accept the OwnerVille access request. That acceptance lands in
+# their inbox minutes -- or days -- after they fill the form, and until this ran
+# the confirm-time preflight was the only one there ever was: the office sat off
+# and everyone believed it was enrolled.
+#
+# It exits before opening anything when nothing is waiting, which is what lets
+# it sit next to the 5-minute gap_alerts ticks. When something IS waiting it
+# takes gap_alerts' own pid lock first -- ownerville allows one session per
+# account, and reading the Office Access table re-establishes it in master mode,
+# which would drop a live capture onto the wrong office.
+if pgrep -f "automations.disposition_signup.pending_check" > /dev/null 2>&1; then
+    echo "[$(date)] disposition_pending SKIPPED — a previous pass is still running" >> "$LOG_FILE"
+else
+    echo "[$(date)] disposition_pending starting" >> "$LOG_FILE"
+    DCMD=("$VENV_PY" -u -m automations.disposition_signup.pending_check)
+    if [ "${#EXTRA_ARGS[@]}" -gt 0 ]; then
+        DCMD+=("${EXTRA_ARGS[@]}")
+    fi
+    "${DCMD[@]}" >> "$LOG_FILE" 2>&1
+    echo "[$(date)] disposition_pending finished exit=$?" >> "$LOG_FILE"
+fi
+
 # Deliberately NOT publishing a Hub card per pass — 14 rows a day would bury the
 # once-daily reports. The card is lit by the pass that actually finds something,
 # and by the standing LaunchAgent-publishes rule via the module itself.

@@ -56,15 +56,19 @@ class DailyPdfTests(unittest.TestCase):
                               day=self.day, out_dir=self.tmp, logfn=lambda *_: None)
         self.assertEqual(len(out), 4)                    # 1 combined + 3 owners
         names = [n for _p, n in out]
-        # The captain's DISPLAY name ("Rafael"), which is also what keeps this
-        # file distinct from his own office's page ("Rafael Hidalgo").
+        # Owner name FIRST (Rafael 2026-09-02): a phone truncates the tail, so
+        # the half that identifies the file has to be the half that shows. The
+        # captain's DISPLAY name ("Rafael") is also what keeps this file
+        # distinct from his own office's page ("Rafael Hidalgo").
         self.assertEqual(
             names[0],
-            "Daily Knock Dispositions - Rafael's Captainship - Aug 31, 2026.pdf")
+            "Rafael's Captainship - Daily Knocks disposition - Aug 31, 2026.pdf")
         self.assertTrue(all(n.endswith("Aug 31, 2026.pdf") for n in names))
         self.assertEqual(names[1:], [
-            f"Daily Knock Dispositions - Owner {i} - Aug 31, 2026.pdf"
+            f"Owner {i} - Daily Knocks disposition - Aug 31, 2026.pdf"
             for i in range(3)])
+        self.assertTrue(all(n.startswith(f"Owner {i}")
+                            for i, n in enumerate(names[1:])))
         for p, _n in out:
             self.assertTrue(p.exists() and p.stat().st_size)
 
@@ -89,7 +93,7 @@ class DailyPdfTests(unittest.TestCase):
         out = daily_pdf.build(_rafael(), self.today, pairs, day=self.day,
                               out_dir=self.tmp, logfn=lambda *_: None)
         self.assertEqual(out[1][1],
-                         "Daily Knock Dispositions - Cody Cannon - Aug 31, 2026.pdf")
+                         "Cody Cannon - Daily Knocks disposition - Aug 31, 2026.pdf")
 
     def test_nothing_on_disk_is_not_a_failure(self):
         self.assertEqual(
@@ -154,10 +158,10 @@ class AttachmentLimitTests(unittest.TestCase):
 
     def _bundle(self, owner_sizes, weekly=200_000, combined=200_000):
         dailies = [(self._file("combined.pdf", combined),
-                    "Daily Knock Dispositions - Raf's Captainship - Aug 31, 2026.pdf")]
+                    "Raf's Captainship - Daily Knocks disposition - Aug 31, 2026.pdf")]
         for i, sz in enumerate(owner_sizes):
             dailies.append((self._file(f"o{i}.pdf", sz),
-                            f"Daily Knock Dispositions - Owner {i} - Aug 31, 2026.pdf"))
+                            f"Owner {i} - Daily Knocks disposition - Aug 31, 2026.pdf"))
         return {"weekly_pdf": (self._file("weekly.pdf", weekly),
                                "Weekly - Aug 24-29, 2026.pdf"),
                 "daily_pdfs": dailies, "daily_knocks": [], "errors": {}}

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.gap-alerts-b2b</string>
+
+    <!-- THE B2B HALF OF THE SELF-SERVE DISPOSITIONS RUN, on LUCY 2.
+
+         Same code and the SAME WRAPPER as com.alphalete.gap-alerts on Lucy 1 -
+         what differs is the box and the envelope, nothing else. An office can
+         only be impersonated from the machine whose ownerville login can see
+         it: Lucy 1 is Raf's (D2D), Lucy 2 is Carlos's (B2B). One shared
+         registry serves both, and config.for_this_machine hands each runner
+         only its own offices, so neither can post the other's board.
+
+         Path is the laptop's; install_agent rewrites it to this machine's repo
+         path. /bin/bash on a wrapper matches the Lucy 1 agent's shape - but see
+         the Messages note below, which is the one place the two boxes are NOT
+         alike. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/gap_alerts_5min.sh</string>
+        <string>--send</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+        <!-- B2B knocks BUSINESSES, in business hours. The wrapper's default
+             envelope opens at noon because a D2D field is out 1:30pm-10pm, and
+             that gate exits before Python runs - so on this box it would cut a
+             B2B office's whole morning silently. b2b widens it to weekdays
+             07:00-20:00 / Saturday 08:00-18:00 (Central), still only an
+             envelope: config.in_office_window makes the real per-office call
+             from that office's own timezone and field hours. -->
+        <key>GAP_ALERTS_ENVELOPE</key>
+        <string>b2b</string>
+    </dict>
+
+    <!-- Ticks every MINUTE; the wrapper decides which minutes count and exits in
+         milliseconds on the rest. It has to be this way round: StartInterval
+         counts from when the previous run EXITS, so a 300 here would mean "5
+         minutes after the last run finished" and a slow browser launch stretched
+         that to nearly 9 minutes on Lucy 1 (2026-08-26). At 60 the wrapper's own
+         wall-clock check is what sets the cadence.
+
+         Still StartInterval and not StartCalendarInterval: launchd caches its
+         timezone on these boxes and has fired calendar jobs two hours off. The
+         wrapper reads the real local clock every run, so a cached TZ cannot
+         move it. -->
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <!-- iMESSAGE DOES NOT WORK FROM THIS AGENT, and that is not a bug to fix by
+         changing this file. macOS grants "control Messages" per EXECUTABLE
+         identity, and on Lucy 2 that Allow was clicked for the mini_control
+         POLLER (.venv/bin/python, 2026-08-03) - not for /bin/bash on a wrapper.
+         That is exactly why b2b_dispositions never sends from its scheduled job
+         and hands its texts to the poller through a manifest instead. A texting
+         route here would block on an unattended consent dialog for five minutes
+         every tick, so config.can_text() returns False on this box and the send
+         loop skips iMessage destinations out loud. Slack and email are
+         unaffected, and the sign-up form is Slack + email only. -->
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/gap-alerts-b2b.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/gap-alerts-b2b.launchd.err.log</string>
+</dict>
+</plist>

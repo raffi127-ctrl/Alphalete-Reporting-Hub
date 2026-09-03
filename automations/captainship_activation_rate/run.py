@@ -42,6 +42,8 @@ REPORTS = [
     ("chan",  "Chan (ATT Fiber)"),
     ("tony",  "Tony (ATT Fiber)"),
     ("sahil", "Sahil (ATT Fiber)"),
+    ("pat",   "Pat (ATT Fiber)"),
+    ("jess",  "Jess (ATT Fiber)"),
 ]
 
 CSV_NAME = "captainship_activation_metrics.csv"

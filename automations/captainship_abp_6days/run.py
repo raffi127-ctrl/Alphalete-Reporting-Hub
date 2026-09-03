@@ -48,6 +48,8 @@ REPORTS = [
     ("chan",  "Chan (ATT Fiber)"),
     ("tony",  "Tony (ATT Fiber)"),
     ("sahil", "Sahil (ATT Fiber)"),
+    ("pat",   "Pat (ATT Fiber)"),
+    ("jess",  "Jess (ATT Fiber)"),
     # ABP only — see fill.TABS. Runs in the same pass off the same download, so
     # Rafael costs no extra Tableau session.
     ("rafael", "Rafael (Raf's Team)"),

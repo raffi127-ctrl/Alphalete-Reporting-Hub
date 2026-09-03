@@ -89,6 +89,20 @@ DELIVERY_CHOICES = ["imessage", "slack", "email"]
 DELIVERY_LABELS = {"imessage": "iMessage text", "slack": "Slack channel",
                    "email": "Email"}
 
+# WHAT THE FORM OFFERS — a strict subset of what the RUNNER can deliver.
+# Megan 2026-09-02: "take the option they have of getting an imessage out of
+# this form. it's only slack and email so my number can also be removed."
+#
+# `imessage` stays in DELIVERY_CHOICES above because it is not dead: every
+# hardcoded gap_alerts office texts (Raf -> Alphalete Partners, Calvin and Jay
+# -> ENERGY WELLS DOMINATION), the runner's send loop still has that leg, and a
+# sign-up taken before today may still carry one — the confirm view has to be
+# able to render and keep those. What changed is only what an OWNER can create:
+# nothing filled in on the form can produce a texting route, which is why the
+# form no longer asks for a group-chat name and no longer prints Megan's phone
+# number.
+FORM_DELIVERY_CHOICES = ["slack", "email"]
+
 
 def destination(kind: str, *, name: str = "", channel_id: str = "",
                 emails=None, cadence_min: int = DEFAULT_CADENCE,
@@ -132,29 +146,55 @@ def dest_label(d: dict) -> str:
 # The B2B two are spelled the way the OwnerVille dropdown spells them on
 # Carlos's screen, so an owner is picking the words they already see.
 #
-# NDS carries NO id, and that is not an omission. A wireless/NDS owner has no
-# Disposition campaign in OwnerVille today — that is why Isaiah's knock board
-# comes back empty (project_isaiah_legacy_wireless) — so there is nothing to
-# pin, and an empty id means "whatever campaign impersonation lands on", which
-# is the right answer for a single-campaign office. When NDS access lands and
-# it turns out to have its own id, read it off the live URL and put it here
-# (feedback_ask_for_the_url); the preflight is what will say whether the grid
-# has the columns the scraper needs.
+# NDS PINS 1 — "RES AT&T OOF", its own campaign. Read off the live picker on
+# BOTH of this org's NDS offices, 2026-09-02: Isaiah Revelle (19717) and Drew
+# Tepper (22583) each list exactly ONE campaign and it is id 1. "OOF" is Out Of
+# Footprint, which is what NDS sells — the same name the NDS Tableau workbook
+# carries, "NDS-SN (RES-ATT-OOF)".
+#
+# IT IS NOT 3. This said 3 (RES AT&T, fiber's id) for most of 2026-09-02, on the
+# strength of a 2026-08-25 reading of Isaiah's picker that no longer holds — his
+# office offers only id 1 today. Pinning 3 did not break anything, because an
+# office cannot be pinned to a campaign it does not have and falls back to its
+# own; but a pin that silently does not apply is the exact drift this repo keeps
+# paying for, and it would land wrong the moment an NDS office gained a second
+# campaign.
+#
+# AND AN NDS BOARD IS THE ORDINARY ONE. This also claimed NDS reps knock without
+# dispositioning, so their board would be Time-Gaps-only. That was true of
+# Isaiah on 2026-08-22 and is not true now: on 2026-09-02 both NDS offices
+# return the full house disposition grid — "scraper would WORK AS-IS, missing:
+# nothing" — with real Talk To / Presentation / Sale / No answer counts and real
+# rows (Isaiah 10 reps on 9/1, Drew 3 on 8/31). Their board is SHAPE_HOUSE, the
+# same one Raf gets.
+#
+# The two earlier corrections this replaces, kept because both were live bugs:
+#
+#   * "NDS has no campaign" conflated the BUSINESS with the campaign. NDS is a
+#     business; RES AT&T OOF is its campaign, and it has an id like any other.
+#   * An EMPTY id does not mean "this office's own campaign". The campaign is a
+#     sticky session-global, so no pin means "whatever the office before it in
+#     the batch left it on" — the exact silent-drift failure that returned
+#     Calvin zero rows for days and blanked Chan's comparison line.
+#
+# The gaps-only path still exists and still matters — when a p=89 grid genuinely
+# comes back empty, knocks_pull builds rows from the Time Tracker and the
+# renderer draws Time Gaps alone (render.SHAPE_GAPS_ONLY). It is just not what
+# an NDS office gets by default any more.
 CAMPAIGNS = [
     # --- D2D ---------------------------------------------------------------
     {"id": "3", "key": "att", "family": "D2D", "label": "AT&T",
      "name": "AT&T Fiber (Internet & Phones)", "live": True},
     {"id": "40", "key": "energy", "family": "D2D", "label": "EnergyWell",
      "name": "Energy Wells", "live": True},
-    # NDS has no Disposition campaign in OwnerVille yet — that is why Isaiah's
-    # knock board comes back empty (project_isaiah_legacy_wireless). Offered
-    # anyway, as a WAITING LIST: an owner who wants it should be able to say so
-    # once, not be told to come back later and remember to.
-    {"id": "", "key": "nds", "family": "D2D", "label": "NDS",
+    # LIVE since 2026-09-02, pinned to its OWN campaign — RES AT&T OOF, id 1,
+    # read off the live picker on both NDS offices. Its board is the ordinary
+    # house board: these offices do disposition.
+    {"id": "1", "key": "nds", "family": "D2D", "label": "NDS",
      # "Wireless" alone: on NDS the phones ARE the wireless (Megan 2026-09-01).
      # office_onboarding spells it "Wireless & Phones"; that reads as two
      # products to an owner picking one.
-     "name": "NDS Wireless", "live": False},
+     "name": "NDS Wireless", "live": True},
     # --- B2B ---------------------------------------------------------------
     # NOT "B2B AT&T SBS" / "B2B-BOX-Energy" — those are OwnerVille's own
     # dropdown strings, and "SBS" means nothing to the person filling this in
@@ -524,4 +564,57 @@ def warnings(rec: DispositionRecord, *,
                    "granted' is ticked — impersonation fails every tick "
                    "without it, and a failing office opens incidents instead "
                    "of posting.")
+    out += b2b_blockers(rec)
     return out
+
+
+# The B2B half of this run went from "wired but not running" to "built, not yet
+# installed" on 2026-09-02. What is left is said here, at the moment Megan
+# decides, rather than discovered as silence a week later.
+#
+# RESOLVED the same day, kept in the record because both were live hazards:
+#  * the B2B Disposition grid is MAPPED. Both campaigns were probed live
+#    (invD2DClientId 2 and 16) and they are two different vocabularies, not one
+#    — knocks_pull carries a column set, a talk-to rule and a board shape for
+#    each. Before that a B2B grid satisfied the tolerant wireless scrape and
+#    rendered a plausible board with 0 under every disposition.
+#  * the LaunchAgent exists (deploy/com.alphalete.gap-alerts-b2b.plist).
+B2B_BLOCKERS = [
+    "No B2B office has ever run through the live agent. "
+    "com.alphalete.gap-alerts-b2b is installed and ticking on Lucy 2 (2026-09-"
+    "02), but zero offices route there, so every tick so far has woken, found "
+    "nothing and exited. The first enrollment is the first real run.",
+    "AN OFFICE THAT RUNS MORE THAN ONE CAMPAIGN CANNOT BE PINNED. Megan's read "
+    "(2026-09-02): OwnerVille's top-right campaign picker defaults for a "
+    "multi-campaign ICD and the invD2DClientId pin cannot move it. It fits "
+    "every case seen — Carlos Hidalgo (11580, three campaigns) pinned to Box "
+    "returns the AT&T grid holding AT&T's reps, while Roshan Amin Ahmad "
+    "(19833, Box only) and Calvin (Energy Wells only) both pull correctly. It "
+    "also explains Jay Turnage, the repo's other multi-campaign office, coming "
+    "back EMPTY on both campaigns on 2026-09-01 while Raf and Calvin posted. "
+    "`assert_campaign_grid` refuses the mismatch rather than posting a "
+    "Box-titled board of AT&T numbers, so a multi-campaign office fails loudly "
+    "instead of lying — but it cannot be served until this is solved. Carlos "
+    "has been asked.",
+    "iMessage cannot send from a LaunchAgent on Lucy 2. macOS granted "
+    "\"control Messages\" there to the poller's executable identity "
+    "(.venv/bin/python), not to a /bin/bash wrapper — which is why "
+    "b2b_dispositions hands its sends to the poller through a manifest. "
+    "gap_alerts texts inline, so `config.can_text()` is False on that box and "
+    "the send loop skips texting routes out loud. Slack and email are "
+    "unaffected; the form is Slack + email only, so this can only bite a row "
+    "added by hand.",
+]
+
+
+def b2b_blockers(rec: "DispositionRecord") -> "List[str]":
+    """What is still in the way of a B2B office actually posting, [] for D2D.
+    Warnings, never errors: confirming a B2B office stores a correct setup, and
+    it goes live the day the runner does."""
+    camp = rec.campaign() or {}
+    if camp.get("family") != "B2B":
+        return []
+    out = list(B2B_BLOCKERS[:2])
+    if rec.of_kind("imessage"):
+        out.append(B2B_BLOCKERS[2])
+    return ["B2B not running yet — " + b for b in out]

@@ -58,6 +58,54 @@ COL_NOT_INTERESTED      = "Not Interested"
 # is also a talk-to."
 COL_VL                  = "VL"
 COL_PRESENTATION        = "Presentation"
+# --- B2B ---------------------------------------------------------------------
+# The two B2B campaigns knock BUSINESSES, and their disposition vocabularies are
+# their own — not the fiber set, not the wireless set, and NOT each other's.
+# Read live off p=89 on 2026-09-02 with the campaign pinned (the campaign is a
+# sticky session-global, so an unpinned dump proves nothing about which campaign
+# produced it); both header dumps are kept in
+# output/probes/b2b-disposition-headers-campaign{2,16}-2026-09-02.log.
+#
+# Both sets are CONFIRMED against a real office that runs the campaign, not just
+# against the master account's view of it: AT&T on Carlos Hidalgo (11580) and
+# Box on Roshan Amin Ahmad (19833), each pulling real rep rows on 2026-09-02.
+#
+# B2B AT&T SBS (invD2DClientId=2), 22 headers. Note "Talked To" (past tense) and
+# "Presentation" WITHOUT the house's "Talk To - " prefix: near-identical English
+# to the fiber columns, different strings, which is exactly why the house scrape
+# raised "missing: No answer, Talk To - Not Interested, Inaccessible" on it.
+# It has NO No-answer and NO Inaccessible bucket at all.
+COL_B2B_TALKED_TO_NI    = "Talked To - Not Interested"
+# NO COL_B2B_PRES_NI. B2B AT&T's "Presentation - Not Interested" (hyphen) and
+# the house COL_PRES_NI (en-dash) are different STRINGS that _norm() flattens to
+# the same key, and that is not a cosmetic clash — render._records_to_table
+# seeds its header with SHEET_COLUMNS (fiber's set) and appends any extra key
+# the records carry, then indexes it by normalized name FIRST-WINS. So the B2B
+# column resolved to the house column's position, which no B2B row fills, and
+# the board drew Presentation blank for every rep with 0 in the totals. Exactly
+# the failure the comment in _records_to_table already records for Energy Wells,
+# arriving by a different route (2026-09-02, caught by rendering realistic
+# numbers rather than a fixture where every bucket held the same value).
+#
+# The scrape resolves columns by _norm, so the house constant matches B2B's live
+# header on its own. Note COL_B2B_TALKED_TO_NI above does NOT collide —
+# "talked to not interested" vs "talk to not interested" — and must stay its own
+# constant, because _is_wireless_dispo keys on the house one being ABSENT.
+COL_B2B_CORP_LOCAL      = "Corp Franchise Local"
+COL_B2B_CORP_NO_OPP     = "Corp Franchise No Opp"
+COL_B2B_NONE            = "None"           # knocked, no disposition recorded
+# B2B Box Energy (invD2DClientId=16), 24 headers. Shares only the spine and
+# Come Back / Inaccurate Lead with AT&T above.
+COL_BOX_TALKED_TO       = "Talked To"
+COL_BOX_OWNER_TALKED_TO = "Owner Talked To"
+COL_BOX_CONTRACT_SIGNED = "Contract Signed"
+COL_BOX_BILL_NO_SALE    = "Bill Collected - No Sale"
+COL_BOX_AM_COME_BACK    = "AM Come Back"
+COL_BOX_CORP_NO_OPP     = "Corp - No Opp"
+COL_BOX_DO_NOT_DISTURB  = "Do Not Disturb"
+# Both B2B grids carry this one, and it is NOT a talk-to: the lead was wrong,
+# so there was nobody there to talk to.
+COL_B2B_INACCURATE_LEAD = "Inaccurate Lead"
 # From Time Tracker (p=510 JSON), merged onto the disposition rows by badge ID.
 COL_GAPS                = "Gaps"               # count of gaps
 COL_TOTAL_GAPS          = "Total Gaps (min)"   # total gap minutes (int)

@@ -556,5 +556,158 @@ class ReusedWeeklyBoardMustCarryTodaysFields(unittest.TestCase):
         self.assertFalse(KD._weekly_rows_are_current({"schema": "cinco"}))
 
 
+class WeeklyColumnsOnTheDailySummary(unittest.TestCase):
+    """Rafael, Slack 2026-09-02: que el DAILY KNOCKS SUMMARY de la capitania
+    lleve las mismas columnas que el reporte semanal de disposiciones, con las
+    disposiciones por rep que el listo.
+
+    El "except" se lee contra su pedido del 2026-08-30 ("remove every column
+    from 'no answer - Credit check' ... the daily one can still keep it"): el
+    semanal ya NO tiene columnas de disposicion, asi que la excepcion es un
+    REEMPLAZO, no una omision."""
+
+    def _rows(self):
+        from automations.total_knocks import pull as K
+        def rec(rep, first, last, gaps, knocks, **dispo):
+            r = {c: "" for c in K.SHEET_COLUMNS}
+            r.update({K.COL_REP: rep, K.COL_FIRST_KNOCK: first,
+                      K.COL_LAST_KNOCK: last, K.COL_TOTAL_GAPS: gaps,
+                      K.COL_TOTAL_KNOCKS: knocks, K.COL_TOTAL_TALK_TO: 12})
+            r.update(dispo)
+            return r
+        return [
+            rec("Alan Diaz", "10:00 AM", "7:00 PM", "60", 60,
+                **{"No answer": 40, "Talk To - Not Interested": 5,
+                   "Presentation – Not Interested": 3, "Come Back": 2,
+                   "Sale": 1, "Inaccessible": 8, "Do Not Knock": 1}),
+            rec("bree kim", "11:00 AM", "6:00 PM", "0", 60,
+                **{"No answer": 30, "Talk To - Not Interested": 6,
+                   "Presentation – Not Interested": 2, "Come Back": 3,
+                   "Sale": 1, "Inaccessible": 4, "Do Not Knock": 0}),
+        ]
+
+    def test_the_dispo_keys_are_the_ones_the_scrape_returns(self):
+        """Estan escritas como literales para no importar el stack del
+        browser; si `pull` les cambia el nombre, esta prueba avisa antes de
+        que el board muestre siete ceros."""
+        from automations.total_knocks import pull as K
+        self.assertEqual(KD.DAILY_SUMMARY_DISPO, [
+            K.COL_NO_ANSWER, K.COL_TALK_TO_NI, K.COL_PRES_NI, K.COL_COME_BACK,
+            K.COL_SALE, K.COL_INACCESSIBLE, K.COL_DO_NOT_KNOCK])
+        for c in KD.DAILY_SUMMARY_DISPO:
+            self.assertIn(c, K.SHEET_COLUMNS)
+
+    def test_the_seven_dispositions_sum_the_icds_reps(self):
+        row = KD.daily_summary_row("ICD", self._rows())
+        got = [row[KD.DAILY_SUMMARY_HEADERS.index(
+            KD.DAILY_SUMMARY_DISPO_DISPLAY.get(c, c))]
+            for c in KD.DAILY_SUMMARY_DISPO]
+        self.assertEqual(got, ["70", "11", "5", "5", "2", "12", "1"])
+
+    def test_an_office_only_bucket_never_reaches_the_board(self):
+        """La sprawl de buckets propios de cada oficina ('Credit check', 'Bill
+        payer not home') es justo lo que hizo sacar el desglose del semanal:
+        el set esta fijado por nombre."""
+        rows = self._rows()
+        rows[0]["Credit check"] = 9
+        row = KD.daily_summary_row("ICD", rows)
+        self.assertEqual(len(row), len(KD.DAILY_SUMMARY_HEADERS))
+        self.assertNotIn("Credit check", KD.DAILY_SUMMARY_HEADERS)
+
+    def test_the_headers_are_spelled_like_the_per_owner_boards(self):
+        """Los dos boards caen en el MISMO mail: una columna que significa lo
+        mismo se escribe igual en los dos."""
+        from automations.total_knocks import render as R
+        for c in KD.DAILY_SUMMARY_DISPO:
+            self.assertIn(R.COMBINED_KNOCKS_DISPLAY.get(c, c),
+                          KD.DAILY_SUMMARY_HEADERS)
+        self.assertIn(R.COL_HRS_KNOCKING, KD.DAILY_SUMMARY_HEADERS)
+
+    def test_avg_doors_per_rep_uses_the_boards_one_divisor(self):
+        """Mismo divisor que Talk To's per Rep y Average App per Rep: los reps
+        KNOCKING, que es el numero impreso en la misma fila. Tres columnas por
+        rep con tres denominadores distintos es como el lector deja de poder
+        verificar la cuenta."""
+        from automations.total_knocks import pull as K
+        from automations.total_knocks.render import KNOCKING_MIN_KNOCKS
+        rows = self._rows()
+        walk_on = {c: "" for c in K.SHEET_COLUMNS}
+        walk_on.update({K.COL_REP: "walk on",
+                        K.COL_TOTAL_KNOCKS: KNOCKING_MIN_KNOCKS - 1})
+        at = KD.DAILY_SUMMARY_HEADERS.index("Avg Doors / Rep")
+        # 140 puertas (las 120 de los dos + las 20 del walk-on) entre los 2
+        # que calificaron.
+        self.assertEqual(KD.daily_summary_row("ICD", rows + [walk_on])[at],
+                         "70.0")
+        # Sin nadie que califique no hay nada que dividir: vacio, no 0.
+        self.assertEqual(KD.daily_summary_row("ICD", [walk_on])[at], "")
+
+    def test_the_three_per_rep_columns_share_one_divisor(self):
+        """El divisor esta impreso en la propia fila (Total # of Reps
+        Knocking), asi que las tres tienen que usar ESE numero."""
+        rows = self._rows()
+        row = KD.daily_summary_row("ICD", rows, 6)
+        at = KD.DAILY_SUMMARY_HEADERS.index
+        n = int(row[at("Total # of Reps Knocking")])
+        self.assertEqual(row[at("Avg Doors / Rep")],
+                         f"{int(row[at('Total Knocks')]) / n:.1f}")
+        self.assertEqual(row[at("Talk To's per Rep")],
+                         f"{int(row[at('Total Talk To')]) / n:.1f}")
+        self.assertEqual(row[at("Average App per Rep")], f"{6 / n:.1f}")
+
+    def test_avg_talk_tos_per_app_is_total_over_total(self):
+        """La correccion de Raf al board semanal (2026-08-22): talk-to's
+        TOTALES sobre apps TOTALES, no el promedio de los cocientes."""
+        at = KD.DAILY_SUMMARY_HEADERS.index("Avg Talk To's per App")
+        self.assertEqual(KD.daily_summary_row("ICD", self._rows(), 6)[at],
+                         "4.0")                     # 24 talk-to's / 6 apps
+
+    def test_avg_talk_tos_per_app_is_blank_without_apps(self):
+        """Sin apps no hay division: un 0 ahi leeria como un ICD que hablo
+        con nadie."""
+        at = KD.DAILY_SUMMARY_HEADERS.index("Avg Talk To's per App")
+        self.assertEqual(KD.daily_summary_row("ICD", self._rows(), None)[at],
+                         "")
+        self.assertEqual(KD.daily_summary_row("ICD", self._rows(), 0)[at], "")
+
+    def test_avg_hrs_knocking_matches_the_offices_own_board(self):
+        """La linea del ICD en el resumen tiene que dar igual que la fila
+        OFFICE TOTAL del board de esa misma oficina, abajo en el mail."""
+        from automations.total_knocks import render as R
+        rows = self._rows()
+        at = KD.DAILY_SUMMARY_HEADERS.index(R.COL_HRS_KNOCKING)
+        # Alan: 9h menos 60min de gaps = 480min. Bree: 7h sin gaps = 420min.
+        self.assertEqual(KD.daily_summary_row("ICD", rows)[at], "7h 30m")
+        header, table = R._table_from_rows(rows)
+        sub = R._combined_sub(header, table)
+        totals = R._combined_totals("TOTAL", sub)
+        hrs = R._fmt_hm(totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_HRS_KNOCKING)])
+        self.assertEqual(hrs, "7h 30m")
+
+    def test_a_rep_without_a_usable_span_sits_out_the_average(self):
+        """Un rep sin hora (o con la ultima antes de la primera) no arrastra
+        el promedio a cero; si NADIE tiene span, la celda va vacia."""
+        from automations.total_knocks import pull as K
+        rows = self._rows()
+        blank = {c: "" for c in K.SHEET_COLUMNS}
+        blank[K.COL_REP] = "sin horario"
+        at = KD.DAILY_SUMMARY_HEADERS.index("Avg. Hrs Knocking")
+        self.assertEqual(KD.daily_summary_row("ICD", rows + [blank])[at],
+                         "7h 30m")
+        self.assertEqual(KD.daily_summary_row("ICD", [blank])[at], "")
+
+    def test_every_row_of_the_board_is_as_wide_as_the_header(self):
+        """La fila teal de Chan y la de TOTALS pasan por el mismo builder: si
+        una queda corta, todo el board se corre bajo los titulos."""
+        captured = [("A", {"name": "A"}, self._rows(), 4),
+                    ("B", {"name": "B"}, self._rows(), 6)]
+        table, bgs = KD.daily_summary_table(captured, chan_rows=self._rows(),
+                                            chan_apps=2)
+        self.assertEqual(len(table), len(captured) + len(bgs))
+        for r in table:
+            self.assertEqual(len(r), len(KD.DAILY_SUMMARY_HEADERS))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

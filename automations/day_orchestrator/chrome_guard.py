@@ -226,3 +226,16 @@ if __name__ == "__main__":
     _dry = "--close" not in sys.argv
     acted = close_stray_chrome(dry=_dry)
     print(f"{'would close' if _dry else 'closed'}: {acted or 'nothing'}")
+    # --unstick ALSO frees the shared profile of ORPHAN automation Chrome
+    # (Megan 2026-09-02). The two calls answer different questions and the CLI
+    # only ever asked the first: --close removes a HUMAN's Chrome, unstick_profile
+    # removes our own browser that outlived a killed report and still holds the
+    # ProcessSingleton. Both callers that work — the 4am orchestrator (run.py) and
+    # `lucy rerun` (mini_control) — do both; a bare wrapper calling `--close`
+    # alone was still walking into a locked profile. Orphans only (PPID 1), so
+    # this can never kill a live report's browser.
+    if "--unstick" in sys.argv:
+        freed = unstick_profile(verbose=False) if "--close" in sys.argv else \
+            profile_holder_pids()
+        print(f"{'unstuck' if '--close' in sys.argv else 'would unstick'}: "
+              f"{freed or 'nothing'}")

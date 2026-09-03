@@ -107,22 +107,58 @@ def _mentions() -> str:
 # 1. the pages + the PDF
 # --------------------------------------------------------------------------
 def build_preview(verbose: bool = True):
-    """Build both bulletin pages. Returns (html_paths, data).
+    """Build the review pages. Returns (html_paths, data).
 
     Calls the data layer ONCE and hands the result to the builder. Not a shell
     out to `send.py --dd`: that would read the whole workbook a second time, and
     Sheets' 60-reads-a-minute ceiling is a real failure mode in this repo. The
-    returned data is what tells --post whether anything blocks the send."""
+    returned data is what tells --post whether anything blocks the send.
+
+    THREE pages since 2026-09-03 (Eve): the two bulletin pages plus the "Up and
+    Coming RCs and NCs" companion, so the reviewer approves everything that goes
+    out from ONE link instead of only seeing the companion after it was mailed.
+    The companion is still MAILED separately by `send_companion` — this adds it
+    to what gets reviewed, it does not change any recipient list."""
     d = D.load()
-    paths = DB.build(data=d)
+    paths = list(DB.build(data=d))
     if verbose:
         print(f"✓ pages built — week {d['weeks'][0]}, "
               f"headline {DB._fmt(d['headline'])}", flush=True)
+    paths += _companion_page(d, verbose=verbose)
     return paths, d
 
 
+def _companion_page(d, verbose: bool = True) -> list:
+    """The 'Up and Coming RCs and NCs' page, as a 1-item list (empty on failure).
+
+    BEST-EFFORT ON PURPOSE, exactly like `send_companion`: it reads a second tab
+    (`Org Tree`) and the bulletin must still reach the reviewer if that read
+    fails. A failure prints and is recorded in `problems` (so the Hub's "show
+    the numbers" names it) but NEVER in `blocking` — the companion carries no
+    money, its absence cannot make the bulletin wrong, and a two-page link is
+    still a reviewable bulletin. Reuses the dd data already in hand, so this
+    costs no second read of the DD tab."""
+    try:
+        from automations.override_bulletin import rcs_ncs_build as RB
+        from automations.override_bulletin import rcs_ncs_data as RD
+        p = RB.build(data=RD.load(dd=d))
+        if verbose:
+            print(f"✓ companion page built — {Path(p).name}", flush=True)
+        return [Path(p)]
+    except Exception as e:  # noqa: BLE001 — never lose the bulletin over the rider
+        msg = ("the 'Up and Coming RCs and NCs' page could not be built "
+               "({}: {}) — the link holds the two bulletin pages only".format(
+                   type(e).__name__, e))
+        print(f"  ({msg})", flush=True)
+        try:
+            d.setdefault("problems", []).append(msg)
+        except Exception:  # noqa: BLE001
+            pass
+        return []
+
+
 def build_pdf(html_paths=None, verbose: bool = True) -> Path:
-    """Render the two pages into one PDF.
+    """Render the review pages into one PDF.
 
     A PDF and not the HTML: Drive shows a PDF inline, so a reviewer opens the
     link and reads it — an .html in Drive downloads instead.
@@ -138,8 +174,16 @@ def build_pdf(html_paths=None, verbose: bool = True) -> Path:
     from automations.shared.pkg import ensure
     PdfWriter = ensure("pypdf").PdfWriter
 
-    paths = [Path(p) for p in (html_paths or (DB.OUT_DIR / "dd-bulletin-1.html",
-                                              DB.OUT_DIR / "dd-bulletin-2.html"))]
+    if html_paths:
+        paths = [Path(p) for p in html_paths]
+    else:
+        # --pdf-only, off pages already on disk. The companion is OPTIONAL here:
+        # an older build left only the two bulletin pages behind, and that has to
+        # keep producing a PDF rather than raising.
+        paths = [DB.OUT_DIR / "dd-bulletin-1.html", DB.OUT_DIR / "dd-bulletin-2.html"]
+        companion = DB.OUT_DIR / "rcs-ncs.html"
+        if companion.exists():
+            paths.append(companion)
     for p in paths:
         if not p.exists():
             raise RuntimeError(f"no page at {p} — build it first (--post does)")
@@ -153,9 +197,14 @@ def build_pdf(html_paths=None, verbose: bool = True) -> Path:
                 page.goto(html.resolve().as_uri(), wait_until="networkidle")
                 page.wait_for_timeout(600)
                 tall = page.evaluate("document.body.scrollHeight")
+                # Sheet width comes from the PAGE, not a constant: the bulletin
+                # pages are 1180px but the companion body is 1000px, and printing
+                # a narrower page at 1180 leaves a white strip down the side (the
+                # dark background is painted on <body>, not on <html>).
+                wide = page.evaluate("Math.ceil(document.body.scrollWidth)") or 1180
                 part = DB.OUT_DIR / f"_rg_page{i}.pdf"
                 page.pdf(path=str(part), print_background=True,
-                         width="1180px", height=f"{tall + 40}px",
+                         width=f"{wide}px", height=f"{tall + 40}px",
                          margin={"top": "0", "bottom": "0",
                                  "left": "0", "right": "0"})
                 parts.append(part)

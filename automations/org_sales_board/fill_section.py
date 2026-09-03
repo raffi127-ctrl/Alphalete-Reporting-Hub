@@ -188,6 +188,39 @@ def section_week(anchor: SectionAnchor,
     return [start + dt.timedelta(days=i) for i in range(7)]
 
 
+def daynum_row_values(start: dt.date, days: int = 7) -> List[int]:
+    """The day-of-month numbers a section's day-number row should carry for the
+    week beginning `start`.
+
+    LITERALS ON PURPOSE. Both tabs of the 1IpDs2 workbook shipped their
+    day-number row as a chain — one literal in col C and `=<prev cell>+1`
+    across D..I — and that chain CANNOT CROSS A MONTH END: 31 + 1 = 32. Every
+    week that straddles one puts the whole row on day numbers no date can
+    match, `find_daily_section` maps nothing, and the fill drops the day
+    (Eve 2026-09-02: the week of Mon 8/31 read 31 32 33 34 35 36 37 and SEVEN
+    sections dropped 9/1 — the board did not post). The chain is also why a
+    human ends up typing a number over one of those cells at every month end,
+    which is the OTHER failure — it freezes that day and all the ones after it
+    on last week's dates ([[project_board-daynum-chain-frozen-drops-days]],
+    2026-08-09).
+
+    Seven literals, rewritten whole by the rollover every Tuesday, is what the
+    Country board has always done and it has never lost a day.
+    """
+    return [(start + dt.timedelta(days=i)).day for i in range(days)]
+
+
+def daynum_row_update(anchor: SectionAnchor, start: dt.date) -> dict:
+    """`batch_update` entry rewriting `anchor`'s ENTIRE day-number row for the
+    week starting `start`. Sections that MIRROR this one (`=C77`, `=D77`, …)
+    follow on their own — only rows carrying their own numbers need this."""
+    c0, c1 = anchor.first_day_col, anchor.last_day_col
+    span = c1 - c0 + 1
+    return {"range": f"{_col(c0)}{anchor.daynum_row}:"
+                     f"{_col(c1)}{anchor.daynum_row}",
+            "values": [daynum_row_values(start, span)]}
+
+
 def missing_day_columns(anchor: SectionAnchor,
                         today: Optional[dt.date] = None) -> List[dt.date]:
     """Completed days of the reporting week with NO column on this section.

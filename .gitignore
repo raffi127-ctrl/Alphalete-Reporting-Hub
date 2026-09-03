@@ -46,8 +46,16 @@ automations/uploaded/.extract_profile/
 automations/uploaded/.extractor_cache/
 # AppStream storage_state export — contains live SESSION cookies (auth). Sensitive;
 # never commit. Exported by output/_scratch_appstream_export_state.py.
-.appstream_storage_state*.json
-automations/shared/.appstream_storage_state*.json
+# NO TRAILING '.json' — the rule has to match the BACKUPS too. It used to be
+# `.appstream_storage_state*.json`, which requires the name to END in .json, and
+# `.appstream_storage_state.json.stale-065520` does not. So a live session-cookie
+# export got committed to a repo that was public (found 2026-09-02 by the
+# gitignore audit in login_check's session; untracked in the same commit).
+# Same shape as the `ownerville-creds.json.bak.20260802-230835` note at the top:
+# it is always the rotated/dated COPY that slips past a rule written for the
+# original filename.
+.appstream_storage_state*
+automations/shared/.appstream_storage_state*
 # ownerville storage_state export — contains live SESSION cookies (auth). Sensitive;
 # never commit. Exported by output/_scratch_ownerville_export_state.py.
 .ownerville_storage_state.json
@@ -158,3 +166,7 @@ automations/slack_skool_email/.slack_profile*
 # The Slack + Skool links themselves live in slack-skool-creds.json, already
 # covered by the *-creds.json* rule at the top.
 .appstream_last_mint_attempt
+# Machine-wide ownerville SESSION lock (flock target). Local runtime state,
+# never shared: one per machine, meaningless anywhere else.
+.ownerville_session.lock
+automations/shared/.ownerville_session.lock

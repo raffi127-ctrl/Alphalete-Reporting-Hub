@@ -1566,6 +1566,37 @@ def _check_chrome_running() -> bool:
         return False
 
 
+def _update_blocked() -> tuple[bool, str]:
+    """Did the launcher's last pull get refused, and over which files?
+
+    launch_dashboard.command writes `.hub-update-blocked` (the git error) plus
+    `.hub-update-blocked.files` (the dirty tracked files that origin/main also
+    touches) whenever a pull fails, and deletes both when one succeeds. Reading
+    the marker is what lets the banner name the real blocker instead of telling
+    you to click a button that git will refuse again.
+
+    Returns (blocked, "a.py, b.py"). Best-effort: an unreadable or absent
+    marker just means "not blocked", so a missing file can never manufacture a
+    scary banner."""
+    try:
+        marker = (Path.home() / ".config" / "recruiting-report"
+                  / ".hub-update-blocked")
+        if not marker.exists():
+            return False, ""
+        names = []
+        fmark = marker.with_suffix(marker.suffix + ".files")
+        if fmark.exists():
+            names = [Path(ln).name for ln in
+                     fmark.read_text().splitlines() if ln.strip()]
+        # Only the first few — the banner is one line, not a file listing.
+        shown = ", ".join(names[:3])
+        if len(names) > 3:
+            shown += f" (+{len(names) - 3} more)"
+        return True, shown
+    except OSError:
+        return False, ""
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _git_health() -> dict:
     """'Are you on the latest code?' status for the sidebar badge.
@@ -1603,6 +1634,27 @@ def _git_health() -> dict:
         behind = _git("rev-list", "--count", "HEAD..origin/main")
         ahead = _git("rev-list", "--count", "origin/main..HEAD")
         if behind and behind != "0":
+            # Is the launcher's pull actually being REFUSED? On a dev machine
+            # the pull is --ff-only, so an uncommitted edit to a file that
+            # origin/main also touches aborts it every time. That failure used
+            # to print only to the Terminal window behind the Hub, so the
+            # banner kept prescribing "click Update & restart" — a fix that
+            # cannot work, clicked forever (Megan, 2026-09-02: 7 commits
+            # stranded for days by one overlapping edit). Same lesson as the
+            # ahead-only case below: never prescribe a remedy that can't clear
+            # the state. [[reference_never_run_reports_invisible]]
+            _blocked, _files = _update_blocked()
+            if _blocked:
+                _detail = (f"on '{branch}' @ {head} — the update is BLOCKED: "
+                           f"local edits to {_files} overlap what's incoming, "
+                           f"so the pull is refused. Commit or stash "
+                           f"{'them' if ',' in _files else 'it'}, then relaunch."
+                           if _files else
+                           f"on '{branch}' @ {head} — the update is BLOCKED: "
+                           f"the pull is being refused. Check `git status`.")
+                return {"icon": "🚫", "label": f"{behind} update(s) behind",
+                        "detail": _detail, "ok": False, "blocked": True,
+                        "blocked_files": _files}
             _how = ("click Update & restart below"
                     if os.environ.get("HUB_SUPERVISED") == "1"
                     else "fully quit + relaunch to update")
@@ -1664,7 +1716,17 @@ def _stale_code_banner() -> None:
             st.markdown(f"### ⚠️ This Hub is {gh['label']}")
             st.caption(f"Reports run from here may use OLD code. {gh['detail']}")
         with c2:
-            if os.environ.get("HUB_SUPERVISED") == "1":
+            # A BLOCKED update gets no button at all. Offering "Update &
+            # restart" here would be offering a click that git refuses, which
+            # is the exact loop this banner exists to end — so show the one
+            # thing that actually clears it instead.
+            if gh.get("blocked"):
+                _f = gh.get("blocked_files") or "the edited file(s)"
+                st.markdown("**A local edit is blocking the update.**")
+                st.caption(f"Commit or stash {_f}, then fully quit and "
+                           f"relaunch the Hub. Ask Claude to do it if you'd "
+                           f"rather not touch git.")
+            elif os.environ.get("HUB_SUPERVISED") == "1":
                 if st.button("⬆️ Update & restart now", type="primary",
                              key="hub_update_restart_banner",
                              use_container_width=True):
@@ -4134,7 +4196,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                     f"<b>{_names}</b></div>"
                                     "<div style='margin-top:8px; font-size:0.95rem;'>"
                                     "AppStream refused these ICDs for the logged-in "
-                                    "account. Request rcaptain access (or switch to "
+                                    "account. Request Lucy Reports access (or switch to "
                                     "an AppStream account that already has it) and "
                                     "click the button below to re-pull."
                                     "</div></div>",
@@ -4173,10 +4235,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                 "<div style='margin-top:6px; font-size:0.95rem;'>"
                                 f"<b>{_names}</b></div>"
                                 "<div style='margin-top:8px; font-size:0.95rem;'>"
-                                "Either rcaptain has no AppStream access yet, or "
+                                "Either the Lucy Reports login has no AppStream access yet, or "
                                 "the pull hit a transient error. Try the retry "
                                 "button below first — if it still fails, request "
-                                "rcaptain access for these ICDs."
+                                "Lucy Reports access for these ICDs."
                                 "</div></div>",
                                 unsafe_allow_html=True,
                             )
@@ -7621,14 +7683,17 @@ with st.sidebar:
             # runs (direct `streamlit run`, Windows) where exiting would just
             # kill the Hub with nobody to restart it. The main-area banner
             # (every view, above the fold) is the loud twin of this button.
-            if os.environ.get("HUB_SUPERVISED") == "1":
+            # Blocked: no button here either — see _stale_code_banner.
+            if _gh.get("blocked"):
+                pass
+            elif os.environ.get("HUB_SUPERVISED") == "1":
                 if st.button("⬆️ Update & restart the Hub",
                              key="hub_update_restart",
                              use_container_width=True):
                     _request_hub_restart()
 
     # Chrome status check removed 2026-05-26: every report now runs through
-    # patchright's unattended login (rcaptain on AppStream, ownerville on
+    # patchright's unattended login (Lucy Reports on AppStream, ownerville on
     # Tableau), so there's no debug-port Chrome for the user to keep open.
     # `chrome_ok` (referenced elsewhere) is force-true so any leftover gates
     # don't block runs; clean those out in a follow-up if anything reads it.

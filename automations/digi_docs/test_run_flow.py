@@ -184,6 +184,65 @@ class QuietWeekSaysNothing(_NoNetwork):
                                              dry_run=True))
 
 
+class FaultsGoToTheFaultChannel(_NoNetwork):
+    """An ERROR does not belong in an office channel (Megan 2026-09-02).
+
+    On 2026-09-02 a crashed run posted "Digi Docs — could not send @Alisson
+    Rodriguez @tiff @Aimee Garibay • the run was killed before it could report —
+    exit 1, see output/logs/…" into #rafs-office-recruiting-11280, @-ing three
+    people over a log file on a machine they do not have. Megan: "if something is
+    an error it goes into the correct channel."
+
+    The split, pinned here: the end-of-run SUMMARY stays in the office channel —
+    "3 people still need doing by hand" is work for the people in that room —
+    and only FAULTS move to #claudecorrections-and-requests, where they get
+    triaged and closed. The send pass is a 5-minute tick, so a fault posting to
+    the office channel is not one stray message; it is a room being trained to
+    stop reading itself."""
+
+    def test_the_two_channels_are_different(self):
+        from automations.digi_docs import slack_post
+        self.assertNotEqual(slack_post.ALERT_CHANNEL, slack_post.CHANNEL)
+        # The corrections channel, the standing home for the day's failures.
+        self.assertEqual(slack_post.ALERT_CHANNEL, "C0BK5PRG259")
+
+    def test_a_failure_posts_to_the_alert_channel_only(self):
+        from automations.digi_docs import slack_post
+        sent = {}
+
+        class _C:
+            def chat_postMessage(self, channel, text):
+                sent["channel"] = channel
+                sent["text"] = text
+                return {"ok": True}
+
+        with mock.patch.object(slack_post, "_already_alerted",
+                               return_value=False), \
+             mock.patch.object(slack_post, "_mark_reported", lambda: None), \
+             mock.patch("automations.shared.slack_metrics_post._client",
+                        return_value=_C()):
+            ok = slack_post.alert_failure("the run was killed — exit 1",
+                                          dry_run=False)
+        self.assertTrue(ok)
+        self.assertEqual(sent["channel"], slack_post.ALERT_CHANNEL)
+        self.assertNotEqual(sent["channel"], slack_post.CHANNEL)
+
+    def test_a_failed_alert_never_takes_down_the_run(self):
+        """An alert that cannot post must not raise into the caller — the run it
+        is reporting on is still trying to finish."""
+        from automations.digi_docs import slack_post
+
+        class _Boom:
+            def chat_postMessage(self, channel, text):
+                raise RuntimeError("slack down")
+
+        with mock.patch.object(slack_post, "_already_alerted",
+                               return_value=False), \
+             mock.patch("automations.shared.slack_metrics_post._client",
+                        return_value=_Boom()):
+            self.assertFalse(slack_post.alert_failure("boom", dry_run=False))
+
+
 class AddPhaseNeverPosts(_NoNetwork):
     def test_add_only_is_not_a_send(self):
         """--add-only mails nobody, so it must not announce a send."""

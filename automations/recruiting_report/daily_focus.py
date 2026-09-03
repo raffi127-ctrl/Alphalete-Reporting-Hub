@@ -1155,7 +1155,15 @@ def run_captainship(captainship: str, args, week_start: dt.date,
         log.info("logging into AppStream via patchright (ALT account: %s) — "
                  "unattended; using separate profile", alt_user)
     else:
-        log.info("logging into AppStream via patchright (rcaptain) — unattended")
+        # NAME THE CONFIGURED ACCOUNT, never a literal. This line said
+        # "rcaptain" long after that login was retired, and a log that names the
+        # wrong account sends the next diagnosis down the wrong road (2026-09-02).
+        try:
+            from automations.shared import creds as _c
+            _who = _c.appstream_username()
+        except Exception:  # noqa: BLE001 — logging must not need a credential
+            _who = "the configured account"
+        log.info("logging into AppStream via patchright (%s) — unattended", _who)
     with appstream_direct_session(**session_kwargs) as target_page:
 
         for icd in icds:

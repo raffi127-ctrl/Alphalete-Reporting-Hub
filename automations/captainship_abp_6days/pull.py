@@ -29,6 +29,8 @@ from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright as _dcp
 from automations.captainship_activation_rate import pull as _act
+from automations.shared import captainship_pins as _pins
+from automations.captainship_churn import pull as _cs   # _smart_title
 
 # MetricsINTfullyEXP, not the BASE Metrics view the activation report uses
 # (2026-08-20). The base view carries a live Internet/Wireless filter that any
@@ -110,8 +112,89 @@ def parse(csv_path: Path, team_value: Optional[str] = None) -> dict:
     The Captainship Avg is Tableau's OWN per-team `Total` row, not a recompute —
     an ABP mix % is not the mean of its owners' mixes. team_value=None returns
     the country `Grand Total` instead.
+
+    ONE EXCEPTION (2026-09-01): a captainship carrying an ADOPTED rep — someone
+    Tableau still files under another captain, see captainship_pins.ADOPTED —
+    cannot use Tableau's team Total, which knows nothing about them. For ABP
+    the honest number is recoverable: an ABP mix % IS a New-Internet-count
+    weighted mean, verified exact against the view's own Total row on four
+    teams (Chan 94.2, Wayne 97.7, Starr 91.6, Tony 95.9 — all reproduced to the
+    decimal, 2026-09-01). The 6+ days box is NOT: no weight in this crosstab
+    reproduces its Total (Tony reads 35.0 while every candidate weight lands
+    37.x), so it keeps Tableau's number and stays short by the adopted rep.
     """
-    return _act.parse(csv_path, team_value, box_columns=BOX_COLUMNS)
+    parsed = _act.parse(csv_path, team_value, box_columns=BOX_COLUMNS)
+    return _recompute_abp_for_adopted(csv_path, team_value, parsed)
+
+
+ABP_WEIGHT_COL = "New Internet Count (Metrics)"
+
+
+def _num(cell) -> Optional[float]:
+    txt = str(cell or "").strip().replace(",", "").replace("%", "")
+    try:
+        return float(txt)
+    except ValueError:
+        return None
+
+
+def _recompute_abp_for_adopted(csv_path: Path, team_value: Optional[str],
+                               parsed: dict, logfn=print) -> dict:
+    """Replace the ABP Captainship Avg with the NI-count weighted mean over the
+    slice, but ONLY when the slice holds an adopted rep. A no-op otherwise —
+    including for `team_value=None` (the country Grand Total), which has no
+    captain to adopt for."""
+    if not team_value:
+        return parsed
+    reps = parsed.get("reps") or {}
+    adopted = [n for n in reps if _pins.adopted_from(team_value, n)]
+    if not adopted:
+        return parsed
+
+    rows = _act._read_crosstab(csv_path)
+    if not rows:
+        return parsed
+    header = [str(h).strip() for h in rows[0]]
+    try:
+        owner_i = header.index(_act.OWNER_COL)
+        abp_i = header.index(BOX_COLUMNS["abp"])
+        w_i = header.index(ABP_WEIGHT_COL)
+    except ValueError:
+        logfn(f"  ⚠ {team_value}: ABP avg left as Tableau's — the crosstab has "
+              f"no {ABP_WEIGHT_COL!r} column to weight by")
+        return parsed
+    rep_i = header.index(_act.REP_COL) if _act.REP_COL in header else None
+
+    # Weight per OWNER, read straight off the crosstab so the adopted rep's own
+    # team row is picked up too. Keyed by the display name the parse produced.
+    want = {_pins._k(n): n for n in reps}
+    num = den = 0.0
+    seen = set()
+    for r in rows[1:]:
+        if len(r) <= max(owner_i, abp_i, w_i):
+            continue
+        if rep_i is not None and (r[rep_i] or "").strip() != _act.TOTAL_ROW:
+            continue
+        owner = (r[owner_i] or "").strip()
+        key = _pins._k(_cs._smart_title(owner))
+        if key not in want or key in seen:
+            continue
+        pct, weight = _num(r[abp_i]), _num(r[w_i])
+        if pct is None or weight is None:
+            return parsed        # incomplete -> don't invent a number
+        seen.add(key)
+        num += pct * weight
+        den += weight
+    if len(seen) != len(reps) or not den:
+        logfn(f"  ⚠ {team_value}: ABP avg left as Tableau's — matched "
+              f"{len(seen)}/{len(reps)} owner rows for the weighted mean")
+        return parsed
+    was = ((parsed.get("office_total") or {}).get("abp") or {}).get("pct")
+    val = f"{round(num / den, 1)}%"
+    parsed.setdefault("office_total", {}).setdefault("abp", {})["pct"] = val
+    logfn(f"  ↺ {team_value}: ABP Captainship Avg recomputed {was} -> {val} "
+          f"(includes adopted {', '.join(sorted(adopted))})")
+    return parsed
 
 
 def make_parser(slug: str):

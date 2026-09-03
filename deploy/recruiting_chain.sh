@@ -45,6 +45,97 @@ case "$MODE" in
   *) echo "unknown mode '$MODE' (want: full | refresh)" | tee -a "$LOG"; exit 2 ;;
 esac
 
+# HUB PILL. The chain is one card ("Recruiting Chain") that colours in two
+# PHASES: amber after the 1am chain, green after the 1pm refresh. Both passes
+# publish under the SAME report id, with DIFFERENT names -- the card is
+# phase_runs, which counts DISTINCT names, so re-running the 1am chain counts
+# once and can never tick the afternoon's box.
+#
+# Before this the wrapper published nothing at all. The steps each published
+# their own run, but the chain itself was invisible, so hub_coverage auto-carded
+# the two PLISTS instead and the Hub carried two permanently-white cards reading
+# "scheduled 1:00 AM, no run logged" every day while the chain ran perfectly
+# (Megan 2026-09-01: "recruiting chain is on here twice? also erroring").
+VENV_PY=".venv/bin/python3.14"
+[ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
+[ -x "$VENV_PY" ] || VENV_PY="python3"
+case "$MODE" in
+  full)    PHASE_NAME="Recruiting Chain - 1 AM full (funnel > indeed > ad sales)" ;;
+  refresh) PHASE_NAME="Recruiting Chain - 1 PM refresh (indeed > ad sales)" ;;
+esac
+# A --dry-run rehearsal publishes nothing: it delivered no data, and a green
+# pill for a rehearsal is the same lie as a green pill for a skipped run.
+PUBLISH=1
+case " ${EXTRA[*]:-} " in *" --dry-run "*) PUBLISH=0 ;; esac
+
+REPORTED=0
+_publish() {  # _publish <status>
+    REPORTED=1
+    [ "$PUBLISH" -eq 1 ] || return 0
+    "$VENV_PY" -c "import sys
+from automations.day_orchestrator import hub_publish
+hub_publish.publish_done('recruiting_chain', sys.argv[1], sys.argv[2])" \
+        "$PHASE_NAME" "$1" >> "$LOG" 2>&1 || true
+}
+
+# A CHAIN THAT DIES HAS TO SAY SO (Megan 2026-09-02). Two nights running, the
+# chain was killed mid-step and published NOTHING, so the card read "scheduled
+# 1:00 AM, no run logged" -- the same thing it says when a job never fired at
+# all. Those are opposite problems and they must not look identical: one is a
+# missing agent, the other is a run that started and was cut off. This trap reds
+# the card on any exit that did not already report itself, so the next morning
+# says "failed" and points at the log. Deliberately installed AFTER the overlap
+# guard's exit, which still publishes nothing: a skipped pass delivered no data
+# and must never paint a colour of any kind.
+trap '[ "$REPORTED" -eq 1 ] || _publish failed' EXIT
+trap 'exit 143' TERM HUP INT   # so a signalled chain still runs the EXIT trap
+
+# HOLD THE MACHINE AWAKE FOR THE LENGTH OF THE CHAIN (Megan 2026-09-01).
+# On 2026-09-01 the 1am chain fired dead on time (01:00:03), got through one of
+# funnel_board's 14 managers, and vanished at 01:00:57 -- no exit line, empty
+# stderr, nothing after. That is not a crash, it is a machine going to sleep
+# underneath a running job. The morning data was not lost (the mini re-ran all
+# three reports at 06:45) but the chain never finished, and the 1pm pass, which
+# skips funnel_board and is short, ran fine at 13:00:01 -- which is why only the
+# overnight one looked broken.
+#
+# com.alphalete.keep-awake IS loaded here, but it asserts `caffeinate -s`, and
+# -s holds ONLY ON AC POWER. That was written for the mini. Lucy 2 is a LAPTOP,
+# so the fleet-wide assertion buys this chain nothing the moment it is on
+# battery. -i asserts against IDLE sleep whatever the power source, and `-w $$`
+# ties it to this script: it releases itself when the chain exits, however it
+# exits, so a wedged chain cannot leave the machine pinned awake all night.
+#
+# This cannot save a chain from a CLOSED LID -- clamshell sleep is not an idle
+# assertion and no flag overrides it. If the overnight run keeps dying, the lid
+# (or AC) is the next thing to check, not this.
+if [ -x /usr/bin/caffeinate ]; then
+    /usr/bin/caffeinate -i -w $$ >/dev/null 2>&1 &
+fi
+
+# FREE THE SHARED CHROME PROFILE BEFORE STEP 1 (Megan 2026-09-02).
+# The chain fired dead on time on 9/1 (01:00:03) and 9/2 (01:00:02), got into
+# funnel_board's AppStream login both nights -- 9/2's last line is "-> Filling
+# password" -- and then vanished: no exception, no "<-- exit=" line, and
+# recruiting-chain-1am.err EMPTY, 0 bytes. That is a browser that never came up,
+# not code that failed.
+#
+# Every OTHER launcher that runs outside the 4am window already guards for this:
+# texas_de_brazil_745, stf_field_check_11pm, raf/carlos_captainship_*,
+# due_diligence_harvest, att_churn_daily. The chain -- the one job that runs at
+# 1 AM, as far from the 4am window as it is possible to be -- was the only one
+# that did not. Both paths that DO succeed do it: the orchestrator (run.py:331)
+# and `lucy rerun` (mini_control.py:553), which is exactly why the same
+# funnel_board that died at 01:00 ran clean at 09:27 by hand.
+#
+# --unstick is the half a bare `--close` was missing: --close removes a HUMAN's
+# Chrome, unstick_profile removes OUR OWN browser orphaned by an earlier killed
+# report, which still holds the profile's ProcessSingleton. It is orphans-only
+# (PPID 1), so it cannot touch a live report's Chrome. Once per chain, not per
+# step: all three steps share the one profile.
+"$VENV_PY" -u -m automations.day_orchestrator.chrome_guard --close --unstick \
+    >> "$LOG" 2>&1 || true
+
 echo "[$(date)] recruiting-chain START mode=$MODE steps=${#STEPS[@]}" | tee -a "$LOG"
 FAILED=()
 for s in "${STEPS[@]}"; do
@@ -64,7 +155,9 @@ done
 
 if [ "${#FAILED[@]}" -gt 0 ]; then
     echo "[$(date)] recruiting-chain FINISHED with ${#FAILED[@]} failure(s): ${FAILED[*]}" | tee -a "$LOG"
+    _publish failed
     exit 1
 fi
 echo "[$(date)] recruiting-chain FINISHED clean" | tee -a "$LOG"
+_publish success
 exit 0

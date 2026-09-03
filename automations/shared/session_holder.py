@@ -6,6 +6,15 @@ now appears on a FRESH login even in a normal browser, on every machine. There i
 no headless way past a forced interactive challenge, and the vendors won't expose
 an API. The only thing that ALWAYS works unattended is to NEVER do a fresh login.
 
+SUPERSEDED FOR OWNERVILLE (2026-09-02). The paragraph above is still true of
+AppStream, but ownerville's Cloudflare now auto-passes automation — measured on
+Lucy 1 2026-09-01: "ownerville form login reached a LIVE session UNATTENDED (rqst
+present)". So NO HUMAN IS REQUIRED to bring this session back. Keeping the warm
+session is still the fast path and still what this file is for; the difference is
+that every recovery path now DRIVES THE LOGIN FORM (_unattended_ownerville_login)
+before it will ever ask a person. It asks a human only after that fails.
+A cold Lucy is a fault, not a constraint. [[feedback_lucys_always_warm]]
+
 ownerville is the session this holds warm: with a fresh exported ownerville
 storage_state, a HEADLESS run reaches Tableau via ownerville SSO. So the holder
 keeps ownerville logged in — that one session covers every Tableau/ownerville
@@ -29,9 +38,10 @@ SEED is non-disruptive: a SEPARATE validation page polls v2.ownerville for a liv
 rqst token while the human logs in on the login page — it never navigates the
 human's page out from under them (the bug in the first cut).
 
-DEGRADES SAFELY: if the session goes stale it does NOT drive the form (that hits
-the Turnstile). It alerts loudly, keeps the last good export, and the human logs
-back in RIGHT THERE — same warm window, no new escalation.
+DEGRADES SAFELY: if the session goes stale it logs back in UNATTENDED, keeps the
+last good export until that succeeds, and only alerts for a human if the login
+itself fails. (Before 2026-09-02 it refused to drive the form at all and just
+alerted — which reads fine at 2pm and is an outage at midnight.)
 
 Run on the always-on schedule machine (Mac mini; a laptop works while awake):
 
@@ -71,7 +81,13 @@ _MACHINE_MARKER = Path(__file__).resolve().parents[2] / ".machine-profile"
 # and every other runner simply consumed the session it pushed. The re-seeding
 # began after that commit, not before.
 #
-# WHY THREE HOLDERS EAT THEMSELVES. All three run the same rcaptain account, and
+# WHY THREE HOLDERS ATE THEMSELVES — PAST TENSE SINCE 2026-09-02. It was true
+# while all three ran the SAME shared rcaptain account; each now signs in as its
+# own login, so the mutual invalidation below no longer applies. Kept because it
+# explains why the fleet was ever built donor-and-consumer, and because the
+# mechanism returns the moment two machines share an account again. Read the
+# paragraph after it for what actually holds today. All three ran the same
+# rcaptain account, and
 # this module already records the mechanism a few lines down in
 # _push_token_to_fleet: "Renewing appears to INVALIDATE the token the donor
 # handed out last time — which every other machine is still holding. So an
@@ -86,7 +102,24 @@ _MACHINE_MARKER = Path(__file__).resolve().parents[2] / ".machine-profile"
 # tokens age out) and wrong about the CURE: what those machines needed was the
 # donor's session pushed to them, which they now get, not a competing console of
 # their own.
-APPSTREAM_HOLD_MACHINES = ("Lucy 2",)
+#
+# EVERY LUCY HOLDS ITS OWN AGAIN, 2026-09-02 (Megan: "All 3 lucy's should each
+# hold their own and not rely on each other — we've proven the last 2 weeks that
+# doesn't work"). The single-holder design above is REVERSED. Two weeks of it is
+# the evidence: a machine whose only source of a session is somebody else's push
+# is dark for as long as that push is late, and on 2026-09-02 Lucy 1 sat with an
+# expired token through the whole 4am batch — daily_focus, applicant_sync_morning
+# and recruiter_retention_daily all died — with no inbound push all morning while
+# a human drove five manual logins.
+#
+# WHAT ABOUT THE MUTUAL-INVALIDATION MECHANISM the 8/29 note describes? It is
+# real, and it is a same-ACCOUNT problem, not a same-design problem: three
+# consoles re-hopping one rcaptain login invalidate each other's tokens. The fix
+# is the per-person login migration (each Lucy signs in as its OWN account), not
+# making two machines depend on a third. Until every Lucy has its own account,
+# expect some token churn here — that is the known cost of this trade, and it is
+# strictly better than a machine that cannot recover on its own.
+APPSTREAM_HOLD_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
 # Back-compat for anything importing the old singular name.
 APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[0]
 
@@ -258,12 +291,14 @@ from patchright.sync_api import sync_playwright
 
 from automations.shared.tableau_patchright import (
     PROFILE_DIR,
+    _drive_login_form,
     _launch_persistent,
     _ownerville_session_valid,
     _reuse_appstream_storage_state,
     _sso_to_appstream,
     OWNERVILLE_STORAGE_STATE,
     APPSTREAM_STORAGE_STATE,
+    LOGIN_URL,
     OWNERVILLE_V2_URL,
     APPSTREAM_BASE,
 )
@@ -317,6 +352,79 @@ def _export_ownerville(ctx) -> int:
     ov = [c for c in cookies if "ownerville" in (c.get("domain") or "")]
     OWNERVILLE_STORAGE_STATE.write_text(json.dumps({"cookies": ov, "origins": []}))
     return len(ov)
+
+
+# NO HUMAN IS REQUIRED TO LOG THIS SESSION BACK IN (Megan 2026-09-02).
+#
+# This file was written in June on a premise that has since been MEASURED FALSE:
+# "there is no headless way past a forced interactive challenge, so never do a
+# fresh login." Ownerville's Cloudflare auto-passes automation — measured on
+# Lucy 1 2026-09-01: "ownerville form login reached a LIVE session UNATTENDED
+# (rqst present)", which is why appstream_autorenew.refresh_ownerville exists and
+# works. The holder never picked that up, so both of its recovery paths still
+# ended at a prompt in a window nobody is sitting in front of.
+#
+# That cost the night of 2026-09-01: the mint failed at 23:48, the holder exited
+# for a relaunch at 23:54, printed "SEED: log into ownerville in the window" at
+# 23:54:31, and waited. Nobody was there at midnight. Ownerville stayed dark
+# through the 4am batch (applicant_sync_morning, recruiter_retention_daily and
+# daily_focus all failed) until a human logged in at 08:26. The relaunch ladder
+# above CANNOT fix this on its own: it re-seeds from the persistent profile's
+# cookies, and last night those cookies were themselves dead.
+#
+# So: drive the form. A cold session is a fault, not a constraint.
+# [[feedback_lucys_always_warm]]
+LOGIN_MIN_INTERVAL_MIN = 15.0
+_LAST_LOGIN_ATTEMPT: dict = {}
+
+
+def _unattended_ownerville_login(ctx, page, verbose: bool = True) -> bool:
+    """Log ownerville back in WITHOUT a human, in the holder's own profile.
+
+    Returns True only when the session is genuinely live afterwards (a real rqst
+    — `_ownerville_session_valid`, not merely a page that rendered).
+
+    THROTTLED. A failing login retried every 6-minute cycle would hammer the
+    form all night and is exactly the kind of loop that earns a challenge; one
+    attempt per LOGIN_MIN_INTERVAL_MIN is plenty against a 25-minute
+    no-export deadline, and the passive human check still runs every cycle.
+
+    Runs in the CALLER's playwright loop by design — the holder is already
+    inside sync_playwright(), so it cannot call refresh_ownerville (that starts
+    its own and declines; see appstream_autorenew._inside_playwright_loop). This
+    is the same login refresh_ownerville drives, minus the throwaway profile:
+    we WANT the session to land in the holder's persistent profile."""
+    last = _LAST_LOGIN_ATTEMPT.get("at", 0.0)
+    if last and (time.time() - last) / 60 < LOGIN_MIN_INTERVAL_MIN:
+        return False
+    _LAST_LOGIN_ATTEMPT["at"] = time.time()
+    print(f"[{_stamp()}] ownerville cold — driving the login form UNATTENDED "
+          f"(no human needed; retry no sooner than {LOGIN_MIN_INTERVAL_MIN:g} min).",
+          flush=True)
+    try:
+        page.goto(LOGIN_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(3_000)
+        # ALREADY SIGNED IN IS NOT A FAILURE — ownerville can redirect straight
+        # past the form, and then filling the password times out on a session
+        # that is perfectly live. Judge on the SESSION, not on whether we got to
+        # type into it (the mistake refresh_ownerville had to correct 2026-09-01).
+        try:
+            _drive_login_form(page, verbose=verbose)
+        except Exception as e:  # noqa: BLE001 — the validity check below judges
+            print(f"[{_stamp()}] login form not driven ({type(e).__name__}) — "
+                  f"checking whether we are already signed in", flush=True)
+        if not _ownerville_session_valid(page, verbose=False):
+            print(f"[{_stamp()}] unattended login did NOT reach a live session — "
+                  f"a human login in the window would still fix it.", flush=True)
+            return False
+        ovn = _export_ownerville(ctx)
+        print(f"[{_stamp()}] unattended login ✓ — session live again, exported "
+              f"{ovn} ownerville cookies. No human was involved.", flush=True)
+        return True
+    except Exception as e:  # noqa: BLE001 — never take the holder down for this
+        print(f"[{_stamp()}] unattended login error: {type(e).__name__}: "
+              f"{str(e)[:160]}", flush=True)
+        return False
 
 
 # --------------------------------------------------------------------------- #
@@ -461,9 +569,17 @@ def _rqst_note(ctx) -> str:
 #
 # Today Lucy 1 and Lucy 3 sat tokenless for ten hours while Lucy 2's holder was
 # exporting a LIVE session the entire time, never more than six minutes stale.
-# All three run the same rcaptain account, and one machine's session works on
+# All three ran the same rcaptain account, and one machine's session worked on
 # any of them — the fix was already on the fleet, and the only way to move it
 # was to ask a person to clear a Turnstile that did not need clearing.
+#
+# BOTH HALVES OF THAT ARE NOW FALSE (2026-09-02), which is why the handoff below
+# never fires between Lucys any more. Each machine signs in as its OWN account,
+# so one machine's session does NOT work on another — installing it makes that
+# machine the wrong person. And nobody has to clear a Turnstile: the check
+# clears itself given ~30s before submit, so a tokenless machine logs ITSELF
+# back in. The answer to "Lucy 1 has no token" is a login on Lucy 1, not a
+# donation from Lucy 2.
 #
 # So a holder that RENEWS its token hands the new one to the other hold
 # machines. A machine whose own renewal fails is then carried by whichever one
@@ -510,10 +626,26 @@ def _push_token_to_fleet(verbose: bool = True, urgent: bool = False) -> None:
             return          # never distribute a session that can't open a console
         from automations.day_orchestrator import mini_control as mc
         me = _this_machine()
-        # FLEET, not HOLD: the donor is the only holder now, so pushing to the
-        # hold list would push to nobody. Every runner that RUNS AppStream
-        # reports needs the session, whether or not it holds one.
-        sent = [m for m in APPSTREAM_FLEET_MACHINES if m != me]
+        # NEVER TO A MACHINE THAT HOLDS ITS OWN. Once each Lucy signs in as its
+        # OWN account, a push is not a favour — it is an identity swap. Lucy 1
+        # authenticates as 'Lucy Reports' (account 23981, 8 offices); Lucy 2 is
+        # Carlos. Handing one machine's storage_state to the other replaces WHO
+        # that machine is, and every office lookup behind it silently becomes the
+        # wrong account's — the same class of failure as Lucy 2's "rcaptain"
+        # verify actually running as Carlos Hidalgo (2026-08-20).
+        #
+        # That is the real content of "each hold their own and not rely on each
+        # other" (Megan 2026-09-02), and it is why the filter is here at the
+        # SENDER rather than a freshness check at the receiver: the objection is
+        # not that the pushed session is stale, it is that it belongs to somebody
+        # else.
+        #
+        # With all three holding, this list is normally empty and no automatic
+        # push happens at all. It stays for a machine added to the fleet before
+        # it has its own login, and `--appstream-push-fleet` remains the
+        # deliberate operator hand-off.
+        sent = [m for m in APPSTREAM_FLEET_MACHINES
+                if m != me and m not in APPSTREAM_HOLD_MACHINES]
         for m in sent:
             mc.enqueue("set_appstream_state", blob, by="holder-renewal", machine=m)
         _LAST_FLEET_PUSH["at"] = now
@@ -559,6 +691,25 @@ _RQST_RE = re.compile(r"rqst=([A-Za-z0-9_-]+)")
 # slate and be free to accept whatever ownerville issues it.
 _DEAD_TOKENS: set = set()
 
+# DOES THIS MACHINE'S OWNERVILLE IDENTITY EVEN HAVE APPSTREAM? (2026-09-02)
+#
+# The ownerville hop can only mint where the signed-in ownerville identity is
+# offered program 701. On Lucy 1 it is NOT: that login is Rafael Hidalgo (ICD,
+# office 11280), and a read of the dashboard lists ~90 program codes — p=81
+# (Tableau) among them, p=701 absent. So every mint attempt there hops, gets no
+# console, and logs "AppStream mint FAILED — ownerville hop landed without a
+# console" — once per cycle, forever, for a condition no retry can change.
+#
+# That line is indistinguishable from the real failure it was written for, and
+# today proved what a misleading log line costs: this one sat next to genuine
+# alerts all morning while the actual fault (a mistyped username) went unlooked
+# at. So decide the question ONCE from the dashboard itself, say so once in
+# plain terms, and stop attempting.
+#
+# Process-local, like _DEAD_TOKENS: a restart re-checks, so granting the account
+# p=701 takes effect on the next holder start with no code change.
+_OV_APPSTREAM: dict = {"offered": None, "announced": False}
+
 
 def _tok8(tok) -> str:
     """The 8-char upper-case id form `_rqst_id` uses, so a freshly scraped token
@@ -599,6 +750,24 @@ def _fresh_rqst_from_ownerville(ctx) -> str | None:
         except Exception:  # noqa: BLE001 — the goto above is the load that matters
             pass
         page.wait_for_timeout(5_000)
+        # Answer "is p=701 offered to this identity?" HERE, off the page we are
+        # already loading, so the check costs no extra navigation. A dashboard
+        # that lists other programs but no 701 is the structural case; a page
+        # with no program links at all is inconclusive (still loading, or a
+        # redirect), so leave the verdict unset rather than latch a false
+        # negative that would disable minting until the next restart.
+        try:
+            _n701, _nprog = page.evaluate(
+                "() => { const a=[...document.querySelectorAll('a')]"
+                ".map(x=>x.getAttribute('href')||'');"
+                " return [a.filter(h=>/p=701/.test(h)).length,"
+                "         a.filter(h=>/[?&#]p=\\d+/.test(h)).length]; }")
+            if _n701:
+                _OV_APPSTREAM["offered"] = True
+            elif _nprog:
+                _OV_APPSTREAM["offered"] = False
+        except Exception:  # noqa: BLE001 — a diagnosis must never break the mint
+            pass
         m = _RQST_RE.search(page.url or "")
         if not m:
             href = page.evaluate(
@@ -697,6 +866,23 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     # hold, names the real cause, and returns False so the caller's restart
     # ladder — the path this file documents as the one that actually mints —
     # gets its failure honestly.
+    # STRUCTURAL, NOT A FAILURE. Ownerville handed us a token, but this identity
+    # is not offered program 701, so the hop below cannot land a console no
+    # matter how fresh the token is. Say it once, in terms that name the fix
+    # (grant the ownerville login AppStream, or let this machine's own
+    # applicantstream login carry it), then stay quiet — the alternative is one
+    # false alarm every cycle for a condition retrying cannot change.
+    if _OV_APPSTREAM.get("offered") is False:
+        if not _OV_APPSTREAM["announced"]:
+            _OV_APPSTREAM["announced"] = True
+            print(f"[{_stamp()}] AppStream mint via ownerville is NOT AVAILABLE "
+                  f"on this machine — its ownerville identity is not offered "
+                  f"program 701, so the SSO hop can never reach the console. "
+                  f"This is not a fault and will not be retried; AppStream here "
+                  f"comes from this machine's own applicantstream login "
+                  f"(appstream_autorenew). Grant that ownerville login p=701 to "
+                  f"re-enable minting, then restart the holder.", flush=True)
+        return False
     _t8 = _tok8(tok)
     if _t8 == _tok8(before) or _t8 in _DEAD_TOKENS:
         print(f"[{_stamp()}] AppStream mint FAILED — ownerville re-served the "
@@ -760,6 +946,54 @@ def _mint_appstream_via_ownerville(ctx, page, verbose: bool = False) -> bool:
     return True
 
 
+def _appstream_form_login(ctx, page, verbose: bool = False) -> bool:
+    """Sign in to AppStream by TYPING THE CREDENTIALS, in the holder's own
+    context. Returns True only when the office console actually renders.
+
+    This is what makes a re-seed unnecessary. It is the same form
+    appstream_direct_session drives (tableau_patchright, the
+    _APPSTREAM_USERNAME_SELECTOR branch), run on the page the holder already
+    has open rather than in a second browser — the holder is inside
+    sync_playwright(), so it cannot call appstream_autorenew._form_login (that
+    opens its own and a nested sync_playwright cannot start).
+
+    THROTTLED with the mint, deliberately: this runs only on the tokenless path,
+    after the hop has already failed, so it inherits that path's pacing instead
+    of adding a second login loop of its own."""
+    from automations.shared import creds
+    from automations.shared.tableau_patchright import (
+        _APPSTREAM_USERNAME_SELECTOR, _PASSWORD_SELECTOR)
+    print(f"[{_stamp()}] AppStream — typing the login (no re-seed, no human).",
+          flush=True)
+    try:
+        page.goto("https://applicantstream.com/", wait_until="domcontentloaded")
+        page.wait_for_timeout(3_000)
+        # ALREADY SIGNED IN IS NOT A FAILURE — same judgment the ownerville side
+        # had to learn: decide on the CONSOLE, not on whether a form appeared.
+        if (page.locator(_PASSWORD_SELECTOR).count() > 0
+                or page.locator(_APPSTREAM_USERNAME_SELECTOR).count() > 0):
+            _drive_login_form(page, verbose,
+                              username=creds.appstream_username(),
+                              password=creds.appstream_password())
+        page.wait_for_selector("#searchMC", timeout=20_000)
+    except Exception as e:  # noqa: BLE001 — never break the holder over a login
+        print(f"[{_stamp()}] AppStream typed login did NOT reach the console: "
+              f"{type(e).__name__}: {str(e)[:140]}", flush=True)
+        return False
+    tok = _rqst_id(ctx)
+    if not tok:
+        # Never clobber a good export with a console that carries no token.
+        print(f"[{_stamp()}] AppStream typed login rendered the console but the "
+              f"context carries NO rqst token — keeping the existing export.",
+              flush=True)
+        return False
+    left = _ctx_rqst_minutes_left(ctx)
+    print(f"[{_stamp()}] AppStream ✓ TYPED LOGIN minted {tok}"
+          + (f", {left:.0f}m left" if left is not None else "")
+          + " — no human, no re-seed.", flush=True)
+    return True
+
+
 def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
     """Keep the AppStream (applicantstream) console session alive in the holder's
     context so unattended reports reuse it. Reload the open console to refresh the
@@ -803,18 +1037,39 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
                 if verbose:
                     print(f"-> rqst token has {left:.0f}m left — minting a fresh "
                           f"one through ownerville", flush=True)
+                # A THROTTLED CALL IS NOT A FAILURE — check before counting.
+                #
+                # This is the rule _mint_is_throttled's own docstring states
+                # ("callers that escalate on failure MUST check this first"),
+                # and the recovery path below obeys it. This branch did not, and
+                # the arithmetic made that fire every single token cycle:
+                # the holder wakes every 6 min, REMINT_MARGIN_MIN is 30, so a
+                # draining token gets ~5 in-margin cycles — while
+                # MINT_MIN_INTERVAL_MIN is also 30, so only the FIRST of those
+                # genuinely tries. Cycles 2-5 return False because they were
+                # throttled, got counted as failures, hit
+                # MINT_FAILURES_BEFORE_RESTART, and asked for a restart the
+                # session did not need. Measured on Lucy 2 and Lucy 3.
+                _throttled = _mint_is_throttled()
                 _minted = _mint_appstream_via_ownerville(ctx, page,
                                                           verbose=verbose)
-                _fails = _note_mint_result(_minted)
                 if _minted:
+                    _note_mint_result(True)
                     return True
-                if _fails >= MINT_FAILURES_BEFORE_RESTART:
-                    # Say it plainly, unconditionally: this is the holder asking
-                    # to be restarted, and a silent one looks identical to the
-                    # four hours of failures it exists to end.
-                    print(f"[{_stamp()}] AppStream mint has failed {_fails}x in a "
-                          f"row — asking for a restart, which is the path that "
-                          f"actually mints.", flush=True)
+                _fails = _MINT_FAILURES["n"] if _throttled else _note_mint_result(False)
+                if not _throttled and _fails >= MINT_FAILURES_BEFORE_RESTART:
+                    # NAME WHAT ACTUALLY MINTS. This line used to say the restart
+                    # "is the path that actually mints", and that is measurably
+                    # untrue: the ownerville hop has never minted a token once
+                    # (0 successes against 23k log lines on Lucy 2), and what
+                    # produces every token this fleet carries is the TYPED login
+                    # on the tokenless path below — "TYPED LOGIN minted …, 120m
+                    # left", like clockwork every ~2h. A restart only helps
+                    # because a fresh process reaches that same typed login.
+                    print(f"[{_stamp()}] AppStream: the ownerville hop failed "
+                          f"{_fails}x in a row. Not fatal — the typed login on "
+                          f"the tokenless path is what mints, and it runs next. "
+                          f"Asking for a restart as the backstop.", flush=True)
                     _MINT_FAILURES["restart_wanted"] = True
                 # Ownerville couldn't mint this cycle (its own session may be
                 # mid-refresh). Fall back to the old replay: it cannot produce a
@@ -886,11 +1141,29 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
     if minted:
         _note_mint_result(True)
         return True
+    # THE HOP IS NOT THE ONLY WAY IN — TYPE THE LOGIN (Megan 2026-09-02: "I
+    # SHOULD NOT HAVE TO RESEED - YOU CAN TYPE IN THE LOGINS").
+    #
+    # The ownerville hop has never once worked. Measured on Lucy 1: 15
+    # "mint FAILED" lines and ZERO "MINTED a fresh rqst" since the two messages
+    # were added together on 2026-08-29 (be91e7f), every failure the same
+    # "#searchMC absent". Lucy 2 is the same. So every token this fleet has ever
+    # carried came from a person typing the login — and the code could have
+    # typed it the whole time: creds.appstream_username()/appstream_password()
+    # are right there, and appstream_autorenew._form_login records it working
+    # "on Lucy 1 from a cold profile (no saved session): the form completed and
+    # the office console rendered."
+    #
+    # Asking for a restart instead was the mistake: a restart re-runs the same
+    # hop that has failed 15/15, then tells a human to --appstream-login. This
+    # tries the login FIRST and keeps the restart as the last resort.
     if not throttled:
+        if _appstream_form_login(ctx, page, verbose=verbose):
+            _note_mint_result(True)
+            return True
         _note_mint_result(False)
-        print(f"[{_stamp()}] no live rqst token and the mint failed — asking for "
-              f"a restart, which is the path that actually mints (nothing live "
-              f"to lose here).", flush=True)
+        print(f"[{_stamp()}] no live rqst token, the ownerville hop failed AND "
+              f"the typed login failed — asking for a restart.", flush=True)
         _MINT_FAILURES["restart_wanted"] = True
     return False
 
@@ -924,38 +1197,50 @@ def main() -> int:
                                  label="session_holder", verbose=False)
         login_page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
-        # --- Seed: open ownerville for the human; poll a separate page for a
-        #     live session. The holder never drives the form or navigates the
-        #     human's page — a pure human login is what keeps Cloudflare quiet. ---
+        # --- Seed. THE HOLDER SEEDS ITSELF (2026-09-02). Order matters:
+        #       1. the persistent profile usually auto-resumes — free, no login;
+        #       2. if it doesn't, DRIVE THE FORM unattended;
+        #       3. only if that fails do we fall back to asking a human.
+        #     Step 2 is the one that was missing. Without it a relaunch onto a
+        #     profile whose cookies are dead — the exact 2026-09-01 midnight case
+        #     — lands on the prompt below and stays there until morning. ---
         try:
             login_page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
         except Exception:
             pass
-        print(f"[{_stamp()}] SEED: log into ownerville in the window and clear any "
-              f"'verify you're human' box. (This one session covers every "
-              f"Tableau/ownerville report.) Waiting up to {args.seed_timeout:g} min…",
-              flush=True)
-        waited, deadline = 0, args.seed_timeout * 60
-        seeded = False
-        while waited < deadline:
-            # PASSIVE detection — read the login page's URL (a property read, NO
-            # navigation) so we never re-trigger Cloudflare while the human is
-            # mid-login. The old cut polled by NAVIGATING a check page every 15s,
-            # which kept the Turnstile alive and fought the login (Megan
-            # 2026-06-18). The post-login redirect lands on v2 with an rqst token.
-            if "rqst=" in (login_page.url or ""):
-                seeded = True
-                break
-            time.sleep(5)
-            waited += 5
+        seeded = "rqst=" in (login_page.url or "")
+        if seeded:
+            print(f"[{_stamp()}] profile resumed a live ownerville session — "
+                  f"no login needed.", flush=True)
+        else:
+            seeded = _unattended_ownerville_login(ctx, login_page, verbose=False)
+        if not seeded:
+            print(f"[{_stamp()}] unattended seed failed — falling back to a human. "
+                  f"SEED: log into ownerville in the window and clear any "
+                  f"'verify you're human' box. (This one session covers every "
+                  f"Tableau/ownerville report.) Waiting up to {args.seed_timeout:g} min…",
+                  flush=True)
+            waited, deadline = 0, args.seed_timeout * 60
+            while waited < deadline:
+                # PASSIVE detection — read the login page's URL (a property read,
+                # NO navigation) so we never re-trigger Cloudflare while the human
+                # is mid-login. The old cut polled by NAVIGATING a check page every
+                # 15s, which kept the Turnstile alive and fought the login (Megan
+                # 2026-06-18). The post-login redirect lands on v2 with an rqst.
+                if "rqst=" in (login_page.url or ""):
+                    seeded = True
+                    break
+                time.sleep(5)
+                waited += 5
         if seeded:
             ovn = _export_ownerville(ctx)
             print(f"[{_stamp()}] seeded ✓ — exported {ovn} ownerville cookies. "
                   f"Keep-alive every {args.interval:g} min. Leave running. Ctrl-C to stop.",
                   flush=True)
         else:
-            print(f"[{_stamp()}] not seeded within {args.seed_timeout:g} min — will keep "
-                  f"checking; finish logging in in the window.", flush=True)
+            print(f"[{_stamp()}] not seeded within {args.seed_timeout:g} min — the "
+                  f"keep-alive loop will retry the unattended login on its own "
+                  f"cadence; a human login in the window also works.", flush=True)
 
         # --- AppStream warming (OPT-IN, RESTORED 2026-08-05): only if this machine
         #     has been seeded (`--appstream-login` wrote APPSTREAM_STORAGE_STATE).
@@ -965,13 +1250,12 @@ def main() -> int:
         #     console so the batch/resume side rides a held session instead of a
         #     flaky fresh login. All AppStream work is try/except-contained so it
         #     can never crash the ownerville holder. ---
-        # Gate on BOTH a seed file AND this being THE AppStream-hold machine
-        # (see APPSTREAM_HOLD_MACHINES — back to one holder on 2026-08-29). A
-        # non-holder runner still gets the session pushed to it; it just doesn't
-        # keep a competing console on the same account, which is what made the
-        # three holders invalidate each other. The machine check also stops a box
-        # carrying a stale .appstream_storage_state.json from before the
-        # 2026-06-30 removal silently re-activating warming.
+        # Gate on BOTH a seed file AND this being an AppStream-hold machine (see
+        # APPSTREAM_HOLD_MACHINES — every Lucy holds its own again since
+        # 2026-09-02, so on the fleet this is normally True everywhere). The
+        # machine check still earns its place: it stops a box carrying a stale
+        # .appstream_storage_state.json from before the 2026-06-30 removal from
+        # silently re-activating warming.
         as_enabled = (APPSTREAM_STORAGE_STATE.exists()
                       and _this_machine() in APPSTREAM_HOLD_MACHINES)
         appstream_page = None
@@ -1008,10 +1292,18 @@ def main() -> int:
                       f"ownerville-only. (Seed once with --appstream-login, then "
                       f"--appstream-push-fleet.)", flush=True)
             else:
-                print(f"[{_stamp()}] AppStream: this machine is a CONSUMER, not "
-                      f"the holder ({APPSTREAM_HOLD_MACHINE} holds it) — "
-                      f"ownerville-only here, by design. Its session arrives by "
-                      f"fleet push; do NOT --appstream-login here.", flush=True)
+                # Seeded, but this machine is not in APPSTREAM_HOLD_MACHINES —
+                # i.e. we could not place it. This used to print "this machine
+                # is a CONSUMER … do NOT --appstream-login here", which since
+                # every Lucy holds its own is both wrong AND the most expensive
+                # kind of wrong: it talks whoever reads the log out of the one
+                # command that fixes the box. Name the real condition instead.
+                print(f"[{_stamp()}] AppStream: this machine "
+                      f"({_this_machine()!r}) is not in APPSTREAM_HOLD_MACHINES "
+                      f"{APPSTREAM_HOLD_MACHINES} — warming is OFF here. If it "
+                      f"IS a runner, its .machine-profile marker is wrong; fix "
+                      f"that, then --appstream-login on THIS machine. Nothing "
+                      f"donates a session to it.", flush=True)
 
         # --- Continuous keep-alive + export loop, ONE ownerville tab. When the
         #     session is healthy we navigate that tab to keep it warm; when it
@@ -1097,16 +1389,28 @@ def main() -> int:
                           flush=True)
                     return 1
                 if awaiting_login:
-                    # Human is (re)logging in on the tab — DON'T navigate it.
+                    # PASSIVE CHECK FIRST, ALWAYS. If a human IS mid-login on this
+                    # tab, driving the form would navigate out from under them
+                    # (the 2026-06-18 bug). A property read never does that.
                     if _passive_rqst():
                         awaiting_login = False
                         ovn = _export_ownerville(ctx)
                         last_export_ok = time.time()
                         print(f"[{_stamp()}] re-seeded ✓ — exported {ovn} ownerville "
                               f"cookies.", flush=True)
+                    # NO HUMAN NEEDED (2026-09-02). This branch used to do nothing
+                    # but print "waiting…" every cycle — for HOURS overnight, which
+                    # is how the 4am batch found a dead session. Retry the
+                    # unattended login instead; it is throttled to one attempt per
+                    # LOGIN_MIN_INTERVAL_MIN, so between attempts we still just
+                    # watch the tab for a human who may be logging in anyway.
+                    elif _unattended_ownerville_login(ctx, login_page, verbose=False):
+                        awaiting_login = False
+                        last_export_ok = time.time()
                     else:
-                        print(f"[{_stamp()}]  ⏳ waiting for ownerville login in the "
-                              f"window…", flush=True)
+                        print(f"[{_stamp()}]  ⏳ ownerville still cold — unattended "
+                              f"login will retry; a human login in the window also "
+                              f"works.", flush=True)
                 else:
                     # Healthy → navigate the one tab to keep the session warm.
                     if _ownerville_session_valid(login_page, verbose=False):
@@ -1114,10 +1418,18 @@ def main() -> int:
                         last_export_ok = time.time()
                         print(f"[{_stamp()}] warm ✓ — {ovn} ownerville cookies "
                               f"(stale = kept last good export)", flush=True)
+                    # STALE → LOG BACK IN, don't announce it and wait. Recovering
+                    # on the FIRST stale cycle is the whole point: the fallback
+                    # ladder below (25-min no-export exit → relaunch) only re-seeds
+                    # from the profile's cookies, which in this state are dead.
+                    elif _unattended_ownerville_login(ctx, login_page, verbose=False):
+                        last_export_ok = time.time()
                     else:
                         awaiting_login = True
-                        print(f"[{_stamp()}]  ⚠️ ownerville STALE — log back in in the "
-                              f"window (kept last good export).", flush=True)
+                        print(f"[{_stamp()}]  ⚠️ ownerville STALE and the unattended "
+                              f"login did not take — will retry (kept last good "
+                              f"export). A human login in the window also works.",
+                              flush=True)
                     # AppStream keep-alive (seeded machines only). FULLY CONTAINED:
                     # its own try/except means a stale/challenged applicantstream
                     # console only logs a nudge — it never raises into the holder's
