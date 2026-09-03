@@ -88,7 +88,14 @@ EXCLUDE: Dict[str, tuple] = {
     # of the Metrics view entirely (confirmed live 8/21: Sahil's Team returns
     # only Andre Burton Jr., Brian Tran, Marcellus Butler, Sahil Multani).
     "Sahil":  ("Jeremiah Minor",),           # 2026-08-21
-    "Tony":   ("Melik El Jaiez", "Aden Berhane"),        # 2026-08-19
+    # Alex Touati, 2026-09-03: he showed up in BOTH Tony's blocks and Pat's,
+    # so the live week counted him twice. Eve settled it by seniority — the
+    # pre-roll snapshot of 2026-09-01 has no row for him under Tony, Pat's
+    # block carries his ten weeks, and Tableau's `Captain's Bonus Teams v2`
+    # has him on Pat's Team — so Tony's rows were the recent thing and came
+    # off. He is NOT pinned out of Pat's, which is where he belongs.
+    "Tony":   ("Melik El Jaiez", "Aden Berhane",         # 2026-08-19
+               "Alex Touati"),                           # 2026-09-03
     "Khalil": ("Jimmy Bonilla", "Ayleen Gonzalez"),      # 2026-08-19
     "Colten": ("Javeon Lara", "Selena Powers"),          # 2026-08-19
 }
