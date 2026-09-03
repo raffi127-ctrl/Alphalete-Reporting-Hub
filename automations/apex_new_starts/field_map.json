@@ -1,0 +1,15 @@
+{
+  "UNIVERSAL I9 MASTER FORM": {
+    "dat010-QaqD0": "dob",
+    "inp001-p8vrb": "last",
+    "inp002-cNJi1": "first",
+    "inp003-B_SDb": "middle",
+    "inp005-zEYVo": "address1",
+    "inp007-hlXIf": "city",
+    "inp008-22tND": "state",
+    "inp009-syqP8": "zip",
+    "inp015-KVOT8": "email",
+    "inp016-gaSi-": "phone",
+    "inp024-I0AWQ": "ssn"
+  }
+}

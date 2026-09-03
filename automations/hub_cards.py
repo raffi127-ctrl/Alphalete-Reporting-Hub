@@ -5557,6 +5557,119 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "apex-new-starts",
+        "name": "New Starts \u2192 Apex",
+        "creator": "Megan",
+        "emoji": "\U0001F4CB",
+        "color": "#0F766E",
+        # \U0001F3AF Recruiting, beside blueink-docs: same weekly cohort, and
+        # this is the step straight after their packet comes back signed.
+        "category": "\U0001F3AF Recruiting",
+        "description": (
+            "Takes everyone in the sales board's 'New Starts/Raf' box who "
+            "wasn't terminated this week and types their Blue Ink onboarding "
+            "answers into a new Apex employee record \u2014 name, address, "
+            "date of birth, email, phone. You add the Social and click Save."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Reads the current **`Sales Board WE <m.d>`** tab, takes the "
+            "**'New Starts/Raf'** box at the bottom, and keeps everyone who is "
+            "**not marked Terminated anywhere in the week**. For each of them "
+            "it finds their signed **Blue Ink** packet and types the answers "
+            "off their **I-9** into a fresh Apex employee record.\n\n"
+            "WHEN TO RUN IT\n"
+            "**Thursday or Friday.** By then the week's terminations are on "
+            "the board, so the people it picks up are the ones actually "
+            "staying \u2014 run it Tuesday and you add six people who are "
+            "gone by Thursday. Preflight refuses any other day unless you "
+            "really mean it.\n\n"
+            "BEFORE YOU PRESS PLAY\n"
+            "**\u2022** Be **signed into Apex** in this machine's normal "
+            "Chrome. The run rides that session \u2014 it never types a "
+            "password, and a login page stops it with a message saying so.\n"
+            "**\u2022** Blue Ink is read through its **API key**, so nothing "
+            "to open there.\n"
+            "**\u2022** Press **Preflight** first: it checks the day, Blue "
+            "Ink and the Apex login, and opens nothing else.\n\n"
+            "WHAT IT WILL NOT DO\n"
+            "**\u2022** **It never types a Social Security number.** "
+            "Everything else is filled and the SSN is left for you \u2014 "
+            "the run opens that person's own signed I-9 in a tab so you can "
+            "read it off the form. The number never passes through the "
+            "report's output or logs.\n"
+            "**\u2022** **It never clicks Save.** You look at the record, add "
+            "the Social, and save it yourself. That is also the duplicate "
+            "check \u2014 you can see whether they are already in Apex before "
+            "anything is committed.\n"
+            "**\u2022** **Direct deposit is not touched at all.** Bank "
+            "details stay a hand job, on purpose.\n\n"
+            "O-NA\n"
+            "**O-NA** is off / not available. It is **not** a termination, so "
+            "those people **are** added \u2014 but they are listed separately "
+            "at the end of the preview, because they are the ones most likely "
+            "to be terminated on Monday.\n\n"
+            "WHERE THE FILLING HAPPENS\n"
+            "**Preflight** and **Preview** run anywhere, including from this "
+            "Hub. The actual filling waits for you between records, so it has "
+            "to be run **from Terminal**:\n"
+            "`python -m automations.apex_new_starts.run --assist`\n\n"
+            "IF A FIELD DOESN'T MATCH\n"
+            "Apex's boxes are found by the **label you read next to them**, "
+            "not by position. Anything it can't match with confidence is "
+            "**not typed** \u2014 it says which field and skips that person "
+            "rather than guessing. `--explore` writes the real screen's "
+            "field list to `apex_screen.json`; send that back and the label "
+            "list gets made exact."),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc/edit"
+                      "?gid=263241811#gid=263241811"),
+        "assignees": ["Megan"],
+        # Push-a-button by design: Apex has no API and no session this repo can
+        # hold, so a person has to be signed in and at the keyboard. Not on any
+        # schedule, and self_scheduled keeps it out of the due-today tallies.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [3, 4],   # Thursday / Friday
+            "time": "Thu or Fri, by hand",
+            "time_label": "Raf's Office \u00b7 Thu/Fri, once Apex is open",
+            "estimated_minutes": 20,
+        },
+        "checklist": [
+            {"text": "Sign into Apex in this machine's normal Chrome "
+                     "(tick remember-this-device on the 2FA prompt)"},
+            {"text": "Run Preflight and check all three lines are green"},
+        ],
+        "post_run": {
+            "message_success": "\u2705 Read the board and Blue Ink. See the list above for who gets added and who was left out.",
+            "message_failed": "\u274C Run failed. Most often it's the Apex login \u2014 sign into Apex in this machine's Chrome and run Preflight again. Nothing was typed.",
+        },
+        "actions": [
+            {
+                "label": "Preflight",
+                "icon": "\U0001FA7A",
+                "primary": True,
+                "help": "Checks the day, Blue Ink, and whether Apex is signed in on this machine. Opens nothing and types nothing.",
+                "module": "automations.apex_new_starts.run",
+                "args_fn": lambda: ["--preflight"],
+            },
+            {
+                "label": "Preview",
+                "icon": "\U0001F441",
+                "help": "Shows who would be added, who was left out and why, and how complete each person's Blue Ink packet is. Doesn't open Apex.",
+                "module": "automations.apex_new_starts.run",
+                "args_fn": lambda: ["--preview"],
+            },
+            {
+                "label": "Match Apex Fields",
+                "icon": "\U0001F50D",
+                "help": "Opens Apex and works out which box on the new-employee screen each answer goes in. Types nothing.",
+                "module": "automations.apex_new_starts.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
+    {
         "id": "bg-check-sync",
         "name": "BG Check Sync",
         "creator": "Raf",
