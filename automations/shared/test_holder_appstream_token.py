@@ -533,3 +533,74 @@ class AThrottledMintIsNotAFailure(unittest.TestCase):
         out = buf.getvalue()
         self.assertNotIn("path that actually mints", out)
         self.assertIn("typed login", out.lower())
+        # Reaching here means BOTH paths missed, and the typed login missing is
+        # the actionable half — it points at the credential, which is where the
+        # 2026-09-02 outage actually was.
+        self.assertIn("credential", out.lower())
+
+
+class TheInMarginRemintActuallyRenews(unittest.TestCase):
+    """Renew BEFORE the token dies — the thing this branch never once did.
+
+    REMINT_MARGIN_MIN exists so a successor is minted while the old token is
+    still alive. But the branch only ever called the ownerville hop, which has
+    minted nothing ever (0 hits in 23k log lines on Lucy 2), so every real
+    renewal happened on the TOKENLESS path instead — about 5 minutes after
+    expiry (14:03 -> 16:08 on a 120m token). Reports landing in that gap each
+    had to log themselves back in.
+
+    The typed login is what mints, so the margin now calls it — once per
+    unthrottled cycle, and judged on the TOKEN ID CHANGING rather than on the
+    call returning True."""
+
+    def setUp(self):
+        sh._MINT_FAILURES["n"] = 0
+        sh._MINT_FAILURES["restart_wanted"] = False
+
+    def _cycle(self, *, throttled, login_ok, token_before, token_after):
+        ids = iter([token_before, token_after])
+        with mock.patch.object(sh, "_ctx_rqst_minutes_left", return_value=5.0), \
+             mock.patch.object(sh, "_mint_is_throttled", return_value=throttled), \
+             mock.patch.object(sh, "_mint_appstream_via_ownerville",
+                               return_value=False), \
+             mock.patch.object(sh, "_rqst_id", side_effect=lambda _c: next(ids)), \
+             mock.patch.object(sh, "_appstream_form_login",
+                               return_value=login_ok) as login, \
+             mock.patch.object(sh, "_reuse_appstream_storage_state",
+                               return_value=False):
+            ok = sh._warm_appstream(_ctx(rqst=1), _page(), verbose=False)
+        return ok, login
+
+    def test_a_new_token_counts_as_a_renewal(self):
+        ok, login = self._cycle(throttled=False, login_ok=True,
+                                token_before="AAAA1111", token_after="BBBB2222")
+        self.assertTrue(ok)
+        login.assert_called_once()
+        self.assertEqual(sh._MINT_FAILURES["n"], 0)
+        self.assertFalse(sh._MINT_FAILURES["restart_wanted"])
+
+    def test_the_same_token_back_is_not_a_renewal(self):
+        """applicantstream can resume the live session instead of showing the
+        form. That returns True while handing back the SAME token — a no-op that
+        must not read as a renewal or reset the failure counter."""
+        ok, _ = self._cycle(throttled=False, login_ok=True,
+                            token_before="AAAA1111", token_after="AAAA1111")
+        self.assertEqual(sh._MINT_FAILURES["n"], 1,
+                         "an unchanged token was counted as a successful mint")
+
+    def test_a_throttled_cycle_does_not_type_the_login(self):
+        """One attempt per margin, not one every 6 minutes."""
+        _, login = self._cycle(throttled=True, login_ok=True,
+                               token_before="AAAA1111", token_after="BBBB2222")
+        login.assert_not_called()
+
+    def test_a_login_that_raises_never_breaks_the_holder(self):
+        with mock.patch.object(sh, "_ctx_rqst_minutes_left", return_value=5.0), \
+             mock.patch.object(sh, "_mint_is_throttled", return_value=False), \
+             mock.patch.object(sh, "_mint_appstream_via_ownerville",
+                               return_value=False), \
+             mock.patch.object(sh, "_appstream_form_login",
+                               side_effect=RuntimeError("browser gone")), \
+             mock.patch.object(sh, "_reuse_appstream_storage_state",
+                               return_value=False):
+            sh._warm_appstream(_ctx(rqst=1), _page(), verbose=False)

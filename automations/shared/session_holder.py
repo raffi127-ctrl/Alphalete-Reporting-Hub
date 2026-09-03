@@ -1051,8 +1051,52 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
                 # MINT_FAILURES_BEFORE_RESTART, and asked for a restart the
                 # session did not need. Measured on Lucy 2 and Lucy 3.
                 _throttled = _mint_is_throttled()
+                _before = _rqst_id(ctx)
                 _minted = _mint_appstream_via_ownerville(ctx, page,
                                                           verbose=verbose)
+                # THE HOP HAS NEVER MINTED — SO TRY WHAT DOES, HERE, BEFORE THE
+                # TOKEN DIES (2026-09-03).
+                #
+                # This branch exists to renew EARLY, and it never once did. It
+                # only ever called the ownerville hop, which has 0 successes
+                # against 23k log lines. So every renewal actually happened on
+                # the tokenless path below — about 5 minutes AFTER expiry
+                # (14:03 -> 16:08 on a 120m token, measured on Lucy 2). Reports
+                # landing in that gap each had to log themselves back in.
+                #
+                # The typed login is what mints ("TYPED LOGIN minted …, 120m
+                # left"), and it works with the old session still live: a bare
+                # load of applicantstream.com serves the login form even when the
+                # cookies are good — only a ?rqst=<TOKEN> URL restores a console
+                # without one.
+                #
+                # ONLY ON THE UNTHROTTLED CYCLE. MINT_MIN_INTERVAL_MIN and
+                # REMINT_MARGIN_MIN are both 30, so this is exactly one attempt
+                # as the token enters its last half hour — not a login loop
+                # every 6 minutes.
+                #
+                # JUDGED ON THE TOKEN CHANGING, never on the call returning True.
+                # If applicantstream resumes the live session instead of showing
+                # the form, the login "succeeds" while handing back the SAME
+                # token — a no-op that would otherwise read as a renewal and
+                # reset the failure counter on nothing.
+                if not _minted and not _throttled:
+                    try:
+                        if _appstream_form_login(ctx, page, verbose=verbose):
+                            _after = _rqst_id(ctx)
+                            if _after and _after != _before:
+                                print(f"[{_stamp()}] AppStream re-minted EARLY "
+                                      f"({_before or 'none'} -> {_after}) with "
+                                      f"{left:.0f}m still on the old token — no "
+                                      f"gap.", flush=True)
+                                _minted = True
+                            elif verbose:
+                                print("-> typed login returned the SAME token "
+                                      f"({_after or 'none'}) — not a re-mint",
+                                      flush=True)
+                    except Exception as e:  # noqa: BLE001 — never break the holder
+                        print(f"[{_stamp()}] AppStream early re-mint errored: "
+                              f"{type(e).__name__}: {str(e)[:110]}", flush=True)
                 if _minted:
                     _note_mint_result(True)
                     return True
@@ -1067,9 +1111,11 @@ def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
                     # left", like clockwork every ~2h. A restart only helps
                     # because a fresh process reaches that same typed login.
                     print(f"[{_stamp()}] AppStream: the ownerville hop failed "
-                          f"{_fails}x in a row. Not fatal — the typed login on "
-                          f"the tokenless path is what mints, and it runs next. "
-                          f"Asking for a restart as the backstop.", flush=True)
+                          f"{_fails}x AND the typed login did not produce a new "
+                          f"token. That second one is the real signal — it is "
+                          f"what mints. Check the AppStream credential "
+                          f"(username spelling first). Asking for a restart as "
+                          f"the backstop.", flush=True)
                     _MINT_FAILURES["restart_wanted"] = True
                 # Ownerville couldn't mint this cycle (its own session may be
                 # mid-refresh). Fall back to the old replay: it cannot produce a
