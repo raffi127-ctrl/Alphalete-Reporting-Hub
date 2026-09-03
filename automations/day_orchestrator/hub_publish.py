@@ -131,6 +131,18 @@ _HUB_CARD = {
     # a clean one. Its wrapper publishes ONLY on a pass that actually emailed:
     # the other six passes are quiet holds waiting for Eve to fill the tab.
     "dd_bulletin": "dd-bulletin",
+    # The HAND-RELEASED send lands on the SAME card (Megan 2026-09-03). Only the
+    # gate's own `--check --send` published phase 2; a send let go by hand
+    # (`lucy rerun dd_bulletin_send`, send.py direct) published NOTHING, because
+    # the id ends in _send and so matched hub_coverage._SKIP_RE — resolve_card
+    # returned None and the run went into the void. The card then sat 1/2 =
+    # purple "awaiting ✅" on a Thursday the bulletin had genuinely gone out:
+    # 8/20 (13:26) and 9/3 (11:34, posted to #alphalete-sales by Lucy). An
+    # EXPLICIT mapping here overrides _SKIP_RE — the same fix org_board_slack
+    # needed — so the release greens the pill whichever path let it go. It also
+    # stops the id self-registering a duplicate library card, which is what put
+    # a second DD Bulletin tile on the Hub.
+    "dd_bulletin_send": "dd-bulletin",
     # Override Bulletin: standalone LaunchAgents on the mini (Lucy 1) — the Friday
     # FILL (override_bulletin_fri.sh) and SEND (override_bulletin_send_fri.sh),
     # never in the 4am batch. Missing here since it shipped, so a clean fill
