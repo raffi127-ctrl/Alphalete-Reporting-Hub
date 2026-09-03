@@ -89,6 +89,20 @@ FIBER_SAHIL_URL = (
     "ATTTRACKER2_1-D2D/CHURN/"
     "e8557aee-2a5b-4c68-a6ad-a1da1394e198/SAHIL%E2%80%99S%20TEAM%20CHURN?:iid=1"
 )
+# Pat y Jess (Eve, 2026-09-03). Hasta ese dia sus dos capitanias no tenian vista
+# propia y el churn de New Internet era el UNICO de los cinco reportes que no se
+# podia llenar: sus pestanas quedaron creadas y vacias esperando estas URLs.
+FIBER_PAT_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CHURN/"
+    "21834ed4-830f-4794-872c-da5e5dada5a6/PatsTeamNewInternetChurn?:iid=1"
+)
+FIBER_JESS_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CHURN/"
+    "37b434f9-aee0-4331-83e6-99717ce36532/JessTeamNewInternetChurn?:iid=1"
+)
+
 # All-teams (org-wide) Fiber churn view — the base CHURN dashboard, which already
 # defaults to 'New Internet Churn View' + Captain's Bonus Teams = All (Megan
 # confirmed 2026-07-23), so it lists every Fiber rep across all teams. Used to
@@ -358,6 +372,20 @@ def fetch_fiber_chan(out_path: Optional[Path] = None,
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_chan.csv"
     _dl(FIBER_CHAN_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
+    return out_path
+
+
+def fetch_fiber_pat(out_path: Optional[Path] = None,
+                    verbose: bool = False, page=None) -> Path:
+    out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_pat.csv"
+    _dl(FIBER_PAT_URL, WORKSHEET, out_path, verbose=verbose, page=page)
+    return out_path
+
+
+def fetch_fiber_jess(out_path: Optional[Path] = None,
+                     verbose: bool = False, page=None) -> Path:
+    out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_jess.csv"
+    _dl(FIBER_JESS_URL, WORKSHEET, out_path, verbose=verbose, page=page)
     return out_path
 
 

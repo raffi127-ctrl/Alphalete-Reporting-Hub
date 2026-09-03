@@ -19,6 +19,9 @@ TAB_FIBER_ARON  = "Churn - Aron Corral (ATT Fiber)"
 TAB_FIBER_CHAN  = "Churn - Chan Park (ATT Fiber)"
 TAB_FIBER_TONY  = "Churn - Tony Chavez (ATT Fiber)"
 TAB_FIBER_SAHIL = "Churn - Sahil Multani (ATT Fiber)"
+# Pat y Jess, 2026-09-03: sus vistas de Tableau ya existen (ver pull.py).
+TAB_FIBER_PAT   = "Churn - Pat Thompson (ATT Fiber)"
+TAB_FIBER_JESS  = "Churn - Jess Lieberman (ATT Fiber)"
 
 
 def open_ws_fiber_wayne():
@@ -43,6 +46,14 @@ def open_ws_fiber_tony():
 
 def open_ws_fiber_sahil():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_FIBER_SAHIL)
+
+
+def open_ws_fiber_pat():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_FIBER_PAT)
+
+
+def open_ws_fiber_jess():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_FIBER_JESS)
 
 
 # ----- Fiber WIRELESS tabs (2026-07-28) ------------------------------

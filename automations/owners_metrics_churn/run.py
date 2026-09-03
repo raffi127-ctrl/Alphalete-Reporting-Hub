@@ -136,6 +136,12 @@ REPORTS = [
     ("sahil", "Sahil Multani (ATT Fiber)",
      pull.fetch_fiber_sahil, fill.open_ws_fiber_sahil,
      "owners_fiber_sahil.csv", pull.parse, pull.PERIODS),
+    ("pat", "Pat Thompson (ATT Fiber)",
+     pull.fetch_fiber_pat, fill.open_ws_fiber_pat,
+     "owners_fiber_pat.csv", pull.parse, pull.PERIODS),
+    ("jess", "Jess Lieberman (ATT Fiber)",
+     pull.fetch_fiber_jess, fill.open_ws_fiber_jess,
+     "owners_fiber_jess.csv", pull.parse, pull.PERIODS),
     # ----- ATT Fiber WIRELESS (2026-07-28) -----
     # Same five captains, their 'Wireless Churn - … (ATT Fiber)' tabs. All five
     # share ONE org-wide pull (fetch_fiber_wireless_org caches per process) and
