@@ -29,6 +29,7 @@ from automations.shared import weekend_release as wr
 
 SAT = dt.date(2026, 8, 15)          # a real Saturday
 MON = dt.date(2026, 8, 17)
+FRI_OFF = dt.date(2026, 9, 4)   # Eve's day off — in wr.NO_REVIEW_DAYS
 OWN = ["captainship_drafts_review", "captainship_drafts"]
 
 
@@ -249,6 +250,73 @@ class NamesWhatBlocksTheDay(Base):
         wr._state = lambda today: None
         self.assertIsNone(wr.blocking_reports(["captainship_drafts_review"],
                                               SAT, own_ids=OWN))
+
+
+class AOneOffDayOffBehavesLikeASaturday(Base):
+    """Eve 2026-09-03: "manana viernes 9/4 tengo dia libre, solo por ese
+    viernes los tres se envian sin gate, misma regla que sabados y domingos".
+
+    So the date opens the SAME door a Saturday does — and nothing else. The
+    cleanliness rule is untouched: a failure still holds, and every other
+    weekday still needs the checkmark."""
+
+    def test_the_listed_friday_auto_releases_a_clean_day(self):
+        self.clean({"captainship_drafts_review": {"status": "DONE"}}, day=FRI_OFF)
+        ok, why = wr.auto_release(["captainship_drafts_review"], FRI_OFF,
+                                  own_ids=OWN, verify=GOOD)
+        self.assertTrue(ok, why)
+        self.assertIn("sin revisores", why)
+
+    def test_a_failure_still_holds_on_that_friday(self):
+        """The day off relaxes WHO approves, never WHETHER it is sendable."""
+        self.clean({"captainship_drafts_review": {"status": "DONE"},
+                    "captainship_cancel_rate": {"status": "FAILED"}},
+                   day=FRI_OFF)
+        ok, why = wr.auto_release(["captainship_drafts_review"], FRI_OFF,
+                                  own_ids=OWN, verify=GOOD)
+        self.assertFalse(ok)
+        self.assertIn("captainship_cancel_rate", why)
+
+    def test_an_incomplete_deliverable_still_holds_on_that_friday(self):
+        self.clean({"captainship_drafts_review": {"status": "DONE"}}, day=FRI_OFF)
+        ok, why = wr.auto_release(["captainship_drafts_review"], FRI_OFF,
+                                  own_ids=OWN, verify=BAD)
+        self.assertFalse(ok)
+        self.assertIn("borradores", why)
+
+    def test_any_other_friday_still_needs_the_checkmark(self):
+        """The knob is a set of EXACT dates, not a weekday rule. The Friday a
+        week later is an ordinary working day again."""
+        other = FRI_OFF + dt.timedelta(days=7)
+        self.assertNotIn(other, wr.NO_REVIEW_DAYS)
+        self.clean({"captainship_drafts_review": {"status": "DONE"}}, day=other)
+        ok, why = wr.auto_release(["captainship_drafts_review"], other,
+                                  own_ids=OWN, verify=GOOD)
+        self.assertFalse(ok)
+        self.assertIn("friday", why.lower())
+
+    def test_the_three_gates_ask_the_policy_not_the_calendar(self):
+        """`is_auto_send_day` is what the gates call; `is_weekend` stays
+        literal so the thread text can still tell the two apart."""
+        self.assertTrue(wr.is_auto_send_day(FRI_OFF))
+        self.assertFalse(wr.is_weekend(FRI_OFF))
+        self.assertTrue(wr.is_auto_send_day(SAT))
+        self.assertFalse(wr.is_auto_send_day(MON))
+
+    def test_the_thread_does_not_call_a_friday_a_weekend(self):
+        self.assertIn("fin de semana", wr.auto_who(SAT))
+        self.assertNotIn("fin de semana", wr.auto_who(FRI_OFF))
+        self.assertIn(FRI_OFF.isoformat(), wr.auto_who(FRI_OFF))
+        self.assertNotIn("fin de semana",
+                         wr.held_note("algo fallo", "el correo", FRI_OFF))
+        self.assertIn("fin de semana",
+                      wr.held_note("algo fallo", "el correo", SAT))
+
+    def test_the_no_auto_flag_still_wins_on_that_friday(self):
+        ok, why = wr.auto_release(["captainship_drafts_review"], FRI_OFF,
+                                  enabled=False, own_ids=OWN, verify=GOOD)
+        self.assertFalse(ok)
+        self.assertIn("--no-auto", why)
 
 
 if __name__ == "__main__":

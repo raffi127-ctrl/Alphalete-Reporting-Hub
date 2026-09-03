@@ -688,10 +688,10 @@ def main(argv=None) -> int:
                                       enabled=not args.no_auto)
             print(f"  weekend auto-send: {why}", flush=True)
             if not ok:
-                if args.send and wr.is_weekend(today) and not args.no_auto:
+                if args.send and wr.is_auto_send_day(today) and not args.no_auto:
                     hold_weekend(today, why, args.channel)
                 return 1
-            who = (wr.AUTO_ID, wr.AUTO_WHO)
+            who = (wr.AUTO_ID, wr.auto_who(today))
         print(f"✓ approved by {who[1]}", flush=True)
         # Tell the Hub the human said yes — this is what turns the card's phase
         # pill from purple (awaiting ✅) to green. Before the send, so an

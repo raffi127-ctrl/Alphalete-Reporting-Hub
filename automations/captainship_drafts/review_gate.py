@@ -1497,7 +1497,7 @@ def main(argv=None) -> int:
                     today, [k for b in unticked for k in b.captains]))
             print(f"  weekend auto-send: {why}", flush=True)
             if ok:
-                auto = (wr.AUTO_ID, wr.AUTO_WHO)
+                auto = (wr.AUTO_ID, wr.auto_who(today))
             else:
                 # UNA FALLA QUE TOCA A UN CAPITAN NO FRENA A LOS OTROS DOCE
                 # (Eve 2026-08-22). Se pregunta a quien afecta lo que freno el
@@ -1505,20 +1505,20 @@ def main(argv=None) -> int:
                 # `None` = no se puede acotar -> el hold de siempre.
                 held, scope_why = scope_today(today,
                                               enabled=not args.no_partial)
-                weekend_auto = wr.is_weekend(today) and not args.no_auto
+                weekend_auto = wr.is_auto_send_day(today) and not args.no_auto
                 going = [k for b in unticked for k in b.captains
                          if k not in (held or ())]
                 ready, ready_why = (previews_complete(today, going)
                                     if held is not None and weekend_auto and going
                                     else (False, "sin envio parcial"))
                 if held is None or not weekend_auto or not ready:
-                    if args.send and wr.is_weekend(today) and not args.no_auto:
+                    if args.send and wr.is_auto_send_day(today) and not args.no_auto:
                         detail = why if held is None else f"{why} ({ready_why})"
                         for block in unticked:
                             hold_weekend(parent, block, detail, args.channel,
                                          thread=thread)
                 else:
-                    auto = (wr.AUTO_ID, wr.AUTO_WHO)
+                    auto = (wr.AUTO_ID, wr.auto_who(today))
                     held_keys, held_why = set(held), f"{why} — {scope_why}"
                     print(f"  envio parcial: {scope_why}; salen {len(going)} "
                           f"({ready_why})", flush=True)

@@ -51,13 +51,26 @@ from zoneinfo import ZoneInfo
 CENTRAL = ZoneInfo("America/Chicago")   # [[project_central-time-for-texas-reports]]
 WEEKEND = {5, 6}                        # sábado, domingo (Python weekday())
 
+# DÍAS HÁBILES SUELTOS QUE SE COMPORTAN COMO UN SÁBADO. Mismo motivo, misma
+# regla, mismo "día limpio": no hay nadie para poner el ✅, así que un día sin
+# fallas se manda solo. Se listan por FECHA EXACTA a propósito — una fecha que
+# ya pasó no puede volver a abrir un gate, así que una entrada vieja es inerte
+# y no hay que acordarse de sacarla. Un rango o un "los viernes" sí podría.
+#
+# Poner una fecha acá NO relaja nada más: `day_is_clean` es idéntico, así que
+# una falla, un módulo que no llegó o un entregable incompleto siguen frenando
+# el envío y dejando la nota en el hilo.
+NO_REVIEW_DAYS: Set[dt.date] = {
+    dt.date(2026, 9, 4),   # viernes: día libre de Eve (pedido 2026-09-03)
+}
+
 # Perilla de apagado, para volver al gate manual los 7 días sin tocar los gates.
 ENABLED = True
 
 # Quién figura como "aprobador" cuando el día se libera solo. Va al mismo lugar
 # donde iría el nombre de Evelyn, así el hilo dice quién lo soltó.
 AUTO_ID = "auto-weekend"
-AUTO_WHO = "envío automático de fin de semana (nadie revisa sáb/dom)"
+AUTO_WHO = "envío automático (día sin revisores)"
 
 # Marcador de la nota que se deja cuando el fin de semana NO se auto-envía.
 # Igual que SENT_MARK / CLOSED_MARK: es lo que hace que se diga UNA sola vez,
@@ -93,8 +106,50 @@ NOT_RUN = {"PENDING", "STILL_TRYING", "MISSED_NOT_READY", SKIPPED}
 
 
 def is_weekend(today: Optional[dt.date] = None) -> bool:
+    """Sábado o domingo, literal. Para preguntar '¿se manda solo?' usá
+    `is_auto_send_day`, que además cubre los días sueltos de NO_REVIEW_DAYS."""
     today = today or dt.datetime.now(CENTRAL).date()
     return today.weekday() in WEEKEND
+
+
+def is_no_review_day(today: Optional[dt.date] = None) -> bool:
+    """Un día hábil que Eve avisó que nadie va a revisar."""
+    today = today or dt.datetime.now(CENTRAL).date()
+    return today in NO_REVIEW_DAYS
+
+
+def is_auto_send_day(today: Optional[dt.date] = None) -> bool:
+    """¿Hoy el gate puede abrirse solo si el día está limpio?
+
+    LA pregunta que hacen los gates. Se llamaba `is_weekend` y por eso los tres
+    gates preguntaban por el calendario cuando lo que querían saber era la
+    política — un día libre avisado no es sábado y aun así no tiene revisores."""
+    today = today or dt.datetime.now(CENTRAL).date()
+    return is_weekend(today) or is_no_review_day(today)
+
+
+def auto_who(today: Optional[dt.date] = None) -> str:
+    """Quién figura como aprobador en el hilo, dicho con precisión. `AUTO_WHO`
+    sigue existiendo y es cierto los 7 días; esto nombra el motivo del día."""
+    today = today or dt.datetime.now(CENTRAL).date()
+    if is_weekend(today):
+        return "envío automático de fin de semana (nadie revisa sáb/dom)"
+    if is_no_review_day(today):
+        return (f"envío automático ({today.isoformat()}: día libre avisado, "
+                f"nadie revisa)")
+    return AUTO_WHO
+
+
+def day_label(today: Optional[dt.date] = None) -> str:
+    """Cómo se nombra el día en el hilo y en el log. Un viernes que dice 'fin de
+    semana' hace dudar de si el gate se creyó otra fecha."""
+    today = today or dt.datetime.now(CENTRAL).date()
+    if is_weekend(today):
+        return "fin de semana sin revisores"
+    if is_no_review_day(today):
+        return (f"{today.isoformat()} es día sin revisores "
+                f"(avisado de antemano)")
+    return f"{today.isoformat()} es día hábil"
 
 
 def _state(today: dt.date) -> Optional[dict]:
@@ -301,19 +356,24 @@ def auto_release(report_ids: Sequence[str], today: Optional[dt.date] = None,
     no se auto-envía tiene que decir por qué, en el log y en el hilo."""
     today = today or dt.datetime.now(CENTRAL).date()
     if not (enabled and ENABLED):
-        return False, "auto-envío de fin de semana desactivado (--no-auto)"
-    if not is_weekend(today):
+        return False, "auto-envío sin revisores desactivado (--no-auto)"
+    if not is_auto_send_day(today):
         return False, (f"{today.isoformat()} es "
                        f"{today.strftime('%A').lower()}: día hábil, el ✅ manda")
     ok, why = day_is_clean(report_ids, today, own_ids=own_ids,
                            verify=verify)
+    label = day_label(today)
     if not ok:
-        return False, f"fin de semana, pero {why}"
-    return True, f"fin de semana sin revisores y {why}"
+        return False, f"{label}, pero {why}"
+    return True, f"{label} y {why}"
 
 
-def held_note(reason: str, what: str) -> str:
-    """El texto de la nota que se deja cuando el fin de semana NO libera."""
-    return (f"— {HELD_MARK}: hoy es fin de semana y {what} se habría enviado "
+def held_note(reason: str, what: str,
+              today: Optional[dt.date] = None) -> str:
+    """El texto de la nota que se deja cuando el día NO libera solo."""
+    today = today or dt.datetime.now(CENTRAL).date()
+    when = ("hoy es fin de semana" if is_weekend(today)
+            else f"hoy ({today.isoformat()}) no hay revisores")
+    return (f"— {HELD_MARK}: {when} y {what} se habría enviado "
             f"solo, pero {reason}. Queda esperando un ✅ como cualquier otro "
             f"día; si está bien, aprobalo y sale.")
