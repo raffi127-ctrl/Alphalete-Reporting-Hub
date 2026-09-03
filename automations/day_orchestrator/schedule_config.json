@@ -1369,6 +1369,24 @@
       },
       "timeout_minutes": 60
     },
+    "b2b_views_probe": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY diagnostic for the 2026-09-03 owners_metrics_churn drop: Carlos's and Luis's B2B churn pulls stopped finding the 'ICD Churn' worksheet (three attempts, same error, clean the day before, Eveliz's view on the same workbook fine) - the shape a workbook republish leaves when it kills the per-user custom views. on_scheduler:false = NEVER in the 4am batch. Run by hand: `lucy rerun b2b_views_probe`. Runs automations.owners_metrics_churn.probe_b2b_views: loads the BASE CHURNRATES view plus the two dead GUIDs plus Eveliz as a control, records the Crosstab thumbs and the banner-error-toast (which NAMES the broken custom view and which production runs throw away), lists the custom views vizportal still has registered for Raf, and then tries to select the captain from the URL the way pull.py already overrides this workbook's product filter. That last check is the point: if the captain filters from the URL, Carlos and Luis hang off the BASE view and no future republication can break them, instead of re-creating custom views that will die again. Writes NO Sheet, NO Slack, NO manifest - only output/b2b_views_probe/ and its log. source_type tableau so chrome_guard runs first. MUST run on Lucy: the Tableau SSO rides ownerville, which allows one session per account, so running it from Windows evicts the holder and pauses every report on the box (2026-09-02).",
+      "display_name": "B2B churn custom-view probe (read-only)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.owners_metrics_churn.probe_b2b_views"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "harvest_proof": {
       "on_scheduler": false,
       "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",

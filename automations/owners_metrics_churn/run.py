@@ -229,6 +229,12 @@ BACKFILL_PULL_TRIES = 3
 
 def _program_of(parse_fn) -> str:
     """Map a REPORTS parse_fn to its program key for the all-teams source lookup."""
+    # A parser built by a factory carries its program as an attribute — it is
+    # not any of the module-level functions below, so identity comparison would
+    # silently fall through to "fiber" and backfill from the wrong view.
+    tagged = getattr(parse_fn, "program", None)
+    if tagged:
+        return tagged
     if parse_fn is pull.parse_b2b:
         return "b2b"
     if parse_fn is pull.parse_nds:

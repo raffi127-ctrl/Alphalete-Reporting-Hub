@@ -621,6 +621,13 @@ def make_b2b_captainship_parser(roster):
         return {"office_total": office, "reps": reps}
 
     _parse.__name__ = "parse_b2b_captainship"
+    # Read by run._program_of. Without it this closure is not `parse_b2b` by
+    # identity, so it fell through to "fiber" and a went-dark rep on Atef's B2B
+    # tab was looked for in the FIBER all-teams NEW INTERNET view — where a B2B
+    # rep can never be, so she could never be backfilled (and a name that DID
+    # collide would have printed NI churn on a B2B tab). Same trap the wireless
+    # closures already dodge with `is_wireless` (Eve 2026-09-03).
+    _parse.program = "b2b"
     return _parse
 
 
