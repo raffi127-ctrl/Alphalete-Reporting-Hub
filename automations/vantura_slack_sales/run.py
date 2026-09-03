@@ -95,7 +95,9 @@ KNOWN_USERS = {
     "U0BFHS9F3LH": "Josephe F",
     # BOX (business energy)
     "U0AU21B9DTQ": "Rebeca Juarez",
-    "U0A0MPGHJ0G": "Jayden Luna",
+    "U0A0MPGHJ0G": "Jayden Willingham",  # board row renamed from "Jayden
+    # Luna" 2026-09-03 to match the BOX order log (car_rides already knew:
+    # Jayden Luna = Jayden Willingham). Board and log must agree on first+last.
     "U09U865JPDL": "Olivia Dittmer",
     "U0BC5NV6ENT": "Priscilla Maria Diaz",
     "U0BGWFQLVD3": "Amy Rodriguez",
