@@ -541,9 +541,14 @@ def remind(after_hours: float = REMIND_AFTER_HOURS,
         return False
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
-    if _said(replies, REMIND_MARK):
+    # SENT_MARK stands the reminder down too: a week that went out OFF the gate
+    # (Eve says "se puede enviar" and it is mailed with `dd_bulletin_send`) has
+    # no checkmark on the post, so `_approver_of` above does not catch it — and
+    # this would nudge Evelyn that "nothing has been sent" hours after the whole
+    # org got it. The thread reply is the record that it went out; read it.
+    if _said(replies, REMIND_MARK, SENT_MARK):
         if verbose:
-            print("— already reminded once", flush=True)
+            print("— already reminded once, or already sent", flush=True)
         return False
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
@@ -574,9 +579,12 @@ def close_day(today: Optional[dt.date] = None, channel: Optional[str] = None,
         return False
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
-    if _said(replies, CLOSED_MARK):
+    # Same reason as the reminder's SENT_MARK guard: a bulletin sent off the
+    # gate carries no checkmark, and the 22:00 pass would tell the channel it
+    # "did not go out" on a night the whole org has it in their inbox.
+    if _said(replies, CLOSED_MARK, SENT_MARK):
         if verbose:
-            print("— already closed once", flush=True)
+            print("— already closed once, or already sent", flush=True)
         return False
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
@@ -689,6 +697,11 @@ def main(argv=None) -> int:
                          f"{REMIND_AFTER_HOURS}).")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the pages + PDF and stop (no Drive, no Slack).")
+    ap.add_argument("--mark-sent", action="store_true",
+                    help="record in the thread that this week went out OFF the "
+                         "gate (Eve released it directly). Sends nothing.")
+    ap.add_argument("--note", default="",
+                    help="text appended to the --mark-sent reply.")
     ap.add_argument("--channel", default=None,
                     help="override the channel id (for a one-off test).")
     ap.add_argument("--date", default=None,
@@ -700,6 +713,31 @@ def main(argv=None) -> int:
     if args.pdf_only:
         paths, _ = build_preview()
         build_pdf(paths)
+        return 0
+    # --mark-sent goes BEFORE --post for the same reason --refresh does: the
+    # scheduler entry's base args are ["--post"], so `lucy rerun dd_bulletin_gate
+    # --mark-sent` arrives here as "--post --mark-sent".
+    #
+    # WHY IT EXISTS. The gate's only release is Evelyn's checkmark, but the week
+    # can still go out around it — Eve says "se puede enviar" and it is mailed
+    # with `lucy rerun dd_bulletin_send`. That leaves the post with no checkmark
+    # and the thread with nothing in it, so --remind would nudge Evelyn that
+    # "nothing has been sent" and the 22:00 --close-day would tell the channel
+    # the bulletin "did not go out" — both hours after the whole org received it.
+    # This writes the SENT_MARK reply those two read. It MAILS NOTHING; it is a
+    # record, and it is idempotent (a second call is a no-op).
+    if args.mark_sent:
+        if already_sent(today, args.channel):
+            print("— the thread already says this week went out; nothing to do",
+                  flush=True)
+            return 0
+        if _find_post(today, args.channel) is None:
+            print(f"— no review post for {_title(today)} to mark", flush=True)
+            return 1
+        confirm_sent("Eve (released off the gate)",
+                     to_note=args.note or "sent with dd_bulletin_send",
+                     today=today, channel=args.channel)
+        print("✓ recorded in the thread that this week went out", flush=True)
         return 0
     # --refresh is checked BEFORE --post on purpose: the scheduler entry's base
     # args are ["--post"], so `lucy rerun dd_bulletin --refresh` arrives here as

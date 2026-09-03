@@ -894,3 +894,27 @@ and Evelyn approves everything that goes out from one link.
   `<body>`, not on `<html>`). The bulletin pages measure 1180 and are unchanged.
 - It reuses the `dd_data.load()` result already in hand — no second read of the
   DD tab, which is what the 60-reads-a-minute ceiling cares about.
+
+### Sending OFF the gate — `--mark-sent` (2026-09-03)
+
+Eve, 2026-09-03, on a week with no checkmark on the post: *"se puede enviar."*
+The gate's only release is Evelyn's `:white_check_mark:` (`APPROVERS` holds her
+and nobody else, on Eve's own instruction), so a week Eve releases herself goes
+out with `lucy rerun dd_bulletin_send` + `lucy rerun rcs_ncs`, around the gate.
+
+**That leaves two false messages behind if nothing records it.** The post has no
+checkmark, so `--remind` nudges Evelyn that *"Nothing has been sent"* (3h after
+the post) and the 22:00 `--close-day` tells the channel the bulletin *"did not
+go out"* — both hours after the whole org has it in their inbox. Fixed two ways,
+and both are needed:
+
+- `remind` and `close_day` now also stand down on **`SENT_MARK` in the thread**,
+  not only on an authorised reaction. Free — both already read the replies.
+- `review_gate --mark-sent` writes that reply (`confirm_sent`, so it contains
+  `SENT_MARK` and doubles as the once-a-week lock `already_sent` reads). It
+  MAILS NOTHING, it is idempotent, and it is checked before `--post` like
+  `--refresh` is, because the scheduler entry's base args are `["--post"]`.
+
+A double send was never the risk here: `send.py` keeps its own per-week marker
+on the mini and refuses a second send without `--force`, so a checkmark that
+lands *after* an off-gate send still mails nobody twice.
