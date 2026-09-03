@@ -476,10 +476,19 @@ def ensure_board_shape(sh, g, log=_log) -> None:
     side = {"style": "SOLID", "width": 1}
     reqs.append({"updateBorders": {
         "range": {"sheetId": sid, "startRowIndex": DAY_HEADER_ROW,
-                  "endRowIndex": last_rep, "startColumnIndex": 1,
+                  "endRowIndex": last_rep, "startColumnIndex": 0,
                   "endColumnIndex": 17},
         "top": side, "bottom": side, "left": side, "right": side,
         "innerHorizontal": side, "innerVertical": side}})
+    # Sorts/inserts drag the campaign dropdown's validation below the rep
+    # block, and the analytics tables' values then wear the red invalid-data
+    # corner (L51-L60, Carlos 2026-09-03). Totals rows keep their campaign
+    # labels; everything below TOTAL loses validation.
+    reqs.append({"setDataValidation": {
+        "range": {"sheetId": sid, "startRowIndex": last_rep + 3,
+                  "endRowIndex": last_rep + 17,
+                  "startColumnIndex": CAMPAIGN_COL - 1,
+                  "endColumnIndex": CAMPAIGN_COL}}})
     _retry(sh.batch_update, {"requests": reqs})
 
 
