@@ -153,6 +153,44 @@ def _thumbs_and_toast(pg, url: str, tag: str) -> dict:
     return info
 
 
+def _filter_state(pg, url: str) -> list:
+    """What every filter dropdown on CHURN RATES is set to, for one view.
+
+    Eve's screenshot of the Original view (2026-09-03) showed it pinned to
+    `B2B Captain's Teams (SFDC) = Cody's Team` AND `Owner & Office = CODY
+    LOWERY` — which is the whole reason the BASE download came back with ONE
+    owner, and why setting only the team in the URL still returned Cody. Read
+    the filter cards so a view's saved scope is a fact instead of a guess:
+    what has to be reproduced when Carlos's and Luis's views get re-created is
+    exactly this state, and re-creating either one while Owner & Office is
+    pinned would bake the single-owner narrowing into the new view.
+    """
+    try:
+        pg.goto(url, wait_until="domcontentloaded")
+    except Exception as e:
+        return [f"goto failed: {type(e).__name__}: {e}"]
+    viz = pg.frame_locator('iframe[title="Data Visualization"]')
+    try:
+        viz.locator(
+            '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+        ).wait_for(state="visible", timeout=90_000)
+    except Exception:
+        pass
+    pg.wait_for_timeout(6_000)
+    out = []
+    try:
+        cards = viz.locator(
+            '[data-tb-test-id$="-FilterCard"], .tab-filterContainer, '
+            '[class*="FilterCard"]')
+        for i in range(min(cards.count(), 20)):
+            txt = " ".join((cards.nth(i).inner_text() or "").split())
+            if txt:
+                out.append(txt[:160])
+    except Exception as e:
+        out.append(f"scrape failed: {type(e).__name__}: {e}")
+    return out or ["(no filter cards matched — see the screenshot)"]
+
+
 def _try_download(url: str, tag: str, page) -> dict:
     """Download 'ICD Churn' off a URL and summarise who is in it.
 
@@ -212,6 +250,13 @@ def main() -> int:
                 log(f"      ERROR: {res.get('error', '')}")
             if res["toast"]:
                 log(f"      TOAST: {res['toast']}")
+
+        log("\n=== 1b. how each view is SAVED (filter cards) ===")
+        for tag, url in [("BASE (Original)", BASE_VIEW_URL),
+                         (CONTROL[1] + " (control)", CONTROL[2])]:
+            log(f"  -- {tag}")
+            for line in _filter_state(pg, url):
+                log(f"     {line}")
 
         log("\n=== 2. custom views still registered on this workbook (as Raf) ===")
         try:
