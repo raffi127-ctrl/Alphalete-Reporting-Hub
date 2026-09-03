@@ -5618,6 +5618,84 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
     return ok, res
 
 
+def _action_campaign_scan(args: str) -> tuple[bool, str]:
+    """READ-ONLY: which offices run MORE THAN ONE campaign — i.e. who CANNOT be
+    enrolled for daily dispositions yet. Runs
+    `automations.disposition_signup.campaign_scan`, which impersonates each
+    granted office, reads its campaigns off an unpinned p=89, and exits
+    impersonation. No Sheet, no Slack, nothing written to ownerville.
+
+      campaign_scan                     the full list, after-hours guarded
+      campaign_scan "Jay Turnage"       just one office (substring match)
+      campaign_scan limit=5             the first 5, for a smoke test
+      campaign_scan force               run even inside the selling window
+
+    Why it must run HERE and not from the laptop: it needs a live ownerville
+    session, and a laptop runs no session holder — its
+    .ownerville_storage_state.json only ages, so the scan dies on
+    "session expired or missing" before it reads a single office
+    (2026-09-03, the run that prompted this action).
+
+    Why `force` is not the default: the full ~90-office scan takes 30-45
+    minutes and holds the machine-wide ownerville session for all of it (one
+    office at a time — it takes and releases the gap_alerts lock per office, so
+    a tick waits seconds, not half an hour). Inside the selling window that
+    still costs Raf boards, so the underlying script refuses to start there and
+    exits 2. `force` drops --after-hours on purpose.
+
+    Read the full table with `lucy logtail campaign-scan-<stamp>`; the report
+    also lands in output/disposition-campaign-scan-<date>.md and .json."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    only = ""
+    limit = None
+    force = False
+    bare: list[str] = []
+    for raw in parts:
+        arg = raw.strip()
+        if not arg:
+            continue
+        if arg.lower() in ("force", "--force"):
+            force = True
+            continue
+        if arg.lower().startswith("limit="):
+            val = arg.split("=", 1)[1].strip()
+            if not val.isdigit():
+                return False, f"campaign_scan: limit must be a number, got {val!r}"
+            limit = val
+            continue
+        if arg.lower().startswith("only="):
+            only = arg.split("=", 1)[1].strip()
+            continue
+        # A bare name is the office. JOINED, not overwritten: an unquoted
+        # `campaign_scan Jay Turnage` used to scan `--only Turnage` — the last
+        # word silently won, and a substring match on a surname is exactly the
+        # kind of wrong answer nobody double-checks.
+        bare.append(arg)
+    if bare and not only:
+        only = " ".join(bare)
+    # Same guard the other browser actions use — a human Chrome left open on the
+    # mini single-instances with patchright's and breaks the scrape.
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome()
+    except Exception:  # noqa: BLE001 — a guard must never crash the run
+        pass
+    cmd = [sys.executable, "-m", "automations.disposition_signup.campaign_scan"]
+    if not force:
+        cmd.append("--after-hours")
+    if only:
+        cmd += ["--only", only]
+    if limit:
+        cmd += ["--limit", limit]
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    return _run_cmd(cmd, timeout_s=90 * 60,
+                    log_name=f"campaign-scan-{stamp}.log")
+
+
 def _action_set_dd_bot_token(args: str) -> tuple[bool, str]:
     """Install/refresh Jiraiya's Slack BOT token (xoxb-) on THIS machine at
     ~/.config/recruiting-report/dd-bot-token — the file due_diligence.watch._client()
@@ -7097,6 +7175,7 @@ ACTIONS = {
     "logtail": _action_logtail,
     "daystate": _action_daystate,
     "probe_knocks": _action_probe_knocks,
+    "campaign_scan": _action_campaign_scan,
     "pip_install": _action_pip_install,
     "playwright_install": _action_playwright_install,
     "install_pinned_chrome": _action_install_pinned_chrome,
@@ -7681,6 +7760,13 @@ def print_help() -> None:
         "                            be impersonated). campaign=none skips the\n"
         "                            TeleMapper pin, to test whether the pin is\n"
         "                            what is blanking an office.\n"
+        '  lucy campaign_scan ["<office>"] [limit=N] [force]\n'
+        "                            READ-ONLY: which offices run more than one\n"
+        "                            campaign, i.e. who CANNOT be enrolled for\n"
+        "                            daily dispositions yet (no Sheet, no Slack).\n"
+        "                            The full ~90-office run takes 30-45 min and\n"
+        "                            refuses to start inside the selling window;\n"
+        "                            `force` overrides that on purpose.\n"
         "  lucy update               git pull the latest code onto the mini\n"
         "  lucy git_status           branch, HEAD, and what's blocking a pull\n"
         "  lucy git_diff [path]      what this machine's uncommitted edits SAY\n"
