@@ -114,7 +114,7 @@ def _thumbs_and_toast(pg, url: str, tag: str) -> dict:
         toast = viz.locator('[data-tb-test-id^="banner-error-toast"]')
         if toast.count():
             info["toast"] = " | ".join(
-                (toast.nth(i).inner_text() or "").strip()
+                " ".join((toast.nth(i).inner_text() or "").split())
                 for i in range(min(toast.count(), 4)))
     except Exception:
         pass
@@ -153,12 +153,22 @@ def _thumbs_and_toast(pg, url: str, tag: str) -> dict:
     return info
 
 
-def _try_download(url: str, tag: str) -> dict:
-    """Download 'ICD Churn' off a URL and summarise who is in it."""
+def _try_download(url: str, tag: str, page) -> dict:
+    """Download 'ICD Churn' off a URL and summarise who is in it.
+
+    `page` is NOT optional. Called without it the driver launches its OWN
+    session, which inside this already-open sync context dies with "It looks
+    like you are using Playwright Sync API inside the asyncio loop" — a probe
+    failure that reads exactly like Tableau refusing the URL, and which made the
+    first two runs report a false 'URL filter works = False'. Every production
+    caller passes the shared page (run.py: `fetch_fn(verbose=False, page=page)`);
+    so does this.
+    """
     out = Path(tempfile.gettempdir()) / f"probe_b2b_{tag}.csv"
     res: dict = {"tag": tag, "url": url, "downloaded": False}
     try:
-        download_crosstab_patchright(url, pull.WORKSHEET, out, verbose=False)
+        download_crosstab_patchright(url, pull.WORKSHEET, out, verbose=False,
+                                     page=page)
         res["downloaded"] = True
     except Exception as e:
         res["error"] = " ".join(str(e).split())[:600]
@@ -190,7 +200,7 @@ def main() -> int:
                          + [(f"{CONTROL[1]} ({CONTROL[0]}) — control", CONTROL[2])]):
             slug = tag.split()[0].lower().strip("(")
             toast = _thumbs_and_toast(pg, url, slug)
-            res = _try_download(url, f"load_{slug}")
+            res = _try_download(url, f"load_{slug}", pg)
             res["tag"] = tag
             res["toast"] = toast.get("toast", "")
             res["toolbar"] = toast.get("ok")
@@ -262,7 +272,7 @@ def main() -> int:
         for slug, value in CAPTAIN_VALUES.items():
             for field in CAPTAIN_FIELDS:
                 url = _filtered_url(field, value)
-                res = _try_download(url, f"{slug}_{abs(hash(field)) % 9999}")
+                res = _try_download(url, f"{slug}_{abs(hash(field)) % 9999}", pg)
                 res.update(slug=slug, field=field, value=value)
                 report["url_filter"].append(res)
                 owners = res.get("owners")
