@@ -33,7 +33,10 @@ fi
 # --ff-only: a failed pull leaves yesterday's code running rather than skipping
 # the refresh.
 if [ -d .git ]; then
-  git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
+  # perl alarm = portable timeout (macOS ships no `timeout`). On 2026-09-03 a
+  # hung pull here ate the 7:50 and 9:50 ticks BEFORE the log line below, so
+  # the schedule died with no trace — a self-update must never outlive 60s.
+  perl -e 'alarm 60; exec @ARGV' git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
 fi
 # -----------------------------------------------------------------------------
 
