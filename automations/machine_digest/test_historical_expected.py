@@ -130,6 +130,41 @@ class HistoricalExpected(unittest.TestCase):
         self.assertEqual(
             _historical_expected(rows, target)["daily-metrics"]["start_hour"], 4)
 
+    def test_one_midnight_outlier_day_does_not_drag_the_anchor(self):
+        """THE 9/3 4AM FALSE ALARM. Rep Gap Alerts writes ONE Activity row a day,
+        at its first good tick (~13:30). Three `gap_alerts --send --force` jobs
+        queued 4pm on 9/1 sat behind a long job in Lucy 1's serial lane and
+        drained at 00:00 the next morning, so 9/2's only row read 00:00. The
+        newest-day anchor took that lone row as the schedule and posted "didn't
+        run today on the mini · usually starts ~0:00" at 4am on 9/3 — for a
+        report whose window does not open until 1:30pm. The median floor keeps
+        the anchor at 13, so the earliest it can now be called missing is 3pm."""
+        target = dt.date(2026, 9, 3)
+        rows = _rows("gap-alerts", _span(target, 2, 7), hour=13)
+        rows += _rows("gap-alerts", [target - dt.timedelta(days=1)], hour=0)
+        exp = _historical_expected(rows, target)
+        self.assertEqual(exp["gap-alerts"]["start_hour"], 13)
+
+    def test_a_real_move_to_a_later_hour_still_wins_on_day_one(self):
+        """The case the newest-day anchor exists for must survive the median
+        floor: enrollment_pending_check left the 4am batch for its own 09:00
+        agent, and the watcher must expect 9 the very next morning, not 4."""
+        target = dt.date(2026, 8, 20)
+        rows = _rows("enrollment-pending-check", _span(target, 2, 7), hour=4)
+        rows += _rows("enrollment-pending-check", [target - dt.timedelta(days=1)],
+                      hour=9)
+        exp = _historical_expected(rows, target)
+        self.assertEqual(exp["enrollment-pending-check"]["start_hour"], 9)
+
+    def test_a_settled_move_to_an_earlier_hour_is_followed(self):
+        """The floor is a floor, not a freeze: once the new earlier hour is the
+        window's norm rather than one odd day, the median moves with it."""
+        target = dt.date(2026, 8, 20)
+        rows = _rows("some-report", _span(target, 1, 5), hour=9)
+        rows += _rows("some-report", _span(target, 6, 7), hour=14)
+        exp = _historical_expected(rows, target)
+        self.assertEqual(exp["some-report"]["start_hour"], 9)
+
 
 class _Cfg:
     def __init__(self, reports):

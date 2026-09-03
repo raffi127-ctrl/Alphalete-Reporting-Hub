@@ -672,10 +672,36 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
         # Anchor "usual start" to the MOST RECENT day it ran, same reasoning as the
         # weekday path: a past day's one-off early test run must not drag the alert
         # time hours earlier for a week.
+        #
+        # ...BUT THE NEWEST DAY IS A SAMPLE OF ONE (Megan 2026-09-03). One odd day
+        # is enough to poison the next one. Rep Gap Alerts publishes exactly one
+        # Activity row a day (_publish_hub_once, at its first good tick ~13:30).
+        # On 2026-09-01 three `gap_alerts --send --force` jobs sat behind a long
+        # job in Lucy 1's serial queue and drained at 00:00, 00:03 and 00:07 the
+        # NEXT morning ([[reference-lucy-machines]]), so 9/2's only row reads
+        # 00:00. The daily anchor took that single row as the schedule and posted
+        # "Rep Gap Alerts — didn't run today on the mini · usually starts ~0:00"
+        # at 4am on 9/3, for a report whose window does not open until 1:30pm.
+        # Megan: "Gap alerts only run like 1-10 so not sure why there's a 4am
+        # error."
+        #
+        # So the newest day no longer decides alone: take the LATER of it and the
+        # MEDIAN of the window's per-day earliest hours. A real schedule MOVE —
+        # the case the newest anchor exists for — is a run of days, so it still
+        # wins as soon as it is later than the old hour (enrollment_pending_check
+        # 04:00 -> 09:00: median 4, newest 9, max 9, correct on day one). A ONE-DAY
+        # outlier cannot win, because a single day never moves the median.
+        #
+        # Erring later is the cheap direction here for the same reason it is at
+        # the merge below: a late alert delays a true report by an hour, an early
+        # one is pure noise in the channel this watcher exists to keep readable.
         newest = max(rec["days"])
         start_hour = rec["hour_by_day"].get(newest)
         if start_hour is None:
             start_hour = min(rec["hour_by_day"].values()) if rec["hour_by_day"] else 0
+        elif rec["hour_by_day"]:
+            _hrs = sorted(rec["hour_by_day"].values())
+            start_hour = max(start_hour, _hrs[len(_hrs) // 2])
         if cid in out:
             # A SCHEDULE CHANGE MUST NOT COST A WEEK OF FALSE ALARMS (Megan
             # 2026-08-24). The weekday path got here first and anchored the hour

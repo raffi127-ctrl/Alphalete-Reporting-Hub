@@ -437,6 +437,7 @@ def main(argv=None) -> int:
     rc = 0
     results = {}          # "office_product" -> "ok" | "FAILED"
     gaps = {}             # "office_product" -> owner the view no longer carries
+    view_owners = {}      # product key -> the owners that view DID carry
     raw_by_url = {}       # view url -> the ONE raw csv pulled for it THIS run
 
     # Pull each ALL-TEAM product view ONCE (its own fresh browser + one retry —
@@ -564,6 +565,11 @@ def main(argv=None) -> int:
                                 tag, office["owner"], len(owners),
                                 ", ".join(sorted(owners))))
                         gaps[tag] = office["owner"]
+                        # Remember WHO the view did carry. One office missing is
+                        # a captaincy split; NOBODY matching means the source
+                        # view itself has been narrowed, and the two need
+                        # opposite fixes — see _write_source_manifest.
+                        view_owners[pkey] = sorted(owners)
                         continue
                     log("  {} slice/fill FAILED:".format(tag))
                     for ln in traceback.format_exc().splitlines()[-12:]:
@@ -577,7 +583,8 @@ def main(argv=None) -> int:
     else:
         log("feed results: " + ", ".join(
             "{}={}".format(k, v) for k, v in results.items()))
-        _write_manifest(results, fill=args.fill, gaps=gaps, log=log)
+        _write_manifest(results, fill=args.fill, gaps=gaps,
+                        view_owners=view_owners, log=log)
     return rc
 
 
@@ -597,7 +604,71 @@ def _split_tag(tag: str) -> tuple:
 SOURCE_MANIFEST_ID = "att_churn_source"
 
 
-def _write_source_manifest(gaps: dict, *, log=print) -> None:
+def _all_feeds_gapped(gaps: dict) -> bool:
+    """Did EVERY office × product feed come back with nothing to slice?
+
+    Read off the live OFFICES/PRODUCTS tables rather than a hard-coded 12, so
+    onboarding a fifth B2B office doesn't quietly turn this back into the
+    partial case."""
+    return len(gaps) >= len(OFFICES) * len(PRODUCTS) > 0
+
+
+def _view_owner_summary(view_owners: dict) -> str:
+    """The owners the pulled view(s) DID carry, deduped across products."""
+    seen = sorted({o for names in (view_owners or {}).values() for o in names})
+    if not seen:
+        return "none we could read"
+    if len(seen) > 8:
+        return "{} owners incl. {}".format(len(seen), ", ".join(seen[:8]))
+    return ", ".join(seen)
+
+
+def _write_narrowed_view_manifest(tags: list, view_owners: dict,
+                                  *, log=print) -> None:
+    """All 12 feeds gapped: the SOURCE VIEW is narrowed, not the roster.
+
+    Kept apart from the captaincy-split manifest because the fix is different
+    and the wrong one costs a morning — see the note in _write_source_manifest."""
+    from automations.shared import run_manifest
+    carried = _view_owner_summary(view_owners)
+    try:
+        run_manifest.write_manifest(
+            SOURCE_MANIFEST_ID, failed=list(tags), retry_args=[], kind="source",
+            note="all {} feed(s) empty — the ALLTEAMSEXP churn view is carrying "
+                 "only: {}. Not a captaincy change: the source view itself is "
+                 "filtered.".format(len(tags), carried),
+            remediation=run_manifest.make_remediation(
+                reason="Every configured office came back with zero rows, and "
+                       "the crosstab was NOT empty — it carried {}. An office "
+                       "leaving a captaincy drops ONE office out; all of them "
+                       "at once means the view we pull "
+                       "(ATTTRACKER-B2B/CHURNRATES/ALLTEAMSEXP) is no longer "
+                       "all-team. A saved custom view keeps filter state per "
+                       "identity and auto-restores it, so a filter left applied "
+                       "on it leaks into every later pull.".format(carried),
+                fix="On Lucy 2, under Carlos's Tableau identity, open "
+                    "ATTTRACKER-B2B/CHURNRATES/ALLTEAMSEXP and check the Owner "
+                    "/ Owner & Office / team quick filters. Set them back to "
+                    "(All) and re-save the ALLTEAMSEXP custom view, then "
+                    "`lucy rerun att_churn --machine \"Lucy 2\"`. If a filter "
+                    "reads (All) but the export is still short, it is the "
+                    "pinned-categorical trap — release it with focus+Space, not "
+                    "a click.",
+                link=PRODUCTS["wireless"]["url"],
+                message="Our B2B churn pull reads the ALLTEAMSEXP view on "
+                        "ATTTRACKER-B2B/CHURNRATES, and today it came back "
+                        "carrying only {}. Could someone reset that view's "
+                        "owner/team filter to (All)? Right now no B2B office's "
+                        "churn tabs can be filled.".format(carried)),
+        )
+        log("source gap: ALL {} feed(s) empty — view carries only {} "
+            "(card stays green; pinged once)".format(len(tags), carried))
+    except Exception as e:  # noqa: BLE001 — bookkeeping never fails a run
+        log("source manifest skipped ({}: {})".format(type(e).__name__, str(e)[:120]))
+
+
+def _write_source_manifest(gaps: dict, view_owners: dict = None,
+                           *, log=print) -> None:
     """An office the pulled view no longer carries: ping once, card stays green.
 
     Cleared (mark_clean) the moment every office is back in its view, so the
@@ -615,6 +686,25 @@ def _write_source_manifest(gaps: dict, *, log=print) -> None:
         return
     owners = sorted(set(gaps.values()))
     tags = sorted(gaps)
+    # EVERY feed gapping is a DIFFERENT FAULT from one office gapping, and the
+    # two fixes point opposite ways (2026-09-03). The captaincy story below is
+    # about an office that LEFT the team the view carries — one or two feeds,
+    # the rest fill fine, and the fix is a new all-team view. On 9/3 all 12
+    # gapped at once and the alert told that story anyway: "12 feeds had nothing
+    # to slice", remediation "ask SmartCircle for an all-team version". But
+    # ALLTEAMSEXP *is* the all-team view, and the log said what had actually
+    # happened — every product carried exactly ONE owner, CODY LOWERY. The
+    # all-team view had been narrowed to one person (a saved custom view holds
+    # filter state per identity and auto-restores it —
+    # [[reference-tableau-gotchas]] #2, the same shape as the "Luis's Team"
+    # leak). Nobody's captaincy had changed, and a morning spent drafting an
+    # access request to SmartCircle would have fixed nothing.
+    #
+    # So when NO configured office survives, say that instead, and name the
+    # owners the view did carry — that list is the whole diagnosis.
+    if _all_feeds_gapped(gaps):
+        _write_narrowed_view_manifest(tags, view_owners or {}, log=log)
+        return
     try:
         run_manifest.write_manifest(
             SOURCE_MANIFEST_ID, failed=tags, retry_args=[], kind="source",
@@ -652,7 +742,7 @@ def _write_source_manifest(gaps: dict, *, log=print) -> None:
 
 
 def _write_manifest(results: dict, *, fill: bool, gaps: dict = None,
-                    log=print) -> None:
+                    view_owners: dict = None, log=print) -> None:
     """Record per-feed outcomes so the orchestrator can RECONCILE this run instead
     of trusting exit 0 (Megan 2026-07-30 — att_churn had verify:null, so a run that
     exited clean having filled nothing read as DONE).
@@ -665,7 +755,7 @@ def _write_manifest(results: dict, *, fill: bool, gaps: dict = None,
     Best-effort — a manifest problem must never change this run's exit code."""
     if not fill:
         return
-    _write_source_manifest(gaps or {}, log=log)
+    _write_source_manifest(gaps or {}, view_owners or {}, log=log)
     if not results:
         return
     try:
