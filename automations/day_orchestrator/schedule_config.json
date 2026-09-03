@@ -9601,6 +9601,31 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "disposition_campaign_scan": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch -- this is a one-off read, run by hand with `lucy rerun disposition_campaign_scan --machine \"Lucy 1\"`. It exists as a registry entry because it MUST run on a Lucy box and not on the laptop: counting an office's campaigns means impersonating it, and the laptop has no session holder, so its .ownerville_storage_state.json only ages (it expired 2026-09-03 mid-scan and the run died on it). Lucy 1 holds Raf's live session, which is the account whose Office Access list this reads.",
+      "machine": "Lucy 1",
+      "display_name": "Scan offices for multiple campaigns (one-off)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.disposition_signup.campaign_scan"
+      ],
+      "base_args": [
+        "--after-hours"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 75,
+      "verify": {
+        "type": "not_configured"
+      },
+      "_note": "Which offices on the access list run MORE THAN ONE campaign, and so cannot be enrolled for daily dispositions yet -- the picker defaults for a multi-campaign ICD and invD2DClientId cannot move it, so the board comes back holding another campaign's reps and the grid guard refuses it. Megan wants the list BEFORE sending the enrollment link, to hold those owners back. --after-hours refuses to start while any office is inside its selling window; the scan also takes gap_alerts' pid lock one office at a time so a tick waits seconds, not the length of a ninety-office run. Read-only: impersonate, read, exit."
     }
   },
   "read_only_standalone": {
