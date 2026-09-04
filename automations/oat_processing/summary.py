@@ -548,6 +548,19 @@ def main(argv=None) -> int:
         # (output/oat-flagged-<date>.json) — NOT the day-cumulative activity log,
         # which over-counted apps already handled since (Megan 2026-08-06).
         snap = _load_flagged_snapshot(date)
+        # NO WALK TODAY → NO POST (2026-09-04). The snapshot file is written by
+        # the walk; on a day the walk never ran — the weekend quiet window, or a
+        # wedged session — there is no file, so every bucket reads empty and this
+        # posts "0 need a number, 0 need a manual text · (none today ✅)" into
+        # Carlos's and Atef's channels. That is a lie: the queue isn't clear, it
+        # just wasn't looked at, and it is exactly the blank board Megan has said
+        # never to post. A file that EXISTS with empty lists is different — the
+        # walk ran and genuinely found nothing to hand a human — and still posts.
+        if not snap:
+            print(f"[report] no walk snapshot for {date} — nothing was walked "
+                  f"today, so there is no to-do list to post. Skipping.",
+                  flush=True)
+            return 0
         # Snapshot entries are {"name","account"} dicts (older ones were bare names);
         # _entries_of in the report tolerates both.
         t_snap = {"nophone": snap.get("nophone", []),
