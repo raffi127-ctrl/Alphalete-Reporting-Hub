@@ -112,25 +112,87 @@ _ONBOARDED_JSON = (Path(__file__).resolve().parents[1] / "gap_alerts"
 
 
 def disposition_channels() -> set:
-    """Slack channel ids owned by a LIVE dispositions enrollment. Best-effort:
-    an unreadable file means this module keeps posting exactly as it did, which
-    is the safe direction — a duplicate board is noise, a board that silently
-    stops is a report nobody notices died."""
+    """Slack channel ids owned by a LIVE dispositions board — from the sign-up
+    file AND from gap_alerts' own hardcoded offices. Best-effort: a read that
+    fails means this module keeps posting exactly as it did, which is the safe
+    direction — a duplicate board is noise, a board that silently stops is a
+    report nobody notices died.
+
+    READING BOTH IS THE POINT (Megan 2026-09-04). This used to read the sign-up
+    JSON alone, so it could only ever see offices that came through the link —
+    and gap_alerts' FIRST office never did: Raf is a hardcoded row in
+    gap_alerts/config.py, and the JSON does not even exist yet. The guard
+    returned an empty set every night and dropped nobody, which is how
+    #alphalete-lvl1-chat got both boards four minutes apart (9/3: 21:04
+    "Knocks & Dispositions — 9:00 PM", 21:08 "Total Knocks — End of Day").
+    Calvin and Jay are wired there too and would have repeated it the day
+    someone flipped them on."""
     out = set()
     try:
         rows = json.loads(_ONBOARDED_JSON.read_text())
     except Exception:                                # noqa: BLE001
-        return out
+        rows = []
     for r in rows:
         if not isinstance(r, dict) or not r.get("enabled", False):
             continue          # wired-but-off offices are not posting yet
         for d in r.get("destinations") or []:
             if d.get("kind") == "slack" and (d.get("channel_id") or "").strip():
                 out.add(d["channel_id"].strip())
+    # The hardcoded half. Imported lazily: this module runs on Lucy 3 and must
+    # not fail to post because a sibling package moved.
+    try:
+        from automations.gap_alerts import config as _gap
+        for cfg in _gap.OFFICES:
+            if not cfg.get("enabled", True):
+                continue      # same rule as the file: off means not posting
+            for d in _gap.destinations(cfg):
+                if d.get("kind") == "slack" and (d.get("channel_id") or "").strip():
+                    out.add(d["channel_id"].strip())
+    except Exception:                                # noqa: BLE001
+        pass
     return out
 
 
+def mirror_collisions(offices: List[Office]) -> List[Office]:
+    """Offices whose board is not duplicated in THEIR channel, but IS duplicated
+    in a channel theirs mirrors into. Reported, never acted on — see below.
+
+    Raf is the live case (2026-09-04). His board here goes to #alphalete-sales
+    and gap_alerts' goes to #alphalete-lvl1-chat: two different rooms, until you
+    remember everything in #alphalete-sales is copied into lvl1
+    (slack_metrics_post.MIRROR_CHANNELS). So lvl1 gets both boards minutes apart
+    — 21:04 "Knocks & Dispositions — 9:00 PM", 21:08 "Total Knocks — End of Day"
+    — while #alphalete-sales gets exactly one and would go EMPTY if this module
+    dropped him.
+
+    Dropping the office is therefore the wrong fix for a mirror collision: it
+    deletes the only copy in the primary room to de-duplicate a copy in the
+    mirror. Raf is in the 9 PM slot because Megan put him there on 2026-08-25
+    ("Raf gets metrics every morning so I feel like we're missing something"),
+    and #alphalete-sales is where every other office's nightly board lands. The
+    real fix is to suppress the MIRROR copy for this one post, which needs a
+    per-call no-mirror path through slack_metrics_post — Megan's call, not a
+    silent one."""
+    try:
+        from automations.shared.slack_metrics_post import mirror_channels
+    except Exception:                                # noqa: BLE001
+        return []
+    taken = disposition_channels()
+    if not taken:
+        return []
+    return [o for o in offices
+            if o.channel_id not in taken
+            and set(mirror_channels(o.channel_id)) & taken]
+
+
 def _drop_enrolled(offices: List[Office]) -> List[Office]:
+    """Offices that still need a board from THIS module.
+
+    Matched on the office's OWN channel: that is the room that would receive
+    two boards, and dropping it removes the duplicate rather than the board. A
+    collision that exists only in a MIRROR is deliberately NOT dropped here —
+    see mirror_collisions() for why removing the office would be the wrong
+    half."""
     taken = disposition_channels()
     if not taken:
         return offices

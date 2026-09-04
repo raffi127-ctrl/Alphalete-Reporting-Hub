@@ -4030,10 +4030,11 @@ AUTOMATED_REPORTS = [
             "afternoon is how a room learns to mute the alert that "
             "matters.\n\n"
             "THE DAY\n"
-            "**\u2022** **Mon\u2013Fri 1:30pm \u2013 8:30pm**\n"
-            "**\u2022** **Saturday 10:00am \u2013 5:00pm** \u2014 its own "
+            "**\u2022** **Mon\u2013Fri 1:30pm \u2013 10:00pm**\n"
+            "**\u2022** **Saturday 10:45am \u2013 6:30pm** \u2014 its own "
             "START, not just its own end: Saturday is the one day the field is "
-            "out in the morning.\n"
+            "out in the morning, and it ends earlier because the field goes in "
+            "earlier.\n"
             "**\u2022** **Sunday** off entirely.\n"
             "The end matters more than the start: once the field stops "
             "knocking EVERY rep reads \u201cinactive 90 min ago\u201d and the "
@@ -4054,16 +4055,17 @@ AUTOMATED_REPORTS = [
         # THE FIELD DAY, not a morning slot (Megan 2026-09-04). With no `time`
         # the Hub falls back to 8:00 AM, so "Needs attention" called this report
         # late from 9am every day for a card whose first tick is 1:30pm — and
-        # listed it on Sunday, when it is off entirely. The window lives in
-        # gap_alerts/run.py: Mon-Fri 1:30pm-8:30pm, Sat 10:00am-5:00pm, Sun
-        # never. Saturday's earlier start is deliberately NOT modelled here (one
-        # card carries one clock) — a Saturday tick that never happens is simply
-        # flagged from 2:30pm instead of 11am, late rather than wrong.
+        # listed it on Sunday, when it is off entirely. THE WINDOW LIVES IN
+        # gap_alerts/config.py (DAY_/SATURDAY_*_HHMM), which is the only copy
+        # the code reads: Mon-Fri 1:30pm-10:00pm, Sat 10:45am-6:30pm, Sunday
+        # never. Saturday's different start is deliberately NOT modelled here
+        # (one card carries one clock) — a Saturday tick that never happens is
+        # flagged from 2:30pm instead of 11:45am, late rather than wrong.
         "schedule": {
             "frequency": "daily",
             "weekdays": [0, 1, 2, 3, 4, 5],   # Mon-Sat; Sunday off
             "time": "1:30 PM",
-            "time_label": "Mon\u2013Fri 1:30\u20138:30pm \u00b7 Sat 10\u20135",
+            "time_label": "Mon\u2013Fri 1:30\u201310pm \u00b7 Sat 10:45\u20136:30",
             "estimated_minutes": 1,
         },
         "checklist": [],
@@ -4661,6 +4663,22 @@ AUTOMATED_REPORTS = [
                 "help": "Prints the headline, every leader's figure against the one the bulletin published, and everything tracked outside the total. No images, no sending.",
                 "module": "automations.override_bulletin.dd_data",
                 "args_fn": lambda: [],
+            },
+            {
+                "label": "Post for Eve's Approval",
+                "icon": "\U0001F4E4",
+                "primary": False,
+                "help": "Builds both pages + the PDF and posts the link in #revision-emails, @-mentioning Eve. Sends NOTHING to the org — it waits for her ✅.",
+                "module": "automations.override_bulletin.review_gate",
+                "args_fn": lambda: ["--post"],
+            },
+            {
+                "label": "Send Now (after Eve's \u2705)",
+                "icon": "\U0001F680",
+                "primary": False,
+                "help": "Checks for Eve's checkmark and, if it's there, sends the full distro. Does nothing until she has approved.",
+                "module": "automations.override_bulletin.review_gate",
+                "args_fn": lambda: ["--check", "--send", "--distro"],
             },
             {
                 "label": "Get This Week's Credico",

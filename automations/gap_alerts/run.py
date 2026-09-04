@@ -23,8 +23,9 @@ THE LOAD IS FENCED, the same four ways the sales-board sweep is:
      collide with the .browser_profile the 4am batch holds;
   2. headless, and one page load per tick -- the card comes from a JSON
      endpoint, not a screenshot, so there is no rendering to wait on;
-  3. it only runs inside the knocking window -- Mon-Fri 1:30pm-8:30pm,
-     Saturday 10:00am-5:00pm, Sunday not at all;
+  3. it only runs inside the knocking window -- Mon-Fri 1:30pm-10:00pm,
+     Saturday 10:45am-6:30pm, Sunday not at all. config.py's DAY_/SATURDAY_
+     *_HHMM are the truth; this line is a summary and has been wrong before;
   4. a pid lock, so a slow tick is SKIPPED rather than stacked. At ~48 runs a
      day an overlapping-run bug becomes 96.
 
