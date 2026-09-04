@@ -251,6 +251,28 @@ def main(argv: Optional[List[str]] = None) -> int:
             retry_args=retry_args if failed_keys else [],
             kind="report",
         )
+        # ...and TELL THE HUB, which is a separate thing (Megan 2026-09-04).
+        # The manifest above is a local JSON file on whichever Lucy ran the
+        # post; the Hub reads the "Hub Activity" sheet and nothing else. From
+        # 2026-08-31 — the first 7 PM post — Raf's post went out every weekday
+        # while `daily-focus-post` never wrote a single Hub row, so the card's
+        # two-phase pill sat on 1/2 amber all week over work that was done.
+        # register_card=False because this is a PHASE of Daily Recruiting
+        # Focus, not a card: auto-registering it would put a second,
+        # permanently-white "daily-focus-post" tile beside the real one.
+        try:
+            from automations.shared import hub_activity
+            if failed_keys and len(failed_keys) == len(posted):
+                _status = "failed"          # nobody got their post
+            elif failed_keys:
+                _status = "partial"         # some offices posted, some didn't
+            else:
+                _status = "success"
+            hub_activity.log_completed(
+                REPORT_ID, "Daily Focus — 7 PM office posts",
+                status=_status, register_card=False)
+        except Exception:   # noqa: BLE001 — reporting must never sink the post
+            pass
 
     if failures:
         print(f"\n{len(failures)} office(s) failed: "
