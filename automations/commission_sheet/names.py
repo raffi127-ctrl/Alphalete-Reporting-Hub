@@ -7,7 +7,7 @@ ways across the DD, the order log and the transfers form: "JD Mascorro" vs
 "LINDA FUENTES" on the other.
 
 The rule throughout: match confidently or not at all. A caller gets an exact
-hit, a clearly-reasoned fuzzy hit, or a miss it has to show Megan — never a
+hit, a clearly-reasoned fuzzy hit, or a miss it has to show JD — never a
 silent guess (her standing "if it's ambiguous, tell me" rule).
 """
 from __future__ import annotations

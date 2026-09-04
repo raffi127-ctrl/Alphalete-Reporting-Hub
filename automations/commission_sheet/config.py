@@ -1,6 +1,6 @@
 """IDs, tab names and column labels for the weekly commission (payroll) run.
 
-Megan's Loom 2026-09-03. Two workbooks are involved:
+JD's Loom 2026-09-03 (his payroll chore, sent to Megan). Two workbooks:
 
   * the WEEK'S commission workbook — a fresh duplicate named "RH <M.D>" (the
     Sunday / week-ending date), holding the numbered workflow tabs plus one

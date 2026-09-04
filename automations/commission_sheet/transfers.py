@@ -1,6 +1,6 @@
 """Step 5 — reconcile `ATT Sales Transfers` against the week's DD.
 
-This is the step Megan calls "the difficult part that takes the most amount of
+This is the step JD calls "the difficult part that takes the most amount of
 time" (Loom 2026-09-03). The form feeds two different things through one tab:
 
   * a REAL TRANSFER — `Your Name` is the rep who should get the credit and
@@ -47,7 +47,7 @@ from automations.commission_sheet.names import (
 APPLY_TRANSFER = "transfer"
 APPLY_BONUS = "bonus"
 PENDING = "pending"        # customer has not activated yet — leave it alone
-REVIEW = "review"          # Megan has to look at this one
+REVIEW = "review"          # JD has to look at this one
 
 
 @dataclass
@@ -74,7 +74,7 @@ class _Grid:
     """A tab's values plus label-based column access.
 
     `values` must start at sheet row 1 so the row numbers reported back are the
-    ones Megan sees in the sheet."""
+    ones JD sees in the sheet."""
 
     def __init__(self, values: List[List[str]], header_row: int, first_data_row: int):
         self.header = [str(c).strip() for c in values[header_row - 1]]
@@ -302,7 +302,7 @@ def apply(found: Dict[str, List[Finding]],
       * each transfer overwrites `REP.Full Name` on its DD rows;
       * each bonus appends one line to the 4b block.
 
-    The transfers tab itself is NOT touched — marking rows PAID stays Megan's
+    The transfers tab itself is NOT touched — marking rows PAID stays JD's
     call, and the form responses are somebody else's data."""
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(workbook_id)
