@@ -85,7 +85,7 @@ STATIONS_GID = 1999003555
 # BOX 11. Headers still found by name inside the range.
 BOXES = {
     "att": {"range": "A5:E14",  "campaign": "B2B AT&T SBS"},
-    "box": {"range": "A31:E42", "campaign": "B2B-BOX-Energy"},
+    "box": {"range": "A30:E41", "campaign": "B2B-BOX-Energy"},  # 9/4: BOX moved up 2 (daily A53 lineup-writer collision)
 }
 LEADER_HDR_RE = re.compile(r"leader", re.I)
 # "Rep #1".."Rep #4" — the trailing digit is what keeps "Rep List" out.
