@@ -32,12 +32,16 @@ CREDS_PATH = CONFIG_DIR / "saraplus-creds-b2b.json"
 PROFILE_DIR = REPO_ROOT / "automations" / "uploaded" / ".saraplus_b2b_profile"
 
 # --- the login verification code ---------------------------------------------
-# SaraPlus emails a code on login; Carlos has it filtered to the reporting
-# inbox so an unattended run can read it (Megan 2026-09-03). The Gmail search
-# is config because nobody has told us what SaraPlus sends FROM -- if the
-# report says it never saw a code, open alphaletereporting@gmail.com, find
-# the real email and tighten this (e.g. 'from:noreply@saraplus.com').
-VERIFY_QUERY = "saraplus OR sara+ newer_than:1d"
+# SaraPlus emails a code on login and it lands in the reporting inbox (Megan
+# 2026-09-03). Read off the real thing on 2026-09-03 -- 174 of them on file,
+# from security.info@saraplus.com, subject "SARA Plus Passcode", body "Your
+# temporary SARA Plus security code is: <6 digits>".
+#
+# BY SENDER, not by the word "saraplus": this inbox also receives the Hub's
+# own commit-summary emails, and those quote code and commit messages that
+# mention SaraPlus all day. A broad text search would eventually read six
+# digits out of one of those and type it in as a passcode.
+VERIFY_QUERY = "from:security.info@saraplus.com newer_than:1d"
 VERIFY_TIMEOUT_S = 180
 VERIFY_POLL_S = 10
 
@@ -49,23 +53,82 @@ BUTTON_LOGIN = "#MainContent_btnLogin"
 
 HUB_PATH = "Reports/ReportingHub.aspx"
 
-# Tabs are clicked BY LABEL (Telerik RadTabStrip renders them as divs with no
-# stable id), and the grid is found by its HEADER ROW, not by index -- the
-# report's columns are read off the header every run.
+# READ OFF THE LIVE PAGE 2026-09-03, in a real browser, with Megan signed in
+# as Carlos. Everything before that was inferred from a Loom screenshot and
+# most of it was wrong.
+#
+# The tab strip is ONE multi-level RadTabStrip (ctl00_MainContent_rtsReportOptions):
+#   level 1: Sales Dashboard | Install Dashboard | Wireless Dashboard | Detail Reports
+#   level 2 (under Detail Reports): Sales Order History | Pending Orders | WSC | ...
+# 'Detail Reports' is a CONTAINER -- its pageView is null and clicking it does
+# nothing on the server. The CHILD is what loads the panel, so that is the
+# only tab this report clicks.
+# HOW THE PANEL IS OPENED: by raising the tab strip's own postback, not by
+# clicking. Captured off the wire on 2026-09-03 by hooking XMLHttpRequest in a
+# real browser while a human clicked the tab:
+#
+#     __EVENTTARGET   = ctl00$MainContent$rtsReportOptions
+#     __EVENTARGUMENT = {"type":0,"index":"3:0"}
+#
+# '3:0' is the HIERARCHICAL index -- Detail Reports (level-1 #3) then Sales
+# Order History (its child #0). An earlier attempt sent '3' on its own and the
+# page came back with no tab strip at all.
+#
+# Clicking is not an option here: patchright evaluates in an isolated world,
+# so neither Telerik's $find nor the page's __doPostBack is reachable, and the
+# child tab is not even in the DOM until its parent is expanded. Setting two
+# hidden fields and submitting the form is plain DOM work that needs none of
+# that. The INDEX IS THE ONE POSITIONAL THING HERE, which is why every run
+# verifies the panel actually loaded rather than trusting it.
+TAB_POSTBACK_TARGET = "ctl00$MainContent$rtsReportOptions"
+TAB_POSTBACK_ARG = '{"type":0,"index":"3:0"}'
+FORM_ID = "frmMaster"
+
+# Kept only as landmarks for page_state's "where am I actually" line -- no
+# longer clicked. 'Detail Reports' is a CONTAINER tab (pageView null, nothing
+# happens on the server) and its child is not even in the DOM until it is
+# expanded, which is why the panel is opened by postback instead.
 TAB_DETAIL_REPORTS = "Detail Reports"
 TAB_SALES_ORDER_HISTORY = "Sales Order History"
+
+# The panel itself. Its presence in the DOM is the honest 'are we there yet' --
+# far better than the tab's rtsSelected class, which reported Sales Order
+# History as selected the whole time the Sales Dashboard was on screen.
+PANEL_ORDER_HISTORY = "MainContent_rpvOrderHistory"
+
+# RadDatePicker base ids on THIS panel. Not the Order Dashboard's
+# rdpOrderDash* -- reading those was how a run believed it was on Sales Order
+# History while looking at the Sales Dashboard.
+FIELD_START = "ctl00_MainContent_rdpOrderHistoryStartDate"
+FIELD_END = "ctl00_MainContent_rdpOrderHistoryEndDate"
+
+# Customer Type. DEFAULTS TO 'Residential' -- so leaving it alone quietly
+# returns residential orders and finds no B2B customers at all. Carlos:
+# "for the customer type, we would click on both". Selecting it AUTOPOSTS BACK.
+COMBO_CUSTOMER_TYPE = "ctl00_MainContent_rcbCustomerType_SalesOrderHistory"
 CUSTOMER_TYPE_BOTH = "Both"
 
-# Header labels as the grid writes them. Anything missing here is a loud error,
-# never a silent index shift.
-COL_REP = "User Name"
-COL_BUSINESS = "Business Name"
+SUBMIT = "#MainContent_btnUpdateOrderHistory"
+
+# RadGrid renders its header and its rows as TWO tables. Reading 'the table
+# whose first row holds the headers' finds only the header table, which has no
+# data in it.
+GRID_HEADER = "ctl00_MainContent_rgOrderHistory_ctl00_Header"
+GRID_DATA = "ctl00_MainContent_rgOrderHistory_ctl00"
+
+# Column labels. 146 columns come back and the Report View toggle only changes
+# which are VISIBLE -- every one stays in the DOM, so the phone is readable
+# without opening a single customer card. That is the whole reason this report
+# does not click 'View Customer' the way the Loom did: same number, no page
+# load per customer.
 COL_ORDER_ID = "Order ID"
 COL_ORDER_DATE = "Order Date"
-REQUIRED_COLUMNS = [COL_ORDER_ID, COL_ORDER_DATE, COL_REP, COL_BUSINESS]
-
-# On the View Customer page, the label that sits beside the number we want.
-PRIMARY_PHONE_LABEL = "Primary Phone"
+COL_REP = "User Name"
+COL_BUSINESS = "Business Name"
+COL_CUSTOMER = "Customer Name"
+COL_PHONE = "Phone"
+REQUIRED_COLUMNS = [COL_ORDER_ID, COL_ORDER_DATE, COL_REP, COL_BUSINESS,
+                    COL_CUSTOMER, COL_PHONE]
 
 GRID_TIMEOUT_MS = 90_000
 NAV_TIMEOUT_MS = 60_000

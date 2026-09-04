@@ -131,42 +131,55 @@ class TestTexted(unittest.TestCase):
 
 
 class TestGridParsing(unittest.TestCase):
-    def _tables(self, headers=None, rows=None):
-        return [{"index": 0, "headers": ["nav", "junk"], "rows": [["a", "b"]]},
-                {"index": 1, "headers": headers or HEADERS,
-                 "rows": rows if rows is not None else ROWS}]
+    """Columns by LABEL. Header and rows arrive as separate tables (RadGrid
+    renders them that way), so parse_grid takes the two apart."""
 
-    def test_columns_are_found_by_label_not_position(self):
-        got = sara.parse_tables(self._tables())
+    # Trimmed from the live grid 2026-09-03 — the real one has 146 columns.
+    HEADERS = ["", "", "", "Order ID", "Order Date", "Order Time", "Territory",
+               "User Name", "Business Name", "Customer Name", "Phone"]
+    ROWS = [
+        ["", "View Customer", "Modify", "DSI270232273", "9/02/2026", "13:11:25",
+         "DFW", "RODOLFO BAZAN", "SLP AUTO REPAIR",
+         "FERNANDO RAMIREZ TOVANCHE", "469-674-9872"],
+        ["", "View Customer", "Modify", "DSI270273730", "9/02/2026", "15:01:02",
+         "DFW", "RODOLFO BAZAN", "", "Blanca Moreno", "214-694-0170"],
+    ]
+
+    def test_columns_are_found_by_label(self):
+        got = sara.parse_grid(self.HEADERS, self.ROWS)
         self.assertEqual(len(got), 2)
-        self.assertEqual(got[0]["User Name"], "FERNANDO SALAZAR")
-        self.assertEqual(got[0]["Business Name"],
-                         "BOTANICA Y DULCERIA SAGRADO CORAZON DE JESUS")
-        self.assertEqual(got[1]["Order ID"], "DSI269961203")
+        self.assertEqual(got[0]["User Name"], "RODOLFO BAZAN")
+        self.assertEqual(got[0]["Business Name"], "SLP AUTO REPAIR")
+        self.assertEqual(got[0]["Phone"], "469-674-9872")
+        self.assertEqual(got[0]["Customer Name"], "FERNANDO RAMIREZ TOVANCHE")
 
     def test_a_reordered_grid_still_reads_correctly(self):
-        """The whole point of by-label lookup: SaraPlus moves a column and the
-        rep is still the rep."""
-        headers = ["", "", "Order Date", "Business Name", "Order ID",
-                   "User Name", "Order Time"]
-        rows = [["View Customer", "Modify", "9/01/2026", "BABER GAUT SHOPS",
-                 "DSI269961203", "JACOB ISAIAH ORTEGA", "15:01:02"]]
-        got = sara.parse_tables(self._tables(headers, rows))
-        self.assertEqual(got[0]["User Name"], "JACOB ISAIAH ORTEGA")
-        self.assertEqual(got[0]["Business Name"], "BABER GAUT SHOPS")
+        """The point of by-label lookup: SaraPlus moves a column and the rep
+        is still the rep. 146 columns is a lot of room to shift."""
+        heads = ["Phone", "Business Name", "Order ID", "Customer Name",
+                 "User Name", "Order Date"]
+        rows = [["469-674-9872", "SLP AUTO REPAIR", "DSI270232273",
+                 "FERNANDO RAMIREZ TOVANCHE", "RODOLFO BAZAN", "9/02/2026"]]
+        got = sara.parse_grid(heads, rows)
+        self.assertEqual(got[0]["User Name"], "RODOLFO BAZAN")
+        self.assertEqual(got[0]["Phone"], "469-674-9872")
 
     def test_a_missing_column_raises_instead_of_guessing(self):
-        headers = [h for h in HEADERS if h != "Business Name"]
-        with self.assertRaises(sara.SaraError):
-            sara.parse_tables(self._tables(headers, [r[:9] for r in ROWS]))
+        heads = [h for h in self.HEADERS if h != "Phone"]
+        with self.assertRaises(sara.SaraError) as cm:
+            sara.parse_grid(heads, [r[:10] for r in self.ROWS])
+        self.assertIn("Phone", str(cm.exception))
+
+    def test_a_residential_row_keeps_its_blank_business(self):
+        """Customer Type is 'Both', so residential orders come back too —
+        blank business, real customer. They are not dropped."""
+        got = sara.parse_grid(self.HEADERS, self.ROWS)
+        self.assertEqual(got[1]["Business Name"], "")
+        self.assertEqual(got[1]["Customer Name"], "Blanca Moreno")
 
     def test_footer_and_spacer_rows_are_dropped(self):
-        rows = ROWS + [[], ["", "", "", "", "", "Totals", "", "", "", ""]]
-        self.assertEqual(len(sara.parse_tables(self._tables(None, rows))), 2)
-
-    def test_row_index_is_kept_for_the_view_customer_click(self):
-        got = sara.parse_tables(self._tables())
-        self.assertEqual([r["_row"] for r in got], [0, 1])
+        rows = self.ROWS + [[], ["", "", "", "", "", "", "", "Totals", "", "", ""]]
+        self.assertEqual(len(sara.parse_grid(self.HEADERS, rows)), 2)
 
 
 class TestSlackMessage(unittest.TestCase):

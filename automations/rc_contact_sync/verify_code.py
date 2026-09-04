@@ -31,10 +31,15 @@ from typing import List, Optional, Tuple
 from automations.shared import email_ingest as _ing
 
 # Gmail search, not IMAP's: we know this mailbox is Gmail, and X-GM-RAW lets
-# the query say what a human would type in the search box. Kept broad on
-# purpose -- matching the SENDER would be tighter, but nobody has told us what
-# SaraPlus sends from, and a wrong sender means silently never finding a code.
-GMAIL_QUERY = "saraplus OR sara+ newer_than:1d"
+# the query say what a human would type in the search box.
+#
+# BY SENDER. Read off the real mail 2026-09-03: security.info@saraplus.com,
+# subject "SARA Plus Passcode", body "Your temporary SARA Plus security code
+# is: <6 digits>". A broad text search for "saraplus" also matches the Hub's
+# own commit-summary emails into this same inbox, which quote commit messages
+# mentioning SaraPlus all day -- and one of those would eventually give up six
+# digits that get typed in as a passcode.
+GMAIL_QUERY = "from:security.info@saraplus.com newer_than:1d"
 
 # The code itself. SaraPlus's exact wording is unknown, so the labelled forms
 # are tried first and a bare digit-run only as a fallback -- that ordering is

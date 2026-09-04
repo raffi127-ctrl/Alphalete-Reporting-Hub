@@ -21,9 +21,9 @@ Module: `automations/rc_contact_sync/` · Hub card: **B2B Customer Contacts
 1. **SaraPlus** (Carlos's login) → Analytics → Detail Reports → **Sales Order
    History** → date range set to yesterday on both ends, Customer Type
    **Both**, Submit.
-2. For each order it takes the **rep** (`User Name` column) and the **business**
-   (`Business Name` column), then clicks that row's **View Customer** and reads
-   the **Primary Phone** and the customer's name off the card.
+2. Each row gives everything: the **rep** (`User Name`), the **business**
+   (`Business Name`), the **customer** (`Customer Name`) and the **phone**
+   (`Phone`). No "View Customer" click — see below.
 3. **RingCentral** (signed in as **Taylor**) → one contact in her address
    book per customer:
    `Company` = business name · phone = primary phone (Mobile) ·
@@ -183,6 +183,43 @@ The log also separates "texted but never wrapped up" from "never contacted at
 all" (it prints how many other messages exist with that customer). The post
 treats both as owed a follow-up; the log is there for when a rep says "but I
 did text them".
+
+---
+
+## How the SaraPlus page actually behaves
+
+Read off the live page on 2026-09-03, in a real browser, with Megan signed in
+as Carlos. Nearly all of this contradicts what the Loom appeared to show, and
+every item cost a failed run to find:
+
+- **The panel is opened by POSTBACK, not by clicking.** "Detail Reports" is a
+  *container* tab (its `pageView` is null — nothing happens on the server), and
+  its child isn't in the DOM until the parent is expanded. Meanwhile patchright
+  evaluates in an isolated world, so Telerik's `$find` and the page's
+  `__doPostBack` are both unreachable. A real mouse click sets Telerik's
+  `rtsClicked` class and changes nothing else, so it reads as working. The
+  report therefore sets `__EVENTTARGET` / `__EVENTARGUMENT` and submits the
+  form — values captured off the wire from a human's click:
+  `ctl00$MainContent$rtsReportOptions` / `{"type":0,"index":"3:0"}`.
+  That `3:0` is a hierarchical index and the one positional thing here, which
+  is why every run verifies `MainContent_rpvOrderHistory` actually appeared.
+- **Customer Type defaults to `Residential`.** Leave it and the report finds no
+  B2B customers and looks like a quiet day. It is set to `Both` and re-checked
+  after the selection, which **autoposts back** — that re-render also resets
+  the dates, so they are written again afterwards.
+- **No `View Customer` needed.** The grid returns ~146 columns and the Report
+  View toggle only changes which are *visible*; every column stays in the DOM,
+  `Phone` included. One page load for the whole day instead of one per
+  customer.
+- **The grid is two tables.** RadGrid renders its header (`…_ctl00_Header`)
+  separately from its rows (`…_ctl00`). "The table whose first row holds the
+  headers" finds the header table, which has no data in it.
+- **Submit is an async postback.** `networkidle` returns before a 146-column
+  grid has rendered, so the run waits for the grid element itself — otherwise
+  a real day reads as empty.
+- **Login lands in two different places.** A remembered browser lands on
+  `DealerPages/`; a login that just cleared the passcode challenge lands on
+  `Reports/ReportingHub.aspx`. Both are accepted.
 
 ---
 
