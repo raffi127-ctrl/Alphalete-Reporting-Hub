@@ -21,7 +21,13 @@ from __future__ import annotations
 # --- workbooks -------------------------------------------------------------
 WORKBOOK_ID = "1nIa_S-EX20ejQPHKgTxgiGs8t0G1VpAd4a26lx1Od1Q"   # RH 8.30 Practice
 ALL_IN_ONE_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"  # All in One - Raf
-COMMISSION_FOLDER_ID = "1-90sJRYFH3HbIuhAAS0O8kCOTrAPZ8lU"      # weekly copies live here
+COMMISSION_FOLDER_ID = "1-90sJRYFH3HbIuhAAS0O8kCOTrAPZ8lU"      # live weekly copies
+#: Raf's folder — finished weeks get MOVED here. Step 1 keeps the two most
+#: recent workbooks in COMMISSION_FOLDER_ID and archives everything older
+#: (Megan, 2026-09-04). A move, never a copy or a delete.
+ARCHIVE_FOLDER_ID = "1EykOnmOmKCmCHUKecj1J9i6fcRiTx8pL"
+#: How many workbooks stay in the live folder. JD: "I just want to keep the last two."
+KEEP_RECENT = 2
 
 # --- tabs ------------------------------------------------------------------
 TAB_DD = "1. Paste the DD"
