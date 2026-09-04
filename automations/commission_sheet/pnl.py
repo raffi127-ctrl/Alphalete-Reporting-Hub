@@ -18,6 +18,10 @@ What this does, per JD's Loom 2026-09-03:
 
 What it deliberately does NOT do:
   * write `Profit/Loss` — that column is a live `=SUM(DEn)-(DFn*1.12)` formula
+  * run before JD has signed off. This is the first step that writes OUTSIDE
+    the week's workbook — into the year P&L everyone reads — so it gates on
+    JD's tick on the review post (see notify.py). `--ungated` skips that, for
+    a dry run against a sandbox.
   * clear or blank ANY cell. The week's block already carries JD's hand-typed
     Partner Pay / Chef / Food Cost lines, which the commission PNL knows nothing
     about; a "clean rebuild" of the block would silently delete them. Only cells
@@ -314,6 +318,8 @@ def main(argv=None) -> int:
     ap.add_argument("--write", action="store_true", help="apply (default: dry run)")
     ap.add_argument("--hide-inactive", action="store_true",
                     help="afterwards, hide every row marked N")
+    ap.add_argument("--ungated", action="store_true",
+                    help="skip JD's sign-off check (sandbox use only)")
     args = ap.parse_args(argv)
 
     plan = analyze(workbook_id=args.workbook)
@@ -321,6 +327,15 @@ def main(argv=None) -> int:
     if not args.write:
         print("\n(dry run — nothing written; add --write to apply)")
         return 0
+    if not args.ungated:
+        from automations.commission_sheet.notify import (NotApproved,
+                                                         require_approval)
+        try:
+            require_approval(plan.week)
+        except NotApproved as e:
+            print(f"\nBLOCKED — {e}")
+            return 2
+        print(f"\n✓ JD signed off WE {plan.week:%m/%d/%y}")
     done = apply(plan)
     print(f"\nWrote {done['cells']} cell(s) for {done['reps']} rep(s); "
           f"flipped {done['flips']} to Y.")

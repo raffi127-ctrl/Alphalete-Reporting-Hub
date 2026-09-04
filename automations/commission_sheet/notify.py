@@ -23,11 +23,18 @@ Re-running is safe. A post for a week that already has one is not duplicated —
 the title carries "WE MM/DD/YY", which is what makes it unique and what lets a
 later run find it without either run recording anything.
 
-NOT A GATE, for now. `--check` below reads whether JD has ticked the post, but
-nothing consults it: no step refuses to run without his tick. It exists because
-step 11 (entering payroll in Apex) is the thing that will eventually want
-gating, and reading reactions is the part worth having ready. Until something
-actually calls it, treat this module as a notification.
+WHERE IT SITS, AND WHY THERE (Megan, 2026-09-04). The post goes up once step 8
+is done, and steps 10 and 11 will not run until JD ticks it. That line is not
+arbitrary: everything through step 8 is contained in the week's OWN workbook and
+costs nothing to redo, while step 10 writes into the year P&L and step 11 enters
+real payroll in Apex. Those two are the first that reach outside the workbook,
+so they are the two worth holding.
+
+    is_approved(week)      -> bool
+    require_approval(week) -> raises NotApproved
+
+`pnl.py --write` calls it. Nothing before step 10 does, deliberately — gating
+the reset or the DD fill would just make a redoable step annoying.
 """
 from __future__ import annotations
 
@@ -128,13 +135,37 @@ def post(week: dt.date, workbook_id: str = C.WORKBOOK_ID,
     return top["ts"]
 
 
+class NotApproved(RuntimeError):
+    """Raised when a step that writes outside the workbook runs before JD ticks."""
+
+
+def is_approved(week: dt.date, channel: str = REVIEW_CHANNEL) -> bool:
+    """Has JD ticked this week's post? False if there is no post at all —
+    absence of a review is not approval."""
+    msg = _find_post(week, channel)
+    return bool(msg and _approver_of(msg))
+
+
+def require_approval(week: dt.date, channel: str = REVIEW_CHANNEL) -> None:
+    """Gate for steps 10 and 11. Raises unless JD has ticked the week's post."""
+    msg = _find_post(week, channel)
+    if not msg:
+        raise NotApproved(
+            f"No review post for WE {week_label(week)} — run "
+            f"`python -m automations.commission_sheet.notify --post` and wait "
+            f"for {', '.join(NOTIFY.values())} to tick it.")
+    if not _approver_of(msg):
+        got = [f":{r['name']}:" for r in msg.get("reactions", [])]
+        raise NotApproved(
+            f"WE {week_label(week)} is posted but not ticked by "
+            f"{', '.join(NOTIFY.values())} yet"
+            + (f" (reactions so far: {', '.join(got)})" if got else "")
+            + ". This step writes outside the workbook, so it waits.")
+
+
 def check(week: dt.date, workbook_id: str = C.WORKBOOK_ID,
           channel: str = REVIEW_CHANNEL) -> int:
-    """0 if JD has ticked the post, 1 otherwise.
-
-    NOTHING CALLS THIS TODAY — no step refuses to run without his tick. It is
-    here for whenever the Apex entry wants gating; until then it is a way to
-    ask "has he looked at it yet", not a control."""
+    """0 if JD has ticked the post, 1 otherwise. Steps 10 and 11 gate on this."""
     msg = _find_post(week, channel)
     if not msg:
         print(f"— no review post found for WE {week_label(week)}. Run --post first.")
@@ -188,7 +219,7 @@ def main(argv=None) -> int:
     ap.add_argument("--channel", default=REVIEW_CHANNEL)
     ap.add_argument("--post", action="store_true", help="post it")
     ap.add_argument("--check", action="store_true",
-                    help="has JD ticked the post? (reports only — gates nothing)")
+                    help="has JD ticked the post? steps 10-11 gate on this")
     args = ap.parse_args(argv)
 
     week = args.week or _last_sunday()
