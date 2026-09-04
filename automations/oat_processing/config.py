@@ -70,6 +70,29 @@ MAX_PER_RUN = int(os.environ.get("OAT_MAX_PER_RUN", "60"))
 # the end. The wrapper's own MAX_RUN_S kill is the real time guarantee.
 MAX_TOUCH_PER_RUN = int(os.environ.get("OAT_MAX_TOUCH_PER_RUN", "300"))
 
+# How many consecutive blank/already-seen reads end the walk. A send or a remove
+# re-renders the ATS list, and for a moment the "current applicant" reads back
+# blank or as the person we just handled — so the strikes that follow a MUTATION
+# are measuring a re-render, not an empty queue.
+#
+# WHY (2026-09-04): with the queues finally walked end to end, the small-queue
+# case exposed this. Seven walks in Carlos's office ended
+# "no fresh applicants (4 blank/seen reads) — end of queue after 1 processed"
+# against a queue of 8 — the walk sent one person and mistook the re-render for
+# the end. The pager was fine (zero "no next control" all day). Eleven of that
+# day's twenty-nine walks did 1-4 people instead of 8. Not fatal — the next tick
+# ten minutes later picked up the rest, which is why the queue still drained —
+# but most of a pass was wasted.
+#
+# The budget is raised ONLY after a mutation, deliberately. The tight default
+# guards a genuinely empty queue, and the allowlist case needs a much bigger one
+# because Rafael's office (11280) fronts its 777-email queue with nameless
+# AD-receipt records the walk must page through.
+END_OF_QUEUE_STRIKES = int(os.environ.get("OAT_END_OF_QUEUE_STRIKES", "3"))
+POST_MUTATION_STRIKES = int(os.environ.get("OAT_POST_MUTATION_STRIKES", "8"))
+# Settle time between blank reads while the list is re-rendering after a mutation.
+POST_MUTATION_SETTLE_MS = int(os.environ.get("OAT_POST_MUTATION_SETTLE_MS", "700"))
+
 # --- Multi-office namespacing (2026-08-26) --------------------------------- #
 # The push works more than one office now (Carlos 11580, Atef 23467 — see
 # automations/applicant_push/offices.py). Every per-day artefact this module

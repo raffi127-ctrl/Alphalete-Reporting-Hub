@@ -2928,6 +2928,10 @@ def run_walk(page, live: bool = False, limit: int = None,
     counts: dict = {}
     seen: set = set()          # applicant keys already handled this run
     no_progress = 0            # consecutive already-seen reads (end guard)
+    # Was the LAST applicant we handled a send/remove? If so, the blank reads that
+    # follow are the ATS list re-rendering, not an empty queue — see
+    # config.POST_MUTATION_STRIKES.
+    after_mutation = False
     # CURRENT snapshot of who's still flagged (needs a human) THIS walk — the
     # noon/4pm Slack post reads this, NOT the day-cumulative activity log, so the
     # counts match what's actually in the queue right now (Megan 2026-08-06: the
@@ -2949,17 +2953,34 @@ def run_walk(page, live: bool = False, limit: int = None,
             # records, and the 4-strike guard called that "end of queue after 0
             # processed" — twice (2026-08-30). Give the walk room to pass them;
             # a real end still trips the guard, just later.
-            _strikes = 40 if _ONLY_NAMES is not None else 3
+            if _ONLY_NAMES is not None:
+                _strikes = 40
+            elif after_mutation:
+                # We just sent or removed someone; the list is re-rendering and
+                # the current-applicant read comes back blank or as the person we
+                # just handled. Reading that as "the queue ended" cost seven of
+                # Carlos's walks on 2026-09-04 — each stopped after ONE applicant
+                # against a queue of eight.
+                _strikes = getattr(config, "POST_MUTATION_STRIKES", 8)
+            else:
+                _strikes = getattr(config, "END_OF_QUEUE_STRIKES", 3)
             if no_progress > _strikes:
-                _log(f"[oat] no fresh applicants ({no_progress} blank/seen reads) "
-                     f"— end of queue after {processed} processed")
+                _log(f"[oat] no fresh applicants ({no_progress} blank/seen reads"
+                     + (" after a mutation" if after_mutation else "")
+                     + f") — end of queue after {processed} processed")
                 break
             if not advance_to_next(page):
                 _log(f"[oat] no next control — end of queue after "
                      f"{processed} processed")
                 break
+            if after_mutation:
+                # Give the re-render room before looking again, or the extra
+                # strikes just burn through at full speed and buy nothing.
+                page.wait_for_timeout(
+                    getattr(config, "POST_MUTATION_SETTLE_MS", 700))
             continue
         no_progress = 0
+        after_mutation = False   # we reached a fresh applicant; re-render is over
         seen.add(key)
         # OPTIONAL ALLOWLIST (OAT_ONLY_NAMES=/path/to/names.txt, one name per
         # line). When set, every applicant NOT on the list is skipped without a
@@ -3042,6 +3063,9 @@ def run_walk(page, live: bool = False, limit: int = None,
         # of truth for what "settled" means.
         if _SETTLED_SKIPS == _skips_before:
             worked += 1
+        # The next few reads will land mid-re-render — widen the end-of-queue
+        # guard until we reach a fresh applicant again.
+        after_mutation = outcome in MUTATIONS
         # Throttle live mutations (a controlled test uses --max-actions 1).
         if live and outcome in MUTATIONS:
             actions += 1
