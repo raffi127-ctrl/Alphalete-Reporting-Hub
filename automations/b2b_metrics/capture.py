@@ -313,8 +313,31 @@ def _sliced_url(o: B2BOffice, view_key: str, today: dt.date = None) -> str:
     from urllib.parse import quote
     field = meta.get("filter_field", OWNER_FIELD)
     value = _tableau_filter_value(o.slice_value(field))
-    base = o.view_url(view_key).split("?")[0]
-    url = "{}?{}={}".format(base, quote(field), quote(value, safe="\\"))
+    # KEEP the view URL's own filters, drop only `:iid` (2026-09-04).
+    #
+    # This used to be a bare `.split("?")[0]`, which threw away EVERY query
+    # param. That was fine while a sliced view was always a bare TEAM url whose
+    # only param was :iid — but it makes an all-team base view unusable as a
+    # per-office override: CHURNRATES needs `Product Type (Broken Out)` in the
+    # URL to say which product, and that param was being deleted a line before
+    # the slice was appended, so the view drew whatever product it was saved on.
+    #
+    # Why that matters now: Jamis's churn renders BLANK because
+    # CarlosTEAMWireless returns nothing for his Owner & Office (proven
+    # 2026-09-04 — blank with the crop and blank without it, while his numbers
+    # fill fine on Carlos's captainship tab from a different view). The fix is
+    # the all-team view + a product param + his owner slice, and all three have
+    # to survive into the final URL.
+    #
+    # `:iid` stays dropped on purpose — it is a tab index, not a filter, and
+    # carrying a stale one lands the capture on the wrong dashboard tab.
+    _raw = o.view_url(view_key)
+    _base, _, _qs = _raw.partition("?")
+    _keep = [p for p in _qs.split("&")
+             if p and not p.startswith(":iid=")]
+    url = "{}?{}{}={}".format(
+        _base, ("&".join(_keep) + "&") if _keep else "",
+        quote(field), quote(value, safe="\\"))
     if week_field:
         url = _with_week(url, week_field, today,
                          meta.get("week_format", "mdy"))

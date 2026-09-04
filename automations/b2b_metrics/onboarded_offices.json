@@ -35,7 +35,9 @@
       "b2b_customer_churn": 6,
       "b2b_order_log_att": 7
     },
-    "per_office_views": {},
+    "per_office_views": {
+      "b2b_churn_wireless": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=WIRELESS"
+    },
     "machine": "Lucy 2",
     "campaign": "",
     "notes": "",

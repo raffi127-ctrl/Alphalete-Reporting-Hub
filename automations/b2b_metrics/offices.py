@@ -381,7 +381,19 @@ _ONBOARDED_FILE = _Path(__file__).with_name("onboarded_offices.json")
 # onboarding report key -> B2B view_key it overrides (only the cleanly-mapped
 # ones; a single churn URL can't drive the 3 product views, so churn/order-log
 # overrides are left for a manual view_overrides edit and flagged in EXTRA).
-_B2B_VIEW_FIELD = {"b2b_sales": "sales_metrics", "b2b_activation": "activation_rate"}
+_B2B_VIEW_FIELD = {"b2b_sales": "sales_metrics", "b2b_activation": "activation_rate",
+                   # The three churn keys ARE cleanly mapped — one owner-facing
+                   # key per product view, so the old "a single churn URL can't
+                   # drive the 3 product views" caveat never applied to them.
+                   # Leaving them unmapped meant an onboarded office had no way
+                   # to point churn anywhere but the shared team view, which is
+                   # what stranded Jamis (2026-09-04): CarlosTEAMWireless returns
+                   # nothing for his Owner & Office, so his board rendered blank
+                   # every morning while his numbers sat healthy on Carlos's
+                   # captainship tab.
+                   "b2b_churn_wireless": "churn_wireless",
+                   "b2b_churn_int": "churn_int",
+                   "b2b_churn_air": "churn_air"}
 
 # Owner-facing B2B ReportKind keys -> the internal thread item ids they include.
 # Several owner concepts bundle multiple sections (Activation = the rate chart +
@@ -471,7 +483,15 @@ def _merge_onboarded() -> None:
                 channel_name=r.get("channel_name", ""), sheet_id=r.get("sheet_id", ""),
                 **_tabs,
                 owner_office=r.get("owner_office", ""),
-                view_overrides=overrides, channel_plans=_cp)
+                view_overrides=overrides,
+                # An onboarded override is an ALL-TEAM base view, not a saved
+                # slice of one person — so it still needs ?<field>=<owner>
+                # appended, or the office would post the whole org's table.
+                # Harmless for an override that IS already personal: re-slicing
+                # on the same value changes nothing (the reasoning
+                # slice_overrides was written on for Carlos's CarlosEXP).
+                slice_overrides=frozenset(overrides),
+                channel_plans=_cp)
             ex = {"thresholds": r.get("thresholds", {}), "notes": r.get("notes", "")}
             if unmapped:
                 ex["_unmapped_views"] = unmapped   # need a manual view_overrides edit
