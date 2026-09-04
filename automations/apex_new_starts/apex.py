@@ -88,16 +88,55 @@ LABELS: Dict[str, tuple] = {
     "pay_state": ("state working in",),
     "rate": ("rate of pay",),
     "department": ("department",),
-    # --- stage two: the employee's own record (NOT yet captured) ------------
-    "address1": ("address 1", "address line 1", "street address", "address"),
-    "address2": ("address 2", "address line 2", "apt", "unit", "suite"),
+    # --- stage two: 'User Profile & Account' on the employee's record -------
+    # Confirmed off a real record (Andrea Herrera, 2026-09-03). Note that
+    # 'Street Address' and 'Street Address 2' are separate boxes AND so is
+    # 'Apt/PO Box' -- three of them, which is why matching is exact-first.
+    "dob": ("date of birth",),
+    "gender": ("gender",),
+    "address1": ("street address",),
+    "apt": ("apt/po box",),
+    "address2": ("street address 2",),
     "city": ("city",),
-    "state": ("home state", "state"),
-    "zip": ("zip", "zip code", "postal code", "postal"),
-    "dob": ("birth date", "date of birth", "dob", "birthdate"),
-    "email": ("personal email", "email address", "e-mail"),
-    "phone": ("cell phone", "mobile phone", "home phone", "phone number",
-              "phone"),
+    "state": ("state",),
+    "zip": ("zip code",),
+    "country": ("country",),
+    "home_phone": ("home phone",),
+    "mobile_phone": ("mobile phone",),
+}
+
+# STAGE TWO lives behind the 'User Profile & Account' tab of a saved employee.
+# The record has three tabs: Employment Record, User Profile & Account, and Tax
+# & Bank Information -- and the Social is on that THIRD one, which nobody has
+# captured and which this report would not type into anyway.
+STAGE_TWO_TAB = "User Profile & Account"
+
+# WHICH PHONE BOX. The record has Home Phone and Mobile Phone, and the I-9 asks
+# for one number without saying which it is. The existing rows put it in Home
+# Phone (Andrea Herrera's reads there), so this follows the office's own habit
+# rather than inventing a second convention -- one line to flip if Megan wants
+# these in Mobile instead.
+PHONE_FIELD = "home_phone"
+
+# The I-9 writes a two-letter state ('TX'); this dropdown holds full names
+# ('Texas'). Selecting 'TX' would select nothing at all.
+STATE_NAMES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
+    "CA": "California", "CO": "Colorado", "CT": "Connecticut",
+    "DE": "Delaware", "DC": "District of Columbia", "FL": "Florida",
+    "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois",
+    "IN": "Indiana", "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky",
+    "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+    "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota",
+    "MS": "Mississippi", "MO": "Missouri", "MT": "Montana",
+    "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire",
+    "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio",
+    "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania",
+    "PR": "Puerto Rico", "RI": "Rhode Island", "SC": "South Carolina",
+    "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah",
+    "VT": "Vermont", "VA": "Virginia", "WA": "Washington",
+    "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
 }
 
 # Boxes on that form this report leaves exactly as it finds them:
@@ -109,7 +148,12 @@ LABELS: Dict[str, tuple] = {
 #   Divisions     already holds 'General', and the form's own note says a
 #                 division is what puts them on the payroll -- already right.
 LEAVE_ALONE = ("office", "status", "salary", "time clock", "require break",
-               "divisions")
+               "divisions",
+               # stage two:
+               "country",          # already 'United States'
+               "user name",        # read-only text on the saved record
+               "override the user's password",   # a checkbox, and a password
+               "send password reset")            # a button that MAILS someone
 
 # WHAT THIS OFFICE PUTS IN THE BOXES THAT NO FORM ANSWERS (Megan, 2026-09-03).
 # The same for every new start, so they are settings, not data: a new hire's I-9
@@ -144,7 +188,10 @@ SECURITY_ROLE = "Sales Rep"
 # security role, 2026-09-03). Kept, empty, because the machinery that reports
 # unanswered fields is what should carry the NEXT one -- stage two is not
 # captured yet, and its fields will land here first.
-UNANSWERED = ()
+# 'Gender' is required on the employee profile and is on NO form this report
+# reads -- the I-9 does not ask, and it is not something to infer from a name.
+# The operator picks it, like the Social.
+UNANSWERED = ("gender",)
 
 USERNAME_IS_EMAIL = True
 
@@ -319,7 +366,14 @@ class PasswordChangeRequired(RuntimeError):
 
 # ------------------------------------------------------------- field finding
 
-_FIND_JS = """(labels) => {
+# Label matching runs in TWO passes: exact first, then substring. Stage two
+# forced this. 'Street Address' and 'Street Address 2' sit one above the other,
+# so a substring match on 'street address' hits both, reads as ambiguous, and
+# fills neither -- while an exact match on the label's text (asterisk and
+# padding stripped) lands on exactly one. The substring pass is still there
+# underneath for labels we only half know.
+_FIND_JS = r"""(args) => {
+  const labels = args.labels, exact = args.exact;
   const out = [];
   const seen = new Set();
   const vis = el => {
@@ -335,10 +389,13 @@ _FIND_JS = """(labels) => {
               id: el.id || '', visible: vis(el),
               readonly: el.hasAttribute('readonly') || el.disabled === true});
   };
+  const norm = t => t.replace(/\*/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const hit = t => exact ? labels.some(l => norm(t) === l)
+                         : labels.some(l => norm(t).includes(l));
   for (const el of document.querySelectorAll('label')) {
     const t = (el.innerText || '').trim().toLowerCase();
     if (!t) continue;
-    if (!labels.some(l => t.includes(l))) continue;
+    if (!hit(t)) continue;
     let f = el.htmlFor ? document.getElementById(el.htmlFor) : null;
     if (!f) f = el.querySelector('input,select,textarea');
     if (!f) {                       // label above/beside its box
@@ -351,12 +408,14 @@ _FIND_JS = """(labels) => {
     }
     if (f) push(f, 'label', t);
   }
-  for (const el of document.querySelectorAll('input,select,textarea')) {
-    const attrs = [el.getAttribute('aria-label'), el.getAttribute('placeholder'),
-                   el.getAttribute('name'), el.id].filter(Boolean)
-                  .join(' ').toLowerCase();
-    if (labels.some(l => attrs.includes(l.replace(/ /g, '')) || attrs.includes(l)))
-      push(el, 'attr', attrs.slice(0, 60));
+  if (!exact) {
+    for (const el of document.querySelectorAll('input,select,textarea')) {
+      const attrs = [el.getAttribute('aria-label'), el.getAttribute('placeholder'),
+                     el.getAttribute('name'), el.id].filter(Boolean)
+                    .join(' ').toLowerCase();
+      if (labels.some(l => attrs.includes(l.replace(/ /g, '')) || attrs.includes(l)))
+        push(el, 'attr', attrs.slice(0, 60));
+    }
   }
   return out;
 }"""
@@ -381,18 +440,21 @@ def find_field(page, semantic: str) -> Optional[dict]:
     the caller reports it -- the alternative is putting a home address in an
     apartment box on somebody's payroll record.
     """
-    for label in LABELS.get(semantic, ()):
-        hits = [h for h in page.evaluate(_FIND_JS, [label])
-                if h["visible"] and not h["readonly"]
-                and not (h["tag"] == "input"
-                         and (h["type"] or "").lower() in NON_TEXT_TYPES)]
-        # A more specific later label ('address 2') can also match an earlier
-        # broad one; take the first wording that lands on exactly one box.
-        if len(hits) == 1:
-            hit = dict(hits[0])
-            hit["semantic"] = semantic
-            hit["matched_label"] = label
-            return hit
+    for exact in (True, False):
+        for label in LABELS.get(semantic, ()):
+            hits = [h for h in page.evaluate(
+                        _FIND_JS, {"labels": [label], "exact": exact})
+                    if h["visible"] and not h["readonly"]
+                    and not (h["tag"] == "input"
+                             and (h["type"] or "").lower() in NON_TEXT_TYPES)]
+            # A more specific later label ('address 2') can also match an
+            # earlier broad one; take the first wording landing on ONE box.
+            if len(hits) == 1:
+                hit = dict(hits[0])
+                hit["semantic"] = semantic
+                hit["matched_label"] = label
+                hit["exact"] = exact
+                return hit
     return None
 
 

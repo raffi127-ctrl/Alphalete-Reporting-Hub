@@ -166,3 +166,42 @@ def test_the_apex_record_carries_the_office_settings():
     assert v["hire_date"] == "08/31/2026"
     assert v["username"] == "ann@example.com" == v["account_email"]
     assert "ssn" not in v          # never, in the dict that gets typed
+
+
+def test_the_state_is_converted_to_the_name_apex_uses():
+    """The I-9 writes 'TX'; the Apex dropdown holds 'Texas'. Handing a select
+    something it doesn't have selects NOTHING, silently -- no error anywhere,
+    and a payroll record with no state on it."""
+    import datetime as dt
+    from automations.apex_new_starts import board as BRD
+    from automations.apex_new_starts import run as RUN
+    c = BRD.Candidate(name="Ann Lee", trainer="", email="", location="",
+                      team="", reason_lost="", roll={0: "CR"}, tab="t", row=1,
+                      week_start=dt.date(2026, 8, 31))
+    v = RUN.apex_values(c, BID.NewHire(name="Ann Lee",
+                                       values={"state": "tx", "dob": "06/28/2004",
+                                               "phone": "2145550123"}))
+    assert v["state"] == "Texas"
+    assert v["dob"] == "6/28/2004"          # M/D/YYYY, as Apex writes them
+    assert v["home_phone"] == "2145550123"  # Home, matching the existing rows
+    assert "phone" not in v
+
+
+def test_a_state_apex_wouldnt_recognise_is_dropped_not_guessed():
+    import datetime as dt
+    from automations.apex_new_starts import board as BRD
+    from automations.apex_new_starts import run as RUN
+    c = BRD.Candidate(name="Ann Lee", trainer="", email="", location="",
+                      team="", reason_lost="", roll={0: "CR"}, tab="t", row=1,
+                      week_start=dt.date(2026, 8, 31))
+    v = RUN.apex_values(c, BID.NewHire(name="Ann Lee",
+                                       values={"state": "ZZ", "dob": "not a date"}))
+    assert "state" not in v and "dob" not in v
+
+
+def test_us_date_handles_what_people_actually_type():
+    from automations.apex_new_starts.run import _us_date
+    assert _us_date("06/28/2004") == "6/28/2004"
+    assert _us_date("2004-06-28") == "6/28/2004"
+    assert _us_date("6/28/04") == "6/28/2004"
+    assert _us_date("") == "" and _us_date("June 28th") == ""

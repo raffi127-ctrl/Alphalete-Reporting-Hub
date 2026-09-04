@@ -224,4 +224,8 @@ def test_every_default_actually_selects_its_option(page):
 
 
 def test_nothing_on_stage_one_is_unanswered_now(page):
-    assert AX.UNANSWERED == ()
+    """Stage one is fully settled. 'gender' is stage TWO -- required on the
+    employee profile, asked by no form this report reads, and not something to
+    infer from somebody's name."""
+    assert set(AX.UNANSWERED) == {"gender"}
+    assert not (set(AX.UNANSWERED) & set(STAGE_ONE))

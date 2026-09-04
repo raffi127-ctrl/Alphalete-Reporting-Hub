@@ -163,7 +163,7 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     v = dict(hire.fillable())               # SSN cannot be in here -- see
                                             # NewHire.fillable
     v.update(AX.DEFAULTS)
-    email = v.get("email", "")
+    email = v.pop("email", "")
     if email:
         v["account_email"] = email
         if AX.USERNAME_IS_EMAIL:
@@ -171,7 +171,44 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     if c.hire_date:
         # MM/dd/yyyy, the format the Hire Date box itself asks for.
         v["hire_date"] = c.hire_date.strftime("%m/%d/%Y")
+
+    # The I-9 does not speak Apex. Two values need converting, and both fail
+    # SILENTLY if they aren't -- a dropdown handed something it doesn't have
+    # simply stays on 'Select', with no error anywhere.
+    st = (v.get("state") or "").strip().upper()
+    if st in AX.STATE_NAMES:
+        v["state"] = AX.STATE_NAMES[st]     # 'TX' -> 'Texas'
+    elif st:
+        v.pop("state")                      # unrecognised: report, don't guess
+    dob = _us_date(v.get("dob"))
+    if dob:
+        v["dob"] = dob
+    else:
+        v.pop("dob", None)
+
+    phone = v.pop("phone", "")
+    if phone:
+        v[AX.PHONE_FIELD] = phone
     return v
+
+
+def _us_date(value) -> str:
+    """A date the way Apex's boxes write one: M/D/YYYY, no leading zeros.
+
+    The I-9 hands back whatever the person typed, and Apex's own records read
+    '6/28/2004'. Anything unparseable comes back empty so the caller drops it --
+    a birthday is not a field to approximate.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m-%d-%Y"):
+        try:
+            d = dt.datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+        return f"{d.month}/{d.day}/{d.year}"
+    return ""
 
 
 def _person_line(c: BRD.Candidate, hire: BID.NewHire) -> str:
