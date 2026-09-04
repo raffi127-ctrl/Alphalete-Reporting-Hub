@@ -388,9 +388,18 @@ def close_day(wk: str, channel: Optional[str] = None,
         return False
     replies = RG._client().conversations_replies(
         channel=RG._channel(channel), ts=msg["ts"], limit=50).get("messages", [])
-    if RG._said(replies, CLOSED_MARK):
+    # SENT_MARK stands the closer down as hard as CLOSED_MARK does. A week can
+    # go out WITHOUT a checkmark on the post — `send.py --send` is its own lever,
+    # and it exists exactly for the Friday the approver is unavailable or a
+    # corrected bulletin has to be re-sent — and this function reads the
+    # REACTION, so on that Friday it would announce "did not go out" into the
+    # same thread whose reply above it says it did, an hour after the org had it
+    # in their inbox. The confirmation reply is the send's own record (it is
+    # already the once-a-week lock `already_sent` reads), so trust it here too.
+    if RG._said(replies, CLOSED_MARK, SENT_MARK):
         if verbose:
-            print("— already closed once", flush=True)
+            print("— already closed, or it went out without a checkmark",
+                  flush=True)
         return False
     RG._client().chat_postMessage(
         channel=RG._channel(channel), thread_ts=msg["ts"],
