@@ -70,16 +70,37 @@ class ProbePublish(unittest.TestCase):
     #claudecorrections nine minutes after the real run had been resolved."""
 
     def _publish(self, ok, probe):
+        """Install the fake on BOTH resolution paths.
+
+        THE BUG THIS FIXES (2026-09-04). `_publish_rerun_done` does
+        `from automations.day_orchestrator import hub_publish`, and once ANYTHING
+        in the process has genuinely imported that submodule, the import resolves
+        through the PACKAGE ATTRIBUTE, not sys.modules. So a sys.modules-only
+        swap held when this file ran alone and was silently bypassed in a
+        full-suite run — the REAL publish_done ran with report_id `r`, status
+        failed, alert_on_fail True. It posted a live 🚨, opened the incident
+        "R failed" that sat in #claudecorrections for a day pointing at a report
+        that does not exist, appended a Hub activity row stamped
+        MacBook-Pro-3.local, and auto-created a phantom library card `r`.
+
+        Same trap, same cure, as automations/b2b_metrics/test_manifest_merge
+        `_stubbed`. A stub that degrades to production is not a stub."""
+        from unittest import mock
+
+        import automations.day_orchestrator as _pkg
         fake = _FakeHubPublish()
-        real = sys.modules.get("automations.day_orchestrator.hub_publish")
-        sys.modules["automations.day_orchestrator.hub_publish"] = fake
-        try:
+        with mock.patch.dict(
+                sys.modules,
+                {"automations.day_orchestrator.hub_publish": fake}), \
+             mock.patch.object(_pkg, "hub_publish", fake, create=True):
+            # create=True because BOTH orders have to work: run this file alone
+            # and the package has no such attribute yet (the sys.modules entry is
+            # what bites); run the whole suite and it does.
             mini_control._publish_rerun_done("r", "R", ok, "run-1", probe)
-        finally:
-            if real is None:
-                sys.modules.pop("automations.day_orchestrator.hub_publish", None)
-            else:
-                sys.modules["automations.day_orchestrator.hub_publish"] = real
+        self.assertIsNotNone(
+            fake.kwargs,
+            "the stub was bypassed — the REAL hub_publish just ran, which is "
+            "how the 'R failed' incident reached #claudecorrections")
         return fake.kwargs
 
     def test_failing_probe_opens_no_incident(self):

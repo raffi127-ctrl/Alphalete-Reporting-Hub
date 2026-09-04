@@ -379,6 +379,17 @@ def hub_card_id(report_id: str):
 
 
 def _ws():
+    # The LAST hole (2026-09-04). A test that reaches the real worksheet is
+    # always a mistake — every test that legitimately drives publish_running /
+    # publish_done stubs `_ws` (see test_hub_publish_marking), so refusing here
+    # cannot break one, and it stops a bypassed stub from appending a row to the
+    # live Hub Activity log. Raising is right: both callers already wrap this in
+    # try/except and degrade to "no Hub row", which is what a test wants anyway.
+    from automations.shared import live_effects
+    if live_effects.driven_by_a_test():
+        raise RuntimeError(
+            "hub_publish._ws() reached from a unit test — stub `_ws` (and see "
+            "automations.shared.live_effects). Nothing was written.")
     return _fill._client().open_by_key(HUB_ACTIVITY_SHEET_ID).worksheet(HUB_ACTIVITY_TAB)
 
 
@@ -630,7 +641,18 @@ def _alert_failure(report_id: str, report_name: str) -> None:
     ahead of the mini's full standalone alert 4 minutes later. As an incident it
     opens the thread only if nobody else has, and otherwise replies inside the one
     that's already there. failure- and standalone- share a subject, so which of
-    them spoke first stops mattering."""
+    them spoke first stops mattering.
+
+    NEVER FROM A UNIT TEST (2026-09-04). test_probe_reason installs its fake
+    hub_publish through sys.modules only, and `_publish_rerun_done` resolves the
+    submodule through the PACKAGE ATTRIBUTE — so on a full-suite run the stub was
+    bypassed and this fired for real, with report_id `r`, display name `R`. "R
+    failed" then sat in #claudecorrections for a day as a report nobody could
+    find, because there IS no report R. See automations/shared/live_effects."""
+    from automations.shared import live_effects
+    if live_effects.refuse_if_under_test(
+            "post a failure alert for {!r}".format(report_id)):
+        return
     try:
         import time
         marker = _fail_marker(report_id)
@@ -676,7 +698,15 @@ def _clear_failure(report_id: str, report_name: str) -> None:
     Clearing the cooldown matters too: after a fix, the NEXT break has to be able
     to speak immediately rather than waiting out a timer earned by the old
     problem — and since its thread was just closed, it correctly opens a fresh
-    post. Best-effort: never raises into a good run."""
+    post. Best-effort: never raises into a good run.
+
+    NEVER FROM A UNIT TEST, for the same reason as _alert_failure above and a
+    worse consequence: this ✅s somebody's OPEN incident. A test that reaches it
+    marks a real, unfixed problem as resolved."""
+    from automations.shared import live_effects
+    if live_effects.refuse_if_under_test(
+            "close the incident for {!r}".format(report_id)):
+        return
     try:
         marker = _fail_marker(report_id)
         from automations.shared import incident_thread as inc

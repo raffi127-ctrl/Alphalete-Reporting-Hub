@@ -302,6 +302,18 @@ def resolve_card(report_id: str, report_name: str = "", *,
         return report_id
     if not create:
         return None
+    # NEVER auto-create a card from a UNIT TEST (2026-09-04). Self-registration
+    # is deliberate for a report that genuinely ran, and a permanent Hub library
+    # card is exactly the wrong thing to mint from a fixture: test_probe_reason's
+    # `("r", "R")` reached here through a stub that got bypassed and left a card
+    # called `r` sitting in Megan's library among 225 real ones. The id resolves
+    # the same way either way — only the WRITE is refused — so a test asserting
+    # on the returned card id still gets its answer.
+    # See automations/shared/live_effects.
+    from automations.shared import live_effects
+    if live_effects.refuse_if_under_test(
+            "auto-create the Hub library card {!r}".format(report_id)):
+        return report_id
     ok, _msg = ensure_library_card(report_id, report_name or report_id,
                                    module=module, dry_run=dry_run)
     # The created library card's id is the underscore report_id (so its
