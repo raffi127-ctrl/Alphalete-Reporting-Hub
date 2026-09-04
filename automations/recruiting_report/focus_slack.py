@@ -1,12 +1,12 @@
-"""DM the Carlos Daily Focus tab screenshot to the recruiting group.
+"""DM a filled Daily Focus captainship tab to that captainship's group DM.
 
-After the 'Carlos Hidalgo' tab is filled, the daily run renders it to a PNG
-(focus_render) and DMs it to a fixed group DM (Carlos + Elena + Valeria + Eve)
-as the shared Slack user token's user. No channel post — this is a private
-multi-person DM.
+After a captainship's tab is filled, the daily run renders it to PNG(s)
+(focus_shot) and DMs them to a fixed group DM as the shared Slack user token's
+user. No channel post — these are private multi-person DMs.
 
 Reuses the shared token/client from slack_metrics_post (same xoxp- token the
-other report posts use, posting as Evelyn Sobrino).
+other report posts use — on the mini that token is 'Lucy Reporting', which is
+who these DMs arrive from).
 """
 from __future__ import annotations
 
@@ -18,21 +18,31 @@ from automations.shared import slack_metrics_post as smp
 
 # Per-captainship group-DM recipients, keyed by the captainship name used in
 # daily_focus.CAPTAINSHIPS / find_captainship_worksheet. The posting token's own
-# user (Eve, U088E2KJEV8) is auto-added by Slack to every group DM, so she is on
-# each DM implicitly even when not listed.
+# user is auto-added by Slack to every group DM, so it is on each DM implicitly
+# even when not listed.
 #
-# - "Carlos": resolved + confirmed by Megan 2026-06-05 (Carlos, Elena, Valeria,
-#   Eve, Maud).
+# A captainship with no entry here simply gets no DM — daily_focus walks THIS
+# dict, so deleting a key is the whole off-switch. The tab still fills.
+#
 # - "Colten Wright" / "Jairo Ruiz": confirmed by Megan 2026-07-15 when the two
 #   new captainship tabs went live.
+#
+# RETIRED 2026-09-04 — "Carlos" (Carlos Hidalgo, Elena Camargo, Valeria Rodea,
+# Evelyn Sobrino, Maud Miller; live since 2026-06-05). Carlos asked for it to
+# stop ("can someone end this automation please") and Megan confirmed killing
+# the whole DM, not just his seat in it — so nobody gets the Carlos-tab
+# screenshot anymore. The Carlos tab still fills at 4am and 6:30pm like every
+# other tab; only the DM is gone. To bring it back, restore the block below and
+# nothing else:
+#
+#     "Carlos": {
+#         "Carlos Hidalgo":   "U046G04P5LG",
+#         "Elena Camargo":    "U0B1G4T0MUN",
+#         "Valeria Rodea":    "U06JQ4S1MRA",
+#         "Evelyn Sobrino":   "U088E2KJEV8",
+#         "Maud Miller":      "U045USN7NCD",
+#     },
 FOCUS_DM_RECIPIENTS = {
-    "Carlos": {
-        "Carlos Hidalgo":   "U046G04P5LG",
-        "Elena Camargo":    "U0B1G4T0MUN",
-        "Valeria Rodea":    "U06JQ4S1MRA",
-        "Evelyn Sobrino":   "U088E2KJEV8",
-        "Maud Miller":      "U045USN7NCD",
-    },
     "Colten Wright": {
         "Colten Wright":    "U047M3AAN0G",
         "Eveliz Wright":    "U048WU3EUFJ",
@@ -44,9 +54,6 @@ FOCUS_DM_RECIPIENTS = {
         "Analay Ruiz":      "U069URK7752",
     },
 }
-
-# Back-compat: the original Carlos-only constant.
-RECIPIENTS = FOCUS_DM_RECIPIENTS["Carlos"]
 
 
 def _caption(today: dt.date, summary: Optional[str]) -> str:
@@ -132,17 +139,7 @@ def post_focus_screenshots(
     }
 
 
-def post_carlos_screenshots(
-    png_paths,
-    today: Optional[dt.date] = None,
-    summary: Optional[str] = None,
-    *,
-    dry_run: bool = False,
-) -> dict:
-    """Back-compat wrapper: post the Carlos tab to the Carlos group DM."""
-    return post_focus_screenshots(
-        png_paths, RECIPIENTS, "Carlos", today, summary, dry_run=dry_run)
-
-
-# Back-compat alias (single screenshot → list of one).
-post_carlos_screenshot = post_carlos_screenshots
+# The Carlos-only back-compat helpers (RECIPIENTS, post_carlos_screenshots,
+# post_carlos_screenshot) went out with the Carlos DM on 2026-09-04. They read
+# FOCUS_DM_RECIPIENTS["Carlos"] at import time, so leaving them would have made
+# this module raise KeyError for every OTHER captainship's DM too.

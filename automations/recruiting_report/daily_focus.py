@@ -1430,8 +1430,8 @@ def main() -> int:
     ap.add_argument("--no-copy", action="store_true",
                     help="Skip the Wednesday copy-current-to-last step.")
     ap.add_argument("--no-slack", action="store_true",
-                    help="Skip the Carlos-tab screenshot group DM "
-                         "(Carlos + Elena + Valeria + Eve).")
+                    help="Skip the per-captainship screenshot group DMs "
+                         "(recipients in focus_slack.FOCUS_DM_RECIPIENTS).")
     ap.add_argument("--alt-appstream", action="store_true",
                     help="Log in with the ALTERNATE AppStream account (read "
                          "from env APPLICANTSTREAM_USERNAME / "
@@ -1644,7 +1644,8 @@ def main() -> int:
     # on rc == 0 so genuine failures still fall through to the scan.
     # Per-captainship screenshot DMs — after a captainship's tab is filled,
     # render it to PNG(s) and DM it to that captainship's group DM (recipients
-    # in focus_slack.FOCUS_DM_RECIPIENTS: Carlos, Colten Wright, Jairo Ruiz).
+    # in focus_slack.FOCUS_DM_RECIPIENTS: Colten Wright, Jairo Ruiz — the
+    # Carlos DM was retired 2026-09-04 at Carlos's request; its tab still fills).
     # Best-effort per tab: a Slack failure on one tab logs a warning but never
     # fails the run, blocks the success sentinel, or stops the other tabs' DMs
     # (the data fill already succeeded). Skipped on --dry-run / --only /
@@ -1654,7 +1655,8 @@ def main() -> int:
     # "hoy se enviaron varios DMs de este reporte y parecen repetidos"). A retry
     # re-pulls ONLY the ICDs that were skipped, but the loop below walks every
     # captainship tab and sends regardless of whether anything changed — so each
-    # retry re-sent the whole report to Carlos', Colten's and Jairo's group DMs.
+    # retry re-sent the whole report to every captainship group DM (Carlos',
+    # Colten's and Jairo's, back when Carlos still had one).
     # Four retries that morning put four identical posts in each one. The Hub's
     # "Retry the skipped ICDs" button runs this same flag, so it was never
     # specific to a re-run queued by hand. The full run that preceded the retry
