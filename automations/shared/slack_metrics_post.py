@@ -660,6 +660,64 @@ def post_reply_with_image(
     return out
 
 
+def file_landed_in_thread(client, file_id: str, channel_id: str,
+                          thread_ts: str, *, tries: int = 4,
+                          delay: float = 2.0):
+    """Did an uploaded file actually BECOME a message in that thread?
+
+    True / False when we can tell; None when Slack can't answer (missing scope,
+    API error) — an unanswerable check must never be read as a miss.
+
+    WHY THIS EXISTS (2026-09-04). Dylan Twaddle noticed by eye that the New
+    Internet Churn thread had a 0-30, a 60 and a 90 board and no 30. The run
+    log said the opposite:
+
+        30-day: posted (file=F0BUK46L7KR)
+
+    `files_upload_v2` had returned ok WITH a file id, so every layer above
+    counted it as delivered. `files.info` on that id now fails outright — the
+    file does not exist — while its 60-day sibling from the same loop
+    (F0BV0EHAMQS) is there with a share into C068PH3RFSM on the right
+    thread_ts. Slack accepted the upload and the message never materialised.
+
+    That is the difference between "the API accepted my upload" and "the image
+    is in the thread", and only the second one is the job. Nothing alerted,
+    because nothing had ever checked: the report self-certified off the
+    return value. Same class as the empty-pull-certifies-as-success bugs.
+
+    Polled, not instant: files_upload_v2 returns once the bytes are up, and
+    Slack creates the in-thread message asynchronously afterwards (the same
+    asynchrony b2b_metrics' POST_SETTLE_SEC works around for ordering). A
+    freshly-posted file can legitimately need a couple of seconds to show a
+    share, so a single immediate check would invent misses."""
+    if not file_id:
+        return None
+    import time as _time
+    for attempt in range(tries):
+        try:
+            info = (client.files_info(file=file_id) or {}).get("file") or {}
+        except Exception:  # noqa: BLE001
+            # A DELETED / never-materialised file answers here too (files.info
+            # errors on an unknown id) — but so does a missing scope, and we
+            # cannot tell those apart from one call. Keep polling; only the
+            # last attempt's silence is reported, and as None, never as False.
+            if attempt == tries - 1:
+                return None
+            _time.sleep(delay)
+            continue
+        shares = (info.get("shares") or {})
+        for bucket in ("public", "private"):
+            for chan, entries in (shares.get(bucket) or {}).items():
+                if chan != channel_id:
+                    continue
+                for e in entries or []:
+                    if str(e.get("thread_ts") or "") == str(thread_ts):
+                        return True
+        if attempt < tries - 1:
+            _time.sleep(delay)
+    return False
+
+
 def post_reply_with_file(
     file_path: Path,
     *,
@@ -701,6 +759,11 @@ def post_reply_with_file(
         "thread_ts": thread_ts,
         "file": upload_resp.get("file", {}).get("id"),
     }
+    # `ok` means Slack ACCEPTED the upload. `landed` means the image is in the
+    # thread — see file_landed_in_thread for the morning those diverged. None =
+    # couldn't tell; callers must treat only an explicit False as a miss.
+    out["landed"] = file_landed_in_thread(
+        client, out["file"], CHANNEL_ID, thread_ts)
     if react_emoji:
         try:
             r = client.reactions_add(

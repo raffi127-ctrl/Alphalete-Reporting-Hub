@@ -348,6 +348,24 @@ def _post_to_slack(selected, today: dt.date,
         # office whose 0-30 is the only filled section, the reaction still
         # fires (on that first present section) rather than being lost on a
         # skipped period.
+        # THE EXPECTED SET, stated out loud (2026-09-04). Until now nothing
+        # anywhere declared how many boards this report owes the thread: the
+        # day-orchestrator manifest records ONE section, "churn", for all EIGHT
+        # images and judges it by this process's exit code. So seven of eight
+        # landing read as a clean run, and the only thing that noticed the
+        # missing New Internet 30-day board was Dylan Twaddle reading the
+        # thread. A miss you can only find by eye is not monitored.
+        #
+        # The expectation is derived from the SHEET, not hardcoded, so it stays
+        # right as offices are added: every period whose section exists on the
+        # tab is owed a board. A section that exists but is genuinely empty (a
+        # young office — Rashad's 30/60/90 are headers with no numbers yet) is
+        # still not a failure, but it is now NAMED instead of passing in
+        # silence, which is the difference between "we know it's empty" and
+        # "nobody looked".
+        expected = [p for p in PERIODS if p in sections]
+        empty = [p for p in expected if p not in paths]
+        delivered: list[str] = []
         posted_any = False
         for period in PERIODS:
             if period not in paths:
@@ -372,11 +390,26 @@ def _post_to_slack(selected, today: dt.date,
                     file_name=file_name,
                 )
                 posted_any = True
-                print(f"      {period}-day: posted (file={result.get('file')})")
-                if not result.get("ok", True):
+                landed = result.get("landed")
+                # `ok` is Slack accepting the upload; `landed` is the image
+                # being IN the thread. On 2026-09-04 those disagreed for
+                # exactly one of the eight — New Internet 30-day came back
+                # ok with file F0BUK46L7KR, that file does not exist, and the
+                # board Dylan asked about was simply absent while this line
+                # printed "posted". Only an explicit False is a miss: None
+                # means Slack couldn't tell us, and a check we can't run must
+                # never invent a failure.
+                state = ("posted" if landed is not False
+                         else "⚠ UPLOAD ACCEPTED BUT NOT IN THREAD")
+                print(f"      {period}-day: {state} "
+                      f"(file={result.get('file')}"
+                      f"{'' if landed is not None else ', delivery unverified'})")
+                if not result.get("ok", True) or landed is False:
                     failures += 1
                     missed.append(f"{title_prefix} {period}-day")
                     missed_parts.append((slug, period))
+                else:
+                    delivered.append(period)
             # Catch EVERY post failure, not just SlackPostError. On 2026-08-25 a
             # bare urllib URLError (SSL handshake timeout inside the slack_sdk
             # upload) escaped this handler on the LAST of the 8 posts: 7 images
@@ -392,6 +425,14 @@ def _post_to_slack(selected, today: dt.date,
                 print(f"      {period}-day: ⚠ Slack post failed: {kind}{e}")
                 missed.append(f"{title_prefix} {period}-day")
                 missed_parts.append((slug, period))
+
+        # Say the tally per report, every run, pass or fail — this is the line
+        # that would have made 3-of-4 visible on the morning it happened.
+        print("      → {}: {}/{} board(s) in the thread ({})".format(
+            title_prefix, len(delivered), len(expected),
+            ", ".join(f"{p}-day" for p in delivered) or "none")
+            + (" · EMPTY on the sheet, not posted: {}".format(
+                ", ".join(f"{p}-day" for p in empty)) if empty else ""))
 
     if missed:
         print(f"\n  Images that did NOT reach the thread: {', '.join(missed)}")
