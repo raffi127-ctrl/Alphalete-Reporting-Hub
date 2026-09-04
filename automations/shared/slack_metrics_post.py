@@ -256,11 +256,19 @@ def _mirror_reply(client, channel_id: str, thread_ts: str, today: dt.date,
                   comment: str | None = None,
                   react_emoji: str | None = None,
                   wait_visible: bool = False,
-                  top_level: bool = False) -> None:
+                  top_level: bool = False,
+                  mirror: bool = True) -> None:
     """Copy one thread reply (text OR file) into every mirror of `channel_id`,
     into the mirror's own twin of the thread. Appends per-channel results onto
     out['mirrors']. Best-effort by design: a broken mirror prints loudly but
-    never fails the primary post."""
+    never fails the primary post.
+
+    `mirror=False` skips the copy for THIS post only — for when the mirror
+    channel already receives the same content from somewhere else. See
+    post_reply_with_image."""
+    if not mirror:
+        out["mirrors_skipped"] = mirror_channels(channel_id)
+        return
     for dst in mirror_channels(channel_id):
         try:
             # A top-level primary mirrors as a top-level message too — looking up
@@ -594,9 +602,19 @@ def post_reply_with_image(
     channel_id: str | None = None,
     wait_visible: bool = False,
     top_level: bool = False,
+    mirror: bool = True,
 ) -> dict:
     """Reply in today's Metrics thread with an image attachment + optional
     reaction emoji on the parent.
+
+    mirror (default True = unchanged for every existing caller): set False when
+    the mirror channel ALREADY gets this same content from another report, so
+    the copy would be a duplicate rather than a reach. The primary post is
+    untouched either way — this only skips the copy. Added 2026-09-04 for the
+    9 PM knock board: it posts to #alphalete-sales, which mirrors into
+    #alphalete-lvl1-chat, where gap_alerts had already posted the same board
+    minutes earlier. Dropping the office would have emptied #alphalete-sales;
+    skipping the mirror leaves both rooms with exactly one board.
 
     react_emoji: short name WITHOUT colons, e.g. 'arrows_counterclockwise',
     'negative_squared_cross_mark'.
@@ -616,7 +634,7 @@ def post_reply_with_image(
             "to_channel": channel_id,
             "comment": comment,
             "react_emoji": react_emoji,
-            "mirrors_to": mirror_channels(channel_id),
+            "mirrors_to": mirror_channels(channel_id) if mirror else [],
             "top_level": top_level,
         }
     client = _client()
@@ -656,7 +674,8 @@ def post_reply_with_image(
                   file_path=image_path,
                   file_name=file_name or f"{comment} {today.month}.{today.day}.png",
                   comment=comment, react_emoji=react_emoji,
-                  wait_visible=wait_visible, top_level=top_level)
+                  wait_visible=wait_visible, top_level=top_level,
+                  mirror=mirror)
     return out
 
 

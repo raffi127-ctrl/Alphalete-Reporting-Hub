@@ -286,6 +286,21 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
 
     from automations.shared import slack_metrics_post as smp
 
+    # Offices whose MIRROR channel already gets a dispositions board. Their
+    # primary post still goes out; only the mirror copy is skipped. Computed
+    # once per slot, and best-effort: if the registries can't be read we mirror
+    # exactly as before — a duplicate is noise, a board that vanishes is a
+    # report nobody notices died. See roster.mirror_collisions.
+    try:
+        from automations.knocks_intraday import roster as _roster
+        _mirror_off = {o.key for o in _roster.mirror_collisions(
+            [o for o in _roster.everyone()])}
+    except Exception:      # noqa: BLE001
+        _mirror_off = set()
+    if _mirror_off:
+        logfn(f"[knocks] mirror copy suppressed for: {', '.join(sorted(_mirror_off))} "
+              "(the mirror channel already gets a dispositions board)")
+
     posted = failed = skipped = 0
     for rec in results:
         day = rec["day"]
@@ -355,6 +370,17 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
                 channel_id=rec["channel_id"],
                 file_name=f"{rec['label']} knocks {day} {slot.key}.png",
                 wait_visible=True,
+                # Skip the MIRROR copy when the mirror channel already gets a
+                # dispositions board for this office (Megan 2026-09-04). Raf is
+                # the live case: this board goes to #alphalete-sales, which
+                # mirrors into #alphalete-lvl1-chat, where gap_alerts had
+                # already posted the same knock board minutes earlier — 9/3 at
+                # 21:04 and 21:08. The primary post is untouched, so
+                # #alphalete-sales keeps the board it has always had and lvl1
+                # stops getting two. DERIVED from the registries, not a name
+                # check: an office that leaves the dispositions roster starts
+                # mirroring again on its own.
+                mirror=rec["key"] not in _mirror_off,
                 # EVERY slot posts to the CHANNEL, not into the day's Metrics
                 # thread (Megan 2026-08-25, of the 9 PM board and then of Cody's
                 # 2 PM / 5:15 PM: "should NOT go in a thread but just be posted
