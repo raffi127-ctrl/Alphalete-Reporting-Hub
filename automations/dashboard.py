@@ -2471,6 +2471,20 @@ def _card_self_check() -> list[str]:
             problems.append(
                 f"card `{r.get('id', '?')}` has daily_runs={_dr!r} — must be "
                 "a number or a weekday map, or the phase pill can't count")
+        # An assignee who is not a Pack profile makes the card UNREACHABLE and
+        # the day's ratio unexplainable: it counts in the header's due total but
+        # lands on nobody's profile, and the Unassigned bucket can't catch it
+        # either — that only collects cards with an EMPTY assignees list. On
+        # 2026-09-03 the header read 60/64 while the Lucys showed 1+2+0 = 3, and
+        # the missing fourth was apex-new-starts, assigned to "Megan". (Megan)
+        _off = [a for a in (r.get("assignees") or [])
+                if a not in {m["name"] for m in MEMBERS}]
+        if _off:
+            problems.append(
+                f"card `{r.get('id', '?')}` is assigned to "
+                f"{', '.join(repr(a) for a in _off)}, which is not a Pack "
+                "profile — it counts in the day's total but appears on no "
+                "profile and can't be opened from The Pack")
 
     # The stuck-orange-pill classic: something logs runs under an id NO card
     # owns, so its pill never moves. Compare a week of the run feed against

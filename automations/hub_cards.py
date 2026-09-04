@@ -2427,6 +2427,18 @@ AUTOMATED_REPORTS = [
             "RingCentral login. A bare run is a DRY RUN and writes nothing."
         ),
         "assignees": ["Lucy 2"],
+        # STILL BEING BUILT (Megan 2026-09-03): it is wired into the 4am flow and
+        # so was failing every morning into "Needs attention", which is triage
+        # noise for a report nobody has armed yet — the two logins are not both
+        # settled. A build in progress is not a broken report: the pause takes it
+        # out of the morning list and off the due-today tallies while leaving the
+        # card and its buttons exactly where they are, so whoever is building can
+        # still run it by hand. LIFT THIS LINE the day it is armed.
+        "paused": ("Still being built (2026-09-03) — not armed yet. It runs in "
+                   "the 4am flow, so a half-finished login was failing it every "
+                   "morning into Needs attention. Buttons still work for "
+                   "hand-runs; remove the pause when the two credentials are "
+                   "settled and it goes live."),
         # Both credentials live on Lucy 2 and nowhere else, so a Hub button
         # pressed from any other machine QUEUES the run there instead of
         # failing locally on a missing creds file.
@@ -5626,7 +5638,24 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc/edit"
                       "?gid=263241811#gid=263241811"),
-        "assignees": ["Megan"],
+        # "Megan" is NOT one of the Pack profiles (Lucy 1/2/3 + Office
+        # Operations), so this card counted toward the header's due total while
+        # appearing on NO profile — the Hub read 60/64 with only 1+2+0 = 3 due
+        # across the Lucys, and the fourth was unreachable: the Unassigned bucket
+        # only catches cards with an EMPTY assignees list, not one naming a person
+        # off the roster. Office Operations is the profile for exactly this — an
+        # office workflow anyone on staff can pick up (Megan 2026-09-03).
+        "assignees": ["Office Operations"],
+        # STILL BEING BUILT (Megan 2026-09-03). self_scheduled keeps it out of the
+        # due-today tallies but NOT out of "Needs attention" — that list only
+        # skips a report on _paused_reason — so its Thu/Fri weekday entry made it
+        # read "no run logged" every Thursday afternoon for a report that is (a)
+        # unfinished and (b) hand-driven by design: nothing is late when a person
+        # decides when it runs. LIFT THIS LINE when the Apex typing is done.
+        "paused": ("Still being built (2026-09-03) — not finished, and hand-run "
+                   "by design: Apex has no API, so a person has to be signed in "
+                   "and at the keyboard. It is never 'late'. Buttons still work; "
+                   "remove the pause when the Apex fill is done."),
         # Push-a-button by design: Apex has no API and no session this repo can
         # hold, so a person has to be signed in and at the keyboard. Not on any
         # schedule, and self_scheduled keeps it out of the due-today tallies.
