@@ -530,16 +530,52 @@ def _offday_standalone_ids(cfg, target_date) -> set:
 
 def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
     """'Lucy 2' when the row's machine matches the Lucy-2 hostname substrings,
-    'the mini' for the scheduler Mac mini, else 'Lucy 1' — so an alert names the
-    box it actually ran on. The scheduler mini runs the single-session ownerville
-    reports (STF Field Check, etc.); defaulting those to 'Lucy 1' sent people to
-    the wrong machine to diagnose them. Lucy-2 check stays first so Carlos's own
-    Mac mini (a lucy2_host) is still labeled 'Lucy 2'."""
+    'the mini' for the scheduler Mac mini, else the hostname the row actually
+    carries — so an alert names the box it really ran on. The scheduler mini runs
+    the single-session ownerville reports (STF Field Check, etc.); defaulting
+    those to 'Lucy 1' sent people to the wrong machine to diagnose them. Lucy-2
+    check stays first so Carlos's own Mac mini (a lucy2_host) is still 'Lucy 2'.
+
+    THE ELSE BRANCH USED TO SAY "Lucy 1" FOR ANY UNKNOWN HOST (fixed
+    2026-09-04). It is not a synonym for "not Lucy 2 and not the mini": Megan's
+    laptop is MacBook-Pro-3.local and is neither. So a run she did AT HER DESK
+    was announced as "*apex_new_starts* — didn't run clean on Lucy 1", and the
+    thread's paste-to-Claude block went on to describe a launchd agent on Lucy 1
+    that does not exist — for a Hub card whose real flow is a person typing
+    `--assist` in a Terminal. Anyone acting on it would have gone to the wrong
+    machine looking for the wrong thing. A label we cannot derive is better
+    printed raw than guessed: the hostname is always true.
+    [[reference_hub_signals_lie]]"""
     if lucy2_hosts and _machine_matches(row_machine, lucy2_hosts, exact=False):
         return "Lucy 2"
-    if "alphaletes-mac-mini" in (row_machine or "").lower():
+    low = (row_machine or "").lower()
+    if "alphaletes-mac-mini" in low:
         return "the mini"
-    return "Lucy 1"
+    if not low:
+        return "Lucy 1"          # no hostname recorded — the historical default
+    if "lucy" in low:
+        return "Lucy 1"          # Lucy 1's own hostnames, unchanged
+    return row_machine
+
+
+# The ONE marker that positively identifies a run a PERSON typed themselves:
+# shared/hub_autopublish._who() writes it into the Activity log's User column,
+# and nothing else in the repo writes it.
+#
+# BARE, not just parenthesised. _who() returns "<name> (hand-run)" when it can
+# resolve the person and a plain "hand-run" when it cannot — so matching only
+# "(hand-run)" would keep paging for exactly the runs we know least about.
+#
+# Read the direction carefully — this is the trap _handrun_only_ids documents at
+# length. The ABSENCE of the marker proves nothing (a `lucy rerun` a human queued
+# stamps "Mini (auto)", identical to a 4am scheduled run — 867 of 876 measured
+# rows). Its PRESENCE is exact.
+_HAND_RUN_MARK = "hand-run"
+
+
+def _is_hand_run(user: str) -> bool:
+    """Did a person run this themselves, at a keyboard, watching the output?"""
+    return _HAND_RUN_MARK in (user or "").lower()
 
 
 _DIDNT_RUN_GRACE_HOURS = 2   # how long past a report's usual start before "didn't run"
@@ -1066,6 +1102,28 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
             continue
         rid = r.get("report_id") or r.get("name") or "?"
         if rid in skip or rid in already:
+            continue
+        # A HAND RUN IS NOT AN INCIDENT (2026-09-04). hub_autopublish writes the
+        # row for a report a person typed themselves and deliberately passes
+        # alert_on_fail=False — "the person is sitting there watching it fail".
+        # This branch then read that same row three minutes later and paged
+        # anyway, so the two halves of the system disagreed and the channel won.
+        #
+        # That is how `standalone-apex-new-starts` was born: Megan hand-ran
+        # apex_new_starts on her laptop at 19:35 on Thu 9/3, saw it fail, and a
+        # 🚨 went up at 19:38 naming a machine she wasn't on and a launchd agent
+        # that does not exist. It sat red and unattended for a day, was the only
+        # ticket in the channel nobody had claimed, and there was never anything
+        # to fix.
+        #
+        # NARROW ON PURPOSE: only this ERRORED branch, and only on the positive
+        # "(hand-run)" marker. A report that fails on a SCHEDULE still pages
+        # exactly as before — nobody is watching those, which is the whole
+        # reason this watcher exists.
+        if _is_hand_run(r.get("user", "")):
+            print("[{}] watch: {} failed as a HAND RUN by {} — not alerting "
+                  "(the person ran it and saw it)".format(
+                      ts, rid, r.get("user", "?")), flush=True)
             continue
         kind = "INCOMPLETE" if _classify(r["status"])[1] == "partial" else "FAILED"
         when = _time_only(r["started"]) + (f"–{_time_only(r['ended'])}" if r["ended"] else "")
