@@ -3767,6 +3767,48 @@
       "verify": null,
       "report_id": "captainship-drafts"
     },
+    "captainship_fiber4_send": {
+      "_note": "Pat y Jess (bloque Fiber 4) se MANDAN solos, sin gate de revision (Eve, 2026-09-04). Los otros doce esperan un check en #revision-emails y los manda el LaunchAgent de review; estos dos no pasan por ahi a proposito, mientras se prueba que el reporte se vea bien. Por eso --allow-unreviewed: NO es saltear un control roto, es que para este bloque todavia no hay control que pasar. Cuando Eve los sume al gate se borra esta entrada.",
+      "_recipients_note": "Van a Rafael y a Evelyn (= eve@alphaletemarketing.com; en Contactos figura como 'Eve Sobrino'), fijados en config.RECIPIENTS. NO tienen grupo de Contacts todavia, asi que recipients_for cae a esa lista y lo dice en el log. Sin grupo a proposito: crearlo implicaria la distribucion real, que Eve todavia no definio.",
+      "_args_note": "--send-reviewed REUSA los .eml que captainship_drafts acaba de escribir en output/ en vez de reconstruir los dos reportes: son ~15 min de cola serial que no hay que pagar dos veces, y ademas garantiza que sale EXACTAMENTE lo que quedo armado esa manana. Por eso corre en la MISMA maquina que el build (los .eml son locales) y detras de el.",
+      "timeout_minutes": 45,
+      "order": 1.15,
+      "machine": "Lucy 3",
+      "on_scheduler": true,
+      "display_name": "Captainship Fiber 4 (Pat + Jess) - envio",
+      "source_type": "none",
+      "data_sources": [],
+      "command": [
+        "automations.captainship_drafts.run"
+      ],
+      "base_args": [
+        "--block",
+        "fiber-4",
+        "--send-reviewed",
+        "--allow-unreviewed"
+      ],
+      "cadence": {
+        "_note": "SIETE DIAS, igual que captainship_drafts: si el build corre, esto manda lo que armo.",
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "after": [
+        "captainship_drafts"
+      ],
+      "_after_note": "SOFT como el de captainship_drafts: si el build falla no hay .eml que mandar y esto no encuentra nada. Nunca depends_on, para no convertir una falla del build en una segunda alerta por lo mismo.",
+      "depends_on": [],
+      "verify": null,
+      "report_id": "captainship-fiber4-send"
+    },
     "captainship_drafts_review": {
       "order": 4.969,
       "on_scheduler": false,

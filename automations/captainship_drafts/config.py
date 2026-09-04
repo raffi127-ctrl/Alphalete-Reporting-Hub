@@ -680,6 +680,22 @@ RECIPIENTS: dict = {
 # las dos cosas que dependen del codigo, el fallback cuando el grupo no se
 # puede leer y lo que seed_groups escribe de vuelta en el grupo.
 ALWAYS = "eve@alphaletemarketing.com"
+# Pat y Jess, 2026-09-04. NO es su distribucion real todavia: Eve pidio que
+# por ahora vayan solo a Rafael y a Evelyn mientras se mira que todo se vea
+# bien ("por ahora solo lo vamos a mandar a eve y rafael, porque estamos
+# probando"). Evelyn es Eve — en Contactos figura como "Eve Sobrino
+# <eve@alphaletemarketing.com>", la misma identidad con la que postea en Slack
+# desde Windows — asi que ALWAYS ya la agrega abajo y no hace falta repetirla.
+#
+# Estas dos claves NO tienen grupo en Contacts (GROUPS en distro.py). Es a
+# proposito: sin grupo, recipients_for cae a esta lista y lo dice en el log
+# ("group ... MISSING — using the N address(es) in config.py"). Cuando Eve
+# defina la distribucion real se crean los grupos y esto pasa a ser el
+# fallback, igual que en los demas capitanes.
+RECIPIENTS["pat"] = ["raffi127@gmail.com"]
+RECIPIENTS["jess"] = ["raffi127@gmail.com"]
+
+
 for _lst in RECIPIENTS.values():
     if ALWAYS.lower() not in {a.lower() for a in _lst}:
         _lst.append(ALWAYS)
@@ -745,12 +761,12 @@ CAPTAINS: List[Captain] = [
     # 'Captainship - <Nombre>', que todavia no existe para ellos, y un `to`
     # vacio hace que --send los SALTEE en vez de mandarle el reporte a quien no
     # corresponde. Los borradores igual se arman.
-    Captain("pat", "Pat", "fiber", title_bg="#C2379A", to="", churn=[
+    Captain("pat", "Pat", "fiber", title_bg="#C2379A", to=_to("pat"), churn=[
         ChurnSource(_own.open_ws_fiber_pat, _ni_render, "New Internet Churn"),
         ChurnSource(_own.open_ws_wl_pat, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("pat")),
-    Captain("jess", "Jess", "fiber", title_bg="#6F8691", to="", churn=[
+    Captain("jess", "Jess", "fiber", title_bg="#6F8691", to=_to("jess"), churn=[
         ChurnSource(_own.open_ws_fiber_jess, _ni_render, "New Internet Churn"),
         ChurnSource(_own.open_ws_wl_jess, _wl_render, "Wireless Churn",
                     brand_title=False),
