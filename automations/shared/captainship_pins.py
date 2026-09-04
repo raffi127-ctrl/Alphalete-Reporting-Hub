@@ -196,19 +196,29 @@ def drop_names(names: Iterable[str], captain_or_team: str,
 # Take them out the day either one sells fiber.
 NOT_IN_SOURCE: Dict[str, tuple] = {
     "tony": ("Kobe Cireus", "Melik El Jaiez"),
-    # Gary Whitaker II — Eve 2026-09-03. Absent from Carlos's B2B churn view AND
-    # from the org-wide B2B pull that the went-dark backfill falls back on, so he
-    # is in this source under no captain at all. Eve: no sales this week and none
-    # last week, so the blanks are right — "dejémoslo por ahora, pero en blanco".
-    # His rows stay (his history is real: 0/35, 0/48, 0/113 activations with zero
-    # disconnects) and stop being reported as a failure every morning.
-    # SELF-HEALING: this only silences the went-dark check. The day he sells
-    # wireless again the pull returns him and his rows fill on their own — so if
-    # his numbers are back, delete this entry rather than trusting it.
-    # Not the same call as Kevin Driggs / Ryan Kabbes, whose rows were DELETED
-    # from that tab the same day: those two do not belong to the captainship,
-    # Gary does.
-    "carlos": ("Gary Whitaker II",),
+    # GARY WHITAKER II WAS REMOVED 2026-09-04 — the evidence he was pinned on
+    # was false. Eve pinned him 2026-09-03 because he was "absent from Carlos's
+    # B2B churn view AND from the org-wide B2B pull that the went-dark backfill
+    # falls back on, so he is in this source under no captain at all".
+    #
+    # That org-wide pull was reading a DEAD custom view. `allteam_guid_probe`
+    # loaded it as Raf on 2026-09-04: the GUID pull.py used returned ONE owner
+    # out of 93, with Tableau's own "re-create the custom view" banner on it.
+    # Everyone was absent from it. Megan then opened the live ALLTEAMWireless
+    # and found GARY WHITAKER II [masters of our reality solutions, inc.] right
+    # there in the Owner & Office list. The view was repointed in 38aec0a.
+    #
+    # So "absent from the fallback" proved nothing that day, and this pin was
+    # silencing a real bug rather than describing a real absence. Removing it
+    # lets the went-dark check speak for him again — and now that the backfill
+    # reads the live view, it can actually rescue him.
+    #
+    # THE LESSON, because this pin looked perfectly reasonable when it was made:
+    # a NOT_IN_SOURCE entry rests entirely on the org-wide fallback being
+    # healthy. Before adding one, confirm the fallback itself returns a sane
+    # owner count — a fallback that returns ~1 owner makes EVERY rep look
+    # expected-absent. `lucy rerun allteam_guid_probe` answers it in two
+    # minutes. [[reference-b2b-churn-wireless-only]]
 }
 
 
