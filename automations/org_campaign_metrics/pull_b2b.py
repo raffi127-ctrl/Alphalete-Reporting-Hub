@@ -18,6 +18,27 @@ CAPTAINSHIP_DASHBOARD = "14_T4fySyQhRPsyWZLGEs6Sarc0jyJ4oD-gV8E97WZU8"
 MT_TAB = "MT · Atef"
 MANAGER = "Atef Choudhury"          # org Focus Report picker spelling
 
+# Every captainship owner with an 'MT · <First>' tab on the Captainship
+# Dashboard gets the same block on the ORG Focus Report, under their own
+# recruiting numbers (Carlos 2026-08-31). Previously only Atef was copied.
+# The MT tabs are the source of truth — captainship_boards fills them each
+# morning — so this is a straight per-manager mirror, same as Atef's always was.
+# Noah Dubale is captainship but has no sales board / MT tab, so no block.
+MT_MANAGERS = [
+    ("Atef Choudhury",   "MT · Atef"),
+    ("Jamis Garay",      "MT · Jamis"),
+    ("Jackie LeRoy",     "MT · Jackie"),
+    ("Justin Wood",      "MT · Justin"),
+    ("Joshua Murphy",    "MT · Joshua"),
+    ("Dhyey Patel",      "MT · Dhyey"),
+    ("Jeff Starr",       "MT · Jeff"),
+    ("Kinsey Guenther",  "MT · Kinsey"),
+    ("George Hipolito",  "MT · George"),
+    ("Joey Ramirez",     "MT · Joey"),
+    ("Vincent Smith",    "MT · Vincent"),
+    ("Sabrina Alicea",   "MT · Sabrina"),
+]
+
 # MT col-A label (normalized) -> our layout label. The ✎ glyph and spacing
 # vary; normalization strips both.
 _MT_TO_OURS = {
@@ -68,10 +89,29 @@ def _norm(label):
 
 
 def collect(S, today=None, log=print):
-    """-> (values, goals) for the Campaign Log upsert.
+    """-> (values, goals) for every captainship owner with an MT tab.
 
-    S is an authorized Sheets session (funnel_board.auth). Reads the MT tab
-    once with FORMATTED values — the display strings ("98%", "6.4") ARE our
+    One Sheets read per MT tab. A tab that fails or drifts is logged and
+    SKIPPED — one owner's layout change must not cost everyone else's block.
+    """
+    values, goals = [], []
+    for mgr, tab in MT_MANAGERS:
+        try:
+            v, g = _collect_one(S, mgr, tab, log=log)
+        except Exception as e:                      # noqa: BLE001
+            log("  [b2b] %-18s SKIPPED (%s: %s)" % (mgr, type(e).__name__, str(e)[:80]))
+            continue
+        values.extend(v)
+        goals.extend(g)
+    log("  [b2b] %d manager(s) copied, %d values, %d goals"
+        % (len(MT_MANAGERS), len(values), len(goals)))
+    return values, goals
+
+
+def _collect_one(S, MANAGER, MT_TAB, today=None, log=print):
+    """-> (values, goals) for ONE manager, copied from their MT tab.
+
+    Reads with FORMATTED values — the display strings ("98%", "6.4") ARE our
     store format, so nothing is reparsed.
     """
     api = ("https://sheets.googleapis.com/v4/spreadsheets/"
@@ -134,8 +174,8 @@ def collect(S, today=None, log=print):
     if missing:
         log("  [b2b] labels not found on MT tab (layout drift?): %s"
             % ", ".join(sorted(missing)))
-    log("  [b2b] %d values (%d weeks), %d goals"
-        % (len(values), len(weeks), len(goals)))
+    log("  [b2b] %-18s %3d values (%d weeks), %d goals"
+        % (MANAGER, len(values), len(weeks), len(goals)))
     return values, goals
 
 
@@ -168,11 +208,17 @@ def _pct(n, d, dec=0):
     return ("%d%%" % round(v)) if dec == 0 else ("%.1f%%" % v)
 
 
-def orderlog_week_slots(path, monday, upto, log=print):
-    """Parse one ORDERLOG csv -> (slot-label -> text value) for CARLOS, using
+def orderlog_week_slots(path, monday, upto, log=print, owner=None):
+    """Parse one ORDERLOG csv -> (slot-label -> text value) for ONE owner, using
     the captainship counting rules (Unit Count summed by sp.Order Date (copy),
     all products; rank = cumulative position among every owner in the export).
+
+    `owner` is the ORDERLOG "Owner & Office" first line, uppercased (e.g.
+    "CARLOS HIDALGO", "SABRINA ALICEA"); it defaults to Carlos, who was the
+    only computed owner until 2026-08-31. Every owner is still tallied for the
+    rank, only the returned slots are filtered to this one.
     """
+    owner_want = (owner or CARLOS_EXPORT).strip().upper()
     import collections
     from automations.att_order_log import clean
 
@@ -196,7 +242,7 @@ def orderlog_week_slots(path, monday, upto, log=print):
         if not u:
             continue
         owners_cum[owner] += u
-        if owner != CARLOS_EXPORT:
+        if owner != owner_want:
             continue
         rep = " ".join(str(r.get("Rep", "") or "").split())
         if rep:

@@ -96,7 +96,8 @@ def _fetch_chunk(page, start, end, log):
     return dest
 
 
-def collect_history(today, log=print, page_factory=None):
+def collect_history(today, log=print, page_factory=None,
+                    manager=None, owner_export=None):
     """-> (values, unavailable) — values are (mgr, week_iso, slot, text) tuples
     for every completed week with data; unavailable is [(week_iso, reason)].
 
@@ -104,6 +105,7 @@ def collect_history(today, log=print, page_factory=None):
     missing from the cache (so cached re-runs need no browser at all).
     """
     from automations.org_campaign_metrics import layout as L
+    from automations.org_campaign_metrics import pull_b2b
     from automations.org_campaign_metrics.pull_b2b import orderlog_week_slots
     from automations.org_campaign_metrics.run import week_sunday
 
@@ -145,14 +147,16 @@ def collect_history(today, log=print, page_factory=None):
         for m in week_mondays:
             upto = m + dt.timedelta(days=6)
             week_iso = week_sunday(m).isoformat()
-            named = orderlog_week_slots(path, m, upto, log)
+            named = orderlog_week_slots(path, m, upto, log,
+                                        owner=owner_export or pull_b2b.CARLOS_EXPORT)
             named = {lab: v for lab, v in named.items()
                      if lab in slots and lab not in _NEVER_LABELS}
             if not named:
-                unavailable.append((week_iso, "no Carlos rows in export"))
+                unavailable.append((week_iso, "no rows for %s in export"
+                                    % (owner_export or pull_b2b.CARLOS_EXPORT)))
                 continue
             for lab, v in sorted(named.items(), key=lambda kv: slots[kv[0]]):
-                values.append((MANAGER, week_iso, slots[lab], v))
+                values.append((manager or MANAGER, week_iso, slots[lab], v))
     return values, unavailable
 
 
@@ -160,6 +164,10 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true",
                     help="actually write (default: dry preview)")
+    ap.add_argument("--manager", help="org Focus Report picker spelling "
+                    "(default: Carlos Hidalgo)")
+    ap.add_argument("--owner-export", help="ORDERLOG 'Owner & Office' first line, "
+                    "uppercase (default: CARLOS HIDALGO)")
     ap.add_argument("--ssid", help="target spreadsheet id "
                     "(overrides ORG_CAMPAIGN_SSID; default = live workbook)")
     a = ap.parse_args(argv)
@@ -187,7 +195,9 @@ def main(argv=None):
 
     _page_factory.cm = None
     try:
-        values, unavailable = collect_history(today, log, _page_factory)
+        values, unavailable = collect_history(today, log, _page_factory,
+                                              manager=a.manager,
+                                              owner_export=a.owner_export)
     finally:
         if _page_factory.cm is not None:
             _page_factory.cm.__exit__(None, None, None)

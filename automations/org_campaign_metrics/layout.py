@@ -40,7 +40,21 @@ ZONE_START = 30
 # everyone else. Adding a manager (e.g. Drew/Isaiah -> nds) is a config change.
 MANAGER_CAMPAIGN = {
     "Carlos Hidalgo":    "b2b_att",
+    # Every captainship owner with an MT tab, mirrored from the Captainship
+    # Dashboard so their sales metrics sit under their recruiting numbers on
+    # the org Focus Report (Carlos 2026-08-31). Noah Dubale has no sales board.
     "Atef Choudhury":    "b2b_att",
+    "Jamis Garay":       "b2b_att",
+    "Jackie LeRoy":      "b2b_att",
+    "Justin Wood":       "b2b_att",
+    "Joshua Murphy":     "b2b_att",
+    "Dhyey Patel":       "b2b_att",
+    "Jeff Starr":        "b2b_att",
+    "Kinsey Guenther":   "b2b_att",
+    "George Hipolito":   "b2b_att",
+    "Joey Ramirez":      "b2b_att",
+    "Vincent Smith":     "b2b_att",
+    "Sabrina Alicea":    "b2b_att",
     "Ryan McSpadden":    "box",
     "Roshan Amin":       "box",
     "Khalil Mansour":    "nds",
