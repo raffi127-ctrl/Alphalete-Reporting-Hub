@@ -1,0 +1,28 @@
+{
+  "source": "lucy practice (copy of RH 8.30-Alisson)",
+  "row": 5,
+  "columns": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J"
+  ],
+  "formulas": [
+    "=IFERROR(INDEX('1. Paste the DD'!A3:AJ3,MATCH(1,ARRAYFORMULA(ISNUMBER(SEARCH(\"REP\",'1. Paste the DD'!$A$1:$AJ$1)))*ISNUMBER(SEARCH(\"NAME\",'1. Paste the DD'!$A$1:$AJ$1)),0)),\"\")",
+    "=IFERROR(VLOOKUP(A5,'3. Add Reps and Set Commission'!$B$4:$C,2,FALSE),\"\")",
+    "=IFERROR(INDEX('1. Paste the DD'!$A$3:$AJ$600,ROW()-4,MATCH(\"*SALE DATE*\",'1. Paste the DD'!$A$1:$AJ$1,0)),\"\")",
+    "=IFERROR(INDEX('1. Paste the DD'!$A$3:$AJ$600,ROW()-4,MATCH(\"*CUSTOMER NAME*\",'1. Paste the DD'!$A$1:$AJ$1,0)),\"\")",
+    "=IFERROR(LET(\n       h,'1. Paste the DD'!$A$1:$CA$1, d,'1. Paste the DD'!$A$3:$CA$1712, r,ROW()-4,\n       INDEX(d,r,IFERROR(MATCH(\"CL.PRODUCT\",h,0),MATCH(\"CL.DESCRIPTION\",h,0)))),\"\")",
+    "",
+    "=IFERROR(LET(\n       h,'1. Paste the DD'!$A$1:$CA$1, d,'1. Paste the DD'!$A$3:$CA$1712, r,ROW()-4,\n       pick,LAMBDA(n,IFERROR(INDEX(d,r,MATCH(n,h,0)),\"\")),\n       prod,INDEX(d,r,IFERROR(MATCH(\"CL.PRODUCT\",h,0),MATCH(\"CL.DESCRIPTION\",h,0))),\n       tier,pick(\"CL.TIER\"), desc,pick(\"CL.DESCRIPTION\"),\n       detl,pick(\"CL.DESCRIPTION DETAIL\"), ordt,pick(\"CL.ORDER TYPE\"),\n       IFS(tier<>\"\",tier, detl<>\"\",detl, AND(desc<>\"\",desc<>prod),desc, TRUE,ordt)),\"\")",
+    "=IFERROR(IF(and(A5<>\"\",B5=\"\"),\"No Level Assigned\",IF(TEXT(C5,\"DDD\")=\"SUN\",INDEX(FILTER('3. Add Reps and Set Commission'!$V$5:$V,'3. Add Reps and Set Commission'!$J$5:$J=E5,'3. Add Reps and Set Commission'!$K$5:$K=G5),1),IF(AND(B5<>\"\",E5<>\"\"),INDEX(FILTER('3. Add Reps and Set Commission'!$M$5:$V,'3. Add Reps and Set Commission'!$J$5:$J=E5,'3. Add Reps and Set Commission'!$K$5:$K=G5),1,MATCH(B5,'3. Add Reps and Set Commission'!$M$3:$V$3,0)),\"\"))),IF(ISNUMBER(SEARCH(\"Bonus\",E5)),J5*INDEX('3. Add Reps and Set Commission'!$M$4:$V$4,1,MATCH(B5,'3. Add Reps and Set Commission'!$M$3:$V$3,0)),\"Product Not Found\"))",
+    "=IF(TEXT(C5,\"DDD\")=\"SUN\",\"Sunday Bonus\",\"\")",
+    "=IFERROR(INDEX('1. Paste the DD'!$A$3:$AJ$600,ROW()-4,MATCH(TRUE,ARRAYFORMULA(ISNUMBER(SEARCH(\"TOTAL\",'1. Paste the DD'!$A$1:$AJ$1)*ISNUMBER(SEARCH(\"ICD\",'1. Paste the DD'!$A$1:$AJ$1)))),0)),\"\")"
+  ]
+}
