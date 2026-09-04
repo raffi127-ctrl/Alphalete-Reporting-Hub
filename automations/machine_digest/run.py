@@ -553,9 +553,13 @@ def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
         return "the mini"
     if not low:
         return "Lucy 1"          # no hostname recorded — the historical default
-    if "lucy" in low:
-        return "Lucy 1"          # Lucy 1's own hostnames, unchanged
     return row_machine
+
+# NOT a "lucy in the hostname -> Lucy 1" branch, tempting as it looks: Lucy 3 IS
+# `Lucys-Mac-mini.local` and Lucy 2 is `Lucys-MacBook-Neo.local`, so that rule
+# would send anyone debugging a Lucy 3 report to Lucy 1 — the same wrong-machine
+# error this function was just fixed for, with a friendlier-looking label on it.
+# Lucy 1 answers to alphaletes-mac-mini above; everything else prints raw.
 
 
 # The ONE marker that positively identifies a run a PERSON typed themselves:

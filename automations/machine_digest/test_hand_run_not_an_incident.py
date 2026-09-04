@@ -61,7 +61,13 @@ class TheMachineLabelNamesTheRealBox(unittest.TestCase):
             md._machine_label("Lucys-MacBook-Neo.local", "MacBook-Neo"), "Lucy 2")
         self.assertEqual(md._machine_label("alphaletes-mac-mini.local", ""),
                          "the mini")
-        self.assertEqual(md._machine_label("Lucys-Mac-mini.local", ""), "Lucy 1")
+
+    def test_lucy_3_is_not_called_Lucy_1_either(self):
+        """`Lucys-Mac-mini.local` IS Lucy 3. A 'lucy in the hostname -> Lucy 1'
+        shortcut would re-commit the exact wrong-machine error this function was
+        fixed for, just with a friendlier-looking label on it."""
+        self.assertNotEqual(md._machine_label("Lucys-Mac-mini.local", ""),
+                            "Lucy 1")
 
     def test_a_blank_hostname_keeps_the_old_default(self):
         """No hostname recorded = no new information; don't regress old rows."""
@@ -97,9 +103,9 @@ class TheErroredBranchSkipsHandRuns(unittest.TestCase):
     def test_the_same_failure_on_a_schedule_still_pages(self):
         """The watcher's whole reason to exist — do not over-suppress."""
         scheduled = dict(self.APEX_ROW, user="Mini (auto)",
-                         machine="Lucys-Mac-mini.local")
+                         machine="alphaletes-mac-mini.local")
         self.assertEqual(self._alerts_for(scheduled),
-                         [("apex-new-starts", "Lucy 1")])
+                         [("apex-new-starts", "the mini")])
 
     def test_a_scheduled_failure_on_an_unknown_box_names_that_box(self):
         odd = dict(self.APEX_ROW, user="Mini (auto)", machine="some-new-box.local")
