@@ -103,15 +103,31 @@ def _owners(url: str, tag: str, page) -> list:
 
 
 def _tab_roster(opener) -> set:
-    """Names already on that captain's churn tab — what the fill must cover."""
+    """REP names on that captain's churn tab — what the fill must cover.
+
+    The skip list has to be exact or the verdict lies. The first run (2026-09-04)
+    reported carlos "missing" `Rep` and `CARLOS HIDALGO (B2B)` — a column header
+    and the captainship-total label, neither of them people. That turned a clean
+    result into a fake shortfall, which is the same species of bug this probe
+    exists to catch, pointed at the probe itself."""
     try:
         col_a = [(r[0] if r else "").strip() for r in opener().get_all_values()]
     except Exception as e:  # noqa: BLE001
         log(f"      tab read failed: {type(e).__name__}: {e}")
         return set()
-    skip = ("churn", "captainship avg", "grand total", "")
-    return {a for a in col_a
-            if a and not any(s in a.lower() for s in skip if s)}
+    out = set()
+    for a in col_a:
+        low = a.lower()
+        if not a or low in ("rep", "name", "icd", "owner"):
+            continue                      # column headers
+        if any(s in low for s in ("churn", "captainship avg", "grand total",
+                                  "national average", "office avg")):
+            continue                      # section headers + total rows
+        if low.endswith("(b2b)"):
+            continue                      # "CARLOS HIDALGO (B2B)" — the tab's
+                                          # own captainship label, not a rep row
+        out.add(a)
+    return out
 
 
 def main() -> int:
@@ -152,19 +168,39 @@ def main() -> int:
             "captain results below mean nothing. Re-check the GUID first "
             "(`lucy rerun allteam_guid_probe`).")
     else:
-        ok = [k for k, v in report["captains"].items()
-              if v["returned"] and not v["missing_from_slice"]]
-        bad = [k for k, v in report["captains"].items()
-               if not v["returned"] or v["missing_from_slice"]]
-        if ok and not bad:
+        base_n = report["baseline_owners"]
+        # THREE outcomes, not two. The first run collapsed the first into the
+        # third and reported "Short: carlos, luis, eveliz" when every slice had
+        # in fact returned ALL 93 owners — the opposite problem, and the wrong
+        # thing to go fix. Say which one it is.
+        ignored = [k for k, v in report["captains"].items()
+                   if v["returned"] == base_n]
+        short = [k for k, v in report["captains"].items()
+                 if v["returned"] != base_n and v["missing_from_slice"]]
+        clean = [k for k, v in report["captains"].items()
+                 if v["returned"] and v["returned"] != base_n
+                 and not v["missing_from_slice"]]
+        if ignored:
+            log(f"  FILTER IGNORED — not 'short'. {ignored} each returned all "
+                f"{base_n} owners, i.e. the captain param changed NOTHING. The "
+                f"likely cause is the pinned-categorical trap this workbook is "
+                f"already known for (att_churn's remediation): a saved view "
+                f"holding a filter at (All) does not accept a URL override — it "
+                f"has to be released in Tableau with focus+Space, not a click. "
+                f"b2b_views_probe saw the mirror image on the BASE view, where "
+                f"a pinned SINGLE owner survived the same param.")
+            log("  => the per-captain cutover is OFF on this evidence. Per-OFFICE "
+                "slicing (Owner & Office) is unaffected and works — that is what "
+                "b2b_metrics uses.")
+        elif clean and not short:
             log("  CUT OVER. Every captain's slice returned their whole tab "
                 "roster off the ONE all-team view — the per-captain custom "
                 "views can stop being a dependency, and no future republish "
                 "can narrow a captainship into looking empty.")
         else:
-            log(f"  NOT YET. Clean: {ok or 'none'}. Short: {bad}. A slice that "
-                f"misses people would fill a tab with an incomplete roster, "
-                f"which is worse than the blank it replaces — see "
+            log(f"  NOT YET. Clean: {clean or 'none'}. Short: {short}. A slice "
+                f"that misses people would fill a tab with an incomplete "
+                f"roster, which is worse than the blank it replaces — see "
                 f"missing_from_slice per captain above before changing pull.py.")
 
     (OUT / "probe.json").write_text(json.dumps(report, indent=2))
