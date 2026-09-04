@@ -15,7 +15,11 @@ from __future__ import annotations
 from automations.oat_processing.run import _blocked_reason, _is_blocked_detail, _BLOCKED_PREFIX
 
 _fails = []
-BODY = "x" * 400          # long enough to clear the empty-body floor
+BODY = ("Work experience\n"
+        "Cashier/Customer Service | Publix | Lauderhill, FL\n"
+        "November 2025 to Present\n"
+        "Skills\nHome care, scheduling, POS\n"
+        "candidate@example.com\n" + "detail " * 60)
 
 
 def check(name, cond, detail=""):

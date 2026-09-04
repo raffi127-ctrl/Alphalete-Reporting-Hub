@@ -1837,6 +1837,34 @@ _SIGNIN_SIGNS = (
     "create your account", "log in to indeed", "sign in to indeed",
 )
 
+# POSITIVE PROOF THAT THE RESUME ITSELF RENDERED — not just the viewer around it.
+# WHY (Shanice Rankine, office 23467, 2026-09-03). Her number is in the header,
+# "Lakewood, CO 80215 | +1 754 302 3395 | shanice…@indeedemail.com" — the same
+# layout the reader pulled from Tamara Derryberry and Manuel Montana the same day.
+# Her first read of the morning still came back empty, and _blocked_reason cleared
+# her: no Cloudflare phrase, no sign-in phrase, and a body well over the 200-char
+# floor — because the VIEWER CHROME alone ("Shanice Rankine's Resume", nav,
+# footer) is over it. So a resume frame that had not rendered YET was recorded as
+# "the resume opened and has no number", the CONFIRMED-uncontactable verdict, which
+# caches for the day. She was then skipped 75 times without the resume being
+# reopened once, and Megan sent her by hand at 6:24 PM.
+#
+# The 8/27 fix taught the reader to look INSIDE frames; this is the other half —
+# noticing when there is no frame content to look at. A rendered Indeed resume
+# always carries at least one of these; the chrome carries none of them. Absent
+# every one, we did not see a resume, so the read is BLOCKED (retryable) rather
+# than a confirmed-empty one. Keep the list GENEROUS and err toward "rendered":
+# a marker we forgot costs one needless retry, bounded by the retry budget; a
+# marker we lack settles a reachable applicant for the whole day. The bias is deliberate and matches Carlos's rule
+# ("If that doesn't work, then just leave it there. Don't remove that applicant"):
+# a needless retry costs ~12s, a wrong "confirmed empty" costs the applicant their
+# whole day. The retry budget (_BLOCKED_MAX_ATTEMPTS) still bounds the cost.
+_RENDERED_RESUME_SIGNS = (
+    "experience", "education", "skills", "authorized to work", "employment",
+    "certification", "objective", "summary", "references", "qualifications",
+    "@",                       # every resume header carries a contact email
+)
+
 # Retry budget for a blocked read: try at most this many times per applicant per day,
 # each at least _BLOCKED_RETRY_AFTER_MIN apart. The cool-off is the point — Megan's
 # 8/6 complaint was the walk reopening the same resumes every 5 minutes, and a bare
@@ -1864,6 +1892,11 @@ def _blocked_reason(title: str, body: str) -> str:
         # A real resume is never this short. An empty/near-empty body means the page
         # didn't render — usually the employer portal bouncing us.
         return "resume page never rendered (empty body)"
+    if not any(sign in b for sign in _RENDERED_RESUME_SIGNS):
+        # Long enough to pass the floor, but carrying none of the marks a real
+        # resume has — i.e. the viewer shell with nothing in it yet. See
+        # _RENDERED_RESUME_SIGNS: this is Shanice Rankine's case.
+        return "viewer chrome only — resume body never rendered"
     return ""
 
 

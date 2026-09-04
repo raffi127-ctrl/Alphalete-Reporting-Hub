@@ -61,9 +61,22 @@ check("with frames (the FIX) finds his real number",
 print("the chrome is why it was called 'no phone' and not 'blocked':")
 # Over the length floor and carrying no challenge markers, so nothing upstream
 # could tell this apart from a resume that genuinely has no number on it.
+#
+# UPDATED 2026-09-03 — the second half of this fix. Reading frames finds the
+# number when the frame HAS rendered; it does nothing when the frame has not
+# rendered yet, and that case still reached a "confirmed empty" verdict on the
+# strength of the chrome alone. Shanice Rankine (23467) was settled that way at
+# 7am on a resume whose number is in the header, then skipped 75 times. So the
+# chrome must now read as BLOCKED (retryable). The assertion below is inverted
+# from what it was, deliberately: it used to record the bug, and now records
+# the fix. See _RENDERED_RESUME_SIGNS and test_rendered_resume.py.
 check("chrome clears the blocked-read length floor", len(CHROME) > 200, True)
-check("chrome is not flagged as blocked", _blocked_reason("carlos nevarez's resume",
-                                                          CHROME), "")
+check("chrome IS flagged as blocked, so the applicant is retried not written off",
+      bool(_blocked_reason("carlos nevarez's resume", CHROME)), True)
+check("and the reason names the cause",
+      "never rendered" in _blocked_reason("carlos nevarez's resume", CHROME), True)
+check("the rendered resume behind it is NOT blocked",
+      _blocked_reason("carlos nevarez's resume", CHROME + RESUME_FRAME), "")
 
 print("a genuinely empty read is still blocked, not settled:")
 check("short body still reads as blocked",
