@@ -43,6 +43,11 @@ COL_ORIENTATION = "ran orientation"
 COL_LOCATION = "location"
 COL_TEAM = "team"
 COL_REASON = "reason lost"
+# Megan added this to the box on 2026-09-03, to the right of 'Notes', because
+# Apex's employee profile requires a gender and no form this report reads asks
+# for one. It is a dropdown on the sheet, so it arrives already spelled the way
+# Apex spells it -- and a blank one is reported, never inferred from a name.
+COL_GENDER = "gender"
 
 # Roll-call values. Matched as substrings of the folded cell, so 'Terminated',
 # 'TERMINATED' and a stray 'terminated 8/30' all land.
@@ -76,6 +81,7 @@ class Candidate:
     roll: dict                    # {weekday offset Mon=0: cell text}
     tab: str
     row: int                      # 1-indexed, for citing the exact cell
+    gender: str = ""              # from the board's own Gender column
     ona_days: tuple = ()          # weekday offsets reading O-NA
     week_start: Optional[dt.date] = None   # the Monday this tab covers
 
@@ -187,7 +193,7 @@ def read_box(grid: list, tab: str, today: Optional[dt.date] = None
     cols = {k: _find_col(grid, hdr, lbl) for k, lbl in (
         ("trainer", COL_TRAINER), ("email", COL_EMAIL),
         ("location", COL_LOCATION), ("team", COL_TEAM),
-        ("reason", COL_REASON))}
+        ("reason", COL_REASON), ("gender", COL_GENDER))}
     if not lay.box_days:
         raise BoxLayoutError(
             "The New Starts box has no weekday columns -- without them there "
@@ -218,6 +224,8 @@ def read_box(grid: list, tab: str, today: Optional[dt.date] = None
             if cols["team"] else "",
             reason_lost=str(BD._cell(grid, r, cols["reason"]) or "").strip()
             if cols["reason"] else "",
+            gender=str(BD._cell(grid, r, cols["gender"]) or "").strip()
+            if cols["gender"] else "",
             roll=roll, tab=tab, row=r, ona_days=ona, week_start=monday))
     return out
 

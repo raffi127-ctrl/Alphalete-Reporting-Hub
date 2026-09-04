@@ -113,8 +113,9 @@ def test_the_password_controls_are_untouchable(page):
     assert {"sendreset", "p6"}.isdisjoint({m[2]["id"] for m in matched})
 
 
-def test_gender_is_found_but_never_answered(page):
-    """It is required, so the run must be able to SEE it -- and it is in
-    UNANSWERED, so the run never picks a value for it."""
-    assert AX.find_field(page, "gender") is not None
-    assert "gender" in AX.UNANSWERED
+def test_gender_is_found_and_now_comes_from_the_board(page):
+    """Apex requires it and no form asks for it, so Megan added a Gender column
+    to the sales board's New Starts box (2026-09-03). The run reads that cell;
+    it never infers a gender from somebody's name."""
+    assert AX.find_field(page, "gender")["id"] == "p8"
+    assert AX.UNANSWERED == ()

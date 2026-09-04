@@ -170,3 +170,19 @@ def test_the_week_monday_comes_off_the_tab_name():
     assert BRD.tab_monday("Sales Board WE 9.6",
                           dt.date(2026, 9, 3)) == dt.date(2026, 8, 31)
     assert BRD.tab_monday("not a week tab") is None
+
+
+def test_gender_comes_off_the_board_not_off_a_name():
+    """Apex requires a gender on the employee profile and no form this report
+    reads asks for one, so Megan added a column (2026-09-03). A blank cell
+    stays blank -- a name is not evidence of anything."""
+    import datetime as dt
+    from automations.apex_new_starts import run as RUN
+    g, row = _grid()
+    g[8][40 - 1] = "Gender"                     # far right of the box header
+    g.append(row({3: "Ann Lee", DAYS[0]: "CR", 40: "Female"}))
+    g.append(row({3: "Pat Ray", DAYS[0]: "CR"}))
+    people = BRD.read_box(g, "Sales Board WE 9.6", dt.date(2026, 9, 3))
+    assert [p.gender for p in people] == ["Female", ""]
+    assert RUN._gender("f") == "Female" and RUN._gender("M") == "Male"
+    assert RUN._gender("") == ""

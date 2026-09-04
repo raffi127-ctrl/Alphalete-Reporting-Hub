@@ -188,10 +188,11 @@ SECURITY_ROLE = "Sales Rep"
 # security role, 2026-09-03). Kept, empty, because the machinery that reports
 # unanswered fields is what should carry the NEXT one -- stage two is not
 # captured yet, and its fields will land here first.
-# 'Gender' is required on the employee profile and is on NO form this report
-# reads -- the I-9 does not ask, and it is not something to infer from a name.
-# The operator picks it, like the Social.
-UNANSWERED = ("gender",)
+# Nothing is unanswered any more: Megan added a Gender column to the board's
+# New Starts box (2026-09-03) rather than leave the one field Apex requires and
+# no form asks for. Kept, empty, because it is the machinery that will carry the
+# next unanswerable field if one turns up.
+UNANSWERED = ()
 
 USERNAME_IS_EMAIL = True
 

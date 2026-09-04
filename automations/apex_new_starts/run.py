@@ -150,7 +150,8 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     """Everything that goes into Apex for one person, from three sources.
 
       the I-9        who they are   -- name, address, DOB, email, phone
-      the board      when they started -- the date of their CR (classroom) cell
+      the board      when they started -- the date of their CR (classroom)
+                     cell -- and their gender, from the column Megan added
       DEFAULTS       how this office hires -- Sales Rep, $10/hr, Texas,
                      Commissions, Weekly. Same for everyone, so they are
                      settings rather than data.
@@ -189,7 +190,24 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     phone = v.pop("phone", "")
     if phone:
         v[AX.PHONE_FIELD] = phone
+
+    # Gender comes off the board's own column (Megan added it 2026-09-03).
+    # Blank stays blank: an empty cell means nobody has said, and a name is not
+    # evidence. The operator fills it, and the preview says who needs it.
+    gender = _gender(c.gender)
+    if gender:
+        v["gender"] = gender
     return v
+
+
+def _gender(value) -> str:
+    """The board's value as Apex's dropdown spells it, or '' if unrecognised."""
+    raw = str(value or "").strip().lower()
+    if raw in ("f", "female", "woman"):
+        return "Female"
+    if raw in ("m", "male", "man"):
+        return "Male"
+    return str(value or "").strip()
 
 
 def _us_date(value) -> str:
@@ -222,6 +240,9 @@ def _person_line(c: BRD.Candidate, hire: BID.NewHire) -> str:
     hired = c.hire_date.strftime("%m/%d/%Y") if c.hire_date else "?"
     body = (f"  ✅ {c.name:26} hire {hired} · {len(hire.have)}/11 fields · {ssn}"
             f" · matched by {hire.matched_on}{flag}")
+    if not c.gender:
+        body += ("\n       ⚠️ no Gender on the board — Apex requires one, so "
+                 "fill that cell or type it in Apex yourself")
     if not c.hire_date:
         body += ("\n       ⚠️ no CR (classroom) day on the board this week — "
                  "hire date has to be typed by hand")
