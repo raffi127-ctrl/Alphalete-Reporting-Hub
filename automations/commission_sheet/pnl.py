@@ -18,6 +18,9 @@ What this does, per JD's Loom 2026-09-03:
 
 What it deliberately does NOT do:
   * write `Profit/Loss` — that column is a live `=SUM(DEn)-(DFn*1.12)` formula
+  * reuse anything captured earlier. The sheet is read live every run, so a
+    figure JD corrects after ticking is the figure that gets written — never a
+    value snapshotted at approval time (Megan, 2026-09-04).
   * run before JD has signed off. This is the first step that writes OUTSIDE
     the week's workbook — into the year P&L everyone reads — so it gates on
     JD's tick on the review post (see notify.py). `--ungated` skips that, for

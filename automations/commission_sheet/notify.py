@@ -33,6 +33,12 @@ so they are the two worth holding.
     is_approved(week)      -> bool
     require_approval(week) -> raises NotApproved
 
+THE TICK AUTHORISES, IT DOES NOT FREEZE. Every gated step reads the workbook
+live when it runs, so if JD corrects a figure after ticking, the corrected
+figure is what gets written (Megan, 2026-09-04). Nothing is snapshotted at
+approval time and replayed later — that would quietly pay the number he
+already fixed.
+
 `pnl.py --write` calls it. Nothing before step 10 does, deliberately — gating
 the reset or the DD fill would just make a redoable step annoying.
 """
@@ -190,8 +196,10 @@ def check(week: dt.date, workbook_id: str = C.WORKBOOK_ID,
         return 1
 
     print(f"✓ ticked by {who[1]} for WE {week_label(week)}")
-    # The link is to the LIVE workbook, so what was ticked is not frozen. Say
-    # plainly whether it moved after the post went up.
+    # The link is to the LIVE workbook and later edits are MEANT to count —
+    # whatever is in the sheet when a step runs is what gets written (Megan,
+    # 2026-09-04). So this is a note, not a warning: it says the numbers moved
+    # since he looked, which is normal when he corrects something.
     try:
         from automations.commission_sheet.drive_auth import service
         meta = service().files().get(fileId=workbook_id, fields="modifiedTime",
@@ -201,8 +209,8 @@ def check(week: dt.date, workbook_id: str = C.WORKBOOK_ID,
         posted = dt.datetime.fromtimestamp(float(msg["ts"]), dt.timezone.utc)
         if modified > posted:
             mins = int((modified - posted).total_seconds() // 60)
-            print(f"  note: the workbook was edited {mins} min after the post — "
-                  f"what JD saw is not what is in it now.")
+            print(f"  note: edited {mins} min after the post — his later "
+                  f"changes are what will be written.")
     except Exception as e:  # noqa: BLE001 — never fail the gate on a metadata read
         print(f"  (could not read the workbook's modified time: {type(e).__name__})")
     return 0
