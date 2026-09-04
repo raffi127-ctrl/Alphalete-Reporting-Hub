@@ -112,6 +112,20 @@ _NOT_A_REPORT = frozenset({
     "weather_6am", "texas_de_brazil_745", "new_start_followup_sat",
     "override_bulletin_send_fri", "brand_audit_noon", "car_rides_cleanup",
     "harvest_prime",
+    # The Override Bulletin's review-gate HANDLE (Megan 2026-09-04: "this should
+    # be green since it went out"). It self-registered a library card AND a
+    # due-today line on Lucy 1, and that line can never tick: override_gate.py
+    # publishes under the card id `override_bulletin`, so the Friday send greens
+    # the 🏆 card while this one sits unchecked beside it saying the bulletin
+    # didn't go out. It is a DUPE, not a report — its three actions are already
+    # buttons on that card ("Post for Eve's Approval", "Send Now (after Eve's
+    # ✅)", "Preview PDF"), so nothing is lost by taking the stub away and the
+    # Hub stops showing one report as two. Same shape as override_bulletin_send_fri
+    # right above. `lucy rerun override_bulletin_gate` is untouched — the
+    # schedule_config entry stays; this only stops it being CARDED.
+    # BOTH spellings, like owner_showdown: the scheduler door keys on the
+    # report_id, the plist door derives the kebab id.
+    "override_bulletin_gate", "override-bulletin-gate",
     # Tableau access-budget tooling (Megan 2026-08-17). All three are hand-run
     # DIAGNOSTICS with on_scheduler:false — they answer "is a shared login safe
     # for this report" and "how many times did we sign in". They self-registered
