@@ -69,3 +69,44 @@ class SplitName(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AdditionsMessage(unittest.TestCase):
+    """What gets reported back into JD's review thread. Offline."""
+
+    def _plan(self, extras=(), ambiguous=(), unplaced=()):
+        from automations.commission_sheet.pnl import Plan, Row
+        return Plan(week=dt.date(2026, 8, 30), banner="WE 8/30",
+                    brought_col="DE", paid_col="DF",
+                    extras=[Row(rep=n, brought=None, paid=None, target_row=r)
+                            for n, r in extras],
+                    ambiguous=[Row(rep=n, brought=None, paid=None, note=x)
+                               for n, x in ambiguous],
+                    unplaced=[Row(rep=n, brought=None, paid=None, note=x)
+                              for n, x in unplaced])
+
+    def test_silent_when_nothing_to_say(self):
+        from automations.commission_sheet.pnl import additions_message
+        self.assertIsNone(additions_message(self._plan()))
+
+    def test_names_the_new_people_and_asks_for_a_team(self):
+        from automations.commission_sheet.pnl import additions_message
+        msg = additions_message(self._plan(
+            extras=[("Chloe Johnson", 365), ("Willie Henderson", 366)]))
+        self.assertIn("WE 08/30/26", msg)
+        self.assertIn("• Chloe Johnson", msg)
+        self.assertIn("• Willie Henderson", msg)
+        self.assertIn("team", msg)
+
+    def test_unplaceable_people_are_reported_too(self):
+        # A rep missing from the year P&L is the failure nobody notices.
+        from automations.commission_sheet.pnl import additions_message
+        msg = additions_message(self._plan(
+            ambiguous=[("Kelvinton Scarbrough", "2 rows share this name")]))
+        self.assertIn("Could not be placed", msg)
+        self.assertIn("Kelvinton Scarbrough", msg)
+        self.assertIn("2 rows share this name", msg)
+
+    def test_an_extra_with_no_row_is_not_claimed_as_added(self):
+        from automations.commission_sheet.pnl import additions_message
+        self.assertIsNone(additions_message(self._plan(extras=[("Nobody", 0)])))

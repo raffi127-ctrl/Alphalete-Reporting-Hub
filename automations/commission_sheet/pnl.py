@@ -260,6 +260,32 @@ def report(plan: Plan) -> str:
     return "\n".join(out)
 
 
+def additions_message(plan: "Plan") -> Optional[str]:
+    """What to say in the review thread about people who were not already on the
+    grid. None when there is nothing to report.
+
+    Anyone NEW is worth naming: they arrived in a spare row with no team, and
+    JD is the one who fills that in. Anyone who could NOT be placed is named
+    too — same concern from the other side, since a rep missing from the year
+    P&L is the failure nobody notices."""
+    added = [r.rep for r in plan.extras if r.target_row]
+    stuck = [(r.rep, r.note) for r in plan.ambiguous + plan.unplaced]
+    if not added and not stuck:
+        return None
+
+    lines = []
+    if added:
+        lines.append(f"Added to the P&L for WE {plan.week:%m/%d/%y} "
+                     f"({len(added)}) — these need a team:")
+        lines += [f"• {name}" for name in added]
+    if stuck:
+        if lines:
+            lines.append("")
+        lines.append(f"Could not be placed ({len(stuck)}) — not written:")
+        lines += [f"• {name} — {note}" for name, note in stuck]
+    return "\n".join(lines)
+
+
 def _split_name(full: str) -> Tuple[str, str]:
     parts = full.split()
     return (parts[0], " ".join(parts[1:])) if len(parts) > 1 else (full, "")
@@ -339,6 +365,24 @@ def main(argv=None) -> int:
     done = apply(plan)
     print(f"\nWrote {done['cells']} cell(s) for {done['reps']} rep(s); "
           f"flipped {done['flips']} to Y.")
+
+    # Report new/unplaceable people into the thread JD is already reading. The
+    # write has already happened, so a Slack failure must not read as a failed
+    # run — it is reported and the exit code stays 0.
+    note = additions_message(plan)
+    if note and not args.ungated:
+        try:
+            from automations.commission_sheet.notify import reply
+            if reply(plan.week, note):
+                print(f"Replied in the review thread with "
+                      f"{len(plan.extras)} addition(s).")
+            else:
+                print("Could not find the review post to reply to.")
+        except Exception as e:  # noqa: BLE001
+            print(f"Could not post the additions note ({type(e).__name__}) — "
+                  f"the P&L write itself succeeded:\n{note}")
+    elif note:
+        print(f"\nWould reply in the review thread:\n{note}")
     if args.hide_inactive:
         print(f"Hid {hide_inactive()} row(s) marked N.")
     return 0

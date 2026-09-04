@@ -163,6 +163,19 @@ def require_approval(week: dt.date, channel: str = REVIEW_CHANNEL) -> None:
             + ". This step writes outside the workbook, so it waits.")
 
 
+def reply(week: dt.date, text: str, channel: str = REVIEW_CHANNEL) -> bool:
+    """Add a message to the week's review thread. False if there is no post.
+
+    Used to report back into the same thread JD is already reading, rather than
+    starting a second conversation he has to find."""
+    msg = _find_post(week, channel)
+    if not msg:
+        return False
+    _client().chat_postMessage(channel=channel, thread_ts=msg["ts"], text=text,
+                               unfurl_links=False)
+    return True
+
+
 def check(week: dt.date, workbook_id: str = C.WORKBOOK_ID,
           channel: str = REVIEW_CHANNEL) -> int:
     """0 if JD has ticked the post, 1 otherwise. Steps 10 and 11 gate on this."""
