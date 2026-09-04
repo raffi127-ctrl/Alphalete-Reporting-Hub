@@ -4051,8 +4051,19 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "run_machine": "Lucy 1",
         "run_rerun_id": "gap_alerts",
+        # THE FIELD DAY, not a morning slot (Megan 2026-09-04). With no `time`
+        # the Hub falls back to 8:00 AM, so "Needs attention" called this report
+        # late from 9am every day for a card whose first tick is 1:30pm — and
+        # listed it on Sunday, when it is off entirely. The window lives in
+        # gap_alerts/run.py: Mon-Fri 1:30pm-8:30pm, Sat 10:00am-5:00pm, Sun
+        # never. Saturday's earlier start is deliberately NOT modelled here (one
+        # card carries one clock) — a Saturday tick that never happens is simply
+        # flagged from 2:30pm instead of 11am, late rather than wrong.
         "schedule": {
             "frequency": "daily",
+            "weekdays": [0, 1, 2, 3, 4, 5],   # Mon-Sat; Sunday off
+            "time": "1:30 PM",
+            "time_label": "Mon\u2013Fri 1:30\u20138:30pm \u00b7 Sat 10\u20135",
             "estimated_minutes": 1,
         },
         "checklist": [],

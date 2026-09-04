@@ -2456,9 +2456,16 @@ def _card_self_check() -> list[str]:
         # SCHEDULED card (daily/weekly/monthly) whose time string has no
         # clock in it is a real wiring problem; on-demand cards legitimately
         # say 'On-demand'.
+        # ...and only a card that is actually ON that clock. A paused or
+        # self_scheduled card has no clock to miss: nothing reads its time to
+        # decide whether it is late, so an unparseable one costs nothing. That
+        # is why apex-new-starts ("Thu or Fri, by hand" — hand-driven by
+        # design, and still being built) sat in this red box for a wiring
+        # problem it cannot have (Megan 2026-09-04).
         _sched = r.get("schedule") or {}
         _t = (_sched.get("time") or "").strip()
         if (_t and not r.get("hide_schedule")
+                and not r.get("paused") and not r.get("self_scheduled")
                 and str(_sched.get("frequency") or "").lower()
                 in ("daily", "weekly", "monthly")
                 and _sched_time_lenient(_t) is None):
