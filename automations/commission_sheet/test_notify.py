@@ -1,12 +1,12 @@
-"""The payroll review gate's wording and its approval rule. Offline — no Slack.
+"""The payroll notification's wording, and who it tags. Offline — no Slack.
 
-    python -m unittest automations.commission_sheet.test_review_gate
+    python -m unittest automations.commission_sheet.test_notify
 """
 import datetime as dt
 import unittest
 
-from automations.commission_sheet.review_gate import (
-    APPROVERS, _approver_of, _last_sunday, reply_for, title_for, week_label)
+from automations.commission_sheet.notify import (
+    NOTIFY, _approver_of, _last_sunday, reply_for, title_for, week_label)
 
 
 class Wording(unittest.TestCase):
@@ -29,11 +29,13 @@ class Wording(unittest.TestCase):
     def test_the_other_jd_account_is_never_tagged(self):
         # Two "JD Mascorro" accounts exist; U068T4LA0C8 is the wrong one.
         self.assertNotIn("U068T4LA0C8", reply_for("X"))
-        self.assertEqual(list(APPROVERS), ["U05094TTPKQ"])
+        self.assertEqual(list(NOTIFY), ["U05094TTPKQ"])
 
 
-class ApprovalRule(unittest.TestCase):
-    def test_tick_from_jd_opens_the_gate(self):
+class TickReading(unittest.TestCase):
+    """Reads whether JD ticked the post. Gates nothing today — see notify.py."""
+
+    def test_tick_from_jd_is_recognised(self):
         msg = {"reactions": [{"name": "white_check_mark",
                               "users": ["U05094TTPKQ"], "count": 1}]}
         self.assertEqual(_approver_of(msg), ("U05094TTPKQ", "JD Mascorro"))
@@ -43,12 +45,12 @@ class ApprovalRule(unittest.TestCase):
             msg = {"reactions": [{"name": name, "users": ["U05094TTPKQ"]}]}
             self.assertIsNotNone(_approver_of(msg), name)
 
-    def test_tick_from_someone_else_leaves_it_shut(self):
+    def test_tick_from_someone_else_does_not_count(self):
         msg = {"reactions": [{"name": "white_check_mark",
                               "users": ["U088E2KJEV8", "U045Z8N0ZQC"]}]}
         self.assertIsNone(_approver_of(msg))
 
-    def test_a_thumbs_up_from_jd_is_not_approval(self):
+    def test_a_thumbs_up_from_jd_does_not_count(self):
         msg = {"reactions": [{"name": "+1", "users": ["U05094TTPKQ"]}]}
         self.assertIsNone(_approver_of(msg))
 

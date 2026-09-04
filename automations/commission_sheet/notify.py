@@ -1,30 +1,33 @@
-"""Step 9 — the approval gate between building the week and entering it in Apex.
+"""Step 9 — tell JD the week is ready for review.
 
-JD asked for "some sort of manual check before I update it". This is that check,
-built the same shape as the bulletin and sales-board gates so there is one review
-habit in the channel and not several:
+JD asked for "some sort of manual check before I update it". Today that check is
+just him looking: nothing downstream is released or sent on his say-so, so this
+posts a notification and stops there (Megan, 2026-09-04).
 
-    review_gate.py --post            post the week's review call in #l10-alphalete,
-                                     then reply in-thread tagging JD with the link
-    review_gate.py --check           has JD ticked it? exit 0 = approved
-    review_gate.py                   dry run: print exactly what would be posted
+    notify.py --post          post it
+    notify.py                 dry run: print exactly what would be posted
 
-WHO APPROVES: **JD ONLY** (Megan, 2026-09-04). A checkmark from anyone else leaves
-the gate closed and releases nothing. Slack reports who reacted, so that is
-enforceable rather than a convention. Note there are TWO "JD Mascorro" accounts in
-this workspace; the live one is josh.mascorro17@gmail.com — tagging the other
-would post into silence.
+It posts one clean line to #l10-alphalete:
 
-WHY THIS ONE NEEDS NO --refresh. The bulletin gate posts a PDF snapshot, so a
-sheet corrected after the link went out needs the PDF rebuilt under the same link
-or people approve a stale document. This gate links the LIVE workbook, so a
-correction is visible the moment it is made and there is nothing to refresh. The
-trade is the opposite risk — what JD ticked is not frozen — so --check reports
-when the workbook was last modified against when the post went up.
+    Payroll Commission Processing Ready for Review WE MM/DD/YY
 
-WEEKLY, KEYED ON THE WEEK ENDING. The post's title carries "WE MM/DD/YY", which
-is what makes it unique; --check finds --post's message by that title without
-either run having to tell the other anything.
+and then replies IN-THREAD tagging JD with the workbook link — two messages on
+purpose, so the channel stays scannable while the ping and the link he actually
+needs sit together in the thread.
+
+Careful with the tag: the workspace holds TWO "JD Mascorro" accounts. The live
+one is josh.mascorro17@gmail.com; tagging the other posts into silence. A test
+pins which one we use.
+
+Re-running is safe. A post for a week that already has one is not duplicated —
+the title carries "WE MM/DD/YY", which is what makes it unique and what lets a
+later run find it without either run recording anything.
+
+NOT A GATE, for now. `--check` below reads whether JD has ticked the post, but
+nothing consults it: no step refuses to run without his tick. It exists because
+step 11 (entering payroll in Apex) is the thing that will eventually want
+gating, and reading reactions is the part worth having ready. Until something
+actually calls it, treat this module as a notification.
 """
 from __future__ import annotations
 
@@ -39,10 +42,10 @@ from automations.commission_sheet import config as C
 #: rename keeps the id.
 REVIEW_CHANNEL = "C075PCEL92M"
 
-#: JD Mascorro, josh.mascorro17@gmail.com. The workspace also holds a second
-#: "JD Mascorro" (U068T4LA0C8, jd.alphaletemarketing@gmail.com) which is NOT the
-#: account he uses — confirmed by Megan 2026-09-04.
-APPROVERS: Dict[str, str] = {"U05094TTPKQ": "JD Mascorro"}
+#: Who gets tagged. JD Mascorro, josh.mascorro17@gmail.com. The workspace also
+#: holds a second "JD Mascorro" (U068T4LA0C8, jd.alphaletemarketing@gmail.com)
+#: which is NOT the account he uses — confirmed by Megan 2026-09-04.
+NOTIFY: Dict[str, str] = {"U05094TTPKQ": "JD Mascorro"}
 
 #: Any of Slack's ticks: nobody should have to remember which green check is
 #: "the" one, and picking the wrong one must not silently read as "not yet".
@@ -67,7 +70,7 @@ def sheet_link(workbook_id: str = C.WORKBOOK_ID) -> str:
 
 
 def reply_for(workbook_id: str = C.WORKBOOK_ID) -> str:
-    tags = " ".join(f"<@{uid}>" for uid in APPROVERS)
+    tags = " ".join(f"<@{uid}>" for uid in NOTIFY)
     return f"{tags} {sheet_link(workbook_id)}"
 
 
@@ -89,14 +92,14 @@ def _find_post(week: dt.date, channel: str = REVIEW_CHANNEL) -> Optional[dict]:
 
 def _approver_of(msg: dict) -> Optional[Tuple[str, str]]:
     """(id, name) of the first AUTHORISED tick, else None. A tick from anyone
-    outside APPROVERS falls through and the gate stays shut — that is the whole
+    outside NOTIFY falls through and the gate stays shut — that is the whole
     enforcement."""
     for rx in msg.get("reactions", []):
         if rx.get("name") not in APPROVE_EMOJI:
             continue
         for uid in rx.get("users", []):
-            if uid in APPROVERS:
-                return uid, APPROVERS[uid]
+            if uid in NOTIFY:
+                return uid, NOTIFY[uid]
     return None
 
 
@@ -127,7 +130,11 @@ def post(week: dt.date, workbook_id: str = C.WORKBOOK_ID,
 
 def check(week: dt.date, workbook_id: str = C.WORKBOOK_ID,
           channel: str = REVIEW_CHANNEL) -> int:
-    """0 if JD has ticked it, 1 otherwise."""
+    """0 if JD has ticked the post, 1 otherwise.
+
+    NOTHING CALLS THIS TODAY — no step refuses to run without his tick. It is
+    here for whenever the Apex entry wants gating; until then it is a way to
+    ask "has he looked at it yet", not a control."""
     msg = _find_post(week, channel)
     if not msg:
         print(f"— no review post found for WE {week_label(week)}. Run --post first.")
@@ -135,11 +142,10 @@ def check(week: dt.date, workbook_id: str = C.WORKBOOK_ID,
     who = _approver_of(msg)
     if not who:
         got = [f":{r['name']}: x{r['count']}" for r in msg.get("reactions", [])]
-        print(f"— not approved yet (reactions: {', '.join(got) or 'none'}; "
-              f"only {', '.join(APPROVERS.values())} can release this one)")
+        print(f"— not ticked yet (reactions: {', '.join(got) or 'none'})")
         return 1
 
-    print(f"✓ approved by {who[1]} for WE {week_label(week)}")
+    print(f"✓ ticked by {who[1]} for WE {week_label(week)}")
     # The link is to the LIVE workbook, so what was ticked is not frozen. Say
     # plainly whether it moved after the post went up.
     try:
@@ -152,7 +158,7 @@ def check(week: dt.date, workbook_id: str = C.WORKBOOK_ID,
         if modified > posted:
             mins = int((modified - posted).total_seconds() // 60)
             print(f"  note: the workbook was edited {mins} min after the post — "
-                  f"what JD ticked is not what is in it now.")
+                  f"what JD saw is not what is in it now.")
     except Exception as e:  # noqa: BLE001 — never fail the gate on a metadata read
         print(f"  (could not read the workbook's modified time: {type(e).__name__})")
     return 0
@@ -181,7 +187,8 @@ def main(argv=None) -> int:
     ap.add_argument("--workbook", default=C.WORKBOOK_ID)
     ap.add_argument("--channel", default=REVIEW_CHANNEL)
     ap.add_argument("--post", action="store_true", help="post it")
-    ap.add_argument("--check", action="store_true", help="has JD ticked it?")
+    ap.add_argument("--check", action="store_true",
+                    help="has JD ticked the post? (reports only — gates nothing)")
     args = ap.parse_args(argv)
 
     week = args.week or _last_sunday()
@@ -194,8 +201,7 @@ def main(argv=None) -> int:
     print(f"\nWould post to {args.channel} (#l10-alphalete):\n")
     print(f"  {title_for(week)}")
     print(f"\n  └ reply in thread:\n     {reply_for(args.workbook)}")
-    print(f"\n  approver: {', '.join(APPROVERS.values())} "
-          f"({', '.join(APPROVERS)})")
+    print(f"\n  tagging: {', '.join(NOTIFY.values())} ({', '.join(NOTIFY)})")
     print("\n(dry run — nothing sent; add --post to send)")
     return 0
 
