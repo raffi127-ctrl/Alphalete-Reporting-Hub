@@ -142,3 +142,27 @@ def test_the_ssn_never_rides_along_with_the_fillable_values():
                        values={"first": "Ann", "ssn": "123-45-6789"})
     assert "ssn" not in hire.fillable()
     assert hire.sensitive == {"ssn": "123-45-6789"}
+
+
+def test_the_apex_record_carries_the_office_settings():
+    """apex_values is the only place the three sources meet, and DEFAULTS went
+    missing from apex.py once during an edit without a single test noticing --
+    every run would have died on the first person."""
+    import datetime as dt
+    from automations.apex_new_starts import apex as AX
+    from automations.apex_new_starts import board as BRD
+    from automations.apex_new_starts import run as RUN
+
+    c = BRD.Candidate(name="Ann Lee", trainer="", email="", location="",
+                      team="", reason_lost="", roll={0: "CR"}, tab="t", row=1,
+                      week_start=dt.date(2026, 8, 31))
+    hire = BID.NewHire(name="Ann Lee",
+                       values={"first": "Ann", "last": "Lee",
+                               "email": "ann@example.com", "ssn": "123-45-6789"})
+    v = RUN.apex_values(c, hire)
+
+    for k, want in AX.DEFAULTS.items():
+        assert v[k] == want, k
+    assert v["hire_date"] == "08/31/2026"
+    assert v["username"] == "ann@example.com" == v["account_email"]
+    assert "ssn" not in v          # never, in the dict that gets typed

@@ -111,6 +111,23 @@ LABELS: Dict[str, tuple] = {
 LEAVE_ALONE = ("office", "status", "salary", "time clock", "require break",
                "divisions")
 
+# WHAT THIS OFFICE PUTS IN THE BOXES THAT NO FORM ANSWERS (Megan, 2026-09-03).
+# The same for every new start, so they are settings, not data: a new hire's I-9
+# cannot tell you what they are paid or what they are called here. Every one of
+# these lands in a SELECT except the rate, so the value has to read EXACTLY as
+# the option does -- '400 Sales' picks an option, '400' picks nothing.
+DEFAULTS = {
+    "position": "Sales Rep",
+    "rate": "10.00",              # $10/hr, into 'Rate of Pay' (NOT 'Salary')
+    "pay_state": "Texas",         # 'State Working In' -- where they WORK, not
+                                  # the state on their I-9 address.
+    "pay_basis": "Commissions",
+    "pay_frequency": "Weekly",
+    # The dropdown reads '100 Owner / 200 Admin / 400 Sales / 750 Chips /
+    # 900 1099' -- department numbers, and the option text carries the number.
+    "department": "400 Sales",
+}
+
 # SECURITY ROLE. Required radio group -- Office Admin / ICD Payroll Admin /
 # Sales Rep / Owner -- and Megan's answer is Sales Rep (2026-09-03). It is set
 # by `set_security_role`, not by the ordinary fill: it is a radio, and radios
@@ -123,10 +140,11 @@ LEAVE_ALONE = ("office", "status", "salary", "time clock", "require break",
 # everyone's.
 SECURITY_ROLE = "Sales Rep"
 
-# 'Department' is a required dropdown whose options nobody has read yet, so it
-# is not filled -- the operator picks it, like the Social. plan_fill reports it
-# rather than guessing.
-UNANSWERED = ("department",)
+# Nothing on stage one is unanswered any more (Megan settled Department and the
+# security role, 2026-09-03). Kept, empty, because the machinery that reports
+# unanswered fields is what should carry the NEXT one -- stage two is not
+# captured yet, and its fields will land here first.
+UNANSWERED = ()
 
 USERNAME_IS_EMAIL = True
 
@@ -150,7 +168,8 @@ NEVER_TYPE = ("ssn", "social security", "social", "routing", "account number",
 # would have skipped every single person as 'missing required field' on a form
 # that never had those boxes.
 REQUIRED = ("first", "last", "username", "account_email", "hire_date",
-            "pay_frequency", "position", "pay_basis", "pay_state", "rate")
+            "pay_frequency", "position", "pay_basis", "pay_state", "rate",
+            "department")
 
 
 def _sync_api():

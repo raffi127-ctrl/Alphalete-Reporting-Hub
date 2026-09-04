@@ -326,8 +326,7 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
                 _log(f"    ⚠️ couldn't find a Security Roles option reading "
                      f"exactly {AX.SECURITY_ROLE!r} — nothing was ticked, set "
                      "it yourself before saving.")
-            _log("    left for you: Department (nobody has said which), the "
-                 "Social, and Save.")
+            _log("    left for you: the Social, and Save.")
             if hire.values.get("ssn"):
                 url = BID.signed_pdf_url(hire.bundle_id)
                 if url:

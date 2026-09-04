@@ -65,7 +65,9 @@ FORM = """
   <select id="f12"><option>Select</option><option>Texas</option></select>
 <label for="f11">Rate of Pay *</label><input id="f11" type="number">
 <label for="f14">Department *</label>
-  <select id="f14"><option>Select</option><option>Sales</option></select>
+  <select id="f14"><option>Select</option><option>100 Owner</option>
+  <option>200 Admin</option><option>400 Sales</option>
+  <option>750 Chips</option><option>900 1099</option></select>
 <label for="f15">Salary</label><input id="f15" type="number">
 <label for="f16"><input type="checkbox" id="f16" checked> Time Clock</label>
 <label for="f17"><input type="checkbox" id="f17" checked> Require Break</label>
@@ -84,12 +86,13 @@ FORM = """
 # pre-filled text on the real form, not inputs.
 STAGE_ONE = ("first", "middle", "last", "username", "account_email",
              "hire_date", "pay_frequency", "position", "rate", "pay_state",
-             "pay_basis")
+             "pay_basis", "department")
 
 EXPECTED_ID = {
     "first": "f1", "middle": "f2", "last": "f3", "username": "f4",
     "account_email": "f5", "hire_date": "f7", "pay_frequency": "f9",
     "position": "f10", "rate": "f11", "pay_state": "f12", "pay_basis": "f13",
+    "department": "f14",
 }
 
 
@@ -204,5 +207,21 @@ def test_an_unknown_role_ticks_nothing_at_all(page):
                    for r in ("r1", "r2", "r3", "r4"))
 
 
-def test_department_is_still_nobody_s_guess(page):
-    assert AX.UNANSWERED == ("department",)
+def test_every_default_actually_selects_its_option(page):
+    """The office settings all land in SELECTs, and a select is not typed into
+    -- apply_fill has to pick the option. '400 Sales' is the whole option text,
+    number included; picking '400' or 'Sales' would select nothing at all."""
+    matched, unmatched = AX.plan_fill(page, dict(AX.DEFAULTS))
+    assert not unmatched, unmatched
+    AX.apply_fill(page, matched, log=lambda *_: None)
+    assert page.locator("#f14").input_value() == "400 Sales"
+    assert page.locator("#f10").input_value() == "Sales Rep"
+    assert page.locator("#f9").input_value() == "Weekly"
+    assert page.locator("#f12").input_value() == "Texas"
+    assert page.locator("#f13").input_value() == "Commissions"
+    assert page.locator("#f11").input_value() == "10.00"
+    assert page.locator("#f15").input_value() == ""      # Salary untouched
+
+
+def test_nothing_on_stage_one_is_unanswered_now(page):
+    assert AX.UNANSWERED == ()
