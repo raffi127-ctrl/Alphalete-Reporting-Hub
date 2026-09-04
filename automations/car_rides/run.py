@@ -81,9 +81,11 @@ STATIONS_GID = 1999003555
 # explicitly excluded — it is a spill formula, not a car-ride rider).
 # Stations tab re-laid-out 2026-09-03 (Carlos): stations stacked UNDER the
 # car rides, Rep #4 dropped, boxes tightened. Headers still found by name.
+# Ride boxes sized leaders-minus-2 (Carlos 2026-09-03 pm): ATT 9 rows,
+# BOX 11. Headers still found by name inside the range.
 BOXES = {
-    "att": {"range": "A5:E13",  "campaign": "B2B AT&T SBS"},
-    "box": {"range": "A30:E39", "campaign": "B2B-BOX-Energy"},
+    "att": {"range": "A5:E14",  "campaign": "B2B AT&T SBS"},
+    "box": {"range": "A31:E42", "campaign": "B2B-BOX-Energy"},
 }
 LEADER_HDR_RE = re.compile(r"leader", re.I)
 # "Rep #1".."Rep #4" — the trailing digit is what keeps "Rep List" out.
