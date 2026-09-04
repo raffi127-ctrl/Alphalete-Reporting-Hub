@@ -63,7 +63,7 @@ RANGE_TOK = re.compile(r"\$?[A-Z]{1,2}\$?(\d+):\$?[A-Z]{1,2}\$?(\d+)\b")
 # right failure here: it asks the question instead of burying it. Take JE out
 # only once Carlos says JE is off the board too.
 BOARD_CAMPAIGNS = {"B2B", "BOX", "JE"}
-ROLL_CAMPAIGN_COL = 3   # col D since the grouped Leadership col landed at C (9/3)                  # Roll Call col C, header 'Campaign'
+ROLL_CAMPAIGN_COL = 2                  # Roll Call col C, header 'Campaign'
 
 # --- auto-close of open terminations (2026-08-14, Eve) ---------------------
 # WHERE A VANTURA TERMINATION IS ACTUALLY RECORDED: the SALES BOARD. On the day
