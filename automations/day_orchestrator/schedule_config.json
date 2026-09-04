@@ -7430,6 +7430,8 @@
     },
     "override_bulletin_gate": {
       "on_scheduler": false,
+      "hand_run_only": true,
+      "_hand_run_only_note": "hand_run_only + cadence.weekdays [] added 2026-09-04. The \u201cdidn\u2019t run today\u201d watcher pages about a report id, and NOTHING ever writes an Activity row under THIS id on a clock: the scheduled Friday path is deploy/override_bulletin_send_fri.sh, and every pass it makes \u2014 including the one that builds, uploads and posts the link \u2014 publishes under the card id `override_bulletin`, never `override_bulletin_gate` (override_gate.py publish_done(\"override_bulletin\", ...)). So the only rows this id has ever collected are HAND drives of a Friday that went sideways \u2014 Thu 8/14, Fri 8/21 (x4), Fri 8/28 (x3) \u2014 and two same-weekday Fridays inside the 3-week window is all _historical_expected needs to conclude \u201cFriday ~10:00 report\u201d. On Fri 2026-09-04 nobody had to drive it by hand, so it posted \u201cOverride Bulletin \u2014 review gate \u2014 didn\u2019t run today on the mini \u00b7 usually starts ~10:00\u201d at ~12:05 while the real thing was fine: the wrapper had fired all ten passes (output/logs/override-bulletin-send-fires.log), posted the WE 8.30.26 link at 09:10 and published override-bulletin success, and was sitting in its normal state \u2014 waiting for Eve\u2019s \u2705. Same class as alphalete_org_b2b and the box_order_log repair handles. DO NOT \u201cfix\u201d this back by restoring weekdays [4]: the flag is honoured ONLY while cadence.weekdays is empty (machine_digest._handrun_only_ids), so the pair is the declaration, and the sibling levers override_bulletin_send and dd_bulletin_gate are already [] for this reason. The plist in deploy/ runs the same MODULE but under the other id, which is why the \u201ccheck for a plist first\u201d rule does not disqualify this one. Exempts the DIDN\u2019T-RUN guess ONLY \u2014 a hand-run of this gate that FAILS, runs partial or hangs still alerts exactly as before.",
       "_off_scheduler_note": "Manual lever for the Friday Override Bulletin REVIEW GATE (automations.override_bulletin.override_gate). The scheduled path is deploy/override_bulletin_send_fri.sh, which runs post -> check -> remind every 25m Fri 10:30-13:00 CST; this entry exists so a Friday that goes wrong can be driven by hand, exactly like dd_bulletin_gate. base_args are ['--post'] and the gate resolves --refresh/--check BEFORE --post, so the extra flags win: `lucy rerun override_bulletin_gate --refresh` (rebuild the PDF over the SAME Drive link after the Sheet is corrected \u2014 never a second post, that is how someone approves the version you already fixed), `--check --send --distro` (release the send Eve has ticked: full org + Slack), `--check --send` (soft-launch 4-person group instead), `--repost` (replace this week's message; refuses over an approval). Approver is EVE ONLY, same as the DD bulletin. Added 2026-08-07 (Eve).",
       "display_name": "Override Bulletin \u2014 review gate (post / refresh / check)",
       "source_type": "sheet",
@@ -7442,9 +7444,7 @@
       ],
       "timeout_minutes": 25,
       "cadence": {
-        "weekdays": [
-          4
-        ]
+        "weekdays": []
       },
       "priority": "P2",
       "freshness_target": null,
