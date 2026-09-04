@@ -791,7 +791,7 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
          ref that silently emptied the new-start lists for months)
       2. checklist formulas V5/X5/Z5 filter the board from $B$5 (they had
          drifted to B10/B15, hiding the top reps) and W5/Y5/AA5 read roll
-         $E$3 and compare $R$2 (not a stale range / literal #REF!)
+         $D$3 and compare $R$2 (not a stale range / literal #REF!)
       3. Rep List FILTERs (F col, all sections + Mon-Fri lineup blocks) start
          at $B$5 — top-inserted board rows push these ranges down over time
       4. Stations week label R2 == Sales Board B2
@@ -854,9 +854,9 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
                                "being dropped again.")
             if "'Roll Call'!$D$" in c:
                 n_roll += 1
-                if "$E$3:" not in c or "#REF" in c:
+                if "$D$3:" not in c or "#REF" in c:
                     out.append(f"STATIONS: new-start list {at} formula drifted "
-                               "(needs the roll $E$3 range; no #REF).")
+                               "(needs the roll $D$3 range; no #REF).")
                 elif week_ok and not any(w in c for w in week_ok):
                     out.append(f"STATIONS: new-start list {at} no longer "
                                "compares the current week cell.")
