@@ -39,6 +39,12 @@ Three things this does that dragging by hand does not:
     python -m automations.commission_sheet.prepare            # dry run
     python -m automations.commission_sheet.prepare --write
     python -m automations.commission_sheet.prepare --check    # verify only
+    python -m automations.commission_sheet.prepare --capture  # re-pin row 5
+
+The pinned row is a snapshot of a formula JD owns, so improving that formula
+means re-pinning it — otherwise the next reset quietly reverts his change.
+`--capture` is that step, and it refuses to pin a row carrying a literal, since
+pinning an overtyped cell would bake the corruption in permanently.
 """
 from __future__ import annotations
 
@@ -207,6 +213,56 @@ def apply(s: Dict) -> Dict:
             "redragged_to": s["extent"], "snapshot": saved}
 
 
+def capture(workbook_id: str = C.WORKBOOK_ID) -> int:
+    """Re-pin row 5 as the canonical 4a formula row.
+
+    Run after deliberately improving a 4a formula. Refuses a row containing a
+    literal — pinning an overtyped cell would bake that mistake in for good,
+    which is the exact failure the pinned copy exists to prevent."""
+    sh = _sheet(workbook_id)
+    cf = sh.worksheet(C.TAB_CONFIRM)
+    got = cf.get(f"A{CONFIRM_FIRST_DATA_ROW}:J{CONFIRM_FIRST_DATA_ROW}",
+                 value_render_option="FORMULA")
+    row = (list(got[0]) if got else []) + [""] * CONFIRM_LAST_COL
+    row = row[:CONFIRM_LAST_COL]
+
+    literals = [f"{chr(65 + i)}={cell!r}" for i, cell in enumerate(row)
+                if str(cell).strip() and not str(cell).strip().startswith("=")]
+    if literals:
+        print(f"\nRefusing to pin row {CONFIRM_FIRST_DATA_ROW} of "
+              f"{sh.title!r} — these hold a literal, not a formula:")
+        for lit in literals:
+            print(f"  ✗ {lit}")
+        print("\nFix those cells first; pinning them would make the mistake "
+              "permanent.")
+        return 1
+
+    current = canonical_row()
+    changed = [c for c, a, b in zip("ABCDEFGHIJ", row, current)
+               if _norm(a) != _norm(b)]
+    if not changed:
+        print(f"\nRow {CONFIRM_FIRST_DATA_ROW} already matches the pinned copy — "
+              "nothing to re-pin.")
+        return 0
+
+    REFERENCE_ROW.parent.mkdir(parents=True, exist_ok=True)
+    REFERENCE_ROW.write_text(json.dumps(
+        {"source": sh.title,
+         "captured": dt.datetime.now().isoformat(timespec="seconds"),
+         "row": CONFIRM_FIRST_DATA_ROW,
+         "columns": list("ABCDEFGHIJ"),
+         "formulas": row}, indent=2), encoding="utf-8")
+    print(f"\nRe-pinned row {CONFIRM_FIRST_DATA_ROW} from {sh.title!r}.")
+    print(f"  changed column(s): {', '.join(changed)}")
+    for col in changed:
+        i = ord(col) - 65
+        print(f"\n  {col} was: {_norm(current[i])[:100] or '(blank)'}")
+        print(f"  {col} now: {_norm(row[i])[:100] or '(blank)'}")
+    print(f"\n  -> {REFERENCE_ROW}")
+    print("  Commit that file so every machine resets to the same formula.")
+    return 0
+
+
 def check(workbook_id: str = C.WORKBOOK_ID) -> int:
     """Assert the END STATE, rather than trusting that the run didn't error.
 
@@ -278,8 +334,12 @@ def main(argv=None) -> int:
     ap.add_argument("--write", action="store_true", help="do it")
     ap.add_argument("--check", action="store_true",
                     help="verify the reset end state; change nothing")
+    ap.add_argument("--capture", action="store_true",
+                    help="re-pin row 5 as the canonical 4a formula row")
     args = ap.parse_args(argv)
 
+    if args.capture:
+        return capture(args.workbook)
     if args.check:
         return check(args.workbook)
 
