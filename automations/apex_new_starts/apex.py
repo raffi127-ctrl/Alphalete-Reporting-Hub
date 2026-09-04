@@ -1,11 +1,23 @@
 """Drive Apex (apex.herbjoyent.com) to add one new start, from a real session.
 
-NO CREDENTIAL HANDLING, EVER. Like `apex_payroll`, this rides the Apex session
-already signed in inside the operator's everyday Chrome: the profile is copied
-to a private directory, Chrome is relaunched against the copy with a debug
-port, and the cookies come along. If Apex shows a login page the run STOPS and
-says so -- a human signs in once at that machine and clicks Run again. That is
-the whole reason this report is push-a-button rather than scheduled.
+NO CREDENTIAL HANDLING, EVER. This opens a browser and WAITS for a human to
+sign in, exactly like `blueink_docs.session --login`. It never types a password
+and it never sets one.
+
+WHY IT DOESN'T COPY THE EVERYDAY CHROME PROFILE (the way apex_payroll does).
+Tried that first, 2026-09-03, and it cannot work for this app. Apex's login is
+carried in `ApexSession` / `ApexSession.RefreshToken`, and both are
+NON-PERSISTENT cookies -- they live in the running browser's memory. Copying a
+profile out from under a live Chrome gets whatever stale session was last
+flushed to disk, which on Megan's machine was an expired one Apex answers by
+redirecting every single page to 'change your password before you continue'.
+Enabling session restore didn't recover it either. Meanwhile her own tab was
+working fine, because her real session had never touched the disk.
+
+So the session is made HERE, in a browser this module owns, and the run does
+its work inside that one browser session. `Identity.TwoFactorRememberMe` IS a
+persistent cookie, so once the device is remembered the sign-in is a password
+and nothing else -- no code to chase.
 
 WHY THE FIELDS ARE FOUND BY LABEL. Nobody had a logged-in Apex screen in front
 of them when this was written, and hard-coding selectors from a screenshot is
@@ -19,11 +31,10 @@ wordings Apex might use listed as alternatives. Two consequences on purpose:
     person is left for a human to finish. Half a record that says so beats a
     full record that is quietly wrong.
 
-ISOLATION (do not collide with the other CDP modules):
-    profile /tmp/apexns_cdp_profile   port 9248
-    vantura 9246 · resume_pushing 9245 · apex_payroll 9247
-The '_cdp_profile' suffix is what `day_orchestrator.chrome_guard` looks for to
-know this Chrome is ours and must not be killed as a stray human window.
+ISOLATION. The browser profile lives at `.apex_profile` inside this module --
+under `automations/`, which is one of the paths `day_orchestrator.chrome_guard`
+recognises as ours and will not kill as a stray human window. It shares nothing
+with apex_payroll's copied CDP profile, so the two can run without colliding.
 """
 from __future__ import annotations
 
@@ -36,37 +47,79 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from automations.apex_payroll.run import _looks_logged_out  # one login test only
-
 APEX_URL = "https://apex.herbjoyent.com/"
-CDP_PROFILE = "/tmp/apexns_cdp_profile"
-CDP_PORT = "9248"
+ROSTER_URL = "https://apex.herbjoyent.com/roster"
+# Our own browser profile, not a copy of anybody's. Gitignored by the
+# .*_profile rule, same as the other patchright profiles in this repo.
+PROFILE_DIR = Path(__file__).resolve().parent / ".apex_profile"
 SCREEN_PATH = Path(__file__).resolve().parent / "apex_screen.json"
 
-# Cross-platform: every report here has to run on macOS AND Windows.
-CHROME_CANDIDATES = {
-    "Darwin": ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
-    "Windows": [r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"],
-    "Linux": ["/usr/bin/google-chrome", "/usr/bin/chromium-browser"],
-}
-
-# The labels a person reads beside each box, most likely wording first. Matched
-# case-insensitively as a SUBSTRING, so 'Employee First Name' hits 'first name'.
+# The labels a person reads beside each box. The ADD ROSTER EMPLOYEE wordings
+# are CONFIRMED off the real screen (Megan, 2026-09-03) and come first; the
+# alternatives behind them are still guesses, kept for the fields that live on
+# the later pages nobody has captured yet.
+#
+# THAT SCREEN IS ONLY STAGE ONE. It holds the account and the employment
+# record -- name, user name, account email, hire date, office, pay frequency --
+# and NOT the address, date of birth or Social. Those sit deeper in the
+# employee's record ("the following page as well", in the Loom), and the labels
+# for them are unconfirmed until someone can run --explore on that page.
 LABELS: Dict[str, tuple] = {
-    "first": ("first name", "legal first name", "employee first name"),
-    "middle": ("middle name", "middle initial", "middle"),
-    "last": ("last name", "legal last name", "employee last name"),
+    # --- stage one: ADD ROSTER EMPLOYEE (confirmed) --------------------------
+    "first": ("first name",),
+    "middle": ("middle name", "middle initial"),
+    "last": ("last name",),
+    "username": ("user name", "username"),
+    "account_email": ("account email",),
+    "hire_date": ("hire date",),
+    "office": ("office",),
+    "pay_frequency": ("pay frequency",),
+    # Confirmed as required by Megan, exact wording not yet seen on screen --
+    # they sit below the fold of the screenshot, so these stay best-guess until
+    # --explore reads the whole form.
+    "position": ("position", "job title", "title"),
+    "rate": ("rate", "pay rate", "hourly rate"),
+    "pay_state": ("state", "work state", "tax state"),
+    "pay_basis": ("basis of pay", "pay basis", "pay type"),
+    # --- stage two: the employee's own pages (NOT yet confirmed) ------------
     "address1": ("address 1", "address line 1", "street address", "address"),
     "address2": ("address 2", "address line 2", "apt", "unit", "suite"),
     "city": ("city",),
-    "state": ("state", "st"),
+    "state": ("state",),
     "zip": ("zip", "zip code", "postal code", "postal"),
     "dob": ("birth date", "date of birth", "dob", "birthdate"),
     "email": ("personal email", "email address", "email", "e-mail"),
     "phone": ("cell phone", "mobile phone", "home phone", "phone number",
               "phone"),
 }
+
+# WHAT THIS OFFICE PUTS IN THE BOXES THAT NO FORM ANSWERS (Megan, 2026-09-03).
+# These are the same for every new start, so they are settings, not data: a new
+# hire's I-9 cannot tell you what they get paid or what they are called here.
+DEFAULTS = {
+    "position": "Sales Rep",
+    "rate": "10.00",              # $10/hr
+    "pay_state": "Texas",         # the EMPLOYMENT state -- not their home
+                                  # address, which comes off the I-9 and can be
+                                  # anything.
+    "pay_basis": "Commissions",
+    "pay_frequency": "Weekly",
+}
+
+# USER NAME. Megan's answer was "employees first and last and email listed",
+# and the roster settles which way to read it: every existing row's User Name
+# is an email address (algemarkennel@gmail.com, g.alysia@yahoo.com), with one
+# '1989736@apex' among them. So the user name IS their email -- the same one
+# that goes in Account Email -- and the first-and-last is the name fields
+# beside it. The preview prints it for every person before anything is typed,
+# so if that reading is wrong it is one line to change here.
+USERNAME_IS_EMAIL = True
+
+# Saving stage one sends mail: 'Send this user a password reset to their
+# Account Email' is TICKED by default on that form. Nothing here unticks it or
+# ticks it -- the operator sees the box and decides, because that is an email
+# to a real new hire and not this report's call to make.
+PASSWORD_RESET_CHECKBOX = ("send this user a password reset",)
 
 # Never typed by this runner, on purpose -- see run.py's SENSITIVE note. Listed
 # here so a stray entry in LABELS can never resurrect one.
@@ -78,141 +131,149 @@ NEVER_TYPE = ("ssn", "social security", "social", "routing", "account number",
 REQUIRED = ("first", "last", "address1", "city", "state", "zip", "dob")
 
 
-def chrome_path() -> str:
-    for cand in CHROME_CANDIDATES.get(platform.system(), []):
-        if os.path.exists(cand):
-            return cand
-    raise RuntimeError(
-        f"Google Chrome not found on this {platform.system()} machine. Apex is "
-        "driven through the operator's own signed-in Chrome; there is no "
-        "headless path, by design.")
-
-
-def _kill_ours() -> None:
-    """Only ever our own Chrome. The filter is the full profile name so it can
-    never match apex_payroll's '/tmp/apex_cdp_profile' or anyone else's."""
-    if platform.system() == "Windows":
-        subprocess.run(["taskkill", "/F", "/FI",
-                        "COMMANDLINE like %apexns_cdp_profile%"],
-                       capture_output=True)
-    else:
-        subprocess.run(["pkill", "-f", "apexns_cdp_profile"], capture_output=True)
-    time.sleep(2)
-
-
-def _copy_profile(log=print) -> str:
-    """Copy the operator's Chrome data into our own dir so the debug port works
-    and their Apex session rides along. Read-only on the source."""
-    home = os.path.expanduser("~")
-    if platform.system() == "Windows":
-        src = os.path.join(home, r"AppData\Local\Google\Chrome\User Data")
-    elif platform.system() == "Darwin":
-        src = f"{home}/Library/Application Support/Google/Chrome"
-    else:
-        src = f"{home}/.config/google-chrome"
-    if not os.path.isdir(src):
-        raise RuntimeError(f"No Chrome profile at {src} — is Chrome installed "
-                           "and has it been opened at least once?")
-    import shutil
-    _kill_ours()
-    shutil.rmtree(CDP_PROFILE, ignore_errors=True)
-    os.makedirs(CDP_PROFILE, exist_ok=True)
-    shutil.copy2(f"{src}/Local State", f"{CDP_PROFILE}/Local State")
-    profiles = [d for d in os.listdir(src)
-                if d == "Default" or d.startswith("Profile ")]
-    # The caches are the bulk of a Chrome profile and none of them carry the
-    # session, so skipping them turns a multi-gigabyte copy into a quick one.
-    SKIP = {"Cache", "Code Cache", "GPUCache", "DawnCache",
-            "GraphiteDawnCache", "Application Cache", "CacheStorage",
-            "Service Worker"}
-    if platform.system() == "Windows":
-        ignore = shutil.ignore_patterns(*SKIP)
-        for prof in profiles:
-            shutil.copytree(f"{src}/{prof}", f"{CDP_PROFILE}/{prof}",
-                            ignore=ignore, dirs_exist_ok=True)
-    else:
-        excludes = []
-        for pat in SKIP:
-            excludes += ["--exclude", pat]
-        for prof in profiles:
-            subprocess.run(["rsync", "-a", *excludes,
-                            f"{src}/{prof}/", f"{CDP_PROFILE}/{prof}/"],
-                           capture_output=True)
-    last = "Default"
+def _sync_api():
+    """patchright if present (stealth), else plain playwright."""
     try:
-        st = json.loads(Path(f"{CDP_PROFILE}/Local State").read_text())
-        cand = st.get("profile", {}).get("last_used", "Default")
-        if cand in profiles:
-            last = cand
+        from patchright.sync_api import sync_playwright
+        return sync_playwright
+    except ImportError:
+        from playwright.sync_api import sync_playwright
+        return sync_playwright
+
+
+def _interactive() -> bool:
+    """Is somebody at a keyboard? Waiting for a sign-in that can never come is
+    worse than failing with a message that says what to do."""
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
     except Exception:  # noqa: BLE001
-        pass
-    log(f"[profiles] copied {profiles}; launching with {last!r}")
-    return last
+        return False
 
 
-def _launch(url: str, profile_dir: str = "Default"):
-    return subprocess.Popen(
-        [chrome_path(), f"--user-data-dir={CDP_PROFILE}",
-         f"--profile-directory={profile_dir}",
-         f"--remote-debugging-port={CDP_PORT}",
-         # The copy may hold a sync-enabled Google account; without this it can
-         # reconnect and broadcast these tabs to somebody's other devices.
-         "--disable-sync", "--no-first-run", "--no-default-browser-check",
-         "--restore-last-session=false", "--disable-session-crashed-bubble",
-         "--disable-infobars", "--window-size=1600,1000", url],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def _attach(p):
-    browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
-    ctx = browser.contexts[0]
-    page = ctx.pages[0] if ctx.pages else ctx.new_page()
-    return browser, page
+def have_session() -> bool:
+    return PROFILE_DIR.exists() and any(PROFILE_DIR.iterdir())
 
 
 class ApexSession:
-    """Context manager: a live Apex page, or a clear reason there isn't one."""
+    """A browser sitting on Apex, signed in -- waiting for a person if it isn't.
 
-    def __init__(self, log=print):
+    The window is deliberately VISIBLE. Somebody is at the keyboard for this
+    report anyway (they add each Social and click Save), so a headless browser
+    would only hide the one screen they need to see.
+    """
+
+    def __init__(self, log=print, *, login_timeout_s: int = 600):
         self.log = log
-        self.proc = None
+        self.login_timeout_s = login_timeout_s
         self._pw = None
-        self.browser = None
+        self.ctx = None
         self.page = None
 
     def __enter__(self):
-        from patchright.sync_api import sync_playwright
-        prof = _copy_profile(self.log)
-        self.proc = _launch(APEX_URL, prof)
-        time.sleep(8)
-        self._pw = sync_playwright().start()
-        self.browser, self.page = _attach(self._pw)
-        self.page.wait_for_load_state("domcontentloaded", timeout=30000)
-        time.sleep(3)
+        PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        self._pw = _sync_api()().start()
+        self.ctx = self._pw.chromium.launch_persistent_context(
+            user_data_dir=str(PROFILE_DIR), headless=False, no_viewport=True,
+            # NO channel="chrome" on purpose. macOS allows one primary Google
+            # Chrome instance, so launching the real Chrome while somebody has
+            # their own open gets our launch adopted into theirs -- blank
+            # about:blank tabs, the failure that broke every browser report on
+            # 2026-07-01. The bundled browser is its own process and cannot
+            # collide, and Apex is a plain ASP.NET app with no bot-detection to
+            # dodge (unlike Tableau, which is why the other modules pay that
+            # price).
+            args=["--window-size=1500,1000", "--window-position=0,0",
+                  # The profile is ours and empty of any human's Google
+                  # account, but sync stays off on principle -- these tabs
+                  # must never turn up on somebody's other devices.
+                  "--disable-sync", "--no-first-run",
+                  "--no-default-browser-check", "--disable-infobars"])
+        self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
+        self.page.goto(ROSTER_URL, wait_until="domcontentloaded", timeout=60000)
+        self.page.wait_for_timeout(2500)
         return self
 
     def __exit__(self, *exc):
+        # Closed gracefully so Chrome writes what it can. The session cookie is
+        # non-persistent either way; the remembered-device one is not, and that
+        # is the part worth keeping.
         try:
+            if self.ctx:
+                self.ctx.close()
+        finally:
             if self._pw:
                 self._pw.stop()
-        finally:
-            if self.proc:
-                self.proc.terminate()
-            _kill_ours()
         return False
 
+    def password_gate(self) -> bool:
+        """Is Apex holding this session behind a forced password change?
+
+        Checked by URL: the modal on that page can be dismissed, but every
+        navigation lands straight back on it, so a closed modal is not
+        progress. Seen on a STALE copied session -- a freshly signed-in one
+        has never shown it.
+        """
+        return "changepassword" in (self.page.url or "").lower()
+
+    def signed_in(self) -> bool:
+        url = (self.page.url or "").lower()
+        if "account/login" in url or "/identity/account/login" in url:
+            return False
+        return not self.password_gate()
+
     def require_login(self) -> None:
-        if _looks_logged_out(self.page):
+        """Wait for a human to sign in, however long the 2FA takes.
+
+        No password is typed here and none is read. If nobody is at the
+        keyboard this raises instead of hanging a scheduled job forever.
+        """
+        if self.signed_in():
+            self.log(f"Apex is signed in — {self.page.url}")
+            return
+        if self.password_gate():
+            raise PasswordChangeRequired(
+                "Apex is holding this session behind 'change your password "
+                "before you continue'. That is the account's own state and "
+                "only its owner can clear it — this automation never sets a "
+                "password.")
+        if not _interactive():
             raise NotLoggedIn(
-                "Apex is showing a login page — the session didn't ride along. "
-                "Sign in to Apex once in this machine's normal Chrome (tick "
-                "remember-this-device on the 2FA prompt), leave it signed in, "
-                "then click Run again. This automation never types a password.")
-        self.log(f"Apex session is live at {self.page.url}")
+                "Apex needs someone to sign in and there is no terminal here. "
+                "Run this from Terminal, sign in when the window opens, and it "
+                "carries on by itself. Nothing was typed.")
+        self.log("")
+        self.log("  Apex wants a sign-in. The window is open — sign in there.")
+        self.log("  Nothing is typed for you and no password is read; this")
+        self.log("  just waits until the roster loads.")
+        deadline = time.time() + self.login_timeout_s
+        while time.time() < deadline:
+            self.page.wait_for_timeout(2000)
+            if self.password_gate():
+                raise PasswordChangeRequired(
+                    "Apex is asking for a password change before it will let "
+                    "anyone in. Clear that in Apex, then run this again.")
+            if self.signed_in() and "herbjoyent" in (self.page.url or ""):
+                self.log(f"  signed in — {self.page.url}")
+                return
+        raise NotLoggedIn(
+            f"Nobody signed in within {self.login_timeout_s // 60} minutes. "
+            "Nothing was typed.")
 
 
 class NotLoggedIn(RuntimeError):
     pass
+
+
+class PasswordChangeRequired(RuntimeError):
+    """Apex is signed in but won't let anyone past until the password is
+    changed. A different problem from being logged out, and it has to say so:
+    apex_payroll's login test sees the password boxes on that screen and calls
+    it a login page, which sends whoever is running this off to sign in again
+    -- something they have already done and which will not help.
+
+    Nobody but the account holder can clear this. This automation does not set
+    passwords, so it stops here every time and names the screen.
+    """
 
 
 # ------------------------------------------------------------- field finding

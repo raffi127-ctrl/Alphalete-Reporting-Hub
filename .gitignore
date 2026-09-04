@@ -170,3 +170,9 @@ automations/slack_skool_email/.slack_profile*
 # never shared: one per machine, meaningless anywhere else.
 .ownerville_session.lock
 automations/shared/.ownerville_session.lock
+
+# Apex browser profile (automations/apex_new_starts/.apex_profile). Apex keeps
+# its login in a memory-only cookie, so this profile is made by a human signing
+# in at the keyboard — same reason .blueink_profile is ignored. Never commit a
+# browser profile that can reach a payroll system.
+.apex_profile*

@@ -138,3 +138,35 @@ def test_missing_weekday_columns_is_a_refusal_not_an_empty_week():
     g.append(row(_person("Anyone", {0: "CR"})))
     with pytest.raises(Exception):
         BRD.read_box(g, "t")
+
+
+def test_the_hire_date_is_the_classroom_day_not_just_monday():
+    """Megan, 2026-09-03: the hire date is where they're marked CR. Usually
+    that IS Monday, but a late add starts mid-week and their record has to say
+    the day they actually started."""
+    import datetime as dt
+    people = _people([
+        _person("Started Monday", {0: "CR", 1: "Hwk1C", 2: "Here"}),
+        _person("Added Wednesday", {2: "CR", 3: "Here"}),
+    ])
+    for p in people:
+        p.week_start = dt.date(2026, 8, 31)      # Monday of WE 9.6
+    assert people[0].hire_date == dt.date(2026, 8, 31)
+    assert people[1].hire_date == dt.date(2026, 9, 2)
+
+
+def test_no_classroom_day_means_no_hire_date_not_a_guess():
+    """Someone carried over from an earlier cohort has no CR this week. A
+    made-up hire date is a wrong number on a payroll record that nobody would
+    ever catch."""
+    import datetime as dt
+    people = _people([_person("Carried Over", {0: "Here", 1: "Here"})])
+    people[0].week_start = dt.date(2026, 8, 31)
+    assert people[0].hire_date is None
+
+
+def test_the_week_monday_comes_off_the_tab_name():
+    import datetime as dt
+    assert BRD.tab_monday("Sales Board WE 9.6",
+                          dt.date(2026, 9, 3)) == dt.date(2026, 8, 31)
+    assert BRD.tab_monday("not a week tab") is None

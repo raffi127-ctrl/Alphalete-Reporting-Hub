@@ -49,6 +49,13 @@ COL_REASON = "reason lost"
 TERMINATED = "terminat"
 ONA_MARKS = ("o-na", "ona", "o/na")
 
+# CLASSROOM -- their first day, and so their HIRE DATE (Megan, 2026-09-03:
+# "that monday / where they are marked as CR on the sales board for first day").
+# Read from the board rather than assumed to be Monday: most weeks the whole
+# cohort is CR on Monday, but a late add starts mid-week and their record has
+# to say the day they actually started, not the day the week did.
+CLASSROOM_MARKS = ("cr",)
+
 DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
              "Sunday")
 
@@ -70,6 +77,7 @@ class Candidate:
     tab: str
     row: int                      # 1-indexed, for citing the exact cell
     ona_days: tuple = ()          # weekday offsets reading O-NA
+    week_start: Optional[dt.date] = None   # the Monday this tab covers
 
     @property
     def terminated(self) -> bool:
@@ -85,6 +93,27 @@ class Candidate:
     @property
     def ona(self) -> bool:
         return bool(self.ona_days)
+
+    @property
+    def classroom_day(self) -> Optional[int]:
+        """First weekday offset marked CR, or None."""
+        for d, v in sorted(self.roll.items()):
+            if _fold(v) in CLASSROOM_MARKS:
+                return d
+        return None
+
+    @property
+    def hire_date(self) -> Optional[dt.date]:
+        """Their first day: the date of the CR cell.
+
+        None when the week holds no CR -- somebody carried over from an earlier
+        cohort. That is reported, never guessed: a made-up hire date is a wrong
+        number on a payroll record and nobody would ever catch it.
+        """
+        day = self.classroom_day
+        if day is None or self.week_start is None:
+            return None
+        return self.week_start + dt.timedelta(days=day)
 
     @property
     def first(self) -> str:
@@ -126,7 +155,23 @@ def _find_col(grid: list, header_row: int, label: str) -> Optional[int]:
     return None
 
 
-def read_box(grid: list, tab: str) -> List[Candidate]:
+def tab_monday(tab_title: str, today: Optional[dt.date] = None
+               ) -> Optional[dt.date]:
+    """The MONDAY of a 'Sales Board WE <m>.<d>' tab. The tab is named for its
+    Sunday and the board's weeks run Monday→Sunday, so this is that Sunday
+    minus six. The year comes from `terminated_reps.board`, which picks the
+    candidate year closest to today -- January tabs must not resolve into last
+    year."""
+    m = BD.WE_TAB_RE.match(BD._norm(tab_title))
+    if not m:
+        return None
+    sunday = BD._resolve_tab_date(int(m.group(1)), int(m.group(2)),
+                                  today or dt.date.today())
+    return sunday - dt.timedelta(days=6) if sunday else None
+
+
+def read_box(grid: list, tab: str, today: Optional[dt.date] = None
+             ) -> List[Candidate]:
     """Every person in the New Starts box, terminated ones included.
 
     Filtering is the caller's job (`to_add`) so the preview can show what it
@@ -149,6 +194,7 @@ def read_box(grid: list, tab: str) -> List[Candidate]:
             "is no way to tell a terminated new start from a working one, and "
             "everyone would be added.")
 
+    monday = tab_monday(tab, today)
     out: List[Candidate] = []
     for r in range(lay.box_first_row, len(grid) + 1):
         name = str(BD._cell(grid, r, name_col) or "").strip()
@@ -172,7 +218,7 @@ def read_box(grid: list, tab: str) -> List[Candidate]:
             if cols["team"] else "",
             reason_lost=str(BD._cell(grid, r, cols["reason"]) or "").strip()
             if cols["reason"] else "",
-            roll=roll, tab=tab, row=r, ona_days=ona))
+            roll=roll, tab=tab, row=r, ona_days=ona, week_start=monday))
     return out
 
 
@@ -199,4 +245,4 @@ def load(today: Optional[dt.date] = None, *, tab: Optional[str] = None
     sh = BD.open_by_key(SHEET_ID)
     title = BD.pick_tab(sh, today, want=tab)
     grid = sh.worksheet(title).get_all_values()
-    return title, read_box(grid, title)
+    return title, read_box(grid, title, today)

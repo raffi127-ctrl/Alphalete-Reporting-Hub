@@ -110,6 +110,9 @@ def check_apex() -> bool:
     try:
         with AX.ApexSession(log=lambda m: _log(f"     {m}")) as s:
             s.require_login()
+    except AX.PasswordChangeRequired as e:
+        _log(f"  ❌ Apex: {e}")
+        return False
     except AX.NotLoggedIn as e:
         _log(f"  ❌ Apex: {e}")
         return False
@@ -143,6 +146,34 @@ def gather(today: dt.date, *, tab=None, include_ona=True):
     return title, add, skipped, hires
 
 
+def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
+    """Everything that goes into Apex for one person, from three sources.
+
+      the I-9        who they are   -- name, address, DOB, email, phone
+      the board      when they started -- the date of their CR (classroom) cell
+      DEFAULTS       how this office hires -- Sales Rep, $10/hr, Texas,
+                     Commissions, Weekly. Same for everyone, so they are
+                     settings rather than data.
+
+    Anything missing is simply absent from the dict; nothing is invented. The
+    caller reports the gap and skips rather than typing a placeholder into
+    somebody's payroll record.
+    """
+    from automations.apex_new_starts import apex as AX
+    v = dict(hire.fillable())               # SSN cannot be in here -- see
+                                            # NewHire.fillable
+    v.update(AX.DEFAULTS)
+    email = v.get("email", "")
+    if email:
+        v["account_email"] = email
+        if AX.USERNAME_IS_EMAIL:
+            v["username"] = email
+    if c.hire_date:
+        # MM/dd/yyyy, the format the Hire Date box itself asks for.
+        v["hire_date"] = c.hire_date.strftime("%m/%d/%Y")
+    return v
+
+
 def _person_line(c: BRD.Candidate, hire: BID.NewHire) -> str:
     if hire.missing_packet:
         return (f"  ❌ {c.name:26} no signed Blue Ink packet — nothing to fill "
@@ -151,8 +182,12 @@ def _person_line(c: BRD.Candidate, hire: BID.NewHire) -> str:
                            "dob", "email", "phone") if not hire.values.get(f)]
     ssn = "SSN on file" if hire.values.get("ssn") else "NO SSN on the packet"
     flag = "  ⚠️ O-NA" if c.ona else ""
-    body = (f"  ✅ {c.name:26} {len(hire.have)}/11 fields · {ssn}"
+    hired = c.hire_date.strftime("%m/%d/%Y") if c.hire_date else "?"
+    body = (f"  ✅ {c.name:26} hire {hired} · {len(hire.have)}/11 fields · {ssn}"
             f" · matched by {hire.matched_on}{flag}")
+    if not c.hire_date:
+        body += ("\n       ⚠️ no CR (classroom) day on the board this week — "
+                 "hire date has to be typed by hand")
     if missing:
         body += f"\n       missing: {', '.join(missing)}"
     for _sem, why in hire.rejected:
@@ -267,7 +302,7 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
                          "window yourself; this uses whatever is in front of "
                          "it.")
                     _pause("    Press Enter once the blank form is open... ")
-            matched, unmatched = AX.plan_fill(s.page, hire.fillable())
+            matched, unmatched = AX.plan_fill(s.page, apex_values(c, hire))
             missing_required = [r for r in AX.REQUIRED
                                 if r not in {m[0] for m in matched}]
             for semantic, why in unmatched:
