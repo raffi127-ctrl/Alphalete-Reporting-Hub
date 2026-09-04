@@ -23,9 +23,21 @@ from automations.override_bulletin import markers as M
 from automations.override_bulletin import pulls as P
 from automations.override_bulletin.pulls import _norm_name
 
-# The five captains whose captain override comes from DD (Raf's is from the PNL).
+# The captains whose captain override comes from DD (Raf's is from the PNL).
+#
+# THE WEEKLY FILL NO LONGER FILTERS ON THIS LIST — `pull_all` asks the DD
+# download for every owner it carries and `fill.assemble` then looks up only the
+# names section 2 of the tab actually holds. That is the whole point: this list
+# went stale the moment Eve added a captain to the tab, and a stale list does not
+# fail loudly — it writes $0.00. Atef Choudhury was added to the tab on
+# 2026-08-28 and never reached this list, so his captain override came out $0 on
+# WE 8.30.26 while Eve's hand-kept tab said $2,273.
+#
+# It survives for the paths that need names BEFORE a download exists: --dd-probe,
+# backtrack's period-forced re-read and special_probe. Keep it in step with
+# section 2 of the tab; nothing but those probes depends on it being complete.
 DD_CAPTAINS = ["Carlos Hidalgo", "Colten Wright", "Khalil Mansour",
-               "Jairo Ruiz", "Eveliz Wright"]
+               "Jairo Ruiz", "Eveliz Wright", "Atef Choudhury"]
 LEDGER_SPECIAL = "Special Override"   # needle refined to period at call time
 LEDGER_CREDICO = "Credico"
 
@@ -163,8 +175,11 @@ def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
     raf_special = _pull("Raf special override", lambda: P.raf_special_override(
         week_header, d / "raf.csv", period=f"Period {period_num}",
         page=page, verbose=verbose))
+    # owners=None -> parse EVERY owner in the DD download, then rekey through ICD
+    # Aliases below. Who counts as a captain is then the SHEET's section 2 (what
+    # assemble looks up), not DD_CAPTAINS — see the note on that constant.
     dd = _pull("DD captain overrides", lambda: P.dd_captain_overrides(
-        DD_CAPTAINS, d / "dd.csv", page=page, verbose=verbose,
+        None, d / "dd.csv", page=page, verbose=verbose,
         period=f"Period {period_year}-{period_num}")) or {}
     captain = {k: _dd_week_for(v, week_mdy) for k, v in dd.items()}
     captain = {k: v for k, v in captain.items() if v is not None}

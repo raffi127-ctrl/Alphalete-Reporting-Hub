@@ -219,7 +219,6 @@ def dd_captains_for_period(period_num, year, *, page=None, verbose=True, cache=N
     if ck in cache:
         return cache[ck]
     per = "Period {}-{}".format(year, period_num)
-    want = {P._norm_name(o) for o in R.DD_CAPTAINS}
     got, used = None, None
     try:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -227,7 +226,12 @@ def dd_captains_for_period(period_num, year, *, page=None, verbose=True, cache=N
             P.DD_DETAIL_VIEW, P.DD_DETAIL_SHEET,
             OUT_DIR / "dd-p{}.csv".format(period_num),
             P.period_candidates(per), page=page, verbose=verbose,
-            accept=lambda rr: P.parse_dd_captain(rr, want) or None)
+            # Every owner in the download, not a fixed list of names — the caller
+            # picks the captains it needs. A name missing from R.DD_CAPTAINS used
+            # to come back empty here and read as "the source has nothing for
+            # that week" (run.DD_CAPTAINS).
+            accept=lambda rr: P.parse_dd_captain(
+                rr, P.dd_owner_universe(rr)) or None)
     except Exception as e:  # noqa: BLE001 — a dead DD period must never fail the run
         if verbose:
             print("  (DD {} unavailable: {})".format(per, type(e).__name__))
@@ -279,6 +283,19 @@ def ledger_reconcile(ws, *, aliases, roster, captains, page=None, verbose=True,
               "ledger read before letting this money in.".format(
                   h["kind"], h["period"], h["total"], h["share"], h["week"],
                   h["week_total"]))
+
+    # The BACKWARD check, on the same ledger snapshot (Eve 2026-09-04). The lines
+    # above are per-marker and say nothing about time: a period that never lands
+    # prints "still pending" every Friday forever and reads like routine. This
+    # says how many weeks it has been waiting and when the NEXT one is due, so a
+    # late special/credico is visible the week it goes late instead of when
+    # somebody happens to notice the bulletin is short.
+    try:
+        from automations.override_bulletin import period_watch as PW
+        PW._print(PW.check(ws, ledger_rows=led), had_ledger=True)
+    except Exception as e:  # noqa: BLE001 — a report never fails the backtrack
+        print("  ⚠ period watch skipped: {}: {}".format(
+            type(e).__name__, str(e).splitlines()[0][:140]))
 
 
 def drop_formula_cells(ws, changes, *, verbose=True):

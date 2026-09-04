@@ -225,6 +225,26 @@ def _ddweek_key(s):
     return None
 
 
+def dd_owner_universe(rows):
+    """Every owner named in a DD Detail download, normalized.
+
+    Lets a caller ask for EVERY captain's bonus instead of a fixed list of names,
+    and then pick out whoever the SHEET says is a captain. Two things that cost
+    us money stop being possible that way: a captain added to the tab is sourced
+    without a code change (Atef Choudhury sat at $0.00 from 8.30.26 because he
+    was never added to run.DD_CAPTAINS), and a source that spells the name its
+    own way still lands, because the caller rekeys through ICD Aliases instead of
+    matching the raw spelling ('Atef Choudhry' in the B2B views vs 'Atef
+    Choudhury' on the tab)."""
+    if not rows:
+        return set()
+    oc = _hdr_col(rows[0], "cl.ICD Owner Name")
+    if oc is None:
+        oc = 1                      # same column the content-scan fallback uses
+    return {_norm_name(r[oc]) for r in rows[1:]
+            if oc < len(r) and (r[oc] or "").strip()}
+
+
 def parse_dd_captain(rows, owners):
     """{owner_norm: {dd_week: amount}} of Captain's-Bonus overrides from the ORG
     DD Detail crosstab.
@@ -345,10 +365,15 @@ def dd_captain_overrides(owners, out_path, *, page=None, verbose=True,
     """{owner_norm: {dd_week: amount}} — every Captain's-Bonus override for the
     captains in `owners`. Downloads the DEFAULT ORG DD Detail crosstab (the
     current DD week) and parses it column-driven (see parse_dd_captain); a period
-    filter is tried only as a fallback when the default comes back empty."""
-    want = {_norm_name(o) for o in owners}
+    filter is tried only as a fallback when the default comes back empty.
 
+    `owners=None` means EVERY owner in the download (dd_owner_universe) — what
+    the weekly fill passes, so the captain list comes from the sheet and not from
+    a constant here. Extra owners are harmless: the caller only looks up the
+    names its section-2 actually holds."""
     def _accept(rows):
+        want = ({_norm_name(o) for o in owners} if owners is not None
+                else dd_owner_universe(rows))
         return parse_dd_captain(rows, want) or None
 
     periods = [None] + (period_candidates(period) if period else [])

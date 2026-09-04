@@ -51,6 +51,15 @@ import sys
 
 from automations.override_bulletin import fill as F
 
+# This module prints '−' (U+2212) and '⚠', neither of which exists in cp1252 —
+# so on Windows it died with UnicodeEncodeError at the exact moment it had
+# something to say, and exited 0-with-a-traceback on the runs where the two tabs
+# AGREED. Same guard the other Windows-run modules carry.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:  # noqa: BLE001
+    pass
+
 # Rounding noise. The two tabs round independently, so cents drift constantly —
 # and a Total row, being a sum of ~14 independently rounded cells, drifts by a
 # few cents on its own. More to the point, THE BULLETIN PUBLISHES WHOLE DOLLARS
@@ -199,7 +208,10 @@ def compare(*, weeks=None, tolerance=DEFAULT_TOLERANCE, verbose=True):
             if a is None and b is None:
                 continue
             d = round((a or 0) - (b or 0), 2)
-            if abs(d) < tolerance:
+            # `not d` first: --tolerance 0 means "show me every last cent", not
+            # "list all 254 cells that match exactly". Without it the zero-cent
+            # cells drowned the real ones on the only run that shows cents.
+            if not d or abs(d) < tolerance:
                 skipped += 1 if d else 0
                 continue
             diffs.append({"week": w, "key": key, "label": _display(eve[key]),
@@ -219,7 +231,7 @@ def compare(*, weeks=None, tolerance=DEFAULT_TOLERANCE, verbose=True):
             if a is None and b is None:
                 continue
             d = round((a or 0) - (b or 0), 2)
-            if abs(d) >= tolerance:
+            if d and abs(d) >= tolerance:     # `d and`: see the week loop above
                 year_diffs.append({"col": lbl, "key": key,
                                    "label": _display(eve[key]),
                                    "eve": a, "bot": b, "delta": d,
@@ -333,26 +345,35 @@ def verdict(res) -> str:
 
     The year total and the headline are part of the verdict, not a footnote: the
     weeks read IGUALES on WE 8.16.26 while the PDF was printing $45,565.99 less
-    than the tab, and a green line above that would have sent it out."""
+    than the tab, and a green line above that would have sent it out.
+
+    The year-column line says "las semanas revisadas coinciden" ONLY when they
+    do. It used to be returned ahead of the week diffs, so a run with real week
+    differences — Atef 8.30.26, Carlos + Colten 8.16.26 — ended on a sentence
+    saying the weeks agreed and the gap was in some old column."""
     hg = _headline_gap(res)
     if hg:
         d, pdf, tab = hg
         return (f"!! EL PDF NO CIERRA con la pestana: titular 2026 = "
                 f"{pdf:,.2f} contra {tab:,.2f} de la fila Total "
                 f"({d:+,.2f}). Revisar antes de mandar.")
-    if res.get("year_diffs"):
-        yd = res["year_diffs"]
-        net = round(sum(d["delta"] for d in yd), 2)
-        cols = sorted({d["col"] for d in yd})
+    yd = res.get("year_diffs") or []
+    ynet = round(sum(d["delta"] for d in yd), 2)
+    ycols = sorted({d["col"] for d in yd})
+    if yd and not res["diffs"]:
         return (f"!! Las semanas revisadas coinciden, pero {len(yd)} columna(s) "
-                f"acumulada(s) NO ({', '.join(cols)}), neto Eve - bot = "
-                f"{net:+,.2f}. El hueco esta en una semana vieja.")
+                f"acumulada(s) NO ({', '.join(ycols)}), neto Eve - bot = "
+                f"{ynet:+,.2f}. El hueco esta en una semana vieja.")
     if res["only_eve"] or res["only_bot"]:
         extra = (f"  ADEMÁS hay filas en una sola pestaña "
                  f"({len(res['only_eve'])} solo de Eve, "
                  f"{len(res['only_bot'])} solo del bot).")
     else:
         extra = ""
+    if yd:
+        extra += (f"  Y {len(yd)} columna(s) acumulada(s) también difieren "
+                  f"({', '.join(ycols)}), neto {ynet:+,.2f} — puede ser esta "
+                  f"misma plata, o además una semana vieja.")
     if not res["diffs"]:
         return (f"✅ IGUALES — nada que corregir en las {len(res['weeks'])} "
                 f"semana(s) revisadas.{extra}")
