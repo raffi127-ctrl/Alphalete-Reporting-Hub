@@ -8,7 +8,9 @@ JD's Loom 2026-09-03 (his payroll chore, sent to Megan). Two workbooks:
   * "All in One Local Office - Raf" — the standing workbook that holds the
     `ATT Sales Transfers` form responses and the `Raf PNL 2026` year grid.
 
-SANDBOX: WORKBOOK_ID points at "RH 8.30 Practice" until Megan says otherwise
+SANDBOX: WORKBOOK_ID points at "lucy practice" — a duplicate of the real
+week ending 2026-08-30, made to prove the pipeline end-to-end (Megan,
+2026-09-04). Nothing points at a live workbook until Megan says otherwise
 (Eve's sandbox-first rule). Nothing here writes without an explicit --write.
 
 Column names are LABELS, never indices — the DD and order-log crosstabs get
@@ -19,7 +21,7 @@ raises with the real header list when a label goes missing.
 from __future__ import annotations
 
 # --- workbooks -------------------------------------------------------------
-WORKBOOK_ID = "1nIa_S-EX20ejQPHKgTxgiGs8t0G1VpAd4a26lx1Od1Q"   # RH 8.30 Practice
+WORKBOOK_ID = "1paNO-wVPCUadHTmhlo0cXqnyRljMnvjqgY15SuGGV3s"   # "lucy practice"
 ALL_IN_ONE_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"  # All in One - Raf
 COMMISSION_FOLDER_ID = "1-90sJRYFH3HbIuhAAS0O8kCOTrAPZ8lU"      # live weekly copies
 #: Raf's folder — finished weeks get MOVED here. Step 1 keeps the two most
