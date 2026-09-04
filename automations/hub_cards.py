@@ -6265,7 +6265,7 @@ AUTOMATED_REPORTS = [
             "three log into AppStream. On separate timers they overlapped, "
             "fought over the AppStream session, and (with the resume pusher "
             "also logging in) tripped Cloudflare. This runs them in sequence:\n"
-            "**\u2022** **1:00 AM \u2014 full chain:** Funnel Board \u2192 Indeed "
+            "**\u2022** **1:10 AM \u2014 full chain:** Funnel Board \u2192 Indeed "
             "Source Report \u2192 Ad Sales Board.\n"
             "**\u2022** **1:00 PM \u2014 refresh:** Indeed Source Report \u2192 "
             "Ad Sales Board.\n\n"
@@ -6298,9 +6298,18 @@ AUTOMATED_REPORTS = [
         "phase_runs": True,
         "schedule": {
             "frequency": "daily",
-            "time": "1:00 AM",
-            "time_label": "1:00 AM full chain \u00b7 1:00 PM refresh",
-            "estimated_minutes": 20,
+            # 01:00 -> 01:10 (Megan 2026-09-03). Six other Lucy 2 agents fire at
+            # :00 of every hour and two of them log into AppStream
+            # (applicant-push, resume-pushing) \u2014 the exact contention this chain
+            # exists to end. The card has to carry the agent's real time or
+            # "Needs attention" measures lateness against a clock nothing runs on.
+            "time": "1:10 AM",
+            "time_label": "1:10 AM full chain \u00b7 1:00 PM refresh",
+            # 20 was optimistic: on 2026-09-03 the 1 PM chain alone (2 of the 3
+            # steps) took 36 min \u2014 indeed 11, ad sales 25. The full chain adds
+            # funnel_board (~3). This feeds the lateness grace, so an estimate
+            # under the real runtime flags a healthy run as overdue.
+            "estimated_minutes": 45,
         },
         "checklist": [],
         "post_run": {
