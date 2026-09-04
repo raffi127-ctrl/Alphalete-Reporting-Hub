@@ -727,23 +727,40 @@ class DroppingAnOwnerOnPurpose(unittest.TestCase):
     """
 
     def test_drop_set_is_normalised_and_accepts_both_shapes(self):
-        self.assertEqual(KD.dropped_owners(["Francisco Castillo"]),
-                         {"francisco castillo"})
-        self.assertEqual(KD.dropped_owners("Francisco Castillo,Chan Park"),
-                         {"chan park", "francisco castillo"})
+        self.assertEqual(
+            KD.dropped_owners(["Francisco Castillo"], include_config=False),
+            {"francisco castillo"})
+        self.assertEqual(
+            KD.dropped_owners("Francisco Castillo,Chan Park",
+                              include_config=False),
+            {"chan park", "francisco castillo"})
 
     def test_blank_entries_never_drop_anyone(self):
         """A trailing comma must not turn into an owner named ''."""
-        self.assertEqual(KD.dropped_owners("Francisco Castillo, ,"),
-                         {"francisco castillo"})
-        self.assertEqual(KD.dropped_owners([]), set())
+        self.assertEqual(
+            KD.dropped_owners("Francisco Castillo, ,", include_config=False),
+            {"francisco castillo"})
+        self.assertEqual(KD.dropped_owners([], include_config=False), set())
+
+    def test_the_durable_list_applies_with_no_flag_at_all(self):
+        """The 06:15 run passes no --drop-owner. If the config list did not
+        apply on its own, Castillo's dead board would hold Pat's mail every
+        morning while the hand-runs looked fine."""
+        self.assertIn("francisco castillo", KD.dropped_owners())
+
+    def test_an_explicit_flag_does_not_erase_the_durable_list(self):
+        """--drop-owner ADDS. A replace here would mean fixing one run by
+        quietly breaking the scheduled one."""
+        got = KD.dropped_owners(["Someone Else"])
+        self.assertIn("francisco castillo", got)
+        self.assertIn("someone else", got)
 
     def test_env_var_carries_it_without_a_code_change(self):
         import os
         old = os.environ.get("CAPTAINSHIP_DROP_OWNERS")
-        os.environ["CAPTAINSHIP_DROP_OWNERS"] = "Francisco Castillo"
+        os.environ["CAPTAINSHIP_DROP_OWNERS"] = "Someone Temporary"
         try:
-            self.assertEqual(KD.dropped_owners(), {"francisco castillo"})
+            self.assertIn("someone temporary", KD.dropped_owners())
         finally:
             if old is None:
                 os.environ.pop("CAPTAINSHIP_DROP_OWNERS", None)

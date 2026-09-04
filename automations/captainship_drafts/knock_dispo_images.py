@@ -287,7 +287,7 @@ def is_access_gap(exc) -> bool:
     return any(m in str(exc).lower() for m in _NO_OFFICE_MARKERS)
 
 
-def dropped_owners(raw=None) -> set:
+def dropped_owners(raw=None, *, include_config: bool = True) -> set:
     """Owners to leave OUT of the email ON PURPOSE, normalised for comparison.
 
     Eve's standing rule (2026-09-03) is that a missing owner never holds a
@@ -307,15 +307,22 @@ def dropped_owners(raw=None) -> set:
     totals stay honest — but the reason it prints is its own, because "no
     Office Access" would be a lie about an office we can open.
 
-    Reads CAPTAINSHIP_DROP_OWNERS (comma-separated) when `raw` is None, so a
-    scheduled run can carry it without a code change."""
+    Tres fuentes que se SUMAN: config.DROP_KNOCK_OWNERS (la lista durable, la
+    que hace que la corrida programada tambien los saltee), la variable de
+    entorno CAPTAINSHIP_DROP_OWNERS (un descarte de un dia) y `raw` (lo que
+    vino por --drop-owner). include_config=False deja solo `raw`, para tests."""
     import os
     from automations.focus_office_att.aliases import _norm_name
-    if raw is None:
-        raw = os.environ.get("CAPTAINSHIP_DROP_OWNERS", "")
-    if isinstance(raw, str):
-        raw = raw.split(",")
-    return {_norm_name(x) for x in (raw or []) if str(x).strip()}
+    names = (raw or "").split(",") if isinstance(raw, str) else list(raw or [])
+    if include_config:
+        # SUMA, nunca reemplazo. config.DROP_KNOCK_OWNERS es la lista DURABLE:
+        # la corrida programada no pasa --drop-owner, asi que si un
+        # --drop-owner suelto la pisara, arreglar una corrida a mano volveria a
+        # romper la de las 06:15 — al reves de lo que uno cree estar haciendo.
+        from automations.captainship_drafts import config as _cfg
+        names += list(getattr(_cfg, "DROP_KNOCK_OWNERS", ()))
+        names += os.environ.get("CAPTAINSHIP_DROP_OWNERS", "").split(",")
+    return {_norm_name(x) for x in names if str(x).strip()}
 
 
 DROP_NOTE = ("board excluded on purpose — its disposition grid does not "

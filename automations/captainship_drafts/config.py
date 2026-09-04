@@ -840,6 +840,30 @@ _BLOCKS: List[Block] = [
 # that they need a home in _BLOCKS above.
 _UNBLOCKED = tuple(c.key for c in CAPTAINS
                    if not any(c.key in b.captains for b in _BLOCKS))
+
+# Owners que NO llevan seccion de knocks, aunque SI podamos entrar a su oficina.
+# Observado y anotado, nunca inferido — igual criterio que CAMPAIGN_OVERRIDES en
+# knocks_pull: una entrada de mas silencia una oficina entera sin que se note.
+#
+# francisco castillo, 2026-09-03. Su pagina de Disposition by Rep en ownerville
+# no arma la grilla NUNCA: impersonacion OK ("22532 - Imperium Consultants"),
+# pagina que carga, y cero filas de encabezado. Tres sondas lo fijan — el dia
+# que fallo con el pin por defecto, el MISMO dia sin pin de campania, y otro dia
+# distinto (2026-08-28): las tres devolvieron "0 headers". No es la campania, no
+# es el dia y no es acceso; del lado de ownerville esa oficina no tiene grilla.
+# Su pedido /knocks del 2026-08-31 ya habia muerto igual.
+#
+# Sin esta lista el correo de Pat NO SALE: su pull tira KnocksPullFailed, que es
+# nota amarilla, y el guard de envio se niega a mandar un reporte con un hueco
+# amarillo. La corrida programada no pasa --drop-owner, asi que el flag manual
+# arreglaba las corridas a mano y dejaba rota la de las 06:15.
+#
+# SE SACA DE ACA en cuanto ownerville muestre su grilla — es lo unico que hay
+# que chequear para revertirlo.
+DROP_KNOCK_OWNERS: tuple = (
+    "Francisco Castillo",
+)
+
 BLOCKS: List[Block] = _BLOCKS + (
     [Block("unassigned", "Unassigned (add them to config.BLOCKS)", _UNBLOCKED)]
     if _UNBLOCKED else [])
