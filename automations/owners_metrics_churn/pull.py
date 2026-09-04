@@ -480,10 +480,41 @@ B2B_LUIS_URL = _wireless(
 # same CHURNRATES dashboard with WIRELESS baked in, which is what the four B2B
 # captainship tabs report now. The product param is appended anyway so the pull
 # does not depend on the saved view keeping its filter.
+# RE-POINTED 2026-09-04, off a probe, not a guess. The GUID below replaces
+# f800acd5-c7aa-4600-9a8c-522cd61af026 — same workbook, same view NAME, a
+# different saved view, and the old one is DEAD. `lucy rerun allteam_guid_probe`
+# loaded both as Raf on Lucy 1 and downloaded 'ICD Churn' off each:
+#
+#     f800acd5… (old):  1 owner,  Cruz Venegas ABSENT, Max Powell ABSENT
+#                       + Tableau's own banner: "An error occurred while loading
+#                         the custom view ALLTEAMWireless. Re-create the custom
+#                         view if this error persists."
+#     16d47259… (new): 93 owners, both PRESENT
+#     in the OLD view only: 0 owners — so the new one is a strict SUPERSET and
+#     no captainship loses anybody by this swap.
+#
+# One owner out of 93 is the same collapse the dead ALLTEAMSEXP view showed on
+# 2026-09-03 (only Cody Lowery). This URL is the went-dark BACKFILL for all four
+# B2B captainships, so while it was dead every backfill silently failed: a rep
+# who moved captainships had no way back onto her old captain's tab, and her
+# absence looked exactly like "she sells no wireless".
+#
+# THAT IS WHY CRUZ VENEGAS AND MAX POWELL WERE NOT PINNED. They were absent from
+# Luis's view AND from this fallback, which is the textbook shape for a
+# captainship_pins.NOT_IN_SOURCE entry — and the fallback was lying. A pin would
+# have hidden a real bug permanently, for them and for whoever went dark next.
+# Re-check Gary Whitaker II's pin (added 2026-09-03 on this same evidence).
+#
+# STILL A CUSTOM VIEW, so still mortal: this workbook has now killed its saved
+# views three times (8/13, 9/3, and this). The durable fix is to hang the
+# backfill off the BASE CHURNRATES view with a URL filter — what
+# probe_b2b_views was written to test. Until that lands, a pull that suddenly
+# returns ~1 owner means this GUID died too; run the probe before believing any
+# went-dark finding built on it.
 B2B_ALLTEAM_URL = _wireless(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/"
-    "f800acd5-c7aa-4600-9a8c-522cd61af026/ALLTEAMWireless?:iid=1"
+    "16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?:iid=1"
 )
 
 
