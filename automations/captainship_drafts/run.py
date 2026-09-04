@@ -324,9 +324,24 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
                 if email_build.PENDING_MARK in html:
                     failures += 1
                     n = html.count(email_build.PENDING_MARK)
+                    # NOMBRAR la seccion, no solo contarla. El contador solo
+                    # decia "1 section(s)", y sin el nombre no hay forma de
+                    # saber que arreglar: logtail no llega al .eml (solo lee
+                    # output/logs) y el log del armado no imprime la nota.
+                    # El renderer escribe "— <seccion> <PENDING_MARK>", asi
+                    # que el nombre esta ahi al lado (Eve, 2026-09-03: una
+                    # tarde entera para identificar UNA seccion de Pat).
+                    import re as _re
+                    which = _re.findall(
+                        r"—\s*([^<>—]{1,80}?)\s*"
+                        + _re.escape(email_build.PENDING_MARK), html)
+                    named = (": " + ", ".join(dict.fromkeys(w.strip()
+                                                            for w in which))
+                             if which else "")
                     logfn(f"  ✗ {captain.key}: NOT SENT — {n} section(s) still "
-                          f"read '{email_build.PENDING_MARK}'. Fix the source "
-                          f"and rebuild, or --allow-incomplete to send anyway.")
+                          f"read '{email_build.PENDING_MARK}'{named}. Fix the "
+                          f"source and rebuild, or --allow-incomplete to send "
+                          f"anyway.")
                     continue
             if msg["To"] is None:
                 msg["To"] = recipient

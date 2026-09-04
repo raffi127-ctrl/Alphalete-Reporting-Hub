@@ -47,7 +47,12 @@ CAPTAINS: list[Captain] = [
     # con discover_teams ese dia, asi que no hay nada que crear del lado de
     # Tableau. a_hex es el color de su banda en el Org Sales Board, el mismo
     # que llevan sus pestanas.
-    Captain("Pat Thompson's Captainship Activations",     1655147128, "Pat",   "#9BA820"),
+    #
+    # Pat era olivo (#9BA820) hasta el 2026-09-03: Raf pidio cambiarlo y tenia
+    # razon medible — quedaba a dE 29.7 del mostaza de Jairo, uno de los pares
+    # mas cercanos del board, y a esa distancia dos bandas se leen iguales. El
+    # magenta no lo usa ninguna de las quince capitanias.
+    Captain("Pat Thompson's Captainship Activations",     1655147128, "Pat",   "#C2379A"),
     Captain("Jess Lieberman's Captainship Activations",   877862349,  "Jess",  "#6F8691"),
 ]
 
