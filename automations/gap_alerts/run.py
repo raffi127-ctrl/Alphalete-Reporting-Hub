@@ -317,11 +317,71 @@ def _dest_due(dest: Dict, now: Optional[dt.datetime] = None,
     cadence = C.dest_cadence(dest)
     if cadence <= 0:                    # slots mode with no usable slot left
         return False
+    # DUE = THIS DESTINATION'S CURRENT ANCHOR IS ONE WE HAVE NOT SENT FOR.
+    #
+    # This used to be `(anchor - offset) % cadence == 0` — a pure clock test
+    # with no memory. On the anchor tick: due. One minute later: not due, even
+    # if the anchor tick never sent anything. So ANY tick lost on the anchor
+    # cost a whole cadence period of silence, and the tick has three ordinary
+    # ways to be lost: the ownerville lock (another run held it past the 120s
+    # budget), the pid lock (the previous pass overran), or a pull failure.
+    #
+    # 2026-09-03 is what it looks like: Raf's board went out at 8:02, the 8:15
+    # tick was SKIPPED because the due_diligence bot held the session, and 8:20
+    # and 8:21 then logged "nothing due" — because they were not anchors. The
+    # next board he could possibly get was 8:30. Half an hour of nothing, from
+    # ONE missed tick, on a report that says every fifteen minutes.
+    #
+    # Comparing anchors instead of clock-matching keeps the exact cadence and
+    # the stagger — a destination still gets one board per anchor, never two,
+    # and MIN_SEND_GAP_MINUTES still guards the back-to-back case — while the
+    # next wake after a lost tick picks the missed anchor up.
+    cur = _dest_anchor(dest, cfg, now)
+    if cur is None:
+        return False
+    return cur != _last_dest_anchor(cfg, dest)
+
+
+def _dest_anchor(dest: Dict, cfg: Optional[Dict], now: dt.datetime):
+    """The most recent anchor at or before `now` for this destination, as
+    'YYYY-MM-DDTHH:MM'. None for fixed-slot destinations, which are moments
+    rather than intervals and must never be caught up late — a board stamped
+    "First Knocks 2:00 PM" arriving at 3:10 is not the thing that was asked for.
+    """
+    cadence = C.dest_cadence(dest)
+    if cadence <= 0:
+        return None
     # Staggered: the office keeps its exact spacing, on its own offset, so
     # twenty offices do not all land on :00. See config.office_offset.
-    mins = now.hour * 60 + now.minute
-    anchor = mins - (mins % C.WAKE_MINUTES)
-    return (anchor - C.office_offset(cfg or {})) % cadence == 0
+    base = now.replace(second=0, microsecond=0)
+    mins = base.hour * 60 + base.minute
+    a = mins - (mins % C.WAKE_MINUTES)
+    a -= (a - C.office_offset(cfg or {})) % cadence
+    at = base.replace(hour=0, minute=0) + dt.timedelta(minutes=a)
+    return at.strftime("%Y-%m-%dT%H:%M")
+
+
+def _last_dest_anchor(cfg: Optional[Dict], dest: Dict):
+    key = "%s|%s" % ((cfg or {}).get("key", "?"), C.dest_label(dest))
+    return (_state().get("_last_anchor") or {}).get(key)
+
+
+def _mark_dest_anchors(cfg: Dict, dests: List[Dict], now: dt.datetime) -> None:
+    """Record the anchor each delivered destination was just sent for.
+
+    Stamped ONLY for destinations a route actually took, for the same reason
+    _mark_sent is: a failed send must leave the board still owed, or the next
+    wake would decide it had already gone out.
+    """
+    if not dests:
+        return
+    data = _state()
+    slot = data.setdefault("_last_anchor", {})
+    for d in dests:
+        cur = _dest_anchor(d, cfg, now)
+        if cur:
+            slot["%s|%s" % (cfg.get("key", "?"), C.dest_label(d))] = cur
+    _save_state(data)
 
 
 def _wrong_account(plan: List, boards: Dict) -> bool:
@@ -1332,6 +1392,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         # the others — a Messages failure taking the inbox copy with it is how
         # an owner ends up with nothing while the log says one thing failed.
         delivered = False
+        delivered_dests = []
         for dest in due:
             kind = dest.get("kind")
             where = C.dest_label(dest)
@@ -1374,6 +1435,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                             res.get("resolved_name"), res.get("participants"),
                             "" if send else " — nothing sent"))
                     delivered = True
+                    delivered_dests.append(dest)
                 elif kind == "email":
                     res = email_send.send(cfg, boards, body, slot, day,
                                           to_addrs=dest.get("emails") or [],
@@ -1386,6 +1448,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                                 ", ".join(res.get("to") or []),
                                 res.get("subject")))
                         delivered = True
+                        delivered_dests.append(dest)
                 elif kind == "slack":
                     channel = C.dest_channel(dest)
                     if not channel:
@@ -1405,6 +1468,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                          % ("SLACK" if send else "SLACK (preview)",
                             res.get("channel"), res.get("file")))
                     delivered = True
+                    delivered_dests.append(dest)
                 else:
                     _log("  unknown destination kind %r — skipped" % kind)
             except Exception as e:  # noqa: BLE001
@@ -1419,6 +1483,10 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             # must not block the next retry, and must not consume the "new"
             # marks — those people would then never be flagged.
             _mark_sent(cfg["key"])
+            # Per-DESTINATION, because cadence is per-destination: Raf's chat
+            # is 15 minutes and his Slack channel is 60, and one stamp for the
+            # office would let whichever fired last speak for both.
+            _mark_dest_anchors(cfg, delivered_dests, dt.datetime.now())
             _remember_gap_names(cfg["key"], day, gap_names)
     _terminated_check_once(day, seen_names)
     return failures
