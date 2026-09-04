@@ -283,15 +283,17 @@ _NOTIFY=0
 case " $* " in
   *" --dry-run "*) : ;;
   *)
-    if [ "$ST" -eq 3 ]; then
-      # EXIT 3 = the module DECLINED on purpose (weekend quiet window). Nothing
+    if [ "$ST" -eq 75 ]; then
+      # EXIT 75 = the module DECLINED on purpose (weekend quiet window). Nothing
       # ran and nothing is broken, so this is not a bad pass: no streak, no
       # FAILED row, no Sosumi. Before this code existed the refusal exited 1 and
       # three quiet ticks published FAILED for BOTH offices and opened
       # "Applicant Push failed" in #claudecorrections (2026-09-04, the afternoon
       # the window shipped). Publishing nothing matches the 7AM-10PM gate above,
-      # which also just leaves the day alone.
-      echo "[$(date)] declined (exit 3, quiet window) — not a failure; nothing published" >> "$LOG_FILE"
+      # which also just leaves the day alone. 75 is EX_TEMPFAIL = HELD, this
+      # repo's existing word for it; NOT 3, which resume_pushing already uses for
+      # an Indeed wedge that MUST keep counting toward the streak.
+      echo "[$(date)] declined (exit 75 = held, quiet window) — not a failure; nothing published" >> "$LOG_FILE"
       rm -f "$_STREAK_FILE"
     elif [ "$ST" -ne 0 ]; then
       _n=$(cat "$_STREAK_FILE" 2>/dev/null || echo 0)

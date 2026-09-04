@@ -281,15 +281,15 @@ def main(argv=None) -> int:
     import datetime as _dt
     if args.live and quiet_window(_dt.datetime.now()) and not getattr(
             args, "audit_office", False):
-        # EXIT 3, NOT AN ERROR (2026-09-04, hours after the window landed): this
+        # EXIT 75 (HELD), NOT AN ERROR (2026-09-04, hours after the window landed): this
         # refusal used to `raise SystemExit(<message>)`, which exits 1. The
         # wrapper reads any non-zero as a bad pass, so three quiet ticks in a row
         # published FAILED to the Hub and opened "Applicant Push failed" in
         # #claudecorrections — for both offices — while the code was doing
         # exactly what Carlos asked. A window we chose is a healthy no-op, so it
-        # gets its own code the wrapper knows: 3 = declined on purpose, nothing
-        # ran, nothing is broken. (The office-allowlist refusal below stays a
-        # hard error — that one IS a misconfiguration.)
+        # gets the repo's HELD code instead — see window.QUIET_EXIT for why 75
+        # and not 3. (The office-allowlist refusal below stays a hard error —
+        # that one IS a misconfiguration.)
         print("[push] SKIPPED: weekend quiet window — live pushes stop Friday "
               "1:00 PM CST and resume Sunday 1:00 PM CST.", flush=True)
         return QUIET_EXIT

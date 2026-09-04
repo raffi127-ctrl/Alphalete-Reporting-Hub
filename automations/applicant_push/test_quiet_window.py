@@ -26,13 +26,15 @@ assert quiet_window(at(6, 12))       # Sunday morning: off
 assert not quiet_window(at(6, 13))   # Sunday 1pm: back on
 assert not quiet_window(at(0, 9))    # Monday: on
 
-# A declined tick is its own code, and NOT the generic failure exit.
-assert QUIET_EXIT == 3 and QUIET_EXIT != 0
+# A declined tick is the repo's HELD code (EX_TEMPFAIL), not the generic failure
+# exit — and NOT 3, which resume_pushing uses for an Indeed wedge that has to keep
+# counting toward the failure streak.
+assert QUIET_EXIT == 75 and QUIET_EXIT not in (0, 1, 2, 3)
 
 # The wrapper has to know that code, or the quiet window pages the channel again.
 wrapper = (pathlib.Path(__file__).resolve().parents[2]
            / "deploy" / "applicant_push.sh").read_text(encoding="utf-8")
-assert '[ "$ST" -eq 3 ]' in wrapper, "wrapper no longer special-cases exit 3"
-assert 'elif [ "$ST" -ne 0 ]' in wrapper, "exit 3 must be checked before the fail streak"
+assert '[ "$ST" -eq 75 ]' in wrapper, "wrapper no longer special-cases exit 75"
+assert 'elif [ "$ST" -ne 0 ]' in wrapper, "exit 75 must be checked before the fail streak"
 
-print("ok: quiet window Fri13->Sun13, declines with exit 3, wrapper skips it")
+print("ok: quiet window Fri13->Sun13, declines with exit 75 (held), wrapper skips it")
