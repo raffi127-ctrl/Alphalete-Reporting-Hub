@@ -197,6 +197,54 @@ def _alert_after_for(per_office: list, now: dt.datetime = None) -> str:
     return floor.isoformat(timespec="seconds") if now < floor else None
 
 
+# --- the run's own clock ----------------------------------------------------
+# WHY (2026-09-04): the 4am pass was SIGKILLed at its 30-minute cap. Nothing
+# hung — this report simply outgrew the cap. It was written for TWO offices
+# (Carlos + Atef, 2026-07-23); Jamis joined 8/1 and Sabrina 8/26, so one
+# `--all --post` now captures 41 sections across four offices. Measured on the
+# morning it died: Carlos's 9 sections took 05:04→05:11, Atef's 10 took
+# 05:11→05:31, and the kill landed at 05:34 with Jamis and Sabrina never
+# started. The two auto-retries then finished the thread only because the
+# pre-capture skip made them cheap — i.e. the batch was rescued by luck, and
+# the channel got a 🚨 for a report whose thread ended up complete.
+#
+# A SIGKILL is the expensive part, not the lateness: the process dies between
+# the capture loop and `_write_manifest`, so the run records NOTHING. No
+# manifest means the orchestrator can't name which sections are still missing
+# and the retry can't be scoped to them — it re-runs the whole 41 again,
+# against the same cap.
+#
+# So the run now watches its OWN budget (HUB_REPORT_TIMEOUT_S, exported by
+# day_orchestrator.run for exactly this kind of use) and stops BEFORE the cap:
+# an office it cannot plausibly finish is left unstarted and recorded as
+# missing, the manifest is written, and the Hub pill closes. Late and honest
+# beats killed and silent. With no budget in the environment (a hand run, a
+# LaunchAgent) there is no deadline and the behaviour is byte-for-byte what it
+# was.
+_WRAPUP_SEC = 90        # manifest write + Hub publish must fit inside the cap
+_MIN_OFFICE_SEC = 8 * 60  # floor for "can another office fit?" before any office
+                          # has finished and taught us its real cost
+_PROCESS_START = time.monotonic()
+
+
+def _budget_deadline(now: float = None) -> float:
+    """Monotonic clock this run must be DONE by, or None when uncapped.
+
+    HUB_REPORT_TIMEOUT_S is the whole budget the orchestrator gave the child,
+    and it is set at launch — so the deadline is measured from process start,
+    not from here. Anything unparseable is treated as "no budget": a bad env
+    var must never shorten a report."""
+    import os
+    raw = (os.environ.get("HUB_REPORT_TIMEOUT_S") or "").strip()
+    try:
+        budget = float(raw)
+    except ValueError:
+        return None
+    if budget <= 0:
+        return None
+    return _PROCESS_START + budget - _WRAPUP_SEC
+
+
 _CRASH_TAG = " (office run failed)"
 
 
@@ -886,8 +934,47 @@ def main(argv=None) -> int:
 
     statuses = []
     per_office = []     # {key, present, missed, failed} — feeds the run-manifest
+    # See _budget_deadline: stop starting offices we can't finish inside the
+    # orchestrator's cap, instead of being SIGKILLed with nothing recorded.
+    deadline = _budget_deadline()
+    slowest_office_sec = 0.0
+    out_of_time = False
     for key in office_keys:
         o = _off.get(key)
+        if deadline is not None and not out_of_time and per_office:
+            # Only AFTER an office has finished — the first one always runs, so
+            # a too-small budget still produces a thread rather than nothing.
+            # The yardstick is the SLOWEST office so far, not an average: the
+            # cost per office varies 3x (Carlos 7 min, Atef 20 min on
+            # 2026-09-04) and an average would keep starting offices that then
+            # get killed, which is the failure this exists to end.
+            need = max(slowest_office_sec, _MIN_OFFICE_SEC)
+            left = deadline - time.monotonic()
+            if left < need:
+                out_of_time = True
+                print("\n⏱ OUT OF TIME — {:.0f}s of budget left, the slowest "
+                      "office so far needed {:.0f}s. Stopping here so the "
+                      "manifest still gets written; the remaining office(s) "
+                      "are recorded as missing and the retry backfills only "
+                      "them.".format(max(left, 0), need))
+        if out_of_time:
+            # Not a crash and not a blank: this office was never attempted. It
+            # is recorded exactly like a crashed office (every expected section
+            # missing) so the manifest names the sections and the `--all --post`
+            # retry — which skips whatever is already in each thread — comes
+            # back for precisely these.
+            statuses.append("failed")
+            unstarted = [args.only] if args.only else expected_ids(o)
+            per_office.append({"key": key, "present": [], "missed": unstarted,
+                               "deferred": [], "no_data": [], "failed": True})
+            if args.post:
+                _record_office_status(
+                    o, ok=False, error="not started — the run ran out of its "
+                                       "time budget")
+            print("  [{}] NOT STARTED (out of time) — {} section(s) recorded "
+                  "as missing".format(key, len(unstarted)))
+            continue
+        _office_started = time.monotonic()
         try:
             res = run(o, post=args.post, only=args.only, dm=args.dm,
                       channel_override=args.channel, today=today, force=args.force,
@@ -926,6 +1013,11 @@ def main(argv=None) -> int:
                     _publish_hub("failed")
                 raise
             traceback.print_exc()         # --all: one office must not kill the rest
+        finally:
+            # A crashed office still teaches us what an office can cost — it may
+            # have burned twenty minutes of Tableau before it raised.
+            slowest_office_sec = max(slowest_office_sec,
+                                     time.monotonic() - _office_started)
 
     if records_manifest:
         # Record section-level completeness for the orchestrator's reconciler

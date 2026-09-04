@@ -6674,7 +6674,8 @@
       "depends_on": [
         "vantura_churn"
       ],
-      "timeout_minutes": 30,
+      "timeout_minutes": 75,
+      "_timeout_note": "30 -> 75 on 2026-09-04. The cap was set on 2026-07-23 for the TWO offices that existed then (Carlos + Atef); Jamis joined 8/1 and Sabrina 8/26, so one `--all --post` now captures 41 sections across four offices and each Tableau section launches its own Chrome under the CDP-9246 lock. It was killed at 30m on 2026-09-04 with nothing hung: measured that morning, Carlos's 9 sections ran 05:04->05:11 and Atef's 10 ran 05:11->05:31, and the kill at 05:34 landed before Jamis and Sabrina were ever started (the two auto-retries then finished the thread only because the pre-capture skip made them cheap). 41 sections at Atef's ~2 min/section is ~60 min cold, so 75 leaves margin and still finishes well before the 8:30 floor pass. RAISE THIS WHEN AN OFFICE IS ADDED - budget ~20 min per office. The runner also watches this same budget itself (HUB_REPORT_TIMEOUT_S -> runner._budget_deadline): it stops starting offices it cannot finish and records them as missing, so going over degrades to a named partial with a manifest instead of a SIGKILL that records nothing.",
       "verify": {
         "type": "manifest",
         "report_id": "b2b_metrics"
