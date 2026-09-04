@@ -67,8 +67,38 @@ def _submit(page, timeout):
     except Exception as e:  # noqa: BLE001 — blocked click, not a missing button
         print("     click blocked (%s) — posting from the page instead"
               % str(e).splitlines()[0][:70], flush=True)
-        page.eval_on_selector(sel, _JS_CLICK)
-        return "js click"
+        try:
+            page.eval_on_selector(sel, _JS_CLICK)
+            return "js click"
+        except Exception:  # noqa: BLE001 — see below; the element is GONE
+            # THE SUBMIT ALREADY LANDED (2026-09-04). The escape hatch itself
+            # started failing with `Failed to find element matching selector
+            # "input[name=sbmtSrcReport]"` — and that error is not what it looks
+            # like. The guard at the top of this function proved the button was
+            # there moments ago, so a button that is gone NOW can only mean the
+            # page navigated away while we were clicking it: the click DID post
+            # the form, and Playwright's actionability gate kept waiting on an
+            # element that the response was already replacing.
+            #
+            # Which is why it hit exactly three of 29 offices — Khalil Mansour
+            # (11901), Rafael Hidalgo (11280), Kinsey Guenther (11906) — and hit
+            # them on BOTH attempts rather than flaking: their Source Reports
+            # are the slow ones, so the post reliably outlives the 30s click
+            # timeout. The other blocked clicks that morning (12 in all) were
+            # rescued by the JS fallback because their forms were still on
+            # screen. Nothing about those three pages changed; the timeout is
+            # just shorter than their report takes.
+            #
+            # Raising here threw away a POST that had already succeeded and
+            # left three offices' weeks untouched. Instead: say so and let the
+            # caller scrape. If the post really did fail, _one_pass' own
+            # "no Source Report table came back" says that truthfully a moment
+            # later and the retry still runs — we lose nothing by looking.
+            if page.query_selector(sel) is None:
+                print("     …the form is already gone — the click posted before "
+                      "it timed out; scraping the response", flush=True)
+                return "click landed during timeout"
+            raise
 
 
 def _one_pass(page, tok, start, end, timeout):
