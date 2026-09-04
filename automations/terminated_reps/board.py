@@ -799,3 +799,108 @@ def scan(today: dt.date, *, tab: str | None = None, back_weeks: int = 1,
     """`scan_full` without the checks — the shape mobrium_list reads."""
     r = scan_full(today, tab=tab, back_weeks=back_weeks, logfn=logfn)
     return r.rows, r.title
+
+
+# ---------------------------------------------------- reading, not filing
+
+# How many week tabs `marked_names` reads, counting the current one.
+#
+# It exists for the READERS that ask "is this person gone?", and they run
+# WEEKLY (mobrium_list, Fridays 10:00 CT) against a board that keeps being
+# typed into afterwards. Three weeks covers a mark added on Friday afternoon,
+# over the weekend, or on a week whose run didn't happen at all.
+MARKED_WEEKS = 3
+
+
+@dataclass
+class Marked:
+    """Everything the recent week tabs SAY, with none of the filing filters.
+
+    `scan_full` is built for the TRACKER, which appends a row per termination,
+    so it protects itself from writing the same person twice: the previous
+    tab only contributes terminations newer than LOOKBACK_DAYS, and a T mark
+    the previous tab already carried is dropped from this tab as a copy.
+
+    Both of those are wrong for a reader that only asks whether somebody is
+    gone, and together they open a hole with no floor: a rep marked T after
+    Friday's run — Friday afternoon, Saturday, Sunday — is too old for the
+    previous tab's 4-day window by the NEXT Friday, and their marks on the new
+    tab read as carried-over, so nobody sees them again. Measured 2026-09-04:
+    `scan` returned 32 of the 87 people the last three tabs mark.
+
+    So this returns the union of the last `weeks` tabs, undeduped by date and
+    unfiltered by recency, plus:
+
+      * `checks` — the rows the board contradicts itself about. They are not
+        terminations and must never be filed, but a reader deciding whether to
+        KEEP somebody deserves to know the board tried to mark them.
+      * `active` — the names on the CURRENT tab carrying no termination mark at
+        all, roster and new-starts box both. That is the board's own statement
+        that somebody is working THIS WEEK, which is the only positive evidence
+        of a rehire that doesn't depend on a human having retired an account.
+    """
+    terminated: list[Termination]
+    checks: list[Check]
+    active: list[str]
+    title: str
+
+
+def _unmarked_names(grid: list) -> list[str]:
+    """Every name on the tab with no Termination Date and no T mark anywhere.
+
+    A row with a CONTRADICTED T (a Check) is not returned: the board is not
+    saying they're working, it is saying it doesn't know.
+    """
+    lay = find_layout(grid)
+    out: list[str] = []
+    for r in lay.roster_rows:
+        name = str(_cell(grid, r, lay.name_col) or "").strip()
+        if not name:
+            continue
+        if to_date(_cell(grid, r, lay.term_col)) is not None:
+            continue
+        if day_marks(grid, r, lay.day_blocks):
+            continue
+        out.append(name)
+    for r in range(lay.box_first_row, len(grid) + 1):
+        name = str(_cell(grid, r, lay.box_name_col) or "").strip()
+        if not name:
+            continue
+        if day_marks(grid, r, lay.box_blocks):
+            continue
+        out.append(name)
+    return out
+
+
+def marked_names(today: dt.date, *, weeks: int = MARKED_WEEKS,
+                 tab: str | None = None, logfn=print) -> Marked:
+    """The last `weeks` week tabs, read whole. See `Marked` for why.
+
+    `tab` pins a single week (backfill / testing), exactly as in `scan_full`.
+    """
+    sh = open_by_key(SHEET_ID)
+    title = pick_tab(sh, today, tab)
+    tabs = week_tabs(sh, today)
+    titles = [t for _d, t in tabs]
+    if tab is None and title in titles:
+        i = titles.index(title)
+        want = tabs[max(0, i - weeks + 1):i + 1]
+    else:
+        want = [(d, t) for d, t in tabs if t == title] or [(week_sunday(today), title)]
+
+    rows: list[Termination] = []
+    checks: list[Check] = []
+    active: list[str] = []
+    for sunday, t in want:
+        grid = sh.worksheet(t).get_values(value_render_option="UNFORMATTED_VALUE")
+        monday = sunday - dt.timedelta(days=6)
+        r, c = scan_grid(grid, t, monday)
+        rows += r
+        checks += c
+        if t == title:
+            active = _unmarked_names(grid)
+        logfn(f"  {t!r}: {len(r)} marked terminated"
+              + (f", {len(c)} contradictory" if c else "")
+              + (f", {len(active)} still working" if t == title else ""))
+    return Marked(terminated=dedupe(rows), checks=dedupe_checks(checks),
+                  active=active, title=title)

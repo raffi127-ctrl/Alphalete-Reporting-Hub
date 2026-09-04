@@ -43,6 +43,7 @@ bug would have deleted working reps from the list.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
 from dataclasses import dataclass
@@ -89,6 +90,23 @@ class OwnervilleError(RuntimeError):
     'nobody has a phone number' and quietly write 12 blank rows."""
 
 
+# The page prints its dates MM-DD-YYYY ('08-03-2026'); the other two forms are
+# there because one hand-edited record is all it takes, and an unparseable date
+# has to read as "no date", never as an exception.
+_DATE_FORMATS = ("%m-%d-%Y", "%m/%d/%Y", "%Y-%m-%d", "%m-%d-%y", "%m/%d/%y")
+
+
+def to_date(value) -> Optional[dt.date]:
+    """An OwnerVille date cell -> a date, or None for anything unreadable."""
+    text = " ".join(str(value or "").split())
+    for fmt in _DATE_FORMATS:
+        try:
+            return dt.datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 @dataclass(frozen=True)
 class Rep:
     first: str
@@ -106,6 +124,10 @@ class Rep:
     @property
     def working(self) -> bool:
         return self.roster in ROSTERS
+
+    @property
+    def started(self) -> Optional[dt.date]:
+        return to_date(self.start)
 
 
 # Parenthetical tags the board and OwnerVille both sprinkle on names — week
@@ -275,6 +297,18 @@ class Directory:
         # Prefer a record that actually carries contact details.
         with_contact = [r for r in pool if r.phone or r.email]
         return (with_contact or pool)[0]
+
+    def started_after(self, name: str, when) -> bool:
+        """Does a LIVE OwnerVille record say they started after `when`?
+
+        This is what tells a rehire from an account nobody retired. Retiring
+        somebody in OwnerVille is a human's job (it's the tracker's own
+        'Ownerville' checkbox), so a live record proves nothing by itself — but
+        a start date later than the termination is a second onboarding, which
+        is exactly what a rehire is. [[see plan.rehired]]
+        """
+        return any(r.started is not None and r.started > when
+                   for r in self._candidates(name) if r.working)
 
     def is_working(self, name: str) -> bool:
         """True when OwnerVille still lists this person on a live roster.

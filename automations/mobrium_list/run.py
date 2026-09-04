@@ -3,9 +3,12 @@
 Keeps the 'Mobrium List' tab of 'All in One Local Office - Raf' current:
 
   1. REMOVE the reps who are gone. Terminated per the 'Terminated Reps' tab in
-     the same workbook and per this week's SALES BOARD. Two vetoes: a tracker
-     note of FFP keeps them (Eve's rule), and so does a live OwnerVille roster
-     entry, which means they were rehired.
+     the same workbook and per the last three weeks of the SALES BOARD — three,
+     because a T typed after Friday's run is invisible to a weekly reader that
+     only looks at the current week. Two vetoes: a tracker note of FFP keeps
+     them (Eve's rule), and so does a REHIRE — which now has to be stated by an
+     OwnerVille start date after the termination or by this week's board, not
+     merely by an OwnerVille account nobody retired (see plan.py).
   2. ADD the week's new starts from the board's 'New Starts/Raf' box, with
      their Email and Phone read out of OwnerVille's Sales Reps page (p=20).
      The board's own email column is used only for people OwnerVille has never
@@ -104,6 +107,22 @@ def _report(plan: mplan.Plan, logfn=print) -> None:
               f"{a.phone or '(no phone)':<16} [{a.source}]")
     if not plan.additions:
         logfn("   (nobody)")
+
+    if plan.flagged:
+        logfn("")
+        logfn(f"⚠ {len(plan.flagged)} on the list the BOARD marked T and then "
+              f"contradicted itself about — nothing filed them, so nothing "
+              f"removes them. Tell me which it is and I'll do it next run:")
+        for f in plan.flagged:
+            logfn(f"   ? {f.entry.full:<28} {f.why}")
+
+    if plan.near:
+        logfn("")
+        logfn(f"⚠ {len(plan.near)} on the list whose name ALMOST matches a "
+              f"termination — removals go on an exact name, so these stay put "
+              f"until the spelling agrees:")
+        for n in plan.near:
+            logfn(f"   ? {n.entry.full:<28} {n.why}")
 
     if plan.fills:
         logfn("")

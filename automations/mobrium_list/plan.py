@@ -4,12 +4,30 @@ All the judgement lives here so the reasons are in one place and every line of
 the report can cite one.
 
 REMOVE somebody when they are named as terminated — by the 'Terminated Reps'
-tab or by this week's sales board — UNLESS one of two things vetoes it:
+tab or by the sales board — UNLESS one of two things vetoes it:
 
   * their tracker Notes say FFP. Eve's rule: those stay.
-  * OwnerVille still lists them on a live roster. That is a rehire, and the
-    tracker row is about the first time they left. Tadana Manyangadze is the
-    live example: on the tracker, and training new starts on this week's board.
+  * something says they came BACK. A rehire's tracker row is about the first
+    time they left. Tadana Manyangadze was the example all August: terminated
+    5/29, on the tracker, and training new starts on the board (the board
+    marked her again on 2026-08-25, and that time she came off the list).
+
+THE REHIRE VETO NEEDS EVIDENCE OF A RETURN, not just a live OwnerVille row.
+It used to read "still in OwnerVille + terminated more than a week ago", and
+that is not a rehire. Retiring somebody in OwnerVille is a HUMAN's job — it is
+the tracker's own 'Ownerville' checkbox, a tick that records that a person went
+and did it — so a record nobody got around to retiring looks exactly like a
+rehire, and the old rule got MORE certain the longer it went unretired. Nothing
+could ever age back out of it, and the same veto runs on the ADD side, so the
+next week's box put the person straight back on the list.
+
+The cadence made it worse: this runs on Fridays, so a rep terminated on a Friday
+reaches the very next run at exactly REHIRE_LAG_DAYS. The first opportunity to
+remove them was already past the threshold.
+
+So the veto now wants a stated return — an OwnerVille start date after the
+termination, or this week's board showing them working — and every kept row
+prints which one it was.
 
 Nothing else is allowed to trigger a removal. In particular, being ABSENT from
 OwnerVille never does: a miss there is as likely to be a spelling the matcher
@@ -41,7 +59,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from automations.mobrium_list import board as mboard
@@ -50,19 +68,21 @@ from automations.mobrium_list.ownerville import Directory, Rep, norm_name
 
 _PAREN = re.compile(r"\([^)]*\)")
 
-# How stale a termination has to be before "still active in OwnerVille" is read
-# as a REHIRE rather than as OwnerVille not having caught up yet.
+# How recent a termination has to be for OwnerVille to be assumed BEHIND it.
 #
-# Both look identical in the data — terminated, and on a live roster — and
-# getting it backwards keeps a departed rep on the list forever. OwnerVille's
-# own lag is a day or two (measured 2026-08-07: Jade Sapp terminated 8/3 →
-# retired 08-05, Adriannah Reyes 8/5 → 08-06, Christopher Cardenas 8/6 → 08-07),
-# while a real rehire is months apart (Tadana Manyangadze: terminated 5/29,
-# active and training new starts in August). A week sits clear of both.
-#
-# This is what stopped Karla Lopez — terminated the morning of 2026-08-07, still
+# Inside this window a live OwnerVille row means nothing at all: retirement runs
+# a day or two late by hand (measured 2026-08-07: Jade Sapp terminated 8/3 →
+# retired 08-05, Adriannah Reyes 8/5 → 08-06, Christopher Cardenas 8/6 → 08-07).
+# It is what stopped Karla Lopez — terminated the morning of 2026-08-07, still
 # active in OwnerVille that afternoon — from being added as though she'd been
 # rehired.
+#
+# OUTSIDE the window nothing changes on its own: this is a floor under the
+# rehire test, never a trigger for it. `rehired` still wants a start date after
+# the termination or a live row on this week's board. It used to be the whole
+# test, and one Friday of cadence was enough to defeat it — a rep terminated on
+# a Friday reaches the very next run at exactly 7 days, so the first chance to
+# remove them was already past the threshold.
 REHIRE_LAG_DAYS = 7
 
 
@@ -119,6 +139,20 @@ class Fill:
                                          ("phone", self.phone)) if v)
 
 
+@dataclass(frozen=True)
+class Flagged:
+    """On the list, and the board marked them T but contradicted itself."""
+    entry: msheet.Entry
+    why: str
+
+
+@dataclass(frozen=True)
+class NearMiss:
+    """On the list under one spelling, terminated under another."""
+    entry: msheet.Entry
+    why: str
+
+
 @dataclass
 class Plan:
     removals: List[Removal]
@@ -127,6 +161,8 @@ class Plan:
     skipped: List[Skipped]
     fills: List[Fill]
     unsorted_tab: bool          # the tab wasn't in first-name order
+    flagged: List[Flagged] = field(default_factory=list)
+    near: List[NearMiss] = field(default_factory=list)
 
 
 def _split_name(name: str) -> Tuple[str, str]:
@@ -148,15 +184,40 @@ def _split_name(name: str) -> Tuple[str, str]:
 
 def rehired(name: str, terminated, directory: Directory,
             today: dt.date) -> bool:
-    """Is this person's live OwnerVille entry a rehire, or just lag?
+    """Did this person come BACK, or is OwnerVille just out of date?
 
-    See REHIRE_LAG_DAYS. A termination with no date anywhere counts as a
-    rehire, because there is nothing to call it recent.
+    Three gates, in order:
+
+      * no live OwnerVille row at all -> not a rehire. Absence still proves
+        nothing on its own, so this only ever withholds the veto.
+      * terminated within REHIRE_LAG_DAYS -> not a rehire, whatever else says.
+        OwnerVille is a day or two behind a termination and that lag must not
+        read as a return (Karla Lopez, 2026-08-07).
+      * older than that -> something has to SAY they returned: an OwnerVille
+        start date after the termination (a second onboarding), or this week's
+        board showing them working with no termination mark on the row. Time
+        alone never promotes a stale account into a rehire.
+
+    A termination with no date anywhere still counts as a rehire: there is
+    nothing to call it recent, and nothing to compare a start date against.
     """
     if not directory.is_working(name):
         return False
     last = terminated.latest(name)
-    return last is None or (today - last).days >= REHIRE_LAG_DAYS
+    if last is None:
+        return True
+    if (today - last).days < REHIRE_LAG_DAYS:
+        return False
+    return terminated.working_now(name) or directory.started_after(name, last)
+
+
+def rehire_why(name: str, terminated, directory: Directory) -> str:
+    """The evidence `rehired` accepted, for the run's own report."""
+    if terminated.working_now(name):
+        return "this week's board still has them working"
+    if terminated.latest(name) is None:
+        return "nothing dates the termination, and OwnerVille still lists them"
+    return "OwnerVille shows a start date after the termination"
 
 
 def build(entries: List[msheet.Entry], new_starts: List[mboard.NewStart],
@@ -173,11 +234,30 @@ def build(entries: List[msheet.Entry], new_starts: List[mboard.NewStart],
         if rehired(e.full, terminated, directory, today):
             last = terminated.latest(e.full)
             kept.append(Kept(
-                e, f"active in OwnerVille again — rehired since "
-                   f"{last.isoformat() if last else 'an undated termination'} "
+                e, f"rehired since "
+                   f"{last.isoformat() if last else 'an undated termination'} — "
+                   f"{rehire_why(e.full, terminated, directory)} "
                    f"({terminated.why(e.full)})"))
             continue
         removals.append(Removal(e, terminated.why(e.full)))
+
+    # The board tried to mark these and contradicted itself, so nothing filed
+    # them and nothing removes them. Reported instead of guessed: a `Check` is
+    # the board saying it doesn't know, and only Eve can say which it is.
+    flagged: List[Flagged] = [
+        Flagged(e, why) for e in entries
+        if not terminated.is_terminated(e.full)
+        and (why := terminated.checked(e.full))
+    ]
+
+    # Terminated under a spelling this module won't match exactly. Also only
+    # reported — see TerminatedIndex.looks_like for why it isn't a removal.
+    near: List[NearMiss] = [
+        NearMiss(e, why) for e in entries
+        if not terminated.is_terminated(e.full)
+        and not terminated.checked(e.full)
+        and (why := terminated.looks_like(e.full))
+    ]
 
     on_list = {e.key for e in entries}
     additions: List[Addition] = []
@@ -251,7 +331,8 @@ def build(entries: List[msheet.Entry], new_starts: List[mboard.NewStart],
 
     return Plan(removals=removals, kept=kept, additions=additions,
                 skipped=skipped, fills=fills,
-                unsorted_tab=not msheet.is_sorted(entries))
+                unsorted_tab=not msheet.is_sorted(entries),
+                flagged=flagged, near=near)
 
 
 def place(entries: List[msheet.Entry], plan: Plan) -> List[Tuple[int, list]]:
