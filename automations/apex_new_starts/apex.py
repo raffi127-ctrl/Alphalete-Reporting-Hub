@@ -111,12 +111,22 @@ LABELS: Dict[str, tuple] = {
 LEAVE_ALONE = ("office", "status", "salary", "time clock", "require break",
                "divisions")
 
-# 'Security Roles' is a required radio group (Office Admin / ICD Payroll Admin /
-# Sales Rep / Owner) and 'Department' is a required dropdown whose options
-# nobody has read. Neither gets filled until Megan says what they should be -- a
-# security role decides what somebody can SEE in a payroll system, which is the
-# last thing to guess at. plan_fill reports them unanswered instead.
-UNANSWERED = ("security_role", "department")
+# SECURITY ROLE. Required radio group -- Office Admin / ICD Payroll Admin /
+# Sales Rep / Owner -- and Megan's answer is Sales Rep (2026-09-03). It is set
+# by `set_security_role`, not by the ordinary fill: it is a radio, and radios
+# are in NON_TEXT_TYPES precisely so nothing can ever be typed into one.
+#
+# Matched on the label's EXACT text. A substring match is not safe here when the
+# options are 'Office Admin', 'ICD Payroll Admin' and 'Owner': this decides what
+# somebody can SEE inside a payroll system, and the difference between Sales Rep
+# and ICD Payroll Admin is the difference between their own numbers and
+# everyone's.
+SECURITY_ROLE = "Sales Rep"
+
+# 'Department' is a required dropdown whose options nobody has read yet, so it
+# is not filled -- the operator picks it, like the Social. plan_fill reports it
+# rather than guessing.
+UNANSWERED = ("department",)
 
 USERNAME_IS_EMAIL = True
 
@@ -412,6 +422,33 @@ def apply_fill(page, matched: List[tuple], log=print) -> int:
         log(f"    {semantic:9} -> {hit['matched_label']!r} ({sel})")
         done += 1
     return done
+
+
+def set_security_role(page, role: str = SECURITY_ROLE) -> bool:
+    """Tick the Security Roles radio whose label reads exactly `role`.
+
+    Returns False and clicks NOTHING if that label isn't on the page or if more
+    than one matches. The wrong radio here is not a typo -- it is somebody
+    seeing the whole office's payroll instead of their own.
+    """
+    hits = page.evaluate("""(want) => {
+      const out = [];
+      for (const el of document.querySelectorAll('input[type="radio"]')) {
+        let text = '';
+        const lab = el.closest('label')
+          || (el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null);
+        if (lab) text = (lab.innerText || '').trim();
+        if (text.toLowerCase() === want.toLowerCase())
+          out.push({id: el.id || '', name: el.getAttribute('name') || '', text});
+      }
+      return out;
+    }""", role)
+    if len(hits) != 1:
+        return False
+    hit = hits[0]
+    sel = f"#{hit['id']}" if hit["id"] else f'input[type="radio"][name="{hit["name"]}"]'
+    page.locator(sel).first.check(timeout=8000)
+    return True
 
 
 # ---------------------------------------------------------------- explore

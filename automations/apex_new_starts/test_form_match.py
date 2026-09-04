@@ -157,9 +157,9 @@ def test_nothing_the_run_fills_touches_a_leave_alone_box(page):
 
 
 def test_the_security_role_radios_are_never_typed_into(page):
-    """A security role is what somebody can SEE in a payroll system. It is in
-    UNANSWERED until Megan says which one, and radios are not text boxes."""
-    assert "security_role" in AX.UNANSWERED
+    """The role is TICKED by set_security_role, never typed. Radios sit in
+    NON_TEXT_TYPES so the ordinary fill cannot reach one even if a caller
+    passed the role in among the values."""
     matched, _ = AX.plan_fill(page, {"security_role": "Sales Rep"})
     assert matched == []
 
@@ -180,3 +180,29 @@ def test_required_is_what_this_screen_actually_asks_for(page):
     matched, _ = AX.plan_fill(page, dict.fromkeys(AX.REQUIRED, "x"))
     assert {m[0] for m in matched} == set(AX.REQUIRED)
     assert not ({"address1", "city", "zip", "dob"} & set(AX.REQUIRED))
+
+
+def test_the_security_role_lands_on_sales_rep(page):
+    """Megan, 2026-09-03: Sales Rep. Radios, so it is ticked by its own
+    function -- the ordinary fill can never reach one."""
+    for r in ("r1", "r2", "r3", "r4"):
+        page.locator(f"#{r}").evaluate("el => el.checked = false")
+    assert AX.set_security_role(page) is True
+    assert page.locator("#r3").is_checked()
+    assert not any(page.locator(f"#{r}").is_checked() for r in ("r1", "r2", "r4"))
+
+
+def test_an_unknown_role_ticks_nothing_at_all(page):
+    """The options are Office Admin, ICD Payroll Admin, Sales Rep and Owner. A
+    name that isn't one of them must tick NOTHING -- the difference between
+    Sales Rep and ICD Payroll Admin is the difference between somebody seeing
+    their own numbers and seeing everyone's."""
+    for r in ("r1", "r2", "r3", "r4"):
+        page.locator(f"#{r}").evaluate("el => el.checked = false")
+    assert AX.set_security_role(page, "Admin") is False
+    assert not any(page.locator(f"#{r}").is_checked()
+                   for r in ("r1", "r2", "r3", "r4"))
+
+
+def test_department_is_still_nobody_s_guess(page):
+    assert AX.UNANSWERED == ("department",)
