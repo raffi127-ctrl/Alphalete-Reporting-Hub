@@ -1365,12 +1365,12 @@ def _action_appstream_status(args: str) -> tuple[bool, str]:
     """Read-only: how long do the AppStream + ownerville sessions still have?
 
     `lucy diag` reports the ownerville file's AGE and nothing about AppStream, so
-    until 2026-08-24 there was NO remote way to see whether the one session that
-    needs a human was alive -- you found out when a report failed. Reads the two
-    stored tokens; no network, no Cloudflare risk, nothing written."""
+    until 2026-08-24 there was NO remote way to see whether the AppStream session
+    was alive -- you found out when a report failed. Reads the two stored tokens;
+    no network, no Cloudflare risk, nothing written."""
     # log_name is load-bearing: the result cell keeps only the TAIL, and AppStream
-    # -- the session that needs a human -- prints BEFORE ownerville, so without a
-    # log the one line worth reading is the one that gets cut (Eve 2026-08-24).
+    # prints BEFORE ownerville, so without a log the one line worth reading is
+    # the one that gets cut (Eve 2026-08-24).
     # Read it whole with: lucy logtail appstream-status
     cmd = [sys.executable, "-m", "automations.shared.appstream_watch", "--status"]
     return _run_cmd(cmd, timeout_s=120, log_name="appstream-status.log")
@@ -1385,14 +1385,15 @@ def _action_watch_test(args: str) -> tuple[bool, str]:
 
 
 def _action_reseed_appstream(args: str) -> tuple[bool, str]:
-    """Open the AppStream login so a HUMAN at the mini clears the Cloudflare
-    check. This can't be fully unattended — the Turnstile is bot-detection and
-    clearing it automatically is off the table — so this just launches the
-    legitimate human-cleared flow."""
+    """Drive the AppStream login to mint a fresh session. Runs UNATTENDED: the
+    Cloudflare box clears itself given 20-30s before submit, on AppStream and
+    ownerville alike (resources/lucy-login-standard.md). Nobody has to be at the
+    machine — if this fails, the cause is a wrong username, a poisoned profile
+    or AppStream itself, not a missing human."""
     cmd = [sys.executable, "-m", "automations.shared.tableau_patchright",
            "--appstream-login"]
     ok, res = _run_cmd(cmd, timeout_s=12 * 60)
-    return ok, res + " (needs a human at the Cloudflare check on the mini)"
+    return ok, res
 
 
 def _action_appstream_renew_probe(args: str) -> tuple[bool, str]:
@@ -7802,7 +7803,7 @@ def print_help() -> None:
         "  lucy restart_holder       restart the session keep-alive\n"
         "  lucy diag                 machine health: sleep, agents, session, disk\n"
         "  lucy set_sleep 1|0        prevent (1) / allow (0) sleep (needs NOPASSWD pmset)\n"
-        "  lucy reseed_appstream     open AppStream login (needs a human AT the mini)\n"
+        "  lucy reseed_appstream     mint a fresh AppStream session (unattended)\n"
         "  lucy watch_test           send a test of the 6pm session-expiry Slack ping\n"
         '  lucy incident_resolve <key> ["note"]\n'
         "                            close an incident thread in #claudecorrections\n"

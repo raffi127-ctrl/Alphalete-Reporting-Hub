@@ -20,11 +20,13 @@ login). The profile is gitignored.
 Auth (since 2026-06-17): the default path restores a manually-exported
 ownerville session (.ownerville_storage_state.json) — inject the login
 cookies, let v2.ownerville mint a fresh rqst SSO token, ride it to
-Tableau. No login form is driven, because ownerville's 'verify you are
-human' check can't be cleared unattended. A missing/expired session
-FAILS FAST (re-export via output/_scratch_ownerville_export_state.py).
-The legacy form-drive survives behind allow_form_login=True for
-interactive/debug use only.
+Tableau. When that session is missing/expired the form login re-mints it
+UNATTENDED: ownerville's 'verify you are human' box clears itself if you
+wait 20-30s before submitting, on ownerville and AppStream alike. Never
+shorten those waits to speed a login up — that is the bug, not a
+speed-up. Seed a first session with
+output/_scratch_ownerville_export_state.py.
+The rules for all of this: resources/lucy-login-standard.md.
 """
 
 from __future__ import annotations
@@ -62,10 +64,11 @@ PROFILE_DIR = (
 
 # A manually-exported ownerville session — the ColdFusion login cookies
 # (CFID/CFTOKEN/…) from which v2.ownerville mints a fresh rqst SSO token.
-# Produced by a one-time manual login via
-# output/_scratch_ownerville_export_state.py. GITIGNORED — live session
-# cookies. This is how unattended runs authenticate WITHOUT driving the login
-# form, whose Cloudflare 'verify you are human' check can't be cleared headless.
+# Seeded by output/_scratch_ownerville_export_state.py and re-minted
+# unattended by the form login when it expires. GITIGNORED — live session
+# cookies. Reusing it is the FAST path, not the only one: the form login runs
+# headless too, because the Cloudflare box clears itself given 20-30s before
+# submit (resources/lucy-login-standard.md).
 OWNERVILLE_STORAGE_STATE = (
     Path(__file__).resolve().parent / ".ownerville_storage_state.json"
 )
@@ -1764,11 +1767,12 @@ APPSTREAM_PROFILE_DIR = (
 )
 _APPSTREAM_USERNAME_SELECTOR = 'input[name="userName"], ' + _USERNAME_SELECTOR
 
-# A manually-exported AppStream session (cookies incl. CFID/CFTOKEN + the
-# rqst_<TOKEN> SSO cookies). Produced by a one-time human login via
-# output/_scratch_appstream_export_state.py. GITIGNORED — carries live session
-# cookies. This is how the unattended path authenticates WITHOUT driving the
-# login form, whose Cloudflare Turnstile can't be cleared unattended.
+# An exported AppStream session (cookies incl. CFID/CFTOKEN + the
+# rqst_<TOKEN> SSO cookies). Seeded by output/_scratch_appstream_export_state.py
+# and re-minted unattended by the form login when it expires. GITIGNORED —
+# carries live session cookies. The Turnstile clears itself given 20-30s before
+# submit, so a dead session is NOT a reason to send somebody to a machine
+# (resources/lucy-login-standard.md).
 APPSTREAM_STORAGE_STATE = (
     Path(__file__).resolve().parent / ".appstream_storage_state.json"
 )

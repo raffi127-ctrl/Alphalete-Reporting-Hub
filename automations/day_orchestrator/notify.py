@@ -1099,11 +1099,12 @@ def _build_body(cfg, ds, *, checkpoint: bool):
         # — no log-digging, no back-and-forth (Megan 2026-06-25).
         # Copy-paste fix: one `lucy rerun <id>` per failed report. Runs from ANY
         # terminal — the `lucy` command queues it to the mini, which runs it
-        # within ~2 min (check with `lucy status`). A session re-seed is the one
-        # exception: it still needs a human AT the mini to clear the check.
+        # within ~2 min (check with `lucy status`). A session re-seed queues the
+        # same way and runs unattended — nobody goes to the machine to clear a
+        # check (resources/lucy-login-standard.md).
         fix = []
         if need_reseed:
-            fix.append("lucy reseed_appstream   # needs someone at the mini to clear the check")
+            fix.append("lucy reseed_appstream   # mints a fresh session, unattended")
         fix += reruns
         text.append("")
         text.append("FIX — paste in your Terminal:")

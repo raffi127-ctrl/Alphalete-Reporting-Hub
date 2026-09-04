@@ -39,6 +39,15 @@ fluff. I need clear visuals and concise communications.
 
 # Rules — when working in this codebase
 
+- **Logins: `resources/lucy-login-standard.md` manda.** Cómo entran las
+  Lucys a OwnerVille y AppStream — qué cuenta va en cada máquina, por qué
+  NINGÚN login necesita un humano (la caja de Cloudflare se limpia sola
+  si esperás 20-30s antes de mandar), y qué frases NO volver a escribir.
+  Si un comentario, docstring o mensaje de error del código dice lo
+  contrario, el stale es el código: arreglá el código, no el doc
+  (Megan, 2026-09-03). Los tests que lo fijan:
+  `python -m unittest automations.shared.test_login_policy`.
+
 - **Preview before rollout.** New report fills / formatting changes go
   on ONE preview tab first (default: Marcellus Butler on the ATT
   Program - Focus Report). Wait for my "looks good, roll out" before
