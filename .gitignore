@@ -170,6 +170,10 @@ automations/slack_skool_email/.slack_profile*
 # never shared: one per machine, meaningless anywhere else.
 .ownerville_session.lock
 automations/shared/.ownerville_session.lock
+# The priority reservation a scheduled job writes while it queues for the
+# session — runtime state, same as the lock beside it. The repo is public.
+.ownerville_session.wanted
+automations/shared/.ownerville_session.wanted
 
 # Apex browser profile (automations/apex_new_starts/.apex_profile). Apex keeps
 # its login in a memory-only cookie, so this profile is made by a human signing

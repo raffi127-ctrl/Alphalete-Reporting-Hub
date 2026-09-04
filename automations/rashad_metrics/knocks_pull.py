@@ -1006,7 +1006,7 @@ def pull_master_on_page(page, target: dt.date, *, verbose: bool = True) -> list:
 
 
 def pull_offices_days(jobs, verbose: bool = True, profile_dir=None,
-                      session_wait_s=None):
+                      session_wait_s=None, priority: str = "normal"):
     """Scrape SEVERAL offices, each for its OWN list of days, in ONE session.
 
     `jobs`: [(office_name, [date, ...]), ...]. Per-office date lists rather
@@ -1028,7 +1028,8 @@ def pull_offices_days(jobs, verbose: bool = True, profile_dir=None,
     # share-of-your-own-deadline budget. A short-cadence caller passes a small
     # number and handles OwnervilleBusy by skipping its tick.
     with ownerville_session(verbose=verbose, profile_dir=profile_dir,
-                            session_wait_s=session_wait_s) as page:
+                            session_wait_s=session_wait_s,
+                            priority=priority) as page:
         for job in jobs:
             # (name, days) or (name, days, campaign) — the third element pins
             # THIS pull's campaign, for an office that runs more than one.

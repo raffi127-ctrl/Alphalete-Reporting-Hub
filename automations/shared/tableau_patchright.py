@@ -96,6 +96,70 @@ OWNERVILLE_SESSION_LOCK = (
     Path(__file__).resolve().parent / ".ownerville_session.lock"
 )
 
+# --- PRIORITY: an enrolled post outranks an ad-hoc request --------------------
+#
+# The lock alone is fair, and fair is wrong here. Megan 2026-09-03: "the post
+# should take priority over the individual request. We can delay the request if
+# needed. We shouldn't just go blank for an enrolled service."
+#
+# What it looked like without this: someone ran three `/knocks` back to back in
+# Slack inside Raf's selling window and gap_alerts lost the 8:15, 8:25 and 8:28
+# ticks to them. A 15-minute board that people are enrolled in went quiet so an
+# ad-hoc lookup could go first.
+#
+# A RESERVATION, not preemption. A holder mid-scrape is never interrupted —
+# yanking the session out from under an impersonated pull is how a board ends up
+# with another office's reps. Instead a scheduled job announces that it is
+# WAITING, and on-demand callers hold off before taking the session, so the
+# scheduled job gets it the moment the current holder finishes rather than
+# losing a coin-flip to whoever polls first.
+#
+# The reservation EXPIRES, and a dead reserver reserves nothing. A scheduled job
+# that crashes mid-wait must not wedge `/knocks` shut for the rest of the day —
+# it holds this only while it is actively queueing, a few minutes at a time.
+OWNERVILLE_PRIORITY_FILE = (
+    Path(__file__).resolve().parent / ".ownerville_session.wanted"
+)
+# Comfortably longer than a scheduled job's own wait budget (gap_alerts waits
+# 240s) so the reservation cannot lapse while its owner is still queueing, and
+# short enough that a crash costs one cycle, not a day.
+_OV_RESERVATION_TTL_S = 360
+
+
+def _reservation_active() -> bool:
+    """Is a scheduled job queueing for the session right now?"""
+    try:
+        pid_s, ts_s = OWNERVILLE_PRIORITY_FILE.read_text().strip().split(",", 1)
+        if time.time() - float(ts_s) > _OV_RESERVATION_TTL_S:
+            return False
+        pid = int(pid_s)
+    except Exception:          # noqa: BLE001 — no reservation, or an unreadable
+        return False           # one, must never block anybody
+    if pid == os.getpid():
+        return False           # our own reservation is not something to yield to
+    try:
+        os.kill(pid, 0)        # signal 0 = "does this process exist"
+    except OSError:
+        return False           # a dead reserver reserves nothing
+    return True
+
+
+def _reserve_session() -> None:
+    try:
+        OWNERVILLE_PRIORITY_FILE.write_text("%d,%.0f" % (os.getpid(),
+                                                         time.time()))
+    except Exception:          # noqa: BLE001 — priority is best-effort; the
+        pass                   # lock itself is what guarantees correctness
+
+
+def _unreserve_session() -> None:
+    try:
+        pid_s, _ = OWNERVILLE_PRIORITY_FILE.read_text().strip().split(",", 1)
+        if int(pid_s) == os.getpid():
+            OWNERVILLE_PRIORITY_FILE.unlink()
+    except Exception:          # noqa: BLE001
+        pass
+
 
 class OwnervilleBusy(RuntimeError):
     """Another run on this machine holds the ownerville session.
@@ -115,13 +179,19 @@ _OV_LOCK_DEPTH = 0
 _OV_LOCK_FD = None
 
 
-def _acquire_session_lock(*, wait_s: float, verbose: bool, label: str):
+def _acquire_session_lock(*, wait_s: float, verbose: bool, label: str,
+                          priority: str = "normal"):
     """Exclusive machine-wide lock on the ownerville session. Returns an fd to
     hold, or None where locking is unavailable (Windows has no flock — those
     machines keep the old behaviour rather than losing the report entirely).
 
     No orphan sweep, unlike the profile lock: flock is released by the kernel
     when the holder dies, so a killed run cannot leave this stuck.
+
+    priority="scheduled" is for a job people are ENROLLED in — it reserves the
+    session while it queues, and on-demand callers hold off rather than racing
+    it for the next free moment. Everything else defaults to "normal" and
+    yields. See OWNERVILLE_PRIORITY_FILE.
     """
     global _OV_LOCK_DEPTH, _OV_LOCK_FD
     if _OV_LOCK_DEPTH > 0:          # already ours — see _OV_LOCK_DEPTH above
@@ -134,6 +204,22 @@ def _acquire_session_lock(*, wait_s: float, verbose: bool, label: str):
     except Exception:          # noqa: BLE001 — never let the lock be the failure
         return None
     start = time.monotonic()
+    scheduled = (priority or "").strip().lower() == "scheduled"
+    if scheduled:
+        _reserve_session()
+    else:
+        # YIELD TO A WAITING SCHEDULED JOB. Only before taking the session --
+        # never mid-hold, and never for longer than this caller was already
+        # willing to wait, so an ad-hoc request is DELAYED, not cancelled.
+        yielded = False
+        while (_reservation_active()
+               and time.monotonic() - start < wait_s):
+            if not yielded and verbose:
+                print(f"[{label}] a scheduled ownerville job is queueing — "
+                      "letting it go first (an enrolled post outranks an "
+                      "on-demand request)", flush=True)
+                yielded = True
+            time.sleep(_PROFILE_LOCK_POLL_S)
     announced = False
     while True:
         try:
@@ -141,11 +227,18 @@ def _acquire_session_lock(*, wait_s: float, verbose: bool, label: str):
             if announced and verbose:
                 print(f"[{label}] ownerville session free — acquired, launching",
                       flush=True)
+            if scheduled:
+                _unreserve_session()
             _OV_LOCK_DEPTH, _OV_LOCK_FD = 1, fd
             return fd
         except OSError:
             if time.monotonic() - start >= wait_s:
                 who = _lock_holder(OWNERVILLE_SESSION_LOCK)
+                if scheduled:
+                    # Gave up: stop holding everyone else off. The reservation
+                    # would expire on its own, but leaving it costs `/knocks`
+                    # minutes for nothing.
+                    _unreserve_session()
                 try:
                     os.close(fd)
                 except Exception:  # noqa: BLE001
@@ -1698,7 +1791,8 @@ def ownerville_session(headless: bool = False,
                       device_scale: float | None = None,
                       window_size: tuple = (1680, 1280),
                       session_lock: bool = True,
-                      session_wait_s: "float | None" = None) -> Iterator[Page]:
+                      session_wait_s: "float | None" = None,
+                      priority: str = "normal") -> Iterator[Page]:
     """Yield a Page logged into ownerville.com via patchright — WITHOUT the
     Tableau SSO hop. For reports that scrape ownerville's own pages (e.g.
     focus_office_att rep breakdowns). Same login + shared profile +
@@ -1735,7 +1829,8 @@ def ownerville_session(headless: bool = False,
     wait_s = (_profile_wait_budget() if session_wait_s is None
               else float(session_wait_s))
     sess_fd = (_acquire_session_lock(wait_s=wait_s, verbose=verbose,
-                                     label="ownerville_session")
+                                     label="ownerville_session",
+                                     priority=priority)
                if session_lock else None)
     try:
         with sync_playwright() as p:

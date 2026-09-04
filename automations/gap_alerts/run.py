@@ -855,7 +855,8 @@ def gap_rows_many(offices: List[Dict], day: dt.date) -> Dict:
         return out
     with ownerville_session(headless=True, verbose=False,
                             profile_dir=C.PROFILE_DIR,
-                            session_wait_s=C.OWNERVILLE_SESSION_WAIT_S) as page:
+                            session_wait_s=C.OWNERVILLE_SESSION_WAIT_S,
+                            priority="scheduled") as page:
         rqst = cap.capture_rqst(page)
         for cfg in offices:
             impersonated = False
@@ -1000,9 +1001,13 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
         compare_i = len(jobs)
         jobs.append((compare, [day], campaign_for_office(compare)))
 
+    # SCHEDULED, so an on-demand `/knocks` waits for this rather than the other
+    # way round. People are enrolled in this board; nobody is enrolled in a
+    # slash command. See tableau_patchright.OWNERVILLE_PRIORITY_FILE.
     pulled = pull_offices_days(jobs, verbose=False,
                                profile_dir=str(C.PROFILE_DIR),
-                               session_wait_s=C.OWNERVILLE_SESSION_WAIT_S)
+                               session_wait_s=C.OWNERVILLE_SESSION_WAIT_S,
+                               priority="scheduled")
     chan_rows: List = []
     if compare_i is not None and compare_i < len(pulled):
         _name, _days, _err = pulled[compare_i]
