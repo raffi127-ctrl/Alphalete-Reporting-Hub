@@ -37,14 +37,19 @@ from automations.commission_sheet.archive import _FOLDER_MIME, _list
 from automations.commission_sheet.drive_auth import service
 
 _SHEET_MIME = "application/vnd.google-apps.spreadsheet"
-#: "RH 8.9", " RH 8.2", "RH 1.7.xlsx", " RH 8.30-Alisson"
-_RH = re.compile(r"^\s*RH[\s.]+(\d{1,2})\.(\d{1,2})\b", re.I)
+#: "RH 8.9", " RH 8.2", "RH 1.7.xlsx", " RH 8.30-Alisson", "RH 9.6.26".
+#: The trailing year is optional because every sheet before 2026-09 was named
+#: without one; new ones carry it (Megan, 2026-09-04).
+_RH = re.compile(r"^\s*RH[\s.]+(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?(?!\d)", re.I)
 #: JD's demo copies. Never the live sheet for a week.
 _PRACTICE = re.compile(r"practice", re.I)
 
 
-def is_live_sheet(name: str) -> Optional[Tuple[int, int]]:
-    """(month, day) if this name is a live weekly workbook, else None."""
+def is_live_sheet(name: str) -> Optional[Tuple[int, int, Optional[int]]]:
+    """(month, day, year-or-None) if this name is a live weekly workbook.
+
+    The year is only present on the newer `RH 9.6.26` names; older ones carry
+    month and day alone and the caller falls back to the created date."""
     if _PRACTICE.search(name):
         return None
     m = _RH.match(name)
@@ -53,7 +58,11 @@ def is_live_sheet(name: str) -> Optional[Tuple[int, int]]:
     month, day = int(m.group(1)), int(m.group(2))
     if not (1 <= month <= 12 and 1 <= day <= 31):
         return None
-    return month, day
+    year = None
+    if m.group(3):
+        year = int(m.group(3))
+        year += 2000 if year < 100 else 0
+    return month, day, year
 
 
 def _week_of(f: dict) -> Optional[dt.date]:
@@ -63,7 +72,12 @@ def _week_of(f: dict) -> Optional[dt.date]:
     md = is_live_sheet(f["name"])
     if not md:
         return None
-    month, day = md
+    month, day, named_year = md
+    if named_year:                       # the name says it outright — trust it
+        try:
+            return dt.date(named_year, month, day)
+        except ValueError:
+            return None
     year = int(f["createdTime"][:4])
     created_month = int(f["createdTime"][5:7])
     if month == 12 and created_month == 1:
@@ -92,7 +106,9 @@ def survey(svc=None) -> Tuple[List[Tuple[dt.date, dict]], List[dict]]:
 
 
 def _name_for(week: dt.date) -> str:
-    return f"RH {week.month}.{week.day}"
+    """`RH 9.6.26` — month.day.2-digit-year (Megan, 2026-09-04). Earlier sheets
+    carry no year; only new copies get one."""
+    return f"RH {week.month}.{week.day}.{week.year % 100:02d}"
 
 
 def plan(week: Optional[dt.date] = None, svc=None) -> Dict:

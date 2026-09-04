@@ -15,14 +15,14 @@ from automations.commission_sheet.newweek import (
 
 class LiveSeries(unittest.TestCase):
     def test_plain_weekly_names(self):
-        self.assertEqual(is_live_sheet("RH 8.9"), (8, 9))
-        self.assertEqual(is_live_sheet("RH 1.7.xlsx"), (1, 7))
+        self.assertEqual(is_live_sheet("RH 8.9"), (8, 9, None))
+        self.assertEqual(is_live_sheet("RH 1.7.xlsx"), (1, 7, None))
 
     def test_leading_space_and_person_suffix_still_count(self):
         # These ARE the live workbooks despite reading like practice copies
         # (Megan, 2026-09-04).
-        self.assertEqual(is_live_sheet(" RH 8.30-Alisson"), (8, 30))
-        self.assertEqual(is_live_sheet(" RH 8.2"), (8, 2))
+        self.assertEqual(is_live_sheet(" RH 8.30-Alisson"), (8, 30, None))
+        self.assertEqual(is_live_sheet(" RH 8.2"), (8, 2, None))
 
     def test_practice_copies_are_never_live(self):
         self.assertIsNone(is_live_sheet("RH 8.30 Practice"))
@@ -62,9 +62,17 @@ class WeekOfFile(unittest.TestCase):
 
 
 class Naming(unittest.TestCase):
-    def test_new_name_is_unpadded(self):
-        self.assertEqual(_name_for(dt.date(2026, 9, 6)), "RH 9.6")
-        self.assertEqual(_name_for(dt.date(2026, 12, 27)), "RH 12.27")
+    def test_new_name_carries_the_year(self):
+        # Megan, 2026-09-04: new copies are RH <M.D.YY>.
+        self.assertEqual(_name_for(dt.date(2026, 9, 6)), "RH 9.6.26")
+        self.assertEqual(_name_for(dt.date(2026, 12, 27)), "RH 12.27.26")
+        self.assertEqual(_name_for(dt.date(2027, 1, 3)), "RH 1.3.27")
+
+    def test_named_year_is_trusted_over_the_created_date(self):
+        # A 2026 sheet re-created/copied in 2027 must keep its own year.
+        f = {"name": "RH 12.27.26", "createdTime": "2027-01-04T12:00:00Z"}
+        self.assertEqual(_week_of(f), dt.date(2026, 12, 27))
+        self.assertEqual(is_live_sheet("RH 9.6.26"), (9, 6, 2026))
 
     def test_week_argument_forms(self):
         self.assertEqual(_parse_week("9.6").month, 9)
