@@ -126,6 +126,19 @@ _NOT_A_REPORT = frozenset({
     # BOTH spellings, like owner_showdown: the scheduler door keys on the
     # report_id, the plist door derives the kebab id.
     "override_bulletin_gate", "override-bulletin-gate",
+    # The DD Bulletin's review-gate handle — the same dupe, one week earlier in
+    # the calendar (Megan 2026-09-04, clearing it out alongside the Override
+    # one). review_gate.py publishes under `dd_bulletin` → the 🏆 DD card, so
+    # this stub's 12 rows are all hand-runs and it can never reflect Thursday's
+    # real send. It was quieter than the Override stub only because it
+    # registered as "on-demand" rather than weekly, so it never claimed to be
+    # DUE — it was still a second card for one report.
+    # DIFFERENT FROM THE OVERRIDE CASE IN ONE WAY: the DD card did NOT already
+    # carry the gate buttons, so removing the stub would have taken "post the DD
+    # gate" off the Hub entirely. "Post for Eve's Approval" + "Send Now (after
+    # Eve's ✅)" were added to the dd-bulletin card in the same commit, mirroring
+    # the Override card — retire the stub, keep the capability.
+    "dd_bulletin_gate", "dd-bulletin-gate",
     # Tableau access-budget tooling (Megan 2026-08-17). All three are hand-run
     # DIAGNOSTICS with on_scheduler:false — they answer "is a shared login safe
     # for this report" and "how many times did we sign in". They self-registered
