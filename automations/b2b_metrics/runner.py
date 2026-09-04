@@ -466,6 +466,53 @@ def _load_ever_posted() -> dict:
         return {}
 
 
+def _slice_is_plausible(o: B2BOffice, section_id: str, log=print) -> bool:
+    """Could this office's filter value match Tableau AT ALL for this section?
+
+    "No data yet" is a promise that the office is NEW, not that the report is
+    broken — so it must never be the answer when the slice value itself cannot
+    match. Sabrina cost nine days to that (2026-08-26 → 09-04): her
+    `owner_office` was recorded as `Sabrina Alicea Alisei Inc.` while Tableau
+    spells it `SABRINA ALICEA [alisei, inc.]`. Every churn board came back
+    blank, the quiet path called it a new office with nothing to show, and
+    nobody looked. It was a typo wearing a friendlier label — and her Activation
+    Rate, which slices on the same field, was wrong the whole time too.
+
+    The check is deliberately SHAPE-only and deliberately narrow: Tableau's
+    "Owner & Office" values are `NAME [office]`, so a value carrying no bracket
+    is one nothing can ever match. It does NOT try to verify the name is the
+    right person — that needs Tableau, and a probe that reaches the network here
+    would turn every new office's first morning into a slow one.
+
+    Sections that slice on plain "Owner Name" (Sales Metrics, Out of Bounds) are
+    unaffected: that field takes a bare name, so there is no shape to check and
+    this returns True for them.
+
+    Returns True when nothing is provably wrong — the safe direction. A false
+    "plausible" only restores today's behaviour; a false "implausible" would
+    page a genuinely new office, which is the noise this whole path exists to
+    avoid."""
+    from automations.b2b_metrics.offices import OWNER_OFFICE_FIELD, VIEW_META
+    # An override view captured AS-IS sends no slice at all (the exact condition
+    # capture._sliced_url branches on), so its value is never on the wire and
+    # judging it would be judging something unused. Carlos is precisely this:
+    # his churn rides CarlosLocalOfficeEXPANDEDCHURN and his `owner_office` is
+    # deliberately blank — flagging him would be a wrong answer about a section
+    # that works.
+    if o.is_override(section_id) and section_id not in o.slice_overrides:
+        return True
+    field = (VIEW_META.get(section_id) or {}).get("filter_field", "")
+    if field != OWNER_OFFICE_FIELD:
+        return True                     # sliced on a bare name — nothing to check
+    value = (o.slice_value(field) or "").strip()
+    if "[" in value and "]" in value:
+        return True
+    log("  ⚠ [{}] {}'s {} is {!r} — Tableau spells these 'NAME [office]', so "
+        "this value can never match and the blank is a MISCONFIGURATION, not a "
+        "new office.".format(section_id, o.key, OWNER_OFFICE_FIELD, value))
+    return False
+
+
 def has_ever_posted(office_key: str, section_id: str) -> bool:
     return bool(_load_ever_posted().get(office_key, {}).get(section_id))
 
@@ -604,7 +651,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
                 # #claudecorrections-and-requests (Megan 2026-08-17). Deliberately
                 # NOT deferred, so it pages now, not after the floor pass.
                 log("  [{}] SKIPPED (blank render): {}".format(item["id"], br))
-            else:
+            elif _slice_is_plausible(o, item["id"], log=log):
                 # Never had data here: the office is new to this section, not
                 # broken. Say so in the thread, don't page, don't drag the shared
                 # Hub card — and keep attempting it every morning, so the day the
@@ -613,6 +660,14 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
                     item["id"], o.key, br))
                 deferred.append(item["id"])
                 no_data.append(item["id"])
+            else:
+                # The quiet path REFUSED it — this office's slice value can't
+                # match Tableau, so "no data yet" would be a lie that costs
+                # nobody's attention and never heals. Page it like the
+                # regression it is. See _slice_is_plausible.
+                log("  [{}] SKIPPED (blank render, and this office's slice "
+                    "value looks wrong — NOT 'no data yet'): {}".format(
+                        item["id"], br))
         except Exception:  # noqa: BLE001 — one item must not kill the rest
             log("  [{}] FAILED:".format(item["id"]))
             for ln in traceback.format_exc().splitlines()[-6:]:

@@ -1406,6 +1406,25 @@
       "verify": null,
       "machine": "Lucy 1"
     },
+    "captain_slice_probe": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY diagnostic for the LAST unknown in the one-view cutover (Megan 2026-09-04: 'Why wouldn't you just use the view that has everyone? Then no one can be missing?'). Product slices and owner slices from the URL are both already proven in production; CAPTAIN slices are not. b2b_views_probe found the field is `Captain's Bonus Teams` (NOT the `B2B Captain's Teams (SFDC)` the dashboard displays) and said 'URL filter works = True' - but returned 1 owner where Carlos holds ~13 and Luis ~9. That is not the filter failing: b2b_views_probe tested the BASE view, which Eve's 2026-09-03 screenshot showed pinned to `Owner & Office = CODY LOWERY`, a saved single-owner filter a captain param does not clear. So the base view can never answer it. This probe asks ALLTEAMWireless instead - Owner & Office = (All), 93 owners measured today - and checks whether a captain param narrows it to that captain's REAL roster, comparing NAMES against the captain's sheet tab rather than counts (a slice with the right count and the wrong people would fill a tab with someone else's numbers, which is worse than the blank it replaces). on_scheduler:false = NEVER in the 4am batch. Run by hand: `lucy rerun captain_slice_probe --machine \"Lucy 1\"`. Writes NO Sheet, NO Slack, NO manifest - only output/captain_slice_probe/. source_type tableau so chrome_guard runs first. MUST run on Lucy 1: the Tableau SSO rides ownerville (one session per account), so a laptop run evicts the holder and pauses the box.",
+      "display_name": "Captain URL-slice probe (read-only)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.owners_metrics_churn.probe_captain_slice"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "machine": "Lucy 1"
+    },
     "harvest_proof": {
       "on_scheduler": false,
       "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",

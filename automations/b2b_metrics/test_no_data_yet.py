@@ -167,15 +167,76 @@ class RegressionsStillPage(unittest.TestCase):
         src = Path(r.__file__).read_text(encoding="utf-8")
         branch = src.split("except BlankRender as br:")[1].split("except Exception")[0]
         self.assertIn("has_ever_posted", branch)
-        # the loud path must NOT mark it deferred/no_data
-        loud = branch.split("else:")[0]
+        # Split on the QUIET path's own guard, not on a bare "else:". The branch
+        # gained a third arm on 2026-09-04 (_slice_is_plausible — a blank whose
+        # slice value can't match Tableau is a misconfiguration, not a new
+        # office), so "else:" no longer marks where the loud path ends and this
+        # assertion silently started reading the quiet path as loud.
+        loud = branch.split("elif _slice_is_plausible")[0]
         self.assertNotIn("no_data.append", loud)
         self.assertNotIn("deferred.append", loud)
         # the quiet path must do both
-        quiet = branch.split("else:")[1]
+        quiet = branch.split("elif _slice_is_plausible")[1]
         self.assertIn("no_data.append", quiet)
         self.assertIn("deferred.append", quiet)
+        # …and the THIRD arm — an implausible slice — must page like the loud
+        # path: no deferral, no no_data, so it lands in `missed`.
+        third = quiet.split("else:")[1]
+        self.assertNotIn("no_data.append", third)
+        self.assertNotIn("deferred.append", third)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ABrokenSliceIsNotANewOffice(unittest.TestCase):
+    """Sabrina cost nine days to the quiet path (2026-08-26 -> 09-04).
+
+    Her `owner_office` was recorded as `Sabrina Alicea Alisei Inc.` while
+    Tableau spells it `SABRINA ALICEA [alisei, inc.]`. Every churn board came
+    back blank, "no data yet - new office" explained it away every morning, and
+    nobody looked. A typo wearing a friendlier label — and Activation Rate,
+    which slices on the same field, was wrong the whole time too.
+
+    So the quiet path now has to be EARNED: a value that cannot match Tableau's
+    `NAME [office]` shape gets the loud path instead.
+    """
+
+    @staticmethod
+    def _office(**kw):
+        from automations.b2b_metrics.offices import OFFICES
+        import dataclasses
+        base = dataclasses.replace(OFFICES["sabrina"], view_overrides={},
+                                   slice_overrides=frozenset())
+        return dataclasses.replace(base, **kw)
+
+    def _plausible(self, o, section="churn_wireless"):
+        from automations.b2b_metrics import runner
+        return runner._slice_is_plausible(o, section, log=lambda m: None)
+
+    def test_the_exact_broken_value_is_refused(self):
+        o = self._office(owner_office="Sabrina Alicea Alisei Inc.")
+        self.assertFalse(self._plausible(o))
+
+    def test_tableaus_real_shape_passes(self):
+        o = self._office(owner_office="SABRINA ALICEA [alisei, inc.]")
+        self.assertTrue(self._plausible(o))
+
+    def test_every_live_office_still_passes(self):
+        """The guard must not page anybody who works today."""
+        from automations.b2b_metrics.offices import OFFICES
+        for key, o in OFFICES.items():
+            self.assertTrue(self._plausible(o), key)
+
+    def test_a_bare_name_field_is_not_judged(self):
+        """Sales Metrics / Out of Bounds slice on plain 'Owner Name', which
+        takes a bare name — there is no bracket shape to check."""
+        o = self._office(owner_office="Sabrina Alicea Alisei Inc.")
+        self.assertTrue(self._plausible(o, "sales_metrics"))
+
+    def test_an_as_is_override_is_not_judged(self):
+        """Carlos's churn rides his own override and sends NO slice, so his
+        deliberately-blank owner_office must not be flagged."""
+        from automations.b2b_metrics.offices import OFFICES
+        self.assertTrue(self._plausible(OFFICES["carlos"]))
