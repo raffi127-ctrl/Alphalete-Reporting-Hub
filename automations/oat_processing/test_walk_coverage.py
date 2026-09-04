@@ -28,10 +28,18 @@ def check(label, got, want):
         print("  [FAIL] %s: got %r, want %r" % (label, got, want))
 
 
-def walked_all(processed, limit, start_total):
-    """The decision as run.py makes it."""
+def walked_all(processed, limit, start_total, worked=None, touch_cap=300):
+    """The decision as run.py makes it.
+
+    `processed` = applicants READ (what coverage means). `worked` = applicants
+    that spent a slot; settled skips are excluded from it since 2026-09-03, so a
+    walk can page past a settled front-of-queue and still reach the end. It
+    defaults to `processed`, which is the pre-2026-09-03 behaviour and keeps
+    every 8/27 case below reading exactly as it did then.
+    """
+    worked = processed if worked is None else worked
     covered = start_total is None or processed >= start_total
-    return (processed < limit) and covered
+    return (worked < limit) and (processed < touch_cap) and covered
 
 
 LIMIT = 60
@@ -71,6 +79,22 @@ for start, touched in ((21, 11), (13, 2), (23, 15)):
     check("old rule said %d-of-%d was complete" % (touched, start),
           old_rule(touched, LIMIT, start), True)
     check("new rule does not", walked_all(touched, LIMIT, start), False)
+
+
+print("settled skips do not spend the cap (2026-09-03):")
+# Atef 23467 that day: queue 104, ~50 of every 60 slots went to applicants
+# already settled, so the walk stopped at 60 and 61-104 were never read.
+check("OLD accounting: 60 read of 104 is partial",
+      walked_all(60, LIMIT, 104), False)
+# With settled skips free, the same walk reads all 104 while working only 54.
+check("NEW accounting: read 104 of 104, worked 54 -> complete",
+      walked_all(104, LIMIT, 104, worked=54), True)
+check("still partial if the REAL work hit the cap",
+      walked_all(104, LIMIT, 104, worked=LIMIT), False)
+check("the touch backstop also means partial",
+      walked_all(300, LIMIT, 400, worked=20, touch_cap=300), False)
+check("coverage still wins: read 60 of 104 is partial however little we worked",
+      walked_all(60, LIMIT, 104, worked=3), False)
 
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)

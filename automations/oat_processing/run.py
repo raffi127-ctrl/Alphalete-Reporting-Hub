@@ -1459,6 +1459,8 @@ def _armed_retext(page, a: Applicant, days, live: bool) -> str:
     # which is what keeps a walk from spending its time re-deciding settled cases.
     _key = _nophone_key(a)
     if _key in _load_nothread():
+        global _SETTLED_SKIPS
+        _SETTLED_SKIPS += 1          # a page-turn, not a slot (see run_walk)
         _flag_retext(a, days)
         _log(f"    ⚑ no reachable thread (settled earlier today) — skipping the "
              f"re-text attempt: {a.first_name} {a.last_name}")
@@ -1798,6 +1800,11 @@ def _persist_phone(page, phone: str) -> bool:
 
 _NOPHONE_CHECKED = None   # lazily-loaded set of applicant keys already read today
 _NOPHONE_SKIPS = 0        # count of resume re-reads SKIPPED this walk (cache hits)
+# Applicants this walk PAGED PAST for free — already settled today (no number on
+# the resume we read, or no reachable SMS thread), so the handler returns without
+# doing anything. They cost a page-turn, not a slot: run_walk excludes them from
+# the per-run cap so the walk can still reach the back of the queue.
+_SETTLED_SKIPS = 0
 _NOPHONE_BLOCKED = None   # lazily-loaded {key: {"n": attempts, "last": iso}} retry state
 
 # A resume read that ended BLOCKED (page never rendered) is marked with this prefix
@@ -2036,8 +2043,9 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
     already_checked = key in _load_nophone_checked()
     cooling_off = (not already_checked) and (not _blocked_due(key))
     if already_checked or cooling_off:
-        global _NOPHONE_SKIPS
+        global _NOPHONE_SKIPS, _SETTLED_SKIPS
         _NOPHONE_SKIPS += 1
+        _SETTLED_SKIPS += 1          # a page-turn, not a slot (see run_walk)
         _why = ("no resume number" if already_checked
                 else f"blocked, retrying in <{_BLOCKED_RETRY_AFTER_MIN}min")
         _log(f"    already checked today ({_why}) — skip re-read: "
@@ -2870,7 +2878,18 @@ def run_walk(page, live: bool = False, limit: int = None,
     if _ONLY_NAMES is not None:
         _log(f"[oat] ALLOWLIST active: only {len(_ONLY_NAMES)} named applicant(s) "
              f"will be touched; everyone else is skipped untouched")
-    processed = 0
+    processed = 0               # applicants READ this walk (coverage)
+    # `limit` caps applicants we actually WORK, not applicants we look at. A
+    # settled case (resume already read today and it had no number; no reachable
+    # SMS thread) is handled by a cache hit and a page-turn — no resume opened, no
+    # widget, no mutation — so charging it a slot only shortened our reach. On
+    # 2026-09-03 that is exactly what it did: Atef's queue was 104, ~50 of every
+    # 60 slots went to settled skips, and applicants 61-104 were never read once
+    # in 74 walks. Now settled skips are free and `worked` is what the cap counts.
+    worked = 0                  # applicants that consumed a real slot
+    touch_cap = max(limit, getattr(config, "MAX_TOUCH_PER_RUN", 300))
+    global _SETTLED_SKIPS
+    _SETTLED_SKIPS = 0
     actions = 0                 # live mutations (sent/removed) this run
     MUTATIONS = ("sent", "sent_override", "removed")
     counts: dict = {}
@@ -2881,7 +2900,7 @@ def run_walk(page, live: bool = False, limit: int = None,
     # counts match what's actually in the queue right now (Megan 2026-08-06: the
     # cumulative log over-counted apps already handled since).
     flagged_now = {"nophone": [], "retext": []}
-    while processed < limit:
+    while worked < limit and processed < touch_cap:
         a = read_current_applicant(page, today)
         key = f"{a.email}|{a.first_name} {a.last_name}".strip().lower()
         # Walk logic that survives the queue shifting under us: after a
@@ -2929,6 +2948,7 @@ def run_walk(page, live: bool = False, limit: int = None,
                f"sent={int(a.sent_to_call_list_today)} "
                f"lc={a.last_correspondence or '-'}")
         _log(f"[{processed + 1}] {d.action.value.upper()} — {d.reason}  [{sig}]")
+        _skips_before = _SETTLED_SKIPS
         try:
             outcome = _DISPATCH[d.action](page, a, live)
         except Exception as e:  # noqa: BLE001
@@ -2982,13 +3002,24 @@ def run_walk(page, live: bool = False, limit: int = None,
             flagged_now["nophone"].append(_entry)
 
         processed += 1
+        # Did the handler do real work, or just recognise a case already settled
+        # today and page past it? Only the former spends a slot. Read off the
+        # skip counter rather than re-deriving the condition here, so the two
+        # settled paths (no-number cache, no-thread cache) stay the single source
+        # of truth for what "settled" means.
+        if _SETTLED_SKIPS == _skips_before:
+            worked += 1
         # Throttle live mutations (a controlled test uses --max-actions 1).
         if live and outcome in MUTATIONS:
             actions += 1
             if max_actions is not None and actions >= max_actions:
                 _log(f"[oat] reached --max-actions {max_actions} — stopping")
                 break
-        if processed >= limit:
+        if worked >= limit:
+            break
+        if processed >= touch_cap:
+            _log(f"[oat] read {processed} applicants (touch cap {touch_cap}) — "
+                 f"stopping; raise OAT_MAX_TOUCH_PER_RUN if the queue is bigger")
             break
         # Do NOT page Next here. Re-read on the next loop: a removed/sent
         # app has left its slot (a fresh app is now current → handled), and
@@ -3004,7 +3035,8 @@ def run_walk(page, live: bool = False, limit: int = None,
         _end_total = None
     _log(f"[oat] QUEUE at end: {_end_total} emails "
          f"(was {_start_total} — a persisted send/remove drops this)")
-    _log(f"[oat] done — {processed} applicant(s) this run: "
+    _log(f"[oat] done — {processed} applicant(s) this run "
+         f"({worked} worked, {_SETTLED_SKIPS} settled skips; cap {limit}): "
          + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     # Only overwrite the snapshot when this walk actually reached the end of the
     # queue (no early --max-actions/limit bail), so a partial walk can't post a
@@ -3026,8 +3058,13 @@ def run_walk(page, live: bool = False, limit: int = None,
     # ATS never gave us a start count (it reads None often) we cannot tell, and we
     # keep the old behaviour rather than freeze the snapshot for the rest of the
     # day — a stale list is its own kind of lie.
+    # Coverage is still measured in applicants READ (`processed`) — that is what
+    # "did we see the whole queue" means, and settled cases were seen. What the
+    # cap-exit test changes to is `worked`, because `worked` is now what `limit`
+    # bounds; testing `processed < limit` here would call a 104-applicant walk
+    # partial the moment it read its 61st person.
     _covered = _start_total is None or processed >= _start_total
-    walked_all = (processed < limit) and _covered
+    walked_all = (worked < limit) and (processed < touch_cap) and _covered
     if not _covered:
         _log(f"[oat] PARTIAL walk: touched {processed} of {_start_total} in the "
              f"queue — keeping the last full snapshot instead of publishing a "

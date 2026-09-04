@@ -52,6 +52,24 @@ NO_PHONE_FLAG_CSV = os.environ.get(
 # --limit N on the CLI overrides this downward.
 MAX_PER_RUN = int(os.environ.get("OAT_MAX_PER_RUN", "60"))
 
+# MAX_PER_RUN counts APPLICANTS WE ACTUALLY WORK, not applicants we look at.
+# WHY (2026-09-03): a settled applicant — resume already read today and it
+# carried no number, or no reachable SMS thread — is a page-turn, not work; the
+# handler logs "already checked today ... skip re-read" and returns. Counting
+# those against the cap meant a queue whose front is mostly settled could never
+# be walked to its end. Measured that day in Atef's office (23467): the queue
+# held 104, every one of 74 walks stopped at exactly 60, and ~50 of those 60
+# slots were settled skips — so the SAME dead-end 60 were re-confirmed every ten
+# minutes and applicants 61-104 were never looked at once, all day. Carlos's
+# office (46-49 in queue) fit under the cap and was fine, which is why this hid.
+# The walk now spends its 60 on real work and pages past settled cases for free.
+#
+# MAX_TOUCH_PER_RUN is the backstop that keeps that free paging bounded: the
+# most applicants one walk will READ, however little work they turn out to need.
+# Set it above the biggest queue we expect, not near it — the point is to reach
+# the end. The wrapper's own MAX_RUN_S kill is the real time guarantee.
+MAX_TOUCH_PER_RUN = int(os.environ.get("OAT_MAX_TOUCH_PER_RUN", "300"))
+
 # --- Multi-office namespacing (2026-08-26) --------------------------------- #
 # The push works more than one office now (Carlos 11580, Atef 23467 — see
 # automations/applicant_push/offices.py). Every per-day artefact this module
