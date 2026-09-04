@@ -273,12 +273,18 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     if getattr(args, "only_names", ""):
         os.environ["OAT_ONLY_NAMES"] = args.only_names
-    # No resume pushing on Saturdays, ever — scheduled or queued. (Carlos,
-    # 2026-08-31: "no pushing resumes should be happening saturday night"; the
-    # 7AM-10PM window alone let the 8/29 evening audit runs through.)
+    # WEEKEND QUIET WINDOW (Carlos, 2026-09-04): pushes stop FRIDAY 1:00 PM CST
+    # and stay off until SUNDAY 1:00 PM CST. Supersedes the plain Saturday block
+    # (2026-08-31) — the whole Fri-afternoon-to-Sun-midday stretch is quiet.
+    # --audit-office (a supervised run) is the only override.
     import datetime as _dt
-    if args.live and _dt.date.today().weekday() == 5             and not getattr(args, "audit_office", False):
-        raise SystemExit("[push] REFUSED: live pushes never run on Saturday.")
+    _now = _dt.datetime.now()
+    _wd, _hr = _now.weekday(), _now.hour
+    _quiet = (_wd == 4 and _hr >= 13) or _wd == 5 or (_wd == 6 and _hr < 13)
+    if args.live and _quiet and not getattr(args, "audit_office", False):
+        raise SystemExit(
+            "[push] REFUSED: weekend quiet window — live pushes stop Friday "
+            "1:00 PM CST and resume Sunday 1:00 PM CST.")
     if (args.live and args.office not in PUSH_ALLOWED
             and not getattr(args, "audit_office", False)):
         raise SystemExit(
