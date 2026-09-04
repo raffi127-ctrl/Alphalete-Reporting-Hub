@@ -150,6 +150,17 @@ _HUB_CARD = {
     # looked identical to a clean one (same bug as vantura_churn / b2b_metrics).
     # The fill wrapper now calls publish_done on a real write; this line routes it
     # to the card. (2026-08-07)
+    # Recruiting chain (Lucy 2, standalone agents 01:10 + 13:00). It published
+    # through the SLOW path: with no entry here, resolve_card fell past the
+    # curated fast path to existing_card_ids(), a LIBRARY SHEET READ over the
+    # network, before it could write the row — and publish_done swallows any
+    # exception and returns False. On 2026-09-03 the 1 PM chain finished clean
+    # (13:00:01 → 13:36:20, both steps exit 0) and the card still read "no run
+    # logged", on a machine whose Sheets calls were timing out in bursts that
+    # morning (ad_sales_board aborted its preflight four times, 04:23–05:55).
+    # An explicit mapping to a HARDCODED card id is the documented local fast
+    # path — no network before the write. (Megan 2026-09-03)
+    "recruiting_chain": "recruiting-chain",
     "override_bulletin": "override-bulletin",
     "recognition_tab": "recognition-tab",
     "pnl_office": "pnl-office",

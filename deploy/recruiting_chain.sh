@@ -16,8 +16,18 @@
 #         bash deploy/recruiting_chain.sh refresh    # indeed + ad sales (1pm)
 #         bash deploy/recruiting_chain.sh full --dry-run
 #
+# NOT ON THE TOP OF THE HOUR (Megan 2026-09-03). The 1am chain ran at 01:00 —
+# the same minute as SIX other Lucy 2 agents that fire at :00 of every hour:
+# applicant-push, resume-pushing, oat-processing, rc-autoread, hub-watch,
+# card-scheduler. applicant-push and resume-pushing both log into AppStream, which
+# is the exact contention this chain was built to end ("with the resume pusher
+# also logging in, tripped Cloudflare" — see WHY A CHAIN above); the chain simply
+# started in the same minute as the pusher every night. 01:10 clears all six. The
+# 1pm chain, which has never had this problem, already sits at 13:00 with only the
+# same hourly crowd — leave it until the 1am one is proven.
+#
 # TIME KNOB: edit StartCalendarInterval in
-#   deploy/com.alphalete.recruiting-chain-1am.plist   (01:00)
+#   deploy/com.alphalete.recruiting-chain-1am.plist   (01:10)
 #   deploy/com.alphalete.recruiting-chain-1pm.plist   (13:00)
 # then re-install:
 #   python -m automations.day_orchestrator.install_agent recruiting-chain-1am
@@ -72,9 +82,14 @@ REPORTED=0
 _publish() {  # _publish <status>
     REPORTED=1
     [ "$PUBLISH" -eq 1 ] || return 0
+    # SAY whether the row landed. publish_done returns False and raises nothing
+    # when the Sheet write fails, so a card that stays white looked identical to
+    # a chain that never ran — which is how the clean 13:00 pass on 2026-09-03
+    # went unnoticed. One line in the log now names it. (Megan 2026-09-03)
     "$VENV_PY" -c "import sys
 from automations.day_orchestrator import hub_publish
-hub_publish.publish_done('recruiting_chain', sys.argv[1], sys.argv[2])" \
+ok = hub_publish.publish_done('recruiting_chain', sys.argv[1], sys.argv[2])
+print('hub pill: %s (%s)' % ('published' if ok else 'NOT PUBLISHED', sys.argv[2]))" \
         "$PHASE_NAME" "$1" >> "$LOG" 2>&1 || true
 }
 
@@ -138,15 +153,60 @@ fi
 
 echo "[$(date)] recruiting-chain START mode=$MODE steps=${#STEPS[@]}" | tee -a "$LOG"
 FAILED=()
+# PER-STEP WEDGE GUARD (Megan 2026-09-03). The 1 AM chain "vanished" three
+# nights running -- 9/1, 9/2, 9/3 -- and the diagnosis it got twice (the machine
+# slept) was WRONG: `lucy diag` on Lucy 2 reads `SleepDisabled=1` on AC power. It
+# never died. It HUNG, inside step 1, and a hang leaves exactly the fingerprint a
+# death does: the log stops mid-step with no `<--` line, launchd's .err is 0
+# bytes, and the EXIT trap below never fires -- because the process never exits.
+# 9/3's log is five lines ending at `--> funnel_board_hourly.sh`; funnel_board's
+# own log ends one line after `Sheets auth`, before `existing log:`.
+#
+# That is the failure applicant_push.sh already documents in as many words:
+# launchd keeps ONE instance per label, so a hung tick swallows every tick after
+# it AND leaves the agent "loaded", i.e. healthy-looking. funnel_board_backstop
+# carries the same 30-minute watchdog. This chain -- three browser+Sheets steps
+# at 1 AM with nobody watching -- was the one that had no cap at all.
+#
+# Per STEP, not per chain: the cap has to name which step wedged, and killing the
+# chain wholesale would lose the two steps that were fine. 40 min is well clear of
+# the real numbers (funnel ~3 min, indeed 11 min, ad_sales 25 min on 9/3) so this
+# only ever fires on a genuine wedge. A killed step is a FAILED step, so the chain
+# still finishes, still publishes, and tomorrow's 1 AM is not blocked behind it.
+STEP_MAX_S=${RECRUITING_CHAIN_STEP_MAX_S:-2400}
+
 for s in "${STEPS[@]}"; do
     echo "[$(date)] --> $s" | tee -a "$LOG"
     START=$(date +%s)
     if [ "${#EXTRA[@]}" -gt 0 ]; then
-        bash "deploy/$s" "${EXTRA[@]}" >> "$LOG" 2>&1
+        bash "deploy/$s" "${EXTRA[@]}" >> "$LOG" 2>&1 &
     else
-        bash "deploy/$s" >> "$LOG" 2>&1
+        bash "deploy/$s" >> "$LOG" 2>&1 &
     fi
-    RC=$?
+    STEP_PID=$!
+    WAITED=0
+    while kill -0 "$STEP_PID" 2>/dev/null && [ "$WAITED" -lt "$STEP_MAX_S" ]; do
+        sleep 5
+        WAITED=$((WAITED + 5))
+    done
+    if kill -0 "$STEP_PID" 2>/dev/null; then
+        echo "[$(date)] WEDGE GUARD: $s still running after ${STEP_MAX_S}s — killing it" | tee -a "$LOG"
+        # The wrapper only forwards its child's exit, so kill the MODULE too or
+        # the python keeps the run.lock and the AppStream profile after we move on.
+        kill -TERM "$STEP_PID" 2>/dev/null
+        sleep 20
+        kill -KILL "$STEP_PID" 2>/dev/null
+        case "$s" in
+            funnel_board_hourly.sh)  pkill -f "automations.funnel_board.run" 2>/dev/null ;;
+            indeed_source_report.sh) pkill -f "automations.indeed_source_report" 2>/dev/null ;;
+            ad_sales_board.sh)       pkill -f "automations.ad_sales_board.run" 2>/dev/null ;;
+        esac
+        wait "$STEP_PID" 2>/dev/null
+        RC=124
+    else
+        wait "$STEP_PID"
+        RC=$?
+    fi
     echo "[$(date)] <-- $s exit=$RC ($(( $(date +%s) - START ))s)" | tee -a "$LOG"
     # Keep going on failure: skipping the rest would silently cost a whole day
     # of data on reports that do not depend on each other's success.
