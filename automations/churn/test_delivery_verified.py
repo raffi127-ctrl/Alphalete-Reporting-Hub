@@ -13,10 +13,10 @@ had alerted. The run log said the opposite of what the thread showed:
     90-day:   posted (file=F0BUU7WPRM1)
 
 `files_upload_v2` had returned ok WITH a file id, so every layer above counted
-it delivered. `files.info` on F0BUK46L7KR fails — that file does not exist —
-while its 60-day sibling from the same loop is there with a share into
-C068PH3RFSM on the right thread_ts. Slack accepted the upload; the message never
-materialised.
+it delivered. `files.info` on F0BUK46L7KR fails outright — that file does not
+exist — while its 60-day sibling from the same loop is in the thread. Slack
+accepted the upload; the message never materialised. Wireless posted all four
+of its boards in the same loop, so it was one image, not the run.
 
 Two separate defects, and the second is the one that let it run for a day:
 
@@ -27,6 +27,11 @@ Two separate defects, and the second is the one that let it run for a day:
      nameable as missing.
 
 Same family as the empty-pull-certifies-as-success bugs.
+
+The check READS THE THREAD (conversations_replies), the same call
+`wait_for_share` uses: it tests what a reader actually sees and needs no
+files:read scope. The tri-state return is the load-bearing part — see
+AnUnanswerableCheckNeverInventsAMiss.
 """
 from __future__ import annotations
 
@@ -39,67 +44,81 @@ CH = "C068PH3RFSM"          # #alphalete-sales
 TS = "1788516839.407259"    # the 2026-09-04 Metrics thread
 
 
-def _client(shares=None, raises=False):
+def _client(messages=None, raises=False):
+    """A stand-in for the Slack client's conversations_replies."""
     c = mock.Mock()
     if raises:
-        c.files_info.side_effect = RuntimeError("file_not_found")
+        c.conversations_replies.side_effect = RuntimeError("channel_not_found")
     else:
-        c.files_info.return_value = {"file": {"shares": shares or {}}}
+        c.conversations_replies.return_value = {"messages": messages or []}
     return c
 
 
-def _share(channel=CH, thread_ts=TS, bucket="private"):
-    return {bucket: {channel: [{"ts": "1.1", "thread_ts": thread_ts}]}}
+def _msg_with_file(file_id):
+    return {"text": "", "files": [{"id": file_id}]}
 
 
-class ADeliveredFileIsSeen(unittest.TestCase):
+class ADeliveredBoardIsSeen(unittest.TestCase):
 
-    def test_a_share_on_the_right_thread_is_landed(self):
-        # F0BV0EHAMQS, the 60-day board that really is in the thread.
-        c = _client(_share())
+    def test_the_file_id_in_the_thread_is_landed(self):
+        # F0BV0EHAMQS — the 60-day board that really is in the thread.
+        c = _client([_msg_with_file("F0BV0EHAMQS")])
         self.assertIs(smp.file_landed_in_thread(c, "F0BV0EHAMQS", CH, TS), True)
 
-    def test_a_public_share_counts_too(self):
-        c = _client(_share(bucket="public"))
-        self.assertIs(smp.file_landed_in_thread(c, "F", CH, TS), True)
+    def test_the_comment_is_the_fallback_when_no_id_came_back(self):
+        """Same fallback wait_for_share uses — an upload response with no id
+        would otherwise be unverifiable forever."""
+        c = _client([{"text": "🌐 New Internet Churn — 30 Day", "files": []}])
+        self.assertIs(
+            smp.file_landed_in_thread(
+                c, "", CH, TS, comment="🌐 New Internet Churn — 30 Day"), True)
 
     def test_it_stops_polling_as_soon_as_it_lands(self):
-        c = _client(_share())
+        c = _client([_msg_with_file("F")])
         smp.file_landed_in_thread(c, "F", CH, TS, tries=4, delay=0)
-        self.assertEqual(c.files_info.call_count, 1)
+        self.assertEqual(c.conversations_replies.call_count, 1)
 
 
-class AnUndeliveredFileIsCaught(unittest.TestCase):
-    """THE BUG."""
+class AnUndeliveredBoardIsCaught(unittest.TestCase):
+    """THE BUG — the thread read succeeds and the image simply is not there."""
 
-    def test_no_shares_at_all_is_not_landed(self):
-        c = _client({})
+    def test_an_empty_thread_is_not_landed(self):
+        c = _client([])
         self.assertIs(smp.file_landed_in_thread(c, "F0BUK46L7KR", CH, TS,
                                                 tries=2, delay=0), False)
 
-    def test_a_share_in_the_WRONG_thread_is_not_landed(self):
-        c = _client(_share(thread_ts="9999.9999"))
-        self.assertIs(smp.file_landed_in_thread(c, "F", CH, TS,
+    def test_other_boards_present_but_not_this_one(self):
+        """The exact 2026-09-04 shape: 0-30, 60 and 90 landed, 30 did not."""
+        c = _client([_msg_with_file("F0C0ERUDXDE"),
+                     _msg_with_file("F0BV0EHAMQS"),
+                     _msg_with_file("F0BUU7WPRM1")])
+        self.assertIs(smp.file_landed_in_thread(c, "F0BUK46L7KR", CH, TS,
                                                 tries=2, delay=0), False)
 
-    def test_a_share_in_another_channel_is_not_landed(self):
-        c = _client(_share(channel="C_SOMEWHERE_ELSE"))
-        self.assertIs(smp.file_landed_in_thread(c, "F", CH, TS,
-                                                tries=2, delay=0), False)
+    def test_it_polls_before_giving_up(self):
+        """The message is created asynchronously after the upload returns, so a
+        single instant check would invent misses."""
+        c = _client([])
+        smp.file_landed_in_thread(c, "F", CH, TS, tries=3, delay=0)
+        self.assertEqual(c.conversations_replies.call_count, 3)
 
 
 class AnUnanswerableCheckNeverInventsAMiss(unittest.TestCase):
-    """A check we cannot run must not become a failure — that would page every
-    morning on a token without files:read, which is worse than the silence it
-    replaces."""
+    """A check we cannot RUN must not become a failure — that would page every
+    morning on a token that can't read the channel, which is worse than the
+    silence it replaces. False means 'we looked and it wasn't there'."""
 
     def test_an_api_error_is_None_not_False(self):
         c = _client(raises=True)
         self.assertIsNone(smp.file_landed_in_thread(c, "F", CH, TS,
                                                     tries=2, delay=0))
 
-    def test_no_file_id_is_None(self):
+    def test_nothing_to_match_on_is_None(self):
         self.assertIsNone(smp.file_landed_in_thread(_client(), "", CH, TS))
+
+    def test_no_thread_ts_is_None(self):
+        """A top-level post has no thread to look in."""
+        self.assertIsNone(smp.file_landed_in_thread(_client(), "F", CH, ""))
 
 
 class OnlyAnExplicitFalseCountsAsAMiss(unittest.TestCase):

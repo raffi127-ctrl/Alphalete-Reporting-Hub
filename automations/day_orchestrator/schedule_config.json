@@ -1387,6 +1387,25 @@
       "depends_on": [],
       "verify": null
     },
+    "allteam_guid_probe": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY diagnostic for the 2026-09-04 owners_metrics_churn drop: Cruz Venegas + Max Powell flagged WENT DARK on 'Churn - Luis Salazar (B2B)' - on the tab with recent history, absent from Luis's pull AND from the org-wide backfill, which is the shape of a rep who simply sells no wireless (the one-line captainship_pins.NOT_IN_SOURCE pin Eve used for Gary Whitaker II the day before). Then Megan opened ALLTEAMWireless and saw BOTH reps in it - at custom-view GUID 16d47259-17b6-4ad0-8fd7-2de5081945b0, while pull.B2B_ALLTEAM_URL has pulled f800acd5-c7aa-4600-9a8c-522cd61af026 since 754b5b4 (2026-08-19). Same workbook, same view NAME, different saved view. If the code reads a narrower copy then nobody is missing from the source and a pin would have hidden a real bug for whoever goes dark next. CANNOT be settled from a browser: Tableau custom views are PER USER - Megan sees hers, this pull runs as RAF, and a GUID that resolves for her may not resolve for him (exactly how the four B2B captainship views died on 2026-09-03). So the question is what RAF gets, and only Raf's own session answers it. on_scheduler:false = NEVER in the 4am batch. Run by hand: lucy rerun allteam_guid_probe --machine \"Lucy 1\". Loads both GUIDs as Raf, reports which resolves plus any 're-create the custom view' banner, downloads 'ICD Churn' off each with the same driver + WIRELESS param the real backfill uses, says whether CRUZ VENEGAS and MAX POWELL are in each, and diffs the two owner lists. Writes NO Sheet, NO Slack, NO manifest - only output/allteam_guid_probe/ and its log. source_type tableau so chrome_guard runs first. MUST run on Lucy 1: the Tableau SSO rides ownerville (one session per account), so running it from a laptop evicts the holder and pauses every report on the box.",
+      "display_name": "ALLTEAMWireless GUID probe (read-only)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.owners_metrics_churn.probe_allteam_guid"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "machine": "Lucy 1"
+    },
     "harvest_proof": {
       "on_scheduler": false,
       "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",

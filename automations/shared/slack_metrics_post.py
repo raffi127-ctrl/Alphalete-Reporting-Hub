@@ -661,8 +661,8 @@ def post_reply_with_image(
 
 
 def file_landed_in_thread(client, file_id: str, channel_id: str,
-                          thread_ts: str, *, tries: int = 4,
-                          delay: float = 2.0):
+                          thread_ts: str, *, comment: str = "",
+                          tries: int = 4, delay: float = 2.0):
     """Did an uploaded file actually BECOME a message in that thread?
 
     True / False when we can tell; None when Slack can't answer (missing scope,
@@ -689,33 +689,39 @@ def file_landed_in_thread(client, file_id: str, channel_id: str,
     Slack creates the in-thread message asynchronously afterwards (the same
     asynchrony b2b_metrics' POST_SETTLE_SEC works around for ordering). A
     freshly-posted file can legitimately need a couple of seconds to show a
-    share, so a single immediate check would invent misses."""
-    if not file_id:
+    share, so a single immediate check would invent misses.
+
+    READS THE THREAD, not files.info. Built on the same call `wait_for_share`
+    uses, for two reasons: it tests what a READER actually sees (which is the
+    claim being made), and it needs no files:read scope. `wait_for_share`
+    itself stays as it is — it answers a different question (ordering) and its
+    bare bool deliberately conflates "absent" with "too slow", which is right
+    for ordering and wrong for alerting.
+    """
+    if not thread_ts or not (file_id or comment):
         return None
     import time as _time
+    could_read = False
     for attempt in range(tries):
         try:
-            info = (client.files_info(file=file_id) or {}).get("file") or {}
+            resp = client.conversations_replies(channel=channel_id,
+                                                ts=thread_ts, limit=200)
+            could_read = True
+            for msg in resp.get("messages") or []:
+                if file_id and any(f.get("id") == file_id
+                                   for f in msg.get("files") or []):
+                    return True
+                # Same fallback wait_for_share uses: an upload response that
+                # carried no id would otherwise be unverifiable forever.
+                if comment and (msg.get("text") or "").strip() == comment.strip():
+                    return True
         except Exception:  # noqa: BLE001
-            # A DELETED / never-materialised file answers here too (files.info
-            # errors on an unknown id) — but so does a missing scope, and we
-            # cannot tell those apart from one call. Keep polling; only the
-            # last attempt's silence is reported, and as None, never as False.
-            if attempt == tries - 1:
-                return None
-            _time.sleep(delay)
-            continue
-        shares = (info.get("shares") or {})
-        for bucket in ("public", "private"):
-            for chan, entries in (shares.get(bucket) or {}).items():
-                if chan != channel_id:
-                    continue
-                for e in entries or []:
-                    if str(e.get("thread_ts") or "") == str(thread_ts):
-                        return True
+            pass
         if attempt < tries - 1:
             _time.sleep(delay)
-    return False
+    # Never read the thread at all (no scope, Slack down) -> we do not know.
+    # Read it fine and the image was not there -> it is not there.
+    return False if could_read else None
 
 
 def post_reply_with_file(
@@ -763,7 +769,7 @@ def post_reply_with_file(
     # thread — see file_landed_in_thread for the morning those diverged. None =
     # couldn't tell; callers must treat only an explicit False as a miss.
     out["landed"] = file_landed_in_thread(
-        client, out["file"], CHANNEL_ID, thread_ts)
+        client, out["file"], CHANNEL_ID, thread_ts, comment=comment)
     if react_emoji:
         try:
             r = client.reactions_add(
