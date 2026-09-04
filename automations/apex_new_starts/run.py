@@ -320,6 +320,9 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
                          f"{hit['matched_label']!r} = {shown}")
                 continue
             AX.apply_fill(s.page, matched, log=_log)
+            _log(f"    left for you: Department and Security Role "
+                 f"({'/'.join(AX.UNANSWERED)}) — nobody has said what these "
+                 "should be, so the run doesn't pick them.")
             if hire.values.get("ssn"):
                 url = BID.signed_pdf_url(hire.bundle_id)
                 if url:

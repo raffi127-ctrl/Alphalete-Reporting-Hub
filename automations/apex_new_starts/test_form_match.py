@@ -7,20 +7,22 @@ the run either skips the person (loud, fine) or types into the neighbouring box
 (silent, and it ends up on a payroll record).
 
 So the ADD ROSTER EMPLOYEE screen is rebuilt here as a fixture from Megan's
-screenshot of it (2026-09-03) -- the same labels in the same order, including
-the two traps that screen actually contains:
+screenshots of the WHOLE form (2026-09-03) -- every label in the order it
+appears, including the traps that screen actually contains:
 
   * 'First Name' / 'Middle Name' / 'Last Name' all end in 'Name', and
     'User Name' does too.
-  * 'Account Email' sits beside nothing else email-shaped, but 'Email' is a
-    substring of it -- so a lazy match on 'email' must not claim it for the
-    person's personal address, which belongs to a different box on a later page.
+  * 'Account Email' is matched by the label of the password-reset CHECKBOX too,
+    which reads '...password reset to their Account Email'.
+  * 'State Working In' is where they work; the employee's own record has a home
+    address with its own state. Matching either on a bare 'state' crosses them.
+  * 'Salary' sits right under 'Rate of Pay' and is the wrong box for $10/hr.
 
 WHAT THIS PROVES, AND WHAT IT DOESN'T. It proves the matcher and the label list
 agree with the wordings on that screen. It does NOT prove Apex's real markup
 ties its labels to its inputs the way this fixture does -- only --explore on the
-live page can settle that. When it can, this fixture should be replaced with the
-structure `apex_screen.json` reports.
+live page can settle that. When it can, replace this fixture with the structure
+`apex_screen.json` reports.
 """
 from __future__ import annotations
 
@@ -45,32 +47,49 @@ FORM = """
 <label for="f4">User Name *</label><input id="f4" name="UserName">
 <label for="f5">Account Email *</label><input id="f5" name="AccountEmail">
 <label for="f6"><input type="checkbox" id="f6" checked>
-  Send this user a password reset to their Account Email.</label>
+  Send this user a password reset to their Account Email. If unchecked, you
+  will set the user's password manually.</label>
 
 <h2>Employment Record</h2>
+<h3>Alphalete Marketing Inc. &ndash; Arlington</h3>
+<span>Status *</span><button id="status">Pending</button>
 <label for="f7">Hire Date *</label><input id="f7" name="HireDate" placeholder="MM/dd/yyyy">
-<label for="f8">Office *</label><select id="f8" name="Office"><option>Arlington</option></select>
+<span>Office *</span><div>Rafael Hidalgo - Alphalete Marketing Inc. , Arlington</div>
 <label for="f9">Pay Frequency *</label>
-  <select id="f9" name="PayFrequency"><option>Select</option><option>Weekly</option></select>
+  <select id="f9"><option>Select</option><option>Weekly</option></select>
 <label for="f10">Position *</label>
-  <select id="f10" name="Position"><option>Select</option><option>Sales Rep</option></select>
-<label for="f11">Rate *</label><input id="f11" name="Rate">
-<label for="f12">State *</label>
-  <select id="f12" name="State"><option>Select</option><option>Texas</option></select>
+  <select id="f10"><option>Select</option><option>Sales Rep</option></select>
 <label for="f13">Basis of Pay *</label>
-  <select id="f13" name="BasisOfPay"><option>Select</option><option>Commissions</option></select>
+  <select id="f13"><option>Select</option><option>Commissions</option></select>
+<label for="f12">State Working In *</label>
+  <select id="f12"><option>Select</option><option>Texas</option></select>
+<label for="f11">Rate of Pay *</label><input id="f11" type="number">
+<label for="f14">Department *</label>
+  <select id="f14"><option>Select</option><option>Sales</option></select>
+<label for="f15">Salary</label><input id="f15" type="number">
+<label for="f16"><input type="checkbox" id="f16" checked> Time Clock</label>
+<label for="f17"><input type="checkbox" id="f17" checked> Require Break</label>
+<span>Divisions</span><div id="divisions">General</div>
+
+<h2>Security Roles *</h2>
+<label for="r1"><input type="radio" name="role" id="r1"> Office Admin</label>
+<label for="r2"><input type="radio" name="role" id="r2"> ICD Payroll Admin</label>
+<label for="r3"><input type="radio" name="role" id="r3"> Sales Rep</label>
+<label for="r4"><input type="radio" name="role" id="r4"> Owner</label>
+<h2>Module Admin</h2>
 </body></html>
 """
 
+# What the run actually fills. 'Office' and 'Status' are NOT here: they are
+# pre-filled text on the real form, not inputs.
 STAGE_ONE = ("first", "middle", "last", "username", "account_email",
-             "hire_date", "office", "pay_frequency", "position", "rate",
-             "pay_state", "pay_basis")
+             "hire_date", "pay_frequency", "position", "rate", "pay_state",
+             "pay_basis")
 
 EXPECTED_ID = {
     "first": "f1", "middle": "f2", "last": "f3", "username": "f4",
-    "account_email": "f5", "hire_date": "f7", "office": "f8",
-    "pay_frequency": "f9", "position": "f10", "rate": "f11",
-    "pay_state": "f12", "pay_basis": "f13",
+    "account_email": "f5", "hire_date": "f7", "pay_frequency": "f9",
+    "position": "f10", "rate": "f11", "pay_state": "f12", "pay_basis": "f13",
 }
 
 
@@ -114,6 +133,37 @@ def test_the_ssn_is_never_even_looked_for(page):
     assert ("ssn", "never auto-typed — enter by hand") in unmatched
 
 
+def test_rate_of_pay_is_not_salary(page):
+    """They sit one under the other and both take a number. $10/hr into the
+    Salary box is a $10 salary."""
+    assert AX.find_field(page, "rate")["id"] == "f11"
+
+
+def test_state_working_in_is_not_a_home_address(page):
+    """Texas is where they WORK. Their address, on a later page, has its own
+    state and can say anything -- matching both on a bare 'state' crosses two
+    different facts."""
+    assert AX.find_field(page, "pay_state")["id"] == "f12"
+
+
+def test_nothing_the_run_fills_touches_a_leave_alone_box(page):
+    """Office, Status, Salary, Time Clock, Require Break and Divisions are all
+    correct as the form loads them. The fill must not land on any of them."""
+    from automations.apex_new_starts import run as RUN
+    values = dict.fromkeys(STAGE_ONE, "x")
+    matched, _ = AX.plan_fill(page, values)
+    landed = {m[2]["id"] for m in matched}
+    assert landed.isdisjoint({"f15", "f16", "f17", "status", "divisions"}), landed
+
+
+def test_the_security_role_radios_are_never_typed_into(page):
+    """A security role is what somebody can SEE in a payroll system. It is in
+    UNANSWERED until Megan says which one, and radios are not text boxes."""
+    assert "security_role" in AX.UNANSWERED
+    matched, _ = AX.plan_fill(page, {"security_role": "Sales Rep"})
+    assert matched == []
+
+
 def test_the_password_reset_checkbox_is_left_alone(page):
     """It is ticked by default and mails a real new hire. Nothing in the fill
     plan may touch it -- the operator sees it and decides."""
@@ -121,3 +171,12 @@ def test_the_password_reset_checkbox_is_left_alone(page):
     matched, _ = AX.plan_fill(page, values)
     assert "f6" not in {m[2]["id"] for m in matched}
     assert page.locator("#f6").is_checked()
+
+
+def test_required_is_what_this_screen_actually_asks_for(page):
+    """REQUIRED once listed address/city/state/zip/dob. None of those boxes
+    exist on this form, so every person came back 'missing required field' and
+    nothing would ever have been typed."""
+    matched, _ = AX.plan_fill(page, dict.fromkeys(AX.REQUIRED, "x"))
+    assert {m[0] for m in matched} == set(AX.REQUIRED)
+    assert not ({"address1", "city", "zip", "dob"} & set(AX.REQUIRED))

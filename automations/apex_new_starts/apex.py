@@ -54,65 +54,70 @@ ROSTER_URL = "https://apex.herbjoyent.com/roster"
 PROFILE_DIR = Path(__file__).resolve().parent / ".apex_profile"
 SCREEN_PATH = Path(__file__).resolve().parent / "apex_screen.json"
 
-# The labels a person reads beside each box. The ADD ROSTER EMPLOYEE wordings
-# are CONFIRMED off the real screen (Megan, 2026-09-03) and come first; the
-# alternatives behind them are still guesses, kept for the fields that live on
-# the later pages nobody has captured yet.
+# The labels a person reads beside each box. ALL of the stage-one wordings are
+# CONFIRMED off the live screen (Megan's screenshots of the whole form,
+# 2026-09-03), and four of the guesses they replaced were wrong in ways that
+# would have mattered:
 #
-# THAT SCREEN IS ONLY STAGE ONE. It holds the account and the employment
-# record -- name, user name, account email, hire date, office, pay frequency --
-# and NOT the address, date of birth or Social. Those sit deeper in the
-# employee's record ("the following page as well", in the Loom), and the labels
-# for them are unconfirmed until someone can run --explore on that page.
+#   guessed 'state'      real 'State Working In' -- 'state' would ALSO match the
+#                        home-address state on the employee's own page, and the
+#                        two are different facts: Texas is where they work, their
+#                        address can say anything.
+#   guessed 'rate'       real 'Rate of Pay' -- and 'Salary' sits directly under
+#                        it, taking a number just the same.
+#   guessed 'job title'  real 'Position'
+#   nothing              real 'Department' -- required, and nobody had mentioned
+#                        it until the form was seen end to end.
+#
+# STAGE TWO IS NOT ON THIS PAGE. Confirmed by seeing all of it: the form ends at
+# Security Roles / Module Admin and carries no address, date of birth or Social
+# anywhere. Those live on the employee's own record after the first Save, a page
+# still nobody has captured.
 LABELS: Dict[str, tuple] = {
-    # --- stage one: ADD ROSTER EMPLOYEE (confirmed) --------------------------
+    # --- Apex User Account --------------------------------------------------
     "first": ("first name",),
-    "middle": ("middle name", "middle initial"),
+    "middle": ("middle name",),
     "last": ("last name",),
-    "username": ("user name", "username"),
+    "username": ("user name",),
     "account_email": ("account email",),
+    # --- Employment Record --------------------------------------------------
     "hire_date": ("hire date",),
-    "office": ("office",),
     "pay_frequency": ("pay frequency",),
-    # Confirmed as required by Megan, exact wording not yet seen on screen --
-    # they sit below the fold of the screenshot, so these stay best-guess until
-    # --explore reads the whole form.
-    "position": ("position", "job title", "title"),
-    "rate": ("rate", "pay rate", "hourly rate"),
-    "pay_state": ("state", "work state", "tax state"),
-    "pay_basis": ("basis of pay", "pay basis", "pay type"),
-    # --- stage two: the employee's own pages (NOT yet confirmed) ------------
+    "position": ("position",),
+    "pay_basis": ("basis of pay",),
+    "pay_state": ("state working in",),
+    "rate": ("rate of pay",),
+    "department": ("department",),
+    # --- stage two: the employee's own record (NOT yet captured) ------------
     "address1": ("address 1", "address line 1", "street address", "address"),
     "address2": ("address 2", "address line 2", "apt", "unit", "suite"),
     "city": ("city",),
-    "state": ("state",),
+    "state": ("home state", "state"),
     "zip": ("zip", "zip code", "postal code", "postal"),
     "dob": ("birth date", "date of birth", "dob", "birthdate"),
-    "email": ("personal email", "email address", "email", "e-mail"),
+    "email": ("personal email", "email address", "e-mail"),
     "phone": ("cell phone", "mobile phone", "home phone", "phone number",
               "phone"),
 }
 
-# WHAT THIS OFFICE PUTS IN THE BOXES THAT NO FORM ANSWERS (Megan, 2026-09-03).
-# These are the same for every new start, so they are settings, not data: a new
-# hire's I-9 cannot tell you what they get paid or what they are called here.
-DEFAULTS = {
-    "position": "Sales Rep",
-    "rate": "10.00",              # $10/hr
-    "pay_state": "Texas",         # the EMPLOYMENT state -- not their home
-                                  # address, which comes off the I-9 and can be
-                                  # anything.
-    "pay_basis": "Commissions",
-    "pay_frequency": "Weekly",
-}
+# Boxes on that form this report leaves exactly as it finds them:
+#   Office        pre-filled text, not an input -- it is the office you are in.
+#   Status        already 'Pending', which is what a new start is.
+#   Salary        optional, and these people are hourly + commission.
+#   Time Clock    both ticked by default; changing either is a policy decision
+#   Require Break about how somebody is paid, not a fact off their I-9.
+#   Divisions     already holds 'General', and the form's own note says a
+#                 division is what puts them on the payroll -- already right.
+LEAVE_ALONE = ("office", "status", "salary", "time clock", "require break",
+               "divisions")
 
-# USER NAME. Megan's answer was "employees first and last and email listed",
-# and the roster settles which way to read it: every existing row's User Name
-# is an email address (algemarkennel@gmail.com, g.alysia@yahoo.com), with one
-# '1989736@apex' among them. So the user name IS their email -- the same one
-# that goes in Account Email -- and the first-and-last is the name fields
-# beside it. The preview prints it for every person before anything is typed,
-# so if that reading is wrong it is one line to change here.
+# 'Security Roles' is a required radio group (Office Admin / ICD Payroll Admin /
+# Sales Rep / Owner) and 'Department' is a required dropdown whose options
+# nobody has read. Neither gets filled until Megan says what they should be -- a
+# security role decides what somebody can SEE in a payroll system, which is the
+# last thing to guess at. plan_fill reports them unanswered instead.
+UNANSWERED = ("security_role", "department")
+
 USERNAME_IS_EMAIL = True
 
 # Saving stage one sends mail: 'Send this user a password reset to their
@@ -126,9 +131,16 @@ PASSWORD_RESET_CHECKBOX = ("send this user a password reset",)
 NEVER_TYPE = ("ssn", "social security", "social", "routing", "account number",
               "bank")
 
-# Fields the run will not proceed without: a record missing one of these is not
-# a usable employee record.
-REQUIRED = ("first", "last", "address1", "city", "state", "zip", "dob")
+# What must be matched on the ADD ROSTER EMPLOYEE screen before the run types
+# anything. Every one of these is marked required by the form itself, and all of
+# them are fillable from the I-9 + the board + DEFAULTS.
+#
+# The address, date of birth and Social are NOT here, and that is the point: they
+# are not on this page at all (see LABELS). An earlier version listed them, which
+# would have skipped every single person as 'missing required field' on a form
+# that never had those boxes.
+REQUIRED = ("first", "last", "username", "account_email", "hire_date",
+            "pay_frequency", "position", "pay_basis", "pay_state", "rate")
 
 
 def _sync_api():
