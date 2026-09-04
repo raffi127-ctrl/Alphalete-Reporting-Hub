@@ -324,24 +324,9 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
                 if email_build.PENDING_MARK in html:
                     failures += 1
                     n = html.count(email_build.PENDING_MARK)
-                    # NOMBRAR la seccion, no solo contarla. El contador solo
-                    # decia "1 section(s)", y sin el nombre no hay forma de
-                    # saber que arreglar: logtail no llega al .eml (solo lee
-                    # output/logs) y el log del armado no imprime la nota.
-                    # El renderer escribe "— <seccion> <PENDING_MARK>", asi
-                    # que el nombre esta ahi al lado (Eve, 2026-09-03: una
-                    # tarde entera para identificar UNA seccion de Pat).
-                    import re as _re
-                    which = _re.findall(
-                        r"—\s*([^<>—]{1,80}?)\s*"
-                        + _re.escape(email_build.PENDING_MARK), html)
-                    named = (": " + ", ".join(dict.fromkeys(w.strip()
-                                                            for w in which))
-                             if which else "")
                     logfn(f"  ✗ {captain.key}: NOT SENT — {n} section(s) still "
-                          f"read '{email_build.PENDING_MARK}'{named}. Fix the "
-                          f"source and rebuild, or --allow-incomplete to send "
-                          f"anyway.")
+                          f"read '{email_build.PENDING_MARK}'. Fix the source "
+                          f"and rebuild, or --allow-incomplete to send anyway.")
                     continue
             if msg["To"] is None:
                 msg["To"] = recipient
@@ -368,7 +353,7 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
 
 def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
                  *, skip_sheets: bool = False, skip_tableau: bool = False,
-                 fresh_knocks: bool = False, logfn=print):
+                 fresh_knocks: bool = False, drop_owners=None, logfn=print):
     """Capture all of a captain's section images into a bundle, or None if the
     captain yielded no images. Email assembly happens later (in main), AFTER
     cross-captain size normalization, so same-flavor sections share one size."""
@@ -414,7 +399,7 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
                 captain, today, render_dir,
                 want_daily="daily_knocks" in kinds_today,
                 want_weekly="knock_dispo" in kinds_today,
-                reuse=not fresh_knocks,
+                reuse=not fresh_knocks, drop_owners=drop_owners,
                 logfn=logfn, errors=errors)
             daily_knocks = kd["daily_knocks"]
             knock_dispo = kd["knock_dispo"]
@@ -624,6 +609,16 @@ def main(argv=None) -> int:
                          "previews are not the ones the approved PDF "
                          "was built from. Only when you know why they "
                          "differ.")
+    ap.add_argument("--drop-owner", action="append", default=None,
+                    metavar="NAME",
+                    help="Leave this owner OUT of the knock sections on "
+                         "purpose (repeatable, or comma-separated). Same "
+                         "treatment an office we have no access to gets: grey "
+                         "note, no sub-heading, still counted in the summary's "
+                         "'(N of M ICDs)'. Use it when a board is KNOWN broken "
+                         "and the fix is elsewhere — it is the honest way past "
+                         "the send guard, unlike --allow-incomplete, which "
+                         "mails the yellow hole.")
     ap.add_argument("--allow-incomplete", action="store_true",
                     help="With --send-reviewed: mail reports that still "
                          "show a 'could not be captured' note. Off by "
@@ -726,7 +721,8 @@ def main(argv=None) -> int:
             bundle = _capture_one(captain, today, render_dir,
                                   skip_sheets=args.skip_sheets,
                                   skip_tableau=args.skip_tableau,
-                                  fresh_knocks=args.fresh_knocks)
+                                  fresh_knocks=args.fresh_knocks,
+                                  drop_owners=args.drop_owner)
         except Exception as e:
             failures += 1
             print(f"  ✗ {captain.key}: capture failed: {e}")

@@ -711,3 +711,80 @@ class WeeklyColumnsOnTheDailySummary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class DroppingAnOwnerOnPurpose(unittest.TestCase):
+    """`--drop-owner` leaves someone out WITHOUT holding the captain's mail.
+
+    WHAT THIS GUARDS (2026-09-03). Francisco Castillo's disposition grid does
+    not render — it failed the same way on his 2026-08-31 /knocks request — so
+    his pull raises KnocksPullFailed, which is a YELLOW pending note, which is
+    what run.py's send guard refuses to mail. Pat's whole sample sat blocked
+    behind one broken board. The only ways past it were --allow-incomplete
+    (which mails the yellow hole, the exact thing Eve said not to do) and
+    editing the roster sheet. This is the third way, and it has to behave like
+    the access gap it resembles: OUT of the email, IN the honest totals.
+    """
+
+    def test_drop_set_is_normalised_and_accepts_both_shapes(self):
+        self.assertEqual(KD.dropped_owners(["Francisco Castillo"]),
+                         {"francisco castillo"})
+        self.assertEqual(KD.dropped_owners("Francisco Castillo,Chan Park"),
+                         {"chan park", "francisco castillo"})
+
+    def test_blank_entries_never_drop_anyone(self):
+        """A trailing comma must not turn into an owner named ''."""
+        self.assertEqual(KD.dropped_owners("Francisco Castillo, ,"),
+                         {"francisco castillo"})
+        self.assertEqual(KD.dropped_owners([]), set())
+
+    def test_env_var_carries_it_without_a_code_change(self):
+        import os
+        old = os.environ.get("CAPTAINSHIP_DROP_OWNERS")
+        os.environ["CAPTAINSHIP_DROP_OWNERS"] = "Francisco Castillo"
+        try:
+            self.assertEqual(KD.dropped_owners(), {"francisco castillo"})
+        finally:
+            if old is None:
+                os.environ.pop("CAPTAINSHIP_DROP_OWNERS", None)
+            else:
+                os.environ["CAPTAINSHIP_DROP_OWNERS"] = old
+
+    def test_the_note_is_grey_so_the_send_guard_lets_it_through(self):
+        """NO_DATA_MARK, never PENDING_MARK: yellow is what blocks the mail."""
+        from automations.captainship_drafts import email_build
+        note = KD.NO_DATA_MARK + KD.DROP_NOTE
+        self.assertTrue(note.startswith(email_build.NO_DATA_MARK))
+        self.assertNotIn(email_build.PENDING_MARK, note)
+
+    def test_the_reason_does_not_claim_an_access_problem(self):
+        """We CAN open Castillo's office; saying otherwise would send someone
+        to grant an access that is already granted."""
+        self.assertNotIn("access", KD.DROP_NOTE.lower())
+
+    def test_a_dropped_owner_is_skipped_before_the_pull(self):
+        """Source check: the skip sits ahead of the per-owner work, so a board
+        we know is broken costs no navigations at all."""
+        import inspect
+        src = inspect.getsource(KD.capture_sections)
+        loop = src.index("for display, cfg in pairs:")
+        drop = src.index("in dropped:", loop)
+        pull = src.index("if want_daily:", loop)
+        self.assertLess(drop, pull,
+                        "the drop check must come before the daily pull")
+
+    def test_all_dropped_still_says_something_in_grey(self):
+        """Every owner dropped = empty out_list. Without its own branch that
+        renders as email_build's yellow 'section failed' note."""
+        import inspect
+        src = inspect.getsource(KD.capture_sections)
+        self.assertIn("(gapped or drop)", src)
+        self.assertIn("excluded on purpose", src)
+
+    def test_run_py_exposes_the_flag_and_threads_it_through(self):
+        from automations.captainship_drafts import run as R
+        import inspect
+        src = inspect.getsource(R)
+        self.assertIn('"--drop-owner"', src)
+        self.assertIn("drop_owners=args.drop_owner", src)
+        self.assertIn("drop_owners=drop_owners", src)

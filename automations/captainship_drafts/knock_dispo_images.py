@@ -287,6 +287,41 @@ def is_access_gap(exc) -> bool:
     return any(m in str(exc).lower() for m in _NO_OFFICE_MARKERS)
 
 
+def dropped_owners(raw=None) -> set:
+    """Owners to leave OUT of the email ON PURPOSE, normalised for comparison.
+
+    Eve's standing rule (2026-09-03) is that a missing owner never holds a
+    captainship's mail: "si falta alguien porque no tenemos acceso, descartado
+    hasta que yo te avise, el mail sale igual con la gente que está". That rule
+    already had a mechanism for the ACCESS case (is_access_gap), and none at
+    all for the other one — an office we CAN reach whose board is genuinely
+    broken. Francisco Castillo is the first: his disposition grid has never
+    rendered a header row (his 2026-08-31 /knocks request failed the same way),
+    so his pull raises KnocksPullFailed, which is a yellow pending note, which
+    is what run.py's send guard refuses to mail. Without this lever the only
+    ways past it were --allow-incomplete (mails the yellow hole — the exact
+    thing Eve does not want) or editing the roster sheet (someone else's data).
+
+    A dropped owner is treated EXACTLY like an access gap — grey note, left out
+    of the sub-headings, still counted in the summary's "(N of M ICDs)" so the
+    totals stay honest — but the reason it prints is its own, because "no
+    Office Access" would be a lie about an office we can open.
+
+    Reads CAPTAINSHIP_DROP_OWNERS (comma-separated) when `raw` is None, so a
+    scheduled run can carry it without a code change."""
+    import os
+    from automations.focus_office_att.aliases import _norm_name
+    if raw is None:
+        raw = os.environ.get("CAPTAINSHIP_DROP_OWNERS", "")
+    if isinstance(raw, str):
+        raw = raw.split(",")
+    return {_norm_name(x) for x in (raw or []) if str(x).strip()}
+
+
+DROP_NOTE = ("board excluded on purpose — its disposition grid does not "
+             "render, so there is nothing to read; being fixed separately")
+
+
 def _owner_error_note(exc) -> str:
     """The errors[] note for a failed owner pull — an ACCESS GAP reads as
     one, anything else keeps its exception text for debugging.
@@ -987,7 +1022,7 @@ def _load_manifest(render_dir, captain_key: str, target: dt.date,
 
 def capture_sections(captain, today: dt.date, render_dir, *,
                      want_daily: bool = True, want_weekly: bool = True,
-                     reuse: bool = True,
+                     reuse: bool = True, drop_owners=None,
                      logfn=print, errors: Optional[dict] = None) -> dict:
     """Both knock sections' images for `captain`, sharing ONE roster lookup
     and ONE ownerville session (run.py passes want_* from sections_on(today),
@@ -1150,6 +1185,12 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # honest; what they lose is a sub-heading of their own.
     gapped_daily: List[str] = []
     gapped_weekly: List[str] = []
+    # Owners dropped ON PURPOSE (see dropped_owners) — same treatment as a
+    # gap, its own reason. Kept as separate lists so the log never files a
+    # deliberate exclusion under "waiting on Office Access".
+    dropped: set = dropped_owners(drop_owners)
+    dropped_daily: List[str] = []
+    dropped_weekly: List[str] = []
     # Everything each summary needs, kept as pulled.
     captured_daily: List[tuple] = []    # (display, cfg, rows, apps|None)
     captured_weekly: List[tuple] = []   # (display, ov_rows, apps, dispo_cols)
@@ -1221,6 +1262,23 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                     _c_rows, chan_apps_by_rep, chan_apps = daily_apps_for_board(
                         chan_rows, _day_apps(_CHAN["name"]))
             for display, cfg in pairs:
+                if _nn(display) in dropped:
+                    # Skipped BEFORE the pull, not after it fails: the point is
+                    # to stop asking for a board we already know does not
+                    # render, and each attempt costs three navigations.
+                    for _kind, _out, _drop, _done, _ans in (
+                            ("daily_knocks", out_daily, dropped_daily,
+                             done_daily, answered_daily),
+                            ("knock_dispo", out_weekly, dropped_weekly,
+                             done_weekly, answered_weekly)):
+                        if _kind not in wanted:
+                            continue
+                        errors[f"{_kind}:{display}"] = NO_DATA_MARK + DROP_NOTE
+                        _drop.append(display)
+                        _done.add(display)
+                        _ans.add(display)
+                    logfn(f"    · dropped {display}: excluded on purpose")
+                    continue
                 if want_daily:
                     try:
                         # ALREADY DRAWN TODAY? Reuse it. Per OWNER, not per
@@ -1564,12 +1622,19 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # the session died" and renders the yellow pending note — which carries
     # PENDING_MARK and would hold that captain's whole email, the exact trap
     # this partial mode exists to avoid. So say what actually happened, in grey.
-    for kind, out_list, gapped in (("daily_knocks", out_daily, gapped_daily),
-                                   ("knock_dispo", out_weekly, gapped_weekly)):
-        if kind in wanted and not out_list and gapped:
+    for kind, out_list, gapped, drop in (
+            ("daily_knocks", out_daily, gapped_daily, dropped_daily),
+            ("knock_dispo", out_weekly, gapped_weekly, dropped_weekly)):
+        if kind in wanted and not out_list and (gapped or drop):
+            bits = []
+            if gapped:
+                bits.append(f"{len(gapped)} still waiting on ownerville "
+                            "Office Access")
+            if drop:
+                bits.append(f"{len(drop)} excluded on purpose")
             errors[kind] = (
-                NO_DATA_MARK + f"no office in this captainship is reachable yet "
-                f"— {len(gapped)} still waiting on ownerville Office Access")
+                NO_DATA_MARK + "no office in this captainship has a board to "
+                "show — " + ", ".join(bits))
 
     # Written LAST, so it only ever describes a finished pull: a run that dies
     # mid-session leaves no manifest and the next build pulls properly instead
@@ -1579,6 +1644,11 @@ def capture_sections(captain, today: dt.date, render_dir, *,
         if kind in wanted and gapped:
             logfn(f"    · {kind}: {len(gapped)} owner(s) left OUT of the email "
                   f"(no Office Access): {', '.join(gapped)}")
+    for kind, drop in (("daily_knocks", dropped_daily),
+                       ("knock_dispo", dropped_weekly)):
+        if kind in wanted and drop:
+            logfn(f"    · {kind}: {len(drop)} owner(s) DROPPED on purpose: "
+                  f"{', '.join(drop)}")
 
     _save_manifest(render_dir, captain.key, target, saturday, wanted,
                    out, errors, logfn=logfn)
