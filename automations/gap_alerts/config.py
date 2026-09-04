@@ -705,14 +705,26 @@ MIN_SEND_GAP_MINUTES = 5
 # How long a tick may queue for the machine-wide ownerville session
 # (tableau_patchright.OWNERVILLE_SESSION_LOCK) before giving the tick up.
 #
-# SHORT ON PURPOSE. This runs every 5 minutes; the captainship build can hold
-# ownerville for ~2h. Queueing behind it would stack ticks that all fire at
-# once when it finishes, against a clock that has moved on. Skipping is the
-# right answer for a job that gets another go in five minutes — and the thing
-# it replaces is worse: gap_alerts used to run UNSERIALISED because it had its
-# own Chrome profile, which is not its own session, so it and the build read
-# each other's offices (2026-09-02).
-OWNERVILLE_SESSION_WAIT_S = 120
+# LONG ENOUGH TO OUTLAST A `/knocks`, which is the thing that actually takes
+# it (Megan 2026-09-03: "the post should take priority over the individual
+# request... we shouldn't just go blank for an enrolled service").
+#
+# 120s was chosen against the captainship build, which holds ownerville for
+# ~2h — nothing survives that, so skipping is right and 240 fails just as
+# cleanly. But the common case is not the build: it is somebody running
+# `/knocks` in Slack through the Jiraiya bot, which takes the session for a
+# few minutes per office. On 2026-09-03 three of those inside Raf's window
+# (Cyrus Wade, Kash Rai, Rafael Hidalgo) cost him 8:15, 8:25 and 8:28. Two
+# minutes was under the length of the thing it was waiting for, so an enrolled
+# 15-minute post went blank for an ad-hoc request — backwards.
+#
+# The old worry — "queueing would stack ticks that all fire at once" — no
+# longer applies: _dest_due compares ANCHORS now, so a tick that finally gets
+# the session sends ONE board for the current anchor, not the pile it missed.
+#
+# This is the blunt half. The real rule is a priority reservation so an
+# on-demand request QUEUES BEHIND a due scheduled post instead of racing it.
+OWNERVILLE_SESSION_WAIT_S = 240
 
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_state.json"
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts.lock"
