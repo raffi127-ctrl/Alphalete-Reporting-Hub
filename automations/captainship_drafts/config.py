@@ -761,12 +761,12 @@ CAPTAINS: List[Captain] = [
     # 'Captainship - <Nombre>', que todavia no existe para ellos, y un `to`
     # vacio hace que --send los SALTEE en vez de mandarle el reporte a quien no
     # corresponde. Los borradores igual se arman.
-    Captain("pat", "Pat", "fiber", title_bg="#C2379A", to=_to("pat"), churn=[
+    Captain("pat", "Pat", "fiber", title_bg="#6F8691", to=_to("pat"), churn=[
         ChurnSource(_own.open_ws_fiber_pat, _ni_render, "New Internet Churn"),
         ChurnSource(_own.open_ws_wl_pat, _wl_render, "Wireless Churn",
                     brand_title=False),
     ], boxes=_fiber_boxes("pat")),
-    Captain("jess", "Jess", "fiber", title_bg="#6F8691", to=_to("jess"), churn=[
+    Captain("jess", "Jess", "fiber", title_bg="#C2379A", to=_to("jess"), churn=[
         ChurnSource(_own.open_ws_fiber_jess, _ni_render, "New Internet Churn"),
         ChurnSource(_own.open_ws_wl_jess, _wl_render, "Wireless Churn",
                     brand_title=False),

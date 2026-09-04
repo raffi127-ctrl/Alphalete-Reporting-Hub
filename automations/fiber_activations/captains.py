@@ -48,12 +48,19 @@ CAPTAINS: list[Captain] = [
     # Tableau. a_hex es el color de su banda en el Org Sales Board, el mismo
     # que llevan sus pestanas.
     #
+    # 2026-09-04: Raf pidio cruzar los colores de los dos ("let's swap Pat and
+    # Jesse's colors"), asi que Pat quedo con el gris azulado y Jess con el
+    # magenta. Los a_hex de aca son el resalte REAL de la col A que tienen hoy
+    # las hojas — el tono suave, no el base: Eve re-estilo esas dos pestanas a
+    # mano con un encabezado oscuro (#47536A / #871C68) y un resalte mas claro,
+    # y estos valores venian arrastrando el base desde antes de ese re-estilo.
+    #
     # Pat era olivo (#9BA820) hasta el 2026-09-03: Raf pidio cambiarlo y tenia
     # razon medible — quedaba a dE 29.7 del mostaza de Jairo, uno de los pares
     # mas cercanos del board, y a esa distancia dos bandas se leen iguales. El
     # magenta no lo usa ninguna de las quince capitanias.
-    Captain("Pat Thompson's Captainship Activations",     1655147128, "Pat",   "#C2379A"),
-    Captain("Jess Lieberman's Captainship Activations",   877862349,  "Jess",  "#6F8691"),
+    Captain("Pat Thompson's Captainship Activations",     1655147128, "Pat",   "#8590A6"),
+    Captain("Jess Lieberman's Captainship Activations",   877862349,  "Jess",  "#AC5292"),
 ]
 
 # team -> Captain, for quick lookup when iterating the Tableau pull.
