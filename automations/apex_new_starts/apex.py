@@ -321,6 +321,17 @@ _FIND_JS = """(labels) => {
 }"""
 
 
+# Input types that can never hold one of our values. A checkbox is not where a
+# name goes, and excluding them is not just tidiness: on the real Add Employee
+# screen the label 'Send this user a password reset to their Account Email'
+# CONTAINS the words 'Account Email', so the account-email lookup matched both
+# that checkbox and the actual box, called it ambiguous, and refused to fill a
+# required field. Dropping non-text controls leaves exactly one answer -- and
+# keeps that checkbox, which mails a real new hire, permanently out of reach.
+NON_TEXT_TYPES = {"checkbox", "radio", "button", "submit", "reset", "hidden",
+                  "file", "image"}
+
+
 def find_field(page, semantic: str) -> Optional[dict]:
     """The one input that means `semantic`, or None if it isn't unambiguous.
 
@@ -331,7 +342,9 @@ def find_field(page, semantic: str) -> Optional[dict]:
     """
     for label in LABELS.get(semantic, ()):
         hits = [h for h in page.evaluate(_FIND_JS, [label])
-                if h["visible"] and not h["readonly"]]
+                if h["visible"] and not h["readonly"]
+                and not (h["tag"] == "input"
+                         and (h["type"] or "").lower() in NON_TEXT_TYPES)]
         # A more specific later label ('address 2') can also match an earlier
         # broad one; take the first wording that lands on exactly one box.
         if len(hits) == 1:
