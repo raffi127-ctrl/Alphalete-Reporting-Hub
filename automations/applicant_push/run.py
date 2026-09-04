@@ -55,6 +55,7 @@ import sys
 from automations.resume_pushing import run as rp
 from automations.oat_processing import run as oat
 from automations.applicant_push import offices
+from automations.applicant_push.window import QUIET_EXIT, quiet_window
 
 # Set by _use_office(); the defaults are Carlos's office, so a caller that
 # never passes --office behaves exactly as before.
@@ -278,13 +279,20 @@ def main(argv=None) -> int:
     # (2026-08-31) — the whole Fri-afternoon-to-Sun-midday stretch is quiet.
     # --audit-office (a supervised run) is the only override.
     import datetime as _dt
-    _now = _dt.datetime.now()
-    _wd, _hr = _now.weekday(), _now.hour
-    _quiet = (_wd == 4 and _hr >= 13) or _wd == 5 or (_wd == 6 and _hr < 13)
-    if args.live and _quiet and not getattr(args, "audit_office", False):
-        raise SystemExit(
-            "[push] REFUSED: weekend quiet window — live pushes stop Friday "
-            "1:00 PM CST and resume Sunday 1:00 PM CST.")
+    if args.live and quiet_window(_dt.datetime.now()) and not getattr(
+            args, "audit_office", False):
+        # EXIT 3, NOT AN ERROR (2026-09-04, hours after the window landed): this
+        # refusal used to `raise SystemExit(<message>)`, which exits 1. The
+        # wrapper reads any non-zero as a bad pass, so three quiet ticks in a row
+        # published FAILED to the Hub and opened "Applicant Push failed" in
+        # #claudecorrections — for both offices — while the code was doing
+        # exactly what Carlos asked. A window we chose is a healthy no-op, so it
+        # gets its own code the wrapper knows: 3 = declined on purpose, nothing
+        # ran, nothing is broken. (The office-allowlist refusal below stays a
+        # hard error — that one IS a misconfiguration.)
+        print("[push] SKIPPED: weekend quiet window — live pushes stop Friday "
+              "1:00 PM CST and resume Sunday 1:00 PM CST.", flush=True)
+        return QUIET_EXIT
     if (args.live and args.office not in PUSH_ALLOWED
             and not getattr(args, "audit_office", False)):
         raise SystemExit(
