@@ -470,6 +470,64 @@ def _retired_ids() -> set:
         return set()
 
 
+def _not_armed_ids(cfg) -> set:
+    """Registry ids DECLARED still-being-built (`not_armed: true`).
+
+    A report that is half-wired fails for the same reason every day, and every
+    one of those failures is the builder's business, not the channel's. Three of
+    them in one morning (2026-09-04) is what made this a declaration instead of
+    a shrug: `apex_new_starts` sat red and unclaimed for a day over a run Megan
+    did at her own desk, and `rc_contact_sync` — B2B Customer Contacts, built
+    2026-09-02 and still waiting on two credentials — opened
+    `failure-rc_contact_sync` whose thread told whoever picked it up to go read
+    a launchd agent's log for a report nobody has armed yet.
+
+    GOES IN `skip`, NOT `offday` — deliberately, and this is the whole
+    difference. `offday` suppresses only the "didn't run today" GUESS and still
+    reports a real FAILED, which is right for a live report on its day off. A
+    not-yet-armed report's FAILED is exactly what must stay quiet: it is the
+    expected state of a thing under construction. Same reasoning as
+    `_retired_ids`, opposite direction in time — retired means it will never run
+    again, not_armed means it does not run YET.
+
+    NOT a synonym for on_scheduler:false. Plenty of finished reports are
+    off-scheduler and run by hand or on their own agent; those must keep
+    alerting. Only an explicit `not_armed: true` counts, and DELETING it is part
+    of arming the report — a flag left on a live report is a report that has
+    gone quiet.
+
+    Matched under BOTH spellings: the registry key AND the hyphenated Hub card
+    id the Activity log actually writes (`rc_contact_sync` ->
+    `rc-contact-sync`). Matching one only is how a skip set silently does
+    nothing — the bug _orchestrator_ids records for sci_campaigns.
+
+    Read from RAW: load_config drops every on_scheduler:false entry before
+    cfg.reports is built, and a report being built is usually one of those.
+    Best-effort — if the config can't be read, skip nothing and alert as before.
+    """
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
+    ids = set()
+    try:
+        raw = cfg.raw.get("reports", {}) or {}
+    except Exception:  # noqa: BLE001
+        return ids
+    for rid, rep_raw in raw.items():
+        if not (rep_raw or {}).get("not_armed"):
+            continue
+        ids.add(rid)
+        for cand in (_HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):
+            if cand:
+                ids.add(cand)
+    return ids
+
+
 def _offday_standalone_ids(cfg, target_date) -> set:
     """Registry ids of STANDALONE (LaunchAgent) reports that are NOT supposed to run
     on `target_date`, per an explicit `standalone_weekdays` list (Python weekday():
@@ -1081,7 +1139,7 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     target_date = dt.date.fromisoformat(day)
     reports = _collect(rows, None, day, exact=False)   # host=None → all machines
     skip = (_orchestrator_ids(cfg, target_date) | _oneshot_utility_ids(cfg)
-            | _retired_ids())
+            | _retired_ids() | _not_armed_ids(cfg))
     # Off-day exemption for weekday-pinned standalone reports. Deliberately NOT
     # folded into `skip`: it must suppress the "didn't run" guess only, never a
     # real FAILED / INCOMPLETE / STUCK on an off-day hand-rerun.

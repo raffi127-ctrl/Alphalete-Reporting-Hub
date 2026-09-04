@@ -626,6 +626,40 @@ def write_failure_reason(report_id: str, reason: str) -> None:
         pass
 
 
+def _is_not_armed(report_id: str) -> bool:
+    """Is this report DECLARED still-being-built (`not_armed: true`)?
+
+    Reads the registry raw, so an on_scheduler:false entry — which is what a
+    half-built report usually is — is still seen. Accepts the underscored
+    registry key and the hyphenated Hub card id alike, because this function is
+    called from both spellings' worlds.
+
+    Best-effort and fail-OPEN: any trouble reading the config returns False, so
+    an unreadable registry makes a report noisy, never silent. Silence is the
+    expensive direction here."""
+    rid = (report_id or "").strip()
+    if not rid:
+        return False
+    try:
+        from automations.day_orchestrator import registry
+        raw = (registry.load_config().raw.get("reports", {}) or {})
+    except Exception:  # noqa: BLE001 — never let a config hiccup mute an alert
+        return False
+    if (raw.get(rid) or {}).get("not_armed"):
+        return True
+    # The Activity log writes the CARD id (rc-contact-sync); the flag lives on
+    # the registry key (rc_contact_sync). Match either way round.
+    under = rid.replace("-", "_")
+    if (raw.get(under) or {}).get("not_armed"):
+        return True
+    for key, rep in raw.items():
+        if not (rep or {}).get("not_armed"):
+            continue
+        if key.replace("_", "-").strip("-") == rid:
+            return True
+    return False
+
+
 def _alert_failure(report_id: str, report_name: str) -> None:
     """Post a failure alert to #claudecorrections-and-requests when a report
     closes 'failed' — so a silently-failing standalone agent (whose wrapper
@@ -652,6 +686,16 @@ def _alert_failure(report_id: str, report_name: str) -> None:
     from automations.shared import live_effects
     if live_effects.refuse_if_under_test(
             "post a failure alert for {!r}".format(report_id)):
+        return
+    # NOT ARMED YET (2026-09-04). A report still being built fails the same way
+    # every day and none of it is news. TWO producers alert for one failure —
+    # this one and the machine_digest watcher — so silencing a WIP report takes
+    # both doors, and rc_contact_sync proved it: the thread carried this alert's
+    # ":x: … closed a run with status FAILED on Lucys-MacBook-Neo.local" AND the
+    # watcher's "didn't run clean on Lucy 2", for a report waiting on two
+    # credentials. Declared in schedule_config; see machine_digest._not_armed_ids
+    # for why it is a declaration and not a guess from on_scheduler.
+    if _is_not_armed(report_id):
         return
     try:
         import time
