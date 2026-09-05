@@ -202,6 +202,26 @@
       "timeout_minutes": 10,
       "machine": "Lucy 2"
     },
+    "b2b_churn_preview": {
+      "on_scheduler": false,
+      "_note": "MANUAL-ONLY preview of the consolidated CHURNRATES board (Carlos 2026-09-05: Tableau merged BYOD/non-BYOD wireless + AIR + internet churn into ONE view where wireless churn used to live; the three per-product saved views have rendered BLANK since 9/03). Captures the churn_wireless team URL AS-IS — no owner slice, no product param, no crop — and base64-chunks the PNG into the 'B2B Shot' tab for the mini to decode. Read-only apart from that tab. `lucy rerun b2b_churn_preview`; `--url <view>` to point elsewhere. Once Carlos approves the shot, the real rewire happens in b2b_metrics/offices.py and this stays as the probe tool.",
+      "display_name": "B2B churn board preview (consolidated view)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.b2b_metrics.churn_preview"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 15,
+      "machine": "Lucy 2"
+    },
     "install_team_tree_agent": {
       "on_scheduler": false,
       "_note": "One-shot installer for com.alphalete.team-tree-daily on Lucy 2 (6:00am daily; deploy/team_tree_daily.sh -> python -m automations.team_tree.run). `lucy update` then `lucy rerun install_team_tree_agent` on the Lucy 2 control tab.",

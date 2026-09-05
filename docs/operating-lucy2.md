@@ -92,25 +92,20 @@ open("/tmp/shot.png","wb").write(base64.b64decode("".join(chunks)))   # then Rea
 Both machines have clones with origin = the repo. From the mini you can commit +
 push. `main` is canonical; do WIP on a branch and promote when verified.
 
-⚠️ **Lucy 2's checkout tracks `resume-pushing-v2`, NOT main** (discovered
-2026-07-15 after a full day of silent "Already up to date" no-op updates —
-mine AND another session's). Pushing main alone never reaches Lucy 2.
-**Since 2026-07-18 the branches CONVERGED** (main contains every
-resume-pushing-v2 commit — screendrive, the extension loader), so delivery
-is now a plain fast-forward push; the old merge-worktree dance is only
-needed again if the branches ever diverge (the push below would then be
-rejected non-ff — do NOT force; merge instead). Symptom check: an `update`
-result showing a fetch delta followed by "Already up to date" means the
-tracking branch didn't move. Long-term fix: check Lucy 2 out on main at the
-laptop, then delete this warning.
+**Lucy 2 tracks `main`** (verified by `git_status` over the queue
+2026-09-05: "branch main · behind origin/main by 0"). The old
+resume-pushing-v2 tracking warning is gone — push main and it reaches
+Lucy 2; `origin/resume-pushing-v2` is a stale leftover (diverged, do not
+push to it, never force). Symptom check still applies: an `update` result
+showing a fetch delta followed by "Already up to date" means the tracking
+branch didn't move — re-check with `git_status`.
 
 ```bash
 cd /Users/carloshidalgo/recruiting-report
 git add path/to/file.py            # never `git add .` blindly
 git commit -m "..."
 git pull --rebase origin main      # teammates push too — rebase first
-git push origin main
-git push origin main:resume-pushing-v2   # deliver to Lucy 2 (ff since 7/18)
+git push origin main                # Lucy 2 tracks main (since 2026-09-05)
 # then queue `update`; plus `restart_poller` if mini_control.py changed,
 # `restart_hub` if dashboard.py changed (see The Hub below).
 # promote just one file from a branch without dumping the whole branch:
