@@ -157,7 +157,17 @@ VIEW_META: dict = {
     # whole thing is the deliverable; the last-colored-row crop was tuned for
     # the old single-product rep table and would cut the lower table off.
     # capture_page already trims trailing whitespace.
-    "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD},
+    #
+    # owner_dropdown (2026-09-05): Owner & Office URL slicing is DEAD on the
+    # restructured CHURNRATES workbook — every value form blanks the whole
+    # view (with CR, without CR, the exact member spelling read off the live
+    # dropdown, owner-only with no product param; all captured blank on Lucy 2
+    # today). An office that still needs slicing (jamis/sabrina — no personal
+    # baked view) gets it by capture.drive_owner CLICKING the dropdown
+    # instead, which proved out live the same day. Carlos's and Atef's baked
+    # views are captured as-is, exactly as before.
+    "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD,
+                        "owner_dropdown": True},
     # No data_cols -> no last-colored-row crop: keep the WHOLE ranking table
     # (the DNQ reps at the bottom aren't highlighted and would be trimmed).
     "order_tiered_bonus": {"filter_field": OWNER_FIELD},

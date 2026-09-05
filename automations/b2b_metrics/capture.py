@@ -335,9 +335,17 @@ def _sliced_url(o: B2BOffice, view_key: str, today: dt.date = None) -> str:
     _base, _, _qs = _raw.partition("?")
     _keep = [p for p in _qs.split("&")
              if p and not p.startswith(":iid=")]
-    url = "{}?{}{}={}".format(
-        _base, ("&".join(_keep) + "&") if _keep else "",
-        quote(field), quote(value, safe="\\"))
+    # owner_dropdown views (churn since 2026-09-05): the Owner & Office URL
+    # param is DEAD on that workbook — ANY value blanks every filter on the
+    # view. The slice happens by drive_owner clicking the dropdown in
+    # tableau_image's after_load instead, so no owner param is appended here
+    # (the product params in _keep still ride along).
+    if meta.get("owner_dropdown"):
+        url = "{}?{}".format(_base, "&".join(_keep)) if _keep else _base
+    else:
+        url = "{}?{}{}={}".format(
+            _base, ("&".join(_keep) + "&") if _keep else "",
+            quote(field), quote(value, safe="\\"))
     if week_field:
         url = _with_week(url, week_field, today,
                          meta.get("week_format", "mdy"))
@@ -360,6 +368,126 @@ def _with_week(url: str, week_field: str, today: dt.date = None,
     wv = we.isoformat() if fmt == "iso" else week_value(we)
     sep = "&" if "?" in url else "?"
     return "{}{}{}={}".format(url, sep, quote(week_field), quote(wv, safe=""))
+
+
+def _dismiss_menus(page) -> None:
+    """Close any open Tableau dropdown HARD. Escape alone is not enough —
+    proven 2026-09-05: an owner selection succeeded and then Download→Image
+    timed out three times behind the still-open menu overlay; Tableau menus
+    really close on click-outside. Click dead space, then Escape, twice."""
+    for _ in range(2):
+        try:
+            page.mouse.click(8, 8)
+        except Exception:  # noqa: BLE001
+            pass
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(1_200)
+
+
+def drive_owner(page, want: str, log=print) -> bool:
+    """Open the dashboard's Owner & Office quick filter and leave ONLY the
+    member containing `want` (case-insensitive) ticked.
+
+    THE reason this exists (2026-09-05): Owner & Office URL slicing is dead on
+    the restructured CHURNRATES workbook — any value, in any encoding (with
+    CR, without, the exact member spelling read off this very dropdown),
+    resets EVERY filter on the view to None and the board renders blank. The
+    dropdown itself still works, so the slice is clicked the way a person
+    does it.
+
+    Modelled on _select_week: keyboard-only toggles (Tableau's click-capture
+    overlay swallows .click() while leaving aria-checked untouched), tick the
+    target FIRST (clearing the last ticked value makes Tableau re-select
+    everything), then untick the rest. The box ids on this dashboard are
+    EMPTY, so the owner box is found by CONTENT — the member list whose
+    entries carry the ' [office]' suffix. Returns True when the wanted member
+    ends up ticked."""
+    from automations.b2b_quality.run import _IFRAME
+    fr = page.frame_locator(_IFRAME)
+    boxes = fr.locator(".tabComboBox")
+    n_boxes = min(boxes.count(), 12)
+
+    def _open(i):
+        for osel in (".tabComboBox", ".tabComboBoxButton", ".tabComboBoxName"):
+            try:
+                fr.locator(osel).nth(i).click(timeout=10_000)
+            except Exception:  # noqa: BLE001
+                try:
+                    fr.locator(osel).nth(i).focus()
+                    page.keyboard.press("Enter")
+                except Exception:  # noqa: BLE001
+                    continue
+            page.wait_for_timeout(2_500)
+            for sel in ('[role="checkbox"]', ".QFCheckbox", "[role='option']",
+                        ".tabMenuItemName"):
+                try:
+                    loc = fr.locator(sel)
+                    n = min(loc.count(), 300)
+                except Exception:  # noqa: BLE001
+                    continue
+                if not n:
+                    continue
+                texts, checked = [], []
+                for j in range(n):
+                    try:
+                        texts.append(" ".join(
+                            (loc.nth(j).inner_text(timeout=2_000) or "")
+                            .split()).lstrip("✓").strip())
+                        checked.append(
+                            loc.nth(j).get_attribute("aria-checked") == "true")
+                    except Exception:  # noqa: BLE001
+                        texts.append("")
+                        checked.append(False)
+                if any(texts):
+                    return loc, texts, checked
+        return None
+
+    for i in range(n_boxes):
+        got = _open(i)
+        if not got:
+            continue
+        loc, texts, checked = got
+        if not any("[" in t for t in texts):
+            _dismiss_menus(page)
+            continue
+        picks = [j for j, t in enumerate(texts)
+                 if t and want.lower() in t.lower()]
+        if not picks:
+            log("   [owner] NO member contains {!r} among {} member(s)"
+                .format(want, len([t for t in texts if t])))
+            _dismiss_menus(page)
+            return False
+        pick = picks[0]
+
+        def _set(j, on):
+            el = loc.nth(j)
+            try:
+                if (el.get_attribute("aria-checked") == "true") == on:
+                    return True
+                el.focus()
+                page.keyboard.press(" ")
+                page.wait_for_timeout(800)
+                return (el.get_attribute("aria-checked") == "true") == on
+            except Exception:  # noqa: BLE001
+                return False
+
+        ok = _set(pick, True)
+        for j, t in enumerate(texts):
+            if j != pick and t:
+                _set(j, False)
+        try:
+            ap = fr.locator("button:has-text('Apply')")
+            if ap.count():
+                ap.first.click(timeout=5_000)
+        except Exception:  # noqa: BLE001
+            pass
+        _dismiss_menus(page)
+        page.wait_for_timeout(12_000)          # let the viz redraw
+        log("   [owner] dropdown -> {!r} ({})".format(
+            texts[pick], "ok" if ok else "TOGGLE UNVERIFIED"))
+        return ok
+    log("   [owner] no combo box offered an owner-style member list")
+    return False
 
 
 def _tableau_filter_value(value: str) -> str:
@@ -1003,6 +1131,19 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
     probe = {"text": "", "nodata": False, "rows": []}
 
     def after_load(page):
+        # owner_dropdown views (churn, 2026-09-05): the office slice happens
+        # HERE, by clicking the Owner & Office dropdown — URL slicing blanks
+        # this workbook (see drive_owner). Only when this office actually
+        # needs slicing: a personal baked view (override NOT in
+        # slice_overrides — Carlos, Atef) is already the office's board.
+        if meta.get("owner_dropdown") and (
+                not o.is_override(view_key) or view_key in o.slice_overrides):
+            if not drive_owner(page, o.owner, log=log):
+                log("   [owner] slice NOT applied — leaving the render to the "
+                    "blank/emptiness guards rather than posting the whole org")
+                raise RuntimeError(
+                    "{}: owner dropdown slice failed for {!r}".format(
+                        view_key, o.owner))
         # Week-pinned views: drive the dashboard's week dropdown, THEN read what
         # it drew. The URL carries the pin too (harmless, and it is the right
         # thing to send if the field is ever renamed to match its caption), but
