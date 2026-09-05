@@ -45,8 +45,15 @@ GROUP = "Vantura Reps"
 ADD_STATUSES = {"active", "orientation scheduled"}
 
 DU_TAB, ROLL_TAB, ALIAS_TAB = "Daily Update", "Roll Call", "Name Aliases"
-# Daily Update columns (0-based): Status A, Campaign F, Name I, Email J, Phone K.
+# Daily Update columns (0-based): Status A, Campaign F, Name I, Email J, Phone K,
+# "2nd round" (the interviewer who ran it) N, Orientation Date R.
 DU_STATUS, DU_CAMP, DU_NAME, DU_EMAIL, DU_PHONE = 0, 5, 8, 9, 10
+DU_2ND, DU_ORIENT = 13, 17
+
+# Managed block written into the contact's Notes (biographies). Anything a human
+# typed ABOVE this marker is preserved; the block below is regenerated each run,
+# so the sync stays idempotent and never duplicates or clobbers manual notes.
+NOTE_MARKER = "— Vantura sync —"
 # Roll Call columns: Week Ending A, Status B, Campaign C, Roll Call (name) D.
 R_WEEK, R_STATUS, R_CAMP, R_NAME = 0, 1, 2, 3
 
@@ -180,8 +187,32 @@ def build_targets(sh) -> List[dict]:
             "phone": phone,
             "email": str(r[DU_EMAIL]).strip(),
             "status": str(r[DU_STATUS]).strip(),
+            "orientation": str(r[DU_ORIENT]).strip() if len(r) > DU_ORIENT else "",
+            "second_round": str(r[DU_2ND]).strip() if len(r) > DU_2ND else "",
         })
     return targets
+
+
+def build_notes(t: dict) -> str:
+    """The managed Notes block for a rep — only lines whose value is present."""
+    lines = []
+    if t.get("orientation"):
+        lines.append(f"Orientation scheduled: {t['orientation']}")
+    if t.get("second_round"):
+        lines.append(f"Second round conducted by: {t['second_round']}")
+    return "\n".join(lines)
+
+
+def merge_notes(existing: str, generated: str) -> str:
+    """Keep any human text above NOTE_MARKER; replace the managed block below it."""
+    base = str(existing or "")
+    idx = base.find(NOTE_MARKER)
+    if idx != -1:
+        base = base[:idx].rstrip()
+    if not generated:
+        return base.strip()
+    block = f"{NOTE_MARKER}\n{generated}"
+    return f"{base}\n\n{block}".strip() if base.strip() else block
 
 
 def load_group_members(svc, grp) -> List[dict]:
@@ -193,7 +224,7 @@ def load_group_members(svc, grp) -> List[dict]:
     for i in range(0, len(rns), 200):
         batch = cw._retry(lambda c=rns[i:i + 200]: svc.people().getBatchGet(
             resourceNames=c,
-            personFields="names,phoneNumbers").execute())
+            personFields="names,phoneNumbers,biographies").execute())
         for r in batch.get("responses", []) or []:
             p = r.get("person", {})
             out.append({
@@ -203,6 +234,7 @@ def load_group_members(svc, grp) -> List[dict]:
                 "phones": {_phone10(ph.get("value"))
                            for ph in (p.get("phoneNumbers") or [])
                            if _phone10(ph.get("value"))},
+                "bio": (p.get("biographies") or [{}])[0].get("value", ""),
             })
     return out
 
@@ -217,7 +249,7 @@ def plan(targets: List[dict], members: List[dict]) -> Tuple[list, list, list]:
     tgt_by_phone = {t["phone"]: t for t in targets if t["phone"]}
     tgt_by_base = {_norm(t["name"]): t for t in targets}
 
-    create, rename, ok = [], [], []
+    create, update, ok = [], [], []
     matched_keys = set()      # phones + base-names of targets that found a member
     for m in members:
         t = None
@@ -235,20 +267,23 @@ def plan(targets: List[dict], members: List[dict]) -> Tuple[list, list, list]:
         # keep this contact's own base name; only fix the parenthetical
         kept_base = _strip_parens(m["display"]) or t["name"]
         new_display = f"{kept_base} ({t['campaign']})" if t["campaign"] else kept_base
-        if _norm(m["display"]) == _norm(new_display):
-            ok.append(new_display)
+        new_notes = merge_notes(m.get("bio", ""), build_notes(t))
+        name_changed = _norm(m["display"]) != _norm(new_display)
+        notes_changed = (m.get("bio", "") or "").strip() != new_notes.strip()
+        if name_changed or notes_changed:
+            update.append((m, new_display, new_notes))
         else:
-            rename.append((m, new_display))
+            ok.append(new_display)
 
     for t in targets:
         keyed = ("p", t["phone"]) in matched_keys or ("n", _norm(t["name"])) in matched_keys
         if not keyed:
             create.append(t)
-    return create, rename, ok
+    return create, update, ok
 
 
-def apply(svc, grp, create: List[dict], rename: list) -> None:
-    # create contacts (name + phone + email), 200/batch, then add to group
+def apply(svc, grp, create: List[dict], update: list) -> None:
+    # create contacts (name + phone + email + notes), 200/batch, then add to group
     new_rns: List[str] = []
     for i in range(0, len(create), 200):
         chunk = create[i:i + 200]
@@ -260,6 +295,10 @@ def apply(svc, grp, create: List[dict], rename: list) -> None:
                 person["phoneNumbers"] = [{"value": t["phone"]}]
             if t["email"]:
                 person["emailAddresses"] = [{"value": t["email"]}]
+            notes = merge_notes("", build_notes(t))
+            if notes:
+                person["biographies"] = [{"value": notes,
+                                          "contentType": "TEXT_PLAIN"}]
             contacts.append({"contactPerson": person})
         body = {"contacts": contacts, "readMask": "names"}
         resp = cw._retry(lambda b=body: svc.people()
@@ -273,13 +312,14 @@ def apply(svc, grp, create: List[dict], rename: list) -> None:
                   .modify(resourceName=grp["resourceName"],
                           body={"resourceNamesToAdd": c}).execute())
 
-    # rename existing (append/fix parenthetical), one updateContact each
-    for m, new_display in rename:
+    # update existing: name parenthetical and/or Notes block, one call each
+    for m, new_display, new_notes in update:
         body = {"etag": m["etag"],
-                "names": [{"unstructuredName": new_display, "givenName": new_display}]}
+                "names": [{"unstructuredName": new_display, "givenName": new_display}],
+                "biographies": [{"value": new_notes, "contentType": "TEXT_PLAIN"}]}
         cw._retry(lambda mm=m, b=body: svc.people().updateContact(
             resourceName=mm["resourceName"],
-            updatePersonFields="names", body=b).execute())
+            updatePersonFields="names,biographies", body=b).execute())
 
 
 def main(argv=None) -> int:
@@ -305,20 +345,26 @@ def main(argv=None) -> int:
         _log(f"group {GROUP!r} not found in {ACCOUNT} — aborting")
         return 1
     members = load_group_members(svc, grp)
-    create, rename, ok = plan(targets, members)
+    create, update, ok = plan(targets, members)
 
-    _log(f"CREATE {len(create)} · RENAME {len(rename)} · already-correct {len(ok)}")
+    _log(f"CREATE {len(create)} · UPDATE {len(update)} · already-correct {len(ok)}")
     for t in sorted(create, key=lambda x: x["name"]):
         disp = f"{t['name']} ({t['campaign']})" if t["campaign"] else t["name"]
-        _log(f"  + {disp}   [{t['status']}]")
-    for m, new_display in sorted(rename, key=lambda x: x[1]):
-        _log(f"  ~ {m['display']!r} -> {new_display!r}")
+        note = build_notes(t).replace("\n", " · ")
+        _log(f"  + {disp}   [{t['status']}]" + (f"   notes: {note}" if note else ""))
+    for m, new_display, new_notes in sorted(update, key=lambda x: x[1]):
+        what = []
+        if _norm(m["display"]) != _norm(new_display):
+            what.append(f"name {m['display']!r}->{new_display!r}")
+        if (m.get("bio", "") or "").strip() != new_notes.strip():
+            what.append("notes:" + new_notes.replace("\n", " · ").replace(NOTE_MARKER, "").strip())
+        _log(f"  ~ {new_display}: " + "; ".join(what))
 
     if not a.write:
         _log("DRY RUN — re-run with --write to apply")
         return 0
-    apply(svc, grp, create, rename)
-    _log(f"wrote: created {len(create)}, renamed {len(rename)}")
+    apply(svc, grp, create, update)
+    _log(f"wrote: created {len(create)}, updated {len(update)}")
     return 0
 
 
