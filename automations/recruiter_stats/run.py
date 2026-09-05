@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -53,14 +54,21 @@ OFFICES = [("11580", "Carlos Hidalgo"),
            ("23467", "Atef Choudhury"),
            ("11280", "Rafael Hidalgo")]
 
-# Only these report sections are kept (payload + relevance)
-KEEP = ["Interviews Booked", "Sent to Call List", "Total First Interviews",
-        "First Interviews Showed Up", "Retention First Interviews",
-        "Retention Call List"]
-
 HEADER = ["Week", "Interviews Booked", "Retention Call List",
-          "Total First Interviews", "1st Showed Up", "1st Retention"]
-BOX_COLS = 6
+          "Total First Interviews", "1st Showed Up", "1st Retention",
+          "Booking Ratio", "Total Calls Made"]
+
+# Call-type sections (Carlos 2026-09-06): Total Calls Made = LM1+LM2+LM3
+# (the no-answer statuses); the breakdown shows every call-type section the
+# report carries, one column each, right of the ratio/total pair.
+LM_SECTIONS = ["Left Message One", "Left Message Two", "Left Message Three"]
+CALL_PAT = re.compile(r"left message|no answer|open|removed from call list",
+                      re.I)
+CALL_ORDER = ["No Answer", "No Answers", "Open", "Opens",
+              "Left Message One", "Left Message Two", "Left Message Three",
+              "Removed from Call List"]
+SHORT = {"Left Message One": "LM1", "Left Message Two": "LM2",
+         "Left Message Three": "LM3", "Removed from Call List": "Removed"}
 
 GREEN = {"red": 0.71, "green": 0.84, "blue": 0.66}
 YELL = {"red": 1.0, "green": 0.9, "blue": 0.55}
@@ -119,13 +127,11 @@ def _parse(page):
             if cur is not None:
                 cur["admins"][texts[0]] = texts[1:9]
         else:
-            label = texts[0]
-            match = next((k for k in KEEP if label == k or label.startswith(k)), None)
-            if match:
-                cur = {"cells": texts[1:9], "admins": {}}
-                out[match] = cur
-            else:
-                cur = None
+            # Keep EVERY section (Carlos 2026-09-06 wants the call-type
+            # breakdown too, and labels vary) — junk rows just become
+            # sections nothing reads.
+            cur = {"cells": texts[1:9], "admins": {}}
+            out[texts[0]] = cur
     return out
 
 
@@ -186,12 +192,41 @@ def _num(s):
         return None
 
 
+def _sec(offraw, wk, label):
+    """Section by exact label, else by prefix (page labels can carry
+    suffixes — the pre-2026-09-06 KEEP filter matched with startswith)."""
+    week = offraw.get(wk, {})
+    sec = week.get(label)
+    if sec is None:
+        sec = next((v for k, v in week.items() if k.startswith(label)), None)
+    return sec
+
+
 def _wk_val(offraw, wk, label, person):
-    sec = offraw.get(wk, {}).get(label)
+    sec = _sec(offraw, wk, label)
     if not sec:
         return None
     row = sec["cells"] if person is None else sec["admins"].get(person, [])
     return _num(row[7]) if len(row) > 7 else None
+
+
+def _calls(offraw, wk, person, breakdown):
+    """(total LM1-3 calls, {breakdown label: value}) for one person-week."""
+    lm = [_wk_val(offraw, wk, s, person) for s in LM_SECTIONS]
+    total = sum(v for v in lm if v is not None) if any(
+        v is not None for v in lm) else None
+    per = {b: _wk_val(offraw, wk, b, person) for b in breakdown}
+    return total, per
+
+
+def _ratio(calls, booked):
+    """Calls per booking, shown '5:1'."""
+    if not calls:
+        return ""
+    if not booked:
+        return "-"
+    r = calls / booked
+    return f"{r:.1f}:1" if r < 10 else f"{round(r)}:1"
 
 
 def _metrics(offraw, wk, person):
@@ -205,51 +240,95 @@ def _metrics(offraw, wk, person):
 
 
 def _roster(offraw, weeks_iso):
-    """Anyone with any booked/first/showed value this year. Most recently
-    ACTIVE first (Carlos 2026-09-05: current people always near the top),
-    ties broken by year booked desc."""
+    """Anyone with any booked/first/showed/call activity this year. Most
+    recently ACTIVE first (Carlos 2026-09-05: current people always near the
+    top), ties broken by year booked desc."""
     booked, latest = {}, {}
     for idx, wk in enumerate(weeks_iso):        # weeks_iso is oldest->newest
         for label in ("Interviews Booked", "Total First Interviews",
-                      "First Interviews Showed Up"):
-            sec = offraw.get(wk, {}).get(label)
+                      "First Interviews Showed Up", *LM_SECTIONS):
+            sec = _sec(offraw, wk, label)
             for name, cells in (sec or {"admins": {}})["admins"].items():
                 v = _num(cells[7]) if len(cells) > 7 else None
                 if v:
                     latest[name] = max(latest.get(name, -1), idx)
-                    booked[name] = booked.get(name, 0) + (
-                        v if label == "Interviews Booked" else 0)
+                    booked.setdefault(name, 0)
+                    if label == "Interviews Booked":
+                        booked[name] += v
     return sorted(booked, key=lambda n: (-latest[n], -booked[n]))
 
 
-def office_rows(offraw, weeks_iso, roster):
+def office_rows(offraw, weeks_iso, roster, breakdown):
     """Stacked per-admin boxes: title / header / weeks newest-first / YTD."""
+    ncols = len(HEADER) + len(breakdown)
+    header = HEADER + [SHORT.get(b, b) for b in breakdown]
     rows = []
     for person in roster:
-        rows.append([person, "", "", "", "", ""])
-        rows.append(HEADER[:])
-        tb = ts = tf = tsh = 0
+        rows.append([person] + [""] * (ncols - 1))
+        rows.append(header[:])
+        tb = ts = tf = tsh = tc = 0
+        tbk = {b: 0 for b in breakdown}
         for wk in reversed(weeks_iso):
             d = dt.date.fromisoformat(wk)
             booked, ret_cl, first, showed, ret = _metrics(offraw, wk, person)
-            if booked is None and first is None and showed is None:
+            calls, per = _calls(offraw, wk, person, breakdown)
+            if (booked is None and first is None and showed is None
+                    and calls is None
+                    and all(v is None for v in per.values())):
                 continue        # Carlos 2026-09-05: no numbers -> drop the week row
             rows.append([f"{d.month}/{d.day}",
                          "" if booked is None else booked,
                          "" if ret_cl is None else round(ret_cl, 4),
                          "" if first is None else first,
                          "" if showed is None else showed,
-                         "" if ret is None else round(ret, 4)])
+                         "" if ret is None else round(ret, 4),
+                         _ratio(calls, booked),
+                         "" if calls is None else calls]
+                        + ["" if per[b] is None else per[b] for b in breakdown])
             tb += booked or 0
             if booked is not None:
                 ts += _wk_val(offraw, wk, "Sent to Call List", None) or 0
             tf += first or 0
             tsh += showed or 0
+            tc += calls or 0
+            for b in breakdown:
+                tbk[b] += per[b] or 0
         rows.append(["YTD TOTAL", tb,
                      round(tb / ts, 4) if ts else "", tf, tsh,
-                     round(tsh / tf, 4) if tf else ""])
-        rows.append(["", "", "", "", "", ""])
+                     round(tsh / tf, 4) if tf else "",
+                     _ratio(tc, tb), tc]
+                    + [tbk[b] for b in breakdown])
+        rows.append([""] * ncols)
     return rows
+
+
+def _breakdown_labels(raw):
+    """Union of call-type section labels across all offices/weeks, in
+    CALL_ORDER (unknown ones after, alphabetical)."""
+    labels = set()
+    for off in raw.values():
+        for wk in off.values():
+            for k in wk:
+                if not CALL_PAT.search(k):
+                    continue
+                # canonicalize to the CALL_ORDER prefix so per-week label
+                # suffixes don't spawn duplicate columns
+                labels.add(next((p for p in CALL_ORDER
+                                 if k == p or k.startswith(p)), k))
+    def key(lbl):
+        for i, pref in enumerate(CALL_ORDER):
+            if lbl == pref or lbl.startswith(pref):
+                return (i, lbl)
+        return (len(CALL_ORDER), lbl)
+    return sorted(labels, key=key)
+
+
+def _a1_col(c):
+    s = ""
+    while c > 0:
+        c, r = divmod(c - 1, 26)
+        s = chr(65 + r) + s
+    return s
 
 
 def _rng(sid, r0, r1, c0, c1):
@@ -274,12 +353,13 @@ def _ensure_tab(sh, title, rows, cols):
         return sh.add_worksheet(title=title, rows=rows, cols=cols)
 
 
-def _cf_rules(sid, end_row):
+def _cf_rules(sid, end_row, box_cols):
     """CF formulas anchored at row 2 (first spilled row on the visible tab).
     Row/col refs are RELATIVE except the $A column lock, so each rule grades
-    every box wherever the dropdown lands it."""
-    full = [_rng(sid, 1, end_row, 0, BOX_COLS)]
-    data = [_rng(sid, 1, end_row, 1, BOX_COLS)]
+    every box wherever the dropdown lands it. Grading stays on the five core
+    metric columns (B-F); ratio/calls/breakdown columns are ungraded."""
+    full = [_rng(sid, 1, end_row, 0, box_cols)]
+    data = [_rng(sid, 1, end_row, 1, 6)]
 
     def rule(ranges, formula, color, bold=False):
         fmt = {"backgroundColor": color}
@@ -308,12 +388,15 @@ def _cf_rules(sid, end_row):
 def build(raw, weeks, offices, dry=False):
     weeks_iso = [w.isoformat() for w in weeks]
 
+    breakdown = _breakdown_labels(raw)
+    box_cols = len(HEADER) + len(breakdown)
+    print(f"call breakdown columns: {breakdown}", flush=True)
     grids = {}
     for oid, owner in offices:
         offraw = raw.get(oid, {})
         roster = _roster(offraw, weeks_iso)
         print(f"{owner}: {len(roster)} admins — {roster}", flush=True)
-        grids[owner] = office_rows(offraw, weeks_iso, roster)
+        grids[owner] = office_rows(offraw, weeks_iso, roster, breakdown)
     if dry:
         print("(dry-run) no writes", flush=True)
         return
@@ -326,7 +409,7 @@ def build(raw, weeks, offices, dry=False):
     # ---- hidden per-office storage tabs
     hide_reqs = []
     for oid, owner in offices:
-        ws = _ensure_tab(sh, DATA_PREFIX + owner, store_rows, BOX_COLS + 2)
+        ws = _ensure_tab(sh, DATA_PREFIX + owner, store_rows, box_cols + 2)
         ws.clear()
         grid = grids[owner]
         if grid:
@@ -336,7 +419,7 @@ def build(raw, weeks, offices, dry=False):
             "fields": "hidden"}})
 
     # ---- visible dropdown tab
-    vt = _ensure_tab(sh, TAB, end_row + 6, BOX_COLS + 2)
+    vt = _ensure_tab(sh, TAB, end_row + 6, box_cols + 2)
     vt.clear()
     sid = vt.id
     meta = sh.fetch_sheet_metadata()
@@ -351,7 +434,7 @@ def build(raw, weeks, offices, dry=False):
     vt.update(range_name="B1",
               values=[[offices[0][1]]], value_input_option="RAW")
     vt.update(range_name="A2",
-              values=[[f'=INDIRECT("\'{DATA_PREFIX}"&$B$1&"\'!A1:F{max_rows}")']],
+              values=[[f'=INDIRECT("\'{DATA_PREFIX}"&$B$1&"\'!A1:{_a1_col(box_cols)}{max_rows}")']],
               value_input_option="USER_ENTERED")
 
     reqs += hide_reqs
@@ -371,7 +454,7 @@ def build(raw, weeks, offices, dry=False):
              {"numberFormat": {"type": "PERCENT", "pattern": "0%"}}),
         _fmt(sid, 1, end_row, 5, 6,
              {"numberFormat": {"type": "PERCENT", "pattern": "0%"}}),
-        _fmt(sid, 1, end_row, 0, BOX_COLS,
+        _fmt(sid, 1, end_row, 0, box_cols,
              {"horizontalAlignment": "CENTER", "wrapStrategy": "WRAP"}),
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
@@ -379,14 +462,14 @@ def build(raw, weeks, offices, dry=False):
             "properties": {"pixelSize": 90}, "fields": "pixelSize"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
-                      "startIndex": 1, "endIndex": BOX_COLS},
+                      "startIndex": 1, "endIndex": box_cols},
             "properties": {"pixelSize": 118}, "fields": "pixelSize"}},
         {"updateSheetProperties": {
             "properties": {"sheetId": sid,
                            "gridProperties": {"frozenRowCount": 1}},
             "fields": "gridProperties.frozenRowCount"}},
     ]
-    reqs += _cf_rules(sid, end_row)
+    reqs += _cf_rules(sid, end_row, box_cols)
     sh.batch_update({"requests": reqs})
 
     newest = weeks[-1]
@@ -395,12 +478,14 @@ def build(raw, weeks, offices, dry=False):
             "prior-4-week average: GREEN at/above · YELLOW within 5% below · "
             "RED more than 5% below. Retention Call List per person = their "
             "interviews booked ÷ the office's Sent to Call List for the week "
-            "(AppStream reports it office-wide). Weeks are labeled by their "
-            "starting Sunday.")
+            "(AppStream reports it office-wide). Total Calls Made = LM1 + LM2 "
+            "+ LM3 (the no-answer statuses); Booking Ratio = calls made per "
+            "interview booked (5:1 = one booking every 5 calls; '-' = calls "
+            "but no bookings). Weeks are labeled by their starting Sunday.")
     vt.update(range_name=f"A{end_row + 2}", values=[[note]],
               value_input_option="RAW")
     sh.batch_update({"requests": [
-        _fmt(sid, end_row + 1, end_row + 2, 0, BOX_COLS,
+        _fmt(sid, end_row + 1, end_row + 2, 0, box_cols,
              {"textFormat": {"italic": True, "fontSize": 9},
               "horizontalAlignment": "LEFT", "wrapStrategy": "WRAP"})]})
     print(f"built '{TAB}' (+{len(offices)} hidden {DATA_PREFIX}* tabs) — "
