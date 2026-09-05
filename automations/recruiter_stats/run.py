@@ -205,18 +205,21 @@ def _metrics(offraw, wk, person):
 
 
 def _roster(offraw, weeks_iso):
-    """Anyone with any booked/first/showed value this year, by year booked desc."""
-    people = {}
-    for wk in weeks_iso:
+    """Anyone with any booked/first/showed value this year. Most recently
+    ACTIVE first (Carlos 2026-09-05: current people always near the top),
+    ties broken by year booked desc."""
+    booked, latest = {}, {}
+    for idx, wk in enumerate(weeks_iso):        # weeks_iso is oldest->newest
         for label in ("Interviews Booked", "Total First Interviews",
                       "First Interviews Showed Up"):
             sec = offraw.get(wk, {}).get(label)
             for name, cells in (sec or {"admins": {}})["admins"].items():
                 v = _num(cells[7]) if len(cells) > 7 else None
                 if v:
-                    people[name] = people.get(name, 0) + (
+                    latest[name] = max(latest.get(name, -1), idx)
+                    booked[name] = booked.get(name, 0) + (
                         v if label == "Interviews Booked" else 0)
-    return sorted(people, key=lambda n: -people[n])
+    return sorted(booked, key=lambda n: (-latest[n], -booked[n]))
 
 
 def office_rows(offraw, weeks_iso, roster):
