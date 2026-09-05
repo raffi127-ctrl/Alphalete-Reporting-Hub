@@ -91,6 +91,7 @@ class Reconciliation:
         self.thread = None            # type: Optional[dict]
         self.needs_leader = 0         # new starts whose leader is gone (OBCL mark OR master list)
         self.terminated_master = {}   # type: Dict[str, str]  name -> why, from the Terminated Reps tab
+        self.terminated_new = []      # type: List[str]  of those, not yet named to Raf
         self.suppressed = []          # type: List[str]  on the do-not-ping list
         self.learned = {}             # type: Dict[str, str]  name -> id, from a hand-tag
 
@@ -332,6 +333,11 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
                     continue
                 rec.needs_leader += src.pop(key)
                 rec.terminated_master[key] = hit.describe()
+        # Named in Slack only the first time (see _needs_leader_lines). Computed
+        # here, but NOT recorded as told — that happens only when the roll call
+        # actually posts, so a dry run or a second build() can't silently burn
+        # a name's one appearance.
+        rec.terminated_new = terminated.unseen(sorted(rec.terminated_master))
 
     # Do-not-ping (Raf 2026-08-30 re: Giovanna Santos + Heiddy Ochoa, "I don't
     # want LUCY to keep pinging"). Dropped BEFORE anything else so a suppressed
@@ -697,11 +703,29 @@ def _needs_leader_lines(rec: Reconciliation) -> List[str]:
     if not rec.needs_leader:
         return []
     n = rec.needs_leader
-    return ["", "🚨 <@{}> — *{} new start{} need{} a leader assigned* "
-                "for reach-out (their leader is no longer with the "
-                "company)".format(
-                    RAF_SLACK_ID, n, "" if n == 1 else "s",
-                    "s" if n == 1 else "")]
+    out = ["", "🚨 <@{}> — *{} new start{} need{} a leader assigned* "
+               "for reach-out (their leader is no longer with the "
+               "company)".format(
+                   RAF_SLACK_ID, n, "" if n == 1 else "s",
+                   "s" if n == 1 else "")]
+    # NAMED, not just counted (Megan 2026-09-05: "keep them named"). "26 new
+    # starts" doesn't tell Raf which offices lost a leader, and these people
+    # used to show by name under "needs a manual reach-out" — folding them into
+    # a bare count made them vanish, which is the exact failure the 2026-08-08
+    # sheet cross-read was built to prevent.
+    #
+    # PLAIN NAMES, never <@mentions>: these accounts are deactivated, and the
+    # departed/unable-to-tag sections have listed names only since 2026-08-23.
+    # OBCL-marked rows can't appear here — that cell literally reads
+    # "Terminated", so there is no name left to print.
+    #
+    # Only the ones Raf has NOT already been told about (Megan 2026-09-05: "you
+    # should learn though each week the users and not ask again other weeks").
+    # The COUNT above still includes everyone, because those new starts are new
+    # work each week even when the departure isn't.
+    for name in sorted(rec.terminated_new):
+        out.append("   •  {}".format(name))
+    return out
 
 
 def _team_flags(rec: Reconciliation) -> List[str]:

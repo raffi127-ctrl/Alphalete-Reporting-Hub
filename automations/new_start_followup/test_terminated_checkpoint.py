@@ -145,5 +145,55 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("ONE checkpoint", out)
 
 
+class LearnOnceTests(unittest.TestCase):
+    """Megan 2026-09-05: "learn though each week the users and not ask again
+    other weeks." The same 20 names must not be re-listed every Saturday."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._orig = terminated.SEEN_PATH
+        terminated.SEEN_PATH = Path(tempfile.mkdtemp()) / "seen.json"
+
+    def tearDown(self):
+        terminated.SEEN_PATH = self._orig
+
+    def test_everyone_is_new_the_first_week(self):
+        self.assertEqual(terminated.unseen(["Olivia Turner", "Shen Mitchell"]),
+                         ["Olivia Turner", "Shen Mitchell"])
+
+    def test_named_once_then_never_again(self):
+        terminated.mark_seen(["Olivia Turner"], "2026-09-05")
+        self.assertEqual(terminated.unseen(["Olivia Turner", "Shen Mitchell"]),
+                         ["Shen Mitchell"])
+
+    def test_matching_survives_spelling_and_tab_separators(self):
+        """The sheet writes 'First\\tLast'; the roster may differ in accents."""
+        terminated.mark_seen(["Anh\tDinh"], "2026-09-05")
+        self.assertEqual(terminated.unseen(["Anh Đinh"]), [])
+
+    def test_first_seen_date_is_not_overwritten(self):
+        terminated.mark_seen(["Olivia Turner"], "2026-09-05")
+        terminated.mark_seen(["Olivia Turner"], "2026-09-12")
+        self.assertEqual(terminated.load_seen()[
+            terminated._norm_name("Olivia Turner")], "2026-09-05")
+
+    def test_a_missing_store_just_means_nobody_has_been_told(self):
+        self.assertFalse(terminated.SEEN_PATH.exists())
+        self.assertEqual(terminated.load_seen(), {})
+
+    def test_marking_nothing_writes_nothing(self):
+        terminated.mark_seen([], "2026-09-05")
+        self.assertFalse(terminated.SEEN_PATH.exists())
+
+
+class SeenPathTests(unittest.TestCase):
+    def test_real_store_lives_under_gitignored_output(self):
+        """It lists who was terminated and the repo is PUBLIC, so it must sit
+        under output/ — never committed. (Not in LearnOnceTests, whose setUp
+        patches SEEN_PATH to a temp dir.)"""
+        self.assertEqual(terminated.SEEN_PATH.parent.name, "output")
+
+
 if __name__ == "__main__":
     unittest.main()

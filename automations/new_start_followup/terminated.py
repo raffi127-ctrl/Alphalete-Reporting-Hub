@@ -47,7 +47,9 @@ FAILURE MODE
 """
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Dict, List, Optional
 
 TAB_TITLE = "Terminated Reps"
@@ -165,6 +167,70 @@ def load(sheet_id: Optional[str] = None) -> Dict[str, TerminatedRep]:
         # recent word on that person.
         out[key] = rep
     return out
+
+
+# Who Raf has already been told about, so the same 20 names aren't re-listed
+# every Saturday (Megan 2026-09-05: "you should learn though each week the users
+# and not ask again other weeks"). Same sticky-state pattern as
+# membership.py — and deliberately under output/, which is GITIGNORED: the repo
+# is PUBLIC and a committed roster of who was terminated is not something to
+# publish. It lives on the machine that posts the roll call, which is the only
+# machine that needs it.
+#
+# NOTE this changes only who is NAMED. Their new starts still roll into the
+# @Raf count every week, because that work is new each week even when the
+# person's departure isn't.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SEEN_PATH = REPO_ROOT / "output" / "new_start_terminated_seen.json"
+
+
+def load_seen() -> Dict[str, str]:
+    """normalized name -> ISO date we first told Raf. {} if absent."""
+    if not SEEN_PATH.exists():
+        return {}
+    try:
+        raw = json.loads(SEEN_PATH.read_text(encoding="utf-8"))
+    except ValueError:
+        return {}
+    return raw.get("names") or {}
+
+
+def mark_seen(names, when: str) -> None:
+    """Record that Raf has now been told about these. First write wins, so the
+    stored date stays the date we ACTUALLY first said it."""
+    if not names:
+        return
+    seen = load_seen()
+    added = False
+    for name in names:
+        key = _norm_name(name)
+        if key and key not in seen:
+            seen[key] = when
+            added = True
+    if not added:
+        return
+    SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SEEN_PATH.write_text(json.dumps({
+        "_note": (
+            "Terminated leaders already named in the @Raf 'needs a leader "
+            "assigned' line. Kept so the same names aren't repeated every "
+            "week; their new starts still count toward that line. NOT "
+            "committed (output/ is gitignored) — the repo is public. Safe to "
+            "delete: the next run just re-names everyone once."
+        ),
+        "names": seen,
+    }, indent=2) + "\n", encoding="utf-8")
+
+
+def _norm_name(name: str) -> str:
+    from automations.new_start_followup import roster as roster_mod
+    return roster_mod._norm(_clean(name))
+
+
+def unseen(names) -> List[str]:
+    """Of `names`, the ones Raf has not been told about yet."""
+    seen = load_seen()
+    return [n for n in names if _norm_name(n) not in seen]
 
 
 _CACHE = None  # type: Optional[Dict[str, TerminatedRep]]

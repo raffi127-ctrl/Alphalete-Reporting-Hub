@@ -34,6 +34,7 @@ import sys
 
 from automations.new_start_followup import report as report_mod
 from automations.new_start_followup import screenshot_roster as roster_mod
+from automations.new_start_followup import terminated
 from automations.shared import slack_metrics_post as smp
 
 
@@ -54,6 +55,17 @@ def _post(rec, body: str, live: bool) -> int:
         text=body,
     )
     print("\nPosted to thread {} (ts {}).".format(rec.thread["anchor_ts"], resp["ts"]))
+    # Raf has now actually SEEN these names, so they aren't repeated in later
+    # weeks (Megan 2026-09-05: "learn ... and not ask again other weeks").
+    # Recorded HERE, after a successful live post — never at build time, or a
+    # dry run would burn a name's one and only appearance.
+    if getattr(rec, "terminated_new", None):
+        import datetime as _dt
+        try:
+            terminated.mark_seen(rec.terminated_new, _dt.date.today().isoformat())
+        except Exception as exc:  # noqa: BLE001 — the post already went out
+            print("WARNING: couldn't record who was named ({}) — they may be "
+                  "listed again next week.".format(str(exc)[:120]))
     return 0
 
 
