@@ -36,7 +36,15 @@ the run STOPS and reports rather than asking for anything.
 
     python -m automations.commission_sheet.apex             # the plan, no browser
     python -m automations.commission_sheet.apex --probe     # is JD's session live?
+    python -m automations.commission_sheet.apex --explore   # map the entry form
     python -m automations.commission_sheet.apex --write     # enter it
+
+WHERE THE LOGIN HAS TO LIVE. Every run deletes its Chrome profile and rebuilds
+it by copying JD's EVERYDAY Chrome (`rm -rf` then rsync from
+~/Library/Application Support/Google/Chrome). So a code typed into the window
+the automation opens is thrown away on the next run and wasted. The login must
+be done in JD's normal Chrome, on the machine that will run the Hub — once
+there, every future run re-copies it.
 
 UNTESTED AGAINST APEX. The plan half below is verified against real data; the
 browser half is adapted from `apex_payroll` (built for Lucy 2) and has NOT been
@@ -182,10 +190,131 @@ def report(p: Plan) -> str:
 # --------------------------------------------------------------------------
 # Apex itself — adapted from apex_payroll, UNTESTED on JD's machine.
 # --------------------------------------------------------------------------
+#: Where --explore leaves what it finds, so it can be read back without
+#: anyone having to copy terminal output around.
+EXPLORE_TAB = "Apex Form Map"
+
+
 def probe() -> int:
     """Is JD's Apex session reachable? Read-only, always safe to run."""
     from automations.apex_payroll.run import probe as _probe
     return _probe()
+
+
+def explore(workbook_id: str = C.WORKBOOK_ID) -> int:
+    """Map the Payroll Entry form and write what it finds into the workbook.
+
+    Read-only against Apex: it navigates, reads, screenshots, and types
+    nothing. Nobody has mapped this form yet — apex_payroll only ever got as
+    far as probe/explore — so this is the step that makes the entry logic
+    writable instead of guessed.
+
+    Results go to a tab in the workbook rather than the terminal, so whoever
+    runs it does not have to copy anything back by hand."""
+    import time
+
+    from patchright.sync_api import sync_playwright
+
+    from automations.apex_payroll.run import (APEX_URL, _attach, _copy_default_profile,
+                                              _kill_ours, _launch, _log,
+                                              _looks_logged_out)
+    from automations.recruiting_report.fill import open_by_key
+
+    lines: List[str] = []
+
+    def say(msg: str) -> None:
+        lines.append(msg)
+        _log(msg)
+
+    prof = _copy_default_profile()
+    proc = _launch(APEX_URL, prof)
+    time.sleep(8)
+    png = None
+    try:
+        with sync_playwright() as pw:
+            _browser, page = _attach(pw)
+            page.wait_for_load_state("domcontentloaded", timeout=30000)
+            time.sleep(3)
+            if _looks_logged_out(page):
+                say("STOP: Apex is showing a login page — the session did not "
+                    "ride along. Log in to Apex in your NORMAL Chrome, quit "
+                    "Chrome, then run this again.")
+                png = page.screenshot(full_page=False)
+                return 3
+            say(f"logged in at {page.url}")
+
+            for label in ("Payroll", "Payroll Entry"):
+                for sel in (f'a:has-text("{label}")', f'button:has-text("{label}")',
+                            f'[role="menuitem"]:has-text("{label}")', f'text="{label}"'):
+                    loc = page.locator(sel).first
+                    try:
+                        if loc.count():
+                            loc.click(timeout=8000)
+                            page.wait_for_load_state("domcontentloaded", timeout=20000)
+                            time.sleep(3)
+                            say(f"clicked {label!r} -> {page.url}")
+                            break
+                    except Exception:                      # noqa: BLE001
+                        continue
+
+            say("")
+            say("--- PAGE TEXT ---")
+            body = page.inner_text("body", timeout=10000) or ""
+            for ln in body[:4000].split("\n"):
+                if ln.strip():
+                    say("  | " + ln.strip()[:160])
+
+            say("")
+            inputs = page.locator("input, select, textarea")
+            total = inputs.count()
+            say(f"--- INPUTS ({total}) ---")
+            for i in range(min(total, 120)):
+                el = inputs.nth(i)
+                attrs = " ".join(
+                    f"{k}={el.get_attribute(k)!r}"
+                    for k in ("name", "id", "type", "placeholder", "aria-label",
+                              "class", "value")
+                    if el.get_attribute(k))
+                say(f"  #{i:<3} {attrs[:200]}")
+
+            say("")
+            rows = page.locator("tr")
+            say(f"--- TABLE ROWS ({rows.count()}) first 15 ---")
+            for i in range(min(rows.count(), 15)):
+                try:
+                    say(f"  r{i:<3} " + (rows.nth(i).inner_text(timeout=3000)
+                                         or "").replace("\n", " | ")[:180])
+                except Exception:                          # noqa: BLE001
+                    continue
+            png = page.screenshot(full_page=True)
+            return 0
+    finally:
+        proc.terminate()
+        _kill_ours()
+        try:
+            sh = open_by_key(workbook_id)
+            try:
+                tab = sh.worksheet(EXPLORE_TAB)
+                tab.clear()
+            except Exception:                              # noqa: BLE001
+                tab = sh.add_worksheet(title=EXPLORE_TAB, rows=2000, cols=2)
+            tab.update(values=[[ln] for ln in lines] or [["(nothing captured)"]],
+                       range_name="A1")
+            _log(f"wrote {len(lines)} line(s) to the {EXPLORE_TAB!r} tab")
+            if png:
+                import base64
+                b64 = base64.b64encode(png).decode()
+                chunks = [b64[i:i + 45000] for i in range(0, len(b64), 45000)]
+                shot = f"{EXPLORE_TAB} PNG"
+                try:
+                    t2 = sh.worksheet(shot)
+                    t2.clear()
+                except Exception:                          # noqa: BLE001
+                    t2 = sh.add_worksheet(title=shot, rows=100, cols=1)
+                t2.update(values=[[c] for c in chunks], range_name="A1")
+                _log(f"screenshot -> {shot!r} ({len(chunks)} chunk(s))")
+        except Exception as e:                             # noqa: BLE001
+            _log(f"could not write the map back: {type(e).__name__}: {e}")
 
 
 def apply(p: Plan) -> Dict[str, int]:
@@ -210,11 +339,15 @@ def main(argv=None) -> int:
     ap.add_argument("--week", type=_parse_week, default=None)
     ap.add_argument("--probe", action="store_true",
                     help="check JD's Apex session; changes nothing")
+    ap.add_argument("--explore", action="store_true",
+                    help="map the Payroll Entry form into the workbook; read-only")
     ap.add_argument("--write", action="store_true", help="enter it in Apex")
     args = ap.parse_args(argv)
 
     if args.probe:
         return probe()
+    if args.explore:
+        return explore()
     p = plan(args.week)
     print(report(p))
     if not args.write:
