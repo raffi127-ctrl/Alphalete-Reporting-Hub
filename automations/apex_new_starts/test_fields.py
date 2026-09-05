@@ -135,13 +135,27 @@ def test_a_wrong_shaped_value_is_refused_not_typed():
     assert hire.rejected and hire.rejected[0][0] == "zip"
 
 
-def test_the_ssn_never_rides_along_with_the_fillable_values():
-    """apex.apply_fill types whatever fillable() returns. If an SSN could get
-    in there it would be typed."""
-    hire = BID.NewHire(name="Ann Lee",
-                       values={"first": "Ann", "ssn": "123-45-6789"})
+def test_the_report_never_holds_a_social_at_all():
+    """Since 2026-09-05 the Social is not kept. extract() sees one, records
+    that it EXISTS, and drops the value -- so there is nothing to print, log,
+    write to output/ or hand to a browser."""
+    bundle = {"id": "x", "packets": [{"name": "Ann Lee"}],
+              "documents": [{"key": "d1", "name": "UNIVERSAL I9 MASTER FORM"}]}
+    mapping = {"UNIVERSAL I9 MASTER FORM": {"f1": "ssn", "f2": "city"}}
+    rows = [{"doc_key": "d1", "field_key": "f1", "kind": "inp",
+             "value": "123-45-6789"},
+            {"doc_key": "d1", "field_key": "f2", "kind": "inp",
+             "value": "Irving"}]
+    orig = BID.bundle_data
+    BID.bundle_data = lambda _bid: rows
+    try:
+        hire = BID.extract(bundle, mapping, "Ann Lee")
+    finally:
+        BID.bundle_data = orig
+    assert hire.has_ssn is True
+    assert "ssn" not in hire.values
+    assert "123-45-6789" not in str(hire.values)
     assert "ssn" not in hire.fillable()
-    assert hire.sensitive == {"ssn": "123-45-6789"}
 
 
 def test_the_apex_record_carries_the_office_settings():

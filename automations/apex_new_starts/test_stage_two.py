@@ -119,3 +119,37 @@ def test_gender_is_found_and_now_comes_from_the_board(page):
     it never infers a gender from somebody's name."""
     assert AX.find_field(page, "gender")["id"] == "p8"
     assert AX.UNANSWERED == ()
+
+
+SSN_FORM = """
+<!doctype html><html><body>
+<label for="s1">Social Security Number *</label><input id="s1">
+<label for="s2">City</label><input id="s2">
+</body></html>
+"""
+
+
+def test_the_social_goes_in_only_through_its_own_door(page):
+    """The Social is looked up outside LABELS, so plan_fill -- the path every
+    ordinary value travels -- cannot reach that box even by accident. Only
+    fill_ssn can, and only with a Secret a person typed."""
+    from automations.apex_new_starts.ssn_prompt import Secret
+    page.set_content(SSN_FORM)
+    matched, unmatched = AX.plan_fill(page, {"ssn": "123456789",
+                                             "city": "Irving"})
+    assert [m[0] for m in matched] == ["city"]
+    assert ("ssn", "never auto-typed — enter by hand") in unmatched
+    assert page.locator("#s1").input_value() == ""
+
+    assert AX.fill_ssn(page, Secret("123456789")) is True
+    assert page.locator("#s1").input_value() == "123456789"
+
+
+def test_fill_ssn_types_nothing_when_it_cant_find_the_box(page):
+    """The Tax & Bank tab has never been seen, so the label wordings are a
+    guess. A guess that lands on the wrong box would put a Social somewhere it
+    doesn't belong -- so a miss types nothing at all."""
+    from automations.apex_new_starts.ssn_prompt import Secret
+    page.set_content('<label for="x">City</label><input id="x">')
+    assert AX.fill_ssn(page, Secret("123456789")) is False
+    assert page.locator("#x").input_value() == ""

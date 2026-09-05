@@ -506,6 +506,45 @@ def apply_fill(page, matched: List[tuple], log=print) -> int:
     return done
 
 
+# The Social's box, looked up SEPARATELY from LABELS on purpose. Keeping it out
+# of LABELS means plan_fill -- the path every ordinary value travels -- has no
+# way to reach it even by accident; the only thing that can put a number in this
+# box is `fill_ssn`, which takes a Secret a person typed. Wordings are a guess:
+# the Tax & Bank Information tab has never been seen, so `fill_ssn` reports and
+# refuses rather than typing into something it isn't sure about.
+SSN_LABELS = ("social security number", "social security", "ssn", "ss #",
+              "ssn/itin")
+
+
+def fill_ssn(page, secret) -> bool:
+    """Type ONE Social, from a Secret the operator typed, into the SSN box.
+
+    The value is revealed for exactly as long as it takes to type it, and it is
+    never returned, logged or stored. Returns whether the box was found; if it
+    wasn't, nothing was typed anywhere.
+    """
+    hit = None
+    for exact in (True, False):
+        for label in SSN_LABELS:
+            hits = [h for h in page.evaluate(
+                        _FIND_JS, {"labels": [label], "exact": exact})
+                    if h["visible"] and not h["readonly"]
+                    and not (h["tag"] == "input"
+                             and (h["type"] or "").lower() in NON_TEXT_TYPES)]
+            if len(hits) == 1:
+                hit = dict(hits[0])
+                hit["matched_label"] = label
+                break
+        if hit:
+            break
+    if not hit:
+        return False
+    el = page.locator(_selector(hit)).first
+    el.fill("", timeout=8000)
+    el.type(secret.reveal(), delay=20)
+    return True
+
+
 def set_security_role(page, role: str = SECURITY_ROLE) -> bool:
     """Tick the Security Roles radio whose label reads exactly `role`.
 

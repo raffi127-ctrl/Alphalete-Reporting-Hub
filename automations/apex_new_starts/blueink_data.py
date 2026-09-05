@@ -52,17 +52,19 @@ class NewHire:
     values: Dict[str, str] = dfield(default_factory=dict)
     rejected: List[tuple] = dfield(default_factory=list)   # (name, why)
     missing_packet: bool = False
+    has_ssn: bool = False          # their packet HAS one; its value is not kept
     matched_on: str = ""           # 'email' (proof) or 'name' (judgement)
 
     @property
     def have(self) -> List[str]:
         return [k for k in FM.PERSONAL if self.values.get(k)]
 
-    @property
-    def sensitive(self) -> Dict[str, str]:
-        """SSN and bank details. Kept apart from `values` at every call site --
-        these are shown to the operator to type, never typed by the runner."""
-        return {k: v for k, v in self.values.items() if k in FM.SENSITIVE and v}
+    # There is no `sensitive` property any more, and that is the point: since
+    # 2026-09-05 the Social is not read out of Blue Ink at all. `extract` sees
+    # it, records that one EXISTS, and drops the value on the floor. Nothing in
+    # this report ever holds a Social Security number, so nothing can print it,
+    # log it, write it to output/ or hand it to a browser. The operator types it
+    # into a local prompt (see ssn_prompt.py) and it goes straight into Apex.
 
     def fillable(self) -> Dict[str, str]:
         return {k: v for k, v in self.values.items()
@@ -175,6 +177,10 @@ def extract(bundle: dict, mapping: Dict[str, Dict[str, str]],
         sem = (mapping.get(doc) or {}).get(f.get("field_key"))
         val = _norm(f.get("value"))
         if not sem or not val or val == "[signature]":
+            continue
+        if sem in FM.SENSITIVE:
+            # Seen and deliberately discarded -- see the note on NewHire.
+            hire.has_ssn = True
             continue
         rule = SHAPE.get(sem)
         if rule and not rule.match(val):

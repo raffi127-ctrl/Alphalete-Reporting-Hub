@@ -235,7 +235,7 @@ def _person_line(c: BRD.Candidate, hire: BID.NewHire) -> str:
                 "from")
     missing = [f for f in ("first", "last", "address1", "city", "state", "zip",
                            "dob", "email", "phone") if not hire.values.get(f)]
-    ssn = "SSN on file" if hire.values.get("ssn") else "NO SSN on the packet"
+    ssn = "SSN on file" if hire.has_ssn else "NO SSN on the packet"
     flag = "  ⚠️ O-NA" if c.ona else ""
     hired = c.hire_date.strftime("%m/%d/%Y") if c.hire_date else "?"
     body = (f"  ✅ {c.name:26} hire {hired} · {len(hire.have)}/11 fields · {ssn}"
@@ -300,6 +300,36 @@ def preview(today: dt.date, *, tab=None, include_ona=True,
 
 
 # ------------------------------------------------------------- Apex fill
+
+def _fill_ssn_by_hand(session, c, hire) -> None:
+    """Ask the operator for this person's Social and put it in the box.
+
+    Apex will not save a profile without one, and this report neither reads
+    Socials out of Blue Ink nor keeps them. So a small window asks, the number
+    goes from that box straight into Apex, and nothing about it is logged --
+    not here, not in the summary, not in output/.
+    """
+    from automations.apex_new_starts import apex as AX
+    from automations.apex_new_starts import ssn_prompt
+
+    if not _interactive():
+        _log("    SSN: nobody at the keyboard — left blank. Apex won't save "
+             "the profile until somebody enters it.")
+        return
+    where = "" if hire.has_ssn else "  (their Blue Ink packet has no SSN on it)"
+    secret = ssn_prompt.ask(c.name, subtitle=(
+        "Everything else on this record is filled in." + where))
+    if not secret:
+        _log("    SSN: skipped — this profile won't save until it's entered.")
+        return
+    if AX.fill_ssn(session.page, secret):
+        _log("    SSN: entered (not logged, not stored).")
+        return
+    _log("    ⚠️ Couldn't find the Social Security box on this screen — "
+         "nothing was typed. Open the Tax & Bank Information tab and enter it "
+         "yourself; send me a screenshot of that tab and the run can go there "
+         "on its own next time.")
+
 
 def _open_add_employee(session, log) -> bool:
     """Try to reach the new-employee screen by the words on the buttons.
@@ -385,15 +415,7 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
                      f"exactly {AX.SECURITY_ROLE!r} — nothing was ticked, set "
                      "it yourself before saving.")
             _log("    left for you: the Social, and Save.")
-            if hire.values.get("ssn"):
-                url = BID.signed_pdf_url(hire.bundle_id)
-                if url:
-                    s.page.context.new_page().goto(url)
-                    _log("    SSN: opened their signed I-9 in a new tab — read "
-                         "it from there and type it in. This report never "
-                         "handles Social Security numbers.")
-                else:
-                    _log("    SSN: it's on their signed I-9 in Blue Ink.")
+            _fill_ssn_by_hand(s, c, hire)
             _pause("    Check the record, add the SSN, click Save in Apex — "
                    "then press Enter for the next person. ")
     _log()
