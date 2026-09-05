@@ -209,31 +209,41 @@ def load_group_members(svc, grp) -> List[dict]:
 
 def plan(targets: List[dict], members: List[dict]) -> Tuple[list, list, list]:
     """-> (to_create, to_rename, already_ok). to_create: target dicts.
-    to_rename: (member, new_display). already_ok: display strings."""
-    by_phone: Dict[str, dict] = {}
-    by_base: Dict[str, dict] = {}
-    for m in members:
-        for ph in m["phones"]:
-            by_phone.setdefault(ph, m)
-        base = _norm(_strip_parens(m["display"]))
-        if base:
-            by_base.setdefault(base, m)
+    to_rename: (member, new_display). already_ok: display strings.
+
+    Member-centric so DUPLICATE contacts of the same rep all get tagged: every
+    group member that matches a current target (by phone or base name) is
+    evaluated on its own. A target with no matching member at all is created."""
+    tgt_by_phone = {t["phone"]: t for t in targets if t["phone"]}
+    tgt_by_base = {_norm(t["name"]): t for t in targets}
 
     create, rename, ok = [], [], []
-    for t in targets:
-        desired = f"{t['name']} ({t['campaign']})" if t["campaign"] else t["name"]
-        m = (by_phone.get(t["phone"]) if t["phone"] else None) or \
-            by_base.get(_norm(t["name"]))
-        if m is None:
-            create.append(t)
-            continue
-        # keep the existing contact's own base name; only fix the parenthetical
+    matched_keys = set()      # phones + base-names of targets that found a member
+    for m in members:
+        t = None
+        for ph in m["phones"]:
+            if ph in tgt_by_phone:
+                t = tgt_by_phone[ph]
+                break
+        if t is None:
+            t = tgt_by_base.get(_norm(_strip_parens(m["display"])))
+        if t is None:
+            continue          # member isn't a current-active rep — leave alone
+        if t["phone"]:
+            matched_keys.add(("p", t["phone"]))
+        matched_keys.add(("n", _norm(t["name"])))
+        # keep this contact's own base name; only fix the parenthetical
         kept_base = _strip_parens(m["display"]) or t["name"]
         new_display = f"{kept_base} ({t['campaign']})" if t["campaign"] else kept_base
         if _norm(m["display"]) == _norm(new_display):
             ok.append(new_display)
         else:
             rename.append((m, new_display))
+
+    for t in targets:
+        keyed = ("p", t["phone"]) in matched_keys or ("n", _norm(t["name"])) in matched_keys
+        if not keyed:
+            create.append(t)
     return create, rename, ok
 
 
