@@ -36,6 +36,17 @@ What it does (idempotent, safe to run any time):
   4. If — and only if — those files changed, commits JUST them and
      pushes (pull --rebase --autostash first). Other sessions' work-in-
      progress in the tree is never staged.
+  4b. DELETION GUARD — before staging, each changed file is compared to HEAD
+     structurally. A regeneration that REMOVES a non-empty value refuses to
+     commit and exits 1; adds and edits go through as normal. This exists
+     because on 2026-09-04 this job pushed away Jamis's and Sabrina's B2B churn
+     view URLs (`per_office_views: {}`) under the generic "regenerated from the
+     tabs" message, and b2b_metrics dropped three sections the next morning
+     looking like a bug rather than a deleted fix. Replayed against all eight
+     historical auto-commits, that one is the ONLY one the guard stops.
+     Override a genuine removal with `--allow-deletions`; the LaunchAgent
+     passes no args, so it can never take that path by itself. The commit
+     message now names what changed per file (+added ~edited -removed).
 
 Runs on LUCY 1 (always-on) as the com.alphalete.tracker-auto-commit
 LaunchAgent, daily 03:15 + 17:30 — the laptop isn't reliably awake (Megan,
@@ -94,6 +105,146 @@ def _git(*args: str) -> "subprocess.CompletedProcess":
                           capture_output=True)
 
 
+# ---------------------------------------------------------------------------
+# THE DELETION GUARD (2026-09-05)
+# ---------------------------------------------------------------------------
+# WHY THIS EXISTS. These registries are GENERATED from the onboarding tabs and
+# also COMMITTED, so anything hand-authored in them lives exactly until the next
+# regeneration. On 2026-09-04 Jamis's three B2B churn view URLs were pointed at
+# ALLTEAMWireless (c10f46e) because the shared team view returns nothing for his
+# Owner & Office; Sabrina got the same three. At 17:30 an unrelated enrollment
+# ran this job, `office_onboarding.apply` regenerated both offices with
+# `per_office_views: {}` — the form has no column for those URLs — and this
+# function's caller committed and pushed the erasure as
+#
+#     enrollments: auto-commit confirmed offices
+#     - regenerated from the Tracker Onboarding + Office Onboarding tabs
+#
+# The next morning b2b_metrics dropped `jamis: churn_wireless / churn_int /
+# churn_air` and the channel read it as the bug coming back, not as a fix being
+# deleted. Two things made it silent, and both are fixed:
+#
+#   1. apply._merge_json now MERGES instead of overwriting, so a regenerated
+#      empty value can no longer blank a value that is already there (3e23070).
+#      That closes the specific hole.
+#   2. This guard closes the CLASS. Any future generator bug that deletes a
+#      real value stops here instead of being pushed to main at 17:30 — because
+#      the message above is identical whether this job added an office or
+#      removed six URLs, and the diff it prints goes to a log on Lucy 1 that
+#      nobody reads at half past five.
+#
+# A deletion BLOCKS; an add or an edit does not. Deleting a value nobody asked
+# to delete is the failure mode; changing one is ordinary enrollment traffic.
+# `--allow-deletions` is the escape hatch for a real removal, and it is a FLAG
+# rather than a config so the LaunchAgent (which passes no args) can never take
+# that path on its own.
+_IDENTITY_FIELDS = ("key", "report_id", "id")
+
+
+def _is_empty(v) -> bool:
+    """Empty = absent-ish. Deliberately NOT falsy: `0` and `False` are real
+    values here (`on_scheduler: false` is the documented off switch), and
+    calling them deletions would block every office anyone turns off."""
+    return v is None or (isinstance(v, (str, dict, list, tuple)) and len(v) == 0)
+
+
+def _keyed(seq):
+    """A list of dicts -> {identity: item}, or None if it isn't that shape.
+
+    The registries are LISTS of office records, so a plain positional compare
+    would call every office after an insertion "changed" and could read a
+    re-ordering as a mass deletion. Match on the record's own id instead."""
+    if not isinstance(seq, list) or not seq:
+        return None
+    if not all(isinstance(x, dict) for x in seq):
+        return None
+    for field in _IDENTITY_FIELDS:
+        vals = [x.get(field) for x in seq]
+        if all(isinstance(v, str) and v for v in vals) and len(set(vals)) == len(vals):
+            return {v: x for v, x in zip(vals, seq)}
+    return None
+
+
+def _walk(before, after, path, out) -> None:
+    """Collect ('added'|'changed'|'deleted', path) into `out`.
+
+    A container that collapses to EMPTY is reported as one deletion at the
+    container, not one per key — `jamis.per_office_views` reads as the thing
+    that happened, where three sibling lines about each URL bury it. A PARTIAL
+    removal still names the individual key, because there the key is the news."""
+    if not _is_empty(before) and _is_empty(after):
+        out.append(("deleted", path or "(entire file)"))
+        return
+    if _is_empty(before) and not _is_empty(after):
+        out.append(("added", path or "(entire file)"))
+        return
+
+    b_map, a_map = _keyed(before), _keyed(after)
+    if b_map is not None and a_map is not None:
+        before, after = b_map, a_map
+
+    if isinstance(before, dict) and isinstance(after, dict):
+        for k in before:
+            sub = f"{path}.{k}" if path else str(k)
+            if k not in after:
+                if not _is_empty(before[k]):
+                    out.append(("deleted", sub))
+            else:
+                _walk(before[k], after[k], sub, out)
+        for k in after:
+            if k not in before and not _is_empty(after[k]):
+                out.append(("added", f"{path}.{k}" if path else str(k)))
+        return
+
+    if before != after:
+        out.append(("changed", path or "(entire file)"))
+
+
+def registry_changes(before_text: str, after_text: str) -> dict:
+    """{'added': [...], 'changed': [...], 'deleted': [...], 'note': str} for one
+    JSON registry, HEAD vs working tree.
+
+    A file that is NEW (no HEAD version) is all-additions — nothing can have
+    been deleted from a file that did not exist. Unparseable NEW content blocks
+    on purpose: a registry we cannot read is not one we should push. Unparseable
+    OLD content cannot be compared, so it degrades to "allow, and say so" — the
+    old behaviour, never worse."""
+    out = {"added": [], "changed": [], "deleted": [], "note": ""}
+    try:
+        after = json.loads(after_text)
+    except ValueError as e:
+        out["deleted"].append(f"(file no longer parses as JSON: {e})")
+        return out
+    if not (before_text or "").strip():
+        out["note"] = "new file"
+        return out
+    try:
+        before = json.loads(before_text)
+    except ValueError:
+        out["note"] = "previous version did not parse — not compared"
+        return out
+    acc = []
+    _walk(before, after, "", acc)
+    for kind, p in acc:
+        out[kind].append(p)
+    return out
+
+
+def _summarize(path: str, d: dict, limit: int = 6) -> str:
+    """One commit-message line naming what actually changed in this file."""
+    bits = []
+    for sign, kind in (("+", "added"), ("~", "changed"), ("-", "deleted")):
+        items = d.get(kind) or []
+        if not items:
+            continue
+        shown = ", ".join(items[:limit])
+        if len(items) > limit:
+            shown += f", +{len(items) - limit} more"
+        bits.append(f"{sign}{shown}")
+    detail = "; ".join(bits) or (d.get("note") or "no structural change")
+    return f"- {Path(path).name}: {detail}"
+
+
 def heal_schedule(apply_mod) -> list:
     """ADD-ONLY schedule reconcile: give every clean onboarded office whose
     report_id has NO entry in schedule_config.json the standard entry apply
@@ -126,7 +277,7 @@ def heal_schedule(apply_mod) -> list:
     return healed
 
 
-def main() -> int:
+def main(argv: list = None) -> int:
     """_run + a Hub Activity row on every exit path.
 
     Standing rule: LaunchAgent reports publish to the Hub. This job had never
@@ -139,7 +290,8 @@ def main() -> int:
     started_at = _dt.datetime.now()
     rc = 1
     try:
-        rc = _run()
+        rc = _run(allow_deletions="--allow-deletions" in
+                  (sys.argv[1:] if argv is None else list(argv)))
         return rc
     finally:
         if not os.environ.get("HUB_REPORT_ID"):
@@ -153,7 +305,7 @@ def main() -> int:
                 print(f"(activity log skipped: {type(e).__name__}: {e})")
 
 
-def _run() -> int:
+def _run(allow_deletions: bool = False) -> int:
     blocked = []
 
     # --- tracker leg -----------------------------------------------------
@@ -231,13 +383,56 @@ def _run() -> int:
     for t in changed:
         print(f"--- {t} changed ---\n{_git('diff', '--', t).stdout}\n---")
 
+    # DELETION GUARD — see registry_changes above for the 2026-09-04 case this
+    # exists to stop. Compare HEAD to the working tree STRUCTURALLY (a textual
+    # diff can't tell a re-ordering from a removal) and refuse to push anything
+    # that removes a value somebody actually put there.
+    diffs = {}
+    for t in changed:
+        head = _git("show", f"HEAD:{t}")
+        diffs[t] = registry_changes(
+            head.stdout if head.returncode == 0 else "",
+            (REPO_ROOT / t).read_text(encoding="utf-8"))
+
+    destructive = {t: d["deleted"] for t, d in diffs.items() if d["deleted"]}
+    if destructive and not allow_deletions:
+        print("\nREFUSING TO COMMIT — this regeneration DELETES values that "
+              "are in main:")
+        for t, gone in destructive.items():
+            for p in gone[:20]:
+                print(f"    - {t}: {p}")
+            if len(gone) > 20:
+                print(f"    - {t}: … and {len(gone) - 20} more")
+        print("\nNothing was staged, committed or pushed; the working tree is "
+              "untouched, so the regenerated files are still there to inspect "
+              "(`git diff`).\n"
+              "A generated registry is not where a hand-authored value should "
+              "live — if one of these was a fix, the fix needs a home the "
+              "onboarding form can reproduce.\n"
+              "If the deletion is REAL (an office genuinely offboarded, a "
+              "field deliberately cleared), re-run with --allow-deletions.")
+        # One summary line last, so a log tail shows the verdict without
+        # scrolling. Not appended to `blocked` — that list is printed further
+        # up, before this point is reached, and every target is staged together
+        # so one destructive file has to stop the whole commit.
+        print("\nBLOCKED — deletion guard: {} file(s) would lose {} value(s). "
+              "Exit 1.".format(len(destructive),
+                               sum(len(v) for v in destructive.values())))
+        return 1
+
     _git("add", "--", *changed)
+    # NAME WHAT CHANGED. The old message was the same three generic lines
+    # whether this job added an office or removed six view URLs, so the one
+    # place a wipe would have been visible to a human — `git log -p <file>` —
+    # read as routine enrollment traffic.
     msg = ("enrollments: auto-commit confirmed offices\n\n"
-           "- regenerated from the Tracker Onboarding + Office Onboarding "
-           "tabs\n"
-           "- committed so the enrollment survives the morning self-update\n"
-           "- files: " + ", ".join(Path(t).name for t in changed) + "\n\n"
-           "Co-Authored-By: Claude <noreply@anthropic.com>")
+           + "\n".join(_summarize(t, diffs[t]) for t in changed)
+           + "\n\n- regenerated from the Tracker Onboarding + Office "
+             "Onboarding tabs\n"
+             "- committed so the enrollment survives the morning self-update"
+           + ("\n- --allow-deletions was passed: removals above are "
+              "deliberate" if (destructive and allow_deletions) else "")
+           + "\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
     # Explicit committer identity so a runner machine with no git config
     # (Lucy 1/2, the mini) can still commit.
     r = _git("-c", "user.name=Alphalete Runner",
