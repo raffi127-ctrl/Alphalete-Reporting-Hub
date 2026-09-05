@@ -165,6 +165,17 @@ def pull(weeks, offices, verbose=True):
 
 
 # ------------------------------------------------------------------ build
+def _open_dashboard():
+    """Service-account-first (the funnel_board.auth pattern): Lucy 2's personal
+    OAuth token can OPEN the dashboard but 403s on edits (add_worksheet,
+    2026-09-05) — the applicant_tracker service account already writes this
+    exact workbook every morning, so it travels with the report."""
+    import gspread
+    from automations.funnel_board import auth as _auth
+    creds = _auth._service_account_creds() or _auth._oauth_creds()
+    return _fill.open_by_key(DASHBOARD_ID, client=gspread.authorize(creds))
+
+
 def _num(s):
     s = (s or "").strip().replace(",", "")
     if s in ("", "-"):
@@ -302,7 +313,7 @@ def build(raw, weeks, offices, dry=False):
         print("(dry-run) no writes", flush=True)
         return
 
-    sh = _fill.open_by_key(DASHBOARD_ID)
+    sh = _open_dashboard()
     max_rows = max((len(g) for g in grids.values()), default=0)
     end_row = max_rows + 1                      # spill starts at visible row 2
     store_rows = max(max_rows + 20, 200)
