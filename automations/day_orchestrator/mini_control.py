@@ -64,6 +64,11 @@ Actions:
                         machine? `remove` deletes it + every .bak copy. Never
                         prints key material. Re-push with
                         set_applicant_service_account.
+  set_ownerville_state <json>  install an ownerville browser session
+                        exported on another machine (the contents of
+                        .ownerville_storage_state.json). Unpauses a runner
+                        whose session went stale WITHOUT anyone getting to
+                        its screen. Verified reuse-only; Args auto-redacted.
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
   sheets_login [check]  the Sales Board screenshot profile: 'check' probes it
@@ -95,6 +100,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
+import pathlib
 import re
 import shlex
 import subprocess
@@ -167,20 +173,36 @@ DAILY_AUTORUN_CAP = 100
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
                     "restart_orchestrator",
+                    # Reloads the Jiraiya listener's CODE. Plumbing for the
+                    # same reason as the two below: `update` alone leaves that
+                    # long-lived process serving pre-update modules, and the
+                    # rerun that used to be the only fix is capped — so a
+                    # cap-hit day left Slack stale with no way out.
+                    "restart_jiraiya",
                     # Installs the read lane. Plumbing, so a cap-hit day — the
                     # exact day you most want fast reads — can still deploy it.
                     "install_mini_control_read",
                     "install_enrollment_pending",
-                    "pip_install", "playwright_install", "set_applicant_service_account",
+                    "pip_install", "playwright_install",
+                    # Pinning Chrome is deploy plumbing: it must run on a
+                    # cap-hit day, which is exactly the day Chrome broke.
+                    "install_pinned_chrome",
+                    "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     # Writes a one-line identity marker, whitelisted and
                     # idempotent — re-running it is a no-op, not a second write.
                     "set_machine_profile",
+                    # Deploy plumbing, like update: bounded (it refuses anything
+                    # not already on origin/main) and idempotent (a commit this
+                    # runner already has is a no-op). A hotfix day must not spend
+                    # the budget meant for bounding repeated REPORT runs.
+                    "cherry_pick",
                     "set_slack_token", "set_office_slack_token",
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
-                    "set_credico_state", "set_alphalete_app_password",
+                    "set_credico_state", "set_ownerville_state",
+                    "set_alphalete_app_password",
                     "set_appstream_state", "set_appstream_alt_state",
                     "appstream_promote_alt",
                     "post_note",
@@ -209,6 +231,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # `update` still succeeds and the queue looks alive while every rerun sits at
 # "queued" for hours. Reading a log should never spend a fix.
 READONLY_ACTIONS = {"push_appstream_fleet",
+                    "login_check",
                     "logtail", "daystate", "git_status", "git_diff",
                     "slack_channel", "slack_find", "slack_thread"}
 
@@ -241,6 +264,8 @@ def _lane_owns(action: str, lane: str) -> bool:
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
+                  "set_ownerville_creds",
+                  "set_appstream_account",
                   "set_doubleentry_creds",
                   # The applicant_tracker service-account PRIVATE KEY rides the
                   # Args cell as base64. It relied on hand-redaction — and on
@@ -259,6 +284,8 @@ SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
                   # A live Credico browser session — same class of secret as a
                   # token, and it transits the Args cell to reach Lucy 1.
                   "set_credico_state",
+                  # The ownerville login cookie — same class of secret.
+                  "set_ownerville_state",
                   # A live AppStream session: same class of secret, same transit
                   # through the Args cell (Eve 2026-08-24).
                   "set_appstream_state",
@@ -446,6 +473,37 @@ def _running_pids(module: str) -> list:
     return proc_guard.running_pids(module)
 
 
+# Flags that mean "this run deliberately delivered NOTHING". A rerun carrying one
+# still publishes to the Hub, but it must not close an incident: exiting 0 proves
+# the code runs, not that the report is fixed. See _probe_reason.
+_PROBE_FLAGS = ("--dry-run", "--dry", "--check", "--inspect")
+
+
+def _probe_reason(raw_report: dict, extra: list) -> str:
+    """Why this rerun should NOT close an incident, or "" when it really ran.
+
+    Two shapes, both real in this repo:
+
+      • an explicit probe flag on the command line (--dry-run and friends);
+      • a handle that is DRY BY DEFAULT and only acts with a flag — the BOX
+        repair tools say so in their own docstrings ("DRY-RUN by default; --post
+        does the work"). The config names that flag as `delivers_only_with`, so
+        the knowledge lives next to the report instead of in a guess here.
+
+    Why it matters (2026-09-01): a DRY run of box_order_log_tier_backfill exited
+    0, and the ✅ that follows a clean run closed `drop-box-order-log` — 13
+    minutes BEFORE the board reached the thread. The ticket said RESOLVED over a
+    thread that was still missing its image.
+    """
+    for f in extra:
+        if f in _PROBE_FLAGS:
+            return f
+    gate = (raw_report or {}).get("delivers_only_with", "")
+    if gate and gate not in extra:
+        return "no {}".format(gate)
+    return ""
+
+
 def _action_rerun(args: str) -> tuple[bool, str]:
     """Re-run one orchestrator report by report_id, plus any EXTRA CLI args after
     it — e.g. 'daily_metrics --only churn' re-runs just that one metric, so a
@@ -480,7 +538,12 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # of them died on that wait and the Country Trackers reached no channel all
     # morning. A rerun fired into a run that's already going doesn't heal the
     # morning, it doubles the damage.
-    busy = _running_pids(r.command[0])
+    # duplicate_guard False = the module is shared with another job on this box
+    # and the report holds no browser profile, so a running copy is not a
+    # collision — asking here would block the very rerun that repairs the
+    # morning (country_sales_board_email vs the 15-minute approval checker,
+    # Eve 2026-09-01). See registry.Report.duplicate_guard.
+    busy = _running_pids(r.command[0]) if getattr(r, "duplicate_guard", True) else []
     if busy:
         return False, (f"{report_id} is ALREADY running here (pid "
                        f"{', '.join(busy)}) — not starting a second copy: two "
@@ -573,14 +636,47 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # INCOMPLETE as run (a report that RAN with an acceptable note should show as
     # run, not like it never ran; Megan 2026-07-01) and closes the pill on failure
     # too. Best-effort; a no-op when the report has no Hub card.
+    probe = _probe_reason(
+        (cfg.raw.get("reports", {}) or {}).get(report_id) or {}, extra)
+    _publish_rerun_done(report_id, getattr(r, "display_name", report_id),
+                        ok, hub_run_id, probe)
+    if probe:
+        # Say it in the result cell, where the person who queued the row reads:
+        # otherwise "exit 0" on a probe looks exactly like a fix that landed —
+        # and "exit 1" looks like a report that just broke.
+        result += (" · probe run ({}) — nothing delivered, any open "
+                   "incident left OPEN".format(probe) if ok else
+                   " · probe run ({}) — nothing delivered, NOT posted to "
+                   "#claudecorrections".format(probe))
+    return ok, result
+
+
+def _publish_rerun_done(report_id: str, display_name: str, ok: bool,
+                        hub_run_id, probe: str) -> None:
+    """Close the Hub pill for a rerun — and keep a PROBE silent in BOTH
+    directions.
+
+    A probe already didn't close an incident on exit 0 (see _probe_reason). On
+    exit 1 it must not OPEN one either: it delivered nothing, so its failure
+    says nothing about the report.
+
+    2026-09-03: `rerun owners_metrics_churn --only carlos --dry-run` hit a 120s
+    Tableau locator timeout and posted "closed a run with status FAILED" to
+    #claudecorrections — nine minutes after the real run of that report had been
+    ✅'d. The identical probe eight minutes later exited 0 and, correctly, left
+    the ticket open. So the channel carried an open incident for a report that
+    was fine, and nothing but a hand `--resolve-report` could ever close it.
+
+    Best-effort: Hub publishing must never fail the rerun."""
     try:
         from automations.day_orchestrator import hub_publish
         hub_publish.publish_done(
-            report_id, getattr(r, "display_name", report_id),
-            status=hub_publish.final_status(report_id, ok), run_id=hub_run_id)
+            report_id, display_name,
+            status=hub_publish.final_status(report_id, ok), run_id=hub_run_id,
+            alert_on_fail=not probe,
+            clear_failure=not probe)
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         pass
-    return ok, result
 
 
 def _action_onboard_apply(args: str) -> tuple[bool, str]:
@@ -589,7 +685,8 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     the office joins the morning run — and, with --post, immediately run its
     report so it posts to its channel.
 
-    <kind> = 'metrics' (D2D/B2B office metrics) | 'tracker' (Tableau trackers).
+    <kind> = 'metrics' (D2D/B2B office metrics) | 'tracker' (Tableau trackers)
+    | 'disposition' (the KNOCKS & DISPOSITIONS board, gap_alerts).
     The onboarding forms enqueue this on submit (wire only) and from their 'Post
     now' button (--post). apply reads the 'Office/Tracker Onboarding' tab (the
     source of truth), so the office need not be committed yet — this is the same
@@ -605,7 +702,8 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     dry = "--dry-run" in parts
     parts = [p for p in parts if not p.startswith("--")]
     if len(parts) < 2:
-        return False, "onboard_apply needs '<kind> <key>' (kind=metrics|tracker)"
+        return False, ("onboard_apply needs '<kind> <key>' "
+                       "(kind=metrics|tracker|disposition)")
     kind, key = parts[0].strip().lower(), parts[1].strip()
 
     try:
@@ -620,8 +718,33 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     elif kind in ("tracker", "trackers"):
         from automations.tracker_onboarding import store as _st, apply as _ap
         _st.set_client(gc)
+    elif kind in ("disposition", "dispositions"):
+        # --post here means PREFLIGHT, not "post now": the dispositions board
+        # is not a once-a-day report that can be run early — it is a tick
+        # inside a selling window, and the next one is at most 15 minutes away.
+        # What actually needs doing on this box is proving the office works
+        # (impersonation + the iMessage room) and switching it on, which is the
+        # step that would otherwise be Megan's.
+        from automations.disposition_signup import store as _st, apply as _ap
+        _st.set_client(gc)
+        rc = _ap.main(["--only", key, "--write"])
+        if rc != 0:
+            return False, f"apply(disposition) failed for {key!r} (rc={rc})"
+        if not post:
+            return True, (f"wired {key} into the dispositions run — it joins "
+                          "the next tick (nothing sends while it is switched "
+                          "off pending preflight)")
+        from automations.disposition_signup import preflight as _pf
+        prc = _pf.main(["--key", key, "--enable", "--notify"])
+        if prc != 0:
+            return False, (f"wired {key}, but preflight FAILED — it stays "
+                           "switched off. See #claudecorrections-and-requests "
+                           "for which check failed.")
+        return True, (f"wired {key} and preflight passed — switched ON, it "
+                      "joins the next tick")
     else:
-        return False, f"unknown kind {kind!r} (expected metrics|tracker)"
+        return False, (f"unknown kind {kind!r} "
+                       "(expected metrics|tracker|disposition)")
 
     rc = _ap.main(["--only", key, "--write"])
     if rc != 0:
@@ -796,6 +919,41 @@ def _action_restart_orchestrator(args: str) -> tuple[bool, str]:
                   f"{' (FORCED — a running report was killed)' if force else ''}"
                   f" — it re-reads today's state and resumes; terminal reports "
                   f"are skipped")
+
+
+JIRAIYA_LABEL = "com.alphalete.jiraiya-bot"
+
+
+def _action_restart_jiraiya(args: str) -> tuple[bool, str]:
+    """Kickstart the Jiraiya Socket Mode listener so it reloads its own code.
+
+    PLUMBING, and it has to be. Jiraiya is a long-lived KeepAlive process:
+    `update` pulls the files and the running listener keeps the OLD modules in
+    memory, so /dd and /knocks answer with pre-update code until something
+    restarts it. Until now the only way was `rerun install_jiraiya_bot_agent`,
+    which the daily cap BLOCKS — so on a cap-hit day Slack served stale code
+    with no route to fix it (2026-09-01, cap reached with the knock-board
+    buttons deployed but not running). That is the same argument that already
+    made install_pinned_chrome and install_mini_control_read plumbing: the day
+    you hit the cap is the day you most need to deploy.
+
+    A kickstart, not a reinstall: this reloads CODE. When the PLIST itself
+    changed, `rerun install_jiraiya_bot_agent` is still the right command.
+
+    Detached after a short delay, like restart_poller — kickstart -k SIGKILLs
+    the target, and this action must return its result first."""
+    label = JIRAIYA_LABEL
+    try:
+        subprocess.Popen(
+            ["/bin/sh", "-c",
+             f"sleep 3; launchctl kickstart -k gui/{os.getuid()}/{label}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't kickstart {label}: {str(e)[:140]}"
+    return True, (f"restart scheduled for {label} (~3s) — the listener reloads "
+                  "its code; /dd and /knocks answer with the new version from "
+                  "the next request")
 
 
 def _action_restart_poller(args: str) -> tuple[bool, str]:
@@ -1207,12 +1365,12 @@ def _action_appstream_status(args: str) -> tuple[bool, str]:
     """Read-only: how long do the AppStream + ownerville sessions still have?
 
     `lucy diag` reports the ownerville file's AGE and nothing about AppStream, so
-    until 2026-08-24 there was NO remote way to see whether the one session that
-    needs a human was alive -- you found out when a report failed. Reads the two
-    stored tokens; no network, no Cloudflare risk, nothing written."""
+    until 2026-08-24 there was NO remote way to see whether the AppStream session
+    was alive -- you found out when a report failed. Reads the two stored tokens;
+    no network, no Cloudflare risk, nothing written."""
     # log_name is load-bearing: the result cell keeps only the TAIL, and AppStream
-    # -- the session that needs a human -- prints BEFORE ownerville, so without a
-    # log the one line worth reading is the one that gets cut (Eve 2026-08-24).
+    # prints BEFORE ownerville, so without a log the one line worth reading is
+    # the one that gets cut (Eve 2026-08-24).
     # Read it whole with: lucy logtail appstream-status
     cmd = [sys.executable, "-m", "automations.shared.appstream_watch", "--status"]
     return _run_cmd(cmd, timeout_s=120, log_name="appstream-status.log")
@@ -1227,14 +1385,15 @@ def _action_watch_test(args: str) -> tuple[bool, str]:
 
 
 def _action_reseed_appstream(args: str) -> tuple[bool, str]:
-    """Open the AppStream login so a HUMAN at the mini clears the Cloudflare
-    check. This can't be fully unattended — the Turnstile is bot-detection and
-    clearing it automatically is off the table — so this just launches the
-    legitimate human-cleared flow."""
+    """Drive the AppStream login to mint a fresh session. Runs UNATTENDED: the
+    Cloudflare box clears itself given 20-30s before submit, on AppStream and
+    ownerville alike (resources/lucy-login-standard.md). Nobody has to be at the
+    machine — if this fails, the cause is a wrong username, a poisoned profile
+    or AppStream itself, not a missing human."""
     cmd = [sys.executable, "-m", "automations.shared.tableau_patchright",
            "--appstream-login"]
     ok, res = _run_cmd(cmd, timeout_s=12 * 60)
-    return ok, res + " (needs a human at the Cloudflare check on the mini)"
+    return ok, res
 
 
 def _action_appstream_renew_probe(args: str) -> tuple[bool, str]:
@@ -1269,6 +1428,33 @@ def _action_appstream_renew_probe(args: str) -> tuple[bool, str]:
 
 
 def _action_push_appstream_fleet(args: str) -> tuple[bool, str]:
+    """RETIRED — a machine does not get its AppStream session from another one.
+
+    Megan 2026-09-02: "one machine CANNOT depend on another, we don't want 1
+    taking them all down."
+
+    Its premise held while every runner shared the rcaptain login: then a pushed
+    storage_state was the same session, only fresher. Since the per-person
+    migration it is an IDENTITY SWAP — Lucy 1 is 'Lucy Reports', the resume
+    pusher is 'Lucy Resume Pushing', and installing one machine's cookies on
+    another makes that machine somebody else for every office lookup behind it.
+
+    Its second premise is gone too: it existed because a tokenless machine could
+    only be rescued by "asking a person to clear a Turnstile". That check clears
+    itself given ~30s before submit, so a tokenless machine logs ITSELF back in.
+
+    Refused, not deleted — a queued row from before this change should say why
+    it did nothing rather than quietly overwriting three machines' identities."""
+    return False, (
+        "RETIRED (Megan 2026-09-02). Pushing a session swaps the destination "
+        "machine's IDENTITY, and a fleet fed by one donor dies with the donor. "
+        "Each Lucy logs itself in — the Cloudflare check clears itself. On the "
+        "machine that needs a session: `--appstream-login`, then verify BOTH "
+        "logins with `login_check` (ownerville and AppStream are separate and "
+        "one passing says nothing about the other).")
+
+
+def _dead_action_push_appstream_fleet(args: str) -> tuple[bool, str]:
     """Push THIS machine's live AppStream session to every runner — no human.
 
     Why this exists (Megan 2026-08-27: "I should not have to ever re-seed").
@@ -1457,6 +1643,12 @@ def _action_set_appstream_state(args: str) -> tuple[bool, str]:
 
 
 def _action_appstream_promote_alt(args: str) -> tuple[bool, str]:
+    """RETIRED — there is no alternate account left to promote (see
+    _RETIRED_ALT_MSG). Kept so a queued row explains itself."""
+    return False, _RETIRED_ALT_MSG
+
+
+def _dead_action_appstream_promote_alt(args: str) -> tuple[bool, str]:
     """Make the ALTERNATE AppStream login this machine's PRIMARY — copy the
     alt credentials (appstream-alt.json, installed by set_appstream_alt_creds)
     into the primary keys of ownerville-creds.json. Runs entirely on THIS
@@ -1509,6 +1701,16 @@ def _action_appstream_promote_alt(args: str) -> tuple[bool, str]:
 
 
 def _action_set_appstream_alt_state(args: str) -> tuple[bool, str]:
+    """RETIRED — no alternate account, so no alternate session to replay.
+
+    Its premise is also gone twice over: it existed because the 2026-08-20
+    release was believed to have put a permanent human check on the login form.
+    It had not — the check clears itself given ~30s before submit — so a machine
+    signs itself in rather than being handed somebody else's session."""
+    return False, _RETIRED_ALT_MSG
+
+
+def _dead_action_set_appstream_alt_state(args: str) -> tuple[bool, str]:
     """Seed the ALTERNATE AppStream account's live session onto THIS machine
     from a storage-state JSON exported where a human cleared the login.
 
@@ -2544,6 +2746,74 @@ def _action_playwright_install(args: str) -> tuple[bool, str]:
                     timeout_s=10 * 60)
 
 
+def _action_install_pinned_chrome(args: str) -> tuple[bool, str]:
+    """Install the PINNED Chrome (Chrome for Testing) on THIS runner.
+
+      install_pinned_chrome                 # default 151.0.7922.138
+      install_pinned_chrome 151.0.7922.138  # an explicit build
+
+    WHY (2026-09-01). Chrome auto-updated to 152.0.7977.65 at 01:45 and began
+    crashing — EXC_BREAKPOINT in ChromeMain on macOS 26.6.2, 26 crashes that day
+    against ZERO on every prior day. One crash took harvest_prime from 17/17 to
+    1/17; the same TargetClosedError killed the captainship reports,
+    fiber_activations, the B2B tracker boards and org_sales_board's delta boxes.
+    tableau_patchright now launches a pinned build when one is installed.
+
+    THIS ACTION EXISTS BECAUSE LUCY 2 AND LUCY 3 TAKE NO SSH. Lucy 1 was fixed
+    by hand in minutes; the other two had no route at all, so the fix reached one
+    of three machines and the trackers (Lucy 3) stayed exposed. A queue action is
+    the only way in.
+
+    Downloads Google's official Chrome for Testing zip (~179 MB) into
+    ~/chrome-for-testing, beside the team's own Chrome — nothing in
+    /Applications is touched and nobody's browser changes. Also stops Keystone
+    re-updating Chrome underneath us. Idempotent: a matching build already
+    present is left alone."""
+    import platform
+    ver = (args or "151.0.7922.138").strip() or "151.0.7922.138"
+    if not re.fullmatch(r"[0-9]+(\.[0-9]+){3}", ver):
+        return False, f"refusing version {ver!r} — expected N.N.N.N"
+    arch = "mac-arm64" if platform.machine() == "arm64" else "mac-x64"
+    root = pathlib.Path.home() / "chrome-for-testing"
+    exe = (root / f"chrome-{arch}" / "Google Chrome for Testing.app"
+           / "Contents" / "MacOS" / "Google Chrome for Testing")
+    if exe.exists():
+        cur = subprocess.run([str(exe), "--version"], capture_output=True,
+                             text=True, timeout=60).stdout.strip()
+        if ver in cur:
+            return True, f"already installed: {cur} ({arch}) — nothing to do"
+    url = ("https://storage.googleapis.com/chrome-for-testing-public/"
+           f"{ver}/{arch}/chrome-{arch}.zip")
+    root.mkdir(parents=True, exist_ok=True)
+    zp = root / f"cft-{ver}.zip"
+    r = subprocess.run(["curl", "-sSL", "--max-time", "900", "-o", str(zp), url],
+                       capture_output=True, text=True, timeout=16 * 60)
+    if r.returncode != 0 or not zp.exists() or zp.stat().st_size < 50_000_000:
+        return False, (f"download failed rc={r.returncode} "
+                       f"size={zp.stat().st_size if zp.exists() else 0} "
+                       f"{(r.stderr or '')[:120]}")
+    mb = zp.stat().st_size / 1048576
+    u = subprocess.run(["unzip", "-qo", str(zp), "-d", str(root)],
+                       capture_output=True, text=True, timeout=10 * 60)
+    if u.returncode != 0 or not exe.exists():
+        return False, f"unzip failed rc={u.returncode} {(u.stderr or '')[:140]}"
+    got = subprocess.run([str(exe), "--version"], capture_output=True,
+                         text=True, timeout=60).stdout.strip()
+    try:
+        zp.unlink()
+    except Exception:  # noqa: BLE001 — the zip is a leftover, not the deliverable
+        pass
+    # Stop Keystone moving Chrome again. Reversible:
+    #   defaults delete com.google.Keystone.Agent checkInterval
+    ks = subprocess.run(["defaults", "write", "com.google.Keystone.Agent",
+                         "checkInterval", "0"], capture_output=True, text=True,
+                        timeout=60)
+    ks_note = "auto-update OFF" if ks.returncode == 0 else "auto-update UNCHANGED"
+    ok = ver in got
+    return ok, (f"{'installed' if ok else 'MISMATCH'}: {got} ({arch}, "
+                f"{mb:.0f} MB) · {ks_note} · reports use it on their next run")
+
+
 def _action_set_applicant_service_account(args: str) -> tuple[bool, str]:
     """Install the Applicant Tracker Google service-account key on THIS runner,
     so the applicant_tracker reports can reach the Sheet with no human at the
@@ -2685,8 +2955,46 @@ def _action_update(args: str) -> tuple[bool, str]:
     if co.returncode != 0:
         return False, ("couldn't switch to main (uncommitted changes on the "
                        f"current branch?): {(co.stderr or co.stdout).strip()[:150]}")
+
+    # RECONCILE A CHERRY-PICKED RUNNER (2026-08-31). `cherry_pick` puts a commit
+    # on this machine ahead of a deploy, which leaves the branch DIVERGED from
+    # origin/main — and `pull --ff-only` cannot fast-forward across divergence,
+    # so without this every later update fails and the runner quietly stops
+    # taking deploys (the 2026-07-15 Lucy 2 stranding, by another route).
+    #
+    # cherry_pick only ever picks commits ALREADY on origin/main, so each one
+    # carries git's own "(cherry picked from commit X)" trailer with X upstream.
+    # When that holds for every local-only commit they are pure duplicates of
+    # what this pull is about to deliver, so resetting to origin/main discards
+    # nothing. When it does NOT hold, the local commits are somebody's real work
+    # and a routine deploy must not throw them away — so refuse and say whose.
+    def _g(*a, timeout=60):
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                           capture_output=True, text=True, timeout=timeout)
+        return p.returncode == 0, (p.stdout or p.stderr).strip()
+
+    picked_note = ""
+    try:
+        _g("fetch", "origin", "main", "--quiet")
+        dupes, local_only, detail = _local_only_upstream_duplicates(_g)
+        if local_only and dupes:
+            ok_r, out_r = _g("reset", "--hard", "origin/main")
+            if not ok_r:
+                return False, f"couldn't reset the cherry-picked runner: {out_r[:150]}"
+            picked_note = (f"reconciled {len(local_only)} cherry-picked commit(s) "
+                           "— origin/main now carries them. ")
+        elif local_only and not dupes:
+            return False, (
+                f"REFUSING — this runner has {len(local_only)} local-only "
+                f"commit(s) that are not cherry-picks of upstream work: {detail}. "
+                "A pull cannot fast-forward across them and this deploy will not "
+                "discard them. Push them, or clear the branch by hand.")
+    except Exception as e:  # noqa: BLE001 — never let the probe block a deploy
+        picked_note = f"(divergence check skipped: {type(e).__name__}) "
+
     ok, out = _run_cmd(["git", "-C", str(REPO_ROOT), "pull", "--ff-only",
                         "--autostash"], timeout_s=120)
+    out = picked_note + out
     # --autostash CAN LEAVE THE TREE UNMERGED AND STILL EXIT 0. Verified by
     # reproduction 2026-08-27: a local edit to a file the pull also touches gives
     # "Applying autostash resulted in conflicts. Your changes are safe in the
@@ -3021,6 +3329,156 @@ def _action_git_recover(args: str) -> tuple[bool, str]:
                   "to restore). restart_poller if poller code changed.")
 
 
+# The trailer `git cherry-pick -x` writes into the commit body. It names the
+# ORIGINAL commit, which is what lets `update` prove a local-only commit is a
+# duplicate of something already upstream rather than real work.
+_CHERRY_PICKED_FROM = re.compile(
+    r"cherry picked from commit ([0-9a-f]{7,40})", re.I)
+
+
+def _local_only_upstream_duplicates(git) -> tuple[bool, list[str], str]:
+    """Are ALL of this runner's local-only commits just cherry-picks of commits
+    that are already on origin/main?
+
+    `git` is a callable taking git args and returning (ok, output) — passed in so
+    both callers share one subprocess style and tests can drive it directly.
+
+    Returns (all_are_duplicates, local_only_shas, human_detail). With no
+    local-only commits it returns (True, [], "") — the normal case, where the
+    caller should change nothing.
+
+    This is the question `update` has to answer before it can safely reset a
+    diverged runner: a duplicate is throwaway (the pull is about to deliver the
+    same content properly), while anything else is somebody's work and must not
+    be discarded by a routine deploy.
+    """
+    ok, out = git("rev-list", "origin/main..HEAD")
+    if not ok:
+        return False, [], "couldn't list local-only commits"
+    local = [s for s in out.split() if s.strip()]
+    if not local:
+        return True, [], ""
+    not_dupes = []
+    for sha in local:
+        _, body = git("log", "-1", "--format=%B", sha)
+        m = _CHERRY_PICKED_FROM.search(body or "")
+        if not m:
+            _, subj = git("log", "-1", "--format=%h %s", sha)
+            not_dupes.append(subj or sha[:9])
+            continue
+        # The trailer is only a CLAIM — verify the original really is upstream.
+        upstream, _ = git("merge-base", "--is-ancestor", m.group(1), "origin/main")
+        if not upstream:
+            _, subj = git("log", "-1", "--format=%h %s", sha)
+            not_dupes.append(f"{subj or sha[:9]} (claims {m.group(1)[:9]}, not on main)")
+    if not_dupes:
+        return False, local, "; ".join(not_dupes[:5])
+    return True, local, ""
+
+
+def _action_cherry_pick(args: str) -> tuple[bool, str]:
+    """Put ONE already-upstream commit onto this runner without pulling the rest.
+
+    THE GAP THIS FILLS (2026-08-31). A 3am false-alarm page was fixed in 72d266b
+    at 08:09, but the runners were 20 commits behind on other sessions' in-flight
+    work — so `update` meant shipping all of that mid-day just to get the one
+    fix. The only alternative was SSH, and Lucy 3 refuses SSH (Remote Login is
+    off), so for that machine there was no route at all.
+
+    THE COMMIT MUST ALREADY BE ON origin/main, and that is the entire safety
+    story. A cherry-pick puts this runner AHEAD of main on a commit main does not
+    have — divergence — and `git pull --ff-only` refuses to fast-forward across
+    it. A runner that silently stops accepting deploys is exactly how Lucy 2 got
+    stranded on 2026-07-15. Requiring the commit to be upstream already makes the
+    divergence temporary and throwaway: the same content arrives for real on the
+    next pull, so `update` can reconcile by resetting to origin/main and lose
+    nothing (see _local_only_upstream_duplicates). Picking a laptop-local commit
+    would strand the runner, so it is REFUSED rather than warned about.
+
+    Conflicts are aborted, never left in the tree. An unmerged file is not valid
+    JSON/Python, and a half-applied schedule_config.json takes out the whole 4am
+    batch — the landmine _action_update already documents.
+
+    Args: one or more commit shas. `lucy cherry_pick 72d266b`
+    """
+    shas = [s for s in (args or "").replace(",", " ").split() if s.strip()]
+    if not shas:
+        return False, ("cherry_pick needs at least one commit sha, "
+                       "e.g. `lucy cherry_pick 72d266b`")
+
+    def _git(*a, timeout=120):
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                           capture_output=True, text=True, timeout=timeout)
+        return p.returncode == 0, (p.stdout or p.stderr).strip()
+
+    ok_b, branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    if not ok_b or branch != "main":
+        return False, (f"refusing — this runner is on {branch!r}, not main. "
+                       "Production runners stay on main; fix the checkout first.")
+
+    _, dirty = _git("status", "--short")
+    blocked = [l for l in dirty.splitlines()
+               if l.strip() and not l.startswith("??")]
+    if blocked:
+        # Split off the XY status field rather than slicing a fixed 3 chars:
+        # _git strips the whole output, which eats the leading space of the
+        # FIRST line of `git status --short`, so a fixed slice silently ate a
+        # character of the first filename ("eploy/captainship_review.sh" on
+        # Lucy 3, 2026-08-31). A path you cannot copy is not a useful refusal.
+        return False, ("refusing — uncommitted tracked edits would be swept into "
+                       "the pick: "
+                       + ", ".join(l.strip().split(None, 1)[-1] for l in blocked[:6])
+                       + ". Park them with `lucy git_stash` first.")
+
+    ok_f, out_f = _git("fetch", "origin", "main")
+    if not ok_f:
+        return False, f"fetch failed: {out_f[:200]}"
+
+    picks, already, refused = [], [], []
+    for s in shas:
+        ok_r, full = _git("rev-parse", "--verify", f"{s}^{{commit}}")
+        if not ok_r:
+            refused.append(f"{s} (no such commit on this runner)")
+            continue
+        upstream, _ = _git("merge-base", "--is-ancestor", full, "origin/main")
+        if not upstream:
+            refused.append(f"{s} (not on origin/main — push it first)")
+            continue
+        have, _ = _git("merge-base", "--is-ancestor", full, "HEAD")
+        if have:
+            already.append(s)
+            continue
+        picks.append(full)
+
+    if refused:
+        return False, ("refusing — " + "; ".join(refused) + ". Only a commit "
+                       "already on origin/main can be picked: anything else "
+                       "leaves this runner diverged and it stops taking deploys.")
+    if not picks:
+        return True, f"nothing to do — already on this runner: {', '.join(already)}"
+
+    # -x records "(cherry picked from commit …)", which is both the audit trail
+    # and how `update` later proves these commits are safe to reset away.
+    ok_c, out_c = _git("cherry-pick", "-x", *picks, timeout=300)
+    if not ok_c:
+        _git("cherry-pick", "--abort")
+        return False, ("cherry-pick FAILED and was aborted — the tree is clean "
+                       f"and unchanged, nothing was applied: {out_c[:200]}")
+
+    _, head = _git("log", "-1", "--format=%h %s")
+    _, files = _git("diff", "--name-only", f"HEAD~{len(picks)}", "HEAD")
+    changed = [f for f in files.splitlines() if f.strip()]
+    skipped = f" (already here, skipped: {', '.join(already)})" if already else ""
+    more = f" (+{len(changed) - 8} more)" if len(changed) > 8 else ""
+    return True, (
+        f"picked {len(picks)} commit(s) onto main{skipped}\n"
+        f"HEAD now: {head}\n"
+        f"changed: {', '.join(changed[:8])}{more}\n"
+        "This runner is AHEAD of origin/main until the next `update`, which "
+        "resets to origin/main and takes the same change properly. "
+        "restart_poller if poller code changed.")
+
+
 def _action_set_payroll_webapp(args: str) -> tuple[bool, str]:
     """Install/refresh the payroll headless-refresh Web App URL (runbook §1)
     into vantura-payroll-webapp.json at the repo root (gitignored), so the
@@ -3288,6 +3746,15 @@ _CRED_FILES = {
     # is PUBLIC), so `lucy update` will never carry it.
     "saraplus-creds":
         lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds.json",
+    # CARLOS's SaraPlus login, for the B2B Customer Contacts report on Lucy 2
+    # (rc_contact_sync.config.creds). Deliberately NOT the key above: that one
+    # is alphaletemarketing@gmail.com, a different dealer whose Detail Reports
+    # return rows -- just not the B2B rows this report is for (Megan
+    # 2026-09-02: "ONLY using Carlos' sara plus login"). One key per account,
+    # so a rotation on one can never hand the other report the wrong orders.
+    # Lives in ~/.config, outside the repo, so `lucy update` never carries it.
+    "saraplus-creds-b2b":
+        lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds-b2b.json",
     # Blue Ink private API key + envelope template id. The SEND itself goes
     # through the web app, but the pre-send dedupe (blueink_docs.recent) reads
     # Blue Ink's own bundle history over the API and needs this key. Lucy 2 --
@@ -3346,6 +3813,24 @@ _CRED_FILES = {
     "gmail-token-alphaletereception":
         lambda: Path.home() / ".config" / "recruiting-report"
                 / "gmail-token-alphaletereception.json",
+    # READ-ONLY Google Contacts for alphaletereception@, the account that holds
+    # every leader's number. Needed on the machine that TEXTS, not just the one
+    # that authorizes: when New-Start learns a leader mid-week from a hand-tag,
+    # it looks their number up here before asking humans for it in Slack
+    # (2026-08-30 — Kenneth Guzman was asked about while his number sat in
+    # Contacts). Authorize on a machine with a browser
+    # (new_start_followup.contacts_google --auth), then push.
+    "contacts-token-alphaletereception":
+        lambda: Path.home() / ".config" / "recruiting-report"
+                / "contacts-token-alphaletereception.json",
+    # READ-WRITE Google Contacts for alphaletegp@, so Lucy 2 can ADD contacts
+    # to that account's contact list. Authorized on the mini
+    # (fiber_owners_distro.contacts_write --authorize --account
+    # alphaletegp@gmail.com), then pushed to Lucy 2. An OAuth token, so it is
+    # deliberately NOT in _CRED_FILES_MERGE — it has to land whole.
+    "contacts-rw-token-alphaletegp":
+        lambda: Path.home() / ".config" / "recruiting-report"
+                / "contacts-rw-token-alphaletegp.json",
 }
 
 # Of those, the file-keys that are a BAG OF INDEPENDENT CREDENTIALS: one flat
@@ -3757,6 +4242,88 @@ def _action_set_gmail_token(args: str) -> tuple[bool, str]:
         return False, (f"token written but it authorizes {who!r}, not "
                        f"{GMAIL_ACCOUNT!r} — drafts would land in the wrong mailbox")
     return True, f"Gmail token installed + verified: mailbox {who}"
+
+
+def _action_set_ownerville_state(args: str) -> tuple[bool, str]:
+    """Install an ownerville browser session on THIS machine. Args is the
+    CONTENTS of automations/shared/.ownerville_storage_state.json, exported on a
+    machine where a HUMAN did the login (output/_scratch_ownerville_export_state.py).
+
+    WHY THIS EXISTS. A stale ownerville session PAUSES EVERY report on the
+    machine — the readiness check is machine-wide, not per-report — and the only
+    documented fix was "log back in on that machine's session-holder window".
+    That needs someone at (or screen-shared into) the runner, which is the same
+    wall set_credico_state was built to get around. 2026-09-02: Lucy 1 sat
+    paused with 542 minutes of stale session while the person who could fix it
+    was on another continent.
+
+    No password travels — an ownerville session is the ColdFusion login cookie.
+    The ephemeral rqst SSO token is NOT replayed; v2.ownerville re-mints it from
+    the login cookie on the next load, which is exactly what
+    _reuse_ownerville_storage_state already does for every report.
+
+    A Playwright storage_state is plain JSON with no OS key in it, so it replays
+    on another machine — unlike a Chrome profile (Keychain/DPAPI), which is why
+    sheets_login still needs a human at the screen.
+
+    Backs up any existing state, writes it 0600, then VERIFIES with the real
+    reuse-only loader (--ownerville-check never touches the login form, so a
+    session bound to the exporting browser fails here instead of looking
+    installed and dying on the next report). NEVER echoes the state; in
+    SECRET_ACTIONS, so the Args cell blanks the moment the row ends."""
+    import json
+    import shlex
+    import shutil
+    # Same two delivery paths as set_credico_state: `lucy` shlex-JOINS its args,
+    # while enqueue() writes the cell verbatim. Raw text first — shlex on raw
+    # JSON eats the quotes — then fall back to un-shlexing.
+    raw = (args or "").strip()
+    parsed = None
+    for cand in (raw, *([shlex.split(raw)[0]] if _safe_shlex_first(raw) else [])):
+        cand = (cand or "").strip()
+        if not cand.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(cand)
+            break
+        except Exception:  # noqa: BLE001 — try the next candidate
+            continue
+    if parsed is None:
+        return False, ("set_ownerville_state needs the CONTENTS of "
+                       ".ownerville_storage_state.json (a JSON object) as Args")
+    cookies = parsed.get("cookies") or []
+    if not cookies:
+        return False, ("no cookies in this state — ownerville keeps its login "
+                       "there, so the export ran before the login completed. "
+                       "Re-export once the ownerville page is fully on screen.")
+
+    from automations.shared.tableau_patchright import (
+        OWNERVILLE_STORAGE_STATE as path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=1), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    ok, res = _run_cmd([sys.executable, "-m",
+                        "automations.shared.tableau_patchright",
+                        "--ownerville-check"],
+                       timeout_s=5 * 60, log_name="ownerville-set-state.log")
+    head = f"{len(cookies)} cookie(s) installed · "
+    if ok:
+        return True, head + ("session VERIFIED here — the readiness gate should "
+                             "clear on the next orchestrator pass")
+    return False, (head + "but ownerville REJECTED it on this machine: " +
+                   res[:150] + " — full log: lucy logtail ownerville-set-state")
 
 
 def _action_set_credico_state(args: str) -> tuple[bool, str]:
@@ -4988,6 +5555,9 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
                 runs total_knocks.pull instead, which is the exact path his
                 daily report uses.
         date    default: yesterday (Central), same as the daily run.
+        force   run even inside the gap_alerts selling window. REFUSED there
+                by default: this takes the machine-wide ownerville session,
+                and a slow probe silently eats Raf's boards (2026-09-02).
         campaign=<id>    pin a different TeleMapper campaign for this probe
         campaign=none    skip the pin entirely (what an NDS office gets in
                          weekly_knock_dispositions). Lets the "is the pin
@@ -5016,8 +5586,12 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
     office = parts[0].strip()
     date_arg = None
     campaign = None                      # None = leave the default pin alone
+    force = False
     for raw in parts[1:]:
         arg = raw.strip()
+        if arg.lower() in ("force", "--force"):
+            force = True
+            continue
         if arg.lower().startswith("campaign="):
             val = arg.split("=", 1)[1].strip()
             # 'none' / '' both mean DON'T pin — knocks_pull skips the pin on
@@ -5030,6 +5604,39 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
             dt.datetime.strptime(date_arg, "%Y-%m-%d")
         except ValueError:
             return False, f"probe_knocks: date must be YYYY-MM-DD, got {date_arg!r}"
+
+    # NOT DURING THE SELLING WINDOW, unless you say so on purpose.
+    #
+    # This action is read-only to the DATA and anything but read-only to the
+    # SESSION. On 2026-09-02 one `probe_knocks "Jay Turnage"` broke Raf's live
+    # gap_alerts twice inside an hour: it stranded the impersonation (his 2:05
+    # board came out as another office's grid), and it held the machine-wide
+    # ownerville lock for ten minutes, which ate the 2:30 and 2:40 boards
+    # outright — gap_alerts waits 120s, then logs "SKIPPED this tick" and
+    # exits 0, so a starved report looks healthy.
+    #
+    # A separate Chrome profile is NOT a separate session: every job restores
+    # the same storage_state, so they share one server-side session and
+    # impersonation lives there. See
+    # [[reference_ownerville_one_session_per_machine]].
+    #
+    # `force` is the deliberate override, because sometimes the thing you need
+    # to debug only happens while the field is out.
+    if not force:
+        try:
+            from automations.gap_alerts import config as _gc
+            _now = dt.datetime.now()
+            if _gc.in_selling_window(_now):
+                return False, (
+                    "probe_knocks refused: it is %s, inside the gap_alerts "
+                    "selling window, and this probe takes the machine-wide "
+                    "ownerville session — a slow one silently eats Raf's "
+                    "boards (2026-09-02). Run it after the window, or add "
+                    "`force` to override on purpose."
+                    % _now.strftime("%I:%M %p").lstrip("0"))
+        except Exception:  # noqa: BLE001 — a guard must never block the action
+            pass
+
     # Same guard the other browser actions use — a human Chrome left open on the
     # mini single-instances with patchright's and breaks the scrape.
     try:
@@ -5052,6 +5659,84 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
                        log_name=f"probe-knocks-{slug}-{stamp}.log",
                        env=env or None)
     return ok, res
+
+
+def _action_campaign_scan(args: str) -> tuple[bool, str]:
+    """READ-ONLY: which offices run MORE THAN ONE campaign — i.e. who CANNOT be
+    enrolled for daily dispositions yet. Runs
+    `automations.disposition_signup.campaign_scan`, which impersonates each
+    granted office, reads its campaigns off an unpinned p=89, and exits
+    impersonation. No Sheet, no Slack, nothing written to ownerville.
+
+      campaign_scan                     the full list, after-hours guarded
+      campaign_scan "Jay Turnage"       just one office (substring match)
+      campaign_scan limit=5             the first 5, for a smoke test
+      campaign_scan force               run even inside the selling window
+
+    Why it must run HERE and not from the laptop: it needs a live ownerville
+    session, and a laptop runs no session holder — its
+    .ownerville_storage_state.json only ages, so the scan dies on
+    "session expired or missing" before it reads a single office
+    (2026-09-03, the run that prompted this action).
+
+    Why `force` is not the default: the full ~90-office scan takes 30-45
+    minutes and holds the machine-wide ownerville session for all of it (one
+    office at a time — it takes and releases the gap_alerts lock per office, so
+    a tick waits seconds, not half an hour). Inside the selling window that
+    still costs Raf boards, so the underlying script refuses to start there and
+    exits 2. `force` drops --after-hours on purpose.
+
+    Read the full table with `lucy logtail campaign-scan-<stamp>`; the report
+    also lands in output/disposition-campaign-scan-<date>.md and .json."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    only = ""
+    limit = None
+    force = False
+    bare: list[str] = []
+    for raw in parts:
+        arg = raw.strip()
+        if not arg:
+            continue
+        if arg.lower() in ("force", "--force"):
+            force = True
+            continue
+        if arg.lower().startswith("limit="):
+            val = arg.split("=", 1)[1].strip()
+            if not val.isdigit():
+                return False, f"campaign_scan: limit must be a number, got {val!r}"
+            limit = val
+            continue
+        if arg.lower().startswith("only="):
+            only = arg.split("=", 1)[1].strip()
+            continue
+        # A bare name is the office. JOINED, not overwritten: an unquoted
+        # `campaign_scan Jay Turnage` used to scan `--only Turnage` — the last
+        # word silently won, and a substring match on a surname is exactly the
+        # kind of wrong answer nobody double-checks.
+        bare.append(arg)
+    if bare and not only:
+        only = " ".join(bare)
+    # Same guard the other browser actions use — a human Chrome left open on the
+    # mini single-instances with patchright's and breaks the scrape.
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome()
+    except Exception:  # noqa: BLE001 — a guard must never crash the run
+        pass
+    cmd = [sys.executable, "-m", "automations.disposition_signup.campaign_scan"]
+    if not force:
+        cmd.append("--after-hours")
+    if only:
+        cmd += ["--only", only]
+    if limit:
+        cmd += ["--limit", limit]
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    return _run_cmd(cmd, timeout_s=90 * 60,
+                    log_name=f"campaign-scan-{stamp}.log")
 
 
 def _action_set_dd_bot_token(args: str) -> tuple[bool, str]:
@@ -5700,20 +6385,146 @@ def _action_install_day_orchestrator(args: str) -> tuple[bool, str]:
     return ok, msg[:400]
 
 
-def _action_appstream_whoami(args: str) -> tuple[bool, str]:
-    """Which AppStream account is THIS machine using, and which offices can it see?
+def _action_set_ownerville_creds(args: str) -> tuple[bool, str]:
+    """Install THIS machine's ownerville login.
 
-      appstream_whoami                 as it runs today (reuses the saved session)
-      appstream_whoami --force         ignore the saved session, log in fresh
-      appstream_whoami --offices 1,2   probe specific office ids
+      set_ownerville_creds <username> <password>
 
-    Read-only: it switches office and reads the page back, nothing is written.
-    Exists because a stale .appstream_storage_state.json keeps a session minted by
-    a DIFFERENT login working forever — so the configured username is never used
-    and the machine silently sees fewer offices than it should."""
-    cmd = [sys.executable, "-m", "automations.shared.appstream_whoami"] + (args or "").split()
-    ok, res = _run_cmd(cmd, timeout_s=20 * 60,
-                       log_name="appstream-whoami.log")
+    WHY IT HAD TO EXIST (2026-09-02). `login_check` found Lucy 3 running with NO
+    ownerville credential at all. Nothing looked wrong — its saved session was
+    live, so every ownerville report worked. But a session lasts ~60h and a
+    machine with no credential cannot log itself back in when one dies, so it
+    was a machine that would fail silently at some future 4am and could not
+    self-heal. Lucy 3 takes no SSH, and every other credential already had a
+    queue action; this one did not, so there was no way to fix it remotely.
+
+    Ownerville and AppStream are SEPARATE logins — this touches ONLY the two
+    ownerville_* keys, exactly like set_ownerville_login does on the console.
+    The AppStream and Double Entry logins in the same file are left alone.
+
+    In SECRET_ACTIONS, so the poller blanks the Args cell the moment the row
+    finishes. Backs the file up first, and verifies by driving a real login
+    rather than by trusting that a write succeeded — a stored credential that
+    cannot log in is worse than none, because it looks configured."""
+    import json as _json
+    import shlex
+    import shutil
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, "couldn't read Args (%s) — quote the password" % str(e)[:80]
+    if len(parts) != 2:
+        return False, ("need: set_ownerville_creds <username> <password> "
+                       "(quote the password if it has spaces)")
+    user, pw = parts[0], parts[1]
+
+    path = REPO_ROOT / "ownerville-creds.json"
+    data: dict = {}
+    if path.exists():
+        try:
+            data = _json.loads(path.read_text())
+        except Exception as e:  # noqa: BLE001
+            return False, "couldn't read %s: %s" % (path.name, str(e).splitlines()[0][:120])
+        shutil.copy2(path, path.with_suffix(
+            ".json.bak.%s" % dt.datetime.now().strftime("%Y%m%d-%H%M%S")))
+    kept = sorted(k for k in data if not k.startswith("ownerville_"))
+    data["ownerville_username"] = user
+    data["ownerville_password"] = pw
+    try:
+        path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+        _creds_cache_bust()
+    except Exception as e:  # noqa: BLE001
+        return False, "couldn't write %s: %s" % (path.name, str(e).splitlines()[0][:120])
+
+    # PROVE IT. The Cloudflare check clears itself given ~30s before submit, so
+    # this really does log in unattended — no human, no window.
+    ok, res = _run_cmd(
+        [sys.executable, "-c",
+         "from automations.shared.appstream_autorenew import refresh_ownerville;"
+         " raise SystemExit(0 if refresh_ownerville(verbose=True) else 1)"],
+        timeout_s=10 * 60, log_name="ownerville-creds-verify.log")
+    tail = str(res).split("\n")[-1][:200]
+    if not ok:
+        return False, ("stored %s in %s (kept: %s) but the LOGIN FAILED: %s"
+                       % (user, path.name, ", ".join(kept) or "none", tail))
+    return True, ("ownerville creds installed for %s + login verified (kept: %s) · %s"
+                  % (user, ", ".join(kept) or "none", tail))
+
+
+def _action_purge_retired_appstream_creds(args: str) -> tuple[bool, str]:
+    """Delete retired AppStream credentials from THIS machine.
+
+    Only two logins exist (Megan 2026-09-02): 'Lucy Reports' for every report and
+    'Lucy Resume Pushing' for the resume pusher. The code already refuses to
+    SELECT anything else, but a retired credential sitting on disk is still worth
+    removing: it is a live login for an account nobody audits, and every call
+    site that could reach it is one edit away from existing again.
+
+    Removes ~/.config/recruiting-report/appstream-alt.json (the CarlosNLR slot)
+    and any non-allowed entry in appstream-accounts.json. Backs each up beside
+    itself with a .retired suffix rather than destroying it — an account we turn
+    out to still need is recoverable, and nothing here is the only copy.
+
+    Read-only against the two accounts that remain: it never touches
+    ownerville-creds.json, so the reporting login and its password are untouched."""
+    import json as _json
+    cfg = Path.home() / ".config" / "recruiting-report"
+    removed, kept = [], []
+
+    alt = cfg / "appstream-alt.json"
+    if alt.exists():
+        bak = alt.with_suffix(".json.retired")
+        alt.replace(bak)
+        removed.append("appstream-alt.json (backed up as %s)" % bak.name)
+
+    acc = cfg / "appstream-accounts.json"
+    if acc.exists():
+        try:
+            blob = _json.loads(acc.read_text())
+        except Exception as e:  # noqa: BLE001
+            return False, "appstream-accounts.json is unreadable: %s" % str(e)[:120]
+        if isinstance(blob, dict):
+            from automations.shared import creds as _creds
+            bad = [k for k in blob if k not in _creds.ALLOWED_APPSTREAM_ACCOUNTS]
+            if bad:
+                (cfg / "appstream-accounts.json.retired").write_text(
+                    _json.dumps(blob, indent=2))
+                for k in bad:
+                    blob.pop(k, None)
+                acc.write_text(_json.dumps(blob, indent=2))
+                try:
+                    os.chmod(acc, 0o600)
+                except OSError:
+                    pass
+                removed.extend("account %r" % k for k in bad)
+            kept = sorted(blob)
+
+    _creds_cache_bust()
+    if not removed:
+        return True, ("nothing retired on this machine · accounts: %s"
+                      % (", ".join(kept) or "primary only"))
+    return True, ("removed: %s · accounts remaining: %s"
+                  % ("; ".join(removed), ", ".join(kept) or "primary only"))
+
+
+def _action_login_check(args: str) -> tuple[bool, str]:
+    """Are BOTH logins live on THIS machine — ownerville AND AppStream?
+
+      login_check           read the stored sessions (fast, no browser)
+      login_check --deep    also open the AppStream console and read back which
+                            account it is actually signed in as
+
+    WHY IT IS A QUEUE ACTION: Lucy 2 and Lucy 3 have no SSH, so this is the only
+    way to audit them, and auditing them SEPARATELY is the point — Megan
+    2026-09-02: "Ownerville and App stream ARE NOT the same login and should not
+    be considered fixed if only one of them works."
+
+    Read-only. It reads session files and, with --deep, opens a console and
+    reads the page back. Nothing is written, nothing is pushed anywhere: each
+    machine answers for itself."""
+    cmd = [sys.executable, "-m", "automations.shared.login_check"] + (args or "").split()
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60, log_name="login-check.log")
     return ok, res[:900]
 
 
@@ -5742,22 +6553,31 @@ def _action_funnel_board_unlock(args: str) -> tuple[bool, str]:
     return not lock.exists(), "cleared a %.0f min old lock (no funnel_board running)" % age
 
 
+_RETIRED_ALT_MSG = (
+    "RETIRED (Megan 2026-09-02). There are exactly two AppStream logins: "
+    "'Lucy Reports' — every report on every Lucy — and 'Lucy Resume Pushing' — "
+    "the resume pusher. rcaptain and the CarlosNLR 'alt' slot are gone. "
+    "Use set_appstream_creds / set_appstream_username for the reporting login, "
+    "or set_appstream_account lucyresume for the resume login. This action is "
+    "kept only so an old queued row gets this sentence instead of quietly "
+    "installing a third account.")
+
+
 def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
-    """Install a SECOND AppStream login on THIS machine, beside the primary.
+    """RETIRED — installing a third AppStream login is no longer allowed.
 
-      set_appstream_alt_creds <username> <password>
+    It used to write a second credential beside the primary, because Lucy 2
+    signed in as CarlosNLR and could not see six of the 28 offices while
+    rcaptain could. Both accounts are gone; every Lucy signs in as
+    'Lucy Reports' and reaches all of them.
 
-    Why a second one rather than replacing: Lucy 2 runs as CarlosNLR, which
-    cannot see six of the 28 offices, while rcaptain can. Other reports on that
-    machine already depend on the primary account and its saved session, so the
-    alternate is stored separately and jobs choose per run
-    (funnel_board --account alt). The alternate also gets its OWN browser profile
-    so its cookies never overwrite the primary's session.
+    It refuses rather than being deleted because the danger is a QUEUED row: the
+    queue outlives a deploy, and a row landing after this change should say why
+    it did nothing, not install an account no report is allowed to select."""
+    return False, _RETIRED_ALT_MSG
 
-    Writes to ~/.config/recruiting-report/appstream-alt.json (chmod 600) and
-    verifies by actually logging in and reading the account back. NEVER echoes
-    the password. In SECRET_ACTIONS, so the poller blanks the Args cell the
-    moment the row ends."""
+
+def _dead_action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     import json as _json
     parts = (args or "").split()
     if len(parts) < 2:
@@ -5783,6 +6603,216 @@ def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
         return False, ("stored %s at %s but the login/office check FAILED: %s"
                        % (user, path.name, tail))
     return True, "stored %s and verified: %s" % (user, tail)
+
+
+def _action_appstream_whoami(args: str) -> tuple[bool, str]:
+    """WHICH AppStream account is this machine's SAVED session? READ ONLY.
+
+      appstream_whoami [office,office,...]
+
+    QUOTE the office list when you queue this from a laptop —
+    `appstream_whoami '"23221,22434,20788,22524"'`. An unquoted comma-grouped
+    all-digit string is read by the Google Sheet as a NUMBER, and comes back with
+    the commas stripped (enqueue already sends value_input_option="RAW"; that is
+    NOT enough). Verified 2026-09-03: quoted → reachable=4/4, denied=none;
+    unquoted → reachable=0/1, "did not land on 23221224342078822524".
+
+    No login, no --force: it reads the console banner off the session the
+    SCHEDULED reports actually reuse. That is the only way to answer "is the
+    fleet really running as the new login?" — the AppStream activity log records
+    applicant actions, not report pulls, so a 4am read leaves no trace there
+    (Megan 2026-08-31).
+
+    Deliberately distinct from appstream_whoami_account, which drives a fresh
+    login as a named account: that proves the account WORKS, this proves what the
+    fleet IS. Retiring the old shared login needs the second answer."""
+    import shlex
+    cmd = [sys.executable, "-m", "automations.shared.appstream_whoami"]
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception:  # noqa: BLE001
+        parts = []
+    if parts:
+        cmd += ["--offices", parts[0]]
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60, log_name="appstream-whoami.log")
+    return ok, res.split("·")[-1].strip()[:400]
+
+
+def _action_appstream_whoami_account(args: str) -> tuple[bool, str]:
+    """Which AppStream account is a NAMED login, and what can it see? READ ONLY.
+
+      appstream_whoami_account <name> [office,office,...]
+
+    Drives a real login as that account and reports the Account No it lands on
+    plus which offices answer. The password is resolved ON the machine from
+    appstream-accounts.json, so it never travels through a queue row.
+
+    WHY (Megan 2026-08-31): the scoped push login showed no activity stamps in
+    AppStream, and the run log could say only that no console ever rendered —
+    which cannot tell "the account does not exist", "wrong password", "no office
+    access" and "Cloudflare blocked it" apart. Those need different fixes, so
+    guessing between them is worse than asking."""
+    import shlex
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]})"
+    if not parts:
+        return False, "need: appstream_whoami_account <name> [office,office,...]"
+    cmd = [sys.executable, "-m", "automations.shared.appstream_whoami",
+           "--account", parts[0], "--force"]
+    if len(parts) > 1:
+        cmd += ["--offices", parts[1]]
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60,
+                       log_name="appstream-whoami-account.log")
+    return ok, res.split("·")[-1].strip()[:400]
+
+
+def _action_set_appstream_account(args: str) -> tuple[bool, str]:
+    """Install a NAMED AppStream login on THIS machine.
+
+      set_appstream_account <name> <username> <password>
+
+    WHY A THIRD MECHANISM (Megan 2026-08-31): primary + alt is two slots, and
+    Lucy 2 needs three kinds of access at once — a broad account for funnel_board
+    / indeed_source_report / ad_sales_board / daily_update_fill, whatever already
+    occupies the alt slot, and now LucyResume, scoped to the only two offices
+    Applicant Push may touch. Overwriting either existing slot to make room is
+    how you trade an over-push for four broken reports.
+
+    Writes ~/.config/recruiting-report/appstream-accounts.json — OUTSIDE the repo,
+    which is public. Merges, so installing one account never disturbs another.
+    NEVER echoes the password; in SECRET_ACTIONS so the poller blanks the Args
+    cell as soon as the row finishes.
+
+    Deliberately does NOT verify by logging in. The verify in
+    set_appstream_creds drives the patchright form, which has been human-gated
+    since 2026-08-20 — on a scoped account that check would fail on a perfectly
+    good credential and read as a broken install. The real proof is
+    `lucy rerun applicant_push --dry-run`, which signs in on the real-Chrome path
+    the report actually uses and records the account number for the send-time
+    identity assert."""
+    import json as _json
+    import pathlib as _pathlib   # this module imports os, not pathlib
+    import shlex
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]}) — quote the password"
+    if len(parts) != 3:
+        return False, ("set_appstream_account needs `<name> <username> <password>` "
+                       f"(quote the password if it has spaces) — got {len(parts)}")
+    name, user, pw = parts[0].strip().lower(), parts[1].strip(), parts[2]
+    if name in ("primary", "alt"):
+        return False, ("%r is a built-in slot — use set_appstream_creds or "
+                       "set_appstream_alt_creds for that one" % name)
+    if not name or not user or not pw:
+        return False, "name, username and password must all be non-empty"
+    path = (_pathlib.Path.home() / ".config" / "recruiting-report"
+            / "appstream-accounts.json")
+    blob = {}
+    if path.exists():
+        try:
+            blob = _json.loads(path.read_text())
+        except Exception:  # noqa: BLE001 — unreadable starts clean, same as creds.py
+            blob = {}
+    if not isinstance(blob, dict):
+        blob = {}
+    existing = blob.get(name) if isinstance(blob.get(name), dict) else {}
+    entry = {"username": user, "password": pw}
+    # Drop any recorded account_no when the USERNAME changes — a fingerprint from
+    # the previous login would make the send-time assert vouch for the wrong one.
+    if existing.get("username") == user and existing.get("account_no"):
+        entry["account_no"] = existing["account_no"]
+    blob[name] = entry
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_json.dumps(blob, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+        _creds_cache_bust()
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    others = sorted(k for k in blob if k != name)
+    return True, ("stored AppStream account %r as %s (untouched: %s). NOT verified "
+                  "here — prove it with `lucy rerun applicant_push --dry-run`, "
+                  "which also records the account number the live send asserts "
+                  "against." % (name, user, ", ".join(others) or "none"))
+
+
+def _action_set_appstream_username(args: str) -> tuple[bool, str]:
+    """Fix ONLY the AppStream username on THIS machine, leaving the password.
+
+      set_appstream_username "Lucy Reports"
+
+    WHY (Megan 2026-09-02). The username was stored as `LucyReports` — no space —
+    where the real account is `Lucy Reports` (23981). A wrong username here does
+    NOT fail loudly: the unattended form login fills it, clears Cloudflare,
+    submits, and then reports "form login reached the console" and "saved fresh
+    AppStream session". It never authenticated. The console rendered off
+    CFID/CFTOKEN from the previously saved state re-injected on the ?rqst=&p=701
+    hop, carrying no new token — so every layer above read a dead session as a
+    live one. On Lucy 1 that took out the whole 4am batch (daily_focus,
+    applicant_sync_morning, recruiter_retention_daily) and cost a morning of
+    wrong diagnoses before anyone checked the username.
+
+    set_appstream_creds already exists but demands `<username> <password>`, so
+    correcting a typo meant re-sending the password through the Sheet — and on a
+    never-touch runner (Lucy 3 takes no SSH) there was no other way in. This
+    changes the one field that is not a secret, which is why it is NOT in
+    SECRET_ACTIONS: the Args cell should stay readable so the fix is auditable.
+
+    Merges — the ownerville pair every Tableau report needs lives in the same
+    file — and backs up first. Verifies with appstream_whoami, which prints
+    `configured=` next to the session's real account label, so a mismatch is
+    visible in one line."""
+    import json as _json
+    import shlex
+    import shutil
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]}) — quote the username"
+    user = " ".join(parts).strip()
+    if not user:
+        return False, ('set_appstream_username needs the username, quoted if it '
+                       'has a space — e.g. set_appstream_username "Lucy Reports"')
+    path = REPO_ROOT / "ownerville-creds.json"
+    if not path.exists():
+        return False, (f"{path.name} does not exist — there is no password to "
+                       "keep, so use set_appstream_creds <username> <password>")
+    try:
+        data = _json.loads(path.read_text())
+    except Exception as e:  # noqa: BLE001
+        # Refuse rather than start clean: unlike set_appstream_creds we have no
+        # password in hand, so replacing an unreadable file would leave the
+        # machine with a username and NO credential at all.
+        return False, (f"{path.name} is unreadable ({str(e).splitlines()[0][:60]}) "
+                       "— fix it with set_appstream_creds, which can rebuild it")
+    if not str(data.get("appstream_password") or "").strip():
+        return False, (f"{path.name} has no appstream_password to keep — use "
+                       "set_appstream_creds <username> <password> instead")
+    old = data.get("appstream_username")
+    if old == user:
+        return True, f"appstream_username was already {user!r} — nothing to change"
+    stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+    try:
+        shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+    except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+        pass
+    data["appstream_username"] = user
+    try:
+        path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+        _creds_cache_bust()
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    ok, res = _run_cmd([sys.executable, "-m", "automations.shared.appstream_whoami"],
+                       timeout_s=20 * 60, log_name="appstream-username-verify.log")
+    tail = res.split("·")[-1].strip()[:200]
+    if not ok:
+        return False, (f"set appstream_username {old!r} -> {user!r} but the "
+                       f"verify FAILED: {tail}")
+    return True, f"appstream_username {old!r} -> {user!r}, verified: {tail}"
 
 
 def _action_set_appstream_creds(args: str) -> tuple[bool, str]:
@@ -6178,8 +7208,10 @@ ACTIONS = {
     "logtail": _action_logtail,
     "daystate": _action_daystate,
     "probe_knocks": _action_probe_knocks,
+    "campaign_scan": _action_campaign_scan,
     "pip_install": _action_pip_install,
     "playwright_install": _action_playwright_install,
+    "install_pinned_chrome": _action_install_pinned_chrome,
     "set_applicant_service_account": _action_set_applicant_service_account,
     "applicant_key": _action_applicant_key,
     "rerun": _action_rerun,
@@ -6189,11 +7221,13 @@ ACTIONS = {
     "git_diff": _action_git_diff,
     "git_stash": _action_git_stash,
     "git_recover": _action_git_recover,
+    "cherry_pick": _action_cherry_pick,
     "set_machine_profile": _action_set_machine_profile,
     "purge_login_test_profile": _action_purge_login_test_profile,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
     "set_appstream_creds": _action_set_appstream_creds,
+    "set_appstream_username": _action_set_appstream_username,
     "set_appstream_state": _action_set_appstream_state,
     "set_appstream_alt_state": _action_set_appstream_alt_state,
     "appstream_promote_alt": _action_appstream_promote_alt,
@@ -6210,6 +7244,7 @@ ACTIONS = {
     "set_gdocs_token": _action_set_gdocs_token,
     "set_gmail_token": _action_set_gmail_token,
     "set_credico_state": _action_set_credico_state,
+    "set_ownerville_state": _action_set_ownerville_state,
     "set_appstream_state": _action_set_appstream_state,
     "set_contacts_token": _action_set_contacts_token,
     "set_contacts_ro_token": _action_set_contacts_ro_token,
@@ -6219,6 +7254,7 @@ ACTIONS = {
     "restart_hub": _action_restart_hub,
     "install_hub_watch": _action_install_hub_watch,
     "install_mini_control_read": _action_install_mini_control_read,
+    "restart_jiraiya": _action_restart_jiraiya,
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
     "install_jiraiya": _action_install_jiraiya,
@@ -6234,10 +7270,12 @@ ACTIONS = {
     "git_push_setup": _action_git_push_setup,
     "git_push_check": _action_git_push_check,
     "install_tracker_auto_commit": _action_install_tracker_auto_commit,
-    "appstream_whoami": _action_appstream_whoami,
     "funnel_board_unlock": _action_funnel_board_unlock,
     "appstream_clear_session": _action_appstream_clear_session,
     "set_appstream_alt_creds": _action_set_appstream_alt_creds,
+    "set_appstream_account": _action_set_appstream_account,
+    "appstream_whoami_account": _action_appstream_whoami_account,
+    "appstream_whoami": _action_appstream_whoami,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_tracker_mirror": _action_install_tracker_mirror,
     "install_day_orchestrator": _action_install_day_orchestrator,
@@ -6248,6 +7286,9 @@ ACTIONS = {
     "post_nsf_correction": _action_post_nsf_correction,
     "reseed_appstream": _action_reseed_appstream,
     "push_appstream_fleet": _action_push_appstream_fleet,
+    "login_check": _action_login_check,
+    "purge_retired_appstream_creds": _action_purge_retired_appstream_creds,
+    "set_ownerville_creds": _action_set_ownerville_creds,
     "appstream_renew_probe": _action_appstream_renew_probe,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
@@ -6751,16 +7792,26 @@ def print_help() -> None:
         "                            be impersonated). campaign=none skips the\n"
         "                            TeleMapper pin, to test whether the pin is\n"
         "                            what is blanking an office.\n"
+        '  lucy campaign_scan ["<office>"] [limit=N] [force]\n'
+        "                            READ-ONLY: which offices run more than one\n"
+        "                            campaign, i.e. who CANNOT be enrolled for\n"
+        "                            daily dispositions yet (no Sheet, no Slack).\n"
+        "                            The full ~90-office run takes 30-45 min and\n"
+        "                            refuses to start inside the selling window;\n"
+        "                            `force` overrides that on purpose.\n"
         "  lucy update               git pull the latest code onto the mini\n"
         "  lucy git_status           branch, HEAD, and what's blocking a pull\n"
         "  lucy git_diff [path]      what this machine's uncommitted edits SAY\n"
         "  lucy git_stash            park uncommitted edits so update can run\n"
+        "  lucy cherry_pick <sha>    take ONE already-pushed commit onto this\n"
+        "                            machine without pulling everything else\n"
+        "                            (the commit must be on origin/main first)\n"
         "  lucy purge_login_test_profile\n"
         "                            delete the leftover .ov_login_test profile\n"
         "  lucy restart_holder       restart the session keep-alive\n"
         "  lucy diag                 machine health: sleep, agents, session, disk\n"
         "  lucy set_sleep 1|0        prevent (1) / allow (0) sleep (needs NOPASSWD pmset)\n"
-        "  lucy reseed_appstream     open AppStream login (needs a human AT the mini)\n"
+        "  lucy reseed_appstream     mint a fresh AppStream session (unattended)\n"
         "  lucy watch_test           send a test of the 6pm session-expiry Slack ping\n"
         '  lucy incident_resolve <key> ["note"]\n'
         "                            close an incident thread in #claudecorrections\n"
