@@ -222,26 +222,6 @@
       "timeout_minutes": 15,
       "machine": "Lucy 2"
     },
-    "jw_admin_breakdown": {
-      "on_scheduler": false,
-      "_note": "ONE-TIME probe (Carlos 2026-09-05): Justin Wood (22192) AppStream Retention Details with Hide/Show Admin Breakdown ON, last 6 Sun-Sat weeks, per-admin per-day rows. Read-only on AppStream; writes ONLY base64 JSON chunks to the 'JW Breakdown Raw' control-sheet tab for Carlos's laptop to decode into a standalone comparison spreadsheet. Touches NO live report tab (not the Daily Focus Report). `lucy rerun jw_admin_breakdown`; delete module + this entry once delivered.",
-      "display_name": "JW admin breakdown probe (one-time)",
-      "source_type": "appstream",
-      "data_sources": [],
-      "command": [
-        "automations.jw_admin_breakdown.run"
-      ],
-      "base_args": [],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": null,
-      "timeout_minutes": 20,
-      "machine": "Lucy 2"
-    },
     "install_team_tree_agent": {
       "on_scheduler": false,
       "_note": "One-shot installer for com.alphalete.team-tree-daily on Lucy 2 (6:00am daily; deploy/team_tree_daily.sh -> python -m automations.team_tree.run). `lucy update` then `lucy rerun install_team_tree_agent` on the Lucy 2 control tab.",
