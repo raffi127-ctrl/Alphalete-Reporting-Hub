@@ -401,10 +401,20 @@ def header_title(o: B2BOffice, day: dt.date) -> str:
 
 
 def header_text(o: B2BOffice, day: dt.date) -> str:
+    # short_header (Carlos 2026-09-05): parent = title + date only; the
+    # section list posts as the thread's first reply (contents_text) instead.
+    if o.short_header:
+        return "*{}*".format(header_title(o, day))
     lines = ["*{}*".format(header_title(o, day))]
     lines += ["{} {}".format(i["emoji"], i["title"])
               for i in expected_items(o)]
     return "\n".join(lines)
+
+
+def contents_text(o: B2BOffice) -> str:
+    """The section list a short_header office posts INSIDE the thread."""
+    return "\n".join("{} {}".format(i["emoji"], i["title"])
+                     for i in expected_items(o))
 
 
 def expected_items(o: B2BOffice) -> list:
@@ -751,6 +761,15 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
                 channel=chan, text=header_text(o, today)).get("ts")
             bq._save_state(today, chan, ts, already)
             log("  [{}] opened thread ts={}".format(chan, ts))
+            if o.short_header:
+                # The section list lives inside the thread now. Posted only at
+                # thread creation, so retry passes never repeat it; best-effort
+                # because a missing contents line must never sink the sections.
+                try:
+                    client.chat_postMessage(channel=chan, thread_ts=ts,
+                                            text=contents_text(o))
+                except Exception as e:  # noqa: BLE001
+                    log("  [{}] contents reply failed: {}".format(chan, e))
         if first_ts is None:
             first_ts = ts
         for item in items:

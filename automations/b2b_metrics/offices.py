@@ -202,6 +202,12 @@ class B2BOffice:
     churn_tab: str = "LUCY CHURN"   # feeds #6 Customer Churn + #7 Activation-by-rep
     order_log_tab: str = "Lucy At&t Order Log"
 
+    # Short parent (Carlos 2026-09-05: "I don't like how long that message
+    # is"): True -> the thread's PARENT message is just the title + date, and
+    # the section list posts as the FIRST REPLY inside the thread instead.
+    # Per-office on purpose — Carlos asked for HIS threads, nobody else's.
+    short_header: bool = False
+
     # Per-office saved-view URLs that OVERRIDE the shared TEAM view for a given
     # view_key. Use when the team view can't be URL-sliced to this office (e.g.
     # CHURNRATES filters on "Owner & Office", not "Owner Name", so the generic
@@ -333,6 +339,9 @@ OFFICES: dict = {
         # Carlos 2026-07-23: the SAME thread also posts to #a-players-b2b
         # (private, Lucy added as a member). Its own daily thread + dedup.
         mirror_channels=(("C0AJQA8P716", "#a-players-b2b"),),
+        # Carlos 2026-09-05: parent = title + date only; the section list
+        # moves inside the thread as its first reply.
+        short_header=True,
     ),
     "atef": B2BOffice(
         key="atef",

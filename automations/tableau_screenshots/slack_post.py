@@ -305,6 +305,59 @@ def reply_caption(spec: dict, today: dt.date) -> str:
     return f"*{spec['title']} - {today.strftime('%b')} {today.day}*"
 
 
+# Carlos 2026-09-05 ("I don't like how long that message is"): channels where
+# the parent is JUST the dated title — the per-tracker list posts as the
+# thread's FIRST REPLY, and the late-note refresh edits that reply instead of
+# the parent. His channel only, on purpose; everyone else keeps the full parent.
+SHORT_HEADER_CHANNELS = {"C07J46MQNUX"}       # #alphalete-gp-sales (carlos_gp)
+
+
+def _split_header(channel: str, pages: list, today: dt.date, pending_late=(),
+                  note: str = "", updated: bool = False) -> tuple:
+    """(parent_text, contents_text) for one channel. contents_text is '' for a
+    normal channel — the parent then carries everything, exactly as before.
+    Splits on the blank separator header_text emits between the title block
+    (title + optional note) and the tracker lines."""
+    full = header_text(pages, today, pending_late, note, updated)
+    if channel not in SHORT_HEADER_CHANNELS:
+        return full, ""
+    lines = full.split("\n")
+    try:
+        cut = lines.index("")
+    except ValueError:                     # no separator -> nothing to split
+        return full, ""
+    return "\n".join(lines[:cut]), "\n".join(lines[cut + 1:])
+
+
+def _update_contents_reply(client, channel: str, thread_ts: str,
+                           contents: str) -> None:
+    """Refresh a short-header thread's tracker-list reply (late notes etc.).
+
+    The list reply is recognised as the first NON-FILE reply whose text is
+    mostly ':emoji:'-led lines. A thread from before this deploy has no list
+    reply — then one is posted, so the thread self-heals. Best-effort: the
+    images matter more than the list."""
+    try:
+        rs = client.conversations_replies(channel=channel, ts=thread_ts,
+                                          limit=100)
+        for m in rs.get("messages", [])[1:]:
+            if m.get("files"):
+                continue
+            txt = m.get("text") or ""
+            body = [ln for ln in txt.split("\n") if ln.strip()]
+            if body and sum(1 for ln in body if ln.startswith(":")) \
+                    >= max(1, len(body) - 1):
+                if _unescape(txt).strip() != contents.strip():
+                    client.chat_update(channel=channel, ts=m["ts"],
+                                       text=contents)
+                return
+        client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                text=contents)
+    except Exception as e:  # noqa: BLE001
+        print(f"  {channel}: tracker-list reply not refreshed "
+              f"({type(e).__name__})", flush=True)
+
+
 _LOCK_DIR = Path(__file__).resolve().parents[2] / "output" / "tableau_screenshots" / ".locks"
 
 
@@ -523,9 +576,17 @@ def ensure_thread(client, channel: str, pages: list, today: dt.date,
     else:
         print(f"  {channel}: --new-thread — posting a SECOND thread for today; "
               f"the existing one is left untouched", flush=True)
-    resp = client.chat_postMessage(
-        channel=channel,
-        text=header_text(pages, today, pending_late, note, updated))
+    parent, contents = _split_header(channel, pages, today, pending_late,
+                                     note, updated)
+    resp = client.chat_postMessage(channel=channel, text=parent)
+    if contents:
+        # Short-header channel: the tracker list is the thread's first reply.
+        try:
+            client.chat_postMessage(channel=channel,
+                                    thread_ts=resp.get("ts"), text=contents)
+        except Exception as e:  # noqa: BLE001
+            print(f"  {channel}: tracker-list reply failed "
+                  f"({type(e).__name__})", flush=True)
     return {"thread_ts": resp.get("ts"), "created": True}
 
 
@@ -702,9 +763,14 @@ def _post_to_channel_unlocked(client, channel: str, captures: list, pages: list,
     # Best-effort: the image is what matters, and a stale note beats a failed run.
     if not thread["created"] and (set(mine) & set(late_all or ())):
         try:
-            client.chat_update(
-                channel=channel, ts=thread_ts,
-                text=header_text(pages, today, pending_late, note, updated))
+            parent, contents = _split_header(channel, pages, today,
+                                             pending_late, note, updated)
+            if contents:
+                # Short-header channel: the list (and its late notes) lives in
+                # the thread's first reply — refresh that, not the parent.
+                _update_contents_reply(client, channel, thread_ts, contents)
+            else:
+                client.chat_update(channel=channel, ts=thread_ts, text=parent)
         except Exception as e:  # noqa: BLE001
             print(f"  {channel}: header note not cleared ({type(e).__name__}) — "
                   f"image posted fine", flush=True)

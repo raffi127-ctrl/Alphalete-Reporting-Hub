@@ -268,11 +268,14 @@ def metrics_thread_ts(client, chan: str, today) -> str:
 
 
 def box_thread_ts(client, chan: str, today):
-    """ts of the day's 'BOX Order Log — <Month D, YYYY>' thread in `chan`, or
-    None — box_order_log posts it at 7:00 (8:30 fallback); we never create it."""
-    needle = "BOX Order Log — {}".format(today.strftime("%B %d, %Y"))
-    alt = "BOX Order Log — {}".format(
-        today.strftime("%B %d, %Y").replace(" 0", " "))
+    """ts of the day's 'Box Metrics — <Month D, YYYY>' thread in `chan`, or
+    None — box_order_log posts it at 7:00 (8:30 fallback); we never create it.
+    (Renamed from 'BOX Order Log' 2026-09-05, Carlos; the old title stays a
+    fallback so a thread posted before the rename deploys is still found.)"""
+    dates = (today.strftime("%B %d, %Y"),
+             today.strftime("%B %d, %Y").replace(" 0", " "))
+    needles = tuple("{} — {}".format(t, d)
+                    for t in ("Box Metrics", "BOX Order Log") for d in dates)
     oldest = dt.datetime.combine(today, dt.time.min).timestamp()
     try:
         resp = client.conversations_history(channel=chan, oldest=str(oldest),
@@ -284,7 +287,7 @@ def box_thread_ts(client, chan: str, today):
     import html as _html
     for m in resp.get("messages", []):
         text = _html.unescape(m.get("text") or "")
-        if needle in text or alt in text:
+        if any(n in text for n in needles):
             return m.get("thread_ts") or m.get("ts")
     return None
 

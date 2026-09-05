@@ -117,17 +117,28 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
 def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                  payout_path: Path, tier_path: Optional[Path],
                  tier_line: str, sections=None,
-                 pending_path: Optional[Path] = None) -> str:
+                 pending_path: Optional[Path] = None,
+                 contents: str = "") -> str:
     """Post one dated thread — parent, then its attachments — and return its ts.
 
     One call per destination: Slack threads don't span channels, so Carlos's two
     rooms each get their own parent and their own replies. `sections` (a set of
     order_log/accepted/tier_bonus) narrows the attachments to an office's
     enrolled boards; None = everything (the standalone run).
+
+    `contents` (Carlos 2026-09-05: "I don't like how long that message is"):
+    the attachment list, posted as the thread's FIRST REPLY instead of living
+    in the parent — the parent is just the title + date now.
     """
     sections = sections if sections is not None else {"order_log", "accepted",
                                                       "pending", "tier_bonus"}
     ts = client.chat_postMessage(channel=channel, text=text)["ts"]
+    if contents:
+        try:
+            client.chat_postMessage(channel=channel, thread_ts=ts,
+                                    text=contents)
+        except Exception as e:  # noqa: BLE001 — the list must never sink the post
+            print("  ⚠ contents reply failed: {}".format(e), flush=True)
     # Workbook first — the overall log plus a tab per rep plus the payout grid.
     # Then the payout image, which Slack renders inline so the numbers are
     # readable without opening anything. Same pairing as the Fiber post. Last
@@ -694,8 +705,13 @@ def main(argv: Optional[list] = None) -> int:
         attach_lines.append(PENDING_LINE)
     if tier_png:
         attach_lines.append(tier_bonus.TIER_LINE)
-    header = "*BOX Order Log — {}*\n{}".format(
-        today.strftime("%B %d, %Y"), "\n".join(attach_lines))
+    # SHORT PARENT + RENAME (Carlos 2026-09-05): the parent is just
+    # "Box Metrics — <date>"; the attachment list posts as the thread's first
+    # reply (`contents` below). Thread finders elsewhere (sales_boards
+    # .box_thread_ts, backfill_tier.find_parent, vantura_revenue_board via
+    # box_thread_ts) match the new title with the old as fallback.
+    header = "*Box Metrics — {}*".format(today.strftime("%B %d, %Y"))
+    contents = "\n".join(attach_lines)
     if not args.post:
         _report_to_hub(started_at, verbose)
         if verbose:
@@ -794,7 +810,7 @@ def main(argv: Optional[list] = None) -> int:
             try:
                 _post_thread(client, target, text, out_xlsx, out_png, tier_png,
                              tier_bonus.TIER_LINE, sections=sections,
-                             pending_path=out_pending)
+                             pending_path=out_pending, contents=contents)
             except Exception as exc:                      # noqa: BLE001
                 failed_channels.append("{} — {}: {}".format(
                     name, type(exc).__name__,

@@ -90,18 +90,21 @@ def canonical_header(existing: str, day: dt.date, with_tier: bool = True) -> str
 
 
 def header_title(day: dt.date) -> str:
-    """The parent's first line, minus the bold markers — what we search for."""
-    return "BOX Order Log — {}".format(day.strftime("%B %d, %Y"))
+    """The parent's first line, minus the bold markers — what we search for.
+    Renamed 'BOX Order Log' -> 'Box Metrics' 2026-09-05 (Carlos)."""
+    return "Box Metrics — {}".format(day.strftime("%B %d, %Y"))
 
 
 def find_parent(client, channel: str, day: dt.date) -> Optional[dict]:
-    """Today's parent message in `channel`, or None."""
+    """Today's parent message in `channel`, or None — new title first, the
+    pre-rename one as fallback so an old thread can still be backfilled."""
     oldest = dt.datetime.combine(day, dt.time.min).timestamp()
     resp = client.conversations_history(channel=channel, oldest=str(oldest),
                                         limit=200)
-    needle = header_title(day)
+    needles = (header_title(day),
+               "BOX Order Log — {}".format(day.strftime("%B %d, %Y")))
     for msg in resp.get("messages", []):
-        if needle in (msg.get("text") or ""):
+        if any(n in (msg.get("text") or "") for n in needles):
             return msg
     return None
 
@@ -157,7 +160,13 @@ def _one_channel(client, name: str, channel: str, day, args,
     print("  thread ts               : {}".format(ts))
 
     have_board = already_in_thread(client, channel, ts)
-    new_text = canonical_header(text, day)
+    # SHORT PARENT (2026-09-05): the parent is title-only now — the attachment
+    # list lives in the thread's first reply. A parent with no attachment lines
+    # is the new form, not a broken header: leave it alone, just add the board.
+    short_parent = not any(
+        line_key(ln) in {line_key(a) for a in ATTACHMENT_LINES}
+        for ln in text.split("\n")[1:])
+    new_text = text if short_parent else canonical_header(text, day)
     needs_header = new_text.strip() != text.strip()
     print("  board already in thread : {}".format("yes" if have_board else "no"))
     print("  header already correct  : {}".format("no" if needs_header else "yes"))
