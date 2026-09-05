@@ -371,28 +371,36 @@ def _with_week(url: str, week_field: str, today: dt.date = None,
 
 
 def _dismiss_menus(page) -> None:
-    """Close any open Tableau dropdown HARD.
+    """Close any open Tableau dropdown HARD, and VERIFY it closed.
 
-    The menu and its click-capture glass live INSIDE the viz iframe — so does
-    the Download button _download_once clicks next. Proven 2026-09-05, twice:
-    Escape alone left the overlay up, and a page-coordinate click at (8,8)
-    landed OUTSIDE the iframe and closed nothing; both times the owner
-    selection succeeded and Download→Image then timed out 3x. Click the glass
-    itself (force=True — clicking the interceptor is the point), then Escape."""
+    The menu lives INSIDE the viz iframe — so does the Download button
+    _download_once clicks next. Three failed dismissal designs on 2026-09-05
+    (selection ok, Download→Image timeout 3x, every time): Escape alone; a
+    page-coordinate (8,8) click that landed OUTSIDE the iframe; a force-click
+    on .tab-glass that evidently hit the wrong glass. So now: a real MOUSE
+    click at the iframe's own origin + a few px (inside the frame, top-left
+    dead space), then Escape — and loop until no visible checkbox menu items
+    remain, up to 5 tries, logging if they survive (the Download click will
+    then fail loudly anyway, which beats hiding it)."""
     from automations.b2b_quality.run import _IFRAME
     fr = page.frame_locator(_IFRAME)
-    for _ in range(2):
-        for sel in (".tab-glass", ".tabMenuGlass", "body"):
-            try:
-                loc = fr.locator(sel)
-                if loc.count():
-                    loc.first.click(position={"x": 4, "y": 4}, force=True,
-                                    timeout=3_000)
-                    break
-            except Exception:  # noqa: BLE001
-                continue
+    for _ in range(5):
+        try:
+            still_open = fr.locator('[role="checkbox"]:visible').count()
+        except Exception:  # noqa: BLE001
+            still_open = 0
+        if not still_open:
+            return
+        try:
+            bb = page.locator(_IFRAME).bounding_box()
+            if bb:
+                page.mouse.click(bb["x"] + 6, bb["y"] + 6)
+        except Exception:  # noqa: BLE001
+            pass
         page.keyboard.press("Escape")
-        page.wait_for_timeout(1_200)
+        page.wait_for_timeout(1_500)
+    print("   [owner] menu items STILL visible after 5 dismissal passes",
+          flush=True)
 
 
 def drive_owner(page, want: str, log=print) -> bool:
