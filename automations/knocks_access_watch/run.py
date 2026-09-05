@@ -196,17 +196,30 @@ def change_text(d: dict, report: dict, prev_report: dict = None) -> Optional[str
                      "captainship's knock boards:\n"
                      + "\n".join(f"• {k}" for k, _w, _s in d["gained"]))
     if d["lost"]:
+        # NAME THE ICD, NOT THE "captain/ICD" KEY (Megan 2026-09-05: "we never
+        # lost access to Chan"). `diff` works in "<captain>/<owner>" keys and
+        # this line printed them raw, so "chan/Kimberly Rodriguez" read as two
+        # people — or as Chan Park having lost something. He had not: his own
+        # office was on the list both days and his captainship was 8 of 9
+        # reachable, Kimberly being the one. The captain is CONTEXT (whose
+        # board loses a column), never the subject of the alarm.
         lines = []
         for k, _w, s in d["lost"]:
+            captain, _, who = str(k).partition("/")
+            title = ((prev_report or {}).get(captain) or {}).get("title") \
+                or (report.get(captain) or {}).get("title") or captain
             held = _held_office(prev_report, k)
-            lines.append(f"• {k} ({_LABEL.get(s, s)})"
-                         + (f" — was reachable as {held}" if held else ""))
+            lines.append(f"• *{who or k}* — on {title}"
+                         + (f", was reachable as {held}" if held else "")
+                         + f" ({_LABEL.get(s, s)})")
         parts.append("*:rotating_light: Office Access LOST* — these ICDs "
-                     "dropped out of the knock boards:\n" + "\n".join(lines)
-                     + "\n_These were GRANTED at the last check and are not "
-                     "now: the grant went away, so an ICD Aliases row is not "
-                     "the fix. Any similar-name hint below is a different "
-                     "office._")
+                     "dropped out of their captain's knock board:\n"
+                     + "\n".join(lines)
+                     + "\n_Only the ICD named above is affected — the "
+                     "captainship itself is fine. These were GRANTED at the "
+                     "last check and are not now: the grant went away, so an "
+                     "ICD Aliases row is not the fix, and any similar-name "
+                     "hint is a different office._")
     parts.append(f"Captainship knock coverage is now *{ok} of {total}* ICDs.")
     if ok == total:
         parts.append(":white_check_mark: Every captainship ICD is reachable — "

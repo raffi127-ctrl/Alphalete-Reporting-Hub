@@ -177,14 +177,26 @@ class LostLineNamesTheOffice(unittest.TestCase):
         self.assertIn("#23576", text)
         self.assertIn("Illumane, Inc.", text)
 
+    def test_the_captain_is_context_not_the_subject(self):
+        """Megan 2026-09-05: "we never lost access to Chan". The raw
+        "chan/Kimberly Rodriguez" key read as the captain losing something."""
+        text = self._lost_text(self.PREV)
+        self.assertNotIn("chan/Kimberly Rodriguez", text)
+        self.assertIn("Kimberly Rodriguez", text)
+        self.assertIn("Chan's", text)                       # the block title
+        self.assertIn("captainship itself is fine", text)
+
     def test_it_says_an_alias_is_not_the_fix(self):
         self.assertIn("ICD Aliases row is not", self._lost_text(self.PREV))
 
     def test_no_snapshot_still_produces_the_alarm(self):
-        """Degrades to the old wording rather than losing the alert."""
+        """Degrades gracefully rather than losing the alert: still names the
+        ICD, falls back to the captain KEY for the block title, and simply
+        omits the office it can no longer look up."""
         text = self._lost_text({})
         self.assertIn("Office Access LOST", text)
-        self.assertIn("chan/Kimberly Rodriguez", text)
+        self.assertIn("Kimberly Rodriguez", text)
+        self.assertIn("on chan", text)
         self.assertNotIn("was reachable as", text)
 
     def test_held_office_needs_the_matching_owner(self):
