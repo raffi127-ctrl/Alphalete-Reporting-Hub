@@ -116,10 +116,61 @@ def parse_rep_churn(grid: list, owner_prefix: str = "CARLOS HIDALGO") -> dict:
                 cell["rate"] = v
             if color and not cell.get("color"):
                 cell["color"] = color
-    if "__TOTAL__" not in out:
-        raise RuntimeError(
-            f"'{CHURN_REP_SHEET}': no Grand Total rows — the office total "
-            "must be the view's own, never a sum of the shown reps")
+    # Grand Total rows are absent from this worksheet's export (proven
+    # 2026-09-05 — the dashboard's Grand Total lives in another sheet); the
+    # caller supplies the office totals from 'ICD Churn' instead.
+    return out
+
+
+def parse_office_churn(grid: list,
+                       owner_prefix: str = "CARLOS HIDALGO") -> dict:
+    """{bucket: cell} — the TRUE office totals, from the view's 'ICD Churn'
+    sheet (per owner x product x bucket; every rep's orders, gone reps
+    included). A 'Total' product row is used verbatim when the export carries
+    one; otherwise act/disc are summed across the product rows — numerator
+    and denominator separately, never the published rates."""
+    hdr = [str(h or "").strip() for h in grid[0]]
+    if "0-30 Day" not in hdr:
+        raise RuntimeError(f"'ICD Churn': header {hdr}")
+    i_owner = 0
+    i_prod = next((i for i, h in enumerate(hdr) if "product" in h.lower()), 1)
+    i_measure = hdr.index("0-30 Day") - 1
+    bucket_ix = {b: hdr.index(b) for b in BUCKETS if b in hdr}
+    acc = {b: {"act": 0.0, "disc": 0.0} for b in BUCKETS}
+    total_rows = {b: {} for b in BUCKETS}
+    saw_total = False
+    for r in grid[1:]:
+        if len(r) <= max(bucket_ix.values()):
+            continue
+        own = str(r[i_owner] or "").replace("\r", " ").upper()
+        if not own.startswith(owner_prefix.upper()):
+            continue
+        prod = str(r[i_prod] or "").strip()
+        measure = str(r[i_measure] or "").strip()
+        if measure not in (M_ACT, M_DISC):
+            continue
+        for b, ci in bucket_ix.items():
+            v = str(r[ci] or "").replace(",", "").strip()
+            if not v:
+                continue
+            try:
+                f = float(v)
+            except ValueError:
+                continue
+            if prod.lower() == "total":
+                saw_total = True
+                total_rows[b]["act" if measure == M_ACT else "disc"] = f
+            else:
+                acc[b]["act" if measure == M_ACT else "disc"] += f
+    src = total_rows if saw_total else acc
+    out = {}
+    for b in BUCKETS:
+        a, d = src[b].get("act", 0.0), src[b].get("disc", 0.0)
+        if not a:
+            out[b] = {}
+            continue
+        out[b] = {"act": str(int(a)), "disc": str(int(d)),
+                  "rate": "{:.1f}%".format(100.0 * d / a)}
     return out
 
 
@@ -267,6 +318,10 @@ def build(log=print) -> int:
                 download_crosstab_patchright(CHURN_VIEW, CHURN_REP_SHEET,
                                              churn_csv, page=page,
                                              verbose=False)
+                icd_csv = OUT_DIR / "office_churn.csv"
+                download_crosstab_patchright(CHURN_VIEW, "ICD Churn",
+                                             icd_csv, page=page,
+                                             verbose=False)
                 # per-rep activation lives on the 'Activation Office'
                 # worksheet of CARLOSLOCALEXPANDED (see activation_rates.py)
                 act_rep_csv = OUT_DIR / "rep_activation.csv"
@@ -297,7 +352,8 @@ def build(log=print) -> int:
     # ---- churn board
     grid = compute._load_grid(churn_csv)
     churn = parse_rep_churn(grid)
-    total = churn.pop("__TOTAL__")
+    churn.pop("__TOTAL__", None)
+    total = parse_office_churn(compute._load_grid(OUT_DIR / "office_churn.csv"))
     kept, dropped = [], 0
     for rep, cells in sorted(churn.items()):
         if _norm(rep) in roster:
