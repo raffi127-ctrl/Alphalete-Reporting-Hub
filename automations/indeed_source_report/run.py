@@ -152,6 +152,13 @@ def push_boards(new_rows, periods):
 # role = one row, cities listed together in the City column (their own call —
 # Carlos, 2026-08-22). Everyone else keeps the per-city split, which is what
 # exposes a dead posting in one metro next to a producing one in another.
+# Managers whose pull uses the FULL calendar month (1st -> month END) every
+# run, instead of 1st -> today (Carlos 2026-09-05: "for me specifically, every
+# day it's looking from the 1st to the end of the month" — testing whether the
+# report's end-date filter drops anything stamped past the pull day). Everyone
+# else keeps the 1st -> today window.
+FULL_MONTH_MANAGERS = {"Carlos Hidalgo"}
+
 CITY_AGNOSTIC = {"Carlos Hidalgo",
                  # Jamis (Carlos 2026-08-24): merge same-account,
                  # same-core-title ads across cities on HIS report
@@ -211,6 +218,10 @@ def main(argv=None):
     run_started = dt.datetime.now()
 
     period, rng, start, end = month_window(a.month)
+    # Month END for the FULL_MONTH_MANAGERS window, even mid-month.
+    _s = dt.datetime.strptime(start, "%m-%d-%Y").date()
+    _nxt = dt.date(_s.year + (_s.month == 12), (_s.month % 12) + 1, 1)
+    end_full = (_nxt - dt.timedelta(days=1)).strftime("%m-%d-%Y")
     targets = [(o, n) for o, n in OFFICES if not a.office or o in a.office]
     print("[indeed_source_report] %s (%s) — %d offices" % (period, rng, len(targets)),
           flush=True)
@@ -284,7 +295,11 @@ def main(argv=None):
         for oid, name in targets:
             try:
                 fetch.select_office(page, tok, oid)
-                html, owner, nrows = fetch.source_report(page, tok, start, end)
+                o_end = end_full if name in FULL_MONTH_MANAGERS else end
+                if o_end != end:
+                    print("  (%s pulls the full month window: %s to %s)"
+                          % (name, start, o_end), flush=True)
+                html, owner, nrows = fetch.source_report(page, tok, start, o_end)
                 rescued_total += len(parse.WRAPPER.findall(html))
                 ads, fl = parse.ads_for_month(html)
                 if name in CITY_AGNOSTIC:
