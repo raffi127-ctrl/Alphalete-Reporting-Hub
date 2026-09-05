@@ -4378,7 +4378,9 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 130
+      "timeout_minutes": 130,
+      "standalone_weekdays": [0, 1, 2, 3, 4],
+      "_standalone_weekdays_note": "Mon-Fri, added 2026-09-05. NOT a schedule change - the plist is untouched. This pins the missed-run watcher's guess, which is the only thing that reads it. Carlos's weekend quiet window (applicant_push.window.quiet_window: Fri 1PM -> Sun 1PM CST, shipped 2026-09-04) makes the module DECLINE with exit 75, and deploy/applicant_push.sh deliberately publishes NOTHING for a decline - so on the FIRST Saturday machine_digest saw no Activity row and posted 'didn't run today on Lucy 2' for both offices at 09:07. A correct skip read as a miss. Saturday never runs; Sunday cannot run before 1PM while _historical_expected has learned a ~7AM start, so both days come off the didn't-run GUESS only. FAILED / INCOMPLETE / STUCK stay watched every day, so a weekend run that actually breaks still alerts. Accepted cost: a genuinely absent Sunday-afternoon run is not flagged until Monday. Remove this if the quiet window is ever lifted."
     },
     "applicant_push_atef": {
       "on_scheduler": false,
@@ -4401,7 +4403,9 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 130
+      "timeout_minutes": 130,
+      "standalone_weekdays": [0, 1, 2, 3, 4],
+      "_standalone_weekdays_note": "Mon-Fri - same reason as the applicant_push entry above; both offices were alerted at 09:07 on the first Saturday of the quiet window. See that note."
     },
     "applicant_push_recheck": {
       "on_scheduler": false,
