@@ -371,15 +371,26 @@ def _with_week(url: str, week_field: str, today: dt.date = None,
 
 
 def _dismiss_menus(page) -> None:
-    """Close any open Tableau dropdown HARD. Escape alone is not enough —
-    proven 2026-09-05: an owner selection succeeded and then Download→Image
-    timed out three times behind the still-open menu overlay; Tableau menus
-    really close on click-outside. Click dead space, then Escape, twice."""
+    """Close any open Tableau dropdown HARD.
+
+    The menu and its click-capture glass live INSIDE the viz iframe — so does
+    the Download button _download_once clicks next. Proven 2026-09-05, twice:
+    Escape alone left the overlay up, and a page-coordinate click at (8,8)
+    landed OUTSIDE the iframe and closed nothing; both times the owner
+    selection succeeded and Download→Image then timed out 3x. Click the glass
+    itself (force=True — clicking the interceptor is the point), then Escape."""
+    from automations.b2b_quality.run import _IFRAME
+    fr = page.frame_locator(_IFRAME)
     for _ in range(2):
-        try:
-            page.mouse.click(8, 8)
-        except Exception:  # noqa: BLE001
-            pass
+        for sel in (".tab-glass", ".tabMenuGlass", "body"):
+            try:
+                loc = fr.locator(sel)
+                if loc.count():
+                    loc.first.click(position={"x": 4, "y": 4}, force=True,
+                                    timeout=3_000)
+                    break
+            except Exception:  # noqa: BLE001
+                continue
         page.keyboard.press("Escape")
         page.wait_for_timeout(1_200)
 
