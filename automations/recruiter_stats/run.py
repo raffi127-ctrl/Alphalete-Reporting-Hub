@@ -229,6 +229,8 @@ def office_rows(offraw, weeks_iso, roster):
         for wk in reversed(weeks_iso):
             d = dt.date.fromisoformat(wk)
             booked, ret_cl, first, showed, ret = _metrics(offraw, wk, person)
+            if booked is None and first is None and showed is None:
+                continue        # Carlos 2026-09-05: no numbers -> drop the week row
             rows.append([f"{d.month}/{d.day}",
                          "" if booked is None else booked,
                          "" if ret_cl is None else round(ret_cl, 4),
