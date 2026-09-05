@@ -29,8 +29,17 @@ order log abbreviates surnames.
 Both paths run whenever they can, and a row where they DISAGREE is reported,
 never applied.
 
-    python -m automations.commission_sheet.transfers            # dry run
-    python -m automations.commission_sheet.transfers --write    # apply
+    python -m automations.commission_sheet.transfers              # dry run
+    python -m automations.commission_sheet.transfers --write      # apply
+    python -m automations.commission_sheet.transfers --clear-paid # tidy the form
+
+CLEARING THE PAID ONES. JD works the form down by emptying the rows he has
+already dealt with, so only live ones remain (JD, 2026-09-04: "delete the data
+in the cells"). `--clear-paid` does that: it empties the CELLS of every row
+whose Status reads PAID and leaves the rows themselves in place, so no other
+row shifts and nothing below is renumbered. Every row it empties is written to
+output/ first — this is somebody's form data, and the manual version has no
+undo.
 """
 from __future__ import annotations
 
@@ -332,12 +341,63 @@ def apply(found: Dict[str, List[Finding]],
     return done
 
 
+def clear_paid(all_in_one_id: str = C.ALL_IN_ONE_ID,
+               write: bool = False) -> dict:
+    """Empty the cells of every PAID row on the transfers form.
+
+    Cells, not rows: deleting rows would shift everything below and break any
+    row number already reported. A snapshot goes to output/ before any write."""
+    import datetime as dt
+    import json
+    from pathlib import Path
+
+    from automations.recruiting_report.fill import open_by_key
+    ws = open_by_key(all_in_one_id).worksheet(C.TAB_TRANSFERS)
+    values = ws.get("A1:P500")
+    grid = _Grid(values, 1, 2)
+    status_col = grid.col(C.TR_STATUS)
+
+    paid = [(n, cells) for n, cells in grid.rows
+            if cells[status_col].strip().upper() == "PAID"]
+    if not paid or not write:
+        return {"paid": len(paid), "cleared": 0,
+                "rows": [n for n, _c in paid], "snapshot": None}
+
+    out_dir = Path(__file__).resolve().parents[2] / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    snap = out_dir / f"transfers-cleared-{dt.date.today().isoformat()}.json"
+    snap.write_text(json.dumps(
+        {"taken": dt.datetime.now().isoformat(timespec="seconds"),
+         "header": grid.header,
+         "rows": [{"row": n, "values": cells} for n, cells in paid]}, indent=2),
+        encoding="utf-8")
+
+    last = _col_letter(grid.width - 1)
+    ws.batch_clear([f"A{n}:{last}{n}" for n, _c in paid])
+    return {"paid": len(paid), "cleared": len(paid),
+            "rows": [n for n, _c in paid], "snapshot": snap}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--workbook", default=C.WORKBOOK_ID)
     ap.add_argument("--write", action="store_true",
                     help="apply the transfers/bonuses (default is a dry run)")
+    ap.add_argument("--clear-paid", action="store_true",
+                    help="empty the cells of rows already marked PAID")
     args = ap.parse_args(argv)
+
+    if args.clear_paid:
+        res = clear_paid(write=args.write)
+        print(f"\nPAID rows on the form: {res['paid']}  {res['rows'][:12]}"
+              + (" …" if len(res["rows"]) > 12 else ""))
+        if not args.write:
+            print("\n(dry run — nothing cleared; add --write to empty them)")
+            return 0
+        print(f"Emptied {res['cleared']} row(s); rows left in place so nothing "
+              f"below shifts.")
+        print(f"Snapshot: {res['snapshot']}")
+        return 0
 
     found = analyze(workbook_id=args.workbook)
     print(report(found))
