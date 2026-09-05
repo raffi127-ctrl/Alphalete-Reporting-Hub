@@ -68,6 +68,16 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", str(s or "").replace("\r", " ")).strip().lower()
 
 
+def _clean_num(v: str) -> str:
+    """'2.0' -> '2', '0.00' -> '0', '1,118' -> '1118' — the product-filtered
+    crosstabs export counts as decimals (probed 2026-09-05)."""
+    try:
+        f = float(str(v).replace(",", ""))
+        return str(int(f)) if f == int(f) else str(f)
+    except ValueError:
+        return v
+
+
 # --------------------------------------------------------------- churn parse
 def parse_rep_churn(grid: list, owner_prefix: str = "CARLOS HIDALGO") -> dict:
     """{rep: {bucket: {'act','disc','rate','color'}}} + a '__TOTAL__' entry
@@ -116,9 +126,9 @@ def parse_rep_churn(grid: list, owner_prefix: str = "CARLOS HIDALGO") -> dict:
                 continue
             cell = slot[b]
             if measure == M_ACT:
-                cell["act"] = v
+                cell["act"] = _clean_num(v)
             elif measure == M_DISC:
-                cell["disc"] = v
+                cell["disc"] = _clean_num(v)
             else:
                 cell["rate"] = v
             if color and not cell.get("color"):
