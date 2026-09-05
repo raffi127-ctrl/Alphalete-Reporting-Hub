@@ -115,9 +115,55 @@ export PYTHONPATH="$(pwd)"
 # read the leading -m as an option and answered "" to a question it never got
 # to ask. [[reference_pgrep_guard_dead]]
 BUSY="$("$VENV_PY" -c "from automations.day_orchestrator import proc_guard; print(','.join(proc_guard.running_pids('automations.digi_docs.run')))" 2>/dev/null)"
+# THE ADD PASS WAITS; THE TICK DOES NOT (2026-09-05).
+#
+# These two jobs share this guard, and only one of them can afford to lose it.
+# The send tick fires every 5 minutes all day, so a skipped tick costs nothing —
+# the next one is along shortly. The ADD fires ONCE, at 11:00. When it loses,
+# nobody gets added that day and the only trace was a line in digi-docs.skip.log
+# plus the watcher saying "didn't run today", which reads as a dead LaunchAgent
+# rather than "the add never happened".
+#
+# That is exactly what happened on 2026-09-05. The tick started at 11:00:04
+# (digi-docs-2026-09-05-110004.log, pid 51574) and the add fired one second
+# later:
+#     [Sat Sep  5 11:00:05] digi_docs already running (pid 51574) — skipping
+# It had won the same race Tue-Fri, which is why this looked stable for a week.
+# The send agent uses StartInterval 300, not a calendar minute, so its fires are
+# NOT aligned to :00 and drift — moving the add off :00 would only reshuffle the
+# odds, never remove the collision. Waiting removes it.
+#
+# So the add retries for a couple of minutes instead of giving up for the day. A
+# tick is short (a quiet day exits on the sheet read); if one is genuinely stuck
+# for two minutes, that IS the news and the skip below still records it.
+_IS_ADD=0
+case " $* " in *" --add "*|*" --add-only "*) _IS_ADD=1 ;; esac
+if [ -n "$BUSY" ] && [ "$_IS_ADD" -eq 1 ]; then
+    for _try in 1 2 3 4; do
+        echo "[$(date)] add: digi_docs busy (pid $BUSY) — waiting 30s (${_try}/4)" \
+            >> "$LOG_DIR/digi-docs.skip.log"
+        sleep 30
+        BUSY="$("$VENV_PY" -c "from automations.day_orchestrator import proc_guard; print(','.join(proc_guard.running_pids('automations.digi_docs.run')))" 2>/dev/null)"
+        [ -z "$BUSY" ] && break
+    done
+fi
 if [ -n "$BUSY" ]; then
     echo "[$(date)] digi_docs already running (pid $BUSY) — skipping this fire" \
         >> "$LOG_DIR/digi-docs.skip.log"
+    # A SKIPPED ADD HAS TO BE VISIBLE. This exit is ABOVE the publish block at
+    # the bottom, whose own comment says "Publish either way so a blocked run is
+    # visible on the Hub instead of leaving the card grey" — and this is
+    # precisely the blocked case it does not cover.
+    #
+    # Only the ADD publishes. A skipped TICK is its normal state while an add is
+    # in flight, and a row per skip would be ~120 a day and would bury the one
+    # that matters. 'skipped' is the status the dashboard already treats as "not
+    # a run": it clears the grey card without claiming work that did not happen,
+    # and publish_done only pages on 'failed'.
+    if [ "$_IS_ADD" -eq 1 ]; then
+        "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('digi_docs','Digi Docs','skipped')" \
+            >> "$LOG_DIR/digi-docs.skip.log" 2>&1 || true
+    fi
     exit 0
 fi
 
