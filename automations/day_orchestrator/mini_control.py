@@ -3823,6 +3823,14 @@ _CRED_FILES = {
     "contacts-token-alphaletereception":
         lambda: Path.home() / ".config" / "recruiting-report"
                 / "contacts-token-alphaletereception.json",
+    # READ-WRITE Google Contacts for alphaletegp@, so Lucy 2 can ADD contacts
+    # to that account's contact list. Authorized on the mini
+    # (fiber_owners_distro.contacts_write --authorize --account
+    # alphaletegp@gmail.com), then pushed to Lucy 2. An OAuth token, so it is
+    # deliberately NOT in _CRED_FILES_MERGE — it has to land whole.
+    "contacts-rw-token-alphaletegp":
+        lambda: Path.home() / ".config" / "recruiting-report"
+                / "contacts-rw-token-alphaletegp.json",
 }
 
 # Of those, the file-keys that are a BAG OF INDEPENDENT CREDENTIALS: one flat
