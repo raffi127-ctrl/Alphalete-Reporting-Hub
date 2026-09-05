@@ -117,6 +117,47 @@ _KINDS = {
         "tail": "There is NO email today — not a short one, none. They have no "
                 "way to notice it's missing; they just don't get it.",
     },
+    # ONE OWNER'S TAB, not a section of a thread (2026-09-05). daily_rep_breakdown
+    # writes kind="owner" and there was no such kind, so it fell through to
+    # 'section' — whose every word is about a Slack thread. On 2026-09-05 that
+    # went out as "dropped 1 section this run — it did NOT post … The thread is
+    # live but incomplete" for a run that had gone 04:58-06:27, posted, and
+    # filled every owner but Kim Rodriguez. The report fills a per-owner TAB;
+    # "the thread didn't post" sends the reader to the wrong artefact entirely.
+    "owner": {
+        "what": "owner",
+        "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
+        "tail_headline": "their tab was not filled.",
+        "label": "Missing",
+        "fix": "re-run only the missing {what}{s} for `{report_id}` — a whole "
+               "re-run re-scrapes every owner and costs an hour.",
+        "tail": "Everything else filled and the report posted.",
+    },
+    # …and the same miss when it is EXPECTED. daily_rep_breakdown already knows
+    # the difference — it classifies a miss as terminal (terminated ICD, pending
+    # OV access, no Sheet tab) and deliberately does NOT retry those — but the
+    # manifest said "failed" either way, so a known-and-waited-on absence got
+    # the same 🚨 as a real break. Kim Rodriguez moved states and is waiting on a
+    # NEW OwnerVille account: that is weeks of identical red mornings for
+    # something nobody can act on. ✅ and the unfilled_icd tone, because the run
+    # genuinely was fine.
+    "owner_expected": {
+        "what": "owner",
+        "headline": "✅ *{report_id}* ran fine and posted. {n} {what}{s} could "
+                    "not be reached, and that is expected: {items}.",
+        "tail_headline": "",
+        "label": "Not reachable",
+        "thread_always": True,
+        "fix_in_thread": True,
+        "see_thread": "Detail in thread.",
+        "detail_header": "*The {n} {what}{s} that could not be reached:*",
+        "fix": "nothing today. A terminated ICD should come off the report; an "
+               "owner waiting on OwnerVille access fills itself on the next run "
+               "once the grant lands; an owner with no Sheet tab needs one "
+               "made. Re-running changes none of these.",
+        "tail": "Not a break and nothing to re-run — the rest of the report "
+                "filled and posted normally.",
+    },
     "section": {
         "what": "section",
         "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",

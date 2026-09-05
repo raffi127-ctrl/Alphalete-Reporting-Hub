@@ -1363,8 +1363,22 @@ def _daily_manifest_ok(sweep_summary: dict = None) -> None:
         owners = sorted(bad)
         note = (f"{len(owners)} owner(s) still missing after retry sweep: "
                 + " | ".join(segs) + "." + heal_txt)
+        # EXPECTED MISSES GET THE QUIET KIND (Megan 2026-09-05). We already know
+        # the difference — `terminal_left` is the bucket we deliberately do NOT
+        # retry — but the manifest said "failed" either way, so a pending OV
+        # access read exactly like a broken scrape: 🚨, "it did NOT post", "It
+        # did not finish. Re-running will not fix it", every single morning.
+        # Kim Rodriguez moved states and is waiting on a NEW OwnerVille account;
+        # that is weeks of identical red for something nobody can act on today.
+        # When EVERY remaining owner is in that bucket the run really was fine,
+        # so say so — section_drop_alert's 'owner_expected' is the ✅ wording.
+        # A single genuine failure alongside them keeps the loud kind: the
+        # quiet one must never be able to hide a real break.
+        kind = ("owner_expected"
+                if (terminal_left and not failed_after and not deferred)
+                else "owner")
         _rm.write_manifest(_DAILY_RB_CARD_ID, failed=owners, retry_args=[],
-                           kind="owner", note=note)
+                           kind=kind, note=note)
     except Exception:
         pass
 

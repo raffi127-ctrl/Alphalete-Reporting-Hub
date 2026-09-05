@@ -213,6 +213,12 @@ _NO_ACTION_LINE = ("*Nothing to do.* An upstream Tableau feed is serving older "
 # the notices above this runs BEFORE the age rule, because a finding also stays
 # open for days by its nature: nothing re-runs it, and a re-run would not clear
 # it — the audit only ever detects, it never edits the board.
+_EXPECTED_MISS_LINE = (
+    "*Nothing to do.* The report ran and posted — what is missing is expected: "
+    "a terminated ICD, an OwnerVille access request that hasn't been granted "
+    "yet, or an owner with no Sheet tab. Re-running will not change it; it "
+    "fills itself on the next run once the access lands.")
+
 _FINDING_PREFIXES = ("finding-",)
 _FINDING_LINE = ("*Needs one of you.* The run itself was fine — this is what it "
                  "FOUND, and it is fixed on the board, not in the code. "
@@ -380,6 +386,31 @@ def classify(key: str, *, day: Optional[dt.date] = None,
         return Verdict(key, NEEDS_YOU,
                        "The run was fine; it found something to fix on the board.",
                        line=_FINDING_LINE)
+
+    # 0c) An EXPECTED miss — the run finished and delivered; the parts it could
+    #     not do are ones nothing on our side can do today (Megan 2026-09-05).
+    #     daily_rep_breakdown's own manifest says it in as many words:
+    #
+    #       1 owner(s) still missing after retry sweep: expected, no action —
+    #       terminated / pending access / no tab (Kim Rodriguez …)
+    #
+    #     and then this module posted "It did not finish. Still not fixed after
+    #     the noon cut-off. Re-running will not fix it." directly underneath —
+    #     about a report that ran 04:58-06:27, posted, and filled every owner
+    #     but one whose OwnerVille account does not exist yet (Kim moved states
+    #     and is waiting on a new one). Same mistake _FINDING_PREFIXES was added
+    #     for, and the same cost: a triage line that contradicts the post above
+    #     it teaches people the line is noise.
+    #
+    #     Matched on the manifest's own phrase, not on a key prefix, because the
+    #     key here is an ordinary `drop-` one — what makes it a notice is what
+    #     the run SAID, not which producer opened it. Before the age rule: a
+    #     pending OV account stays pending for weeks, and the age rule would
+    #     paint that red every morning.
+    if "expected, no action" in (tail or "").lower():
+        return Verdict(key, WAITING,
+                       "It ran and delivered; what is missing is expected.",
+                       line=_EXPECTED_MISS_LINE)
 
     # 1) Open since a previous day. A full morning of retries already lost.
     age = inc._days_open(opened, day) if opened else 0
