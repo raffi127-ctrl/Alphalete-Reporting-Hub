@@ -155,8 +155,37 @@ def summary_lines(report: dict) -> List[str]:
     return out
 
 
-def change_text(d: dict, report: dict) -> Optional[str]:
-    """The Slack message, or None when nothing worth saying happened."""
+def _held_office(prev_report: dict, key: str) -> str:
+    """"office #23576 (Illumane, Inc.)" — what this owner was reachable AS in
+    the previous snapshot, or "" if we can't say.
+
+    `key` is "<captain>/<owner display>", the shape `diff` works in."""
+    captain, _, display = str(key).partition("/")
+    block = (prev_report or {}).get(captain) or {}
+    for o in block.get("owners") or []:
+        if o.get("display") == display and o.get("office"):
+            company = (o.get("company") or "").strip()
+            return (f"office #{o['office']}"
+                    + (f" ({company})" if company else ""))
+    return ""
+
+
+def change_text(d: dict, report: dict, prev_report: dict = None) -> Optional[str]:
+    """The Slack message, or None when nothing worth saying happened.
+
+    A LOST line NAMES THE OFFICE (2026-09-05). "chan/Kimberly Rodriguez (not on
+    the list)" is true and unusable: it doesn't say what was lost, so the first
+    move is to go looking for a spelling problem — and the near-miss hint,
+    which matches on SURNAME ALONE, helpfully offered "Marcial Rodriguez
+    (#22512)", a different person at a different office. daily_rep_breakdown
+    reached the same false lead the same morning ("name not found in ownerville
+    — it lists: 'marcial rodriguez'"), and an ICD Aliases row written on that
+    evidence would have quietly pointed one ICD's knocks at another's.
+
+    The previous snapshot already knows the answer — she was reachable AS
+    office #23576, Illumane, Inc. — so an owner who WAS granted and now is not
+    has lost a specific grant, and no alias can bring it back. Say which one,
+    and say that renaming is not the fix."""
     if not (d["gained"] or d["lost"]):
         return None
     ok = sum(c[0] for c in A.counts(report).values())
@@ -167,10 +196,17 @@ def change_text(d: dict, report: dict) -> Optional[str]:
                      "captainship's knock boards:\n"
                      + "\n".join(f"• {k}" for k, _w, _s in d["gained"]))
     if d["lost"]:
+        lines = []
+        for k, _w, s in d["lost"]:
+            held = _held_office(prev_report, k)
+            lines.append(f"• {k} ({_LABEL.get(s, s)})"
+                         + (f" — was reachable as {held}" if held else ""))
         parts.append("*:rotating_light: Office Access LOST* — these ICDs "
-                     "dropped out of the knock boards:\n"
-                     + "\n".join(f"• {k} ({_LABEL.get(s, s)})"
-                                 for k, _w, s in d["lost"]))
+                     "dropped out of the knock boards:\n" + "\n".join(lines)
+                     + "\n_These were GRANTED at the last check and are not "
+                     "now: the grant went away, so an ICD Aliases row is not "
+                     "the fix. Any similar-name hint below is a different "
+                     "office._")
     parts.append(f"Captainship knock coverage is now *{ok} of {total}* ICDs.")
     if ok == total:
         parts.append(":white_check_mark: Every captainship ICD is reachable — "
@@ -327,7 +363,7 @@ def main(argv=None) -> int:
     save_state(report, now, data["offices"])
 
     if args.post and prev:
-        text = change_text(d, report)
+        text = change_text(d, report, prev.get("report") or {})
         if text:
             post(text, dry_run=args.dry_run)
         else:

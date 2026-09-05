@@ -153,6 +153,48 @@ class Diff(unittest.TestCase):
         self.assertIn("Every captainship ICD is reachable", text)
 
 
+class LostLineNamesTheOffice(unittest.TestCase):
+    """A LOST line has to say WHAT was lost.
+
+    2026-09-05: "chan/Kimberly Rodriguez (not on the list)" sent the morning
+    hunting for a spelling problem, and the surname-only near-miss hint offered
+    "Marcial Rodriguez (#22512)" — a different person at a different office.
+    She had been reachable as #23576 (Illumane, Inc.); the previous snapshot
+    knew that all along."""
+
+    PREV = {"chan": {"title": "Chan's", "owners": [
+        {"display": "Kimberly Rodriguez", "canonical": "Kimberly Rodriguez",
+         "status": A.OK, "office": "23576", "company": "Illumane, Inc."}]}}
+
+    def _lost_text(self, prev_report):
+        rep = A.classify({"tony": ("Tony's", ["Coel Reif"])}, ROWS, ALIASES)
+        d = R.diff({"chan/Kimberly Rodriguez": A.OK},
+                   {"chan/Kimberly Rodriguez": A.MISSING})
+        return R.change_text(d, rep, prev_report)
+
+    def test_it_names_the_office_that_went_away(self):
+        text = self._lost_text(self.PREV)
+        self.assertIn("#23576", text)
+        self.assertIn("Illumane, Inc.", text)
+
+    def test_it_says_an_alias_is_not_the_fix(self):
+        self.assertIn("ICD Aliases row is not", self._lost_text(self.PREV))
+
+    def test_no_snapshot_still_produces_the_alarm(self):
+        """Degrades to the old wording rather than losing the alert."""
+        text = self._lost_text({})
+        self.assertIn("Office Access LOST", text)
+        self.assertIn("chan/Kimberly Rodriguez", text)
+        self.assertNotIn("was reachable as", text)
+
+    def test_held_office_needs_the_matching_owner(self):
+        self.assertEqual(
+            R._held_office(self.PREV, "chan/Someone Else"), "")
+        self.assertEqual(
+            R._held_office(self.PREV, "chan/Kimberly Rodriguez"),
+            "office #23576 (Illumane, Inc.)")
+
+
 class ShortRead(unittest.TestCase):
     class _Page:
         """Enough of a patchright Page to walk read_office_access to its guard

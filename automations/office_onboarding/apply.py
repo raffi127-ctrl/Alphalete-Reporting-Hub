@@ -183,7 +183,41 @@ def plan() -> List[dict]:
 
 def _merge_json(path: Path, rows: List[dict], write: bool) -> str:
     """Merge office rows into a family's onboarded_offices.json (keyed by 'key',
-    last write wins). Returns a short human summary."""
+    last write wins). Returns a short human summary.
+
+    A MERGE, NOT A REPLACEMENT (2026-09-05). This said "merge" and did
+    `existing[key] = row` — a whole-record overwrite that silently threw away
+    every field the onboarding FORM has no column for. `per_office_views` is
+    that field: the form only carries a view URL when an office enrolled a real
+    one, so `_office_row` regenerates it as `{}` for everyone else, and an
+    overwrite turns a hand-authored override into an empty dict.
+
+    That is what re-broke Jamis's B2B churn. On 2026-09-04 his three churn
+    sections were pointed at ALLTEAMWireless (c10f46e) because the shared team
+    view returns nothing for his Owner & Office; Sabrina got the same three plus
+    a corrected `owner_office`. At 17:30 that evening an unrelated enrollment
+    ran `apply` and the auto-commit ("enrollments: auto-commit confirmed
+    offices", 305719c) reset both offices to `per_office_views: {}` — and the
+    next morning b2b_metrics dropped `jamis: churn_wireless / churn_int /
+    churn_air` again, exactly as before the fix. Nothing in the commit or the
+    channel said a fix had been reverted; it read as the bug coming back.
+
+    So: shallow-merge over the existing record, and never let a regenerated
+    EMPTY value ("" / {} / []) blank a non-empty one that is already there. The
+    form still wins whenever it actually has something to say — a renamed
+    channel, a new report, a changed sheet id all still apply. This mirrors what
+    the two sibling patchers in this file already do: `_patch_schedule` merges
+    (`{**reports.get(rid, {}), **entry}`) and preserves a tuned `order`, and
+    `_patch_icd_mappings` "never overwrites an existing alias". This was the
+    outlier.
+
+    What it deliberately does NOT solve: a field the form fills with a WRONG
+    non-empty value still overwrites a hand-corrected one (Sabrina's
+    `owner_office` was submitted as "Sabrina Alicea Alisei Inc." and Tableau
+    wants "SABRINA ALICEA [alisei, inc.]"). The durable fix for that is to
+    capture the Tableau spelling on the form; until then it needs re-correcting
+    after a submission, and this at least stops the same commit from eating the
+    view overrides too."""
     existing: Dict[str, dict] = {}
     if path.exists():
         try:
@@ -193,7 +227,17 @@ def _merge_json(path: Path, rows: List[dict], write: bool) -> str:
     added = [r["key"] for r in rows if r["key"] not in existing]
     updated = [r["key"] for r in rows if r["key"] in existing]
     for r in rows:
-        existing[r["key"]] = r
+        prior = existing.get(r["key"])
+        if not prior:
+            existing[r["key"]] = r
+            continue
+        merged = {**prior, **r}
+        for field, value in r.items():
+            # An empty regenerated value means the FORM had nothing to say about
+            # this field, not that the office wants it cleared.
+            if not value and prior.get(field):
+                merged[field] = prior[field]
+        existing[r["key"]] = merged
     if write:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")

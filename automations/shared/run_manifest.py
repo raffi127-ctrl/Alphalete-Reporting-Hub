@@ -191,7 +191,17 @@ def outcome(report_id: str, *, today_only: bool = True) -> Optional[str]:
     so it reads as 'failed' (the safe direction: never green).
 
     today_only (default) ignores a stale manifest from an earlier day, so
-    yesterday's failure can't colour today's pill."""
+    yesterday's failure can't colour today's pill.
+
+    A kind='finding' manifest is NEVER 'failed' (2026-09-05). Those reports are
+    AUDITS: `ok=False` there means "the run worked and it found things", not
+    "the run broke" — vantura_board_audit exits 0 and writes exactly that shape
+    on purpose, so a human fixes the BOARD (there is nothing to re-run). But it
+    passes `failed` without `succeeded`, which is the one combination the line
+    below reads as a total failure, so 17 healthy findings painted the card red
+    and paged the channel with ":x: … closed a run with status FAILED" beside
+    the same run's "the run itself was fine". Orange is the honest colour: it
+    ran, it isn't clean, and nobody should be woken for it."""
     m = read_manifest(report_id)
     if not m:
         return None
@@ -203,6 +213,8 @@ def outcome(report_id: str, *, today_only: bool = True) -> Optional[str]:
             return None
     if m.get("ok"):
         return "success"
+    if m.get("kind") == "finding":
+        return "partial"
     return "partial" if (m.get("succeeded") and m.get("failed")) else "failed"
 
 

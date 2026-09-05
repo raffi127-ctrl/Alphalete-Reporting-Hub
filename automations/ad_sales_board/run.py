@@ -81,6 +81,22 @@ def _owner_expect():
     return {str(o): w for n, o, w in list(ORG) + list(CAPTAINSHIP)}
 
 
+def _prev_office_name(office_id):
+    """The office selected immediately BEFORE `office_id` in this run's order.
+
+    A wrong-office read that matches this one is a switch that never took (the
+    session stayed put), not a job on another machine stealing the session — and
+    the two want completely different people looking at them. Empty for the
+    first office, which has no predecessor to be mistaken for."""
+    from automations.indeed_source_report.offices import OFFICES
+    ids = [str(o) for o, _n in OFFICES]
+    try:
+        i = ids.index(str(office_id))
+    except ValueError:
+        return ""
+    return list(OFFICES)[i - 1][1] if i else ""
+
+
 def _same_owner(got, want):
     """True when two owner spellings name the same person.
 
@@ -377,11 +393,40 @@ def main(argv=None):
                     html, owner, nrows = fetch.source_report(
                         page, tok, weeks.fmt_mdY(start), weeks.fmt_mdY(end))
                     if want_owner and not _same_owner(owner, want_owner):
+                        # RE-SELECT ONCE, THEN SAY WHAT ACTUALLY HAPPENED
+                        # (2026-09-05). select_office fires
+                        # `p=104&newOfficeId=<id>` and never checks that the
+                        # switch took, so when AppStream declines it the session
+                        # simply STAYS on whatever office was selected before —
+                        # and the next report reads as that office's.
+                        #
+                        # Dhyey Patel (22767) hit this on every run from
+                        # 2026-09-04 22:05: the report came back for
+                        # 'Joey Ramirez', who is 23206 — the office immediately
+                        # BEFORE him in OFFICES (idx 26, Dhyey is 27). A job on
+                        # another machine stealing the session would land on a
+                        # random office and would not repeat; the previous
+                        # office, every single run, is a switch that didn't take.
+                        # The old message named the wrong cause with total
+                        # confidence and sent whoever picked up the ticket
+                        # hunting for a concurrency bug that isn't there.
+                        fetch.select_office(page, tok, oid)
+                        html, owner, nrows = fetch.source_report(
+                            page, tok, weeks.fmt_mdY(start), weeks.fmt_mdY(end))
+                    if want_owner and not _same_owner(owner, want_owner):
+                        prev = _prev_office_name(oid)
+                        why = ("the office switch did not take — this is the "
+                               "office selected just before it, so office %s is "
+                               "most likely not selectable on this AppStream "
+                               "login any more (removed, renamed or re-owned); "
+                               "check it by hand before assuming a code bug"
+                               % oid) if _same_owner(owner, prev) else (
+                              "another job sharing this AppStream session "
+                              "switched the office mid-run")
                         raise RuntimeError(
                             "WRONG OFFICE for %s: asked for %r, the report came "
-                            "back for %r. Another job sharing this AppStream "
-                            "session switched the office mid-run."
-                            % (label, want_owner, owner))
+                            "back for %r, and re-selecting office %s did not fix "
+                            "it. %s." % (label, want_owner, owner, oid, why))
                     rescued = len(names.WRAPPER.findall(html))
                     rescued_total += rescued
                     ads, _flags = ads_for_week(html)

@@ -782,8 +782,21 @@ def _attempt_report_inner(ds, r, rs, target, *, dry_run, simulate) -> str:
             # Reports that don't record `succeeded` keep the historical green.
             _status = (hub_publish.incomplete_status(r.report_id)
                        if incomplete else "success")
+            # alert_on_fail=False like the other two publish_done call sites in
+            # this file: the orchestrator sends its OWN failure summary, and a
+            # second witness for the same run is the duplicate-post problem
+            # incident_thread exists to stop. This was the one call site that
+            # left it defaulting to True, and vantura_board_audit is what it
+            # cost (2026-09-05): the audit RAN FINE, found 17 board findings,
+            # wrote its deliberate "soft" manifest (ok=False, kind='finding') —
+            # incomplete_status read that as 'failed', and this line then paged
+            # #claudecorrections with ":x: … closed a run with status FAILED"
+            # four seconds after the very same run's finding post said "the run
+            # itself was fine". Two contradictory tickets, one healthy run, and
+            # the red one is the one that reads as "drop everything".
             if hub_publish.publish_done(r.report_id, r.display_name,
-                                        status=_status, run_id=rs.hub_run_id):
+                                        status=_status, run_id=rs.hub_run_id,
+                                        alert_on_fail=False):
                 _log(f"  {r.report_id}: ✓ marked ran on the Hub ({_status})")
         except Exception as e:
             _log(f"  {r.report_id}: Hub publish skipped ({type(e).__name__}: {str(e)[:80]})")
