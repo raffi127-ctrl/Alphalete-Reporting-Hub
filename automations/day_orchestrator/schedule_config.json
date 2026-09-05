@@ -4079,6 +4079,28 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "disable_texas_de_brazil_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "RETIRE the daily 7:45am Texas de Brazil launchd job on Lucy 1: `lucy rerun disable_texas_de_brazil_agent --machine \"Lucy 1\"` race-free boots out + stashes com.alphalete.texas-de-brazil-745.plist -> .disabled, so the timer stops firing at all. Rafael 2026-09-05 (#l10-alphalete): the competition is over for now and comes back FRESH after R&R, so there is nothing to keep warm. deploy/texas_de_brazil_745.DISABLED already makes the wrapper bail — this stops the job even being launched. REVERSIBLE: `lucy rerun install_texas_de_brazil_agent` re-creates + bootstraps it (also delete the DISABLED flag and the PAUSED_REPORTS entries in dashboard.py). Read-only w.r.t. any Sheet/report data.",
+      "display_name": "Retire: Texas de Brazil daily 7:45am LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "texas-de-brazil-745"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
+      "machine": "Lucy 1"
+    },
     "install_je_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_je_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. It regens + launchctl-bootstraps com.alphalete.je-sunday-catchup on the mini. source_type 'local' skips the tableau/appstream chrome guard. Not a Hub card. Safe to leave here; re-runnable any time.",
