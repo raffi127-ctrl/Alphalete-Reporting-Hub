@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from automations.new_start_followup import (
-    membership, obcl, roster as roster_mod, thread as thread_mod)
+    membership, obcl, roster as roster_mod, terminated, thread as thread_mod)
 from automations.shared import slack_metrics_post as smp
 from automations.shared import (
     slack_suppression as suppression, slack_tag_learning as tag_learning)
@@ -89,7 +89,8 @@ class Reconciliation:
         self.tagged_unknown = []      # type: List[str]       Slack id tagged, not in roster
         self.tagged_no_starts = []    # type: List[str]       Slack id tagged, but owes nothing
         self.thread = None            # type: Optional[dict]
-        self.needs_leader = 0         # new starts whose OBCL row says "Terminated"
+        self.needs_leader = 0         # new starts whose leader is gone (OBCL mark OR master list)
+        self.terminated_master = {}   # type: Dict[str, str]  name -> why, from the Terminated Reps tab
         self.suppressed = []          # type: List[str]  on the do-not-ping list
         self.learned = {}             # type: Dict[str, str]  name -> id, from a hand-tag
 
@@ -303,6 +304,34 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
     for src in (owed, sheet_only):
         for key in [k for k in src if roster_mod._norm(k) == "terminated"]:
             rec.needs_leader += src.pop(key)
+
+    # CHECKPOINT 2 — the master "Terminated Reps" tab (Megan 2026-09-05: "they
+    # should also be on the alert to Raf"). The block above only fires if
+    # somebody remembered to type "Terminated" into the interviewer cell; this
+    # catches the leaver nobody edited, whose Slack account was merely
+    # DEACTIVATED and so is never seen to leave the channel.
+    #
+    # Done HERE rather than only at send time so a terminated leader is treated
+    # exactly like an OBCL-marked one: never tagged, never texted, never in the
+    # unable-to-tag list — their new starts just roll into the same @Raf count.
+    # texts.run() keeps its own check as a second layer.
+    try:
+        gone_table = terminated.load_cached()
+    except Exception as exc:  # noqa: BLE001 — advisory; checkpoint 1 still ran
+        gone_table = {}
+        print("WARNING: couldn't read the '{}' tab ({}) — the roll call ran on "
+              "the OBCL marker alone.".format(terminated.TAB_TITLE,
+                                              str(exc)[:120]))
+    if gone_table:
+        for src in (owed, sheet_only):
+            for key in list(src):
+                leader = ros.by_obcl_name(key)
+                hit = (terminated.find(leader, gone_table) if leader is not None
+                       else gone_table.get(roster_mod._norm(key)))
+                if hit is None:
+                    continue
+                rec.needs_leader += src.pop(key)
+                rec.terminated_master[key] = hit.describe()
 
     # Do-not-ping (Raf 2026-08-30 re: Giovanna Santos + Heiddy Ochoa, "I don't
     # want LUCY to keep pinging"). Dropped BEFORE anything else so a suppressed
@@ -657,14 +686,20 @@ def _untaggable_lines(rec: Reconciliation) -> List[str]:
 
 
 def _needs_leader_lines(rec: Reconciliation) -> List[str]:
-    """New starts whose OBCL row was marked "Terminated" — their leader is
-    gone, so Raf gets @'d to assign someone for the reach-out (his Loom,
-    2026-08-23). A count only: no names, no tags."""
+    """New starts whose leader is gone — Raf gets @'d to assign someone for the
+    reach-out (his Loom, 2026-08-23). A count only: no names, no tags.
+
+    TWO sources feed the count since 2026-09-05 (Megan: "they should also be on
+    the alert to Raf"): the OBCL row marked "Terminated", and the master
+    Terminated Reps tab. The reason line stays generic because it now covers
+    both — the names are in ops_flags, log-only.
+    """
     if not rec.needs_leader:
         return []
     n = rec.needs_leader
     return ["", "🚨 <@{}> — *{} new start{} need{} a leader assigned* "
-                "for reach-out (marked Terminated on the OBCL)".format(
+                "for reach-out (their leader is no longer with the "
+                "company)".format(
                     RAF_SLACK_ID, n, "" if n == 1 else "s",
                     "s" if n == 1 else "")]
 
@@ -703,6 +738,15 @@ def ops_flags(rec: Reconciliation) -> List[str]:
                    "(automations/shared/slack_do_not_ping.json):")
         for name in sorted(rec.suppressed):
             out.append("   •  {}".format(name))
+    if rec.terminated_master:
+        # Loud here, anonymous in Slack: the posted line is a count, so this is
+        # the only place a WRONG block can be spotted and overturned.
+        out.append("On the master '{}' tab — not tagged, not texted; their new "
+                   "starts rolled into the @Raf count. If someone here is "
+                   "actually active, note it on that row (see "
+                   "terminated._NOT_GONE_RE):".format(terminated.TAB_TITLE))
+        for name in sorted(rec.terminated_master):
+            out.append("   •  {} — {}".format(name, rec.terminated_master[name]))
     if rec.unmatched_obcl:
         out.append("In OBCL but no Slack match — add them to leaders.json:")
         for name in sorted(rec.unmatched_obcl):

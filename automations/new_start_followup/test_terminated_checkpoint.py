@@ -62,13 +62,32 @@ class MatchingTests(unittest.TestCase):
         self.assertIsNone(terminated.find(leader, {}))
 
 
-class RehireTests(unittest.TestCase):
+class StillActiveTests(unittest.TestCase):
     def test_rehired_row_does_not_block(self):
-        self.assertTrue(_rep("Someone Back", notes="Rehired 9/1").rehired)
-        self.assertFalse(_rep("Someone Gone", notes="").rehired)
+        self.assertTrue(_rep("Someone Back", notes="Rehired 9/1").still_active)
+        self.assertFalse(_rep("Someone Gone", notes="").still_active)
 
     def test_rehire_note_is_case_insensitive(self):
-        self.assertTrue(_rep("X Y", notes="REHIRED").rehired)
+        self.assertTrue(_rep("X Y", notes="REHIRED").still_active)
+
+    def test_ffp_is_not_terminated(self):
+        """Megan 2026-09-05: FFP = Field Forever Program — he isn't in the
+        OFFICE, he isn't gone. Kaleb Muvunyi's real row. Fine to text, and Raf
+        is in every text now anyway."""
+        self.assertTrue(_rep("Kaleb Muvunyi", notes="FFP").still_active)
+        self.assertTrue(_rep("Kaleb Muvunyi", notes="ffp").still_active)
+
+    def test_ffp_row_is_left_out_of_the_blocking_table(self):
+        leader = roster_mod.Leader("U0B4RUR83J9", "Kaleb Muvunyi",
+                                   obcl_names=["Kaleb Muvunyi"])
+        table = {roster_mod._norm(r.raw_name): r
+                 for r in [_rep("Kaleb Muvunyi", notes="FFP")]
+                 if not r.still_active}
+        self.assertIsNone(terminated.find(leader, table))
+
+    def test_a_substring_does_not_accidentally_unblock(self):
+        """Word-boundary matched, so 'offp'/'preffpay' can't un-block."""
+        self.assertFalse(_rep("X Y", notes="stuffpile").still_active)
 
 
 class DescribeTests(unittest.TestCase):

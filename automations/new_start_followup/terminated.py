@@ -62,6 +62,14 @@ DEACT_HEADER = "Slack Deact"
 # see REHIRES above.
 REHIRED_MARK = "rehired"
 
+# Notes that mean "on this tab, but NOT gone" — these rows must never block.
+#   rehired  back on the team; the row stays because it is payroll history
+#   FFP      Field Forever Program (Megan 2026-09-05) — he isn't in the OFFICE,
+#            he is not terminated. Fine to text, "as long as Raf is in the
+#            text", which he now always is (every text is a Raf group).
+# Word-boundary matched so a stray substring can't quietly un-block someone.
+_NOT_GONE_RE = re.compile(r"\b(rehired|ffp)\b", re.I)
+
 
 class TerminatedRep:
     def __init__(self, raw_name: str, date: str, lead: str, notes: str,
@@ -75,8 +83,14 @@ class TerminatedRep:
         self.row = row
 
     @property
+    def still_active(self) -> bool:
+        """On the tab, but NOT gone — a rehire, or FFP (see _NOT_GONE_RE)."""
+        return bool(_NOT_GONE_RE.search(self.notes or ""))
+
+    # Back-compat name; `still_active` is the one to use.
+    @property
     def rehired(self) -> bool:
-        return REHIRED_MARK in (self.notes or "").lower()
+        return self.still_active
 
     def describe(self) -> str:
         """One line for a human deciding whether this block is right."""
@@ -142,7 +156,7 @@ def load(sheet_id: Optional[str] = None) -> Dict[str, TerminatedRep]:
         rep = TerminatedRep(raw, cell(row, i_date), cell(row, i_lead),
                             cell(row, i_notes), cell(row, i_ov),
                             cell(row, i_deact), n)
-        if rep.rehired:
+        if rep.still_active:
             continue
         key = roster_mod._norm(raw)
         if not key:
