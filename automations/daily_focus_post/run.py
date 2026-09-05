@@ -226,15 +226,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     failures = []
     posted = []
     for o in offices:
-        posted.append(o.key)
         try:
-            post_office(o, spreadsheet, dry_run=dry_run, force=args.force,
-                        keep_png=args.keep_png, now=now)
+            result = post_office(o, spreadsheet, dry_run=dry_run,
+                                 force=args.force, keep_png=args.keep_png,
+                                 now=now)
         except Exception as e:  # noqa: BLE001
             # One office failing (a renamed section, a missing invite) must not
             # cost every other office its post.
             failures.append((o.key, e))
+            posted.append(o.key)
             print(f"[{o.key}] !! FAILED: {type(e).__name__}: {e}")
+        else:
+            # Only a real post counts. The LaunchAgent ticks every 10 minutes
+            # and the office stays "due" for the whole 3-hour grace window, so
+            # every tick after the real one returns already_posted — counting
+            # those rewrote the manifest and wrote a duplicate Hub row 16 more
+            # times on 2026-09-04 (Megan 2026-09-05).
+            if not result.get("skipped"):
+                posted.append(o.key)
 
     # Publish the phase so the Hub card shows it. Never on a dry run — a
     # preview must not paint a green pill for a post that didn't happen — and

@@ -38,13 +38,15 @@ class _Office:
         self.channel_id = "C000"
 
 
-def _drive(argv, offices, fail_keys=()):
+def _drive(argv, offices, fail_keys=(), skip_keys=()):
     """Run main() with everything outward stubbed. Returns the log_completed mock."""
     hub = mock.Mock(return_value=True)
 
     def _post(office, spreadsheet, **kw):
         if office.key in fail_keys:
             raise RuntimeError("boom")
+        if office.key in skip_keys:
+            return {"office": office.key, "skipped": "already_posted"}
         return {"office": office.key}
 
     with mock.patch.object(R.roster, "validate", return_value=[]), \
@@ -98,6 +100,29 @@ class PublishesItsPhase(unittest.TestCase):
         hub = _drive(["--live"], [_Office("raf"), _Office("carlos")],
                      fail_keys={"carlos"})
         self.assertEqual(hub.call_args.kwargs["status"], "partial")
+
+    def test_an_already_posted_tick_reports_nothing(self):
+        """The LaunchAgent ticks every 10 minutes and the office stays due for
+        the whole 3-hour grace window, so ~17 ticks reach main() for ONE post.
+        Only the tick that actually posts is work: on 2026-09-04 the other 16
+        each wrote their own duplicate Hub row."""
+        hub = _drive(["--live"], [_Office("raf")], skip_keys={"raf"})
+        hub.assert_not_called()
+
+    def test_a_new_office_still_reports_when_another_already_posted(self):
+        """Offices post at their OWN local 7 PM, so a later tick legitimately
+        carries one real post beside one already-posted skip."""
+        hub = _drive(["--live"], [_Office("raf"), _Office("carlos")],
+                     skip_keys={"raf"})
+        hub.assert_called_once()
+        self.assertEqual(hub.call_args.kwargs["status"], "success")
+
+    def test_a_skipped_office_does_not_mask_a_failure(self):
+        """raf already posted, carlos blew up: nobody did new work that tick,
+        so the row must read failed — not partial off the stale skip."""
+        hub = _drive(["--live"], [_Office("raf"), _Office("carlos")],
+                     skip_keys={"raf"}, fail_keys={"carlos"})
+        self.assertEqual(hub.call_args.kwargs["status"], "failed")
 
 
 if __name__ == "__main__":
