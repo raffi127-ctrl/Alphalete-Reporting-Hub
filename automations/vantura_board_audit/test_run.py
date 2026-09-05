@@ -28,6 +28,12 @@ from unittest import mock
 _fill_stub = types.ModuleType("automations.recruiting_report.fill")
 _fill_stub.open_by_key = lambda key: None
 sys.modules.setdefault("automations.recruiting_report.fill", _fill_stub)
+# mock.patch resolves the target via getattr on the PARENT package, not via
+# sys.modules — on a machine where the real fill was never imported the
+# attribute is missing and every test errors before it starts. Pin it.
+import automations.recruiting_report as _rr  # noqa: E402
+if not hasattr(_rr, "fill"):
+    _rr.fill = sys.modules["automations.recruiting_report.fill"]
 
 from automations.vantura_board_audit import run as audit_run  # noqa: E402
 
@@ -708,6 +714,110 @@ class BoardTerminationMark(unittest.TestCase):
             rc, _, _ = self._run(sheet, argv)
             self.assertEqual(rc, 0, argv)
             self.assertEqual(sheet.worksheet("Roll Call").written, [], argv)
+
+
+class StoreCloseTerminations(unittest.TestCase):
+    """The RollCallData close (Carlos 2026-09-05): a trainee T'd in the Roll
+    Call's own week columns has no board row, so the board-'T' sync can't see
+    them. Their LATEST store week saying 'Terminated' closes them — but ONLY
+    once that labeled week is over, so the week's losses stay visible on the
+    board all week (the sheet's original design, whose script died)."""
+
+    _run = ExitCodeSemantics._run
+
+    @staticmethod
+    def _label(d):
+        return "%d.%d" % (d.month, d.day)
+
+    @classmethod
+    def _closed_sunday(cls):
+        import datetime as dt
+        today = dt.date.today()
+        # the most recent Sunday strictly in the past
+        return today - dt.timedelta(days=today.weekday() + 1)
+
+    @classmethod
+    def _open_sunday(cls):
+        import datetime as dt
+        return cls._closed_sunday() + dt.timedelta(days=7)
+
+    def _roll(self, name, status="Active", gone=""):
+        row = _pad([""], 14)
+        row[1], row[3], row[12] = status, name, gone
+        return [_roll_header(), ["", "Active", "", "Casey Rep"], row]
+
+    def _sheet(self, roll, store):
+        board_v, board_f = _board_with_one_rep()
+        st_v, st_f = _stations_clean()
+        return _FakeSheet({
+            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "Roll Call": _FakeWS(roll),
+            "Report an Issue": _FakeWS([]),
+            "Stations": _FakeWS(st_v, st_f),
+            "RollCallData": _FakeWS(store),
+        })
+
+    def _store(self, name, label, marks, status):
+        return [["Key", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
+                 "Status", "Weeks"],
+                ["%s|%s" % (name, label)] + marks + [status, ""]]
+
+    def test_closed_week_flips_status_and_fills_date_gone(self):
+        we = self._closed_sunday()
+        store = self._store("Edwin Test", self._label(we),
+                            ["Here", "Here", "Here", "NoShow", "T", "T"],
+                            "Terminated")
+        sheet = self._sheet(self._roll("Edwin Test"), store)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        written = dict(sheet.worksheet("Roll Call").written)
+        self.assertEqual(written.get("B3"), "Terminated")
+        import datetime as dt
+        fri = we - dt.timedelta(days=2)     # first T = Friday of that week
+        self.assertEqual(written.get("M3"),
+                         "%d/%d/%d" % (fri.month, fri.day, fri.year))
+
+    def test_current_week_is_left_alone_until_it_closes(self):
+        """A T today must stay Active until Monday — the whole point."""
+        store = self._store("Edwin Test", self._label(self._open_sunday()),
+                            ["Here", "T", "T", "T", "T", "T"], "Terminated")
+        sheet = self._sheet(self._roll("Edwin Test"), store)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertNotIn(("B3", "Terminated"),
+                         sheet.worksheet("Roll Call").written)
+
+    def test_rehire_newer_active_week_wins(self):
+        import datetime as dt
+        old = self._closed_sunday() - dt.timedelta(days=7)
+        store = self._store("Edwin Test", self._label(old),
+                            ["T"] * 6, "Terminated")
+        store.append(["Edwin Test|%s" % self._label(self._closed_sunday()),
+                      "Here", "Here", "Here", "Here", "Here", "Here",
+                      "Active", ""])
+        sheet = self._sheet(self._roll("Edwin Test"), store)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertNotIn(("B3", "Terminated"),
+                         sheet.worksheet("Roll Call").written)
+
+    def test_existing_date_gone_is_never_overwritten(self):
+        store = self._store("Edwin Test", self._label(self._closed_sunday()),
+                            ["T"] * 6, "Terminated")
+        sheet = self._sheet(self._roll("Edwin Test", gone="1/2/2026"), store)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        written = dict(sheet.worksheet("Roll Call").written)
+        self.assertEqual(written.get("B3"), "Terminated")
+        self.assertNotIn("M3", written, "a hand-set Date Gone stays")
+
+    def test_dry_run_never_writes(self):
+        store = self._store("Edwin Test", self._label(self._closed_sunday()),
+                            ["T"] * 6, "Terminated")
+        sheet = self._sheet(self._roll("Edwin Test"), store)
+        rc, _, _ = self._run(sheet, ["--dry-run"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [])
 
 
 if __name__ == "__main__":

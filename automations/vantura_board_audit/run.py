@@ -104,12 +104,31 @@ ROLL_CAMPAIGN_COL = 2                  # Roll Call col C, header 'Campaign'
 # Anything it declines to close still comes out as the usual finding, with the
 # reason attached, so declining is never silent.
 #
-# It writes col B ONLY. Date Gone is left to a human even when the 'T' implies
-# it: col N 'Days Lasted' and col O 'Reason Lost' hang off that date, and
-# inventing it would be writing a second hand-kept column nobody asked for.
+# For board-'T' and Date-Gone closes it writes col B ONLY — Date Gone is left
+# to a human there: col N 'Days Lasted' and col O 'Reason Lost' hang off that
+# date, and inventing it would be writing a second hand-kept column nobody
+# asked for. The RollCallData close (below) is the one exception: the store
+# records the exact T day, so it fills an EMPTY Date Gone from it (Carlos
+# 2026-09-05); a Date Gone already present is never overwritten.
+#
+# --- the RollCallData close (2026-09-05, Carlos) ---------------------------
+# THIRD SIGNAL. The Roll Call tab's Mon-Sat cells are a VIEW over the
+# RollCallData store (Key 'Name|W.k', Mon..Sat marks, a per-week Status) — the
+# sheet's own week-roll used to flip col B to 'Terminated' for anyone T'd
+# during the week, ONCE the new week started (so the week's losses stay
+# visible all week). That flip died (~when the Captainship board was created)
+# while the store kept recording, leaving 16+ rows T'd-but-Active by 9/05.
+# So the audit now closes FROM the store: a name whose LATEST store week is
+# 'Terminated' AND whose labeled week has CLOSED (today is past its Sunday)
+# flips to Terminated, with Date Gone filled from the first T day when empty.
+# A T in the CURRENT week never flips — that is the point of the design, not
+# a gap. A newer store week that is not Terminated (a rehire) wins, so a
+# comeback is never closed off an old week.
 TERMINATED = "Terminated"
 TERM_MARK = "T"
 MAX_AUTO_CLOSE = 25
+STORE_TAB = "RollCallData"
+STORE_STATUS_COL = 7                  # RollCallData col H, header 'Status'
 ROLL_HEADERS = {"status": "status", "name": "roll call", "gone": "date gone"}
 ROLL_FALLBACK = {"status": 1, "name": 3, "gone": 12}   # cols B / D / M today
 BOARD_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday",
@@ -337,6 +356,64 @@ def _board_terminations(board, day_cols, week_end, log=_log):
     return out
 
 
+def _week_label_date(label, today):
+    """'8.23' -> the date that Sunday label means, year-inferred.
+
+    Labels carry no year, so build a candidate in last/this/next year and take
+    the one nearest today — roll weeks live within a few months of now, and
+    this keeps a December run reading a January label (and vice versa) right."""
+    m = re.match(r"^(\d{1,2})\.(\d{1,2})$", str(label).strip())
+    if not m:
+        return None
+    mo, day = int(m.group(1)), int(m.group(2))
+    best = None
+    for year in (today.year - 1, today.year, today.year + 1):
+        try:
+            d = dt.date(year, mo, day)
+        except ValueError:
+            continue
+        if best is None or abs((d - today).days) < abs((best - today).days):
+            best = d
+    return best
+
+
+def _store_terminations(store_rows, log=_log, today=None):
+    """{normalised name: (week label, first-T date or None)} from RollCallData —
+    ONLY names whose LATEST store week is 'Terminated' AND already closed.
+
+    The store keys are 'Name|W.k'; Mon..Sat marks sit in cols B..G and the
+    week's Status in col H. 'Latest week wins' is the rehire guard: someone
+    T'd on 8.16 who came back 8.30 has a newer non-Terminated row, and this
+    returns nothing for them. 'Week closed' = today is PAST the labeled Sunday,
+    so a T during the current week stays visible until the new week starts —
+    the behaviour the sheet's own (dead) week-roll flip was built for."""
+    today = today or dt.date.today()
+    latest = {}                       # norm name -> (week_end, label, row)
+    for r in store_rows[1:]:
+        key = str(r[0]).strip() if r else ""
+        if "|" not in key:
+            continue
+        name, label = key.rsplit("|", 1)
+        we = _week_label_date(label, today)
+        if we is None or not name.strip():
+            continue
+        n = _norm(name)
+        if n not in latest or we > latest[n][0]:
+            latest[n] = (we, label.strip(), r)
+    out = {}
+    for n, (we, label, r) in latest.items():
+        status = (str(r[STORE_STATUS_COL]).strip()
+                  if len(r) > STORE_STATUS_COL else "")
+        if status != TERMINATED or today <= we:
+            continue
+        marks = [str(c).strip().upper() for c in (list(r[1:7]) + [""] * 6)[:6]]
+        first = next((k for k, m2 in enumerate(marks) if m2 == TERM_MARK), None)
+        # Mon..Sat are week_end-6 .. week_end-1
+        gone = we - dt.timedelta(days=6 - first) if first is not None else None
+        out[n] = (label, gone)
+    return out
+
+
 def _roll_cols(roll, log=_log):
     """Roll Call's Status / name / Date Gone column indexes, found BY HEADER.
 
@@ -355,12 +432,17 @@ def _roll_cols(roll, log=_log):
 
 
 def _close_terminations(ws, roll, cols, resolved, write, log=_log,
-                        board_terms=None, alias=None):
+                        board_terms=None, alias=None, store_terms=None):
     """Flip Roll Call Status -> 'Terminated' for anyone already recorded as gone.
 
-    TWO signals, in priority order:
+    THREE signals, in priority order:
       1. the SALES BOARD 'T' mark (board_terms) — this is where a termination is
          recorded on the day it happens, so it is the one that closes the loop.
+      1b. the RollCallData store (store_terms) — trainees T'd in the Roll Call's
+         own week columns never get a board row, so the board mark can't see
+         them; their latest store week says Terminated once the week CLOSES
+         (see the block comment up top). This one also fills an empty Date
+         Gone from the store's first T day.
       2. a Roll Call Date Gone already set and in the past — the backstop for a
          leaver who never had a board row to mark.
 
@@ -377,6 +459,8 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
                  exactly what it always was."""
     st, nm, gn = cols["status"], cols["name"], cols["gone"]
     board_terms, alias = board_terms or {}, alias or {}
+    store_terms = store_terms or {}
+    gone_fill = {}                    # roll row -> M/D/YYYY to write in col M
     today = dt.date.today()
 
     def _board_mark(n):
@@ -413,6 +497,24 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
             ready.append((ri, who, gone, why))
             continue
 
+        # 1b. the RollCallData store closed their week
+        hit = store_terms.get(_norm(who))
+        if hit is None:
+            for other in alias.get(_norm(who), ()):
+                if other in store_terms:
+                    hit = store_terms[other]
+                    break
+        if hit:
+            label, gone_d = hit
+            why = f"RollCallData {label} closed the week {TERMINATED}"
+            if gone_d:
+                why += f" (T from {gone_d.month}/{gone_d.day}/{gone_d.year})"
+                if not gone:
+                    gone_fill[ri] = (
+                        f"{gone_d.month}/{gone_d.day}/{gone_d.year}")
+            ready.append((ri, who, gone, why))
+            continue
+
         # 2. Date Gone already set. Only from 'Active': a New Start carries one
         #    all week as part of the wash-out flow and rolls over on its own.
         if status != "Active" or not gone:
@@ -445,9 +547,14 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
     if not ready:
         return [], held
 
-    ws.batch_update([{"range": "%s%d" % (_a1col(st), ri),
-                      "values": [[TERMINATED]]} for ri, _, _, _ in ready],
-                    value_input_option="RAW")
+    updates = [{"range": "%s%d" % (_a1col(st), ri), "values": [[TERMINATED]]}
+               for ri, _, _, _ in ready]
+    # Store-signal rows also get their empty Date Gone filled from the store's
+    # first T day (Carlos 2026-09-05) — never over a value already there.
+    updates += [{"range": "%s%d" % (_a1col(gn), ri), "values": [[when]]}
+                for ri, when in gone_fill.items()
+                if any(ri == r0 for r0, _, _, _ in ready)]
+    ws.batch_update(updates, value_input_option="RAW")
 
     # Read back before believing it. A silent no-op write here would leave the
     # row Active AND drop its finding — the worst of both.
@@ -548,9 +655,17 @@ def audit(write: bool, log=_log, auto_close: bool = True) -> int:
         board, _board_day_cols(board, log=log),
         _tag_date(str(sh.worksheet("Sales Board").acell("B2").value or "")),
         log=log)
+    try:
+        store_terms = _store_terminations(
+            sh.worksheet(STORE_TAB).get_all_values(), log=log)
+    except Exception as e:  # noqa: BLE001 — a missing/renamed store tab must
+        # not take the whole audit down; the other two signals still run.
+        store_terms = {}
+        log(f"{STORE_TAB} unreadable ({type(e).__name__}) — store close "
+            "signal OFF this run")
     closed, still_open = _close_terminations(
         roll_ws, roll, roll_cols, roll_hdr_ok, write and auto_close, log=log,
-        board_terms=board_terms, alias=alias)
+        board_terms=board_terms, alias=alias, store_terms=store_terms)
     if still_open:
         who = "; ".join(f"{nm} (r{ri}, gone {g})" for ri, nm, g, _ in still_open)
         why = sorted({w for _, _, _, w in still_open if w})
