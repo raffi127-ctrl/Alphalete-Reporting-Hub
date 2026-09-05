@@ -51,100 +51,108 @@ def _drive_owner(page, want: str, log=print) -> bool:
     from automations.b2b_quality.run import _IFRAME
     fr = page.frame_locator(_IFRAME)
     boxes = fr.locator(".tabComboBox")
-    idx, token = None, ""
-    for i in range(min(boxes.count(), 12)):
-        try:
-            bid = boxes.nth(i).get_attribute("id") or ""
-            txt = " ".join((boxes.nth(i).inner_text(timeout=5_000) or "").split())
-        except Exception:  # noqa: BLE001
-            continue
-        log("   [owner] box[{}] value={!r} id={!r}".format(i, txt[:40], bid[:110]))
-        low = bid.lower()
-        if idx is None and "owner" in low and "office" in low:
-            idx = i
-            bits = [b for b in bid.split(":") if b and not b.startswith("FI_")]
-            token = (bits[0].strip().lstrip("﻿")) if bits else ""
-    if idx is None:
-        log("   [owner] no combo box id names Owner & Office — cannot drive")
-        return False
-    log("   [owner] driving box[{}] token={!r} to member ~ {!r}".format(
-        idx, token, want))
+    n_boxes = min(boxes.count(), 12)
 
-    for osel in (".tabComboBox", ".tabComboBoxButton", ".tabComboBoxName"):
-        try:
-            fr.locator(osel).nth(idx).click(timeout=15_000)
-        except Exception:  # noqa: BLE001
+    def _open(i):
+        """Open box i's menu; return (loc, texts, checked) or None. The ids on
+        this dashboard are EMPTY (probed 2026-09-05), so the menu is read with
+        the generic selectors and the CALLER decides if it's the right list."""
+        for osel in (".tabComboBox", ".tabComboBoxButton", ".tabComboBoxName"):
             try:
-                fr.locator(osel).nth(idx).focus()
-                page.keyboard.press("Enter")
+                fr.locator(osel).nth(i).click(timeout=10_000)
             except Exception:  # noqa: BLE001
-                continue
-        page.wait_for_timeout(3_000)
-        sels = ([('[role="checkbox"][id*="{}"]'.format(token))] if token else []) \
-            + ['[role="checkbox"]', ".QFCheckbox", "[role='option']"]
-        for sel in sels:
-            try:
-                loc = fr.locator(sel)
-                n = min(loc.count(), 300)
-            except Exception:  # noqa: BLE001
-                continue
-            if not n:
-                continue
-            texts, checked = [], []
-            for j in range(n):
                 try:
-                    texts.append(" ".join((loc.nth(j).inner_text(timeout=3_000)
-                                           or "").split()).lstrip("✓").strip())
-                    checked.append(loc.nth(j).get_attribute("aria-checked")
-                                   == "true")
+                    fr.locator(osel).nth(i).focus()
+                    page.keyboard.press("Enter")
                 except Exception:  # noqa: BLE001
-                    texts.append("")
-                    checked.append(False)
-            if not any(texts):
-                continue
-            log("   [owner] {} -> {} member(s):".format(sel, n))
-            for j, t in enumerate(texts):
+                    continue
+            page.wait_for_timeout(2_500)
+            for sel in ('[role="checkbox"]', ".QFCheckbox", "[role='option']",
+                        ".tabMenuItemName"):
+                try:
+                    loc = fr.locator(sel)
+                    n = min(loc.count(), 300)
+                except Exception:  # noqa: BLE001
+                    continue
+                if not n:
+                    continue
+                texts, checked = [], []
+                for j in range(n):
+                    try:
+                        texts.append(" ".join(
+                            (loc.nth(j).inner_text(timeout=2_000) or "")
+                            .split()).lstrip("✓").strip())
+                        checked.append(loc.nth(j).get_attribute("aria-checked")
+                                       == "true")
+                    except Exception:  # noqa: BLE001
+                        texts.append("")
+                        checked.append(False)
+                if any(texts):
+                    return loc, texts, checked
+        return None
+
+    # Find the Owner & Office box by CONTENT: it is the one whose members carry
+    # the " [office]" suffix. Escape closes a wrong box's menu before moving on.
+    for i in range(n_boxes):
+        try:
+            val = " ".join((boxes.nth(i).inner_text(timeout=5_000) or "").split())
+        except Exception:  # noqa: BLE001
+            val = "?"
+        got = _open(i)
+        if not got:
+            log("   [owner] box[{}] value={!r}: no menu".format(i, val[:30]))
+            continue
+        loc, texts, checked = got
+        sample = [t for t in texts if t][:6]
+        is_owner = any("[" in t for t in texts)
+        log("   [owner] box[{}] value={!r} {} items, owner_list={} sample: {}"
+            .format(i, val[:30], len(texts), is_owner, " | ".join(sample)))
+        if not is_owner:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(1_000)
+            continue
+        for j, t in enumerate(texts):
+            if t:
                 log("   [owner]   [{}] {}{!r}".format(
                     j, "[x] " if checked[j] else "[ ] ", t))
-            picks = [j for j, t in enumerate(texts)
-                     if t and want.lower() in t.lower()]
-            if not picks:
-                log("   [owner] NO member contains {!r} — see the list above "
-                    "for the real spellings".format(want))
-                return False
-            pick = picks[0]
-
-            def _set(j, on):
-                el = loc.nth(j)
-                try:
-                    if (el.get_attribute("aria-checked") == "true") == on:
-                        return True
-                    el.focus()
-                    page.keyboard.press(" ")
-                    page.wait_for_timeout(800)
-                    return (el.get_attribute("aria-checked") == "true") == on
-                except Exception:  # noqa: BLE001
-                    return False
-
-            # Tick the target FIRST (clearing the last ticked value makes
-            # Tableau re-select everything), then untick every other row —
-            # including "(All)".
-            ok = _set(pick, True)
-            for j, t in enumerate(texts):
-                if j != pick and t:
-                    _set(j, False)
-            # Some quick filters carry an Apply button; press it if present.
-            try:
-                ap = fr.locator("button:has-text('Apply')")
-                if ap.count():
-                    ap.first.click(timeout=5_000)
-            except Exception:  # noqa: BLE001
-                pass
+        picks = [j for j, t in enumerate(texts)
+                 if t and want.lower() in t.lower()]
+        if not picks:
+            log("   [owner] NO member contains {!r} — real spellings above"
+                .format(want))
             page.keyboard.press("Escape")
-            page.wait_for_timeout(12_000)      # let the viz redraw
-            log("   [owner] selected {!r} -> {}".format(texts[pick], ok))
-            return ok
-        log("   [owner] {} opened no member list".format(osel))
+            return False
+        pick = picks[0]
+
+        def _set(j, on):
+            el = loc.nth(j)
+            try:
+                if (el.get_attribute("aria-checked") == "true") == on:
+                    return True
+                el.focus()
+                page.keyboard.press(" ")
+                page.wait_for_timeout(800)
+                return (el.get_attribute("aria-checked") == "true") == on
+            except Exception:  # noqa: BLE001
+                return False
+
+        # Tick the target FIRST (clearing the last ticked value makes Tableau
+        # re-select everything), then untick every other row — "(All)" too.
+        ok = _set(pick, True)
+        for j, t in enumerate(texts):
+            if j != pick and t:
+                _set(j, False)
+        try:
+            ap = fr.locator("button:has-text('Apply')")
+            if ap.count():
+                ap.first.click(timeout=5_000)
+        except Exception:  # noqa: BLE001
+            pass
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(12_000)          # let the viz redraw
+        log("   [owner] selected {!r} -> {}".format(texts[pick], ok))
+        return ok
+    log("   [owner] no combo box offered an owner-style member list")
     return False
 
 
