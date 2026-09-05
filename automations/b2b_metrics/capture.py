@@ -1251,7 +1251,9 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
                                                  allow_form_login=True)
                 capture_page(page, spec, out_dir, after_load=after_load,
                              verbose=False)
-            if meta.get("data_cols") and not _os.environ.get("B2B_SKIP_CROP"):
+            _want_crop = (meta.get("data_cols")
+                          or (view_key == "churn_wireless" and o.churn_crop))
+            if _want_crop and not _os.environ.get("B2B_SKIP_CROP"):
                 _crop_to_last_colored_row(
                     out, leading=(meta.get("crop_mode") == "leading"),
                     verbose=True)

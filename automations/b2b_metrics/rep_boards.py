@@ -529,11 +529,110 @@ def probe(argv_url: str = "") -> int:
     return 0
 
 
+def probe_csv() -> int:
+    """Does ANY CHURNRATES export carry Rep x Product x bucket granularity?
+    (Carlos 2026-09-05: the by-rep board must break each rep out by product,
+    the way the dashboard does.) Fetches the plain dashboard .csv candidates
+    and re-downloads '1 Rep Churn' with the product filter FORCED in the URL,
+    logging headers + sample rows to the B2B Diag tab."""
+    import csv as _csv
+    import io
+
+    from patchright.sync_api import sync_playwright
+    from automations.shared import tableau_patchright as tp
+    from automations.shared.tableau_patchright import (
+        download_crosstab_patchright)
+    from automations.vantura_churn import cdp_pull, compute
+
+    lines = []
+
+    def log(msg):
+        print(msg, flush=True)
+        lines.append(str(msg))
+
+    base_csv = ("https://us-east-1.online.tableau.com/t/sci/views/"
+                "ATTTRACKER-B2B/CHURNRATES.csv?:refresh=yes")
+    cv = "Carlos%20Local%20Office%20EXPANDED%20CHURN"
+    candidates = [("custom-view", f"{base_csv}&:customView={cv}"),
+                  ("bare", base_csv)]
+    prod_url = (CHURN_VIEW + "?Product%20Type%20(Broken%20Out)="
+                "AIR/AWB,WIRELESS,NEW%20INTERNET")
+    with cdp_pull._cdp_lock(label="b2b rep_boards probe-csv", log=log):
+        cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        try:
+            with sync_playwright() as p:
+                browser = None
+                for attempt in range(10):
+                    time.sleep(5)
+                    try:
+                        browser = p.chromium.connect_over_cdp(
+                            "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                        break
+                    except Exception:  # noqa: BLE001
+                        if attempt == 9:
+                            raise
+                ctx = (browser.contexts[0] if browser.contexts
+                       else browser.new_context())
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                for label, url in candidates:
+                    try:
+                        r = page.context.request.get(url, timeout=300_000)
+                        body = r.body() or b""
+                        log(f"[csv {label}] status={r.status} "
+                            f"bytes={len(body):,}")
+                        if r.status != 200 or len(body) < 200:
+                            continue
+                        rows = list(_csv.reader(io.StringIO(
+                            body.decode("utf-8-sig", "replace"))))
+                        hdr = [h.strip() for h in rows[0]]
+                        log(f"[csv {label}] {len(rows)-1} rows, cols: {hdr}")
+                        has = {k: [h for h in hdr if k in h.lower()]
+                               for k in ("rep", "product", "day", "bucket")}
+                        log(f"[csv {label}] rep-ish={has['rep']} "
+                            f"product-ish={has['product']} "
+                            f"day-ish={has['day']} bucket-ish={has['bucket']}")
+                        for r2 in rows[1:6]:
+                            log(f"[csv {label}]   {[str(c)[:24] for c in r2]}")
+                    except Exception as ex:  # noqa: BLE001
+                        log(f"[csv {label}] ERR {str(ex)[:200]}")
+                # '1 Rep Churn' with the product members forced in the URL —
+                # does the crosstab gain a product column?
+                try:
+                    dst = OUT_DIR / "probe_rep_churn_products.csv"
+                    OUT_DIR.mkdir(parents=True, exist_ok=True)
+                    download_crosstab_patchright(prod_url, CHURN_REP_SHEET,
+                                                 dst, page=page,
+                                                 verbose=False)
+                    grid = compute._load_grid(dst)
+                    hdr = [str(h or "").strip() for h in grid[0]]
+                    log(f"[xtab +products] {len(grid)-1} rows, cols: {hdr}")
+                    for r2 in grid[1:6]:
+                        log(f"[xtab +products]   {[str(c)[:24] for c in r2]}")
+                except Exception as ex:  # noqa: BLE001
+                    log(f"[xtab +products] ERR {str(ex)[:200]}")
+        finally:
+            cdp_pull._kill_ours()
+            try:
+                proc.wait(timeout=5)
+            except Exception:  # noqa: BLE001
+                pass
+    _upload_diag(lines)
+    print(f"probe-csv output -> {DIAG_TAB!r} ({len(lines)} line(s))",
+          flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="b2b_metrics.rep_boards")
     ap.add_argument("--probe", action="store_true",
                     help="enumerate + download the churn view's worksheets; "
                          "geometry to the B2B Diag tab (read-only)")
+    ap.add_argument("--probe-csv", action="store_true",
+                    help="probe the CHURNRATES exports for rep x product "
+                         "granularity (read-only)")
     ap.add_argument("--build", action="store_true",
                     help="pull both exports, render both boards, b64 them "
                          "into the B2B Shot tabs (preview flow)")
@@ -541,9 +640,11 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     if args.probe:
         return probe(args.url)
+    if args.probe_csv:
+        return probe_csv()
     if args.build:
         return build()
-    ap.error("pass --probe or --build")
+    ap.error("pass --probe, --probe-csv or --build")
     return 2
 
 

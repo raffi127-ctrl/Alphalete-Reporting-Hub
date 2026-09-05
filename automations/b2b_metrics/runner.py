@@ -454,6 +454,15 @@ def expected_items(o: B2BOffice) -> list:
     from automations.shared import thread_plans as tp
     default = [i for i in ITEMS if i["id"] not in o.skip_views
                and (i["id"] != "churn_by_rep" or o.rep_boards)]
+    # rep_boards offices (Carlos 2026-09-05: "both those screenshots should
+    # come in back to back"): Activation Rate by Rep moves up to follow
+    # Activation Rate directly.
+    if o.rep_boards:
+        ids = [i["id"] for i in default]
+        if "activation_rate" in ids and "activation_by_rep" in ids:
+            abr = default.pop(ids.index("activation_by_rep"))
+            default.insert([i["id"] for i in default].index(
+                "activation_rate") + 1, abr)
     return tp.resolve_sections("b2b", o.key, ITEMS, default, id_key="id")
 
 

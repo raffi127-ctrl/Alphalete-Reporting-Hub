@@ -226,6 +226,13 @@ class B2BOffice:
     # his until another office gets equivalents.
     rep_boards: bool = False
 
+    # Crop the consolidated churn capture to the last COLOURED row (Carlos
+    # 2026-09-05: "get rid of that white space in between... I don't need to
+    # see what's at the bottom") — the dashboard puts a tall gap and the
+    # Disconnect Reasons table under the rep table; the crop ends the image
+    # right after the coloured churn cells. His thread only.
+    churn_crop: bool = False
+
     # Per-office saved-view URLs that OVERRIDE the shared TEAM view for a given
     # view_key. Use when the team view can't be URL-sliced to this office (e.g.
     # CHURNRATES filters on "Owner & Office", not "Owner Name", so the generic
@@ -362,6 +369,8 @@ OFFICES: dict = {
         short_header=True,
         # Carlos 2026-09-05: churn-by-rep section + rebuilt activation-by-rep.
         rep_boards=True,
+        # Carlos 2026-09-05: crop the churn board after the rep table.
+        churn_crop=True,
     ),
     "atef": B2BOffice(
         key="atef",
