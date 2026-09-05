@@ -39,6 +39,18 @@ export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
+# STOOD DOWN? Bail before we build, post, or publish anything. Same shape as
+# tracker_mirror.sh: the flag file is the switch, so turning the competition
+# back on is `rm` + push, with no launchctl surgery on the mini. Exit 0 and no
+# publish_done, so the Hub card stays grey/paused instead of going green for a
+# pass that deliberately sent nothing (Rafael 2026-09-05 — comp ends, may come
+# back after R&R).
+if [ -f deploy/texas_de_brazil_745.DISABLED ]; then
+    echo "[$(date)] texas-de-brazil STOOD DOWN (deploy/texas_de_brazil_745.DISABLED) — not building, not posting, not publishing" \
+        >> "$LOG_DIR/texas-de-brazil-745-standdown.log"
+    exit 0
+fi
+
 # Disable the iMessage step (Apple disabled iMessage on this account, 2026-07-22).
 # EMPTY overrides the module's default chat id, so send_imessage() skips cleanly;
 # Slack posting is untouched. Set to the live A-Team GUID to re-enable later.

@@ -26,6 +26,26 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(2)
     lib_id, rest = argv[0], argv[1:]
 
+    # 0) STOOD-DOWN reports: a flag file in deploy/ switches a library report off
+    #    everywhere at once. The scheduled wrapper has its own copy of the check
+    #    (it bails before even materializing); this one covers the MANUAL paths —
+    #    `lucy rerun <key> --send` and the Hub's Run button — so a stood-down
+    #    report can't be posted by someone who didn't know it was off. A
+    #    --dry-run still builds locally, because that sends nothing.
+    _stood_down = {
+        # Rafael 2026-09-05: the Texas de Brazil competition is ending for now
+        # (may come back after R&R), so the daily standings post stops.
+        "june_texas_de_brazil_monthly_competition":
+            "deploy/texas_de_brazil_745.DISABLED",
+    }.get(lib_id)
+    if _stood_down and "--dry-run" not in rest:
+        from pathlib import Path as _Path
+        _flag = _Path(__file__).resolve().parents[2] / _stood_down
+        if _flag.exists():
+            print(f"{lib_id} is STOOD DOWN ({_stood_down}) — not running, "
+                  f"nothing sent. Why:\n\n{_flag.read_text().strip()}")
+            return
+
     # 1) Materialize the latest script text from the Report Library Sheet into the
     #    local cache. Best-effort: if the Hub login isn't importable/authorized we
     #    fall through and run whatever is already on disk (same as before).

@@ -1,0 +1,20 @@
+Texas de Brazil competition — STOOD DOWN 2026-09-05.
+
+Rafael, #l10-alphalete: "we can end this. it'll come back maybe after R&R."
+Megan confirmed: stop the daily comp post going out.
+
+While THIS FILE EXISTS:
+  • deploy/texas_de_brazil_745.sh (the 7:45am launchd job on Lucy 1 / the mini)
+    exits without building, posting, or publishing to the Hub.
+  • automations.day_orchestrator.run_library_report refuses a LIVE run of
+    june_texas_de_brazil_monthly_competition, so `lucy rerun texas_de_brazil
+    --send` and the Hub's Run button can't post it by accident either.
+    --dry-run still builds the PDF locally (nothing is sent).
+  • The Hub card shows a grey ⏸ paused pill and stops counting as due
+    (PAUSED_REPORTS in automations/dashboard.py).
+
+TO RESTART IT (after R&R):
+  1. delete this file, commit + push (the mini picks it up at the 4am pull);
+  2. remove both Texas de Brazil entries from PAUSED_REPORTS in dashboard.py.
+Nothing else was changed — the launchd job, the Library Sheet cell, the Scoring
+Log sheet and the live standings page are all untouched.

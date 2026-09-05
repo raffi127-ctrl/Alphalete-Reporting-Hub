@@ -1404,6 +1404,22 @@ PAUSED_REPORTS = {
     "tracker_mirror": ("Stood down 2026-08-24 (Carlos, 5d4042b) — the manager "
                        "tabs are on live IMPORTRANGE again, so a ferry pass "
                        "would overwrite those formulas with frozen values."),
+    # Both spellings again: the library card id is the one the Hub renders,
+    # `texas_de_brazil` is the schedule_config / `lucy rerun` key.
+    "june_texas_de_brazil_monthly_competition": (
+        "Paused 2026-09-05 (Rafael, #l10-alphalete) — the Texas de Brazil "
+        "competition is ending for now; it may come back after R&R. The "
+        "daily 7:45am post is stood down by "
+        "deploy/texas_de_brazil_745.DISABLED — the wrapper and "
+        "run_library_report both refuse to send while that file exists. "
+        "Delete that file + this entry to restart it."),
+    "texas_de_brazil": (
+        "Paused 2026-09-05 (Rafael, #l10-alphalete) — the Texas de Brazil "
+        "competition is ending for now; it may come back after R&R. The "
+        "daily 7:45am post is stood down by "
+        "deploy/texas_de_brazil_745.DISABLED — the wrapper and "
+        "run_library_report both refuse to send while that file exists. "
+        "Delete that file + this entry to restart it."),
 }
 
 
@@ -3961,7 +3977,8 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
 
         # Texas de Brazil only: let Maud set the dinner date/time each cycle
         # (written to the report's manual-inputs JSON that the run reads).
-        if report["id"] == "june_texas_de_brazil_monthly_competition":
+        if (report["id"] == "june_texas_de_brazil_monthly_competition"
+                and not _paused_reason(report)):
             _render_texas_de_brazil_dinner_inputs()
 
         # Checklist (gates the primary run button)
