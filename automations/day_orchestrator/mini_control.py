@@ -3853,14 +3853,30 @@ _CRED_FILES = {
 #     nothing to merge, the file IS the value;
 #   * an OAuth token or a live browser session (drive-token,
 #     gmail-token-alphaletereception, slack-skool-session) — one identity that
-#     has to land whole, since half of a refreshed token is worse than none;
-#   * new-start-leader-phones, a people OVERLAY — merging would resurrect a
-#     leader deliberately removed on the laptop.
+#     has to land whole, since half of a refreshed token is worse than none.
+#
+# new-start-leader-phones WAS excluded here ("merging would resurrect a leader
+# deliberately removed on the laptop") — that reasoning is now WRONG, and the
+# exclusion was the more dangerous half of the trade (2026-09-05). Lucy 1 is
+# where that overlay is WRITTEN, not just read: the Saturday sweep looks a
+# missing leader up in reception's Google Contacts and calls
+# roster.save_phones() ON LUCY 1 (number_requests._fill_from_contacts). So the
+# laptop's copy is behind by construction — it was 44 numbers, last written
+# 8/30, while Lucy 1 had gained more — and a wholesale push silently ate every
+# number the sweep had filled in. That is the same failure as the doubleentry
+# one above, with the same green "installed (N chars)".
+#
+# Removal still works, via a TOMBSTONE instead of a deleted key: set the
+# leader's value to "" on the laptop and push. The merge (incoming wins) drives
+# Lucy 1's entry to "", and roster.load_phones() drops falsy values, so they
+# read as having no number. A DELETED key is the one thing merge can't carry —
+# so don't delete, blank it.
 _CRED_FILES_MERGE = {
     "ownerville-creds",
     "blueink-creds",
     "saraplus-creds",
     "slack-skool-creds",
+    "new-start-leader-phones",
 }
 
 

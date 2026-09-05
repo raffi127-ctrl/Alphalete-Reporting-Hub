@@ -168,18 +168,34 @@ def load(path: Optional[Path] = None) -> Roster:
     ]
     phones = load_phones()
     for leader in leaders:
-        if not leader.phone and leader.slack_id in phones:
+        # `leader.slack_id and` is load-bearing: a leader with a BLANK id must
+        # never match a blank overlay key, or one person's number is handed to
+        # every id-less leader at once. See load_phones().
+        if not leader.phone and leader.slack_id and leader.slack_id in phones:
             leader.phone = phones[leader.slack_id]
     return Roster(leaders)
 
 
 def load_phones(path: Optional[Path] = None) -> Dict[str, str]:
-    """slack_id -> E.164 from the machine-local overlay. {} if absent."""
+    """slack_id -> E.164 from the machine-local overlay. {} if absent.
+
+    Drops three kinds of entry:
+      * `_`-prefixed keys — the file's own `_note` header;
+      * FALSY values — an empty number is a deliberate-removal TOMBSTONE. It
+        has to stay in the file (a deleted key would be re-added by the
+        merging push, resurrecting someone taken off on purpose) but must
+        read as "no number here";
+      * BLANK keys — a leader with no Slack id (one learned from a hand-tag
+        that never resolved) could otherwise be written under "" and then
+        matched by every OTHER id-less leader, texting one person's number
+        into another person's thread.
+    """
     path = path or PHONES_PATH
     if not path.exists():
         return {}
     raw = json.loads(path.read_text(encoding="utf-8"))
-    return {k: v for k, v in raw.items() if not k.startswith("_") and v}
+    return {k: v for k, v in raw.items()
+            if k.strip() and not k.startswith("_") and v}
 
 
 def save_phones(phones: Dict[str, str], path: Optional[Path] = None) -> Path:

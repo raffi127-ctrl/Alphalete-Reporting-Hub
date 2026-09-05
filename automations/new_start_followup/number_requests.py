@@ -62,11 +62,37 @@ def _save_state(monday: dt.date, state: dict) -> None:
 
 
 def gap_statuses(rec) -> List:
-    """Pending leaders we can't text: no number, not resolved as terminated."""
+    """Pending leaders we can't text: no number, not resolved as terminated.
+
+    "Terminated" means BOTH sources: the per-week state file (someone replied
+    "Name - terminated" in the thread) AND the master Terminated Reps tab
+    (checkpoint 2, Megan 2026-09-05). Without the second one an ex-employee is
+    named in the Slack "numbers needed" post, somebody helpfully supplies their
+    number, and the backfill texts them — routing straight around the
+    checkpoint that texts.run() applies.
+    """
+    from automations.new_start_followup import terminated
+
     state = _load_state(rec.monday)
     gone = set(state.get("terminated") or [])
-    return [s for s in rec.pending
-            if not s.leader.phone and s.leader.slack_id not in gone]
+    out = [s for s in rec.pending
+           if not s.leader.phone and s.leader.slack_id not in gone]
+    try:
+        table = terminated.load_cached()
+    except Exception as exc:  # noqa: BLE001 — advisory, same as texts.run()
+        print("[numbers] WARNING: couldn't read the '{}' tab ({}) — the "
+              "numbers-needed list is unfiltered by it.".format(
+                  terminated.TAB_TITLE, str(exc)[:120]))
+        return out
+    kept = []
+    for s in out:
+        hit = terminated.find(s.leader, table)
+        if hit is None:
+            kept.append(s)
+        else:
+            print("[numbers] NOT asking for {}'s number — {}".format(
+                s.leader.name, hit.describe()))
+    return kept
 
 
 def render_request(gaps) -> str:
@@ -131,7 +157,18 @@ def _fill_from_contacts(rec, gaps, client=None, live: bool = False) -> Dict[str,
             continue
         print("[numbers] {} found in reception's Contacts.".format(g.leader.name))
         g.leader.phone = num
-        phones[g.leader.slack_id] = num
+        # Only a REAL Slack id may key the overlay. A blank one would write
+        # phones[""], which every other id-less leader then matches — their
+        # text would go to this person's number. Texting them this run is
+        # still right (g.leader.phone is set above); we just don't persist a
+        # number nobody can look up again.
+        if g.leader.slack_id:
+            phones[g.leader.slack_id] = num
+        else:
+            print("[numbers] {} has no Slack id — texting them now, but NOT "
+                  "saving to the overlay (it is keyed by Slack id; they will "
+                  "be re-filled from Contacts next run)."
+                  .format(g.leader.name))
         filled.append(g)
     if not live:
         print("[numbers] [dry-run] overlay not written, no texts sent.")
