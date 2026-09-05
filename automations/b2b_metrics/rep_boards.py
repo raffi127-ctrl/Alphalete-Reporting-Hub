@@ -384,23 +384,40 @@ def build(log=print) -> int:
             "only this pass")
         reps = {}
 
-    def _acell(d):
+    # The office's agreed activation bands (Megan 2026-07-19) — the SAME rule
+    # set that colours the churn tab's activation columns, deliberately not
+    # Tableau's own 'Activation Color' (it bands 31-60 differently; see
+    # vantura_churn.fill.BANDS). Carlos 2026-09-05: "do whatever rules are on
+    # the activation rates tab for those colors."
+    from automations.vantura_churn.fill import BANDS as _ACT_BANDS
+
+    def _act_color(window, rate):
+        if rate is None:
+            return ""
+        for floor, name in _ACT_BANDS[window]:
+            if rate >= floor:
+                return name.capitalize()
+        return ""
+
+    def _acell(d, window):
         if not d or d.get("rate") is None:
             return {}
         return {"act": str(d["sold"]), "disc": str(d["activated"]),
-                "rate": f"{round(d['rate'] * 100, 1)}%"}
+                "rate": f"{round(d['rate'] * 100, 1)}%",
+                "color": _act_color(window, d["rate"])}
 
     cols = ["0-30 Day", "31-60 Day"]
     a_rows = [("Office Total (all reps)", True,
-               {"0-30 Day": _acell(office.get("0-30")),
-                "31-60 Day": _acell(office.get("31-60"))})]
+               {"0-30 Day": _acell(office.get("0-30"), "0-30"),
+                "31-60 Day": _acell(office.get("31-60"), "31-60")})]
     a_dropped = 0
     for rep, d in sorted(reps.items()):
         if _norm(rep) not in roster:
             a_dropped += 1
             continue
-        a_rows.append((rep, False, {"0-30 Day": _acell(d.get("0-30")),
-                                    "31-60 Day": _acell(d.get("31-60"))}))
+        a_rows.append((rep, False,
+                       {"0-30 Day": _acell(d.get("0-30"), "0-30"),
+                        "31-60 Day": _acell(d.get("31-60"), "31-60")}))
     log(f"  activation: {len(a_rows) - 1} active rep row(s), "
         f"{a_dropped} inactive dropped")
     act_png = render_table_png(
