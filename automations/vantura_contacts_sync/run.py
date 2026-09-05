@@ -78,6 +78,19 @@ def _phone10(s) -> str:
     return d[-10:] if len(d) >= 10 else ""
 
 
+def _e164(s) -> str:
+    """US 10-digit or 1+10-digit -> +1XXXXXXXXXX for reliable iOS matching.
+    Anything else (short, or a real international number) is returned unchanged
+    so we never mangle a foreign contact."""
+    raw = str(s or "").strip()
+    d = re.sub(r"\D", "", raw)
+    if len(d) == 10:
+        return "+1" + d
+    if len(d) == 11 and d.startswith("1"):
+        return "+" + d
+    return raw
+
+
 def _canon_campaign(raw: str) -> str:
     """Fold every spelling onto the Roll Call vocabulary: B2B / BOX / BASE / JE.
     Unknown values pass through upper-cased rather than being dropped."""
@@ -227,15 +240,46 @@ def load_group_members(svc, grp) -> List[dict]:
             personFields="names,phoneNumbers,biographies").execute())
         for r in batch.get("responses", []) or []:
             p = r.get("person", {})
+            phone_objs = [{"value": ph.get("value", ""), "type": ph.get("type", ""),
+                           "canonical": ph.get("canonicalForm", "")}
+                          for ph in (p.get("phoneNumbers") or [])
+                          if ph.get("value")]
             out.append({
                 "resourceName": p.get("resourceName"),
                 "etag": p.get("etag"),
                 "display": (p.get("names") or [{}])[0].get("displayName", ""),
-                "phones": {_phone10(ph.get("value"))
-                           for ph in (p.get("phoneNumbers") or [])
-                           if _phone10(ph.get("value"))},
+                "phones": {_phone10(ph["value"]) for ph in phone_objs
+                           if _phone10(ph["value"])},
+                "phone_objs": phone_objs,
                 "bio": (p.get("biographies") or [{}])[0].get("value", ""),
             })
+    return out
+
+
+def desired_phones(member: dict, target: dict) -> Optional[list]:
+    """Return a new phone list ONLY when the rep's Daily Update number is
+    missing from the contact; otherwise None (no change).
+
+    Google auto-computes each number's canonicalForm (+1XXXXXXXXXX) no matter
+    how it's stored — that's what syncs to iOS — and it rewrites a +1 value we
+    send back to national display, so "reformatting" existing numbers churns
+    forever with no real effect. So we leave existing numbers untouched and only
+    ADD a genuinely absent one."""
+    have10 = set()
+    for ph in member.get("phone_objs", []):
+        d10 = _phone10(ph.get("canonical") or ph.get("value"))
+        if d10:
+            have10.add(d10)
+    if not target.get("phone") or target["phone"] in have10:
+        return None
+    # append the missing number in E.164; keep every existing number as-is
+    out = []
+    for ph in member.get("phone_objs", []):
+        entry = {"value": ph["value"]}
+        if ph.get("type"):
+            entry["type"] = ph["type"]
+        out.append(entry)
+    out.append({"value": _e164(target["phone"])})
     return out
 
 
@@ -268,10 +312,11 @@ def plan(targets: List[dict], members: List[dict]) -> Tuple[list, list, list]:
         kept_base = _strip_parens(m["display"]) or t["name"]
         new_display = f"{kept_base} ({t['campaign']})" if t["campaign"] else kept_base
         new_notes = merge_notes(m.get("bio", ""), build_notes(t))
+        new_phones = desired_phones(m, t)
         name_changed = _norm(m["display"]) != _norm(new_display)
         notes_changed = (m.get("bio", "") or "").strip() != new_notes.strip()
-        if name_changed or notes_changed:
-            update.append((m, new_display, new_notes))
+        if name_changed or notes_changed or new_phones is not None:
+            update.append((m, new_display, new_notes, new_phones))
         else:
             ok.append(new_display)
 
@@ -292,7 +337,7 @@ def apply(svc, grp, create: List[dict], update: list) -> None:
             disp = f"{t['name']} ({t['campaign']})" if t["campaign"] else t["name"]
             person = {"names": [{"unstructuredName": disp, "givenName": disp}]}
             if t["phone"]:
-                person["phoneNumbers"] = [{"value": t["phone"]}]
+                person["phoneNumbers"] = [{"value": _e164(t["phone"])}]
             if t["email"]:
                 person["emailAddresses"] = [{"value": t["email"]}]
             notes = merge_notes("", build_notes(t))
@@ -312,14 +357,18 @@ def apply(svc, grp, create: List[dict], update: list) -> None:
                   .modify(resourceName=grp["resourceName"],
                           body={"resourceNamesToAdd": c}).execute())
 
-    # update existing: name parenthetical and/or Notes block, one call each
-    for m, new_display, new_notes in update:
+    # update existing: name parenthetical, Notes block, and/or E.164 phones
+    for m, new_display, new_notes, new_phones in update:
         body = {"etag": m["etag"],
                 "names": [{"unstructuredName": new_display, "givenName": new_display}],
                 "biographies": [{"value": new_notes, "contentType": "TEXT_PLAIN"}]}
-        cw._retry(lambda mm=m, b=body: svc.people().updateContact(
+        fields = "names,biographies"
+        if new_phones is not None:
+            body["phoneNumbers"] = new_phones
+            fields += ",phoneNumbers"
+        cw._retry(lambda mm=m, b=body, f=fields: svc.people().updateContact(
             resourceName=mm["resourceName"],
-            updatePersonFields="names,biographies", body=b).execute())
+            updatePersonFields=f, body=b).execute())
 
 
 def main(argv=None) -> int:
@@ -352,12 +401,14 @@ def main(argv=None) -> int:
         disp = f"{t['name']} ({t['campaign']})" if t["campaign"] else t["name"]
         note = build_notes(t).replace("\n", " · ")
         _log(f"  + {disp}   [{t['status']}]" + (f"   notes: {note}" if note else ""))
-    for m, new_display, new_notes in sorted(update, key=lambda x: x[1]):
+    for m, new_display, new_notes, new_phones in sorted(update, key=lambda x: x[1]):
         what = []
         if _norm(m["display"]) != _norm(new_display):
             what.append(f"name {m['display']!r}->{new_display!r}")
         if (m.get("bio", "") or "").strip() != new_notes.strip():
             what.append("notes:" + new_notes.replace("\n", " · ").replace(NOTE_MARKER, "").strip())
+        if new_phones is not None:
+            what.append("phones->" + ", ".join(p["value"] for p in new_phones))
         _log(f"  ~ {new_display}: " + "; ".join(what))
 
     if not a.write:
