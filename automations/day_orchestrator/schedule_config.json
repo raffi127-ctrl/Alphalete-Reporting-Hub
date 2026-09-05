@@ -242,6 +242,26 @@
       "timeout_minutes": 20,
       "machine": "Lucy 2"
     },
+    "recruiter_stats": {
+      "on_scheduler": false,
+      "_note": "MANUAL-ONLY (Carlos 2026-09-05: 'if I like it, we'll probably make it an automation'): per-admin weekly funnel boxes for Carlos (11580) / Atef (23467) / Raf (11280) on the Alphalete Recruiting Dashboard — ONE visible 'Recruiter Stats' tab with an office dropdown mirroring hidden 'RS Data - <name>' tabs via INDIRECT; color grading is CF formulas so it follows the dropdown. Scrapes AppStream p=701 Retention Details (admin breakdown ON) for every Sun-Sat week of the current year (~35 weeks x 3 offices, ~20 min); raw cached to output/recruiter_stats_raw.json — `--no-pull` rebuilds tabs from cache. `lucy rerun recruiter_stats`.",
+      "display_name": "Recruiter Stats (per-admin weekly boxes)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.recruiter_stats.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 60,
+      "machine": "Lucy 2"
+    },
     "install_team_tree_agent": {
       "on_scheduler": false,
       "_note": "One-shot installer for com.alphalete.team-tree-daily on Lucy 2 (6:00am daily; deploy/team_tree_daily.sh -> python -m automations.team_tree.run). `lucy update` then `lucy rerun install_team_tree_agent` on the Lucy 2 control tab.",
