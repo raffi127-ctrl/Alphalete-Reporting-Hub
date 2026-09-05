@@ -651,7 +651,7 @@ class BoardTerminationMark(unittest.TestCase):
 
     def test_selling_rep_is_never_touched(self):
         """The guard that matters most. Jayden Luna sold 32 the week before and
-        sat in New DU's 'Not Active' bucket; only the board's 'T' decides."""
+        sat in Daily Update's 'Not Active' bucket; only the board's 'T' decides."""
         sheet = self._sheet([("Casey Rep", ["2", "0", "1", "1", "0", "", ""])],
                             self._roll("Casey Rep"))
         self._run(sheet, [])

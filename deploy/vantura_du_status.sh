@@ -1,5 +1,5 @@
 #!/bin/bash
-# New DU status reconcile -> Vantura Master (Sundays 7pm CT on LUCY 2).
+# Daily Update status reconcile -> Vantura Master (Sundays 7pm CT on LUCY 2).
 # Flips Active/Orientation-Scheduled DU rows to Not Active when the person's
 # newest Roll Call row is Terminated / T-marked. See the module docstring.
 set -u
@@ -23,7 +23,7 @@ try:
     from automations.day_orchestrator import notify
     from automations.day_orchestrator.registry import load_config
     tail = Path(sys.argv[1]).read_text().splitlines()[-15:]
-    notify.post_alert(":rotating_light: *New DU status reconcile* failed",
+    notify.post_alert(":rotating_light: *Daily Update status reconcile* failed",
                       ["```"] + tail + ["```",
                        'Re-run: `lucy rerun vantura_du_status --machine "Lucy 2"`'],
                       tag="vantura_du_status-failed", cfg=load_config(),

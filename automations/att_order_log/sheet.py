@@ -46,7 +46,7 @@ PROTECTED_TABS = (
     "Churn", "Churn - Atef", "LUCY CHURN", "Activations",
     "Sales Board", "WeekData", "Roll Call", "RollCallData", "Stations",
     "Commission", "Commission Calculator", "Rates", "Adjustments", "RAW",
-    "Copy of Carlos PNL 2026", "Name Aliases", "NoRevPay", "New DU",
+    "Copy of Carlos PNL 2026", "Name Aliases", "NoRevPay", "Daily Update",
     "JE Sales by Store", "Report an Issue",
     "Lucy Wireless Churn", "Lucy New INT Churn",   # ours, but a DIFFERENT module's
 )

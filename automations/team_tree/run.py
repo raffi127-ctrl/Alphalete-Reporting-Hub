@@ -13,7 +13,7 @@ The rules, all from Carlos on 2026-08-30 (session d3e813de):
     trainer is themselves / unresolvable) is a first-gen branch off the root.
   * This week's Roll Call rows with Status "New Start" and no Date Gone are
     pink NEW nodes under their Trainer.
-  * "NS scheduled" = New DU rows with col A "Orientation Scheduled" and a
+  * "NS scheduled" = Daily Update rows with col A "Orientation Scheduled" and a
     FUTURE Orientation Date (col R); team = whoever ran the 2nd round (col N),
     EXCEPT the row's Campaign (col F) overrides on a mismatch — a B2B-campaign
     start 2nd-rounded by a BOX rep counts for B2B, not that rep's card.
@@ -187,8 +187,8 @@ def build(today: dt.date):
         else:
             parent.children.append(r)
 
-    # ---- New DU: scheduled orientations still in the future ------------
-    du = sh.worksheet("New DU").get("A1:R4000")
+    # ---- Daily Update: scheduled orientations still in the future ------------
+    du = sh.worksheet("Daily Update").get("A1:R4000")
     scheduled = []           # (person, campaign, team-Rep-or-None)
     for row in du:
         row += [""] * (18 - len(row))
@@ -316,7 +316,7 @@ def render_html(week, reps, roots, scheduled) -> str:
 <div class="cards">{"".join(cards)}</div>
 <p class="note">Counts cover the leader's whole tree, leader included.
 Total active = Entry Level and up · Leaders = Level 1 and up · In training =
-New Starts + In Training. NS scheduled = New DU orientations dated after
+New Starts + In Training. NS scheduled = Daily Update orientations dated after
 today, teamed by who ran the 2nd round (their campaign column wins if the two
 disagree). Nico and Sebastian run the office and aren't counted.</p></aside>
 </div>

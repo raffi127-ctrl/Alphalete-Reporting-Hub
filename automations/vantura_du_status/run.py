@@ -1,12 +1,12 @@
-"""New DU status reconcile — Sundays (Carlos 2026-09-04).
+"""Daily Update status reconcile — Sundays (Carlos 2026-09-04).
 
-Nothing has ever maintained the New DU's Status column: Lucy's 8:45pm fill
+Nothing has ever maintained the Daily Update's Status column: Lucy's 8:45pm fill
 APPENDS rows with their initial status, the VA used to fix the rest by hand,
 and terminations on the board/Roll Call never flowed back (Jayden read
 "Not Active" for months while actively selling — the reverse rot). This is
 the missing half of the VA's runbook, as Carlos specced it:
 
-  Every Sunday, for each New DU row whose Status (col A) is "Active" or
+  Every Sunday, for each Daily Update row whose Status (col A) is "Active" or
   "Orientation Scheduled": find the person on the Roll Call. If their most
   recent Roll Call row says they're gone — Status "Terminated", or a T in
   the attendance columns (terminations stamp T through Saturday, so col L
@@ -32,7 +32,7 @@ import sys
 import unicodedata
 
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura Master
-DU_TAB, ROLL_TAB, ALIAS_TAB = "New DU", "Roll Call", "Name Aliases"
+DU_TAB, ROLL_TAB, ALIAS_TAB = "Daily Update", "Roll Call", "Name Aliases"
 FLIP_FROM = ("active", "orientation scheduled")
 R_WEEK, R_STATUS, R_NAME = 0, 1, 3          # Roll Call A/B/D (0-based)
 R_ATT0, R_ATT1 = 6, 12                      # attendance G:L
@@ -130,7 +130,7 @@ def main(argv=None) -> int:
     roll = latest_roll_rows(roll_vals, aliases)
 
     hdr, c_status, c_name = du_columns(du_vals)
-    _log(f"New DU: {len(du_vals)} rows; status col {c_status + 1}, "
+    _log(f"Daily Update: {len(du_vals)} rows; status col {c_status + 1}, "
          f"name col {c_name + 1}; roll people: {len(roll)}")
 
     plan, unmatched = [], 0

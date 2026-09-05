@@ -4,7 +4,7 @@
 # (trainer column = parent, color = leadership status, NS scheduled from New
 # DU), renders it with headless Chrome, posts the PNG as Lucy.
 #
-# RUNS ON LUCY 2 — the board, Roll Call and New DU live in the Vantura
+# RUNS ON LUCY 2 — the board, Roll Call and Daily Update live in the Vantura
 # workbook her creds already open, and her Slack user token posts to the
 # channel. Deployed via GitHub: push -> `lucy update` -> `lucy rerun
 # install_team_tree_agent` on the Lucy 2 control tab.

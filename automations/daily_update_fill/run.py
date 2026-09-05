@@ -1,4 +1,4 @@
-"""Daily Update fill — automates the VA's New DU runbook (Carlos 2026-08-23).
+"""Daily Update fill — automates the VA's Daily Update runbook (Carlos 2026-08-23).
 
 For each office, reads ApplicantStream's Retention Details and fills the
 board's Daily Update tab exactly the way the VA does it by hand:
@@ -14,7 +14,7 @@ board's Daily Update tab exactly the way the VA does it by hand:
     later shows to training also gets R = that training date and
     A = '2 - Showed to classroom'.
 
-Offices: Carlos's own (11580 -> Vantura 'New DU') and the 11 captainship
+Offices: Carlos's own (11580 -> Vantura 'Daily Update') and the 11 captainship
 owners (funnel_board roster ids -> their boards' 'Daily Update').
 
 DEDUP by name per tab — re-runs and VA overlap are safe. DRY-RUN by default.
@@ -51,7 +51,7 @@ CENTRAL = ZoneInfo("America/Chicago")
 VANTURA = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 
 # name -> (appstream office id, sheet id, tab)
-OFFICES = {"Carlos Hidalgo": ("11580", VANTURA, "New DU")}
+OFFICES = {"Carlos Hidalgo": ("11580", VANTURA, "Daily Update")}
 _ROSTER_OIDS = {
     "Atef Choudhury": "23467", "Jamis Garay": "19592", "Jackie LeRoy": "22358",
     "Jeff Starr": "15031", "Kinsey Guenther": "11906", "Vincent Smith": "23318",

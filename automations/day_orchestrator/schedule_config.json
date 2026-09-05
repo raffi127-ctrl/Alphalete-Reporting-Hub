@@ -1099,8 +1099,8 @@
     "daily_update_fill": {
       "on_scheduler": false,
       "machine": "Lucy 2",
-      "_note": "Daily Update fill (Carlos 2026-08-23) — automates the VA's evening 'New DU' pass on the Vantura Master Sales Board from ApplicantStream (office 11580): today's second-round roster/showed/offered/BOB from Retention detail pages + calendar follow-up wording and 'Brought on Board' orientation dates (best-effort), appended in the VA's exact column layout/vocabulary (A status, I-S data). Dedup by name so re-runs and VA overlap are safe. DRY-RUN default; the 8:45 PM Report Library card runs --write. Needs AppStream creds (ownerville-creds.json) + the applicant_tracker session store on the machine. Verified 8/21 vs the VA's own entries (9/9 roster, statuses match; LM nuance needs the live calendar day). `lucy rerun daily_update_fill` = dry preview.",
-      "display_name": "Daily Update Fill (New DU)",
+      "_note": "Daily Update fill (Carlos 2026-08-23) — automates the VA's evening 'Daily Update' pass on the Vantura Master Sales Board from ApplicantStream (office 11580): today's second-round roster/showed/offered/BOB from Retention detail pages + calendar follow-up wording and 'Brought on Board' orientation dates (best-effort), appended in the VA's exact column layout/vocabulary (A status, I-S data). Dedup by name so re-runs and VA overlap are safe. DRY-RUN default; the 8:45 PM Report Library card runs --write. Needs AppStream creds (ownerville-creds.json) + the applicant_tracker session store on the machine. Verified 8/21 vs the VA's own entries (9/9 roster, statuses match; LM nuance needs the live calendar day). `lucy rerun daily_update_fill` = dry preview.",
+      "display_name": "Daily Update Fill (Daily Update)",
       "source_type": "appstream",
       "data_sources": [],
       "command": [
@@ -9731,8 +9731,8 @@
     },
     "vantura_du_status": {
       "on_scheduler": false,
-      "_off_scheduler_note": "New DU status reconcile (Carlos 2026-09-04). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.vantura-du-status, installed via `lucy rerun install_vantura_du_status_agent`) on LUCY 2, SUNDAYS 7:00pm CT. Every Active/Orientation-Scheduled row on the Vantura master's 'New DU' whose person's NEWEST Roll Call row is Terminated or T-marked (G:L) flips to 'Not Active'. Most-recent-row rule on purpose: an old Terminated row must never beat a current Active one (Jayden 9/3). People not on the Roll Call are left alone (Orientation Scheduled usually hasn't started). Names bridge through the master's Name Aliases tab. NOBODY else maintains DU statuses (8:45pm fill only APPENDS; the VA used to hand-fix) - this is the missing half of her runbook. `lucy rerun vantura_du_status` = DRY preview; the Sunday agent runs --write. NOTE: the tab MUST stay named 'New DU' - daily_update_fill, team_tree, the bound script's add-new-starts AND its cleanupTabs KEEP whitelist all reference the name literally.",
-      "display_name": "New DU Status Reconcile (Sun 7pm)",
+      "_off_scheduler_note": "Daily Update status reconcile (Carlos 2026-09-04). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.vantura-du-status, installed via `lucy rerun install_vantura_du_status_agent`) on LUCY 2, SUNDAYS 7:00pm CT. Every Active/Orientation-Scheduled row on the Vantura master's 'Daily Update' whose person's NEWEST Roll Call row is Terminated or T-marked (G:L) flips to 'Not Active'. Most-recent-row rule on purpose: an old Terminated row must never beat a current Active one (Jayden 9/3). People not on the Roll Call are left alone (Orientation Scheduled usually hasn't started). Names bridge through the master's Name Aliases tab. NOBODY else maintains DU statuses (8:45pm fill only APPENDS; the VA used to hand-fix) - this is the missing half of her runbook. `lucy rerun vantura_du_status` = DRY preview; the Sunday agent runs --write. NOTE: the tab MUST stay named 'Daily Update' - daily_update_fill, team_tree, the bound script's add-new-starts AND its cleanupTabs KEEP whitelist all reference the name literally.",
+      "display_name": "Daily Update Status Reconcile (Sun 7pm)",
       "source_type": "api",
       "data_sources": [],
       "command": [
@@ -9752,7 +9752,7 @@
     "install_vantura_du_status_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_du_status_agent` can install the STANDALONE com.alphalete.vantura-du-status LaunchAgent on LUCY 2 (Sundays 19:00, deploy/vantura_du_status.sh, --write). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
-      "display_name": "Install New DU Status agent (Sun 7pm)",
+      "display_name": "Install Daily Update Status agent (Sun 7pm)",
       "source_type": "local",
       "data_sources": [],
       "command": [

@@ -77,14 +77,14 @@ ROLL_CAMPAIGN_COL = 2                  # Roll Call col C, header 'Campaign'
 # So this syncs the Roll Call FROM the board's 'T', and as a second net also
 # closes a row whose Date Gone is already set and in the past.
 #
-# The first design of this read New DU col A instead, on the theory that
-# 'Not Active' meant terminated. It does NOT: New DU is the RECRUITING funnel
+# The first design of this read Daily Update col A instead, on the theory that
+# 'Not Active' meant terminated. It does NOT: Daily Update is the RECRUITING funnel
 # (col A is the stage — '1 - Orientation Scheduled', '3 - In Training',
 # '5 - Leader'), and 'Not Active' is its default parking bucket holding 2170 of
 # 2243 rows, every applicant who never started included. Three Roll Call reps
 # sat in it while selling — Jayden Luna had 32 sales the week before and was
 # marked 'Here' Mon-Fri, and is a Trainer. Wiring that up would have terminated
-# the campaign's best seller overnight. Do not use New DU as a status source.
+# the campaign's best seller overnight. Do not use Daily Update as a status source.
 #
 # This is the ONE place the audit writes outside 'Report an Issue', and it is
 # deliberately narrow:
@@ -188,7 +188,7 @@ def _with_aliases(names, alias):
 
 def _load_activity(sh, log=_log, alias=None):
     """Evidence used to explain WHY someone has no board row:
-      - New DU col A status ('Not Active', '3 - In Training', '5 - Leader')
+      - Daily Update col A status ('Not Active', '3 - In Training', '5 - Leader')
         keyed by the col-I name
       - RAW sale counts, last sale date AND a per-week-ending breakdown, keyed
         by col-B rep name
@@ -217,11 +217,11 @@ def _load_activity(sh, log=_log, alias=None):
 
     du = {}
     try:
-        for r in sh.worksheet("New DU").get_all_values()[1:]:
+        for r in sh.worksheet("Daily Update").get_all_values()[1:]:
             if len(r) > 8 and str(r[8]).strip():
                 du.setdefault(_norm(r[8]), str(r[0]).strip())
     except Exception as e:  # noqa: BLE001
-        log(f"(no New DU tab: {type(e).__name__}) — status evidence unavailable")
+        log(f"(no Daily Update tab: {type(e).__name__}) — status evidence unavailable")
 
     sales, weeks = {}, set()
     try:
@@ -603,7 +603,7 @@ def audit(write: bool, log=_log, auto_close: bool = True) -> int:
         # Not on the board. WHY matters — this used to fire one identical
         # "deleted by accident?" line for everyone, and on 2026-07-30 that was
         # 8 people of whom only 2 were really missing: 2 had already been closed
-        # out in New DU and 4 were still in training. Split by evidence.
+        # out in Daily Update and 4 were still in training. Split by evidence.
         who = str(r[R_NAME]).strip()
         cohort = _cohort_weeks_old(str(r[0]) if r else "")
         du = du_status.get(n, "")
@@ -622,21 +622,21 @@ def audit(write: bool, log=_log, auto_close: bool = True) -> int:
                 f"STOPPED SELLING: '{who}' (roll r{ri}) is Active on Roll Call "
                 f"with {sales} lifetime sale(s) but none in the last "
                 f"{len(recent_weeks)} closed weeks ({trace}) and no board row — "
-                f"New DU says {du or 'nothing'}. Confirm they are gone and "
+                f"Daily Update says {du or 'nothing'}. Confirm they are gone and "
                 "close the Roll Call status; do NOT add a board row.")
         elif "not active" in du.lower():
             findings.append(
                 f"ROLL CALL STALE: '{who}' (roll r{ri}) is Active on Roll Call "
-                f"but New DU says {du!r} and they have no sales — close the "
+                f"but Daily Update says {du!r} and they have no sales — close the "
                 "Roll Call status instead of adding a board row.")
         elif cohort is not None and cohort >= 4:
             findings.append(
                 f"STALLED TRAINEE: '{who}' (roll r{ri}) is Active, no board row "
-                f"and no sales {cohort} weeks after their roll week — New DU "
+                f"and no sales {cohort} weeks after their roll week — Daily Update "
                 f"says {du or 'nothing'}. Chase or close them out.")
         else:
             # recent cohort, still ramping: expected, nothing to do
-            log(f"not on board (no sales yet, {cohort}w old, New DU "
+            log(f"not on board (no sales yet, {cohort}w old, Daily Update "
                 f"{du or 'blank'}): {who}")
 
     # 2. stats-range drift: summary formulas whose rep-block range ends off
