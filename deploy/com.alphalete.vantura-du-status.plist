@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.vantura-du-status</string>
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it on Lucy 2
+         (python -m automations.day_orchestrator.install_agent vantura-du-status).
+         SUNDAYS 7pm CT: reconcile New DU statuses against the Roll Call after
+         the selling week closes, before Monday's roll. Carlos 2026-09-04. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/vantura_du_status.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-du-status.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-du-status.launchd.err.log</string>
+</dict>
+</plist>
