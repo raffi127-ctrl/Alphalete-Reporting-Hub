@@ -391,11 +391,12 @@ def _tableau_filter_value(value: str) -> str:
     return v.replace(",", "\\,")
 
 
-# Which views need the sort/crop rep-table handling (Activation + the 3 Churn
-# products). All views capture the same way (cdp_pull Download→Image — the path
-# that reliably auths via Carlos's warm Chrome on Lucy 2); these just get the
-# extra sort (Activation) + crop-to-last-rep afterward.
-_REP_TABLE_VIEWS = ("activation_rate", "churn_wireless", "churn_int", "churn_air")
+# Which views need the sort/crop rep-table handling (Activation + Churn — one
+# consolidated churn view since 2026-09-05). All views capture the same way
+# (cdp_pull Download→Image — the path that reliably auths via Carlos's warm
+# Chrome on Lucy 2); these just get the extra sort (Activation) +
+# crop-to-last-rep afterward (churn no longer crops — no data_cols).
+_REP_TABLE_VIEWS = ("activation_rate", "churn_wireless")
 
 # DIAGNOSTIC 2026-07-21: churn came back as National-Average-only. Download→Image
 # exports the WHOLE dashboard, so the rep table should be in the PNG — meaning the

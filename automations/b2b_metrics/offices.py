@@ -19,11 +19,10 @@ THE THREAD, in Carlos's order (2026-07-20; churn expanded to 3 product views
   1. Sales Metrics          Tableau — B2BATTSalesMetrics team view + Owner Name
                             URL slice (both panels scoped by the slice).
   2. Activation Rate        Tableau — ACTIVATIONRATES team view, owner-sliced.
-  3. Wireless Churn         Tableau — CHURNRATES / CarlosTeamWIRELESSExp, sliced.
-  4. INT Churn              Tableau — CHURNRATES / CarlosTeamINTExp, sliced.
-                            (Carlos SKIPS 4+5 as of 2026-07-27 — skip_views;
-                            Atef still posts them.)
-  5. AIR Churn              Tableau — CHURNRATES / CarlosTeamAIRExp, sliced.
+  3. Churn Rates            Tableau — CHURNRATES, sliced. ONE consolidated
+                            board since 2026-09-05 (AIR/AWB + BYOD/NON BYOD
+                            wireless + New Internet in one table); the old
+                            separate INT/AIR churn sections are retired.
   6. Customer Churn         Sheet — the office board's LUCY CHURN tab main block
                             (the 0-30 Day Rolloff List), via vantura_churn.shot.
   7. Activation Rate by rep Sheet — the LUCY CHURN tab's rep chart (cols AE:AF).
@@ -108,16 +107,23 @@ TEAM: dict = {
     "activation_rate": (_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"
                         "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
                         "CarlosTeamViewExpanded?:iid=1"),
-    # The all-team product churn views (Carlos 2026-07-21 — the real bases).
+    # ONE consolidated churn view (Carlos 2026-09-05). Tableau restructured
+    # CHURNRATES: the board now shows every product in one table (the display
+    # dimension breaks WIRELESS out into BYOD/NON BYOD rows), so ONE capture
+    # with the three filter members — AIR/AWB, WIRELESS, NEW INTERNET —
+    # replaces the churn_wireless/churn_int/churn_air trio (those two keys are
+    # retired from ITEMS; THIS key is kept so per-office overrides, manifests
+    # and thread history stay stable). Member set proven by preview captures
+    # 2026-09-05: %28/%2F-encoding the param made it select NOTHING (bar reads
+    # 'None'), and 'BYOD WIRELESS'/'NON BYOD WIRELESS' are display labels, not
+    # members — raw parens + these three values render all four rows. Stored
+    # pre-encoded — _sliced_url keeps query params (the 2026-09-04 fix) and
+    # appends the office's Owner & Office slice after it.
     "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
                        "e5d34696-30de-4db7-a27e-2654dbf9babd/"
-                       "CarlosTEAMWireless?:iid=1"),
-    "churn_int": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                  "2365c727-4967-4bfc-a3c5-01015ea98278/"
-                  "CarlosTEAMNewINTEXP?:iid=2"),
-    "churn_air": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                  "66dd0946-c47b-488e-990c-cf67f04de4c0/"
-                  "CarlosTEAMAIREXP?:iid=1"),
+                       "CarlosTEAMWireless"
+                       "?Product%20Type%20(Broken%20Out)="
+                       "AIR/AWB,WIRELESS,NEW%20INTERNET"),
     # Order Tiered Bonus - Rep Ranking (Carlos 2026-07-27). Base view shows
     # every team — slice by Owner Name (Carlos's screenshot filters on "Owner
     # Name" = the plain owner). Captured full canvas (no data_cols in VIEW_META)
@@ -146,9 +152,12 @@ VIEW_META: dict = {
     # order_tiered_bonus/out_of_bounds below — keep the whole ranking table.
     "activation_rate": {"filter_field": OWNER_OFFICE_FIELD,
                         "sort_header": "0-7 Days"},
-    "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
-    "churn_int":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
-    "churn_air":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
+    # Consolidated churn (2026-09-05): NO data_cols — the board is now two
+    # stacked tables (National Average per product + Owner (+/-) Rep) and the
+    # whole thing is the deliverable; the last-colored-row crop was tuned for
+    # the old single-product rep table and would cut the lower table off.
+    # capture_page already trims trailing whitespace.
+    "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD},
     # No data_cols -> no last-colored-row crop: keep the WHOLE ranking table
     # (the DNQ reps at the bottom aren't highlighted and would be trimmed).
     "order_tiered_bonus": {"filter_field": OWNER_FIELD},
@@ -295,18 +304,17 @@ OFFICES: dict = {
             "sales_metrics": (_T + "ATTTRACKER-B2B/B2BATTSalesMetrics/"
                               "4a1c404e-54e1-4325-a1a8-61e361f8fd12/"
                               "CarlosEXP?:iid=1"),
+            # Consolidated churn (Carlos 2026-09-05): his EXPANDED per-rep
+            # view with all three product members selected by URL (WIRELESS
+            # displays as BYOD/NON BYOD rows on the restructured board). One
+            # capture carries every product; churn_int/churn_air overrides
+            # deleted with their ITEMS entries. Member set proven by the
+            # 2026-09-05 preview captures — see the TEAM entry's note.
             "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
                                "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
                                "CarlosLocalOfficeEXPANDEDCHURN"
-                               "?Product%20Type%20(Broken%20Out)=WIRELESS"),
-            "churn_int": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                          "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
-                          "CarlosLocalOfficeEXPANDEDCHURN"
-                          "?Product%20Type%20(Broken%20Out)=NEW%20INTERNET"),
-            "churn_air": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                          "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
-                          "CarlosLocalOfficeEXPANDEDCHURN"
-                          "?Product%20Type%20(Broken%20Out)=AIR/AWB"),
+                               "?Product%20Type%20(Broken%20Out)="
+                               "AIR/AWB,WIRELESS,NEW%20INTERNET"),
             # Activation = the SAME view b2b_quality posts correctly. Captured
             # as-is (owner filter baked); VIEW_META's sort_header clicks "0-7
             # Days" high->low, exactly as b2b_quality does.
@@ -314,10 +322,10 @@ OFFICES: dict = {
                                 "4c53fb7e-5a1b-4e8f-990e-0b2c8cf42309/"
                                 "CarlosLocalOfficeEXPANDED"),
         },
-        # Carlos 2026-07-27: drop INT + AIR churn from HIS thread (Atef keeps
-        # them). The overrides above stay intact so un-skipping restores them;
-        # skip_views is the only toggle. Wireless churn + Customer churn remain.
-        skip_views=frozenset({"churn_int", "churn_air"}),
+        # churn_int/churn_air no longer exist as sections (consolidated into
+        # churn_wireless 2026-09-05); the old skip of them is moot. Kept empty
+        # rather than deleted so the field stays discoverable.
+        skip_views=frozenset(),
         # CarlosEXP is a whole-workbook saved view (expanded layout), NOT a
         # pre-filtered slice — keep the ?Owner Name= slice so both panels stay
         # scoped to Carlos's office, exactly as the old team view did.
@@ -334,20 +342,17 @@ OFFICES: dict = {
         channel_name="#domin8-b2b-sales",
         sheet_id="15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30",
         owner_office="ATEF CHOUDHURY\r [domin8 acquisitions, inc.]",
-        # CHURNRATES can't be URL-sliced by "Owner & Office" (compound value with
-        # an embedded CR — Tableau URL returns empty). So churn rides Carlos's
-        # Atef-scoped saved view AtefExp (Owner & Office baked in) and switches
-        # PRODUCT via URL — a clean value Tableau URL filters DO match. One saved
-        # view covers all three products. Activation still needs its own.
+        # Churn rides Carlos's Atef-scoped saved view AtefExp (Owner & Office
+        # baked in). Consolidated 2026-09-05: ONE capture with the three
+        # product members named explicitly by URL (WIRELESS displays as
+        # BYOD/NON BYOD rows) — never trust the view's saved product state,
+        # which is what went stale and blanked the churn from 9/03. Activation
+        # still needs its own saved view.
         view_overrides={
             "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                               "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/AtefExp"),
-            "churn_int": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                          "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/AtefExp"
-                          "?Product%20Type%20(Broken%20Out)=NEW%20INTERNET"),
-            "churn_air": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                          "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/AtefExp"
-                          "?Product%20Type%20(Broken%20Out)=AIR/AWB"),
+                               "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/AtefExp"
+                               "?Product%20Type%20(Broken%20Out)="
+                               "AIR/AWB,WIRELESS,NEW%20INTERNET"),
             # Activation can't be URL-sliced (Owner & Office) either — Carlos's
             # Atef-scoped ACTIVATIONRATES saved view (named AtefEXP).
             "activation_rate": (_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"

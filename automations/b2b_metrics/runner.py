@@ -107,12 +107,13 @@ ITEMS = [
          capture=_tableau_shot("sales_metrics")),
     dict(id="activation_rate", emoji="\U000026A1", title="Activation Rate",
          capture=_activation_board),
-    dict(id="churn_wireless", emoji="\U0001F4C9", title="Wireless Churn",
+    # Consolidated 2026-09-05 (Carlos): Tableau merged the churn products into
+    # ONE board (AIR/AWB + BYOD/NON BYOD wireless + New Internet), so the old
+    # churn_int / churn_air sections are RETIRED and this one shot carries all
+    # four. The id stays 'churn_wireless' so office overrides, manifests and
+    # thread history keep working.
+    dict(id="churn_wireless", emoji="\U0001F4C9", title="Churn Rates",
          capture=_tableau_shot("churn_wireless")),
-    dict(id="churn_int", emoji="\U0001F4C9", title="INT Churn",
-         capture=_tableau_shot("churn_int")),
-    dict(id="churn_air", emoji="\U0001F4C9", title="AIR Churn",
-         capture=_tableau_shot("churn_air")),
     dict(id="customer_churn", emoji="\U0001F43A", title="Customer Churn",
          capture=_sheet_shot("customer_churn")),
     dict(id="activation_by_rep", emoji="\U0001F4C8", title="Activation Rate by Rep",
