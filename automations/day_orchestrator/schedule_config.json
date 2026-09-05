@@ -222,6 +222,26 @@
       "timeout_minutes": 15,
       "machine": "Lucy 2"
     },
+    "b2b_rep_boards": {
+      "on_scheduler": false,
+      "_note": "MANUAL-ONLY (so far): by-rep Activation + Churn boards for the B2B Metrics thread (Carlos 2026-09-05 — activation by rep gains 31-60 day + office totals; churn by rep is new: every bucket, active reps only, office total = the TRUE office total). Currently only `--probe` exists: enumerates the CHURNRATES rep view's worksheets under Carlos's identity and writes geometry to the 'B2B Diag' tab, so the parser/renderer get written against a real export. `lucy rerun b2b_rep_boards -- --probe`.",
+      "display_name": "B2B by-rep boards (activation + churn)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.b2b_metrics.rep_boards"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20,
+      "machine": "Lucy 2"
+    },
     "install_team_tree_agent": {
       "on_scheduler": false,
       "_note": "One-shot installer for com.alphalete.team-tree-daily on Lucy 2 (6:00am daily; deploy/team_tree_daily.sh -> python -m automations.team_tree.run). `lucy update` then `lucy rerun install_team_tree_agent` on the Lucy 2 control tab.",
