@@ -218,6 +218,14 @@ class B2BOffice:
     # Per-office on purpose — Carlos asked for HIS threads, nobody else's.
     short_header: bool = False
 
+    # By-rep boards (Carlos 2026-09-05): True -> the thread gets the NEW
+    # 'Churn by Rep' section (rep_boards.churn_by_rep_capture) and its
+    # 'Activation Rate by Rep' section renders from the activation crosstab
+    # (0-30 + 31-60 with true office totals) instead of the sheet screenshot.
+    # The renderers are wired to Carlos's saved views/roster, so this stays
+    # his until another office gets equivalents.
+    rep_boards: bool = False
+
     # Per-office saved-view URLs that OVERRIDE the shared TEAM view for a given
     # view_key. Use when the team view can't be URL-sliced to this office (e.g.
     # CHURNRATES filters on "Owner & Office", not "Owner Name", so the generic
@@ -352,6 +360,8 @@ OFFICES: dict = {
         # Carlos 2026-09-05: parent = title + date only; the section list
         # moves inside the thread as its first reply.
         short_header=True,
+        # Carlos 2026-09-05: churn-by-rep section + rebuilt activation-by-rep.
+        rep_boards=True,
     ),
     "atef": B2BOffice(
         key="atef",

@@ -84,6 +84,23 @@ def _sheet_shot(which: str):
     return cap
 
 
+def _activation_by_rep(o: B2BOffice, out_dir: Path, log, today=None):
+    """#7: for a rep_boards office (Carlos 2026-09-05) the rebuilt board —
+    0-30 + 31-60 with true office totals, banded by the office's agreed
+    rules; everyone else keeps the LUCY CHURN sheet screenshot."""
+    if o.rep_boards:
+        from automations.b2b_metrics import rep_boards
+        return rep_boards.activation_by_rep_capture(o, out_dir, log=log,
+                                                    today=today)
+    from automations.b2b_metrics import capture
+    return capture.churn_tab_image(o, "activation_by_rep", out_dir, log=log)
+
+
+def _churn_by_rep(o: B2BOffice, out_dir: Path, log, today=None):
+    from automations.b2b_metrics import rep_boards
+    return rep_boards.churn_by_rep_capture(o, out_dir, log=log, today=today)
+
+
 def _activation_board(o: B2BOffice, out_dir: Path, log, today=None):
     """#2 Activation Rate — recreated full-height board (every rep) instead of
     Tableau's scroll-clipped Download→Image. Applies to EVERY office that posts
@@ -114,10 +131,15 @@ ITEMS = [
     # thread history keep working.
     dict(id="churn_wireless", emoji="\U0001F4C9", title="Churn Rates",
          capture=_tableau_shot("churn_wireless")),
+    # rep_boards offices only (expected_items drops it elsewhere) — Carlos
+    # 2026-09-05: the activation-by-rep board's sibling, every churn bucket,
+    # active reps only, office total = the TRUE office total.
+    dict(id="churn_by_rep", emoji="\U0001F4C9", title="Churn by Rep",
+         capture=_churn_by_rep),
     dict(id="customer_churn", emoji="\U0001F43A", title="Customer Churn",
          capture=_sheet_shot("customer_churn")),
     dict(id="activation_by_rep", emoji="\U0001F4C8", title="Activation Rate by Rep",
-         capture=_sheet_shot("activation_by_rep")),
+         capture=_activation_by_rep),
     dict(id="order_log", emoji="\U0001F4C4", title="Order Log", is_file=True,
          capture=_order_log),
     dict(id="order_tiered_bonus", emoji="\U0001F3C6",
@@ -430,7 +452,8 @@ def expected_items(o: B2BOffice) -> list:
     NO plan (the default), this is byte-for-byte the old behavior: every ITEM
     except the ones this office gates out via `skip_views`."""
     from automations.shared import thread_plans as tp
-    default = [i for i in ITEMS if i["id"] not in o.skip_views]
+    default = [i for i in ITEMS if i["id"] not in o.skip_views
+               and (i["id"] != "churn_by_rep" or o.rep_boards)]
     return tp.resolve_sections("b2b", o.key, ITEMS, default, id_key="id")
 
 

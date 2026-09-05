@@ -276,10 +276,42 @@ def render_table_png(title: str, subtitle: str, columns: list, rows: list,
 
 
 # -------------------------------------------------------------------- build
-def build(log=print) -> int:
-    """Pull both exports on Lucy 2, render both boards, b64 them into the
-    B2B Shot tabs for the mini to decode (preview flow; thread wiring comes
-    after Carlos signs off on the pictures)."""
+def churn_by_rep_capture(o, out_dir, log=print, today=None):
+    """Thread capture (runner ITEMS): the churn-by-rep board PNG."""
+    import shutil
+    churn_png, _ = _ensure_built(log=log)
+    dst = Path(out_dir) / "churn_by_rep.png"
+    shutil.copyfile(churn_png, dst)
+    return dst
+
+
+def activation_by_rep_capture(o, out_dir, log=print, today=None):
+    """Thread capture (runner ITEMS): the activation-by-rep board PNG."""
+    import shutil
+    _, act_png = _ensure_built(log=log)
+    dst = Path(out_dir) / "activation_by_rep.png"
+    shutil.copyfile(act_png, dst)
+    return dst
+
+
+def _ensure_built(log=print, max_age_min=45):
+    """Render both boards at most once per run window — the two thread items
+    share one pull instead of opening two CDP sessions minutes apart."""
+    import time as _t
+    churn_png = OUT_DIR / "churn_by_rep.png"
+    act_png = OUT_DIR / "activation_by_rep.png"
+    fresh = all(p.exists()
+                and (_t.time() - p.stat().st_mtime) < max_age_min * 60
+                for p in (churn_png, act_png))
+    if not fresh:
+        _render_both(log=log)
+    if not (churn_png.exists() and act_png.exists()):
+        raise RuntimeError("rep boards did not render")
+    return churn_png, act_png
+
+
+def _render_both(log=print) -> int:
+    """Pull both exports on Lucy 2 and render both PNGs into OUT_DIR."""
     import csv as _csv
     import datetime as dt
 
@@ -367,9 +399,7 @@ def build(log=print) -> int:
         "CHURN RATES BY REP", f"Carlos's B2B Office — {today} "
         "(active reps; total = whole office)", BUCKETS, rows,
         OUT_DIR / "churn_by_rep.png")
-    cdp_pull._upload_png(churn_png.read_bytes(), tab=SHOT_TAB_CHURN)
-    log(f"  churn board -> {SHOT_TAB_CHURN!r} "
-        f"({churn_png.stat().st_size:,} bytes)")
+    log(f"  churn board rendered ({churn_png.stat().st_size:,} bytes)")
 
     # ---- activation board
     if not act_rows:
@@ -424,10 +454,21 @@ def build(log=print) -> int:
         "ACTIVATION RATES BY REP", f"Carlos's B2B Office — {today} "
         "(activated/sold; total = whole office)", cols, a_rows,
         OUT_DIR / "activation_by_rep.png")
-    cdp_pull._upload_png(act_png.read_bytes(), tab=SHOT_TAB_ACT)
-    log(f"  activation board -> {SHOT_TAB_ACT!r} "
-        f"({act_png.stat().st_size:,} bytes)")
+    log(f"  activation board rendered ({act_png.stat().st_size:,} bytes)")
     return 0
+
+
+def build(log=print) -> int:
+    """Preview flow: render both boards and b64 them into the B2B Shot tabs
+    for the mini to decode."""
+    from automations.vantura_churn import cdp_pull
+    rc = _render_both(log=log)
+    for png, tab in ((OUT_DIR / "churn_by_rep.png", SHOT_TAB_CHURN),
+                     (OUT_DIR / "activation_by_rep.png", SHOT_TAB_ACT)):
+        if png.exists():
+            cdp_pull._upload_png(png.read_bytes(), tab=tab)
+            log(f"  {png.name} -> {tab!r} ({png.stat().st_size:,} bytes)")
+    return rc
 
 
 def _upload_diag(lines) -> None:
