@@ -62,7 +62,9 @@ HEADER = ["Week", "Interviews Booked", "Retention Call List",
 # (the no-answer statuses); the breakdown shows every call-type section the
 # report carries, one column each, right of the ratio/total pair.
 LM_SECTIONS = ["Left Message One", "Left Message Two", "Left Message Three"]
-CALL_PAT = re.compile(r"left message|no answer|open|removed from call list",
+# NB: "Starting Open Applicants" is an inventory count, not a call type
+# (Carlos 2026-09-06: drop it) — so 'open' only matches as a whole label.
+CALL_PAT = re.compile(r"left message|no answer|removed from call list|^opens?$",
                       re.I)
 CALL_ORDER = ["No Answer", "No Answers", "Open", "Opens",
               "Left Message One", "Left Message Two", "Left Message Three",
