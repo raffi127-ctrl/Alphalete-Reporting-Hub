@@ -108,8 +108,7 @@ def _drive_owner(page, want: str, log=print) -> bool:
         log("   [owner] box[{}] value={!r} {} items, owner_list={} sample: {}"
             .format(i, val[:30], len(texts), is_owner, " | ".join(sample)))
         if not is_owner:
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(1_000)
+            _dismiss(page)
             continue
         for j, t in enumerate(texts):
             if t:
@@ -148,12 +147,26 @@ def _drive_owner(page, want: str, log=print) -> bool:
                 ap.first.click(timeout=5_000)
         except Exception:  # noqa: BLE001
             pass
-        page.keyboard.press("Escape")
+        _dismiss(page)
         page.wait_for_timeout(12_000)          # let the viz redraw
         log("   [owner] selected {!r} -> {}".format(texts[pick], ok))
         return ok
     log("   [owner] no combo box offered an owner-style member list")
     return False
+
+
+def _dismiss(page) -> None:
+    """Close any open Tableau dropdown HARD. Escape alone is not enough —
+    round 10 (2026-09-05) selected the member fine and then Download→Image
+    timed out three times behind the still-open menu overlay; Tableau menus
+    really close on click-outside. Click dead space, then Escape, twice."""
+    for _ in range(2):
+        try:
+            page.mouse.click(8, 8)
+        except Exception:  # noqa: BLE001
+            pass
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(1_200)
 
 
 def main(argv=None) -> int:
