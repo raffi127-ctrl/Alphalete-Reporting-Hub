@@ -317,12 +317,20 @@ def _fill_ssn_by_hand(session, c, hire) -> None:
              "the profile until somebody enters it.")
         return
     where = "" if hire.has_ssn else "  (their Blue Ink packet has no SSN on it)"
-    secret = ssn_prompt.ask(c.name, subtitle=(
-        "Everything else on this record is filled in." + where))
-    if not secret:
+    answers = ssn_prompt.ask(
+        c.name, gender=c.gender,
+        subtitle="Everything else on this record is filled in." + where)
+    if not answers:
         _log("    SSN: skipped — this profile won't save until it's entered.")
         return
-    if AX.fill_ssn(session.page, secret):
+    if answers.gender:
+        hit = AX.find_field(session.page, "gender")
+        if hit:
+            AX.apply_fill(session.page, [("gender", answers.gender, hit)],
+                          log=lambda *_: None)
+            _log(f"    gender -> {answers.gender}"
+                 + ("" if c.gender else "  (the board's column was empty)"))
+    if AX.fill_ssn(session.page, answers.ssn):
         _log("    SSN: entered (not logged, not stored).")
         return
     _log("    ⚠️ Couldn't find the Social Security box on this screen — "

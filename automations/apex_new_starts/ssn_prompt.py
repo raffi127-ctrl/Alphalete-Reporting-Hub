@@ -5,6 +5,11 @@ Security number, and this report does not read Socials out of Blue Ink and does
 not put them anywhere. Megan's answer (2026-09-05) is the right one: pop up a
 window, let the operator type it, and let the rest of the record fill itself.
 
+It asks for GENDER in the same window (Megan, same day). Apex requires one, the
+board's column for it is usually still empty by the time this runs, and asking
+for both at once is one interruption per person instead of two. Whatever the
+board does have is pre-selected, so the common case is a glance and Enter.
+
 WHAT THIS GUARANTEES.
   * The number is TYPED BY A PERSON, into a masked box, on their own machine.
     It is never read from a document, never fetched, never inferred.
@@ -21,10 +26,22 @@ both, no new dependency on a machine that already has enough moving parts.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Optional
 
 TITLE = "Alphalete · Apex new start"
 SSN_RE = re.compile(r"^\d{3}-?\d{2}-?\d{4}$")
+
+# As Apex's own dropdown spells them.
+GENDERS = ("Female", "Male")
+
+
+@dataclass
+class Answers:
+    """What the window collected. The Social is a Secret; the gender is just a
+    word, and is fine to log."""
+    ssn: "Secret"
+    gender: str = ""
 
 
 class Secret:
@@ -70,8 +87,9 @@ def normalise(raw: str) -> Optional[str]:
     return text.replace("-", "")
 
 
-def ask(person: str, *, subtitle: str = "") -> Optional[Secret]:
-    """Show the box. Returns the Social, or None if the operator skips.
+def ask(person: str, *, subtitle: str = "",
+        gender: str = "") -> Optional["Answers"]:
+    """Show the window. Returns the answers, or None if the operator skips.
 
     Skipping is a first-class answer -- somebody whose number isn't to hand gets
     left for later rather than holding up the other twelve.
@@ -102,7 +120,13 @@ def ask(person: str, *, subtitle: str = "") -> Optional[Secret]:
     entry.focus_set()
     note = ttk.Label(frame, text="9 digits. Not saved anywhere by this report.",
                      foreground="#777")
-    note.grid(column=0, row=3, columnspan=2, sticky="w", pady=(6, 12))
+    note.grid(column=0, row=3, columnspan=2, sticky="w", pady=(6, 10))
+
+    ttk.Label(frame, text="Gender").grid(column=0, row=4, sticky="w")
+    gender_var = tk.StringVar(value=gender if gender in GENDERS else "")
+    picker = ttk.Combobox(frame, textvariable=gender_var, values=list(GENDERS),
+                          state="readonly", width=12)
+    picker.grid(column=1, row=4, sticky="e", pady=(0, 12))
 
     def submit(_event=None):
         clean = normalise(entry.get())
@@ -111,16 +135,21 @@ def ask(person: str, *, subtitle: str = "") -> Optional[Secret]:
                         foreground="#b00")
             entry.delete(0, "end")
             return
-        result["value"] = Secret(clean)
+        if not gender_var.get():
+            note.config(text="Apex needs a gender too — pick one.",
+                        foreground="#b00")
+            picker.focus_set()
+            return
+        result["value"] = Answers(ssn=Secret(clean), gender=gender_var.get())
         root.destroy()
 
     def skip():
         root.destroy()
 
     ttk.Button(frame, text="Skip this person",
-               command=skip).grid(column=0, row=4, sticky="w")
+               command=skip).grid(column=0, row=5, sticky="w")
     ttk.Button(frame, text="Enter",
-               command=submit).grid(column=1, row=4, sticky="e")
+               command=submit).grid(column=1, row=5, sticky="e")
     entry.bind("<Return>", submit)
     root.bind("<Escape>", lambda _e: skip())
     root.update_idletasks()

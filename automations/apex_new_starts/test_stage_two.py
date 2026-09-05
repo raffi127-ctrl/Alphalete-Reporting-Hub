@@ -153,3 +153,22 @@ def test_fill_ssn_types_nothing_when_it_cant_find_the_box(page):
     page.set_content('<label for="x">City</label><input id="x">')
     assert AX.fill_ssn(page, Secret("123456789")) is False
     assert page.locator("#x").input_value() == ""
+
+
+def test_the_prompt_returns_a_gender_beside_the_secret():
+    """The window collects both, so it's one interruption per person. The
+    Social stays a Secret; the gender is an ordinary word and is fine to log."""
+    from automations.apex_new_starts.ssn_prompt import Answers, Secret, GENDERS
+    a = Answers(ssn=Secret("123456789"), gender="Female")
+    assert a.gender in GENDERS
+    assert str(a.ssn) == "•" * 9          # still cannot print itself
+    assert a.ssn.reveal() == "123456789"
+
+
+def test_the_gender_the_operator_picks_goes_into_apex(page):
+    """Whatever the window returns is what lands in the box -- the board's
+    column is usually still empty when this runs."""
+    page.set_content(PROFILE)
+    hit = AX.find_field(page, "gender")
+    AX.apply_fill(page, [("gender", "Female", hit)], log=lambda *_: None)
+    assert page.locator("#p8").input_value() == "Female"
