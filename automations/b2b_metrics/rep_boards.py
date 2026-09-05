@@ -57,6 +57,12 @@ SHOT_TAB_ACT = "B2B Shot AR"
 
 SALES_BOARD_SHEET = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 
+# The BYOD-split product field + its four members (Carlos's own list). The
+# field name is URL-encoded in the raw-paren house style ([[…]] — percent-
+# encoding the parens makes Tableau select NOTHING, proven 2026-09-05).
+PRODUCTS = ["AIR/AWB", "BYOD WIRELESS", "NON BYOD WIRELESS", "NEW INTERNET"]
+BYOD_FIELD_URL = ("Product%20Type%20(Broken%20Out)%20(BYOD/Non%20BYOD)")
+
 
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", str(s or "").replace("\r", " ")).strip().lower()
@@ -88,9 +94,10 @@ def parse_rep_churn(grid: list, owner_prefix: str = "CARLOS HIDALGO") -> dict:
             continue
         rep = str(r[i_rep] or "").replace("\r", " ").strip()
         full = str(r[0] or "").strip()
-        if not rep and "grand total" in full.lower():
-            rep = "__TOTAL__"
-        if "grand total" in rep.lower():
+        # Grand Total spelling depends on the pull: unfiltered exports carry
+        # rep='Grand Total'; product-filtered ones carry
+        # rep.Full Name='Grand Total' with Rep='Total' (probed 2026-09-05).
+        if "grand total" in rep.lower() or "grand total" in full.lower():
             rep = "__TOTAL__"
         if not rep:
             continue
@@ -237,19 +244,26 @@ def _cell(cell: dict) -> str:
 
 def render_table_png(title: str, subtitle: str, columns: list, rows: list,
                      out_path: Path) -> Path:
-    """rows = [(label, is_total, {col: cell-dict})]; cell-dict keys
-    act/disc/rate/color (rate pre-formatted, e.g. '11.1%')."""
+    """rows = [(label, sublabel, is_total, {col: cell-dict})]; cell-dict keys
+    act/disc/rate/color (rate pre-formatted, e.g. '11.1%'). A non-empty
+    sublabel anywhere adds a second label column (the per-product breakout —
+    the rep's name prints once, on their first product row, like Tableau)."""
+    two_col = any(r[1] for r in rows)
     ths = "".join(f'<th class="wh">{c}</th>' for c in columns)
+    lbl_ths = ('<th class="wh"></th><th class="wh">Product</th>'
+               if two_col else '<th class="wh"></th>')
     trs = []
-    for label, is_total, cells in rows:
-        cls = ' class="grand"' if is_total else ""
+    for label, sublabel, is_total, cells in rows:
+        g = " grand" if is_total else ""
         tds = "".join(_cell(cells.get(c)) for c in columns)
-        trs.append(f'<tr><td class="lbl{" grand" if is_total else ""}">'
-                   f"{label}</td>{tds}</tr>")
+        lbl = f'<td class="lbl{g}">{label}</td>'
+        if two_col:
+            lbl += f'<td class="lbl{g}" style="min-width:120px">{sublabel}</td>'
+        trs.append(f"<tr>{lbl}{tds}</tr>")
     html = (f"<html><head><meta charset='utf-8'>{_CSS}</head><body>"
             f'<div class="board"><div class="title">{title}</div>'
             f'<div class="sub">{subtitle}</div>'
-            f'<table><tr><th class="wh"></th>{ths}</tr>'
+            f"<table><tr>{lbl_ths}{ths}</tr>"
             + "".join(trs) + "</table></div></body></html>")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_suffix(".html")
@@ -324,7 +338,6 @@ def _render_both(log=print) -> int:
     from automations.vantura_churn import compute
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    churn_csv = OUT_DIR / "rep_churn.csv"
     act_rows = None
 
     with cdp_pull._cdp_lock(label="b2b rep_boards build", log=log):
@@ -347,9 +360,18 @@ def _render_both(log=print) -> int:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 tp._ensure_tableau_authenticated(page, verbose=False,
                                                  allow_form_login=True)
-                download_crosstab_patchright(CHURN_VIEW, CHURN_REP_SHEET,
-                                             churn_csv, page=page,
-                                             verbose=False)
+                # One '1 Rep Churn' pull PER PRODUCT (Carlos 2026-09-05:
+                # each rep broken out by category). The worksheet carries no
+                # product column, but the BYOD-split field URL-filters it —
+                # raw-paren house style, value with a raw slash.
+                for prod in PRODUCTS:
+                    pv = prod.replace(" ", "%20")
+                    purl = (CHURN_VIEW + "?" + BYOD_FIELD_URL + "=" + pv)
+                    download_crosstab_patchright(
+                        purl, CHURN_REP_SHEET,
+                        OUT_DIR / f"rep_churn_{prod.replace('/', '_').replace(' ', '_')}.csv",
+                        page=page, verbose=False)
+                    log(f"  [churn] pulled rep sheet for {prod}")
                 icd_csv = OUT_DIR / "office_churn.csv"
                 download_crosstab_patchright(CHURN_VIEW, "ICD Churn",
                                              icd_csv, page=page,
@@ -381,23 +403,40 @@ def _render_both(log=print) -> int:
     today = dt.date.today().strftime("%B %d, %Y")
     roster = active_reps(log=log)
 
-    # ---- churn board
-    grid = compute._load_grid(churn_csv)
-    churn = parse_rep_churn(grid)
-    churn.pop("__TOTAL__", None)
+    # ---- churn board: rep x PRODUCT x bucket, assembled from the four
+    # product-filtered pulls. Guard: if every product returned the same
+    # Grand Total the URL filter was inert — refuse to render a wrong board.
+    per_product, prod_totals = {}, {}
+    for prod in PRODUCTS:
+        fn = OUT_DIR / f"rep_churn_{prod.replace('/', '_').replace(' ', '_')}.csv"
+        parsed = parse_rep_churn(compute._load_grid(fn))
+        prod_totals[prod] = parsed.pop("__TOTAL__", {})
+        per_product[prod] = parsed
+    sig = {p: str(t.get("0-30 Day", {})) for p, t in prod_totals.items()}
+    if len(set(sig.values())) <= 1:
+        raise RuntimeError(
+            "product URL filter looks INERT — all four pulls carry the same "
+            f"Grand Total ({sig}); not rendering a wrong board")
     total = parse_office_churn(compute._load_grid(OUT_DIR / "office_churn.csv"))
-    kept, dropped = [], 0
-    for rep, cells in sorted(churn.items()):
-        if _norm(rep) in roster:
-            kept.append((rep, False, cells))
-        else:
+    all_reps = sorted({r for d in per_product.values() for r in d})
+    rows, dropped = [("Office Total (all reps)", "All products", True,
+                      total)], 0
+    for rep in all_reps:
+        if _norm(rep) not in roster:
             dropped += 1
-    log(f"  churn: {len(kept)} active rep row(s), {dropped} inactive "
-        "dropped (their numbers still count in the office total)")
-    rows = [("Office Total (all reps)", True, total)] + kept
+            continue
+        first = True
+        for prod in PRODUCTS:
+            cells = per_product[prod].get(rep)
+            if not cells or not any(cells[b] for b in BUCKETS):
+                continue
+            rows.append((rep if first else "", prod, False, cells))
+            first = False
+    log(f"  churn: {len(rows) - 1} rep-product row(s), {dropped} inactive "
+        "rep(s) dropped (their numbers still count in the office total)")
     churn_png = render_table_png(
         "CHURN RATES BY REP", f"Carlos's B2B Office — {today} "
-        "(active reps; total = whole office)", BUCKETS, rows,
+        "(active reps by product; total = whole office)", BUCKETS, rows,
         OUT_DIR / "churn_by_rep.png")
     log(f"  churn board rendered ({churn_png.stat().st_size:,} bytes)")
 
@@ -437,7 +476,7 @@ def _render_both(log=print) -> int:
                 "color": _act_color(window, d["rate"])}
 
     cols = ["0-30 Day", "31-60 Day"]
-    a_rows = [("Office Total (all reps)", True,
+    a_rows = [("Office Total (all reps)", "", True,
                {"0-30 Day": _acell(office.get("0-30"), "0-30"),
                 "31-60 Day": _acell(office.get("31-60"), "31-60")})]
     a_dropped = 0
@@ -445,7 +484,7 @@ def _render_both(log=print) -> int:
         if _norm(rep) not in roster:
             a_dropped += 1
             continue
-        a_rows.append((rep, False,
+        a_rows.append((rep, "", False,
                        {"0-30 Day": _acell(d.get("0-30"), "0-30"),
                         "31-60 Day": _acell(d.get("31-60"), "31-60")}))
     log(f"  activation: {len(a_rows) - 1} active rep row(s), "
