@@ -23,6 +23,8 @@ from automations.shared import (
     slack_suppression as suppression, slack_tag_learning as tag_learning)
 
 
+# Kept only as the historical wording. NOT posted anywhere since
+# 2026-09-06 — see _departed_lines for why.
 DEPARTED_NOTE = "No longer a channel member"
 
 # Scopes both shared stores to this report: a name suppressed here isn't
@@ -467,6 +469,10 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
                 departed=sid in gone,
             )
         )
+    # Their new starts need somebody too. Counted here rather than announced:
+    # see _departed_lines. A terminated leader can't double-count — those rows
+    # were popped from `owed` before any status row existed.
+    rec.needs_leader += sum(st.owed for st in rec.departed)
     return rec
 
 
@@ -639,8 +645,6 @@ def render_checklist(rec: Reconciliation) -> str:
     for i, s in enumerate(statuses, 1):
         mark = " ✅" if s.sent else ""
         detail = []
-        if s.departed:
-            detail.append(DEPARTED_NOTE)
         if s.covered_by is not None:
             detail.append("sent by {}".format(s.covered_by.short or s.covered_by.name))
         tail = "  _({})_".format(", ".join(detail)) if detail else ""
@@ -677,12 +681,17 @@ def _departed_lines(rec: Reconciliation) -> List[str]:
     Named, not tagged -- the @-mention is the whole thing we're avoiding. Their
     new starts still need somebody, so this has to be visible in the post.
     """
-    if not rec.departed:
-        return []
-    out = ["", "⚠️ *{}* — someone else needs to cover their new starts".format(DEPARTED_NOTE)]
-    for s in rec.departed:
-        out.append("   •  {}".format(s.leader.name))
-    return out
+    # NOTHING. Publishing that a named person is no longer in the channel is
+    # the same disclosure as saying they left the company, in a thread read by
+    # ~30 leaders plus external members from two partner companies (Megan
+    # 2026-09-06, extending "We DO NOT want to post that the leaders are no
+    # longer with the company in that channel").
+    #
+    # The actionable half is kept: their new starts are counted into the
+    # neutral "N new starts need a leader assigned" alert, and the names are in
+    # ops_flags, log only. Deleting the signal instead of relocating it would
+    # leave those new starts uncovered, which is what this section was for.
+    return []
 
 
 def _untaggable_lines(rec: Reconciliation) -> List[str]:
@@ -779,6 +788,12 @@ def ops_flags(rec: Reconciliation) -> List[str]:
             out.append("   •  {} — {} new start{}".format(
                 name, rec.unmatched_obcl[name],
                 "" if rec.unmatched_obcl[name] == 1 else "s"))
+    if rec.departed:
+        out.append("Left the channel but still has new starts — counted into "
+                   "the @Raf 'needs a leader' total, NEVER named in Slack:")
+        for st in rec.departed:
+            out.append("   •  {} — {} new start{}".format(
+                st.leader.name, st.owed, "" if st.owed == 1 else "s"))
     if rec.tagged_unknown:
         out.append("Tagged in the thread but not in leaders.json:")
         for sid in sorted(rec.tagged_unknown):
