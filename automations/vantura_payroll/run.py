@@ -450,6 +450,54 @@ BASE_BLANK_AMOUNT = 200
 # Revenue-by-Campaign section (was lumped into the Base bucket before).
 LEAD_DESCS = ("Lead Disposition Bonus",)
 
+# Level 2 reps (Carlos, 2026-09-06): promoted reps keep their base rate on the
+# commission sheet and get an EXTRA n% of that week's brought-in as a separate
+# labeled bonus line — never a Rates-tab change (Rates holds only the current
+# rate, so editing it silently restates old weeks on any picker rebuild).
+# The Wednesday run appends one Adjustments row per rep per week, idempotent
+# on (week, rep, LEVEL2_LABEL). Names must be the PAID name (RAW col B).
+LEVEL2_REPS = {"Jayden Willingham": 0.05}
+LEVEL2_LABEL = "Level 2 bonus (5% of revenue)"
+
+
+def _level2_bonus(week: dt.date, raw_range: tuple[int, int], *, write: bool,
+                  sheet_id: str, log=_log) -> None:
+    """Append the Level-2 bonus Adjustments rows for this week (skip any that
+    already exist, e.g. hand-entered). Reads brought-in from RAW; a rep with
+    no revenue this week gets no row."""
+    from automations.recruiting_report.fill import open_by_key
+    wnum = _week_num(week)
+    sh = open_by_key(sheet_id)
+    s, e = raw_range
+    raw_rows = sh.worksheet("RAW").get(
+        f"B{s}:H{e}", value_render_option="UNFORMATTED_VALUE")
+    adj = sh.worksheet("Adjustments")
+    existing = adj.get_all_values()
+    have = {(str(r[0]).strip(), str(r[1]).strip().lower())
+            for r in existing[1:]
+            if len(r) > 4 and str(r[4]).strip() == LEVEL2_LABEL}
+    to_add = []
+    for rep, pct in LEVEL2_REPS.items():
+        if (str(wnum), rep.lower()) in have:
+            log(f"level2: {rep} week {wnum} row already exists — skip")
+            continue
+        brought = sum(float(r[6]) for r in raw_rows
+                      if r and str(r[0]).strip().lower() == rep.lower()
+                      and len(r) > 6 and isinstance(r[6], (int, float)))
+        if brought <= 0:
+            log(f"level2: {rep} has no revenue in week {wnum} — no row")
+            continue
+        amt = round(brought * pct, 2)
+        to_add.append([wnum, rep, "Bonus", amt, LEVEL2_LABEL])
+        log(f"level2: {rep} brought ${brought:,.2f} -> +${amt:,.2f}")
+    if not to_add:
+        return
+    if not write:
+        log(f"  (dry-run: {len(to_add)} Level-2 row(s) not written)")
+        return
+    adj.append_rows(to_add, value_input_option="RAW")
+    log(f"  WROTE {len(to_add)} Level-2 bonus row(s) to Adjustments")
+
 # "Revenue by Campaign" summary (Carlos, 2026-07-15): per-campaign revenue /
 # paid-out / payroll-tax / profit in rows 215-233 of each week's block —
 # labels in the paid column, values in the profit column, mirroring the
@@ -895,6 +943,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         raw_range = _load_raw(xlsx, week, write=write, sheet_id=sheet_id)
         _set_week(week, write=write, sheet_id=sheet_id)
+        # Level-2 bonuses BEFORE the refresh so _rebuildCore picks them up.
+        try:
+            _level2_bonus(week, raw_range, write=write, sheet_id=sheet_id)
+        except Exception as exc:  # noqa: BLE001 — never block payroll on a bonus
+            _log(f"level2 bonus step FAILED ({exc!r}) — continuing; add by hand")
         _repoint_pnl(week, raw_range, write=write, sheet_id=sheet_id)
         result = _refresh_and_check(week, raw_range, write=write,
                                     sheet_id=sheet_id)
