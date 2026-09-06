@@ -652,14 +652,14 @@ SATURDAY_START_HHMM = (10, 45)   # Raf 2026-08-29: "can it start at 10:45am"
 # uses start <= local <= end), so the 8:00 PM tick itself is a real slot and
 # the bash gate has to admit hour 20, not stop at 19.
 #
-# >>> TEMPORARY, ONE NIGHT ONLY — 2026-09-05 <<<
-# Held open to 22:00 for the evening of Sat 2026-09-05 ONLY (Megan, 8:2xpm:
-# the change to 8pm landed while the team was still in the field, so tonight
-# was reopened). 8PM IS STILL THE STANDARD. A scheduled revert puts this back
-# to (20, 0) — and SAT_HI back to 20 — on Sun 2026-09-06 ~6am Central.
-# IF YOU ARE READING THIS ON OR AFTER 2026-09-06, THE REVERT DID NOT RUN:
-# set this to (20, 0) and deploy/gap_alerts_5min.sh SAT_HI to 20, now.
-SATURDAY_END_HHMM = (22, 0)
+# 8PM IS A HARD STOP (Megan, 2026-09-05). On that evening this was briefly held
+# open to 22:00 for one night because the 8pm change landed at ~8:15pm with the
+# team still in the field — then reverted within the hour, because a hard 8pm is
+# the actual intent. Do not re-open it "just for tonight" again: past 8pm every
+# rep reads inactive and the card degenerates into the whole roster (the 8:42pm
+# board that evening went out 46-of-46 flagged, 0 new, which is what that hold
+# actually buys).
+SATURDAY_END_HHMM = (20, 0)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
 SATURDAY = 5
 

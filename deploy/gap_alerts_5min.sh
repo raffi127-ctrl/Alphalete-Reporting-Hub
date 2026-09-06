@@ -76,15 +76,11 @@ HOUR=${HOUR#0}
 # made 8/29 read as a dead automation. Nothing after 8pm posts anyway: hours
 # 20:01-20:59 survive bash and are then refused by Python per office.
 #
-# >>> TEMPORARY, ONE NIGHT ONLY — 2026-09-05 <<<
-# SAT_HI is held at 23 for the evening of Sat 2026-09-05 ONLY, matching the
-# temporary SATURDAY_END_HHMM = (22, 0) in automations/gap_alerts/config.py.
-# 8PM IS STILL THE STANDARD (SAT_HI=20). A scheduled revert puts both back on
-# Sun 2026-09-06 ~6am Central. IF YOU ARE READING THIS ON OR AFTER 2026-09-06,
-# THE REVERT DID NOT RUN: set SAT_HI back to 20 and config back to (20, 0).
+# 8PM ON SATURDAY IS A HARD STOP (Megan, 2026-09-05). SAT_HI was briefly held at
+# 23 that one evening and reverted within the hour — a hard 8pm is the intent.
 case "${GAP_ALERTS_ENVELOPE:-d2d}" in
     b2b) WK_LO=7;  WK_HI=20; SAT_LO=8; SAT_HI=18 ;;
-    *)   WK_LO=12; WK_HI=23; SAT_LO=9; SAT_HI=23 ;;
+    *)   WK_LO=12; WK_HI=23; SAT_LO=9; SAT_HI=20 ;;
 esac
 
 if [ "$DOW" = "6" ]; then
