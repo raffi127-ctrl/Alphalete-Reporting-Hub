@@ -148,7 +148,7 @@ RAW_FIRST_DATA_ROW = 2
 # headed "WE m/d" in row 1; rep rows 3-152; the campaign summary blocks sit
 # below (~rows 154-210), located by their labels — never by hardcoded rows.
 PNL_TAB = "Copy of Carlos PNL 2026"
-PNL_REP_FIRST, PNL_REP_LAST = 3, 171
+PNL_REP_FIRST, PNL_REP_LAST = 3, 195  # +24 rows inserted 9/6 (9 new reps + 15 spares)
 
 
 def _week_num(week: dt.date) -> float:
@@ -403,9 +403,9 @@ def _locate_block(pnl, week: dt.date, log=_log) -> dict:
             "and re-run.")
     blk = {"brought": _col_letter(c), "paid": _col_letter(c + 1),
            "profit": _col_letter(c + 2), "header": hdr}
-    labels = pnl.get(f"{blk['paid']}150:{blk['paid']}250")
+    labels = pnl.get(f"{blk['paid']}150:{blk['paid']}290")
     seq = [(i, (r[0].strip() if r and r[0] else ""))
-           for i, r in enumerate(labels, start=150)]
+           for i, r in enumerate(labels, start=150)]  # window widened 9/6 (+24 shift)
 
     def find(label, after, alts=()):
         for row, v in seq:
@@ -503,10 +503,10 @@ def _level2_bonus(week: dt.date, raw_range: tuple[int, int], *, write: bool,
 # labels in the paid column, values in the profit column, mirroring the
 # summary blocks above. Backfilled by hand for 6/21-7/12; the weekly run
 # writes it for each new week. Anchored at fixed rows per Carlos's spec.
-REV_TITLE_ROW = 236
+REV_TITLE_ROW = 260
 # 2026-07-23 v2 (Carlos): Lead Disposition revenue belongs under BOX (still
 # never paid — BOX's Paid Out mask excludes it). No separate section.
-REV_CAMPAIGNS = (("B2B", 238), ("BOX", 244), ("Base", 250))
+REV_CAMPAIGNS = (("B2B", 262), ("BOX", 268), ("Base", 274))
 REV_METRICS = ("Revenue Brought In", "Paid Out", "Payroll Tax", "Profit")
 
 # House style (read off the hand-built summary blocks 2026-07-19): dark
@@ -653,10 +653,10 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
 
     # Captainship revenue (Carlos 2026-07-23): label-driven 'Captain' slot
     # (row shifts with the ledger — locate by label, currently CM206/CN206).
-    cap_scan = pnl.get(f"{blk['paid']}190:{blk['paid']}214")
+    cap_scan = pnl.get(f"{blk['paid']}214:{blk['paid']}238")
     for off, rowv in enumerate(cap_scan or []):
         if rowv and str(rowv[0]).strip().lower() == "captain":
-            formulas[f"{blk['profit']}{190 + off}"] = (
+            formulas[f"{blk['profit']}{214 + off}"] = (
                 f'=SUMPRODUCT(ISNUMBER(SEARCH("Captain",{E}))*{H})')
             break
 
