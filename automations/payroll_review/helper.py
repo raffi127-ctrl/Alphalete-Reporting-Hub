@@ -243,6 +243,91 @@ def apply(payload: str) -> dict:
             "new_total": total2}
 
 
+def npa(payload: str) -> dict:
+    """Reimbursement -> one NPA Adjustments row (Carlos 2026-09-06, Slack
+    /reimbursement flow; NO approval step by design — the #a-players-b2b post
+    is the audit trail). NPA = added to the check UNTAXED, never mixed into
+    commission (Payroll.gs sums Adjustments rows whose Type contains 'NPA'
+    into Commission col E).
+
+    payload: {"rep": "<slack real name>", "amount": 45.0, "label": "..."}
+    Week rule: submitted Mon-Wed (CT) -> the week being built (last Sunday);
+    Thu-Sun -> next build (the coming Sunday). Only refreshes the board when
+    the target week is the one currently in B1."""
+    import datetime as dt
+    it = json.loads(payload)
+    amount = float(it.get("amount", 0))
+    if not (0 < amount <= 2000):
+        return {"error": f"amount ${amount:,.2f} out of range (0-2000)"}
+    label = str(it.get("label", "Reimbursement (Slack)")).strip()[:180]
+
+    now = dt.datetime.now()  # laptop runs America/Chicago
+    wd = now.weekday()  # Mon=0
+    days_since_sunday = (wd + 1) % 7          # Sun=0 Mon=1 Tue=2 Wed=3 Thu=4...
+    last_sunday = now.date() - dt.timedelta(days=days_since_sunday)
+    # WE <last Sunday> is built Wed EOD (+3 days). On/before that -> this
+    # build; Thu-Sat -> the coming Sunday's build.
+    target = last_sunday if days_since_sunday <= 3 else \
+        last_sunday + dt.timedelta(days=7)
+    week_str = f"{float(f'{target.month}.{target.day}'):g}"
+
+    sh = _sheet()
+    cm, b1_week, locked, reps, _total = _read_summary(sh)
+    if week_str == b1_week and locked:
+        # board already locked for this build -> roll to the next check
+        target += dt.timedelta(days=7)
+        week_str = f"{float(f'{target.month}.{target.day}'):g}"
+
+    # roster: Commission reps + Sales Board + Roll Call names, alias-bridged —
+    # a rep with no line this week must still resolve.
+    roster = {_nrm(r["name"]): r["name"] for r in reps}
+    try:
+        for r in sh.worksheet("Sales Board").get("B5:B60"):
+            nm = str(r[0]).strip() if r else ""
+            if nm:
+                roster.setdefault(_nrm(nm), nm)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        for r in sh.worksheet("Roll Call").get("D3:D400"):
+            nm = str(r[0]).strip() if r else ""
+            if nm:
+                roster.setdefault(_nrm(nm), nm)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        for row in sh.worksheet("Name Aliases").get_all_values():
+            if len(row) > 1 and str(row[0]).strip() and str(row[1]).strip():
+                canon = _nrm(row[1])
+                if canon in roster:
+                    roster.setdefault(_nrm(row[0]), roster[canon])
+                else:
+                    # alias may BE the canonical paid name even if not rostered
+                    roster.setdefault(_nrm(row[0]), str(row[1]).strip())
+    except Exception:  # noqa: BLE001
+        pass
+
+    n = _nrm(it.get("rep", ""))
+    who = roster.get(n)
+    if not who:
+        hits = {v for k, v in roster.items()
+                if k.startswith(n + " ") or n.startswith(k + " ")
+                or (n and n in k)}
+        if len(hits) == 1:
+            who = hits.pop()
+        else:
+            return {"error": "could not match rep name",
+                    "candidates": sorted(hits)[:6], "rep": it.get("rep")}
+
+    sh.worksheet("Adjustments").append_rows(
+        [[week_str, who, "NPA", amount, label]], value_input_option="RAW")
+    note = "queued for next build"
+    if week_str == b1_week:
+        note = _webapp_refresh()
+    return {"ok": True, "rep": who, "week": week_str, "amount": amount,
+            "refreshed": week_str == b1_week, "note": note}
+
+
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else "summary"
     if mode == "summary":
@@ -253,6 +338,8 @@ def main() -> int:
         print(json.dumps(png(sys.argv[2])))
     elif mode == "apply":
         print(json.dumps(apply(sys.argv[2])))
+    elif mode == "npa":
+        print(json.dumps(npa(sys.argv[2])))
     else:
         print(json.dumps({"error": f"unknown mode {mode}"}))
         return 2
