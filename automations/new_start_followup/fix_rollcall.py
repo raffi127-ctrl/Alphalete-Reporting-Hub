@@ -84,18 +84,24 @@ def take_snapshot(monday: dt.date, path: Path, funnel=None) -> Path:
     return path
 
 
-def _find_rollcall(client, friday: dt.date, funnel=None):
-    """Lucy's roll-call message in this week's thread, or None."""
+def _find_rollcall(client, friday: dt.date, funnel=None, target="rollcall"):
+    """Lucy's roll-call (or checklist) message in this week's thread, or None."""
     funnel = funnel or thread_mod.FUNNELS[0]
     th = thread_mod.read_thread(friday=friday, client=client,
                                 poster=funnel["poster"])
+    marker = (thread_mod.CHECKLIST_MARKER if target == "checklist"
+              else thread_mod.ROLLCALL_MARKER)
+    # LAST match, not first: a week can carry more than one checklist if a pass
+    # re-ran, and the one people are reading is the latest.
+    found = None
     for m in th["replies"]:
-        if thread_mod.ROLLCALL_MARKER in thread_mod._strip(m.get("text", "")):
-            return th, m
-    return th, None
+        if marker in thread_mod._strip(m.get("text", "")):
+            found = m
+    return th, found
 
 
-def apply_fix(monday: dt.date, path: Path, post: bool, funnel=None) -> int:
+def apply_fix(monday: dt.date, path: Path, post: bool, funnel=None,
+              target: str = "rollcall") -> int:
     funnel = funnel or thread_mod.FUNNELS[0]
     client = smp._client()
     me = client.auth_test()
@@ -103,10 +109,10 @@ def apply_fix(monday: dt.date, path: Path, post: bool, funnel=None) -> int:
         me.get("user"), me.get("user_id")))
 
     friday = monday - dt.timedelta(days=3)
-    th, msg = _find_rollcall(client, friday, funnel=funnel)
+    th, msg = _find_rollcall(client, friday, funnel=funnel, target=target)
     if msg is None:
-        print("No roll call found in the week-of-{} thread — nothing to fix."
-              .format(monday.isoformat()), file=sys.stderr)
+        print("No {} found in the week-of-{} thread — nothing to fix."
+              .format(target, monday.isoformat()), file=sys.stderr)
         return 2
 
     author = msg.get("user")
@@ -120,22 +126,28 @@ def apply_fix(monday: dt.date, path: Path, post: bool, funnel=None) -> int:
               "a new message.".format(author, me.get("user_id")), file=sys.stderr)
         return 3
 
-    if not path.exists():
-        print("No roster snapshot at {}. Take one on a machine that can read "
-              "the screenshot: --snapshot".format(path), file=sys.stderr)
-        return 2
-
-    rec = report_mod.build(monday=monday, client=client, roster_json=path,
-                           funnel=funnel)
-    corrected = report_mod.render_rollcall(rec, tag=funnel["tag"])
+    # The snapshot bridge exists for a machine that can't read the screenshot.
+    # This one may be able to (the mini's token gained files:read), so use the
+    # screenshot when there's no snapshot rather than refusing outright — a
+    # week-old snapshot is the thing that must never be used, not the absence
+    # of one.
+    if path.exists():
+        rec = report_mod.build(monday=monday, client=client, roster_json=path,
+                               funnel=funnel)
+    else:
+        print("[roster] no snapshot at {} — reading the screenshot directly."
+              .format(path))
+        rec = report_mod.build(monday=monday, client=client, funnel=funnel)
+    corrected = (report_mod.render_checklist(rec) if target == "checklist"
+                 else report_mod.render_rollcall(rec, tag=funnel["tag"]))
     if not corrected.strip():
-        print("The corrected roll call came out empty — refusing to blank the "
+        print("The corrected post came out empty — refusing to blank the "
               "posted message.", file=sys.stderr)
         return 2
 
     old = thread_mod._strip(msg.get("text", ""))
     if old.strip() == corrected.strip():
-        print("Posted roll call already matches the screenshot. Nothing to do.")
+        print("The posted {} already matches. Nothing to do.".format(target))
         return 0
 
     print("\n--- BEFORE " + "-" * 55)
@@ -175,6 +187,10 @@ def main(argv=None) -> int:
     ap.add_argument("--funnel", choices=["all", "main", "second"], default="all",
                     help="which funnel to snapshot/fix (--snapshot default: all; "
                          "--apply uses main unless told otherwise)")
+    ap.add_argument("--target", choices=["rollcall", "checklist"],
+                    default="rollcall",
+                    help="which of Lucy's posts to correct in place. "
+                         "checklist = the Sunday roll-up")
     ap.add_argument("--path", default="", help="snapshot file path override "
                     "(single-funnel runs only; default: the funnel's own file)")
     args = ap.parse_args(argv)
@@ -207,7 +223,8 @@ def main(argv=None) -> int:
         funnel = thread_mod.funnel_by_key(
             "main" if args.funnel == "all" else args.funnel)
         path = Path(args.path) if args.path else report_mod.snapshot_path(funnel)
-        return apply_fix(monday, path, args.post, funnel=funnel)
+        return apply_fix(monday, path, args.post, funnel=funnel,
+                         target=args.target)
     ap.error("choose --snapshot (laptop) or --apply (the machine that posted it)")
 
 

@@ -80,6 +80,10 @@ MENTION_PATTERN = re.compile(r"<@([UW][A-Z0-9]+)>")
 # so idempotency lives in the thread itself rather than in a state file that
 # can drift out of sync with Slack.
 ROLLCALL_MARKER = "New-Start Texts — Roll Call"
+# The Sunday checklist header. Distinct from the roll call's, whose text
+# reads "New-Start Texts — Roll Call — week of ...", so this substring
+# cannot match it.
+CHECKLIST_MARKER = "New-Start Texts — week of"
 
 
 class Confirmation:
