@@ -716,32 +716,17 @@ def _needs_leader_lines(rec: Reconciliation) -> List[str]:
     # the old wording ("their leader is no longer with the company") read as if
     # they were new starts — Megan 2026-09-06: "some aren't even new starts
     # (tadana)". Say which list this is.
-    # The names are only listed the FIRST time Raf is told about a departure,
-    # so on a later pass there is nothing to put under the header. Ending on a
-    # colon with an empty list is worse than not promising a list at all —
-    # that's what the corrected 9/7 checklist posted.
-    lead = "🚨 <@{}> — *{} new start{} need{} a leader assigned* for reach-out".format(
-        RAF_SLACK_ID, n, "" if n == 1 else "s", "s" if n == 1 else "")
-    out = ["", lead + (". These leaders are no longer with the company:"
-                       if rec.terminated_new else
-                       " — their leader is no longer with the company.")]
-    # NAMED, not just counted (Megan 2026-09-05: "keep them named"). "26 new
-    # starts" doesn't tell Raf which offices lost a leader, and these people
-    # used to show by name under "needs a manual reach-out" — folding them into
-    # a bare count made them vanish, which is the exact failure the 2026-08-08
-    # sheet cross-read was built to prevent.
-    #
-    # PLAIN NAMES, never <@mentions>: these accounts are deactivated, and the
-    # departed/unable-to-tag sections have listed names only since 2026-08-23.
-    # OBCL-marked rows can't appear here — that cell literally reads
-    # "Terminated", so there is no name left to print.
-    #
-    # Only the ones Raf has NOT already been told about (Megan 2026-09-05: "you
-    # should learn though each week the users and not ask again other weeks").
-    # The COUNT above still includes everyone, because those new starts are new
-    # work each week even when the departure isn't.
-    for name in sorted(rec.terminated_new):
-        out.append("   •  {}".format(name))
+    # NEVER say why, and NEVER name them (Megan 2026-09-06: "We DO NOT want to
+    # post that the leaders are no longer with the company in that channel").
+    # This thread is read by ~30 leaders and carries external members from two
+    # partner companies — somebody's departure is not ours to announce there.
+    # Raf gets the one thing he has to act on: these new starts need a leader.
+    # WHO left, and which new starts are theirs, stays in ops_flags (log only)
+    # and on the Terminated Reps tab.
+    out = ["", "🚨 <@{}> — *{} new start{} need{} a leader assigned* for "
+               "reach-out.".format(
+                   RAF_SLACK_ID, n, "" if n == 1 else "s",
+                   "s" if n == 1 else "")]
     return out
 
 
