@@ -3,15 +3,33 @@
   "people": [
     {
       "name": "Giovanna Santos",
-      "reports": ["new_start_followup"],
+      "reports": [
+        "new_start_followup"
+      ],
       "why": "Raf 2026-08-30 in the #rafs-office-recruiting-11280 thread: not his people, he knows their engagement, doesn't want Lucy pinging them.",
       "added": "2026-08-30"
     },
     {
       "name": "Heiddy Ochoa",
-      "reports": ["new_start_followup"],
+      "reports": [
+        "new_start_followup"
+      ],
       "why": "Raf 2026-08-30 in the #rafs-office-recruiting-11280 thread: same as Giovanna Santos — don't ping.",
-      "added": "2026-08-30"
+      "added": "2026-08-30",
+      "aliases": [
+        "Heildy Ochoa"
+      ]
+    },
+    {
+      "name": "Tadana Jeti",
+      "aliases": [
+        "Tadana"
+      ],
+      "reports": [
+        "new_start_followup"
+      ],
+      "why": "Raf asked in the #11280 thread 2026-09-06: 'Please remove Tadana from the list'. Removed by Megan the same day.",
+      "added": "2026-09-06"
     }
   ]
 }
