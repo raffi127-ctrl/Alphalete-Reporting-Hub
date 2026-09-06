@@ -157,9 +157,12 @@ def _day_rows(page, date_str: str):
 
 def _open_history(page, row) -> bool:
     """Find the row FRESH by its cell values (closed dialogs leave <tr>s in the
-    DOM, so a pre-collected index goes stale) and click its first icon link."""
-    return page.evaluate(
+    DOM, so a pre-collected index goes stale), mark its history icon, and click
+    it with a REAL Playwright click (JS .click() didn't fire the handler)."""
+    marked = page.evaluate(
         """(want) => {
+             document.querySelectorAll('[data-smsmark]').forEach(
+               e => e.removeAttribute('data-smsmark'));
              const tr = [...document.querySelectorAll('tr')].find(tr => {
                const tds = [...tr.querySelectorAll('td')];
                if (tds.length < 7 || tr.offsetParent === null) return false;
@@ -167,14 +170,30 @@ def _open_history(page, row) -> bool:
                return c[0] === want.date && c[1] === want.time
                       && c[2] === want.name && c[3] === want.phone;
              });
-             if (!tr) return false;
-             const tds = tr.querySelectorAll('td');
-             const link = tds[tds.length - 1].querySelector('a');
-             if (!link) return false;
-             link.click();
-             return true;
+             if (!tr) return 'no row';
+             const cell = tr.querySelectorAll('td')[tr.querySelectorAll('td').length - 1];
+             const el = cell.querySelector('a img, img, a');
+             if (!el) return 'no icon: ' + cell.innerHTML.slice(0, 200);
+             el.setAttribute('data-smsmark', '1');
+             return 'ok';
            }""", {"date": row["date"], "time": row["time"],
                   "name": row["name"], "phone": row["phone"]})
+    if marked != "ok":
+        raise RuntimeError(f"mark failed: {marked}")
+    page.locator("[data-smsmark='1']").first.scroll_into_view_if_needed()
+    page.locator("[data-smsmark='1']").first.click()
+    return True
+
+
+def _dialog_state(page) -> str:
+    """One-line debug of what's on screen after a failed dialog wait."""
+    return page.evaluate(
+        """() => {
+             const dlg = [...document.querySelectorAll('.ui-dialog, [role=dialog]')]
+                          .filter(d => d.offsetParent !== null);
+             return 'visible dialogs=' + dlg.length + ' first=' +
+                    (dlg[0] ? (dlg[0].innerText || '').slice(0, 120).replace(/\\n/g, '|') : '-');
+           }""")
 
 
 def _scrape_thread(page):
@@ -281,7 +300,12 @@ def main(argv=None):
                     if not thread:
                         rec["error"] = "no chat table"
                 except Exception as e:  # noqa: BLE001 — one bad row must not kill the run
-                    rec["error"] = f"{type(e).__name__}: {str(e).splitlines()[0][:160]}"
+                    state = ""
+                    try:
+                        state = " · " + _dialog_state(page)
+                    except Exception:
+                        pass
+                    rec["error"] = f"{type(e).__name__}: {str(e).splitlines()[0][:120]}{state}"
                     print(f"[sms_dump]   {row['name']}: {rec['error']}", flush=True)
                 finally:
                     _close_dialog(page)
