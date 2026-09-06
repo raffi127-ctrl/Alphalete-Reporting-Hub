@@ -716,10 +716,15 @@ def _needs_leader_lines(rec: Reconciliation) -> List[str]:
     # the old wording ("their leader is no longer with the company") read as if
     # they were new starts — Megan 2026-09-06: "some aren't even new starts
     # (tadana)". Say which list this is.
-    out = ["", "🚨 <@{}> — *{} new start{} need{} a leader assigned* for "
-               "reach-out. These leaders are no longer with the company:".format(
-                   RAF_SLACK_ID, n, "" if n == 1 else "s",
-                   "s" if n == 1 else "")]
+    # The names are only listed the FIRST time Raf is told about a departure,
+    # so on a later pass there is nothing to put under the header. Ending on a
+    # colon with an empty list is worse than not promising a list at all —
+    # that's what the corrected 9/7 checklist posted.
+    lead = "🚨 <@{}> — *{} new start{} need{} a leader assigned* for reach-out".format(
+        RAF_SLACK_ID, n, "" if n == 1 else "s", "s" if n == 1 else "")
+    out = ["", lead + (". These leaders are no longer with the company:"
+                       if rec.terminated_new else
+                       " — their leader is no longer with the company.")]
     # NAMED, not just counted (Megan 2026-09-05: "keep them named"). "26 new
     # starts" doesn't tell Raf which offices lost a leader, and these people
     # used to show by name under "needs a manual reach-out" — folding them into
