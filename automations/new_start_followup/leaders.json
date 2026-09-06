@@ -267,6 +267,18 @@
       "phone": ""
     },
     {
+      "slack_id": "U0B397Z0HSR",
+      "name": "Nima Hijaz",
+      "short": "Nima",
+      "obcl_names": [
+        "Nima Aweida",
+        "Nima hijaz",
+        "Nima Hijaz"
+      ],
+      "phone": "",
+      "_note": "Added 2026-09-06. The OBCL spells her 'Nima Aweida'; Slack is 'Nima hijaz' (Megan confirmed off the @-autocomplete). Without the alias she landed in 'needs a manual reach-out' every week."
+    },
+    {
       "slack_id": "U09RNEP07DW",
       "name": "Noemi Rivera",
       "short": "Noemi",
