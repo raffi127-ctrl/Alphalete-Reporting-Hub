@@ -703,9 +703,12 @@ def _needs_leader_lines(rec: Reconciliation) -> List[str]:
     if not rec.needs_leader:
         return []
     n = rec.needs_leader
-    out = ["", "🚨 <@{}> — *{} new start{} need{} a leader assigned* "
-               "for reach-out (their leader is no longer with the "
-               "company)".format(
+    # The bullets under this are the DEPARTED LEADERS, not the new starts, and
+    # the old wording ("their leader is no longer with the company") read as if
+    # they were new starts — Megan 2026-09-06: "some aren't even new starts
+    # (tadana)". Say which list this is.
+    out = ["", "🚨 <@{}> — *{} new start{} need{} a leader assigned* for "
+               "reach-out. These leaders are no longer with the company:".format(
                    RAF_SLACK_ID, n, "" if n == 1 else "s",
                    "s" if n == 1 else "")]
     # NAMED, not just counted (Megan 2026-09-05: "keep them named"). "26 new

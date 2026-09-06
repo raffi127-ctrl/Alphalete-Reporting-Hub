@@ -168,7 +168,17 @@ def read_new_starts(monday: Optional[dt.date] = None, sheet_id: str = SHEET_ID):
         first = cell(row, i_first)
         last = cell(row, i_last)
         if not interviewer and not first:
-            continue
+            # END OF THE TABLE, not a row to skip. The 9.7 tab runs to row 65
+            # and then, after one blank row, carries a leftover block where
+            # each person is listed against THEMSELVES in the interviewer
+            # column. Walking past the blank read those as real assignments:
+            # 27 names — last week's people, and leaders like Tadana
+            # Manyangadze who aren't new starts at all — were posted to Raf as
+            # "new starts needing a leader assigned" (Megan 2026-09-06).
+            # A blank row is a boundary everywhere else in this repo; it is one
+            # here too. Verified on the 9.7 tab: the first blank is row 66, and
+            # the real table above it has none.
+            break
         if interviewer.lower() == INTERVIEWER_HEADER.lower():
             # A repeated header row pasted into the data area (week of 8/24) —
             # not a person, and it leaked into the posted "unable to tag" list.
