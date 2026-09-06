@@ -131,7 +131,21 @@ def apply_fix(monday: dt.date, path: Path, post: bool, funnel=None,
     # screenshot when there's no snapshot rather than refusing outright — a
     # week-old snapshot is the thing that must never be used, not the absence
     # of one.
-    if path.exists():
+    usable_snapshot = path.exists()
+    if usable_snapshot:
+        # A snapshot for ANOTHER week is worse than none: build() refuses it
+        # outright, which killed this correction on 2026-09-06 (Lucy 1 still
+        # held the week of 8/24). Check the week here and step over a stale one
+        # instead of failing.
+        try:
+            snap_monday = json.loads(path.read_text(encoding="utf-8")).get("monday")
+        except Exception:  # noqa: BLE001
+            snap_monday = None
+        if snap_monday != monday.isoformat():
+            print("[roster] ignoring the snapshot — it's for the week of {}, "
+                  "not {}.".format(snap_monday, monday.isoformat()))
+            usable_snapshot = False
+    if usable_snapshot:
         rec = report_mod.build(monday=monday, client=client, roster_json=path,
                                funnel=funnel)
     else:

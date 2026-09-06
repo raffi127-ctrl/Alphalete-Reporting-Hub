@@ -136,8 +136,17 @@ class Reconciliation:
             return []
         # Departed leaders are untagged BY DESIGN -- reporting them here would
         # read as an oversight to fix. They're listed under `departed` instead.
+        #
+        # Neither does anyone who has already replied Sent. The post ticked
+        # Aimee Garibay done and then listed her as not tagged, in the same
+        # message (Megan 2026-09-06: "you've got it saying that they were sent
+        # and then saying they were not to the same people"). The flag exists
+        # to catch someone who might not know they owe a text; a leader who has
+        # sent plainly knew, so a missing tag cost nothing and naming them just
+        # contradicts their own tick.
         return sorted(
-            [s for s in self.statuses if s.owed and not s.tagged and not s.departed],
+            [s for s in self.statuses
+             if s.owed and not s.tagged and not s.departed and not s.sent],
             key=LeaderStatus.sort_key)
 
     @property
