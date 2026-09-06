@@ -204,6 +204,10 @@ def build(*, write: bool = True, log=_log) -> dict:
     # earlier weeks show the TOTAL box and the rep table with blank campaigns).
     # Un-started weeks are skipped so they don't push the live ones off-screen.
     order = [h for h in info["order"] if _week_has_data(info, h)]
+    # Carlos 2026-09-06: newest week LEFTMOST (col B), so the current week is
+    # on screen without scrolling. Presentation only — the working tab stays
+    # chronological and nothing reads this tab back.
+    order = order[::-1]
     reps = active_reps(info, log=log)
 
     q = f"'{SRC_TAB}'!"
@@ -389,7 +393,7 @@ def build(*, write: bool = True, log=_log) -> dict:
             reqs.append({"updateBorders": {"range": rng(r, r + 1, 0, n_cols),
                 "top": _BORDER, "bottom": _BORDER}})
     reqs.append({"repeatCell": {
-        "range": rng(1, n_rows + 1, n_cols - 1, n_cols),
+        "range": rng(1, n_rows + 1, 1, 2),  # newest week = col B since 9/6
         "cell": {"userEnteredFormat": {"borders": {
             "left": _BORDER, "right": _BORDER}}},
         "fields": "userEnteredFormat.borders"}})
