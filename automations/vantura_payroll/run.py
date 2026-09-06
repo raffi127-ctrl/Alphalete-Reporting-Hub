@@ -760,6 +760,47 @@ def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
                  f"${totals[blk['total_pnl']]:,.2f} (Δ ${delta:,.2f}; manual "
                  "bonuses raise payroll un-tagged — small Δ expected)")
 
+    # Tie-out (Carlos 2026-09-06): Commission TOTAL must equal the P&L totals.
+    # A gap means paid reps with no P&L roster row (auto-add out of spares) —
+    # exactly how $6.5k/wk fell out of the campaign sections twice (8/16, 9/6).
+    try:
+        def money(v):
+            try:
+                return float(str(v).replace("$", "").replace(",", ""))
+            except ValueError:
+                return 0.0
+        comm_ws = sh.worksheet("Commission")
+        b1 = str(comm_ws.acell("B1", value_render_option="UNFORMATTED_VALUE").value)
+        if b1 != str(_week_num(week)):
+            raise RuntimeError(
+                f"Commission!B1={b1} != run week {_week_num(week)} — tab shows "
+                "another week (picker parked elsewhere); tie-out skipped")
+        cv = comm_ws.get("A3:C60")
+        ct = next((r for r in cv if r and r[0] == "TOTAL"), None)
+        lbls = pnl.get(f"{blk['paid']}150:{blk['paid']}290")
+        lmap = {str(r[0]).strip(): i for i, r in enumerate(lbls, 150) if r and r[0]}
+        pd = money(pnl.acell(f"{blk['profit']}{lmap['Carlos Total DD']}",
+                             value_render_option="UNFORMATTED_VALUE").value)
+        pp = money(pnl.acell(f"{blk['profit']}{lmap['Carlos Total Payroll']}",
+                             value_render_option="UNFORMATTED_VALUE").value)
+        cb, cc = money(ct[1]), money(ct[2])
+        roster = pnl.get(f"C{PNL_REP_FIRST}:E{PNL_REP_LAST}")
+        spares = (PNL_REP_LAST - PNL_REP_FIRST + 1) - sum(
+            1 for r in roster if r and any(str(c).strip() for c in r))
+        d1, d2 = cb - pd, cc - pp
+        if abs(d1) < 1 and abs(d2) < 1:
+            parts.append(f"tie-out: Commission==P&L ✓ (spare roster rows: {spares})")
+        else:
+            parts.append(
+                f"tie-out FAILED ⚠: Commission brought ${cb:,.2f} vs P&L ${pd:,.2f} "
+                f"(Δ ${d1:,.2f}); paid ${cc:,.2f} vs ${pp:,.2f} (Δ ${d2:,.2f}) — "
+                f"paid rep(s) missing a P&L roster row? spares left: {spares}")
+        if spares <= 3:
+            parts.append(f"⚠ only {spares} spare roster row(s) left — auto-add "
+                         "goes silent at 0; extend the roster (see 9/6 playbook)")
+    except Exception as exc:  # noqa: BLE001 — the tie-out must never kill payroll
+        parts.append(f"tie-out check errored ({exc!r})")
+
     checks = " | ".join(parts[1:])
     log("checks: " + checks)
     return {"summary": parts[0], "checks": checks}
