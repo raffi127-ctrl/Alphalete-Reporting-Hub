@@ -604,13 +604,14 @@ def capture_window():
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 15 minutes inside these windows (Megan 2026-08-26):
 #     Mon–Fri  1:30pm – 10:00pm
-#     Saturday 10:45am – 6:30pm
+#     Saturday 10:45am – 10:00pm   (end matched to the weekday, Megan 9/5)
 #     Sunday   off entirely
 #
 # Saturday has its OWN START, not just its own end — it is the one day the field
 # is out in the morning. Every other short-interval job in this repo happens to
 # share one start time across the week, so this is the thing to notice when
 # editing: there are two windows here, not one window with a short Saturday.
+# The two ENDS now agree; the two STARTS still do not.
 #
 # The END is load-bearing. Once the field stops knocking, EVERY rep reads
 # "inactive 90 min ago" and the card degenerates into the whole roster — a wall
@@ -619,15 +620,31 @@ def capture_window():
 DAY_START_HHMM = (13, 30)
 DAY_END_HHMM = (22, 0)   # 10pm (Raf, 2026-08-28: "can we have this come till 10:00pm")
 SATURDAY_START_HHMM = (10, 45)   # Raf 2026-08-29: "can it start at 10:45am"
-# 6:30pm (Megan, 2026-08-30). The 8/28 "till 10:00pm" was scoped to weekdays
-# (commit 8473d41) and left Saturday at 5:00pm, which is why the KNOCKS &
-# DISPOSITIONS texts appeared to die at 4:45 PM on Sat 8/29 — the 17:00 tick
-# launched at 17:00:55 and was refused as out-of-window. Saturday gets its own
-# end, NOT the weekday 10pm: the field goes in earlier on a Saturday.
+# 10:00pm (Megan, 2026-09-05) — the SAME end as a weekday. Saturday still has
+# its own START (10:45am; the field is out in the morning), but no longer its
+# own end.
+#
+# HISTORY, because this number has now been wrong twice in the same direction
+# and both times it read as "Lucy is shut down":
+#   8/29  Saturday sat at 5:00pm while weekdays had already moved to 10pm —
+#         the 8/28 "till 10:00pm" was applied to DAY_END_HHMM only (8473d41,
+#         titled "on weekdays"). Texts appeared to die at 4:45 PM.
+#   8/30  Moved to 6:30pm.
+#   9/05  Still too early. The team was live in the Partners chat at 8pm
+#         asking whether the report was dead while reps were in the field
+#         closing. Refused ticks exit 0 in ~1s and log
+#         "outside its window", so the failure is SILENT — nothing alerts.
+# The assumption that kept being re-made is "the field goes in earlier on a
+# Saturday". It does not. Do not shorten this again without Megan saying so.
+#
+# The END is still load-bearing (see the block above): past the hour the field
+# actually stops, every rep reads "inactive 90 min ago" and the card degenerates
+# into the whole roster. 10pm is where the weekday already draws that line.
+#
 # CHANGING THIS ALSO MEANS CHANGING THE HOUR GATE in deploy/gap_alerts_5min.sh
 # — that gate exits before Python ever runs, so config alone cannot widen the
 # day. Keep the two consistent.
-SATURDAY_END_HHMM = (18, 30)
+SATURDAY_END_HHMM = (22, 0)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
 SATURDAY = 5
 

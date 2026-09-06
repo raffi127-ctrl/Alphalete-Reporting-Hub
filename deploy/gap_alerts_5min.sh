@@ -32,9 +32,9 @@ DOW=$(date +%u)     # 1=Mon .. 7=Sun
 HOUR=$(date +%H)
 HOUR=${HOUR#0}
 [ "$DOW" = "7" ] && exit 0                       # Sunday is not a selling day
-# Mon-Fri 1:30pm-10:00pm, Saturday 10:45am-6:30pm (Megan 2026-08-30). SATURDAY
+# Mon-Fri 1:30pm-10:00pm, Saturday 10:45am-10:00pm (Megan 2026-09-05). SATURDAY
 # HAS ITS OWN START, not just its own end — it is the one day the field is out
-# in the morning.
+# in the morning. Its END now matches the weekday's.
 #
 # HOUR-GRANULAR ON PURPOSE. This gate is a cheap coarse filter, so it keeps the
 # whole hour a boundary falls in and lets Python make the :30 call. Trying to do
@@ -60,17 +60,23 @@ HOUR=${HOUR#0}
 # Still only an ENVELOPE either way -- config.in_office_window makes the real
 # per-office call from the office's OWN timezone and field hours, so these just
 # have to be generous enough not to cut anyone before Python ever runs.
-#   d2d  weekdays 12:00-23:00, Sat 09:00-21:00  (Eastern 1:30pm .. Mountain 10pm)
+#   d2d  weekdays 12:00-23:00, Sat 09:00-23:00  (Eastern 1:30pm .. Mountain 10pm)
 #   b2b  weekdays 07:00-20:00, Sat 08:00-18:00  (Eastern 8am .. Mountain 6pm)
+#
+# SAT_HI WENT 21 -> 23 ON 2026-09-05, with the org Saturday end (Megan). The
+# d2d Saturday envelope is now the weekday's on both sides but the start: an
+# org end of 10pm needs hour 22 to survive this gate, and 21 would have capped
+# Saturday at 9pm while config claimed 10 — the exact silent half-fix that made
+# 8/29 look like a dead automation.
 case "${GAP_ALERTS_ENVELOPE:-d2d}" in
     b2b) WK_LO=7;  WK_HI=20; SAT_LO=8; SAT_HI=18 ;;
-    *)   WK_LO=12; WK_HI=23; SAT_LO=9; SAT_HI=21 ;;
+    *)   WK_LO=12; WK_HI=23; SAT_LO=9; SAT_HI=23 ;;
 esac
 
 if [ "$DOW" = "6" ]; then
     [ "$HOUR" -lt "$SAT_LO" ] && exit 0
-    # The org default Saturday is 10:45am-6:30pm Central (Megan 2026-08-30);
-    # 9 and 21 are the ENVELOPE around it for other zones. This gate exits
+    # The org default Saturday is 10:45am-10:00pm Central (Megan 2026-09-05);
+    # 9 and 23 are the ENVELOPE around it for other zones. This gate exits
     # before Python runs, so anything it cuts is cut silently — that is how the
     # 8/29 "texts died at 4:45 PM Saturday" happened when it said 17.
     [ "$HOUR" -gt "$SAT_HI" ] && exit 0
