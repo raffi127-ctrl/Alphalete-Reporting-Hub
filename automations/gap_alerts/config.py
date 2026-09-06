@@ -604,14 +604,14 @@ def capture_window():
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 15 minutes inside these windows (Megan 2026-08-26):
 #     Mon–Fri  1:30pm – 10:00pm
-#     Saturday 10:45am – 10:00pm   (end matched to the weekday, Megan 9/5)
+#     Saturday 10:45am – 8:00pm    (Megan 9/5)
 #     Sunday   off entirely
 #
-# Saturday has its OWN START, not just its own end — it is the one day the field
-# is out in the morning. Every other short-interval job in this repo happens to
-# share one start time across the week, so this is the thing to notice when
-# editing: there are two windows here, not one window with a short Saturday.
-# The two ENDS now agree; the two STARTS still do not.
+# Saturday has its OWN START AND its own end — it is the one day the field is
+# out in the morning and the one day it goes in early. Every other
+# short-interval job in this repo happens to share one window across the week,
+# so this is the thing to notice when editing: there are two windows here, not
+# one window with a short Saturday. Neither the starts nor the ends agree.
 #
 # The END is load-bearing. Once the field stops knocking, EVERY rep reads
 # "inactive 90 min ago" and the card degenerates into the whole roster — a wall
@@ -620,9 +620,11 @@ def capture_window():
 DAY_START_HHMM = (13, 30)
 DAY_END_HHMM = (22, 0)   # 10pm (Raf, 2026-08-28: "can we have this come till 10:00pm")
 SATURDAY_START_HHMM = (10, 45)   # Raf 2026-08-29: "can it start at 10:45am"
-# 10:00pm (Megan, 2026-09-05) — the SAME end as a weekday. Saturday still has
-# its own START (10:45am; the field is out in the morning), but no longer its
-# own end.
+# 8:00pm (Megan, 2026-09-05). Saturday has its own START (10:45am; the field is
+# out in the morning) AND its own END — it is NOT the weekday's 10pm. A prior
+# session that same day pushed this to 22:00 to match the weekday; Megan
+# corrected it to 8pm within the hour. Read the 9/05 history entries below as
+# "too early, then overshot", not as "longer is always safer".
 #
 # HISTORY, because this number has now been wrong twice in the same direction
 # and both times it read as "Lucy is shut down":
@@ -630,21 +632,26 @@ SATURDAY_START_HHMM = (10, 45)   # Raf 2026-08-29: "can it start at 10:45am"
 #         the 8/28 "till 10:00pm" was applied to DAY_END_HHMM only (8473d41,
 #         titled "on weekdays"). Texts appeared to die at 4:45 PM.
 #   8/30  Moved to 6:30pm.
-#   9/05  Still too early. The team was live in the Partners chat at 8pm
-#         asking whether the report was dead while reps were in the field
+#   9/05  Still too early at 6:30pm. The team was live in the Partners chat at
+#         8pm asking whether the report was dead while reps were in the field
 #         closing. Refused ticks exit 0 in ~1s and log
 #         "outside its window", so the failure is SILENT — nothing alerts.
-# The assumption that kept being re-made is "the field goes in earlier on a
-# Saturday". It does not. Do not shorten this again without Megan saying so.
+#   9/05  Overshot to 10pm chasing that, on the reasoning that Saturday should
+#         just be the weekday. Megan: 8pm. 8pm IS the Saturday standard — it is
+#         where the field actually goes in on a Saturday, and the 8pm complaint
+#         above was about 6:30, not about 8.
+# Do not move this in either direction without Megan saying so.
 #
-# The END is still load-bearing (see the block above): past the hour the field
+# The END is load-bearing (see the block above): past the hour the field
 # actually stops, every rep reads "inactive 90 min ago" and the card degenerates
-# into the whole roster. 10pm is where the weekday already draws that line.
+# into the whole roster.
 #
 # CHANGING THIS ALSO MEANS CHANGING THE HOUR GATE in deploy/gap_alerts_5min.sh
 # — that gate exits before Python ever runs, so config alone cannot widen the
-# day. Keep the two consistent.
-SATURDAY_END_HHMM = (22, 0)
+# day. Keep the two consistent. Note the END IS INCLUSIVE (in_office_window
+# uses start <= local <= end), so the 8:00 PM tick itself is a real slot and
+# the bash gate has to admit hour 20, not stop at 19.
+SATURDAY_END_HHMM = (20, 0)
 WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
 SATURDAY = 5
 

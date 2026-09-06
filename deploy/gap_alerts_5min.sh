@@ -32,9 +32,9 @@ DOW=$(date +%u)     # 1=Mon .. 7=Sun
 HOUR=$(date +%H)
 HOUR=${HOUR#0}
 [ "$DOW" = "7" ] && exit 0                       # Sunday is not a selling day
-# Mon-Fri 1:30pm-10:00pm, Saturday 10:45am-10:00pm (Megan 2026-09-05). SATURDAY
-# HAS ITS OWN START, not just its own end — it is the one day the field is out
-# in the morning. Its END now matches the weekday's.
+# Mon-Fri 1:30pm-10:00pm, Saturday 10:45am-8:00pm (Megan 2026-09-05). SATURDAY
+# HAS ITS OWN START AND ITS OWN END — it is the one day the field is out in the
+# morning and the one day it goes in early. Its end is NOT the weekday's.
 #
 # HOUR-GRANULAR ON PURPOSE. This gate is a cheap coarse filter, so it keeps the
 # whole hour a boundary falls in and lets Python make the :30 call. Trying to do
@@ -47,7 +47,7 @@ HOUR=${HOUR#0}
 # old `HOUR -lt 13` gate killed before Python ever ran.
 # Envelope = Central hours covering Eastern..Mountain field hours:
 #   weekdays  12:30-23:00   (Eastern 1:30pm start .. Mountain 10pm end)
-#   Saturday   9:45-21:00
+#   Saturday   9:45-20:00
 # Pacific is NOT covered (its 10pm would land at midnight Central, a different
 # calendar day) — which is why the sign-up form does not offer it.
 # TWO ENVELOPES, ONE WRAPPER. B2B knocks BUSINESSES, in business hours -- the
@@ -63,20 +63,27 @@ HOUR=${HOUR#0}
 #   d2d  weekdays 12:00-23:00, Sat 09:00-23:00  (Eastern 1:30pm .. Mountain 10pm)
 #   b2b  weekdays 07:00-20:00, Sat 08:00-18:00  (Eastern 8am .. Mountain 6pm)
 #
-# SAT_HI WENT 21 -> 23 ON 2026-09-05, with the org Saturday end (Megan). The
-# d2d Saturday envelope is now the weekday's on both sides but the start: an
-# org end of 10pm needs hour 22 to survive this gate, and 21 would have capped
-# Saturday at 9pm while config claimed 10 — the exact silent half-fix that made
-# 8/29 look like a dead automation.
+# SAT_HI WENT 21 -> 23 -> 20 ON 2026-09-05, following the org Saturday end
+# (Megan: 10pm, then corrected to 8pm within the hour).
+#
+# HOW TO PICK THIS NUMBER — it is not "the end hour minus one":
+#   - the gate below is `HOUR -gt SAT_HI`, so it ADMITS hour <= SAT_HI;
+#   - config.in_office_window is `start <= local <= end`, so the END MINUTE
+#     ITSELF is a live slot — an 8:00pm end means an 8:00 PM card gets sent.
+# So an org end of 8pm needs HOUR 20 to survive this gate. SAT_HI=19 would look
+# right (the last quarter-hour before 8 is 19:45) and would silently drop the
+# 8:00 PM send, which is the same half-fix shape as the 21-vs-10pm case that
+# made 8/29 read as a dead automation. Nothing after 8pm posts anyway: hours
+# 20:01-20:59 survive bash and are then refused by Python per office.
 case "${GAP_ALERTS_ENVELOPE:-d2d}" in
     b2b) WK_LO=7;  WK_HI=20; SAT_LO=8; SAT_HI=18 ;;
-    *)   WK_LO=12; WK_HI=23; SAT_LO=9; SAT_HI=23 ;;
+    *)   WK_LO=12; WK_HI=23; SAT_LO=9; SAT_HI=20 ;;
 esac
 
 if [ "$DOW" = "6" ]; then
     [ "$HOUR" -lt "$SAT_LO" ] && exit 0
-    # The org default Saturday is 10:45am-10:00pm Central (Megan 2026-09-05);
-    # 9 and 23 are the ENVELOPE around it for other zones. This gate exits
+    # The org default Saturday is 10:45am-8:00pm Central (Megan 2026-09-05);
+    # 9 and 20 are the ENVELOPE around it. This gate exits
     # before Python runs, so anything it cuts is cut silently — that is how the
     # 8/29 "texts died at 4:45 PM Saturday" happened when it said 17.
     [ "$HOUR" -gt "$SAT_HI" ] && exit 0
