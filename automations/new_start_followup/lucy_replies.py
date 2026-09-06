@@ -188,14 +188,27 @@ Only choose stop_pinging or resume_pinging when the message clearly names a pers
 def known_people(rec) -> List[str]:
     """Every person Lucy is allowed to act on — the WHITELIST.
 
-    An action can only ever land on somebody this week's report already knows
-    about. Without this, "stop pinging Dave" would let anyone write an
-    arbitrary string into the do-not-ping list, and a name nobody recognises
-    would silently never be chased again.
+    An action can only ever land on somebody we actually know, so an arbitrary
+    string can never be written into the do-not-ping list.
+
+    It is the WHOLE roster, not just this week's rows. Scoping it to this week
+    was wrong and broke the first real request: Raf asked to "remove Tadana
+    from the list", and Tadana Jeti had no new starts that week, so she had no
+    status row and Lucy escalated instead of acting. Somebody asking to remove
+    a person is very often asking precisely because that person shouldn't be
+    there — the request must not depend on them currently being listed.
     """
+    from automations.new_start_followup import roster as roster_mod
+    from automations.shared import slack_tag_learning as tag_learning
+
     names = [s.leader.name for s in rec.statuses]
     names += list(rec.unmatched_obcl or {})
     names += list(rec.suppressed or [])
+    try:
+        names += [l.name for l in roster_mod.load().leaders]
+    except Exception:  # noqa: BLE001 — the week's names are still usable
+        pass
+    names += [v.get("name", "") for v in tag_learning.known().values()]
     return sorted(set(n for n in names if n))
 
 
@@ -229,8 +242,7 @@ def intent(question_text: str, rec) -> dict:
     # The whitelist gate applies to the two ACTIONS only. An escalation has
     # nothing to look up — it's going to a human either way.
     if action in ("stop_pinging", "resume_pinging"):
-        match = next((p for p in people
-                      if _norm_name(p) == _norm_name(person)), None)
+        match = _resolve_person(person, people)
         if not match:
             # Don't quietly answer it as a question: they asked for something
             # and nothing would happen. Escalate instead, so a name Lucy
@@ -242,12 +254,32 @@ def intent(question_text: str, rec) -> dict:
     return {"action": action, "person": person}
 
 
+def _resolve_person(person: str, people: List[str]) -> Optional[str]:
+    """Match a named person against the whitelist. None = no confident match.
+
+    Exact on the normalized name, then FIRST NAME ONLY when exactly one person
+    answers to it — people ask for "Tadana", not "Tadana Jeti". Ambiguous first
+    names (two Jordans) deliberately fall through to no match rather than pick
+    one: acting on the wrong person silently stops their chasing.
+    """
+    want = _norm_name(person)
+    if not want:
+        return None
+    exact = next((p for p in people if _norm_name(p) == want), None)
+    if exact:
+        return exact
+    first = want.split()[0]
+    hits = [p for p in people if _norm_name(p).split()[:1] == [first]]
+    return hits[0] if len(hits) == 1 else None
+
+
 def _norm_name(name: str) -> str:
     from automations.shared.slack_tag_learning import _norm
     return _norm(name)
 
 
-def act(intent_out: dict, asked_by: str, live: bool) -> Optional[str]:
+def act(intent_out: dict, asked_by: str, live: bool,
+        asked_text: str = "") -> Optional[str]:
     """Perform a stop/resume request. -> the confirmation to post, or None.
 
     Deterministic wording, not the model's: this is the one place Lucy claims
@@ -260,8 +292,18 @@ def act(intent_out: dict, asked_by: str, live: bool) -> Optional[str]:
     if action == "none":
         return None
     if action == "other_change_request":
+        # QUOTE THE ASK. The bare "flagging it for @Megan @Eve" told them
+        # nothing — Megan's reaction to the first one was "idk who you couldn't
+        # add??". A ping that doesn't say what it's about is a ping someone has
+        # to go hunting to action.
         tags = " ".join("<@%s>" % uid for uid in ESCALATE_TO)
-        return ("I can't change that one myself — flagging it for %s." % tags)
+        asked = " ".join(MENTION_RE.sub("", asked_text or "").split())
+        if len(asked) > 220:
+            asked = asked[:217] + "..."
+        if asked:
+            return ('I can\'t do that one myself — flagging it for %s.\n> %s'
+                    % (tags, asked))
+        return "I can't do that one myself — flagging it for %s." % tags
     why = "Asked in the new-start thread on %s." % dt.date.today().isoformat()
     if action == "stop_pinging":
         if suppression.is_suppressed(person, "new_start_followup"):
@@ -315,7 +357,8 @@ def run(rec, live: bool = False, client=None) -> Dict:
         try:
             # A request to CHANGE something is executed here and confirmed in
             # code's own words; everything else is answered from the facts.
-            done = act(intent(asked, rec), msg.get("user") or "", live)
+            done = act(intent(asked, rec), msg.get("user") or "", live,
+                       asked_text=asked)
             reply = done if done else answer(asked, rec)
         except Exception as exc:  # noqa: BLE001
             result["lines"].append(

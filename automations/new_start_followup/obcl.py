@@ -50,6 +50,24 @@ class NewStart:
         self.row = row
 
     @property
+    def self_assigned(self) -> bool:
+        """The interviewer cell holds the NEW START'S own name.
+
+        Nobody is their own 2nd-round interviewer. The OBCL tab carries a
+        second block below the real table (rows 68+ on the 9/7 tab) where each
+        person is listed against themselves; read as real assignments they
+        became interviewers nobody could tag, and 8 new starts were posted in
+        Slack as "needs a manual reach-out" (2026-09-06).
+        """
+        from automations.new_start_followup.roster import _norm
+        a, b = _norm(self.interviewer or ""), _norm(self.name or "")
+        if not a or not b:
+            return False
+        # Either direction, because the two cells spell it differently:
+        # 'Anibal Delgado' against 'Anibal Delgado Rivadeneira'.
+        return a == b or a.startswith(b) or b.startswith(a)
+
+    @property
     def dropped(self) -> bool:
         """Not actually starting Monday, so their interviewer owes no text.
 
@@ -181,7 +199,7 @@ def counts_by_interviewer(starts: List[NewStart]) -> Dict[str, int]:
     """How many new starts each interviewer owes a text, dropped ones excluded."""
     out = {}  # type: Dict[str, int]
     for s in starts:
-        if s.dropped or not s.interviewer:
+        if s.dropped or s.self_assigned or not s.interviewer:
             continue
         out[s.interviewer] = out.get(s.interviewer, 0) + 1
     return out

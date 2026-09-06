@@ -57,6 +57,11 @@ def funnel_by_key(key: str) -> dict:
 
 # Aisha's Friday post. Matched loosely (case-insensitive substring on the
 # de-formatted text) so bold markers or a trailing date don't break it.
+# How many people a HAND-TYPED roll call has to tag before we believe it is
+# one. A real roll call names the week's leaders (15-30 of them); a couple of
+# mentions is a conversation.
+MIN_HAND_ROLLCALL_MENTIONS = 5
+
 ANCHOR_PATTERN = re.compile(r"new starts scheduled for monday", re.I)
 
 # "Sent", "sent x4", "Sentttttt x3", "Sent (Sosa)", "sent them all", plus the
@@ -178,12 +183,26 @@ def find_roll_call(replies: List[dict], anchor_ts: str) -> Optional[dict]:
     if ours is not None:
         candidates.append(ours)
 
+    # A hand-typed roll call happens on the SATURDAY, never on the Friday the
+    # anchor goes up, and it tags the week's leaders — plural, most of them.
+    # Both guards exist because of 2026-09-05: a 3-mention message Tiffani
+    # posted in the main thread at Friday 17:29 was read as the roll call, and
+    # since a hand-typed one BLOCKS Lucy's, her roll call never posted at all.
+    # Nobody was tagged that week, and 22 leaders were then flagged "has new
+    # starts but wasn't tagged" — including people who had already replied
+    # Sent. Missing a real hand-typed roll call is the cheap failure (Lucy
+    # posts her own); mistaking a stray tag for one silences the whole week.
+    anchor_dt = dt.datetime.fromtimestamp(float(anchor_ts))
+    saturday = dt.datetime.combine(anchor_dt.date() + dt.timedelta(days=1),
+                                   dt.time.min)
     for msg in replies:
         if msg["ts"] == anchor_ts:
             continue
+        if dt.datetime.fromtimestamp(float(msg["ts"])) < saturday:
+            continue
         text = _strip(msg.get("text", "")).strip()
         ids = MENTION_PATTERN.findall(text)
-        if len(ids) < 2:
+        if len(ids) < MIN_HAND_ROLLCALL_MENTIONS:
             continue
         remainder = MENTION_PATTERN.sub("", text).strip()
         if len(remainder) > 40:  # mostly prose that happens to tag people
