@@ -173,7 +173,26 @@ PRE_BATCH_PING_HOUR = 3   # 3am (mini local time)
 # So a stale export FILE means the holder is down OR the session no longer
 # validates — a real-health signal the rqst-expiry timestamp alone can miss
 # (a future-dated token whose holder died still reads "valid").
-STALE_EXPORT_MIN = 25
+#
+# MUST BE LONGER THAN THE HOLDER'S OWN RECOVERY LADDER (2026-09-07). This was 25
+# — the SAME NUMBER as session_holder.NO_EXPORT_MAX_MIN — so the watcher ran out
+# of patience at the exact minute the holder's ladder began its relaunch. It
+# could only ever page while the fix was already in flight.
+#
+# That is what happened on 2026-09-07: this alert fired at 03:01 ("hasn't
+# re-exported in 57m"), and at 03:04:12 the holder hit its own deadline, exited
+# rc=1, and the relaunch resumed a live session at 03:04:20 — 8 seconds later
+# and 56 minutes before the 4am batch. Nothing was wrong by the time anyone read
+# the page, but the page had already sent a triage session after a fault that no
+# longer existed and cost most of a morning.
+#
+# So wait out the WHOLE ladder before saying anything: NO_EXPORT_MAX_MIN to
+# detect + the relaunch and re-seed + a full keep-alive interval for the first
+# export to land, then margin. A genuinely dead holder (the disabled-LaunchAgent
+# case) still pages comfortably before 4am — it just is not accused while it is
+# busy healing itself. test_login_policy pins the relationship so the two numbers
+# cannot drift back into equality.
+STALE_EXPORT_MIN = 60
 
 
 def _now() -> dt.datetime:
@@ -593,18 +612,27 @@ def _reseed_alert_text(stale, when: str) -> str:
     # was a DISABLED session-holder LaunchAgent on Lucy 1 — the ownerville token
     # had 48h left and nothing needed re-seeding at all. An alert that names a
     # remedy it has not tried is worse than one that says less.
-    lines = [f"⚠️ *Session holder needs attention* {when}."]
+    # NO launchctl BLOCK, AND NO "NEEDS ATTENTION" (2026-09-07). A self-healing
+    # ladder must not hand anybody a terminal command: by the time this is read
+    # the holder has usually already retried the unattended login, relaunched
+    # itself and re-seeded. Pasting a raw launchd enable/kickstart into a healthy
+    # machine at 3am is worse than useless — it restarts a holder that was mid-
+    # recovery and looks like it was the fix. `lucy restart_holder` exists and
+    # raises a disabled LaunchAgent remotely, so even the genuinely-stuck case is
+    # a queue action, not somebody at a keyboard.
+    lines = [f"⚠️ *Session holder — still cold after its own recovery* {when}."]
     for stt, reseed in stale:
         lines.append(f"\n• *{stt['what']}*: {stt['reason']}\n"
-                     f"  Nobody needs to clear a Cloudflare check — both logins "
-                     f"sign themselves in. Check the holder is actually RUNNING "
-                     f"first (a disabled LaunchAgent looks exactly like this, "
-                     f"and `kickstart` will say \"could not find service\"):\n"
-                     f"```launchctl print-disabled gui/$(id -u) | grep alphalete\n"
-                     f"launchctl enable gui/$(id -u)/com.alphalete.session-holder\n"
-                     f"launchctl kickstart -k gui/$(id -u)/com.alphalete.session-holder```\n"
-                     f"  Then confirm BOTH logins on that machine:\n"
-                     f"```{reseed}```")
+                     f"  This has ALREADY waited out the holder's full recovery "
+                     f"ladder (unattended re-login, then a relaunch + re-seed), "
+                     f"so it is not the normal mid-recovery dip. Nobody needs to "
+                     f"log in anywhere — both logins sign themselves in.\n"
+                     f"  If it is still cold, the usual cause is the holder not "
+                     f"RUNNING at all (a disabled LaunchAgent looks exactly like "
+                     f"this). From any machine:\n"
+                     f"```lucy restart_holder --machine \"<that machine>\"```\n"
+                     f"  Then confirm both logins there:\n"
+                     f"```lucy login_check --machine \"<that machine>\"```")
     lines.append("\nThe moment it's healthy I'll auto-run what I can — "
                  "you don't have to touch anything else.")
     return "\n".join(lines)

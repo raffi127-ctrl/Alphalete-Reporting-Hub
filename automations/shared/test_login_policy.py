@@ -188,6 +188,46 @@ class NeitherLoginNeedsAHuman(unittest.TestCase):
                 f"self-heals via the relaunch ladder — say what is retrying and "
                 f"when, not who should go to the machine.")
 
+    def test_the_watcher_waits_out_the_holders_own_recovery(self):
+        """A watcher whose patience equals the healer's deadline can only ever
+        page while the fix is already running.
+
+        Both numbers were 25. On 2026-09-07 the 3am ping fired at 03:01; the
+        holder hit its own deadline at 03:04:12, relaunched, and had a live
+        session at 03:04:20 — 8 seconds later, 56 minutes before the batch. The
+        page was true about the symptom and wrong about everything actionable,
+        and it sent a triage session after a fault that had already fixed itself.
+
+        STALE_EXPORT_MIN must leave room for the WHOLE ladder: detect
+        (NO_EXPORT_MAX_MIN) + relaunch + re-seed + one keep-alive interval for
+        the first export to land."""
+        from automations.shared import appstream_watch as aw
+        from automations.shared import session_holder as sh
+        self.assertGreater(
+            aw.STALE_EXPORT_MIN, sh.NO_EXPORT_MAX_MIN,
+            "the watcher must not page before the holder's ladder has even "
+            "reached its relaunch")
+        # Detect + relaunch/re-seed + a keep-alive cycle, with margin.
+        self.assertGreaterEqual(aw.STALE_EXPORT_MIN, sh.NO_EXPORT_MAX_MIN * 2,
+                                "leave room for the relaunch to land an export")
+        # Still has to page well before the 4am batch it exists to protect.
+        self.assertLess(aw.STALE_EXPORT_MIN, 90)
+
+    def test_the_reseed_alert_hands_nobody_a_terminal_command(self):
+        """The 3am page must not paste launchctl at a person. By the time it is
+        read the holder has usually healed itself, and restarting it then looks
+        like the fix while actually interrupting one. `lucy restart_holder`
+        raises even a disabled LaunchAgent remotely, so the stuck case is a queue
+        action too."""
+        import inspect
+        from automations.shared import appstream_watch as aw
+        src = inspect.getsource(aw._reseed_alert_text)
+        for banned in ("launchctl enable", "launchctl kickstart",
+                       "launchctl print-disabled"):
+            self.assertNotIn(banned, src,
+                             f"the re-seed alert still pastes {banned!r} at a "
+                             f"human for a session that heals itself")
+
     def test_the_recovery_ladder_ends_in_a_relaunch_not_a_prompt(self):
         """The last rung has to be automatic. A ladder whose final step is
         "wait for a person" is an outage at midnight (2026-09-01, and again in
