@@ -294,6 +294,25 @@ LOGIN_URL = "https://ownerville.com"
 # link. The CDP-attached path (opt_phase._reauth_tableau) navigates
 # here to extract the rqst token and ride it through to Tableau.
 OWNERVILLE_V2_URL = "https://v2.ownerville.com/index.cfm"
+# The two navigations in _sso_to_tableau get their OWN, longer timeout (2026-09-07).
+#
+# They were on Playwright's 30s default, which is a limit with no relation to
+# what the hop actually costs: the second goto is not a page load but ownerville
+# handing the browser off to Tableau, and the code right after it already sits
+# through a fixed 15s wait because that leg is known to be slow.
+#
+# On 9/7 the mini's link was degraded all morning and 30s stopped being enough:
+# captainship_activations died on `page.goto(sso_url)` FOUR times (05:20, 06:31,
+# 07:40, 08:51) and org_sales_board — same code, same profile — died twice and
+# got through on its third at 07:20. That mix is the signature of a limit set too
+# close to the real cost, not of a broken login: a dead session raises the
+# "Couldn't find Tableau SSO token" error above instead, and a refusal comes back
+# fast rather than timing out.
+#
+# 90s costs nothing on a healthy day (goto returns as soon as the DOM is there)
+# and is the difference between a report running and a report failing on a slow
+# one.
+SSO_NAV_TIMEOUT_MS = 90_000
 # Ownerville login is read from a gitignored local file (automations.shared.
 # creds → ownerville-creds.json at the repo root), NOT hardcoded — the repo was
 # public, so the password must never live in source. creds.ownerville_*() raise
@@ -831,7 +850,8 @@ def _sso_to_tableau(page: Page, verbose: bool = True) -> None:
     SSO link. Mirrors opt_phase._reauth_tableau."""
     if verbose:
         print(f"-> Fetching SSO token from {OWNERVILLE_V2_URL}", flush=True)
-    page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
+    page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded",
+              timeout=SSO_NAV_TIMEOUT_MS)
     page.wait_for_timeout(6_000)
     m = re.search(r"rqst=([A-Za-z0-9_]+)", page.url or "")
     if not m:
@@ -849,7 +869,8 @@ def _sso_to_tableau(page: Page, verbose: bool = True) -> None:
     sso_url = f"{OWNERVILLE_V2_URL}?p=81&rqst={m.group(1)}&ssook=1"
     if verbose:
         print("-> Following SSO link to Tableau…", flush=True)
-    page.goto(sso_url, wait_until="domcontentloaded")
+    page.goto(sso_url, wait_until="domcontentloaded",
+              timeout=SSO_NAV_TIMEOUT_MS)
     page.wait_for_timeout(15_000)
     if verbose:
         print(f"-> Tableau session established (page at {(page.url or '')[:80]})",
