@@ -57,6 +57,27 @@ TIMEOUT_DETAIL = "timed out after "
 # the day and needed a manual rerun (2026-07-08). Capped so a genuinely broken
 # report still gives up instead of hammering Tableau every pass all morning.
 MAX_RUN_RETRIES = 3
+# ...BUT A TIMEOUT KILL IS NOT A FLAKE (2026-09-07). The cap above assumes a
+# failure is CHEAP — a download-button timeout or half-rendered viz that errors in
+# seconds, where a fresh subprocess costs almost nothing and often works. A run
+# KILLED AT ITS TIMEOUT is the opposite: it already spent its entire window, and
+# retrying spends another whole one. Same cap for both is what made a slow network
+# into a lost morning.
+#
+# 2026-09-07, both cases in one batch. org_sales_board errored in ~50s, was
+# retried three times, and the THIRD ONE SUCCEEDED — exactly what MAX_RUN_RETRIES
+# is for, and worth keeping. daily_metrics timed out at 45m and was retried to the
+# same cap: 05:43, 06:36, 08:02, three full windows, 137 minutes, never succeeded.
+# It sits at order 9, so ~30 healthy reports behind it — every office metrics
+# thread among them — waited hours. Megan the same morning: "Metrics and trackers
+# need to be posted by 7am at the latest. IDK why it's trying later than that."
+# That is why.
+#
+# So a timeout gets ONE retry (the network hiccup that clears), never two. The
+# report still goes terminal FAILED and still alerts; it just cannot own the
+# morning. Raising a report's timeout_minutes is the fix when it genuinely needs
+# longer — not spending the extra time three times over.
+MAX_TIMEOUT_RETRIES = 2
 # Max auto-retries of just the FAILED PARTS of an INCOMPLETE run (via the
 # manifest's retry_args). A report that posts most of its parts but drops one to
 # a transient (ownerville session expiry, network timeout, a Downloads write
@@ -712,14 +733,24 @@ def _attempt_report_inner(ds, r, rs, target, *, dry_run, simulate) -> str:
         # is what a manual rerun did to recover Fiber et al. (2026-07-08). Cap at
         # MAX_RUN_RETRIES, then go terminal FAILED. Keep the pill yellow across
         # retries (it IS still being worked); _sync_hub_pills heartbeats it.
-        if r.source_type == "tableau" and rs.attempts < MAX_RUN_RETRIES:
+        # A timeout kill spends a WHOLE window per attempt, so it gets a lower cap
+        # than a cheap flake — see MAX_TIMEOUT_RETRIES.
+        _timed_out = detail.startswith(TIMEOUT_DETAIL)
+        _cap = MAX_TIMEOUT_RETRIES if _timed_out else MAX_RUN_RETRIES
+        if r.source_type == "tableau" and rs.attempts < _cap:
             ds.set(r.report_id, state.STILL_TRYING,
-                   reason=(f"run failed (attempt {rs.attempts}/{MAX_RUN_RETRIES}) "
+                   reason=(f"run failed (attempt {rs.attempts}/{_cap}) "
                            f"— retrying: {detail}"),
                    waiting_on=FLAKE_WAITING_ON)
             _log(f"  {r.report_id}: run failed "
-                 f"(attempt {rs.attempts}/{MAX_RUN_RETRIES}) — will retry: {detail}")
+                 f"(attempt {rs.attempts}/{_cap}) — will retry: {detail}")
             return "flaked"
+        if _timed_out and r.source_type == "tableau":
+            # Say WHY it stopped early, or the next reader counts attempts
+            # against MAX_RUN_RETRIES and calls this a bug.
+            _log(f"  {r.report_id}: timed out {rs.attempts}x — not retrying "
+                 f"again (a timeout costs a full window; raise its "
+                 f"timeout_minutes if it genuinely needs longer)")
         if rs.hub_run_id:                  # terminal fail → close the pill
             try:
                 from automations.day_orchestrator import hub_publish
