@@ -265,17 +265,29 @@ DOCS_NEEDED_STATE = "REQUIRED ACTION"
 # walked past them in silence. Whether PENDING means "packet out, awaiting
 # signature" or "started and never delivered" is not something this code can
 # tell, and that is exactly why it must not decide alone.
-DOCS_DONE_STATES = ("COMPLETED", "PENDING")
-# PENDING added 2026-08-31 on Megan's read: "that more than likely means they
-# were already generated" — i.e. the packet is out and waiting on a signature,
-# not stalled. The behaviour of the row agrees: the people she sent by hand
-# that afternoon moved out of PENDING as their bundles landed.
+DOCS_DONE_STATES = ("COMPLETED",)
+# PENDING WAS IN HERE AND IS NOT ANY MORE (Megan 2026-09-07). The tell the
+# 2026-08-31 note asked for arrived: Ashari Evans, Miguel Rodríguez Tapia,
+# Jayla Callier and Lurabeth Cottle all sat in PENDING, all had no documents,
+# and Megan sent all four by hand — "All were NOT sent digital docs and should
+# have been". So PENDING does not mean "packet out, awaiting signature". It
+# means nothing has gone yet, and treating it as finished made those people
+# invisible: no send, no alert, every run walking past them in silence.
 #
-# IF THAT READ IS WRONG, the cost is people who never get their contracts and
-# no run that says so — which is why it is written down here rather than
-# assumed. The tell would be somebody sitting in PENDING with no documents in
-# OwnerVille; take PENDING back out of this tuple and the send treats them as
-# sendable again.
+# The old note's fix was to drop it from this tuple, but that alone only moves
+# them into the REPORTED-but-still-not-sent branch. To actually send them
+# PENDING has to be a state the send ACTS on — see DOCS_SENDABLE_STATES.
+
+
+# The states the send pass will generate a bundle for. "REQUIRED ACTION" is the
+# ordinary one; PENDING joins it per the note above.
+#
+# THE RISK, WRITTEN DOWN. Generating IS the send and there is no unsend, so if
+# a PENDING person somewhere DOES already have a packet out, they get a second
+# one. Today's evidence is 4 for 4 the other way, and the cost of the opposite
+# mistake is somebody never receiving their contract at all and no run saying
+# so. If a duplicate ever does turn up, this tuple is the one line to change.
+DOCS_SENDABLE_STATES = (DOCS_NEEDED_STATE, "PENDING")
 
 # --- Onboarding Quizzes: NOT automated (Megan 2026-08-25) -----------------
 # No completion sweep, unlike Blue Ink's signed-packet check. The six rows below

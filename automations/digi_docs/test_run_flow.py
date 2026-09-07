@@ -913,15 +913,20 @@ class UnrecognisedDocsStateIsLoudTest(_NoNetwork):
                        dry=False, added=[], done=done, refused=refused)
         return refused
 
-    def test_pending_is_treated_as_already_generated(self):
-        """Megan 2026-08-31: "that more than likely means they were already
-        generated" — the packet is out, waiting on a signature. It behaves that
-        way too: people she sent by hand moved OUT of PENDING as their bundles
-        landed. If that read is ever wrong, take PENDING out of
-        config.DOCS_DONE_STATES and the send treats them as sendable again."""
+    def test_pending_is_not_treated_as_already_generated(self):
+        """REVERSED 2026-09-07, and the 08-31 note asked for exactly this.
+
+        It said: "IF THAT READ IS WRONG ... the tell would be somebody sitting
+        in PENDING with no documents in OwnerVille." The tell arrived — Ashari
+        Evans, Miguel Rodríguez Tapia, Jayla Callier and Lurabeth Cottle, all
+        PENDING, all with nothing sent, all done by hand: "All were NOT sent
+        digital docs and should have been".
+
+        So PENDING is not finished. It is not merely reportable either — it is
+        SENDABLE, because the person is owed a packet nobody has generated."""
         from automations.digi_docs import config
-        self.assertIn("PENDING", config.DOCS_DONE_STATES)
-        self.assertEqual([], self._send_one("PENDING"))
+        self.assertNotIn("PENDING", config.DOCS_DONE_STATES)
+        self.assertIn("PENDING", config.DOCS_SENDABLE_STATES)
 
     def test_completed_stays_quiet(self):
         # noqa: kept alongside the PENDING case above
@@ -1003,3 +1008,46 @@ class FastAddOnlyTrustsAProvenRosterTest(_NoNetwork):
         self.assertEqual(["Ana Lopez", "Bo Diaz"], ov.asked)
         self.assertFalse(any(ov.known_absent_flags),
                          "empty means unread, never 'nobody is here'")
+
+
+class PendingIsSendableNotFinished(_NoNetwork):
+    """PENDING means nothing has gone out yet — so send it.
+
+    Megan 2026-09-07: Ashari Evans, Miguel Rodríguez Tapia, Jayla Callier and
+    Lurabeth Cottle all sat in PENDING with no documents, and she sent all four
+    by hand — "All were NOT sent digital docs and should have been".
+
+    PENDING was in DOCS_DONE_STATES from 2026-08-31, on the read that it meant
+    "packet out, awaiting signature". It did not. It made those people
+    invisible: skipped with a routine '·', no alert, on every run."""
+
+    def _ov_in_state(self, state):
+        ov = _fake_ov()
+        ov.open_set_status = lambda page, name, **k: (object(), name)
+        ov.docs_row_state = lambda modal: state
+        ov.open_docs_portal = lambda page, modal: object()
+        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.confirm_generated = lambda tab, name: True
+        ov.tick_attestations = lambda page, modal, dry_run=True: ["BG"]
+        ov.close_tab = lambda tab: None
+        ov.config = types.SimpleNamespace(
+            DOCS_NEEDED_STATE="REQUIRED ACTION",
+            DOCS_DONE_STATES=("COMPLETED",),
+            DOCS_SENDABLE_STATES=("REQUIRED ACTION", "PENDING"))
+        return ov
+
+    def test_pending_gets_a_bundle(self):
+        rec = _Recorder()
+        _run(self._ov_in_state("PENDING"), rec)
+        self.assertEqual(1, rec.calls[0]["sent"],
+                         "a PENDING person must be sent, not skipped")
+
+    def test_completed_is_still_left_alone(self):
+        rec = _Recorder()
+        _run(self._ov_in_state("COMPLETED"), rec)
+        self.assertEqual(0, rec.calls[0]["sent"] if rec.calls else 0)
+
+    def test_the_config_no_longer_calls_pending_done(self):
+        from automations.digi_docs import config
+        self.assertNotIn("PENDING", config.DOCS_DONE_STATES)
+        self.assertIn("PENDING", config.DOCS_SENDABLE_STATES)

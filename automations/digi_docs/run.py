@@ -457,7 +457,9 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                         # found after being added, that is a real refusal.
                         modal, matched = ov.open_set_status(page, c.name)
                     state = ov.docs_row_state(modal)
-                    if state != ov.config.DOCS_NEEDED_STATE:
+                    sendable = getattr(ov.config, "DOCS_SENDABLE_STATES",
+                                       (ov.config.DOCS_NEEDED_STATE,))
+                    if state not in sendable:
                         shown = state or "unreadable"
                         done_states = getattr(ov.config, "DOCS_DONE_STATES",
                                               ("COMPLETED",))
