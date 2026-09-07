@@ -162,23 +162,27 @@ def parse_orderlog(path: Path, monday: dt.date, upto: dt.date):
             continue
         if not u:
             continue
-        nrows += 1
-        all_owner_day[owner][d] += u
+        prod = _n(r.get("Product Type (Broken Out)", "")).upper()
+        counted = prod in C.COUNTED_PRODUCTS
+        if counted:
+            all_owner_day[owner][d] += u
         if owner not in wanted:
             continue
-        rep = _n(r.get("Rep", ""))
-        if rep:
-            reps[owner][rep][d] += u
         a = agg[owner][d]
-        a["total"] += u
-        prod = _n(r.get("Product Type (Broken Out)", "")).upper()
-        cru = _n(r.get("CRU/IRU", "")).upper()
-        wip = _n(r.get("Wireless Installment Plan", "")).upper()
-        abp = _n(r.get("Auto Bill Pay", "")).upper()
         try:
             a["voip"] += float(r.get("Voice Line Count") or 0)
         except (TypeError, ValueError):
             pass
+        if not counted:
+            continue        # tracker parity (Carlos 9/7) — not a sale
+        nrows += 1
+        rep = _n(r.get("Rep", ""))
+        if rep:
+            reps[owner][rep][d] += u
+        a["total"] += u
+        cru = _n(r.get("CRU/IRU", "")).upper()
+        wip = _n(r.get("Wireless Installment Plan", "")).upper()
+        abp = _n(r.get("Auto Bill Pay", "")).upper()
         if prod == "NEW INTERNET":
             a["ni"] += u
             if cru == "CRU":

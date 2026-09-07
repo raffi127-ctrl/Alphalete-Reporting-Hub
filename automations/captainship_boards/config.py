@@ -28,6 +28,13 @@ OWNERS = {
     "Sabrina Alicea":  ("SABRINA ALICEA",  "1oVqhWqb7_TW_B9aH0peIsmp2NHMtKdXKjpOE3-7PNnQ"),
 }
 MASTER_ID = "14_T4fySyQhRPsyWZLGEs6Sarc0jyJ4oD-gV8E97WZU8"   # Captainship Dashboard
+
+# What counts as a SALE (Carlos 2026-09-07): only what the D2D1 tracker
+# counts, so boards + Focus Reports line up with it. The raw ORDERLOG also
+# carries VOICE / TABLET/WEARABLE / VIDEO / UPGRADE INTERNET units — those are
+# NOT sales (no day-cell count, no seller credit, no rank weight). VoIP Line
+# Count keeps summing from every row: it is a line count, not an app.
+COUNTED_PRODUCTS = {"NEW INTERNET", "WIRELESS", "AIR/AWB"}
 ORG_TRACKER_ID = "111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA"  # Alphalete Recruiting Dashboard (Daily Log lives here; READ-ONLY)
 
 def mt_tab(label: str) -> str:

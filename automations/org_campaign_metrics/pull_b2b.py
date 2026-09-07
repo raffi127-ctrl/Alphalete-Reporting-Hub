@@ -28,6 +28,7 @@ from __future__ import annotations
 import datetime as _dt
 import re
 
+from automations.captainship_boards import config as CB
 from automations.org_campaign_metrics import layout as L
 
 CARLOS = "Carlos Hidalgo"
@@ -48,9 +49,8 @@ CHURN_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 def _managers():
     """org-picker label -> ORDERLOG owner name for every computed b2b block:
     Carlos + each captainship owner with a sales board."""
-    from automations.captainship_boards.config import OWNERS
     out = {CARLOS: CARLOS_EXPORT}
-    for label, (export, _fid) in OWNERS.items():
+    for label, (export, _fid) in CB.OWNERS.items():
         out[label] = export
     return out
 
@@ -104,22 +104,26 @@ def orderlog_all_owner_slots(path, monday, upto, wanted, log=print):
             continue
         if not u:
             continue
-        owners_cum[owner] += u
+        prod = " ".join(str(r.get("Product Type (Broken Out)", "") or "").split()).upper()
+        counted = prod in CB.COUNTED_PRODUCTS
+        if counted:
+            owners_cum[owner] += u
         if owner not in wanted:
             continue
-        rep = " ".join(str(r.get("Rep", "") or "").split())
-        if rep:
-            sellers[owner].add(rep)
         a = agg[owner]
-        a["total"] += u
-        prod = " ".join(str(r.get("Product Type (Broken Out)", "") or "").split()).upper()
-        cru = str(r.get("CRU/IRU", "") or "").strip().upper()
-        wip = str(r.get("Wireless Installment Plan", "") or "").strip().upper()
-        abp = str(r.get("Auto Bill Pay", "") or "").strip().upper()
         try:
             a["voip"] += float(r.get("Voice Line Count") or 0)
         except (TypeError, ValueError):
             pass
+        if not counted:
+            continue        # tracker parity (Carlos 9/7) — not a sale
+        rep = " ".join(str(r.get("Rep", "") or "").split())
+        if rep:
+            sellers[owner].add(rep)
+        a["total"] += u
+        cru = str(r.get("CRU/IRU", "") or "").strip().upper()
+        wip = str(r.get("Wireless Installment Plan", "") or "").strip().upper()
+        abp = str(r.get("Auto Bill Pay", "") or "").strip().upper()
         if prod == "NEW INTERNET":
             a["ni"] += u
             if cru == "CRU":
