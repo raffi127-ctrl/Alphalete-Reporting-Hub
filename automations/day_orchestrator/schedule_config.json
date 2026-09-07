@@ -7069,6 +7069,19 @@
       "cadence": {"weekdays": []},
       "priority": "P3"
     },
+    "carlos_bonus_projection": {
+      "on_scheduler": true,
+      "machine": "Lucy 2",
+      "display_name": "Carlos captainship bonus daily projection (DM)",
+      "source_type": "tableau",
+      "command": ["automations.carlos_captainship_bonus.daily_projection"],
+      "base_args": ["--dm"],
+      "timeout_minutes": 45,
+      "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6], "not_before": "09:30"},
+      "priority": "P2",
+      "order": 30,
+      "_note": "Carlos 2026-09-07: daily DM projecting his B2B captainship bonus for the RUNNING DD week (Sun-Sat) as activations post. Volumes live from the ORDERLOG (45-day window, 31-day chunks, shared CDP Chrome, cached per as-of date); tier ladder/adders/decel thresholds + churn seeds in carlos_captainship_bonus/sc_program.json, decoded from SC's weekly 'B2B ATT Captains Bonus Breakdown' email (DD WE 08/29 reproduces the paid $794 exactly: payout x weighted per-product decel, worse of team/personal churn). REFRESH sc_program.json when each Wednesday's SC email lands — tier thresholds recalibrate and churn seeds go stale (the DM warns past 9 days). not_before 09:30 so the extract has the morning's postings. Manual: lucy rerun carlos_bonus_projection (add --dry-run to preview without DM)."
+    },
     "install_att_order_log_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_att_order_log_agent` can install/refresh the STANDALONE com.alphalete.att-order-log LaunchAgent on LUCY 2 (5:00am CST daily incl. weekends, deploy/att_order_log.sh, --sheet). 5:00 and not 5:30 (Megan's first ask) because 5:30/5:38/5:46/5:54 is b2b_quality's retry ladder with a hard 6:00 deadline, and this pull is ~7min on a ~120MB export plus a Chrome-profile copy. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run after the plist changes.",

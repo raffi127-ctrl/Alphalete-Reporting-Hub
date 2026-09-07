@@ -1,0 +1,24 @@
+{
+  "_source": "SC email 'B2B ATT Captains Bonus Breakdown DD WE 08/29' (Priyanka Oshin, 2026-09-02). Refresh when each Wednesday's breakdown lands — thresholds move when SC recalibrates, churn/activation rates weekly.",
+  "as_of": "2026-09-02",
+  "dd_we": "2026-08-29",
+  "grade": "Senior",
+  "tier_thresholds": [119, 131, 143, 155, 167, 179, 191, 203],
+  "tier_rates": [0.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.5, 12.5],
+  "payout_floor": 2500,
+  "activation_adder": [[83.0, 2.0], [81.0, 1.0]],
+  "churn_adder": [[2.8, 2.0], [3.5, 1.0]],
+  "decel_scale": [1.0, 0.75, 0.5, 0.25, 0.0],
+  "decel_thresholds": {
+    "internet": [2.5, 3.0, 3.5, 4.0],
+    "nonbyod": [2.5, 3.0, 3.5, 4.0],
+    "byod": [6.0, 7.0, 8.0, 9.0],
+    "air": [6.5, 7.5, 8.5, 9.5]
+  },
+  "seed_rates": {
+    "_note": "Worse of team/personal per product from the same email (decel uses MAX of the two); total churn/activation drive the $/pc adders.",
+    "churn_pct": {"internet": 3.9, "nonbyod": 9.2, "byod": 8.2, "air": 10.0},
+    "team_total_churn_pct": 4.3,
+    "activation_31_60_pct": 79.5
+  }
+}
