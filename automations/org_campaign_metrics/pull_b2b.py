@@ -85,10 +85,11 @@ def orderlog_all_owner_slots(path, monday, upto, wanted, log=print):
         raw = str(r.get("Owner & Office", "") or "").replace("\r", "\n")
         owner = _norm_owner(raw)
         if owner == "ALL":
-            # Tableau grand-total row. Usually self-skips late in the week (its
-            # Unit Count grows a comma past 999 and fails float()), but early
-            # in the week it parses — and one fake owner above everyone shifts
-            # every rank +1 (found 9/7: George ranked 2 behind "ALL").
+            # Tableau grand-total row (a fake owner). It self-skips today by
+            # accident — its date field says "All" so strptime rejects it, and
+            # past 999 units its comma'd Unit Count fails float() too — but
+            # rank must not depend on that: skip it on purpose (verified 9/7
+            # that the accidental skip was the only thing keeping ranks right).
             continue
         s = str(r.get("sp.Order Date (copy)", "") or "").strip()
         try:
