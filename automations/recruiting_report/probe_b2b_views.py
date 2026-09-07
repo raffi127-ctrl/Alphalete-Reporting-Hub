@@ -200,8 +200,84 @@ def _list_custom_views(page, view_url: str) -> None:
               f"{type(e).__name__}: {str(e)[:140]}", flush=True)
 
 
+def _dd_layout(page) -> None:
+    """Answer the two questions the DD break actually turns on, on the EXACT
+    url opt_phase_carlos uses (custom view GUID and all):
+
+      1. Did the custom view load, or did Tableau fall back to Original? The
+         toolbar's Custom Views button doubles as the "View:" label, so it
+         says so outright. Reading the custom-view LIST on the base view does
+         NOT answer this — custom views are per-user, so a view someone else
+         owns is absent from that list yet opens fine from its url (that
+         mistake cost a wrong call on 2026-09-07).
+      2. Where did the downline grid go? For each candidate click point,
+         report how many View Data rows come back. The real grid is ~76-86
+         rows; the dashboard's top summary is 1-4. That turns "re-measure the
+         coordinate" from a guess into a reading.
+
+    Read-only: it scrapes View Data, writes no Sheet, downloads no file.
+    """
+    from automations.recruiting_report.opt_phase import scrape_view_data
+    from automations.recruiting_report.opt_phase_carlos import (
+        VIEWS, _dd_week_url, _current_we_sunday)
+
+    dd = next(v for v in VIEWS if v.key == "dd")
+    url = _dd_week_url(dd.url, _current_we_sunday())
+    print("\n" + "=" * 64, flush=True)
+    print(f"DDURL: {url}", flush=True)
+
+    page.goto(url, wait_until="domcontentloaded")
+    viz = page.frame_locator('iframe[title="Data Visualization"]')
+    btn = viz.locator(
+        '[data-tb-test-id="viz-viewer-toolbar-button-manage-customviews"]')
+    try:
+        btn.first.wait_for(state="visible", timeout=60_000)
+        label = btn.first.inner_text(timeout=5_000).strip()
+        print(f"DDVIEW: toolbar reads {label!r}", flush=True)
+        if "original" in label.casefold():
+            print("DDVIEW: FELL BACK to Original — the custom view did not "
+                  "load for this account, so the layout is the default "
+                  "dashboard's.", flush=True)
+        else:
+            print("DDVIEW: the custom view DID load — so the break is the "
+                  "click point, not a missing view.", flush=True)
+    except Exception as e:                                   # noqa: BLE001
+        print(f"DDVIEW: couldn't read the view label ({type(e).__name__})",
+              flush=True)
+
+    # x is swept too: the inner retry in _scrape_one_view_data only moves y,
+    # so a horizontal shift is invisible to every existing candidate. The y
+    # values are spaced 0.18 apart because that inner retry already walks
+    # +/-0.10 around each one — three of them cover 0.37-0.93 with no gap, and
+    # a denser list would just re-click the same bands for minutes on end.
+    points = [(x, y) for x in (0.033, 0.05, 0.10)
+              for y in (0.47, 0.65, 0.83)]
+    for xy in points:
+        try:
+            fields, records = scrape_view_data(url, verbose=False, page=page,
+                                               activate_xy=xy)
+        except Exception as e:                               # noqa: BLE001
+            print(f"XY {xy}: {type(e).__name__}: {str(e)[:90]}", flush=True)
+            continue
+        head = ", ".join(fields[:4])
+        print(f"XY {xy}: {len(records)} row(s) | cols: {head}", flush=True)
+
+
 def main() -> int:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dd-layout", action="store_true",
+                    help="Skip the workbook inventory; open the DD view at the "
+                         "exact url opt_phase_carlos uses and report which "
+                         "view loaded plus the row count at each click point.")
+    args = ap.parse_args()
+
     from automations.shared.tableau_patchright import tableau_session
+
+    if args.dd_layout:
+        with tableau_session(verbose=True) as page:
+            _dd_layout(page)
+        return 0
 
     inventory = {}
     with tableau_session(verbose=True) as page:
