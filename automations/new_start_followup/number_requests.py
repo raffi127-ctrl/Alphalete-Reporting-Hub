@@ -221,20 +221,24 @@ def _fill_from_contacts(rec, gaps, client=None, live: bool = False) -> Dict[str,
 
 
 def ensure_request(rec, client=None, live: bool = False,
-                   allow_post: bool = True) -> Optional[str]:
+                   sweep: bool = True) -> Optional[str]:
     """Post the numbers-needed request if gaps exist and none is up yet.
     Returns a human line describing what happened (None = nothing to do).
 
-    `allow_post=False` still fills numbers from Contacts and still texts
-    whoever that resolves — it just won't START a new ask. Megan 2026-09-06:
-    "if texts are sent out on sat morning that's when this should post...not
-    late sunday afternoon". The hourly weekend scan therefore answers the
-    Saturday ask but never opens a fresh one; a gap that appears after the
-    sweep waits for the next one rather than pinging Raf and Aisha on a Sunday
-    evening about a text that is no longer going out that weekend.
+    `sweep` marks the Saturday morning pass — the ONLY one that reads
+    reception's Contacts, texts what that turns up, or opens a new ask. Megan
+    2026-09-06: "if texts are sent out on sat morning that's when this should
+    post...not late sunday afternoon" and "it should only scan for the contacts
+    on saturday though and text then".
+
+    With sweep=False (the hourly weekend scan) this does nothing but report.
+    That scan still has a job — reading a human's "Name - number" reply and
+    sending that leader's text, which is process()'s work, not this function's.
+    What it must not do is go looking for numbers or start texting people on a
+    Sunday evening, hours after the weekend's texts went out.
     """
     gaps = gap_statuses(rec)
-    if gaps:
+    if gaps and sweep:
         # LOOK BEFORE ASKING (Megan 2026-08-30: "shouldn't you just have looked
         # at the reception email contacts once he was on?"). Kenneth Guzman was
         # asked about in the thread while his number sat in reception's
@@ -252,9 +256,10 @@ def ensure_request(rec, client=None, live: bool = False,
     client = client or smp._client()
     if find_request(_replies(client, rec)) is not None:
         return "numbers-needed post already in the thread ({} gap(s) listed)".format(len(gaps))
-    if not allow_post:
-        return ("{} gap(s) still open, but not posting — the ask goes up with "
-                "the Saturday texts, not later.".format(len(gaps)))
+    if not sweep:
+        return ("{} gap(s) still open, but not posting — the Contacts scan, "
+                "the texts and the ask all belong to the Saturday sweep."
+                .format(len(gaps)))
     body = render_request(gaps)
     print("-" * 46)
     print(body)
@@ -394,8 +399,7 @@ def process(rec, live: bool = False) -> dict:
 
     remaining = [s for s in gap_statuses(rec)
                  if s not in resolved and not s.leader.phone]
-    note = ensure_request(rec, client=client, live=live,
-                          allow_post=False)
+    note = ensure_request(rec, client=client, live=live, sweep=False)
     if note:
         lines.append(note)
     if remaining:
