@@ -82,6 +82,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.recruiting_report.fill import open_by_key, _retry     # noqa: E402
 from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB      # noqa: E402
 from automations.org_sales_board import roster_sync                    # noqa: E402
+from automations.org_sales_board.grid import read_grid                 # noqa: E402
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -398,7 +399,7 @@ def main(argv=None) -> int:
     names = [n.strip() for n in args.names.split("|") if n.strip()]
 
     ws = _retry(lambda: open_by_key(args.sheet).worksheet(args.tab))
-    grid = _retry(lambda: ws.get("A1:ZZ2200", value_render_option="UNFORMATTED_VALUE")) or []
+    grid = _retry(lambda: read_grid(ws))
     plan = plan_removals(grid, names)
     if args.owner:
         key, before = norm(args.owner), len(plan)
@@ -440,7 +441,7 @@ def main(argv=None) -> int:
     _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
     print(f"\n  borradas {len(reqs)} fila(s)")
 
-    grid2 = _retry(lambda: ws.get("A1:ZZ2200", value_render_option="UNFORMATTED_VALUE")) or []
+    grid2 = _retry(lambda: read_grid(ws))
     ranks = plan_rank_repair(grid2)
     if ranks:
         _retry(lambda: ws.batch_update(ranks, value_input_option="USER_ENTERED"))

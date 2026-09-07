@@ -98,6 +98,15 @@ EXCLUDE: Dict[str, tuple] = {
                "Alex Touati"),                           # 2026-09-03
     "Khalil": ("Jimmy Bonilla", "Ayleen Gonzalez"),      # 2026-08-19
     "Colten": ("Javeon Lara", "Selena Powers"),          # 2026-08-19
+    # 2026-09-07 (Eve): "de los captainship reports hay que eliminar Angel
+    # Arias y Mary Maya (Jess) / Jesus Hawthorne (Pat), de todos lados donde
+    # aparezcan". Las dos capitanias se armaron el 2026-09-02 y los tres
+    # entraron con el bloque; los tres cerraron sus dos semanas en 0 (0/0 en
+    # las cuatro cajas de delta), asi que ninguna columna historica se mueve.
+    # Sin esta entrada el gate se los vuelve a ofrecer a Evelyn cada manana,
+    # porque `Captain's Bonus Teams v2` los sigue filando bajo esos equipos.
+    "Pat":    ("Jesus Hawthorne",),                      # 2026-09-07
+    "Jess":   ("Angel Arias", "Mary Maya"),              # 2026-09-07
 }
 
 

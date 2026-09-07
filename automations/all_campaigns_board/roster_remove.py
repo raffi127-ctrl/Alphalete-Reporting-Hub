@@ -174,6 +174,19 @@ def main(argv=None) -> int:
     if unexcluded:
         print("\nABORTADO: el auto-add los repondría. Agregalos a roster.EXCLUDE.")
         return 2
+    if not hits:
+        # Nobody to delete is the NORMAL outcome of the cascade from the ORG
+        # board: one line here is a rep's total across EVERY campaign and the
+        # blocks only carry the top ~33, so a rep cleared off a captainship is
+        # very often not on this tab at all. Sending the empty request instead
+        # made Sheets answer `400 Must specify at least one request`, which the
+        # cascade printed as `cascade: FALLO` - a line telling the runner to go
+        # finish by hand a job that was already finished (2026-09-07, Angel
+        # Arias / Mary Maya / Jesus Hawthorne). Returning before the snapshot
+        # also stops a no-op run from overwriting the backup tab with a copy of
+        # the untouched board.
+        print("\n  0 fila(s): estos nombres no estan en el tab - nada que borrar")
+        return 0
 
     _snapshot(ws, _retry(ws.get_all_values))
     sid = ws.id

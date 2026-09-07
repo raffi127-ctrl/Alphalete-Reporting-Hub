@@ -85,6 +85,13 @@ EXCLUDE: set = {
     "paola rodriguez",      # 2026-08-19, off every report
     "jeremiah minor",       # 2026-08-21, two-week zero rule (Sahil's captainship)
     "william sassenberg",   # 2026-08-25, two-week zero rule (Starr's captainship)
+    # 2026-09-07 (Eve): fuera de las capitanias de Jess y Pat, "de todos lados
+    # donde aparezcan". Los tres quedaron sin NINGUNA fila en el ORG board, asi
+    # que la cascada de roster_remove llega hasta aca — una linea de All
+    # Campaigns es el total de TODAS sus campanas y ya no queda ninguna.
+    "angel arias",          # 2026-09-07 (Jess)
+    "mary maya",            # 2026-09-07 (Jess)
+    "jesus hawthorne",      # 2026-09-07 (Pat)
 }
 
 

@@ -60,6 +60,7 @@ from automations.recruiting_report.fill import open_by_key, _retry   # noqa: E40
 from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB    # noqa: E402
 from automations.org_sales_board.rollover import a1col               # noqa: E402
 from automations.org_sales_board import week as wk                   # noqa: E402
+from automations.org_sales_board.grid import read_grid              # noqa: E402
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -190,8 +191,7 @@ def main():
     # ONE unformatted read: labels come back as text, numbers as numbers, and
     # formulas as their computed value — so '1,199' can't be written back as a
     # string and turn a number into text.
-    grid = _retry(lambda: ws.get("A1:ZZ2200",
-                                 value_render_option="UNFORMATTED_VALUE")) or []
+    grid = _retry(lambda: read_grid(ws))
     we_rows = find_we_header_rows(grid)
     print(f"    {len(we_rows)} leaderboard(s) found\n")
 

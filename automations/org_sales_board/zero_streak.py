@@ -44,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.recruiting_report.fill import open_by_key, _retry     # noqa: E402
 from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB      # noqa: E402
 from automations.org_sales_board import week as wk                     # noqa: E402
+from automations.org_sales_board.grid import read_grid              # noqa: E402
 from automations.org_sales_board import roster_sync                    # noqa: E402
 from automations.org_sales_board.roster_remove import (                # noqa: E402
     text, norm, _blank, _owner_above, END_LABELS, WE_RE)
@@ -309,8 +310,7 @@ def after_rollover(sheet_id: str, tab: str, *, today=None,
     try:
         today = today or dt.date.today()
         ws = _retry(lambda: open_by_key(sheet_id).worksheet(tab))
-        grid = _retry(lambda: ws.get("A1:ZZ2200",
-                                     value_render_option="UNFORMATTED_VALUE")) or []
+        grid = _retry(lambda: read_grid(ws))
         boxes = read_boxes(grid, today)
         if not boxes:
             logfn("  zero-rule: no leaderboard on %r — skipped" % (tab,))
@@ -369,7 +369,7 @@ def main(argv=None) -> int:
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
 
     ws = _retry(lambda: open_by_key(args.sheet).worksheet(args.tab))
-    grid = _retry(lambda: ws.get("A1:ZZ2200", value_render_option="UNFORMATTED_VALUE")) or []
+    grid = _retry(lambda: read_grid(ws))
     boxes = read_boxes(grid, today)
     if not boxes:
         print("no se encontró ningún leaderboard — ¿cambió el tab?")

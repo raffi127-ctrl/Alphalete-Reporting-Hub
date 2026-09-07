@@ -83,8 +83,30 @@ from typing import Dict, Iterable, Optional
 # morning. His board rows and his address on "Colten's Captainship" went the
 # same day. He stays an NDS ICD everywhere else (office 22604, SD Premier
 # Consulting) — the pin is scoped to Colten on purpose.
+# 2026-09-07 (Eve): Angel Arias y Mary Maya salen de la capitania de JESS,
+# Jesus Hawthorne de la de PAT — "de todos lados donde aparezcan". Los tres
+# entraron el 2026-09-02 con el armado de los dos bloques nuevos y cerraron sus
+# dos semanas en 0 (0 / 0 en las cuatro cajas de delta del Org Sales Board), asi
+# que ninguna columna historica se mueve al sacarlos. Sus filas salieron ese dia
+# del board (18: leaderboard + diaria + caja de delta, en NEW INTERNET y en
+# ALL UNITS) y de las 7 tabs de metricas de los dos capitanes (29).
+#
+# Van aca y no solo en `captain_gate.EXCLUDE` porque las dos listas frenan cosas
+# distintas y hacen falta las dos: el gate deja de OFRECERLOS a Evelyn, y este
+# pin los saca del PULL — sin el, cancel rate / activation rate / ABP / 6+ days
+# / churn les vuelven a escribir la fila manana, que es exactamente lo que Eve
+# pidio que no pasara. Es el mismo caso de Milan Godbolt y Marcos Barbosa bajo
+# Colten: la persona SI estuvo en el equipo, y Tableau (`Captain's Bonus Teams
+# v2`) la sigue filando ahi despues de la baja.
+#
+# Jesus Hawthorne ya estaba fuera de TODAS las listas de distribucion desde el
+# 2026-08-24 y del Country Sales Board desde el 2026-09-01; Mary Maya tambien
+# salio del Country board ese dia. Esto cierra la mitad de capitania que quedaba
+# abierta en los dos casos.
 NOT_ON_TEAM: Dict[str, tuple] = {
     "Raf": ("Steve McElwee",),
+    "Pat": ("Jesus Hawthorne",),
+    "Jess": ("Angel Arias", "Mary Maya"),
     "Colten": ("Milan Godbolt", "Marcos Barbosa", "Fernando Munoz",
                "Fernando Muñoz"),
     "Eveliz": ("Lizette Ruiz", "Lizette Ruiz-Conejo"),
