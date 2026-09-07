@@ -246,8 +246,10 @@ def main() -> int:
             for v in views:
                 url = _seg_url(v, wb.get("repositoryUrl") or "")
                 rows.append({"name": v.get("name"), "seg": _seg(v), "url": url})
-                print(f"VIEW: {v.get('name')} -> {url or '(no url segment on '
-                      f'the record)'}", flush=True)
+                # Nested quotes inside the f-string would be a SyntaxError on
+                # the runners' Python 3.9 — build the fallback text first.
+                shown = url or "(no url segment on the record)"
+                print(f"VIEW: {v.get('name')} -> {shown}", flush=True)
 
             st, cvs = _custom_views(page, wb["id"])
             print(f"{len(cvs)} custom view(s) (HTTP {st})", flush=True)
