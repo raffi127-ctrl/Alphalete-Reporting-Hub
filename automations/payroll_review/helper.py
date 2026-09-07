@@ -313,7 +313,9 @@ def npa(payload: str) -> dict:
         hits = {v for k, v in roster.items()
                 if k.startswith(n + " ") or n.startswith(k + " ")
                 or (n and n in k)}
-        if len(hits) == 1:
+        # a fuzzy hit must be at least as specific as what was asked for —
+        # a stray short cell ("carlos") must never swallow a full name.
+        if len(hits) == 1 and len(_nrm(next(iter(hits)))) >= len(n):
             who = hits.pop()
         else:
             return {"error": "could not match rep name",
