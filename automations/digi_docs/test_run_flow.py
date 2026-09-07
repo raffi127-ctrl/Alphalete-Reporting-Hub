@@ -134,6 +134,98 @@ class _NoNetwork(unittest.TestCase):
             self.addCleanup(pt.stop)
 
 
+class LateAddsAreAddedNotRefused(_NoNetwork):
+    """The add pass runs ONCE at 11:00; the send pass ticks all day.
+
+    Megan 2026-09-07, after Brittany Brandon reached the chart after 11:00,
+    was never added, and surfaced half an hour before her start as "not found
+    in OwnerVille": "we need to correct the issue".
+
+    A person who is not in OwnerVille is not a failure to report — it is an add
+    that has not happened yet. The send pass does it and carries on to their
+    bundle in the same pass."""
+
+    def _ov_missing_until_added(self):
+        ov = _fake_ov()
+        state = {"added": False, "add_calls": [], "opens": 0}
+
+        def _open(page, name, **kw):
+            state["opens"] += 1
+            if not state["added"]:
+                raise ov.Refused(f"{name}: not found in OwnerVille "
+                                 "(tried ['RES-AT&T'])")
+            return object(), name
+
+        def _add(page, name, **kw):
+            state["add_calls"].append({"name": name,
+                                       "known_absent": kw.get("known_absent")})
+            state["added"] = True
+            return "added"
+
+        ov.open_set_status = _open
+        ov.add_sales_rep = _add
+        ov.docs_row_state = lambda modal: "REQUIRED ACTION"
+        ov.open_docs_portal = lambda page, modal: object()
+        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.confirm_generated = lambda tab, name: True
+        ov.tick_attestations = lambda page, modal, dry_run=True: ["BG", "Drug"]
+        ov.close_tab = lambda tab: None
+        return ov, state
+
+    def test_a_missing_person_is_added_then_sent(self):
+        ov, state = self._ov_missing_until_added()
+        rec = _Recorder()
+        _run(ov, rec)
+        self.assertEqual(1, len(state["add_calls"]),
+                         "the missing person should have been added")
+        self.assertEqual(2, state["opens"], "exactly one retry, never a loop")
+        self.assertEqual([], rec.alerts,
+                         "a late add is not a refusal — nobody should be paged")
+        self.assertEqual(1, rec.calls[0]["sent"], "their bundle still went")
+
+    def test_the_add_trusts_the_search_that_just_failed(self):
+        """known_absent=True — open_set_status already walked RES-AT&T."""
+        ov, state = self._ov_missing_until_added()
+        _run(ov, _Recorder())
+        self.assertTrue(state["add_calls"][0]["known_absent"])
+
+    def test_a_refusal_that_is_not_a_miss_is_left_alone(self):
+        """Only "not found in OwnerVille" triggers an add. Anything else is a
+        real refusal and must not be answered by creating the person."""
+        ov = _fake_ov()
+        adds = []
+        ov.add_sales_rep = lambda page, name, **kw: adds.append(name)
+
+        def _open(page, name, **kw):
+            raise ov.Refused(f"{name}: 3 employees match — refusing to guess")
+
+        ov.open_set_status = _open
+        rec = _Recorder()
+        _run(ov, rec)
+        self.assertEqual([], adds, "an ambiguous match must not add anybody")
+        self.assertTrue(rec.calls[0]["refused"], "it stays a refusal")
+
+    def test_still_refuses_when_ownerville_will_not_offer_them(self):
+        """OV does not offer a rep already on the campaign, so the add refuses
+        — which is the duplicate-onboarding-email guard. It must surface as a
+        refusal, not be swallowed."""
+        ov = _fake_ov()
+
+        def _open(page, name, **kw):
+            raise ov.Refused(f"{name}: not found in OwnerVille "
+                             "(tried ['RES-AT&T'])")
+
+        def _add(page, name, **kw):
+            raise ov.Refused(f"{name}: not in the Add Sales Rep employee list")
+
+        ov.open_set_status = _open
+        ov.add_sales_rep = _add
+        rec = _Recorder()
+        _run(ov, rec)
+        self.assertTrue(any("Add Sales Rep employee list" in r
+                            for r in rec.calls[0]["refused"]))
+
+
 class FatalStillAlerts(_NoNetwork):
     def test_session_failure_reaches_slack(self):
         """A run that dies before it starts must still say so in the channel."""

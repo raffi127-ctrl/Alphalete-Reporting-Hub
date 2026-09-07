@@ -413,7 +413,49 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
             for c in send:
                 tab = None
                 try:
-                    modal, matched = ov.open_set_status(page, c.name)
+                    try:
+                        modal, matched = ov.open_set_status(page, c.name)
+                    except ov.Refused as miss:
+                        # ADD THE STRAGGLERS (Megan 2026-09-07: "we need to
+                        # correct the issue").
+                        #
+                        # THE GAP. The add pass runs ONCE, at 11:00. The send
+                        # pass ticks every five minutes all day. So anybody
+                        # whose row reaches the chart after 11:00 is never
+                        # added to OwnerVille at all — and then, thirty minutes
+                        # before they start, the send finds nothing and refuses
+                        # them. On 2026-09-07 that was Brittany Brandon: absent
+                        # from the 11:00 log entirely, not added, not refused,
+                        # simply never attempted, and by the time it showed up
+                        # as "not found in OwnerVille" she was half an hour
+                        # from her start time.
+                        #
+                        # A person who is not there is not a failure to report,
+                        # it is an add we have not done yet. Do it, then carry
+                        # on to their bundle in the same pass.
+                        if "not found in OwnerVille" not in str(miss):
+                            raise
+                        print(f"  ↻ {c.name}: not in OwnerVille yet — adding "
+                              f"now (reached the chart after the add pass)")
+                        # known_absent=True on purpose: open_set_status just
+                        # searched RES-AT&T and came back empty, so re-walking
+                        # the same page would only cost another page load.
+                        #
+                        # THE DUPLICATE-EMAIL GUARD IS OWNERVILLE'S OWN PICKER.
+                        # Adding mails the onboarding email, so a wrong "absent"
+                        # would mail somebody twice. OV does not offer a rep who
+                        # is already on the campaign, so that case refuses here
+                        # with "not in the Add Sales Rep employee list" instead
+                        # of sending — which is exactly what SHOULD happen for
+                        # someone like Zahra Muhsen, who was in OwnerVille but
+                        # unfindable by name.
+                        outcome = ov.add_sales_rep(
+                            page, c.name, dry_run=dry, known_absent=True)
+                        if outcome in ("added", "dry"):
+                            added.append(c.name)
+                        # ONE retry, never a loop: if they still cannot be
+                        # found after being added, that is a real refusal.
+                        modal, matched = ov.open_set_status(page, c.name)
                     state = ov.docs_row_state(modal)
                     if state != ov.config.DOCS_NEEDED_STATE:
                         shown = state or "unreadable"
