@@ -382,8 +382,8 @@ def shown_sunday(shown: str, want_sunday):
     return None
 
 
-def _day_already_posted(day, yday) -> bool:
-    """Did an EARLIER pass already ship today's thread in full?
+def _day_already_posted(day, yday, programs, corrected=False) -> bool:
+    """Did an EARLIER pass already ship THIS PASS's replies in full?
 
     The week gate runs before anything is rendered, so a pass that fires AFTER a
     human rolls the board forward sees the "wrong" week and holds — even though
@@ -399,11 +399,22 @@ def _day_already_posted(day, yday) -> bool:
     EVERY program's board reply is in the thread in EVERY target channel; any
     lookup failure returns False, since alerting twice beats swallowing a day
     that never posted.
+
+    `programs` is THIS pass's program list, not the module's — the 2026-08-30
+    restructure took BOX out of the 5:10 ladder (it rides vantura_revenue_board
+    now), so a checker that kept demanding a BOX reply could never say "done"
+    for a ladder pass. On 2026-09-07 that reopened the exact false alarm this
+    function exists to prevent: the B2B board went out 05:10 in both rooms, a
+    human rolled the board forward, and 07:15 held anyway and filed "today's
+    thread was not posted" — whose fix line would have undone the roll. Same
+    for `corrected`: that pass posts a differently-named reply, so it has to
+    look for the name it will actually write.
     """
     targets = [t for t in TARGETS if t[1]]
     if os.environ.get("SALES_BOARD_CHANNEL_ID") or not targets:
         return False                      # a scratch-channel run proves nothing
     tag = f"{yday.month}.{yday.day}"
+    suffix = " (corrected)" if corrected else ""
     try:
         from automations.shared import slack_metrics_post as smp
         import automations.b2b_quality.run as bq
@@ -412,18 +423,18 @@ def _day_already_posted(day, yday) -> bool:
             # Post-restructure the boards live in TWO threads: B2B in the B2B
             # Metrics thread (ts from the shared state file — never create it
             # from a checker), BOX in the BOX Order Log thread.
-            for prog in [p for p in PROGRAMS if p != "BOX"]:
+            for prog in [p for p in programs if p != "BOX"]:
                 ts = bq._load_state(day, cid).get("thread_ts")
                 if not ts:
                     print(f"    ({name}: no B2B Metrics thread today)")
                     return False
-                plain = f"{prog} Sales Board {tag}"
+                plain = f"{prog} Sales Board {tag}{suffix}"
                 if not _already_replied(client, cid, ts, plain):
                     print(f"    ({name}: {plain!r} is not in today's thread)")
                     return False
-            if "BOX" in PROGRAMS:
+            if "BOX" in programs:
                 ts = box_thread_ts(client, cid, day)
-                plain = f"BOX Sales Board {tag}"
+                plain = f"BOX Sales Board {tag}{suffix}"
                 if not ts or not _already_replied(client, cid, ts, plain):
                     print(f"    ({name}: {plain!r} not posted yet)")
                     return False
@@ -533,12 +544,14 @@ def main(argv=None) -> int:
         # A rolled-forward board is only a problem while the day is unposted —
         # see _day_already_posted. Checked before the hold so a late pass neither
         # alerts nor returns 75 (which the LaunchAgent ladder would keep retrying).
-        if args.post and not args.dm and _day_already_posted(today, yday):
+        if args.post and not args.dm and _day_already_posted(
+                today, yday, programs, args.corrected):
             print(f"WRONG WEEK for a re-run (board reads {shown!r}, "
-                  f"{yday:%a %m/%d} lives in {want!r}) — but today's thread is "
-                  "already posted in full, so there is nothing left to render. "
-                  "The board has moved on to the week the 4:00pm fill needs; "
-                  "that is correct, not a failure.")
+                  f"{yday:%a %m/%d} lives in {want!r}) — but this pass's "
+                  f"replies ({', '.join(programs)}) are already in today's "
+                  "thread, so there is nothing left to render. The board has "
+                  "moved on to the week the 4:00pm fill needs; that is "
+                  "correct, not a failure.")
             return 0
         print(f"WRONG WEEK — holding. The gold WE cell reads {shown!r} but "
               f"{yday:%a %m/%d}'s data lives in week {want!r}. Set B2 to {want} "
