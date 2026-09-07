@@ -64,10 +64,19 @@ class _FakeWS(object):
         self.appended.extend(rows)
 
     def batch_update(self, updates, value_input_option=None):
-        """Apply an A1 single-cell write to _values, so the audit's read-back
-        check sees what a real Sheet would. Only the 'B41'-shaped ranges the
-        auto-close issues are supported — anything else is a test bug."""
+        """Apply an A1 single-cell write, so the audit's read-back check sees
+        what a real Sheet would. Only the 'B41'-shaped ranges the auto-close and
+        the range repair issue are supported — anything else is a test bug.
+
+        The write lands in BOTH grids: the auto-close reads its cells back with
+        get_all_values() (values) and the range repair with
+        value_render_option='FORMULA' (formulas). Writing only one of them made
+        the repair's read-back see the old formula and report every cell as
+        'protected range?'."""
         import re as _re
+        grids = [self._values]
+        if self._formulas is not self._values:
+            grids.append(self._formulas)
         for u in updates:
             m = _re.match(r"^([A-Z]{1,2})(\d+)$", str(u["range"]))
             if not m:
@@ -77,11 +86,12 @@ class _FakeWS(object):
                 col = col * 26 + (ord(ch) - 64)
             col -= 1
             row = int(m.group(2)) - 1
-            while len(self._values) <= row:
-                self._values.append([])
-            while len(self._values[row]) <= col:
-                self._values[row].append("")
-            self._values[row][col] = u["values"][0][0]
+            for grid in grids:
+                while len(grid) <= row:
+                    grid.append([])
+                while len(grid[row]) <= col:
+                    grid[row].append("")
+                grid[row][col] = u["values"][0][0]
             self.written.append((u["range"], u["values"][0][0]))
 
 
@@ -818,6 +828,158 @@ class StoreCloseTerminations(unittest.TestCase):
         rc, _, _ = self._run(sheet, ["--dry-run"])
         self.assertEqual(rc, 0)
         self.assertEqual(sheet.worksheet("Roll Call").written, [])
+
+
+class StatsRangeAutoRepair(unittest.TestCase):
+    """The summary boxes' rep-block ranges are REALIGNED, not just reported
+    (2026-09-07, Eve).
+
+    The drift is always the same one-number rewrite (7/20, 8/11, 9/07: on 9/07
+    it was 82 cells all ending at row 48 with the block at row 50, so the two
+    newest reps counted in nothing). What these pin is that the repair can only
+    ever do that rewrite: it never touches a cross-sheet range, never widens a
+    range over a campaign TOTAL row, and still reports when it declines."""
+
+    _run = ExitCodeSemantics._run
+    LAST_REP = 45
+    DRIFT_END = 43
+
+    def _board(self, summary, total_row=None):
+        """Reps r5..r45, plus `summary` = {(row, col): formula}. `total_row`
+        puts a 'TOTAL' label in col B INSIDE the rep block."""
+        width = 20
+        values, formulas = [], []
+        rows = max([51] + [r for r, _ in summary]) + 1
+        for i in range(1, rows + 1):
+            v, f = [""] * width, [""] * width
+            if 5 <= i <= self.LAST_REP:
+                v[1] = "Rep %02d" % i          # col B name
+                v[11] = "B2B"                  # col L campaign
+                v[13] = "1st Wk"               # col N week tag -> _is_rep
+            if total_row and i == total_row:
+                v[1] = "TOTAL"
+            values.append(v)
+            formulas.append(f)
+        for (r, c), fml in summary.items():
+            formulas[r - 1][c] = fml
+        return values, formulas
+
+    def _roll(self):
+        """Every board rep Active on the roll, so no off-menu-add / missing
+        findings fire and the only finding under test is the drift."""
+        rows = [_roll_header()]
+        for i in range(5, self.LAST_REP + 1):
+            rows.append(["", "Active", "", "Rep %02d" % i])
+        return rows
+
+    def _sheet(self, summary, total_row=None):
+        board_v, board_f = self._board(summary, total_row=total_row)
+        st_v, st_f = _stations_clean()
+        return _FakeSheet({
+            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "Roll Call": _FakeWS(self._roll()),
+            "Report an Issue": _FakeWS([]),
+            "Stations": _FakeWS(st_v, st_f),
+        })
+
+    def _drifted(self):
+        return '=SUMIFS(C$5:C$%d,$L$5:$L$%d,"B2B")' % (self.DRIFT_END,
+                                                       self.DRIFT_END)
+
+    def _realigned(self):
+        return '=SUMIFS(C$5:C$%d,$L$5:$L$%d,"B2B")' % (self.LAST_REP,
+                                                       self.LAST_REP)
+
+    def _findings(self, sheet):
+        return [str(r[3]) for r in sheet.worksheet("Report an Issue").appended]
+
+    def test_drift_is_realigned_and_no_finding_left(self):
+        sheet = self._sheet({(51, 2): self._drifted()})
+        rc, wm, mc = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(dict(sheet.worksheet("Sales Board").written).get("C51"),
+                         self._realigned())
+        self.assertEqual(self._findings(sheet), [],
+                         "a repaired drift must not also be reported")
+        self.assertTrue(mc.called or wm.called)
+        if wm.called:
+            self.assertTrue(wm.call_args.kwargs.get("ok"),
+                            "repaired-only run stays green")
+
+    def test_start_drift_is_realigned_too(self):
+        """Rows inserted at the top push 5 -> 7 (the whole % box read 7:68 on
+        2026-07-20). Both ends come back to 5:last_rep."""
+        sheet = self._sheet({(51, 2): '=SUMPRODUCT(($L$7:$L$43="B2B"))'})
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(dict(sheet.worksheet("Sales Board").written).get("C51"),
+                         '=SUMPRODUCT(($L$5:$L$%d="B2B"))' % self.LAST_REP)
+
+    def test_repair_leaves_a_trace_in_the_manifest(self):
+        """A run that silently rewrote cells and then said 'clean' reads like a
+        day with nothing wrong — the note is what tells them apart."""
+        sheet = self._sheet({(51, 2): self._drifted()})
+        _, wm, mc = self._run(sheet, [])
+        self.assertTrue(wm.called, "the repair must be recorded, not swallowed")
+        self.assertFalse(mc.called, "mark_clean carries no note")
+        note = wm.call_args.kwargs.get("note") or ""
+        self.assertIn("realigned", note)
+        self.assertIn("C51", note)
+
+    def test_no_fix_ranges_reports_the_old_way(self):
+        sheet = self._sheet({(51, 2): self._drifted()})
+        rc, _, _ = self._run(sheet, ["--no-fix-ranges"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+        found = self._findings(sheet)
+        self.assertTrue(any("STATS-RANGE DRIFT" in f for f in found), found)
+        self.assertFalse(any("declined" in f for f in found),
+                         "not this run's job is not a refusal")
+
+    def test_dry_run_never_writes(self):
+        sheet = self._sheet({(51, 2): self._drifted()})
+        rc, _, _ = self._run(sheet, ["--dry-run"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+
+    def test_total_row_inside_the_block_refuses_and_says_why(self):
+        """A TOTAL row inside 5:last_rep means the block ran into the campaign
+        subtotals; widening a range over those double-counts."""
+        sheet = self._sheet({(51, 2): self._drifted()}, total_row=40)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Sales Board").written, [],
+                         "must refuse to write over a TOTAL row")
+        found = self._findings(sheet)
+        self.assertTrue(any("STATS-RANGE DRIFT" in f and "declined" in f
+                            for f in found), found)
+
+    def test_cross_sheet_range_is_never_rewritten(self):
+        """'Roll Call'!$B$5:$B$43 is finding 2b, whose fix is a full-column
+        ref — not a new end row. The repair must leave it exactly alone."""
+        fml = '=SUMPRODUCT((\'Roll Call\'!$B$5:$B$43<>""))'
+        sheet = self._sheet({(51, 2): fml})
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+
+    def test_clean_board_writes_nothing(self):
+        sheet = self._sheet({(51, 2): self._realigned()})
+        rc, _, mc = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+        self.assertTrue(mc.called, "already aligned -> a plain clean run")
+
+    def test_over_the_cap_refuses(self):
+        """Hundreds of cells at once is a re-layout, not drift."""
+        summary = {(51 + i // 18, 2 + i % 18): self._drifted()
+                   for i in range(audit_run.MAX_RANGE_FIX + 1)}
+        sheet = self._sheet(summary)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+        self.assertTrue(any("declined" in f and "re-layout" in f
+                            for f in self._findings(sheet)))
 
 
 if __name__ == "__main__":

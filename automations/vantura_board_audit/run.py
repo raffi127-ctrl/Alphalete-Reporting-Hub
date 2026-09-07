@@ -14,16 +14,22 @@ Two invariants, both broken silently in the past:
    row 5, pushing range starts down).
 
 Findings are appended to the board's "Report an Issue" tab, deduped against
-rows already there. The tab is the only thing this writes, with ONE deliberate
-exception since 2026-08-14: when the Sales Board marks a rep 'T' (terminated,
-on the day it happens), it flips that rep's Roll Call Status to 'Terminated'
-instead of asking a human to chase the same cell every few weeks. See the
-auto-close block below for how narrow that write is and what it refuses to
-touch.
+rows already there. The tab is the only thing this writes, with TWO deliberate
+exceptions:
+
+  - since 2026-08-14: when the Sales Board marks a rep 'T' (terminated, on the
+    day it happens), it flips that rep's Roll Call Status to 'Terminated'
+    instead of asking a human to chase the same cell every few weeks. See the
+    auto-close block below for how narrow that write is and what it refuses.
+  - since 2026-09-07 (Eve): it REPAIRS invariant 2 below — the summary boxes'
+    rep-block ranges get realigned to 5:<last rep> instead of only reported.
+    Same one-number rewrite a human ran on 7/20, 8/11 and 9/07. See
+    `_fix_stats_ranges` for what it refuses to touch.
 
   python -m automations.vantura_board_audit.run                  # audit + fix + report
   python -m automations.vantura_board_audit.run --dry-run        # print only
-  python -m automations.vantura_board_audit.run --no-auto-close  # report, don't fix
+  python -m automations.vantura_board_audit.run --no-auto-close  # don't close terminations
+  python -m automations.vantura_board_audit.run --no-fix-ranges  # don't realign ranges
 """
 from __future__ import annotations
 
@@ -64,6 +70,19 @@ RANGE_TOK = re.compile(r"\$?[A-Z]{1,2}\$?(\d+):\$?[A-Z]{1,2}\$?(\d+)\b")
 # only once Carlos says JE is off the board too.
 BOARD_CAMPAIGNS = {"B2B", "BOX", "JE"}
 ROLL_CAMPAIGN_COL = 2                  # Roll Call col C, header 'Campaign'
+
+# --- the stats-range REPAIR (2026-09-07, Eve) ------------------------------
+# Same range as RANGE_TOK, but with the optional sheet qualifier in front, so
+# the repair can tell a local rep-block range from a cross-sheet one. RANGE_TOK
+# cannot: it matches the tail of 'Roll Call'!$B$5:$B$50 exactly like a local
+# $B$5:$B$50. Harmless when only DETECTING (that shape is finding 2b, whose fix
+# is a full-column ref, not a new end row) — a silent wrong write here.
+QUAL_RANGE = re.compile(
+    r"(?:'([^']+)'!)?(\$?[A-Z]{1,2}\$?)(\d+):(\$?[A-Z]{1,2}\$?)(\d+)\b")
+# A drift repair rewrites ONE number per range. A run that wants to rewrite
+# hundreds of cells is not drift, it is a re-layout — same reasoning as
+# MAX_AUTO_CLOSE. The real 2026-09-07 drift was 82 cells (rows 51-67).
+MAX_RANGE_FIX = 150
 
 # --- auto-close of open terminations (2026-08-14, Eve) ---------------------
 # WHERE A VANTURA TERMINATION IS ACTUALLY RECORDED: the SALES BOARD. On the day
@@ -574,7 +593,104 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
     return closed, held + missed
 
 
-def audit(write: bool, log=_log, auto_close: bool = True) -> int:
+def _fix_stats_ranges(ws, board, board_form, last_rep, write, log=_log):
+    """Realign the summary boxes' rep-block ranges to 5:last_rep, in place.
+
+    WHY THIS WRITES (2026-09-07, Eve). The drift comes back every time reps are
+    added past the end of the block — 2026-07-20, 2026-08-11, 2026-09-07 — and
+    every time the shape is identical: one number, at the END of a range, on a
+    pile of summary cells (82 of them on 9/07: rows 51-67, the campaign totals
+    and every % box). The audit detected it, a human ran the same rewrite, the
+    report went green. Nothing in that loop needed a human, and while it waited
+    the board showed totals that silently excluded the newest reps — on 9/07,
+    Dalton Robert Francis (r49) and Jacob Diego Raya (r50).
+
+    It repairs EXACTLY what the drift check flags (a range 5..20 : 40..100 that
+    is not 5:last_rep) so detector and repair can never disagree, and it refuses
+    in the same spirit the auto-close refuses:
+
+      - cross-sheet refs are left alone. A bounded 'Roll Call'! range is a
+        DIFFERENT finding whose fix is a full-column ref, not a new end row.
+      - a TOTAL row inside 5:last_rep means the rep block ran into the campaign
+        subtotals; widening a range over those double-counts. Refuse.
+      - over MAX_RANGE_FIX cells is a re-layout, not drift. Refuse.
+      - dry-run / --no-fix-ranges: report, don't write (the pre-9/07 behaviour).
+
+    Returns (fixed, held): `fixed` [(a1, old, new)] written AND read back;
+    `held` [(a1, old, why)] left alone — `why` is "" when it simply was not this
+    run's job, and a real reason when the repair REFUSED, so declining is never
+    silent."""
+    plan = []
+    for i, row in enumerate(board_form, start=1):
+        for j, c in enumerate(row):
+            c = str(c)
+            if not c.startswith("="):
+                continue
+
+            def _sub(m):
+                sheet, c1, r1, c2, r2 = m.groups()
+                if sheet and sheet != "Sales Board":
+                    return m.group(0)
+                a, b = int(r1), int(r2)
+                if not (5 <= a <= 20 and 40 <= b <= 100):
+                    return m.group(0)
+                if a == 5 and b == last_rep:
+                    return m.group(0)
+                return "%s%s5:%s%d" % ("'%s'!" % sheet if sheet else "",
+                                       c1, c2, last_rep)
+
+            new = QUAL_RANGE.sub(_sub, c)
+            if new != c:
+                plan.append(("%s%d" % (_a1col(j), i), c, new, i, j))
+
+    if not plan:
+        return [], []
+
+    totals = [i for i in range(5, last_rep + 1)
+              if len(board) >= i and len(board[i - 1]) > 1
+              and str(board[i - 1][1]).strip().upper() == "TOTAL"]
+    if totals:
+        return [], [(a1, old, "a TOTAL row (r%d) sits inside 5:%d — widening a "
+                     "range over the campaign subtotals would double-count"
+                     % (totals[0], last_rep)) for a1, old, _, _, _ in plan]
+    if len(plan) > MAX_RANGE_FIX:
+        return [], [(a1, old, "%d cells is over the %d-cell repair cap — that "
+                     "looks like a re-layout, not drift"
+                     % (len(plan), MAX_RANGE_FIX))
+                    for a1, old, _, _, _ in plan]
+    if not write:
+        for a1, old, new, _, _ in plan[:3]:
+            log("(no write) would realign %s: %s -> %s" % (a1, old, new))
+        if len(plan) > 3:
+            log("(no write) ... and %d more, same rewrite" % (len(plan) - 3))
+        return [], [(a1, old, "") for a1, old, _, _, _ in plan]
+
+    ws.batch_update([{"range": a1, "values": [[new]]}
+                     for a1, _, new, _, _ in plan],
+                    value_input_option="USER_ENTERED")
+
+    # Read back before believing it. A no-op write (protected range) would
+    # otherwise clear the finding AND leave the board wrong — worst of both.
+    back = ws.get("A1:AQ110", value_render_option="FORMULA")
+    fixed, held = [], []
+    for a1, old, new, i, j in plan:
+        got = (str(back[i - 1][j])
+               if len(back) >= i and len(back[i - 1]) > j else "")
+        if got == new:
+            board_form[i - 1][j] = new     # so the drift check below sees it
+            fixed.append((a1, old, new))
+        else:
+            held.append((a1, old, "wrote the realigned formula but the cell "
+                         "reads %r — protected range?" % got))
+    for a1, old, new in fixed[:3]:
+        log("realigned %s: %s -> %s" % (a1, old, new))
+    if len(fixed) > 3:
+        log("realigned %d more cell(s), same rewrite" % (len(fixed) - 3))
+    return fixed, held
+
+
+def audit(write: bool, log=_log, auto_close: bool = True,
+          fix_ranges: bool = True) -> int:
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(SHEET_ID)
     # Sheets TRIMS trailing empty cells, so a rep row that stops at col L comes
@@ -754,7 +870,14 @@ def audit(write: bool, log=_log, auto_close: bool = True) -> int:
             log(f"not on board (no sales yet, {cohort}w old, Daily Update "
                 f"{du or 'blank'}): {who}")
 
-    # 2. stats-range drift: summary formulas whose rep-block range ends off
+    # 2. stats-range drift: summary formulas whose rep-block range ends off.
+    #    The repair runs FIRST and rewrites board_form in place, so the check
+    #    below reports only what could not be (or was not to be) fixed — the
+    #    detector text is unchanged, and a refusal always says why.
+    range_fixed, range_held = _fix_stats_ranges(
+        sh.worksheet("Sales Board"), board, board_form, last_rep,
+        write and fix_ranges, log=log)
+    held_why = "; ".join(sorted({w for _, _, w in range_held if w}))
     for i, row in enumerate(board_form, start=1):
         for c in row:
             c = str(c)
@@ -770,7 +893,9 @@ def audit(write: bool, log=_log, auto_close: bool = True) -> int:
                         f"STATS-RANGE DRIFT: formula on board r{i} covers rows "
                         f"{a}:{b} but the rep block is 5:{last_rep} — "
                         "summary counts are excluding reps again. Run "
-                        "Alphalete > Realign / Health Check.")
+                        "Alphalete > Realign / Health Check."
+                        + (f" (auto-repair declined: {held_why})"
+                           if held_why else ""))
                     break
             else:
                 continue
@@ -834,11 +959,23 @@ def audit(write: bool, log=_log, auto_close: bool = True) -> int:
             f"auto-closed {len(closed)} Roll Call status(es) -> {TERMINATED}: "
             + "; ".join(f"{nm} (roll r{ri} — {why})" for ri, nm, why in closed))
         log(closed_note)
+    # Same rule for the range repair: 82 silently rewritten cells followed by
+    # "clean" reads exactly like a day with nothing wrong.
+    if range_fixed:
+        cells = ", ".join(a1 for a1, _, _ in range_fixed[:6]) + (
+            " …" if len(range_fixed) > 6 else "")
+        fixed_note = (f"realigned {len(range_fixed)} summary formula(s) to rows "
+                      f"5:{last_rep} ({cells})")
+        log(fixed_note)
+        closed_note = (closed_note + " | " + fixed_note if closed_note
+                       else fixed_note)
 
     if not findings:
         log(f"audit clean: {len(reps)} reps checked, block ends r{last_rep}, "
             "stations OK" + (f"; {len(closed)} termination(s) auto-closed"
-                             if closed else ""))
+                             if closed else "")
+            + (f"; {len(range_fixed)} summary range(s) realigned"
+               if range_fixed else ""))
         if write:
             # mark_clean() can't carry a note, and the closures are worth one:
             # ok=True keeps the Hub card green and clears any prior finding,
@@ -1059,10 +1196,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-auto-close", action="store_true",
                     help="don't flip Roll Call statuses; just report open "
                          "terminations the way the audit did before 2026-08-14")
+    ap.add_argument("--no-fix-ranges", action="store_true",
+                    help="don't realign the summary boxes' rep-block ranges; "
+                         "just report the drift the way the audit did before "
+                         "2026-09-07")
     args = ap.parse_args(argv)
     try:
         return audit(write=not args.dry_run,
-                     auto_close=not args.no_auto_close)
+                     auto_close=not args.no_auto_close,
+                     fix_ranges=not args.no_fix_ranges)
     except Exception as e:  # noqa: BLE001 — audit must fail loud in the log
         _log(f"AUDIT ERROR: {type(e).__name__}: {e}")
         return 3
