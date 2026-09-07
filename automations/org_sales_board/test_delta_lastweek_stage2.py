@@ -252,3 +252,23 @@ class TheNewInternetBoxReadsItsOwnMetric(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheWeekTheParseCameBackOn(unittest.TestCase):
+    """The 1-PAGER worksheets are RELATIVE windows, so 'last week' is only last
+    week while the view's clock agrees with the board's. The dates decide."""
+
+    def test_parsed_dates_reads_what_the_pull_actually_is(self):
+        parsed = {"a rep": {"count": {WEEK[0]: 3, WEEK[2]: 1}},
+                  "b rep": {"count": {WEEK[1]: 5}}}
+        self.assertEqual(bf.parsed_dates(parsed), set(WEEK))
+
+    def test_an_empty_parse_has_no_dates(self):
+        self.assertEqual(bf.parsed_dates({}), set())
+        self.assertEqual(bf.parsed_dates({"a": {"count": {}}}), set())
+
+    def test_a_different_week_is_not_a_subset(self):
+        want = set(WEEK)
+        other = {dt.date(2026, 8, 31), dt.date(2026, 9, 1)}
+        self.assertFalse(other <= want)
+        self.assertTrue({WEEK[0]} <= want)

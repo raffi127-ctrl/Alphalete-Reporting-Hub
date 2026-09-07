@@ -79,6 +79,7 @@ leaves something over, which is only the morning after somebody is added.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import re
 import sys
@@ -309,9 +310,41 @@ def program_days(prog: dict, hint: str, name: str, kind: str, aliases):
     return None, None
 
 
+# The last-week worksheet a 1-PAGER view carries UNDER its current-week one.
+# Tableau names it by suffixing the sheet: 'Sales By ICD (ATT) (V2)' ->
+# 'Sales By ICD (ATT) (V2) (LW2)'. Same view, no week filter.
+LAST_WEEK_SUFFIX = " (LW2)"
+
+
+def parsed_dates(parsed: dict) -> set:
+    """Every date a parse actually returned. The crosstabs label their day
+    columns with REAL dates ('Mon (08-24)'), so this is what the pull IS —
+    not what we asked it for."""
+    return {d for metrics in parsed.values()
+            for by_day in metrics.values() for d in by_day}
+
+
 def lastweek_programs(today: dt.date, page=None, out_dir=None, logfn=print):
     """({program: parsed}, [failed programs]) for the week the delta boxes are
     comparing AGAINST — one week before the live one.
+
+    TWO WAYS IN, AND THE DATES DECIDE (2026-09-07). Pinning a week onto these
+    views is NOT a general way to reach an old week: the 1-PAGERs are pinned to
+    RELATIVE weeks, so a filter for any week but their own renders the
+    worksheet EMPTY and Tableau then drops it from the Crosstab dialog
+    altogether — the download fails with "couldn't find the sheet … saw N
+    thumb(s)", which reads like a renamed worksheet and is not one. That is
+    exactly how b2b and nds failed on 2026-09-07 while fiber (a custom view
+    that does take the filter) came back fine. `country_sales_board.pull` hit
+    the same wall in July and answered it the way Eve did here: the view
+    already carries LAST WEEK as its own worksheet, one band further down.
+
+    So: try the pinned pull first, then fall back to that '(LW2)' worksheet
+    with NO pin — and in both cases CHECK THE DATES the parse came back with
+    against the week we actually want. A relative worksheet is only last week
+    while the view's clock agrees with the board's; on a week where it does
+    not, the dates say so and the program is dropped rather than smeared into
+    the wrong column.
 
     `today - 7` rather than a hand-built date, so the Monday lag (the board
     rolls Tuesday — `week.reporting_sunday`) applies identically to both weeks.
@@ -319,10 +352,59 @@ def lastweek_programs(today: dt.date, page=None, out_dir=None, logfn=print):
     current week's downloads sitting next to it."""
     from pathlib import Path as _Path
     from automations.org_sales_board import captainship as cap
-    return cap.pull_programs(
-        page, today - dt.timedelta(days=7),
-        out_dir=_Path(out_dir) if out_dir else _Path("output") / "_lastweek",
+    from automations.org_sales_board import section_pull as sp
+    out_dir = _Path(out_dir) if out_dir else _Path("output") / "_lastweek"
+    ref = today - dt.timedelta(days=7)
+    want = set(wk.reporting_week(ref))
+
+    prog, failed = cap.pull_programs(
+        page, ref, out_dir=out_dir,
         out_prefix="org_sales_board_lastweek_", logfn=logfn)
+
+    # A pull that came back on a DIFFERENT week is not a pull of this week.
+    for tk in list(prog):
+        got = parsed_dates(prog[tk])
+        if prog[tk] and not (got and got <= want):
+            logfn(f"  [!] {tk}: el pull volvió con {sorted(got)[:3]}… y la "
+                  f"semana pedida es {min(want)}..{max(want)} — se descarta")
+            prog[tk] = {}
+            if tk not in failed:
+                failed.append(tk)
+
+    # The 1-PAGER's own last-week band, for whatever the pin could not reach.
+    for tk in list(failed):
+        sheet = cap.TYPES[tk]["parse"].get("crosstab_sheet", "")
+        if not sheet:
+            continue
+        spec = dataclasses.replace(
+            cap._spec(f"PROG_{tk}", cap.PROGRAMS[tk], cap.TYPES[tk]["parse"],
+                      cap.TYPES[tk]["metric"],
+                      out_prefix="org_sales_board_lw2_"),
+            week_pin=False, crosstab_sheet=sheet + LAST_WEEK_SUFFIX)
+        logfn(f"  hoja de la semana pasada, sin pin: {tk} "
+              f"{spec.crosstab_sheet!r}")
+        try:
+            csv = sp.pull_section_byday(spec, out_dir, page,
+                                        logfn=lambda m: None, today=ref)
+            got_parsed = sp.parse_byday(spec, csv, ref)
+        except Exception as e:                                # noqa: BLE001
+            logfn(f"  [!] {tk}: la hoja {spec.crosstab_sheet!r} tampoco se "
+                  f"pudo bajar ({type(e).__name__}: {str(e)[:70]})")
+            continue
+        got = parsed_dates(got_parsed)
+        if not got:
+            logfn(f"  [!] {tk}: {spec.crosstab_sheet!r} volvió vacía")
+        elif not got <= want:
+            logfn(f"  [!] {tk}: {spec.crosstab_sheet!r} está en "
+                  f"{min(got)}..{max(got)}, no en {min(want)}..{max(want)} — "
+                  f"su 'semana pasada' no es la del board; se descarta")
+        else:
+            logfn(f"  {tk}: resuelto con {spec.crosstab_sheet!r} "
+                  f"({len(got_parsed)} owners)")
+            prog[tk] = got_parsed
+            failed.remove(tk)
+
+    return prog, failed
 
 
 def calibrate_programs(grid, prog, day_dates, aliases) -> Tuple[int, List[str]]:
