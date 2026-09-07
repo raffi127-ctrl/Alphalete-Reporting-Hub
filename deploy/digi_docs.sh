@@ -212,7 +212,7 @@ echo "[$(date)] Digi Docs finished exit=$ST" >> "$LOG_FILE"
 if [ -n "$LIVE" ] && [ "$ST" -ne 0 ] && [ ! -f "$LOG_DIR/.digi-docs-reported" ]; then
     "$VENV_PY" -c "
 from automations.digi_docs import slack_post
-slack_post.alert_failure('the run was killed before it could report — exit $ST, see $LOG_FILE', dry_run=False)
+slack_post.alert_failure('the run was killed before it could report — exit $ST, see $LOG_FILE', fault=True, dry_run=False)
 " >> "$LOG_FILE" 2>&1 || true
 fi
 

@@ -532,12 +532,46 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
     # cannot be scheduled" reached the channel as a generic red nobody could
     # act on. A clean run clears it, so a stale reason can never outlive the
     # failure it described.
+    #
+    # ONLY A FATAL WRITES A WHY NOW (Megan 2026-09-07). A refusal is not the
+    # run's reason for failing, because the run did not fail — see the exit
+    # code below — and putting one person's name here made the Hub's red
+    # failure callout read "Why: Ly Quan Milligan: not in the Add Sales Rep
+    # employee list" for a pass that added the other 52.
     try:
         from automations.day_orchestrator import hub_publish as _hp
-        _hp.write_failure_reason(
-            "digi_docs", (fatal or (refused[0] if refused else "")))
+        _hp.write_failure_reason("digi_docs", fatal or "")
     except Exception:                                   # noqa: BLE001
         pass
+
+    # REFUSALS ARE FINDINGS, NOT A FAILED RUN (Megan 2026-09-07).
+    #
+    # WHAT WENT WRONG. One person out of 53 was not in OwnerVille's employee
+    # list. The other 52 were added, on the right campaign, exactly as intended
+    # — and because ANY refusal exited 1, the orchestrator closed the run
+    # "status **FAILED**" in corrections and told whoever read it to "re-run
+    # it". For this report that advice is worse than useless: generating a
+    # bundle IS the send, there is no unsend, and a re-run to chase one missing
+    # name would walk the click-path for everyone again.
+    #
+    # `kind='finding'` is the existing shape for exactly this — "it worked and
+    # it found things" — and run_manifest.outcome() resolves it to orange
+    # 'partial', never red, so the card still refuses to read green while a
+    # name is outstanding. [[reference_findings_are_not_failures]]
+    #
+    # A `fatal` is untouched: the run really did break, red is right, and
+    # re-running it IS the fix.
+    if not dry and refused and not fatal:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(
+                "digi_docs", failed=list(refused), kind="finding", ok=False,
+                succeeded=[n for n, _m, _t in done] + list(added),
+                note="Per-person items needing a human; the run itself was "
+                     "fine. Do NOT re-run to chase these — generating a "
+                     "bundle is the send.")
+        except Exception:                               # noqa: BLE001
+            pass    # a manifest we cannot write must not fail the run
 
     print(f"\nadded {len(added)} · sent {len(done)} · tinted {tinted} · "
           f"refused {len(refused)}")
@@ -549,7 +583,11 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
     for name, matched, ticked in done:
         as_ = f" (as {matched})" if matched and matched != name else ""
         print(f"  ✓ {name}{as_}: ticked {', '.join(ticked)}")
-    return 0 if not (refused or fatal) else 1
+    # EXIT 0 ON REFUSALS. They are recorded as findings above (orange card,
+    # named in the office thread); exiting non-zero would re-light the red
+    # "FAILED … re-run it" ticket that made 52 successful adds look like a
+    # broken run. Only a fatal is a failure.
+    return 1 if fatal else 0
 
 
 if __name__ == "__main__":

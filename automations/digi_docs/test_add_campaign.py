@@ -80,5 +80,46 @@ class SelectCampaignTest(unittest.TestCase):
         self.assertIsNone(page.sel.picked)
 
 
+class SearchStaysOnResAttTest(unittest.TestCase):
+    """The SEARCH is pinned to RES-AT&T too, not just the add.
+
+    Megan 2026-09-07, on seeing "Zahra Muhsen: not found in OwnerVille (tried
+    ['RES-AT&T', 'RES-ENERGYWELL', 'Water – Primo / RSW B2B'])": "we SHOULD
+    only be sending res at&t and NOT trying any other campaign".
+
+    Digi Docs adds everyone under RES-AT&T, so that is the only campaign its
+    people can be on. Walking the rest costs two page loads per person on a
+    5-minute tick, and risks matching a same-surname rep on a campaign this
+    report must not touch — whose bundle it would then GENERATE, which is the
+    send. find_rep keeps its full walk for headshots, where a rep needing a
+    photo can legitimately be anywhere."""
+
+    def test_digi_docs_passes_only_res_att(self):
+        import inspect
+        from automations.digi_docs import ownerville
+        src = inspect.getsource(ownerville)
+        # Both call sites — the "already there?" probe and the one that goes on
+        # to generate a bundle — must scope the search.
+        self.assertEqual(2, src.count("campaigns=[config.ADD_CAMPAIGN]"),
+                         "both find_rep calls must pin the campaign")
+        self.assertNotIn("find_rep(page, name, verbose=verbose)\n", src)
+
+    def test_find_rep_still_walks_everything_by_default(self):
+        """Headshots depends on the unrestricted walk — do not break it."""
+        import inspect
+        from automations.headshots.ov_upload import find_rep
+        self.assertIsNone(
+            inspect.signature(find_rep).parameters["campaigns"].default)
+
+    def test_restriction_filters_the_dropdown(self):
+        """The filter matches the dropdown's OWN labels."""
+        opts = ["RES-AT&T", "RES-ENERGYWELL", "Water – Primo / RSW B2B"]
+        want = {c.strip().lower() for c in ["RES-AT&T"]}
+        kept = [o for o in opts
+                if o.strip().lower() in want
+                or any(w in o.strip().lower() for w in want)]
+        self.assertEqual(["RES-AT&T"], kept)
+
+
 if __name__ == "__main__":
     unittest.main()

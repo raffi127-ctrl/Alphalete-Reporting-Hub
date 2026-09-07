@@ -193,20 +193,28 @@ class FaultsGoToTheFaultChannel(_NoNetwork):
     people over a log file on a machine they do not have. Megan: "if something is
     an error it goes into the correct channel."
 
-    The split, pinned here: the end-of-run SUMMARY stays in the office channel —
-    "3 people still need doing by hand" is work for the people in that room —
-    and only FAULTS move to #claudecorrections-and-requests, where they get
-    triaged and closed. The send pass is a 5-minute tick, so a fault posting to
-    the office channel is not one stray message; it is a room being trained to
-    stop reading itself."""
+    Then the 09-02 fix overcorrected, and Megan sent the other half back
+    (2026-09-07: "this posted in the wrong channel — it should be in the 11280
+    channel"). It had moved EVERY alert to corrections, per-person ones
+    included, so "Ly Quan Milligan: not in the Add Sales Rep employee list" went
+    to a room that cannot act on it while the office that can never saw it.
+
+    The split, pinned here, is about WHO ACTS — not about severity:
+      · a RUN-LEVEL FAULT (killed, exit 1, machine down) -> corrections, where
+        whoever fixes Lucy 3 triages and closes it. Nobody in the office can.
+      · a PER-PERSON refusal -> the office channel, in today's thread, beside
+        the summary that counts it. One name a human in 11280 has to handle.
+    The end-of-run SUMMARY was always office-channel and stays there."""
 
     def test_the_two_channels_are_different(self):
         from automations.digi_docs import slack_post
         self.assertNotEqual(slack_post.ALERT_CHANNEL, slack_post.CHANNEL)
         # The corrections channel, the standing home for the day's failures.
         self.assertEqual(slack_post.ALERT_CHANNEL, "C0BK5PRG259")
+        # #rafs-office-recruiting-11280, where the work lands.
+        self.assertEqual(slack_post.CHANNEL, "C0AUAS88FGW")
 
-    def test_a_failure_posts_to_the_alert_channel_only(self):
+    def test_a_run_level_fault_posts_to_the_alert_channel_only(self):
         from automations.digi_docs import slack_post
         sent = {}
 
@@ -222,10 +230,74 @@ class FaultsGoToTheFaultChannel(_NoNetwork):
              mock.patch("automations.shared.slack_metrics_post._client",
                         return_value=_C()):
             ok = slack_post.alert_failure("the run was killed — exit 1",
-                                          dry_run=False)
+                                          fault=True, dry_run=False)
         self.assertTrue(ok)
         self.assertEqual(sent["channel"], slack_post.ALERT_CHANNEL)
         self.assertNotEqual(sent["channel"], slack_post.CHANNEL)
+
+    def test_a_per_person_refusal_goes_to_the_office_thread(self):
+        """Megan 2026-09-07. The default is the office channel, threaded under
+        the day's one header — not corrections, and not top-level."""
+        from automations.digi_docs import slack_post
+        sent = {}
+
+        def _reply(body, thread_ts=None, channel_id=None):
+            sent["channel"] = channel_id
+            sent["thread_ts"] = thread_ts
+            sent["text"] = body
+            return True
+
+        class _C:
+            def chat_postMessage(self, channel, text):   # must NOT be used
+                sent["top_level"] = channel
+                return {"ok": True}
+
+        with mock.patch.object(slack_post, "_already_alerted",
+                               return_value=False), \
+             mock.patch.object(slack_post, "_mark_reported", lambda: None), \
+             mock.patch.object(slack_post, "_thread_ts", lambda _smp: "1.23"), \
+             mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_text_only", _reply), \
+             mock.patch("automations.shared.slack_metrics_post._client",
+                        return_value=_C()):
+            ok = slack_post.alert_failure(
+                "Ly Quan Milligan: not in the Add Sales Rep employee list",
+                dry_run=False)
+        self.assertTrue(ok)
+        self.assertEqual(sent["channel"], slack_post.CHANNEL)
+        self.assertEqual(sent["thread_ts"], "1.23")      # threaded, not a flood
+        self.assertNotIn("top_level", sent)
+
+    def test_a_per_person_refusal_still_tags_but_not_on_the_headline(self):
+        """The trio stays pinged (Megan 2026-08-26) — the tags just move off
+        the headline.
+
+        "*Digi Docs — could not send* @Alisson @tiff @Aimee" over a bullet
+        naming a FOURTH person reads as three people who got nothing
+        (2026-09-07). Under the line they read as who should pick it up."""
+        from automations.digi_docs import slack_post
+        sent = {}
+
+        def _reply(body, thread_ts=None, channel_id=None):
+            sent["text"] = body
+            return True
+
+        with mock.patch.object(slack_post, "_already_alerted",
+                               return_value=False), \
+             mock.patch.object(slack_post, "_mark_reported", lambda: None), \
+             mock.patch.object(slack_post, "_thread_ts", lambda _smp: "1.23"), \
+             mock.patch.object(slack_post, "_tags", lambda: "<@U1> <@U2>"), \
+             mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_text_only", _reply):
+            slack_post.alert_failure("Ly Quan Milligan: not in the list",
+                                     dry_run=False)
+        lines = sent["text"].splitlines()
+        self.assertNotIn("<@U1>", lines[0])          # not on the headline
+        self.assertIn("<@U1>", sent["text"])         # but still pinged
+        self.assertIn("Ly Quan Milligan", sent["text"])
+        # The name has to come BEFORE the tags, or the misread is unchanged.
+        self.assertLess(sent["text"].index("Ly Quan Milligan"),
+                        sent["text"].index("<@U1>"))
 
     def test_a_failed_alert_never_takes_down_the_run(self):
         """An alert that cannot post must not raise into the caller — the run it

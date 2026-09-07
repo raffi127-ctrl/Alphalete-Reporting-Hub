@@ -76,7 +76,12 @@ def add_sales_rep(page, name: str, *, dry_run: bool = True,
     already on the campaign), but it is a backstop, not the plan.
     """
     if not known_absent:
-        row, _campaign, _matched = find_rep(page, name, verbose=False)
+        # RES-AT&T ONLY. This is the "are they already here?" check, and here
+        # the narrow search is not just a saving: a same-surname hit on another
+        # campaign would return "exists" for someone who is NOT on ours, and
+        # this person would never be added at all.
+        row, _campaign, _matched = find_rep(page, name, verbose=False,
+                                            campaigns=[config.ADD_CAMPAIGN])
         if row is not None:
             if verbose:
                 print(f"  {name}: already in OwnerVille")
@@ -324,11 +329,16 @@ def _select_person(picker, name: str, *, employee_id: str | None = None) -> None
 def open_set_status(page, name: str, *, verbose: bool = True):
     """Search the rep, click Edit, return (modal, matched_name).
 
-    find_rep does the campaign walk, the short probes and the Show All widen —
-    a just-added rep is often outside the default 3-week activation window,
-    which is exactly the case that widen exists for.
+    find_rep does the short probes and the Show All widen — a just-added rep is
+    often outside the default 3-week activation window, which is exactly the
+    case that widen exists for.
+
+    The campaign is PINNED to RES-AT&T, not walked (Megan 2026-09-07). This is
+    the path that goes on to generate a bundle, so a hit on the wrong campaign
+    would send the wrong person's documents.
     """
-    row, campaign, matched = find_rep(page, name, verbose=verbose)
+    row, campaign, matched = find_rep(page, name, verbose=verbose,
+                                      campaigns=[config.ADD_CAMPAIGN])
     if row is None:
         raise Refused(f"{name}: not found in OwnerVille (tried {campaign})")
     _click_any(row, "Edit", page=page)

@@ -20,9 +20,9 @@ from automations.digi_docs import config
 # people who fix a crashed run.
 CHANNEL = os.environ.get("DIGI_DOCS_SLACK_CHANNEL", "C0AUAS88FGW")
 
-# WHERE FAILURES GO (Megan 2026-09-02: "if something is an error it goes into
-# the correct channel"). #claudecorrections-and-requests — the standing home for
-# the day's failures, where they are triaged, marked :pending: while someone
+# WHERE RUN-LEVEL FAULTS GO (Megan 2026-09-02: "if something is an error it goes
+# into the correct channel"). #claudecorrections-and-requests — the standing home
+# for the day's failures, where they are triaged, marked :pending: while someone
 # works them, and closed with a ✅.
 #
 # WHAT WENT WRONG. alert_failure() posted to CHANNEL, so on 2026-09-02 a crashed
@@ -34,8 +34,20 @@ CHANNEL = os.environ.get("DIGI_DOCS_SLACK_CHANNEL", "C0AUAS88FGW")
 # and the send pass is a 5-minute tick, so a persistent fault would have kept
 # doing it (only _already_alerted held it to one).
 #
-# The end-of-run SUMMARY still goes to the office channel: "3 people still need
-# doing by hand" is work for the people in that room. Only faults move.
+# THEN IT OVERCORRECTED (Megan 2026-09-07: "this posted in the wrong channel —
+# it should be in the 11280 channel"). The 09-02 fix moved EVERY alert here,
+# including the per-person ones, so "Ly Quan Milligan: not in the Add Sales Rep
+# employee list" landed in corrections. That is not a fault — nothing is broken
+# and there is nothing to triage. It is one name that needs a human in Raf's
+# office to add them, i.e. exactly the "who still needs doing by hand" this
+# report exists to publish, and in corrections the people who can act on it
+# never see it.
+#
+# THE SPLIT, and it is about WHO ACTS, not about severity:
+#   fault=True  -> here. The RUN broke: killed, OOM, exit non-zero, machine
+#                  down. Whoever fixes Lucy 3 acts. Nobody in the office can.
+#   fault=False -> the office channel, in today's thread, next to the summary.
+#                  One PERSON could not be processed. Someone in 11280 acts.
 ALERT_CHANNEL = os.environ.get("DIGI_DOCS_ALERT_CHANNEL", "C0BK5PRG259")
 HEADER = "🗂️ Digi Docs"
 
@@ -207,7 +219,8 @@ def _already_alerted(line: str) -> bool:
     return False
 
 
-def alert_failure(line: str, *, dry_run: bool = True) -> bool:
+def alert_failure(line: str, *, fault: bool = False,
+                  dry_run: bool = True) -> bool:
     """One failure, posted the MOMENT it happens (Megan 2026-08-26: "if
     anything fails it needs to alert right away").
 
@@ -219,6 +232,11 @@ def alert_failure(line: str, *, dry_run: bool = True) -> bool:
     The end-of-run summary still goes out, but it COUNTS these rather than
     repeating them — the same failure twice in one channel is how a channel
     stops being read.
+
+    `fault` picks the room, by WHO CAN ACT on the line (see ALERT_CHANNEL):
+    the default False is a per-person refusal and belongs in the office
+    channel's thread; True is the run itself breaking and belongs in
+    corrections. Only the wrapper's last-resort alert passes True.
     """
     if not dry_run and _already_alerted(line):
         print(f"  (already alerted today, not repeating: {line[:60]})")
@@ -235,30 +253,51 @@ def alert_failure(line: str, *, dry_run: bool = True) -> bool:
         head = "Digi Docs — not sent, and nothing will retry it"
     else:
         head = "Digi Docs — could not send"
-    # NAME THE REPORT. In the office channel the thread header said "Digi Docs"
-    # for us; in the corrections channel this sits among every other report's
-    # failures, so the line has to identify itself.
-    body = f"*{head}* {_tags()}\n• {line}"
+    # NAME THE REPORT, but only where it is not already named. In the office
+    # channel this hangs under the "🗂️ Digi Docs" header, which says it for us;
+    # in corrections it sits among every other report's failures, so there the
+    # line has to identify itself.
+    #
+    # THE TAGS STAY, BUT NOT ON THE HEADLINE (2026-09-07). Alisson/Tiff/Aimee
+    # are pinged on every refusal on purpose (Megan 2026-08-26: a failure has to
+    # get picked up fast), and moving the message into their own office channel
+    # does not change that. What had to change is WHERE they sit: "*Digi Docs —
+    # could not send* @Alisson @tiff @Aimee" reads as three people who did not
+    # get documents, directly above a bullet naming a fourth person who is the
+    # one who actually failed. Under the line instead, they read as what they
+    # are — who should pick it up.
+    if fault:
+        body = f"*{head}* {_tags()}\n• {line}"
+    else:
+        body = f"*{head}*\n• {line}\n{_tags()}".rstrip()
+    channel = ALERT_CHANNEL if fault else CHANNEL
     if dry_run:
-        print(f"\n--- Slack ALERT (dry run, NOT posted) -> {ALERT_CHANNEL} ---")
+        print(f"\n--- Slack ALERT (dry run, NOT posted) -> {channel} ---")
         print(body)
         return False
     from automations.shared import slack_metrics_post as smp
-    # A FAULT GOES TO THE FAULT CHANNEL, as its OWN top-level message — not
-    # threaded under the office channel's Digi Docs header, which is where it
-    # used to land. Top-level because that is the corrections channel's
-    # convention: one message per failure, so it can be triaged, marked
-    # :pending: while somebody works it, and closed with a ✅.
-    #
-    # chat_postMessage direct, the same way appstream_watch._alert posts there:
-    # slack_metrics_post's helpers are all thread-reply shaped, and there is no
-    # thread to reply to here.
     try:
-        smp._client().chat_postMessage(channel=ALERT_CHANNEL, text=body)
+        if fault:
+            # A FAULT GOES TO THE FAULT CHANNEL, as its OWN top-level message.
+            # Top-level because that is the corrections channel's convention:
+            # one message per failure, so it can be triaged, marked :pending:
+            # while somebody works it, and closed with a ✅.
+            #
+            # chat_postMessage direct, the same way appstream_watch._alert
+            # posts there: slack_metrics_post's helpers are all thread-reply
+            # shaped, and there is no thread to reply to here.
+            smp._client().chat_postMessage(channel=ALERT_CHANNEL, text=body)
+        else:
+            # A PERSON GOES IN TODAY'S THREAD, under the one header, beside the
+            # summary that counts them. Never top-level: the send pass is a
+            # 5-minute tick and fifty refusals as fifty top-level posts is the
+            # flood _thread_ts was written to stop.
+            smp.post_reply_text_only(body, thread_ts=_thread_ts(smp),
+                                     channel_id=CHANNEL)
     except Exception as e:  # noqa: BLE001
         # NEVER let a failed alert take down the run it is reporting on — but do
         # not swallow it either: an alert nobody sees is the same as no alert.
-        print(f"  (Digi Docs alert to {ALERT_CHANNEL} FAILED: "
+        print(f"  (Digi Docs alert to {channel} FAILED: "
               f"{type(e).__name__}: {str(e)[:120]})")
         return False
     _mark_reported()

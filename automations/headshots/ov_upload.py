@@ -316,12 +316,26 @@ def _search_probes(name: str):
     return out
 
 
-def find_rep(page, name: str, *, verbose: bool = True):
+def find_rep(page, name: str, *, verbose: bool = True, campaigns=None):
     """Locate the rep across campaigns/filters, tolerating typos.
 
     Returns (row, campaign, matched_name) or (None, tried_campaigns, None).
     matched_name is what the OV table actually calls them, which can differ
-    from what was typed in Slack."""
+    from what was typed in Slack.
+
+    `campaigns` LIMITS the walk to the campaign labels given, instead of every
+    option in the dropdown (Megan 2026-09-07: "we SHOULD only be sending res
+    at&t and NOT trying any other campaign"). Default None keeps the full walk
+    — headshots wants it, because a rep needing a photo can legitimately sit on
+    any campaign.
+
+    Digi Docs must not. It ADDS everyone under RES-AT&T, so that is the only
+    campaign its people can be on, and a walk that continues into RES-ENERGYWELL
+    and Water – Primo can only do two things: waste two page loads per person on
+    a 5-minute tick, or — the real risk — match a DIFFERENT rep who shares a
+    surname on a campaign this report has no business touching, and generate
+    that person's bundle. Generating is sending; there is no unsend. Narrowing
+    the search is what makes "not found" mean "not found where they belong"."""
     from automations.b2b_dispositions.capture import capture_rqst
     rqst = capture_rqst(page)
     # View Progress renders a huge DataTable (every rep + a pill per column)
@@ -345,6 +359,19 @@ def find_rep(page, name: str, *, verbose: bool = True):
         pass                      # the select wait below is the real gate
     sel = _campaign_select(page)
     options = sel.locator("option").all_inner_texts()
+    if campaigns:
+        # Match on the DROPDOWN's own labels, never on the caller's string: the
+        # option reads "Water – Primo / RSW B2B" with an en dash and a suffix,
+        # and select_option(label=…) needs the label the page actually renders.
+        want = {c.strip().lower() for c in campaigns}
+        options = [o for o in options
+                   if o.strip().lower() in want
+                   or any(w in o.strip().lower() for w in want)]
+        if not options:
+            # Asked for a campaign this dropdown does not offer. Say so rather
+            # than silently falling back to walking everything — a silent
+            # fallback is how the wrong-campaign bug hid for a morning.
+            return None, [f"{'/'.join(campaigns)} (not in this dropdown)"], None
     tried = []
     for opt in options:
         label = opt.strip()
