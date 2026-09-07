@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import os
 import shlex
 import subprocess
@@ -126,6 +127,50 @@ def _todays_manifest():
     if (m.get("run_ts") or "")[:10] != dt.date.today().isoformat():
         return None
     return m
+
+
+# Where a killed run leaves its breadcrumbs. One file, rewritten after every
+# metric, holding the date it speaks for and the slugs that finished.
+PROGRESS_PATH = REPO_ROOT / "output" / "state" / "daily_metrics-progress.json"
+
+
+def _read_progress() -> set:
+    """Slugs that already posted TODAY, left by a run that never reached its
+    summary.
+
+    WHY (2026-09-07): the orchestrator kills this report at timeout_minutes and
+    then re-runs it from metric 1 — with base_args, not the manifest's scoped
+    retry_args, which only the INCOMPLETE path uses. A killed run never writes a
+    manifest either, so nothing downstream knows what did land. On a slow
+    morning that became three 45-minute attempts that each re-posted every
+    metric they had time for: Total Knocks, Order Log, Rep Activations and
+    Scheduled-6 went into #alphalete-sales THREE times each, and the thread
+    still never reached ABP or the Tableau screenshot. A kill can't be prevented
+    from in here; a retry picking up where the last one stopped can.
+
+    Yesterday's file says nothing about today, so a date mismatch reads empty.
+    """
+    try:
+        data = json.loads(PROGRESS_PATH.read_text())
+    except Exception:  # noqa: BLE001 — missing/corrupt = nothing done yet
+        return set()
+    if not isinstance(data, dict):
+        return set()
+    if data.get("date") != dt.date.today().isoformat():
+        return set()
+    return {s for s in (data.get("ok") or []) if isinstance(s, str)}
+
+
+def _mark_done(slug: str) -> None:
+    """Record one finished metric IMMEDIATELY — the whole point is to survive a
+    SIGKILL, so this can't wait for the end of the run."""
+    done = _read_progress() | {slug}
+    try:
+        PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        PROGRESS_PATH.write_text(json.dumps(
+            {"date": dt.date.today().isoformat(), "ok": sorted(done)}, indent=2))
+    except Exception:  # noqa: BLE001 — bookkeeping must never fail the run
+        pass
 
 
 def _record_outcome(selected, failed: list[str], *, scoped: bool) -> None:
@@ -239,6 +284,9 @@ def main(argv=None) -> int:
                          f"({', '.join(m[0] for m in METRICS)}).")
     ap.add_argument("--no-header", action="store_true",
                     help="Skip ensuring the Metrics header thread.")
+    ap.add_argument("--restart", action="store_true",
+                    help="Ignore today's progress file and run every selected "
+                         "metric again, even ones that already posted.")
     # REPAIR HATCH (2026-08-25). A metric module can drop ONE of the several
     # images it posts — on 2026-08-25 the churn module posted 7 of its 8 and
     # died on a flaky SSL handshake on the last one. The only rerun handle the
@@ -271,10 +319,31 @@ def main(argv=None) -> int:
         module_args = shlex.split(args.module_args)
         print(f"   ↳ extra args for {selected[0][0]}: {module_args}")
 
+    # RESUME (2026-09-07). A full LIVE run skips the metrics an earlier attempt
+    # TODAY already posted, so the orchestrator's retry-after-timeout finishes
+    # the thread instead of re-posting the front of it (see _read_progress).
+    # A --only run is a deliberate repair of exactly that metric and never
+    # skips; --restart redoes everything on purpose.
+    resumed: list[str] = []
+    if not args.dry_run and only is None and not args.restart:
+        already = _read_progress()
+        resumed = [label for slug, label, _m, _b in selected if slug in already]
+        selected = [m for m in selected if m[0] not in already]
+
     mode = "DRY-RUN" if args.dry_run else "LIVE"
     print(f"=== Daily Metrics — {mode} — {len(selected)} metric module(s) ===")
+    for label in resumed:
+        print(f"   ⏭  {label}  (already posted today — resuming after it)")
     for slug, label, module, base in selected:
         print(f"   • {label}  ({module} {' '.join(base)})".rstrip())
+
+    if not args.dry_run and not selected:
+        # Every metric already landed in an earlier attempt. Say so and close
+        # the day out cleanly, rather than exiting on a silent no-op.
+        print("\nEvery metric already posted today ✅ — nothing left to run.")
+        _record_outcome([], [], scoped=False)
+        print("\n=== done ===")
+        return 0
 
     # --- Header thread first (so every reply has a parent to land in) ---
     if not args.no_header:
@@ -311,12 +380,21 @@ def main(argv=None) -> int:
                if slug == "churn" else None)
         ok, note = _run_one(label, module, base + module_args, env=env)
         results.append((label, ok, note))
+        if ok and not module_args:
+            # Written NOW, not at the end: a timeout SIGKILL never reaches the
+            # summary, and that is exactly the run this file exists for.
+            # NOT for a --module-args repair: those post ONE image of a
+            # multi-image metric, so the slug as a whole isn't done.
+            _mark_done(slug)
 
     # --- Summary ---
     total = time.monotonic() - overall_start
     n_ok = sum(1 for _, ok, _ in results if ok)
     print(f"\n{'='*70}\n=== Daily Metrics summary "
-          f"({n_ok}/{len(results)} ok, {total/60:.0f}m total) ===")
+          f"({n_ok + len(resumed)}/{len(results) + len(resumed)} ok, "
+          f"{total/60:.0f}m total) ===")
+    for label in resumed:
+        print(f"  ✅  {label}  (posted by an earlier attempt today)")
     for label, ok, note in results:
         print(f"  {'✅' if ok else '❌'}  {label}  ({note})")
     failed = [label for label, ok, _ in results if not ok]

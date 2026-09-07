@@ -3013,7 +3013,9 @@
       "verify": {
         "type": "manifest",
         "report_id": "daily_metrics"
-      }
+      },
+      "timeout_minutes": 75,
+      "_timeout_note": "Was the flat 45m default until 2026-09-07, when three attempts in a row were killed at 45m and each restarted from metric 1 - the first six metrics landed in #alphalete-sales THREE times and the thread never reached ABP or the Tableau screenshot. This report is NINE subprocesses with a 20m per-metric cap of their own; a clean morning is ~22m (2026-09-06) but a slow Tableau day runs 3x that, and 45m cannot hold nine of them. 75m fits a 3x morning plus one metric hitting its own 20m cap. The companion fix is in daily_metrics/run.py: a kill now leaves a progress file, so a retry resumes instead of re-posting."
     },
     "daily_focus": {
       "order": 1,
