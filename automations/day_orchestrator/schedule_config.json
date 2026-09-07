@@ -6083,11 +6083,12 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 45,
+      "timeout_minutes": 120,
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots"
-      }
+      },
+      "_timeout_note": "was 45m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
     },
     "tableau_screenshots_box": {
       "order": 25,
@@ -6121,12 +6122,13 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots-box"
       },
-      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
+      "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
     },
     "tableau_screenshots_settle_am": {
       "order": 24,
@@ -6158,11 +6160,12 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots-settle"
-      }
+      },
+      "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
     },
     "tableau_screenshots_settle_pm": {
       "order": 41,
@@ -6194,11 +6197,12 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots-settle"
-      }
+      },
+      "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
     },
     "tableau_screenshots_settle_12": {
       "order": 42,
@@ -6230,11 +6234,12 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots-settle"
-      }
+      },
+      "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
     },
     "tableau_screenshots_settle_13": {
       "order": 43,
@@ -6266,11 +6271,12 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots-settle"
-      }
+      },
+      "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
     },
     "tableau_screenshots_settle_14": {
       "order": 44,
@@ -6302,11 +6308,12 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots-settle"
-      }
+      },
+      "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
     },
     "tableau_preview": {
       "on_scheduler": true,
