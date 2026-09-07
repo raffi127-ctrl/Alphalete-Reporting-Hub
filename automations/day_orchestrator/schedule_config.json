@@ -4755,6 +4755,28 @@
       "machine": "Lucy 2",
       "timeout_minutes": 45
     },
+    "probe_b2b_views": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY diagnostic (automations.recruiting_report.probe_b2b_views). Lists EVERY view AND custom view of the two workbooks the Carlos OPT phase depends on -- ATTTRACKER-B2B and DirectDepositICDVIEWVersion2_0 -- via the vizportal API the Tableau UI itself calls (getWorkbooks/getViews/getCustomViews). Prefixed lines so logtail can page them: 'VIEW:', 'CUSTOM:', 'HOT:' (name mentions penetration/zip/market or program/summary/downline), 'GONE:' (the view the code points at is no longer listed). Downloads nothing, opens no viz, writes no Sheet. Exists for two open source breaks: row 50 Penetration Rate reads ATTTRACKER-B2B/MARKETPERFORMANCEZIPLEVEL, which stopped existing after 2026-08-24 (Eve confirmed by hand 2026-08-31) and has no known replacement URL; and Direct Deposit reads DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY/DOWNLINEVIEW, which filled on 2026-08-31 and broke 2026-09-07 with 'couldn't activate the worksheet for Download->Data' on 4 runs. Scraping cannot answer either -- Tableau content pages are virtualized, so an anchor sweep returns ZERO hits on a workbook that plainly exists, a false negative that reads like 'the workbook is gone'. Run this, then `lucy logtail <its log> VIEW: 40`. `lucy rerun probe_b2b_views --machine \"Lucy 2\"`.",
+      "display_name": "Carlos OPT - probe ATTTRACKER-B2B views (read-only)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report.probe_b2b_views"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2",
+      "timeout_minutes": 30
+    },
     "disable_carlos_captainship_bonus_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "RETIRE the standalone Tuesday-10am launchd now that Carlos B2B Captainship Bonus runs in the Lucy 2 Tuesday 4am flow (readiness-gated on tableau:captainship_bonus_carlos, 10am fail-open floor). `lucy rerun disable_carlos_captainship_bonus_agent --machine \"Lucy 2\"` boots out + stashes com.alphalete.carlos-captainship-bonus-tue.plist -> .disabled so it doesn't ALSO fire at 10am (which would re-DM a duplicate PDF). REVERSIBLE: re-run install_carlos_captainship_bonus_agent + set cadence.weekdays []. Read-only w.r.t. Sheet data.",

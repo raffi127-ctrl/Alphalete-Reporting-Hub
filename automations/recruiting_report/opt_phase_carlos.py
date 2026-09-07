@@ -762,6 +762,59 @@ def _dd_week_url(url: str, we_sunday: "dt.date") -> str:
     return f"{url}{sep}{quote('Processed Week')}={quote(monday.isoformat())}"
 
 
+def _scrape_dd_view_data(dd_url: str, page=None, verbose: bool = True):
+    """Scrape the DD dashboard's View Data, sweeping every calibrated click
+    point instead of betting the whole pull on one.
+
+    'Download -> Data' on this multi-sheet DOWNLINEVIEW dashboard stays
+    disabled until a worksheet is active, so the scrape first clicks the
+    downline table's header row. Carlos's two DD call sites used to pass the
+    single PROGRAM_SUMMARY_XY; Raf's identical pull (opt_phase.
+    download_program_summary) has swept PROGRAM_SUMMARY_XY_CANDIDATES since
+    2026-07-28, and this is the one thing that differed between them. On
+    2026-09-07 the single point stopped landing on any activatable band —
+    four runs, all "couldn't activate the worksheet for Download->Data" —
+    while the layout had shifted horizontally, which only the third candidate
+    (a different x) covers. Same sweep, same order, same acceptance test.
+
+    A candidate that raises (the header band never activates) is tried, then
+    the next one is; a candidate that activates the WRONG worksheet is caught
+    by PROGRAM_SUMMARY_MIN_ROWS. That second guard matters as much as the
+    first: this dashboard's top table is a 1-row owner summary, so a wrong
+    click yields a valid-looking scrape whose parse returns {} and leaves
+    every DD cell untouched — the silent failure that cost Raf's report four
+    weeks in July. Raises only when NO candidate produced a real grid."""
+    from automations.recruiting_report.opt_phase import (
+        scrape_view_data, PROGRAM_SUMMARY_XY_CANDIDATES,
+        PROGRAM_SUMMARY_MIN_ROWS)
+    last_err = None
+    for xy in PROGRAM_SUMMARY_XY_CANDIDATES:
+        try:
+            fields, records = scrape_view_data(
+                dd_url, verbose=verbose, page=page, activate_xy=xy)
+        except Exception as e:                               # noqa: BLE001
+            last_err = f"{type(e).__name__}: {str(e)[:120]}"
+            if verbose:
+                print(f"  dd: click {xy} — {last_err}; trying the next point",
+                      flush=True)
+            continue
+        if len(records) < PROGRAM_SUMMARY_MIN_ROWS:
+            last_err = f"{len(records)} row(s) — wrong worksheet"
+            if verbose:
+                print(f"  dd: click {xy} gave {last_err}; trying the next "
+                      f"point", flush=True)
+            continue
+        if verbose:
+            print(f"  dd: click {xy} → {len(records)} View Data row(s)",
+                  flush=True)
+        return fields, records
+    raise RuntimeError(
+        f"dd: no click point hit the downline grid (last: {last_err}) — the "
+        f"dashboard layout moved or DOWNLINEVIEW is gone; re-measure "
+        f"PROGRAM_SUMMARY_XY_CANDIDATES (probe with "
+        f"`lucy rerun probe_b2b_views --machine \"Lucy 2\"`)")
+
+
 def write_icd_values(ws, icd_values: dict[int, object],
                      target_col: int, dry_run: bool = False,
                      row_remap: Optional[dict] = None) -> list[str]:
@@ -1429,8 +1482,6 @@ def main() -> int:
         # the login click never completed (Eve 2026-06-01). Download every
         # crosstab + scrape dd through a single shared page.
         from automations.shared.tableau_patchright import tableau_session
-        from automations.recruiting_report.opt_phase import (
-            scrape_view_data, PROGRAM_SUMMARY_XY)
         we = _current_we_sunday()
         # --only-views narrows the batch to the views named (the targeted
         # recovery after one view failed). Unknown keys are a hard error — a
@@ -1493,9 +1544,8 @@ def main() -> int:
                 # disabled until the downline worksheet is activated, so pass the
                 # calibrated activate_xy. Without it data_item.click() hangs 30s
                 # (the 2026-06-29 switch to DOWNLINEVIEW made this view multi-sheet).
-                fields, records = scrape_view_data(
-                    _dd_week_url(dd_view.url, we), verbose=True, page=page,
-                    activate_xy=PROGRAM_SUMMARY_XY)
+                fields, records = _scrape_dd_view_data(
+                    _dd_week_url(dd_view.url, we), page=page, verbose=True)
                 dd_path = DOWNLOAD_DIR / "dd_view_data.csv"
                 dd_path.parent.mkdir(parents=True, exist_ok=True)
                 dd_path.write_text(
@@ -1893,7 +1943,7 @@ def main() -> int:
         # ICDs appear alongside Raf's (Raf's CAPTAINVIEW filters out
         # everyone but the logged-in user's downline).
         from automations.recruiting_report.opt_phase import (
-            scrape_view_data, parse_program_summary, _norm, PROGRAM_SUMMARY_XY,
+            parse_program_summary, _norm,
         )
         dd_view = next(v for v in VIEWS if v.key == "dd")
         # Use a distinct filename so the old UTF-16 crosstab attempts at
@@ -1925,8 +1975,7 @@ def main() -> int:
             print(f"  → scraping View Data from {dd_url}")
             # Multi-sheet DOWNLINEVIEW dashboard — activate the downline
             # worksheet first or Download->Data stays disabled (see download-all).
-            fields, records = scrape_view_data(dd_url, verbose=True,
-                                               activate_xy=PROGRAM_SUMMARY_XY)
+            fields, records = _scrape_dd_view_data(dd_url, verbose=True)
             carlos_dd_path.parent.mkdir(parents=True, exist_ok=True)
             lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
             carlos_dd_path.write_text("\n".join(lines), encoding="utf-8")
