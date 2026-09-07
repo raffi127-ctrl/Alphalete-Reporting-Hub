@@ -3493,6 +3493,28 @@
       },
       "_warn": "Scheduled on the SANDBOX 'Copy of' tab ONLY. The real VA tab stays guarded (--real refuses live runs + a Copy-of-only assert); a real-tab cutover needs that guard relaxed first — do NOT point this at the real tab unattended without that work."
     },
+    "delta_lastweek_backfill": {
+      "order": 8.15,
+      "on_scheduler": false,
+      "_off_scheduler_note": "MANUAL HANDLE ONLY (on_scheduler false, so registry.load_config drops it and it never enters the morning batch). The step ALREADY runs every day inside org_sales_board --step daily, right after delta_manual_fill; this entry exists so `lucy rerun delta_lastweek_backfill` can fill the delta boxes of somebody added TODAY without re-running the whole board fill for it. Same reasoning as org_board_zero_streak's handle.",
+      "_note": "Fills the per-day 'Last week' cells of a delta-box row that was added AFTER Tuesday's freeze, so nobody sits at a flat 0.00% against a blank week and no box totals row comes out short (Eve 2026-08-31, Jairo's box: Abdallah Ghousheh and Fernando Munoz had sold 62 and 67 and it read 0). TWO SOURCES: the pre-rollover snapshot for somebody MOVED between captainships, then last week's fiber/b2b/nds program crosstabs for a genuinely new person — absent from every view = a literal 0, because those crosstabs omit zero rows (Eve 2026-09-07: 'si no tienen ventas=0'). It writes nothing off a source it cannot calibrate against the rows already frozen, so a wrong week or a failed pull leaves the cells blank and says which. Idempotent: only an EMPTY cell is ever filled, never a formula and never a literal 0 somebody's rollover already wrote, so re-running it costs one Sheets read on a normal day and opens no browser at all.",
+      "display_name": "Delta boxes - backfill last week's daily breakdown",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.org_sales_board.delta_lastweek_backfill"
+      ],
+      "base_args": [
+        "--apply"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "machine": "Lucy 1"
+    },
     "org_sales_board_email": {
       "order": 8.2,
       "on_scheduler": false,

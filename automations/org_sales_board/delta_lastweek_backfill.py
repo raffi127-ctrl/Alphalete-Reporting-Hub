@@ -44,19 +44,43 @@ the answer was zero". So this is idempotent, it can never walk over a
 rollover's work, and a row that is already complete costs nothing. A cell
 holding a FORMULA is never touched either.
 
-ABSENT IS NOT ZERO. Somebody the snapshot does not carry — a genuinely NEW ICD,
-not one moved between captainships — is left blank and NAMED in the log, the
-same rule `delta_manual_fill` follows: writing 0 would invent a fact about
-their week. Their week has to come off the section's own Tableau view pinned to
-that week (see `output/nds_lastweek_pull_2026-08-31.py` for the shape of it).
+NOBODY IS LEFT BLANK — STAGE 2 (Eve, 2026-09-07: "cada vez que se agregue una
+persona nueva ... aplicalo como regla general ... si no tienen ventas=0").
+
+The snapshot only carries people who were already ON the board last Tuesday, so
+it settles a MOVE between captainships and nothing else. A genuinely new ICD —
+Nicolas Lujan, added to Carlos' captainship on 09/05 — is not in it, and used
+to be left blank and merely named in the log. Blank is the failure this whole
+module exists to remove, so the leftovers now go to a SECOND source:
+
+  * the same three all-teams program crosstabs the captainship fill uses
+    (`captainship.pull_programs`: fiber / b2b / nds), pinned to LAST week
+    instead of this one. Same views, same product filters, same retry policy —
+    imported, never re-listed, so the two can't drift.
+  * a name the program pull DOES carry is filled with its real per-day numbers.
+  * a name absent from every program is filled with a literal 0. That is not an
+    invention: these views omit zero rows, which is exactly how the captainship
+    fill reads absence when it writes NS for an ICD with no sales this week.
+
+WHEN IT STILL REFUSES. Absence only means zero if the pull actually happened,
+so stage 2 writes nothing at all when the program it needed FAILED to render,
+when the pull cannot be calibrated against rows that are already frozen (>10%
+of them disagreeing = the wrong week or the wrong view), or when there is no
+Tableau session to pull with. In every one of those the cells stay blank and
+the log says which — a blank row is visible, a wrong 0 is not.
+
+Costs nothing on a normal day: stage 2 only opens a browser at all when stage 1
+leaves something over, which is only the morning after somebody is added.
 
     python -m automations.org_sales_board.delta_lastweek_backfill          # dry-run
     python -m automations.org_sales_board.delta_lastweek_backfill --apply
+    python -m automations.org_sales_board.delta_lastweek_backfill --offline # snapshot only
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 import unicodedata
 from pathlib import Path
@@ -67,7 +91,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.recruiting_report.fill import open_by_key, _retry     # noqa: E402
 from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB      # noqa: E402
 from automations.org_sales_board import rollover as ro                 # noqa: E402
+from automations.org_sales_board import week as wk                     # noqa: E402
 from automations.org_sales_board.delta_manual_fill import _cell        # noqa: E402
+from automations.focus_office_att.aliases import load_aliases          # noqa: E402
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -78,6 +104,14 @@ except Exception:                                                      # noqa: B
 # numbers are used for the blank ones. Low enough that a small board still
 # calibrates, high enough that it is not one lucky row.
 MIN_CALIBRATION_ROWS = 5
+
+# Same idea for stage 2, where the two sides are the board and a Tableau pull
+# rather than the board and its own snapshot, so they are allowed to disagree a
+# little: a frozen cell is the fill's answer from a week ago and a rep can be
+# re-filed under another captain since. Above this share it is not drift, it is
+# the wrong week or the wrong view, and nothing is written.
+MIN_PROGRAM_CALIBRATION_ROWS = 5
+MAX_PROGRAM_DISAGREE_SHARE = 0.10
 
 
 def _key(name: str) -> str:
@@ -213,31 +247,202 @@ def blank_cells(grid, formulas) -> List[dict]:
     return out
 
 
-def plan(cells, index) -> Tuple[List[dict], List[str]]:
-    """[{range, values}] for `blank_cells`, plus notes."""
+# ------------------------------------------------------- stage 2: Tableau
+
+def box_title(grid, table: dict) -> str:
+    """The box's own banner — "CARLOS CAPTAINSHIP", "Chan's Captainship",
+    "RAF SPECIAL TEAM". Read UPWARD from the header row in col A then col B,
+    skipping the 'NEW INTERNET UNITS' / 'ALL UNITS' sub-label that `box_kind`
+    reads, because a fiber captain's two boxes carry the banner one row higher
+    than everybody else's. Returns "" when there is none (the caller then just
+    searches every program, which is what the captainship fill does anyway)."""
+    hdr = table["header_row"]
+    for r in (hdr - 1, hdr - 2, hdr - 3):
+        for c in (1, 2):
+            v = (_cell(grid, r, c) or "").strip()
+            if not v:
+                continue
+            up = v.upper()
+            if "UNITS" in up and "CAPTAIN" not in up:
+                continue            # the kind sub-label, not the banner
+            return v
+    return ""
+
+
+def program_hint(title: str) -> str:
+    """Which program's crosstab to look in FIRST for a box titled `title`.
+
+    A HINT only, exactly as in `captainship.TYPE_HINTS`: the lookup falls back
+    across every program, so a box the map has never heard of (RAF SPECIAL
+    TEAM, TRANG'S ORG, a captainship added this morning) still resolves — it
+    just pays for one wasted first lookup."""
+    from automations.org_sales_board import captainship as cap
+    key = re.sub(r"\b(CAPTAINSHIP|CAPTAIN|TEAM|ORG)\b", " ",
+                 (title or "").upper())
+    return cap.TYPE_HINTS.get(cap._cap_key(" ".join(key.split())),
+                              cap.DEFAULT_TYPE)
+
+
+def box_metric(kind: str) -> Optional[str]:
+    """The pull metric a box of this `kind` reads. None = the program default
+    (all units); a New Internet box reads the New-Internet-only sum of the very
+    same crosstab, the way `captainship.run_captainships` routes its two fiber
+    boxes."""
+    return "NewInternet" if kind == "NEW INTERNET" else None
+
+
+def program_days(prog: dict, hint: str, name: str, kind: str, aliases):
+    """(per-day dict, program key) for `name` in the last-week program pull, or
+    (None, None) when no program carries them at all.
+
+    Deliberately the same search `captainship.per_for` does — hinted program
+    first, then every other one — so a rep filed under an unexpected Tableau
+    team is found here for the same reason they are found there."""
+    from automations.org_sales_board import captainship as cap
+    cands = cap._candidates_for_name(name, aliases)
+    metric = box_metric(kind)
+    for tk in [hint] + [k for k in prog if k != hint]:
+        pdata = prog.get(tk) or {}
+        k = next((x for x in pdata if x in cands), None)
+        if k:
+            return pdata[k].get(metric or cap.TYPES[tk]["metric"], {}), tk
+    return None, None
+
+
+def lastweek_programs(today: dt.date, page=None, out_dir=None, logfn=print):
+    """({program: parsed}, [failed programs]) for the week the delta boxes are
+    comparing AGAINST — one week before the live one.
+
+    `today - 7` rather than a hand-built date, so the Monday lag (the board
+    rolls Tuesday — `week.reporting_sunday`) applies identically to both weeks.
+    The pull is written under its own name so it can never overwrite the
+    current week's downloads sitting next to it."""
+    from pathlib import Path as _Path
+    from automations.org_sales_board import captainship as cap
+    return cap.pull_programs(
+        page, today - dt.timedelta(days=7),
+        out_dir=_Path(out_dir) if out_dir else _Path("output") / "_lastweek",
+        out_prefix="org_sales_board_lastweek_", logfn=logfn)
+
+
+def calibrate_programs(grid, prog, day_dates, aliases) -> Tuple[int, List[str]]:
+    """(rows checked, disagreements) between the delta rows that are ALREADY
+    frozen and the last-week program pull.
+
+    The twin of `calibrate`, and for the same reason: a pull that came back on
+    the wrong week, or off a view somebody has since re-pointed, looks exactly
+    like a good one. The rows whose answer is already on the board are the only
+    way to tell, so they are checked before a single blank is written."""
+    checked, bad = 0, []
+    manual = {rep for _t, rep in ro.manual_fill_rows(grid)}
+    for t in ro.find_delta_tables(grid):
+        days = _day_names(grid, t)
+        kind = box_kind(grid, t)
+        hint = program_hint(box_title(grid, t))
+        for r in t["data_rows"]:
+            name = _cell(grid, r, 2)
+            if not name or name.strip().lower() in manual:
+                continue
+            pairs = [(days[c], _cell(grid, r, c + 1)) for c in days]
+            if any(v == "" for _d, v in pairs):
+                continue                  # not frozen: nothing known to check
+            src, _tk = program_days(prog, hint, name, kind, aliases)
+            if src is None:
+                continue                  # absent: that is what stage 2 tests
+            checked += 1
+            diff = []
+            for d, v in pairs:
+                want = str(int(src.get(day_dates.get(d), 0) or 0))
+                if (v or "0").strip() != want:
+                    diff.append(f"{d} {v!r}!={want}")
+            if diff:
+                bad.append(f"{name} (fila {r}): " + ", ".join(diff[:4]))
+    return checked, bad
+
+
+def plan_from_programs(grid, cells, prog, failed, day_dates, aliases
+                       ) -> Tuple[List[dict], List[str]]:
+    """[{range, values}] + notes for the cells stage 1 could not settle.
+
+    A name the pull carries gets its real numbers; a name no program carries
+    gets a literal 0 — these crosstabs omit zero rows, so absence IS zero, the
+    same reading `captainship.run_captainships` makes when it writes NS. Unless
+    a program FAILED to pull: then absence means nothing at all, and the row is
+    left blank and named."""
+    hints = {}
+    for t in ro.find_delta_tables(grid):
+        hint = program_hint(box_title(grid, t))
+        for r in t["data_rows"]:
+            hints[r] = hint
     updates: List[dict] = []
+    notes: List[str] = []
+    said: set = set()
+    for c in cells:
+        src, tk = program_days(prog, hints.get(c["row"], "fiber"),
+                               c["name"], c["kind"], aliases)
+        if src is None and failed:
+            if c["name"] not in said:
+                said.add(c["name"])
+                notes.append(
+                    f"{c['name']}: no esta en el pull de la semana pasada, "
+                    f"pero {', '.join(failed)} no se pudo bajar — sin ese "
+                    f"programa 'ausente' no quiere decir cero; se deja en "
+                    f"blanco")
+            continue
+        if c["name"] not in said:
+            said.add(c["name"])
+            notes.append(
+                f"{c['name']}: alta nueva, no un pase — "
+                + (f"de la vista {tk!r} de la semana pasada"
+                   if src is not None else
+                   "ninguna vista lo trae la semana pasada: van 0"))
+        updates.append({"range": f"{ro.a1col(c['last_col'])}{c['row']}",
+                        "values": [[int((src or {}).get(
+                            day_dates.get(c["day"]), 0) or 0)]]})
+    return updates, notes
+
+
+def plan(cells, index) -> Tuple[List[dict], List[dict], List[str]]:
+    """(updates, leftover cells, notes) for `blank_cells` against the snapshot.
+
+    Anybody the snapshot carries is settled here — that is a MOVE between
+    captainships, and their frozen answer already exists. Anybody it does not
+    is handed back as `leftover` for stage 2 to resolve off Tableau instead of
+    being written off as a blank."""
+    updates: List[dict] = []
+    leftover: List[dict] = []
     notes: List[str] = []
     missing: set = set()
     for c in cells:
         src = index.get((c["kind"], _key(c["name"])))
         if src is None:
+            leftover.append(c)
             if c["name"] not in missing:
                 missing.add(c["name"])
                 notes.append(
-                    f"{c['name']}: no está en el snapshot pre-roleo — es un "
-                    f"ICD nuevo, no un pase de capitanía; se deja en blanco "
-                    f"(no se escribe 0)")
+                    f"{c['name']}: no está en el snapshot pre-roleo — alta "
+                    f"nueva, no un pase de capitanía; va a la vista de la "
+                    f"semana pasada")
             continue
         updates.append({"range": f"{ro.a1col(c['last_col'])}{c['row']}",
                         "values": [[src.get(c["day"], 0) or 0]]})
-    return updates, notes
+    return updates, leftover, notes
 
 
 def apply_backfill(ws, today: Optional[dt.date] = None,
-                   dry_run: bool = False, logfn=print) -> List[dict]:
-    """Fill every blank per-day 'Last week' cell on `ws` from the pre-rollover
-    snapshot. Reads the grid first and returns before touching the backup tab
-    when nothing is blank, so the normal day costs one read."""
+                   dry_run: bool = False, logfn=print, page=None,
+                   offline: bool = False) -> List[dict]:
+    """Fill every blank per-day 'Last week' cell on `ws`.
+
+    Two sources, in order: the pre-rollover snapshot (a move between
+    captainships), then last week's program crosstabs (a brand-new person, and
+    a literal 0 when no view carries them). Reads the grid first and returns
+    before touching either one when nothing is blank, so the normal day costs
+    one read and never opens a browser.
+
+    `page` reuses a live patchright session if the caller already has one;
+    `offline` skips stage 2 entirely."""
+    today = today or dt.date.today()
     grid = _retry(ws.get_all_values)
     formulas = _retry(lambda: ws.get_all_values(value_render_option="FORMULA"))
     cells = blank_cells(grid, formulas)
@@ -246,37 +451,91 @@ def apply_backfill(ws, today: Optional[dt.date] = None,
               "backfillear")
         return []
 
+    # ---- stage 1: the board's own snapshot of the week that just closed.
+    # A backup tab that is missing or does not reconcile is NOT fatal any more:
+    # it only means no move can be settled from it, and stage 2 is a wholly
+    # independent source for the same cells.
+    index: Dict[tuple, Dict[str, str]] = {}
     try:
         bws = ws.spreadsheet.worksheet(ro.BACKUP_TAB)
+        backup = _retry(bws.get_all_values)
     except Exception as e:                                    # noqa: BLE001
-        logfn(f"  [!] no hay pestaña {ro.BACKUP_TAB!r} ({e}) — no se puede "
-              f"backfillear el desglose de la semana pasada")
-        return []
-    backup = _retry(bws.get_all_values)
-    index, ambiguous = snapshot_index(backup)
-    for a in ambiguous:
-        logfn(f"    [!] {a}: aparece en dos cajas del snapshot con números "
-              f"distintos — se deja en blanco")
+        logfn(f"  [!] no hay pestaña {ro.BACKUP_TAB!r} ({e}) — sin snapshot "
+              f"para los pases entre capitanías")
+        backup = None
+    if backup:
+        index, ambiguous = snapshot_index(backup)
+        for a in ambiguous:
+            logfn(f"    [!] {a}: aparece en dos cajas del snapshot con números "
+                  f"distintos — se deja en blanco")
+        checked, disagree = calibrate(grid, index)
+        if disagree:
+            for d in disagree[:8]:
+                logfn(f"    [!] {d}")
+            logfn(f"  [!] {ro.BACKUP_TAB!r} NO coincide con las filas ya "
+                  f"congeladas ({len(disagree)} de {checked}) — snapshot viejo "
+                  f"o a medio escribir; no se usa")
+            index = {}
+        elif checked < MIN_CALIBRATION_ROWS:
+            logfn(f"  [!] sólo {checked} fila(s) congeladas para verificar el "
+                  f"snapshot (hacen falta {MIN_CALIBRATION_ROWS}) — no se usa")
+            index = {}
+        else:
+            logfn(f"  snapshot {ro.BACKUP_TAB!r} verificado contra {checked} "
+                  f"fila(s) ya congeladas")
 
-    checked, disagree = calibrate(grid, index)
-    if disagree:
-        for d in disagree[:8]:
-            logfn(f"    [!] {d}")
-        logfn(f"  [!] {ro.BACKUP_TAB!r} NO coincide con las filas ya "
-              f"congeladas ({len(disagree)} de {checked}) — snapshot viejo o a "
-              f"medio escribir; no se escribe nada")
-        return []
-    if checked < MIN_CALIBRATION_ROWS:
-        logfn(f"  [!] sólo {checked} fila(s) congeladas para verificar el "
-              f"snapshot (hacen falta {MIN_CALIBRATION_ROWS}) — no se escribe "
-              f"nada")
-        return []
-    logfn(f"  snapshot {ro.BACKUP_TAB!r} verificado contra {checked} fila(s) "
-          f"ya congeladas")
-
-    updates, notes = plan(cells, index)
+    updates, leftover, notes = plan(cells, index)
     for n in notes:
         logfn(f"    [!] {n}")
+
+    # ---- stage 2: last week's program crosstabs, for the people the snapshot
+    # never carried. Only reached when stage 1 left something over, which is
+    # only the morning after somebody was added to a captainship.
+    if leftover and offline:
+        logfn(f"  [!] {len(leftover)} celda(s) sin resolver y --offline — "
+              f"quedan en blanco")
+    elif leftover:
+        try:
+            names = ", ".join(dict.fromkeys(c["name"] for c in leftover))
+            logfn(f"  bajando las vistas de la semana pasada para: {names}")
+            aliases = load_aliases()
+            day_dates = {d.strftime("%A"): d
+                         for d in wk.reporting_week(today - dt.timedelta(days=7))}
+            if page is not None:
+                prog, failed = lastweek_programs(today, page=page, logfn=logfn)
+            else:
+                from automations.shared.tableau_patchright import tableau_session
+                with tableau_session(verbose=False) as _pg:
+                    prog, failed = lastweek_programs(today, page=_pg,
+                                                     logfn=logfn)
+            chk, bad = calibrate_programs(grid, prog, day_dates, aliases)
+            share = (len(bad) / chk) if chk else 1.0
+            if chk < MIN_PROGRAM_CALIBRATION_ROWS:
+                logfn(f"  [!] sólo {chk} fila(s) congeladas para verificar el "
+                      f"pull de la semana pasada (hacen falta "
+                      f"{MIN_PROGRAM_CALIBRATION_ROWS}) — no se escribe nada "
+                      f"de la etapa 2")
+            elif share > MAX_PROGRAM_DISAGREE_SHARE:
+                for d in bad[:8]:
+                    logfn(f"    [!] {d}")
+                logfn(f"  [!] el pull de la semana pasada NO coincide con las "
+                      f"filas ya congeladas ({len(bad)} de {chk}) — semana o "
+                      f"vista equivocada; no se escribe nada de la etapa 2")
+            else:
+                logfn(f"  pull de la semana pasada verificado contra {chk} "
+                      f"fila(s) congeladas ({len(bad)} difieren)")
+                u2, n2 = plan_from_programs(grid, leftover, prog, failed,
+                                            day_dates, aliases)
+                for n in n2:
+                    logfn(f"    [!] {n}")
+                updates += u2
+        except Exception as e:                                # noqa: BLE001 —
+            # a resolver that cannot reach Tableau must not take down the
+            # backfill it rides on, let alone the board fill above THAT.
+            logfn(f"  [!] etapa 2 (vistas de la semana pasada) salteada "
+                  f"({type(e).__name__}: {str(e)[:90]}) — esas celdas quedan "
+                  f"en blanco")
+
     for u in updates:
         logfn(f"    {u['range']} ← {u['values'][0][0]}")
     if updates and not dry_run:
@@ -293,13 +552,17 @@ def main(argv=None) -> int:
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--tab", default=SANDBOX_TAB)
     ap.add_argument("--today", default=None, help="YYYY-MM-DD")
+    ap.add_argument("--offline", action="store_true",
+                    help="sólo el snapshot pre-roleo: no abre Tableau, así que "
+                         "un alta nueva queda en blanco en vez de en 0")
     args = ap.parse_args(argv)
     today = (dt.date.fromisoformat(args.today) if args.today
              else dt.date.today())
     print(f"=== backfill 'Last week' por día — {args.tab!r} — "
           f"{'APPLY' if args.apply else 'DRY-RUN'} ===")
     ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(args.tab))
-    apply_backfill(ws, today=today, dry_run=not args.apply)
+    apply_backfill(ws, today=today, dry_run=not args.apply,
+                   offline=args.offline)
     return 0
 
 

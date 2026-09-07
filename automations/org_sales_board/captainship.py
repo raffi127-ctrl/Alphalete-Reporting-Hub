@@ -359,7 +359,8 @@ PROGRAMS = {
 }
 
 
-def _spec(label, view_url, parse, metric):
+def _spec(label, view_url, parse, metric,
+          out_prefix: str = "org_sales_board_cap_"):
     from automations.org_sales_board import section_pull as sp
     return sp.ScrapeSpec(
         section_label=label, metric=metric, view_url=view_url,
@@ -370,7 +371,7 @@ def _spec(label, view_url, parse, metric):
         strip_office=parse.get("strip_office", False),
         skip_owners=("Grand Total", "Sales Total"),
         week_pin=True,   # team/org views default to LAST week — pin to current
-        out_name=f"org_sales_board_cap_{label}.csv")
+        out_name=f"{out_prefix}{label}.csv")
 
 
 # A transient Tableau load/render flake ("0 thumbs") or a slow crosstab losing
@@ -380,6 +381,105 @@ def _spec(label, view_url, parse, metric):
 # way; a standalone re-run pulled clean). Tunable.
 _PROG_PULL_TRIES = 3
 _PROG_PULL_BACKOFF_S = 8
+
+
+def pull_programs(page, today, *, programs=None, resolve_csv=None,
+                  out_dir=None, out_prefix="org_sales_board_cap_",
+                  logfn=print):
+    """Pull each PROGRAM's all-teams crosstab ONCE -> ({tkey: parsed}, failed).
+
+    Lifted out of run_captainships (2026-09-07) because the daily fill is no
+    longer the only caller: `delta_lastweek_backfill` pulls the SAME three
+    views pinned to LAST week to settle somebody the pre-rollover snapshot
+    never carried. Keeping ONE definition is the point — which view, which
+    worksheet, which product filter, how many retries and what a failure means
+    must not drift between the two.
+
+    `today` picks the week (the specs are week_pin=True, so the URL is pinned
+    to `week.reporting_sunday(today)`); `out_dir` / `out_prefix` keep a
+    last-week pull from overwriting the current week's downloads.
+
+    RESILIENT, unchanged: a program view that will not render (Tableau flake ->
+    "0 thumbs", or a stale custom view) is retried, then skipped with its key
+    named in the returned list — an unretried "0 thumbs" killed a whole board
+    run on 2026-06-08, and Wed/Thu runs blanked every captainship's d1/d2 on
+    2026-07-02 when a slow crosstab lost the 4am race — it must never take down the caller. An empty
+    dict for a program therefore means BOTH "nobody sold" and "the pull died",
+    which is exactly why the failed list is returned alongside it: a caller
+    that turns absence into a zero has to check it first.
+    """
+    import time
+    from pathlib import Path as _Path
+    from automations.org_sales_board import section_pull as sp
+    out_dir = _Path(out_dir) if out_dir is not None else _Path("output")
+    _filter = set(programs) if programs else None
+
+    def _pull(label, view_url, parse, metric):
+        spec = _spec(label, view_url, parse, metric, out_prefix=out_prefix)
+        if resolve_csv:
+            csv = resolve_csv(label, spec)
+        else:
+            csv = sp.pull_section_byday(spec, out_dir, page,
+                                        logfn=lambda m: None, today=today)
+        return sp.parse_byday(spec, csv, today)
+
+    def _pull_fiber_dual(view_url):
+        """ONE fiber download -> TWO metrics. The All Units box keeps the
+        all-units total (every product except Voice); the New Internet box sums
+        ONLY the NEW INTERNET product rows of the SAME crosstab. No extra
+        Tableau pull — the include/exclude filter is applied at parse time.
+        Returns {owner: {'Total': {...}, 'NewInternet': {...}}}."""
+        fp = TYPES["fiber"]["parse"]
+        all_units = _spec("PROG_fiber", view_url, fp, "Total",
+                          out_prefix=out_prefix)
+        new_int = sp.ScrapeSpec(
+            section_label="PROG_fiber", metric="NewInternet", view_url=view_url,
+            owner_col=fp["owner_col"], value_col="", day_col="",
+            method=sp.CROSSTAB, crosstab_sheet=fp["crosstab_sheet"],
+            include_products=("NEW INTERNET",),
+            skip_owners=("Grand Total", "Sales Total"), week_pin=True,
+            out_name=all_units.out_name)            # SAME file -> one download
+        if resolve_csv:
+            csv = resolve_csv("PROG_fiber", all_units)
+        else:
+            csv = sp.pull_section_byday(all_units, out_dir, page,
+                                        logfn=lambda m: None, today=today)
+        merged: dict = {}
+        for spec in (all_units, new_int):
+            for owner, metrics in sp.parse_byday(spec, csv, today).items():
+                merged.setdefault(owner, {}).update(metrics)
+        return merged
+
+    prog: dict = {}
+    failed_programs: list = []
+    for tkey, view_url in PROGRAMS.items():
+        if _filter is not None and tkey not in _filter:
+            continue                  # granular retry: skip non-targeted programs
+        t = TYPES[tkey]
+        logfn(f"  program pull: {tkey}")
+        _last_exc = None
+        for _attempt in range(1, _PROG_PULL_TRIES + 1):
+            try:
+                prog[tkey] = (_pull_fiber_dual(view_url) if tkey == "fiber"
+                              else _pull(f"PROG_{tkey}", view_url,
+                                         t["parse"], t["metric"]))
+                _last_exc = None
+                break
+            except Exception as e:    # noqa: BLE001 — flake, not a board failure
+                _last_exc = e
+                _more = _attempt < _PROG_PULL_TRIES
+                logfn(f"  ⚠ program pull {tkey} attempt {_attempt}/"
+                      f"{_PROG_PULL_TRIES} failed ({type(e).__name__}: "
+                      f"{str(e)[:80]})" + (" — retrying…" if _more else ""))
+                if _more:
+                    time.sleep(_PROG_PULL_BACKOFF_S * _attempt)
+        if _last_exc is not None:
+            logfn(f"  ⚠ program pull {tkey} FAILED after {_PROG_PULL_TRIES} "
+                  f"tries ({type(_last_exc).__name__}) — skipping; {tkey} stays "
+                  f"blank for all captainships this run. Re-run to retry.")
+            prog[tkey] = {}
+            failed_programs.append(tkey)
+    return prog, failed_programs
 
 
 def run_captainships(ws, page, *, today=None, dry_run=False,
@@ -397,9 +497,6 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
     """
     _prog_filter = set(programs) if programs else None
     import datetime as dt
-    import time
-    from pathlib import Path
-    from automations.org_sales_board import section_pull as sp
     today = today or dt.date.today()
     aliases = load_aliases()
     grid = ws.get_all_values()
@@ -436,75 +533,12 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
             logfn(f"  ⚠ captainship new-rep gate skipped "
                   f"({type(e).__name__}: {str(e)[:60]})")
 
-    def _pull(label, view_url, parse, metric):
-        spec = _spec(label, view_url, parse, metric)
-        if resolve_csv:
-            csv = resolve_csv(label, spec)
-        else:
-            csv = sp.pull_section_byday(spec, Path("output"), page, logfn=lambda m: None, today=today)
-        return sp.parse_byday(spec, csv, today)
-
-    def _pull_fiber_dual(view_url):
-        """ONE fiber download → TWO metrics. The 🛜 All Units box keeps the
-        current all-units total (sum all products except Voice); the 📶 New
-        Internet box sums ONLY the NEW INTERNET product rows of the SAME
-        crosstab. No extra Tableau pull — the include/exclude filter is applied
-        at parse time. Returns {owner: {'Total': {...}, 'NewInternet': {...}}}."""
-        fp = TYPES["fiber"]["parse"]
-        all_units = _spec("PROG_fiber", view_url, fp, "Total")  # == current spec
-        new_int = sp.ScrapeSpec(
-            section_label="PROG_fiber", metric="NewInternet", view_url=view_url,
-            owner_col=fp["owner_col"], value_col="", day_col="",
-            method=sp.CROSSTAB, crosstab_sheet=fp["crosstab_sheet"],
-            include_products=("NEW INTERNET",),
-            skip_owners=("Grand Total", "Sales Total"), week_pin=True,
-            out_name=all_units.out_name)            # SAME file → one download
-        if resolve_csv:
-            csv = resolve_csv("PROG_fiber", all_units)
-        else:
-            csv = sp.pull_section_byday(all_units, Path("output"), page,
-                                        logfn=lambda m: None, today=today)
-        merged: dict = {}
-        for spec in (all_units, new_int):
-            for owner, metrics in sp.parse_byday(spec, csv, today).items():
-                merged.setdefault(owner, {}).update(metrics)
-        return merged
-
     # Pull each PROGRAM's all-teams view ONCE (fiber, b2b, nds) — every ICD in
-    # that program, no team filter. RESILIENT: a single program view that
-    # fails to render (Tableau load/render flake → "0 thumbs", or a stale
-    # custom view) must NOT crash the whole board run. Skip + flag it; its
-    # captainship numbers stay blank this run and the rest still fills.
-    # (Megan 2026-06-08: a PROG pull "0 thumbs" killed the entire run.)
-    prog = {}
-    failed_programs = []
-    for tkey, view_url in PROGRAMS.items():
-        if _prog_filter is not None and tkey not in _prog_filter:
-            continue                      # granular retry: skip non-targeted programs
-        t = TYPES[tkey]
-        logfn(f"  program pull: {tkey}")
-        _last_exc = None
-        for _attempt in range(1, _PROG_PULL_TRIES + 1):
-            try:
-                prog[tkey] = (_pull_fiber_dual(view_url) if tkey == "fiber"
-                              else _pull(f"PROG_{tkey}", view_url,
-                                         t["parse"], t["metric"]))
-                _last_exc = None
-                break
-            except Exception as e:
-                _last_exc = e
-                _more = _attempt < _PROG_PULL_TRIES
-                logfn(f"  ⚠ program pull {tkey} attempt {_attempt}/"
-                      f"{_PROG_PULL_TRIES} failed ({type(e).__name__}: "
-                      f"{str(e)[:80]})" + (" — retrying…" if _more else ""))
-                if _more:
-                    time.sleep(_PROG_PULL_BACKOFF_S * _attempt)
-        if _last_exc is not None:
-            logfn(f"  ⚠ program pull {tkey} FAILED after {_PROG_PULL_TRIES} "
-                  f"tries ({type(_last_exc).__name__}) — skipping; {tkey} stays "
-                  f"blank for all captainships this run. Re-run to retry.")
-            prog[tkey] = {}
-            failed_programs.append(tkey)
+    # that program, no team filter. The pull itself lives in `pull_programs`
+    # (module level) so the last-week resolver in delta_lastweek_backfill uses
+    # the very same views, filters and retry policy.
+    prog, failed_programs = pull_programs(
+        page, today, programs=programs, resolve_csv=resolve_csv, logfn=logfn)
 
     summary = {"filled": [], "missing": {}, "failed_programs": failed_programs,
                "auto_added": auto_added}
