@@ -2768,7 +2768,8 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "_timeout_note": "35, no 20 (2026-09-07). El post son ~18 PNG y slack_post._post_thread los sube UNO POR UNO con sleep(3) A CADA CANAL - #alphalete-sales y el mirror #alphalete-lvl1-chat -, o sea ~36 subidas. Con Slack a 30-60s por archivo eso solo son 20-35 min, mas ~6 min de capture_all, asi que 20 no alcanzaba ni en un dia bueno: el 9/6 entro por poco (arranco 04:00:04) y el 9/7 murio a los 20m con el hilo YA CREADO y 7 de 18 imagenes subidas - un post a medias en un canal de ventas, que despues hay que completar a mano con `--only <ids>`. Ojo con bajarlo: el tiempo no lo manda la fuente sino la cantidad de imagenes x canales, asi que sumar una seccion o un mirror sube el piso.",
+      "timeout_minutes": 35,
       "verify": {
         "type": "manifest",
         "report_id": "alphalete-production"
