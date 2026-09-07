@@ -153,7 +153,25 @@ def _run_funnel(args, funnel, monday, when) -> int:
         if note:
             print(note)
         failed = [o for o in outcomes if o.error]
-        return 2 if (failed or out["errors"]) else 0
+        # A 1:1 fallback is a FAILURE, not a footnote (Megan 2026-09-05).
+        # The texts still went out — nobody is un-chased — but Raf asked to be
+        # in every one of these threads, and if the Shortcut is renamed or its
+        # folder bookmark breaks, EVERY leader silently drops to 1:1 and he
+        # falls out of all of them. That used to exit 0 and go green, so the
+        # only thing catching it was a weekly agent check. Now it exits 2 and
+        # reaches #claudecorrections-and-requests like any other failure.
+        if args.live:
+            texts.note_fallbacks(rec.monday, outcomes)
+        solo = texts.had_fallback(rec.monday) if args.live else [
+            o.label for o in texts.solo_fallbacks(outcomes)]
+        if solo:
+            print("INCOMPLETE — Raf is NOT in the thread for {} leader(s) this "
+                  "week: {}".format(len(solo), ", ".join(sorted(solo))))
+            print("  They WERE texted — this is about Raf being left out, not "
+                  "a missed leader. Check the '{}' Shortcut on Lucy 1 (both "
+                  "'Get File from Folder' actions lose their bookmark if the "
+                  "home directory changes).".format(pair_chat.SHORTCUT_NAME))
+        return 2 if (failed or out["errors"] or solo) else 0
 
     if args.mode == "thread-replies":
         # Answering people who @-tag Lucy in the thread (Raf 2026-08-30).

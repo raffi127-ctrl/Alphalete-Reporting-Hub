@@ -201,6 +201,54 @@ def _marker(monday, slack_id: str) -> Path:
     return MARKER_DIR / monday.isoformat() / ("%s.sent" % slack_id)
 
 
+def solo_fallbacks(outcomes: List["Outcome"]) -> List["Outcome"]:
+    """Leaders texted 1:1 — i.e. WITHOUT Raf in the thread.
+
+    One definition, used by both the report line and the exit code, so the
+    thing we print and the thing we fail on can never drift apart.
+    """
+    return [o for o in outcomes
+            if o.route == "1:1" and o.skipped != "already texted this week"]
+
+
+def _fallback_marker(monday) -> Path:
+    return MARKER_DIR / monday.isoformat() / "raf-group-fallback"
+
+
+def note_fallbacks(monday, outcomes: List["Outcome"]) -> None:
+    """Remember that Raf was left out of a thread THIS WEEK.
+
+    Sticky on purpose. The sweep exits non-zero on a fallback so it reaches
+    #claudecorrections-and-requests — but a retry finds every leader already
+    marked .sent, so `solo_fallbacks` comes back EMPTY and the retry would exit
+    0. The incident thread ticks itself ✅ when a report next runs clean, so
+    without this the alert would auto-resolve while Raf was still missing from
+    24 threads. The marker keeps the week red until the week rolls over.
+    """
+    solo = solo_fallbacks(outcomes)
+    if not solo:
+        return
+    path = _fallback_marker(monday)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    names = sorted(o.label for o in solo)
+    prior = []
+    if path.exists():
+        prior = [n for n in path.read_text(encoding="utf-8").splitlines() if n]
+    merged = sorted(set(prior) | set(names))
+    path.write_text("\n".join(merged) + "\n", encoding="utf-8")
+
+
+def had_fallback(monday) -> List[str]:
+    """Who went 1:1 at any point this week. [] if nobody did."""
+    path = _fallback_marker(monday)
+    if not path.exists():
+        return []
+    try:
+        return [n for n in path.read_text(encoding="utf-8").splitlines() if n]
+    except OSError:
+        return []
+
+
 def run(rec, send: bool = False) -> List[Outcome]:
     """Text every pending leader. `send=False` composes without sending."""
     pending = rec.pending
@@ -428,7 +476,7 @@ def render(outcomes: List[Outcome], send: bool,
 
     # Raf asked to be in every one of these threads — a leader who fell back to
     # a 1:1 is a gap he can't see, so it gets named, not buried in the log.
-    solo = [o for o in outcomes if o.route == "1:1" and o.skipped != "already texted this week"]
+    solo = solo_fallbacks(outcomes)
     if solo:
         lines.append("NOT IN A GROUP WITH RAF — {} leader(s) went 1:1: {}".format(
             len(solo), ", ".join(o.label for o in solo)))
