@@ -358,21 +358,25 @@ def render(act, sales, weeks, today):
     ncol = len(weeks) + 2
     push(["CAPTAINSHIP ACTIVATIONS — BY WEEK ENDING"] + [""] * (ncol - 1), "title")
     push(["Mon–Sun weeks. Activated = posted & not canceled/disconnected, in its "
-          "POSTED week (morning activation-report rule). Total Sales = tracker "
-          "apps (New Internet + Wireless + AIR/AWB units) by ORDER week. "
-          "Captainship split 8/17. — = not on this captainship that week. "
+          "POSTED week (morning activation-report rule). TOTAL SALES row = the "
+          "captainship's tracker apps (New Internet + Wireless + AIR/AWB units) "
+          "by ORDER week — no per-person breakdown (Carlos 9/7). Captainship "
+          "split 8/17. — = not on this captainship that week. "
           "Updated %s." % today.strftime("%m/%d/%Y")] + [""] * (ncol - 1), "note")
     push([""] * ncol)
 
     for stitle, team in SECTIONS:
-        for metric, data in (("ACTIVATIONS", act), ("TOTAL SALES", sales)):
-            g = _grid("%s — %s" % (stitle, metric), team, data[stitle], weeks)
-            push(g[0], "section")
-            push(g[1], "header")
-            for r in g[2:-1]:
-                push(r)
-            push(g[-1], "total")
-            push([""] * ncol)
+        g = _grid("%s — ACTIVATIONS" % stitle, team, act[stitle], weeks)
+        push(g[0], "section")
+        push(g[1], "header")
+        for r in g[2:-1]:
+            push(r)
+        push(g[-1], "total")
+        # One section-wide sales row right under the activations TOTAL —
+        # Carlos 9/7: "I don't need a breakdown of everyone's sales."
+        sg = _grid("x", team, sales[stitle], weeks)
+        push(["TOTAL SALES"] + sg[-1][1:], "total")
+        push([""] * ncol)
     return values, meta
 
 
@@ -510,7 +514,8 @@ def main(argv=None) -> int:
         paths = pull_chunks(today, start, log=log)
 
     act, sales = tally(paths, weeks, log=log)
-    values, meta = render(act, sales, weeks, today)
+    # Columns newest-first (Carlos 9/7: "the most recent week at the beginning")
+    values, meta = render(act, sales, weeks[::-1], today)
 
     for row in values:
         log("  | " + " | ".join("%7s" % c for c in row[:len(weeks) + 2]))
