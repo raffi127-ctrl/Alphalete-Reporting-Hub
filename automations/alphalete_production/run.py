@@ -5,6 +5,7 @@ screenshot posts into ONE automated thread in #alphalete-sales (as Lucy).
     python -m automations.alphalete_production.run --preview-dm U04G5HJBGFN
     python -m automations.alphalete_production.run --only daily_production --dry-run
     python -m automations.alphalete_production.run                      # LIVE post to #alphalete-sales
+    python -m automations.alphalete_production.run --channel-only C09JG28CD27   # repair ONE channel
 
 Renders each section off a hidden, auto-deleted copy of the current-week Sales Board
 tab (live sheet never touched), then posts the dated 🐺 parent + threaded image replies.
@@ -14,6 +15,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 from pathlib import Path
 
 from automations.alphalete_production import capture, slack_post
@@ -78,7 +80,34 @@ def main():
     ap.add_argument("--only", nargs="+", metavar="ID",
                     help="only these section ids (default: all)")
     ap.add_argument("--out", default=str(OUT_DIR), help="PNG output dir")
+    # REPAIR ONE CHANNEL WITHOUT TOUCHING THE OTHER (Eve 2026-09-07).
+    #
+    # post_all fans every run out to #alphalete-sales AND the mirror
+    # #alphalete-lvl1-chat, so a run that dies partway leaves the two channels
+    # at DIFFERENT depths — and then there is no way to finish the short one:
+    # any `--only` rerun re-posts those same sections into the channel that was
+    # already complete. On 9/7 that was the whole problem. #alphalete-sales
+    # ended 17/18 and the mirror 3/18, and the only offered repairs were "leave
+    # the mirror broken" or "duplicate seven images in the sales channel".
+    #
+    # So: name the channel. `--channel-only <id>` posts to exactly that channel
+    # and turns the mirror fan-out off, which makes each channel repairable on
+    # its own. It is a REPAIR flag — the scheduled run passes nothing and still
+    # posts to both.
+    ap.add_argument("--channel-only", metavar="CHANNEL_ID",
+                    help="post ONLY to this channel id (no mirror fan-out) — "
+                         "for repairing one channel that a timed-out run left "
+                         "short, without re-posting into the other")
     args = ap.parse_args()
+
+    if args.channel_only:
+        # slack_post.CHANNEL is read at IMPORT time, so setting the env var here
+        # would be too late — assign the module global. mirror_channels() reads
+        # its env var per call, so that one does take effect.
+        slack_post.CHANNEL = args.channel_only
+        os.environ["ALPHALETE_MIRROR_OFF"] = "1"
+        print(f"[alphalete_production] --channel-only {args.channel_only} — "
+              f"mirror fan-out OFF for this run", flush=True)
 
     today = dt.date.today()
     out_dir = Path(args.out)
