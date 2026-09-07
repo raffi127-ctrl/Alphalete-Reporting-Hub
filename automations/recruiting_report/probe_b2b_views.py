@@ -137,6 +137,69 @@ def _squash(s):
     return "".join(ch for ch in str(s or "").casefold() if ch.isalnum())
 
 
+# The DD base view, no GUID — the one the API confirms is still published.
+# Opened last so the custom-view list is read from the sheet DOWNLINEVIEW was
+# saved on (custom views are per-USER and per-SHEET).
+DD_BASE_VIEW = (BASE + "/#/site/sci/views/"
+                "DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY")
+
+
+def _list_custom_views(page, view_url: str) -> None:
+    """Open a view and print the entries in its 'Manage Custom Views' dialog.
+
+    This is the ONLY way to see them: the vizportal `getCustomViews` endpoint
+    answers HTTP 404 on this site, so the API inventory above is blind to
+    custom views. Selectors verified in automations/uploaded/order_log.py.
+
+    The viz toolbar lives in a lazily-loaded iframe inside closed shadow DOM,
+    so `page.evaluate` / `querySelectorAll` cannot see it — only Playwright
+    locators pierce it. Match entries by normalized innerText, never by the
+    `title` attribute (titles carry stray whitespace).
+
+    Custom views are per-USER: this reads them for whichever account the
+    ownerville SSO logged in as (rhidalgo = Rafael Hidalgo), which is exactly
+    the account whose list matters, because that is the account the reports
+    run under.
+    """
+    print("\n" + "=" * 64, flush=True)
+    print(f"custom views on {view_url}", flush=True)
+    page.goto(view_url, wait_until="domcontentloaded")
+    viz = page.frame_locator('iframe[title="Data Visualization"]')
+    btn = viz.locator(
+        '[data-tb-test-id="viz-viewer-toolbar-button-manage-customviews"]')
+    try:
+        btn.first.wait_for(state="visible", timeout=60_000)
+    except Exception as e:                                   # noqa: BLE001
+        print(f"CVERR: the Custom Views toolbar button never appeared "
+              f"({type(e).__name__}) — the viz did not finish loading.",
+              flush=True)
+        return
+    try:
+        label = btn.first.inner_text(timeout=5_000).strip()
+        # The button doubles as the "View:" label — it names whatever view is
+        # currently applied, so it says whether the URL landed on a custom
+        # view or fell back to Original.
+        print(f"CVLABEL: toolbar reads {label!r}", flush=True)
+    except Exception:                                        # noqa: BLE001
+        pass
+    try:
+        btn.first.click(timeout=10_000)
+        page.wait_for_timeout(2500)
+        names = viz.locator('[data-tb-test-id="view-name"]')
+        n = names.count()
+        print(f"{n} custom view entr(ies) in the dialog", flush=True)
+        for i in range(n):
+            try:
+                print(f"CV: {names.nth(i).inner_text(timeout=3_000).strip()}",
+                      flush=True)
+            except Exception:                                # noqa: BLE001
+                print("CV: (unreadable entry)", flush=True)
+        page.keyboard.press("Escape")
+    except Exception as e:                                   # noqa: BLE001
+        print(f"CVERR: couldn't open the Custom Views dialog: "
+              f"{type(e).__name__}: {str(e)[:140]}", flush=True)
+
+
 def main() -> int:
     from automations.shared.tableau_patchright import tableau_session
 
@@ -212,6 +275,8 @@ def main() -> int:
                 "workbook": wb.get("name"), "views": rows,
                 "custom_views": [{"name": c.get("name"), "id": c.get("id")}
                                  for c in cvs]}
+
+        _list_custom_views(page, DD_BASE_VIEW)
 
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     OUT_JSON.write_text(json.dumps(inventory, indent=2), encoding="utf-8")
