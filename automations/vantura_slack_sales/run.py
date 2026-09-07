@@ -795,11 +795,6 @@ def main(argv=None) -> int:
             _log(f"  wrote {len(plan)} cell(s)")
     if a.yes:
         ensure_board_shape(ws.spreadsheet, g)
-        from automations.vantura_slack_sales.roster_sync import ensure_campaign_rosters
-        try:
-            ensure_campaign_rosters(ws.spreadsheet, log=_log)
-        except Exception as e:                       # sync must never sink a fill
-            _log(f"roster sync failed (non-fatal): {e}")
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
 

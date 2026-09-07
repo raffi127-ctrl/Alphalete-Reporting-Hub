@@ -9902,7 +9902,7 @@
     },
     "vantura_roster_sync": {
       "on_scheduler": false,
-      "_off_scheduler_note": "Campaign roster sync (Carlos 2026-09-06: 'if someone gets assigned Verizon, they get moved into the Verizon sales board'). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.vantura-roster-sync, installed via `lucy rerun install_vantura_roster_sync_agent`) on LUCY 2, EVERY 30 MIN (StartInterval 1800; off-hours passes are 3-read no-ops). Moves reps between the Vantura 'Sales Board' and the 'D2D Sales Board' when their Campaign (col L) says so, both directions, carrying name/last-wk/day-cells/trainer/field-status/team/leadership and restoring the C =SUM(E:K) formula + the D2D 'Verizon' L-prefill on the cleared row; live-week Roll Call people with campaign Verizon on neither board are ADDED to the D2D board (trainer + 1st Wk + In Training). Skips Terminated rows, never duplicates, and a FULL target board holds the move + posts ONE incident to the corrections channel (vantura-roster-board-full), resolved when the move lands. The same sync also runs inside every live vantura_slack_sales / vantura_orderlog_sales pass, so the agent is belt-and-suspenders latency cover for midday edits. There is no dry mode — a pass with nothing to move writes nothing. Live-tested 2026-09-06 (roll-add + full-board guard + no-dup, dummy rep).",
+      "_off_scheduler_note": "MANUAL-ONLY reconcile (RETIRED as an automatic job 2026-09-07). The bound Apps Script (Verizon.gs + vzOnEdit installable trigger, range-based so it also catches multi-cell PASTE) now moves reps between the Vantura 'Sales Board' and 'D2D Sales Board' natively the instant a campaign is set to/from Verizon -- so the Lucy sweep is no longer needed (Carlos: 'Lucy should not be needed'). The standalone 30-min agent is disabled via disable_vantura_roster_sync_agent and the in-fill-pass hooks were removed. This handle is KEPT only as a manual full-scan reconcile: `lucy rerun vantura_roster_sync --machine \"Lucy 2\"` if the boards ever drift. No dry mode.",
       "display_name": "Vantura campaign roster sync (30 min)",
       "source_type": "local",
       "data_sources": [],
@@ -9952,6 +9952,29 @@
       "data_sources": [],
       "command": [
         "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "vantura-roster-sync"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
+    },
+    "disable_vantura_roster_sync_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun disable_vantura_roster_sync_agent --machine \"Lucy 2\"` can RETIRE the standalone com.alphalete.vantura-roster-sync LaunchAgent on Lucy 2. RETIRED 2026-09-07: the bound Apps Script now moves reps between the Sales Board and D2D board natively on any campaign edit INCLUDING multi-cell paste (Verizon.gs + the vzOnEdit installable trigger, range-based), so the Lucy sweep is no longer needed (Carlos: 'Lucy should not be needed'). Race-free bootout + stashes the plist; reversible by re-running install_vantura_roster_sync_agent. Read-only w.r.t. Sheet data.",
+      "display_name": "Disable Vantura roster-sync standalone agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
       ],
       "base_args": [
         "vantura-roster-sync"
