@@ -7057,6 +7057,18 @@
       },
       "machine": "Lucy 2"
     },
+    "b2b_captainship_activations": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "display_name": "B2B Captainship Activations tab (weekly grid)",
+      "source_type": "tableau",
+      "command": ["automations.b2b_captainship_activations.run"],
+      "base_args": ["--sheet"],
+      "timeout_minutes": 60,
+      "_note": "Carlos 2026-09-07: 'Captainship Activations' tab on the Vantura Master Sales Board — per-owner ACTIVATIONS (posted & not canceled/disconnected, by POSTED week, the morning activation-report rule but Mon-Sun weeks) + TOTAL SALES (tracker apps by ORDER week), last 8 completed weeks, Carlos's captainship vs Atef's. Membership is DATED in the module (realignment 2026-08-17: Atef/Sabrina/Eckhart/Kabbes/Driggs count for Carlos thru WE 8/16; Jackie/Jeff/Vincent/Murphy from WE 8/23; Dhyey only under Atef; McKendree excluded; Nic Lujan all history) — edit CARLOS_TEAM/ATEF_TEAM in run.py when someone moves. Pulls ~13 weeks of ATTTRACKER-B2B ORDERLOG via the direct .csv in 31-day chunks over the shared CDP Chrome (each ~120MB; chunks cached per as-of date under output/b2b_captainship_activations). base_args --sheet so a plain rerun WRITES; add --dry-run for a preview (it overrides --sheet). Writes ONLY its own tab. First run 2026-09-07 was from the MINI (Carlos's own session — national export verified); reruns work from either machine with a Carlos Tableau session.",
+      "cadence": {"weekdays": []},
+      "priority": "P3"
+    },
     "install_att_order_log_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_att_order_log_agent` can install/refresh the STANDALONE com.alphalete.att-order-log LaunchAgent on LUCY 2 (5:00am CST daily incl. weekends, deploy/att_order_log.sh, --sheet). 5:00 and not 5:30 (Megan's first ask) because 5:30/5:38/5:46/5:54 is b2b_quality's retry ladder with a hard 6:00 deadline, and this pull is ~7min on a ~120MB export plus a Chrome-profile copy. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run after the plist changes.",
