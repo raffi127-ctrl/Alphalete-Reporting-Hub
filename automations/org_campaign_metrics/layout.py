@@ -40,9 +40,11 @@ ZONE_START = 30
 # everyone else. Adding a manager (e.g. Drew/Isaiah -> nds) is a config change.
 MANAGER_CAMPAIGN = {
     "Carlos Hidalgo":    "b2b_att",
-    # Every captainship owner with an MT tab, mirrored from the Captainship
-    # Dashboard so their sales metrics sit under their recruiting numbers on
-    # the org Focus Report (Carlos 2026-08-31). Noah Dubale has no sales board.
+    # Every captainship owner with a sales board, so their sales metrics sit
+    # under their recruiting numbers on the org Focus Report (Carlos
+    # 2026-08-31; computed from the order log + tracker since 2026-09-07, when
+    # the Captainship Dashboard the blocks used to copy from was trashed).
+    # Noah Dubale has no sales board.
     "Atef Choudhury":    "b2b_att",
     "Jamis Garay":       "b2b_att",
     "Jackie LeRoy":      "b2b_att",
@@ -63,11 +65,11 @@ MANAGER_CAMPAIGN = {
     "Akib Chowdhury":    "limbo",
 }
 
-# Campaigns whose manual rows (mm/mg) the stamper is allowed to overwrite —
-# b2b_att's manual TEAM numbers live on the Captainship Dashboard MT tabs
-# (Carlos types them there), so for b2b the stamper copy WINS. Everyone else's
-# manual rows are typed on this dashboard and must never be stomped.
-STAMPER_OWNS_MANUAL = {"b2b_att"}
+# Campaigns whose manual rows (mm/mg) the stamper is allowed to overwrite.
+# Empty since 2026-09-07: b2b_att's manual TEAM numbers used to copy from the
+# Captainship Dashboard MT tabs, but that workbook is retired — every
+# campaign's manual rows are now typed on this dashboard and never stomped.
+STAMPER_OWNS_MANUAL = set()
 
 LAYOUTS = {
     "b2b_att": [

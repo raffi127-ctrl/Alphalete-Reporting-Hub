@@ -15,8 +15,7 @@ Column map (fixed; build.py's formulas and goal_sync.gs read these ranges):
 All writes are RAW — "79%" must stay a string, never become 0.79.
 Values/goals are UPSERTS keyed on the key column: manual rows typed on the
 dashboard (synced in by Apps Script) survive stamper runs because the stamper
-simply never emits their keys (except b2b_att, whose manual numbers are copied
-from the Captainship Dashboard MT tab and are meant to win).
+simply never emits their keys.
 """
 from __future__ import annotations
 

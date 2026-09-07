@@ -1,11 +1,27 @@
-"""B2B block for Atef — a straight copy of 'MT · Atef' on the Captainship
-Dashboard. That tab is already filled daily by automations/captainship_boards
-(order log + tracker + email stamps), and Carlos types the manual TEAM numbers
-THERE — so for b2b the copy wins, manual rows included (layout.
-STAMPER_OWNS_MANUAL). No Tableau involved: one FORMATTED_VALUE read.
+"""B2B blocks for the org Focus Report — COMPUTED for every captainship owner.
 
-Matching is by LABEL (col A), never by row number: the MT block has been
-re-rowed three times in one day before (see captainship-sales-boards README).
+Until 2026-09-07 this module copied each owner's 'MT · <First>' tab off the
+Captainship Dashboard (filled every morning by automations/captainship_boards).
+Carlos trashed that workbook on 9/7 — the org Focus Report is where the
+captainship's sales metrics live now — so the copy became a computation: ONE
+current-week ORDERLOG export, parsed once and tallied for every owner at the
+same time, under the exact captainship_boards counting rules (Unit Count
+summed by `sp.Order Date (copy)`, ALL product types; rank = cumulative
+position among every owner in the export). The ACTIVATIONRATES / ALLTEAMCHURN
+crosstabs are read once for everyone's activation + churn rows. Carlos is one
+more owner on the same pass — his block was always computed like this.
+
+Deliberately NOT emitted, so values typed on the org sheet win forever:
+manual TEAM rows (Head Count / Leaders / People in Training) and every goal —
+type them on the Focus Report and the Goal Sync script stores them, same as
+BOX/NDS. The two NATIONAL rows are not computed either (the MT rows they
+copied from had no daily refresh of their own); they hold their last stamped
+value until they get a tracker source — an open follow-up.
+
+Owner spellings: the ORDERLOG "Owner & Office" first line, uppercase —
+captainship_boards.config.OWNERS is the proven per-owner source. Crosstab
+owner cells may carry a "[company]" suffix ("SABRINA ALICEA [alisei, inc.]");
+matching strips it.
 """
 from __future__ import annotations
 
@@ -13,177 +29,6 @@ import datetime as _dt
 import re
 
 from automations.org_campaign_metrics import layout as L
-
-CAPTAINSHIP_DASHBOARD = "14_T4fySyQhRPsyWZLGEs6Sarc0jyJ4oD-gV8E97WZU8"
-MT_TAB = "MT · Atef"
-MANAGER = "Atef Choudhury"          # org Focus Report picker spelling
-
-# Every captainship owner with an 'MT · <First>' tab on the Captainship
-# Dashboard gets the same block on the ORG Focus Report, under their own
-# recruiting numbers (Carlos 2026-08-31). Previously only Atef was copied.
-# The MT tabs are the source of truth — captainship_boards fills them each
-# morning — so this is a straight per-manager mirror, same as Atef's always was.
-# Noah Dubale is captainship but has no sales board / MT tab, so no block.
-MT_MANAGERS = [
-    ("Atef Choudhury",   "MT · Atef"),
-    ("Jamis Garay",      "MT · Jamis"),
-    ("Jackie LeRoy",     "MT · Jackie"),
-    ("Justin Wood",      "MT · Justin"),
-    ("Joshua Murphy",    "MT · Joshua"),
-    ("Dhyey Patel",      "MT · Dhyey"),
-    ("Jeff Starr",       "MT · Jeff"),
-    ("Kinsey Guenther",  "MT · Kinsey"),
-    ("George Hipolito",  "MT · George"),
-    ("Joey Ramirez",     "MT · Joey"),
-    ("Vincent Smith",    "MT · Vincent"),
-    ("Sabrina Alicea",   "MT · Sabrina"),
-]
-
-# MT col-A label (normalized) -> our layout label. The ✎ glyph and spacing
-# vary; normalization strips both.
-_MT_TO_OURS = {
-    "head count": "Head Count  ✎",
-    "leaders": "Leaders  ✎",
-    "people in training": "People in Training  ✎",
-    "active headcount on tableau": "Active Headcount on Tableau",
-    "total apps": "Total Apps",
-    "sales per rep": "Sales per Rep",
-    "rank on the tracker": "Rank on the Tracker",
-    "new internet": "New Internet Sales",
-    "new internet sales": "New Internet Sales",
-    "cru internet": "CRU Internet Sales",
-    "cru internet sales": "CRU Internet Sales",
-    "wireless (excl. byod)": "Wireless Sales (excl. BYOD)",
-    "wireless sales (excl. byod)": "Wireless Sales (excl. BYOD)",
-    "byod": "BYOD Sales",
-    "byod sales": "BYOD Sales",
-    "cru byod": "CRU BYOD Sales",
-    "cru byod sales": "CRU BYOD Sales",
-    "iru byod": "IRU BYOD Sales",
-    "iru byod sales": "IRU BYOD Sales",
-    "air/awb": "AIR/AWB Sales",
-    "air/awb sales": "AIR/AWB Sales",
-    "voip line count": "VoIP Line Count",
-    "cru %": "CRU %",
-    "abp %": "ABP %",
-    "byod %": "BYOD %",
-    "activation rate (31-60 day)": "Activation Rate (31–60 Day)",
-    "activation 31-60": "Activation Rate (31–60 Day)",
-    "0-30 day churn rate": "0–30 Day Churn Rate",
-    "0-30 churn": "0–30 Day Churn Rate",
-    "national avg headcount": "National AVG Headcount",
-    "national sales per rep": "National Sales per Rep",
-}
-# labels whose goal cell (col B) we also carry across
-_GOAL_LABELS = ["Head Count  ✎", "Total Apps", "Sales per Rep"]
-
-_WEEKS_TO_COPY = 99          # every WK block the MT tab has — full history
-
-
-def _norm(label):
-    s = str(label or "")
-    s = s.replace("✎", "").replace("✎", "")          # pencil glyph
-    s = s.replace("–", "-").replace("—", "-")   # en/em dash -> hyphen
-    s = re.sub(r"\s+", " ", s).strip().lower()
-    return s
-
-
-def collect(S, today=None, log=print):
-    """-> (values, goals) for every captainship owner with an MT tab.
-
-    One Sheets read per MT tab. A tab that fails or drifts is logged and
-    SKIPPED — one owner's layout change must not cost everyone else's block.
-    """
-    values, goals = [], []
-    for mgr, tab in MT_MANAGERS:
-        try:
-            v, g = _collect_one(S, mgr, tab, log=log)
-        except Exception as e:                      # noqa: BLE001
-            log("  [b2b] %-18s SKIPPED (%s: %s)" % (mgr, type(e).__name__, str(e)[:80]))
-            continue
-        values.extend(v)
-        goals.extend(g)
-    log("  [b2b] %d manager(s) copied, %d values, %d goals"
-        % (len(MT_MANAGERS), len(values), len(goals)))
-    return values, goals
-
-
-def _collect_one(S, MANAGER, MT_TAB, today=None, log=print):
-    """-> (values, goals) for ONE manager, copied from their MT tab.
-
-    Reads with FORMATTED values — the display strings ("98%", "6.4") ARE our
-    store format, so nothing is reparsed.
-    """
-    api = ("https://sheets.googleapis.com/v4/spreadsheets/"
-           + CAPTAINSHIP_DASHBOARD)
-    r = S.get(api + "/values/'%s'!A1:KZ70" % MT_TAB,
-              params={"valueRenderOption": "FORMATTED_VALUE",
-                      "dateTimeRenderOption": "FORMATTED_STRING"})
-    if r.status_code != 200:
-        raise RuntimeError("MT tab read failed: %s %s"
-                           % (r.status_code, r.text[:300]))
-    grid = r.json().get("values", [])
-    if len(grid) < 4:
-        raise RuntimeError("MT tab came back empty")
-
-    def cell(rw, cl):
-        row = grid[rw] if rw < len(grid) else []
-        return row[cl] if cl < len(row) else ""
-
-    # week blocks: row 3 (index 2) holds "WK m/d"; row 2 (index 1) the date —
-    # formatted "m/d" with no year, so read that one row again as raw serials.
-    # Block layout is [WK][Mon..Sun] starting at C, so WK columns are C, K, S…
-    week_cols = []
-    hdr = grid[2] if len(grid) > 2 else []
-    for c, h in enumerate(hdr):
-        if str(h).startswith("WK "):
-            week_cols.append(c)
-        if len(week_cols) >= _WEEKS_TO_COPY:
-            break
-    r2 = S.get(api + "/values/'%s'!2:2" % MT_TAB,
-               params={"valueRenderOption": "UNFORMATTED_VALUE"})
-    serials = (r2.json().get("values", [[]]) or [[]])[0] if r2.status_code == 200 else []
-    weeks = []
-    for c in week_cols:
-        sv = serials[c] if c < len(serials) else None
-        if not isinstance(sv, (int, float)):
-            log("  [skip-week] col %d has no date serial (%r)" % (c, sv))
-            continue
-        d = _dt.date(1899, 12, 30) + _dt.timedelta(days=int(sv))
-        weeks.append((c, d.isoformat()))
-    if not weeks:
-        raise RuntimeError("no week columns recognized on %s" % MT_TAB)
-
-    slots = L.slots_by_label("b2b_att")
-    values, goals, matched = [], [], set()
-    for rw in range(len(grid)):
-        ours = _MT_TO_OURS.get(_norm(cell(rw, 0)))
-        if not ours or ours in matched or ours not in slots:
-            continue
-        matched.add(ours)
-        s = slots[ours]
-        for c, week_iso in weeks:
-            v = str(cell(rw, c)).strip()
-            if v != "":
-                values.append((MANAGER, week_iso, s, v))
-        if ours in _GOAL_LABELS:
-            gv = str(cell(rw, 1)).strip()
-            if gv != "":
-                goals.append((MANAGER, s, gv))
-    missing = set(_MT_TO_OURS.values()) - matched
-    if missing:
-        log("  [b2b] labels not found on MT tab (layout drift?): %s"
-            % ", ".join(sorted(missing)))
-    log("  [b2b] %-18s %3d values (%d weeks), %d goals"
-        % (MANAGER, len(values), len(weeks), len(goals)))
-    return values, goals
-
-
-# --------------------------------------------------------------- Carlos
-# Carlos runs the same campaign but has no MT tab (his Vantura board sits
-# outside the captainship fleet), so his block is COMPUTED — the exact math
-# captainship_boards/run.py uses for the 11 owners (parse_orderlog +
-# update_focus), specialized to one owner, cumulative over the week window.
 
 CARLOS = "Carlos Hidalgo"
 CARLOS_EXPORT = "CARLOS HIDALGO"          # ORDERLOG "Owner & Office" line 1
@@ -198,7 +43,16 @@ ACTIVATION_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 CHURN_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
               "ATTTRACKER-B2B/CHURNRATES/429cb06d-a32e-4d0e-bf06-9acb77587afd/"
               "ALLTEAMCHURN")
-_OUT = None  # set lazily: repo output dir for the shared csv
+
+
+def _managers():
+    """org-picker label -> ORDERLOG owner name for every computed b2b block:
+    Carlos + each captainship owner with a sales board."""
+    from automations.captainship_boards.config import OWNERS
+    out = {CARLOS: CARLOS_EXPORT}
+    for label, (export, _fid) in OWNERS.items():
+        out[label] = export
+    return out
 
 
 def _pct(n, d, dec=0):
@@ -208,22 +62,24 @@ def _pct(n, d, dec=0):
     return ("%d%%" % round(v)) if dec == 0 else ("%.1f%%" % v)
 
 
-def orderlog_week_slots(path, monday, upto, log=print, owner=None):
-    """Parse one ORDERLOG csv -> (slot-label -> text value) for ONE owner, using
-    the captainship counting rules (Unit Count summed by sp.Order Date (copy),
-    all products; rank = cumulative position among every owner in the export).
+def _norm_owner(raw):
+    return " ".join(str(raw or "").split("\n")[0].split()).strip().upper()
 
-    `owner` is the ORDERLOG "Owner & Office" first line, uppercased (e.g.
-    "CARLOS HIDALGO", "SABRINA ALICEA"); it defaults to Carlos, who was the
-    only computed owner until 2026-08-31. Every owner is still tallied for the
-    rank, only the returned slots are filtered to this one.
-    """
-    owner_want = (owner or CARLOS_EXPORT).strip().upper()
+
+def _strip_company(raw):
+    """Crosstab owner cell -> comparable owner name ("X [co., inc.]" -> "X")."""
+    return _norm_owner(re.sub(r"\[[^\]]*\]", " ", str(raw or "")))
+
+
+def orderlog_all_owner_slots(path, monday, upto, wanted, log=print):
+    """Parse one ORDERLOG csv ONCE -> {owner: {layout label: text value}} for
+    every owner in `wanted`. Every owner in the export is tallied either way,
+    so Rank runs over the whole tracker, not just the captainship."""
     import collections
     from automations.att_order_log import clean
 
-    a = collections.Counter()
-    sellers = set()
+    agg = collections.defaultdict(collections.Counter)
+    sellers = collections.defaultdict(set)
     owners_cum = collections.Counter()
     for r in clean.load_rows(str(path), owner_prefix=None):
         raw = str(r.get("Owner & Office", "") or "").replace("\r", "\n")
@@ -242,11 +98,12 @@ def orderlog_week_slots(path, monday, upto, log=print, owner=None):
         if not u:
             continue
         owners_cum[owner] += u
-        if owner != owner_want:
+        if owner not in wanted:
             continue
         rep = " ".join(str(r.get("Rep", "") or "").split())
         if rep:
-            sellers.add(rep)
+            sellers[owner].add(rep)
+        a = agg[owner]
         a["total"] += u
         prod = " ".join(str(r.get("Product Type (Broken Out)", "") or "").split()).upper()
         cru = str(r.get("CRU/IRU", "") or "").strip().upper()
@@ -279,55 +136,69 @@ def orderlog_week_slots(path, monday, upto, log=print, owner=None):
             a["abp_f"] += u
         elif abp in ("N", "NO"):
             a["abp_f"] += u
-    my = owners_cum.get(CARLOS_EXPORT, 0)
-    rank = (1 + sum(1 for v in owners_cum.values() if v > my)) if my else None
+
     out = {}
-    if a["total"]:
-        out["Total Apps"] = str(int(a["total"]))
-        out["Active Headcount on Tableau"] = str(len(sellers))
-        if sellers:
-            out["Sales per Rep"] = "%.1f" % (a["total"] / len(sellers))
-        if rank:
-            out["Rank on the Tracker"] = str(rank)
-        out["New Internet Sales"] = str(int(a["ni"]))
-        out["CRU Internet Sales"] = str(int(a["ni_cru"]))
-        out["Wireless Sales (excl. BYOD)"] = str(int(a["wl"] - a["byod"]))
-        out["BYOD Sales"] = str(int(a["byod"]))
-        out["CRU BYOD Sales"] = str(int(a["byod_cru"]))
-        out["IRU BYOD Sales"] = str(int(a["byod_iru"]))
-        out["AIR/AWB Sales"] = str(int(a["air"]))
-        out["VoIP Line Count"] = str(int(a["voip"]))
+    for owner in wanted:
+        a = agg[owner]
+        if not a["total"]:
+            continue
+        named = {
+            "Total Apps": str(int(a["total"])),
+            "Active Headcount on Tableau": str(len(sellers[owner])),
+            "New Internet Sales": str(int(a["ni"])),
+            "CRU Internet Sales": str(int(a["ni_cru"])),
+            "Wireless Sales (excl. BYOD)": str(int(a["wl"] - a["byod"])),
+            "BYOD Sales": str(int(a["byod"])),
+            "CRU BYOD Sales": str(int(a["byod_cru"])),
+            "IRU BYOD Sales": str(int(a["byod_iru"])),
+            "AIR/AWB Sales": str(int(a["air"])),
+            "VoIP Line Count": str(int(a["voip"])),
+        }
+        if sellers[owner]:
+            named["Sales per Rep"] = "%.1f" % (a["total"] / len(sellers[owner]))
+        my = owners_cum.get(owner, 0)
+        if my:
+            named["Rank on the Tracker"] = str(
+                1 + sum(1 for v in owners_cum.values() if v > my))
         cden = a["cru"] + a["iru"]
         for lab, v in (("CRU %", _pct(a["cru"], cden)),
                        ("ABP %", _pct(a["abp_y"], a["abp_f"])),
                        ("BYOD %", _pct(a["byod"], a["wl"]))):
             if v is not None:
-                out[lab] = v
-    log("  [b2b/carlos] %s..%s apps=%s hc=%s rank=%s"
-        % (monday, upto, out.get("Total Apps", "-"),
+                named[lab] = v
+        out[owner] = named
+    return out
+
+
+def orderlog_week_slots(path, monday, upto, log=print, owner=None):
+    """One owner's slots — backfill_carlos_b2b's entry point. Same math as the
+    all-owner pass (which also retired this function's old bug: a non-Carlos
+    `owner` was still ranked as Carlos)."""
+    owner_want = _norm_owner(owner or CARLOS_EXPORT)
+    out = orderlog_all_owner_slots(path, monday, upto, {owner_want},
+                                   log).get(owner_want, {})
+    log("  [b2b] %s %s..%s apps=%s hc=%s rank=%s"
+        % (owner_want, monday, upto, out.get("Total Apps", "-"),
            out.get("Active Headcount on Tableau", "-"),
            out.get("Rank on the Tracker", "-")))
     return out
 
 
-def _norm_owner(raw):
-    return " ".join(str(raw or "").split("\n")[0].split()).strip().upper()
-
-
-def _quality_crosstabs(page, log):
-    """CARLOS row from ACTIVATIONRATES ('31-60 Days') + CHURNRATES ('0-30 Day').
-    Best effort — a rename logs and omits, never raises."""
+def _quality_crosstabs(page, wanted, log):
+    """{owner: {label: value}} for every owner in `wanted` — ACTIVATIONRATES
+    ('31-60 Days') + ALLTEAMCHURN ('0-30 Day'). Best effort: a rename or a
+    missing owner row logs and omits, never raises. Both crosstabs carry
+    several rows per ICD with an UNNAMED subrow column; the value only lives
+    on the named subrow ('Activation %' / 'Churn Rate') — first-row matching
+    once put a count row on the dashboard as 375% churn (8/23)."""
+    import collections
     import csv as _csv
     import tempfile
     from pathlib import Path as _P
 
     from automations.shared.tableau_patchright import download_crosstab_patchright
 
-    out = {}
-    # Both crosstabs are multi-row per ICD with an UNNAMED subrow column
-    # ('Activation %' / 'Total Activations' / …; 'Churn Rate' / 'Activated
-    # SPE/SP' / …) — the value only lives on the named subrow. Structure per
-    # opt_phase_carlos's proven configs.
+    out = collections.defaultdict(dict)
     jobs = [
         (ACTIVATION_VIEW, "Activation Office", "31-60", "Activation %",
          "Activation Rate (31–60 Day)", 0),
@@ -348,32 +219,36 @@ def _quality_crosstabs(page, log):
                        if "owner" in h.lower() or "icd" in h.lower()), 0)
             si = next((i for i, h in enumerate(hdr) if not str(h).strip()), None)
             if ci is None:
-                log("  [b2b/carlos] no %r column on %s — skipped" % (colkey, sheet))
+                log("  [b2b] no %r column on %s — skipped" % (colkey, sheet))
                 continue
             for r in rows[1:]:
-                if len(r) <= max(ci, oi) or _norm_owner(r[oi]) != CARLOS_EXPORT:
+                if len(r) <= max(ci, oi):
+                    continue
+                owner = _strip_company(r[oi])
+                if owner not in wanted or label in out[owner]:
                     continue
                 if si is not None and len(r) > si and r[si].strip() and \
                         r[si].strip() != subrow:
                     continue                     # wrong subrow (a count row)
                 v = r[ci].strip().rstrip("%")
-                if v:
-                    try:
-                        out[label] = (("%.1f%%" % float(v)) if dec
-                                      else ("%d%%" % round(float(v))))
-                        log("  [b2b/carlos] %s = %s" % (label, out[label]))
-                        break
-                    except ValueError:
-                        continue
-            if label not in out:
-                log("  [b2b/carlos] no %r value for CARLOS on %s" % (subrow, sheet))
+                if not v:
+                    continue
+                try:
+                    out[owner][label] = (("%.1f%%" % float(v)) if dec
+                                         else ("%d%%" % round(float(v))))
+                except ValueError:
+                    continue
+            hit = sum(1 for o in wanted if label in out[o])
+            log("  [b2b] %s: %d/%d owners" % (label, hit, len(wanted)))
         except Exception as exc:  # noqa: BLE001 — quality rows are best-effort
-            log("  [b2b/carlos] %s pull failed (%s) — skipped" % (sheet, exc))
+            log("  [b2b] %s pull failed (%s) — skipped" % (sheet, exc))
     return out
 
 
-def collect_carlos(page, today, log=print):
-    """-> (values, goals_seed) for Carlos's computed b2b block, current week."""
+def collect_computed(page, today, log=print):
+    """-> (values, goals) for every computed b2b manager, CURRENT week only.
+    goals is always [] — b2b goals are typed on the org sheet now. History
+    already in the Campaign Log stays put: upserts never delete."""
     from pathlib import Path as _P
 
     from automations.att_order_log.run import _fetch_csv
@@ -383,6 +258,12 @@ def collect_carlos(page, today, log=print):
     upto = min(today, monday + _dt.timedelta(days=6))
     week_iso = week_sunday(today).isoformat()
 
+    managers = _managers()
+    for mgr in [m for m in managers if L.MANAGER_CAMPAIGN.get(m) != "b2b_att"]:
+        log("  [b2b] %s has a board but no b2b_att mapping in layout.py — skipped"
+            % mgr)
+        managers.pop(mgr)
+
     out_dir = _P(__file__).resolve().parents[2] / "output" / "org_campaign_metrics"
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / ("b2b_orderlog_%s.csv" % today.isoformat())
@@ -391,11 +272,23 @@ def collect_carlos(page, today, log=print):
                           log=log)
         dest.write_bytes(body)
     else:
-        log("  [b2b/carlos] reusing today's export %s" % dest.name)
+        log("  [b2b] reusing today's export %s" % dest.name)
+
+    wanted = set(managers.values())
+    per = orderlog_all_owner_slots(dest, monday, upto, wanted, log)
+    per_q = _quality_crosstabs(page, wanted, log)
 
     slots = L.slots_by_label("b2b_att")
-    named = orderlog_week_slots(dest, monday, upto, log)
-    named.update(_quality_crosstabs(page, log))
-    values = [(CARLOS, week_iso, slots[lab], v)
-              for lab, v in named.items() if lab in slots]
+    values = []
+    for mgr, exp in managers.items():
+        named = dict(per.get(exp, {}))
+        named.update(per_q.get(exp, {}))
+        values += [(mgr, week_iso, slots[lab], v)
+                   for lab, v in named.items() if lab in slots]
+        log("  [b2b] %-18s %2d values  apps=%s hc=%s rank=%s act=%s churn=%s"
+            % (mgr, len(named), named.get("Total Apps", "-"),
+               named.get("Active Headcount on Tableau", "-"),
+               named.get("Rank on the Tracker", "-"),
+               named.get("Activation Rate (31–60 Day)", "-"),
+               named.get("0–30 Day Churn Rate", "-")))
     return values, []

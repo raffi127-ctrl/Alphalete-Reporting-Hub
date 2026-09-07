@@ -10,15 +10,18 @@ funnel_board/build.py). One run = layout sync + per-campaign pulls + upserts.
     python -m automations.org_campaign_metrics.run --skip-tableau  # b2b only
 
 Campaign sources:
-    b2b   copy of 'MT · Atef' on the Captainship Dashboard (Sheets read)
+    b2b   COMPUTED per captainship owner + Carlos: ATT order log
+          + activation/churn crosstabs                  (Tableau)
     box   B2BBOXEnergyTracker views + the BOX order log  (Tableau)
     nds   NDS-SN (RES-ATT-OOF) workbook views            (Tableau)
 
-Goal policy: b2b goals copy from the MT tab every run (that tab is the source
-of truth). BOX/NDS goals are SEEDED only where empty — Sales per Rep from the
+(The b2b blocks were a copy of the Captainship Dashboard's MT tabs until
+2026-09-07, when Carlos trashed that workbook — see pull_b2b's docstring.)
+
+Goal policy: goals are SEEDED only where empty — Sales per Rep from the
 campaign's national average, weekly-units from HeadCount-goal x national SPR —
 and never overwritten after that; typed goals live on via the Goal Sync
-script. Manual TEAM rows (mm/mg) are never emitted for BOX/NDS at all.
+script. Manual TEAM rows (mm/mg) are never emitted for any campaign.
 
 Runs on Lucy 2 (needs the Tableau session). Python 3.9.
 """
@@ -98,29 +101,6 @@ def _derive_unit_goals(S, values, goals_seeded, log):
     return out + goals_seeded
 
 
-def _mirror_b2b_nationals(values, log):
-    """The b2b national rows are global numbers sourced from Atef's MT copy —
-    mirror them onto every OTHER b2b manager (Carlos) for each week present,
-    and seed Carlos's SPR goal off the national. Emits only missing tuples."""
-    slots = L.slots_by_label("b2b_att")
-    nat_slots = [slots[lab] for lab in
-                 ("National AVG Headcount", "National Sales per Rep")
-                 if lab in slots]
-    src = {(w, s): v for m, w, s, v in values
-           if m == "Atef Choudhury" and s in nat_slots}
-    have = {(m, w, s) for m, w, s, _v in values}
-    out = []
-    for mgr, camp in L.MANAGER_CAMPAIGN.items():
-        if camp != "b2b_att" or mgr == "Atef Choudhury":
-            continue
-        for (w, s), v in src.items():
-            if (mgr, w, s) not in have:
-                out.append((mgr, w, s, v))
-    if out:
-        log("b2b nationals mirrored: %d tuples" % len(out))
-    return out
-
-
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true",
@@ -128,7 +108,8 @@ def main(argv=None):
     ap.add_argument("--only", choices=["b2b", "box", "nds"],
                     help="run a single campaign's pull")
     ap.add_argument("--skip-tableau", action="store_true",
-                    help="skip box+nds (no browser) — b2b copy only")
+                    help="skip every pull (all three campaigns need the "
+                         "browser now) — layout sync only")
     a = ap.parse_args(argv)
     dry = not a.write
     today = dt.datetime.now(TZ).date()
@@ -142,7 +123,7 @@ def main(argv=None):
     if not dry:
         CL.write_layout(S, log)
 
-    values, goals_now, goals_seed = [], [], []
+    values, goals_seed = [], []
     failures = []
 
     def _run(name, fn):
@@ -154,19 +135,13 @@ def main(argv=None):
             failures.append(name)
             return [], []
 
-    if a.only in (None, "b2b"):
-        from automations.org_campaign_metrics import pull_b2b
-        v, g = _run("b2b", lambda: pull_b2b.collect(S, today, log))
-        values += v
-        goals_now += g               # MT goals win every run
-
     if not a.skip_tableau and a.only in (None, "b2b", "box", "nds"):
         from automations.shared.tableau_patchright import tableau_session
         with tableau_session(verbose=True) as page:
             if a.only in (None, "b2b"):
                 from automations.org_campaign_metrics import pull_b2b
-                v, g = _run("b2b/carlos",
-                            lambda: pull_b2b.collect_carlos(page, today, log))
+                v, g = _run("b2b",
+                            lambda: pull_b2b.collect_computed(page, today, log))
                 values += v
                 goals_seed += g
             if a.only in (None, "box"):
@@ -180,21 +155,18 @@ def main(argv=None):
                 values += v
                 goals_seed += g
 
-    values += _mirror_b2b_nationals(values, log)
     goals_seed = _derive_unit_goals(S, values, goals_seed, log)
 
-    log("-- totals: %d values, %d goals (stamped), %d goals (seed-only)"
-        % (len(values), len(goals_now), len(goals_seed)))
+    log("-- totals: %d values, %d goals (seed-only)"
+        % (len(values), len(goals_seed)))
     if dry:
         for row in values[:200]:
             log("   %s" % (row,))
         if len(values) > 200:
             log("   … %d more" % (len(values) - 200))
-        for row in goals_now + goals_seed:
+        for row in goals_seed:
             log("   goal %s" % (row,))
     CL.upsert_values(S, values, dry_run=dry, log=log)
-    if goals_now:
-        CL.upsert_goals(S, goals_now, dry_run=dry, log=log)
     if goals_seed:
         CL.upsert_goals(S, goals_seed, dry_run=dry, seed_only=True, log=log)
 
