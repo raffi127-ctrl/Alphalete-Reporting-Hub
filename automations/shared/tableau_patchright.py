@@ -313,6 +313,16 @@ OWNERVILLE_V2_URL = "https://v2.ownerville.com/index.cfm"
 # and is the difference between a report running and a report failing on a slow
 # one.
 SSO_NAV_TIMEOUT_MS = 90_000
+# ...and a bigger number is only half of it: a login that times out has NO
+# retry at all, while the DOWNLOAD it exists to serve gets three attempts plus a
+# fresh-login escape hatch (download_crosstab_patchright). captainship_activations
+# opens EIGHT back-to-back logins in its PSS phase — one per captain, isolated on
+# purpose so a Tableau filter can't leak into the next pull — so on 9/7 it kept
+# dying on a LATER hop, after all of phase 1 had already been paid for. One more
+# attempt, with a FRESH rqst (ownerville issues a new one per visit, so replaying
+# a spent one is a dead hop), is what turns that into a delay instead of a
+# failed report.
+_SSO_ATTEMPTS = 2
 # Ownerville login is read from a gitignored local file (automations.shared.
 # creds → ownerville-creds.json at the repo root), NOT hardcoded — the repo was
 # public, so the password must never live in source. creds.ownerville_*() raise
@@ -845,11 +855,12 @@ def _ensure_tableau_authenticated(page: Page, verbose: bool = True,
     _sso_to_tableau(page, verbose=verbose)
 
 
-def _sso_to_tableau(page: Page, verbose: bool = True) -> None:
-    """Seed a Tableau session by following ownerville's 'Login to Tableau'
-    SSO link. Mirrors opt_phase._reauth_tableau."""
-    if verbose:
-        print(f"-> Fetching SSO token from {OWNERVILLE_V2_URL}", flush=True)
+def _fetch_ownerville_sso_token(page: Page) -> Optional[str]:
+    """Visit v2.ownerville.com and return its rqst SSO token — from the landing
+    URL, else from an in-page p=81 link — or None if there isn't one.
+
+    Split out of _sso_to_tableau so a retry can fetch a FRESH token instead of
+    replaying a spent one."""
     page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded",
               timeout=SSO_NAV_TIMEOUT_MS)
     page.wait_for_timeout(6_000)
@@ -860,21 +871,63 @@ def _sso_to_tableau(page: Page, verbose: bool = True) -> None:
             ".find(x=>/p=81/.test(x.getAttribute('href')||'')); "
             "return a?a.getAttribute('href'):''; }")
         m = re.search(r"rqst=([A-Za-z0-9_]+)", href or "")
-    if not m:
-        raise RuntimeError(
-            "Couldn't find Tableau SSO token (rqst=...) on v2.ownerville.com — "
-            "ownerville login state isn't valid. Delete "
-            f"{PROFILE_DIR} and retry to force a fresh login."
-        )
-    sso_url = f"{OWNERVILLE_V2_URL}?p=81&rqst={m.group(1)}&ssook=1"
-    if verbose:
-        print("-> Following SSO link to Tableau…", flush=True)
-    page.goto(sso_url, wait_until="domcontentloaded",
-              timeout=SSO_NAV_TIMEOUT_MS)
-    page.wait_for_timeout(15_000)
-    if verbose:
-        print(f"-> Tableau session established (page at {(page.url or '')[:80]})",
-              flush=True)
+    return m.group(1) if m else None
+
+
+def _sso_to_tableau(page: Page, verbose: bool = True) -> None:
+    """Seed a Tableau session by following ownerville's 'Login to Tableau'
+    SSO link. Mirrors opt_phase._reauth_tableau.
+
+    A timeout on the hop is no longer fatal by itself. The chain can outrun any
+    budget while STILL having landed — only the last document is slow to fire
+    domcontentloaded — so the verdict comes from where the page ended up, not
+    from the exception. If it really stalled short, one more attempt on a fresh
+    token; only then does this raise.
+
+    INERT ON THE HAPPY PATH: when the goto returns normally this behaves exactly
+    as it did before — same 15s settle, same return, and NO check of the landing
+    URL, which we never verified and must not start failing on now. The new
+    logic runs only after a goto that already raised."""
+    timed_out = None
+    for attempt in range(1, _SSO_ATTEMPTS + 1):
+        if verbose:
+            print(f"-> Fetching SSO token from {OWNERVILLE_V2_URL}", flush=True)
+        token = _fetch_ownerville_sso_token(page)
+        if not token:
+            raise RuntimeError(
+                "Couldn't find Tableau SSO token (rqst=...) on v2.ownerville.com — "
+                "ownerville login state isn't valid. Delete "
+                f"{PROFILE_DIR} and retry to force a fresh login."
+            )
+        sso_url = f"{OWNERVILLE_V2_URL}?p=81&rqst={token}&ssook=1"
+        if verbose:
+            print("-> Following SSO link to Tableau…", flush=True)
+        try:
+            page.goto(sso_url, wait_until="domcontentloaded",
+                      timeout=SSO_NAV_TIMEOUT_MS)
+            timed_out = None
+        except PWTimeout as e:
+            timed_out = e
+            if verbose:
+                print(f"-> SSO navigation wait timed out after "
+                      f"{SSO_NAV_TIMEOUT_MS // 1000}s — checking whether it "
+                      f"landed anyway…", flush=True)
+        page.wait_for_timeout(15_000)
+        url = page.url or ""
+        if timed_out is None or "tableau.com" in url.lower():
+            if verbose:
+                print(f"-> Tableau session established (page at {url[:80]})",
+                      flush=True)
+            return
+        if verbose:
+            print(f"-> SSO hop stalled short of Tableau (at {url[:80]}) — "
+                  f"attempt {attempt}/{_SSO_ATTEMPTS}", flush=True)
+    raise RuntimeError(
+        "Tableau SSO hop (ownerville p=81) timed out "
+        f"{_SSO_ATTEMPTS}x at {SSO_NAV_TIMEOUT_MS // 1000}s and never reached "
+        "Tableau. Ownerville allows ONE session per account, so the usual "
+        "cause is another machine having taken this one over mid-run."
+    ) from timed_out
 
 
 def _drive_login_form(page: Page, verbose: bool,
