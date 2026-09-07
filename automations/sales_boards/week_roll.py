@@ -430,14 +430,27 @@ def main(argv=None) -> int:
 
     _retry(sb.update, values=[[new_we]], range_name=WE_CELL,
            value_input_option="RAW")
-    _retry(sh.batch_update, {"requests": [{"setDataValidation": {
-        "range": {"sheetId": sb.id, "startRowIndex": 1, "endRowIndex": 2,
-                  "startColumnIndex": 1, "endColumnIndex": 2},
-        "rule": {"condition": {"type": "ONE_OF_LIST",
-                               "values": [{"userEnteredValue": l}
-                                          for l in labels]},
-                 "showCustomUi": True, "strict": False}}}]})
-    print("WROTE %s = %r (text) + dropdown list" % (WE_CELL, new_we))
+    we_range = {"sheetId": sb.id, "startRowIndex": 1, "endRowIndex": 2,
+                "startColumnIndex": 1, "endColumnIndex": 2}
+    # Writing RAW keeps OUR value a string, but a HUMAN picking off the dropdown
+    # enters USER_ENTERED, and Sheets parses "9.20" into the number 9.2 - the
+    # lost zero that reads exactly like a board nobody rolled. Pinning the cell
+    # to TEXT is what makes the pick safe; the list values alone never were.
+    _retry(sh.batch_update, {"requests": [
+        {"setDataValidation": {
+            "range": we_range,
+            "rule": {"condition": {"type": "ONE_OF_LIST",
+                                   "values": [{"userEnteredValue": l}
+                                              for l in labels]},
+                     "showCustomUi": True, "strict": False}}},
+        {"repeatCell": {
+            "range": we_range,
+            "cell": {"userEnteredFormat":
+                     {"numberFormat": {"type": "TEXT"}}},
+            "fields": "userEnteredFormat.numberFormat"}},
+    ]})
+    print("WROTE %s = %r (text, cell pinned to TEXT) + dropdown list"
+          % (WE_CELL, new_we))
 
     _retry(st.update, values=[[new_we]], range_name=STATIONS_WE,
            value_input_option="RAW")
