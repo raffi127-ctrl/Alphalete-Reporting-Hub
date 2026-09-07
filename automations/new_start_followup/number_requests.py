@@ -139,20 +139,31 @@ def _fill_from_contacts(rec, gaps, client=None, live: bool = False) -> Dict[str,
     from automations.new_start_followup import (
         contacts_google, pair_chat, roster as roster_mod, texts)
 
-    names = [g.leader.name for g in gaps]
+    # EVERY spelling, not just the roster name. Reception files a contact under
+    # whatever name they know the person by, which is often the OBCL spelling:
+    # Nima Hijaz's number was sitting there under "Nima Aweida" and Lucy still
+    # posted asking for it (Megan 2026-09-06).
+    aliases = {}  # candidate spelling -> leader slack id
+    for g in gaps:
+        for spelling in [g.leader.name] + list(g.leader.obcl_names or []):
+            if spelling:
+                aliases.setdefault(spelling, g.leader.slack_id)
     try:
-        found = contacts_google.numbers_for(names)
+        found = contacts_google.numbers_for(list(aliases))
     except Exception as exc:  # noqa: BLE001
         print("[numbers] couldn't check reception's Contacts ({}) — asking in "
               "the thread instead.".format(str(exc)[:140]))
         return {}
     if not found:
         return {}
+    by_leader = {}  # slack id -> number
+    for spelling, num in found.items():
+        by_leader.setdefault(aliases[spelling], num)
 
     phones = roster_mod.load_phones()
     filled = []
     for g in gaps:
-        num = found.get(g.leader.name)
+        num = by_leader.get(g.leader.slack_id)
         if not num:
             continue
         print("[numbers] {} found in reception's Contacts.".format(g.leader.name))
@@ -209,9 +220,19 @@ def _fill_from_contacts(rec, gaps, client=None, live: bool = False) -> Dict[str,
     return found
 
 
-def ensure_request(rec, client=None, live: bool = False) -> Optional[str]:
+def ensure_request(rec, client=None, live: bool = False,
+                   allow_post: bool = True) -> Optional[str]:
     """Post the numbers-needed request if gaps exist and none is up yet.
-    Returns a human line describing what happened (None = nothing to do)."""
+    Returns a human line describing what happened (None = nothing to do).
+
+    `allow_post=False` still fills numbers from Contacts and still texts
+    whoever that resolves — it just won't START a new ask. Megan 2026-09-06:
+    "if texts are sent out on sat morning that's when this should post...not
+    late sunday afternoon". The hourly weekend scan therefore answers the
+    Saturday ask but never opens a fresh one; a gap that appears after the
+    sweep waits for the next one rather than pinging Raf and Aisha on a Sunday
+    evening about a text that is no longer going out that weekend.
+    """
     gaps = gap_statuses(rec)
     if gaps:
         # LOOK BEFORE ASKING (Megan 2026-08-30: "shouldn't you just have looked
@@ -231,6 +252,9 @@ def ensure_request(rec, client=None, live: bool = False) -> Optional[str]:
     client = client or smp._client()
     if find_request(_replies(client, rec)) is not None:
         return "numbers-needed post already in the thread ({} gap(s) listed)".format(len(gaps))
+    if not allow_post:
+        return ("{} gap(s) still open, but not posting — the ask goes up with "
+                "the Saturday texts, not later.".format(len(gaps)))
     body = render_request(gaps)
     print("-" * 46)
     print(body)
@@ -370,7 +394,8 @@ def process(rec, live: bool = False) -> dict:
 
     remaining = [s for s in gap_statuses(rec)
                  if s not in resolved and not s.leader.phone]
-    note = ensure_request(rec, client=client, live=live)
+    note = ensure_request(rec, client=client, live=live,
+                          allow_post=False)
     if note:
         lines.append(note)
     if remaining:
