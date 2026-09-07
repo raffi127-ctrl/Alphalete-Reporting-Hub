@@ -2947,6 +2947,41 @@
       "machine": "Lucy 1",
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "weekly_dispo_pdf_slack": {
+      "order": 36.6,
+      "on_scheduler": true,
+      "_on_scheduler_note": "Raf, in the #alphalete-sales Metrics thread 2026-09-07 09:49: 'can we get weekly knocks posted in here on sundays and mondays please?' - and he attached the PDF itself to the ask, so the shape was not in question. This posts THAT document: the one-PDF-per-captainship weekly_pdf (Captainship Summary + one Mon-Sat per-rep board per OWNER) that the daily Captainship emails have carried since 2026-08-27. It is strictly more than the thread already had - weekly_knock_dispositions (36.5) posts ONE board, Rafael's own office. Sits right behind it so on Sunday the board and the PDF read as one block; the mirror into #alphalete-lvl1-chat rides along like every other reply in that thread.",
+      "display_name": "Weekly Knock Dispositions PDF (Sun+Mon)",
+      "source_type": "local",
+      "data_sources": [],
+      "_sources_note": "No pull of any kind, and that is the point: it prints from the PNGs captainship_knocks already captured, or falls back to the PDF printed earlier that week (weekly_pdf.build's contract). No ownerville session, no Tableau, no freshness gate - it cannot be the thing that makes a morning late.",
+      "command": [
+        "automations.captainship_drafts.weekly_pdf_slack"
+      ],
+      "base_args": [
+        "--live"
+      ],
+      "_base_args_note": "Bare runs are DRY-RUN (they print what would go and stop), so `lucy rerun ... --dry-run` arriving as `--live --dry-run` is safe - the dry flag wins. A plain rerun the same day is a no-op: the thread already carries the '(PDF)' marker and the step skips. `--force` ignores BOTH the Sun+Mon gate and that check, which is how you repost after fixing the boards.",
+      "cadence": {
+        "weekdays": [
+          6,
+          0
+        ]
+      },
+      "_cadence_note": "Sunday + Monday only. The CODE gates on config.SECTION_DAYS['knock_dispo'], not on this list - the same table the captainship emails' weekly section reads, so the two can never drift apart. Monday is a deliberate re-show of the SAME completed week (Raf 2026-08-23: 'Monday should re duplicate sundays post so I can see it again' - the one-on-ones).",
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "after": [
+        "captainship_drafts"
+      ],
+      "_after_note": "SOFT. The PDF is printed by the drafts build, so this wants to follow it - but a morning the build never ran can still have an earlier PDF for that week on disk, and posting it is the right outcome. Never depends_on: a failed build already alerts once, and this must not turn it into a second alert for the same thing.",
+      "timeout_minutes": 10,
+      "verify": null,
+      "machine": "Lucy 3",
+      "_machine_note": "MUST be Lucy 3, the machine that runs captainship_knocks + captainship_drafts: the render dir and output/weekly_dispositions/ are LOCAL to that build (see captainship_drafts' own _machine_note). Anywhere else there is no PDF to find and the step exits 1 saying so.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
+    },
     "daily_metrics": {
       "order": 9,
       "on_scheduler": true,

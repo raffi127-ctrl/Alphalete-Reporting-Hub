@@ -45,6 +45,10 @@ _HUB_CARD = {
     # 2026-08-22): it posts into the same per-office Metrics threads, so its
     # runs land on the same shared card.
     "weekly_knock_dispositions": "office-metrics",
+    # The Sun+Mon PDF of the SAME boards into the SAME thread (Raf 2026-09-07)
+    # — same reasoning, same card, and naming it here is what stops the
+    # orchestrator pill from auto-creating a second one.
+    "weekly_dispo_pdf_slack": "office-metrics",
     "fiber_activations": "fiber-activations",
     "captainship_activations": "captainship-activations",
     "captainship_churn": "captainship-new-internet-wireless-churn",
