@@ -64,6 +64,24 @@ GROUPS: dict = {
     "khalil": "Khalil's Captainship",
     "colten": "Colten's Captainship",
     "jairo":  "Jairo's Captainship",
+    # 2026-09-07 (Eve): Pat y Jess estrenan grupo. Hasta hoy no tenian uno a
+    # proposito y `recipients_for` caia a config.RECIPIENTS, o sea que sus dos
+    # reportes salian solo a Rafael + Eve. Los grupos se sembraron con el
+    # roster del Org Sales Board (15 y 6) cruzado contra Contactos: los 21 ya
+    # tenian ficha y estaban en "ATT Fiber Owners".
+    #
+    # Y CON EL GATE, desde el mismo dia. Eve, al ver a quien le iba a llegar:
+    # "no pueden enviarse sin ser revisados todos los dias, aplican las mismas
+    # reglas que para los otros, solo sabados y domingos se envian solos". La
+    # entrada `captainship_fiber4_send` (order 1.15, --allow-unreviewed) se
+    # BORRO del orquestador; no hizo falta nada mas, porque `fiber-4` ya estaba
+    # en config.BLOCKS y los dos agentes de revision caminan config.BLOCKS sin
+    # filtro (`review_gate --ensure-posted` / `--check --send`). Sabado y
+    # domingo los libera `shared.weekend_release` si el dia esta limpio, igual
+    # que a los otros cinco bloques.
+    # [[project_captainship-fiber4-daily-send]] [[project_captainship-review-gate]]
+    "pat":    "Pat's Captainship",
+    "jess":   "Jess's Captainship",
 }
 
 GROUP_PREFIX = "Captainship - "

@@ -680,20 +680,62 @@ RECIPIENTS: dict = {
 # las dos cosas que dependen del codigo, el fallback cuando el grupo no se
 # puede leer y lo que seed_groups escribe de vuelta en el grupo.
 ALWAYS = "eve@alphaletemarketing.com"
-# Pat y Jess, 2026-09-04. NO es su distribucion real todavia: Eve pidio que
-# por ahora vayan solo a Rafael y a Evelyn mientras se mira que todo se vea
-# bien ("por ahora solo lo vamos a mandar a eve y rafael, porque estamos
-# probando"). Evelyn es Eve — en Contactos figura como "Eve Sobrino
-# <eve@alphaletemarketing.com>", la misma identidad con la que postea en Slack
-# desde Windows — asi que ALWAYS ya la agrega abajo y no hace falta repetirla.
+# Pat y Jess. Del 2026-09-04 al 2026-09-07 NO tenian grupo de Contacts a
+# proposito y esta lista era la distribucion entera: Eve queria que fueran solo
+# a Rafael y a ella mientras se miraba que el reporte se viera bien ("por ahora
+# solo lo vamos a mandar a eve y rafael, porque estamos probando").
 #
-# Estas dos claves NO tienen grupo en Contacts (GROUPS en distro.py). Es a
-# proposito: sin grupo, recipients_for cae a esta lista y lo dice en el log
-# ("group ... MISSING — using the N address(es) in config.py"). Cuando Eve
-# defina la distribucion real se crean los grupos y esto pasa a ser el
-# fallback, igual que en los demas capitanes.
-RECIPIENTS["pat"] = ["raffi127@gmail.com"]
-RECIPIENTS["jess"] = ["raffi127@gmail.com"]
+# 2026-09-07 (Eve): "arma los grupos de contactos". Ya existen
+# "Pat's Captainship" (17) y "Jess's Captainship" (8), sembrados con el roster
+# del Org Sales Board cruzado contra Contactos + Rafael y Eve, igual que los
+# otros doce grupos. O sea que esto volvio a ser lo que es en el resto de los
+# capitanes: EL FALLBACK, para cuando el grupo no se puede leer, y lo que
+# seed_groups escribe de vuelta. La lista viva es el grupo.
+#
+# Evelyn es Eve — en Contactos figura como "Eve Sobrino
+# <eve@alphaletemarketing.com>", la misma identidad con la que postea en Slack
+# desde Windows — asi que ALWAYS la agrega abajo y no se repite aca.
+#
+# Y PASAN POR EL GATE como los otros doce (Eve, 2026-09-07): "no pueden
+# enviarse sin ser revisados todos los dias, aplican las mismas reglas que para
+# los otros, solo sabados y domingos se envian solos". La entrada
+# `captainship_fiber4_send` (--allow-unreviewed) salio del orquestador ese dia.
+RECIPIENTS["pat"] = [
+    "raffi127@gmail.com",
+    "pthomp2133@gmail.com",          # Pat Thompson (ficha: "Patrick Thompson")
+    "hasanilynch17@gmail.com",       # Hasani Lynch
+    "youngjohnrichard@gmail.com",    # John Richard Young
+    "christopher.marzullo@gmail.com",  # Chris Marzullo (ficha: "Christopher")
+    "kasapidisstergios@gmail.com",   # Stergios Kasapidis
+    "gperez3rd@yahoo.com",           # Gabe Perez
+    "aeldredge90@gmail.com",         # Austin Eldredge
+    "ericzech23@gmail.com",          # Eric Zech
+    "skandertouati77@gmail.com",     # Alex Touati (ficha: "Iskander Touati")
+    "tre.mitchell60@gmail.com",      # Tre Mitchell
+    "bill@zenithmgmtinc.com",        # Bill Fischer
+    "f.castillo0021@gmail.com",      # Francisco Castillo
+    "npgilbert00@gmail.com",         # Nigel Gilbert
+    "jarredhill1906@gmail.com",      # Jarred Hill
+    "rluconi17@gmail.com",           # Roberto Luconi
+    # Reciben TODAS las capitanias, no solo esta (Eve, 2026-09-07).
+    "dylanjtwaddle@gmail.com",       # Dylan Twaddle
+    "maudmiller4@gmail.com",         # Maud Miller
+    # OUT 2026-09-07: Jesus Hawthorne — fuera de la capitania de Pat y de todas
+    # las listas de distribucion desde el 2026-08-24. No tiene direccion aca.
+]
+RECIPIENTS["jess"] = [
+    "raffi127@gmail.com",
+    "jlieberman5m@gmail.com",        # Jess Lieberman (ficha: "Jessica")
+    "osvaldocenteno101@gmail.com",   # Ozzy Centeno (ficha: "Osvaldo")
+    "sebbogutierrez@gmail.com",      # Sebastian Gutierrez
+    "jenniferfigueroa55@gmail.com",  # Jennifer Figueroa
+    "mercel.management@gmail.com",   # Mercy Ohiokhai
+    "sheree0795@gmail.com",          # Sheree Rodriguez
+    # Reciben TODAS las capitanias, no solo esta (Eve, 2026-09-07).
+    "dylanjtwaddle@gmail.com",       # Dylan Twaddle
+    "maudmiller4@gmail.com",         # Maud Miller
+    # OUT 2026-09-07: Angel Arias y Mary Maya — fuera de la capitania de Jess.
+]
 
 
 for _lst in RECIPIENTS.values():
