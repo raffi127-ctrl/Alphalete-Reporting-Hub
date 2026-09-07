@@ -1,7 +1,7 @@
 {
-  "confirmed_count": 57,
+  "confirmed_count": 55,
   "needs_review_count": 0,
-  "skip_count": 29,
+  "skip_count": 31,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -29,13 +29,6 @@
       "office_id": "23275",
       "as_owner": "Nii Tagoe",
       "as_company": "Next Horizon Group, Inc.",
-      "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Melik El Jaiez",
-      "office_id": "23265",
-      "as_owner": "Melik El Jaiez",
-      "as_company": "Uniq Strategies, Inc.",
       "confidence": 1.0
     },
     {
@@ -100,13 +93,6 @@
       "as_owner": "Carissa Ng",
       "as_company": "Lunar Management Group, Inc.",
       "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Jason Strid",
-      "office_id": "21712",
-      "as_owner": "Jason Strid",
-      "as_company": "Newforge Marketing, Inc.",
-      "confidence": 0.7
     },
     {
       "sheet_tab": "Gabe Perez",
@@ -431,6 +417,18 @@
   ],
   "needs_review": [],
   "skip": [
+    {
+      "sheet_tab": "Melik El Jaiez",
+      "office_id": "23265",
+      "reason": "oficina cerrada — AppStream dejó de ofrecerla y Tableau dejó de listarla en la misma fecha: headcount activo 6→5→4→(nada), última venta WE 8/2, embudo vacío desde WE 8/9. La 'denegación' de AppStream es consecuencia del cierre, no un permiso perdido (Eve, 2026-09-07)",
+      "retired": "2026-09-07"
+    },
+    {
+      "sheet_tab": "Jason Strid",
+      "office_id": "21712",
+      "reason": "oficina cerrada — mismo patrón que Melik El Jaiez: headcount activo 6→1→(nada), última venta WE 7/26, embudo vacío desde WE 7/12 (Eve, 2026-09-07)",
+      "retired": "2026-09-07"
+    },
     {
       "sheet_tab": "Calvin Ribero (B2B)",
       "reason": "duplicate of 'Calvin Ribera (BOX)' — that tab is the live one (renamed 2026-08-31 when he moved off the B2B template to BOX); this copy keeps its data and is hidden",
