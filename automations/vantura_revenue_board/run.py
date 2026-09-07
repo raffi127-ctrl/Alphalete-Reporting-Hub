@@ -303,19 +303,35 @@ def load_priced(csv_path: Path, monday: dt.date, upto: dt.date):
     return out, unpriced
 
 
-def build_rows(per_rep, monday: dt.date, upto: dt.date, tier_fn=tier_for):
-    rows, office = [], {"days": collections.defaultdict(float), "bonus": 0.0}
+def build_rows(per_rep, monday: dt.date, upto: dt.date, tier_fn=tier_for,
+               tiers=TIERS):
+    rows, office = [], {"days": collections.defaultdict(float), "bonus": 0.0,
+                        "ntotal": 0.0}
     for rep, rec in per_rep.items():
         base = sum(rec["days"].values())
         tname, rate = tier_fn(int(rec["elig"]))
         bonus = rate * rec["payable"]
-        row = {"rep": rep, "tier": tname, "total": base + bonus}
+        # Next tier (Carlos 2026-09-05): what THIS WEEK'S units would pay at
+        # the next tier's bonus rate — the carrot, not a forecast (the extra
+        # sales needed to get there would add on top of this number).
+        above = [t for t in tiers if t[0] > int(rec["elig"])]
+        if above:
+            nf, nn, nr = min(above, key=lambda t: t[0])
+            need = nf - int(rec["elig"])
+            ntotal = base + nr * rec["payable"]
+            nxt = f"{nn} in {need} → ${ntotal:,.0f}"
+        else:
+            ntotal = base + bonus
+            nxt = "MAX"
+        row = {"rep": rep, "tier": tname, "total": base + bonus,
+               "next": nxt, "ntotal": ntotal}
         for i, dcode in enumerate(DAYS):
             d = monday + dt.timedelta(days=i)
             v = rec["days"].get(d, 0.0)
             row[dcode] = v if d <= upto else None
             office["days"][dcode] += v
         office["bonus"] += bonus
+        office["ntotal"] += ntotal
         rows.append(row)
     rows.sort(key=lambda r: -r["total"])
     return rows, office
@@ -334,13 +350,15 @@ def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     ft = _font(14 * S, bold=True)
 
     # Week Total rides right after the name (Carlos, first preview).
-    cols = ["Rep", "Week Total"] + list(DAYS) + ["Tier"]
+    cols = ["Rep", "Week Total"] + list(DAYS) + ["Tier", "Next Tier"]
 
     def cell(row, c):
         if c == "Rep":
             return row["rep"]
         if c == "Tier":
             return row["tier"]
+        if c == "Next Tier":
+            return row.get("next", "")
         if c == "Week Total":
             return f"${row['total']:,.0f}"
         v = row.get(c)
@@ -349,7 +367,9 @@ def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         return f"${v:,.0f}" if v else "·"
 
     total_row = {"rep": "OFFICE", "tier": "",
-                 "total": sum(r["total"] for r in rows)}
+                 "total": sum(r["total"] for r in rows),
+                 "next": (f"${sum(r.get('ntotal', 0) for r in rows):,.0f}"
+                          if any(r.get('ntotal') for r in rows) else "")}
     for dcode in DAYS:
         vals = [r.get(dcode) for r in rows]
         total_row[dcode] = (sum(v or 0 for v in vals)
@@ -506,7 +526,8 @@ def main(argv=None) -> int:
                            f":moneybag: *Revenue Board {tag}* — per-day AT&T "
                            "revenue on the office comp sheet (incl. ABP / plan "
                            "add-ons; Week Total includes the Tiered Volume "
-                           "bonus at the rep's current tier; baseline churn; "
+                           "bonus at the rep's current tier; Next Tier = this week's "
+                           "units at the next tier's rate; baseline churn; "
                            "MCOE/road trip not included)"))
 
     # ---------------- BOX ----------------
@@ -547,7 +568,8 @@ def main(argv=None) -> int:
                 held = True
             elif per_box:
                 rows_b, office_b = build_rows(per_box, monday, upto,
-                                              tier_fn=box_tier_for)
+                                              tier_fn=box_tier_for,
+                                              tiers=BOX_TIERS)
                 for r in rows_b:
                     print(f"  {r['rep']:24} {r['tier']:>3} ${r['total']:>8,.0f}")
                 print(f"  BOX OFFICE ${sum(r['total'] for r in rows_b):,.0f} "
