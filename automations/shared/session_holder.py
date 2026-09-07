@@ -1,19 +1,33 @@
 """Continuous session holder — keeps the ownerville login warm so SCHEDULED,
-UNATTENDED report runs never hit Cloudflare's 'verify you're human'.
+UNATTENDED report runs never pay for a fresh login.
 
-WHY (Megan 2026-06-17): Cloudflare globally tightened — the interactive Turnstile
-now appears on a FRESH login even in a normal browser, on every machine. There is
-no headless way past a forced interactive challenge, and the vendors won't expose
-an API. The only thing that ALWAYS works unattended is to NEVER do a fresh login.
+NO LOGIN HERE NEEDS A HUMAN — OWNERVILLE OR APPSTREAM.
+`resources/lucy-login-standard.md` is authoritative on this and this file is
+downstream of it. Both systems use the same form and BOTH sign themselves in:
 
-SUPERSEDED FOR OWNERVILLE (2026-09-02). The paragraph above is still true of
-AppStream, but ownerville's Cloudflare now auto-passes automation — measured on
-Lucy 1 2026-09-01: "ownerville form login reached a LIVE session UNATTENDED (rqst
-present)". So NO HUMAN IS REQUIRED to bring this session back. Keeping the warm
-session is still the fast path and still what this file is for; the difference is
-that every recovery path now DRIVES THE LOGIN FORM (_unattended_ownerville_login)
-before it will ever ask a person. It asks a human only after that fails.
-A cold Lucy is a fault, not a constraint. [[feedback_lucys_always_warm]]
+    username → submit
+    password → WAIT 20-30 seconds → submit
+
+The pause is the whole trick — Cloudflare's box clears itself if you leave it
+alone before submitting (`_CLOUDFLARE_WAIT_MS` / `_PRE_SUBMIT_PAUSE_MS` in
+tableau_patchright, both 30s). Never shorten them to speed a login up: that is
+the bug, not a speed-up.
+
+HISTORY, so nobody re-derives the old belief from an old comment: this file was
+written 2026-06-17 on the premise "there is no headless way past a forced
+interactive challenge, so never do a fresh login." That premise was MEASURED
+FALSE for ownerville on 2026-09-01 ("ownerville form login reached a LIVE session
+UNATTENDED (rqst present)") and for AppStream by the typed login, which mints
+without a human every day (`AppStream ✓ TYPED LOGIN minted … — no human, no
+re-seed`). Every recovery path in this file drives the form itself.
+
+A cold session is a FAULT, not a constraint, and never a reason to send somebody
+to a machine. If a message here — or anywhere else — tells you a human must log
+in, that message is the stale thing; fix it. Saying it costs real time: on
+2026-09-07 the seed-failure string below (it used to name a person as the
+fallback) sent a triage session hunting a human-login problem for a session that
+had already healed itself at 03:04, unattended, 56 minutes before the 4am batch.
+[[feedback_lucys_always_warm]]
 
 ownerville is the session this holds warm: with a fresh exported ownerville
 storage_state, a HEADLESS run reaches Tableau via ownerville SSO. So the holder
@@ -28,20 +42,31 @@ of a flaky fresh login. Un-seeded machines (the mini) stay ownerville-only — n
 tab, no per-cycle AppStream nav. All AppStream work is try/except-contained so it
 can never crash the ownerville holder.
 
-HOW: a human clears Cloudflare ONCE in the holder's window, then it keeps that
-session alive 24/7 (never closes → never re-challenged) and every few minutes
-EXPORTS the live cookies into the storage_state file the reports reuse
+HOW: the holder signs itself in, keeps that session alive 24/7 (never closes →
+never re-challenged) and every few minutes EXPORTS the live cookies into the
+storage_state file the reports reuse
 (tableau_patchright._reuse_ownerville_storage_state). Scheduled runs load that and
-skip the login + Turnstile entirely.
+skip the login entirely.
 
-SEED is non-disruptive: a SEPARATE validation page polls v2.ownerville for a live
-rqst token while the human logs in on the login page — it never navigates the
-human's page out from under them (the bug in the first cut).
+SEED order, cheapest first: (1) the persistent profile usually auto-resumes — no
+login at all; (2) if it doesn't, DRIVE THE FORM unattended; (3) if that doesn't
+take, the ladder below relaunches and starts again at (1). A person logging in at
+the window is always ACCEPTED — the passive `rqst=` check notices it — but it is
+never required, and nothing waits on it. The check is a property read, never a
+navigation, so it cannot navigate anyone's page out from under them.
 
-DEGRADES SAFELY: if the session goes stale it logs back in UNATTENDED, keeps the
-last good export until that succeeds, and only alerts for a human if the login
-itself fails. (Before 2026-09-02 it refused to drive the form at all and just
-alerted — which reads fine at 2pm and is an outage at midnight.)
+DEGRADES SAFELY, ON A LADDER THAT ENDS IN RECOVERY, NOT IN A PROMPT:
+  stale session      → log back in UNATTENDED (throttled to one attempt per
+                       LOGIN_MIN_INTERVAL_MIN so a failing login can't hammer
+                       the form all night and earn a challenge)
+  still no export    → after NO_EXPORT_MAX_MIN, exit rc=1 so launchd relaunches
+                       and the seed order above starts over on a fresh browser
+  browser gone       → same exit, same relaunch
+The last rung is what actually saves the batch: on 2026-09-07 two form attempts
+(02:11, 02:18) didn't take, the 30-minute rung fired at 03:04, and the relaunch
+resumed a live session eight seconds later — unattended, before the 4am batch.
+The last good export is kept throughout, so reports never read dead cookies while
+a recovery is in progress.
 
 Run on the always-on schedule machine (Mac mini; a laptop works while awake):
 
@@ -365,8 +390,8 @@ def _export_ownerville(ctx) -> int:
 # ended at a prompt in a window nobody is sitting in front of.
 #
 # That cost the night of 2026-09-01: the mint failed at 23:48, the holder exited
-# for a relaunch at 23:54, printed "SEED: log into ownerville in the window" at
-# 23:54:31, and waited. Nobody was there at midnight. Ownerville stayed dark
+# for a relaunch at 23:54, printed a seed prompt asking someone to sign in at the
+# window at 23:54:31, and waited. Nobody was there at midnight. Ownerville stayed dark
 # through the 4am batch (applicant_sync_morning, recruiter_retention_daily and
 # daily_focus all failed) until a human logged in at 08:26. The relaunch ladder
 # above CANNOT fix this on its own: it re-seeds from the persistent profile's
@@ -376,6 +401,14 @@ def _export_ownerville(ctx) -> int:
 # [[feedback_lucys_always_warm]]
 LOGIN_MIN_INTERVAL_MIN = 15.0
 _LAST_LOGIN_ATTEMPT: dict = {}
+
+# The last rung of the recovery ladder: no good export in this long and the holder
+# EXITS rc=1 so launchd relaunches it, which re-runs the whole seed order on a
+# fresh browser. 25 min >> the 6-8 min export cadence, so it only fires when
+# genuinely stuck. This is the rung that recovers a night the form attempts can't:
+# 2026-09-07, two failed attempts at 02:11/02:18, this fired 03:04 and the
+# relaunch resumed a live session 8 seconds later, unattended.
+NO_EXPORT_MAX_MIN = 25
 
 
 def _unattended_ownerville_login(ctx, page, verbose: bool = True) -> bool:
@@ -415,7 +448,9 @@ def _unattended_ownerville_login(ctx, page, verbose: bool = True) -> bool:
                   f"checking whether we are already signed in", flush=True)
         if not _ownerville_session_valid(page, verbose=False):
             print(f"[{_stamp()}] unattended login did NOT reach a live session — "
-                  f"a human login in the window would still fix it.", flush=True)
+                  f"retrying in {LOGIN_MIN_INTERVAL_MIN:g} min; if it still hasn't "
+                  f"taken after {NO_EXPORT_MAX_MIN:g} min the holder relaunches and "
+                  f"re-seeds itself. No human needed.", flush=True)
             return False
         ovn = _export_ownerville(ctx)
         print(f"[{_stamp()}] unattended login ✓ — session live again, exported "
@@ -1261,11 +1296,13 @@ def main() -> int:
         else:
             seeded = _unattended_ownerville_login(ctx, login_page, verbose=False)
         if not seeded:
-            print(f"[{_stamp()}] unattended seed failed — falling back to a human. "
-                  f"SEED: log into ownerville in the window and clear any "
-                  f"'verify you're human' box. (This one session covers every "
-                  f"Tableau/ownerville report.) Waiting up to {args.seed_timeout:g} min…",
-                  flush=True)
+            print(f"[{_stamp()}] unattended seed did not take — NOT a human "
+                  f"problem and nobody needs to go to this machine. Watching the "
+                  f"tab up to {args.seed_timeout:g} min, then the keep-alive loop "
+                  f"retries the login itself every {LOGIN_MIN_INTERVAL_MIN:g} min "
+                  f"and relaunches after {NO_EXPORT_MAX_MIN:g} min without a good "
+                  f"export. (This one session covers every Tableau/ownerville "
+                  f"report.)", flush=True)
             waited, deadline = 0, args.seed_timeout * 60
             while waited < deadline:
                 # PASSIVE detection — read the login page's URL (a property read,
@@ -1284,9 +1321,11 @@ def main() -> int:
                   f"Keep-alive every {args.interval:g} min. Leave running. Ctrl-C to stop.",
                   flush=True)
         else:
-            print(f"[{_stamp()}] not seeded within {args.seed_timeout:g} min — the "
-                  f"keep-alive loop will retry the unattended login on its own "
-                  f"cadence; a human login in the window also works.", flush=True)
+            print(f"[{_stamp()}] not seeded within {args.seed_timeout:g} min — "
+                  f"handing off to the keep-alive loop, which retries the "
+                  f"unattended login every {LOGIN_MIN_INTERVAL_MIN:g} min and "
+                  f"relaunches after {NO_EXPORT_MAX_MIN:g} min without a good "
+                  f"export. Recovery is automatic from here.", flush=True)
 
         # --- AppStream warming (OPT-IN, RESTORED 2026-08-05): only if this machine
         #     has been seeded (`--appstream-login` wrote APPSTREAM_STORAGE_STATE).
@@ -1317,10 +1356,13 @@ def main() -> int:
                         print(f"[{_stamp()}]  ⚠️ AppStream console warm but NO rqst "
                               f"token — nothing exported", flush=True)
                 else:
-                    print(f"[{_stamp()}]  ⚠️ AppStream session stale — re-seed once:  "
-                          f"PYTHONPATH=. .venv/bin/python -m "
-                          f"automations.shared.tableau_patchright --appstream-login",
-                          flush=True)
+                    # NOT a re-seed request. The typed login mints this session
+                    # unattended every day ("TYPED LOGIN minted … — no human, no
+                    # re-seed"), so a stale console is a fault the next renew
+                    # cycle clears by itself.
+                    print(f"[{_stamp()}]  ⚠️ AppStream console stale — the typed "
+                          f"login re-mints it on the next renew cycle, no human "
+                          f"and no re-seed.", flush=True)
             except Exception as e:  # noqa: BLE001 — AppStream must never crash the holder
                 as_enabled = False
                 print(f"[{_stamp()}] AppStream warm init skipped: "
@@ -1390,7 +1432,8 @@ def main() -> int:
         # re-seeds with no human. 25 min >> the 6–8 min export cadence (so it only
         # fires when genuinely stuck) and >> any real human login (which _passive_rqst
         # detects instantly anyway), so it won't interrupt someone mid-login.
-        NO_EXPORT_MAX_MIN = 25
+        # (module-level since 2026-09-07 so the retry message can name the same
+        # deadline it is counting down to — see _unattended_ownerville_login.)
         last_export_ok = time.time()   # the seed export above counts as the first
         # SELF-RELOAD (Megan 2026-08-25). The holder runs for days, so it keeps
         # whatever code it started with — a `git pull` changes the files on disk
@@ -1455,8 +1498,9 @@ def main() -> int:
                         last_export_ok = time.time()
                     else:
                         print(f"[{_stamp()}]  ⏳ ownerville still cold — unattended "
-                              f"login will retry; a human login in the window also "
-                              f"works.", flush=True)
+                              f"login retries every {LOGIN_MIN_INTERVAL_MIN:g} min, "
+                              f"then the holder relaunches itself. No action "
+                              f"needed.", flush=True)
                 else:
                     # Healthy → navigate the one tab to keep the session warm.
                     if _ownerville_session_valid(login_page, verbose=False):
@@ -1473,9 +1517,11 @@ def main() -> int:
                     else:
                         awaiting_login = True
                         print(f"[{_stamp()}]  ⚠️ ownerville STALE and the unattended "
-                              f"login did not take — will retry (kept last good "
-                              f"export). A human login in the window also works.",
-                              flush=True)
+                              f"login did not take — retrying every "
+                              f"{LOGIN_MIN_INTERVAL_MIN:g} min, relaunching after "
+                              f"{NO_EXPORT_MAX_MIN:g} min without a good export. "
+                              f"Kept the last good export meanwhile; no human "
+                              f"needed.", flush=True)
                     # AppStream keep-alive (seeded machines only). FULLY CONTAINED:
                     # its own try/except means a stale/challenged applicantstream
                     # console only logs a nudge — it never raises into the holder's

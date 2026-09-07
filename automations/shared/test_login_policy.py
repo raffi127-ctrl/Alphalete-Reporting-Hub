@@ -155,6 +155,50 @@ class NeitherLoginNeedsAHuman(unittest.TestCase):
                 allow_form_login=False, force_form_login=False,
                 username=None, password=None))
 
+    def test_the_holder_never_tells_anyone_to_go_log_in(self):
+        """The strings the HOLDER PRINTS are read by people at 6am, and a
+        message is as authoritative as a doc to whoever is reading it.
+
+        2026-09-07: two form attempts didn't take at 02:11/02:18, the holder
+        printed "unattended seed failed — falling back to a human. SEED: log
+        into ownerville in the window", then the 30-minute rung fired at 03:04
+        and the relaunch resumed a live session EIGHT SECONDS LATER — no human,
+        56 minutes before the 4am batch. The session was never the problem; the
+        string was, and it cost a triage session most of a morning chasing a
+        human-login fault that did not exist.
+
+        `resources/lucy-login-standard.md`: "Stop writing these ... needs a
+        one-time human login / a human must be at the machine". This asserts the
+        holder's own output obeys that, because the doc alone did not stop it."""
+        import inspect
+        from automations.shared import session_holder as sh
+        src = inspect.getsource(sh)
+        banned = [
+            "falling back to a human",
+            "a human login in the window would still fix it",
+            "a human login in the window also works",
+            "SEED: log into ownerville in the window",
+            "AppStream session stale — re-seed once",
+        ]
+        for phrase in banned:
+            self.assertNotIn(
+                phrase, src,
+                f"session_holder still tells a reader a human is needed: "
+                f"{phrase!r}. Both logins sign themselves in and a cold session "
+                f"self-heals via the relaunch ladder — say what is retrying and "
+                f"when, not who should go to the machine.")
+
+    def test_the_recovery_ladder_ends_in_a_relaunch_not_a_prompt(self):
+        """The last rung has to be automatic. A ladder whose final step is
+        "wait for a person" is an outage at midnight (2026-09-01, and again in
+        the wording on 2026-09-07)."""
+        from automations.shared import session_holder as sh
+        self.assertLessEqual(sh.LOGIN_MIN_INTERVAL_MIN, 15.0)
+        self.assertLessEqual(sh.NO_EXPORT_MAX_MIN, 30)
+        # The relaunch rung must be strictly slower than the retry, or the
+        # holder exits before the unattended login has had a chance to work.
+        self.assertGreater(sh.NO_EXPORT_MAX_MIN, sh.LOGIN_MIN_INTERVAL_MIN)
+
 
 class NoMachineDependsOnAnother(unittest.TestCase):
 
