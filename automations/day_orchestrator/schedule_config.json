@@ -9894,6 +9894,27 @@
       "verify": null,
       "machine": "Lucy 2"
     },
+    "vantura_roster_sync": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Campaign roster sync (Carlos 2026-09-06: 'if someone gets assigned Verizon, they get moved into the Verizon sales board'). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.vantura-roster-sync, installed via `lucy rerun install_vantura_roster_sync_agent`) on LUCY 2, EVERY 30 MIN (StartInterval 1800; off-hours passes are 3-read no-ops). Moves reps between the Vantura 'Sales Board' and the 'D2D Sales Board' when their Campaign (col L) says so, both directions, carrying name/last-wk/day-cells/trainer/field-status/team/leadership and restoring the C =SUM(E:K) formula + the D2D 'Verizon' L-prefill on the cleared row; live-week Roll Call people with campaign Verizon on neither board are ADDED to the D2D board (trainer + 1st Wk + In Training). Skips Terminated rows, never duplicates, and a FULL target board holds the move + posts ONE incident to the corrections channel (vantura-roster-board-full), resolved when the move lands. The same sync also runs inside every live vantura_slack_sales / vantura_orderlog_sales pass, so the agent is belt-and-suspenders latency cover for midday edits. There is no dry mode — a pass with nothing to move writes nothing. Live-tested 2026-09-06 (roll-add + full-board guard + no-dup, dummy rep).",
+      "display_name": "Vantura campaign roster sync (30 min)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.vantura_slack_sales.roster_sync"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
+    },
     "install_vantura_du_status_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_du_status_agent` can install the STANDALONE com.alphalete.vantura-du-status LaunchAgent on LUCY 2 (Sundays 19:00, deploy/vantura_du_status.sh, --write). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
@@ -9905,6 +9926,29 @@
       ],
       "base_args": [
         "vantura-du-status"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
+    },
+    "install_vantura_roster_sync_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_roster_sync_agent` can install the STANDALONE com.alphalete.vantura-roster-sync LaunchAgent on LUCY 2 (every 30 min, deploy/vantura_roster_sync.sh). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
+      "display_name": "Install Vantura roster sync agent (30 min)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "vantura-roster-sync"
       ],
       "cadence": {
         "weekdays": []

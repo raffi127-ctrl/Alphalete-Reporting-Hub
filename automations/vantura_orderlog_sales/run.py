@@ -386,6 +386,11 @@ def main(argv=None) -> int:
                 box_corrected = True
     if a.yes:
         ensure_board_shape(sh, g)
+        from automations.vantura_slack_sales.roster_sync import ensure_campaign_rosters
+        try:
+            ensure_campaign_rosters(sh, log=_log)
+        except Exception as e:                       # sync must never sink a fill
+            _log(f"roster sync failed (non-fatal): {e}")
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
 
