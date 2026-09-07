@@ -141,16 +141,54 @@ def _thread_ts(smp) -> str:
        people, thirteen seconds apart. It did.
 
     So resolve it ONCE and hold it for the process. Every later alert in the
-    same run replies under the same header, however many there are."""
+    same run replies under the same header, however many there are.
+
+    3. A PROCESS IS NOT A DAY (Megan 2026-09-07: "this shouldn't have 2 threads
+       in the 11280 channel"). The send pass is a five-minute tick, so every
+       firing is a NEW process with an empty _THREAD_TS, and each one asks
+       ensure_named_thread again. That search is a conversations_history scan
+       for today's dated header — and when it comes back empty, for any reason
+       at all, the answer is to POST ANOTHER HEADER. It did: 12:13 PM and
+       12:43 PM, two "Digi Docs — September 7th 2026" threads in the same
+       channel, replies split across both.
+
+       So the ts is written down for the DAY, not held for the process. The
+       first tick that needs a thread resolves it and records it; every later
+       tick today reads the file and never searches at all. A search that can
+       fail open cannot be the thing standing between us and a duplicate
+       header."""
     global _THREAD_TS
     if _THREAD_TS:
         return _THREAD_TS
+    import os
+    path = _thread_marker_path()
+    try:
+        with open(path) as fh:
+            ts = fh.read().strip()
+        if ts:
+            _THREAD_TS = ts
+            return ts
+    except Exception:                                       # noqa: BLE001
+        pass            # no marker yet, or unreadable — resolve it below
     parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
     ts = parent.get("thread_ts") if isinstance(parent, dict) else parent
     if not ts:
         raise smp.SlackPostError(f"no thread_ts in {parent!r}")
     _THREAD_TS = ts
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write(str(ts))
+    except Exception:                                       # noqa: BLE001
+        pass    # worst case the next tick searches, exactly as it used to
     return ts
+
+
+def _thread_marker_path() -> str:
+    """Today's Digi Docs thread ts. Dated, so tomorrow starts a new thread on
+    its own and nothing has to clean this up."""
+    import datetime as _dt
+    return f"output/logs/.digi-docs-thread-{_dt.date.today().isoformat()}"
 
 
 def _mark_reported() -> None:

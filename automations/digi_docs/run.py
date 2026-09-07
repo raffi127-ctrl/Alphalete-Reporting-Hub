@@ -514,14 +514,22 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                         # WRONG CAMPAIGN: reps were being added under
                         # Water/Primo, so bundles generated against the wrong
                         # campaign's list. That is fixed at the source now.
-                        ticked = []
+                        #
+                        # NAME THE BOXES THAT ARE ACTUALLY OWED (2026-09-07).
+                        # "the attestation boxes were not ticked" made an admin
+                        # go and check all four; when three of them saved, the
+                        # honest ask is the one that did not.
+                        ticked = list(getattr(e, "ticked", []))
+                        missed = getattr(e, "missed", None)
+                        owed = (", ".join(missed) if missed
+                                else "all of them")
                         _refuse(refused,
                                 f"{c.name}: bundle SENT (success banner "
-                                f"confirmed) — but the attestation boxes were "
-                                f"not ticked ({type(e).__name__}: "
-                                f"{str(e).splitlines()[0][:70]}). Tick them in "
-                                f"OwnerVille; this person does NOT need a "
-                                f"re-send.", dry)
+                                f"confirmed) — tick these in OwnerVille by "
+                                f"hand: {owed}. "
+                                f"({type(e).__name__}: "
+                                f"{str(e).splitlines()[0][:70]}) "
+                                f"This person does NOT need a re-send.", dry)
                     done.append((c.name, matched, ticked))
                 except ov.Refused as e:
                     _refuse(refused, str(e), dry)

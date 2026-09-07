@@ -100,7 +100,19 @@ def _run(ov, recorder, args=None):
     slack.alert_failure = lambda line, dry_run=True: recorder.alerts.append(line)
 
     ws = types.SimpleNamespace(title="D2D OBCL 8.24", id=0)
-    with mock.patch.dict(sys.modules, {
+    # THESE TESTS RUN WITH live=True, SO THE SIDE EFFECTS ARE REAL.
+    # _write_back records refusals as a finding manifest, and on 2026-09-07 a
+    # plain `python -m unittest` on Megan's laptop wrote output/manifests/
+    # digi_docs.json with the FIXTURE names in it — "Dana Reyes: 3 employees
+    # match" — which the orchestrator then posted to #claudecorrections as a
+    # real open finding. A test suite must not be able to page anybody.
+    # [[feedback_no_blind_test_sweeps]]
+    from automations.shared import run_manifest as _rm
+    with mock.patch.object(_rm, "write_manifest",
+                           lambda *a, **k: None), \
+        mock.patch("automations.day_orchestrator.hub_publish."
+                   "write_failure_reason", lambda *a, **k: None), \
+        mock.patch.dict(sys.modules, {
             "automations.digi_docs.ownerville": ov,
             "automations.digi_docs.mark": mark,
             "automations.digi_docs.slack_post": slack}), \

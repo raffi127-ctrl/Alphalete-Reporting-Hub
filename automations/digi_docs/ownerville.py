@@ -37,6 +37,22 @@ PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
                / config.BROWSER_PROFILE_DIRNAME)
 
 
+class AttestationIncomplete(RuntimeError):
+    """Some attestation boxes were ticked and saved; some were not.
+
+    Carries BOTH lists, because the difference matters to a human: `ticked` is
+    what the audit log can legitimately say we asserted, and `missed` is the
+    short list an admin actually has to go and click. Before this existed the
+    whole set was thrown away on the first timeout and the channel simply said
+    "the attestation boxes were not ticked" — true, but it made four boxes of
+    work out of one."""
+
+    def __init__(self, msg, *, ticked=(), missed=()):
+        super().__init__(msg)
+        self.ticked = list(ticked)
+        self.missed = list(missed)
+
+
 class Refused(RuntimeError):
     """We stopped on purpose. Never a crash — a refusal names its reason so the
     run's summary can say who was skipped and why."""
@@ -924,28 +940,83 @@ def tick_attestations(page, modal, *, dry_run: bool = True,
     process does; recording which reps we asserted it for is what keeps it
     auditable rather than invisible.
     """
-    ticked = []
+    ticked, missed = [], []
     for section, labels in ((config.DOCS_ROW.replace("ONBOARDING DOCUMENTS",
                                                      "BACKGROUND CHECK"),
                              config.BG_CHECK_TICK),
                             ("DRUG TEST", config.DRUG_TEST_TICK)):
-        _expand(modal, section, page, reveals=labels[0][:28])
+        try:
+            _expand(modal, section, page, reveals=labels[0][:28])
+        except Exception as e:                          # noqa: BLE001
+            # A section that will not open costs ITS boxes, not the others'.
+            missed.extend(f"{frag} ({section} did not open: "
+                          f"{type(e).__name__})" for frag in labels)
+            continue
         for frag in labels:
-            box = modal.locator("label", has_text=frag).first
-            box.wait_for(state="visible", timeout=15000)
-            if not dry_run:
-                box.click(timeout=10000)
-            ticked.append(frag)
+            (ticked if _tick_one(modal, frag, dry_run=dry_run)
+             else missed).append(frag)
 
-    _expand(modal, "SERVICE", page, reveals=config.SERVICE_RADIO)
-    radio = modal.locator("label", has_text=config.SERVICE_RADIO).first
-    radio.wait_for(state="visible", timeout=15000)
-    if not dry_run:
-        radio.click(timeout=10000)
-        _click_any(modal, "Save Changes", page=page)
-        page.wait_for_load_state("networkidle")
-    ticked.append(config.SERVICE_RADIO)
+    try:
+        _expand(modal, "SERVICE", page, reveals=config.SERVICE_RADIO)
+        ok = _tick_one(modal, config.SERVICE_RADIO, dry_run=dry_run)
+    except Exception as e:                              # noqa: BLE001
+        ok = False
+        missed.append(f"{config.SERVICE_RADIO} (SERVICE did not open: "
+                      f"{type(e).__name__})")
+    else:
+        (ticked if ok else missed).append(config.SERVICE_RADIO)
+
+    # SAVE WHATEVER GOT TICKED. This used to sit inside the SERVICE branch, so
+    # ANY earlier box raising meant Save Changes was never clicked and NOTHING
+    # persisted — the whole nine-box path thrown away over one 10s timeout.
+    # That is how Lilia Olvera Lopez ended up with a bundle sent and zero boxes
+    # ticked (2026-09-07). Three of four saved is three an admin does not have
+    # to do by hand.
+    if not dry_run and ticked:
+        try:
+            _click_any(modal, "Save Changes", page=page)
+            page.wait_for_load_state("networkidle")
+        except Exception as e:                          # noqa: BLE001
+            # Nothing persisted, so nothing was ticked as far as anyone can see.
+            raise AttestationIncomplete(
+                f"Save Changes failed ({type(e).__name__}): nothing was saved",
+                ticked=[], missed=ticked + missed)
+
     if verbose:
         print(f"  attestations {'WOULD be' if dry_run else ''} ticked: "
-              f"{len(ticked)}")
+              f"{len(ticked)}"
+              + (f" · MISSED {len(missed)}: {', '.join(missed)}" if missed
+                 else ""))
+    if missed:
+        raise AttestationIncomplete(
+            f"{len(missed)} of {len(ticked) + len(missed)} boxes not ticked: "
+            f"{', '.join(missed)}", ticked=ticked, missed=missed)
     return ticked
+
+
+def _tick_one(modal, frag: str, *, dry_run: bool) -> bool:
+    """Tick ONE box, and do not give up on the first timeout.
+
+    A plain click(timeout=10000) is a strict actionability wait — visible,
+    stable, hit-testable — and OwnerVille's modal fails it transiently while a
+    section it just expanded is still settling, or when the box has been
+    revealed below the fold. Both are recoverable, and neither is a reason to
+    leave a compliance box unticked: scroll it into view, then fall back to a
+    forced click that skips the hit-test. Returns False rather than raising, so
+    one stubborn box costs itself and not the other three."""
+    try:
+        box = modal.locator("label", has_text=frag).first
+        box.wait_for(state="visible", timeout=15000)
+        if dry_run:
+            return True
+        for attempt in ("normal", "scrolled", "forced"):
+            try:
+                if attempt == "scrolled":
+                    box.scroll_into_view_if_needed(timeout=5000)
+                box.click(timeout=10000, force=(attempt == "forced"))
+                return True
+            except Exception:                           # noqa: BLE001
+                continue
+        return False
+    except Exception:                                   # noqa: BLE001
+        return False
