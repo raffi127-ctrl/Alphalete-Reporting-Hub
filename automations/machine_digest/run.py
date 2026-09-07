@@ -470,6 +470,33 @@ def _retired_ids() -> set:
         return set()
 
 
+def _paused_ids() -> set:
+    """Ids the Hub declares STOOD DOWN (day_orchestrator.paused_reports).
+
+    A paused report is switched off on purpose, so "didn't run today" is the
+    system working. This watcher learns from HISTORY, not from declarations —
+    `_historical_expected` sees three weeks of a report running every day, so the
+    day it is paused is the day it starts looking missing. That is exactly what
+    happened to Texas de Brazil: paused Sat 9/5 (competition over, Rafael), and
+    at 10:10 on Mon 9/7 the channel got
+    `standalone-june_texas_de_brazil_monthly_competition` — "didn't run today on
+    the mini" — about a job whose LaunchAgent we had booted out ourselves.
+
+    Goes in `skip`, not `offday`, for _retired_ids' reason: offday suppresses
+    only the "didn't run" guess and still reports a FAILED, which is right for a
+    live report on its day off and wrong for one nobody expects to run at all.
+
+    Best-effort: unreadable → skip nothing and behave exactly as before. A paused
+    report alerting is a nuisance; a live one going quiet is the bug this watcher
+    exists to catch.
+    """
+    try:
+        from automations.day_orchestrator import paused_reports
+        return paused_reports.paused_ids()
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def _not_armed_ids(cfg) -> set:
     """Registry ids DECLARED still-being-built (`not_armed: true`).
 
@@ -1139,7 +1166,7 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     target_date = dt.date.fromisoformat(day)
     reports = _collect(rows, None, day, exact=False)   # host=None → all machines
     skip = (_orchestrator_ids(cfg, target_date) | _oneshot_utility_ids(cfg)
-            | _retired_ids() | _not_armed_ids(cfg))
+            | _retired_ids() | _not_armed_ids(cfg) | _paused_ids())
     # Off-day exemption for weekday-pinned standalone reports. Deliberately NOT
     # folded into `skip`: it must suppress the "didn't run" guess only, never a
     # real FAILED / INCOMPLETE / STUCK on an off-day hand-rerun.

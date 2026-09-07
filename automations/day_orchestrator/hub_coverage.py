@@ -175,7 +175,7 @@ _NOT_A_REPORT = frozenset({
 
 
 # RETIRED reports: switched off for good, code kept. Distinct from _NOT_A_REPORT
-# (plumbing that was never a report) and from dashboard.PAUSED_REPORTS (stood
+# (plumbing that was never a report) and from paused_reports.PAUSED_REPORTS (stood
 # down, still meant to come back — tracker_mirror, which KEEPS its card and says
 # why). A retired report's card should simply go.
 #
