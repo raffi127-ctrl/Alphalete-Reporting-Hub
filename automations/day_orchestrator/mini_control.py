@@ -69,7 +69,9 @@ Actions:
                         .ownerville_storage_state.json). Unpauses a runner
                         whose session went stale WITHOUT anyone getting to
                         its screen. Verified reuse-only; Args auto-redacted.
-  restart_holder        relaunch the ownerville session-holder LaunchAgent
+  restart_holder        relaunch the ownerville session-holder LaunchAgent.
+                        Recovers a DISABLED agent too (enable → kickstart,
+                        bootstrap if launchd says 'could not find service')
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
   sheets_login [check]  the Sales Board screenshot profile: 'check' probes it
                         headlessly; bare opens the Google login for a human
@@ -829,16 +831,83 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     return ok, f"wired + {verb} {key} → {result}"
 
 
+def _session_holder_plist() -> Path:
+    """Where the holder's LaunchAgent lives once installed. Its own function so
+    the restart ladder's bootstrap rung is testable off a Mac."""
+    return Path.home() / "Library" / "LaunchAgents" / f"{SESSION_HOLDER_LABEL}.plist"
+
+
 def _action_restart_holder(args: str) -> tuple[bool, str]:
-    """Relaunch the ownerville session-holder LaunchAgent on the mini."""
-    cmd = ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{SESSION_HOLDER_LABEL}"]
-    try:
-        proc = subprocess.run(cmd, timeout=90, stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True)
-    except Exception as e:
-        return False, f"launch error: {str(e)[:140]}"
-    out = (proc.stdout or "").strip()[:160]
-    return proc.returncode == 0, f"kickstart exit {proc.returncode}" + (f": {out}" if out else "")
+    """Relaunch the ownerville session-holder LaunchAgent on THIS machine.
+
+    A DISABLED agent looks exactly like a dead one (2026-09-07). Both show the
+    same symptom the pre-batch ping reports — "the holder hasn't re-exported in
+    N minutes" — but a bare `kickstart` cannot fix the disabled case: launchd
+    keeps the disable flag in the domain's override database, so the service is
+    not in the domain at all and kickstart answers `Could not find service`.
+    The documented remedy was three commands typed at the machine's own screen
+    (`print-disabled` / `enable` / `kickstart`), which is exactly what nobody
+    can do — nobody sits at a Lucy, and this action is the only remote path to
+    the holder. So do the whole ladder here:
+
+      1. `enable`    — clear the override-DB flag if it is set. Harmless and
+                       idempotent on an already-enabled service.
+      2. `kickstart` — the normal restart.
+      3. `bootstrap` — only if kickstart says the service isn't in the domain
+                       (disabled long enough to have been unloaded, or never
+                       loaded since the last reboot), then kickstart again.
+
+    Reports which rung actually did it, because "it was disabled" and "it was
+    merely dead" want different follow-ups: a disabled agent was disabled by
+    something, and it will come back."""
+    uid = os.getuid()
+    target = f"gui/{uid}/{SESSION_HOLDER_LABEL}"
+
+    def _lc(*argv, timeout=90):
+        """(returncode, combined output). Never raises — a launchctl that won't
+        run is reported, not an exception that hides which rung we reached."""
+        try:
+            proc = subprocess.run(["launchctl", *argv], timeout=timeout,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True)
+            return proc.returncode, (proc.stdout or "").strip()
+        except Exception as e:  # noqa: BLE001
+            return -1, f"{type(e).__name__}: {str(e)[:120]}"
+
+    # Was it disabled? Read it BEFORE clearing the flag — afterwards the
+    # evidence is gone, and "it was disabled" is the part worth telling.
+    _, disabled_out = _lc("print-disabled", f"gui/{uid}")
+    was_disabled = bool(re.search(
+        rf'"{re.escape(SESSION_HOLDER_LABEL)}"\s*=>\s*(true|disabled)',
+        disabled_out or "", re.I))
+
+    steps = []
+    if was_disabled:
+        rc_en, out_en = _lc("enable", target)
+        steps.append(f"enable exit {rc_en}" + (f" ({out_en[:80]})" if out_en else ""))
+    else:
+        # Still enable — print-disabled only lists services with an explicit
+        # override, and a domain that can't be read shouldn't cost us the fix.
+        _lc("enable", target)
+
+    rc, out = _lc("kickstart", "-k", target)
+    steps.append(f"kickstart exit {rc}" + (f": {out[:120]}" if out else ""))
+
+    # "Could not find service" (launchd errno 113) = not in the domain. Load it.
+    if rc != 0 and ("could not find service" in (out or "").lower()
+                    or "113" in (out or "")):
+        plist = _session_holder_plist()
+        if not plist.exists():
+            return False, (f"{'; '.join(steps)} — and {plist.name} is not in "
+                           f"~/Library/LaunchAgents, so there is nothing to load. "
+                           f"Re-install it (deploy/setup_lucy_machine.sh).")
+        rc_bs, out_bs = _lc("bootstrap", f"gui/{uid}", str(plist))
+        steps.append(f"bootstrap exit {rc_bs}" + (f": {out_bs[:80]}" if out_bs else ""))
+        rc, out = _lc("kickstart", "-k", target)
+        steps.append(f"kickstart exit {rc}" + (f": {out[:120]}" if out else ""))
+
+    note = " (it was DISABLED — something disabled it, expect it back)" if was_disabled else ""
+    return rc == 0, "; ".join(steps) + note
 
 
 # --- the restart hold ---------------------------------------------------------
