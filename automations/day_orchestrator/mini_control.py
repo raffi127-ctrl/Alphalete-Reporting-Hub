@@ -5746,6 +5746,61 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
     return ok, res
 
 
+def _action_harvest_zones(args: str) -> tuple[bool, str]:
+    """READ-ONLY: read each captainship ICD's street address and print the
+    timezone it implies. Touches no Sheet, posts nothing, mails nobody — it runs
+    `automations.captainship_night_knocks.harvest_zones`, whose whole job is to
+    produce the table the night knock send needs.
+
+      harvest_zones                    every ICD in every captainship (~44)
+      harvest_zones --only rafael      one captainship
+      harvest_zones --icd "Aya Mohamed"
+
+    Why this exists: Raf asked (2026-09-07) for the daily knocking sheet mailed
+    to the captainships at 9 PM LOCAL, one thread per captain filled in as each
+    timezone finishes its day. Nothing in the repo knows where an ICD is —
+    office_metrics has eleven addresses, the captainships run ~44 — and
+    ownerville's `timezoneFullName` describes the LOGGED-IN ACCOUNT, not the
+    office (proven across 21 impersonations 2026-08-25). The office's own
+    address IS readable under impersonation, so this reads it.
+
+    RUN IT ON LUCY 3. It takes the machine-wide ownerville session for ~45
+    minutes, and gap_alerts posts Raf's boards off LUCY 1's session every 15
+    minutes until 10 PM — the same collision that ate two of his boards on
+    2026-09-02 when a probe ran on the mini mid-window. Two machines CAN
+    impersonate the same account at once, which is the whole reason
+    captainship_knocks lives on Lucy 3. What it DOES collide with there is
+    knocks_intraday's own slots (2:00 / 5:15 PM and the 9 PM boards, Lucy 3), so
+    leave a clear hour before one of those.
+
+    Read the full table with `lucy logtail harvest-zones-<stamp>`."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    # Same guard the other browser actions use — a human Chrome left open
+    # single-instances with patchright's and breaks the scrape.
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome()
+        freed = chrome_guard.unstick_profile()
+        if freed:
+            print(f"  (freed the browser profile: orphan Chrome {freed})",
+                  flush=True)
+    except Exception:  # noqa: BLE001 — a guard must never crash the run
+        pass
+    cmd = [sys.executable, "-u", "-m",
+           "automations.captainship_night_knocks.harvest_zones"] + parts
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    # 75 min: ~44 impersonations in single file at ~45s each, plus headroom for
+    # the ones that fail slowly. The 3-line result cell is useless here — the
+    # paste-ready table is the whole point — so read the log.
+    ok, res = _run_cmd(cmd, timeout_s=75 * 60,
+                       log_name=f"harvest-zones-{stamp}.log")
+    return ok, res
+
+
 def _action_campaign_scan(args: str) -> tuple[bool, str]:
     """READ-ONLY: which offices run MORE THAN ONE campaign — i.e. who CANNOT be
     enrolled for daily dispositions yet. Runs
@@ -7293,6 +7348,7 @@ ACTIONS = {
     "logtail": _action_logtail,
     "daystate": _action_daystate,
     "probe_knocks": _action_probe_knocks,
+    "harvest_zones": _action_harvest_zones,
     "campaign_scan": _action_campaign_scan,
     "pip_install": _action_pip_install,
     "playwright_install": _action_playwright_install,
@@ -7877,6 +7933,14 @@ def print_help() -> None:
         "                            be impersonated). campaign=none skips the\n"
         "                            TeleMapper pin, to test whether the pin is\n"
         "                            what is blanking an office.\n"
+        '  lucy harvest_zones [--only <captain>] [--icd "<name>"]\n'
+        "                            READ-ONLY: read each captainship ICD's\n"
+        "                            address in ownerville and print the timezone\n"
+        "                            it implies (no Sheet, no Slack, no mail).\n"
+        "                            Feeds the 9 PM-local knock email. ~45 min on\n"
+        "                            LUCY 3 — it holds that machine's ownerville\n"
+        "                            session, so keep it clear of knocks_intraday's\n"
+        "                            5:15 PM and 9 PM slots.\n"
         '  lucy campaign_scan ["<office>"] [limit=N] [force]\n'
         "                            READ-ONLY: which offices run more than one\n"
         "                            campaign, i.e. who CANNOT be enrolled for\n"
