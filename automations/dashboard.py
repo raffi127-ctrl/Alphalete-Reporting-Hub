@@ -1431,8 +1431,11 @@ def _machine_card_assignments() -> dict:
     library-sheet reads at boot."""
     out = {}
     try:
+        # encoding= is not optional — see registry.load_config: the config
+        # carries em-dashes/arrows and read_text() falls back to the locale
+        # codec (cp1252 on Windows), which raises on the first one.
         cfg = json.loads((WORKSPACE / "automations" / "day_orchestrator"
-                          / "schedule_config.json").read_text())
+                          / "schedule_config.json").read_text(encoding="utf-8"))
         from automations.day_orchestrator import hub_coverage as _cov
         curated = _cov._curated_map()
         present = {str(r.get("id")) for r in AUTOMATED_REPORTS}

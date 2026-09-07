@@ -525,7 +525,12 @@ def ensure_library_card(report_id: str, report_name: str, *,
     name = report_name
     machine, weekdays, est = "Lucy 1", [], None
     try:
-        cfg = json.loads(CONFIG_PATH.read_text())
+        # encoding= is not optional: schedule_config.json is full of em-dashes
+        # and arrows, and read_text() defaults to the LOCALE codec — cp1252 on
+        # the Windows machines, which dies on the first one. registry.load_config
+        # learned this already; these four calls (and dashboard's) had not.
+        # The four here are the same file read four times, so they move together.
+        cfg = json.loads(CONFIG_PATH.read_text(encoding='utf-8'))
         r = cfg.get("reports", {}).get(report_id, {})
         real_module = real_module or (r.get("command") or [None])[0]
         base_args = list(r.get("base_args", []) or [])
@@ -603,7 +608,7 @@ def ensure_library_card(report_id: str, report_name: str, *,
 
 # ------------------------------------------------------------------------ audit
 def _scheduler_reports() -> Dict[str, dict]:
-    cfg = json.loads(CONFIG_PATH.read_text())
+    cfg = json.loads(CONFIG_PATH.read_text(encoding='utf-8'))
     return {rid: r for rid, r in cfg.get("reports", {}).items()
             if r.get("on_scheduler")}
 
@@ -637,7 +642,7 @@ def _report_display_name(rid: str, r: dict) -> str:
 
 def sync(dry_run: bool = True) -> List[str]:
     """Create a library card for every needs_card report. dry_run reports only."""
-    cfg = json.loads(CONFIG_PATH.read_text())
+    cfg = json.loads(CONFIG_PATH.read_text(encoding='utf-8'))
     reps = cfg.get("reports", {})
     msgs = []
     for rid, cid, _daily in audit()["needs_card"]:
@@ -801,7 +806,7 @@ def _wrapper_for_plist(plist_path: Path) -> Optional[Path]:
 def _module_to_report_id(module: str) -> Optional[str]:
     """Canonical report_id whose schedule_config command runs `module`, or None."""
     try:
-        cfg = json.loads(CONFIG_PATH.read_text())
+        cfg = json.loads(CONFIG_PATH.read_text(encoding='utf-8'))
     except Exception:
         return None
     for rid, r in cfg.get("reports", {}).items():
