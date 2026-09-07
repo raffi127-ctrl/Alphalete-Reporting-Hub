@@ -94,7 +94,12 @@ def _views(page, wb_id):
 def _custom_views(page, wb_id):
     """Custom views on a workbook. Best-effort: this method name has moved
     between Tableau builds, so a non-200 is reported, not raised — the base
-    view list above is what the caller actually needs."""
+    view list above is what the caller actually needs.
+
+    2026-09-07: it answers HTTP 404 on this site, same as getViewsForWorkbook
+    and getSheets. So '0 custom view(s) (HTTP 404)' means THE PROBE CANNOT SEE
+    THEM — it is NOT evidence that a custom view was deleted. Read the HTTP
+    code before drawing any conclusion from the count."""
     st, data = _call(page, "getCustomViews", {
         "filter": {"operator": "and", "clauses": [
             {"operator": "eq", "field": "workbookId", "value": str(wb_id)}]},
@@ -104,14 +109,32 @@ def _custom_views(page, wb_id):
     return st, (res.get("customViews") or res.get("views") or [])
 
 
+def _seg(rec):
+    """The view's url segment, spelled differently across Tableau builds —
+    take the first one present rather than guessing. Can legitimately come
+    back EMPTY: on DirectDepositICDVIEWVersion2_0 (2026-09-07) not one of
+    these keys was on the record, which is why the probe also prints the raw
+    key list per workbook."""
+    return str(rec.get("viewUrlName") or rec.get("urlName")
+               or rec.get("contentUrl") or rec.get("sheetUrl") or "")
+
+
 def _seg_url(rec, repo):
-    """The view's url segment is spelled differently across Tableau builds —
-    take the first one present rather than guessing from the display name."""
-    seg = str(rec.get("viewUrlName") or rec.get("urlName")
-              or rec.get("contentUrl") or rec.get("sheetUrl") or "")
+    seg = _seg(rec)
+    if not seg:
+        return ""
     if "/" in seg:
         return "{}/#/site/sci/views/{}".format(BASE, seg.lstrip("/"))
     return "{}/#/site/sci/views/{}/{}".format(BASE, repo, seg)
+
+
+def _squash(s):
+    """A view's url segment is its display name with spaces and punctuation
+    dropped ('PROGRAM SUMMARY' -> 'PROGRAMSUMMARY'), so this is what makes the
+    'is the view we point at still here?' test work on NAMES. Doing that test
+    on the URL instead reported PROGRAMSUMMARY as deleted on 2026-09-07 purely
+    because its url segment came back empty — a false alarm."""
+    return "".join(ch for ch in str(s or "").casefold() if ch.isalnum())
 
 
 def main() -> int:
@@ -151,11 +174,17 @@ def main() -> int:
 
             st, views = _views(page, wb["id"])
             print(f"{len(views)} view(s) (HTTP {st})", flush=True)
+            if views:
+                # The record's key names move between builds and decide whether
+                # a URL can be built at all — print them so an empty '-> ' is
+                # readable instead of mysterious.
+                print(f"KEYS: {sorted(views[0].keys())}", flush=True)
             rows = []
             for v in views:
                 url = _seg_url(v, wb.get("repositoryUrl") or "")
-                rows.append({"name": v.get("name"), "url": url})
-                print(f"VIEW: {v.get('name')} -> {url}", flush=True)
+                rows.append({"name": v.get("name"), "seg": _seg(v), "url": url})
+                print(f"VIEW: {v.get('name')} -> {url or '(no url segment on '
+                      f'the record)'}", flush=True)
 
             st, cvs = _custom_views(page, wb["id"])
             print(f"{len(cvs)} custom view(s) (HTTP {st})", flush=True)
@@ -163,10 +192,15 @@ def main() -> int:
                 print(f"CUSTOM: {c.get('name')} id={c.get('id')} "
                       f"view={c.get('viewId')}", flush=True)
 
-            if not any(expect.casefold() in (r["url"] or "").casefold()
+            # Match on the squashed NAME (and the segment when there is one),
+            # never on the URL — see _squash.
+            if not any(_squash(expect) in (_squash(r["name"]),
+                                           _squash(r["seg"]))
                        for r in rows):
                 print(f"GONE: {repo}/{expect} is NOT in this workbook's view "
                       f"list — that source really is dead.", flush=True)
+            else:
+                print(f"ALIVE: {repo}/{expect} is still listed.", flush=True)
             hot = [r for r in rows
                    if any(k in (r["name"] or "").casefold() for k in hot_words)]
             for r in hot:

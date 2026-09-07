@@ -44,15 +44,15 @@ import time
 # for carlos_focus). Distinct from the Hub card id 'recruiting-carlos'.
 MANIFEST_ID = "carlos-1on1s-run"
 
-# ("Cancel Rates", "cancel") was REMOVED 2026-08-30 with the ViewConfig it
-# names — its Tableau view no longer exists. Both lists have to move together:
-# a key here with no ViewConfig makes `--views cancel` an invalid choice and
-# leaves a step that can never pass.
+# ("Cancel Rates", "cancel") was REMOVED 2026-08-30 and ("Penetration",
+# "penetration") on 2026-09-07, each with the ViewConfig it names — both
+# Tableau views are gone and neither metric is being read any more. Both lists
+# have to move together: a key here with no ViewConfig makes `--views cancel`
+# an invalid choice and leaves a step that can never pass.
 CARLOS_OPT_VIEWS = [
     ("B2B 1-Pager",        "d2d1"),
     ("Activation",         "activation"),
     ("Churn",              "churn"),
-    ("Penetration",        "penetration"),
     ("Personal Production", "personal_production"),
     ("Direct Deposit",     "dd"),
 ]

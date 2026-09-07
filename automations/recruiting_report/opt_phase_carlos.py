@@ -87,7 +87,12 @@ def _aggregate_penetration(rows: list) -> dict:
     'Actual Pen %' up at the owner level as
         sum(Actual Sales) / ICD Workable Lead Count
     (verified against Adrian Sarabia 2026-05-20: 875 / 41,780 = 2.09%
-    matches what Megan sees in Tableau)."""
+    matches what Megan sees in Tableau).
+
+    UNUSED since 2026-09-07 — kept on purpose. The penetration ViewConfig was
+    retired (see its tombstone in VIEWS below) and this rollup is the part of
+    it that took the longest to get right, so it stays for whenever the metric
+    comes back under a new view."""
     if not rows:
         return {}
     total_actual = sum(_parse_csv_num(r.get("Actual Sales")) for r in rows)
@@ -270,26 +275,37 @@ VIEWS: List[ViewConfig] = [
             ViewMetric(sheet_row=49, tableau_column="120 Day"),
         ],
     ),
-    ViewConfig(
-        key="penetration",
-        url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/MARKETPERFORMANCEZIPLEVEL",
-        percent_format="0%",   # whole-number percent
-        sheet_thumbnail_match="Office/Zip Lead Penetration",
-        # ZIP-level data — 9608 rows, MANY per owner (~37 rows per ICD,
-        # one per ZIP). Per-ZIP 'Actual Pen %' varies; Tableau's owner-
-        # level rollup of 'Actual Pen %' is sum(Actual Sales) / ICD
-        # Workable Lead Count (verified vs Adrian 2026-05-20: 2.09%).
-        # `aggregator` collapses all of an owner's rows into the single
-        # owner-level value before we write it.
-        key_column="Owner Name",
-        aggregator=_aggregate_penetration,
-        metrics=[
-            # Listed for documentation only; the aggregator is what
-            # produces the value at row 50. _to_number doesn't run on
-            # aggregator output.
-            ViewMetric(sheet_row=50, tableau_column="Actual Pen %"),
-        ],
-    ),
+    # PENETRATION — REMOVED 2026-09-07. There is no view left to read, and
+    # the metric itself is retired: Eve, asked directly, "no tenemos más
+    # penetration para b2b".
+    #
+    # ATTTRACKER-B2B/MARKETPERFORMANCEZIPLEVEL was deleted from Tableau after
+    # the WE 2026-08-24 run — Eve confirmed by hand in the Tableau UI on
+    # 2026-08-31. It was a BASE view (no GUID, no custom view), so the error's
+    # own advice ("re-create the custom view") never applied, and there was no
+    # replacement URL to point at. Third casualty of the August ATTTRACKER-B2B
+    # republish, after Personal Production and Carlos's captainship bonus.
+    #
+    # Left in this list it downloaded nothing, failed ~8 render attempts per
+    # morning ("Viz toolbar never rendered for view 'penetration' — no viz
+    # iframe on the page"), and dragged carlos-1on1s-run to INCOMPLETE with a
+    # section-drop alert every Monday for a number nobody reads.
+    #
+    # Consequence, on purpose: SHEET ROW 50 IS NO LONGER WRITTEN by this phase.
+    # It is not cleared either — the tabs keep whatever was last filled there
+    # (week of 2026-08-24), so treat that cell as historical, not current.
+    # Same shape as row 43 / cancel above.
+    #
+    # If the metric ever returns under a new view: restore a ViewConfig with
+    # key="penetration", percent_format="0%" (whole-number percent),
+    # sheet_thumbnail_match="Office/Zip Lead Penetration",
+    # key_column="Owner Name", aggregator=_aggregate_penetration, and one
+    # ViewMetric(sheet_row=50, tableau_column="Actual Pen %") — and put
+    # ("Penetration", "penetration") back in carlos_opt_all.CARLOS_OPT_VIEWS
+    # beside it. The aggregator matters: the view was ZIP-level (~9608 rows,
+    # ~37 per ICD), and the owner-level rollup Tableau shows is
+    # sum(Actual Sales) / ICD Workable Lead Count, not a mean of the per-ZIP
+    # percentages (verified against Adrian 2026-05-20: 2.09%).
     ViewConfig(
         key="personal_production",
         # BASE view 'B2BATTSalesMetrics' (was the saved custom view

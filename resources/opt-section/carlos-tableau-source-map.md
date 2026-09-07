@@ -39,14 +39,14 @@ Sheet: https://docs.google.com/spreadsheets/d/1KLF8diMJ8pwIQWW9IqN7CL288t1l9VGUK
 | 40  | National AVG Apps                    | Tableau · `ATTTRACKER-B2B / D2D1-PAGERV3` · **bottom totals row** column **Sales / Rep** — single value, same on all 32 Carlos tabs |
 | 41  | Scorecard Ranking                    | Tableau · `ATTTRACKER-B2B / D2D1-PAGERV3` · column **rank**                                                       |
 | 42  | Personal Production                  | **TBD — Eve confirming.** Likely the same Raf-pipeline view: `ATTTRACKER2_1-D2D / PRODUCTSALESSUMMARY4WK` filtered on each Carlos ICD's rep name. Update this row once Eve confirms. |
-| 43  | 0-30 Day Cancel Rate                 | Tableau · `ATTTRACKER-B2B / B2BCancelRates` · column **6 Week average**                                           |
+| 43  | 0-30 Day Cancel Rate                 | **RETIRED 2026-08-30** — `B2BCancelRates` was deleted from Tableau and Carlos confirmed nobody reads it. The row is no longer written; it holds the WE 08-24 value. |
 | 44  | Activation / Approval %              | Tableau · `ATTTRACKER-B2B / ACTIVATIONRATES` · column **31-60 Days**                                              |
 | 45  | 0-30 Day Churn                       | Tableau · `ATTTRACKER-B2B / CHURNRATES` · column **0-30 Day Churn**                                               |
 | 46  | 30 Day Churn                         | Tableau · `ATTTRACKER-B2B / CHURNRATES` · column **30 Day Churn**                                                 |
 | 47  | 60 Day Churn                         | Tableau · `ATTTRACKER-B2B / CHURNRATES` · column **60 Day Churn**                                                 |
 | 48  | 90 Day Churn                         | Tableau · `ATTTRACKER-B2B / CHURNRATES` · column **90 Day Churn**                                                 |
 | 49  | 120 Day churn                        | Tableau · `ATTTRACKER-B2B / CHURNRATES` · column **120 Day churn**                                                |
-| 50  | Penetration Rate                     | Tableau · `ATTTRACKER-B2B / MARKETPERFORMANCEZIPLEVEL` · column **Actual Pen %**                                  |
+| 50  | Penetration Rate                     | **RETIRED 2026-09-07** — `MARKETPERFORMANCEZIPLEVEL` was deleted from Tableau after WE 08-24 and Eve retired the metric ("no tenemos más penetration para b2b"). The row is no longer written; it holds the WE 08-24 value. |
 | 51  | Direct Deposit                       | Tableau · `DirectDepositICDVIEWVersion2_0 / PROGRAMSUMMARY` · column **Grand Total to ICD**                       |
 
 ## Financial block — rows 52-58
@@ -66,9 +66,9 @@ Sheet: https://docs.google.com/spreadsheets/d/1KLF8diMJ8pwIQWW9IqN7CL288t1l9VGUK
 | Workbook / view                                   | Used for rows | URL |
 |---------------------------------------------------|---------------|-----|
 | `ATTTRACKER-B2B / D2D1-PAGERV3`                   | 29, 33-37, 40, 41 | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/D2D1-PAGERV3 |
-| `ATTTRACKER-B2B / B2BCancelRates`                 | 43            | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/B2BCancelRates?:iid=2 (repointed 2026-08-17 after SmartCircle republished the view) |
+| ~~`ATTTRACKER-B2B / B2BCancelRates`~~             | ~~43~~        | **DELETED from Tableau** — view retired 2026-08-30 (was repointed 2026-08-17 after a SmartCircle republish; it did not come back a second time) |
 | `ATTTRACKER-B2B / ACTIVATIONRATES`                | 44            | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/ACTIVATIONRATES |
 | `ATTTRACKER-B2B / CHURNRATES`                     | 45-49         | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES |
-| `ATTTRACKER-B2B / MARKETPERFORMANCEZIPLEVEL`      | 50            | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/MARKETPERFORMANCEZIPLEVEL |
+| ~~`ATTTRACKER-B2B / MARKETPERFORMANCEZIPLEVEL`~~  | ~~50~~        | **DELETED from Tableau** — base view (no GUID), gone after WE 08-24, no replacement URL; metric retired 2026-09-07 |
 | `DirectDepositICDVIEWVersion2_0 / PROGRAMSUMMARY` | 51            | https://us-east-1.online.tableau.com/#/site/sci/views/DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY |
 | `ATTTRACKER2_1-D2D / PRODUCTSALESSUMMARY4WK` (?)  | 42 (TBD)      | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK |
