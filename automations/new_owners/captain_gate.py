@@ -75,7 +75,8 @@ EXCLUDE: Dict[str, tuple] = {
     "Carlos": ("Atef Choudhury", "Sabrina Alicea",
                "Joe Eckhart", "Joseph Eckhart",
                # two-week zero rule, 2026-08-19
-               "Ryan Kabbes", "Kevin Driggs"),
+               "Ryan Kabbes", "Kevin Driggs",
+               "Gary Whitaker II"),             # 2026-09-08
     "Raf":    ("Edgar Muniz II",),           # 2026-08-19
     "Wayne":  ("Mason Davis",),              # 2026-08-19
     "Starr":  ("Jason Strid",                # 2026-08-19
@@ -105,7 +106,11 @@ EXCLUDE: Dict[str, tuple] = {
     # las cuatro cajas de delta), asi que ninguna columna historica se mueve.
     # Sin esta entrada el gate se los vuelve a ofrecer a Evelyn cada manana,
     # porque `Captain's Bonus Teams v2` los sigue filando bajo esos equipos.
-    "Pat":    ("Jesus Hawthorne",),                      # 2026-09-07
+    # 2026-09-08 (Eve), two-week zero rule: Roberto Luconi cerro WE 09.06 y
+    # WE 08.30 en 0 en las DOS cajas fiber de Pat (ultima venta WE 08.23) y no
+    # vende en ningun otro cuadro del board.
+    "Pat":    ("Jesus Hawthorne",                        # 2026-09-07
+               "Roberto Luconi"),                        # 2026-09-08
     "Jess":   ("Angel Arias", "Mary Maya"),              # 2026-09-07
 }
 

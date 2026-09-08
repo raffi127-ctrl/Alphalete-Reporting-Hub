@@ -92,6 +92,12 @@ EXCLUDE: set = {
     "angel arias",          # 2026-09-07 (Jess)
     "mary maya",            # 2026-09-07 (Jess)
     "jesus hawthorne",      # 2026-09-07 (Pat)
+    # 2026-09-08 (Eve), two-week zero rule. Ambos quedaron sin ninguna fila en
+    # el ORG board, asi que la cascada de roster_remove llega hasta aca. Ana
+    # Griffin salio flaggeada la misma manana y NO esta aca ni en ningun lado:
+    # vende Retail NL bajo el mismo banner, asi que no sale de ningun cuadro.
+    "gary whitaker ii",     # 2026-09-08 (Carlos)
+    "roberto luconi",       # 2026-09-08 (Pat)
 }
 
 

@@ -104,6 +104,23 @@ REMOVALS: dict = {
     "Carlos' Captain Team": [
         ("Ryan Kabbes", "ryankabbes@gmail.com"),
         ("Kevin Driggs", "kevdriggs25@gmail.com"),
+        # 2026-09-08 (Eve), regla de dos semanas: Gary Whitaker II sale de la
+        # capitanía de Carlos (B2B - All Units, cero en WE 09.06 y WE 08.30).
+        # Este grupo es COMPARTIDO (distro.GROUPS + screenshot_email
+        # .DISTRO_GROUPS), así que la baja también lo saca del correo del Org
+        # Sales Board y del Override Bulletin — igual que con Ethan McKendree.
+        # Su dirección sale además de config.RECIPIENTS["carlos"], porque
+        # seed_groups.py RECONSTRUYE este grupo desde esa lista.
+        ("Gary Whitaker II", "wgary.att@gmail.com"),
+    ],
+    # 2026-09-08 (Eve), regla de dos semanas: Roberto Luconi sale de la capitanía
+    # de Pat (las DOS cajas fiber, cero en WE 09.06 y WE 08.30). Su dirección
+    # sale también de config.RECIPIENTS["pat"] — seed_groups reconstruye el grupo
+    # desde ahí. Su tarjeta queda en "ATT Fiber Owners", que NO se toca: es el
+    # padrón de dueños ATT Fiber, no esta capitanía (mismo criterio que con Steve
+    # McElwee el 2026-08-20).
+    "Pat's Captainship": [
+        ("Roberto Luconi", "rluconi17@gmail.com"),
     ],
     "Khalil's Captainship": [
         ("Ayleen Gonzalez", "agonzalezz25@outlook.com"),

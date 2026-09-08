@@ -69,5 +69,13 @@ EXCLUDE = (
     "Javeon Lara",          # Colten's captainship
     # --- two-week zero rule, 2026-08-25 ---
     "William Sassenberg",   # Starr's captainship (both boxes)
+    # --- two-week zero rule, 2026-09-08. Sólo estos dos: quedaron con CERO
+    # filas en el board. Ana Griffin salió flaggeada la misma mañana y NO entra
+    # — vende Retail NL (27 en WE 08.23, 2 en WE 08.30) bajo el mismo banner que
+    # el cuadro frío, y Eve zanjó que en ese caso no sale de ninguno: "tiene que
+    # estar en ambos retail aunque venda uno solo". Ver el comentario de
+    # `--owner` en roster_remove.py.
+    "Gary Whitaker II",     # Carlos' captainship — B2B - All Units
+    "Roberto Luconi",       # Pat's captainship (both fiber boxes)
 )
 

@@ -566,8 +566,11 @@ RECIPIENTS: dict = {
         # smgroupjoe@ (Joe Eckhart, off the captainship); IN jackieleroyatt@.
         # The group had already been edited — this is the backup catching up, and
         # a stale backup is exactly what hid the Khalil typo.
+        # OUT 2026-09-08: Gary Whitaker II (wgary.att@) — regla de dos semanas,
+        # fuera de la capitanía de Carlos y del grupo vivo el mismo día. Tiene
+        # que salir de ACÁ también: seed_groups.py reconstruye el grupo desde
+        # esta lista y lo repondría, igual que pasó con Ethan McKendree.
         "CarlosHidalgo349@gmail.com",
-        "wgary.att@gmail.com",
         "georgehipolito2@gmail.com", "jamisgaray18@gmail.com",
         "jackieleroyatt@gmail.com", "jeffcstarr@gmail.com",
         "joeyrmz2002@gmail.com", "justinryanwood.93@gmail.com",
@@ -716,7 +719,10 @@ RECIPIENTS["pat"] = [
     "f.castillo0021@gmail.com",      # Francisco Castillo
     "npgilbert00@gmail.com",         # Nigel Gilbert
     "jarredhill1906@gmail.com",      # Jarred Hill
-    "rluconi17@gmail.com",           # Roberto Luconi
+    # OUT 2026-09-08: Roberto Luconi (rluconi17@) — regla de dos semanas, fuera
+    # de las dos cajas fiber de Pat y del grupo vivo "Pat's Captainship" el mismo
+    # dia. Sale de aca tambien porque seed_groups reconstruye el grupo desde esta
+    # lista. Su ficha sigue en "ATT Fiber Owners" a proposito.
     # Reciben TODAS las capitanias, no solo esta (Eve, 2026-09-07).
     "dylanjtwaddle@gmail.com",       # Dylan Twaddle
     "maudmiller4@gmail.com",         # Maud Miller

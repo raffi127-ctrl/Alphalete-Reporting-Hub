@@ -381,6 +381,14 @@ def main(argv=None) -> int:
                          "here is found by LABEL, so the same finders cover any "
                          "board of this shape — the Country Sales Board rides "
                          "this rather than a second copy of the module.")
+    # NO HAY UN SCOPE MÁS FINO QUE EL BANNER, y es una decisión, no una falta
+    # (Eve, 2026-09-08): "tiene que estar en ambos retail aunque venda uno solo".
+    # Ana Griffin salió flaggeada en ALPHALETE ORG / Retail Internet mientras
+    # vendía Retail NL bajo el MISMO banner; se le borraron las dos filas de
+    # Internet y Eve lo mandó deshacer. Un rep que vende en cualquier cuadro de
+    # su banner se queda en TODOS los cuadros de ese banner. Un `--section` que
+    # borre un solo cuadro se agregó ese día y se sacó el mismo día — si volvés
+    # a necesitarlo, la respuesta es que la baja no va.
     ap.add_argument("--owner", default=None,
                     help="Scope the removal to the blocks whose banner contains "
                          "this text — e.g. --owner eveliz takes a rep off HER "
