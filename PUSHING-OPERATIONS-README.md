@@ -142,6 +142,15 @@ restore pages drop their Restore controls mid-pass (repeat until clean);
 "Removed Apps <office>" Sheet tabs get OVERWRITTEN by each scrape — copy names
 out (`--names-out`) before the next run.
 
+**Changed: added a third office to the rotation (9/8, Khalil 11901).**
+Broke: nothing visibly — his ticks simply never fired. Why: the rotation is
+declared TWICE — `offices.py ROTATION` (Python) and `ROTATION=` in
+`deploy/applicant_push.sh` (the shell wrapper that actually picks the office).
+Editing only the Python side looks complete and does nothing.
+LESSON: adding an office = offices.py row + Python ROTATION + wrapper ROTATION
++ PUSH_ALLOWED + (if it posts) its own Slack channel + verify the push
+account's scope covers it — then watch the office's OWN log for the first tick.
+
 **Changed: queue-driven diagnostics (8/30–9/3).**
 Gotchas: sheet Result cells truncate (~a few hundred chars) — use `logtail`
 against the log file, or a tab dump; `rerun` args are shlex-split — a literal
