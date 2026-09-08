@@ -36,6 +36,97 @@ def _emit(rows, line):
         rows.append([line[i:i + 45000]])
 
 
+WANT_SECTIONS = ["Await Call", "Await Call AI", "1st Left Message",
+                 "2nd Left Message", "3rd Left Message", "No Answer",
+                 "First Interview Confirmation", "Friendly Reminder 1"]
+
+
+def _dump_template_bodies(page, rqst, rows):
+    """On the SMS Templates page (p=332), click Edit on each wanted section's
+    templates and dump every textarea/text-input the edit view exposes."""
+    url = f"https://applicantstream.com/index.cfm?rqst={rqst}&p=332"
+
+    def _reload():
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(2500)
+
+    _reload()
+    # map every Edit link to its section heading + template name
+    links = page.evaluate(
+        """() => {
+          const out = [];
+          const els = [...document.querySelectorAll('a,button')];
+          const heads = [...document.querySelectorAll('b,strong,h1,h2,h3,h4,td,div,span')]
+            .filter(e => /:$/.test((e.innerText||'').trim()) &&
+                         (e.innerText||'').length < 60);
+          els.forEach((a, i) => {
+            if ((a.innerText||'').trim() !== 'Edit') return;
+            let head = '', name = '';
+            let n = a;
+            for (let hops = 0; hops < 12 && n; hops++) {
+              n = n.parentElement;
+              if (!n) break;
+              const t = (n.innerText||'');
+              const m = t.match(/([A-Za-z0-9#\\/ .\\-]+ Template #\\d+|Test)/);
+              if (m && !name) name = m[1].trim();
+            }
+            let best = '', bestPos = -1;
+            const pos = a.getBoundingClientRect().top + window.scrollY;
+            heads.forEach(h => {
+              const hp = h.getBoundingClientRect().top + window.scrollY;
+              if (hp <= pos && hp > bestPos) { bestPos = hp; best = (h.innerText||'').trim(); }
+            });
+            out.push({i, head: best.replace(/:$/,''), name});
+          });
+          return out;
+        }""")
+    _emit(rows, f"=== phase 2: {len(links)} Edit links found ===")
+    wanted = [l for l in links
+              if any(l["head"].startswith(w) or l["name"].startswith(w)
+                     for w in WANT_SECTIONS)]
+    for l in wanted:
+        _emit(rows, f"opening Edit #{l['i']} — section {l['head']!r} "
+                    f"template {l['name']!r}")
+        try:
+            page.evaluate(
+                """(i) => { const es=[...document.querySelectorAll('a,button')]
+                     .filter(a=>(a.innerText||'').trim()==='Edit');
+                   if (es[0] !== undefined) {
+                     const all=[...document.querySelectorAll('a,button')];
+                     all[i].click(); } }""", l["i"])
+            page.wait_for_timeout(3000)
+            payload = page.evaluate(
+                """() => ({
+                  tas: [...document.querySelectorAll('textarea')]
+                        .map(t => (t.value||'').trim()).filter(Boolean),
+                  ins: [...document.querySelectorAll("input[type=text]")]
+                        .map(t => (t.value||'').trim())
+                        .filter(v => v && v.length > 15),
+                  frames: []})""")
+            for fr in page.frames:
+                try:
+                    extra = fr.evaluate(
+                        """() => [...document.querySelectorAll('textarea')]
+                              .map(t => (t.value||'').trim()).filter(Boolean)""")
+                    for e in extra:
+                        if e not in payload["tas"]:
+                            payload["tas"].append(e)
+                except Exception:  # noqa: BLE001
+                    continue
+            for k, ta in enumerate(payload["tas"]):
+                _emit(rows, f"[{l['head']} / {l['name']}] textarea {k}:\n{ta[:4000]}")
+            for k, v in enumerate(payload["ins"]):
+                _emit(rows, f"[{l['head']} / {l['name']}] input {k}: {v[:1000]}")
+            if not payload["tas"] and not payload["ins"]:
+                body = page.evaluate(
+                    "() => document.body ? document.body.innerText : ''") or ""
+                _emit(rows, f"[{l['head']} / {l['name']}] no fields — page text:\n"
+                            + body[:4000])
+        except Exception as e:  # noqa: BLE001
+            _emit(rows, f"[{l['head']}] edit failed: {e.__class__.__name__}: {e}")
+        _reload()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="as_templates_probe")
     ap.add_argument("--office", default="11280")
@@ -94,6 +185,10 @@ def main(argv=None):
                 _emit(rows, body[:40000])
                 for k, ta in enumerate(tas):
                     _emit(rows, f"--- textarea {k} ---\n{ta[:8000]}")
+
+            # ---- phase 2: open Edit on the pre-call templates and capture the
+            # actual message bodies (p=332 lists names only).
+            _dump_template_bodies(page, rqst, rows)
 
     sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
     try:
