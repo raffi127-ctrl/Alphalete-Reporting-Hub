@@ -312,6 +312,7 @@ OFFICES = {
     # resumes are removed).
     "11901": {
         "office_id": "11901",
+        "account": "lucyresume",
         "hint": "KHALIL MANSOUR",
         "owner": "Khalil Mansour",
         "label": "office 11901 · Khalil Mansour — ALPHALETE MANAGEMENT GROUP, INC.",
