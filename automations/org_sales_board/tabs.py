@@ -29,5 +29,11 @@ BOARD_TAB = "Alphalete ORG Sales Board"
 # The VAs' old hand-keyed tab: renamed + hidden 2026-08-19, out of circulation
 # since 2026-07-21. Kept only so the MANUAL comparison tools (compare.py,
 # full_compare.py, prior_week_repair.py) can still open it. Nothing scheduled
-# reads it — the daily job runs with --skip-compare.
+# reads it.
+#
+# IT IS FROZEN, so a diff against it is drift, not disagreement — seven weeks
+# of it by 2026-09-08, when a retry that still compared marked a correctly
+# filled board INCOMPLETE over 28 reps we ourselves retired in August. Nothing
+# may GATE on this tab. run.py compares only under --compare and treats the
+# result as report-only; see the note there.
 ARCHIVED_VA_TAB = "ARCHIVE — Alphalete ORG Sales Board (VAs, hasta 7/21)"
