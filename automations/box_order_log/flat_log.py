@@ -43,7 +43,7 @@ HEADERS = ("Week Ending", "Rep Name", "Sale Date", "Business Name",
            "Contract ID", "Account Id", "Status", "Contr. Sub-status",
            "Secondary Status", "Accepted Date", "BF Tier", "Term",
            "Complete Sales", "Sales (All) kWH+Therms", "Last Updated",
-           "Notes")
+           "Notes", "Box Notes")
 
 _COL_WEEK = HEADERS.index("Week Ending")
 _COL_SALE = HEADERS.index("Sale Date")
@@ -52,6 +52,7 @@ _COL_ACCOUNT = HEADERS.index("Account Id")
 _COL_STATUS = HEADERS.index("Status")
 _COL_UPDATED = HEADERS.index("Last Updated")
 _COL_NOTES = HEADERS.index("Notes")
+_COL_BOX_NOTES = HEADERS.index("Box Notes")
 _COL_SECONDARY = HEADERS.index("Secondary Status")
 
 
@@ -89,6 +90,7 @@ def _sale_row(s, stamp: str) -> List[str]:
         (f.get("Sales (All) kWH+Therms") or "").strip(),
         stamp,
         "",                                  # Notes — Carlos's, never ours
+        "",                                  # Box Notes — the email sweep's
     ]
 
 
@@ -131,6 +133,12 @@ def merge(existing: Sequence[Sequence[str]], sales: Sequence, *,
         # status changes, and dies only when the row ages off the window.
         if prior is not None and len(prior) > _COL_NOTES:
             fresh[_COL_NOTES] = prior[_COL_NOTES]
+        # Box Notes is the EMAIL column — written from the mini by the
+        # box-notes-email-sweep scheduled task (Lucy 2 has no Gmail), carried
+        # here exactly like Carlos's Notes so the twice-daily rewrite can't
+        # eat what the sweep wrote between runs.
+        if prior is not None and len(prior) > _COL_BOX_NOTES:
+            fresh[_COL_BOX_NOTES] = prior[_COL_BOX_NOTES]
         merged[_key(fresh)] = fresh
 
     kept, aged = [], 0
@@ -240,12 +248,12 @@ def push(sales: Sequence, *, today: Optional[dt.date] = None,
     # Notes column: readable width + wrap, so a sentence doesn't vanish.
     reqs.append({"updateDimensionProperties": {
         "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                  "startIndex": _COL_NOTES, "endIndex": _COL_NOTES + 1},
+                  "startIndex": _COL_NOTES, "endIndex": _COL_BOX_NOTES + 1},
         "properties": {"pixelSize": 260}, "fields": "pixelSize"}})
     reqs.append({"repeatCell": {
         "range": {"sheetId": ws.id, "startRowIndex": 1,
                   "startColumnIndex": _COL_NOTES,
-                  "endColumnIndex": _COL_NOTES + 1},
+                  "endColumnIndex": _COL_BOX_NOTES + 1},
         "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP"}},
         "fields": "userEnteredFormat.wrapStrategy"}})
     _retry(lambda: sh.batch_update({"requests": reqs}))
