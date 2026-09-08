@@ -27,6 +27,7 @@ import sys
 from typing import List
 
 from automations.blueink_docs import (blueink, completed, config, ledger,
+                                      session_alert,
                                       mark, recent, slack_post,
                                       recent_ui)
 from automations.blueink_docs import session as bi_session
@@ -452,7 +453,19 @@ def _main(argv=None) -> int:
             return 1
 
     if args.sync_completed:
-        n = _sync_completed(ws, people, headless=not args.headed)
+        try:
+            n = _sync_completed(ws, people, headless=not args.headed)
+        except Exception as exc:
+            # A dead session exits 2 correctly -- and that exit code went
+            # NOWHERE, because this job deliberately doesn't publish to the
+            # Hub. Fourteen silent failures a day is how 2026-09-07 came to be
+            # found by hand, a day late. Now it says so, once.
+            if session_alert.looks_dead(exc):
+                session_alert.alert_dead(
+                    exc, what_failed="the every-2-hours completed sweep",
+                    dry_run=not args.slack)
+            raise
+        session_alert.clear(dry_run=not args.slack)
         print(f"Checked off {n} completed packet(s) in {config.COL_BLUEINK!r} "
               f"on {ws.title!r}.")
         return 0
@@ -493,6 +506,12 @@ def _main(argv=None) -> int:
             # for a check the preview itself never needed. An expired Blue
             # Ink session or a moved search box lands here the same way.
             print(f"\nCouldn't read Blue Ink's list ({exc}).")
+            if session_alert.looks_dead(exc) and args.send:
+                # Worse here than in the sweep: the send REFUSES without this
+                # check, so a dead session on a Monday means nobody gets docs.
+                session_alert.alert_dead(
+                    exc, what_failed="the Monday 7:30am send",
+                    dry_run=not args.slack)
             if args.send:
                 print("REFUSING to send -- without that check this could "
                       "duplicate packets your team already sent by hand. "
