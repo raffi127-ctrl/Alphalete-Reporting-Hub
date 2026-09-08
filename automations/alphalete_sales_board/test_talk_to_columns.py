@@ -86,6 +86,48 @@ class Plan(unittest.TestCase):
         self.assertNotIn("MON", [t[0] for t in todo])
 
 
+WEEK_COLS = ["APPS", "INT", "INT UP", "DTV", "NL", "TK",
+             "AVG Total Knocks per day", "Total Talk-To's",
+             "AVG TT's per day", "% of TT's per knock", "AVG TTs per app", "Cx"]
+
+
+def week_grid():
+    """The running-week block in front of the seven day blocks."""
+    g = grid(THU=True)
+    r1 = ["", "", T.WEEK_BLOCK] + [""] * (len(WEEK_COLS) - 1) + \
+         ["LAST WEEK'S TOTALS"] + g[0][2:]
+    r3 = ["#", "Name"] + list(WEEK_COLS) + ["APPS"] + g[2][2:]
+    return [r1, [""] * len(r1), r3]
+
+
+class RunningWeekBlock(unittest.TestCase):
+    def test_the_block_ends_at_the_next_row1_label(self):
+        g = week_grid()
+        lo, hi = T.running_block(g)
+        self.assertEqual(T._cell(g, T.SUB_ROW, lo), "APPS")
+        self.assertEqual(T._cell(g, T.SUB_ROW, hi), "Cx")
+        self.assertEqual(hi - lo + 1, len(WEEK_COLS))
+
+    def test_the_shared_names_resolve_INSIDE_the_week_block(self):
+        """'Total Talk-To's' and '% of TT's per knock' exist in the week block
+        AND in every day block. Scoped lookup is what keeps them apart."""
+        g = week_grid()
+        wk = T.running_block(g)
+        thu = T.day_blocks(g)["THU"]
+        for h in (T.WEEK_TT, T.WEEK_PCT):
+            a, b = T.sub_col(g, wk, h), T.sub_col(g, thu, h)
+            self.assertTrue(a and b)
+            self.assertNotEqual(a, b)
+            self.assertLess(a, thu[0])          # the week one is to the LEFT
+
+    def test_sunday_is_not_a_working_day(self):
+        g = week_grid()
+        blocks = T.day_blocks(g)
+        work = [lab for lab in blocks if lab.upper() != "SUN"]
+        self.assertEqual(len(work), 6)
+        self.assertIn("SAT", work)
+
+
 class ColumnLetters(unittest.TestCase):
     def test_round_trip_past_Z(self):
         for col, want in ((1, "A"), (26, "Z"), (27, "AA"), (56, "BD"), (82, "CD")):

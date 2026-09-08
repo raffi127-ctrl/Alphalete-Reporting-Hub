@@ -150,6 +150,28 @@ def widths(ss, tab: str, first_col: int) -> list:
     return [c.get("pixelSize") for c in cm][:3]
 
 
+def number_format(ws, col: int, first_row: int, last_row: int,
+                  kind: str, pattern: str) -> dict:
+    """A request that sets one column's number format over a row range.
+
+    `updateCells` and NOT `repeatCell`, which is the whole reason this is a
+    function. The board carries a live FILTER, and repeatCell silently skips
+    every row the filter hides -- so the reps Eve has filtered out keep the raw
+    `0.1443298969` while everyone else reads `14.4%`, and it only shows up the
+    day somebody clears the filter. updateCells addresses rows by index and
+    formats them all.
+    """
+    cell = {"userEnteredFormat": {
+        "numberFormat": {"type": kind, "pattern": pattern}}}
+    return {"updateCells": {
+        "range": {"sheetId": ws.id, "startRowIndex": first_row - 1,
+                  "endRowIndex": last_row,
+                  "startColumnIndex": col - 1, "endColumnIndex": col},
+        "rows": [{"values": [cell]} for _ in range(last_row - first_row + 1)],
+        "fields": "userEnteredFormat.numberFormat",
+    }}
+
+
 def _has_group(ss, ws, start0: int, end0: int) -> bool:
     """Is there already a column group over exactly these columns?"""
     meta = ss.fetch_sheet_metadata({"fields": "sheets(properties(sheetId),columnGroups)"})
@@ -321,17 +343,142 @@ def formulas(ss, ws, apply: bool = False) -> int:
         if not (pct and avg):
             continue
         for c, pattern, kind in ((pct, "0.0%", "PERCENT"), (avg, "0.00", "NUMBER")):
-            fmt.append({"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": SUB_ROW,
-                          "endRowIndex": totals,
-                          "startColumnIndex": c - 1, "endColumnIndex": c},
-                "cell": {"userEnteredFormat": {
-                    "numberFormat": {"type": kind, "pattern": pattern}}},
-                "fields": "userEnteredFormat.numberFormat",
-            }})
+            fmt.append(number_format(ws, c, SUB_ROW + 1, totals, kind, pattern))
     if fmt:
         ss.batch_update({"requests": fmt})
     print("\nwrote the two derived columns on %d day block(s)." % (len(data) // 2))
+    return 0
+
+
+# The five Talk-To columns Eve added to the RUNNING WEEK TOTALS block, exactly as
+# row 3 spells them. Two of these names ALSO exist inside every day block, so
+# they are only ever looked up INSIDE the running-week block.
+WEEK_BLOCK = "RUNNING WEEK TOTALS"
+WEEK_AVG_TK = "AVG Total Knocks per day"
+WEEK_TT = "Total Talk-To's"
+WEEK_AVG_TT = "AVG TT's per day"
+WEEK_PCT = "% of TT's per knock"
+WEEK_TT_APP = "AVG TTs per app"
+
+
+def running_block(grid):
+    """(first_col, last_col) of the RUNNING WEEK TOTALS block: its row-1 label,
+    out to the column before the next row-1 label."""
+    width = max((len(r) for r in grid), default=0)
+    start = None
+    for c in range(1, width + 1):
+        lab = _cell(grid, DAY_ROW, c)
+        if start is None:
+            if lab.upper() == WEEK_BLOCK:
+                start = c
+        elif lab:
+            return start, c - 1
+    return (start, width) if start else (None, None)
+
+
+def week_formulas(ss, ws, apply: bool = False) -> int:
+    """The five weekly Talk-To columns, as formulas over the day blocks.
+
+    WHAT A "DAY WORKED" IS (Eve, 2026-09-08): a day the rep was actually out in
+    the field. Her rule is the roll-call letter — a day marked `X` is a day he
+    was not there and must not be averaged over — plus SUNDAY, which is a
+    non-working day every week and so is left out of the day list entirely.
+
+    `COUNT` is what implements that, and it is exact rather than clever: the
+    per-day Apps cell is a NUMBER on a day the rep worked (0.00 included — out
+    in the field, sold nothing) and TEXT on every other kind of day, because the
+    day's Apps formula returns the roll-call letter itself (`X`, `T`, `CR`,
+    `RT`, `L`, `STF`, `ATMO`, `F`). COUNT ignores text and blanks, so it lands on
+    exactly the days that count, and it keeps working if a new letter is added.
+
+      AVG Total Knocks per day = week TK       / days worked
+      Total Talk-To's          = the 7 daily Talk-To's, summed
+      AVG TT's per day         = week Talk-To's / days worked
+      % of TT's per knock      = week Talk-To's / week TK
+      AVG TTs per app          = week Talk-To's / week Apps
+
+    A rep with no day worked, no knocks or no apps reads BLANK, not 0 and never
+    #DIV/0! — the same rule the per-day columns follow.
+
+    In the TOTALS row the same formulas hold, with one thing worth knowing: the
+    denominator there is the SIX working days of the office (each day's total is
+    a number), so its 'per day' cells read office knocks/talk-to's per day. It
+    is not the sum of everybody's days worked.
+    """
+    from automations.energy_slack_fill.run import last_rep_row
+
+    grid = ws.get_all_values()
+    totals = last_rep_row(grid) + 1
+    lo, hi = running_block(grid)
+    if not lo:
+        print("no %r block in row 1 -- nothing to write." % WEEK_BLOCK)
+        return 1
+    wk = (lo, hi)
+    wanted = {h: sub_col(grid, wk, h) for h in
+              (WEEK_AVG_TK, WEEK_TT, WEEK_AVG_TT, WEEK_PCT, WEEK_TT_APP,
+               "APPS", "TK")}
+    missing = [h for h, c in wanted.items() if not c]
+    if missing:
+        print("%s is missing %s -- nothing written."
+              % (WEEK_BLOCK, ", ".join(repr(m) for m in missing)))
+        return 1
+
+    blocks = day_blocks(grid)
+    work = [b for lab, b in sorted(blocks.items(), key=lambda kv: kv[1][0])
+            if lab.upper() != "SUN"]                  # Sunday is never a work day
+    day_apps = [b[0] for b in work]
+    all_tt = [sub_col(grid, b, TRIO[0])
+              for _lab, b in sorted(blocks.items(), key=lambda kv: kv[1][0])]
+    if not all(all_tt):
+        print("some day block has no %r column -- run without --week-formulas "
+              "first." % TRIO[0])
+        return 1
+
+    A, K = (_col_letter(wanted["APPS"]), _col_letter(wanted["TK"]))
+    print("%s  %s..%s   dias habiles: %s   Apps=%s TK=%s"
+          % (WEEK_BLOCK, _col_letter(lo), _col_letter(hi),
+             ", ".join(_col_letter(c) for c in day_apps), A, K))
+
+    rows = list(range(SUB_ROW + 1, totals + 1))
+    data = []
+
+    def put(header, make):
+        col = _col_letter(wanted[header])
+        data.append({"range": "%s%d:%s%d" % (col, rows[0], col, rows[-1]),
+                     "values": [[make(r)] for r in rows]})
+        print("  %-26s %s" % (header, col))
+
+    def days(r):
+        return "COUNT(%s)" % ",".join("%s%d" % (_col_letter(c), r)
+                                      for c in day_apps)
+
+    def tts(r):
+        return ",".join("%s%d" % (_col_letter(c), r) for c in all_tt)
+
+    TT = _col_letter(wanted[WEEK_TT])
+    put(WEEK_AVG_TK, lambda r: '=IFERROR(IF(%s=0,"",%s%d/%s),"")'
+        % (days(r), K, r, days(r)))
+    put(WEEK_TT, lambda r: '=IF(COUNT(%s)=0,"",SUM(%s))' % (tts(r), tts(r)))
+    put(WEEK_AVG_TT, lambda r: '=IFERROR(IF(%s=0,"",%s%d/%s),"")'
+        % (days(r), TT, r, days(r)))
+    put(WEEK_PCT, lambda r: '=IF(N(%s%d)=0,"",IFERROR(%s%d/%s%d,""))'
+        % (K, r, TT, r, K, r))
+    put(WEEK_TT_APP, lambda r: '=IF(N(%s%d)=0,"",IFERROR(%s%d/%s%d,""))'
+        % (A, r, TT, r, A, r))
+
+    if not apply:
+        print("\npreview only -- re-run with --apply to write.")
+        return 0
+    ws.batch_update(data, value_input_option="USER_ENTERED")
+    fmt = []
+    for header, kind, pattern in (
+            (WEEK_AVG_TK, "NUMBER", "0.0"), (WEEK_TT, "NUMBER", "0"),
+            (WEEK_AVG_TT, "NUMBER", "0.0"), (WEEK_PCT, "PERCENT", "0.0%"),
+            (WEEK_TT_APP, "NUMBER", "0.0")):
+        fmt.append(number_format(ws, wanted[header], rows[0], rows[-1],
+                                 kind, pattern))
+    ss.batch_update({"requests": fmt})
+    print("\nwrote the five weekly columns, rows %d-%d." % (rows[0], rows[-1]))
     return 0
 
 
@@ -380,6 +527,8 @@ def main(argv=None) -> int:
                     help="only re-hide trios that sit in a collapsed day group")
     ap.add_argument("--formulas", action="store_true",
                     help="(re)write the two derived columns, every day, every row")
+    ap.add_argument("--week-formulas", action="store_true",
+                    help="(re)write the five Talk-To columns of RUNNING WEEK TOTALS")
     a = ap.parse_args(argv)
 
     from automations.recruiting_report.fill import open_by_key
@@ -390,6 +539,8 @@ def main(argv=None) -> int:
         return refold(ss, ws, a.tab, apply=a.apply)
     if a.formulas:
         return formulas(ss, ws, apply=a.apply)
+    if a.week_formulas:
+        return week_formulas(ss, ws, apply=a.apply)
 
     tmpl_day, tmpl_col, todo = plan(_headers(ws))
     if not tmpl_day:
