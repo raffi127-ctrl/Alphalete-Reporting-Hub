@@ -42,7 +42,8 @@ DAYS_KEPT = 60
 HEADERS = ("Week Ending", "Rep Name", "Sale Date", "Business Name",
            "Contract ID", "Account Id", "Status", "Contr. Sub-status",
            "Secondary Status", "Accepted Date", "BF Tier", "Term",
-           "Complete Sales", "Sales (All) kWH+Therms", "Last Updated")
+           "Complete Sales", "Sales (All) kWH+Therms", "Last Updated",
+           "Notes")
 
 _COL_WEEK = HEADERS.index("Week Ending")
 _COL_SALE = HEADERS.index("Sale Date")
@@ -50,6 +51,8 @@ _COL_CONTRACT = HEADERS.index("Contract ID")
 _COL_ACCOUNT = HEADERS.index("Account Id")
 _COL_STATUS = HEADERS.index("Status")
 _COL_UPDATED = HEADERS.index("Last Updated")
+_COL_NOTES = HEADERS.index("Notes")
+_COL_SECONDARY = HEADERS.index("Secondary Status")
 
 
 def week_ending_sunday(d: dt.date) -> dt.date:
@@ -85,6 +88,7 @@ def _sale_row(s, stamp: str) -> List[str]:
         (f.get("Complete Sales") or "").strip(),
         (f.get("Sales (All) kWH+Therms") or "").strip(),
         stamp,
+        "",                                  # Notes — Carlos's, never ours
     ]
 
 
@@ -121,6 +125,12 @@ def merge(existing: Sequence[Sequence[str]], sales: Sequence, *,
             fresh[_COL_UPDATED] = prior[_COL_UPDATED] or stamp
         else:
             changed += 1
+        # Carlos types into Notes by hand and the tab is CLEARED and rewritten
+        # every run — the merge is the only thing keeping his words alive.
+        # Carried by sale key, so a note follows its deal through re-sorts and
+        # status changes, and dies only when the row ages off the window.
+        if prior is not None and len(prior) > _COL_NOTES:
+            fresh[_COL_NOTES] = prior[_COL_NOTES]
         merged[_key(fresh)] = fresh
 
     kept, aged = [], 0
@@ -188,6 +198,58 @@ def push(sales: Sequence, *, today: Optional[dt.date] = None,
             "endRowIndex": len(body), "startColumnIndex": 0,
             "endColumnIndex": len(HEADERS)}}}},
     ]}))
+    # Status colors, same palette and meaning as the main log tab — derived
+    # from clean.STATUS_COLORS so a ruling that recolors one recolors both
+    # (a hardcoded copy went stale on the view tab once; see sheet.py).
+    # Row-scoped CUSTOM_FORMULA rules; ours are cleared first so re-runs
+    # never stack duplicates (same approach as sheet._clear_color_rules).
+    from .sheet import _clear_color_rules, _rgb
+    def col_letter(i):
+        out = ""
+        i += 1
+        while i:
+            i, r = divmod(i - 1, 26)
+            out = chr(65 + r) + out
+        return out
+    st = "$" + col_letter(_COL_STATUS) + "2"
+    sec = "$" + col_letter(_COL_SECONDARY) + "2"
+    was_submitted = 'ISNUMBER(SEARCH("{s}",{h}))'.format(s=clean.SUBMITTED, h=sec)
+    rng = {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": len(body),
+           "startColumnIndex": 0, "endColumnIndex": len(HEADERS)}
+    specs = [
+        (clean.STATUS_COLORS["Ready For Booking"],
+         '={st}="Ready For Booking"'.format(st=st)),
+        (clean.GREEN, '={st}="Accepted by Supplier"'.format(st=st)),
+        (clean.RED_BRIGHT, '={st}="Incomplete"'.format(st=st)),
+        (clean.RED, '=OR({st}="Cancelled by Broker",{st}="Rejected",'
+                    '{st}="Dropped")'.format(st=st)),
+        (clean.YELLOW, '=OR({st}="{sub}",AND({st}="Verification",{ws}))'
+                       .format(st=st, sub=clean.SUBMITTED, ws=was_submitted)),
+        (clean.ORANGE, '=AND({st}="Verification",NOT({ws}))'
+                       .format(st=st, ws=was_submitted)),
+    ]
+    reqs = _clear_color_rules(sh, ws.id)
+    for i, (hexv, formula) in enumerate(specs):
+        reqs.append({"addConditionalFormatRule": {
+            "index": i,
+            "rule": {"ranges": [rng],
+                     "booleanRule": {
+                         "condition": {"type": "CUSTOM_FORMULA",
+                                       "values": [{"userEnteredValue": formula}]},
+                         "format": {"backgroundColor": _rgb(hexv)}}}}})
+    # Notes column: readable width + wrap, so a sentence doesn't vanish.
+    reqs.append({"updateDimensionProperties": {
+        "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                  "startIndex": _COL_NOTES, "endIndex": _COL_NOTES + 1},
+        "properties": {"pixelSize": 260}, "fields": "pixelSize"}})
+    reqs.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 1,
+                  "startColumnIndex": _COL_NOTES,
+                  "endColumnIndex": _COL_NOTES + 1},
+        "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP"}},
+        "fields": "userEnteredFormat.wrapStrategy"}})
+    _retry(lambda: sh.batch_update({"requests": reqs}))
+
     log("  {} tab: {} rows ({} new, {} status changes, {} aged out past "
         "{} days)".format(TAB, len(rows), result["added"], result["changed"],
                           result["aged_out"], DAYS_KEPT))
