@@ -1303,6 +1303,95 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "org-active-headcount",
+        "name": "Active Headcount Alphalete Org Board",
+        "creator": "Eve",
+        "emoji": "\U0001F465",
+        "color": "#4C9AFF",
+        "category": "\U0001F4CA Metrics",
+        "description": (
+            "Fills this week's ACTIVE HEADCOUNT for all six campaigns on the "
+            "'Active Headcout Alphalete Org Board' tab \u2014 the same Rep Count "
+            "the focus reports use \u2014 then rolls the week columns and sorts "
+            "each box high\u2192low."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**\u2022** Rolls the week: 'This Week' freezes into the history and "
+            "the live column is cleared.\n"
+            "**\u2022** Fills each ICD's **active headcount** per campaign, from "
+            "the SAME Tableau views the focus reports read.\n"
+            "**\u2022** Sorts every box high\u2192low, each ICD's history "
+            "travelling with them.\n\n"
+            "WHERE EACH NUMBER COMES FROM\n"
+            "**\u2022** ATT Fiber / B2B \u2014 `Rep Count` off the ATT and B2B "
+            "one-pagers.\n"
+            "**\u2022** ATT NDS \u2014 `Rep Count` off TT-LineN/P Detail.\n"
+            "**\u2022** BOX \u2014 `Total Rep Count` off the Box **Daily** "
+            "Tracker, with the week pinned.\n"
+            "**\u2022** Retail NL/Internet \u2014 distinct reps with a sale "
+            "(SARA).\n"
+            "**\u2022** Retail JE \u2014 `Productive Rep Count`.\n\n"
+            "WHEN IT RUNS\n"
+            "**Mondays, after the focus reports.** It reads their crosstabs, so "
+            "running after them costs no extra Tableau downloads.\n\n"
+            "IF A CAMPAIGN'S SOURCE IS DOWN\n"
+            "That box is left **untouched, not zeroed**, and the run says so. "
+            "The other five still fill \u2014 re-run once the view is back.\n\n"
+            "WEEKS THAT CANNOT BE PULLED\n"
+            "NDS and B2B cannot be asked about a past week. To backfill one, send "
+            "the tracker screenshot; it goes in via "
+            "`python -m automations.org_active_headcount.tracker_fill`."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
+                      "?gid=1937067034#gid=1937067034"),
+        "assignees": ["Lucy 3"],
+        # Same machine as `alphalete_org_focus`, whose crosstabs this reads.
+        "run_machine": "Lucy 3",
+        "run_rerun_id": "org_active_headcount",
+        "self_scheduled": False,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],  # Monday
+            "time": "after the focus reports",
+            "estimated_minutes": 10,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": (
+                "\u2705 Active Headcount done \u2014 week rolled, all six "
+                "campaigns filled, boxes sorted. Check the log for any ICD its "
+                "source did not carry."
+            ),
+            "message_failed": (
+                "\u274c Run failed. Check the log above, fix the issue, then run "
+                "again."
+            ),
+        },
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "\u25b6",
+                "primary": True,
+                "help": ("Rolls the week, fills all six campaigns from Tableau, "
+                         "then sorts each box."),
+                "module": "automations.org_active_headcount.run",
+                "args_fn": lambda: ["--apply"],
+            },
+            {
+                "label": "Refill (no roll)",
+                "icon": "\u21bb",
+                "primary": False,
+                "help": ("Re-reads the crosstabs already on disk and refreshes "
+                         "THIS week's column. No browser and no roll \u2014 for "
+                         "fixing one campaign that failed."),
+                "module": "automations.org_active_headcount.run",
+                "args_fn": lambda: ["--apply", "--skip-roll", "--skip-download"],
+            },
+        ],
+    },
+    {
         "id": "carlos-captainship-headcount",
         "name": "Carlos Captainship Headcount",
         "creator": "Maud",
