@@ -913,20 +913,27 @@ class UnrecognisedDocsStateIsLoudTest(_NoNetwork):
                        dry=False, added=[], done=done, refused=refused)
         return refused
 
-    def test_pending_is_not_treated_as_already_generated(self):
-        """REVERSED 2026-09-07, and the 08-31 note asked for exactly this.
+    def test_pending_is_reported_but_never_re_sent(self):
+        """PENDING is ambiguous, and the record proves it both ways.
 
-        It said: "IF THAT READ IS WRONG ... the tell would be somebody sitting
-        in PENDING with no documents in OwnerVille." The tell arrived — Ashari
-        Evans, Miguel Rodríguez Tapia, Jayla Callier and Lurabeth Cottle, all
-        PENDING, all with nothing sent, all done by hand: "All were NOT sent
-        digital docs and should have been".
+        The 08-31 note asked for a falsification: "the tell would be somebody
+        sitting in PENDING with no documents in OwnerVille." That arrived —
+        Ashari Evans, Miguel Rodríguez Tapia, Jayla Callier, Lurabeth Cottle,
+        all PENDING with nothing sent, all done by hand.
 
-        So PENDING is not finished. It is not merely reportable either — it is
-        SENDABLE, because the person is owed a packet nobody has generated."""
+        But the opposite case is just as real: Ossaid Abusroor was generated at
+        12:03 (success banner, 4 boxes) and read PENDING at 12:36. Generating
+        LEAVES the row in PENDING.
+
+        So the row cannot distinguish "packet out" from "never sent", and the
+        tie goes to the irreversible side: never re-send. PENDING is reported
+        instead, so nobody is invisible and nobody is mailed twice. The real
+        discriminator would be whether a bundle exists in the portal."""
         from automations.digi_docs import config
         self.assertNotIn("PENDING", config.DOCS_DONE_STATES)
-        self.assertIn("PENDING", config.DOCS_SENDABLE_STATES)
+        self.assertNotIn("PENDING", config.DOCS_SENDABLE_STATES)
+        self.assertEqual(1, len(self._send_one("PENDING")),
+                         "PENDING must be reported, not silently skipped")
 
     def test_completed_stays_quiet(self):
         # noqa: kept alongside the PENDING case above
@@ -1010,16 +1017,25 @@ class FastAddOnlyTrustsAProvenRosterTest(_NoNetwork):
                          "empty means unread, never 'nobody is here'")
 
 
-class PendingIsSendableNotFinished(_NoNetwork):
-    """PENDING means nothing has gone out yet — so send it.
+class PendingIsNeitherDoneNorSendable(_NoNetwork):
+    """PENDING is ambiguous, so it is REPORTED and never re-sent.
 
-    Megan 2026-09-07: Ashari Evans, Miguel Rodríguez Tapia, Jayla Callier and
-    Lurabeth Cottle all sat in PENDING with no documents, and she sent all four
-    by hand — "All were NOT sent digital docs and should have been".
+    Two facts, both from 2026-09-07, and they point opposite ways:
 
-    PENDING was in DOCS_DONE_STATES from 2026-08-31, on the read that it meant
-    "packet out, awaiting signature". It did not. It made those people
-    invisible: skipped with a routine '·', no alert, on every run."""
+      · Megan's four — Ashari Evans, Miguel Rodriguez Tapia, Jayla Callier,
+        Lurabeth Cottle — sat in PENDING with NO documents. She sent them by
+        hand: "All were NOT sent digital docs and should have been."
+      · Ossaid Abusroor was generated at 12:03 (success banner, 4 boxes) and
+        read "skipped - Onboarding Documents is PENDING" at 12:36.
+
+    So generating LEAVES the row in PENDING, and the row cannot tell "packet
+    out" from "never sent". Sending on PENDING would have re-generated for
+    everyone already sent, every five minutes, every day - and generating IS
+    the send.
+
+    The resolution: not sendable (no duplicates) and not "done" either (nobody
+    invisible). It lands in the reported branch and gets named in the summary
+    for a human to settle."""
 
     def _ov_in_state(self, state):
         ov = _fake_ov()
@@ -1033,21 +1049,35 @@ class PendingIsSendableNotFinished(_NoNetwork):
         ov.config = types.SimpleNamespace(
             DOCS_NEEDED_STATE="REQUIRED ACTION",
             DOCS_DONE_STATES=("COMPLETED",),
-            DOCS_SENDABLE_STATES=("REQUIRED ACTION", "PENDING"))
+            DOCS_SENDABLE_STATES=("REQUIRED ACTION",))
         return ov
 
-    def test_pending_gets_a_bundle(self):
+    def test_pending_is_never_sent(self):
+        """The duplicate-contract guard. This is the one that matters."""
         rec = _Recorder()
         _run(self._ov_in_state("PENDING"), rec)
-        self.assertEqual(1, rec.calls[0]["sent"],
-                         "a PENDING person must be sent, not skipped")
+        self.assertEqual(0, rec.calls[0]["sent"] if rec.calls else 0,
+                         "PENDING must never generate a second bundle")
 
-    def test_completed_is_still_left_alone(self):
+    def test_pending_is_still_reported(self):
+        """Not sent, but never silent - that was the 08-31 harm."""
+        rec = _Recorder()
+        _run(self._ov_in_state("PENDING"), rec)
+        self.assertTrue(any("PENDING" in r for r in rec.calls[0]["refused"]),
+                        "a PENDING person must be named, not walked past")
+
+    def test_required_action_still_sends(self):
+        rec = _Recorder()
+        _run(self._ov_in_state("REQUIRED ACTION"), rec)
+        self.assertEqual(1, rec.calls[0]["sent"])
+
+    def test_completed_stays_quiet(self):
         rec = _Recorder()
         _run(self._ov_in_state("COMPLETED"), rec)
-        self.assertEqual(0, rec.calls[0]["sent"] if rec.calls else 0)
+        self.assertEqual([], rec.calls[0]["refused"] if rec.calls else [],
+                         "a finished person owes nothing and says nothing")
 
-    def test_the_config_no_longer_calls_pending_done(self):
+    def test_the_config_agrees(self):
         from automations.digi_docs import config
         self.assertNotIn("PENDING", config.DOCS_DONE_STATES)
-        self.assertIn("PENDING", config.DOCS_SENDABLE_STATES)
+        self.assertNotIn("PENDING", config.DOCS_SENDABLE_STATES)

@@ -279,15 +279,31 @@ DOCS_DONE_STATES = ("COMPLETED",)
 # PENDING has to be a state the send ACTS on — see DOCS_SENDABLE_STATES.
 
 
-# The states the send pass will generate a bundle for. "REQUIRED ACTION" is the
-# ordinary one; PENDING joins it per the note above.
+# The states the send pass will generate a bundle for. ONLY "REQUIRED ACTION".
 #
-# THE RISK, WRITTEN DOWN. Generating IS the send and there is no unsend, so if
-# a PENDING person somewhere DOES already have a packet out, they get a second
-# one. Today's evidence is 4 for 4 the other way, and the cost of the opposite
-# mistake is somebody never receiving their contract at all and no run saying
-# so. If a duplicate ever does turn up, this tuple is the one line to change.
-DOCS_SENDABLE_STATES = (DOCS_NEEDED_STATE, "PENDING")
+# PENDING WAS BRIEFLY IN HERE AND IT WAS WRONG (2026-09-07, caught same day).
+# The reasoning was that Megan's four — Ashari Evans, Miguel Rodríguez Tapia,
+# Jayla Callier, Lurabeth Cottle — sat in PENDING with no documents, so PENDING
+# must mean "nothing sent". Then the record settled it the other way:
+#
+#   Ossaid Abusroor, 12:03 — bundle generated, success banner, 4 boxes ticked
+#   Ossaid Abusroor, 12:36 — "skipped — Onboarding Documents is PENDING"
+#
+# Generating a bundle LEAVES the row in PENDING. So PENDING is ambiguous: it is
+# where a person lands whether their packet is out awaiting signature or was
+# never sent at all, and the row cannot tell you which. Making it sendable
+# would have re-generated for everyone already sent, every five minutes, all
+# day — and the wrapper gates on the clock, not the weekday, so every day.
+# Generating IS the send. There is no unsend.
+#
+# So PENDING is not sent, and it is also NOT in DOCS_DONE_STATES: it falls to
+# the reported-but-not-sent branch, which names those people in the run summary
+# instead of walking past them in silence. That keeps the real harm from
+# 2026-08-31 fixed (nobody invisible) without the irreversible one.
+#
+# To actually send them, the discriminator has to come from the DOCUMENTS, not
+# the status: look in the portal for whether a bundle already exists.
+DOCS_SENDABLE_STATES = (DOCS_NEEDED_STATE,)
 
 # --- Onboarding Quizzes: NOT automated (Megan 2026-08-25) -----------------
 # No completion sweep, unlike Blue Ink's signed-packet check. The six rows below
