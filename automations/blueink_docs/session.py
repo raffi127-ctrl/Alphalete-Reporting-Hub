@@ -13,7 +13,9 @@ cookies to a gitignored storage_state file. Every later run replays that file.
 When it expires, a human re-seeds -- there is deliberately no automated
 password path, because the repo is public and this session can SEND documents.
 
-    # once per machine, at the keyboard:
+    # once per machine, at the keyboard (or on ANY machine that then runs the
+    # read-only sweep itself -- Blue Ink is one shared account, so unlike
+    # ownerville/AppStream this session does not encode WHICH machine you are):
     python -m automations.blueink_docs.session --login
 
     # anytime, to see whether the runner still has a usable session:
@@ -24,11 +26,22 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 APP_ROOT = "https://secure.blueink.com"
 DASHBOARD = f"{APP_ROOT}/dashboard/"
-LOGIN_URL = f"{APP_ROOT}/login/"
+
+# The ROOT, not "/login/" -- that path is a hard HTTP 404 (checked 2026-09-08,
+# and it is what the first person to actually run --login saw: "page not
+# found"). It had never been exercised: everything else here replays a session
+# somebody seeded by hand, so the one URL nothing tested was the one that mints
+# it. Blue Ink is a single-page app; unauthenticated, the root renders its own
+# sign-in, the same way ownerville only logs in at its root domain. (The page
+# it actually redirects to is /auth/login -- seen 2026-09-08 when a replayed
+# session landed there. The root is what we open, so a future move of that
+# path costs nothing.)
+LOGIN_URL = f"{APP_ROOT}/"
 
 STORAGE_STATE = Path(__file__).resolve().parent / ".blueink_storage_state.json"
 PROFILE_DIR = Path(__file__).resolve().parent / ".blueink_profile"
@@ -44,12 +57,50 @@ def _sync_api():
         return sync_playwright
 
 
+# Where the app parks you when you are NOT signed in.
+LOGGED_OUT = "/auth/"
+
+
+def signed_in(page) -> bool:
+    """Is this browser looking at the signed-in app right now?
+
+    Every cheaper test was tried on 2026-09-08 and every one of them lied:
+
+      url contains "/dashboard"   true within a second of opening, while the
+                                  SPA is still on its way to /auth/login
+      a blueink.com cookie        the site sets cookies before you log in (the
+                                  saved "session" also carried a doubleclick
+                                  one -- page-load junk, not a login)
+      localStorage is non-empty   same problem, the app writes to it logged out
+
+    So: the app decides, and it says so by ROUTING. Being on /dashboard and NOT
+    on /auth is the thing every caller actually means, and it is what --check
+    has always tested. Nothing here reports a session that --check would then
+    call expired.
+    """
+    url = page.url or ""
+    return "/dashboard" in url and LOGGED_OUT not in url
+
+
 def have_session() -> bool:
-    return STORAGE_STATE.exists() and STORAGE_STATE.stat().st_size > 0
+    """Is there a SAVED session worth replaying?
+
+    Not just "the file exists": an empty storage_state is a real file of 30
+    bytes, and treating it as a session sends every later run off to fail
+    somewhere less obvious (2026-09-08).
+    """
+    if not STORAGE_STATE.exists() or STORAGE_STATE.stat().st_size == 0:
+        return False
+    try:
+        state = json.loads(STORAGE_STATE.read_text())
+    except (ValueError, OSError):
+        return False
+    return bool(state.get("cookies")
+                or any(o.get("localStorage") for o in state.get("origins") or []))
 
 
 def _require_session() -> None:
-    if not have_session():
+    if not (have_session() or have_profile()):
         raise RuntimeError(
             "No Blue Ink session. At the keyboard on THIS machine run:\n"
             "    python -m automations.blueink_docs.session --login\n"
@@ -71,26 +122,92 @@ def login() -> int:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(LOGIN_URL, wait_until="domcontentloaded")
         print("waiting for sign-in...", flush=True)
-        try:
-            # 10 minutes of patience -- SSO + 2FA on a phone is not quick.
-            page.wait_for_url(f"{APP_ROOT}/dashboard/**", timeout=600_000)
-        except Exception:
-            print("\nDidn't reach the dashboard. Nothing saved -- rerun when "
-                  "you're ready.", file=sys.stderr)
+        # WHAT COUNTS AS SIGNED IN. Not the URL. The app routes itself to
+        # /dashboard while still logged out (it renders the sign-in over that
+        # route), so "is /dashboard in the url" is true within a second of
+        # opening the browser and proves nothing -- it saved an EMPTY state
+        # and reported success on 2026-09-08. The only honest test is that the
+        # browser is actually holding a Blue Ink session: a cookie for this
+        # host, or a token the app put in localStorage.
+        deadline = time.time() + 600            # SSO + 2FA is not quick
+        ok = False
+        stable = 0
+        while time.time() < deadline:
+            try:
+                # TWICE, three seconds apart. A single look catches the moment
+                # the SPA is passing THROUGH /dashboard on its way to the login
+                # screen, which is exactly how this reported success twice on
+                # 2026-09-08 while nobody had signed in.
+                stable = stable + 1 if signed_in(page) else 0
+                if stable >= 2:
+                    ok = True
+                    break
+            except Exception:                   # noqa: BLE001
+                stable = 0                      # mid-navigation; look again
+            page.wait_for_timeout(3000)
+        if not ok:
+            print("\nNo Blue Ink session appeared -- NOTHING was saved.\n"
+                  f"The browser was left at: {page.url}\n"
+                  "If that says 'page not found', the app moved and LOGIN_URL "
+                  "in this file needs updating. If you were still typing, just "
+                  "rerun it.", file=sys.stderr)
             ctx.close()
             return 1
         ctx.storage_state(path=str(STORAGE_STATE))
+        state = json.loads(STORAGE_STATE.read_text())
+        cookies = len(state.get("cookies") or [])
+        items = sum(len(o.get("localStorage") or [])
+                    for o in state.get("origins") or [])
+        # Refuse to leave an empty file behind. have_session() only asks
+        # whether the file is there, so an empty one is WORSE than none: every
+        # later run reads it as a good session and fails somewhere further in.
+        if not cookies and not items:
+            STORAGE_STATE.unlink(missing_ok=True)
+            print("\nThe browser reported a session but saved nothing -- "
+                  "removed the empty file rather than leave a fake one. "
+                  "Rerun.", file=sys.stderr)
+            ctx.close()
+            return 1
         STORAGE_STATE.chmod(0o600)
-        cookies = len(json.loads(STORAGE_STATE.read_text()).get("cookies", []))
         ctx.close()
-    print(f"\nSaved {cookies} cookie(s) to {STORAGE_STATE.name} (owner-only). "
-          "This machine can now send without anyone signing in again.")
+    print(f"\nSaved {cookies} cookie(s) and {items} stored item(s) to "
+          f"{STORAGE_STATE.name} (owner-only). This machine can now read and "
+          "send without anyone signing in again.")
     return 0
 
 
+def have_profile() -> bool:
+    """Did a --login here leave a real browser profile behind?"""
+    return PROFILE_DIR.is_dir() and any(PROFILE_DIR.iterdir())
+
+
 def open_context(p, *, headless: bool = True):
-    """A browser context already logged into Blue Ink. Raises if unseeded."""
+    """A browser context already logged into Blue Ink. Raises if unseeded.
+
+    THE PROFILE FIRST, the storage_state file only as a fallback. Replaying
+    storage_state does not restore this app's login: --login on 2026-09-08
+    saved 5 cookies and 4 localStorage items, and a --check that replayed them
+    into a fresh browser still landed on /auth/login. storage_state carries
+    cookies and localStorage and nothing else -- no IndexedDB, no
+    sessionStorage -- so for an app that keeps its token anywhere else the file
+    looks convincingly full and authenticates nothing. The profile directory is
+    the whole browser and does not have that hole.
+
+    The file is still written and still read, because it is what tells another
+    machine (and have_session) that a login happened at all; it is just not the
+    thing this replays when the profile is right here.
+
+    Returns (closeable, context) either way. With a persistent profile those
+    are the same object -- it has .close() and .new_page(), so every caller's
+    `browser, ctx = open_context(...)` keeps working unchanged.
+    """
     _require_session()
+    if have_profile():
+        ctx = p.chromium.launch_persistent_context(
+            user_data_dir=str(PROFILE_DIR), headless=headless,
+            viewport={"width": 1440, "height": 1000},
+            args=["--window-size=1440,1000", "--disable-sync"])
+        return ctx, ctx
     browser = p.chromium.launch(
         headless=headless,
         args=["--window-size=1440,1000", "--disable-sync"])
@@ -100,14 +217,15 @@ def open_context(p, *, headless: bool = True):
 
 def check(headless: bool = True) -> int:
     """Is the saved session still good? Loads the dashboard and looks."""
-    if not have_session():
-        print("No session file -- run --login first.")
+    if not (have_session() or have_profile()):
+        print("No session here -- run --login first.")
         return 1
     sync_playwright = _sync_api()
     with sync_playwright() as p:
         browser, ctx = open_context(p, headless=headless)
-        page = ctx.new_page()
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(DASHBOARD, wait_until="domcontentloaded", timeout=60_000)
+        page.wait_for_timeout(6000)     # the SPA decides who you are late
         url = page.url
         ok = "/login" not in url
         print(f"landed on {url}")
