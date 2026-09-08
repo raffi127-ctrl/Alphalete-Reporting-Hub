@@ -161,20 +161,25 @@ def pull(today: dt.date, log=print) -> List[Path]:
 # --------------------------------------------------------------------- math
 
 def tally(paths, today: dt.date, log=print):
-    """-> (wtd_by_product, weekday_cum_share, per_owner_wtd).
+    """-> (wtd_by_product, weekday_cum_share, per_owner_wtd, weekly).
 
     wtd_by_product: activations posted this DD week so far, per SC product.
     weekday_cum_share: over the last 4 COMPLETED DD weeks, the share of a
     week's team activations posted by end of each weekday index 0=Sun..6=Sat.
+    weekly: {DD week Sunday-start: Counter(product -> n)} for completed DD
+    weeks from 2026-08-23 on (post-realignment — older weeks come from SC's
+    own emails, so the current-roster tally would be wrong for them anyway).
     """
     from automations.att_order_log import clean
 
     ws, we = dd_week(today)
     hist_start = ws - dt.timedelta(days=28)
+    weekly_floor = dt.date(2026, 8, 23)     # first post-realignment DD week
 
     wtd = collections.Counter()
     per_owner = collections.Counter()
     hist_by_day = collections.Counter()     # weekday idx -> volume, last 4 wks
+    weekly = collections.defaultdict(collections.Counter)
     for path in paths:
         for ln in clean.load_rows(str(path), owner_prefix=None):
             owner = _norm_owner(ln.get("Owner & Office"))
@@ -194,6 +199,9 @@ def tally(paths, today: dt.date, log=print):
                 per_owner[owner.title()] += 1
             elif hist_start <= posted < ws:
                 hist_by_day[(posted.weekday() + 1) % 7] += 1   # 0=Sun
+            if posted < ws and posted >= weekly_floor:
+                wk_start = posted - dt.timedelta(days=(posted.weekday() + 1) % 7)
+                weekly[wk_start][prod] += 1
     hist_total = sum(hist_by_day.values())
     cum, share = 0, []
     for d in range(7):
@@ -203,7 +211,7 @@ def tally(paths, today: dt.date, log=print):
         % (sum(wtd.values()),
            " ".join("%s %d" % (PROD_LABEL[p], wtd[p]) for p in PRODUCTS),
            hist_total, 100 * share[(today.weekday() + 1) % 7]))
-    return wtd, share, per_owner
+    return wtd, share, per_owner, weekly
 
 
 def _tier(vol: float, prog: dict) -> Tuple[int, float]:
@@ -322,6 +330,239 @@ def build_report(today: dt.date, wtd, share, per_owner, prog) -> str:
     return "\n".join(l for l in lines if l != "")
 
 
+HISTORY = Path(__file__).resolve().parent / "sc_history.json"
+BONUS_TAB = "Captainship Bonus"
+TIER_NAMES = ["Base"] + ["Tier %d" % i for i in range(1, 8)]
+
+
+def _money(v) -> str:
+    return "$" + "{:,.0f}".format(v)
+
+
+def _bonus_col(prog, vols, rates, status, posted_so_far=None):
+    """One sheet column (list of display strings) from computed inputs."""
+    b = bonus({p: float(vols.get(p, 0)) for p in PRODUCTS}, prog, rates)
+    thr = prog["tier_thresholds"][b["tier"]]
+    col = [
+        status,
+        str(int(round(b["vol"]))),
+        (str(posted_so_far) if posted_so_far is not None else u"—"),
+    ]
+    col += [str(int(round(vols.get(p, 0)))) for p in PRODUCTS]
+    col += [
+        "%s (≥%d)" % (TIER_NAMES[b["tier"]], thr),
+        "$%.2f" % b["rate"],
+        "%.1f%%" % rates["activation_31_60_pct"],
+        "+$%.0f" % b["act_add"],
+        "%.1f%%" % rates["team_total_churn_pct"],
+        u"—",
+        "+$%.0f" % b["churn_add"],
+        "$%.2f" % b["per_pc"],
+        _money(b["payout"]),
+    ]
+    col += ["%.1f%% → %.0f%%" % (rates["churn_pct"][p],
+                                      100 * b["decels"][p]) for p in PRODUCTS]
+    col += ["%.1f%%" % (100 * b["wdecel"]), _money(b["final"])]
+    return col
+
+
+def _paid_col(wk: dict):
+    """One sheet column from an SC-email actual (old or new format)."""
+    prods = wk.get("products") or {}
+    cprods = wk.get("churn_products") or {}
+    dprods = wk.get("decel_products") or {}
+    per_pc = wk["vol_rate"] + wk["act_add"] + wk["churn_add"]
+    col = ["PAID (SC email)", str(wk["volume"]), u"—"]
+    col += [(str(prods[p]) if p in prods else u"—") for p in PRODUCTS]
+    col += [
+        u"—",
+        "$%.2f" % wk["vol_rate"],
+        "%.1f%%" % wk["activation"],
+        "+$%.0f" % wk["act_add"],
+        "%.1f%%" % wk["churn_team"],
+        "%.1f%%" % wk["churn_personal"],
+        "+$%.0f" % wk["churn_add"],
+        "$%.2f" % per_pc,
+        _money(wk["payout"]),
+    ]
+    if wk.get("format") == "weighted":
+        col += ["%.1f%% → %.0f%%" % (cprods[p], 100 * dprods[p])
+                for p in PRODUCTS]
+    else:
+        col += [u"— (single decel)"] * len(PRODUCTS)
+    col += ["%.1f%%" % (100 * wk["decel"]), _money(wk["final"])]
+    return col
+
+
+ROW_LABELS = [
+    "", "DD Volume (activations)", "posted so far",
+    "  Internet", "  Non-BYOD wireless", "  BYOD wireless", "  AIR/AWB",
+    "Volume tier", "Volume $/pc",
+    "Activation % (31–60d)", "Activation adder",
+    "Team churn % (0–30d)", "Personal churn % (0–30d)", "Churn adder",
+    "Total $/pc", "Payout (before decel)",
+    "Internet churn → decel", "Non-BYOD churn → decel",
+    "BYOD churn → decel", "AIR/AWB churn → decel",
+    "Weighted decelerator", "FINAL BONUS",
+]
+
+
+def build_sheet(today, wtd, share, weekly, prog, log=print):
+    """-> (values, meta) for the 'Captainship Bonus' tab. Columns: the running
+    DD week (live), then prior DD weeks newest-first — SC actuals where the
+    breakdown email exists (sc_history.json), our ESTIMATE where it doesn't
+    yet (post-realignment weeks only)."""
+    hist = json.loads(HISTORY.read_text())["weeks"]
+    rates = dict(prog["seed_rates"])
+    rates["churn_pct"] = dict(rates["churn_pct"])
+
+    ws, we = dd_week(today)
+    cs = share[(today.weekday() + 1) % 7]
+    can_project = cs >= 0.08
+    cur_vols = ({p: wtd[p] / cs for p in PRODUCTS} if can_project
+                else {p: float(wtd[p]) for p in PRODUCTS})
+    day_n = (today - ws).days + 1
+    cur_status = ("LIVE · day %d, projected" % day_n if can_project
+                  else "LIVE · day %d, WTD only" % day_n)
+
+    cols = [("DD WE %d/%d" % (we.month, we.day),
+             _bonus_col(prog, cur_vols, rates, cur_status,
+                        posted_so_far=sum(wtd.values())))]
+    # prior weeks, newest first: SC actual > our estimate > skip
+    prior = ws - dt.timedelta(days=7)
+    hist_keys = sorted(hist.keys(), reverse=True)
+    oldest = dt.date.fromisoformat(min(hist_keys)) if hist_keys else prior
+    wk = prior
+    while wk >= oldest - dt.timedelta(days=6):
+        sat = wk + dt.timedelta(days=6)
+        label = "DD WE %d/%d" % (sat.month, sat.day)
+        h = hist.get(sat.isoformat())
+        if h:
+            cols.append((label, _paid_col(h)))
+        elif wk in weekly:
+            cols.append((label + " *",
+                         _bonus_col(prog, dict(weekly[wk]), rates,
+                                    "ESTIMATE (SC email pending)")))
+        wk -= dt.timedelta(days=7)
+
+    ncol = len(cols) + 1
+    values, meta = [], []
+
+    def push(row, kind=None):
+        values.append(row + [""] * (ncol - len(row)))
+        if kind:
+            meta.append((len(values), kind))
+
+    push(["CARLOS CAPTAINSHIP BONUS — WEEKLY BREAKDOWN"], "title")
+    push(["DD (pay) weeks run Sun–Sat. PAID columns are Smart Circle's own "
+          "breakdown email; ESTIMATE/LIVE columns are computed from the order "
+          "log with churn/activation seeded from the latest email (as of %s). "
+          "Bonus = volume × tier $/pc (+adders, $%s floor) × weighted "
+          "churn decelerator. Before DD WE 8/29 the program used one single "
+          "decelerator. Updated %s."
+          % (prog["as_of"], "{:,}".format(prog["payout_floor"]),
+             today.strftime("%m/%d/%Y"))], "note")
+    push([""])
+    push([""] + [c[0] for c in cols], "header")
+    for i, lab in enumerate(ROW_LABELS):
+        if i == 0:
+            push(["Status"] + [c[1][0] for c in cols], "status")
+            continue
+        kind = "final" if lab == "FINAL BONUS" else (
+            "money" if lab in ("Payout (before decel)", "Weighted decelerator")
+            else None)
+        push([lab] + [c[1][i] for c in cols], kind)
+    return values, meta
+
+
+def write_bonus_tab(values, meta, log=print):
+    from automations.b2b_captainship_activations.run import SHEET_ID
+    from automations.recruiting_report.fill import _retry, open_by_key
+
+    sh = open_by_key(SHEET_ID)
+    ncol = max(len(r) for r in values)
+    try:
+        ws = sh.worksheet(BONUS_TAB)
+    except Exception:  # noqa: BLE001 — WorksheetNotFound
+        ws = _retry(lambda: sh.add_worksheet(title=BONUS_TAB,
+                                             rows=len(values) + 10,
+                                             cols=ncol + 2))
+        log("  [sheet] created tab %r" % BONUS_TAB)
+    if ws.title != BONUS_TAB:
+        raise RuntimeError("PROTECTED: refusing to write tab %r" % ws.title)
+    _retry(lambda: ws.resize(rows=max(len(values) + 10, 40),
+                             cols=max(ncol + 2, 10)))
+    _retry(lambda: ws.clear())
+    _retry(lambda: ws.update(values, "A1", raw=True))
+
+    sid = ws.id
+    white = {"red": 1, "green": 1, "blue": 1}
+    navy = {"red": 0.12, "green": 0.30, "blue": 0.47}
+    slate = {"red": 0.85, "green": 0.88, "blue": 0.91}
+    gold = {"red": 1.0, "green": 0.95, "blue": 0.75}
+    grey = {"red": 0.95, "green": 0.95, "blue": 0.95}
+
+    def band(i0, color, fg=None, bold=True, size=None, italic=False):
+        fmt = {"backgroundColor": color,
+               "textFormat": {"bold": bold, "italic": italic}}
+        if fg:
+            fmt["textFormat"]["foregroundColor"] = fg
+        if size:
+            fmt["textFormat"]["fontSize"] = size
+        return {"repeatCell": {
+            "range": {"sheetId": sid, "startRowIndex": i0 - 1, "endRowIndex": i0,
+                      "startColumnIndex": 0, "endColumnIndex": ncol},
+            "cell": {"userEnteredFormat": fmt},
+            "fields": "userEnteredFormat(backgroundColor,textFormat)"}}
+
+    reqs = [
+        {"repeatCell": {
+            "range": {"sheetId": sid, "startRowIndex": 0,
+                      "endRowIndex": len(values), "startColumnIndex": 1,
+                      "endColumnIndex": ncol},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER",
+                                           "verticalAlignment": "MIDDLE"}},
+            "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS",
+                      "startIndex": 0, "endIndex": 1},
+            "properties": {"pixelSize": 190}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS",
+                      "startIndex": 1, "endIndex": ncol},
+            "properties": {"pixelSize": 132}, "fields": "pixelSize"}},
+        {"updateSheetProperties": {
+            "properties": {"sheetId": sid,
+                           "gridProperties": {"frozenRowCount": 4,
+                                              "frozenColumnCount": 1}},
+            "fields": "gridProperties(frozenRowCount,frozenColumnCount)"}},
+    ]
+    for i, kind in meta:
+        if kind == "title":
+            reqs.append(band(i, white, size=14))
+        elif kind == "note":
+            reqs.append({"repeatCell": {
+                "range": {"sheetId": sid, "startRowIndex": i - 1,
+                          "endRowIndex": i, "startColumnIndex": 0,
+                          "endColumnIndex": ncol},
+                "cell": {"userEnteredFormat": {
+                    "textFormat": {"italic": True, "fontSize": 8},
+                    "wrapStrategy": "OVERFLOW_CELL"}},
+                "fields": "userEnteredFormat(textFormat,wrapStrategy)"}})
+        elif kind == "header":
+            reqs.append(band(i, navy, fg=white))
+        elif kind == "status":
+            reqs.append(band(i, slate, bold=False, italic=True))
+        elif kind == "money":
+            reqs.append(band(i, grey))
+        elif kind == "final":
+            reqs.append(band(i, gold, size=12))
+    from automations.recruiting_report.fill import _retry as _r
+    _r(lambda: sh.batch_update({"requests": reqs}))
+    log("  [sheet] %r: %d rows x %d cols, formatted"
+        % (BONUS_TAB, len(values), ncol))
+
+
 def dm(text: str, user: str, log=print) -> None:
     from automations.shared.slack_metrics_post import _bot_client
     client = _bot_client()
@@ -335,6 +576,8 @@ def dm(text: str, user: str, log=print) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="carlos_bonus_projection")
     ap.add_argument("--dm", action="store_true", help="DM Carlos the projection")
+    ap.add_argument("--sheet", action="store_true",
+                    help="write the 'Captainship Bonus' tab on the Vantura board")
     ap.add_argument("--dm-user", default=SLACK_CARLOS)
     ap.add_argument("--dry-run", action="store_true",
                     help="never DM, even if --dm was passed")
@@ -361,10 +604,13 @@ def main(argv=None) -> int:
     log("Carlos bonus projection — %s (DD week %s..%s)" % (today, ws, we))
     paths = ([Path(p) for p in args.from_file] if args.from_file
              else pull(today, log=log))
-    wtd, share, per_owner = tally(paths, today, log=log)
+    wtd, share, per_owner, weekly = tally(paths, today, log=log)
     text = build_report(today, wtd, share, per_owner, prog)
     log("")
     log(text)
+    if args.sheet and not args.dry_run:
+        values, meta = build_sheet(today, wtd, share, weekly, prog, log=log)
+        write_bonus_tab(values, meta, log=log)
     if args.dm and not args.dry_run:
         dm(text, args.dm_user, log=log)
     return 0

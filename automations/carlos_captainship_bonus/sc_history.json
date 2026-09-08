@@ -1,0 +1,48 @@
+{
+  "_source": "Carlos's Team rows from SC's weekly 'B2B ATT Captains Bonus Breakdown' emails (Priyanka Oshin). APPEND a week here every Wednesday when the new email lands; the sheet's ESTIMATE column for that week flips to PAID on the next run. Weeks before DD WE 8/29 ran the OLD program (single decelerator on the higher of team/personal total churn, no product split published).",
+  "weeks": {
+    "2026-08-08": {
+      "format": "single",
+      "volume": 813,
+      "vol_rate": 12.5, "act_add": 0.0, "churn_add": 0.0,
+      "payout": 10163,
+      "churn_team": 3.7, "churn_personal": 4.0,
+      "activation": 77.0,
+      "decel": 0.75,
+      "final": 7622
+    },
+    "2026-08-15": {
+      "format": "single",
+      "volume": 872,
+      "vol_rate": 12.5, "act_add": 0.0, "churn_add": 0.0,
+      "payout": 10900,
+      "churn_team": 4.76, "churn_personal": 4.0,
+      "activation": 79.1,
+      "decel": 0.75,
+      "final": 8175
+    },
+    "2026-08-22": {
+      "format": "single",
+      "volume": 754,
+      "vol_rate": 12.5, "act_add": 0.0, "churn_add": 0.0,
+      "payout": 9425,
+      "churn_team": 4.7, "churn_personal": 6.4,
+      "activation": 77.8,
+      "decel": 0.25,
+      "final": 2356
+    },
+    "2026-08-29": {
+      "format": "weighted",
+      "volume": 666,
+      "products": {"internet": 61, "nonbyod": 280, "byod": 193, "air": 132},
+      "vol_rate": 12.5, "act_add": 0.0, "churn_add": 0.0,
+      "payout": 8325,
+      "churn_team": 4.3, "churn_personal": 8.5,
+      "activation": 79.5,
+      "churn_products": {"internet": 3.9, "nonbyod": 9.2, "byod": 8.2, "air": 10.0},
+      "decel_products": {"internet": 0.25, "nonbyod": 0.0, "byod": 0.25, "air": 0.0},
+      "decel": 0.095,
+      "final": 794
+    }
+  }
+}

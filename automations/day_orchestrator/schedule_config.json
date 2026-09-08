@@ -7105,7 +7105,7 @@
       "display_name": "Carlos captainship bonus daily projection (DM)",
       "source_type": "tableau",
       "command": ["automations.carlos_captainship_bonus.daily_projection"],
-      "base_args": ["--dm"],
+      "base_args": ["--dm", "--sheet"],
       "timeout_minutes": 45,
       "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6], "not_before": "09:30"},
       "priority": "P2",
