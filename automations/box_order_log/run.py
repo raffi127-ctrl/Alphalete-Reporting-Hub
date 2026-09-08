@@ -630,6 +630,16 @@ def main(argv: Optional[list] = None) -> int:
             return 1
         print("\n✅ Wrote '{}' on the Vantura Master Sales Board.".format(
             sheet.TAB_VIEW))
+        # Carlos's flat 60-day "Box Sales Log" tab (2026-09-05) rides the same
+        # --sheet write. Own try/except: a failure here must never take down
+        # the post or the main tab it rides along with.
+        try:
+            from . import flat_log
+            flat_log.push(sales, today=today)
+        except Exception as exc:
+            print("✗ Box Sales Log write failed (main tab + post "
+                  "unaffected): {}".format(exc), file=sys.stderr)
+            traceback.print_exc()
     elif verbose:
         print("\n  (no --sheet — nothing written to the Sales Board)")
 
