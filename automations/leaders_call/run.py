@@ -283,6 +283,11 @@ CAMPAIGNS: dict[str, Campaign] = {
 # Used only by --recover. A normal Monday run never touches any of this.
 _PRODUCT_SALES_WEEK_PARAM = "Sale Date Week Ending (mon-sun)"
 
+NDS_RECOVER_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/"
+    "5e31de75-1d1c-4f23-b234-4148516134c0/Thisweekandlast?:iid=1")
+
 _FIBER_RECOVER_BASE = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
@@ -328,9 +333,17 @@ RECOVERY: dict = {
         parser="product_sales",
     ),
     "nds": Recovery(
-        url_fn=lambda sun: _week_pinned(CAMPAIGNS["nds"].url, sun),
+        # NOT a week param: the NDS workbook ignores every field name but
+        # "Sale Date Week Ending (mon-sun)", and THAT one empties the worksheet
+        # for any past week (probed 2026-09-08, both ISO and M/D/YYYY, on the
+        # custom view and the base view alike) — the data simply is not there to
+        # filter. What IS there is this custom view, 'This week and last', which
+        # renders the FINISHED week beside the in-progress one. It is the same
+        # view opt_nds already reads for personal production. The parser picks
+        # the target week's columns BY THEIR DATE HEADER, never by position.
+        url_fn=lambda sun: NDS_RECOVER_URL,
         sheet="Sales By ICD (Weekly View)",
-        parser="product_sales",
+        parser="product_sales_multiweek",
     ),
     "b2b": Recovery(
         url_fn=_b2b_recover_url,
@@ -1020,6 +1033,34 @@ def _base_view_url(url: str) -> str:
     return f"{head}?{query}" if query else head
 
 
+def _inspect_recovery(camp: Campaign) -> int:
+    """READ-ONLY: dump the shape of a campaign's RECOVERY crosstab."""
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.alphalete_org_report.opt_nds import _read_tab_csv
+    rec = RECOVERY[camp.key]
+    mon, sun = _target_week()
+    sheet = rec.sheet or _b2b_recover_sheet()
+    url = rec.url_fn(sun)
+    print(f"{camp.key} recovery source for {mon.isoformat()}..{sun.isoformat()}",
+          flush=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUTPUT_DIR / f"{camp.key}_inspect.csv"
+    with tableau_session(verbose=True) as page:
+        hook = rec.hook(mon, sun) if rec.hook else None
+        rows = _read_tab_csv(_download_substr(page, url, sheet, out,
+                                              pre_export=hook))
+    if not rows:
+        print("empty export")
+        return 1
+    print(f"rows={len(rows)}", flush=True)
+    for i, r in enumerate(rows[:6]):
+        print(f"  r{i}: {' | '.join((c or '')[:22] for c in r[:14])}", flush=True)
+    print(f"  dates seen: "
+          f"{sorted({f'{m:02d}-{d:02d}' for m, d in _extract_week_dates(rows)})}",
+          flush=True)
+    return 0
+
+
 def _probe_week_param(camp: Campaign) -> int:
     """READ-ONLY: find a URL that actually pins `camp`'s view to the target week.
 
@@ -1692,6 +1733,11 @@ def main() -> int:
                          "day or two of data never reaches the real threshold; "
                          "with the same --min both sides list the same reps and "
                          "any disagreement is a parser difference, not a filter.")
+    ap.add_argument("--inspect-recovery", action="store_true",
+                    help="READ-ONLY: with --campaign, download that campaign's "
+                         "RECOVERY source and print the header row plus a few "
+                         "data rows, so a parser is written against the real "
+                         "shape instead of a guess. Writes nothing.")
     ap.add_argument("--probe-week-param", action="store_true",
                     help="READ-ONLY: with --campaign, try each candidate week "
                          "filter name against that view and report which one "
@@ -1729,6 +1775,13 @@ def main() -> int:
             print("--week only applies to --recover: every other path reads a "
                   "relative 'This Week' view that cannot reach an old week.")
             return 2
+
+    if args.inspect_recovery:
+        if not args.campaign or args.campaign not in RECOVERY:
+            print("--inspect-recovery needs --campaign one of: "
+                  + ", ".join(RECOVERY))
+            return 2
+        return _inspect_recovery(CAMPAIGNS[args.campaign])
 
     if args.probe_week_param:
         if not args.campaign:
