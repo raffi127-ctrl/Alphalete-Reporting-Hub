@@ -147,9 +147,18 @@ Broke: nothing visibly — his ticks simply never fired. Why: the rotation is
 declared TWICE — `offices.py ROTATION` (Python) and `ROTATION=` in
 `deploy/applicant_push.sh` (the shell wrapper that actually picks the office).
 Editing only the Python side looks complete and does nothing.
-LESSON: adding an office = offices.py row + Python ROTATION + wrapper ROTATION
-+ PUSH_ALLOWED + (if it posts) its own Slack channel + verify the push
-account's scope covers it — then watch the office's OWN log for the first tick.
+Then (same day) his first slot STOPPED THE AGENT COLD, pre-log: the row was
+missing the REQUIRED "account" key (post-9/2 schema; activate() reads it with
+[] on purpose so a typo fails loudly) — a row built from a pre-refactor
+template. And once fixed, the office switch failed anyway: the scoped
+"Lucy Resume Pushing" login could not see 11901 until Megan granted access.
+LESSON — the full add-an-office checklist: offices.py row WITH "account":
+"lucyresume" + Python ROTATION + wrapper ROTATION (declared TWICE!) +
+PUSH_ALLOWED + its own Slack channel if it posts + MEGAN GRANTS THE OFFICE to
+the push account + a supervised probe (`rerun applicant_push --office <id>
+--dry-run`, auto-retried past tick collisions) passes — and ONLY THEN the
+wrapper rotation. A crashed slot kills ALL offices' ticks until the agent is
+reinstalled (`rerun install_applicant_push_agent`).
 
 **Changed: queue-driven diagnostics (8/30–9/3).**
 Gotchas: sheet Result cells truncate (~a few hundred chars) — use `logtail`
