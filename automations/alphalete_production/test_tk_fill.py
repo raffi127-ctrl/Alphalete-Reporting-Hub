@@ -126,6 +126,37 @@ class TalkToColumn(unittest.TestCase):
         self.assertEqual(len(set(cols.values())), 7, cols)
 
 
+class OwnervilleStatusTag(unittest.TestCase):
+    """Ownerville hangs 'RT' off the end of some names. Eve 2026-09-08: those
+    reps' knocks belong on the board, so the tag must not cost them the match."""
+
+    def _rows(self):
+        return {4: "Edgar Camunez (Wk 2)",
+                5: "Ibukunoluwa Olapade Ogunlola (Wk 2)",
+                6: "Justin Avila"}
+
+    def test_a_trailing_RT_still_finds_the_rep(self):
+        m, un, amb = T.match_rows({"Edgar Camunez RT": 66}, self._rows())
+        self.assertEqual(m, {4: 66})
+        self.assertEqual((un, amb), ([], []))
+
+    def test_it_works_with_the_middle_name_fallback_too(self):
+        m, un, _a = T.match_rows({"Ibukunoluwa Olapade Ogunlola RT": 165},
+                                 self._rows())
+        self.assertEqual(m, {5: 165})
+        self.assertEqual(un, [])
+
+    def test_an_untagged_name_is_unchanged(self):
+        m, _u, _a = T.match_rows({"Justin Carlos Avila": 40}, self._rows())
+        self.assertEqual(m, {6: 40})
+
+    def test_a_two_word_name_keeps_its_last_word(self):
+        """Never strip a name down to one word — 'RT' as somebody's real
+        surname is a worse thing to get wrong than a tag left on."""
+        self.assertEqual(T._ov_norm("Edgar RT"), "edgar rt")
+        self.assertEqual(T._ov_norm("Edgar Camunez RT"), "edgar camunez")
+
+
 class RosterCoversBothSections(unittest.TestCase):
     def test_the_second_numbered_section_is_included(self):
         rows = T.roster(_grid())

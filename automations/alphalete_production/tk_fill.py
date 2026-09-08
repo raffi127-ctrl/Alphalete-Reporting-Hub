@@ -259,11 +259,33 @@ def _as_int(raw):
 
 
 # --------------------------------------------------------------- match ---
+# Ownerville hangs a STATUS TAG off the end of some rep names -- 'Edgar Camunez
+# RT' -- the way the board hangs '(Wk 2)' / '(NC)' off its own. `_norm` strips
+# the board's parenthetical tags; this strips ownerville's trailing one.
+#
+# Eve, 2026-09-08: an RT rep's knocks DO belong on the board. Until this, the tag
+# cost them the match and the two reps who carry it (Edgar Camunez, Ibukunoluwa
+# Olapade Ogunlola) had been left blank every day since 2026-08-31 -- 231 knocks
+# between them on 9/3 alone. The board is what says whether a row counts (its
+# TOTALS already exclude Field Status = RT); ownerville only reports who knocked.
+_OV_TAGS = {"rt"}
+
+
+def _ov_norm(name: str) -> str:
+    """`_norm` plus ownerville's trailing status tag. Never strips past two
+    words -- a name is a name, and 'RT' as somebody's actual surname would be a
+    worse thing to get wrong than a tag left on."""
+    parts = _norm(name).split()
+    while len(parts) > 2 and parts[-1] in _OV_TAGS:
+        parts.pop()
+    return " ".join(parts)
+
+
 def _ends(name: str) -> str:
     """First and last word of a normalised name -- 'justin carlos avila' and
     'justin avila' both collapse to 'justin avila'."""
-    parts = _norm(name).split()
-    return f"{parts[0]} {parts[-1]}" if len(parts) > 1 else _norm(name)
+    parts = _ov_norm(name).split()
+    return f"{parts[0]} {parts[-1]}" if len(parts) > 1 else _ov_norm(name)
 
 
 def match_rows(knocks: dict, rows: dict):
@@ -288,14 +310,14 @@ def match_rows(knocks: dict, rows: dict):
     by_norm: dict = {}
     by_ends: dict = {}
     for r, nm in rows.items():
-        by_norm.setdefault(_norm(nm), []).append(r)
+        by_norm.setdefault(_ov_norm(nm), []).append(r)
         by_ends.setdefault(_ends(nm), []).append(r)
 
     matched: dict = {}
     unmatched: list = []
     ambiguous: list = []
     for ov_name, count in knocks.items():
-        hits = by_norm.get(_norm(ov_name), [])
+        hits = by_norm.get(_ov_norm(ov_name), [])
         if not hits:
             hits = by_ends.get(_ends(ov_name), [])
         if len(hits) == 1:
