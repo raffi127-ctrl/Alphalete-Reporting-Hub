@@ -228,7 +228,7 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 # that you're only pushing resumes for Atef and my office." An audit of another
 # office must say so out loud with --audit-office — and still runs behind the
 # per-click office guard in oat_processing.
-PUSH_ALLOWED = {"11580", "23467"}
+PUSH_ALLOWED = {"11580", "23467", "11901"}
 
 
 def main(argv=None) -> int:

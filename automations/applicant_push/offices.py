@@ -303,6 +303,34 @@ OFFICES = {
         "remove_blocked_read": True,
         "remove_no_phone": True,
     },
+    # LIVE PUSH OFFICE #3 (Carlos, 2026-09-08: "can we add khalil mansour to
+    # list of people we push for"). Safe-default policies until Carlos says
+    # otherwise: NO texting (only 11580/23467 text — standing rule 8/29), NO
+    # Slack to-do posts (his office has no channel wired yet, and one office's
+    # applicant names never land in another office's channel), and the
+    # non-Carlos removal policies (confirmed-uncontactable and never-opening
+    # resumes are removed).
+    "11901": {
+        "office_id": "11901",
+        "hint": "KHALIL MANSOUR",
+        "owner": "Khalil Mansour",
+        "label": "office 11901 · Khalil Mansour — ALPHALETE MANAGEMENT GROUP, INC.",
+        "short": "office 11901, Khalil",
+        "suffix": "-11901",
+        "cdp_profile": "/tmp/rp_cdp_11901",
+        "cdp_port": "9254",
+        "cdp_kill_pat": "rp_cdp_11901",
+        "walk_diag_tab": "OAT Walk Diag 11901",
+        "push_diag_tab": "Applicant Push Diag 11901",
+        "log_stem": "applicant-push-11901",
+        "hub_report_id": "applicant_push_khalil",
+        "hub_display": "Applicant Push (Khalil)",
+        "post_channel": "",
+        "post_todo": False,
+        "allow_retext": False,
+        "remove_blocked_read": True,
+        "remove_no_phone": True,
+    },
 }
 
 DEFAULT_OFFICE = "11580"
@@ -312,7 +340,7 @@ DEFAULT_OFFICE = "11580"
 # risking the wrapper's hard time cap), and a bad tick for one office cannot
 # starve the other — which running both inside one tick would do, since the first
 # office's wedge burns the cap before the second ever opens a session.
-ROTATION = ["11580", "23467"]
+ROTATION = ["11580", "23467", "11901"]
 
 
 def get(office_id: str) -> dict:
