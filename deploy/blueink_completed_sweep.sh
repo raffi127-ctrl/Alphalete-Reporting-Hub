@@ -47,7 +47,10 @@ fi
 
 LOG_FILE="output/logs/blueink-completed-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Blue Ink completed-sweep starting" > "$LOG_FILE"
-"$VENV_PY" -u -m automations.blueink_docs.run --sync-completed "$@" >> "$LOG_FILE" 2>&1
+# --slack is what lets a DEAD SESSION actually reach a human. Without it the
+# alert only dry-runs, which is the same hole this job fell into on 2026-09-07:
+# a correct exit 2, fourteen times a day, that nobody could see.
+"$VENV_PY" -u -m automations.blueink_docs.run --sync-completed --slack "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] Blue Ink completed-sweep finished exit=$ST" >> "$LOG_FILE"
 
