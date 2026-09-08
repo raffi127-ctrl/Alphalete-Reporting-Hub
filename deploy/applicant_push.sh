@@ -53,12 +53,11 @@ for a in "$@"; do [ "$a" = "--dry-run" ] && DRYRUN=1; done
 # An explicit --office on the command line wins (manual probe of one office) and
 # does NOT disturb the rotation marker, so a hand-run can't make the agent skip an
 # office on its next tick.
-# 11901 (Khalil) PULLED from the rotation 9/8 ~11:10am: the first tick that
-# should have been his (10:05) never started and no tick fired after — the
-# agent stopped cold at his slot, pre-log. His offices.py row and PUSH_ALLOWED
-# stay so a supervised probe (--office 11901) still works; he rejoins only
-# after that probe survives a full tick. Live offices come first.
-ROTATION="11580 23467"
+# 11901 (Khalil) REJOINED 9/8 2:35pm after the full gauntlet: the crash was a
+# missing "account" key in his offices.py row (fixed), then the scoped login
+# needed Megan to grant the office (done), then the supervised dry-run probe
+# passed (rerun-2026-09-08-142852: switch ok, walk ok). See the README ledger.
+ROTATION="11580 23467 11901"
 OFFICE=""
 _prev=""
 for a in "$@"; do
