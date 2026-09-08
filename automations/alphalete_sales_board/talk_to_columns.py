@@ -1,0 +1,435 @@
+"""Add the three Talk-To columns to every day block of a Sales Board tab.
+
+WHAT EVE BUILT BY HAND. On 'Sales Board WE 9.6 Eve Edits' she widened THU's
+day block from the usual eight columns
+
+    Apps | Int | Int Up | DTV | NL | TK | Cx | Roll Call
+
+to eleven, by slipping three new sub-headers in AFTER `TK` and BEFORE `Cx`:
+
+    ... | TK | Total Talk-To's | % of TT's per knock | AVG app per TT | Cx | ...
+
+plus a nested (depth-2) column group over just those three, so they fold away
+inside the day's own group. This script copies that shape onto the other six
+days of the same tab.
+
+WHY A SCRIPT AND NOT SIX COPY-PASTES. Doing it by hand means picking the right
+insert point in six collapsed blocks; one mis-click puts the trio inside `Cx`
+and the daily fill starts writing knocks into a cancel column. The insert point
+is found the way every fill on this board finds one -- weekday label in row 1,
+sub-header in row 3 UNDER it, never an index. [[feedback_no_hardcoded_columns]]
+
+WHAT IT COPIES. The template columns from the sub-header row down to their last
+non-empty row -- the row-3 header with its green fill, the empty rep rows, and
+the TOTALS-row `SUMIF`. The per-rep cells are empty on THU, so they land empty
+everywhere: nothing is invented.
+
+NOT THE WHOLE COLUMN, on purpose. Row 1-2 and the second section's header row
+are MERGED across each day block, and Sheets refuses a paste that partially
+intersects a merge. Those merged headers do not need copying anyway -- an
+insert INSIDE a merge widens it by itself.
+
+WHAT IT DOES NOT TOUCH. The day's `Apps` ARRAYFORMULA does not mention the trio
+on THU either, so it is left exactly as it is. No rep row is written.
+
+CAREFUL -- THIS CHANGES THE BLOCK WIDTH from 8 columns to 11 on every day.
+Anything that walks a day block by OFFSET instead of by header will read the
+wrong column the moment this ships to a live tab; that exact bug has already
+bitten three readers on this board.
+[[project_sales-board-en-to-tk-broke-a-third-reader]]
+
+    python -m automations.alphalete_sales_board.talk_to_columns              # preview
+    python -m automations.alphalete_sales_board.talk_to_columns --apply
+    python -m automations.alphalete_sales_board.talk_to_columns --tab "Sales Board WE 9.13"
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:  # noqa: BLE001 -- Windows console, best effort
+    pass
+
+# The workbook, the three header rows and the weekday labels are the Energy /
+# TK fill's geometry. Same board, one definition.
+from automations.energy_slack_fill.run import DAY_LABELS, DAY_ROW, SUB_ROW, PROD_SHEET_ID
+
+SANDBOX_TAB = "Sales Board WE 9.6 Eve Edits"
+
+# The three columns, in order, exactly as row 3 spells them on THU.
+TRIO = ("Total Talk-To's", "% of TT's per knock", "AVG app per TT")
+
+# Where they go: straight after this sub-header, still inside the day's group.
+ANCHOR = "TK"
+
+
+def _col_letter(c: int) -> str:
+    s = ""
+    while c:
+        c, r = divmod(c - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def _cell(grid, row: int, col: int) -> str:
+    try:
+        return str(grid[row - 1][col - 1]).strip()
+    except Exception:  # noqa: BLE001 -- short rows are blanks
+        return ""
+
+
+def day_blocks(grid) -> dict:
+    """{'MON': (first_col, last_col)} -- 1-based, by the row-1 weekday labels."""
+    width = max((len(r) for r in grid), default=0)
+    starts = []
+    for c in range(1, width + 1):
+        lab = _cell(grid, DAY_ROW, c).upper()
+        if lab in DAY_LABELS:
+            starts.append((lab, c))
+    out = {}
+    for i, (lab, c) in enumerate(starts):
+        end = starts[i + 1][1] - 1 if i + 1 < len(starts) else width
+        out[lab] = (c, end)
+    return out
+
+
+def sub_col(grid, block, header: str):
+    """The column of a row-3 sub-header inside one day block, or None."""
+    lo, hi = block
+    want = header.strip().lower()
+    for c in range(lo, hi + 1):
+        if _cell(grid, SUB_ROW, c).lower() == want:
+            return c
+    return None
+
+
+def plan(grid):
+    """(template_day, template_first_col, [(day, anchor_col, needs_insert)]).
+
+    `needs_insert` is False for a day whose block is ALREADY as wide as the
+    template's but has no headers in the new columns -- an interrupted run.
+    Re-running then finishes the paste instead of inserting three more columns.
+    """
+    blocks = day_blocks(grid)
+    template = None
+    for lab in DAY_LABELS:
+        b = blocks.get(lab)
+        if not b:
+            continue
+        cols = [sub_col(grid, b, h) for h in TRIO]
+        if all(cols) and cols == list(range(cols[0], cols[0] + 3)):
+            template = (lab, cols[0], b[1] - b[0] + 1)
+            break
+    todo = []
+    for lab in sorted(blocks, key=lambda k: blocks[k][0]):
+        if template and lab == template[0]:
+            continue
+        b = blocks[lab]
+        if any(sub_col(grid, b, h) for h in TRIO):
+            continue                      # already has some of it -- leave it alone
+        anchor = sub_col(grid, b, ANCHOR)
+        if anchor is None:
+            print("  ! %s: no %r sub-header in %s..%s -- skipped"
+                  % (lab, ANCHOR, _col_letter(b[0]), _col_letter(b[1])))
+            continue
+        width = b[1] - b[0] + 1
+        todo.append((lab, anchor, not (template and width >= template[2])))
+    return (template[0] if template else None,
+            template[1] if template else None, todo)
+
+
+def widths(ss, tab: str, first_col: int) -> list:
+    meta = ss.fetch_sheet_metadata({
+        "ranges": ["'%s'!%s1:%s1" % (tab, _col_letter(first_col),
+                                     _col_letter(first_col + 2))],
+        "fields": "sheets(data(columnMetadata(pixelSize)))",
+    })
+    cm = meta["sheets"][0]["data"][0].get("columnMetadata", [])
+    return [c.get("pixelSize") for c in cm][:3]
+
+
+def _has_group(ss, ws, start0: int, end0: int) -> bool:
+    """Is there already a column group over exactly these columns?"""
+    meta = ss.fetch_sheet_metadata({"fields": "sheets(properties(sheetId),columnGroups)"})
+    for sh in meta.get("sheets", []):
+        if sh.get("properties", {}).get("sheetId") != ws.id:
+            continue
+        for g in sh.get("columnGroups", []) or []:
+            r = g.get("range", {})
+            if r.get("startIndex") == start0 and r.get("endIndex") == end0:
+                return True
+    return False
+
+
+def hidden_cols(ss, tab: str, last_col: int) -> list:
+    """hiddenByUser per column, 1-based. A COLLAPSED day group hides its members
+    this way, and a freshly inserted column does not inherit it -- without this
+    the trio would stick out of six folded-up days."""
+    meta = ss.fetch_sheet_metadata({
+        "ranges": ["'%s'!A1:%s1" % (tab, _col_letter(last_col))],
+        "fields": "sheets(data(columnMetadata(hiddenByUser)))",
+    })
+    cm = meta["sheets"][0]["data"][0].get("columnMetadata", [])
+    return [False] + [bool(c.get("hiddenByUser")) for c in cm]
+
+
+def add_for_day(ss, ws, anchor_col: int, tmpl_first: int, px: list,
+                last_row: int, insert: bool = True, hide: bool = False) -> None:
+    """Make room after `anchor_col` and paste the template columns onto it.
+
+    The insert goes in its own request so the paste that follows sees the
+    widened sheet; `tmpl_first` is the template's column AFTER that insert,
+    which the caller tracks (the template shifts right whenever a day to its
+    LEFT is widened).
+    """
+    gid = ws.id
+    new0 = anchor_col            # 0-based index of the first new column
+    if insert:
+        ss.batch_update({"requests": [{
+            "insertDimension": {
+                "range": {"sheetId": gid, "dimension": "COLUMNS",
+                          "startIndex": new0, "endIndex": new0 + 3},
+                "inheritFromBefore": True,
+            }
+        }]})
+
+    src0 = tmpl_first - 1
+    reqs = [
+        {"copyPaste": {
+            "source": {"sheetId": gid, "startRowIndex": SUB_ROW - 1,
+                       "endRowIndex": last_row,
+                       "startColumnIndex": src0, "endColumnIndex": src0 + 3},
+            "destination": {"sheetId": gid, "startRowIndex": SUB_ROW - 1,
+                            "endRowIndex": last_row,
+                            "startColumnIndex": new0, "endColumnIndex": new0 + 3},
+            "pasteType": "PASTE_NORMAL",
+        }},
+    ]
+    # Only if the fold isn't there already -- asking twice nests a THIRD level.
+    if not _has_group(ss, ws, new0, new0 + 3):
+        reqs.append({"addDimensionGroup": {
+            "range": {"sheetId": gid, "dimension": "COLUMNS",
+                      "startIndex": new0, "endIndex": new0 + 3}
+        }})
+    for i, size in enumerate(px):
+        if not size:
+            continue
+        reqs.append({"updateDimensionProperties": {
+            "range": {"sheetId": gid, "dimension": "COLUMNS",
+                      "startIndex": new0 + i, "endIndex": new0 + i + 1},
+            "properties": {"pixelSize": size},
+            "fields": "pixelSize",
+        }})
+    if hide:
+        reqs.append({"updateDimensionProperties": {
+            "range": {"sheetId": gid, "dimension": "COLUMNS",
+                      "startIndex": new0, "endIndex": new0 + 3},
+            "properties": {"hiddenByUser": True},
+            "fields": "hiddenByUser",
+        }})
+    ss.batch_update({"requests": reqs})
+
+
+def _headers(ws):
+    return ws.get("A1:%s%d" % (_col_letter(ws.col_count), SUB_ROW),
+                  value_render_option="FORMATTED_VALUE")
+
+
+def template_last_row(ws, first_col: int) -> int:
+    """Last row the template columns actually use -- the TOTALS row today.
+
+    Copying only down to here keeps the paste clear of the merged section
+    headers further down the tab, which is what Sheets rejects.
+    """
+    rng = "%s%d:%s%d" % (_col_letter(first_col), SUB_ROW,
+                         _col_letter(first_col + 2), ws.row_count)
+    got = ws.get(rng, value_render_option="FORMULA")
+    last = SUB_ROW
+    for i, row in enumerate(got, start=SUB_ROW):
+        if any(str(x).strip() for x in row):
+            last = i
+    return last
+
+
+def formulas(ss, ws, apply: bool = False) -> int:
+    """Lay the two DERIVED Talk-To columns in as formulas, every day, every row.
+
+    Only `Total Talk-To's` is data -- ownerville's calculated 'Total Talk to',
+    written by `alphalete_production.tk_fill` alongside TK. The other two are
+    ratios of cells already on the row, so they are formulas and not writes:
+    TK climbs all day and Apps is itself a formula, and a number computed at
+    9:40 would be wrong by 9:55 with nothing to say so.
+
+      % of TT's per knock = Talk-To's / TK
+      AVG app per TT      = Apps      / Talk-To's
+
+    Both guard the same two ways. `N()` around the denominator turns a roll-call
+    letter ('X', 'CR', 'T') into 0, and a zero denominator gives "" -- a rep who
+    has not knocked yet reads blank, never #DIV/0!. IFERROR catches the Apps
+    cell on a day it holds text rather than a count.
+
+    A BLANK Talk-To's cell reads blank too, not 0%. Blank on this board means
+    "ownerville has not said yet", the same rule the TK fill writes by; a column
+    of 0.0% at 9 AM looks like sixty reps who talked to nobody.
+
+    The TOTALS row gets the same two ratios over the column totals, NOT a sum of
+    the per-rep percentages -- that would be an average of averages, and it is
+    what a straight copy of the neighbouring SUMIF leaves behind.
+    """
+    from automations.energy_slack_fill.run import last_rep_row
+
+    grid = ws.get_all_values()
+    last = last_rep_row(grid)
+    totals = last + 1
+    data, said = [], []
+    for lab, b in sorted(day_blocks(grid).items(), key=lambda kv: kv[1][0]):
+        apps = b[0]                                   # Apps is the block's first
+        tk = sub_col(grid, b, ANCHOR)
+        tt, pct, avg = (sub_col(grid, b, h) for h in TRIO)
+        if not all((tk, tt, pct, avg)):
+            said.append("  %-5s no Talk-To columns -- skipped" % lab)
+            continue
+        A, T_, K, P, V = (_col_letter(c) for c in (apps, tt, tk, pct, avg))
+        rows = list(range(SUB_ROW + 1, totals + 1))
+        data.append({
+            "range": "%s%d:%s%d" % (P, rows[0], P, rows[-1]),
+            "values": [['=IF(OR(%s%d="",N(%s%d)=0),"",IFERROR(%s%d/%s%d,""))'
+                        % (T_, r, K, r, T_, r, K, r)] for r in rows],
+        })
+        data.append({
+            "range": "%s%d:%s%d" % (V, rows[0], V, rows[-1]),
+            "values": [['=IFERROR(IF(N(%s%d)>0,%s%d/%s%d,""),"")'
+                        % (T_, r, A, r, T_, r)] for r in rows],
+        })
+        said.append("  %-5s %s = %s/%s   %s = %s/%s   rows %d-%d"
+                    % (lab, P, T_, K, V, A, T_, rows[0], rows[-1]))
+    print("\n".join(said))
+    if not data:
+        return 1
+    if not apply:
+        print("\npreview only -- re-run with --apply to write.")
+        return 0
+    ws.batch_update(data, value_input_option="USER_ENTERED")
+    # Percent as a percent, the average to two places -- a bare 0.0384 in a
+    # column headed '%' is the kind of thing nobody reports and everybody
+    # misreads.
+    fmt = []
+    for lab, b in day_blocks(grid).items():
+        _tt, pct, avg = (sub_col(grid, b, h) for h in TRIO)
+        if not (pct and avg):
+            continue
+        for c, pattern, kind in ((pct, "0.0%", "PERCENT"), (avg, "0.00", "NUMBER")):
+            fmt.append({"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": SUB_ROW,
+                          "endRowIndex": totals,
+                          "startColumnIndex": c - 1, "endColumnIndex": c},
+                "cell": {"userEnteredFormat": {
+                    "numberFormat": {"type": kind, "pattern": pattern}}},
+                "fields": "userEnteredFormat.numberFormat",
+            }})
+    if fmt:
+        ss.batch_update({"requests": fmt})
+    print("\nwrote the two derived columns on %d day block(s)." % (len(data) // 2))
+    return 0
+
+
+def refold(ss, ws, tab: str, apply: bool = False) -> int:
+    """Hide any trio whose day block is folded up, leave the open day alone."""
+    grid = _headers(ws)
+    folded = hidden_cols(ss, tab, ws.col_count)
+    reqs, said = [], []
+    for lab, b in sorted(day_blocks(grid).items(), key=lambda kv: kv[1][0]):
+        anchor = sub_col(grid, b, ANCHOR)
+        first = sub_col(grid, b, TRIO[0])
+        if not anchor or not first:
+            continue
+        want = folded[anchor]
+        have = [folded[first + i] for i in range(3)]
+        if all(h == want for h in have):
+            continue
+        said.append("  %-5s %s..%s -> %s"
+                    % (lab, _col_letter(first), _col_letter(first + 2),
+                       "hidden" if want else "shown"))
+        reqs.append({"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": first - 1, "endIndex": first + 2},
+            "properties": {"hiddenByUser": want},
+            "fields": "hiddenByUser",
+        }})
+    if not reqs:
+        print("every trio already matches its day block -- nothing to refold.")
+        return 0
+    print("\n".join(said))
+    if not apply:
+        print("\npreview only -- re-run with --apply to write.")
+        return 0
+    ss.batch_update({"requests": reqs})
+    print("refolded.")
+    return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--tab", default=SANDBOX_TAB, help="board tab to widen")
+    ap.add_argument("--sheet-id", default=PROD_SHEET_ID, help="override the workbook")
+    ap.add_argument("--apply", action="store_true",
+                    help="write to the Sheet (default is a preview)")
+    ap.add_argument("--refold", action="store_true",
+                    help="only re-hide trios that sit in a collapsed day group")
+    ap.add_argument("--formulas", action="store_true",
+                    help="(re)write the two derived columns, every day, every row")
+    a = ap.parse_args(argv)
+
+    from automations.recruiting_report.fill import open_by_key
+    ss = open_by_key(a.sheet_id)
+    ws = ss.worksheet(a.tab)
+
+    if a.refold:
+        return refold(ss, ws, a.tab, apply=a.apply)
+    if a.formulas:
+        return formulas(ss, ws, apply=a.apply)
+
+    tmpl_day, tmpl_col, todo = plan(_headers(ws))
+    if not tmpl_day:
+        print("No day block on %r has %r -- nothing to copy FROM." % (a.tab, TRIO[0]))
+        return 1
+    print("tab      : %s" % a.tab)
+    print("template : %s at %s..%s"
+          % (tmpl_day, _col_letter(tmpl_col), _col_letter(tmpl_col + 2)))
+    if not todo:
+        print("every other day already has the three columns -- nothing to do.")
+        return 0
+    for lab, anchor, ins in todo:
+        print("  %-5s %s after %s (%s) -> %s..%s"
+              % (lab, "insert 3 cols" if ins else "fill the 3 blank cols",
+                 ANCHOR, _col_letter(anchor),
+                 _col_letter(anchor + 1), _col_letter(anchor + 3)))
+    if not a.apply:
+        print("\npreview only -- re-run with --apply to write.")
+        return 0
+
+    px = widths(ss, a.tab, tmpl_col)
+    last_row = template_last_row(ws, tmpl_col)
+    folded = hidden_cols(ss, a.tab, ws.col_count)
+    print("copying rows %d-%d of the template columns" % (SUB_ROW, last_row))
+
+    # Right to left: widening a day never moves one still to be done, so every
+    # anchor from the plan above stays valid. The TEMPLATE does move -- three
+    # columns each time a day to its LEFT is widened -- and it moves during the
+    # very insert that precedes the paste, so count the shift BEFORE copying.
+    shift = 0
+    for lab, anchor, ins in reversed(todo):
+        if ins and anchor < tmpl_col:
+            shift += 3
+        add_for_day(ss, ws, anchor, tmpl_col + shift, px, last_row,
+                    insert=ins, hide=folded[anchor])
+        print("  %-5s done -> %s..%s"
+              % (lab, _col_letter(anchor + 1), _col_letter(anchor + 3)))
+    print("\nwrote the three Talk-To columns into every day block.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

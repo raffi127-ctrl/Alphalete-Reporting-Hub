@@ -1,19 +1,29 @@
-"""TK -- the per-day Total Knocks column on the Alphalete SALES BOARD 2025.
+"""TK + Talk-To's -- the per-day knock columns on the Alphalete SALES BOARD 2025.
 
 An ADD-ON to the production batch, not a report of its own (Eve 2026-08-31):
-no Hub card, no Slack post, no PDF. It writes ONE cell per rep per day.
+no Hub card, no Slack post, no PDF. It writes TWO cells per rep per day.
 
-WHERE THE COLUMN IS. Each day's block on 'Sales Board WE m.d' runs
-Apps / Int / Int Up / DTV / NL / TK / Cx / Roll Call. That 'TK' sub-header
-replaced 'EN' on the WE 9.6 tab -- so the column is found the way every other
-fill on this board finds one: the weekday label in row 1, then the 'TK'
-sub-header in row 3 UNDER it. Never an index; the blocks move every week and
-the sub-headers get renamed (this one just was).
+WHERE THE COLUMNS ARE. Each day's block on 'Sales Board WE m.d' runs
+Apps / Int / Int Up / DTV / NL / TK / Cx / Roll Call, and on the tabs that
+carry Eve's Talk-To columns three more sit between TK and Cx:
+`Total Talk-To's` / `% of TT's per knock` / `AVG app per TT`. That 'TK'
+sub-header replaced 'EN' on the WE 9.6 tab -- so the columns are found the way
+every other fill on this board finds one: the weekday label in row 1, then the
+sub-header in row 3 UNDER it. Never an index; the blocks move every week, the
+sub-headers get renamed (this one just was) and the block is 8 columns wide on
+an old tab and 11 on a new one.
 
-WHERE THE NUMBER COMES FROM. Ownerville -> TeleMapper Leads -> Disposition by
-Rep (p=89) for RAF'S LOCAL OFFICE, column 'Total Knocks', for TODAY in Central
-Time. Same scrape the daily Total Knocks board uses -- `total_knocks.pull` --
-asked for today instead of yesterday.
+THE TWO DERIVED COLUMNS ARE FORMULAS, NOT OUR WRITES. `% of TT's per knock` and
+`AVG app per TT` are laid in once per tab by
+`alphalete_sales_board.talk_to_columns --formulas`, so they follow TK, Talk-To's
+and Apps as those keep moving through the day. This fill never touches them.
+
+WHERE THE NUMBERS COME FROM. Ownerville -> TeleMapper Leads -> Disposition by
+Rep (p=89) for RAF'S LOCAL OFFICE, for TODAY in Central Time: column
+'Total Knocks' for TK, and the calculated 'Total Talk to' (Talk To-Not
+Interested + Presentation-Not Interested + Come Back + Sale + Do Not Knock)
+for the Talk-To's column. Same scrape the daily Total Knocks board uses --
+`total_knocks.pull` -- asked for today instead of yesterday.
 
 TODAY IS A PARTIAL DAY, WHICH IS THE WHOLE POINT: reps knock all day and this
 runs every 15 minutes, so every pass sees a bigger number than the last.
@@ -75,6 +85,7 @@ from automations.energy_slack_fill.run import (
 from automations.total_knocks.pull import (
     COL_REP,
     COL_TOTAL_KNOCKS,
+    COL_TOTAL_TALK_TO,
     KnocksPullFailed,
     central_today,
     pull_disposition_day,
@@ -84,6 +95,9 @@ CENTRAL = ZoneInfo("America/Chicago")
 
 SHEET_ID = os.environ.get("TK_FILL_SHEET_ID", PROD_SHEET_ID)
 METRIC = "TK"          # the per-day sub-column Total Knocks lands in
+# The Talk-To's column, on the tabs that have it. Older tabs do not, and that is
+# not an error: the fill writes TK there and says the column is missing.
+METRIC_TT = "Total Talk-To's"
 
 # Quiet hours, Central. Every pass costs an ownerville browser session, and the
 # fleet's heavy overnight jobs (the 4am wave, the 07:15 captainship build) share
@@ -129,6 +143,27 @@ def day_block(g, day: dt.date):
 def tk_col(g, day: dt.date):
     """Just the TK column -- see day_block."""
     return day_block(g, day)[1]
+
+
+def tt_col(g, day: dt.date):
+    """`day`'s 'Total Talk-To's' column, or None on a tab that predates it.
+
+    Bounded by the NEXT weekday label rather than by a column count: the block
+    is eight columns wide on the old tabs and eleven on the ones that carry
+    these three, so a fixed span would either fall short or read into Monday.
+    """
+    want = METRIC_TT.strip().lower()
+    for c in range(1, 200):
+        lab = _cell(g, DAY_ROW, c).strip().upper()
+        if lab not in DAY_LABELS or DAY_LABELS[lab] != day.weekday():
+            continue
+        for cc in range(c, c + 12):
+            if cc > c and _cell(g, DAY_ROW, cc).strip().upper() in DAY_LABELS:
+                break                               # next day started, no column
+            if _cell(g, SUB_ROW, cc).strip().lower() == want:
+                return cc
+        return None
+    return None
 
 
 def _a1_col(n: int) -> str:
@@ -297,6 +332,11 @@ def main(argv=None) -> int:
                     help="write to the Sheet (default is a preview)")
     ap.add_argument("--sheet-id", default=SHEET_ID,
                     help="override the workbook (point at a sandbox copy)")
+    ap.add_argument("--tab",
+                    help="write to THIS tab instead of the week's own — for a "
+                         "sandbox copy like 'Sales Board WE 9.6 Eve Edits', "
+                         "which lives in the same workbook and so cannot be "
+                         "reached with --sheet-id")
     ap.add_argument("--force", action="store_true",
                     help="run outside the active hours, and don't defer to "
                          "another job holding the ownerville session")
@@ -329,23 +369,27 @@ def main(argv=None) -> int:
         _log(f"ownerville answered for {pulled_day}, not {day} -- writing nothing")
         return 75
 
-    knocks = {}
-    for rec in records:
-        nm = str(rec.get(COL_REP, "")).strip()
-        raw = rec.get(COL_TOTAL_KNOCKS, "")
-        if not nm:
-            continue
-        try:
-            knocks[nm] = int(float(str(raw).replace(",", "") or 0))
-        except ValueError:
-            continue
+    def _counts(column):
+        out = {}
+        for rec in records:
+            nm = str(rec.get(COL_REP, "")).strip()
+            if not nm:
+                continue
+            try:
+                out[nm] = int(float(str(rec.get(column, "")).replace(",", "") or 0))
+            except ValueError:
+                continue
+        return out
+
+    knocks = _counts(COL_TOTAL_KNOCKS)
+    talks = _counts(COL_TOTAL_TALK_TO)
     _log(f"ownerville: {len(knocks)} rep(s) with knocks so far today "
-         f"({sum(knocks.values())} total)")
+         f"({sum(knocks.values())} knocks, {sum(talks.values())} talk-to's)")
 
     from automations.recruiting_report.fill import open_by_key, _retry
     from automations.alphalete_production.capture import find_week_tab
     ss = open_by_key(a.sheet_id)
-    ws = find_week_tab(ss, day)
+    ws = ss.worksheet(a.tab) if a.tab else find_week_tab(ss, day)
     g = ws.get_all_values()
     _log(f"sheet: {ss.title!r}  tab: {ws.title!r}"
          f"{'' if a.sheet_id == PROD_SHEET_ID else '   (NOT the prod workbook)'}")
@@ -376,14 +420,26 @@ def main(argv=None) -> int:
              "that column was EN).")
         return 75
     matched, unmatched, ambiguous = match_rows(knocks, rows)
+    tt_c = tt_col(g, day)
     _log(f"board roster: {len(rows)} rep(s) - matched {len(matched)} - "
-         f"TK column {col}")
+         f"TK column {col}"
+         + (f", Talk-To's column {tt_c}" if tt_c else
+            f" - no {METRIC_TT!r} column on this tab, knocks only"))
 
     plan, protected = build_plan(g, col, matched, rows)
-    if not plan:
-        _log("nothing to write -- the board already holds today's knocks")
-    for rep, a1, cur, new in plan:
-        _log(f"  {a1}  {rep:<36} {cur} -> {new}")
+    # The Talk-To's column rides the SAME pull and the same three rules: it only
+    # ever rises, it never overwrites something a human typed, and a rep
+    # ownerville does not list stays BLANK rather than being zeroed.
+    tt_plan, tt_protected = ([], [])
+    if tt_c:
+        tt_matched, _u, _a = match_rows(talks, rows)
+        tt_plan, tt_protected = build_plan(g, tt_c, tt_matched, rows)
+    if not plan and not tt_plan:
+        _log("nothing to write -- the board already holds today's numbers")
+    for label, p in (("TK", plan), ("TT", tt_plan)):
+        for rep, a1, cur, new in p:
+            _log(f"  {label} {a1}  {rep:<36} {cur} -> {new}")
+    protected = protected + tt_protected
     if protected:
         _log("")
         _log(f"LEFT ALONE -- {len(protected)} cell(s) hold something a human typed:")
@@ -403,12 +459,13 @@ def main(argv=None) -> int:
         for nm in ambiguous:
             _log(f"  {nm}")
 
-    if plan and a.apply:
+    writes = plan + tt_plan
+    if writes and a.apply:
         _retry(ws.batch_update,
-               [{"range": a1, "values": [[new]]} for _rep, a1, _cur, new in plan])
+               [{"range": a1, "values": [[new]]} for _rep, a1, _cur, new in writes])
         _log("")
-        _log(f"wrote {len(plan)} TK cell(s) to {ws.title!r}")
-    elif plan:
+        _log(f"wrote {len(plan)} TK + {len(tt_plan)} Talk-To cell(s) to {ws.title!r}")
+    elif writes:
         _log("")
         _log("PREVIEW -- re-run with --apply to write")
 

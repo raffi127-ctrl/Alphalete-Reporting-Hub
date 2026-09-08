@@ -33,21 +33,24 @@ from automations.alphalete_production import tk_fill as T
 _DAY_BLOCK = ["Apps", "Int", "Int Up", "DTV", "NL", "TK", "Cx", "Roll Call"]
 
 
-def _grid(*, tk_label: str = "TK", extra_rows=()):
+def _grid(*, tk_label: str = "TK", extra_rows=(), talk_to=False):
     head = ["", "", ""] + ["APPS", "INT", "INT UP", "DTV", "NL", "TK", "Cx"]
     row1 = list(head)
     row3 = ["", "#", "WE 8/31- 9/6", "APPS", "INT", "INT UP", "DTV", "NL",
             "TK", "Cx"]
+    block = _DAY_BLOCK if not talk_to else (
+        _DAY_BLOCK[:6] + ["Total Talk-To's", "% of TT's per knock",
+                          "AVG app per TT"] + _DAY_BLOCK[6:])
     for label in ("MON", "TUES", "WED", "THU", "FRI", "SAT", "SUN"):
-        row1 += [label] + [""] * (len(_DAY_BLOCK) - 1)
-        row3 += [b if b != "TK" else tk_label for b in _DAY_BLOCK]
+        row1 += [label] + [""] * (len(block) - 1)
+        row3 += [b if b != "TK" else tk_label for b in block]
     row2 = [""] * len(row1)
 
     rows = [row1, row2, row3]
 
     # Monday's knock cell, located the way the fixture knows it and NOT via
     # tk_col — the EN variant below exists precisely to make tk_col say None.
-    mon_tk = row1.index("MON") + _DAY_BLOCK.index("TK")
+    mon_tk = row1.index("MON") + block.index("TK")
 
     def rep(num, name, tk=""):
         r = [""] * len(row1)
@@ -91,6 +94,36 @@ class ColumnIsFoundByLabel(unittest.TestCase):
     def test_friday_is_not_mondays_column(self):
         g = _grid()
         self.assertNotEqual(T.tk_col(g, FRIDAY), T.tk_col(g, MONDAY))
+
+
+class TalkToColumn(unittest.TestCase):
+    """Eve's three Talk-To columns widen the day block from 8 to 11. The fill
+    has to find the new one on a tab that has it and say None on one that does
+    not — the two shapes live side by side while the change rolls out."""
+
+    def test_it_sits_right_after_TK_on_a_widened_tab(self):
+        g = _grid(talk_to=True)
+        for day in (MONDAY, FRIDAY):
+            self.assertEqual(T.tt_col(g, day), T.tk_col(g, day) + 1)
+
+    def test_an_old_eight_column_tab_has_none(self):
+        self.assertIsNone(T.tt_col(_grid(), MONDAY))
+
+    def test_it_never_reads_into_the_next_day(self):
+        """Only THU carries the columns. Every other day must come back None
+        rather than reaching across the block boundary into THU's."""
+        g = _grid(talk_to=True)
+        row3 = g[T.SUB_ROW - 1]
+        for day in (MONDAY, FRIDAY):
+            lo = T.tk_col(g, day)
+            for off in range(1, 4):                   # blank out that day's trio
+                row3[lo + off - 1] = ""
+            self.assertIsNone(T.tt_col(g, day))
+
+    def test_each_weekday_gets_its_own(self):
+        g = _grid(talk_to=True)
+        cols = {d: T.tt_col(g, MONDAY + dt.timedelta(days=d)) for d in range(7)}
+        self.assertEqual(len(set(cols.values())), 7, cols)
 
 
 class RosterCoversBothSections(unittest.TestCase):
