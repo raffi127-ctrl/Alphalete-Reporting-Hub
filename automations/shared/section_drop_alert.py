@@ -167,6 +167,28 @@ _KINDS = {
                "don't re-post the whole thread.",
         "tail": "The thread is live but incomplete.",
     },
+    # ONE METRIC of a metrics thread that DID post (office_metrics.runner
+    # writes kind="metric" from both of its manifest calls). 'section' was
+    # wrong twice over: its tail_headline says "it did NOT post" when the
+    # thread is in the channel eight metrics deep, and its fix says "don't
+    # re-post the whole thread" without saying how to scope the re-run — while
+    # the manifest already carries `--office <key> --live --only <slug>`.
+    # On 2026-09-08 hammad_metrics and daily_metrics both went out that way,
+    # with the runner logging "kind 'metric' has no wording" on the way past:
+    # the sheets had filled (49/46/52/54 rows) and only the Slack chart upload
+    # had failed, so "it did NOT post" sent the reader hunting a thread that
+    # was live and had carried 8 of 9 metrics.
+    "metric": {
+        "what": "metric",
+        "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
+        "tail_headline": "the thread posted short.",
+        "label": "Missing",
+        "fix": "re-run ONLY the missing {what}{s} — the manifest's retry args "
+               "are already scoped to it, so don't re-post the whole thread.",
+        "tail": "The thread is live and the other metrics landed; the missing "
+                "{what}{s} may already be filled in the sheet, in which case a "
+                "scoped re-run only has to post it.",
+    },
     # One OFFICE's post missing from a thread that carries several offices
     # (other_office_knocks: one Total Knocks image per office in a shared
     # thread). 'section' is nearly right — the thread IS live but incomplete —
