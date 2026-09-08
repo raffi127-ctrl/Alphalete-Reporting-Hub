@@ -53,7 +53,7 @@ for a in "$@"; do [ "$a" = "--dry-run" ] && DRYRUN=1; done
 # An explicit --office on the command line wins (manual probe of one office) and
 # does NOT disturb the rotation marker, so a hand-run can't make the agent skip an
 # office on its next tick.
-ROTATION="11580 23467"
+ROTATION="11580 23467 11901"
 OFFICE=""
 _prev=""
 for a in "$@"; do
