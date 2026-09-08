@@ -24,6 +24,7 @@ PRODUCT_SALES = [
     ["Rafael Hidalgo", "Ana Griffin", "NEW INTERNET", "2", "3", "1", "0", "4",
      "0", "0", "10"],
     ["", "", "WIRELESS", "1", "0", "0", "2", "1", "0", "0", "4"],
+    ["", "", "Total", "3", "3", "1", "2", "5", "0", "0", "14"],
     ["Kash Rai", "Hank Tran", "NEW INTERNET", "5", "5", "3", "0", "0", "0",
      "0", "13"],
     ["Cyrus Wade", "Micah Mcghee", "NEW INTERNET", "1", "1", "0", "0", "0",
@@ -52,6 +53,13 @@ class ProductSalesRecoveryTest(unittest.TestCase):
         names = [r[0] for r in lc.parse_product_sales(camp, PRODUCT_SALES)]
         self.assertNotIn("Outsider Rep", names)   # owner not in the campaign
         self.assertNotIn("Micah Mcghee", names)   # 2 apps, under 12
+
+    def test_ignores_the_per_rep_subtotal_row(self):
+        """The crosstab carries a 'Total' Product Type row per rep; counting it
+        would double everyone's apps and float people over the threshold."""
+        camp = _camp(owners=["Rafael Hidalgo"], threshold=1)
+        out = lc.parse_product_sales(camp, PRODUCT_SALES)
+        self.assertEqual(out, [("Ana Griffin", "Rafael Hidalgo", 14.0)])  # not 28
 
     def test_a_collapsed_export_raises_instead_of_writing_owners_as_reps(self):
         collapsed = [["Owner Name", "Product Type", "Mon", "Product Total"],

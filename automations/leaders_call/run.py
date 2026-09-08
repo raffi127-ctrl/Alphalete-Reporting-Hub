@@ -524,6 +524,13 @@ def parse_product_sales(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
             continue
         if re.fullmatch(r"[\d.,]+", cur_rep):
             continue
+        # SKIP the per-rep subtotal rows. The crosstab carries a blank/'Total'
+        # Product Type row alongside the real product rows; summing those too
+        # would DOUBLE every rep's apps and push people over the threshold who
+        # never earned it. Same guard opt_phase.parse_personal_production uses.
+        ptype = ((r[pi] if pi is not None and pi < len(r) else "") or "").strip()
+        if pi is not None and ptype.lower() in ("", "total", "grand total"):
+            continue
         total = 0
         for i in day_cols:
             n = _num(r[i]) if i < len(r) else None
@@ -973,6 +980,66 @@ def _recover_pull_parse(camp: Campaign, page):
                 except Exception:
                     pass
     return PullFailure(camp.key, last)
+
+
+# Candidate names for a view's week filter, tried in order by
+# --probe-week-param. Tableau URL filter fields are matched by their EXACT
+# caption, so a workbook that spells the same concept differently silently
+# ignores the param (view renders the current week) or empties the worksheet
+# (the Crosstab dialog then offers only 'Last Refresh', which is how NDS
+# failed on 2026-09-08). Probing beats guessing: each guess is a five-minute
+# round trip to the mini.
+WEEK_PARAM_CANDIDATES = (
+    "Sale Date Week Ending (mon-sun)",
+    "Sale Date Week Ending",
+    "Sale Date Week Ending (Mon-Sun)",
+    "Week Ending",
+    "Sales Week Ending",
+    "Sale Date Weekending",
+)
+
+
+def _probe_week_param(camp: Campaign) -> int:
+    """READ-ONLY: which week-filter param name actually pins `camp`'s view?
+
+    For each candidate, pull the crosstab and report what the week guard sees.
+    Nothing is written anywhere. Prints a single OK line for any candidate whose
+    export comes back for the target week."""
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.alphalete_org_report.opt_nds import _read_tab_csv
+    from urllib.parse import quote
+    mon, sun = _target_week()
+    rec = RECOVERY.get(camp.key)
+    base = camp.url
+    sheet = (rec.sheet if rec and rec.sheet else camp.crosstab_sheet)
+    print(f"probing week params for {camp.key} — target "
+          f"{mon.isoformat()}..{sun.isoformat()}", flush=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    winners = []
+    with tableau_session(verbose=True) as page:
+        for name in WEEK_PARAM_CANDIDATES:
+            sep = "&" if "?" in base else "?"
+            url = f"{base}{sep}{quote(name)}={sun.isoformat()}"
+            out = OUTPUT_DIR / f"{camp.key}_probe.csv"
+            try:
+                path = _download_substr(page, url, sheet, out)
+                rows = _read_tab_csv(path)
+                dates = sorted({f"{m:02d}-{d:02d}"
+                                for m, d in _extract_week_dates(rows)})
+                ok = _week_ok(rows)
+                n = max(0, len(rows) - 1)
+                print(f"  [{name}] rows={n} dates={dates} week_ok={ok}",
+                      flush=True)
+                if ok is not False and n:
+                    winners.append(name)
+            except Exception as e:
+                print(f"  [{name}] FAILED: {str(e).splitlines()[0][:120]}",
+                      flush=True)
+    if winners:
+        print(f"OK usable week param(s) for {camp.key}: {winners}", flush=True)
+        return 0
+    print(f"X no candidate pinned {camp.key} to {sun.isoformat()}", flush=True)
+    return 1
 
 
 RECOVERABLE = ("fiber", "nds", "b2b")
@@ -1588,6 +1655,10 @@ def main() -> int:
                          "their week-PINNED stand-ins, for a Monday that never "
                          "ran. BOX / Costco / Revenue are left untouched. Use "
                          "with --dry-run first, then --write.")
+    ap.add_argument("--probe-week-param", action="store_true",
+                    help="READ-ONLY: with --campaign, try each candidate week "
+                         "filter name against that view and report which one "
+                         "actually pins it. Writes nothing.")
     ap.add_argument("--week", metavar="YYYY-MM-DD",
                     help="target a specific week-ending SUNDAY instead of the "
                          "one that just ended. Only meaningful with --recover "
@@ -1608,10 +1679,16 @@ def main() -> int:
             print(f"--week must be a SUNDAY (the week ENDING date); "
                   f"{args.week} is a {_WEEK_END_OVERRIDE.strftime('%A')}.")
             return 2
-        if not args.recover:
+        if not (args.recover or args.probe_week_param):
             print("--week only applies to --recover: every other path reads a "
                   "relative 'This Week' view that cannot reach an old week.")
             return 2
+
+    if args.probe_week_param:
+        if not args.campaign:
+            print("--probe-week-param needs --campaign")
+            return 2
+        return _probe_week_param(CAMPAIGNS[args.campaign])
 
     if args.recover:
         mon, sun = _target_week()
