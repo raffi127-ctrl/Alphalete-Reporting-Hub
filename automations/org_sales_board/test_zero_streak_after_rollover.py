@@ -41,13 +41,34 @@ def board(live_label, cold_name="Cold Rep"):
     ]
 
 
+def two_box_board(live_label, second_box):
+    """Same banner, TWO campaigns — the shape the banner rule turns on.
+
+    `second_box` is what 'Split Rep' did in the second campaign, newest closed
+    week first. The rep is stone cold in the first one either way.
+    """
+    return [
+        ["ALPHALETE ORG", "", live_label, "WE 08.30", "WE 08.23", "WE 08.16"],
+        ["Retail Internet", "", "", "", "", ""],
+        ["1", "Hot Rep", "10", "12", "9", "11"],
+        ["2", "Split Rep", "0", "0", "0", "7"],
+        ["TOTALS", "", "10", "12", "9", "18"],
+        [],
+        ["ALPHALETE ORG", "", live_label, "WE 08.30", "WE 08.23", "WE 08.16"],
+        ["Retail NL", "", "", "", "", ""],
+        ["1", "Split Rep", "0"] + second_box,
+        ["TOTALS", "", "0"] + second_box,
+    ]
+
+
 class AfterRollover(unittest.TestCase):
     today = dt.date(2026, 9, 1)          # Tuesday; live week = WE 09.06
 
     def setUp(self):
         self.posted = []
         self._real_open, self._real_post = zs.open_by_key, zs.post_slack
-        zs.post_slack = lambda f, n, w, t, logfn=print: self.posted.append((f, n))
+        zs.post_slack = (lambda f, n, w, t, logfn=print, kept=():
+                         self.posted.append((f, n, kept)))
         self.addCleanup(self._restore)
 
     def _restore(self):
@@ -57,7 +78,7 @@ class AfterRollover(unittest.TestCase):
         zs.open_by_key = lambda _id: sheet(board("WE 09.06"))
         n = zs.after_rollover("sid", "tab", today=self.today, logfn=lambda m: None)
         self.assertEqual(n, 1)
-        flags, _newbies = self.posted[0]
+        flags, _newbies, _kept = self.posted[0]
         self.assertEqual([f["name"] for f in flags], ["Cold Rep"])
 
     def test_a_board_that_did_not_roll_posts_nothing(self):
@@ -101,9 +122,51 @@ class AfterRollover(unittest.TestCase):
         would propose every new rep for removal on their first Tuesday."""
         zs.open_by_key = lambda _id: sheet(board("WE 09.06"))
         zs.after_rollover("sid", "tab", today=self.today, logfn=lambda m: None)
-        flags, newbies = self.posted[0]
+        flags, newbies, _kept = self.posted[0]
         self.assertNotIn("New Hire", [f["name"] for f in flags])
         self.assertNotIn("New Hire", [f["name"] for f in newbies])
+
+
+class TheBannerIsTheUnit(unittest.TestCase):
+    """Cold in ONE campaign is not a removal when the same banner has another
+    the rep still sells (Eve, 2026-09-08: "es que ana no debe salir mientras
+    venda una retail"). Ana Griffin went out as a proposal, and half her rows
+    were deleted, because the old `elsewhere` warning only looked at the live
+    week and the last closed one — her last Retail NL sale was one week older
+    than that.
+    """
+    today = dt.date(2026, 9, 1)          # live week = WE 09.06
+
+    def setUp(self):
+        self.posted = []
+        self._real_open, self._real_post = zs.open_by_key, zs.post_slack
+        zs.post_slack = (lambda f, n, w, t, logfn=print, kept=():
+                         self.posted.append((f, n, kept)))
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        zs.open_by_key, zs.post_slack = self._real_open, self._real_post
+
+    def _run(self, second_box):
+        zs.open_by_key = lambda _id: sheet(two_box_board("WE 09.06", second_box))
+        n = zs.after_rollover("sid", "tab", today=self.today, logfn=lambda m: None)
+        return n, self.posted[0]
+
+    def test_a_sale_too_old_to_be_active_still_vetoes_the_removal(self):
+        """WE 08.23 is two closed weeks back — outside the `elsewhere` window,
+        inside the streak. That gap is the whole Ana Griffin case."""
+        n, (flags, _newbies, kept) = self._run(["0", "6", "4"])
+        self.assertEqual(n, 0, "nothing to remove")
+        self.assertEqual([f["name"] for f in flags], [])
+        self.assertEqual([f["name"] for f in kept], ["Split Rep"])
+        self.assertEqual(kept[0]["kept_for"], ["ALPHALETE ORG/Retail NL"])
+
+    def test_cold_in_every_box_of_the_banner_is_still_a_removal(self):
+        """The veto is a warm sibling, not the mere existence of one."""
+        n, (flags, _newbies, kept) = self._run(["0", "0", "9"])
+        self.assertEqual(n, 2, "both boxes propose")
+        self.assertEqual({f["name"] for f in flags}, {"Split Rep"})
+        self.assertEqual(kept, [])
 
 
 class NoStandaloneCard(unittest.TestCase):
