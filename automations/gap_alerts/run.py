@@ -44,6 +44,7 @@ import datetime as dt
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -1906,8 +1907,29 @@ def main(argv=None) -> int:
         if not lock.held:
             _log("another tick is still running — skipping this one")
             return 0
-        failures = tick(day, send=send, only=args.only, force=args.force,
-                        headless=not args.headed)
+        try:
+            failures = tick(day, send=send, only=args.only, force=args.force,
+                            headless=not args.headed)
+        except Exception as e:                       # noqa: BLE001
+            # A CRASH IS A FAILURE, and it has to reach _record_failure like
+            # any other. It did not: the exception escaped main(), so the
+            # streak never incremented, so the 3-strike #claudecorrections
+            # alert never fired.
+            #
+            # 2026-09-07 is what that costs. Lucy 1 lost DNS at 14:15; the
+            # ownerville login could not reach a live session and raised
+            # straight out of pull_boards_many. 67 ticks in a row died here
+            # over three hours, the Partners chat went quiet, the streak file
+            # still read 1, and the first anyone knew was the team asking
+            # whether Lucy was shut down. The alerting code was correct and
+            # simply never got called.
+            #
+            # Deliberately BROAD. The point is that no exception can put this
+            # job back to looking healthy; narrowing it to the session errors
+            # we have seen would just re-open the hole for the next one.
+            failures = ["%s: %s" % (type(e).__name__, str(e)[:300])]
+            _log("TICK CRASHED: %s: %s" % (type(e).__name__, str(e)[:300]))
+            traceback.print_exc()
 
     if failures:
         _record_failure("; ".join(failures), dry_run=not send)

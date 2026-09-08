@@ -154,4 +154,14 @@ export PYTHONPATH="$(pwd)"
 
 echo "[$(date)] tick starting (args: ${*:-none})" >> "$LOG_FILE"
 "$VENV_PY" -m automations.gap_alerts.run "$@" >> "$LOG_FILE" 2>&1
-echo "[$(date)] tick done (exit $?)" >> "$LOG_FILE"
+# GRAB $? FIRST. It used to be read inline as `... tick done (exit $?)`, and
+# the `$(date)` in the SAME echo runs before that expansion — command
+# substitution resets $?, so the status logged was `date`'s, not Python's.
+# Every tick has therefore logged "exit 0" since this file was written,
+# INCLUDING ONES THAT DIED ON A TRACEBACK. On 2026-09-07 Lucy 1 lost DNS and
+# 67 consecutive ticks crashed on the ownerville login while every one of them
+# logged "exit 0"; the room stopped getting cards for three hours and nothing
+# anywhere said so. Keep this on its own line.
+rc=$?
+echo "[$(date)] tick done (exit $rc)" >> "$LOG_FILE"
+exit $rc
