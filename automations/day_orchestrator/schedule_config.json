@@ -5784,6 +5784,7 @@
       "order": 44,
       "on_scheduler": true,
       "display_name": "Int WoW Report - Penetration %",
+      "_note": "Eve 2026-09-08: not_before 13:30 because the FEED LOADS LATE, not because the report is slow. Order 44 reached this report around 08:08 CT and at that hour ATTTRACKER2_1-D2D/FiberLeadPerformance (the workbook DEFAULT view, worksheet 'Office New Fiber Lead Penetration By Zip') has not loaded the weekend yet. Measured on the same view the same day: 08:08 newest 2026-09-05 (Sat), 13:21 newest 2026-09-07 (Mon) — two days newer, five hours later. Three Tuesdays in a row opened the same stale-source thread (8/25 newest Sat 8/22, 9/1 newest Sun 8/30, 9/8 newest Sat 9/5), and on two of the three the day missing was this report's OWN weekending Sunday: it writes a WE column for the week that ENDED Sunday, so a pull that stops at Saturday writes that week short. 13:30 is a measured hour, not a guess (the only other afternoon sample on record is Tue 2026-05-26 15:20, which already carried Monday). Deliberate cost: _backstop_covering pushes Lucy 1's noon give-up time to ~14:30 on Tuesdays, so a stuck Lucy 1 report is retired later that one day of the week.",
       "source_type": "tableau",
       "data_sources": [
         "tableau:fiber_pss"
@@ -5795,7 +5796,8 @@
       "cadence": {
         "weekdays": [
           1
-        ]
+        ],
+        "not_before": "13:30"
       },
       "priority": "P2",
       "freshness_target": null,
