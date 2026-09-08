@@ -982,63 +982,93 @@ def _recover_pull_parse(camp: Campaign, page):
     return PullFailure(camp.key, last)
 
 
-# Candidate names for a view's week filter, tried in order by
-# --probe-week-param. Tableau URL filter fields are matched by their EXACT
-# caption, so a workbook that spells the same concept differently silently
-# ignores the param (view renders the current week) or empties the worksheet
-# (the Crosstab dialog then offers only 'Last Refresh', which is how NDS
-# failed on 2026-09-08). Probing beats guessing: each guess is a five-minute
-# round trip to the mini.
+# WHY THIS PROBE EXISTS. Tableau URL filter fields match on their EXACT
+# caption, and a wrong name is SILENT — the view just renders its default week
+# and the export looks fine. Worse, a name that IS right can still come back
+# empty when the view is a CUSTOM VIEW whose saved relative "This Week" filter
+# intersects with the pinned date to nothing; the Crosstab dialog then offers
+# only 'Last Refresh', which reads like a broken view. Both happened to NDS on
+# 2026-09-08. Guessing costs a five-minute round trip to the mini each time, so
+# probe combinations instead: field name AND value format AND base-vs-custom
+# view, all in one pass.
+# Only the (mon-sun) spelling is real: probing NDS on 2026-09-08 showed
+# "Sale Date Week Ending", "Sale Date Week Ending (Mon-Sun)", "Week Ending",
+# "Sales Week Ending" and "Sale Date Weekending" ALL silently ignored (371 rows
+# of the CURRENT week every time), while the (mon-sun) spelling emptied the
+# worksheet — which is a field that matched and a value that found nothing.
+# Add a name back here only after a probe shows it changing the export.
 WEEK_PARAM_CANDIDATES = (
     "Sale Date Week Ending (mon-sun)",
-    "Sale Date Week Ending",
-    "Sale Date Week Ending (Mon-Sun)",
-    "Week Ending",
-    "Sales Week Ending",
-    "Sale Date Weekending",
 )
 
 
-def _probe_week_param(camp: Campaign) -> int:
-    """READ-ONLY: which week-filter param name actually pins `camp`'s view?
+def _base_view_url(url: str) -> str:
+    """A custom-view URL reduced to its BASE view.
 
-    For each candidate, pull the crosstab and report what the week guard sees.
-    Nothing is written anywhere. Prints a single OK line for any candidate whose
-    export comes back for the target week."""
+    Tableau custom views live at `…/views/<workbook>/<view>/<guid>/<name>`. The
+    saved view carries its own filters — including the relative week filter this
+    whole path is trying to escape — so the base view is where a pinned date can
+    actually take (same lesson as the B2B TEAMSTATS section)."""
+    from urllib.parse import urlsplit
+    head, _, query = url.partition("?")
+    parts = head.split("/")
+    for i, seg in enumerate(parts):
+        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+                        r"[0-9a-f]{4}-[0-9a-f]{12}", seg):
+            head = "/".join(parts[:i])       # drop the guid AND the view name
+            break
+    return f"{head}?{query}" if query else head
+
+
+def _probe_week_param(camp: Campaign) -> int:
+    """READ-ONLY: find a URL that actually pins `camp`'s view to the target week.
+
+    Tries the campaign's own URL and its BASE view, each with several field
+    names and both date formats, and reports what the week guard sees for each.
+    Writes nothing anywhere."""
     from automations.shared.tableau_patchright import tableau_session
     from automations.alphalete_org_report.opt_nds import _read_tab_csv
     from urllib.parse import quote
     mon, sun = _target_week()
     rec = RECOVERY.get(camp.key)
-    base = camp.url
     sheet = (rec.sheet if rec and rec.sheet else camp.crosstab_sheet)
-    print(f"probing week params for {camp.key} — target "
-          f"{mon.isoformat()}..{sun.isoformat()}", flush=True)
+    base = _base_view_url(camp.url)
+    iso = sun.isoformat()
+    mdy = f"{sun.month}/{sun.day}/{sun.year}"
+
+    attempts = [("base, no param", base)]
+    for label, root in (("custom view", camp.url), ("base view", base)):
+        for name in WEEK_PARAM_CANDIDATES:
+            for fmt, val in (("ISO", iso), ("M/D/YYYY", mdy)):
+                sep = "&" if "?" in root else "?"
+                attempts.append((f"{label} · {name} · {fmt}",
+                                 f"{root}{sep}{quote(name)}={quote(val)}"))
+
+    print(f"probing {camp.key} for the week {mon.isoformat()}..{iso} "
+          f"({len(attempts)} combinations)", flush=True)
+    print(f"  base view: {base}", flush=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUTPUT_DIR / f"{camp.key}_probe.csv"
     winners = []
     with tableau_session(verbose=True) as page:
-        for name in WEEK_PARAM_CANDIDATES:
-            sep = "&" if "?" in base else "?"
-            url = f"{base}{sep}{quote(name)}={sun.isoformat()}"
-            out = OUTPUT_DIR / f"{camp.key}_probe.csv"
+        for label, url in attempts:
             try:
-                path = _download_substr(page, url, sheet, out)
-                rows = _read_tab_csv(path)
+                rows = _read_tab_csv(_download_substr(page, url, sheet, out))
                 dates = sorted({f"{m:02d}-{d:02d}"
                                 for m, d in _extract_week_dates(rows)})
                 ok = _week_ok(rows)
                 n = max(0, len(rows) - 1)
-                print(f"  [{name}] rows={n} dates={dates} week_ok={ok}",
+                print(f"  [{label}] rows={n} dates={dates} week_ok={ok}",
                       flush=True)
-                if ok is not False and n:
-                    winners.append(name)
+                if ok is True and n:
+                    winners.append(label)
             except Exception as e:
-                print(f"  [{name}] FAILED: {str(e).splitlines()[0][:120]}",
+                print(f"  [{label}] FAILED: {str(e).splitlines()[0][:110]}",
                       flush=True)
     if winners:
-        print(f"OK usable week param(s) for {camp.key}: {winners}", flush=True)
+        print(f"OK pinned {camp.key}: {winners}", flush=True)
         return 0
-    print(f"X no candidate pinned {camp.key} to {sun.isoformat()}", flush=True)
+    print(f"X nothing pinned {camp.key} to {iso}", flush=True)
     return 1
 
 
