@@ -67,8 +67,8 @@ class AfterRollover(unittest.TestCase):
     def setUp(self):
         self.posted = []
         self._real_open, self._real_post = zs.open_by_key, zs.post_slack
-        zs.post_slack = (lambda f, n, w, t, logfn=print, kept=():
-                         self.posted.append((f, n, kept)))
+        zs.post_slack = (lambda f, n, w, t, logfn=print, kept=(), tab="":
+                         self.posted.append((f, n, kept, tab)))
         self.addCleanup(self._restore)
 
     def _restore(self):
@@ -78,7 +78,7 @@ class AfterRollover(unittest.TestCase):
         zs.open_by_key = lambda _id: sheet(board("WE 09.06"))
         n = zs.after_rollover("sid", "tab", today=self.today, logfn=lambda m: None)
         self.assertEqual(n, 1)
-        flags, _newbies, _kept = self.posted[0]
+        flags, _newbies, _kept, _tab = self.posted[0]
         self.assertEqual([f["name"] for f in flags], ["Cold Rep"])
 
     def test_a_board_that_did_not_roll_posts_nothing(self):
@@ -122,7 +122,7 @@ class AfterRollover(unittest.TestCase):
         would propose every new rep for removal on their first Tuesday."""
         zs.open_by_key = lambda _id: sheet(board("WE 09.06"))
         zs.after_rollover("sid", "tab", today=self.today, logfn=lambda m: None)
-        flags, newbies, _kept = self.posted[0]
+        flags, newbies, _kept, _tab = self.posted[0]
         self.assertNotIn("New Hire", [f["name"] for f in flags])
         self.assertNotIn("New Hire", [f["name"] for f in newbies])
 
@@ -140,8 +140,8 @@ class TheBannerIsTheUnit(unittest.TestCase):
     def setUp(self):
         self.posted = []
         self._real_open, self._real_post = zs.open_by_key, zs.post_slack
-        zs.post_slack = (lambda f, n, w, t, logfn=print, kept=():
-                         self.posted.append((f, n, kept)))
+        zs.post_slack = (lambda f, n, w, t, logfn=print, kept=(), tab="":
+                         self.posted.append((f, n, kept, tab)))
         self.addCleanup(self._restore)
 
     def _restore(self):
@@ -155,7 +155,7 @@ class TheBannerIsTheUnit(unittest.TestCase):
     def test_a_sale_too_old_to_be_active_still_vetoes_the_removal(self):
         """WE 08.23 is two closed weeks back — outside the `elsewhere` window,
         inside the streak. That gap is the whole Ana Griffin case."""
-        n, (flags, _newbies, kept) = self._run(["0", "6", "4"])
+        n, (flags, _newbies, kept, _tab) = self._run(["0", "6", "4"])
         self.assertEqual(n, 0, "nothing to remove")
         self.assertEqual([f["name"] for f in flags], [])
         self.assertEqual([f["name"] for f in kept], ["Split Rep"])
@@ -163,10 +163,39 @@ class TheBannerIsTheUnit(unittest.TestCase):
 
     def test_cold_in_every_box_of_the_banner_is_still_a_removal(self):
         """The veto is a warm sibling, not the mere existence of one."""
-        n, (flags, _newbies, kept) = self._run(["0", "0", "9"])
+        n, (flags, _newbies, kept, _tab) = self._run(["0", "0", "9"])
         self.assertEqual(n, 2, "both boxes propose")
         self.assertEqual({f["name"] for f in flags}, {"Split Rep"})
         self.assertEqual(kept, [])
+
+
+class ThePostNamesItsBoard(unittest.TestCase):
+    """Two boards ride this detector into the SAME channel off their own rolls.
+    On 2026-09-08 the ORG board proposed four people at 07:00 and the Country
+    board posted "nadie llegó al umbral" at 09:50 — same title, no board name,
+    so the second read like the first being retracted."""
+    today = dt.date(2026, 9, 1)
+    weeks = [dt.date(2026, 8, 30), dt.date(2026, 8, 23)]
+
+    def test_the_empty_post_says_which_board(self):
+        text = zs.build_post([], [], self.weeks, self.today,
+                             tab="Country Sales Board")
+        self.assertIn("Country Sales Board", text)
+
+    def test_the_listing_post_says_which_board(self):
+        flags = [{"name": "Cold Rep", "owner": "ALPHALETE ORG",
+                  "section": "Retail NL", "streak": 2, "last_sale": "WE 08.16",
+                  "elsewhere": [], "kept_for": []}]
+        text = zs.build_post(flags, [], self.weeks, self.today,
+                             tab="Alphalete ORG Sales Board")
+        self.assertIn("Alphalete ORG Sales Board", text)
+        self.assertIn("Cold Rep", text)
+
+    def test_no_tab_still_builds(self):
+        """after_rollover always passes one, but the default must not crash a
+        hand-built post."""
+        self.assertIn("Two-week zero rule",
+                      zs.build_post([], [], self.weeks, self.today))
 
 
 class NoStandaloneCard(unittest.TestCase):

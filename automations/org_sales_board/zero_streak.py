@@ -191,20 +191,28 @@ def unrolled_boxes(boxes: list, live_sun: dt.date) -> dict:
 
 
 def build_post(flags: list, newbies: list, weeks: list, today: dt.date,
-               kept: list = ()) -> str:
+               kept: list = (), tab: str = "") -> str:
     """The Slack message. It PROPOSES; it never says anything was removed.
 
     Taking a rep off the board is irreversible for the person reading it, so
     this posts a list and the command, exactly like the new-owners gate posts a
-    name and waits for a ✅. Nothing here writes to the board."""
+    name and waits for a ✅. Nothing here writes to the board.
+
+    SAY WHICH BOARD. Two boards ride this same detector off their own Tuesday
+    roll and post into the SAME channel — the ORG board around 07:00 and the
+    Country board a couple of hours later. With the title alone they are
+    indistinguishable: on 2026-09-08 the ORG board proposed four people at
+    07:00 and the Country board posted "nadie llegó al umbral · Nada que sacar"
+    at 09:50, which reads like the first post being retracted."""
     # Date built from the fields, never '%-d' — that strftime flag is glibc-only
     # and these reports run on Windows too. [[feedback_cross_platform]]
     stamp = f"{today.day}/{today.month}"
+    which = f" · {tab}" if tab else ""
     wk = " y ".join(f"WE {d:%m.%d}" for d in weeks) or "las semanas cerradas"
     if not flags and not newbies and not kept:
-        return (f"*Two-week zero rule* — {stamp} · nadie llegó al umbral "
+        return (f"*Two-week zero rule*{which} — {stamp} · nadie llegó al umbral "
                 f"({wk} en 0). Nada que sacar.")
-    lines = [f"*Two-week zero rule* — {stamp}",
+    lines = [f"*Two-week zero rule*{which} — {stamp}",
              f"Cero en {wk}. Esto es una PROPUESTA: no se tocó el board."]
     if flags:
         lines.append(f"\n*Para sacar ({len({f['name'] for f in flags})} personas)*")
@@ -234,7 +242,7 @@ def build_post(flags: list, newbies: list, weeks: list, today: dt.date,
 
 
 def post_slack(flags: list, newbies: list, weeks: list, today: dt.date,
-               logfn=print, kept: list = ()) -> None:
+               logfn=print, kept: list = (), tab: str = "") -> None:
     """Post to the channel the new-owners notices already use — who comes OFF
     the board belongs next to who comes ON, in front of the same people.
 
@@ -243,7 +251,7 @@ def post_slack(flags: list, newbies: list, weeks: list, today: dt.date,
     is Evelyn's, so a hand-run would post under her name. If there is no token
     at all the text is printed and nothing is sent — a failed post must never
     fail the report, which has already done its work by now."""
-    text = build_post(flags, newbies, weeks, today, kept)
+    text = build_post(flags, newbies, weeks, today, kept, tab)
     try:
         from automations.shared import slack_metrics_post as smp
         from automations.new_owners import notify
@@ -382,7 +390,8 @@ def after_rollover(sheet_id: str, tab: str, *, today=None,
         if dry_run:
             logfn("  zero-rule: dry-run — no se postea")
             return len(flags)
-        post_slack(flags, newbies, closed[:weeks], today, logfn=logfn, kept=kept)
+        post_slack(flags, newbies, closed[:weeks], today, logfn=logfn, kept=kept,
+                   tab=tab)
         return len(flags)
     except Exception as e:                  # noqa: BLE001 — advisory, never fatal
         logfn("  zero-rule: SALTEADO (%s: %s) — el roleo y el fill ya quedaron"
@@ -474,7 +483,8 @@ def main(argv=None) -> int:
         print(f"CSV: {out}")
 
     if args.post:
-        post_slack(flags, newbies, closed[:args.weeks], today, kept=kept)
+        post_slack(flags, newbies, closed[:args.weeks], today, kept=kept,
+                   tab=args.tab)
 
     if args.commands:
         # `kept` never reaches here — a rep with a warm box under the SAME
