@@ -1655,6 +1655,13 @@ def main() -> int:
                          "their week-PINNED stand-ins, for a Monday that never "
                          "ran. BOX / Costco / Revenue are left untouched. Use "
                          "with --dry-run first, then --write.")
+    ap.add_argument("--min", type=float, metavar="N", dest="min_value",
+                    help="VERIFICATION ONLY: override every campaign's apps/$ "
+                         "threshold. The point is comparing a --recover pull "
+                         "against the LIVE view for the CURRENT week, where a "
+                         "day or two of data never reaches the real threshold; "
+                         "with the same --min both sides list the same reps and "
+                         "any disagreement is a parser difference, not a filter.")
     ap.add_argument("--probe-week-param", action="store_true",
                     help="READ-ONLY: with --campaign, try each candidate week "
                          "filter name against that view and report which one "
@@ -1666,6 +1673,15 @@ def main() -> int:
                          "point is verifying a recovery against a week whose "
                          "deck already went out.")
     args = ap.parse_args()
+
+    if args.min_value is not None:
+        if args.write and not args.dry_run:
+            print("--min is a verification aid; it refuses to run with --write.")
+            return 2
+        for _c in CAMPAIGNS.values():
+            _c.threshold = args.min_value
+        print(f"(--min {args.min_value:g}: every section's threshold overridden "
+              f"for this run only)", flush=True)
 
     if args.week:
         import datetime as dt
