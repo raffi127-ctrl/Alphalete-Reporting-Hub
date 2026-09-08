@@ -325,8 +325,11 @@ OFFICES = {
         "log_stem": "applicant-push-11901",
         "hub_report_id": "applicant_push_khalil",
         "hub_display": "Applicant Push (Khalil)",
-        "post_channel": "",
-        "post_todo": False,
+        # #11901-alphalete-management-group-inc-khalil-mansour (private). Carlos
+        # added the Lucy Slack apps 2026-09-08 ("ive added you to his slack") —
+        # his flagged-applicant to-do posts land HERE and nowhere else.
+        "post_channel": "C0AUKHN120L",
+        "post_todo": True,
         "allow_retext": False,
         "remove_blocked_read": True,
         "remove_no_phone": True,
