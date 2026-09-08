@@ -20,8 +20,9 @@ This module fills ONE section, write-once / apply-many:
     from the pull, never transcribe the source's name list
   • Running Week Total = a live =SUM() formula over that ICD's day cells
     (never a hardcoded number)
-  • only writes day columns that have data in this pull (fill day-by-day;
-    future days stay blank)
+  • fills every COMPLETED day of the section's week — a day nobody sold on
+    is a 0, not a blank, and only a source that ANSWERED (even with an empty
+    week) gets zeros written for it. Today + future days stay blank
 
 The Product Summary / RAF ORG blocks + the leaderboard are FORMULA-DRIVEN
 and are NOT touched here (see run.py / the recipe).
@@ -53,6 +54,28 @@ class SectionSpec:
     feeds it."""
     label: str            # col-A header on the daily section (e.g. 'Retail NL')
     metric: str           # Measure Name in the pull (e.g. 'Wireless Lines')
+    # Does this section's source publish a day late? A day-behind section's
+    # most recent completed day is legitimately not out yet, so it must NOT be
+    # zero-filled at 4am (the 14:30 catchup brings it). None = resolve it from
+    # data_gate.LAGGING_SECTIONS, which is the list that already answers this
+    # question for the email gate — so a caller that knows nothing about
+    # lagging sources (new_owners.hook, all_campaigns_board) still gets it
+    # right. Pass True/False to override (tests do).
+    day_behind: Optional[bool] = None
+
+
+class EmptyPull(dict):
+    """A pull that is empty because the SOURCE SAID SO — the view rendered and
+    had no rows — as opposed to `{}`, which is also what a dead custom view, an
+    expired session and a failed download leave behind.
+
+    The difference decides whether a completed day is written as 0 or left
+    alone, so it cannot be inferred from the value: an adapter that has SEEN
+    Tableau answer "no rows for this week" returns EmptyPull(), and only then
+    does a section with no sales get its zeros (Eve 2026-09-08). It is a dict,
+    so every consumer — len(), .keys(), iteration, `if pull:` — behaves exactly
+    as it did.
+    """
 
 
 # Retail NL + Retail Internet both come from the ONE SARA pull.
@@ -248,6 +271,40 @@ def missing_day_columns(anchor: SectionAnchor,
             if d < today and d.day not in anchor.day_col_by_daynum]
 
 
+def is_day_behind(spec: SectionSpec) -> bool:
+    """Whether `spec`'s source publishes a day late (see SectionSpec)."""
+    if spec.day_behind is not None:
+        return bool(spec.day_behind)
+    from automations.org_sales_board import data_gate as _dg
+    return _dg.is_lagging(spec.label)
+
+
+def zero_fill_days(anchor: SectionAnchor, spec: SectionSpec,
+                   today: Optional[dt.date] = None) -> List[dt.date]:
+    """Days this section OWES a number for, whatever the pull says.
+
+    A day nobody sold on produces no rows in the pull at all, so a day list
+    built from the pull has nothing to fill and the section is left BLANK on a
+    day whose real answer is 0 — that is Eve 2026-09-08: Retail NL and Retail
+    Internet both blank for Mon 9/7, on a Monday nobody sold retail. Blank in
+    those cells is not "no sales", it is "we don't know", and it reads that way
+    in the emailed picture too.
+
+    So the day list is SHEET-DRIVEN, the same way the ICD list already is:
+    every COMPLETED day of the section's own week (Frontier-style Sun–Sat
+    sections included — section_week handles the offset). Today is in progress
+    and never owed; a day-behind source doesn't owe yesterday either, because
+    its yesterday genuinely has not published yet and a 0 there would be a
+    number we made up (BOX at 4am, before the 14:30 catchup).
+
+    The CALLER still has to prove the source answered before writing these —
+    see plan_section_fill.
+    """
+    today = today or dt.date.today()
+    cutoff = today - dt.timedelta(days=1) if is_day_behind(spec) else today
+    return [d for d in section_week(anchor, today) if d < cutoff]
+
+
 # ----------------------------------------------------------- name matching
 
 # Board-local owner aliases — for ICDs whose Org-board ROW name differs from
@@ -320,17 +377,49 @@ def plan_section_fill(
     present_days: set[dt.date] = set()
     for metrics in pull.values():
         present_days.update(metrics.get(spec.metric, {}).keys())
+
+    # Plus every completed day the section OWES a number for (zero_fill_days),
+    # so a day nobody sold on lands as 0 instead of blank.
+    #
+    # THE GUARD, and it is the whole reason this isn't unconditional: an empty
+    # `pull` is ALSO what a dead custom view, an expired Tableau session and an
+    # empty crosstab look like, and painting a wall of zeros over one of those
+    # is the silent-wrong failure this board keeps getting bitten by (SARA
+    # returned 0 offices for three weeks in July and every cell just stayed
+    # blank). One owner row parsed = the source answered = a metric with no
+    # rows really is nobody selling. With nothing parsed we write NOTHING and
+    # say so, and orchestrate turns that into a not-filled section.
+    answered = bool(pull) or isinstance(pull, EmptyPull)
+    owed_days: set[dt.date] = set()
+    if answered:
+        owed_days = {d for d in zero_fill_days(anchor, spec, today)
+                     if d.day in anchor.day_col_by_daynum}
+
     # Restrict to days that map to a column on the sheet's current week.
     fill_cols = {d: anchor.day_col_by_daynum[d.day]
-                 for d in present_days if d.day in anchor.day_col_by_daynum}
+                 for d in (present_days | owed_days)
+                 if d.day in anchor.day_col_by_daynum}
     skipped = sorted(d for d in present_days if d.day not in anchor.day_col_by_daynum)
     if skipped:
         plan.log.append(
             f"  ⚠ {len(skipped)} pull day(s) not on the sheet's current week, "
             f"skipped: {[d.isoformat() for d in skipped]}")
+    zeroed = sorted(d for d in owed_days if d not in present_days)
+    if zeroed:
+        plan.log.append(
+            f"  {spec.label}: no {spec.metric!r} anywhere in the pull for "
+            f"{[d.isoformat() for d in zeroed]} — nobody sold, filling 0 "
+            + (f"(the pull parsed {len(pull)} owner(s), so the source did "
+               f"answer)" if pull else
+               "(Tableau rendered the view and it had NO rows — an answer, "
+               "not a failed pull)"))
     if not fill_cols:
         plan.log.append(
-            f"  no pull days for metric {spec.metric!r} — nothing to fill")
+            f"  no pull days for metric {spec.metric!r} and nothing owed "
+            f"— nothing to fill"
+            + ("" if pull else " (the pull parsed NO owners at all: treat this "
+                               "as a source that did not answer, not as a day "
+                               "with no sales)"))
         return plan
 
     first_l = _col(anchor.first_day_col)
@@ -379,10 +468,17 @@ def plan_section_fill(
         f"  {spec.label}: {len(anchor.icd_rows)} ICDs × {len(fill_cols)} day(s); "
         f"day totals (by day-of-month) = "
         f"{dict(sorted(plan.day_totals.items()))}")
-    if plan.unmatched:
+    if plan.unmatched and not isinstance(pull, EmptyPull):
         plan.log.append(
             f"  ⚠ {len(plan.unmatched)} sheet ICD(s) not found in the pull "
             f"(filled 0 — verify/alias): {plan.unmatched}")
+    elif plan.unmatched:
+        # Nobody is missing: the whole week is empty, so every ICD is "absent".
+        # Saying "verify/alias" here would send someone hunting a name problem
+        # that isn't there.
+        plan.log.append(
+            f"  {spec.label}: empty week — all {len(plan.unmatched)} ICD(s) "
+            f"filled 0, no name matching needed")
     return plan
 
 
