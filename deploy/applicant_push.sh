@@ -53,7 +53,12 @@ for a in "$@"; do [ "$a" = "--dry-run" ] && DRYRUN=1; done
 # An explicit --office on the command line wins (manual probe of one office) and
 # does NOT disturb the rotation marker, so a hand-run can't make the agent skip an
 # office on its next tick.
-ROTATION="11580 23467 11901"
+# 11901 (Khalil) PULLED from the rotation 9/8 ~11:10am: the first tick that
+# should have been his (10:05) never started and no tick fired after — the
+# agent stopped cold at his slot, pre-log. His offices.py row and PUSH_ALLOWED
+# stay so a supervised probe (--office 11901) still works; he rejoins only
+# after that probe survives a full tick. Live offices come first.
+ROTATION="11580 23467"
 OFFICE=""
 _prev=""
 for a in "$@"; do
