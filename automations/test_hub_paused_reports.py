@@ -70,8 +70,22 @@ class PausedStaysVISIBLEButUncounted(unittest.TestCase):
         card = next((c for c in dashboard.AUTOMATED_REPORTS
                      if c.get("id") == "tracker_mirror"), None)
         self.assertIsNotNone(card, "tracker_mirror card missing from the Hub")
-        self.assertTrue(dashboard._is_due_today(card, TODAY))
-        self.assertTrue(dashboard._paused_reason(card))
+        self.assertTrue(dashboard._paused_reason(card),
+                        "it has to READ as stood down, not merely be present")
+        # This used to assert _is_due_today(card) flat, and it went red on
+        # 2026-09-08. Nothing on the Hub broke: tracker_mirror is a
+        # self-registered LIBRARY card, so its schedule is whatever the shared
+        # Sheet's Metadata column says, and that row now reads `on-demand` —
+        # which _was_due_on answers False for, correctly (no weekdays, so no day
+        # is its day). The assertion was testing the contents of a Sheet anyone
+        # can edit, from a test that cannot see it change.
+        #
+        # What the line MEANT is the invariant this class exists for: the pause
+        # must not be what takes a card off the day's views. Ask that of the real
+        # card directly, with a schedule that recurs — true no matter what the
+        # library row says tomorrow.
+        self.assertTrue(dashboard._was_due_on({**card, "schedule": DAILY}, TODAY),
+                        "paused must NOT hide the real card from a day it runs")
 
     def test_the_pack_count_excludes_paused(self):
         import inspect
