@@ -256,6 +256,22 @@ def push(sales: Sequence, *, today: Optional[dt.date] = None,
                   "endColumnIndex": _COL_BOX_NOTES + 1},
         "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP"}},
         "fields": "userEnteredFormat.wrapStrategy"}})
+    # Bordering (Carlos 2026-09-08: "more lines"). Repainted every run like
+    # the color rules — the clear+rewrite wipes cell borders, so they have to
+    # ride the same batch. Grey grid on every cell, a heavier line under the
+    # header and around the outside.
+    grey = {"style": "SOLID", "color": _rgb("B7B7B7")}
+    heavy = {"style": "SOLID_MEDIUM", "color": _rgb("3D3D3D")}
+    body_rng = {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": len(body),
+                "startColumnIndex": 0, "endColumnIndex": len(HEADERS)}
+    reqs.append({"updateBorders": {
+        "range": body_rng,
+        "top": heavy, "bottom": heavy, "left": heavy, "right": heavy,
+        "innerHorizontal": grey, "innerVertical": grey}})
+    reqs.append({"updateBorders": {
+        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
+                  "startColumnIndex": 0, "endColumnIndex": len(HEADERS)},
+        "bottom": heavy}})
     _retry(lambda: sh.batch_update({"requests": reqs}))
 
     log("  {} tab: {} rows ({} new, {} status changes, {} aged out past "
