@@ -982,5 +982,36 @@ class StatsRangeAutoRepair(unittest.TestCase):
                             for f in self._findings(sheet)))
 
 
+class StationsNameHygiene(unittest.TestCase):
+    """Col A of a station block is 'Territory Status', not a name column: its
+    values sit in the same columns the check scans, and the capitalised
+    two-token ones ('T Extended', 'New T') look exactly like a person. Each one
+    that slips through is a finding EVERY DAY forever — the board is right and
+    nothing a human does clears it."""
+
+    def _stations(self, cell):
+        rows, form = _stations_clean()
+        while len(rows) < 7:                   # _stations_clean() stops at r6
+            rows.append([""] * 95)
+        rows[6][0] = cell                      # r7, col A (the real address)
+        return _FakeSheet({"Stations": _FakeWS(rows, form),
+                           "Sales Board": _FakeWS([], [], b2="")})
+
+    def _findings(self, cell):
+        return audit_run.audit_stations(self._stations(cell), 5,
+                                        [(5, "Casey Rep")], [], log=lambda *a: None)
+
+    def test_territory_status_values_are_not_names(self):
+        for status in ("New T", "T Extended"):
+            self.assertEqual(self._findings(status), [],
+                             "%r is a Territory Status value" % status)
+
+    def test_a_real_name_still_gets_checked(self):
+        """The whitelist is anchored, so it must not swallow a person whose
+        name merely starts the same way."""
+        found = self._findings("New Tyler Smith")
+        self.assertTrue(any("New Tyler Smith" in f for f in found), found)
+
+
 if __name__ == "__main__":
     unittest.main()
