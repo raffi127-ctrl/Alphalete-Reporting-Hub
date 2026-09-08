@@ -492,6 +492,94 @@ def parse_rows(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
     return out
 
 
+def _clean_owner(raw: str) -> str:
+    """Owner cell -> display name. Collapse newlines FIRST: the NDS export puts
+    the '[legal entity]' suffix on its own line, and the bracket regex does not
+    cross a newline, so stripping in the other order leaves it in."""
+    one_line = (raw or "").replace("\n", " ").replace("\r", " ")
+    return re.sub(r"\s*\[.*", "", one_line).strip()
+
+
+def _mdy(cell: str):
+    """'9/6/2026' -> date, else None."""
+    import datetime as dt
+    m = re.fullmatch(r"\s*(\d{1,2})/(\d{1,2})/(\d{4})\s*", cell or "")
+    if not m:
+        return None
+    try:
+        return dt.date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return None
+
+
+def parse_product_sales_multiweek(camp: Campaign,
+                                  rows: list[list[str]]) -> list[tuple]:
+    """NDS 'This week and last' crosstab -> [(rep, owner, apps)].
+
+    TWO header rows. Row 0 carries each column's WEEK-ENDING date, repeated
+    across that week's block ('9/6/2026' x8, then '9/13/2026' x3 — the current
+    week only has the days it has). Row 1 carries the day name, with a 'Total'
+    closing each block. Data starts at row 2.
+
+    Columns are chosen BY THE DATE IN ROW 0, never by position: the in-progress
+    week grows a column a day, and 'the first block' is only last week until the
+    view is opened on a Monday. The block's own 'Total' column is skipped —
+    summing the days already gives it, and counting both doubles everyone."""
+    if len(rows) < 3:
+        return []
+    _, sun = _target_week()
+    wk_row, hdr = rows[0], rows[1]
+    day_cols = []
+    for i, label in enumerate(hdr):
+        if _mdy(wk_row[i] if i < len(wk_row) else "") != sun:
+            continue
+        name = (label or "").strip().lower()
+        if not name or "total" in name:
+            continue
+        day_cols.append(i)
+    if not day_cols:
+        seen = sorted({str(d) for d in (_mdy(c) for c in wk_row) if d})
+        raise RuntimeError(
+            f"{camp.key}: no columns for the week ending {sun.isoformat()} in "
+            f"this export (weeks present: {seen or 'none'}) — the view no longer "
+            f"carries the finished week; do not fall back to another week.")
+    oi = _find_col(hdr, camp.owner_hdr)
+    ri = _find_col(hdr, camp.rep_hdr)
+    pi = _find_col(hdr, ("product type", "product"))
+    if ri is None:
+        raise RuntimeError(f"{camp.key}: no 'Rep' column in {hdr}")
+    apps: dict = {}
+    owners: dict = {}
+    cur_owner = cur_rep = ""
+    for r in rows[2:]:
+        if len(r) <= ri:
+            continue
+        owner = (r[oi] if oi is not None and oi < len(r) else "").strip()
+        rep = (r[ri] or "").strip()
+        if owner:
+            cur_owner = _clean_owner(owner)
+        if rep:
+            cur_rep = rep
+        if not cur_rep or cur_rep.lower() in ("total", "grand total"):
+            continue
+        if re.fullmatch(r"[\d.,]+", cur_rep):
+            continue
+        ptype = ((r[pi] if pi is not None and pi < len(r) else "") or "").strip()
+        if pi is not None and ptype.lower() in ("", "total", "grand total"):
+            continue
+        total = 0
+        for i in day_cols:
+            n = _num(r[i]) if i < len(r) else None
+            if n:
+                total += int(n)
+        if not total:
+            continue
+        key = _norm(cur_rep)
+        apps[key] = apps.get(key, 0) + total
+        owners.setdefault(key, (cur_rep, cur_owner))
+    return _finish_recovery(camp, apps, owners)
+
+
 def parse_product_sales(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
     """PRODUCT SALES SUMMARY crosstab -> [(rep, owner, apps)] for the OFF-DAY
     recovery of Fiber / NDS.
@@ -530,7 +618,7 @@ def parse_product_sales(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
         owner = (r[oi] if oi is not None and oi < len(r) else "").strip()
         rep = (r[ri] or "").strip()
         if owner:
-            cur_owner = re.sub(r"\s*\[.*", "", owner).replace("\n", " ").strip()
+            cur_owner = _clean_owner(owner)
         if rep:
             cur_rep = rep
         if not cur_rep or cur_rep.lower() in ("total", "grand total"):
@@ -588,7 +676,7 @@ def parse_b2b_summary(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
         owner = (r[oi] if oi is not None and oi < len(r) else "").strip()
         rep = (r[ri] or "").strip() if ri < len(r) else ""
         if owner:
-            cur_owner = re.sub(r"\s*\[.*", "", owner).replace("\n", " ").strip()
+            cur_owner = _clean_owner(owner)
         if rep:
             cur_rep = rep
         if not cur_rep or cur_rep.lower() in ("total", "grand total"):
@@ -748,6 +836,8 @@ def _parse_inner(camp: Campaign, rows: list[list[str]],
         return parse_revenue(camp, rows)
     if parser == "product_sales":
         return parse_product_sales(camp, rows)
+    if parser == "product_sales_multiweek":
+        return parse_product_sales_multiweek(camp, rows)
     if parser == "b2b_summary":
         return parse_b2b_summary(camp, rows)
     return parse_rows(camp, rows)

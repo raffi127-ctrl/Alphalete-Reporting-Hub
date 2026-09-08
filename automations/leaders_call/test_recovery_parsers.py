@@ -102,5 +102,58 @@ class B2BRecoveryTest(unittest.TestCase):
             lc.parse_b2b_summary(_camp(key="b2b"), owner_level)
 
 
+
+# NDS 'This week and last': row 0 = week-ending date per column, row 1 = day
+# name, data from row 2. The finished week (9/6) sits BESIDE the in-progress
+# one (9/13), which only has the days it has so far.
+NDS_MULTIWEEK = [
+    ["", "", "", "9/6/2026", "9/6/2026", "9/6/2026", "9/6/2026", "9/6/2026",
+     "9/6/2026", "9/6/2026", "9/6/2026", "9/13/2026", "9/13/2026", "9/13/2026"],
+    ["Owner & Office", "Rep Name", "Product Type (Broken Out)", "Monday",
+     "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+     "Total", "Monday", "Tuesday", "Total"],
+    ["KHALIL MANSOUR\n[amg dba hab]", "Abdallah Ghousheh", "NEW INTERNET",
+     "4", "3", "2", "1", "0", "0", "0", "10", "9", "9", "18"],
+    ["", "", "WIRELESS", "1", "1", "1", "0", "0", "0", "0", "3", "0", "0", "0"],
+    ["", "", "Total", "5", "4", "3", "1", "0", "0", "0", "13", "9", "9", "18"],
+    ["MAXAMAD ADEN", "Slow Rep", "NEW INTERNET",
+     "1", "0", "0", "0", "0", "0", "0", "1", "40", "40", "80"],
+]
+
+
+class NDSMultiweekTest(unittest.TestCase):
+    def _camp(self):
+        return _camp(key="nds", section_title="NDS",
+                     owners=["Khalil Mansour", "Maxamad Aden"])
+
+    def test_reads_the_finished_week_not_the_one_in_progress(self):
+        camp = self._camp()
+        out = lc.parse_product_sales_multiweek(camp, NDS_MULTIWEEK)
+        # 10 NI + 3 WIRELESS across 8/31-9/6. The 9/13 columns (18 + 0) and the
+        # 'Total' rows/columns are all excluded.
+        self.assertEqual(out, [("Abdallah Ghousheh", "KHALIL MANSOUR", 13.0)])
+
+    def test_a_rep_who_only_sold_this_week_does_not_qualify(self):
+        """Slow Rep has 80 apps in the in-progress week and 1 in the finished
+        one — reading the wrong block would put them on the deck."""
+        camp = self._camp()
+        names = [r[0] for r in lc.parse_product_sales_multiweek(camp,
+                                                                NDS_MULTIWEEK)]
+        self.assertNotIn("Slow Rep", names)
+
+    def test_the_legal_suffix_on_its_own_line_is_stripped(self):
+        out = lc.parse_product_sales_multiweek(self._camp(), NDS_MULTIWEEK)
+        self.assertEqual(out[0][1], "KHALIL MANSOUR")
+
+    def test_raises_when_the_finished_week_is_gone(self):
+        """Once the view stops carrying the target week there is nothing to
+        recover — it must say so, never quietly read the other block."""
+        rolled = [r[:] for r in NDS_MULTIWEEK]
+        rolled[0] = [c.replace("9/6/2026", "9/20/2026") for c in rolled[0]]
+        with self.assertRaises(RuntimeError):
+            lc.parse_product_sales_multiweek(self._camp(), rolled)
+
+
+
 if __name__ == "__main__":
     unittest.main()
