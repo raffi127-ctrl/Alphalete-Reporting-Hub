@@ -170,6 +170,50 @@ class PhaseCollapseIsNotAThread(unittest.TestCase):
                          "as a 'section' fallback that's fine as-is")
 
 
+class OneMetricOfALiveThread(unittest.TestCase):
+    """2026-09-08: office_metrics writes kind="metric" and there was no such
+    kind, so it fell through to 'section' — whose tail_headline is "it did NOT
+    post". That morning hammad_metrics and daily_metrics each lost ONE churn
+    image to a failed Slack upload; the sheets had filled and the thread was
+    sitting in the channel eight metrics deep, and the alert described both as
+    threads that never posted. The fix line matters just as much: the manifest
+    already carries scoped retry args, and a whole-office re-run RE-POSTS every
+    metric that already landed (office_metrics.runner writes them scoped for
+    exactly that reason), so the wording must never send the reader at the
+    whole office."""
+
+    ITEMS = ["🌐 New Internet + 📊 Wireless Churn"]
+    NOTE = "8/9 metrics posted to #horizon-edge-sales"
+
+    def _parts(self, remediation=None):
+        return sda._compose_parts("hammad_metrics", self.ITEMS,
+                                  remediation, self.NOTE, "metric")
+
+    def _text(self):
+        return chr(10).join(sum(self._parts(), []))
+
+    def test_it_never_says_the_report_did_not_post(self):
+        self.assertNotIn("did not post", self._text().lower(),
+                         "the thread posted — it is one metric short")
+
+    def test_the_fix_says_the_retry_is_already_scoped(self):
+        text = self._text().lower()
+        self.assertIn("only the missing", text)
+        self.assertIn("scoped", text,
+                      "a whole-office re-run re-posts every metric that "
+                      "already landed — the reader has to be told the "
+                      "manifest's retry args are narrower than that")
+
+    def test_it_names_the_metric_and_counts_it(self):
+        self.assertIn("dropped 1 metric this run", chr(10).join(self._parts()[0]))
+
+    def test_metric_no_longer_falls_back_silently(self):
+        self.assertIn("metric", sda._KINDS)
+        self.assertNotIn("metric", sda._FILL_SHAPED,
+                         "a kind with its own wording must not also be listed "
+                         "as a 'section' fallback that's fine as-is")
+
+
 class UnfilledIcdIsLowKey(unittest.TestCase):
     """Megan 2026-08-15: "the alert on Melik just needs to say his is the only
     one not filled so we know that's not a big deal / fail." One ICD without a
