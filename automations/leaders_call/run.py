@@ -1057,9 +1057,20 @@ def _recover_pull_parse(camp: Campaign, page):
             hook = rec.hook(mon, sun) if rec.hook else None
             path = _download_substr(page, url, sheet, out, pre_export=hook)
             rows = _read_tab_csv(path)
-            if _week_ok(rows) is False:
-                got = sorted({f"{m:02d}-{d:02d}"
-                              for m, d in _extract_week_dates(rows)})
+            seen = {(m, d) for m, d in _extract_week_dates(rows)}
+            got = sorted(f"{m:02d}-{d:02d}" for m, d in seen)
+            if rec.parser == "product_sales_multiweek":
+                # A multi-week source is SUPPOSED to carry another week beside
+                # the target one, so the all-dates-inside guard would reject
+                # every good export. What matters here is that the target week
+                # is still present; the parser picks its columns by date and
+                # raises if they are gone.
+                if (sun.month, sun.day) not in seen:
+                    return PullFailure(
+                        camp.key, f"the export no longer carries the week "
+                                  f"ending {sun.isoformat()} (weeks present: "
+                                  f"{got}); nothing to recover from it")
+            elif _week_ok(rows) is False:
                 return PullFailure(camp.key,
                                    f"RECOVERY pin did not take: data is for "
                                    f"{got}, asked for {wk}")
