@@ -1547,11 +1547,45 @@ def main() -> int:
                     bits.append(f"{len(set(unmapped))} unmapped "
                                 f"(need an office id via 'Map new ICDs')")
                 note = "; ".join(bits) + "."
+                # AN EXPECTED DENIAL IS NOT A BREAK (Megan 2026-09-08). `denied`
+                # is the bucket we deliberately NEVER retry: _switch_office ran
+                # under confirm_denial=True, so the office really is absent from
+                # the AppStream account's own list, and no re-run can conjure
+                # the grant. The manifest said "failed" either way, so it went
+                # out 🚨 "dropped 2 sections — it did NOT post" every morning
+                # for Kim Rodriguez, who moved states and is waiting on a NEW
+                # account — the same red-every-day that got 'owner_expected'
+                # added for daily_rep_breakdown on 09-05 (focus_office_att/
+                # daily.py:_daily_manifest_ok). Same rule as there: the quiet
+                # kind only when EVERY remaining ICD is one of these, so a real
+                # break standing next to one can never be hidden by it.
+                _expected_only = bool(_den) and not (_tra or _other
+                                                     or set(unmapped))
+                if _expected_only:
+                    # THE PHRASE IS LOAD-BEARING. incident_triage matches
+                    # "expected, no action" against the tail of this report's
+                    # ORCHESTRATOR LOG (_log_tail, not the manifest), and picks
+                    # its quiet WAITING line off that. Without it the age rule
+                    # wins instead and posts "Open since yesterday. Automatic
+                    # retries have not fixed it." directly under the ✅ above —
+                    # the same contradiction the 09-05 fix was written to stop,
+                    # and a pending account stays pending for weeks. So it goes
+                    # in the note AND gets logged, because only the log is what
+                    # triage actually reads.
+                    note += (" Expected, no action — a denial is never "
+                             "retried; it clears itself on the next run once "
+                             "the access grant lands.")
+                    log.info("daily-focus: expected, no action — %d ICD(s) "
+                             "refused by AppStream (%s). Nothing to re-run "
+                             "until the access grant lands.",
+                             len(_den), ", ".join(sorted(_den)))
                 if term_note:
                     note += " ⚠ " + term_note
                 _rm.write_manifest(
                     "daily-focus", failed=uniq,
-                    retry_args=["--retry-inaccessible"], kind="ICD", note=note)
+                    retry_args=["--retry-inaccessible"],
+                    kind=("icd_expected" if _expected_only else "ICD"),
+                    note=note)
             elif term_note:
                 # No failures, but terminated ICDs to remove — keep the run clean
                 # (ok=true, no failed parts) while carrying the advisory note.

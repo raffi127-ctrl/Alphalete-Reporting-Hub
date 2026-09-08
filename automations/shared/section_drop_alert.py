@@ -158,6 +158,33 @@ _KINDS = {
         "tail": "Not a break and nothing to re-run — the rest of the report "
                 "filled and posted normally.",
     },
+    # The ICD-shaped twin of 'owner_expected' (Megan 2026-09-08). daily_focus
+    # files an office AppStream refused under `denied` and NEVER retries it —
+    # _switch_office ran with confirm_denial=True, so the office is genuinely
+    # absent from the account's own list and only an access grant changes that.
+    # It still wrote kind="ICD", which is in _FILL_SHAPED and so reads with the
+    # 'section' wording: "dropped 2 sections this run — it did NOT post", on a
+    # run whose thread was live and carried every other ICD. Kim Rodriguez
+    # moved states and is waiting on a NEW account; that is weeks of identical
+    # red mornings for something nobody can act on. Same guard as its twin:
+    # daily_focus only reaches for this when EVERY remaining ICD is a denial.
+    "icd_expected": {
+        "what": "ICD",
+        "headline": "✅ *{report_id}* ran fine and posted. {n} {what}{s} could "
+                    "not be pulled, and that is expected: {items}.",
+        "tail_headline": "",
+        "label": "Not reachable",
+        "thread_always": True,
+        "fix_in_thread": True,
+        "see_thread": "Detail in thread.",
+        "detail_header": "*The {n} {what}{s} AppStream could not reach:*",
+        "fix": "nothing today. The AppStream account cannot reach these "
+               "offices yet, and a denial is never retried — each one fills "
+               "itself on the next run once the access grant lands. "
+               "Re-running changes none of them.",
+        "tail": "Not a break and nothing to re-run — every other ICD pulled "
+                "and the thread posted normally.",
+    },
     "section": {
         "what": "section",
         "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
