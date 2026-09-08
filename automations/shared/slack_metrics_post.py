@@ -437,16 +437,55 @@ def find_named_thread_ts(client, title: str, today: dt.date,
     read as a plain substring, so the bold '*…*' wrapper doesn't break it.
     Raises SlackPostError when today's header isn't in the channel yet, so the
     caller can post it (ensure_named_thread does exactly that).
+
+    AN EMOJI IN THE TITLE USED TO MAKE THIS ALWAYS FAIL (Megan 2026-09-07).
+    We post '🗂️ Digi Docs — September 7th 2026'; Slack STORES it as
+    ':card_index_dividers: Digi Docs — September 7th 2026'. The literal emoji
+    never appears in the text we read back, so the substring never matched, the
+    caller concluded "no header today", and posted another one. digi_docs runs
+    on a five-minute tick: five identical threads in
+    #rafs-office-recruiting-11280 in one afternoon, replies scattered across
+    all of them.
+
+    So the emoji is not part of what we match on. The dated suffix carries the
+    specificity anyway — '<title> — September 7th 2026' does not collide with
+    another report's header, and 'Digi Docs — …' cannot match 'Digi Docs Extra
+    — …'. The one thing this cannot separate is two titles differing ONLY by
+    their leading emoji; nothing in the codebase does that, and a caller that
+    wants to should put the difference in the words.
     """
     channel_id = channel_id or CHANNEL_ID
-    marker = f"{title} — {today.strftime('%B')} {_ordinal(today.day)} {today.year}"
+    dated = f" — {today.strftime('%B')} {_ordinal(today.day)} {today.year}"
+    marker = f"{title}{dated}"
+    # The same header with any leading emoji (literal or :shortcode:) removed.
+    bare = f"{_strip_lead_emoji(title)}{dated}"
     oldest = dt.datetime.combine(today, dt.time.min).timestamp()
     resp = client.conversations_history(channel=channel_id, oldest=str(oldest),
                                         limit=200)
     for msg in resp.get("messages", []):
-        if marker in (msg.get("text", "") or ""):
+        text = msg.get("text", "") or ""
+        # Exact first — if a client did preserve the literal emoji, prefer it.
+        if marker in text or bare in _strip_lead_emoji(text.lstrip("*")):
             return msg.get("thread_ts") or msg.get("ts")
     raise SlackPostError(f"No '{marker}' header posted today.")
+
+
+def _strip_lead_emoji(text: str) -> str:
+    """Drop a leading ':shortcode:' or literal emoji, plus the space after it.
+
+    Only the LEADING one, and only when something is left over — this is for
+    matching a header's words, never for rewriting anything we post.
+    """
+    s = (text or "").lstrip()
+    m = re.match(r"^:[a-z0-9_+\-]+:\s*", s)
+    if m:
+        return s[m.end():]
+    # A literal emoji: anything outside the usual text planes, plus the
+    # variation selectors and ZWJs that ride along with it.
+    m = re.match(r"^[^\w\s*#(\[{'\"]+[︀-️‍]*\s+", s)
+    if m and s[m.end():]:
+        return s[m.end():]
+    return s
 
 
 def ensure_named_thread(title: str, today: dt.date | None = None,
