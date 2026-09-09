@@ -110,6 +110,9 @@ def check_apex() -> bool:
     try:
         with AX.ApexSession(log=lambda m: _log(f"     {m}")) as s:
             s.require_login()
+    except AX.ProfileInUse as e:
+        _log(f"  ❌ Apex: {e}")
+        return False
     except AX.PasswordChangeRequired as e:
         _log(f"  ❌ Apex: {e}")
         return False
@@ -423,6 +426,22 @@ def _open_add_employee(session, log) -> bool:
     the point of --assist -- somebody is sitting there.
     """
     page = session.page
+    # The form's own URL, learned from the real app (2026-09-05). Going
+    # straight there beats hunting for a button by its words, and it is how we
+    # know we're on the right screen rather than whatever was in front.
+    from automations.apex_new_starts import apex as AX
+    try:
+        page.goto(AX.APEX_URL.rstrip("/") + "/employees/new",
+                  wait_until="domcontentloaded", timeout=40000)
+        page.wait_for_timeout(3000)
+        if AX.find_field(page, "first") and AX.find_field(page, "hire_date"):
+            log(f"    on the new-employee form → {page.url}")
+            return True
+        log(f"    that URL didn't give a blank form ({page.url}) — trying the "
+            "menu instead")
+    except Exception as e:  # noqa: BLE001
+        log(f"    couldn't open the form by URL ({type(e).__name__}) — trying "
+            "the menu instead")
     for label in ("Add Employee", "New Employee", "Add New Employee",
                   "New Hire", "Employees"):
         for sel in (f'a:has-text("{label}")', f'button:has-text("{label}")',
@@ -456,7 +475,12 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
     _log(f"{title}: {len(ready)} record(s) to fill"
          f"{' (typing nothing — dry run)' if not assist else ''}")
 
-    with AX.ApexSession(log=lambda m: _log(f"  {m}")) as s:
+    try:
+        session = AX.ApexSession(log=lambda m: _log(f"  {m}"))
+    except AX.ProfileInUse as e:
+        _log(f"❌ {e}")
+        return 1
+    with session as s:
         s.require_login()
         for i, c in enumerate(ready, 1):
             hire = hires[c.name]
@@ -511,7 +535,12 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
 
 def explore(today: dt.date) -> int:
     from automations.apex_new_starts import apex as AX
-    with AX.ApexSession(log=lambda m: _log(f"  {m}")) as s:
+    try:
+        session = AX.ApexSession(log=lambda m: _log(f"  {m}"))
+    except AX.ProfileInUse as e:
+        _log(f"❌ {e}")
+        return 1
+    with session as s:
         s.require_login()
         _open_add_employee(s, _log)
         _pause("  Put the blank NEW EMPLOYEE form on screen, then press Enter. ")

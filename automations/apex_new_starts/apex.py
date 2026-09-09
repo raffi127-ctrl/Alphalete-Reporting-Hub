@@ -39,6 +39,7 @@ with apex_payroll's copied CDP profile, so the two can run without colliding.
 from __future__ import annotations
 
 import json
+import re
 import os
 import platform
 import subprocess
@@ -257,6 +258,12 @@ def have_session() -> bool:
     return PROFILE_DIR.exists() and any(PROFILE_DIR.iterdir())
 
 
+# Any sign-in / account screen, under either prefix Apex serves them from:
+#   /Identity/Account/Login      /Account/SendCode
+#   /Identity/Account/ChangePassword
+_AUTH_PATH = re.compile(r"/(?:identity/)?account/")
+
+
 class ApexSession:
     """A browser sitting on Apex, signed in -- waiting for a person if it isn't.
 
@@ -275,7 +282,8 @@ class ApexSession:
     def __enter__(self):
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         self._pw = _sync_api()().start()
-        self.ctx = self._pw.chromium.launch_persistent_context(
+        try:
+            self.ctx = self._pw.chromium.launch_persistent_context(
             user_data_dir=str(PROFILE_DIR), headless=False, no_viewport=True,
             # NO channel="chrome" on purpose. macOS allows one primary Google
             # Chrome instance, so launching the real Chrome while somebody has
@@ -290,7 +298,21 @@ class ApexSession:
                   # account, but sync stays off on principle -- these tabs
                   # must never turn up on somebody's other devices.
                   "--disable-sync", "--no-first-run",
-                  "--no-default-browser-check", "--disable-infobars"])
+                      "--no-default-browser-check", "--disable-infobars"])
+        except Exception as e:  # noqa: BLE001
+            self._pw.stop()
+            self._pw = None
+            if "existing browser session" in str(e):
+                # One profile, one browser. A second run adopts the first one's
+                # window instead of getting its own, and then drives a page
+                # nobody is looking at. Say which run is in the way rather than
+                # printing thirty lines of patchright stack.
+                raise ProfileInUse(
+                    "Another run of this report already has the Apex window "
+                    "open (the browser profile can only be used once at a "
+                    "time). Stop that run with Ctrl+C and close its window, "
+                    "then start this one again. Nothing was typed.")
+            raise
         self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
         self.page.goto(ROSTER_URL, wait_until="domcontentloaded", timeout=60000)
         self.page.wait_for_timeout(2500)
@@ -308,6 +330,17 @@ class ApexSession:
                 self._pw.stop()
         return False
 
+    def on_signin_step(self) -> str:
+        """Which sign-in screen is showing, for a log line that helps."""
+        url = (self.page.url or "").lower()
+        for tag, name in (("account/login", "the password page"),
+                          ("sendcode", "the 2FA code page"),
+                          ("verifycode", "the 2FA code page"),
+                          ("changepassword", "the change-password page")):
+            if tag in url:
+                return name
+        return "the sign-in" if _AUTH_PATH.search(url) else ""
+
     def password_gate(self) -> bool:
         """Is Apex holding this session behind a forced password change?
 
@@ -319,10 +352,26 @@ class ApexSession:
         return "changepassword" in (self.page.url or "").lower()
 
     def signed_in(self) -> bool:
+        """On a real Apex page -- not anywhere in the sign-in flow.
+
+        This used to look only for the LOGIN url, and a live run walked
+        straight past a half-finished sign-in: Apex was sitting on
+        /Identity/Account/SendCode (the 2FA code screen, ReturnUrl=/roster) and
+        this called it signed in, then went hunting for an 'Add Employee'
+        button on a page that has never had one.
+
+        So the test is inverted: the sign-in screens are named, and being
+        signed in means being somewhere that isn't one of them.
+
+        And they are served under TWO prefixes, which caught this a second
+        time. The password page is /Identity/Account/Login, but after it Apex
+        sent the 2FA step to a bare /Account/SendCode -- no /Identity -- and a
+        check written for the first spelling waved it straight through.
+        """
         url = (self.page.url or "").lower()
-        if "account/login" in url or "/identity/account/login" in url:
+        if "herbjoyent.com" not in url:
             return False
-        return not self.password_gate()
+        return not _AUTH_PATH.search(url)
 
     def require_login(self) -> None:
         """Wait for a human to sign in, however long the 2FA takes.
@@ -339,18 +388,27 @@ class ApexSession:
                 "before you continue'. That is the account's own state and "
                 "only its owner can clear it — this automation never sets a "
                 "password.")
+        # No tty is NOT a reason to refuse. The wait is already bounded by
+        # login_timeout_s, and the person who needs to sign in is looking at
+        # the window, not at whichever shell launched it -- refusing outright
+        # meant the run died instantly when driven from anywhere but a
+        # terminal, which is most of the ways it actually gets started.
         if not _interactive():
-            raise NotLoggedIn(
-                "Apex needs someone to sign in and there is no terminal here. "
-                "Run this from Terminal, sign in when the window opens, and it "
-                "carries on by itself. Nothing was typed.")
+            self.log("  (no terminal here — waiting for the sign-in anyway, "
+                     f"up to {self.login_timeout_s // 60} minutes)")
         self.log("")
         self.log("  Apex wants a sign-in. The window is open — sign in there.")
         self.log("  Nothing is typed for you and no password is read; this")
-        self.log("  just waits until the roster loads.")
+        self.log("  waits until the ROSTER loads — through the 2FA code too,")
+        self.log("  so take as long as you need.")
         deadline = time.time() + self.login_timeout_s
+        said = ""
         while time.time() < deadline:
             self.page.wait_for_timeout(2000)
+            step = self.on_signin_step()
+            if step and step != said:
+                self.log(f"  ...waiting — you're on {step}")
+                said = step
             if self.password_gate():
                 raise PasswordChangeRequired(
                     "Apex is asking for a password change before it will let "
@@ -365,6 +423,10 @@ class ApexSession:
 
 class NotLoggedIn(RuntimeError):
     pass
+
+
+class ProfileInUse(RuntimeError):
+    """A second run tried to open a browser the first one already has."""
 
 
 class PasswordChangeRequired(RuntimeError):
@@ -447,6 +509,27 @@ NON_TEXT_TYPES = {"checkbox", "radio", "button", "submit", "reset", "hidden",
                   "file", "image"}
 
 
+def _evaluate(page, script, arg):
+    """page.evaluate, but a navigation mid-call is retried instead of fatal.
+
+    Apex redirects while these lookups run -- an unfinished sign-in bounces
+    every page -- and 'Execution context was destroyed' took down a whole run
+    of 24 people at person one. A destroyed context means the page moved, so
+    the answer is to let it settle and ask again, once.
+    """
+    try:
+        return page.evaluate(script, arg)
+    except Exception as e:  # noqa: BLE001
+        if "context was destroyed" not in str(e).lower():
+            raise
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(1500)
+        return page.evaluate(script, arg)
+
+
 def find_field(page, semantic: str) -> Optional[dict]:
     """The one input that means `semantic`, or None if it isn't unambiguous.
 
@@ -457,8 +540,8 @@ def find_field(page, semantic: str) -> Optional[dict]:
     """
     for exact in (True, False):
         for label in LABELS.get(semantic, ()):
-            hits = [h for h in page.evaluate(
-                        _FIND_JS, {"labels": [label], "exact": exact})
+            hits = [h for h in _evaluate(
+                        page, _FIND_JS, {"labels": [label], "exact": exact})
                     if h["visible"] and not h["readonly"]
                     and not (h["tag"] == "input"
                              and (h["type"] or "").lower() in NON_TEXT_TYPES)]
@@ -599,8 +682,8 @@ def _one_field(page, labels):
     """The single visible box matching any of `labels`, or None."""
     for exact in (True, False):
         for label in labels:
-            hits = [h for h in page.evaluate(
-                        _FIND_JS, {"labels": [label], "exact": exact})
+            hits = [h for h in _evaluate(
+                        page, _FIND_JS, {"labels": [label], "exact": exact})
                     if h["visible"] and not h["readonly"]
                     and not (h["tag"] == "input"
                              and (h["type"] or "").lower() in NON_TEXT_TYPES)]

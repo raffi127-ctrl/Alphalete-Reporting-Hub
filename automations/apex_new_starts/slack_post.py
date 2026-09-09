@@ -51,13 +51,23 @@ def _mentions() -> str:
 
 
 def build_thread(tab: str, added: int, items: List[Tuple[str, List[str]]],
-                 *, no_packet: List[str] = None) -> str:
-    """The reply body. `items` is [(person, [what's missing])]."""
+                 *, done: bool = False) -> str:
+    """The reply body. `items` is [(person, [what's missing])].
+
+    `done` is the whole difference between a plan and a result, and it is not
+    cosmetic. The first version of this message said "27 new starts filled in
+    Apex" after a run that never opened Apex -- it had only read the board and
+    Blue Ink. Two people were told 27 records existed when none did. A report
+    claims what it DID, never what it is ready to do. [[green means delivered]]
+    """
     lines = ["*%s*" % tab,
-             "*%d* new start%s filled in Apex"
+             ("*%d* new start%s added to Apex" if done else
+              "*%d* new start%s ready to add to Apex — not added yet")
              % (added, "" if added == 1 else "s")]
     if not items:
-        lines += ["", "Nothing needs doing by hand. :tada:"]
+        lines += ["", "Nothing needs doing by hand. :tada:"
+                      if done else
+                      "Nothing is missing — everyone's paperwork is in."]
         return "\n".join(lines)
 
     lines += ["", "*%d* need%s a hand:" % (len(items),
@@ -67,13 +77,20 @@ def build_thread(tab: str, added: int, items: List[Tuple[str, List[str]]],
     # Name the action, not the vibe: the people tagged are the ones who will
     # actually finish these.
     lines += ["", "%s — these bits need doing by hand in Apex." % _mentions()]
+    if not done:
+        lines += ["", "_(Nobody has been added to Apex yet — this is the list "
+                      "as it stands.)_"]
     return "\n".join(lines)
 
 
 def post(tab: str, added: int, items: List[Tuple[str, List[str]]], *,
-         dry_run: bool = True) -> None:
-    """Header to the channel, detail in its thread."""
-    body = build_thread(tab, added, items)
+         dry_run: bool = True, done: bool = False) -> None:
+    """Header to the channel, detail in its thread.
+
+    `done=False` (the default) means nothing has been typed into Apex yet, and
+    the message says so. Only the run that actually fills records passes True.
+    """
+    body = build_thread(tab, added, items, done=done)
     if dry_run:
         print("\n--- Slack (dry run, NOT posted) -> %s ---" % CHANNEL)
         print(HEADER)
