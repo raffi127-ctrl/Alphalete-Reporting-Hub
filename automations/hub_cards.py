@@ -2517,24 +2517,17 @@ AUTOMATED_REPORTS = [
             "RingCentral login. A bare run is a DRY RUN and writes nothing."
         ),
         "assignees": ["Lucy 2"],
-        # STILL BEING BUILT (Megan 2026-09-03): it is wired into the 4am flow and
-        # so was failing every morning into "Needs attention", which is triage
-        # noise for a report nobody has armed yet — the two logins are not both
-        # settled. A build in progress is not a broken report: the pause takes it
-        # out of the morning list and off the due-today tallies while leaving the
-        # card and its buttons exactly where they are, so whoever is building can
-        # still run it by hand. LIFT THIS LINE the day it is armed.
-        "paused": ("Still being built (2026-09-03) — not armed yet. It runs in "
-                   "the 4am flow, so a half-finished login was failing it every "
-                   "morning into Needs attention. Buttons still work for "
-                   "hand-runs; remove the pause when the two credentials are "
-                   "settled and it goes live."),
         # Both credentials live on Lucy 2 and nowhere else, so a Hub button
         # pressed from any other machine QUEUES the run there instead of
         # failing locally on a missing creds file.
         "run_machine": "Lucy 2",
         "schedule": {
             "frequency": "daily",
+            # Mon–Sat, matching the scheduler's cadence. Without the list a
+            # "daily" card is due EVERY day, so every Sunday — when B2B does
+            # not sell and this deliberately does not run — would read as a
+            # miss. Python weekday(): Monday = 0.
+            "weekdays": [0, 1, 2, 3, 4, 5],
             "time": "4 AM flow",
             # login + one grid + one customer card per order; ~20 orders/day.
             "estimated_minutes": 8,

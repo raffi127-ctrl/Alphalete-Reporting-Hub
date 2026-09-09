@@ -38,6 +38,10 @@ _HUB_CARD = {
     "alphalete_org_focus": "recruiting-alphalete-org",
     "daily_focus": "daily-focus",
     "daily_rep_breakdown": "daily-rep-breakdown",
+    # Without this the report self-registers a "🗂 Auto-registered" library
+    # card keyed on its report_id, its pill greens THERE, and the hand-built
+    # card stays white forever. [[reference_hub_card_rendering_rules]]
+    "rc_contact_sync": "rc-contact-sync",
     # Raf's local office — folded onto the shared card with the other offices
     # (Megan 2026-07-16); it just still runs its own older module.
     "daily_metrics": "office-metrics",
