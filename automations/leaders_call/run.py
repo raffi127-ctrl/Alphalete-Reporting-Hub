@@ -1214,6 +1214,21 @@ def _probe_week_param(camp: Campaign) -> int:
     return 1
 
 
+def _set_why(reason: str) -> None:
+    """Leave (or CLEAR) the one-line reason the next Slack failure alert quotes.
+
+    Clearing on a clean run is the half that is easy to forget: the file
+    outlives the failure that wrote it, so a week-rolled "only a MONDAY run
+    reaches it" would ride along on some unrelated break weeks later and send
+    whoever reads the channel down the wrong path. Same contract digi_docs
+    uses. Best-effort — never fails a run over a hint."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.write_failure_reason("leaders_call", reason or "")
+    except Exception:      # noqa: BLE001
+        pass
+
+
 RECOVERABLE = ("fiber", "nds", "b2b")
 
 
@@ -1902,6 +1917,7 @@ def main() -> int:
             print("\n(dry run: nothing written. Re-run with --write to fill the "
                   "three sections.)", flush=True)
         else:
+            _set_why("")        # the week is recovered; the old reason is gone
             print("\nOK recovered sections written. Build + post the deck with "
                   "--finalize (add --dry-run to preview it first).", flush=True)
         return 0
@@ -1956,16 +1972,13 @@ def main() -> int:
                        f"target week {mon.isoformat()}..{sun.isoformat()} — only "
                        "a MONDAY run reaches it; re-running will not help")
                 print(f"   ⏸ {why}.", flush=True)
-                try:
-                    from automations.day_orchestrator import hub_publish
-                    hub_publish.write_failure_reason("leaders_call", why)
-                except Exception:   # noqa: BLE001 — never fail over the hint
-                    pass
+                _set_why(why)
             if [t for t in failed if t not in rolled]:
                 print("   Re-run the report to refresh them.", flush=True)
             print("   ⏸ Recognition PDF NOT generated — it only builds when every "
                   "section pulled cleanly.", flush=True)
             return 1
+        _set_why("")            # clean run: no reason outlives its failure
         print("\n✅ All sections pulled and written for this week.", flush=True)
         if args.no_pdf:
             print("   (--no-pdf: tab written; the PDF + channel post runs in the "
