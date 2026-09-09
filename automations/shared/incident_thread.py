@@ -473,6 +473,78 @@ def _react_done(client, channel: str, ts: str) -> None:
         _react(client, channel, ts, r, remove=True)
 
 
+def check_landed(client, channel: str, ts: str) -> bool:
+    """Put the ✅ on and PROVE it is there. True = the post wears the check.
+
+    WHY (Megan 2026-09-09). resolve() used to do three independent things — post
+    the reply, edit the parent to "· RESOLVED", react ✅ — and throw the
+    reaction's answer away. Either half could land alone, in both directions, and
+    ten posts in the channel right now say RESOLVED while wearing no check at
+    all: closed to a machine, still open to the two people who triage this
+    channel by emoji.
+
+    `reactions.add` answering ok is not proof — incident_triage._apply learned
+    that on 2026-08-27 (a mark that Slack accepted and that never appeared) and
+    reads its own marks back with reactions_now(). This is the same guard for the
+    ✅, which is the one mark that must never be wrong.
+
+    An unreadable channel answers True: "we cannot tell" has to mean "carry on",
+    or a missing reactions scope would stop every resolution in the workspace.
+    Only a definite "read it fine, the check is not there" — after one retry —
+    answers False, and that is the case resolve() must refuse to build on."""
+    _react(client, channel, ts, DONE_REACTION)
+    landed = reactions_now(client, channel, ts)
+    if landed is None or DONE_REACTION in landed:
+        return True
+    _react(client, channel, ts, DONE_REACTION)          # one retry, then say so
+    landed = reactions_now(client, channel, ts)
+    if landed is None or DONE_REACTION in landed:
+        return True
+    print("  ⚠ the ✅ did NOT land on {} — Slack accepted the call and the post "
+          "is still wearing {}. NOT stamping the text RESOLVED: a ticket that "
+          "reads fixed with no check in the channel list is the drift this "
+          "guard exists to stop.".format(ts, ", ".join(landed) or "nothing"),
+          flush=True)
+    return False
+
+
+def _clear_in_progress(client, channel: str, ts: str) -> None:
+    """Take every in-progress mark off a post that is now done."""
+    for r in (WORKING_REACTION, WAITING_REACTION, NEEDS_HUMAN_REACTION):
+        _react(client, channel, ts, r, remove=True)
+
+
+def _hand_off_stranded(key: str, ts: str, owner: str) -> None:
+    """The parent edit was refused — ask the machine that OWNS the post to finish
+    it, instead of leaving it for somebody to notice by hand.
+
+    chat.update only touches your own messages, so a thread opened by Lucy and
+    fixed from a laptop keeps its ✅ and its `open` marker forever. close_stranded
+    is the cure and has always been a command a PERSON had to remember to run on
+    the right box (Megan hand-fixed six on 2026-08-26). Lucy's posts are the
+    common case and the mini is Lucy, so those can be queued automatically; a
+    post owned by a person still has to be named, because no machine can edit it.
+
+    Never raises: this is the tidy-up after a resolution that already landed."""
+    if owner and owner != LUCY_USER_ID:
+        print("  - {}: the parent belongs to {}, so only that machine can "
+              "straighten its text. The ✅ stands; run "
+              "`python -m automations.shared.incident_thread --close-stranded` "
+              "there.".format(key, owner))
+        return
+    try:
+        from automations.day_orchestrator import mini_control as mc
+        mc.enqueue("incident_close_stranded", "",
+                   by="incident_thread-resolve", machine=mc.DEFAULT_MACHINE)
+        print("  - {}: parent edit refused here; queued "
+              "`incident_close_stranded` on the mini to finish the text "
+              "({}).".format(key, ts))
+    except Exception as e:  # noqa: BLE001 — the ✅ is already the visible half
+        print("  - {}: parent edit refused and the hand-off failed ({}: {}). "
+              "Run `lucy incident_close_stranded`.".format(
+                  key, type(e).__name__, str(e)[:60]))
+
+
 def _parent_still_open(client, channel: str, ts: str) -> Optional[bool]:
     """Fetch JUST this parent and read its marker: True = open, False = resolved,
     None = couldn't tell. One targeted history call — nowhere near the 3-page
@@ -663,7 +735,11 @@ def find(key: str, *, channel: str = CHANNEL, client=None,
         return {"key": key, "marker_key": mark.group("key"), "ts": msg.get("ts"),
                 "opened": mark.group("date"), "text": msg.get("text") or "",
                 "count": int(msg.get("reply_count") or 0), "channel": channel,
-                "resolved": False, "source": "channel", "via_family": via_family}
+                "resolved": False, "source": "channel", "via_family": via_family,
+                # WHO posted the parent. Only that identity may chat.update it,
+                # so resolve() needs it to hand a refused edit to the right
+                # machine rather than leaving the marker stranded (_hand_off_stranded).
+                "user": msg.get("user") or ""}
 
     # History is newest-first, so the first hit per key is the live thread.
     open_by_key: Dict[str, tuple] = {}
@@ -1251,6 +1327,16 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     Closing matters as much as posting: once resolved, the NEXT occurrence opens
     a fresh top-level post instead of reviving a thread everyone stopped reading.
 
+    THE ✅ AND THE WORDS ARE ONE ACT (Megan 2026-09-09). Before anything is
+    said, the check is put on the parent and READ BACK (see check_landed). If it
+    will not land, nothing else happens: no reply, no "· RESOLVED" stamp, no
+    index write, and this returns False so the next clean pass tries again. That
+    is what makes the invariant hold — *a post can never read RESOLVED without
+    wearing the ✅* — and it is the direction nothing swept, because Megan
+    triages this channel by emoji and a check-less "RESOLVED" is invisible there.
+    The opposite half (✅ on, text refused across identities) is allowed, is
+    visible, and now hands itself to the machine that can finish it.
+
     Returns True when the incident was CLOSED — the thread was told, or the reply
     failed but the parent now shows ✅ plus the `resolved` marker. It used to
     return whether the REPLY landed, which cost b2b_metrics its marker on
@@ -1304,6 +1390,32 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     # Unknown (None) means post: losing a resolution is worse than repeating one
     # — people go on working a problem that is already fixed, which is the
     # complaint this module was built for. Only a definite True stays quiet.
+    # THE ✅ GOES ON FIRST, AND IT HAS TO BE PROVEN (Megan 2026-09-09).
+    #
+    # This used to be the LAST step and its answer was discarded, so the three
+    # halves of a resolution — the reply, the "· RESOLVED" text, the check —
+    # could each land alone. The two failures are not symmetric:
+    #
+    #   ✅ without the text   a machine still reads the ticket as open, but a
+    #                         PERSON scanning the channel sees it is done, and
+    #                         close_stranded finishes the text on the next pass.
+    #   text without the ✅   the exact opposite, and nothing sweeps it: the
+    #                         ticket is invisible as done in the only view the
+    #                         two people working this channel actually use.
+    #
+    # Anyone may react on anyone's post, while chat.update is refused across
+    # identities — so the ✅ is also the half that can always be made to land.
+    # Doing it first, and refusing to say RESOLVED in words when it did not,
+    # makes the bad direction unreachable: *a post can never read RESOLVED
+    # without wearing the check.* The reply carries the closing sentence that
+    # _thread_is_closed reads, so it is gated on the same proof.
+    if not check_landed(client, channel, ts):
+        print(f"[incident] {key}: NOT closing — the ✅ would not land on {ts}, "
+              f"so nothing here may claim it is fixed. It stays open and the "
+              f"next clean pass tries again.", flush=True)
+        return False
+    _clear_in_progress(client, channel, ts)
+
     already = _thread_has_resolution(client, channel, ts) is True
     told = False
     if already:
@@ -1341,10 +1453,10 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     except Exception as e:  # noqa: BLE001 — the thread reply already told people
         print(f"  ⚠ incident parent edit refused ({type(e).__name__}: "
               f"{str(e)[:60]}) — the in-thread note stands", flush=True)
-    # The ✅ REACTION is the part that survives a refused edit: any identity can
-    # react on anyone's message, so a thread closed from the wrong machine still
-    # reads as done in the channel list.
-    _react_done(client, channel, ts)
+        # The ✅ is already on (we proved it above), so this post is closed to a
+        # person and open to every machine. That is the stranded state Megan has
+        # been finishing by hand; hand it to the machine that can edit it.
+        _hand_off_stranded(key, ts, inc.get("user") or "")
     _mark_resolved_in_index(key, ts=ts, channel=channel)
     _forget_history(channel)
     print(f"[incident] {key}: resolved in thread {ts}", flush=True)
@@ -1825,7 +1937,15 @@ def resolve_any(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
 def close_stranded(*, channel: str = CHANNEL, client=None,
                    day: Optional[dt.date] = None, dry_run: bool = False,
                    max_age_days: int = 30) -> Dict[str, List[str]]:
-    """Finish the parents whose ✅ landed but whose TEXT never got updated.
+    """Straighten parents whose ✅ and whose TEXT disagree — in BOTH directions.
+
+    Direction 1 (the original): the ✅ landed, the marker still says `open`.
+    Direction 2 (added 2026-09-09): the marker says `resolved` and there is no ✅
+    at all — closed to every machine, invisible as closed to the two people who
+    triage this channel by emoji. That one needs no ownership to fix, because
+    anyone may react on anyone's post, so it is always repaired from here.
+    resolve() can no longer CREATE direction 2 (see check_landed); this clears
+    the ten that were already standing and anything a hand-edit leaves behind.
 
     WHY THIS KEEPS HAPPENING (Megan 2026-08-26). resolve() posts the reply, then
     edits the parent — and chat.update only touches your OWN messages. So when a
@@ -1853,7 +1973,7 @@ def close_stranded(*, channel: str = CHANNEL, client=None,
     is not returned by the scan at all.
     """
     day = day or dt.date.today()
-    out: Dict[str, List[str]] = {"closed": [], "not_ours": []}
+    out: Dict[str, List[str]] = {"closed": [], "not_ours": [], "checked": []}
     try:
         client = client or _client()
         me = whoami(client)
@@ -1865,9 +1985,30 @@ def close_stranded(*, channel: str = CHANNEL, client=None,
     for m in _history(client, channel):
         text = m.get("text") or ""
         mark = _MARK_RE.search(text)
-        if not mark or mark.group("state") != "open":
+        if not mark:
             continue
         reactions = [r.get("name") for r in (m.get("reactions") or [])]
+        if mark.group("state") != "open":
+            # THE OTHER DIRECTION, WHICH NOTHING SWEPT (Megan 2026-09-09). A
+            # parent whose TEXT says resolved and that wears no ✅ is done to
+            # every machine and still open to the only view the two people
+            # working this channel use. Ten posts were sitting like that. The
+            # fix needs no ownership — anyone may react on anyone's post — so
+            # unlike the marker edit below, this one always works from here.
+            if (mark.group("state") == "resolved"
+                    and DONE_REACTION not in reactions
+                    and _days_open(mark.group("date"), day) <= max_age_days):
+                key, ts = mark.group("key"), m.get("ts") or ""
+                if dry_run:
+                    print("  DRY-RUN — would put the ✅ back on {} ({})".format(
+                        key, ts))
+                    out.setdefault("checked", []).append(key)
+                elif _react(client, channel, ts, DONE_REACTION):
+                    _clear_in_progress(client, channel, ts)
+                    out.setdefault("checked", []).append(key)
+                    print("  {} ({}) — said RESOLVED with no check; ✅ put on"
+                          .format(key, ts))
+            continue
         # The ✅ is the proof the fix landed. Without it this is just an open
         # incident, and closing it would erase a real problem from the board.
         if DONE_REACTION not in reactions and "RESOLVED" not in text.upper():
@@ -1901,8 +2042,9 @@ def close_stranded(*, channel: str = CHANNEL, client=None,
         out["closed"].append(key)
         print("  {} ({}) — closed".format(key, ts))
 
-    print("[incident] close-stranded: {} closed, {} belong to another machine"
-          .format(len(out["closed"]), len(out["not_ours"])))
+    print("[incident] close-stranded: {} closed, {} belong to another machine, "
+          "{} said RESOLVED with no check".format(
+              len(out["closed"]), len(out["not_ours"]), len(out["checked"])))
     if out["not_ours"]:
         print("  run `lucy incident_close_stranded` (or this CLI on that box) "
               "to finish: {}".format(", ".join(sorted(set(out["not_ours"])))))

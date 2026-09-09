@@ -1088,5 +1088,120 @@ class AnAlertIsNotItsOwnDomino(unittest.TestCase):
         self.assertIn("not same_alert(", src)
 
 
+class TheCheckAndTheWordsAreOneAct(unittest.TestCase):
+    """A post can never read RESOLVED without wearing the ✅ (Megan 2026-09-09).
+
+    Ten posts in the channel said RESOLVED with no check on them: closed to every
+    machine, invisible as closed in the only view the two people working this
+    channel actually use. resolve() used to do the reply, the text and the ✅ as
+    three independent best-effort steps and throw the reaction's answer away, so
+    either half could land alone. The ✅ now goes first and is read back."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._real = inc.STATE_PATH
+        inc.STATE_PATH = Path(self.tmp.name) / "incident_threads.json"
+        self.addCleanup(lambda: setattr(inc, "STATE_PATH", self._real))
+        inc._HISTORY_CACHE.clear()
+        self.addCleanup(inc._HISTORY_CACHE.clear)
+        self.c = FakeClient()
+        inc.open_or_followup(key="failure-r", title="🚨 *r* — broke",
+                             body=["*Error:* boom"], channel="C1",
+                             day=dt.date(2026, 9, 8), client=self.c)
+        inc._HISTORY_CACHE.clear()
+
+    def _resolve(self):
+        return inc.resolve(key="failure-r", lines=["✅ *r* — RESOLVED."],
+                           channel="C1", day=dt.date(2026, 9, 9), client=self.c)
+
+    def test_the_check_goes_on_before_anything_says_resolved(self):
+        self.assertTrue(self._resolve())
+        self.assertIn(("1.0000", inc.DONE_REACTION), self.c.reactions)
+        self.assertIn("RESOLVED", self.c.updates[-1][1])
+
+    def test_a_check_that_will_not_stick_blocks_the_whole_close(self):
+        """reactions.add answering ok is not proof — incident_triage learned that
+        on 2026-08-27. If the mark is not really there, nothing may claim a fix.
+        """
+        def _swallow(*, channel, timestamp, name):
+            return {"ok": True}          # accepted, never applied
+        self.c.reactions_add = _swallow
+
+        before = list(self.c.replies)
+        self.assertFalse(self._resolve())
+        self.assertEqual(self.c.updates, [],
+                         "the parent must not be stamped RESOLVED")
+        self.assertEqual(self.c.replies, before,
+                         "the closing reply is the machine-readable half — it "
+                         "must be gated on the same proof")
+        self.assertIn("failure-r", inc.open_keys(),
+                      "nothing landed, so the ticket stays open for the next pass")
+
+    def test_a_refused_parent_edit_hands_the_text_to_the_owning_machine(self):
+        """✅ on, marker still `open`: closed to a person, open to every machine.
+        Megan finished six of these by hand on 2026-08-26 — queue it instead."""
+        self.c.refuse_updates()
+        with mock.patch.object(inc, "_hand_off_stranded") as handed:
+            self.assertTrue(self._resolve())
+        self.assertIn(("1.0000", inc.DONE_REACTION), self.c.reactions)
+        handed.assert_called_once()
+
+    def test_the_in_progress_marks_come_off_with_the_check(self):
+        self.c.reactions.append(("1.0000", inc.WORKING_REACTION))
+        self.c.reactions.append(("1.0000", inc.NEEDS_HUMAN_REACTION))
+        self.assertTrue(self._resolve())
+        self.assertNotIn(("1.0000", inc.WORKING_REACTION), self.c.reactions)
+        self.assertNotIn(("1.0000", inc.NEEDS_HUMAN_REACTION), self.c.reactions)
+
+
+class ResolvedWithNoCheckIsSweptBack(unittest.TestCase):
+    """close_stranded now walks BOTH directions of the drift."""
+
+    def setUp(self):
+        self.c = FakeClient()
+        inc._HISTORY_CACHE.clear()
+        self.addCleanup(inc._HISTORY_CACHE.clear)
+
+    def _msg(self, key, state, reactions=()):
+        for r in reactions:
+            self.c.reactions.append(("1.0", r))
+        # An `open` parent keeps the plain headline on purpose: "RESOLVED" in the
+        # text is itself proof a fix landed (the direction-1 branch reads it), so
+        # a fixture that carried it would not be an open ticket at all.
+        stamp = " · *RESOLVED* Mon Sep 8" if state == "resolved" else ""
+        return {"ts": "1.0", "user": inc.LUCY_USER_ID,
+                "text": "*{}* — broke{}\n\n_incident · {} · {} 2026-09-08_"
+                        .format(key, stamp, key, state),
+                "reactions": [{"name": r} for r in reactions]}
+
+    def _run(self, messages, **kw):
+        with mock.patch.object(inc, "_history", return_value=messages), \
+             mock.patch.object(inc, "_mark_resolved_in_index"):
+            return inc.close_stranded(client=self.c, day=dt.date(2026, 9, 9),
+                                      **kw)
+
+    def test_a_resolved_post_with_no_check_gets_one(self):
+        out = self._run([self._msg("a", "resolved")])
+        self.assertEqual(out["checked"], ["a"])
+        self.assertIn(("1.0", inc.DONE_REACTION), self.c.reactions)
+
+    def test_a_resolved_post_that_already_has_one_is_left_alone(self):
+        out = self._run([self._msg("a", "resolved", ["white_check_mark"])])
+        self.assertEqual(out["checked"], [])
+
+    def test_an_open_post_with_no_check_is_still_a_real_problem(self):
+        out = self._run([self._msg("a", "open")])
+        self.assertEqual((out["checked"], out["closed"]), ([], []))
+        self.assertNotIn(("1.0", inc.DONE_REACTION), self.c.reactions)
+
+    def test_it_works_on_another_machines_post_too(self):
+        """Unlike the marker edit: anyone may react on anyone's message."""
+        m = self._msg("a", "resolved")
+        m["user"] = "ULAPTOP"
+        out = self._run([m])
+        self.assertEqual(out["checked"], ["a"])
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
