@@ -5750,13 +5750,15 @@ def _action_captainship_send_owner(args: str) -> tuple[bool, str]:
     """Mail ONE captainship report to ONE named address — the corrected-copy
     path, for the morning after a board went out wrong.
 
-      captainship_send_owner <captain key> to=<addr> [owner="Name"]
+      captainship_send_owner <captain key> to=<addr> [cc=<addr>] [owner="Name"]
                              [note="..."] [prefix="..."] [date=YYYY-MM-DD]
 
         captain key  rafael, chan, wayne, … (captainship_drafts config.CAPTAINS)
         to=          REQUIRED. Where this copy goes. There is no form of this
                      action that reaches a captainship's real distribution
-                     list — see below.
+                     list — see below. Takes a comma-separated list, and
+                     accepts display names: to="Chan Park <a@b.com>, Eve <c@d>".
+        cc=          Cc, same shape. Headers only — the body is untouched.
         owner=       keep only this ICD's knock boards; every other owner in
                      the captainship is dropped the honest way
                      (`--drop-owner`: grey note, still counted in "N of M").
@@ -5802,7 +5804,7 @@ def _action_captainship_send_owner(args: str) -> tuple[bool, str]:
                            "— expected to=/owner=/note=/prefix=/date=")
         k, v = raw.split("=", 1)
         opts[k.strip().lower()] = v.strip()
-    unknown = set(opts) - {"to", "owner", "note", "prefix", "date"}
+    unknown = set(opts) - {"to", "cc", "owner", "note", "prefix", "date"}
     if unknown:
         return False, ("captainship_send_owner: unknown option(s) "
                        f"{sorted(unknown)}")
@@ -5837,6 +5839,8 @@ def _action_captainship_send_owner(args: str) -> tuple[bool, str]:
            "--note", opts.get(
                "note", "Corrected copy — this replaces the knock boards in "
                        "this morning's report.")]
+    if opts.get("cc"):
+        cmd += ["--cc", opts["cc"]]
     if date_arg:
         cmd += ["--date", date_arg]
     owner = opts.get("owner", "")
