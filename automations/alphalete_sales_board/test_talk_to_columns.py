@@ -159,6 +159,29 @@ class TeamCriterion(unittest.TestCase):
         self.assertIsNone(T._team_test('=SUM($E$166:$E$180)', 4, 78))
 
 
+class DayWorked(unittest.TestCase):
+    """The day count has to grow one day at a time as the week runs, without
+    anybody advancing a counter."""
+
+    EXPR = T.day_worked_expr(31, 36, 41, 7)          # AE apps, AJ tk, AO roll
+
+    def test_the_roll_call_letters_that_are_out(self):
+        for letter in ('"X"', '"T"'):
+            self.assertIn('%s7=%s' % ("AE", letter), self.EXPR)
+
+    def test_a_day_still_ahead_needs_a_trace_to_count(self):
+        """Apps reads 0.00 on a day that has not happened -- a NUMBER, so the
+        letter test alone counts it and mid-week every average divides by six."""
+        self.assertIn('AO7<>""', self.EXPR)          # a roll call, or
+        self.assertIn("N(AJ7)>0", self.EXPR)         # knocks, or
+        self.assertIn("AE7<>0", self.EXPR)           # a non-zero Apps
+
+    def test_knocks_are_tested_as_a_NUMBER_not_as_non_empty(self):
+        """On the TOTALS row an untouched day's TK is a SUMIF reading 0, not a
+        blank; `TK<>""` there would count Thursday as a working day all week."""
+        self.assertNotIn('AJ7<>""', self.EXPR)
+
+
 class InsertOrder(unittest.TestCase):
     """Seeding inserts into several blocks at once. Every insert shifts what is
     to its RIGHT, so the rightmost anchor has to go first."""

@@ -65,6 +65,10 @@ TRIO = ("Total Talk-To's", "% of TT's per knock", "AVG app per TT")
 # Where they go: straight after this sub-header, still inside the day's group.
 ANCHOR = "TK"
 
+# The last column of a day block. Used as the "did this day happen yet" test:
+# it is filled in the morning, and blank on a day still ahead in the week.
+ROLL_CALL = "Roll Call"
+
 
 def _col_letter(c: int) -> str:
     s = ""
@@ -276,6 +280,32 @@ def add_for_day(ss, ws, anchor_col: int, tmpl_first: int, px: list,
             "fields": "hiddenByUser",
         }})
     ss.batch_update({"requests": reqs})
+
+
+def day_worked_expr(apps_col: int, tk_col: int, rc_col: int, row: int) -> str:
+    """`1` if the rep worked that day, `0` otherwise — as a Sheets expression.
+
+    TWO TESTS, and the second is what makes the denominator grow one day at a
+    time as the week runs (Eve, 2026-09-09: *"cada dia dividan por un dia
+    mas"*). Nobody advances a counter; the week does.
+
+    1. THE ROLL-CALL LETTER. `X` and `T` are out, every other letter is in
+       (Eve, 2026-09-08). The day's Apps cell carries it, because the Apps
+       formula returns the letter itself when there is one.
+    2. THE DAY LEFT A TRACE. A day still ahead in the week reads Apps `0.00` --
+       a NUMBER, so test 1 alone counts it, and mid-week every average divides
+       by six. On the WE 9.13 sandbox that had Andres Mejia at 49 knocks/day
+       when he had done 294 over two days. So a day also needs a roll call, or
+       knocks, or a non-zero Apps.
+
+    `N(TK)>0` and not `TK<>""`: the same formula runs on the TOTALS row, where
+    an untouched day's TK is a `SUMIF` reading 0 rather than a blank, and
+    "not empty" would count Thursday as a working day all week.
+    """
+    return ('IF(OR({a}{r}="X",{a}{r}="T",{a}{r}=""),0,'
+            'IF(OR({c}{r}<>"",N({k}{r})>0,{a}{r}<>0),1,0))').format(
+        a=_col_letter(apps_col), k=_col_letter(tk_col),
+        c=_col_letter(rc_col), r=row)
 
 
 def insert_order(jobs):
@@ -625,6 +655,8 @@ def week_formulas(ss, ws, apply: bool = False) -> int:
     work = [b for lab, b in sorted(blocks.items(), key=lambda kv: kv[1][0])
             if lab.upper() != "SUN"]                  # Sunday is never a work day
     day_apps = [b[0] for b in work]
+    day_cells = [(b[0], sub_col(grid, b, ANCHOR), sub_col(grid, b, ROLL_CALL))
+                 for b in work]
     all_tt = [sub_col(grid, b, TRIO[0])
               for _lab, b in sorted(blocks.items(), key=lambda kv: kv[1][0])]
     if not all(all_tt):
@@ -650,11 +682,10 @@ def week_formulas(ss, ws, apply: bool = False) -> int:
         print("  %-26s %s" % (header, col))
 
     def days(r):
-        """Days the rep was out: every day whose Apps cell is not X, T or empty."""
+        """Mon-Sat the rep was out, on days that have HAPPENED — see
+        `day_worked_expr`."""
         return "(%s)" % "+".join(
-            'IF(OR(%s%d="X",%s%d="T",%s%d=""),0,1)'
-            % (_col_letter(c), r, _col_letter(c), r, _col_letter(c), r)
-            for c in day_apps)
+            day_worked_expr(ap, tk, rc, r) for ap, tk, rc in day_cells)
 
     def tts(r):
         return ",".join("%s%d" % (_col_letter(c), r) for c in all_tt)
@@ -757,11 +788,18 @@ def team_totals(ss, ws, apply: bool = False) -> int:
     A, K = _col_letter(col["APPS"]), _col_letter(col["TK"])
 
     blocks = day_blocks(grid)
-    work = [b[0] for lab, b in sorted(blocks.items(), key=lambda kv: kv[1][0])
+    work = [b for lab, b in sorted(blocks.items(), key=lambda kv: kv[1][0])
             if lab.upper() != "SUN"]
+
+    def _rng(c):
+        return "$%s$%d:$%s$%d" % (_col_letter(c), first, _col_letter(c), last)
+
+    # The array form of `week_formulas.days`: out that day, AND the day happened.
     span = "+".join(
-        '($%s$%d:$%s$%d<>"X")*($%s$%d:$%s$%d<>"T")*($%s$%d:$%s$%d<>"")'
-        % ((_col_letter(c), first, _col_letter(c), last) * 3) for c in work)
+        '({a}<>"X")*({a}<>"T")*({a}<>"")*(({c}<>"")+({k}<>"")*({k}<>0)+({a}<>0)>0)'
+        .format(a=_rng(b[0]), k=_rng(sub_col(grid, b, ANCHOR)),
+                c=_rng(sub_col(grid, b, ROLL_CALL)))
+        for b in work)
 
     # The Teams block: every row BELOW the roster whose INT cell is a formula.
     rows = [r for r in range(last + 2, len(grid) + 1)
@@ -808,7 +846,7 @@ def team_totals(ss, ws, apply: bool = False) -> int:
                                           else "solo Talk-To's (la fila no "
                                                "lleva TK)"))
     print("Teams: filas %d..%d   dias habiles: %s"
-          % (rows[0], rows[-1], ", ".join(_col_letter(c) for c in work)))
+          % (rows[0], rows[-1], ", ".join(_col_letter(b[0]) for b in work)))
     print("\n".join(said))
     if not apply:
         print("\npreview only -- re-run with --apply to write.")
