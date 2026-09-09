@@ -2749,6 +2749,29 @@
       "order": 49,
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "new_starts_box": {
+      "on_scheduler": true,
+      "_note": "WEDNESDAY ONLY (Eve 2026-09-09). Fills the 'New Starts/Raf' box on the week's 'Alphalete SALES BOARD 2025' tab: 'Trainers' from the blue 'Is Training / New Start Name' box on 'Line Up WE <m>.<d>' (same workbook), 'Location' from 'D2D OBCL <m>.<d>' (the week's MONDAY tab on 'All in One Local Office - Raf'), and 'Team' from the TRAINER's own roster row, because a new start is always on their trainer's team. Sheets-only, no browser, no Slack, so it can run on any box. Idempotent and additive: it writes ONLY cells that are still empty and never replaces a value a person typed (`--overwrite` does, by hand). Runs in the 4AM batch (Eve 2026-09-09) because the box has to be filled before alphalete_production posts the production screenshots in #alphalete-sales, and that post goes out once. THE RISK THAT BUYS: all three sources are typed by hand, so anything not yet on 'Line Up WE <m>.<d>' or 'D2D OBCL <m>.<d>' at 4am is simply left blank and nothing retries it - the line up is built Tuesday night and the classroom lands Monday, so it is normally there, but a late-typed row needs a hand re-run (`lucy rerun new_starts_box`), which is free because the fill is additive. Anything it cannot establish is left BLANK with a named reason in the log, never guessed. Validated against the 31 rows filled by hand on WE 9.13: 31/31 trainers and 26/31 locations identical, and the five location diffs were the SOURCE being right ('Seagoville' typed 'Seagonville', 'Little Elm' typed 'Litte Elm', two people left blank, one row carrying the city of the person above). Not a Hub card (Eve 2026-09-09) - it is one step of the Wednesday morning batch, not something anybody runs by hand; `lucy rerun new_starts_box` covers the re-run.",
+      "display_name": "New Starts box → Trainers / Location / Team",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.new_starts_box.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          2
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 8,
+      "order": 5.5,
+      "_order_note": "IN THE 4AM BATCH, immediately before alphalete_production (6) - Eve 2026-09-09: the box has to be filled by the time the bot posts the production screenshots in #alphalete-sales, and that post happens ONCE a morning. Sits after rep_sales_fill (3.95) and energy_slack_fill (5), which write the same tab's day columns, so the whole board is settled before it is rendered. Do NOT move it past 6."
+    },
     "morning_diag": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY diagnostic (weekdays [] -> never auto-runs). `lucy rerun morning_diag` prints, from the mini, when the 4am launchd orchestrator ACTUALLY started (from its per-run log filename: ~04:00 = mini awake, so the ~6am report delay is the AppStream session; ~06:00 = mini was asleep and launchd deferred the job) + pmset wake schedule/sleep timer + daily_focus attempt/fail count. Built 2026-07-06 to diagnose why AppStream/recruiting reports land ~6am not 4am.",
