@@ -682,3 +682,57 @@ def test_a_widget_that_only_updates_the_display_is_not_believed(page):
     out = page.locator("#ansout").inner_text()
     assert "State" in out and "no matching option" in out
     assert "Filled: State" not in out
+
+
+TWO_HALF_BINDING = """
+<!doctype html><html><body>
+<div class="form-group">
+  <label for="StateProvince_445">State <span>*</span></label>
+  <input type="hidden" id="StateProvinceID_445" ng-model="vm...StateProvinceID">
+  <span class="k-widget k-dropdown" id="sw">
+    <span class="k-dropdown-wrap"><span class="k-input">Select</span></span>
+    <select id="StateProvince_445" style="display:none">
+      <option value="">Select</option>
+      <option value="45">Texas</option>
+      <option value="36">Oklahoma</option>
+    </select>
+  </span>
+</div>
+</body></html>
+"""
+
+TWO_HALF_WIRING = """() => {
+  /* Apex's shape: the <select> holds the choice, a hidden input holds the id
+     the form submits, and only a BLUR copies one into the other. */
+  const sel = document.getElementById('StateProvince_445');
+  sel.addEventListener('blur', () => {
+    document.getElementById('StateProvinceID_445').value = sel.value;
+  });
+  window.jQuery = el => ({data: k => (k === 'kendoDropDownList' && el === sel) ? {
+    options: {dataTextField: 'text', dataValueField: 'value'},
+    dataSource: {data: () => [{text: 'Texas', value: '45'},
+                              {text: 'Oklahoma', value: '36'}]},
+    value: v => { sel.value = v;
+                  document.querySelector('#sw .k-input').textContent =
+                    sel.options[sel.selectedIndex].text; },
+    trigger: () => {}
+  } : null});
+}"""
+
+
+def test_it_blurs_so_the_id_actually_gets_written(page):
+    """Apex kept returning request.HomeAddress.StateProvinceID: "An error has
+    occurred." while the box showed Texas. The selection was fine -- the field
+    the form SUBMITS is a separate hidden input, filled by
+    ng-blur="vm.onChangeStateProvince()". Nothing ever blurred the control."""
+    page.set_content(TWO_HALF_BINDING)
+    page.evaluate(TWO_HALF_WIRING)
+    people = [{"name": "X", "find": "X", "fields": {"State": "Texas"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+
+    assert page.locator("#StateProvince_445").input_value() == "45"
+    assert page.locator("#StateProvinceID_445").input_value() == "45", \
+        "the id the form submits"
+    assert "Filled: State" in page.locator("#ansout").inner_text()

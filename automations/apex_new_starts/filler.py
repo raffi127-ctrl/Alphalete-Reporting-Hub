@@ -103,6 +103,32 @@ _JS = r"""
    }
    return null;
  }
+ function settle(el){
+   /* Apex wires these in TWO halves: the Kendo <select> holds the object
+      (k-ng-model="vm.address.StateProvince") and a separate hidden input holds
+      the id the form submits (ng-model="...StateProvince.StateProvinceID").
+      What copies one into the other is ng-blur="vm.onChangeStateProvince()".
+      Selecting without blurring leaves the widget showing Texas and
+      StateProvinceID empty -- which is exactly the 400 Apex kept returning.
+      So every set is followed by a blur on the control AND on the <select>
+      inside its widget, then a digest. */
+   var targets=[el], sp=el?widgetSpan(el):null, i;
+   if(el&&el.tagName==='SELECT') targets.push(el);
+   if(sp){ var sel=sp.querySelector('select'); if(sel) targets.push(sel);
+           var vi=visibleInput(sp); if(vi) targets.push(vi); }
+   if(el&&el.parentElement){ var s2=el.parentElement.querySelector('select');
+     if(s2) targets.push(s2); }
+   for(i=0;i<targets.length;i++){
+     if(!targets[i]) continue;
+     try{
+       targets[i].dispatchEvent(new Event('change',{bubbles:true}));
+       targets[i].dispatchEvent(new FocusEvent('blur',{bubbles:false}));
+       targets[i].dispatchEvent(new Event('blur',{bubbles:true}));
+       if(targets[i].blur) targets[i].blur();
+     }catch(e){}
+   }
+   ngApply(el);
+ }
  function ngApply(el){
    if(!window.angular) return;
    try{ var sc=angular.element(el).scope();
@@ -236,7 +262,7 @@ _JS = r"""
    target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',keyCode:13}));
    target.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',keyCode:13}));
    await sleep(200);
-   ngApply(el);
+   settle(el);
    TRACE.push('typeahead -> bound "'+String(boundValue(el)).slice(0,20)+'"');
    return bindingLooksReal(el,v);
  }
@@ -310,7 +336,8 @@ _JS = r"""
    best.scrollIntoView({block:'nearest'});
    fire(best,'mouseover'); fire(best,'mousedown'); fire(best,'mouseup'); fire(best,'click');
    await sleep(150);
-   ngApply(el);
+   settle(el);
+   await sleep(120);
    if(!bindingLooksReal(el,v)){
      /* The option was clicked and the display changed, but the id behind it is
         still empty -- State did exactly this. Let Kendo make the selection
@@ -322,10 +349,18 @@ _JS = r"""
    return true;
  }
  function boundValue(el){
-   /* what the form will actually SEND for this control */
+   /* What the form will actually SEND for this control. Looked for only in the
+      element's own parent at first, so a group shaped even slightly
+      differently returned null -- and null means "nothing to check", which
+      quietly turned the verification off for exactly the fields most likely to
+      need it. Widen to the form-group, and prefer an input that carries an
+      ng-model, which is the one Angular submits. */
    if(el&&(el.type||'').toLowerCase()==='hidden') return el.value;
-   var box=el?el.parentElement:null;
-   var h=box?box.querySelector('input[type=hidden]'):null;
+   var box=el?(el.closest?el.closest('.form-group,.col-md-6,.col-lg-4'):null):null;
+   box=box||(el?el.parentElement:null);
+   if(!box) return null;
+   var h=box.querySelector('input[type=hidden][ng-model]')||
+         box.querySelector('input[type=hidden]');
    return h?h.value:null;
  }
  function bindingLooksReal(el,v){
@@ -348,14 +383,14 @@ _JS = r"""
        t=norm(tf&&d[i][tf]!==undefined?d[i][tf]:(d[i].Text||d[i].text||d[i]));
        if(t===want||(t&&(t.indexOf(want)===0||want.indexOf(t)===0))){
          w.value(vf&&d[i][vf]!==undefined?d[i][vf]:(d[i].Value||d[i].value||d[i]));
-         w.trigger('change'); ngApply(el);
+         w.trigger('change'); settle(el);
          if(!bindingLooksReal(el,v)){ TRACE.push('widget set but binding empty'); return false; }
          return true;
        }
      }
      return false;
    }
-   w.value(v); w.trigger('change'); ngApply(el);
+   w.value(v); w.trigger('change'); settle(el);
    return bindingLooksReal(el,v);
  }
  function vis(el){ var r=el.getBoundingClientRect(); return r.width>0&&r.height>0&&!el.disabled&&!el.hasAttribute('readonly'); }
