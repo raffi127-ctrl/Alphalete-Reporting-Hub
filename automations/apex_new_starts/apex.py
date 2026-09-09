@@ -503,21 +503,62 @@ def plan_fill(page, values: Dict[str, str]) -> tuple:
     return matched, unmatched
 
 
-def apply_fill(page, matched: List[tuple], log=print) -> int:
-    """Type the approved values. Nothing is submitted here -- saving is the
-    caller's explicit step, so a bad match is still recoverable on screen."""
-    done = 0
+def _option_like(page, sel: str, want: str) -> Optional[str]:
+    """The dropdown option that means `want`, or None.
+
+    Exact first, then a looser match, because the wording we carry and the
+    wording Apex shows are written by different people. The filing statuses are
+    the live case: the W-4 says 'Married filing jointly or Qualifying surviving
+    spouse' and Apex's list may just say 'Married filing jointly'.
+
+    Returning None is the important half. Handing a select a value it does not
+    have selects NOTHING, silently -- the bug that would have left every state
+    blank until 'TX' was turned into 'Texas'. A miss here is reported instead.
+    """
+    options = page.locator(f"{sel} option").all_text_contents()
+    def fold(t):
+        return " ".join(str(t or "").split()).strip().lower()
+    w = fold(want)
+    for opt in options:
+        if fold(opt) == w:
+            return opt.strip()
+    for opt in options:
+        o = fold(opt)
+        if o and (o.startswith(w) or w.startswith(o)):
+            return opt.strip()
+    for opt in options:
+        o = fold(opt)
+        if o and (o in w or w in o):
+            return opt.strip()
+    return None
+
+
+def apply_fill(page, matched: List[tuple], log=print) -> tuple:
+    """Type the approved values. Returns (filled, problems).
+
+    Nothing is submitted here -- saving is the caller's explicit step, so a bad
+    match is still recoverable on screen. A dropdown with no matching option is
+    left alone and reported rather than silently staying on 'Select'.
+    """
+    done, problems = 0, []
     for semantic, value, hit in matched:
         sel = _selector(hit)
         el = page.locator(sel).first
         if hit["tag"] == "select":
-            el.select_option(label=value, timeout=8000)
+            option = _option_like(page, sel, value)
+            if option is None:
+                problems.append(
+                    (semantic, f"{value!r} isn't one of the options on "
+                               f"{hit['matched_label']!r} — left unset"))
+                continue
+            el.select_option(label=option, timeout=8000)
+            log(f"    {semantic:9} -> {hit['matched_label']!r} = {option!r}")
         else:
             el.fill("", timeout=8000)
             el.type(value, delay=25)
-        log(f"    {semantic:9} -> {hit['matched_label']!r} ({sel})")
+            log(f"    {semantic:9} -> {hit['matched_label']!r} ({sel})")
         done += 1
-    return done
+    return done, problems
 
 
 # The Social's boxes, looked up SEPARATELY from LABELS on purpose. Keeping them
@@ -529,17 +570,21 @@ def apply_fill(page, matched: List[tuple], log=print) -> int:
 # There are TWO boxes, not one: the page shows the existing number masked
 # ('***-**-7663') and then asks for 'Change SSN' and 'Confirm SSN'. Filling one
 # and not the other saves nothing, so this fills both or neither.
-# W-4 Step 1(c) has three filing-status boxes and exactly one is ticked on every
-# one of 30 signed packets -- so the three keys are certain, but WHICH is which
-# is not. 'chk003-0odkU' carries 24 of the 30 and matches the value Apex already
-# shows by default, so Single is safe. The other two are 2 and 4 packets, and
-# the evidence contradicts itself: by placement order chk004 is Married Filing
-# Jointly, but 2 of 2 of its people claim dependents while only 1 of 4 of
-# 6471's do -- which points the other way, since Head of Household needs a
-# qualifying dependent. Guessing between them would put a wrong filing status on
-# a real tax record, so only Single is mapped and the rest are reported.
-# One Quick View of Ashari Evans's and Michael Moore's W-4s settles it forever.
-MARITAL_SINGLE = "Single or Married filing separately"
+# W-4 Step 1(c), all three boxes, settled 2026-09-09. Exactly one is ticked on
+# every one of 30 signed packets, so the keys were certain from the data -- but
+# WHICH was which was not, and the two available signals disagreed. By placement
+# order chk004 looked like Married Filing Jointly; by dependents it looked like
+# Head of Household (2 of 2 of its people claimed dependents, against 1 of 4 of
+# 6471's). Megan opened the two forms and the DEPENDENTS signal was right:
+# Ashari Evans (chk004) is Head of household, Michael Moore (6471) is Married
+# filing jointly. Placement order would have swapped them onto a real tax
+# record, which is why neither was guessed.
+MARITAL_BY_FLAG = {
+    "filing_single": "Single or Married filing separately",
+    "filing_mfj": "Married filing jointly or Qualifying surviving spouse",
+    "filing_hoh": "Head of household",
+}
+MARITAL_SINGLE = MARITAL_BY_FLAG["filing_single"]
 
 SSN_CHANGE_LABELS = ("change ssn", "social security number", "ssn")
 SSN_CONFIRM_LABELS = ("confirm ssn", "confirm social security number")

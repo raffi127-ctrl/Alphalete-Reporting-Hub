@@ -186,3 +186,41 @@ def test_the_gender_the_operator_picks_goes_into_apex(page):
     hit = AX.find_field(page, "gender")
     AX.apply_fill(page, [("gender", "Female", hit)], log=lambda *_: None)
     assert page.locator("#p8").input_value() == "Female"
+
+
+MARITAL_FORM = """
+<!doctype html><html><body>
+<label for="m1">Marital Status *</label>
+<select id="m1"><option>Select</option>
+  <option>Single or Married filing separately</option>
+  <option>Married filing jointly</option>
+  <option>Head of household</option></select>
+<label for="m2">Claim Dependents</label><input id="m2">
+</body></html>
+"""
+
+
+def test_a_dropdown_worded_differently_still_gets_set(page):
+    """The W-4 says 'Married filing jointly or Qualifying surviving spouse';
+    Apex's list just says 'Married filing jointly'. Same status, different
+    words, and select_option on the long form would select nothing."""
+    from automations.apex_new_starts import apex as AX
+    page.set_content(MARITAL_FORM)
+    hit = AX.find_field(page, "marital_status")
+    filled, problems = AX.apply_fill(
+        page, [("marital_status",
+                AX.MARITAL_BY_FLAG["filing_mfj"], hit)], log=lambda *_: None)
+    assert not problems and filled == 1
+    assert page.locator("#m1").input_value() == "Married filing jointly"
+
+
+def test_an_option_that_isnt_there_is_reported_not_silently_skipped(page):
+    """Handing a select something it doesn't have selects NOTHING, with no
+    error -- the same silent failure as 'TX' against a list of 'Texas'."""
+    from automations.apex_new_starts import apex as AX
+    page.set_content(MARITAL_FORM)
+    hit = AX.find_field(page, "marital_status")
+    filled, problems = AX.apply_fill(
+        page, [("marital_status", "Widowed", hit)], log=lambda *_: None)
+    assert filled == 0 and problems and "isn't one of the options" in problems[0][1]
+    assert page.locator("#m1").input_value() == "Select"

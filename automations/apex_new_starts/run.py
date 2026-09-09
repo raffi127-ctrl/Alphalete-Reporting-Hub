@@ -216,11 +216,13 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     if dep is not None:
         v["claim_dependents"] = f"{dep:.2f}"
 
-    # Only the Single box is identified -- see apex.MARITAL_SINGLE. Anyone
-    # ticking one of the other two is reported and set by hand, rather than
-    # given a filing status nobody has confirmed.
-    if str(hire.values.get("filing_single") or "").strip().lower() == "true":
-        v["marital_status"] = AX.MARITAL_SINGLE
+    # All three filing-status boxes are identified now (see MARITAL_BY_FLAG).
+    # A form with none ticked -- or somehow more than one -- sets nothing and is
+    # reported: a filing status nobody stated is not one to invent.
+    ticked = [flag for flag in AX.MARITAL_BY_FLAG
+              if str(hire.values.get(flag) or "").strip().lower() == "true"]
+    if len(ticked) == 1:
+        v["marital_status"] = AX.MARITAL_BY_FLAG[ticked[0]]
     return v
 
 
@@ -448,7 +450,9 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
                     _log(f"    would fill {semantic:9} → "
                          f"{hit['matched_label']!r} = {shown}")
                 continue
-            AX.apply_fill(s.page, matched, log=_log)
+            _filled, problems = AX.apply_fill(s.page, matched, log=_log)
+            for semantic, why in problems:
+                _log(f"    ⚠️ {semantic}: {why}")
             if AX.set_security_role(s.page):
                 _log(f"    security role -> {AX.SECURITY_ROLE!r}")
             else:

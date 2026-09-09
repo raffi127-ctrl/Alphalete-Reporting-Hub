@@ -43,7 +43,8 @@ PERSONAL = ("first", "middle", "last", "address1", "address2", "city", "state",
 # and Step 1(c)'s filing status. Read from the W-4 by these four LITERAL keys
 # only -- never by trusting that form's layout, which is why it is otherwise
 # excluded: its address boxes hold the employer's beside the employee's.
-W4 = ("child_credit", "other_dep_credit", "dep_total", "filing_single")
+W4 = ("child_credit", "other_dep_credit", "dep_total",
+      "filing_single", "filing_mfj", "filing_hoh")
 # Held to a different standard everywhere downstream: never auto-typed, shown
 # to the operator to enter by hand. Bank routing/account numbers are not on
 # this list because they are not mapped AT ALL -- direct deposit is out of
