@@ -42,7 +42,9 @@ from typing import Dict, List
 LABEL_FOR = {
     "first": "First Name", "middle": "Middle Name", "last": "Last Name",
     "username": "User Name", "account_email": "Account Email",
-    "hire_date": "Hire Date", "pay_frequency": "Pay Frequency",
+    # Hire Date and User Name are READ-ONLY text on the Edit pages -- already
+    # correct on the Pending record, and not ours to change.
+    "country": "Country", "pay_frequency": "Pay Frequency",
     "position": "Position", "rate": "Rate of Pay",
     "pay_state": "State Working In", "pay_basis": "Basis of Pay",
     "department": "Department",
@@ -51,7 +53,7 @@ LABEL_FOR = {
     "address2": "Street Address 2", "city": "City", "state": "State",
     "zip": "Zip Code", "home_phone": "Home Phone",
     "mobile_phone": "Mobile Phone",
-    "claim_dependents": "Claim Dependents",
+    "claim_dependents": "Claim Dependants",   # Apex spells it with an A
     "marital_status": "Marital Status",
     "tax_state": "State to be taxed in",
 }
@@ -105,7 +107,9 @@ _JS = r"""
      if(out.length===1) return out[0];
    }
    var all=document.querySelectorAll('div,span,td,th,p,legend,strong,b'), cands=[];
+   var mine=document.getElementById('anspanel');
    for(i=0;i<all.length;i++){
+     if(mine&&mine.contains(all[i])) continue;   /* never match our own panel */
      if(all[i].children.length>2) continue;
      if(norm(all[i].textContent)!==want) continue;
      var f=nearInput(all[i]);
@@ -177,8 +181,43 @@ _JS = r"""
    var msg='Filled: '+(r.done.join(', ')||'nothing on this page');
    var s=document.getElementById('ansssn');
    if(s&&s.value){ var b=ssnBoxes(); if(b){ setVal(b[0],s.value); setVal(b[1],s.value); s.value=''; msg+='; Social entered'; } }
-   if(r.miss.length) msg+='<br><span style="color:#b00">Not found here: '+r.miss.join(', ')+'</span>';
+   if(r.miss.length) msg+='<br><span style="color:#b00">Not found here: '+r.miss.join(', ')+'</span>'+
+     ' <a href="#" id="answhy" style="font-size:11px">why?</a>';
    document.getElementById('ansout').innerHTML=msg+'<br><b>Check it, then click Save in Apex.</b>';
+   var w=document.getElementById('answhy');
+   if(w) w.onclick=function(e){ e.preventDefault();
+     /* Show the markup around the FIRST field we could not place, so the
+        shape of the page can be fixed once instead of guessed at twice. */
+     /* Skip our OWN panel: it lists every missing field name, so the first
+        scan matched its own red text and reported the panel's markup. And
+        diagnose a field that is actually ON this page -- 'Street Address'
+        belongs to the profile screen and being absent here is correct. */
+     var panel=document.getElementById('anspanel'), want=null;
+     for(var m=0;m<r.miss.length&&!want;m++){
+       var cand=r.miss[m], probe=document.querySelectorAll('*');
+       for(var q=0;q<probe.length;q++){
+         if(probe[q].children.length||panel.contains(probe[q])) continue;
+         if(norm(probe[q].textContent)===norm(cand)){ want=cand; break; }
+       }
+     }
+     if(!want) want=r.miss[0];
+     var out=['<b>'+want+'</b>'], seen=0;
+     var all=document.querySelectorAll('*');
+     for(var i=0;i<all.length&&seen<3;i++){
+       var el=all[i];
+       if(el.children.length||panel.contains(el)) continue;
+       if(norm(el.textContent).indexOf(norm(want))<0) continue;
+       seen++;
+       var chain=[], n=el, d=0;
+       while(n&&d<4){ chain.push(n.tagName.toLowerCase()+(n.id?'#'+n.id:'')); n=n.parentElement; d++; }
+       var par=el.parentElement, sibs=[], sb=par?par.children:[];
+       for(var j=0;j<sb.length&&j<8;j++) sibs.push(sb[j].tagName.toLowerCase()+(sb[j].id?'#'+sb[j].id:''));
+       out.push('text in: '+chain.join(' &lt; ')+'<br>parent kids: '+sibs.join(', '));
+     }
+     if(seen===0) out.push('that caption text is not on this page at all');
+     document.getElementById('ansout').innerHTML=out.join('<hr style="border:0;border-top:1px solid #eee">')+
+       '<div style="margin-top:6px;font-size:11px">screenshot this</div>';
+   };
  };
  document.getElementById('ansnext').onclick=function(){
    I++; try{ localStorage.setItem(KEY,String(I)); }catch(e){}
@@ -263,15 +302,22 @@ document.getElementById('copybtn').onclick = function(){{
 
 <ol>
   <li>Log into Apex yourself, with the code it texts you.</li>
-  <li>Open <b>Roster → Employees → + Add Employee</b>.</li>
-  <li>Click <b>Fill Apex</b> in your bookmarks bar. A panel appears with the
-      person's name and fills the boxes on that page.</li>
-  <li>Check it, click <b>Save</b> in Apex.</li>
-  <li>On their profile and tax pages, click <b>Fill Apex</b> again — it fills
-      whatever belongs to the page you're on. The tax page is where it asks you
-      for their Social.</li>
+  <li>Open <b>Roster → Employees</b> and click the <b>Pending</b> tab. Everyone
+      below is already there — their account exists, their profile is empty.</li>
+  <li>Click <b>Edit</b> on the person the panel names.</li>
+  <li>Click <b>Fill Apex</b>. It fills whatever belongs to the tab you're on,
+      then you click <b>Save</b> in Apex.</li>
+  <li>Do the same on their other tabs — <b>Employment Record</b>,
+      <b>User Profile &amp; Account</b>, <b>Tax &amp; Bank Information</b>.
+      The tax tab is where it asks you for their Social.</li>
   <li>Press <b>Saved → next</b> in the panel to move to the next person.</li>
 </ol>
+
+<div class="note">
+  <b>Nobody is being created.</b> These people are already in Apex on the
+  Pending tab, so their name, user name and email are left exactly as they are.
+  This only fills in what's blank.
+</div>
 
 <div class="note">
   <b>The Social is never in this page.</b> You type it into the panel on Apex's

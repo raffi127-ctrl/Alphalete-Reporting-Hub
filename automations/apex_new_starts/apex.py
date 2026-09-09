@@ -106,7 +106,9 @@ LABELS: Dict[str, tuple] = {
     "mobile_phone": ("mobile phone",),
     # --- stage three: 'Tax & Bank Information' ------------------------------
     # Confirmed 2026-09-05 off /employees/<id>/edit/bank-info.
-    "claim_dependents": ("claim dependents",),
+    # Apex spells it "Claim Dependants" -- with an A. Spelled the usual way it
+    # matches nothing, silently, forever.
+    "claim_dependents": ("claim dependants", "claim dependents"),
     "marital_status": ("marital status",),
     "tax_state": ("state to be taxed in",),
 }
@@ -156,7 +158,6 @@ STATE_NAMES = {
 LEAVE_ALONE = ("office", "status", "salary", "time clock", "require break",
                "divisions",
                # stage two:
-               "country",          # already 'United States'
                "user name",        # read-only text on the saved record
                "override the user's password",   # a checkbox, and a password
                "send password reset")            # a button that MAILS someone
@@ -176,6 +177,9 @@ DEFAULTS = {
     # The dropdown reads '100 Owner / 200 Admin / 400 Sales / 750 Chips /
     # 900 1099' -- department numbers, and the option text carries the number.
     "department": "400 Sales",
+    # Required on the profile page and empty on a Pending record -- it is NOT
+    # pre-filled the way an existing employee's is.
+    "country": "United States",
 }
 
 # The tax tab's own settings, kept apart from DEFAULTS because they are filled

@@ -211,8 +211,11 @@ def test_every_default_actually_selects_its_option(page):
     """The office settings all land in SELECTs, and a select is not typed into
     -- apply_fill has to pick the option. '400 Sales' is the whole option text,
     number included; picking '400' or 'Sales' would select nothing at all."""
-    matched, unmatched = AX.plan_fill(page, dict(AX.DEFAULTS))
-    assert not unmatched, unmatched          # TAX_DEFAULTS live on another page
+    # Country lives on the PROFILE page, not this one; TAX_DEFAULTS on the tax
+    # page. Only the employment-record settings are checked here.
+    here = {k: v for k, v in AX.DEFAULTS.items() if k != "country"}
+    matched, unmatched = AX.plan_fill(page, here)
+    assert not unmatched, unmatched
     AX.apply_fill(page, matched, log=lambda *_: None)
     assert page.locator("#f14").input_value() == "400 Sales"
     assert page.locator("#f10").input_value() == "Sales Rep"

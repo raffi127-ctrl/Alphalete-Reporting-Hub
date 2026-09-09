@@ -177,10 +177,14 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     email = v.pop("email", "")
     if email:
         v["account_email"] = email
-        if AX.USERNAME_FROM_EMAIL_LOCAL_PART:
-            v["username"] = email.split("@")[0]
+        # NOT the user name. The new starts are ALREADY in Apex, sitting on the
+        # Pending tab with their account created (Megan, 2026-09-09) -- which is
+        # also why Apex rejected the email as "already being used": it was this
+        # company's own existing record. The job is completing those profiles,
+        # so the account fields are left exactly as they are.
     if c.hire_date:
-        # MM/dd/yyyy, the format the Hire Date box itself asks for.
+        # Kept for the preview and the Slack thread. It is NOT typed: on a
+        # Pending record the Hire Date is already set and shown as plain text.
         v["hire_date"] = c.hire_date.strftime("%m/%d/%Y")
 
     # The I-9 does not speak Apex. Two values need converting, and both fail
