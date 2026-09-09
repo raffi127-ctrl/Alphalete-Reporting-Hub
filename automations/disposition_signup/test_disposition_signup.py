@@ -1070,7 +1070,7 @@ def test_a_pending_access_request_is_a_retry_not_a_failure(monkeypatch):
     res = P.check("cody")
     assert res["ok"] is False and res["retry"] is True
     assert pulled == []                     # never opened a second session
-    assert "WAITING" in _title(P, res)
+    assert "⏳" in _title(P, res) and "Retries on its own" in _title(P, res)
 
 
 def test_a_missing_office_is_a_real_failure(monkeypatch):
@@ -1083,7 +1083,7 @@ def test_a_missing_office_is_a_real_failure(monkeypatch):
     monkeypatch.setattr(P, "_check_groups", lambda rec: [])
     res = P.check("cody")
     assert res["ok"] is False and not res.get("retry")
-    assert "failed" in _title(P, res)
+    assert "❌" in _title(P, res) and "Dispositions OFF" in _title(P, res)
 
 
 def test_a_tick_holding_the_session_is_also_a_retry(monkeypatch):
@@ -1288,3 +1288,43 @@ def test_an_unreadable_picker_says_so_without_blocking():
     res = _camp_check([], "1")
     assert res["ok"] is True
     assert "couldn't read" in res["note"] and "board pull" in res["note"]
+
+
+def test_a_passing_preflight_is_ONE_line_with_no_thread(monkeypatch):
+    """Megan 2026-09-09: "that preflight is way too long and hard to read." Four
+    PASS lines plus cadence, hours and every route is a paragraph that says one
+    thing — it worked. A pass says who, where and how often, and stops."""
+    from automations.disposition_signup import preflight as P
+    rec = _rec(owner="Isaiah Revelle", destinations=[
+        _dest("email", emails=["a@b.com"], cadence_min=60),
+        _dest("slack", name="#ops", channel_id="C1", cadence_min=60)])
+    res = {"ok": True, "rec": rec,
+           "checks": [{"name": "n", "ok": True, "note": "x"}] * 4}
+    posts = _posts(P, res, enabled=True)
+    assert len(posts) == 1, "a passing preflight must not open a thread"
+    assert posts[0].startswith("✅ Dispositions ON — Isaiah Revelle")
+    assert "#ops" in posts[0] and "email" in posts[0]
+    assert "PASS" not in posts[0]
+
+
+def test_a_failure_leads_with_the_reason_and_drops_the_passes(monkeypatch):
+    from automations.disposition_signup import preflight as P
+    rec = _rec(owner="Isaiah Revelle")
+    res = {"ok": False, "rec": rec, "checks": [
+        {"name": "Campaign", "ok": True, "note": "fine"},
+        {"name": "OwnerVille office", "ok": False, "note": "not on the list"},
+        {"name": "Board", "ok": False, "note": "grid refused"}]}
+    posts = _posts(P, res, enabled=False)
+    assert posts[0].startswith("❌ Dispositions OFF — Isaiah Revelle")
+    assert "not on the list" in posts[0]
+    body = "\n".join(posts[1:])
+    assert "grid refused" in body        # the other failure
+    assert "fine" not in body            # what passed is not news
+
+
+def _posts(P, res, *, enabled):
+    import unittest.mock as m
+    with m.patch("automations.shared.slack_metrics_post._client") as c:
+        P.notify("k", res, enabled=enabled)
+        return [k.kwargs.get("text") for k
+                in c.return_value.chat_postMessage.call_args_list]

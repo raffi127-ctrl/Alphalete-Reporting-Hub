@@ -216,29 +216,66 @@ def summary(key: str, res: Dict) -> str:
     return "\n".join(lines)
 
 
+def _where(rec) -> str:
+    """'hourly → #chan + email' — where this office's board goes, in one clause.
+
+    The routes list is for the office's own record; a corrections post needs the
+    shape of it, not the inventory."""
+    if rec is None or not rec.destinations:
+        return "nowhere yet"
+    bits = []
+    for d in rec.destinations:
+        kind = d.get("kind")
+        if kind == "slack":
+            bits.append((d.get("name") or d.get("channel_id") or "#?").strip())
+        elif kind == "email":
+            bits.append("email")
+        else:
+            bits.append((d.get("name") or "chat").strip())
+    seen, uniq = set(), []
+    for b in bits:
+        if b.lower() not in seen:
+            seen.add(b.lower())
+            uniq.append(b)
+    return "%s → %s" % (rec.cadence_label().lower(), " + ".join(uniq))
+
+
 def notify(key: str, res: Dict, *, enabled: bool) -> None:
-    """One line to the corrections channel, detail in the thread — the standing
-    format. Best-effort: a failed post must not fail the preflight."""
+    """One line to the corrections channel; detail ONLY when something is wrong.
+
+    IT USED TO PRINT EVERY CHECK, PASSING OR NOT (Megan 2026-09-09: "that
+    preflight is way too long and hard to read"). Four PASS lines plus the
+    cadence, the hours and every route is a paragraph that says one thing:
+    it worked. So a pass is now a single line, and the thread exists only when
+    there is something to act on — which is also what makes a failure stand out
+    in a channel where most of these succeed.
+
+    Best-effort: a failed post must not fail the preflight.
+    """
     rec = res.get("rec")
     who = rec.display() if rec else key
+    thread: List[str] = []
+
     if res["ok"]:
-        title = ("Dispositions preflight passed for %s — %s"
-                 % (who, "switched ON, it joins the next tick" if enabled
-                    else "ready to switch on"))
+        title = ("✅ Dispositions ON — %s · %s" % (who, _where(rec))
+                 if enabled else
+                 "✅ Dispositions ready — %s · %s (not switched on yet)"
+                 % (who, _where(rec)))
     elif res.get("retry"):
-        # NOT a failure, and it must not read like one: nothing is wrong with
-        # the enrollment, we are waiting on the owner to accept the OwnerVille
-        # access request (or on a tick to let go of the session). Saying
-        # "failed" here sends Megan to check a setup that is already correct.
-        title = ("Dispositions preflight WAITING for %s — nothing to fix, it "
-                 "retries on its own" % who)
+        # Nothing to fix. Name the one thing being waited on, in the title.
+        why = next((c["note"] for c in res["checks"] if not c["ok"]), "")
+        title = ("⏳ Dispositions waiting — %s · %s. Retries on its own"
+                 % (who, why.split("—")[0].strip()[:90] or "access pending"))
     else:
-        title = "Dispositions preflight failed for %s — still switched off" % who
-    thread = ["- %s %s: %s" % ("PASS" if c["ok"] else "FAIL", c["name"],
-                               c["note"]) for c in res["checks"]]
-    if rec is not None:
-        thread.append("- %s, %s" % (rec.cadence_label(), rec.hours_label()))
-        thread += ["- %s" % r for r in rec.routes()]
+        bad = [c for c in res["checks"] if not c["ok"]]
+        first = bad[0] if bad else {"name": "?", "note": ""}
+        title = ("❌ Dispositions OFF — %s · %s: %s"
+                 % (who, first["name"], first["note"][:140]))
+        # Only the failures. What passed is not news.
+        thread = ["- %s: %s" % (c["name"], c["note"]) for c in bad[1:]]
+        if rec is not None:
+            thread.append("- would send %s" % _where(rec))
+
     try:
         from automations.day_orchestrator import registry, notify as _n
         from automations.shared.slack_metrics_post import _client
@@ -246,9 +283,10 @@ def notify(key: str, res: Dict, *, enabled: bool) -> None:
         client = _client()
         top = client.chat_postMessage(channel=channel, text=title,
                                       unfurl_links=False, unfurl_media=False)
-        client.chat_postMessage(channel=channel, thread_ts=top["ts"],
-                                text="\n".join(thread), unfurl_links=False,
-                                unfurl_media=False)
+        if thread:
+            client.chat_postMessage(channel=channel, thread_ts=top["ts"],
+                                    text="\n".join(thread), unfurl_links=False,
+                                    unfurl_media=False)
     except Exception as e:                           # noqa: BLE001
         print("[preflight] corrections post skipped: %s: %s"
               % (type(e).__name__, str(e)[:160]))
