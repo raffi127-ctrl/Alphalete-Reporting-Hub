@@ -141,6 +141,24 @@ class EmptyCells(unittest.TestCase):
         self.assertEqual(T.CANT_MEASURE, '"-"')
 
 
+class TeamCriterion(unittest.TestCase):
+    """The Teams block has three row shapes. The day count may only be built
+    for the ones SUMPRODUCT can actually reproduce."""
+
+    def test_a_plain_team_row_gives_an_array_test(self):
+        out = T._team_test('=SUMIFS($E:$E,$DI:$DI,$C166)', 4, 78)
+        self.assertEqual(out, "($DI$4:$DI$78=$C166)")
+
+    def test_a_wildcard_row_is_refused(self):
+        """SUMPRODUCT compares literally, so '*Andrew*' would match nothing and
+        hand back a confident average built on a zero denominator."""
+        self.assertIsNone(
+            T._team_test('=SUMIFS(E:E,$DI:$DI,"*Andrews Full Crew*")', 4, 78))
+
+    def test_the_totals_row_has_no_criterion(self):
+        self.assertIsNone(T._team_test('=SUM($E$166:$E$180)', 4, 78))
+
+
 class ColumnLetters(unittest.TestCase):
     def test_round_trip_past_Z(self):
         for col, want in ((1, "A"), (26, "Z"), (27, "AA"), (56, "BD"), (82, "CD")):

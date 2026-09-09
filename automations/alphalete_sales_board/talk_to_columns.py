@@ -45,6 +45,7 @@ bitten three readers on this board.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 
 try:
@@ -528,6 +529,145 @@ def week_formulas(ss, ws, apply: bool = False) -> int:
     return 0
 
 
+_SUMIFS = re.compile(
+    r"^=SUMIFS\(.+?,\s*\$?([A-Z]{1,3})\s*:\s*\$?([A-Z]{1,3})\s*,\s*(.+)\)\s*$",
+    re.I)
+
+
+def _team_test(formula: str, first: int, last: int):
+    """`(range=criterion)`, taken from the row's own SUMIFS, for SUMPRODUCT.
+
+    Returns None when the row does not filter (the TOTALS row is a plain SUM
+    over the team rows) or filters with a WILDCARD -- SUMPRODUCT compares
+    literally, so `"*Andrew*"` would silently match nothing and the average
+    would come out of a zero denominator looking like a real answer.
+    """
+    m = _SUMIFS.match(formula.strip())
+    if not m:
+        return None
+    a, b, crit = m.group(1), m.group(2), m.group(3).strip()
+    if a != b or "*" in crit or "?" in crit:
+        return None
+    return "($%s$%d:$%s$%d=%s)" % (a, first, a, last, crit)
+
+
+def team_totals(ss, ws, apply: bool = False) -> int:
+    """The five weekly Talk-To columns for the Teams block under the roster.
+
+    THE SUM COLUMN IS NOT WRITTEN FROM SCRATCH -- it is the row's OWN `INT`
+    formula with the column letter swapped, the same trick `tk_fill`'s
+    `ensure_tk_total` uses. That is what makes this work across three different
+    row shapes without knowing about any of them: a team row
+    (`SUMIFS($E:$E,$DI:$DI,$C166)`), the TOTALS row (`SUM($E$166:$E$180)`) and
+    the two sub-crews that match their people with a wildcard
+    (`SUMIFS(E:E,$DI:$DI,"*Andr…")`). Whatever population that row counts, the
+    Talk-To's column counts the same one.
+
+    THE RATIOS ARE PER REP-DAY, NOT PER TEAM-DAY. 'AVG Total Knocks per day' on
+    a team row divides by the rep-days its people actually worked, so it reads
+    on the same scale as the rep rows above it -- a team averaging 150 sits next
+    to a rep averaging 178. Dividing by 6 instead would give the team's daily
+    VOLUME, which is a different number that cannot be compared with anything
+    else in its own column. The day count is the SUMPRODUCT of the same
+    not-X-not-T-not-blank test the per-rep column uses.
+
+    A row that has no TK of its own (the two sub-crews carry Int..NL only) gets
+    the Talk-To's sum and nothing else -- the same shape it already had.
+    """
+    from automations.energy_slack_fill.run import last_rep_row, name_col
+
+    # FORMULAS, not values: this pass finds the team rows BY the formula in
+    # their INT cell and then rewrites that formula for Talk-To's.
+    # `get_all_values()` would hand back the rendered numbers instead.
+    grid = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
+                  value_render_option="FORMULA")
+    last = last_rep_row(grid)
+    first = SUB_ROW + 1
+    lo, hi = running_block(grid)
+    if not lo:
+        print("no %r block in row 1 -- nothing to write." % WEEK_BLOCK)
+        return 1
+    wk = (lo, hi)
+    col = {h: sub_col(grid, wk, h) for h in
+           (WEEK_AVG_TK, WEEK_TT, WEEK_AVG_TT, WEEK_PCT, WEEK_TT_APP,
+            "APPS", "INT", "TK")}
+    if not all(col.values()):
+        print("%s is missing %s -- nothing written."
+              % (WEEK_BLOCK, [h for h, c in col.items() if not c]))
+        return 1
+    INT, TT = _col_letter(col["INT"]), _col_letter(col[WEEK_TT])
+    A, K = _col_letter(col["APPS"]), _col_letter(col["TK"])
+
+    blocks = day_blocks(grid)
+    work = [b[0] for lab, b in sorted(blocks.items(), key=lambda kv: kv[1][0])
+            if lab.upper() != "SUN"]
+    span = "+".join(
+        '($%s$%d:$%s$%d<>"X")*($%s$%d:$%s$%d<>"T")*($%s$%d:$%s$%d<>"")'
+        % ((_col_letter(c), first, _col_letter(c), last) * 3) for c in work)
+
+    # The Teams block: every row BELOW the roster whose INT cell is a formula.
+    rows = [r for r in range(last + 2, len(grid) + 1)
+            if _cell(grid, r, col["INT"]).startswith("=")]
+    if not rows:
+        print("no team rows under the roster -- nothing to write.")
+        return 1
+
+    names = _col_letter(name_col(grid))
+    data, said = [], []
+    for r in rows:
+        base = _cell(grid, r, col["INT"])
+        tt = base.replace("$%s$" % INT, "$%s$" % TT).replace(
+            "$%s:$%s" % (INT, INT), "$%s:$%s" % (TT, TT)).replace(
+            "%s:%s" % (INT, INT), "%s:%s" % (TT, TT))
+        if tt == base:
+            said.append("  r%-4d %-22s no supe reescribir %r -- salteada"
+                        % (r, _cell(grid, r, 3)[:22], base[:40]))
+            continue
+        cells = {WEEK_TT: tt}
+        # Only rows that count a TK of their own get the ratios.
+        test = _team_test(base, first, last)
+        if _cell(grid, r, col["TK"]).startswith("=") and (
+                test or "SUMIFS" not in base.upper()):
+            days = ("SUMPRODUCT(%s*(%s))" % (test, span) if test
+                    else "SUMPRODUCT(%s)" % span)
+            cells[WEEK_AVG_TK] = ('=IFERROR(IF(%s=0,%s,$%s%d/%s),%s)'
+                                  % (days, CANT_MEASURE, K, r, days,
+                                     CANT_MEASURE))
+            cells[WEEK_AVG_TT] = ('=IFERROR(IF(%s=0,%s,$%s%d/%s),%s)'
+                                  % (days, CANT_MEASURE, TT, r, days,
+                                     CANT_MEASURE))
+            cells[WEEK_PCT] = ('=IF(N($%s%d)=0,%s,IFERROR($%s%d/$%s%d,%s))'
+                               % (K, r, CANT_MEASURE, TT, r, K, r,
+                                  CANT_MEASURE))
+            cells[WEEK_TT_APP] = ('=IF(N($%s%d)=0,%s,IFERROR($%s%d/$%s%d,%s))'
+                                  % (A, r, CANT_MEASURE, TT, r, A, r,
+                                     CANT_MEASURE))
+        for header, formula in cells.items():
+            c = _col_letter(col[header])
+            data.append({"range": "%s%d" % (c, r), "values": [[formula]]})
+        said.append("  r%-4d %-24s %s" % (r, _cell(grid, r, 3)[:24],
+                                          "5 columnas" if len(cells) == 5
+                                          else "solo Talk-To's (la fila no "
+                                               "lleva TK)"))
+    print("Teams: filas %d..%d   dias habiles: %s"
+          % (rows[0], rows[-1], ", ".join(_col_letter(c) for c in work)))
+    print("\n".join(said))
+    if not apply:
+        print("\npreview only -- re-run with --apply to write.")
+        return 0
+    ws.batch_update(data, value_input_option="USER_ENTERED")
+    fmt = []
+    for header, kind, pattern in (
+            (WEEK_AVG_TK, "NUMBER", "0.0"), (WEEK_TT, "NUMBER", "0"),
+            (WEEK_AVG_TT, "NUMBER", "0.0"), (WEEK_PCT, "PERCENT", "0.0%"),
+            (WEEK_TT_APP, "NUMBER", "0.0")):
+        fmt.append(number_format(ws, col[header], rows[0], rows[-1],
+                                 kind, pattern))
+    ss.batch_update({"requests": fmt})
+    print("\nwrote %d cell(s) across %d team row(s)." % (len(data), len(rows)))
+    return 0
+
+
 def refold(ss, ws, tab: str, apply: bool = False) -> int:
     """Hide any trio whose day block is folded up, leave the open day alone."""
     grid = _headers(ws)
@@ -575,6 +715,8 @@ def main(argv=None) -> int:
                     help="(re)write the two derived columns, every day, every row")
     ap.add_argument("--week-formulas", action="store_true",
                     help="(re)write the five Talk-To columns of RUNNING WEEK TOTALS")
+    ap.add_argument("--team-totals", action="store_true",
+                    help="(re)write those five for the Teams block under the roster")
     a = ap.parse_args(argv)
 
     from automations.recruiting_report.fill import open_by_key
@@ -587,6 +729,8 @@ def main(argv=None) -> int:
         return formulas(ss, ws, apply=a.apply)
     if a.week_formulas:
         return week_formulas(ss, ws, apply=a.apply)
+    if a.team_totals:
+        return team_totals(ss, ws, apply=a.apply)
 
     tmpl_day, tmpl_col, todo = plan(_headers(ws))
     if not tmpl_day:
