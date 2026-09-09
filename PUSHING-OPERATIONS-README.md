@@ -160,6 +160,14 @@ the push account + a supervised probe (`rerun applicant_push --office <id>
 wrapper rotation. A crashed slot kills ALL offices' ticks until the agent is
 reinstalled (`rerun install_applicant_push_agent`).
 
+**Changed: Khalil (11901) fully joined the scheduled rotation (9/9).**
+Broke: the same-day MANUAL rerun for his office died mid-walk
+(TargetClosedError) — his newly-live scheduled slot pkills the office profile
+on startup. LESSON: once an office has a scheduled slot, NEVER also run a
+manual push for it during push hours; the two paths share the office profile
+and the scheduled tick always wins. Manual reruns are only for offices with no
+slot, or outside the window.
+
 **Changed: queue-driven diagnostics (8/30–9/3).**
 Gotchas: sheet Result cells truncate (~a few hundred chars) — use `logtail`
 against the log file, or a tab dump; `rerun` args are shlex-split — a literal
