@@ -912,6 +912,57 @@ def _resolve_office_id(name: str) -> Optional[str]:
     return _resolve_office_id_with_source(name)[0]
 
 
+def group_by_office(names) -> List[Tuple[Optional[str], List[str]]]:
+    """Group ICD names by the OFFICE they resolve to: [(office_id, [name, …]), …].
+
+    An office can sit on more than one captainship tab, under a different
+    spelling on each — office 23576 is "Kim Rodriguez" on Raf's tab and
+    "KIMBERLY RODRIGUEZ" on Chan's. Both rows resolve to the same office, so a
+    single office nobody can reach was counted, and listed, TWICE: "2 ICD(s)
+    refused by AppStream (KIMBERLY RODRIGUEZ, Kim Rodriguez)" every morning
+    (2026-09-09), which reads as two people with two separate access problems
+    and sends whoever is on triage looking for the second one.
+
+    Nothing is dropped — every spelling stays in its group, so the message can
+    still say which tabs are affected. Only the COUNT changes, from rows to
+    offices. Unmapped names (no office id) each stand alone: without an id
+    there is nothing to prove two of them are the same office, and collapsing
+    them on a shared None would invent a duplicate that isn't there.
+
+    Order is stable: groups sorted by their first spelling, names sorted within
+    a group. Pure apart from the id lookup, which is a local map read."""
+    groups: dict = {}
+    singles: List[Tuple[Optional[str], List[str]]] = []
+    for name in names or []:
+        try:
+            oid = _resolve_office_id(name)
+        except Exception:  # noqa: BLE001 — a lookup blip must not lose a name
+            oid = None
+        if oid:
+            groups.setdefault(oid, []).append(name)
+        else:
+            singles.append((None, [name]))
+    out = [(oid, sorted(set(v))) for oid, v in groups.items()] + singles
+    return sorted(out, key=lambda g: (g[1][0] or "").lower())
+
+
+def describe_offices(names) -> Tuple[int, str]:
+    """(how many OFFICES, human list) for an alert line.
+
+    A group with two spellings renders as "Kimberly Rodriguez (also listed as
+    Kim Rodriguez)" — one entry, both names, so the reader can find the row on
+    either tab without being told there are two problems."""
+    groups = group_by_office(names)
+    bits = []
+    for _oid, spellings in groups:
+        if len(spellings) == 1:
+            bits.append(spellings[0])
+        else:
+            bits.append(f"{spellings[0]} (also listed as "
+                        f"{', '.join(spellings[1:])})")
+    return len(groups), ", ".join(bits)
+
+
 def _pin_office_id(name: str, office_id: str) -> bool:
     """Persist a directory-resolved ICD→office id into the LOCAL mapping file.
 
@@ -1527,6 +1578,11 @@ def main() -> int:
             # failed list now correctly marks the run INCOMPLETE, not clean.
             # Terminated ICDs are appended to the NOTE only — they're an advisory
             # to act on, not a failed part to retry.
+            # EVERY SPELLING, on purpose — this list is what
+            # --retry-inaccessible re-pulls, and it re-pulls PER TAB by name.
+            # Deduping it to one office would leave the other tab's row
+            # unretried forever. Only the human-facing counts below collapse to
+            # offices (group_by_office); the machine-facing list stays as rows.
             uniq = sorted(set(skipped) | set(unmapped))
             if uniq:
                 bits = []
@@ -1536,13 +1592,17 @@ def main() -> int:
                 # chasing access grants for what was a timeout (Megan 2026-08-18).
                 _den = set(denied)
                 _tra = set(fetch_errors) - _den
+                # COUNT OFFICES, NOT ROWS. The same office listed on two tabs
+                # is one access problem, not two — see group_by_office.
+                _n_den, _den_txt = describe_offices(_den)
                 if _den:
-                    bits.append(f"{len(_den)} refused by AppStream (needs access)")
+                    bits.append(f"{_n_den} refused by AppStream (needs access)")
                 if _tra:
-                    bits.append(f"{len(_tra)} transient pull error (retry)")
+                    bits.append(f"{describe_offices(_tra)[0]} transient pull "
+                                f"error (retry)")
                 _other = set(skipped) - _den - _tra
                 if _other:
-                    bits.append(f"{len(_other)} not pulled")
+                    bits.append(f"{describe_offices(_other)[0]} not pulled")
                 if set(unmapped):
                     bits.append(f"{len(set(unmapped))} unmapped "
                                 f"(need an office id via 'Map new ICDs')")
@@ -1578,7 +1638,7 @@ def main() -> int:
                     log.info("daily-focus: expected, no action — %d ICD(s) "
                              "refused by AppStream (%s). Nothing to re-run "
                              "until the access grant lands.",
-                             len(_den), ", ".join(sorted(_den)))
+                             _n_den, _den_txt)
                 if term_note:
                     note += " ⚠ " + term_note
                 _rm.write_manifest(
@@ -1605,8 +1665,11 @@ def main() -> int:
             try:
                 from automations.day_orchestrator import notify
                 from automations.day_orchestrator.registry import load_config
+                # Headline counts OFFICES too, so it agrees with the per-bucket
+                # lines under it. A headline of 2 over a list of 1 is how the
+                # 2026-09-09 triage started.
                 _lines = ["☀️ *Daily Recruiting Focus — {} ICD(s) not pulled "
-                          "today*".format(len(_gap))]
+                          "today*".format(describe_offices(_gap)[0])]
                 # Same split as the manifest note: only a real AppStream refusal
                 # gets the "no access" wording, so nobody goes off requesting
                 # access for what a retry fixes.
@@ -1615,13 +1678,13 @@ def main() -> int:
                 _other = set(skipped) - _den - _tra
                 if _den:
                     _lines.append("• AppStream refused these — needs access ({}): {}".format(
-                        len(_den), ", ".join(sorted(_den))))
+                        *describe_offices(_den)))
                 if _tra:
                     _lines.append("• Transient pull error — a retry usually fixes it ({}): {}".format(
-                        len(_tra), ", ".join(sorted(_tra))))
+                        *describe_offices(_tra)))
                 if _other:
                     _lines.append("• Not pulled ({}): {}".format(
-                        len(_other), ", ".join(sorted(_other))))
+                        *describe_offices(_other)))
                 if set(unmapped):
                     _lines.append("• Unmapped — needs an office id ({}): {}".format(
                         len(set(unmapped)), ", ".join(sorted(set(unmapped)))))
