@@ -1198,3 +1198,66 @@ def test_it_looks_them_up_without_being_asked(page, tmp_path):
     stored = page.evaluate(
         "() => JSON.parse(localStorage.getItem('apexNewStarts.WE 9.13.ids'))")
     assert stored["aundre browder"] == "2816109"
+
+
+ROSTER_NO_LINKS = """
+<!doctype html><html><body>
+<table>
+<thead><tr><th>First Name</th><th>Last Name</th><th>User Name</th><th></th></tr>
+<tr><td><input placeholder="Filter"></td><td><input placeholder="Filter" id="lf"></td>
+    <td><input placeholder="Filter"></td>
+    <td><button id="apply">Apply Filters</button></td></tr></thead>
+<tbody id="rows"></tbody></table>
+</body></html>
+"""
+
+ROSTER_NO_LINKS_WIRING = """() => {
+  /* Apex's real roster: Edit is a BUTTON that routes in JavaScript. There is
+     not one /employees/ href anywhere on the page. */
+  const all = [['Rosa', 'Capel', '3001'], ['Kalynn', 'Nugent', '9999']];
+  window.__render = () => {
+    const want = document.getElementById('lf').value.toLowerCase();
+    document.getElementById('rows').innerHTML = all
+      .filter(r => !want || r[1].toLowerCase().includes(want))
+      .map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>x</td>
+        <td><button class="ed" data-id="${r[2]}">Edit</button></td></tr>`).join('');
+    document.querySelectorAll('.ed').forEach(b =>
+      b.addEventListener('click', () => {
+        window.__clicked = b.dataset.id;
+        /* a file:// origin refuses pushState to another path, so the URL half
+           cannot be simulated here -- what matters is that the RIGHT row's
+           Edit was the thing clicked */
+        try { history.pushState({}, '',
+          '/employees/' + b.dataset.id + '/edit/employment-record'); } catch (e) {}
+      }));
+  };
+  document.getElementById('apply').addEventListener('click', window.__render);
+  document.getElementById('lf').value = 'nugent';      /* wrong page to start */
+  window.__render();
+}"""
+
+
+def test_it_opens_people_by_clicking_edit_not_by_reading_links(page, tmp_path):
+    """The harvest looked for <a href="/employees/123">Edit</a>. Apex's roster
+    has NO such link -- not one in the whole page -- so every person came back
+    "not found" while sitting right there on screen. Filter to them, click
+    their Edit, and read where the app lands."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_NO_LINKS)
+    page.goto(f.as_uri())
+    page.evaluate(ROSTER_NO_LINKS_WIRING)
+    page.evaluate("() => localStorage.clear()")
+
+    people = [{"name": "Rosa Capel", "find": "Capel", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+
+    # the panel starts its own lookup; let that settle before driving directly
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('found')",
+        timeout=20000)
+    page.evaluate("() => { window.__clicked = null; }")
+    page.evaluate(
+        "async () => await window.__ansOpen({name:'Rosa Capel', find:'Capel'})")
+
+    assert page.evaluate("() => window.__clicked") == "3001", \
+        "it filtered to Rosa and clicked HER Edit, not Kalynn's"

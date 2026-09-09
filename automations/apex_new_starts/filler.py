@@ -707,7 +707,7 @@ _JS = r"""
       person up itself. */
    var f=filterBoxes();
    if(!f){ say('No filter row on this page — open Roster then Employees, and the Pending tab.'); return; }
-   var map=knownIds(), missing=[], i;
+   var map=knownIds(), missing=[], present=0, i;
    for(i=0;i<D.length;i++){ if(!idFor(D[i])) missing.push(D[i]); }
    if(!missing.length){ say('<b>All '+D.length+' found.</b> Ready to run the week.'); return; }
    for(i=0;i<missing.length;i++){
@@ -725,7 +725,12 @@ _JS = r"""
      if(!hit) for(key in rows){
        if(key.indexOf(parts[0])>=0&&key.indexOf(norm(surname))>=0){ hit=rows[key]; break; }
      }
+     /* A real id if the row happens to carry a link, and otherwise nothing at
+        all. Storing a placeholder here would have sent the run to
+        /employees/?/edit -- the pre-flight is only allowed to REPORT. The run
+        opens each person by clicking their Edit when it reaches them. */
      if(hit){ map[want]=hit; try{ localStorage.setItem(IDKEY,JSON.stringify(map)); }catch(e){} }
+     else if(rowFor(person)) present++;
    }
    f.last.value='';
    f.last.dispatchEvent(new Event('input',{bubbles:true}));
@@ -733,8 +738,9 @@ _JS = r"""
    await sleep(800);
    var lack=0;
    for(i=0;i<D.length;i++){ if(!idFor(D[i])) lack++; }
-   say(lack? '<b style="color:#b00">'+lack+' still not found.</b> They may not be '+
-             'on the Pending tab at all — those need doing by hand.'
+   lack=lack-present;
+   say(lack>0? '<b style="color:#b00">'+lack+' not on the Pending tab.</b> Those '+
+               'need doing by hand; the rest are ready.'
       : '<b>All '+D.length+' found.</b> Ready to run the week.');
  }
  function idFor(p){
@@ -825,8 +831,67 @@ _JS = r"""
    }
    return {done:done,miss:miss};
  }
+ function rowFor(person){
+   var rows=document.querySelectorAll('tr'), i, c, nm;
+   var want=norm(person.name), parts=want.split(' ');
+   for(i=0;i<rows.length;i++){ c=rows[i].querySelectorAll('td');
+     if(c.length<2) continue;
+     nm=(norm(c[0].textContent)+' '+norm(c[1].textContent)).trim();
+     if(nm===want) return rows[i]; }
+   for(i=0;i<rows.length;i++){ c=rows[i].querySelectorAll('td');
+     if(c.length<2) continue;
+     nm=(norm(c[0].textContent)+' '+norm(c[1].textContent)).trim();
+     if(nm.indexOf(parts[0])>=0&&nm.indexOf(parts[parts.length-1])>=0) return rows[i]; }
+   return null;
+ }
+ function editControl(row){
+   var els=row.querySelectorAll('a,button'), i;
+   for(i=0;i<els.length;i++){ if(norm(els[i].textContent)==='edit') return els[i]; }
+   return null;
+ }
+ async function openPerson(p){
+   /* Do not read ids out of the page. The harvest looked for
+      <a href="/employees/123/...">Edit</a> and the roster has NO such link --
+      not one in the whole page -- so every person came back "not found" while
+      sitting right there on screen. Filter to them, click their Edit, and read
+      where the app lands. Nothing about the row's markup has to be guessed. */
+   /* Already looking at the roster? Then do not route anywhere -- the filter
+      row being on screen is the only thing that matters, and a needless route
+      change is one more thing to go wrong. */
+   var f=filterBoxes();
+   if(!f){
+     if(!(await goSpa('/roster'))) return null;
+     await sleep(1000);
+     f=filterBoxes();
+   }
+   var parts=norm(p.name).split(' ');
+   if(f){
+     f.last.value=p.find||parts[parts.length-1];
+     f.last.dispatchEvent(new Event('input',{bubbles:true}));
+     f.last.dispatchEvent(new Event('change',{bubbles:true}));
+     ngApply(f.last); applyFilters(); await sleep(1300);
+   }
+   var row=rowFor(p); if(!row) return null;
+   var ed=editControl(row); if(!ed) return null;
+   ed.click();
+   var waited=0;
+   while(waited<8000){
+     await sleep(300); waited+=300;
+     var m=(location.pathname||'').match(/\/employees\/(\d+)/);
+     if(m){
+       var map=knownIds(); map[norm(p.name)]=m[1];
+       try{ localStorage.setItem(IDKEY,JSON.stringify(map)); }catch(e){}
+       return m[1];
+     }
+   }
+   return null;
+ }
+ /* exposed so the way in can be tested, and so a stuck run can be poked at
+    from the console without re-reading this whole script */
+ window.__ansOpen=openPerson;
  async function runPerson(p,say){
    var id=idFor(p);
+   if(!id){ say(p.name+': finding them…'); id=await openPerson(p); }
    if(!id){ say(p.name+': not on the Pending list — skipped'); return false; }
    var tabs=[['employment','/employees/'+id+'/edit/employment-record'],
              ['profile','/employees/'+id+'/edit/user-profile'],
