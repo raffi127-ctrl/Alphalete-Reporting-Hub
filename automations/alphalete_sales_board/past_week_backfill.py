@@ -33,7 +33,7 @@ except Exception:  # noqa: BLE001 -- Windows console, best effort
     pass
 
 from automations.alphalete_sales_board.talk_to_columns import (
-    ANCHOR, PROD_SHEET_ID, ROLL_CALL, SANDBOX_TAB, TRIO, WEEK_AVG_TK,
+    ANCHOR, DAY_ROW, PROD_SHEET_ID, ROLL_CALL, SANDBOX_TAB, TRIO, WEEK_AVG_TK,
     WEEK_AVG_TT, WEEK_TT, _cell, _col_letter, _labelled_block, day_blocks,
     sub_col)
 
@@ -200,6 +200,48 @@ def main(argv=None) -> int:
                      "values": [[talk]]})
         data.append({"range": "%s%d" % (_col_letter(cols[WEEK_AVG_TT]), r),
                      "values": [[round(talk / days, 1) if days else "-"]]})
+
+    # --- and the Teams block's two per-day cells --------------------------
+    # They are the only cells in that block a formula cannot reach: a finished
+    # week's day columns are gone, so there is no team day count to divide by.
+    # The days ARE known here though -- one rep at a time, off last week's tab --
+    # so they are summed per team and written as VALUES. That is what the block
+    # holds anyway: from Monday on, Eve's roll carries the live numbers across
+    # and nothing here has to run again.
+    team_col = None
+    for c in range(1, len(grid[0]) + 1):
+        if _cell(grid, DAY_ROW, c).strip().lower() == "team":
+            team_col = c
+            break
+    if team_col:
+        days_by_team, all_days = {}, 0
+        for r in range(4, last + 1):
+            nm, team = _cell(grid, r, nc), _cell(grid, r, team_col)
+            got = prev.get(_norm(nm))
+            if not nm or not got:
+                continue
+            days_by_team[team] = days_by_team.get(team, 0) + got[0]
+            all_days += got[0]
+        int_c = sub_col(grid, b, "INT") or sub_col(grid, b, "Int")
+        team_rows = [r for r in range(last + 2, len(grid) + 1)
+                     if _cell(grid, r, int_c or 1)]
+        tt_c = cols[WEEK_TT]
+        for r in team_rows:
+            label = _cell(grid, r, 3)
+            d = all_days if "TOTALS" in label.upper() else days_by_team.get(label)
+            if not d:
+                continue
+            for col, src_col in ((cols[WEEK_AVG_TK], tk_c),
+                                 (cols[WEEK_AVG_TT], tt_c)):
+                try:
+                    v = float(_cell(grid, r, src_col) or 0)
+                except ValueError:
+                    continue
+                data.append({"range": "%s%d" % (_col_letter(col), r),
+                             "values": [[round(v / d, 1)]]})
+        print("  equipos: %s" % ", ".join(
+            "%s=%d dias" % (k or "(sin equipo)", v)
+            for k, v in sorted(days_by_team.items()) if v))
 
     print("%r <- %r" % (a.tab, a.from_tab))
     print("  %d rep(s) emparejados, %d sin par en la semana pasada" % (hit, len(miss)))
