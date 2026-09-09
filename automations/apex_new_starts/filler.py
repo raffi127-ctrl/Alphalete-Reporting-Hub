@@ -218,6 +218,28 @@ _JS = r"""
    if(hid&&(!bound||norm(bound)===norm(v))) return false;   /* free text, not a real pick */
    return true;
  }
+ async function keyboardPick(sp,el,v){
+   /* Kendo dropdowns support type-ahead: focus the widget and type the first
+      letters and it selects the matching item itself -- which means Kendo does
+      the binding, not us. Worth trying when a click updates the display and
+      leaves the id empty. */
+   var target=visibleInput(sp)||sp;
+   target.focus();
+   var i, ch;
+   for(i=0;i<v.length&&i<12;i++){
+     ch=v.charAt(i);
+     target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:ch}));
+     target.dispatchEvent(new KeyboardEvent('keypress',{bubbles:true,key:ch}));
+     target.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:ch}));
+     await sleep(40);
+   }
+   target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',keyCode:13}));
+   target.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',keyCode:13}));
+   await sleep(200);
+   ngApply(el);
+   TRACE.push('typeahead -> bound "'+String(boundValue(el)).slice(0,20)+'"');
+   return bindingLooksReal(el,v);
+ }
  async function kendoClick(el,v){
    TRACE=[];
    /* Drive the dropdown the way a person does: click it, wait for the list,
@@ -258,8 +280,8 @@ _JS = r"""
      TRACE.push('after arrow click: '+lists.length);
    }
    if(!lists.length){
-     /* last resort: type, whatever the widget calls itself */
      if(await typeInto(sp,v)) return true;
+     if(await keyboardPick(sp,el,v)) return true;
      return false;
    }
    var want=norm(v), i, j, items, best=null;
@@ -289,7 +311,14 @@ _JS = r"""
    fire(best,'mouseover'); fire(best,'mousedown'); fire(best,'mouseup'); fire(best,'click');
    await sleep(150);
    ngApply(el);
-   if(!bindingLooksReal(el,v)){ TRACE.push('clicked but binding empty'); return false; }
+   if(!bindingLooksReal(el,v)){
+     /* The option was clicked and the display changed, but the id behind it is
+        still empty -- State did exactly this. Let Kendo make the selection
+        itself via type-ahead, so the binding is its own doing. */
+     TRACE.push('clicked but binding empty; trying type-ahead');
+     if(await keyboardPick(sp,el,v)) return true;
+     return false;
+   }
    return true;
  }
  function boundValue(el){
