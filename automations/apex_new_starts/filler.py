@@ -78,7 +78,35 @@ SECURITY_ROLE_LABEL = "Sales Rep"
 
 _JS = r"""
 (function(){
- var D=%(data)s, KEY='apexNewStarts.%(week)s';
+ var KEY='apexNewStarts.%(week)s', DKEY=KEY+'.data';
+ /* The week's people live in this browser, not inside the button. Carrying
+    them meant a saved bookmark froze that week's data AND that day's code, so
+    every change cost a delete, a copy and a re-drag. Saved once now; a new
+    week is a paste. */
+ var D=%(data)s;
+ if(!D){ try{ D=JSON.parse(localStorage.getItem(DKEY)||'null'); }catch(e){} }
+ if(!D||!D.length){
+   var o0=document.getElementById('anspanel'); if(o0) o0.remove();
+   var w0=document.createElement('div'); w0.id='anspanel';
+   w0.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;background:#fff;border:2px solid #0F766E;border-radius:10px;padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:340px';
+   w0.innerHTML='<div style="font-weight:700">No list loaded for %(week)s</div>'+
+     '<div style="color:#555;margin:4px 0 8px;font-size:12px">On the Fill Apex page click '+
+     '<b>Copy this week&#39;s list</b>, then paste it here.</div>'+
+     '<textarea id="anspaste" style="width:100%%;height:70px;font-size:11px"></textarea>'+
+     '<div style="margin-top:8px"><button id="anssave" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer">Load it</button> '+
+     '<span id="anspmsg" style="font-size:12px;color:#b00"></span></div>';
+   document.body.appendChild(w0);
+   document.getElementById('anssave').onclick=function(){
+     try{
+       var parsed=JSON.parse(document.getElementById('anspaste').value);
+       if(!parsed||!parsed.length) throw 0;
+       localStorage.setItem(DKEY,JSON.stringify(parsed));
+       w0.remove();
+       alert('Loaded '+parsed.length+' people for %(week)s.\nClick the button again.');
+     }catch(e){ document.getElementById('anspmsg').textContent='That is not the list — copy it again.'; }
+   };
+   return;
+ }
  var I=0; try{ I=parseInt(localStorage.getItem(KEY)||'0',10)||0; }catch(e){}
  if(I>=D.length){ alert('All '+D.length+' done for %(week)s.\nTo start again, click this and choose Reset.'); }
  function norm(t){ return (t||'').replace(/\*/g,'').replace(/\s+/g,' ').trim().toLowerCase(); }

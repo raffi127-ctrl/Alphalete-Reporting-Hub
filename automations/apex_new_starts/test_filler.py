@@ -109,7 +109,8 @@ def test_no_social_ever_rides_in_the_button():
     from automations.apex_new_starts import filler as F
 
     js = F.build_js(PEOPLE, "WE 9.13")
-    payload = js.split("var D=", 1)[1].rsplit(", KEY=", 1)[0]
+    # the payload now sits on its own after `var D=` and ends at the semicolon
+    payload = js.split("var D=", 1)[1].split("; if(!D)", 1)[0]
     data = json.loads(payload)                 # the only data the button holds
 
     for person in data:
@@ -1002,3 +1003,41 @@ def test_every_row_of_the_setup_form_links_to_that_persons_packet(page, tmp_path
     assert hrefs[1].endswith("search=Vega")
     for h in hrefs:
         assert "blueinkprod.s3" not in h and "signed.pdf" not in h
+
+
+def test_the_code_only_button_asks_for_the_list(page, tmp_path):
+    """This is the exact thing the page ships, and it was completely broken:
+    the paste-panel code silently failed to apply, so the button was emitted
+    with `var D=null` and died on the next line reading D.length. Nothing
+    appeared at all when clicked. Every test until now passed the people IN,
+    so none of them exercised what the page actually hands out."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>apex</h1>")
+    page.goto(f.as_uri())
+
+    shipped = filler.build_js(None, "WE 9.13")      # code only, as shipped
+    page.evaluate(shipped[len("javascript:"):])
+    assert page.locator("#anspaste").count() == 1, "the paste box must appear"
+
+    page.locator("#anspaste").fill(filler.data_json(
+        [{"name": "A Person", "find": "Person",
+          "pages": {"profile": {"City": "Plano"}}}]))
+    page.locator("#anssave").click()
+    assert page.evaluate(
+        "() => !!localStorage.getItem('apexNewStarts.WE 9.13.data')")
+
+    page.evaluate(shipped[len("javascript:"):])
+    assert page.locator("#ansrun").count() == 1, "then the real panel"
+    assert "A Person" in page.locator("#anspanel").inner_text()
+
+
+def test_rubbish_pasted_in_is_refused(page, tmp_path):
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>apex</h1>")
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(None, "WE 9.13")[len("javascript:"):])
+    page.locator("#anspaste").fill("not json at all")
+    page.locator("#anssave").click()
+    assert "not the list" in page.locator("#anspmsg").inner_text()
+    assert page.evaluate(
+        "() => localStorage.getItem('apexNewStarts.WE 9.13.data')") is None
