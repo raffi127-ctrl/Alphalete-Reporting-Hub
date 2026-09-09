@@ -460,39 +460,47 @@ def _main(argv=None) -> int:
             return 1
 
     if args.sync_completed:
+        # THE TICKING GOES THROUGH THE API, and needs no browser session at all
+        # (Megan's call, 2026-09-09). The browser session on Lucy 2 expired
+        # twice in a fortnight, each time silently stopping the marking, and it
+        # cannot be renewed remotely -- a login is Google SSO and nothing here
+        # types a password. Reads over the API don't touch the send quota, so
+        # the sweep simply stops depending on the fragile thing.
         try:
             n = _sync_completed(ws, people, headless=not args.headed,
                                 use_api=not args.sweep_browser)
-            # Tick FIRST, then prove the BROWSER session is alive -- separately,
-            # and on every sweep. Otherwise that check only happens as a side
-            # effect of having work to do and of the API route being absent, so
-            # "nothing to tick" and "can't see Blue Ink at all" print the same
-            # line and exit the same way. That is how a dead session on Lucy 2
-            # hid for two days while the alert built to catch it never fired:
-            # nothing raised. The browser matters even when the API carries the
-            # ticking, because the Monday SEND can only go through the web app --
-            # this turns "the send dies on Monday" into "someone re-seeds on
-            # Thursday".
-            completed.verify_ui_session(headless=not args.headed)
         except Exception as exc:
-            # A dead session exits 2 correctly -- and that exit code went
-            # NOWHERE, because this job deliberately doesn't publish to the
-            # Hub. Fourteen silent failures a day is how 2026-09-07 came to be
-            # found by hand, a day late. Now it says so, once.
-            #
-            # Still reachable, and still worth alerting on: the sweep now asks
-            # the API first, so a dead session only gets this far when THAT
-            # route was unavailable too (no blueink-creds.json on the machine).
-            # Which is precisely when a human is needed -- so the alert means
-            # more than it used to, not less.
+            # Only reachable when the API route was unavailable too (no
+            # blueink-creds.json here) AND the browser fallback couldn't sign
+            # in -- i.e. the machine genuinely can't see Blue Ink by any route.
             if session_alert.looks_dead(exc):
                 session_alert.alert_dead(
                     exc, what_failed="the every-2-hours completed sweep",
                     dry_run=not args.slack)
             raise
-        session_alert.clear(dry_run=not args.slack)
         print(f"Checked off {n} completed packet(s) in {config.COL_BLUEINK!r} "
               f"on {ws.title!r}.")
+
+        # The browser session still matters -- but for MONDAY'S SEND, which is
+        # the one thing the API can't do (its bundles bill as Bulk Envelopes,
+        # 50/year, long spent). So it's checked here, ADVISORY: a dead session
+        # is worth someone's attention days early, and is not a reason to fail
+        # a sweep that just did its job. The alert dedupes to one post per
+        # outage, so this cannot nag every two hours.
+        try:
+            completed.verify_ui_session(headless=not args.headed)
+            session_alert.clear(dry_run=not args.slack)
+        except Exception as exc:
+            if session_alert.looks_dead(exc):
+                print("\n⚠️  Ticking is fine, but this machine can't sign in to "
+                      "Blue Ink, so MONDAY'S SEND would fail. Raising it now "
+                      "rather than on Monday morning.")
+                session_alert.alert_dead(
+                    exc, what_failed="Monday's 7:30am send (the sweep itself "
+                                     "is unaffected -- it reads via the API)",
+                    dry_run=not args.slack)
+            else:
+                print(f"\n(couldn't check send-readiness: {exc})")
         return 0
 
     if args.highlight_only:

@@ -260,5 +260,85 @@ def main(argv=None) -> int:
     return 0
 
 
+# --- shipping a session to a runner ---------------------------------------
+#
+# Megan can't get to Lucy 2, and a login can't be automated (Google SSO, and
+# nothing here types a password). So the session has to travel FROM wherever a
+# human did sign in.
+#
+# storage_state was tried first and does NOT work: it carries cookies and
+# localStorage only, and this app keeps what it needs elsewhere (see
+# open_context). The PROFILE is the real session -- but 57MB of it is caches,
+# and the cred channel is one Google Sheet cell.
+#
+# These are the files that actually carry the login. Verified 2026-09-09: a
+# profile holding ONLY these authenticates, and packs to ~39K of base64 --
+# inside a cell's 50K limit. Everything else Chrome rebuilds by itself.
+PROFILE_AUTH_PARTS = (
+    "Local State",
+    "Default/Cookies",
+    "Default/Preferences",
+    "Default/Local Storage",
+    "Default/Session Storage",
+)
+
+
+def pack_profile() -> str:
+    """This machine's profile auth files, as one base64 tar.gz string."""
+    import base64
+    import io
+    import tarfile
+    if not have_profile():
+        raise RuntimeError(
+            "No Blue Ink profile on this machine to pack. Sign in first: "
+            "python -m automations.blueink_docs.session --login")
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for rel in PROFILE_AUTH_PARTS:
+            src = PROFILE_DIR / rel
+            if src.exists():
+                tar.add(str(src), arcname=rel)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def install_profile(b64: str) -> str:
+    """Unpack a pushed profile over this machine's, keeping the old one."""
+    import base64
+    import io
+    import shutil
+    import tarfile
+    blob = base64.b64decode(b64)
+    tmp = PROFILE_DIR.parent / (PROFILE_DIR.name + ".incoming")
+    if tmp.exists():
+        shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
+        for m in tar.getmembers():
+            # Refuse anything that would write outside the profile, or a link
+            # pointing somewhere else. The blob arrives via a shared Sheet, so
+            # it does not get the benefit of the doubt.
+            dest = (tmp / m.name).resolve()
+            if not str(dest).startswith(str(tmp.resolve())):
+                raise RuntimeError(
+                    "refusing tar member outside the profile: " + m.name)
+            if m.issym() or m.islnk():
+                raise RuntimeError(
+                    "refusing a link in the profile archive: " + m.name)
+        tar.extractall(str(tmp))
+    if PROFILE_DIR.exists():
+        old = PROFILE_DIR.parent / (PROFILE_DIR.name + ".replaced")
+        shutil.rmtree(old, ignore_errors=True)
+        # MOVED aside, not deleted: if the pushed session turns out to be stale
+        # the machine still has whatever it had before.
+        shutil.move(str(PROFILE_DIR), str(old))
+    shutil.move(str(tmp), str(PROFILE_DIR))
+    try:
+        PROFILE_DIR.chmod(0o700)
+    except Exception:                          # noqa: BLE001
+        pass
+    n = sum(1 for f in PROFILE_DIR.rglob("*") if f.is_file())
+    return "%d file(s) installed into %s" % (n, PROFILE_DIR.name)
+
+
 if __name__ == "__main__":
     sys.exit(main())
