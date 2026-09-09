@@ -1328,3 +1328,66 @@ def _posts(P, res, *, enabled):
         P.notify("k", res, enabled=enabled)
         return [k.kwargs.get("text") for k
                 in c.return_value.chat_postMessage.call_args_list]
+
+
+# --- taking an office back out ----------------------------------------------
+
+def test_remove_takes_an_office_out_of_the_registry(tmp_path, monkeypatch):
+    """`_merge_json` only adds or updates, so switching an office off in the
+    Sheet leaves a disabled row in the JSON forever. This is the other half."""
+    j = tmp_path / "onboarded_offices.json"
+    j.write_text(json.dumps([{"key": "keep", "enabled": True},
+                             {"key": "zztest", "enabled": False}]))
+    monkeypatch.setattr(A, "ONBOARDED_JSON", j)
+    out = A.remove("zztest", write=True)
+    assert "removed 'zztest'" in out
+    assert [r["key"] for r in json.loads(j.read_text())] == ["keep"]
+
+
+def test_remove_is_a_dry_run_without_write(tmp_path, monkeypatch):
+    j = tmp_path / "onboarded_offices.json"
+    j.write_text(json.dumps([{"key": "zztest", "enabled": False}]))
+    monkeypatch.setattr(A, "ONBOARDED_JSON", j)
+    assert "DRY-RUN" in A.remove("zztest", write=False)
+    assert len(json.loads(j.read_text())) == 1
+
+
+def test_removing_a_live_office_says_so_loudly(tmp_path, monkeypatch):
+    """Taking a switched-ON office out is a real thing to want — it is how a
+    test office stops sending — but it is also how a board silently disappears,
+    so it must never happen quietly."""
+    j = tmp_path / "onboarded_offices.json"
+    j.write_text(json.dumps([{"key": "live", "enabled": True}]))
+    monkeypatch.setattr(A, "ONBOARDED_JSON", j)
+    assert "SWITCHED ON" in A.remove("live", write=True)
+
+
+def test_removing_something_absent_changes_nothing(tmp_path, monkeypatch):
+    j = tmp_path / "onboarded_offices.json"
+    j.write_text(json.dumps([{"key": "keep", "enabled": True}]))
+    monkeypatch.setattr(A, "ONBOARDED_JSON", j)
+    assert "no office 'nope'" in A.remove("nope", write=True)
+    assert len(json.loads(j.read_text())) == 1
+
+
+def test_an_unreadable_registry_is_not_rewritten(tmp_path, monkeypatch):
+    """Refuse rather than replace a file we could not parse — a corrupt read
+    turning into a one-line rewrite would take every office out at once."""
+    j = tmp_path / "onboarded_offices.json"
+    j.write_text("{ this is not json")
+    monkeypatch.setattr(A, "ONBOARDED_JSON", j)
+    assert "refusing to rewrite" in A.remove("x", write=True)
+    assert j.read_text() == "{ this is not json"
+
+
+def test_delete_removes_every_row_for_a_key(tmp_path, monkeypatch):
+    """save appends and update overwrites the LAST match, so a key can have
+    more than one row. Deleting one of two leaves a sign-up that still reads
+    as live to plan()."""
+    f = tmp_path / "subs.json"
+    f.write_text(json.dumps([{"key": "a"}, {"key": "zz"}, {"key": "zz"}]))
+    monkeypatch.setattr(store, "_LOCAL_FALLBACK", f)
+    monkeypatch.setattr(store, "_CLIENT", None)
+    assert store.delete("zz") == "local"
+    assert [d["key"] for d in json.loads(f.read_text())] == ["a"]
+    assert store.delete("zz") == "missing"

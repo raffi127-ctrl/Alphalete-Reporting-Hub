@@ -134,6 +134,39 @@ def update(rec: DispositionRecord) -> str:
     return "local"
 
 
+def delete(key: str) -> str:
+    """Remove EVERY row for this office key. -> "sheet" | "local" | "missing"
+
+    Rows, plural: `save` appends and `update` overwrites the last match, so a
+    key can legitimately have more than one row (an owner who re-submitted after
+    being wired). Deleting one of two would leave a sign-up that still reads as
+    live to `plan()`.
+
+    Deletes bottom-up — removing row 5 renumbers everything below it, so
+    top-down deletion skips rows.
+    """
+    ws = _ws()
+    if ws is not None:
+        keys = ws.col_values(1)
+        rows = [i for i, k in enumerate(keys[1:], start=2) if k == key]
+        if not rows:
+            return "missing"
+        for row_i in reversed(rows):
+            ws.delete_rows(row_i)
+        return "sheet"
+    if not _LOCAL_FALLBACK.exists():
+        return "missing"
+    try:
+        data = json.loads(_LOCAL_FALLBACK.read_text())
+    except Exception:                                # noqa: BLE001
+        return "missing"
+    kept = [d for d in data if d.get("key") != key]
+    if len(kept) == len(data):
+        return "missing"
+    _LOCAL_FALLBACK.write_text(json.dumps(kept, indent=2))
+    return "local"
+
+
 def load_one(key: str) -> "Optional[dict]":
     """The (last) submission for this office key, or None."""
     hit = None

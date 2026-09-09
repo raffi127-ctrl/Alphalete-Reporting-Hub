@@ -682,7 +682,7 @@ def _publish_rerun_done(report_id: str, display_name: str, ok: bool,
 
 
 def _action_onboard_apply(args: str) -> tuple[bool, str]:
-    """onboard_apply <kind> <key> [--post] [--dry-run]: materialize a pending
+    """onboard_apply <kind> <key> [--post] [--dry-run] [--remove]: materialize a pending
     enrollment from the onboarding Sheet into the working tree (apply --write) so
     the office joins the morning run — and, with --post, immediately run its
     report so it posts to its channel.
@@ -702,6 +702,7 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
         parts = (args or "").split()
     post = "--post" in parts
     dry = "--dry-run" in parts
+    remove = "--remove" in parts
     parts = [p for p in parts if not p.startswith("--")]
     if len(parts) < 2:
         return False, ("onboard_apply needs '<kind> <key>' "
@@ -729,6 +730,11 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
         # step that would otherwise be Megan's.
         from automations.disposition_signup import store as _st, apply as _ap
         _st.set_client(gc)
+        if remove:
+            # Applying can only add or update, so switching an office off in
+            # the Sheet leaves a disabled row in the registry forever. This is
+            # how it comes back out.
+            return True, _ap.remove(key, True)
         rc = _ap.main(["--only", key, "--write"])
         if rc != 0:
             return False, f"apply(disposition) failed for {key!r} (rc={rc})"

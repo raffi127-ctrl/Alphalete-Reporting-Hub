@@ -141,11 +141,56 @@ def _merge_json(rows: "List[dict]", write: bool) -> str:
                             added or "—", updated or "—")
 
 
+def remove(key: str, write: bool) -> str:
+    """Drop an office from the materialized registry. -> a one-line summary.
+
+    `_merge_json` only ever adds or updates, so a wired office cannot be taken
+    out by re-applying — switching it off in the Sheet leaves a disabled row in
+    the JSON forever. This is the other half.
+
+    It removes the ROW, not the sign-up: the Sheet is the record of who asked,
+    and `store.delete` is what forgets that.
+    """
+    if not ONBOARDED_JSON.exists():
+        return "%s does not exist — nothing to remove" % ONBOARDED_JSON.name
+    try:
+        rows = json.loads(ONBOARDED_JSON.read_text())
+    except Exception as e:                           # noqa: BLE001
+        return "couldn't read %s (%s) — refusing to rewrite it" % (
+            ONBOARDED_JSON.name, type(e).__name__)
+    kept = [r for r in rows if r.get("key") != key]
+    if len(kept) == len(rows):
+        return "no office %r in %s" % (key, ONBOARDED_JSON.name)
+    gone = [r for r in rows if r.get("key") == key]
+    # Say it out loud rather than refusing: taking a LIVE office out is a real
+    # thing to want (it is how a test office stops sending), but it is also how
+    # a board silently disappears, so it must never happen quietly.
+    live = [r for r in gone if r.get("enabled")]
+    note = ""
+    if live:
+        note = ("  ** %r was SWITCHED ON — its board stops now. **"
+                % key)
+    if write:
+        tmp = ONBOARDED_JSON.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(kept, indent=2))
+        tmp.replace(ONBOARDED_JSON)
+    return "removed %r from %s (%d office(s) left)%s%s" % (
+        key, ONBOARDED_JSON.name, len(kept), note,
+        "" if write else "   [DRY-RUN — not written]")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="disposition_signup.apply")
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--only", default=None)
+    ap.add_argument("--remove", default=None, metavar="KEY",
+                    help="take this office OUT of the materialized registry "
+                         "(applying can only add or update)")
     args = ap.parse_args(argv)
+
+    if args.remove:
+        print(remove(args.remove, args.write))
+        return 0
 
     plans = plan()
     if args.only:
