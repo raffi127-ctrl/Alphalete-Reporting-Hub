@@ -444,3 +444,49 @@ def test_an_option_list_with_no_kendo_classes_still_works(page):
     _settled(page)
     assert page.locator("#GenderID_9").input_value() == "Male"
     assert page.locator("#gpop").is_hidden()
+
+
+PENDING_LIST = """
+<!doctype html><html><body>
+<table><tbody>
+<tr><td>Aundre</td><td>Browder</td><td>aundrebrowder22@gmail.com</td>
+    <td><a href="/employees/2816109/edit/employment-record">Edit</a></td></tr>
+<tr><td>tayshaun</td><td>funches</td><td>1835950@apex</td>
+    <td><a href="/employees/2816110/edit/employment-record">Edit</a></td></tr>
+</tbody></table>
+</body></html>
+"""
+
+
+def _served(page, html, tmp_path):
+    """A real origin. about:blank has no localStorage -- the button copes
+    (every access is wrapped) but a test has to be able to read it back."""
+    f = tmp_path / "page.html"
+    f.write_text(html)
+    page.goto(f.as_uri())
+
+
+def test_it_learns_where_everyone_is_from_the_pending_list(page, tmp_path):
+    """Finding 23 people by hand in a list, three tabs each, is the slowest
+    part of the job. Every row's Edit link carries the employee's id, so one
+    click on that list is enough to jump straight to people afterwards."""
+    _served(page, PENDING_LIST, tmp_path)
+    people = [{"name": "Aundre Browder", "find": "Browder", "fields": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+
+    stored = page.evaluate(
+        "() => JSON.parse(localStorage.getItem('apexNewStarts.WE 9.13.ids'))")
+    assert stored["aundre browder"] == "2816109"
+    assert stored["tayshaun funches"] == "2816110"
+    # and the panel now offers the three tabs for this person
+    assert page.locator("#ansg1").count() == 1
+    assert page.locator("#ansg3").count() == 1
+
+
+def test_without_that_list_it_says_how_to_teach_it(page, tmp_path):
+    _served(page, "<h1>somewhere else</h1>", tmp_path)
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": "Nobody Known", "find": "Known", "fields": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    assert page.locator("#ansg1").count() == 0
+    assert "Pending" in page.locator("#anspanel").inner_text()

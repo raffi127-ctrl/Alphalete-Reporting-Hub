@@ -129,16 +129,29 @@ _JS = r"""
    }
    return out;
  }
+ var TRACE=[];
  async function kendoClick(el,v){
+   TRACE=[];
    /* Drive the dropdown the way a person does: click it, wait for the list,
       click the option. This is the ONLY approach that does not depend on how
       kendo-angular wired the widget -- .data() and kendo.widgetInstance both
       came back empty on the live page, while the NumericTextBox answered fine.
       A real click can't be wrong about that. */
-   var sp=widgetSpan(el); if(!sp) return false;
+   var sp=widgetSpan(el);
+   TRACE.push('span: '+(sp?(sp.className||'').split(' ').slice(0,2).join('.'):'NONE'));
+   if(!sp) return false;
    fire(sp,'mousedown'); fire(sp,'mouseup'); fire(sp,'click');
    var lists=[], waited=0;
    while(waited<2000){ lists=openLists(); if(lists.length) break; await sleep(100); waited+=100; }
+   TRACE.push('lists after '+waited+'ms: '+lists.length);
+   if(!lists.length){
+     /* Some widgets only open from the arrow, or from the input inside */
+     var alt=sp.querySelector('.k-select,.k-icon,.k-input')||sp;
+     fire(alt,'mousedown'); fire(alt,'mouseup'); fire(alt,'click');
+     waited=0;
+     while(waited<1500){ lists=openLists(); if(lists.length) break; await sleep(100); waited+=100; }
+     TRACE.push('after arrow click: '+lists.length);
+   }
    if(!lists.length) return false;
    var want=norm(v), i, j, items, best=null;
    for(i=0;i<lists.length&&!best;i++){
@@ -156,7 +169,13 @@ _JS = r"""
        if(t3&&t3.indexOf(want)>=0){ best=items[j]; break; }
      }
    }
-   if(!best){ fire(sp,'mousedown'); fire(document.body,'click'); return false; }
+   if(!best){
+     var names=[], L, M;
+     for(L=0;L<lists.length;L++){ var it=lists[L].querySelectorAll('li,[role="option"]');
+       for(M=0;M<it.length&&M<8;M++) names.push(norm(it[M].textContent).slice(0,18)); }
+     TRACE.push('wanted "'+want+'" — saw: '+(names.join(' | ')||'(no items)'));
+     fire(sp,'mousedown'); fire(document.body,'click'); return false;
+   }
    best.scrollIntoView({block:'nearest'});
    fire(best,'mouseover'); fire(best,'mousedown'); fire(best,'mouseup'); fire(best,'click');
    await sleep(150);
@@ -277,6 +296,36 @@ _JS = r"""
       would not match got reported as "not an Apex form". */
    return {done:done,miss:miss,found:found};
  }
+ var IDKEY=KEY+'.ids';
+ function knownIds(){
+   try{ return JSON.parse(localStorage.getItem(IDKEY)||'{}'); }catch(e){ return {}; }
+ }
+ function learnIds(){
+   /* On the Pending list every row's Edit link carries the employee's id.
+      Harvest them once and the panel can jump straight to each person after
+      that -- finding 23 people by hand in a list is the slowest part of the
+      whole job. */
+   var map=knownIds(), links=document.querySelectorAll('a[href*="/employees/"]'), n=0, i;
+   for(i=0;i<links.length;i++){
+     var m=(links[i].getAttribute('href')||'').match(/\/employees\/(\d+)/);
+     if(!m) continue;
+     var row=links[i].closest('tr'); if(!row) continue;
+     var cells=row.querySelectorAll('td'); if(cells.length<2) continue;
+     var nm=norm(cells[0].textContent)+' '+norm(cells[1].textContent);
+     if(!nm.trim()) continue;
+     if(!map[nm.trim()]){ n++; }
+     map[nm.trim()]=m[1];
+   }
+   try{ localStorage.setItem(IDKEY,JSON.stringify(map)); }catch(e){}
+   return n;
+ }
+ function idFor(p){
+   var map=knownIds(), want=norm(p.name);
+   if(map[want]) return map[want];
+   var k; for(k in map){ if(k===want||k.indexOf(want)>=0||want.indexOf(k)>=0) return map[k]; }
+   return null;
+ }
+ function go(id,tab){ location.href='/employees/'+id+'/edit/'+tab; }
  function ssnBoxes(){ var a=fieldFor('SSN')||fieldFor('Change SSN'),
                       b=fieldFor('Confirm SSN'); return (a&&b)?[a,b]:null; }
  function genderBox(p){
@@ -292,7 +341,8 @@ _JS = r"""
  var p=D[Math.min(I,D.length-1)];
  var box=document.createElement('div'); box.id='anspanel';
  box.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;background:#fff;border:2px solid #0F766E;border-radius:10px;padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:330px';
- var ssn=ssnBoxes(), gnd=genderBox(p);
+ var found=learnIds();
+ var ssn=ssnBoxes(), gnd=genderBox(p), nav=idFor(p);
  box.innerHTML='<div style="font-weight:700;font-size:16px">'+p.name+'</div>'+
    '<div style="color:#555;margin:2px 0 10px">'+(I+1)+' of '+D.length+' · %(week)s</div>'+
    (gnd?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Gender <span style="color:#b00">(required, not on the board)</span></div>'+
@@ -302,11 +352,23 @@ _JS = r"""
         '<input id="ansssn" type="password" style="width:100%%;padding:6px;font-size:15px">'+
         '<div style="margin-top:6px"><a href="'+blueink(p)+'" target="_blank" rel="noopener" id="ansbi" style="font-size:12px;color:#0F766E">Open their Blue Ink packet →</a>'+
         '<span style="font-size:11px;color:#888"> (I-9 → Quick View)</span></div></div>':'')+
+   (nav?'<div style="margin-bottom:8px;font-size:12px">'+
+        '<a href="#" id="ansg1">1 Employment</a> · <a href="#" id="ansg2">2 Profile</a>'+
+        ' · <a href="#" id="ansg3">3 Tax</a></div>':
+        '<div style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
+        '<b>Pending</b> list and it will learn where everyone is, then jump you straight to them.</div>')+
    '<button id="ansfill" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer">Fill this page</button> '+
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved → next</button>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
    '<div style="margin-top:8px"><a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
  document.body.appendChild(box);
+ if(nav){
+   document.getElementById('ansg1').onclick=function(e){e.preventDefault();go(nav,'employment-record');};
+   document.getElementById('ansg2').onclick=function(e){e.preventDefault();go(nav,'user-profile');};
+   document.getElementById('ansg3').onclick=function(e){e.preventDefault();go(nav,'bank-info');};
+ }
+ if(found) document.getElementById('ansout').innerHTML=
+   'Learned where '+found+' more people are. Click <b>1 Employment</b> to start on '+p.name+'.';
  document.getElementById('ansfill').onclick=async function(){
    document.getElementById('ansout').innerHTML='filling...';
    var r=await fill(p);
@@ -326,7 +388,8 @@ _JS = r"""
    var g=document.getElementById('ansgender');
    if(g&&g.value){ var gb=genderBox(p);
      if(gb&&await setVal(gb,g.value)){ msg+='; gender '+g.value; }
-     else msg+='; <span style="color:#b00">gender would not set</span>'; }
+     else msg+='; <span style="color:#b00">gender would not set — '+
+       (gb?TRACE.join(' / '):'no Gender box found')+'</span>'; }
    else if(gnd) msg+='<br><span style="color:#b00">Gender is required and '+
      'still empty — pick one above and Fill again, or Apex will refuse to '+
      'save this page.</span>';
@@ -384,7 +447,11 @@ _JS = r"""
  };
  document.getElementById('ansnext').onclick=function(){
    I++; try{ localStorage.setItem(KEY,String(I)); }catch(e){}
-   box.remove(); alert(I>=D.length?'That was the last one.':'Next: '+D[I].name+'\n\nOpen a blank Add Employee form and click the button again.');
+   box.remove();
+   if(I>=D.length){ alert('That was the last one.'); return; }
+   var nid=idFor(D[I]);
+   if(nid){ go(nid,'employment-record'); }        /* straight to the next person */
+   else alert('Next: '+D[I].name+'\n\nOpen their record and click the button again.');
  };
  document.getElementById('ansreset').onclick=function(e){ e.preventDefault();
    try{ localStorage.setItem(KEY,'0'); }catch(err){} box.remove(); alert('Back to the first person.'); };
