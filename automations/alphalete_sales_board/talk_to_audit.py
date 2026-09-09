@@ -52,7 +52,11 @@ def audit(grid, totals_row: int, name_col: int, team_rows) -> list:
             if _cell(grid, r, name_col) or r == totals_row]
     rows += [r for r in team_rows if _cell(grid, r, name_col)]
 
-    def look(block, headers, cols_of, weekly: bool):
+    def look(block, headers, cols_of, weekly: bool, knocks_col=None):
+        """`weekly` blocks answer to Eve's rule: no knocks -> the row is EMPTY,
+        knocks but no derivable value -> '-', a real zero -> 0. So a blank is
+        only wrong on a row that HAS knocks, and a '-' is only wrong on a row
+        that has none."""
         for h in headers:
             c = cols_of(h)
             if not c:
@@ -62,8 +66,17 @@ def audit(grid, totals_row: int, name_col: int, team_rows) -> list:
                 v = _cell(grid, r, c)
                 if any(e in v for e in ERRORS):
                     out.append(("ERROR", r, c, block, h, v))
-                elif not v and weekly:
-                    out.append(("VACIA", r, c, block, h, v))
+                    continue
+                if not weekly or not knocks_col:
+                    continue
+                try:
+                    knocks = float(_cell(grid, r, knocks_col) or 0)
+                except ValueError:
+                    knocks = 0
+                if knocks and not v:
+                    out.append(("VACIA CON KNOCKS", r, c, block, h, v))
+                elif not knocks and v:
+                    out.append(("SIN KNOCKS PERO CON DATO", r, c, block, h, v))
     # the weekly blocks, where a blank is never right
     for label, headers in ([(WEEK_BLOCK, WEEK_HEADERS)]
                            + [(b, WEEK_HEADERS) for b in PAST_BLOCKS]):
@@ -71,7 +84,9 @@ def audit(grid, totals_row: int, name_col: int, team_rows) -> list:
         if not b[0]:
             out.append(("FALTA EL BLOQUE", 0, 0, label, "", ""))
             continue
-        look(label, headers, lambda h, b=b: sub_col(grid, b, h), True)
+        kc = next((sub_col(grid, b, k) for k in ("TK", "EN")
+                   if sub_col(grid, b, k)), None)
+        look(label, headers, lambda h, b=b: sub_col(grid, b, h), True, kc)
     # the day blocks, where a day with nothing is blank ON PURPOSE
     for lab, b in sorted(day_blocks(grid).items(), key=lambda kv: kv[1][0]):
         tk = sub_col(grid, b, ANCHOR)

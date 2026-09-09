@@ -173,6 +173,24 @@ def widths(ss, tab: str, first_col: int) -> list:
 CANT_MEASURE = '"-"'
 
 
+def _no_knocks(row: int, expr: str, names: str, knocks_col: str) -> str:
+    """`expr`, but EMPTY on a rep who has no knocks that week.
+
+    Eve, 2026-09-09, refining the rule: *"cuando en los desgloses semanales va
+    la columna vacia si no hay knocks en un rep y cuando no salio al campo y no
+    tienen knocks, queden sus filas vacias directamente; dejemos los '-' cuando
+    no hay valores posibles a pesar de tener knocks"*.
+
+    So knocks are the gate. No knocks means the rep was never out, and a row of
+    dashes across five columns for somebody who did not work is noise -- the row
+    just stays clean. `-` is reserved for the case that actually needs saying:
+    he WAS out, he knocked, and this particular number still cannot be worked
+    out. And a number that really is 0 stays 0.
+    """
+    return '=IF(OR($%s%d="",N(%s%d)=0),"",%s)' % (
+        names, row, knocks_col, row, expr.lstrip("="))
+
+
 def _no_rep(row: int, expr: str, name_col_letter: str) -> str:
     """`expr`, but blank on a row that holds no rep.
 
@@ -710,7 +728,7 @@ def week_formulas(ss, ws, apply: bool = False) -> int:
         col = _col_letter(wanted[header])
         data.append({
             "range": "%s%d:%s%d" % (col, rows[0], col, rows[-1]),
-            "values": [[_no_rep(r, make(r), names)] for r in rows],
+            "values": [[_no_knocks(r, make(r), names, K)] for r in rows],
         })
         print("  %-26s %s" % (header, col))
 
@@ -803,6 +821,8 @@ def team_totals(ss, ws, apply: bool = False) -> int:
     # `get_all_values()` would hand back the rendered numbers instead.
     grid = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
                   value_render_option="FORMULA")
+    vals = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
+                  value_render_option="FORMATTED_VALUE")
     last = last_rep_row(grid)
     first = SUB_ROW + 1
     lo, hi = running_block(grid)
@@ -850,7 +870,9 @@ def team_totals(ss, ws, apply: bool = False) -> int:
             said.append("  r%-4d %-22s no supe reescribir %r -- salteada"
                         % (r, _cell(grid, r, 3)[:22], base[:40]))
             continue
-        cells = {WEEK_TT: tt}
+        # Even the SUM keeps quiet for a team that did not work: a `0` there
+        # says "they talked to nobody" when the truth is "they were not out".
+        cells = {WEEK_TT: '=IF(N(%s%d)=0,"",%s)' % (K, r, tt.lstrip("="))}
         # Only rows that count a TK of their own get the ratios.
         test = _team_test(base, first, last)
         if _cell(grid, r, col["TK"]).startswith("=") and (
@@ -871,8 +893,14 @@ def team_totals(ss, ws, apply: bool = False) -> int:
                                      CANT_MEASURE))
         # A row that cannot have the four derived cells still must not be
         # BLANK -- '-' says "nothing to measure here", a blank says "broken".
+        # Unless the row has no knocks at all: then it was never out, and the
+        # whole row stays clean (Eve, 2026-09-09).
+        try:
+            worked = float(_cell(vals, r, col["TK"]) or 0) > 0
+        except ValueError:
+            worked = False
         for header in (WEEK_AVG_TK, WEEK_AVG_TT, WEEK_PCT, WEEK_TT_APP):
-            cells.setdefault(header, CANT_MEASURE.strip('"'))
+            cells.setdefault(header, CANT_MEASURE.strip('"') if worked else "")
         for header, formula in cells.items():
             c = _col_letter(col[header])
             data.append({"range": "%s%d" % (c, r), "values": [[formula]]})
@@ -1060,6 +1088,9 @@ def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
     """The formulas for the columns `past_weeks` just inserted."""
     grid = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
                   value_render_option="FORMULA")
+    # A team row's knocks are a SUMIFS, so "did they work" needs the VALUE.
+    vals = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
+                  value_render_option="FORMATTED_VALUE")
     team_rows = None
     data, fmt, said = [], [], []
     for label in PAST_BLOCKS:
@@ -1086,12 +1117,13 @@ def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
             info deducible se ponia '-', y si habia y daba 0 se ponia 0"*. So
             the test is ISNUMBER on the Talk-To's cell, not "is it zero":
             a `-` or a blank there means nobody knows, and `-` says so; a real
-            `0` is data, and `0.0%` is the honest reading of it. Only a row with
-            NO REP stays empty."""
-            return ('=IF($%s%d="","",IF(NOT(ISNUMBER(%s%d)),%s,'
-                    'IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))))'
-                    % (names, r, TT, r, CANT_MEASURE,
-                       den, r, CANT_MEASURE, num, r, den, r, CANT_MEASURE))
+            `0` is data, and `0.0%` is the honest reading of it. A rep with NO
+            KNOCKS gets nothing at all -- see `_no_knocks`."""
+            return _no_knocks(
+                r, '=IF(NOT(ISNUMBER(%s%d)),%s,IF(N(%s%d)=0,%s,'
+                   'IFERROR(%s%d/%s%d,%s)))'
+                % (TT, r, CANT_MEASURE, den, r, CANT_MEASURE,
+                   num, r, den, r, CANT_MEASURE), names, K_)
 
         rows = list(range(SUB_ROW + 1, totals + 1)) + (team_rows or [])
         for r in rows:
@@ -1111,10 +1143,22 @@ def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
         for r in rows:
             if not _cell(grid, r, 3):
                 continue
+            try:
+                worked = float(_cell(grid, r, knocks) or 0) > 0
+            except ValueError:
+                worked = False
             for h in (WEEK_AVG_TK, WEEK_TT, WEEK_AVG_TT):
-                if not _cell(grid, r, cols[h]):
+                now = _cell(grid, r, cols[h])
+                if worked and not now:
+                    # out in the field, but this number is not knowable yet
                     data.append({"range": "%s%d" % (_col_letter(cols[h]), r),
                                  "values": [[CANT_MEASURE.strip('"')]]})
+                elif not worked and now:
+                    # never out: the row goes back to clean. These are VALUE
+                    # columns, so nothing clears them on its own -- a rule that
+                    # changed once has to be able to undo what it wrote before.
+                    data.append({"range": "%s%d" % (_col_letter(cols[h]), r),
+                                 "values": [[""]]})
         # The TOTALS row of the roster gets the same sum its neighbours use --
         # without it the block's own foot is the one cell with no total.
         f = _totals_like(grid, totals, knocks, cols[WEEK_TT])
@@ -1125,10 +1169,19 @@ def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
             base = _cell(grid, r, intc)
             f = swap_col(base, intc, cols[WEEK_TT])
             if f != base:
-                data.append({"range": "%s%d" % (TT, r), "values": [[f]]})
+                data.append({"range": "%s%d" % (TT, r),
+                             "values": [['=IF(N(%s%d)=0,"",%s)'
+                                         % (K_, r, f.lstrip("="))]]})
+            # '-' only for a team that WAS out that week. A team block with no
+            # knocks is a week that team did not work, and its row stays clean.
+            try:
+                worked = float(_cell(vals, r, knocks) or 0) > 0
+            except ValueError:
+                worked = False
             for h in (WEEK_AVG_TK, WEEK_AVG_TT):
                 data.append({"range": "%s%d" % (_col_letter(cols[h]), r),
-                             "values": [[CANT_MEASURE.strip('"')]]})
+                             "values": [[CANT_MEASURE.strip('"') if worked
+                                         else ""]]})
         for h, kind, pattern in ((WEEK_AVG_TK, "NUMBER", "0.0"),
                                  (WEEK_TT, "NUMBER", "0"),
                                  (WEEK_AVG_TT, "NUMBER", "0.0"),

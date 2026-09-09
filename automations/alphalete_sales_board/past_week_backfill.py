@@ -181,6 +181,12 @@ def main(argv=None) -> int:
         nm = _cell(grid, r, nc)
         if not nm:
             continue
+        try:                       # sin knocks esa semana: la fila queda limpia
+            has_knocks = float(_cell(grid, r, tk_c) or 0) > 0
+        except ValueError:
+            has_knocks = False
+        if not has_knocks:
+            continue
         got = prev.get(_norm(nm))
         if not got:
             # A rep who was not on LAST WEEK'S tab at all. Nothing to deduce,
