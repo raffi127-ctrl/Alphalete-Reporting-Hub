@@ -141,6 +141,36 @@ class EmptyCells(unittest.TestCase):
         self.assertEqual(T.CANT_MEASURE, '"-"')
 
 
+class SwapColumn(unittest.TestCase):
+    """Every new column's formula is the neighbour's with the letter changed,
+    so this has to know every reference shape the board actually writes."""
+
+    E, K = 5, 11
+
+    def swap(self, f):
+        return T.swap_col(f, self.E, self.K)
+
+    def test_the_four_shapes(self):
+        for before, after in (
+            ("=SUM($E$158:$E$172)", "=SUM($K$158:$K$172)"),      # TOTALS row
+            ("=SUMIFS($E:$E,$DI:$DI,$C158)",                      # a team row
+             "=SUMIFS($K:$K,$DI:$DI,$C158)"),
+            ('=SUMIFS(E:E,$DI:$DI,"*Andr*")',                     # a sub-crew
+             '=SUMIFS(K:K,$DI:$DI,"*Andr*")'),
+            ("=SUM(E158:E172)", "=SUM(K158:K172)"),
+        ):
+            self.assertEqual(self.swap(before), after)
+
+    def test_it_does_not_maul_a_longer_column_that_ends_in_the_same_letter(self):
+        """'AE158' is Monday's Apps. Swapping E must not turn it into 'AK158'."""
+        self.assertEqual(self.swap("=SUM(AE158)+E4"), "=SUM(AE158)+K4")
+
+    def test_the_criterion_and_the_other_columns_are_left_alone(self):
+        out = self.swap("=SUMIFS($E:$E,$DI:$DI,$C158)")
+        self.assertIn("$DI:$DI", out)
+        self.assertIn("$C158", out)
+
+
 class TeamCriterion(unittest.TestCase):
     """The Teams block has three row shapes. The day count may only be built
     for the ones SUMPRODUCT can actually reproduce."""

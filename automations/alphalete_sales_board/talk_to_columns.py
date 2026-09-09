@@ -326,6 +326,28 @@ def insert_order(jobs):
     return sorted(jobs, key=lambda j: -j[1])
 
 
+def swap_col(formula: str, a_col: int, b_col: int) -> str:
+    """`formula` with every reference to column `a` pointed at column `b`.
+
+    The one trick this whole module leans on: a new column's formula is never
+    written from scratch, it is the NEIGHBOUR'S formula with the letter changed
+    (the same move as `tk_fill.ensure_tk_total`). Whatever row range, whatever
+    `Field Status <> RT` exclusion, whatever team criterion the neighbour uses,
+    the new column inherits — so a template that changes either carries us along
+    instead of leaving us behind.
+
+    Handles the four shapes this board writes: `$AJ:$AJ`, `AJ:AJ`, `AJ158` and
+    `$E$158` -- the last one is the TOTALS row's `=SUM($E$158:$E$172)`, and
+    missing it silently skipped that row.
+    """
+    a, b = _col_letter(a_col), _col_letter(b_col)
+    out = formula.replace("$%s:$%s" % (a, a), "$%s:$%s" % (b, b))
+    out = out.replace("%s:%s" % (a, a), "%s:%s" % (b, b))
+    return re.sub(r"(?<![A-Z0-9])(\$?)%s(\$?)(\d+)" % a,
+                  lambda m: "%s%s%s%s" % (m.group(1), b, m.group(2), m.group(3)),
+                  out)
+
+
 def _totals_like(grid, totals_row: int, model_col: int, want_col: int):
     """The TOTALS-row formula of `model_col`, pointed at `want_col` instead.
 
@@ -823,9 +845,7 @@ def team_totals(ss, ws, apply: bool = False) -> int:
     data, said = [], []
     for r in rows:
         base = _cell(grid, r, col["INT"])
-        tt = base.replace("$%s$" % INT, "$%s$" % TT).replace(
-            "$%s:$%s" % (INT, INT), "$%s:$%s" % (TT, TT)).replace(
-            "%s:%s" % (INT, INT), "%s:%s" % (TT, TT))
+        tt = swap_col(base, col["INT"], col[WEEK_TT])
         if tt == base:
             said.append("  r%-4d %-22s no supe reescribir %r -- salteada"
                         % (r, _cell(grid, r, 3)[:22], base[:40]))
@@ -856,6 +876,47 @@ def team_totals(ss, ws, apply: bool = False) -> int:
                                           "5 columnas" if len(cells) == 5
                                           else "solo Talk-To's (la fila no "
                                                "lleva TK)"))
+    # --- and the SAME three columns inside each day of the Teams block -------
+    # The Teams block repeats the whole per-day layout to the right, in the very
+    # same columns the roster uses (`SUMIFS($AJ:$AJ, $DI:$DI, $C158)` -- the
+    # roster's Monday TK, filtered to one team). Eve, 2026-09-09: those three
+    # were left empty and the day-by-day read is where the coaching happens.
+    #
+    # A row only gets them where it has a TK of its own that day: the two
+    # sub-crews carry Int..NL and nothing else, and inventing a denominator for
+    # them would be worse than the blank they already have.
+    day_cells, day_fmt = 0, []
+    for lab, b in sorted(day_blocks(grid).items(), key=lambda kv: kv[1][0]):
+        apps = b[0]
+        tk = sub_col(grid, b, ANCHOR)
+        tt, pct, avg = (sub_col(grid, b, h) for h in TRIO)
+        if not all((tk, tt, pct, avg)):
+            continue
+        for r in rows:
+            model = _cell(grid, r, tk)
+            if not model.startswith("="):
+                continue
+            f = swap_col(model, tk, tt)
+            if f == model:
+                continue
+            T_, K_, A_ = (_col_letter(c) for c in (tt, tk, apps))
+            for c, formula in (
+                (tt, f),
+                (pct, '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
+                 % (K_, r, CANT_MEASURE, T_, r, K_, r, CANT_MEASURE)),
+                (avg, '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
+                 % (T_, r, CANT_MEASURE, A_, r, T_, r, CANT_MEASURE)),
+            ):
+                data.append({"range": "%s%d" % (_col_letter(c), r),
+                             "values": [[formula]]})
+                day_cells += 1
+        for c, kind, pattern in ((tt, "NUMBER", "0"), (pct, "PERCENT", "0.0%"),
+                                 (avg, "PERCENT", "0.0%")):
+            day_fmt.append(number_format(ws, c, rows[0], rows[-1],
+                                         kind, pattern))
+    said.append("  + %d celda(s) en los bloques por día del cuadro de Teams"
+                % day_cells)
+
     print("Teams: filas %d..%d   dias habiles: %s"
           % (rows[0], rows[-1], ", ".join(_col_letter(b[0]) for b in work)))
     print("\n".join(said))
@@ -870,8 +931,195 @@ def team_totals(ss, ws, apply: bool = False) -> int:
             (WEEK_TT_APP, "NUMBER", "0.0")):
         fmt.append(number_format(ws, col[header], rows[0], rows[-1],
                                  kind, pattern))
-    ss.batch_update({"requests": fmt})
+    ss.batch_update({"requests": fmt + day_fmt})
     print("\nwrote %d cell(s) across %d team row(s)." % (len(data), len(rows)))
+    return 0
+
+
+# The two blocks that hold a FINISHED week. Their sixth metric is the knocks
+# column: 'TK' on LAST WEEK, still 'EN' on PRIOR WEEK until the 9/14 roll
+# renames it ([[project_sales-board-prior-week-header-en-to-tk]]).
+PAST_BLOCKS = ("LAST WEEK'S TOTALS", "PRIOR WEEK'S TOTALS")
+PAST_KNOCKS = ("TK", "EN")
+
+
+def _labelled_block(grid, label: str):
+    """(first_col, last_col) of a row-1 block, out to the next row-1 label."""
+    width = max((len(r) for r in grid), default=0)
+    start = None
+    for c in range(1, width + 1):
+        lab = _cell(grid, DAY_ROW, c)
+        if start is None:
+            if lab.upper() == label.upper():
+                start = c
+        elif lab:
+            return start, c - 1
+    return (start, width) if start else (None, None)
+
+
+def past_weeks(ss, ws, apply: bool = False) -> int:
+    """The five Talk-To columns for LAST WEEK'S and PRIOR WEEK'S TOTALS.
+
+    WHAT CARRIES A NUMBER AND WHAT COMPUTES ONE. On a REP row these blocks hold
+    plain values -- Eve's Monday roll drops last week's numbers in, which is why
+    `APPS` there is `8` and not a formula. So `Total Talk-To's` and the two
+    per-day averages are left for the roll to fill, exactly like their
+    neighbours. On a TEAM row they are `SUMIFS` down the roster's column, so
+    those DO get written, taken from the row's own INT formula with the letter
+    swapped.
+
+    THE TWO RATIOS ARE FORMULAS EVERYWHERE, because both of their inputs sit in
+    the same block: `% of TT's per knock` = Talk-To's / knocks and
+    `AVG TTs per app` = Talk-To's / Apps. They refresh themselves the moment the
+    roll brings the numbers in.
+
+    THE TWO PER-DAY AVERAGES CANNOT BE COMPUTED HERE. A finished week's daily
+    cells are not on this tab any more, so there is no day count to divide by --
+    a team row gets `-` and a rep row waits for the roll, which carries the
+    number the live block already worked out.
+
+    NOTHING SHOWS UNTIL THERE IS SOMETHING TO SHOW. A block whose Talk-To's is
+    empty reads blank, not `0.0%`: this week PRIOR WEEK still holds Energy-era
+    numbers under an `EN` header (Eve, 2026-09-09: *"vamos a dejar las secciones
+    Prior Week sin informacion"*), and a percentage over those would be a made-up
+    number that looks real.
+    """
+    from automations.energy_slack_fill.run import last_rep_row, name_col
+
+    grid = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
+                  value_render_option="FORMULA")
+    totals = last_rep_row(grid) + 1
+    names = _col_letter(name_col(grid))
+    lo, hi = running_block(grid)
+    model = [sub_col(grid, (lo, hi), h) for h in WEEK_HEADERS] if lo else []
+    if not all(model):
+        print("%s no tiene las cinco columnas -- correr --week-formulas primero."
+              % WEEK_BLOCK)
+        return 1
+
+    jobs = []
+    for label in PAST_BLOCKS:
+        b = _labelled_block(grid, label)
+        if not b[0]:
+            print("  ! no hay bloque %r en la fila 1 -- salteado" % label)
+            continue
+        if all(sub_col(grid, b, h) for h in WEEK_HEADERS):
+            print("  %-22s ya tiene las cinco columnas" % label)
+            continue
+        anchor = next((sub_col(grid, b, k) for k in PAST_KNOCKS
+                       if sub_col(grid, b, k)), None)
+        if not anchor:
+            print("  ! %s sin columna de knocks (%s) -- salteado"
+                  % (label, "/".join(PAST_KNOCKS)))
+            continue
+        jobs.append((label, anchor, 5, model[0]))
+        print("  %-22s 5 columnas después de %s (%s)"
+              % (label, _cell(grid, SUB_ROW, anchor), _col_letter(anchor)))
+    if not jobs:
+        # The columns are already there -- fall through to the formulas anyway,
+        # so re-running fixes a formula without needing a fresh insert.
+        return (0 if not apply
+                else _past_weeks_formulas(ss, ws, totals, names))
+    if not apply:
+        print("\npreview only -- re-run with --apply to write.")
+        return 0
+
+    px = widths(ss, ws.title, model[0]) + widths(ss, ws.title, model[0] + 3)
+    for label, anchor, n, s_first in insert_order(jobs):
+        ss.batch_update({"requests": [{"insertDimension": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": anchor, "endIndex": anchor + n},
+            "inheritFromBefore": True}}]})
+        reqs = [{"copyPaste": {          # row 3 only, from RUNNING WEEK's five
+            "source": {"sheetId": ws.id, "startRowIndex": SUB_ROW - 1,
+                       "endRowIndex": SUB_ROW,
+                       "startColumnIndex": s_first - 1,
+                       "endColumnIndex": s_first - 1 + n},
+            "destination": {"sheetId": ws.id, "startRowIndex": SUB_ROW - 1,
+                            "endRowIndex": SUB_ROW,
+                            "startColumnIndex": anchor, "endColumnIndex": anchor + n},
+            "pasteType": "PASTE_NORMAL"}}]
+        for i, size in enumerate(px[:n]):
+            if size:
+                reqs.append({"updateDimensionProperties": {
+                    "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                              "startIndex": anchor + i, "endIndex": anchor + i + 1},
+                    "properties": {"pixelSize": size}, "fields": "pixelSize"}})
+        ss.batch_update({"requests": reqs})
+        print("  %-22s -> %s..%s" % (label, _col_letter(anchor + 1),
+                                     _col_letter(anchor + n)))
+
+    return _past_weeks_formulas(ss, ws, totals, names)
+
+
+def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
+    """The formulas for the columns `past_weeks` just inserted."""
+    grid = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
+                  value_render_option="FORMULA")
+    team_rows = None
+    data, fmt, said = [], [], []
+    for label in PAST_BLOCKS:
+        b = _labelled_block(grid, label)
+        cols = {h: sub_col(grid, b, h) for h in WEEK_HEADERS}
+        apps = sub_col(grid, b, "APPS") or sub_col(grid, b, "Apps")
+        knocks = next((sub_col(grid, b, k) for k in PAST_KNOCKS
+                       if sub_col(grid, b, k)), None)
+        intc = sub_col(grid, b, "INT") or sub_col(grid, b, "Int")
+        if not (all(cols.values()) and apps and knocks and intc):
+            said.append("  ! %s incompleto -- salteado" % label)
+            continue
+        TT = _col_letter(cols[WEEK_TT])
+        K_, A_ = _col_letter(knocks), _col_letter(apps)
+        if team_rows is None:
+            team_rows = [r for r in range(totals + 2, len(grid) + 1)
+                         if _cell(grid, r, intc).startswith("=")]
+
+        def ratio(r, num, den):
+            """Blank until the roll brings Talk-To's, '-' when the denominator
+            is zero, the number otherwise.
+
+            The empty test is `N(TT)=0` and not `TT=""` because a TEAM row's
+            Talk-To's is a `SUMIFS` over an empty column -- it reads 0, not
+            blank, and `0.0%` down the Teams block says last week nobody talked
+            to anybody. In a FINISHED week zero talk-to's is missing data, never
+            a real zero: a team that worked a week talked to someone."""
+            return ('=IF($%s%d="","",IF(N(%s%d)=0,"",IF(N(%s%d)=0,%s,'
+                    'IFERROR(%s%d/%s%d,%s))))'
+                    % (names, r, TT, r, den, r, CANT_MEASURE,
+                       num, r, den, r, CANT_MEASURE))
+
+        rows = list(range(SUB_ROW + 1, totals + 1)) + (team_rows or [])
+        for r in rows:
+            data.append({"range": "%s%d" % (_col_letter(cols[WEEK_PCT]), r),
+                         "values": [[ratio(r, TT, K_)]]})
+            data.append({"range": "%s%d" % (_col_letter(cols[WEEK_TT_APP]), r),
+                         "values": [[ratio(r, TT, A_)]]})
+        # Team rows only: the sum, and a dash where a past week has no days.
+        for r in (team_rows or []):
+            base = _cell(grid, r, intc)
+            f = swap_col(base, intc, cols[WEEK_TT])
+            if f != base:
+                data.append({"range": "%s%d" % (TT, r), "values": [[f]]})
+            for h in (WEEK_AVG_TK, WEEK_AVG_TT):
+                data.append({"range": "%s%d" % (_col_letter(cols[h]), r),
+                             "values": [[CANT_MEASURE.strip('"')]]})
+        for h, kind, pattern in ((WEEK_AVG_TK, "NUMBER", "0.0"),
+                                 (WEEK_TT, "NUMBER", "0"),
+                                 (WEEK_AVG_TT, "NUMBER", "0.0"),
+                                 (WEEK_PCT, "PERCENT", "0.0%"),
+                                 (WEEK_TT_APP, "PERCENT", "0.0%")):
+            fmt.append(number_format(ws, cols[h], SUB_ROW + 1,
+                                     max(team_rows or [totals]), kind, pattern))
+        said.append("  %-22s %s..%s   ratios en %d fila(s), sumas en %d de equipo"
+                    % (label, _col_letter(cols[WEEK_AVG_TK]),
+                       _col_letter(cols[WEEK_TT_APP]), len(rows),
+                       len(team_rows or [])))
+    print("\n".join(said))
+    if not data:
+        return 1
+    ws.batch_update(data, value_input_option="USER_ENTERED")
+    ss.batch_update({"requests": fmt})
+    print("\nwrote %d cell(s) into the past-week blocks." % len(data))
     return 0
 
 
@@ -924,6 +1172,8 @@ def main(argv=None) -> int:
                     help="(re)write the five Talk-To columns of RUNNING WEEK TOTALS")
     ap.add_argument("--team-totals", action="store_true",
                     help="(re)write those five for the Teams block under the roster")
+    ap.add_argument("--past-weeks", action="store_true",
+                    help="add the five to LAST WEEK'S / PRIOR WEEK'S TOTALS")
     ap.add_argument("--seed", action="store_true",
                     help="create all the columns on a tab that has NONE, "
                          "taking the row-3 headers from --from-tab")
@@ -943,6 +1193,8 @@ def main(argv=None) -> int:
         return week_formulas(ss, ws, apply=a.apply)
     if a.team_totals:
         return team_totals(ss, ws, apply=a.apply)
+    if a.past_weeks:
+        return past_weeks(ss, ws, apply=a.apply)
     if a.seed:
         return seed(ss, ws, ss.worksheet(a.from_tab), apply=a.apply)
 

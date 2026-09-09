@@ -142,6 +142,31 @@ def test_tab_title_is_the_weeks_sunday():
     assert fill.tab_title(dt.date(2026, 8, 30)) == "Sales Board WE 8.30"
 
 
+def test_the_sandbox_twin_is_the_tab_name_plus_a_suffix():
+    """The two fills that write this board have to agree on which tab is the
+    twin, or the sandbox ends up with half the day."""
+    from automations.alphalete_production import tk_fill
+    assert fill.SANDBOX_SUFFIX == tk_fill.SANDBOX_SUFFIX, (
+        fill.SANDBOX_SUFFIX, tk_fill.SANDBOX_SUFFIX)
+    assert fill.tab_title(MONDAY) + fill.SANDBOX_SUFFIX == \
+        "Sales Board WE 8.30 SANDBOX"
+
+
+def test_the_twin_is_planned_against_its_own_rows():
+    """The tabs are sorted differently, so the live tab's A1 ranges would land
+    on the wrong people. Planning against the twin's own grid is what keeps a
+    rep's numbers on the rep."""
+    live = _grid([_row("Ana Griffin"), _row("Zoria Johnson")])
+    twin = _grid([_row("Zoria Johnson"), _row("Ana Griffin")])
+    rows = [{"board_name": "Zoria Johnson",
+             "metrics": {"Int": 3, "Int Up": 0, "DTV": 0, "NL": 0}}]
+    a, _ = fill.plan(live, MONDAY, rows)
+    b, _ = fill.plan(twin, MONDAY, rows)
+    assert a and b, (a, b)
+    assert a[0]["range"] != b[0]["range"], (a[0]["range"], b[0]["range"])
+    assert a[0]["values"] == b[0]["values"]
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:

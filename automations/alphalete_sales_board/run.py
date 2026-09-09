@@ -226,6 +226,43 @@ def week_to_date(grid, upto: dt.date) -> int:
 
 
 # --- one sweep --------------------------------------------------------------
+def _mirror_to_sandbox(day: dt.date, agents, alias_map, live_ws,
+                       *, apply_writes: bool) -> None:
+    """Put the same day's sales on the '<tab> SANDBOX' twin, if there is one.
+
+    Eve, 2026-09-09: the Talk-To columns are being judged on the sandbox, and a
+    sandbox that has yesterday's sales while the live tab has today's cannot be
+    compared with anything.
+
+    IT IS PLANNED AGAINST THE TWIN'S OWN GRID, not copied cell for cell. The two
+    tabs are sorted differently -- the same rep sits on different rows -- so the
+    live tab's A1 ranges would land on the wrong people. Names, matching and
+    plan all run again over the twin; only the SaraPlus scrape is shared, which
+    is the expensive part.
+
+    AND IT CAN NEVER COST THE LIVE WRITE. No texts, no Slack, no roster append
+    (`missing` is dropped on purpose: adding a rep is a decision, and it belongs
+    to the real board). Anything it raises is caught and logged -- a mirror for
+    evaluation must not fail a job that runs 150 times a day.
+    """
+    try:
+        ws = fill.sandbox_twin(live_ws)
+        if ws is None:
+            return
+        grid = ws.get_all_values()
+        rows, _notes, _missing = calc.calculate(
+            agents, fill.board_names(grid), alias_map)
+        updates, _plan_notes = fill.plan(grid, day, rows)
+        if apply_writes and updates:
+            _log("sandbox %r: wrote %d cell(s)"
+                 % (ws.title, fill.apply(ws, updates)))
+        else:
+            _log("sandbox %r: %d cell(s) would change (preview)"
+                 % (ws.title, len(updates)))
+    except Exception as e:  # noqa: BLE001 -- never let the twin fail the sweep
+        _log("sandbox mirror skipped: %s: %s" % (type(e).__name__, str(e)[:200]))
+
+
 def sweep(day: dt.date, *, apply_writes: bool, send: bool,
           headless: bool = True, times_label: Optional[str] = None) -> int:
     scraped = sara.scrape(day, headless=headless, log=_log)
@@ -254,6 +291,8 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
         _log("%d cell(s) would change (preview)" % len(updates))
         for u in updates[:15]:
             _log("    %s -> %r" % (u["range"], u["values"][0][0]))
+
+    _mirror_to_sandbox(day, agents, alias_map, ws, apply_writes=apply_writes)
 
     # Who is on the board today that our pull can't explain? (See fill.
     # board_only_reps.) Logged every sweep so a pattern is visible in one grep.

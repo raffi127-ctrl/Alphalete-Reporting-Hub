@@ -36,6 +36,12 @@ from automations.rep_sales_fill import board as B
 
 TAB_PREFIX = "Sales Board WE"
 
+# The evaluation copy of a week's tab, filled with the same sales from the same
+# sweep. Kept identical to `alphalete_production.tk_fill.SANDBOX_SUFFIX` -- the
+# two fills have to agree on which tab is the twin or the sandbox ends up with
+# half the day.
+SANDBOX_SUFFIX = " SANDBOX"
+
 
 def tab_title(day: dt.date) -> str:
     sunday = C.week_ending(day)
@@ -54,6 +60,28 @@ def open_tab(day: dt.date, client=None):
     raise RuntimeError(
         "no %r tab on the sales board -- the week's tab is usually rolled over "
         "on Sunday. Nothing was written." % tab_title(day))
+
+
+def sandbox_twin(live_worksheet, client=None):
+    """The '<this week's tab> SANDBOX' worksheet, or None if there isn't one.
+
+    Same convention `alphalete_production.tk_fill` uses, and for the same
+    reason: while the Talk-To columns are being evaluated, the sandbox has to
+    carry the SAME sales the live tab carries. Eve, 2026-09-09: *"no me sirve si
+    mañana una queda completa y la otra no"* -- a sandbox a day behind cannot be
+    compared with anything.
+
+    Returns None once the tab is gone, which is how the mirroring switches
+    itself off after rollout with no code change.
+    """
+    from automations.recruiting_report.fill import _client
+    gc = client or _client()
+    want = (live_worksheet.title + SANDBOX_SUFFIX).strip().lower()
+    book = gc.open_by_key(C.SPREADSHEET_ID)
+    for ws in book.worksheets():
+        if ws.title.strip().lower() == want:
+            return ws
+    return None
 
 
 def board_names(grid) -> List[str]:
