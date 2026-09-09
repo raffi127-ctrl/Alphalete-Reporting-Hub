@@ -367,14 +367,18 @@ PROFILE_WITH_GENDER = """
 """
 
 
-def test_it_asks_for_gender_when_the_board_has_none(page):
+def test_it_asks_for_gender_when_the_board_has_none(page, tmp_path):
     """Gender is required on the profile page and the board's column is usually
     still empty when this runs. Without it Apex refuses the WHOLE page with
     "The request is invalid" and names no field, which is impossible to debug
     from the outside."""
-    page.set_content(PROFILE_WITH_GENDER)
+    # served from a user-profile url: the prompt is decided by which PAGE you
+    # are on, not by whether the control can be found
+    f = tmp_path / "user-profile.html"
+    f.write_text(PROFILE_WITH_GENDER)
+    page.goto(f.as_uri())
     people = [{"name": "Aundre Browder", "find": "Browder",
-               "fields": {"City": "Dallas"}}]          # no Gender
+               "pages": {"profile": {"City": "Dallas"}}}]      # no Gender
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
     assert page.locator("#ansgender").count() == 1
 
@@ -385,11 +389,14 @@ def test_it_asks_for_gender_when_the_board_has_none(page):
     assert "gender Female" in page.locator("#ansout").inner_text()
 
 
-def test_it_warns_rather_than_saving_a_page_apex_will_reject(page):
+def test_it_warns_rather_than_saving_a_page_apex_will_reject(page, tmp_path):
     """Filling without picking one leaves a required field empty. Say so, in
     the panel, instead of letting Save fail with a message that names nothing."""
-    page.set_content(PROFILE_WITH_GENDER)
-    people = [{"name": "X", "find": "X", "fields": {"City": "Dallas"}}]
+    f = tmp_path / "user-profile.html"
+    f.write_text(PROFILE_WITH_GENDER)
+    page.goto(f.as_uri())
+    people = [{"name": "X", "find": "X",
+               "pages": {"profile": {"City": "Dallas"}}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
     page.locator("#ansfill").click()
     _settled(page)
@@ -926,3 +933,28 @@ def test_the_button_is_handed_pages_not_a_flat_field_list():
             assert isinstance(value, str), f"{page}/{label} is not a string"
     assert pages["profile"]["State"] == "Texas"
     assert "State" not in pages.get("tax", {})
+
+
+def test_the_gender_prompt_does_not_depend_on_finding_the_box(page, tmp_path):
+    """It used to only appear if fieldFor('Gender') succeeded, so a lookup miss
+    silently removed the prompt -- and the operator found out the required
+    field was empty when Apex refused the save. The question is whether the
+    PAGE wants a gender, not whether the box can be located."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>profile with no gender control at all</h1>")
+    page.goto(f.as_uri())
+    people = [{"name": "Cristian Amaya Vega", "find": "Vega",
+               "pages": {"profile": {"City": "Seagoville"}}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    assert page.locator("#ansgender").count() == 1
+
+
+def test_no_gender_prompt_on_the_tax_page(page, tmp_path):
+    """It appeared on the tax page too, which has no Gender field, and then
+    reported that it could not set it."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("<h1>tax page</h1>")
+    page.goto(f.as_uri())
+    people = [{"name": "X", "find": "X", "pages": {"tax": {}}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    assert page.locator("#ansgender").count() == 0

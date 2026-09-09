@@ -378,7 +378,13 @@ _JS = r"""
    fire(best,'mouseover'); fire(best,'mousedown'); fire(best,'mouseup'); fire(best,'click');
    await sleep(150);
    settle(el);
-   await sleep(120);
+   await sleep(250);
+   if(!bindingLooksReal(el,v)){
+     /* Apex repopulates some of these asynchronously after the blur -- State
+        and Country both showed the right text while the check said otherwise.
+        Look once more before calling it a miss. */
+     await sleep(500);
+   }
    if(!bindingLooksReal(el,v)){
      /* The option was clicked and the display changed, but the id behind it is
         still empty -- State did exactly this. Let Kendo make the selection
@@ -647,21 +653,24 @@ _JS = r"""
  function go(id,tab){ location.href='/employees/'+id+'/edit/'+tab; }
  function ssnBoxes(){ var a=fieldFor('SSN')||fieldFor('Change SSN'),
                       b=fieldFor('Confirm SSN'); return (a&&b)?[a,b]:null; }
- function genderBox(p){
-   var set=fieldsHere(p); if(set&&set['Gender']) return null;
-   /* Required on the profile page. Ask for it here when the board's Gender
-      column was empty -- which it usually is by the time this runs. Without
-      it Apex refuses the whole page with "The request is invalid", naming
-      nothing. */
-   return fieldFor('Gender');
+ function needGender(p){
+   /* Ask whenever we are on the PROFILE page and the board did not supply a
+      gender. This used to depend on FINDING the control first, so a lookup
+      miss quietly removed the prompt and the operator only discovered the
+      required field was empty when Apex refused the save. The question is
+      "does this page want one", not "can I find the box". */
+   if(pageName()!=='profile') return false;
+   var set=fieldsHere(p);
+   return !(set&&set['Gender']);
  }
+ function genderBox(p){ return fieldFor('Gender'); }
  function blueink(p){ return 'https://secure.blueink.com/dashboard/wall?search='+encodeURIComponent(p.find||p.name); }
  var old=document.getElementById('anspanel'); if(old) old.remove();
  var p=D[Math.min(I,D.length-1)];
  var box=document.createElement('div'); box.id='anspanel';
  box.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;background:#fff;border:2px solid #0F766E;border-radius:10px;padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:330px';
  var found=learnIds();
- var ssn=ssnBoxes(), gnd=genderBox(p), nav=idFor(p);
+ var ssn=ssnBoxes(), gnd=needGender(p), nav=idFor(p);
  box.innerHTML='<div style="font-weight:700;font-size:16px">'+p.name+'</div>'+
    '<div style="color:#555;margin:2px 0 10px">'+(I+1)+' of '+D.length+' · %(week)s</div>'+
    (gnd?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Gender <span style="color:#b00">(required, not on the board)</span></div>'+
