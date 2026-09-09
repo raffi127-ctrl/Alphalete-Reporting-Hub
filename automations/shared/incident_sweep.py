@@ -192,7 +192,14 @@ def sweep(*, channel: str = CHANNEL, days: int = DEFAULT_DAYS,
         mk = inc._MARK_RE.search(m.get("text") or "")
         # No marker = not one of our incident posts. A marker still saying `open`
         # is a live ticket: whatever it is wearing, it is not ours to second-guess.
-        if not mk or mk.group("state") != "resolved":
+        #
+        # `superseded` counts here alongside `resolved` (Megan 2026-09-09). A
+        # rolled-over post is exactly the case this module was built for — the
+        # marks on it are unreachable by any later resolve, which is leak (2) in
+        # the docstring above. Roll-over now says `superseded` instead of
+        # `resolved`, so reading only for the latter would have quietly re-opened
+        # that leak. It does NOT make the post fixed: nothing here adds a check.
+        if not mk or mk.group("state") not in inc.CLOSED_STATES:
             continue
         out["closed"] += 1
         ts, key = m["ts"], mk.group("key")

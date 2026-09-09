@@ -9,6 +9,7 @@ post, and a fix must be announced IN that thread and close it.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -217,10 +218,14 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertNotEqual(tomorrow["ts"], first["ts"])
         self.assertEqual(len(self.c.top_level), 2)
         # Yesterday's thread says where the story went, and its marker is closed
-        # so no machine keeps rolling it over.
+        # so no machine keeps rolling it over — as SUPERSEDED, not `resolved`.
+        # Nobody fixed this; the story just moved (Megan 2026-09-09).
         self.assertIn("this thread ends here",
                       "\n".join(self.c.replies).lower())
-        self.assertIn("· resolved 2026-08-15", self.c.updates[-1][1])
+        self.assertIn("· superseded 2026-08-15", self.c.updates[-1][1])
+        self.assertNotIn("resolved", self.c.updates[-1][1].lower())
+        self.assertNotIn(("1.0000", inc.DONE_REACTION), self.c.reactions,
+                         "a superseded thread must never wear the ✅")
 
     def test_a_thread_is_only_rolled_over_once_ever(self):
         """Megan 2026-08-23: "these alerts don't make any sense posting on a
@@ -423,9 +428,9 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertTrue(third["new"])
         self.assertEqual(len(self.c.top_level), 2)
 
-    def test_a_clean_run_closes_the_finding_thread(self):
-        """resolve_report() is "this just ran clean" — and a finding thread is
-        exactly what a clean run should close. keys_for() has to reach it."""
+    def test_a_person_can_still_name_the_finding_thread_by_report(self):
+        """keys_for() is the HAND list — "somebody typed this report's name,
+        which of its threads could they mean?" A finding is certainly one."""
         self.assertIn("finding-vantura_board_audit",
                       inc.keys_for("vantura_board_audit"))
         self.assertIn("finding-vantura-board-audit",
@@ -1086,6 +1091,119 @@ class AnAlertIsNotItsOwnDomino(unittest.TestCase):
         """The call site must consult same_alert, not via_family alone."""
         src = Path(inc.__file__).read_text(encoding="utf-8")
         self.assertIn("not same_alert(", src)
+
+
+class SupersededIsNotFixed(unittest.TestCase):
+    """A roll-over ends a thread; it does not fix the problem (Megan 2026-09-09).
+
+    `standalone-leaders-call` said "didn't run today on the mini" from
+    2026-09-07 17:17. Triage painted it red at 08:15 the next morning. At 08:58
+    a roll-over stamped it `resolved` — the same word a real fix writes — and it
+    left the board. Nobody fixed it, the Monday deck never went out, and no
+    reader could tell it apart from a ticket somebody had actually closed."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._real = inc.STATE_PATH
+        inc.STATE_PATH = Path(self.tmp.name) / "incident_threads.json"
+        self.addCleanup(lambda: setattr(inc, "STATE_PATH", self._real))
+        inc._HISTORY_CACHE.clear()
+        self.addCleanup(inc._HISTORY_CACHE.clear)
+        self.c = FakeClient()
+
+    def _open(self, day):
+        inc._HISTORY_CACHE.clear()
+        return inc.open_or_followup(key="standalone-leaders-call",
+                                    title="🚫 *Leader's Call* — didn't run today",
+                                    body=["*Error:* no run recorded today"],
+                                    channel="C1", day=day, client=self.c)
+
+    def test_a_roll_over_writes_superseded_not_resolved(self):
+        self._open(dt.date(2026, 9, 7))
+        self._open(dt.date(2026, 9, 8))
+        parent = self.c.updates[-1][1]
+        self.assertIn("· superseded 2026-09-08", parent)
+        self.assertNotIn("resolved", parent.lower())
+
+    def test_a_superseded_thread_never_wears_the_check(self):
+        self._open(dt.date(2026, 9, 7))
+        self._open(dt.date(2026, 9, 8))
+        self.assertNotIn(("1.0000", inc.DONE_REACTION), self.c.reactions)
+
+    def test_it_is_still_invisible_to_find_so_nothing_revives_it(self):
+        """The lookup behaviour the old `resolved` was written FOR has to
+        survive the rename, or every machine starts rolling it over again."""
+        first = self._open(dt.date(2026, 9, 7))
+        second = self._open(dt.date(2026, 9, 8))
+        inc._HISTORY_CACHE.clear()
+        live = inc.find("standalone-leaders-call", channel="C1", client=self.c,
+                        day=dt.date(2026, 9, 8), trust_index=False)
+        self.assertEqual(live["ts"], second["ts"], "today's post is the live one")
+        self.assertNotEqual(live["ts"], first["ts"],
+                            "the rolled-over parent must never be found again")
+
+    def test_it_is_counted_as_ended_without_being_fixed(self):
+        """The channel marker is the durable record — the local index entry for
+        this key is immediately overwritten by today's fresh post. That is why
+        the digest reads the channel (incident_triage.unfixed_today)."""
+        from automations.shared import incident_triage as tri
+        self._open(dt.date(2026, 9, 7))
+        self._open(dt.date(2026, 9, 8))
+        inc._HISTORY_CACHE.clear()
+        ended = tri.unfixed_today(self.c, "C1", dt.date(2026, 9, 8))
+        self.assertEqual([e["key"] for e in ended], ["standalone-leaders-call"])
+
+    def test_a_real_fix_still_records_resolved(self):
+        self._open(dt.date(2026, 9, 7))
+        inc.resolve(key="standalone-leaders-call", lines=["✅ done"],
+                    channel="C1", day=dt.date(2026, 9, 7), client=self.c)
+        ent = json.loads(inc.STATE_PATH.read_text())["standalone-leaders-call"]
+        self.assertEqual(ent["state"], inc.RESOLVED)
+
+
+class AFindingIsFixedOnTheBoardNotByRerunning(unittest.TestCase):
+    """finding-vantura-board-audit opened and was ✅'d at 04:01 every morning
+    from 2026-08-21 — 1, 1, 3, 3, 3, 17, 2, 1, 3 open board findings — because
+    tomorrow's healthy run closed yesterday's ticket. incident_triage was posting
+    the opposite in the same thread the whole time: "Re-running will not clear
+    it: the audit only detects, it never edits." (Megan 2026-09-09)"""
+
+    def test_a_clean_run_may_not_close_a_findings_thread(self):
+        keys = inc.keys_for_clean_run("vantura_board_audit")
+        self.assertNotIn("finding-vantura_board_audit", keys)
+        self.assertNotIn("finding-vantura-board-audit", keys)
+
+    def test_it_still_closes_every_outage_witness(self):
+        """The drop / watch / standalone / failure witnesses of one outage are
+        exactly what a clean run IS entitled to close."""
+        keys = inc.keys_for_clean_run("b2b_metrics")
+        for expected in ("failure-b2b_metrics", "drop-b2b_metrics",
+                         "standalone-b2b_metrics", "drop-b2b-metrics"):
+            self.assertIn(expected, keys)
+
+    def test_resolve_report_uses_the_clean_run_list(self):
+        src = Path(inc.__file__).read_text(encoding="utf-8")
+        head = src[src.index("def resolve_report("):]
+        self.assertIn("keys_for_clean_run(report_id)", head[:2000])
+
+    def test_the_orchestrators_carryover_close_drops_findings_too(self):
+        """run.py hand-listed the three keys rather than calling keys_for."""
+        run_py = (Path(inc.__file__).resolve().parents[1]
+                  / "day_orchestrator" / "run.py").read_text(encoding="utf-8")
+        body = run_py[run_py.index("def _close_carryover_incidents"):]
+        body = body[:body.index("def _check_post_watch")]
+        self.assertNotIn('f"finding-{rs.report_id}"', body)
+        self.assertIn('f"failure-{rs.report_id}"', body)
+
+    def test_a_zero_finding_run_is_still_allowed_to_close_it(self):
+        """The one signal that genuinely means the board is clean, unchanged:
+        run_manifest.write_manifest with no failed parts -> section_drop_alert
+        .resolved(), which reaches the finding- key directly."""
+        from automations.shared import section_drop_alert as sda
+        src = Path(sda.__file__).read_text(encoding="utf-8")
+        body = src[src.index("def resolved("):]
+        self.assertIn('_incident_key(report_id, "finding")', body[:1200])
 
 
 class TheCheckAndTheWordsAreOneAct(unittest.TestCase):

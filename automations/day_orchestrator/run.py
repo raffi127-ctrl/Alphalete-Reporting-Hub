@@ -1618,8 +1618,13 @@ def _close_carryover_incidents(cfg, ds, dry_run):
     for rs in list(ds.reports.values()):
         if rs.status != state.DONE:
             continue
-        for key in (f"failure-{rs.report_id}", f"finding-{rs.report_id}",
-                    f"standalone-{rs.report_id}"):
+        # NO `finding-` here (Megan 2026-09-09). A findings thread says the run
+        # was FINE and names what it saw on the board; running clean again is
+        # not evidence anybody corrected the board, and closing it that way is
+        # how finding-vantura-board-audit went green every morning for three
+        # weeks with 1-17 findings still open. Same rule as
+        # incident_thread.keys_for_clean_run.
+        for key in (f"failure-{rs.report_id}", f"standalone-{rs.report_id}"):
             if key not in open_keys:
                 continue
             label = rs.display_name or rs.report_id

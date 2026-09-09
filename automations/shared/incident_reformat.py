@@ -38,7 +38,7 @@ import re
 from typing import List, Optional, Tuple
 
 from automations.shared import alert_thread as at
-from automations.shared.incident_thread import CHANNEL, _MARK_RE
+from automations.shared.incident_thread import CHANNEL, CLOSED_STATES, _MARK_RE
 
 # The pointer alert_thread.split_for_thread used to leave on a trimmed parent.
 # It described the OLD split; carrying it into the new one-liner would be a
@@ -191,7 +191,10 @@ def _clear_stray_pending(client, channel: str, m: dict, me: str, *,
     incident_thread.mark_working; this clears the ones already standing. Only MY
     own reaction can come off — Slack has no removing someone else's."""
     mk = _MARK_RE.search(m.get("text") or "")
-    if not mk or mk.group("state") != "resolved":
+    # `superseded` too: a rolled-over post's marks are just as unreachable, and
+    # leaving a :pending: on one reads as "somebody is on this" about a thread
+    # that ended (see incident_thread.SUPERSEDED).
+    if not mk or mk.group("state") not in CLOSED_STATES:
         return
     for rx in m.get("reactions") or []:
         if rx.get("name") == "pending" and me in (rx.get("users") or []):

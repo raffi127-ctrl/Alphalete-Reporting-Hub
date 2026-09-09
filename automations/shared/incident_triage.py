@@ -582,6 +582,40 @@ def _open_incidents(client, channel: str, day: dt.date,
     return out, fixed, stale, gated
 
 
+def unfixed_today(client, channel: str, day: dt.date) -> List[dict]:
+    """Tickets that ENDED today without anybody fixing them.
+
+    WHY (Megan 2026-09-09). A thread that is not resolved is rolled over — one
+    line saying the story continues in today's post — and the parent is stamped
+    so no machine keeps finding it. That is the right lookup behaviour and it
+    used to be written with the same word a real fix writes (`resolved`), so an
+    unfixed problem left the board looking exactly like a fixed one. Nothing
+    counted them and nothing could: from the outside the two were identical.
+
+    `standalone-leaders-call` is the case. It said "didn't run today on the
+    mini" from 2026-09-07 17:17, triage painted it red at 08:15 the next
+    morning, and at 08:58 a roll-over ended it. Nobody fixed it, the Monday deck
+    never went out, and the ticket simply stopped existing.
+
+    Roll-over now writes `superseded`, and this is what reads it back. Returns
+    the raw rows so a digest can print them; deliberately NOT an alert — these
+    are already on the record, the point is that they stop being invisible."""
+    out: List[dict] = []
+    for m in inc._history(client, channel):
+        text = m.get("text") or ""
+        mark = inc._MARK_RE.search(text)
+        if not mark or mark.group("state") != inc.SUPERSEDED:
+            continue
+        if mark.group("date") != day.isoformat():
+            continue
+        head = next((l for l in text.splitlines()
+                     if l.strip() and not l.startswith("_incident")), "")
+        out.append({"key": mark.group("key"), "ts": m.get("ts") or "",
+                    "headline": head.strip()[:90],
+                    "opened": mark.group("date")})
+    return out
+
+
 def _apply(client, channel: str, ts: str, bucket: str,
            existing: Sequence[str], *, dry_run: bool) -> bool:
     """Put this bucket's reaction on the parent and take the other two off.
@@ -728,8 +762,26 @@ def run(*, day: Optional[dt.date] = None, channel: str = inc.CHANNEL,
     if not dry_run:
         _save_state(st)
 
-    print("\n[triage] {} need you · {} with Lucy · {} waiting on a source"
-          .format(len(out[NEEDS_YOU]), len(out[LUCY]), len(out[WAITING])))
+    # ENDED WITHOUT BEING FIXED (Megan 2026-09-09). These are not open any more
+    # and never were resolved — they were rolled over. Saying so out loud is the
+    # whole remedy: an unfixed problem must not be able to leave the board more
+    # quietly than a fixed one. Counted, never re-alerted.
+    try:
+        ended = unfixed_today(client, channel, day)
+    except Exception as e:  # noqa: BLE001 — a count must never break the pass
+        print("  - couldn't count superseded tickets ({}: {})".format(
+            type(e).__name__, str(e)[:60]))
+        ended = []
+    if ended:
+        print("\n[triage] {} ticket(s) ended today WITHOUT being fixed — the "
+              "thread rolled over, nobody closed it:".format(len(ended)))
+        for e in ended:
+            print("   {:<44} {}".format(e["key"][:44], e["headline"]))
+    out["superseded"] = [e["key"] for e in ended]
+
+    print("\n[triage] {} need you · {} with Lucy · {} waiting on a source · "
+          "{} ended unfixed".format(len(out[NEEDS_YOU]), len(out[LUCY]),
+                                    len(out[WAITING]), len(ended)))
     return out
 
 

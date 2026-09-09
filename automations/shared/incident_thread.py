@@ -159,7 +159,33 @@ _HISTORY_LIMIT = 200
 # be unfindable. Reject it loudly at the door instead of alerting into a void.
 _KEY_RE = re.compile(r"^[A-Za-z0-9_.:@/-]+$")
 _MARK_RE = re.compile(
-    r"_incident · (?P<key>[^ ·]+) · (?P<state>open|resolved) (?P<date>\d{4}-\d{2}-\d{2})_")
+    r"_incident · (?P<key>[^ ·]+) · (?P<state>open|resolved|superseded) "
+    r"(?P<date>\d{4}-\d{2}-\d{2})_")
+
+# SUPERSEDED IS NOT RESOLVED (Megan 2026-09-09). A roll-over used to write
+# `resolved` — the same word a fix writes — purely so find() would stop
+# returning the old post. That is true of the LOOKUP and false about the world:
+# nothing was fixed, the story just moved to today's post. It cost the
+# leaders_call ticket on 2026-09-08. `standalone-leaders-call` said "didn't run
+# today on the mini", triage painted it red at 08:15, and at 08:58 a roll-over
+# stamped it `resolved` and it left the board. Nobody fixed it and nobody could
+# see that nobody had.
+#
+# So a third state, which every reader can tell apart:
+#   open        a live ticket
+#   resolved    someone or something FIXED it — the only state that wears the ✅
+#   superseded  the thread ended; the problem may well still be real
+#
+# find() ignores superseded exactly as it ignored the old `resolved` (no thread
+# is revived), the sweepers still clear stale in-progress marks off it, and it is
+# COUNTED — see incident_triage.unfixed_today(), which is where "N ended without
+# being fixed" comes from. It must never gain a ✅: that is the whole point.
+OPEN = "open"
+RESOLVED = "resolved"
+SUPERSEDED = "superseded"
+# States that mean "this post is no longer a live ticket", for the sweepers that
+# only care whether a mark is reachable. NOT a synonym for "fixed".
+CLOSED_STATES = (RESOLVED, SUPERSEDED)
 
 # What a RESOLVED parent looks like from the channel list (Eve 2026-08-17). The
 # resolution used to be visible only inside the thread plus a grey italic marker
@@ -920,15 +946,22 @@ def _roll_over(client, channel: str, inc: dict, key: str, age: int,
     was = _MARK_RE.sub("", inc.get("text") or "").rstrip()
     if was:
         try:
+            # SUPERSEDED, not `resolved` (Megan 2026-09-09). This used to write
+            # the same word a fix writes, so a problem that was never fixed left
+            # the board looking exactly like one that was — and no reader, human
+            # or machine, could tell the two apart afterwards. `superseded` is
+            # invisible to find() in precisely the same way (no thread is
+            # revived) and honest to everything else.
             client.chat_update(channel=channel, ts=inc["ts"],
                                text="{}\n\n{}".format(
                                    was, marker(inc.get("marker_key") or key,
-                                               "resolved", day)))
+                                               SUPERSEDED, day)))
         except Exception:  # noqa: BLE001 — the local index still closes it
             pass
-    _mark_resolved_in_index(key, ts=inc.get("ts"), channel=channel)
+    _mark_resolved_in_index(key, ts=inc.get("ts"), channel=channel,
+                            state=SUPERSEDED)
     print("[incident] {}: rolled over ({} day(s) old) — today opens a fresh "
-          "post".format(key, age))
+          "post. NOT fixed: superseded.".format(key, age))
 
 
 def _bump_today(key: str, day: dt.date, *, sibling: bool, label: str) -> dict:
@@ -1164,7 +1197,8 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
 
 
 def _mark_resolved_in_index(key: str, *, ts: Optional[str] = None,
-                            channel: str = CHANNEL) -> None:
+                            channel: str = CHANNEL,
+                            state: str = RESOLVED) -> None:
     """Close `key` — and every SIBLING pointing at the same thread.
 
     With families one parent can be several keys' incident. Closing only the key
@@ -1188,7 +1222,12 @@ def _mark_resolved_in_index(key: str, *, ts: Optional[str] = None,
     today = dt.date.today().isoformat()
     for k, e in idx.items():
         if isinstance(e, dict) and (k == key or (ts and e.get("ts") == ts)):
+            # `resolved` stays the "is this entry still live?" flag every caller
+            # already reads — a superseded thread is just as dead for lookup
+            # purposes. `state` records WHICH kind of dead it is, so a digest can
+            # tell a fix from a thread that simply ended (see unfixed_today).
             e["resolved"] = True
+            e["state"] = state
             e["last"] = today
     _save_index(idx)
 
@@ -1791,11 +1830,10 @@ def keys_for(report_id: str) -> List[str]:
     standalone watcher's, the drop alert's AND the finding one, in both the
     underscore id and the dashed manifest id.
 
-    finding- belongs here even though it is a separate FAMILY (see subject()):
-    the two questions are different. "Which thread does this witness join?" must
-    keep findings out of outage threads; "this report just ran clean, what did it
-    leave open?" wants every one of them, and a finding thread is precisely what a
-    clean run is supposed to close (2026-08-18)."""
+    This is the HAND list: "a person typed this report's name, which of its
+    threads could they mean?" — and they may certainly mean the finding one.
+    A CLEAN RUN is a different question with a different answer; see
+    keys_for_clean_run()."""
     out: List[str] = []
     for rid in (report_id, _canon(report_id)):
         for p in _KEY_PREFIXES:
@@ -1803,6 +1841,34 @@ def keys_for(report_id: str) -> List[str]:
             if k not in out:
                 out.append(k)
     return out
+
+
+def keys_for_clean_run(report_id: str) -> List[str]:
+    """The threads a CLEAN RUN of this report is entitled to close — everything
+    keys_for() names except the findings.
+
+    WHY THE DIFFERENCE (Megan 2026-09-09). keys_for() included `finding-` on the
+    argument that "a clean run is precisely what a finding thread should close"
+    (2026-08-18). The channel says otherwise, in its own words, in the same
+    thread: incident_triage posts *"the run itself was fine — this is what it
+    FOUND, and it is fixed on the board, not in the code. Re-running will not
+    clear it: the audit only detects, it never edits."* Both cannot be true, and
+    the triage line is the one that is right.
+
+    What the old rule produced: `finding-vantura-board-audit` opened and was ✅'d
+    at 04:01 EVERY morning from 2026-08-21 on — 1, 1, 3, 3, 3, 17, 2, 1, 3 open
+    board findings — because tomorrow's healthy run closed yesterday's ticket.
+    The board was never corrected and the channel said "RESOLVED. It just ran
+    clean." about it nine times.
+
+    A finding still closes automatically, by the only signal that means anything:
+    the audit running again and finding NOTHING. That path already exists and is
+    untouched — run_manifest.write_manifest with no failed parts calls
+    section_drop_alert.resolved(), which closes the `finding-` key. It just no
+    longer happens on a run that found the same problems all over again.
+    """
+    return [k for k in keys_for(report_id)
+            if not k.startswith(_FINDING_PREFIXES)]
 
 
 # How often a CLEAN run may ask the channel "is anything of mine open?" when this
@@ -1871,7 +1937,10 @@ def resolve_report(report_id: str, *, what: str = "", note: str = "",
     day = day or dt.date.today()
     label = what or "*{}*".format(report_id)
     try:
-        keys = keys_for(report_id)
+        # NOT keys_for(): a clean run may not close a findings thread — the
+        # audit only ever detects, so running it again cannot have corrected the
+        # board it is complaining about. See keys_for_clean_run().
+        keys = keys_for_clean_run(report_id)
         idx = _load_index() or {}
         hit = next((k for k in keys
                     if isinstance(idx.get(k), dict) and idx[k].get("ts")

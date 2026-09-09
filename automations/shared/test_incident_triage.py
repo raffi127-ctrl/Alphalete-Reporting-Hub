@@ -438,7 +438,10 @@ class FinishesStrandedMarkers(unittest.TestCase):
         out, close = self._run(["failure-a"],
                                close_raises=RuntimeError("slack down"))
         self.assertEqual(close.call_count, 1)
-        self.assertEqual(out, {tri.NEEDS_YOU: [], tri.LUCY: [], tri.WAITING: []})
+        self.assertEqual(out, {tri.NEEDS_YOU: [], tri.LUCY: [], tri.WAITING: [],
+                               # ended-without-being-fixed, counted since
+                               # 2026-09-09 so a roll-over can't leave quietly
+                               "superseded": []})
 
 
 if __name__ == "__main__":
