@@ -159,6 +159,34 @@ class TeamCriterion(unittest.TestCase):
         self.assertIsNone(T._team_test('=SUM($E$166:$E$180)', 4, 78))
 
 
+class InsertOrder(unittest.TestCase):
+    """Seeding inserts into several blocks at once. Every insert shifts what is
+    to its RIGHT, so the rightmost anchor has to go first."""
+
+    # As `seed` collects them: the day blocks, then RUNNING WEEK TOTALS — which
+    # is the LEFTMOST of the lot.
+    JOBS = [("MON", 36, 3, 1), ("TUES", 44, 3, 1), ("SUN", 84, 3, 1),
+            (T.WEEK_BLOCK, 9, 5, 1)]
+
+    def test_the_leftmost_block_is_widened_LAST(self):
+        self.assertEqual([j[0] for j in T.insert_order(self.JOBS)],
+                         ["SUN", "TUES", "MON", T.WEEK_BLOCK])
+
+    def test_reversing_the_list_is_NOT_the_same_thing(self):
+        """The bug: `reversed(jobs)` ran RUNNING WEEK first and its five columns
+        pushed every day anchor five to the right, so each trio landed beside
+        'Apps' instead of 'TK'."""
+        self.assertNotEqual([j[0] for j in reversed(self.JOBS)],
+                            [j[0] for j in T.insert_order(self.JOBS)])
+
+    def test_anchors_stay_valid_as_the_inserts_go_in(self):
+        done = []
+        for _lab, anchor, n, _s in T.insert_order(self.JOBS):
+            # nothing already inserted may sit at or left of this anchor
+            self.assertTrue(all(a > anchor for a, _n in done), (anchor, done))
+            done.append((anchor, n))
+
+
 class ColumnLetters(unittest.TestCase):
     def test_round_trip_past_Z(self):
         for col, want in ((1, "A"), (26, "Z"), (27, "AA"), (56, "BD"), (82, "CD")):

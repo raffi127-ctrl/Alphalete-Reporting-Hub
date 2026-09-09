@@ -278,6 +278,162 @@ def add_for_day(ss, ws, anchor_col: int, tmpl_first: int, px: list,
     ss.batch_update({"requests": reqs})
 
 
+def insert_order(jobs):
+    """The jobs sorted RIGHT TO LEFT BY COLUMN, so no insert moves a later one.
+
+    Not the same as reversing the list, and that is the whole point. The jobs
+    come out in the order they were collected -- the seven day blocks, then
+    RUNNING WEEK TOTALS -- but RUNNING WEEK sits LEFTMOST on the tab. Reversing
+    ran it first, its five columns pushed every day anchor five to the right,
+    and all seven trios landed beside `Apps` instead of `TK`
+    (WE 9.13 SANDBOX, 2026-09-09). Sort by the anchor, never by arrival.
+    """
+    return sorted(jobs, key=lambda j: -j[1])
+
+
+def _totals_like(grid, totals_row: int, model_col: int, want_col: int):
+    """The TOTALS-row formula of `model_col`, pointed at `want_col` instead.
+
+    Copied rather than written, exactly like `tk_fill.ensure_tk_total`: whatever
+    row range and `Field Status <> RT` exclusion the column beside it uses, this
+    one uses too, and a template that changes either carries us along. Returns
+    None when the model cell is not a formula.
+    """
+    f = _cell(grid, totals_row, model_col)
+    if not f.startswith("="):
+        return None
+    a, b = _col_letter(model_col), _col_letter(want_col)
+    out = re.sub(r"(?<![A-Z0-9$])%s(\d+)" % a, lambda m: b + m.group(1), f)
+    return out if out != f else None
+
+
+def seed(ss, ws, src_ws, apply: bool = False) -> int:
+    """Create the Talk-To columns on a tab that has NONE of them yet.
+
+    `--tab` alone can only copy a day that already carries the trio, which is
+    how the WE 9.6 sandbox was finished -- Eve had built THU by hand. A fresh
+    week's tab has nothing to copy from, so this seeds it: three columns in
+    every day block and five in RUNNING WEEK TOTALS.
+
+    THE HEADERS COME FROM THE OTHER TAB, THE REST FROM THIS ONE. Only row 3 is
+    pasted across (same row on both tabs, so nothing can land off by a row),
+    which brings the wording, the green and the small font exactly as Eve made
+    them. Everything else is local: the body formatting is inherited from the
+    `TK` column the new ones sit beside, and the TOTALS-row sum is this tab's
+    own TK total with the column letter swapped -- so a tab with a different
+    roster length gets a total over ITS rows, not over WE 9.6's.
+    """
+    from automations.energy_slack_fill.run import last_rep_row
+
+    src = _headers(src_ws)
+    s_day = None
+    for lab, b in day_blocks(src).items():
+        cols = [sub_col(src, b, h) for h in TRIO]
+        if all(cols) and cols == list(range(cols[0], cols[0] + 3)):
+            s_day = (lab, cols[0])
+            break
+    s_lo, s_hi = running_block(src)
+    s_week = [sub_col(src, (s_lo, s_hi), h) for h in WEEK_HEADERS] if s_lo else []
+    if not s_day or not all(s_week):
+        print("%r does not carry the columns -- nothing to copy headers FROM."
+              % src_ws.title)
+        return 1
+    print("headers <- %r  (%s %s..%s, semanal %s..%s)"
+          % (src_ws.title, s_day[0], _col_letter(s_day[1]),
+             _col_letter(s_day[1] + 2), _col_letter(s_week[0]),
+             _col_letter(s_week[-1])))
+
+    grid = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
+                  value_render_option="FORMULA")
+    totals = last_rep_row(grid) + 1
+    lo, hi = running_block(grid)
+    jobs = []                      # (label, anchor_col, how_many, src_first)
+    for lab, b in sorted(day_blocks(grid).items(), key=lambda kv: kv[1][0]):
+        if any(sub_col(grid, b, h) for h in TRIO):
+            print("  %-5s ya las tiene -- salteado" % lab)
+            continue
+        anchor = sub_col(grid, b, ANCHOR)
+        if anchor is None:
+            print("  ! %s sin %r -- salteado" % (lab, ANCHOR))
+            continue
+        jobs.append((lab, anchor, 3, s_day[1]))
+    if lo and not any(sub_col(grid, (lo, hi), h) for h in WEEK_HEADERS):
+        anchor = sub_col(grid, (lo, hi), ANCHOR)
+        if anchor:
+            jobs.append((WEEK_BLOCK, anchor, 5, s_week[0]))
+    if not jobs:
+        print("nada que sembrar -- la pestaña ya tiene las columnas.")
+        return 0
+    for lab, anchor, n, _s in jobs:
+        print("  %-20s %d columnas después de %s (%s)"
+              % (lab, n, ANCHOR, _col_letter(anchor)))
+    if not apply:
+        print("\npreview only -- re-run with --apply to write.")
+        return 0
+
+    folded = hidden_cols(ss, ws.title, ws.col_count)
+    px_day = widths(ss, src_ws.title, s_day[1])
+    px_week = widths(ss, src_ws.title, s_week[0]) + widths(
+        ss, src_ws.title, s_week[0] + 3)
+    for lab, anchor, n, s_first in insert_order(jobs):
+        px = (px_day if n == 3 else px_week)[:n]
+        ss.batch_update({"requests": [{"insertDimension": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": anchor, "endIndex": anchor + n},
+            "inheritFromBefore": True}}]})
+        reqs = [{"copyPaste": {                       # ROW 3 ONLY, across tabs
+            "source": {"sheetId": src_ws.id,
+                       "startRowIndex": SUB_ROW - 1, "endRowIndex": SUB_ROW,
+                       "startColumnIndex": s_first - 1,
+                       "endColumnIndex": s_first - 1 + n},
+            "destination": {"sheetId": ws.id,
+                            "startRowIndex": SUB_ROW - 1, "endRowIndex": SUB_ROW,
+                            "startColumnIndex": anchor, "endColumnIndex": anchor + n},
+            "pasteType": "PASTE_NORMAL"}}]
+        if n == 3:                                    # the day trio folds away
+            reqs.append({"addDimensionGroup": {
+                "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                          "startIndex": anchor, "endIndex": anchor + n}}})
+        for i, size in enumerate(px):
+            if size:
+                reqs.append({"updateDimensionProperties": {
+                    "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                              "startIndex": anchor + i, "endIndex": anchor + i + 1},
+                    "properties": {"pixelSize": size}, "fields": "pixelSize"}})
+        if folded[anchor]:
+            reqs.append({"updateDimensionProperties": {
+                "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                          "startIndex": anchor, "endIndex": anchor + n},
+                "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
+        ss.batch_update({"requests": reqs})
+        print("  %-20s -> %s..%s" % (lab, _col_letter(anchor + 1),
+                                     _col_letter(anchor + n)))
+
+    # The TOTALS row: give every new column the sum its TK neighbour already
+    # has. `--formulas` / `--week-formulas` then overwrite the ratio ones.
+    grid = ws.get("A1:%s%d" % (_col_letter(ws.col_count), totals),
+                  value_render_option="FORMULA")
+    data = []
+    todo = [(b, TRIO) for b in day_blocks(grid).values()]
+    if lo:
+        todo.append((running_block(grid), WEEK_HEADERS))
+    for b, headers in todo:
+        tk = sub_col(grid, b, ANCHOR)
+        for h in headers:
+            c = sub_col(grid, b, h)
+            if not (tk and c):
+                continue
+            f = _totals_like(grid, totals, tk, c)
+            if f:
+                data.append({"range": "%s%d" % (_col_letter(c), totals),
+                             "values": [[f]]})
+    if data:
+        ws.batch_update(data, value_input_option="USER_ENTERED")
+    print("\nsembrada: %d bloque(s), %d total(es) en la fila %d."
+          % (len(jobs), len(data), totals))
+    return 0
+
+
 def _headers(ws):
     return ws.get("A1:%s%d" % (_col_letter(ws.col_count), SUB_ROW),
                   value_render_option="FORMATTED_VALUE")
@@ -398,6 +554,8 @@ WEEK_TT = "Total Talk-To's"
 WEEK_AVG_TT = "AVG TT's per day"
 WEEK_PCT = "% of TT's per knock"
 WEEK_TT_APP = "AVG TTs per app"
+# In the order Eve put them, which is also the order `seed` inserts them.
+WEEK_HEADERS = (WEEK_AVG_TK, WEEK_TT, WEEK_AVG_TT, WEEK_PCT, WEEK_TT_APP)
 
 
 def running_block(grid):
@@ -717,6 +875,11 @@ def main(argv=None) -> int:
                     help="(re)write the five Talk-To columns of RUNNING WEEK TOTALS")
     ap.add_argument("--team-totals", action="store_true",
                     help="(re)write those five for the Teams block under the roster")
+    ap.add_argument("--seed", action="store_true",
+                    help="create all the columns on a tab that has NONE, "
+                         "taking the row-3 headers from --from-tab")
+    ap.add_argument("--from-tab", default=SANDBOX_TAB,
+                    help="tab to copy the headers from when seeding")
     a = ap.parse_args(argv)
 
     from automations.recruiting_report.fill import open_by_key
@@ -731,6 +894,8 @@ def main(argv=None) -> int:
         return week_formulas(ss, ws, apply=a.apply)
     if a.team_totals:
         return team_totals(ss, ws, apply=a.apply)
+    if a.seed:
+        return seed(ss, ws, ss.worksheet(a.from_tab), apply=a.apply)
 
     tmpl_day, tmpl_col, todo = plan(_headers(ws))
     if not tmpl_day:
