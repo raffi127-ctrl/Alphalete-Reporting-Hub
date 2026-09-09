@@ -773,6 +773,9 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
                       else campaign_for_office(canonical),
                       verbose=verbose)
 
+        # Whose grid the audit records are about — the scrape helpers only ever
+        # see a token and a date (see total_knocks.pull.audit_label).
+        knocks.audit_label(canonical)
         for target in targets:
             rows = _scrape_day_on_page(page, rqst, target, verbose=verbose,
                                        expect_campaign=campaign)
@@ -871,6 +874,8 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
         return got
 
     rows = _read_grid()
+    first_rows = len(rows)
+    did_reread = False
     # Supplementary while we have disposition rows, the last source
     # standing when we don't — only then is a failed fetch fatal.
     tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose,
@@ -888,6 +893,7 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
     # does not share the grid's failure mode. See total_knocks.pull's
     # SHORT_READ_* thresholds for why a small gap is left alone.
     if knocks.disposition_read_is_short(len(rows), len(tt)):
+        did_reread = True
         if verbose:
             print(f"-> Disposition {len(rows)} rep(s) < Time Tracker "
                   f"{len(tt)} — re-reading the grid", flush=True)
@@ -904,6 +910,11 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
             rows = again
         if verbose:
             print(f"-> re-read: {len(rows)} rep(s)", flush=True)
+    # BEFORE the refusal below, so the audit records the office that was
+    # refused too — a captain held for a bad grid is exactly what the morning
+    # summary has to name.
+    knocks.record_pull(target, first_rows, len(tt), len(rows),
+                       reread=did_reread)
     why = knocks.short_read_error(len(rows), len(tt))
     if why:
         # KnocksPullFailed, so this owner is reported as a FAILED capture (grey
@@ -1020,6 +1031,7 @@ def pull_master_days_on_page(page, targets: "list[dt.date]", *,
     _pin_campaign(page, rqst, campaign_for_office(_RAF["name"]),
                   verbose=verbose)
     out: dict = {}
+    knocks.audit_label(_RAF["name"])
     for target in targets:
         rows = _scrape_day_on_page(page, rqst, target, verbose=verbose)
         # The master path drifts too, and in the more dangerous direction:

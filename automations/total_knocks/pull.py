@@ -372,6 +372,61 @@ def short_read_error(n_rows: int, n_tt: int) -> "str | None":
             % (n_rows, n_tt))
 
 
+# ---- Audit trail -----------------------------------------------------------
+# The guard above REFUSES on a drastic short read. It deliberately tolerates the
+# rest (a gap under SHORT_READ_MIN_GAP, or a grid holding over half the office),
+# because refusing there would hold a captain's whole email over a rep who
+# clocked in and knocked nothing — which is a normal day, not a broken read.
+#
+# That tolerance is the second gate's job (Eve, 2026-09-09: "doble gate para
+# este problema"). These records are what makes it possible to audit WITHOUT
+# opening ownerville again: every pull writes down what it saw, and
+# captainship_drafts.knocks_audit reads them at the end of the capture. They are
+# facts, not verdicts — the thresholds stay in one place, up there.
+_AUDIT: list[dict] = []
+_AUDIT_LABEL = ""
+
+
+def audit_label(label: str) -> None:
+    """Name the office whose pulls get recorded from here on.
+
+    The scrape helpers see a `rqst` token and a date, never a name — the caller
+    that impersonated is the only one that knows whose grid this is. Set it
+    around a pull, and the records carry it."""
+    global _AUDIT_LABEL
+    _AUDIT_LABEL = label or ""
+
+
+def record_pull(target, n_first: int, n_tt: int, n_final: int, *,
+                reread: bool = False, label: "str | None" = None) -> None:
+    """Write down one office-day: what the grid gave first, what the Time
+    Tracker said, and what we ended up publishing.
+
+    Best-effort by design — an audit that raises would turn a bookkeeping bug
+    into a missing board, which is exactly the trade this whole guard exists to
+    avoid."""
+    try:
+        _AUDIT.append({
+            "office": (label if label is not None else _AUDIT_LABEL) or "?",
+            "date": target.isoformat() if hasattr(target, "isoformat")
+                    else str(target),
+            "first_rows": int(n_first),
+            "tt_reps": int(n_tt),
+            "rows": int(n_final),
+            "reread": bool(reread),
+        })
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def take_records() -> list[dict]:
+    """Every record since the last call, and reset. The capture drains this
+    once at the end, so a second capture in the same process starts clean."""
+    out = list(_AUDIT)
+    _AUDIT.clear()
+    return out
+
+
 def _wait_rows_settled(page, *, quiet_ms: int = 400, timeout_ms: int = 12000
                        ) -> int:
     """Wait until the Disposition grid STOPS growing, and return the row count.
@@ -643,7 +698,9 @@ def pull_disposition_day(target: Optional[dt.date] = None,
         # captainship path runs (rashad_metrics.knocks_pull._scrape_day_on_page)
         # — this is the master office's copy of the sequence, and a fix that
         # lived in only one of them would leave Raf's own board unguarded.
+        first_rows, did_reread = len(rows), False
         if disposition_read_is_short(len(rows), len(tt)):
+            did_reread = True
             if verbose:
                 print(f"-> Disposition {len(rows)} rep(s) < Time Tracker "
                       f"{len(tt)} — re-reading the grid", flush=True)
@@ -653,6 +710,8 @@ def pull_disposition_day(target: Optional[dt.date] = None,
                 rows = again
             if verbose:
                 print(f"-> re-read: {len(rows)} rep(s)", flush=True)
+        record_pull(target, first_rows, len(tt), len(rows), reread=did_reread,
+                    label="master office")
         why = short_read_error(len(rows), len(tt))
         if why:
             raise KnocksPullFailed(why)

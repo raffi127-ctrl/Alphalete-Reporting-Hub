@@ -114,15 +114,18 @@ def main(argv=None) -> int:
     print(f"capturing knock boards for {len(targets)} captain(s) into "
           f"{config.RENDER_DIR}")
     failures = 0
+    rosters: dict = {}
+    results: dict = {}
     for captain, wants in targets:
         errors: dict = {}
+        roster: list = []
         try:
             got = KD.capture_sections(
                 captain, today, config.RENDER_DIR,
                 want_daily="daily_knocks" in wants,
                 want_weekly="knock_dispo" in wants,
                 reuse=not args.fresh,
-                errors=errors)
+                errors=errors, roster_out=roster)
         except Exception as e:  # noqa: BLE001 — one captain ≠ the step
             failures += 1
             print(f"  ✗ {captain.key}: {type(e).__name__}: {str(e)[:200]}")
@@ -135,6 +138,15 @@ def main(argv=None) -> int:
         blanks = sum(1 for k in wants for _lab, p in got.get(k, []) if not p)
         print(f"  ✓ {captain.key}: {boards} board(s)"
               + (f", {blanks} without data/failed" if blanks else ""))
+        # For the audit below: what this captain was SUPPOSED to produce, and
+        # what came back.
+        rosters[captain.key] = roster
+        results[captain.key] = {
+            "labels": [lab for k in wants for lab, _p in got.get(k, [])],
+            "error_keys": list(errors),
+        }
+
+    _audit(rosters, results)
 
     if failures:
         print(f"\n✗ {failures} captain(s) failed to capture — the build will "
@@ -142,6 +154,28 @@ def main(argv=None) -> int:
         return 1
     print("\n=== done ===")
     return 0
+
+
+def _audit(rosters: dict, results: dict) -> None:
+    """The morning re-check, run every day right here (Eve, 2026-09-09).
+
+    It sits INSIDE the capture rather than in a step of its own so it cannot be
+    forgotten, needs no second ownerville session, and always lands before
+    captainship_drafts (order 1.1) builds the emails from these boards.
+
+    Never raises and never changes the exit code: every board is already drawn
+    by the time this runs, so a bug in the bookkeeping must not be what costs
+    twelve captains their reports."""
+    try:
+        from automations.captainship_drafts import knocks_audit
+        from automations.total_knocks import pull as knocks
+        print()
+        knocks_audit.run(knocks.take_records(), rosters, results)
+    except Exception as e:  # noqa: BLE001
+        # ASCII on purpose: this is the handler of last resort, and a Windows
+        # console (cp1252) raises UnicodeEncodeError on the 'warning' glyph —
+        # which would turn "the audit had a bug" into "the capture crashed".
+        print(f"  [!] knocks audit skipped: {type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":
