@@ -138,6 +138,28 @@ def bundle_data(bundle_id: str) -> List[dict]:
     return B._request("GET", f"/bundles/{bundle_id}/data/") or []
 
 
+def search_bundles(term: str, limit: int = 20) -> List[dict]:
+    """Completed bundles matching `term`, asked of the server.
+
+    The recent sweep only reaches back as far as it pages, and people sign
+    weeks before they start: Zahra Muhsen signed on 8/24 and started on 9/7, so
+    a sweep of the newest bundles reported her as having no packet at all and
+    put a real person on a "chase this" list she didn't belong on.
+
+    Blue Ink's list endpoint takes `search=`, so anyone the sweep misses gets
+    looked up by name directly instead of by paging further and hoping.
+    """
+    term = _norm(term)
+    if not term:
+        return []
+    try:
+        rows = B._results(B._request(
+            "GET", "/bundles/", params={"search": term, "per_page": limit}))
+    except Exception:  # noqa: BLE001  -- a failed search is "not found"
+        return []
+    return [b for b in rows if str(b.get("status")) == "co"]
+
+
 def index_by_person(bundles: List[dict]) -> tuple:
     """(by_email, by_name) -- newest wins, since `bundles` is newest-first.
 
@@ -160,6 +182,27 @@ def index_by_person(bundles: List[dict]) -> tuple:
             if k and k not in by_name:
                 by_name[k] = b
     return by_email, by_name
+
+
+def _search_for(name: str, email: str = "") -> Optional[dict]:
+    """One person, looked up on the server. Their surname is the query, then
+    their whole name; the match is still `_key`, so a search that returns a
+    different Williams cannot be mistaken for this one."""
+    want = _key(name)
+    parts = [p for p in _norm(name).split() if p]
+    terms = [parts[-1]] if len(parts) > 1 else []
+    terms.append(_norm(name))
+    if email:
+        terms.append(email)
+    for term in terms:
+        for b in search_bundles(term):
+            for pkt in b.get("packets") or []:
+                if str(pkt.get("status")) != "co":
+                    continue
+                if _key(pkt.get("name") or "") == want or (
+                        email and _norm(pkt.get("email")).lower() == email):
+                    return b
+    return None
 
 
 def _doc_rank(doc_name: str) -> int:
@@ -219,6 +262,11 @@ def for_people(people, mapping: Optional[dict] = None,
         name = getattr(person, "name", person)
         email = _norm(getattr(person, "email", "")).lower()
         b = (by_email.get(email) if email else None) or by_name.get(_key(name))
+        if not b:
+            # Not in the recent sweep -- ask the server directly before
+            # declaring somebody has no paperwork. They may simply have signed
+            # further back than the sweep reaches.
+            b = _search_for(name, email)
         if not b:
             out[name] = NewHire(name=name, missing_packet=True)
             continue

@@ -265,3 +265,46 @@ def test_only_the_identified_filing_status_is_set():
     assert v["marital_status"] == AX.MARITAL_SINGLE
     v2 = RUN.apex_values(_cand(), BID.NewHire(name="Ann Lee", values={}))
     assert "marital_status" not in v2
+
+
+def test_somebody_who_signed_weeks_ago_is_not_reported_as_missing():
+    """People sign well before they start. Zahra Muhsen signed on 8/24 and
+    started 9/7, so the sweep of the newest bundles didn't reach her and the
+    run told Alisson and Tiff to chase paperwork that was already done.
+
+    Anyone the sweep misses is now looked up on the server by name -- and the
+    match is still `_key`, so a different Williams coming back from a search
+    for "Williams" can never be mistaken for this one.
+    """
+    calls = {"search": []}
+    recent = [{"id": "new", "status": "co",
+               "packets": [{"name": "Someone Else", "status": "co",
+                            "email": "else@example.com"}]}]
+    older = {"id": "old", "status": "co",
+             "packets": [{"name": "Zahra Muhsen", "status": "co",
+                          "email": "z@example.com"}],
+             "documents": []}
+
+    def fake_search(term, limit=20):
+        calls["search"].append(term)
+        return [older] if "muhsen" in term.lower() else [
+            {"id": "wrong", "status": "co",
+             "packets": [{"name": "Someone Williams", "status": "co",
+                          "email": "w@example.com"}], "documents": []}]
+
+    o_recent, o_search, o_data = (BID.completed_bundles, BID.search_bundles,
+                                  BID.bundle_data)
+    BID.completed_bundles = lambda **kw: recent
+    BID.search_bundles = fake_search
+    BID.bundle_data = lambda _bid: []
+    try:
+        got = BID.for_people(["Zahra Muhsen", "Deric Williams"], mapping={})
+    finally:
+        (BID.completed_bundles, BID.search_bundles,
+         BID.bundle_data) = o_recent, o_search, o_data
+
+    assert got["Zahra Muhsen"].missing_packet is False
+    assert got["Zahra Muhsen"].bundle_id == "old"
+    # a search that returns the WRONG Williams must not match
+    assert got["Deric Williams"].missing_packet is True
+    assert calls["search"], "the sweep miss should have triggered a lookup"
