@@ -63,7 +63,7 @@ for a in "$@"; do [ "$a" = "--dry-run" ] && DRYRUN=1; done
 # somewhere before LOG_FILE. Do NOT re-add until the wrapper's per-office
 # handling is fixed and a supervised WRAPPER-PATH test passes. Khalil is
 # served by manual reruns meanwhile.
-ROTATION="11580 23467"
+ROTATION="11580 23467 11901"
 OFFICE=""
 _prev=""
 for a in "$@"; do
@@ -110,9 +110,22 @@ case "$OFFICE" in
     # Carlos's #alphaletegp-recruiting.
     POST_TODO=1
     ;;
+  11901)
+    OFFICE_SLUG="-11901"
+    OFFICE_LABEL="office 11901 (Khalil)"
+    HUB_ID="applicant_push_khalil"
+    HUB_NAME="Applicant Push (Khalil)"
+    POST_TODO=1
+    ;;
   *)
-    echo "[$(date)] unknown office '$OFFICE' — not in ROTATION; skipping" >&2
-    exit 1
+    # An unknown office must SKIP THIS TICK, not kill the agent: on 9/8 this
+    # arm was `exit 1` and, because the rotation marker only advances on
+    # success, every tick re-picked the same unknown office and died pre-log —
+    # ALL offices' pushing stopped for hours, twice. Advance the marker past
+    # the bad entry and exit 0 so the next tick works the next office.
+    echo "[$(date)] unknown office '$OFFICE' — skipping this tick and advancing the rotation" >&2
+    echo "$OFFICE" > "$ROTATE_MARK"
+    exit 0
     ;;
 esac
 
@@ -141,6 +154,17 @@ case "$OFFICE" in
     # were added 2026-08-26). The summary post runs as its own process, so it
     # reads the channel from here, not from offices.py.
     export OAT_SCORECARD_CHANNEL="C0B85KRS5FU"
+    ;;
+  11901)
+    export OAT_OFFICE_ID="11901"
+    export OAT_FILE_SUFFIX="-11901"
+    export OAT_WALK_DIAG_TAB="OAT Walk Diag 11901"
+    export OAT_OFFICE_LABEL="office 11901 · Khalil Mansour — Alphalete Management Group"
+    export OAT_OFFICE_SHORT="office 11901, Khalil"
+    export OAT_REMOVE_NO_PHONE="1"
+    # #11901-alphalete-management-group-inc-khalil-mansour (private; the Lucy
+    # apps were added 2026-09-08). His to-do post goes HERE and nowhere else.
+    export OAT_SCORECARD_CHANNEL="C0AUKHN120L"
     ;;
 esac
 
