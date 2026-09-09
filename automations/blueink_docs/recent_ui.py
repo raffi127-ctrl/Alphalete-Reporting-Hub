@@ -68,6 +68,44 @@ _ROW_RE = re.compile(
     r"(\d{1,2}/\d{1,2}/\d{2,4})")
 
 
+def open_dashboard(page, *, timeout_ms: int = 45_000) -> None:
+    """Load the dashboard and WAIT for it to settle. Raises if not signed in.
+
+    The one definition of "is this session alive", because three copies of it
+    disagreed. Each did `goto` then a fixed sleep then `if "/login" in
+    page.url` -- 6 seconds in the probe, 12 in the completed sweep. The
+    dashboard is a single-page app that routes through an auth check on the way
+    in, so at 6 seconds the URL can still be a login route that is about to
+    resolve. On 2026-09-09 that had the probe reporting a DEAD session on Lucy 2
+    while the sweep on the same machine, with the same cookies, read Blue Ink
+    perfectly. A diagnostic that cries wolf is worse than none: it was used as
+    evidence the session had expired.
+
+    So this POLLS for an outcome instead of guessing a duration -- the search
+    box appearing means we're in, and only a URL that is STILL a login route
+    once the page has stopped moving means we're out.
+    """
+    import time
+    page.goto(DASHBOARD, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
+    deadline = time.time() + (timeout_ms / 1000.0)
+    while time.time() < deadline:
+        try:
+            if page.query_selector(SEARCH_SEL):
+                return                      # the list is up: we are signed in
+        except Exception:                   # noqa: BLE001 — mid-navigation
+            pass
+        page.wait_for_timeout(1000)
+    # Out of time. NOW the URL is worth believing.
+    if "/login" in (page.url or "") or "/auth" in (page.url or ""):
+        raise RuntimeError(
+            "The Blue Ink session on this machine has expired. At the keyboard "
+            "here run: python -m automations.blueink_docs.session --login")
+    raise RuntimeError(
+        "Blue Ink loaded but never showed its list in %ds (url=%s). The app's "
+        "layout may have changed -- rerun --probe-sent." % (
+            timeout_ms // 1000, page.url))
+
+
 def _search(page, term: str) -> str:
     """Type `term` into the list search and return the resulting body text.
 
@@ -187,14 +225,7 @@ def screen(people: List[NewStart], headless: bool = True,
         browser, ctx = S.open_context(p, headless=headless)
         page = ctx.new_page()
         try:
-            page.goto(DASHBOARD, wait_until="domcontentloaded",
-                      timeout=NAV_TIMEOUT)
-            page.wait_for_timeout(6000)
-            if "/login" in page.url:
-                raise RuntimeError(
-                    "The Blue Ink session on this machine has expired. At the "
-                    "keyboard here run: python -m "
-                    "automations.blueink_docs.session --login")
+            open_dashboard(page)
             _canaries(page, known_sent, today)
             for person in todo:
                 email = person.email.strip()
@@ -265,12 +296,12 @@ def _probe(email: str, headless: bool) -> int:
         browser, ctx = S.open_context(p, headless=headless)
         page = ctx.new_page()
         try:
-            page.goto(DASHBOARD, wait_until="domcontentloaded",
-                      timeout=NAV_TIMEOUT)
-            page.wait_for_timeout(6000)
-            if "/login" in page.url:
-                print("PROBE session is DEAD -- rerun session.py --login")
+            try:
+                open_dashboard(page)
+            except RuntimeError as exc:
+                print("PROBE " + str(exc).splitlines()[0][:180])
                 return 0
+            print("PROBE session is GOOD")
             print("PROBE tids=" + _tids(page, "list", 8))
             known = email or "Angiep8k@gmail.com"
             miss = "zzz-nobody-has-this@example.invalid"
