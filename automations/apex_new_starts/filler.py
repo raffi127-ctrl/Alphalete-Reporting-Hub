@@ -890,9 +890,13 @@ _JS = r"""
             '<a href="#" id="ansfind">Find them all for me</a> '+
             '(it looks each one up by surname on this list).'
           : '<b>All '+D.length+' found.</b> Ready to run the week.');
+   var tell=function(m){ document.getElementById('ansout').innerHTML=m; };
    var fb=document.getElementById('ansfind');
-   if(fb) fb.onclick=function(e){ e.preventDefault();
-     findEveryone(function(m){ document.getElementById('ansout').innerHTML=m; }); };
+   if(fb) fb.onclick=function(e){ e.preventDefault(); findEveryone(tell); };
+   /* Do not ASK. If people are missing and this page has the roster's filter
+      row, go and find them -- being offered a chore is barely better than
+      doing it (Megan, 2026-09-09). The link stays for a retry. */
+   if(lack&&filterBoxes()) findEveryone(tell);
  }
  document.getElementById('ansrun').onclick=async function(){
    /* One form for the whole week, then one pass. The alternative -- filling

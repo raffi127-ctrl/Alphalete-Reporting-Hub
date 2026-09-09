@@ -1164,9 +1164,8 @@ def test_it_looks_everyone_up_itself(page, tmp_path):
     people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
               {"name": "Cristian Amaya Vega", "find": "Amaya Vega", "pages": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
-    assert "2 of 2 still not found" in page.locator("#ansout").inner_text()
-
-    page.locator("#ansfind").click()
+    # the lookup now starts on its own, so the "still not found" line is
+    # already being replaced by the time we could assert on it
     page.wait_for_function(
         "() => document.getElementById('ansout').innerText.includes('found')"
         " && !document.getElementById('ansout').innerText.includes('not found')",
@@ -1177,3 +1176,25 @@ def test_it_looks_everyone_up_itself(page, tmp_path):
     assert stored["aundre browder"] == "2816109"
     assert stored["cristian amaya vega"] == "2816105"
     assert page.locator("#lf").input_value() == "", "the filter is put back"
+
+
+def test_it_looks_them_up_without_being_asked(page, tmp_path):
+    """Being offered a chore is barely better than doing it. If people are
+    missing and the roster's filter row is on screen, it just goes."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_WITH_FILTER)
+    page.goto(f.as_uri())
+    page.evaluate(ROSTER_WIRING)
+    page.evaluate("() => localStorage.clear()")
+
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Cristian Amaya Vega", "find": "Amaya Vega", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+
+    # no click on anything -- it starts on its own
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('All 2 found')",
+        timeout=20000)
+    stored = page.evaluate(
+        "() => JSON.parse(localStorage.getItem('apexNewStarts.WE 9.13.ids'))")
+    assert stored["aundre browder"] == "2816109"
