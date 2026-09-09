@@ -103,6 +103,11 @@ LABELS: Dict[str, tuple] = {
     "country": ("country",),
     "home_phone": ("home phone",),
     "mobile_phone": ("mobile phone",),
+    # --- stage three: 'Tax & Bank Information' ------------------------------
+    # Confirmed 2026-09-05 off /employees/<id>/edit/bank-info.
+    "claim_dependents": ("claim dependents",),
+    "marital_status": ("marital status",),
+    "tax_state": ("state to be taxed in",),
 }
 
 # STAGE TWO lives behind the 'User Profile & Account' tab of a saved employee.
@@ -170,6 +175,15 @@ DEFAULTS = {
     # The dropdown reads '100 Owner / 200 Admin / 400 Sales / 750 Chips /
     # 900 1099' -- department numbers, and the option text carries the number.
     "department": "400 Sales",
+}
+
+# The tax tab's own settings, kept apart from DEFAULTS because they are filled
+# on a DIFFERENT PAGE. Mixing them would have every stage-one fill report
+# 'tax_state: no field matched' -- noise that trains people to ignore the
+# warnings that matter.
+TAX_DEFAULTS = {
+    "tax_state": "Texas",       # 'State to be taxed in' -- same answer as
+                                # 'State Working In' on the employment record.
 }
 
 # SECURITY ROLE. Required radio group -- Office Admin / ICD Payroll Admin /
@@ -515,6 +529,18 @@ def apply_fill(page, matched: List[tuple], log=print) -> int:
 # There are TWO boxes, not one: the page shows the existing number masked
 # ('***-**-7663') and then asks for 'Change SSN' and 'Confirm SSN'. Filling one
 # and not the other saves nothing, so this fills both or neither.
+# W-4 Step 1(c) has three filing-status boxes and exactly one is ticked on every
+# one of 30 signed packets -- so the three keys are certain, but WHICH is which
+# is not. 'chk003-0odkU' carries 24 of the 30 and matches the value Apex already
+# shows by default, so Single is safe. The other two are 2 and 4 packets, and
+# the evidence contradicts itself: by placement order chk004 is Married Filing
+# Jointly, but 2 of 2 of its people claim dependents while only 1 of 4 of
+# 6471's do -- which points the other way, since Head of Household needs a
+# qualifying dependent. Guessing between them would put a wrong filing status on
+# a real tax record, so only Single is mapped and the rest are reported.
+# One Quick View of Ashari Evans's and Michael Moore's W-4s settles it forever.
+MARITAL_SINGLE = "Single or Married filing separately"
+
 SSN_CHANGE_LABELS = ("change ssn", "social security number", "ssn")
 SSN_CONFIRM_LABELS = ("confirm ssn", "confirm social security number")
 

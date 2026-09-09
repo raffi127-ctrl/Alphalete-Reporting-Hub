@@ -39,12 +39,17 @@ MAP_PATH = Path(__file__).resolve().parent / "field_map.json"
 # The semantic names Apex is filled from. Order matters only for printing.
 PERSONAL = ("first", "middle", "last", "address1", "address2", "city", "state",
             "zip", "dob", "email", "phone")
+# W-4 Step 3 (dollars, which is exactly what Apex's 'Claim Dependents' wants)
+# and Step 1(c)'s filing status. Read from the W-4 by these four LITERAL keys
+# only -- never by trusting that form's layout, which is why it is otherwise
+# excluded: its address boxes hold the employer's beside the employee's.
+W4 = ("child_credit", "other_dep_credit", "dep_total", "filing_single")
 # Held to a different standard everywhere downstream: never auto-typed, shown
 # to the operator to enter by hand. Bank routing/account numbers are not on
 # this list because they are not mapped AT ALL -- direct deposit is out of
 # scope for this report (see run.py).
 SENSITIVE = ("ssn",)
-KNOWN = PERSONAL + SENSITIVE
+KNOWN = PERSONAL + SENSITIVE + W4
 
 _SSN = re.compile(r"^\d{3}-?\d{2}-?\d{4}$")
 _ZIP = re.compile(r"^\d{5}(-\d{4})?$")

@@ -212,7 +212,7 @@ def test_every_default_actually_selects_its_option(page):
     -- apply_fill has to pick the option. '400 Sales' is the whole option text,
     number included; picking '400' or 'Sales' would select nothing at all."""
     matched, unmatched = AX.plan_fill(page, dict(AX.DEFAULTS))
-    assert not unmatched, unmatched
+    assert not unmatched, unmatched          # TAX_DEFAULTS live on another page
     AX.apply_fill(page, matched, log=lambda *_: None)
     assert page.locator("#f14").input_value() == "400 Sales"
     assert page.locator("#f10").input_value() == "Sales Rep"

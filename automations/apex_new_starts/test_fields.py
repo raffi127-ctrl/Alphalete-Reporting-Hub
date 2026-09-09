@@ -219,3 +219,49 @@ def test_us_date_handles_what_people_actually_type():
     assert _us_date("2004-06-28") == "6/28/2004"
     assert _us_date("6/28/04") == "6/28/2004"
     assert _us_date("") == "" and _us_date("June 28th") == ""
+
+
+def _cand():
+    import datetime as dt
+    from automations.apex_new_starts import board as BRD
+    return BRD.Candidate(name="Ann Lee", trainer="", email="", location="",
+                         team="", reason_lost="", roll={0: "CR"}, tab="t",
+                         row=1, week_start=dt.date(2026, 8, 31))
+
+
+def test_claim_dependents_goes_across_in_dollars():
+    """Apex's 'Claim Dependents' box wants the W-4's own dollar figure, so
+    line 3 goes straight over -- no converting it to a count of kids."""
+    from automations.apex_new_starts import run as RUN
+    v = RUN.apex_values(_cand(), BID.NewHire(
+        name="Ann Lee", values={"dep_total": "4000"}))
+    assert v["claim_dependents"] == "4000.00"
+
+
+def test_a_blank_total_falls_back_to_the_two_lines():
+    """Real packets leave the total empty and fill only 3a and 3b."""
+    from automations.apex_new_starts import run as RUN
+    v = RUN.apex_values(_cand(), BID.NewHire(
+        name="Ann Lee", values={"child_credit": "4000",
+                                "other_dep_credit": "500"}))
+    assert v["claim_dependents"] == "4500.00"
+
+
+def test_an_untouched_step_three_claims_nothing():
+    """Somebody who left Step 3 blank gets NO value -- not a zero we invented."""
+    from automations.apex_new_starts import run as RUN
+    v = RUN.apex_values(_cand(), BID.NewHire(name="Ann Lee", values={}))
+    assert "claim_dependents" not in v
+
+
+def test_only_the_identified_filing_status_is_set():
+    """Three W-4 boxes, one ticked per form, and only the Single one is
+    identified. The other two are reported and set by hand rather than given a
+    filing status nobody has confirmed -- it lands on a real tax record."""
+    from automations.apex_new_starts import apex as AX
+    from automations.apex_new_starts import run as RUN
+    v = RUN.apex_values(_cand(), BID.NewHire(
+        name="Ann Lee", values={"filing_single": "True"}))
+    assert v["marital_status"] == AX.MARITAL_SINGLE
+    v2 = RUN.apex_values(_cand(), BID.NewHire(name="Ann Lee", values={}))
+    assert "marital_status" not in v2

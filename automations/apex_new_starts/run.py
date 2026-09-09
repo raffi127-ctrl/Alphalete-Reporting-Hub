@@ -155,6 +155,11 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
       DEFAULTS       how this office hires -- Sales Rep, $10/hr, Texas,
                      Commissions, Weekly. Same for everyone, so they are
                      settings rather than data.
+      the W-4        what the tax tab needs -- what they claim for dependents,
+                     in dollars, and their filing status.
+
+    The three pages are filled from ONE dict: whichever page is on screen,
+    plan_fill matches what belongs to it and reports the rest as absent.
 
     Anything missing is simply absent from the dict; nothing is invented. The
     caller reports the gap and skips rather than typing a placeholder into
@@ -164,6 +169,7 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     v = dict(hire.fillable())               # SSN cannot be in here -- see
                                             # NewHire.fillable
     v.update(AX.DEFAULTS)
+    v.update(AX.TAX_DEFAULTS)
     email = v.pop("email", "")
     if email:
         v["account_email"] = email
@@ -197,7 +203,34 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     gender = _gender(c.gender)
     if gender:
         v["gender"] = gender
+
+    # --- the tax tab, off the W-4 -------------------------------------------
+    # Apex's 'Claim Dependents' wants DOLLARS, which is what the W-4 already
+    # states -- no converting to a count. Prefer the form's own total; fall
+    # back to 3a + 3b when whoever filled it left the total blank.
+    dep = _dollars(hire.values.get("dep_total"))
+    if dep is None:
+        a = _dollars(hire.values.get("child_credit"))
+        b = _dollars(hire.values.get("other_dep_credit"))
+        dep = None if a is None and b is None else (a or 0) + (b or 0)
+    if dep is not None:
+        v["claim_dependents"] = f"{dep:.2f}"
+
+    # Only the Single box is identified -- see apex.MARITAL_SINGLE. Anyone
+    # ticking one of the other two is reported and set by hand, rather than
+    # given a filing status nobody has confirmed.
+    if str(hire.values.get("filing_single") or "").strip().lower() == "true":
+        v["marital_status"] = AX.MARITAL_SINGLE
     return v
+
+
+def _dollars(value):
+    """'4,000' -> 4000.0, or None when the box was left empty."""
+    raw = str(value or "").replace(",", "").replace("$", "").strip()
+    try:
+        return float(raw)
+    except ValueError:
+        return None
 
 
 def _gender(value) -> str:

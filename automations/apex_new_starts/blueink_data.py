@@ -30,6 +30,9 @@ DOC_PREFERENCE = ("i9", "i-9", "w4", "w-4", "dd", "direct deposit")
 # What each mapped value has to look like before it is allowed through. A field
 # with no rule here (city, address, names) is accepted as any non-blank text.
 SHAPE = {
+    "child_credit": re.compile(r"^\d{1,6}$"),
+    "other_dep_credit": re.compile(r"^\d{1,6}$"),
+    "dep_total": re.compile(r"^\d{1,6}$"),
     "ssn": FM._SSN,
     "zip": FM._ZIP,
     "phone": FM._PHONE,
