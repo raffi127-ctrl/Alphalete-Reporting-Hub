@@ -97,6 +97,18 @@ REMOVALS: dict = {
         # stays: he is still selling Fiber - All Units.
         ("William Sassenberg", "William@optimabusinessmgmt.com"),
     ],
+    # 2026-09-09 (Eve): "she is shut down" — la oficina 23576 (Illumane, Inc.)
+    # de Kimberly Rodriguez cerró, que es por qué AppStream venía rechazándola
+    # desde el 09-02. NO es la regla de dos semanas: al 09-09 seguía vendiendo
+    # (Order Log, última orden 09-07). Eve pidió expresamente sacarla del distro
+    # AHORA y dejarla en los REPORTES hasta que alguien pida la baja o cumpla
+    # las dos semanas en cero — así que esta entrada va sola: ni roster_remove,
+    # ni captain_gate.EXCLUDE, ni hide/skip del focus report todavía.
+    # Este grupo NO es compartido, así que la baja llega sólo al correo de Chan.
+    # Queda anotada en la tab 'Terminated ICDs' del AUTOMATION MASTER.
+    "Chan's Captainship": [
+        ("Kimberly Rodriguez", "kimberlyatt458@gmail.com"),
+    ],
     "Tony's Captainship": [
         ("Melik El Jaiez", "melikeljaiez@yahoo.com"),        # no display name on the card
         ("Aden Berhane", "berhaneaden3@gmail.com"),

@@ -521,7 +521,14 @@ RECIPIENTS: dict = {
     "chan": [
         "carissang46@gmail.com", "parkwchan19@gmail.com",
         "coel.g.reif@gmail.com", "dylanjtwaddle@gmail.com",
-        "ericdmartinez222@gmail.com", "kimberlyatt458@gmail.com",
+        "ericdmartinez222@gmail.com",
+        # Kimberly Rodriguez (kimberlyatt458@gmail.com) sacada el
+        # 2026-09-09: su oficina 23576 cerró (Eve, "she is shut down").
+        # Tiene que salir del CÓDIGO además del grupo de Contactos —
+        # seed_groups.py reconstruye el grupo desde esta lista, así que
+        # dejarla acá la repone en el próximo envío. Sigue en los
+        # reportes a propósito hasta que Eve pida la baja o cumpla las
+        # dos semanas en cero; esto saca SÓLO el correo.
         "marcial.enrique@yahoo.com", "maudmiller4@gmail.com",
         "nweldon0130@gmail.com", "raffi127@gmail.com",
         "samjpark1497@gmail.com",
