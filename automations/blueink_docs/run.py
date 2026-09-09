@@ -413,6 +413,13 @@ def _main(argv=None) -> int:
     if args.sync_completed:
         try:
             n = _sync_completed(ws, people, headless=not args.headed)
+            # Tick FIRST, then prove the BROWSER session is alive -- separately,
+            # and on every sweep. Otherwise that check only happens as a side
+            # effect of having work to do, so "nothing to tick" and "can't see
+            # Blue Ink at all" print the same line and exit the same way. That
+            # is how a dead session on Lucy 2 hid for two days while the alert
+            # built to catch it never fired: nothing raised.
+            completed.verify_ui_session(headless=not args.headed)
         except Exception as exc:
             # A dead session exits 2 correctly -- and that exit code went
             # NOWHERE, because this job deliberately doesn't publish to the

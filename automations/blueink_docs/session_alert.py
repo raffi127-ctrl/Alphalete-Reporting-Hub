@@ -30,8 +30,12 @@ KEY = "blueink_session"
 WHAT = "*Blue Ink* session on Lucy 2"
 
 # What a dead session actually looks like coming out of recent_ui / completed.
+# EXPIRED and MISSING both mean "a human has to sign in here", and both were
+# not covered: the file simply being absent raises "No Blue Ink session ..."
+# which matched none of these, so a fresh machine would have failed silently
+# exactly the way an expired one did.
 _DEAD_MARKERS = ("session on this machine has expired", "session is dead",
-                 "/login")
+                 "no blue ink session", "no session here", "/login")
 
 
 def looks_dead(exc: BaseException) -> bool:
