@@ -183,7 +183,13 @@ def main(argv=None) -> int:
             continue
         got = prev.get(_norm(nm))
         if not got:
+            # A rep who was not on LAST WEEK'S tab at all. Nothing to deduce,
+            # so all three say so -- leaving the cells untouched would leave
+            # blanks in the middle of the block, which reads as a broken report.
             miss.append(nm)
+            for h in (WEEK_AVG_TK, WEEK_TT, WEEK_AVG_TT):
+                data.append({"range": "%s%d" % (_col_letter(cols[h]), r),
+                             "values": [["-"]]})
             continue
         days, talk = got
         hit += 1
@@ -245,6 +251,12 @@ def main(argv=None) -> int:
                     continue
                 data.append({"range": "%s%d" % (_col_letter(col), r),
                              "values": [[round(v / d, 1)]]})
+        # The roster's TOTALS row holds VALUES here, not formulas (`379`, not a
+        # SUMIF), so its Talk-To's total has to be added up the same way.
+        week_tt = sum(t for _d, t in prev.values() if isinstance(t, int))
+        if week_tt:
+            data.append({"range": "%s%d" % (_col_letter(cols[WEEK_TT]), last + 1),
+                         "values": [[week_tt]]})
         # The roster's own TOTALS row, over the days EVERYBODY worked.
         for col, src_col in ((cols[WEEK_AVG_TK], tk_c), (cols[WEEK_AVG_TT], tt_c)):
             try:

@@ -869,6 +869,10 @@ def team_totals(ss, ws, apply: bool = False) -> int:
             cells[WEEK_TT_APP] = ('=IF(N($%s%d)=0,%s,IFERROR($%s%d/$%s%d,%s))'
                                   % (A, r, CANT_MEASURE, TT, r, A, r,
                                      CANT_MEASURE))
+        # A row that cannot have the four derived cells still must not be
+        # BLANK -- '-' says "nothing to measure here", a blank says "broken".
+        for header in (WEEK_AVG_TK, WEEK_AVG_TT, WEEK_PCT, WEEK_TT_APP):
+            cells.setdefault(header, CANT_MEASURE.strip('"'))
         for header, formula in cells.items():
             c = _col_letter(col[header])
             data.append({"range": "%s%d" % (c, r), "values": [[formula]]})
@@ -1095,6 +1099,17 @@ def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
                          "values": [[ratio(r, TT, K_)]]})
             data.append({"range": "%s%d" % (_col_letter(cols[WEEK_TT_APP]), r),
                          "values": [[ratio(r, TT, A_)]]})
+        # The three VALUE columns of a past week: nothing computes them, the
+        # Monday roll brings them. Until it does they say '-' and not blank --
+        # a blank in a weekly block reads as a broken report (Eve, 2026-09-09).
+        # Only ever seeded where the cell is EMPTY, so a real number is safe.
+        for r in rows:
+            if not _cell(grid, r, 3):
+                continue
+            for h in (WEEK_AVG_TK, WEEK_TT, WEEK_AVG_TT):
+                if not _cell(grid, r, cols[h]):
+                    data.append({"range": "%s%d" % (_col_letter(cols[h]), r),
+                                 "values": [[CANT_MEASURE.strip('"')]]})
         # The TOTALS row of the roster gets the same sum its neighbours use --
         # without it the block's own foot is the one cell with no total.
         f = _totals_like(grid, totals, knocks, cols[WEEK_TT])
