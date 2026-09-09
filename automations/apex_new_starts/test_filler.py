@@ -215,3 +215,66 @@ def test_it_finds_boxes_whose_caption_is_not_a_label_tag(page):
     assert page.locator("#c1").input_value() == "Sales Rep"
     assert page.locator("#c2").input_value() == "10.00"
     assert page.locator("#c3").input_value() == "400 Sales"
+
+
+KENDO_FORM = """
+<!doctype html><html><body>
+<div class="form-group">
+  <label for="JobTitleID_943">Position <span>*</span></label>
+  <input type="hidden" id="JobTitleID_943" name="JobTitleID_943">
+  <span class="k-widget k-dropdown" role="listbox">Select</span>
+</div>
+<div class="form-group">
+  <label for="PlainCity">City <span>*</span></label>
+  <input type="text" id="PlainCity">
+</div>
+</body></html>
+"""
+
+# The smallest thing that behaves like jQuery + Kendo: a widget bound to the
+# hidden input whose value only changes through its own API. Installed by
+# evaluate() rather than an inline <script>, which set_content does not run.
+KENDO_STUB = """() => {
+  window.__set = [];
+  const W = {
+    options: {dataTextField: 'Text', dataValueField: 'Value'},
+    dataSource: {data: () => ([
+        {Text: 'Select', Value: ''},
+        {Text: 'Sales Rep', Value: '17'},
+        {Text: 'Office Admin', Value: '4'}])},
+    value: v => { document.getElementById('JobTitleID_943').value = v;
+                  window.__set.push(v); },
+    trigger: () => {}
+  };
+  window.jQuery = el => ({
+    data: k => (k === 'kendoDropDownList' && el && el.id === 'JobTitleID_943')
+               ? W : null
+  });
+}"""
+
+
+def _kendo_page(page, fields):
+    page.set_content(KENDO_FORM)
+    page.evaluate(KENDO_STUB)
+    people = [{"name": "Aundre Browder", "find": "Browder", "fields": fields}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+
+
+def test_it_drives_kendo_dropdowns_through_their_own_api(page):
+    """Apex's dropdowns are Kendo widgets on AngularJS: the <label for> points
+    at a HIDDEN input and the visible control is a span. Setting .value on the
+    input does nothing at all -- which is why six fields silently stayed on
+    'Select' through three rounds of guessing."""
+    _kendo_page(page, {"Position": "Sales Rep", "City": "Dallas"})
+    assert page.evaluate("window.__set") == ["17"], "set by VALUE, matched on text"
+    assert page.locator("#PlainCity").input_value() == "Dallas", "plain inputs still work"
+    assert "Position" in page.locator("#ansout").inner_text()
+
+
+def test_a_hidden_kendo_input_is_not_skipped_as_invisible(page):
+    """The rule everywhere else is 'never type into something hidden'. A
+    Kendo-backed input is the one exception: it is SUPPOSED to be hidden, and
+    refusing it is what made these fields unreachable."""
+    _kendo_page(page, {"Position": "Office Admin"})
+    assert page.evaluate("window.__set") == ["4"]

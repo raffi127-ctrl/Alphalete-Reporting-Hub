@@ -67,6 +67,39 @@ _JS = r"""
  var I=0; try{ I=parseInt(localStorage.getItem(KEY)||'0',10)||0; }catch(e){}
  if(I>=D.length){ alert('All '+D.length+' done for %(week)s.\nTo start again, click this and choose Reset.'); }
  function norm(t){ return (t||'').replace(/\*/g,'').replace(/\s+/g,' ').trim().toLowerCase(); }
+ function kw(el){
+   /* Apex's dropdowns are Kendo UI widgets on AngularJS, not <select>s. The
+      <label for> points at a HIDDEN input holding the id, and the thing you
+      see is a k-dropdown span beside it. Setting .value on that input changes
+      nothing: Angular never hears about it and the widget keeps its own state.
+      So anything Kendo-backed has to be driven through Kendo's own API. */
+   var $=window.jQuery||window.$; if(!$||!el) return null;
+   var e=$(el);
+   return e.data('kendoDropDownList')||e.data('kendoComboBox')||
+          e.data('kendoNumericTextBox')||e.data('kendoDatePicker')||
+          e.data('kendoMaskedTextBox')||null;
+ }
+ function ngApply(el){
+   if(!window.angular) return;
+   try{ var sc=angular.element(el).scope();
+        if(sc&&!sc.$$phase) sc.$applyAsync(); }catch(e){}
+ }
+ function kendoSet(el,v){
+   var w=kw(el); if(!w) return false;
+   if(w.dataSource&&w.dataSource.data&&w.options&&w.value){
+     var d=w.dataSource.data()||[], want=norm(v),
+         tf=w.options.dataTextField, vf=w.options.dataValueField, i, t;
+     for(i=0;i<d.length;i++){
+       t=norm(tf&&d[i][tf]!==undefined?d[i][tf]:(d[i].Text||d[i].text||d[i]));
+       if(t===want||(t&&(t.indexOf(want)===0||want.indexOf(t)===0))){
+         w.value(vf&&d[i][vf]!==undefined?d[i][vf]:(d[i].Value||d[i].value||d[i]));
+         w.trigger('change'); ngApply(el); return true;
+       }
+     }
+     return false;
+   }
+   w.value(v); w.trigger('change'); ngApply(el); return true;
+ }
  function vis(el){ var r=el.getBoundingClientRect(); return r.width>0&&r.height>0&&!el.disabled&&!el.hasAttribute('readonly'); }
  var BAD={checkbox:1,radio:1,button:1,submit:1,reset:1,hidden:1,file:1,image:1};
  function nearInput(node){
@@ -102,7 +135,8 @@ _JS = r"""
          for(var k=0;k<3&&n;k++,n=n.nextElementSibling){
            var c=n.matches&&n.matches('input,select,textarea')?n:(n.querySelector?n.querySelector('input,select,textarea'):null);
            if(c){ f=c; break; } } }
-       if(f && vis(f) && !(f.tagName==='INPUT'&&BAD[(f.type||'').toLowerCase()])) out.push(f);
+       /* a Kendo-backed input is legitimately hidden -- accept it anyway */
+       if(f && (kw(f) || (vis(f) && !(f.tagName==='INPUT'&&BAD[(f.type||'').toLowerCase()])))) out.push(f);
      }
      if(out.length===1) return out[0];
    }
@@ -119,6 +153,7 @@ _JS = r"""
    return null;
  }
  function setVal(el,v){
+   if(kendoSet(el,v)) return true;
    if(el.tagName==='SELECT'){
      var o=el.options,w=norm(v),i,pick=null;
      for(i=0;i<o.length;i++){ if(norm(o[i].text)===w){pick=o[i];break;} }
