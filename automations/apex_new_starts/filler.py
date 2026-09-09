@@ -74,15 +74,77 @@ _JS = r"""
       nothing: Angular never hears about it and the widget keeps its own state.
       So anything Kendo-backed has to be driven through Kendo's own API. */
    var $=window.jQuery||window.$; if(!$||!el) return null;
-   var e=$(el);
-   return e.data('kendoDropDownList')||e.data('kendoComboBox')||
+   var e=$(el), w=e.data('kendoDropDownList')||e.data('kendoComboBox')||
           e.data('kendoNumericTextBox')||e.data('kendoDatePicker')||
           e.data('kendoMaskedTextBox')||null;
+   if(w) return w;
+   /* The NumericTextBox answers to .data(); the DropDownLists on this page do
+      not -- kendo-angular can hang the widget somewhere else entirely. Ask
+      Kendo itself, then look at the k-widget span sitting beside the hidden
+      input, which is the thing the user actually sees. */
+   if(window.kendo&&kendo.widgetInstance){
+     try{ w=kendo.widgetInstance(e); }catch(x){}
+     if(w&&w.value) return w;
+     var box=el.parentElement, sp=box?box.querySelector('.k-widget'):null, hops=0;
+     while(!sp&&box&&hops<2){ box=box.parentElement; sp=box?box.querySelector('.k-widget'):null; hops++; }
+     if(sp){ try{ w=kendo.widgetInstance($(sp)); }catch(x2){}
+             if(w&&w.value) return w; }
+   }
+   return null;
  }
  function ngApply(el){
    if(!window.angular) return;
    try{ var sc=angular.element(el).scope();
         if(sc&&!sc.$$phase) sc.$applyAsync(); }catch(e){}
+ }
+ function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+ function fire(el,type){
+   el.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,view:window}));
+ }
+ function widgetSpan(el){
+   /* The thing a person actually clicks: the k-dropdown span sitting beside
+      the hidden input the <label> points at -- in the SAME parent, and only
+      there. Walking up the tree looked more forgiving and was wrong: it found
+      a neighbouring field's dropdown and declared a plain text box
+      Kendo-backed, so City stopped filling. */
+   var box=el.parentElement;
+   return box?box.querySelector(':scope > .k-dropdown, :scope > .k-combobox, :scope > .k-widget'):null;
+ }
+ function openLists(){
+   var uls=document.querySelectorAll('ul.k-list,ul.k-reset'), out=[], i;
+   for(i=0;i<uls.length;i++){ var r=uls[i].getBoundingClientRect();
+     if(r.width>0&&r.height>0) out.push(uls[i]); }
+   return out;
+ }
+ async function kendoClick(el,v){
+   /* Drive the dropdown the way a person does: click it, wait for the list,
+      click the option. This is the ONLY approach that does not depend on how
+      kendo-angular wired the widget -- .data() and kendo.widgetInstance both
+      came back empty on the live page, while the NumericTextBox answered fine.
+      A real click can't be wrong about that. */
+   var sp=widgetSpan(el); if(!sp) return false;
+   fire(sp,'mousedown'); fire(sp,'mouseup'); fire(sp,'click');
+   var lists=[], waited=0;
+   while(waited<2000){ lists=openLists(); if(lists.length) break; await sleep(100); waited+=100; }
+   if(!lists.length) return false;
+   var want=norm(v), i, j, items, best=null;
+   for(i=0;i<lists.length&&!best;i++){
+     items=lists[i].querySelectorAll('li');
+     for(j=0;j<items.length;j++){
+       var t=norm(items[j].textContent);
+       if(t===want){ best=items[j]; break; }
+     }
+     if(!best) for(j=0;j<items.length;j++){
+       var t2=norm(items[j].textContent);
+       if(t2&&(t2.indexOf(want)===0||want.indexOf(t2)===0)){ best=items[j]; break; }
+     }
+   }
+   if(!best){ fire(sp,'mousedown'); fire(document.body,'click'); return false; }
+   best.scrollIntoView({block:'nearest'});
+   fire(best,'mouseover'); fire(best,'mousedown'); fire(best,'mouseup'); fire(best,'click');
+   await sleep(150);
+   ngApply(el);
+   return true;
  }
  function kendoSet(el,v){
    var w=kw(el); if(!w) return false;
@@ -135,8 +197,12 @@ _JS = r"""
          for(var k=0;k<3&&n;k++,n=n.nextElementSibling){
            var c=n.matches&&n.matches('input,select,textarea')?n:(n.querySelector?n.querySelector('input,select,textarea'):null);
            if(c){ f=c; break; } } }
-       /* a Kendo-backed input is legitimately hidden -- accept it anyway */
-       if(f && (kw(f) || (vis(f) && !(f.tagName==='INPUT'&&BAD[(f.type||'').toLowerCase()])))) out.push(f);
+       /* A Kendo-backed input is legitimately hidden -- accept it anyway.
+          Either it answers to the widget API, or there is a k-dropdown span
+          beside it that a person would click. Both count; the plain rule
+          ("never touch something invisible") holds everywhere else. */
+       if(f && (kw(f) || widgetSpan(f) ||
+                (vis(f) && !(f.tagName==='INPUT'&&BAD[(f.type||'').toLowerCase()])))) out.push(f);
      }
      if(out.length===1) return out[0];
    }
@@ -152,8 +218,16 @@ _JS = r"""
    if(cands.length===1) return cands[0];
    return null;
  }
- function setVal(el,v){
+ async function setVal(el,v){
    if(kendoSet(el,v)) return true;
+   if(el.tagName!=='SELECT'&&widgetSpan(el)){
+     if(await kendoClick(el,v)) return true;
+     /* A Kendo control that would not take the value must NOT fall through to
+        el.value: that input is hidden and holds an id, so writing 'Astronaut'
+        into it sets a value the widget disowns and the page still shows
+        'Select' -- wrong, and invisible. An honest miss is reported instead. */
+     return false;
+   }
    if(el.tagName==='SELECT'){
      var o=el.options,w=norm(v),i,pick=null;
      for(i=0;i<o.length;i++){ if(norm(o[i].text)===w){pick=o[i];break;} }
@@ -174,13 +248,17 @@ _JS = r"""
    }
    return false;
  }
- function fill(p){
-   var done=[],miss=[],k;
+ async function fill(p){
+   var done=[],miss=[],found=0,k;
    for(k in p.fields){ var el=fieldFor(k);
-     if(el){ if(setVal(el,p.fields[k])) done.push(k); else miss.push(k+' (no matching option)'); }
+     if(el){ found++;
+       if(await setVal(el,p.fields[k])) done.push(k); else miss.push(k+' (no matching option)'); }
      else miss.push(k); }
-   if(role()) done.push('Sales Rep role');
-   return {done:done,miss:miss};
+   if(role()){ done.push('Sales Rep role'); found++; }
+   /* `found` is boxes we LOCATED, which is not the same as boxes we filled.
+      Without the difference, a page where every field was found but one value
+      would not match got reported as "not an Apex form". */
+   return {done:done,miss:miss,found:found};
  }
  function ssnBoxes(){ var a=fieldFor('Change SSN'), b=fieldFor('Confirm SSN'); return (a&&b)?[a,b]:null; }
  function blueink(p){ return 'https://secure.blueink.com/dashboard/wall?search='+encodeURIComponent(p.find||p.name); }
@@ -200,22 +278,24 @@ _JS = r"""
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
    '<div style="margin-top:8px"><a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
  document.body.appendChild(box);
- document.getElementById('ansfill').onclick=function(){
-   var r=fill(p);
+ document.getElementById('ansfill').onclick=async function(){
+   document.getElementById('ansout').innerHTML='filling...';
+   var r=await fill(p);
    /* Nothing matched at all = not an Apex form. Saying so beats a wall of red
       listing every field the page was never going to have, which is what it
       did the first time somebody clicked it on the wrong tab. NOTE: block
       comments only in here -- build_js collapses this to ONE line, so a
       line comment would swallow the entire rest of the script. */
-   if(!r.done.length && !ssnBoxes()){
+   if(!r.found && !ssnBoxes()){
      document.getElementById('ansout').innerHTML=
        '<b>This isn\'t an Apex form.</b><br>Open <b>Roster → Employees → '+
-       '+ Add Employee</b> in Apex, then click the button there.';
+       'Pending</b>, click <b>Edit</b> on '+p.name+', then click the button '+
+       'on each of the three tabs.';
      return;
    }
    var msg='Filled: '+(r.done.join(', ')||'nothing on this page');
    var s=document.getElementById('ansssn');
-   if(s&&s.value){ var b=ssnBoxes(); if(b){ setVal(b[0],s.value); setVal(b[1],s.value); s.value=''; msg+='; Social entered'; } }
+   if(s&&s.value){ var b=ssnBoxes(); if(b){ await setVal(b[0],s.value); await setVal(b[1],s.value); s.value=''; msg+='; Social entered'; } }
    if(r.miss.length) msg+='<br><span style="color:#b00">Not found here: '+r.miss.join(', ')+'</span>'+
      ' <a href="#" id="answhy" style="font-size:11px">why?</a>';
    document.getElementById('ansout').innerHTML=msg+'<br><b>Check it, then click Save in Apex.</b>';
@@ -250,6 +330,18 @@ _JS = r"""
        out.push('text in: '+chain.join(' &lt; ')+'<br>parent kids: '+sibs.join(', '));
      }
      if(seen===0) out.push('that caption text is not on this page at all');
+     var lab=null, ls=document.querySelectorAll('label');
+     for(var z=0;z<ls.length;z++) if(norm(ls[z].innerText)===norm(want)) lab=ls[z];
+     if(lab){
+       var tgt=lab.htmlFor?document.getElementById(lab.htmlFor):null;
+       var $$=window.jQuery||window.$;
+       out.push('label for='+(lab.htmlFor||'(none)')+
+         '<br>target: '+(tgt?tgt.tagName.toLowerCase()+'[type='+(tgt.type||'')+']':'(missing)')+
+         '<br>jQuery: '+(!!$$)+' kendo: '+(!!window.kendo)+
+         ' widgetInstance: '+(!!(window.kendo&&kendo.widgetInstance))+
+         '<br>kw(): '+(tgt?(kw(tgt)?'FOUND '+(kw(tgt).options?'has options':'no options'):'null'):'n/a')+
+         '<br>siblings: '+(tgt&&tgt.parentElement?Array.prototype.slice.call(tgt.parentElement.children).map(function(c){return c.tagName.toLowerCase()+'.'+(c.className||'').split(' ')[0];}).join(', '):''));
+     }
      document.getElementById('ansout').innerHTML=out.join('<hr style="border:0;border-top:1px solid #eee">')+
        '<div style="margin-top:6px;font-size:11px">screenshot this</div>';
    };

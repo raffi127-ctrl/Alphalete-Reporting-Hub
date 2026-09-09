@@ -50,6 +50,7 @@ def _click_button(pg, html):
     assert js.startswith("javascript:")
     pg.evaluate(js[len("javascript:"):])       # the bookmarklet itself
     pg.locator("#ansfill").click()
+    _settled(pg)
     return pg.locator("#ansout").inner_text()
 
 
@@ -133,6 +134,7 @@ def test_the_ssn_boxes_appear_only_on_the_tax_screen(page):
     assert page.locator("#ansssn").count() == 1
     page.locator("#ansssn").fill("123456789")
     page.locator("#ansfill").click()
+    _settled(page)
     assert page.locator("#a").input_value() == "123456789"
     assert page.locator("#b").input_value() == "123456789"
     assert page.locator("#ansssn").input_value() == ""   # cleared after use
@@ -174,7 +176,7 @@ def test_clicking_it_on_the_wrong_page_says_so_plainly(page):
     page.locator("#ansfill").click()
     out = page.locator("#ansout").inner_text()
     assert "isn't an Apex form" in out
-    assert "Add Employee" in out
+    assert "Pending" in out and "Edit" in out
     assert "Not found here" not in out
 
 
@@ -212,6 +214,7 @@ def test_it_finds_boxes_whose_caption_is_not_a_label_tag(page):
                           "Department": "400 Sales"}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
     page.locator("#ansfill").click()
+    _settled(page)
     assert page.locator("#c1").input_value() == "Sales Rep"
     assert page.locator("#c2").input_value() == "10.00"
     assert page.locator("#c3").input_value() == "400 Sales"
@@ -253,12 +256,22 @@ KENDO_STUB = """() => {
 }"""
 
 
+def _settled(page):
+    """Filling is async now -- a Kendo dropdown is opened, waited for, clicked.
+    The click returns long before that finishes."""
+    page.wait_for_function(
+        "() => { const o = document.getElementById('ansout');"
+        "        return o && o.innerHTML && o.innerHTML !== 'filling...'; }",
+        timeout=15000)
+
+
 def _kendo_page(page, fields):
     page.set_content(KENDO_FORM)
     page.evaluate(KENDO_STUB)
     people = [{"name": "Aundre Browder", "find": "Browder", "fields": fields}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
     page.locator("#ansfill").click()
+    _settled(page)
 
 
 def test_it_drives_kendo_dropdowns_through_their_own_api(page):
@@ -278,3 +291,67 @@ def test_a_hidden_kendo_input_is_not_skipped_as_invisible(page):
     refusing it is what made these fields unreachable."""
     _kendo_page(page, {"Position": "Office Admin"})
     assert page.evaluate("window.__set") == ["4"]
+
+
+# A dropdown that behaves like Apex's: the <label> points at a HIDDEN input,
+# the visible control is a k-dropdown span, and NOTHING answers to .data() or
+# kendo.widgetInstance. The only way in is the way a person goes -- click the
+# span, click the option.
+CLICKY_KENDO = """
+<!doctype html><html><body>
+<div class="form-group">
+  <label for="JobTitleID_943">Position <span>*</span></label>
+  <input type="hidden" id="JobTitleID_943">
+  <span class="k-widget k-dropdown" id="ddl"><span class="k-input">Select</span></span>
+  <div class="k-animation-container" id="pop" style="display:none">
+    <ul class="k-list">
+      <li>Select</li><li>Office Admin</li><li>Sales Rep</li>
+    </ul>
+  </div>
+</div>
+</body></html>
+"""
+
+CLICKY_WIRING = """() => {
+  const pop = document.getElementById('pop');
+  document.getElementById('ddl').addEventListener('mousedown', () => {
+    pop.style.display = 'block';                 /* opens on mousedown, as Kendo does */
+  });
+  pop.querySelectorAll('li').forEach(li => {
+    li.addEventListener('click', () => {
+      document.getElementById('JobTitleID_943').value = li.textContent;
+      document.querySelector('#ddl .k-input').textContent = li.textContent;
+      pop.style.display = 'none';
+    });
+  });
+}"""
+
+
+def test_a_dropdown_with_no_api_is_still_filled_by_clicking(page):
+    """On the live page .data() and kendo.widgetInstance both came back empty
+    for the dropdowns, while the NumericTextBox answered fine. A real click
+    cannot be wrong about which control it is talking to."""
+    page.set_content(CLICKY_KENDO)
+    page.evaluate(CLICKY_WIRING)
+    people = [{"name": "Aundre Browder", "find": "Browder",
+               "fields": {"Position": "Sales Rep"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+
+    assert page.locator("#JobTitleID_943").input_value() == "Sales Rep"
+    assert page.locator("#ddl .k-input").inner_text() == "Sales Rep"
+    assert "Position" in page.locator("#ansout").inner_text()
+    assert page.locator("#pop").is_hidden(), "the list closes again"
+
+
+def test_an_option_that_isnt_in_the_list_leaves_it_alone(page):
+    """Better an honest miss than the wrong option on a payroll record."""
+    page.set_content(CLICKY_KENDO)
+    page.evaluate(CLICKY_WIRING)
+    people = [{"name": "X", "find": "X", "fields": {"Position": "Astronaut"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#JobTitleID_943").input_value() == ""
+    assert "Position" in page.locator("#ansout").inner_text()
