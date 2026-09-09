@@ -1,0 +1,35 @@
+[
+  {
+    "key": "zztest_dispo",
+    "name": "Isaiah Revelle",
+    "owner": "Isaiah Revelle",
+    "ov": "impersonate",
+    "campaign_id": "1",
+    "campaign_label": "NDS",
+    "destinations": [
+      {
+        "kind": "email",
+        "name": "",
+        "channel_id": "",
+        "emails": [
+          "raffi127@gmail.com"
+        ],
+        "cadence_min": 60
+      },
+      {
+        "kind": "slack",
+        "name": "#claudecorrections-and-requests",
+        "channel_id": "C0BK5PRG259",
+        "emails": [],
+        "cadence_min": 60
+      }
+    ],
+    "group": "",
+    "label": "TEST",
+    "compare": false,
+    "enabled": true,
+    "ov_account": "19717",
+    "source": "disposition_signup",
+    "machine": "Lucy 1"
+  }
+]
