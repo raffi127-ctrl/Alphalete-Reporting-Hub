@@ -572,7 +572,13 @@ def formulas(ss, ws, apply: bool = False) -> int:
         _tt, pct, avg = (sub_col(grid, b, h) for h in TRIO)
         if not (pct and avg):
             continue
-        for c, pattern, kind in ((pct, "0.0%", "PERCENT"), (avg, "0.00", "NUMBER")):
+        # BOTH as percentages. `AVG app per TT` is apps/talk-to's, which reads
+        # `0.07` as a number and `7.3%` as a rate -- the same cell, and only one
+        # of the two says "seven of every hundred conversations ended in a sale"
+        # without the reader doing arithmetic (Eve, 2026-09-09). The formula and
+        # the direction Rafael asked for are untouched; this is the display.
+        for c, pattern, kind in ((pct, "0.0%", "PERCENT"),
+                                 (avg, "0.0%", "PERCENT")):
             fmt.append(number_format(ws, c, SUB_ROW + 1, totals, kind, pattern))
     if fmt:
         ss.batch_update({"requests": fmt})
