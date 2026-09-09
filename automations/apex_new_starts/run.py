@@ -177,8 +177,8 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     email = v.pop("email", "")
     if email:
         v["account_email"] = email
-        if AX.USERNAME_IS_EMAIL:
-            v["username"] = email
+        if AX.USERNAME_FROM_EMAIL_LOCAL_PART:
+            v["username"] = email.split("@")[0]
     if c.hire_date:
         # MM/dd/yyyy, the format the Hire Date box itself asks for.
         v["hire_date"] = c.hire_date.strftime("%m/%d/%Y")
@@ -554,7 +554,11 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
             notes[c.name] = "no Blue Ink packet — type this one by hand"
             continue
         fields = filler.rows_for(apex_values(c, hire))
-        people.append({"name": c.name, "fields": fields})
+        # `find` is what the Blue Ink link searches for: the SURNAME, which is
+        # how a person searches that dashboard, and the only thing about them
+        # that ends up in a URL.
+        people.append({"name": c.name, "fields": fields,
+                       "find": c.last or c.name})
         gaps = [lbl for lbl in ("Marital Status", "Date of Birth",
                                 "Street Address") if lbl not in fields]
         if gaps:

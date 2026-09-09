@@ -136,3 +136,82 @@ def test_the_ssn_boxes_appear_only_on_the_tax_screen(page):
     assert page.locator("#a").input_value() == "123456789"
     assert page.locator("#b").input_value() == "123456789"
     assert page.locator("#ansssn").input_value() == ""   # cleared after use
+
+
+def test_the_tax_screen_offers_their_blue_ink_packet(page):
+    """Read the Social off their own signed I-9, beside the box it goes in."""
+    page.set_content('<label for="a">Change SSN</label><input id="a">'
+                     '<label for="b">Confirm SSN</label><input id="b">')
+    people = [dict(PEOPLE[0], find="Browder")]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    href = page.locator("#ansbi").get_attribute("href")
+    assert href == ("https://secure.blueink.com/dashboard/wall?search=Browder")
+    assert page.locator("#ansbi").get_attribute("target") == "_blank"
+
+
+def test_that_link_is_a_search_never_a_document():
+    """A signed document URL embedded here would be a link to somebody's SSN
+    sitting in a bookmarks bar -- which would undo the reason the number itself
+    is kept out."""
+    js = filler.build_js([dict(PEOPLE[0], find="Browder")], "WE 9.13")
+    assert "blueinkprod.s3" not in js and "signed.pdf" not in js
+    assert "AWSAccessKeyId" not in js and "Signature=" not in js
+
+
+def test_no_blue_ink_link_on_the_other_screens(page):
+    """It appears where the Social is asked for, and nowhere else."""
+    page.set_content(STAGE_ONE_FORM)
+    page.evaluate(filler.build_js(PEOPLE, "WE 9.13")[len("javascript:"):])
+    assert page.locator("#ansbi").count() == 0
+
+
+def test_clicking_it_on_the_wrong_page_says_so_plainly(page):
+    """The first click anyone makes is on the instructions page. It used to
+    answer with a wall of red listing every field that page was never going to
+    have, which reads like a broken tool rather than a wrong tab."""
+    page.set_content("<h1>Not Apex</h1><p>nothing here</p>")
+    page.evaluate(filler.build_js(PEOPLE, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    out = page.locator("#ansout").inner_text()
+    assert "isn't an Apex form" in out
+    assert "Add Employee" in out
+    assert "Not found here" not in out
+
+
+def test_the_button_never_contains_a_line_comment():
+    """build_js collapses the script to ONE line, so a single `//` comment
+    silently swallows everything after it -- the button still saves, still
+    clicks, and does nothing. Cost an afternoon once; only /* */ from here."""
+    js = filler.build_js(PEOPLE, "WE 9.13")
+    body = js[len("javascript:"):]
+    for marker in ("http://", "https://"):
+        body = body.replace(marker, "")
+    body = body.replace("&&", "")          # not a comment
+    assert "//" not in body, "a // comment would kill everything after it"
+
+
+CAPTIONS_NOT_LABELS = """
+<!doctype html><html><body>
+<div><div>Position *</div>
+  <select id="c1"><option>Select</option><option>Sales Rep</option></select>
+  <div>Position is required.</div></div>
+<div><span>Rate of Pay *</span><input id="c2"></div>
+<div><p>Department *</p>
+  <select id="c3"><option>Select</option><option>400 Sales</option></select></div>
+</body></html>
+"""
+
+
+def test_it_finds_boxes_whose_caption_is_not_a_label_tag(page):
+    """Apex's Employment Record writes 'Position *' as plain text beside the
+    <select>, not as a <label>. The button filled the top of the form on the
+    live page and silently missed all six of these."""
+    page.set_content(CAPTIONS_NOT_LABELS)
+    people = [{"name": "Aundre Browder", "find": "Browder",
+               "fields": {"Position": "Sales Rep", "Rate of Pay": "10.00",
+                          "Department": "400 Sales"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    assert page.locator("#c1").input_value() == "Sales Rep"
+    assert page.locator("#c2").input_value() == "10.00"
+    assert page.locator("#c3").input_value() == "400 Sales"

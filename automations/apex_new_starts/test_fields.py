@@ -178,7 +178,10 @@ def test_the_apex_record_carries_the_office_settings():
     for k, want in AX.DEFAULTS.items():
         assert v[k] == want, k
     assert v["hire_date"] == "08/31/2026"
-    assert v["username"] == "ann@example.com" == v["account_email"]
+    # the username is the email WITHOUT its domain -- Apex refused the full
+    # address as already taken under another Apex account
+    assert v["account_email"] == "ann@example.com"
+    assert v["username"] == "ann"
     assert "ssn" not in v          # never, in the dict that gets typed
 
 
@@ -308,3 +311,16 @@ def test_somebody_who_signed_weeks_ago_is_not_reported_as_missing():
     # a search that returns the WRONG Williams must not match
     assert got["Deric Williams"].missing_packet is True
     assert calls["search"], "the sweep miss should have triggered a lookup"
+
+
+def test_the_username_drops_the_email_domain():
+    """Apex usernames are unique across ALL of Apex, not just this company, so
+    the full address was refused on the live form: "currently being used under
+    another Apex account". The local part collides far less and still reads as
+    the person (Megan, 2026-09-09)."""
+    from automations.apex_new_starts import run as RUN
+    v = RUN.apex_values(_cand(), BID.NewHire(
+        name="Aundre Browder",
+        values={"email": "aundrebrowder22@gmail.com"}))
+    assert v["username"] == "aundrebrowder22"
+    assert v["account_email"] == "aundrebrowder22@gmail.com"

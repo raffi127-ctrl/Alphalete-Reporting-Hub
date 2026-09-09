@@ -209,7 +209,16 @@ SECURITY_ROLE = "Sales Rep"
 # next unanswerable field if one turns up.
 UNANSWERED = ()
 
-USERNAME_IS_EMAIL = True
+# USER NAME. Their email WITHOUT the domain (Megan, 2026-09-09):
+# aundrebrowder22@gmail.com -> aundrebrowder22.
+#
+# The whole email was tried first, because that is what every existing roster
+# row shows. Apex refused it on the live form: "This username is not available
+# as it is currently being used under another Apex account" -- usernames are
+# unique across ALL of Apex, not just this company, so a Gmail address another
+# Apex customer has already used is taken. The local part collides far less and
+# still reads as the person.
+USERNAME_FROM_EMAIL_LOCAL_PART = True
 
 # Saving stage one sends mail: 'Send this user a password reset to their
 # Account Email' is TICKED by default on that form. Nothing here unticks it or

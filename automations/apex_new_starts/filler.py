@@ -18,6 +18,13 @@ It is page-aware on purpose, because a new start spans three screens (Add Roster
 Employee, User Profile & Account, Tax & Bank Information). One button that fills
 "whatever is in front of you" is one thing to learn instead of three.
 
+ON THE TAX SCREEN it also offers to open that person's own Blue Ink packet in a
+second tab, so the Social can be read off their signed I-9 beside the box it
+goes in, instead of hunted for. That link is Blue Ink's dashboard filtered by
+their SURNAME -- deliberately not a link to the document itself. A signed
+document URL embedded here would be a link to somebody's SSN sitting in a
+bookmarks bar, which would undo the whole point of the paragraph below.
+
 THE SOCIAL NEVER LEAVES THE PAGE. It is not in the button, not in this file, not
 in the run's output. On the tax screen the panel shows two boxes; the person
 types it there and it goes straight into Apex's own fields, in their browser.
@@ -60,6 +67,25 @@ _JS = r"""
  function norm(t){ return (t||'').replace(/\*/g,'').replace(/\s+/g,' ').trim().toLowerCase(); }
  function vis(el){ var r=el.getBoundingClientRect(); return r.width>0&&r.height>0&&!el.disabled&&!el.hasAttribute('readonly'); }
  var BAD={checkbox:1,radio:1,button:1,submit:1,reset:1,hidden:1,file:1,image:1};
+ function nearInput(node){
+   /* the box that belongs to a caption which is not a <label>: look inside the
+      caption's own container, then its parent, then its grandparent. Apex's
+      Employment Record writes 'Position *' as plain text beside a <select>,
+      which the <label> passes cannot see at all. */
+   var n=node, depth=0, f;
+   while(n && depth<3){
+     f=n.querySelector?n.querySelector('input,select,textarea'):null;
+     if(f&&vis(f)&&!(f.tagName==='INPUT'&&BAD[(f.type||'').toLowerCase()])) return f;
+     var sib=n.nextElementSibling, hops=0;
+     while(sib&&hops<3){
+       f=sib.matches&&sib.matches('input,select,textarea')?sib:(sib.querySelector?sib.querySelector('input,select,textarea'):null);
+       if(f&&vis(f)&&!(f.tagName==='INPUT'&&BAD[(f.type||'').toLowerCase()])) return f;
+       sib=sib.nextElementSibling; hops++;
+     }
+     n=n.parentElement; depth++;
+   }
+   return null;
+ }
  function fieldFor(label){
    var want=norm(label), pass, i, labs=document.querySelectorAll('label'), out=[];
    for(pass=0;pass<2;pass++){
@@ -78,6 +104,14 @@ _JS = r"""
      }
      if(out.length===1) return out[0];
    }
+   var all=document.querySelectorAll('div,span,td,th,p,legend,strong,b'), cands=[];
+   for(i=0;i<all.length;i++){
+     if(all[i].children.length>2) continue;
+     if(norm(all[i].textContent)!==want) continue;
+     var f=nearInput(all[i]);
+     if(f&&cands.indexOf(f)<0) cands.push(f);
+   }
+   if(cands.length===1) return cands[0];
    return null;
  }
  function setVal(el,v){
@@ -110,6 +144,7 @@ _JS = r"""
    return {done:done,miss:miss};
  }
  function ssnBoxes(){ var a=fieldFor('Change SSN'), b=fieldFor('Confirm SSN'); return (a&&b)?[a,b]:null; }
+ function blueink(p){ return 'https://secure.blueink.com/dashboard/wall?search='+encodeURIComponent(p.find||p.name); }
  var old=document.getElementById('anspanel'); if(old) old.remove();
  var p=D[Math.min(I,D.length-1)];
  var box=document.createElement('div'); box.id='anspanel';
@@ -117,14 +152,29 @@ _JS = r"""
  var ssn=ssnBoxes();
  box.innerHTML='<div style="font-weight:700;font-size:16px">'+p.name+'</div>'+
    '<div style="color:#555;margin:2px 0 10px">'+(I+1)+' of '+D.length+' · %(week)s</div>'+
-   (ssn?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Social Security number</div><input id="ansssn" type="password" style="width:100%%;padding:6px;font-size:15px"></div>':'')+
+   (ssn?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Social Security number</div>'+
+        '<input id="ansssn" type="password" style="width:100%%;padding:6px;font-size:15px">'+
+        '<div style="margin-top:6px"><a href="'+blueink(p)+'" target="_blank" rel="noopener" id="ansbi" style="font-size:12px;color:#0F766E">Open their Blue Ink packet →</a>'+
+        '<span style="font-size:11px;color:#888"> (I-9 → Quick View)</span></div></div>':'')+
    '<button id="ansfill" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer">Fill this page</button> '+
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved → next</button>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
    '<div style="margin-top:8px"><a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
  document.body.appendChild(box);
  document.getElementById('ansfill').onclick=function(){
-   var r=fill(p), msg='Filled: '+(r.done.join(', ')||'nothing on this page');
+   var r=fill(p);
+   /* Nothing matched at all = not an Apex form. Saying so beats a wall of red
+      listing every field the page was never going to have, which is what it
+      did the first time somebody clicked it on the wrong tab. NOTE: block
+      comments only in here -- build_js collapses this to ONE line, so a
+      line comment would swallow the entire rest of the script. */
+   if(!r.done.length && !ssnBoxes()){
+     document.getElementById('ansout').innerHTML=
+       '<b>This isn\'t an Apex form.</b><br>Open <b>Roster → Employees → '+
+       '+ Add Employee</b> in Apex, then click the button there.';
+     return;
+   }
+   var msg='Filled: '+(r.done.join(', ')||'nothing on this page');
    var s=document.getElementById('ansssn');
    if(s&&s.value){ var b=ssnBoxes(); if(b){ setVal(b[0],s.value); setVal(b[1],s.value); s.value=''; msg+='; Social entered'; } }
    if(r.miss.length) msg+='<br><span style="color:#b00">Not found here: '+r.miss.join(', ')+'</span>';
@@ -175,10 +225,41 @@ PAGE = """<!doctype html><meta charset="utf-8">
 <div class="sub">{n} new start{s} ready. Blue Ink extraction is done.</div>
 
 <div class="drag">
-  <div style="margin-bottom:12px;font-size:15px">Drag this up to your bookmarks bar
-  <b>once on this computer</b>:</div>
-  <a class="btn" href="{js}">Fill Apex</a>
+  <div style="margin-bottom:12px;font-size:15px">Save this <b>once on this
+  computer</b> — drag it to your bookmarks bar:</div>
+  <a class="btn" href="{js}" id="thebtn">Fill Apex</a>
+  <div style="margin-top:16px;font-size:14px;color:#555">
+    No bookmarks bar? <button id="copybtn" style="font:inherit;padding:6px 12px;
+    border:1px solid #0F766E;background:#fff;color:#0F766E;border-radius:6px;
+    cursor:pointer">Copy the button</button>
+    <span id="copied" style="color:#0F766E;display:none">copied ✓</span>
+  </div>
 </div>
+
+<div class="note" id="manual">
+  <b>If you can't drag it:</b> click <b>Copy the button</b> above, then
+  <b>Bookmarks → Open Bookmarks Manager</b> → the <b>⋮</b> at the top right →
+  <b>Add new bookmark</b>. Name it <b>Fill Apex</b> and paste into the URL box.
+  It then lives in your Bookmarks menu — no bar needed.
+</div>
+
+<script>
+document.getElementById('copybtn').onclick = function(){{
+  var url = document.getElementById('thebtn').getAttribute('href');
+  var done = function(){{
+    var c = document.getElementById('copied');
+    c.style.display = 'inline'; setTimeout(function(){{c.style.display='none';}}, 2500);
+  }};
+  if (navigator.clipboard) {{ navigator.clipboard.writeText(url).then(done, fallback); }}
+  else fallback();
+  function fallback(){{
+    var t = document.createElement('textarea');
+    t.value = url; document.body.appendChild(t); t.select();
+    try {{ document.execCommand('copy'); done(); }} catch(e) {{ alert('Select and copy this:\\n\\n' + url); }}
+    t.remove();
+  }}
+}};
+</script>
 
 <ol>
   <li>Log into Apex yourself, with the code it texts you.</li>
