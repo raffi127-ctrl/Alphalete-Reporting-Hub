@@ -57,7 +57,13 @@ for a in "$@"; do [ "$a" = "--dry-run" ] && DRYRUN=1; done
 # missing "account" key in his offices.py row (fixed), then the scoped login
 # needed Megan to grant the office (done), then the supervised dry-run probe
 # passed (rerun-2026-09-08-142852: switch ok, walk ok). See the README ledger.
-ROTATION="11580 23467 11901"
+# 11901 OUT of the launchd rotation again (9/8 8:35pm): with him in it the
+# AGENT dies pre-log on his slot even after the account-key fix — the rerun
+# path works (48 sent today) but the wrapper path crashes on a third office
+# somewhere before LOG_FILE. Do NOT re-add until the wrapper's per-office
+# handling is fixed and a supervised WRAPPER-PATH test passes. Khalil is
+# served by manual reruns meanwhile.
+ROTATION="11580 23467"
 OFFICE=""
 _prev=""
 for a in "$@"; do
