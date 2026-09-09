@@ -5746,6 +5746,126 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
     return ok, res
 
 
+def _action_captainship_send_owner(args: str) -> tuple[bool, str]:
+    """Mail ONE captainship report to ONE named address — the corrected-copy
+    path, for the morning after a board went out wrong.
+
+      captainship_send_owner <captain key> to=<addr> [owner="Name"]
+                             [note="..."] [prefix="..."] [date=YYYY-MM-DD]
+
+        captain key  rafael, chan, wayne, … (captainship_drafts config.CAPTAINS)
+        to=          REQUIRED. Where this copy goes. There is no form of this
+                     action that reaches a captainship's real distribution
+                     list — see below.
+        owner=       keep only this ICD's knock boards; every other owner in
+                     the captainship is dropped the honest way
+                     (`--drop-owner`: grey note, still counted in "N of M").
+        note=        one bold line above the greeting, e.g. why this copy
+                     exists. Defaults to a correction notice.
+        prefix=      Subject prefix, so the copy is not read as a duplicate of
+                     the morning's report. Default "Corrected — ".
+        date=        rebuild for another day (default today).
+
+    WHY IT EXISTS. `lucy rerun captainship_drafts` cannot send: the registry
+    gives that report `--dry-run` in base_args and rerun appends extra args
+    AFTER it, so `--send` is silently outranked (run.py: `args.send and not
+    args.dry_run`). That guard is right — the scheduled build must never mail —
+    but it left NO route from the laptop to "this one owner got a wrong board,
+    send him the fixed one", which is exactly what 2026-09-08 needed (Christian
+    Esposito's 9/7 board mailed 2 reps of 22).
+
+    WHY `to=` IS MANDATORY. The real send path is the review gate, which mails
+    a block only after a human ✅. An action that could default to a captain's
+    distro would be a second, unreviewed door to 145 people. This one can only
+    ever reach the address typed into it.
+
+    It reuses the knock PNGs already on disk (no `--fresh-knocks`), so the
+    corrected board is the one a `rerun captainship_knocks … --fresh` just
+    wrote, and it skips the Sheets/Tableau sections — those take sessions this
+    copy has no business holding, and their notes say so in the mail.
+
+    Read the full run with `lucy logtail captainship-send-<key>`."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, ('captainship_send_owner needs a captain key, e.g. '
+                       'captainship_send_owner wayne to=someone@example.com '
+                       'owner="Christian Esposito"')
+    key = parts[0].strip().lower()
+    opts: dict = {}
+    for raw in parts[1:]:
+        if "=" not in raw:
+            return False, (f"captainship_send_owner: unknown argument {raw!r} "
+                           "— expected to=/owner=/note=/prefix=/date=")
+        k, v = raw.split("=", 1)
+        opts[k.strip().lower()] = v.strip()
+    unknown = set(opts) - {"to", "owner", "note", "prefix", "date"}
+    if unknown:
+        return False, ("captainship_send_owner: unknown option(s) "
+                       f"{sorted(unknown)}")
+    to = opts.get("to", "")
+    if "@" not in to:
+        return False, ("captainship_send_owner needs to=<address> — this "
+                       "action never falls back to a captain's real "
+                       "distribution list.")
+    date_arg = opts.get("date")
+    if date_arg:
+        try:
+            dt.datetime.strptime(date_arg, "%Y-%m-%d")
+        except ValueError:
+            return False, ("captainship_send_owner: date must be YYYY-MM-DD, "
+                           f"got {date_arg!r}")
+    try:
+        from automations.captainship_drafts import config as _ccfg
+    except Exception as e:  # noqa: BLE001
+        return False, f"captainship config unavailable: {type(e).__name__}: {e}"
+    known = [c.key for c in _ccfg.CAPTAINS]
+    if key not in known:
+        return False, (f"unknown captain key {key!r}. known: "
+                       + ", ".join(known))
+
+    cmd = [sys.executable, "-u", "-m", "automations.captainship_drafts.run",
+           "--only", key, "--send", "--to", to,
+           # A knocks correction, not a rebuild of the whole report: those two
+           # sections would take the Sheets/Tableau sessions, and the mail
+           # already prints its own 'pending' note where they'd be.
+           "--skip-sheets", "--skip-tableau",
+           "--subject-prefix", opts.get("prefix", "Corrected — "),
+           "--note", opts.get(
+               "note", "Corrected copy — this replaces the knock boards in "
+                       "this morning's report.")]
+    if date_arg:
+        cmd += ["--date", date_arg]
+    owner = opts.get("owner", "")
+    if owner:
+        # Drop every OTHER owner in this captainship, by name, from the roster
+        # the capture itself reads — so "just his board" cannot drift from who
+        # the report thinks the captainship holds.
+        try:
+            from automations.captainship_drafts.knock_dispo_images import (
+                owner_names)
+            names = list(owner_names(key) or [])
+        except Exception as e:  # noqa: BLE001
+            return False, ("couldn't read the captainship roster to drop the "
+                           f"other owners: {type(e).__name__}: {e}")
+        from automations.focus_office_att.aliases import _norm_name
+        keep = [n for n in names if _norm_name(n) == _norm_name(owner)]
+        if not keep:
+            return False, (f"{owner!r} is not an owner in {key!r}: "
+                           + ", ".join(names))
+        for n in names:
+            if _norm_name(n) != _norm_name(owner):
+                cmd += ["--drop-owner", n]
+
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    ok, res = _run_cmd(cmd, timeout_s=45 * 60,
+                       log_name=f"captainship-send-{key}-{stamp}.log")
+    return ok, (f"to {to} · " + res)
+
+
 def _action_harvest_zones(args: str) -> tuple[bool, str]:
     """READ-ONLY: read each captainship ICD's street address and print the
     timezone it implies. Touches no Sheet, posts nothing, mails nobody — it runs
@@ -7348,6 +7468,7 @@ ACTIONS = {
     "logtail": _action_logtail,
     "daystate": _action_daystate,
     "probe_knocks": _action_probe_knocks,
+    "captainship_send_owner": _action_captainship_send_owner,
     "harvest_zones": _action_harvest_zones,
     "campaign_scan": _action_campaign_scan,
     "pip_install": _action_pip_install,
