@@ -5124,6 +5124,33 @@
       "timeout_minutes": 5,
       "verify": null
     },
+    "sales_board_ref_repair": {
+      "on_scheduler": true,
+      "_note": "Cada LUNES, despues del roleo manual de Eve: repara en la pestana VIVA de la semana las celdas que el roleo viene arrastrando rotas. Son dos danos, los dos anteriores a este job y los dos silenciosos: (1) 17 SUMIFS del cuadro de Teams con el CRITERIO en #REF! -- alguien borro la celda a la que apuntaban y SUMIFS con criterio roto devuelve 0 sin avisar, asi que parecian ceros reales; (2) el TOTALS de PRIOR WEEK sumando $X$161:$X$171 donde el resto suma $X$158:$X$172, o sea salteandose los tres primeros equipos (leia 60 donde Se7en Sins sola tenia 113). El 2026-09-09 estaban en las 16 pestanas semanales; se repararon las 181 celdas a mano y esto existe para que no vuelvan. Repara SOLO esas celdas y solo copiando la formula sana de al lado, asi que una corrida sin nada que arreglar no escribe nada. --current-week resuelve la pestana sola, para que el job no envejezca cada siete dias. Manual: `lucy rerun sales_board_ref_repair`.",
+      "display_name": "Sales Board — reparar el cuadro de Teams",
+      "machine": "Lucy 1",
+      "command": [
+        "automations.alphalete_sales_board.ref_repair"
+      ],
+      "base_args": [
+        "--current-week",
+        "--prior-range",
+        "--apply"
+      ],
+      "cadence": {
+        "weekdays": [
+          0
+        ],
+        "not_before": "12:00"
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 10,
+      "verify": null
+    },
     "sales_board_last_week_talk_to": {
       "hand_run_only": true,
       "on_scheduler": true,

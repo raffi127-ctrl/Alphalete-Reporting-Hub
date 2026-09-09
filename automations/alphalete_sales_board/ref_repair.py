@@ -135,6 +135,10 @@ def plan_prior_range(grid) -> list:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tab", default=SANDBOX_TAB)
+    ap.add_argument("--current-week", action="store_true",
+                    help="repair THIS week's live tab -- what the Monday run "
+                         "uses, so the repair follows the roll instead of "
+                         "naming a tab that goes stale every seven days")
     ap.add_argument("--sheet-id", default=PROD_SHEET_ID)
     ap.add_argument("--prior-range", action="store_true",
                     help="also give PRIOR WEEK'S TOTALS the span LAST WEEK'S uses")
@@ -144,7 +148,13 @@ def main(argv=None) -> int:
 
     from automations.recruiting_report.fill import open_by_key
     ss = open_by_key(a.sheet_id)
-    ws = ss.worksheet(a.tab)
+    if a.current_week:
+        import datetime as dt
+        from automations.alphalete_sales_board import fill as F
+        ws = F.open_tab(dt.date.today())
+        a.tab = ws.title
+    else:
+        ws = ss.worksheet(a.tab)
     grid = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
                   value_render_option="FORMULA")
     vals = ws.get("A1:%s%d" % (_col_letter(ws.col_count), ws.row_count),
