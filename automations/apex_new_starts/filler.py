@@ -813,8 +813,19 @@ _JS = r"""
    document.getElementById('ansg2').onclick=function(e){e.preventDefault();go(nav,'user-profile');};
    document.getElementById('ansg3').onclick=function(e){e.preventDefault();go(nav,'bank-info');};
  }
- if(found) document.getElementById('ansout').innerHTML=
-   'Learned where '+found+' more people are. Click <b>1 Employment</b> to start on '+p.name+'.';
+ /* The Pending list is PAGINATED. One click only sees the rows on screen, so
+    with the week spread over five pages the run would stop at the first person
+    it has no id for. Say how many are still missing, plainly. */
+ var lack=0, li;
+ for(li=0;li<D.length;li++){ if(!idFor(D[li])) lack++; }
+ if(found||lack){
+   document.getElementById('ansout').innerHTML=
+     (found?'Learned '+found+' more. ':'')+
+     (lack? '<b style="color:#b00">'+lack+' of '+D.length+' still not found.</b> '+
+            'The Pending list has several pages — click this button on each one '+
+            'until that reaches zero, then Run the week.'
+          : '<b>All '+D.length+' found.</b> Ready to run the week.');
+ }
  document.getElementById('ansrun').onclick=async function(){
    /* One form for the whole week, then one pass. The alternative -- filling
       every field and leaving a person to click Save 69 times -- was not

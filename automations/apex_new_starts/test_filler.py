@@ -1041,3 +1041,39 @@ def test_rubbish_pasted_in_is_refused(page, tmp_path):
     assert "not the list" in page.locator("#anspmsg").inner_text()
     assert page.evaluate(
         "() => localStorage.getItem('apexNewStarts.WE 9.13.data')") is None
+
+
+PENDING_PAGE_1 = """
+<!doctype html><html><body><table><tbody>
+<tr><td>Aundre</td><td>Browder</td><td>a@b.com</td>
+    <td><a href="/employees/2816109/edit/employment-record">Edit</a></td></tr>
+</tbody></table></body></html>
+"""
+
+PENDING_PAGE_2 = """
+<!doctype html><html><body><table><tbody>
+<tr><td>Cristian</td><td>Amaya Vega</td><td>c@d.com</td>
+    <td><a href="/employees/2816105/edit/employment-record">Edit</a></td></tr>
+</tbody></table></body></html>
+"""
+
+
+def test_it_says_how_many_people_it_still_cannot_find(page, tmp_path):
+    """The Pending list is paginated. One click only sees the rows on screen,
+    so with a week spread over five pages the run would stop dead at the first
+    person it has no id for -- with nothing having warned anybody."""
+    p1 = tmp_path / "roster1.html"; p1.write_text(PENDING_PAGE_1)
+    p2 = tmp_path / "roster2.html"; p2.write_text(PENDING_PAGE_2)
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Cristian Amaya Vega", "find": "Vega", "pages": {}}]
+    js = filler.build_js(people, "WE 9.13")[len("javascript:"):]
+
+    page.goto(p1.as_uri())
+    page.evaluate(js)
+    out = page.locator("#ansout").inner_text()
+    assert "1 of 2 still not found" in out
+    assert "each one" in out                      # tells you to keep clicking
+
+    page.goto(p2.as_uri())                        # same origin: ids accumulate
+    page.evaluate(js)
+    assert "All 2 found" in page.locator("#ansout").inner_text()
