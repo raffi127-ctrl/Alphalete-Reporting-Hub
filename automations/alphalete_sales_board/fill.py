@@ -37,10 +37,11 @@ from automations.rep_sales_fill import board as B
 TAB_PREFIX = "Sales Board WE"
 
 # The evaluation copy of a week's tab, filled with the same sales from the same
-# sweep. Kept identical to `alphalete_production.tk_fill.SANDBOX_SUFFIX` -- the
+# sweep. Kept identical to `alphalete_production.tk_fill.SANDBOX_PREFIX` -- the
 # two fills have to agree on which tab is the twin or the sandbox ends up with
-# half the day.
-SANDBOX_SUFFIX = " SANDBOX"
+# half the day. It goes IN FRONT so the tab cannot match the prefix search every
+# reader on this board uses; see the note there.
+SANDBOX_PREFIX = "SANDBOX — "
 
 
 def tab_title(day: dt.date) -> str:
@@ -63,7 +64,7 @@ def open_tab(day: dt.date, client=None):
 
 
 def sandbox_twin(live_worksheet, client=None):
-    """The '<this week's tab> SANDBOX' worksheet, or None if there isn't one.
+    """The 'SANDBOX — <this week's tab>' worksheet, or None if there isn't one.
 
     Same convention `alphalete_production.tk_fill` uses, and for the same
     reason: while the Talk-To columns are being evaluated, the sandbox has to
@@ -76,7 +77,7 @@ def sandbox_twin(live_worksheet, client=None):
     """
     from automations.recruiting_report.fill import _client
     gc = client or _client()
-    want = (live_worksheet.title + SANDBOX_SUFFIX).strip().lower()
+    want = (SANDBOX_PREFIX + live_worksheet.title).strip().lower()
     book = gc.open_by_key(C.SPREADSHEET_ID)
     for ws in book.worksheets():
         if ws.title.strip().lower() == want:

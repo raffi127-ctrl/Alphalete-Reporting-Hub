@@ -62,7 +62,7 @@ from automations.energy_slack_fill.run import DAY_LABELS, DAY_ROW, SUB_ROW, PROD
 # 2026-09-09, when she moved to the live week and had the old one deleted.
 # Keep this pointing at whichever sandbox is current: a tab that no longer
 # exists makes every default here raise WorksheetNotFound.
-SANDBOX_TAB = "Sales Board WE 9.13 SANDBOX"
+SANDBOX_TAB = "SANDBOX — Sales Board WE 9.13"
 
 # The three columns, in order, exactly as row 3 spells them on THU.
 TRIO = ("Total Talk-To's", "% of TT's per knock", "AVG app per TT")

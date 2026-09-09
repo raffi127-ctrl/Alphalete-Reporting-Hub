@@ -255,7 +255,7 @@ class SandboxTwin(unittest.TestCase):
 
     def test_the_same_pull_lands_on_both_tabs(self):
         live, sand = self._tab("Sales Board WE 9.13"), self._tab(
-            "Sales Board WE 9.13" + T.SANDBOX_SUFFIX)
+            T.SANDBOX_PREFIX + "Sales Board WE 9.13")
         knocks = {"Zoria Johnson": 120}
         talks = {"Zoria Johnson": 18}
         for ws in (live, sand):
@@ -266,9 +266,15 @@ class SandboxTwin(unittest.TestCase):
         self.assertIn(120, [v for _a1, v in live.written])
         self.assertIn(18, [v for _a1, v in live.written])
 
-    def test_the_twin_is_the_tab_name_plus_a_suffix(self):
-        self.assertEqual("Sales Board WE 9.13" + T.SANDBOX_SUFFIX,
-                         "Sales Board WE 9.13 SANDBOX")
+    def test_the_marker_goes_IN_FRONT_of_the_tab_name(self):
+        """A trailing marker matched the prefix search every reader on this
+        board uses, so 'Sales Board WE 9.13 SANDBOX' looked like the week's tab
+        to all of them -- on 2026-09-09 the only thing keeping Texas de Brazil
+        off the 11-column sandbox was tab order in the workbook."""
+        import re
+        twin = T.SANDBOX_PREFIX + "Sales Board WE 9.13"
+        self.assertEqual(twin, "SANDBOX — Sales Board WE 9.13")
+        self.assertIsNone(re.match(r"sales board we\s*\d+\.\d+", twin.lower()))
 
     def test_a_preview_writes_to_neither(self):
         ws = self._tab("Sales Board WE 9.13")

@@ -44,7 +44,7 @@ current week's tab -- not the Total Knocks Sheet, not the /knocks cache, not
 the captainship sidecar. Tomorrow morning's boards re-collect the day from
 ownerville the way they always did.
 
-AND THE SANDBOX TWIN, if there is one: a tab named '<the week's tab> SANDBOX'
+AND THE SANDBOX TWIN, if there is one: a tab named 'SANDBOX — <the week's tab>'
 gets the same two writes from the same pull, so the Talk-To columns can be
 judged on live numbers before they ship (Eve, 2026-09-09). It never affects the
 exit code and it cannot fail the run; delete that tab and this goes quiet.
@@ -112,12 +112,21 @@ METRIC_TT = "Total Talk-To's"
 # the window; TK_FILL_HOURS="5-23" moves it.
 ACTIVE_HOURS = os.environ.get("TK_FILL_HOURS", "6-23")
 
-# The SANDBOX TWIN of a week's tab: same name plus this. 'Sales Board WE 9.13'
-# -> 'Sales Board WE 9.13 SANDBOX'. Every pass writes both, from one pull, so
-# the sandbox can be judged on live numbers instead of on whatever somebody
-# last queued by hand. No tab by that name = nothing happens, which is also how
-# this switches itself off the day the sandbox is deleted.
-SANDBOX_SUFFIX = " SANDBOX"
+# The SANDBOX TWIN of a week's tab: this in FRONT of the same name.
+# 'Sales Board WE 9.13' -> 'SANDBOX — Sales Board WE 9.13'. Every pass
+# writes both, from one pull, so the sandbox can be judged on live numbers
+# instead of on whatever somebody last queued by hand. No tab by that name =
+# nothing happens, which is also how this switches itself off the day the
+# sandbox is deleted.
+#
+# IN FRONT, NOT BEHIND, and that is the whole point. Every reader on this board
+# finds the week's tab with a PREFIX match ("sales board we 9.13..."), so a tab
+# called '... WE 9.13 SANDBOX' matched them all: on 2026-09-09 the only thing
+# keeping Texas de Brazil and the production screenshots off an 11-column
+# sandbox was that the live tab happened to sit FIRST in the workbook. Drag the
+# sandbox left and they would have read it instead. A leading marker cannot
+# match, so the two can sit side by side for as long as the rollout takes.
+SANDBOX_PREFIX = "SANDBOX — "
 
 
 def _log(msg: str = "") -> None:
@@ -376,7 +385,7 @@ def main(argv=None) -> int:
                     help="run outside the active hours, and don't defer to "
                          "another job holding the ownerville session")
     ap.add_argument("--no-sandbox", action="store_true",
-                    help=f"skip the '<tab>{SANDBOX_SUFFIX}' twin, which every "
+                    help=f"skip the '{SANDBOX_PREFIX}<tab>' twin, which every "
                          "pass fills from the same pull")
     a = ap.parse_args(argv)
 
@@ -447,7 +456,7 @@ def main(argv=None) -> int:
     # or hold the day. And it disappears by itself -- delete the sandbox tab
     # after rollout and this goes quiet with no code change.
     if not a.tab and not a.no_sandbox:
-        twin = ws.title + SANDBOX_SUFFIX
+        twin = SANDBOX_PREFIX + ws.title
         try:
             other = next((w for w in ss.worksheets() if w.title == twin), None)
             if other:

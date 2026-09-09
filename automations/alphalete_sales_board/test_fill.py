@@ -142,14 +142,19 @@ def test_tab_title_is_the_weeks_sunday():
     assert fill.tab_title(dt.date(2026, 8, 30)) == "Sales Board WE 8.30"
 
 
-def test_the_sandbox_twin_is_the_tab_name_plus_a_suffix():
+def test_the_sandbox_twin_is_the_tab_name_behind_a_marker():
     """The two fills that write this board have to agree on which tab is the
     twin, or the sandbox ends up with half the day."""
+    import re as _re
     from automations.alphalete_production import tk_fill
-    assert fill.SANDBOX_SUFFIX == tk_fill.SANDBOX_SUFFIX, (
-        fill.SANDBOX_SUFFIX, tk_fill.SANDBOX_SUFFIX)
-    assert fill.tab_title(MONDAY) + fill.SANDBOX_SUFFIX == \
-        "Sales Board WE 8.30 SANDBOX"
+    assert fill.SANDBOX_PREFIX == tk_fill.SANDBOX_PREFIX, (
+        fill.SANDBOX_PREFIX, tk_fill.SANDBOX_PREFIX)
+    twin = fill.SANDBOX_PREFIX + fill.tab_title(MONDAY)
+    assert twin == "SANDBOX — Sales Board WE 8.30", twin
+    # AND IN FRONT. A trailing marker still matches the prefix search every
+    # reader on this board uses ('sales board we 8.30…'), so they would go and
+    # read the 11-column sandbox instead of the live tab.
+    assert not _re.match(r"sales board we\s*\d+\.\d+", twin.lower()), twin
 
 
 def test_the_twin_is_planned_against_its_own_rows():
