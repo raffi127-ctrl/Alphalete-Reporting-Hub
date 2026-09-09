@@ -822,3 +822,44 @@ def test_it_never_writes_into_a_neighbouring_field(page):
     _settled(page)
     assert page.locator("#FedAmt").input_value() == "", \
         "the neighbouring money box must be untouched"
+
+
+NO_LABEL_AT_ALL = """
+<!doctype html><html><body>
+<div class="row"><div class="col-md-4"><div class="form-group">
+  Claim Dependants <span class="fas fa-question-circle"></span>
+  <span class="k-widget k-numerictextbox">
+    <span class="k-numeric-wrap">
+      <input type="text" class="k-formatted-value" aria-hidden="true" id="pretty">
+      <input type="text" id="ClaimDependants" ng-model="vm.claim">
+    </span>
+  </span>
+</div></div></div>
+<div class="row form-group"><div class="col-md-3"><div>
+  State to be taxed in <div class="RequiredText">*</div>
+  <span class="k-widget k-combobox">
+    <span class="k-dropdown-wrap">
+      <input name="StateToBeTaxedIn_input" class="k-input" type="text" id="taxstate">
+    </span>
+  </span>
+</div></div></div>
+</body></html>
+"""
+
+
+def test_fields_with_no_label_element_are_still_found(page):
+    """Claim Dependants and State to be taxed in have no <label> anywhere --
+    the caption is a bare text node in the form-group. Every lookup started
+    from a <label>, so neither field was findable by any route, and both sat
+    empty through several rounds of me blaming the widgets."""
+    page.set_content(NO_LABEL_AT_ALL)
+    people = [{"name": "X", "find": "X",
+               "fields": {"Claim Dependants": "0.00",
+                          "State to be taxed in": "Texas"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#ClaimDependants").input_value() == "0.00"
+    assert page.locator("#taxstate").input_value() == "Texas"
+    assert page.locator("#pretty").input_value() == "", \
+        "the aria-hidden display input is not the one to write to"

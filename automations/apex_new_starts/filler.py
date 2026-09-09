@@ -421,6 +421,41 @@ _JS = r"""
  }
  function vis(el){ var r=el.getBoundingClientRect(); return r.width>0&&r.height>0&&!el.disabled&&!el.hasAttribute('readonly'); }
  var BAD={checkbox:1,radio:1,button:1,submit:1,reset:1,hidden:1,file:1,image:1};
+ function usable(f){
+   if(!f) return false;
+   /* Kendo numeric boxes carry TWO inputs: a k-formatted-value one that is
+      what you see, marked aria-hidden, and the real one that holds the model.
+      Writing to the pretty one changes the display and nothing else. */
+   if(f.getAttribute&&f.getAttribute('aria-hidden')==='true') return false;
+   if(f.tagName==='INPUT'&&BAD[(f.type||'').toLowerCase()]) return false;
+   return kw(f)||widgetSpan(f)||vis(f);
+ }
+ function bestInput(host){
+   /* Prefer the input Angular is bound to; fall back to the first usable one. */
+   var all=host.querySelectorAll?host.querySelectorAll('input,select,textarea'):[];
+   var i, f=null;
+   for(i=0;i<all.length;i++){ if(!usable(all[i])) continue;
+     if(all[i].getAttribute('ng-model')||all[i].getAttribute('k-ng-model')) return all[i];
+     if(!f) f=all[i]; }
+   return f;
+ }
+ function fieldByCaptionText(want){
+   /* Neither "Claim Dependants" nor "State to be taxed in" has a <label> at
+      all -- the caption is a bare text node inside the form-group, with the
+      control beside it. Every other lookup here starts from a <label>, so
+      those two fields were never findable by any of them. */
+   var mine=document.getElementById('anspanel'), out=[];
+   var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null), n;
+   while((n=w.nextNode())){
+     if(!n.nodeValue||norm(n.nodeValue)!==want) continue;
+     var host=n.parentElement;
+     if(!host||(mine&&mine.contains(host))) continue;
+     var grp=host.closest?(host.closest('.form-group')||host):host;
+     var f=bestInput(grp)||nearInput(host);
+     if(f&&out.indexOf(f)<0) out.push(f);
+   }
+   return out.length===1?out[0]:null;
+ }
  function nearInput(node){
    /* the box that belongs to a caption which is not a <label>: look inside the
       caption's own container, then its parent, then its grandparent. Apex's
@@ -473,6 +508,8 @@ _JS = r"""
      if(f&&cands.indexOf(f)<0) cands.push(f);
    }
    if(cands.length===1) return cands[0];
+   var byText=fieldByCaptionText(want);
+   if(byText) return byText;
    return null;
  }
  async function setVal(el,v){
