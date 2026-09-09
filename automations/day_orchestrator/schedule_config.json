@@ -5695,8 +5695,15 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
+      "_verify_note": "The deck IS the report. A tab-fill that exits 0 is phase 1 of 2 (hub_cards daily_runs {\"0\": 2}); on 2026-09-08 verify:not_configured let two 'RESOLVED — it just ran clean' posts go out on a Monday when no deck reached either channel. slack_delivered reads the channels the way a member does.",
       "verify": {
-        "type": "not_configured"
+        "type": "slack_delivered",
+        "channels": [
+          "C067TTGFEFR",
+          "C07J46MQNUX"
+        ],
+        "match": "leaders_call",
+        "files_only": true
       }
     },
     "leaders_call_pdf_test": {

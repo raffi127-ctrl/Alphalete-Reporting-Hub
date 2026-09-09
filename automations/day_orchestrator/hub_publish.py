@@ -723,6 +723,86 @@ def _alert_failure(report_id: str, report_name: str) -> None:
         pass
 
 
+def expected_runs_today(report_id: str, day=None) -> int:
+    """How many passes this report's Hub card declares for TODAY (1 if it isn't
+    a multi-phase card). Read from the card's `daily_runs`, weekday-aware — the
+    same declaration the Hub's own pill and calendar tile count against
+    (dashboard._expected_runs).
+
+    Never raises: an unreadable card answers 1, which is exactly today's
+    behaviour and can only ever ALLOW a close, never invent one."""
+    try:
+        import datetime as _dt
+        from automations import hub_cards
+        day = day or _dt.date.today()
+        card = hub_card_id(report_id)
+        if not card:
+            return 1
+        rec = next((r for r in hub_cards.AUTOMATED_REPORTS
+                    if r.get("id") == card), None)
+        cfg = (rec or {}).get("daily_runs") or 1
+        if isinstance(cfg, dict):
+            return int(cfg.get(str(day.weekday()), cfg.get(day.weekday(), 1)))
+        return int(cfg)
+    except Exception:  # noqa: BLE001 — a phase count must never break a run
+        return 1
+
+
+def successful_runs_today(report_id: str, day: str = "") -> int:
+    """How many SUCCESS rows this report's card already has today, from any
+    machine. Read-only; 0 on any error.
+
+    ran_ok_today answers the same question as a bool. This counts, because a
+    two-phase report needs to know it is on pass 2 of 2 and not pass 1."""
+    n = 0
+    try:
+        import datetime as _dt
+        card = hub_card_id(report_id)
+        if not card:
+            return 0
+        day = day or _dt.date.today().isoformat()
+        for r in _ws().get_all_records():
+            if str(r.get("Report ID") or "").strip() != card:
+                continue
+            if not str(r.get("Started At") or "").startswith(day):
+                continue
+            if str(r.get("Status") or "").strip().lower() in ("success", "done"):
+                n += 1
+    except Exception:  # noqa: BLE001
+        return n
+    return n
+
+
+def _phase_complete(report_id: str) -> bool:
+    """Has this report done ALL the passes it declares for today?
+
+    WHY (Megan 2026-09-09, the leaders_call case). leaders_call is a two-phase
+    Monday card — daily_runs {"0": 2}: the 2pm run pulls the campaigns and
+    writes the tab, the 7:30pm --finalize pass builds the deck and posts it to
+    #top-leaders-alphalete-org and #alphalete-gp-sales. Both phases publish
+    `success`, and _clear_failure fired on the FIRST one. On 2026-09-08 that put
+    two "RESOLVED. It just ran clean." posts in #claudecorrections (13:39 and
+    14:34) for a Monday on which no deck reached either channel at all.
+
+    Phase 1 finishing IS a real success — the Hub pill correctly climbs to 1/2,
+    amber. It is not a DELIVERY, and only a delivery may close a ticket. Every
+    daily_runs > 1 card had this; there are about twenty.
+
+    Costs a Hub read only for those cards: a report declaring one pass a day
+    answers True without touching the sheet, which is the overwhelming majority
+    of publishes."""
+    want = expected_runs_today(report_id)
+    if want <= 1:
+        return True
+    got = successful_runs_today(report_id)
+    if got >= want:
+        return True
+    print(f"[hub] {report_id}: pass {got} of {want} today — publishing the run, "
+          f"NOT closing its alert thread. A phase that finished is not a report "
+          f"that delivered.", flush=True)
+    return False
+
+
 def _fail_marker(report_id: str):
     """The "already alerted for this report" stamp. No date in the name any more
     — it is read as a COOLDOWN (see _alert_failure)."""
@@ -833,7 +913,14 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
             # Unless the caller says this run delivered nothing (clear_failure
             # False) — see the docstring. A probe that exits 0 has proved the
             # code runs, not that the report is fixed.
-            _clear_failure(report_id, report_name)
+            #
+            # …or unless the report declares more passes today than it has done
+            # (_phase_complete): leaders_call's 2pm tab fill is a genuine
+            # success and publishes as one, but the deck it exists to send does
+            # not go out until 7:30pm, and closing the ticket at 2pm is how
+            # 2026-09-08 ended with two green checks and no deck.
+            if _phase_complete(report_id):
+                _clear_failure(report_id, report_name)
         return True
     except Exception:
         return False

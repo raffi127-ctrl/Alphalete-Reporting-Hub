@@ -980,9 +980,18 @@ def _build_recognition_pdf(results: dict) -> None:
         if res.get("ok"):
             try:
                 from automations.day_orchestrator import hub_publish
+                # clear_failure=False: this is the 2pm PHASE. The deck the card
+                # exists to send goes to #top-leaders-alphalete-org and
+                # #alphalete-gp-sales in the 7:30pm --finalize pass, and only
+                # that pass may close an alert thread. On 2026-09-08 a phase-1
+                # publish put "RESOLVED. It just ran clean." in
+                # #claudecorrections on a Monday when no deck reached either
+                # channel (Megan 2026-09-09). hub_publish._phase_complete holds
+                # the same line off daily_runs; saying it here too costs no Hub
+                # read and keeps the rule visible where the phase is.
                 hub_publish.publish_done("leaders_call",
                                          "Leader's Call - Weekly Recognition",
-                                         status="success")
+                                         status="success", clear_failure=False)
             except Exception:
                 pass
     except Exception as e:
@@ -1003,6 +1012,36 @@ CALL_TIME = "8:45"
 ZOOM_URL = "https://us02web.zoom.us/j/7567334591"
 
 
+def _deck_landed(client, cid: str, filename: str, *, tries: int = 3,
+                 delay: float = 2.0):
+    """Is the deck actually a message in that channel? True / False / None.
+
+    Same shape and the same reasoning as
+    slack_metrics_post.file_landed_in_thread: Slack creates the message
+    asynchronously after the bytes are up, so this polls rather than asking
+    once, and a channel we cannot read answers None — "I am not allowed to
+    look" must never be reported as "it wasn't sent"."""
+    import datetime as _dt
+    import time as _time
+    oldest = str(int(_dt.datetime.combine(_dt.date.today(),
+                                          _dt.time.min).timestamp()))
+    could_read = False
+    for attempt in range(tries):
+        try:
+            resp = client.conversations_history(channel=cid, oldest=oldest,
+                                                limit=50)
+            could_read = True
+            for m in resp.get("messages") or []:
+                if any(str(f.get("name") or "") == filename
+                       for f in (m.get("files") or [])):
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+        if attempt < tries - 1:
+            _time.sleep(delay)
+    return False if could_read else None
+
+
 def _post_pdf_to_channels(pdf_path, week_end, dry_run: bool = False) -> list:
     from pathlib import Path as _P
     name = _P(pdf_path).name
@@ -1016,11 +1055,24 @@ def _post_pdf_to_channels(pdf_path, week_end, dry_run: bool = False) -> list:
             continue
         try:
             from automations.shared import slack_metrics_post as smp
-            resp = smp._client().files_upload_v2(channel=cid, file=str(pdf_path),
-                                                 filename=name, initial_comment=comment)
+            client = smp._client()
+            resp = client.files_upload_v2(channel=cid, file=str(pdf_path),
+                                          filename=name, initial_comment=comment)
             ok = bool(resp.get("ok"))
-            print(f"  #{chan}: {'posted ✓' if ok else 'ok=false'}", flush=True)
-            out.append({"channel": chan, "ok": ok})
+            # `ok` means Slack ACCEPTED the upload. It is not the deck being in
+            # the channel: on 2026-09-04 files_upload_v2 returned ok WITH a file
+            # id for a churn board that never materialised as a message
+            # (slack_metrics_post.file_landed_in_thread). This card's whole job
+            # is the deck being in front of people, so read it back. None =
+            # couldn't tell (no history scope) — never read as a miss.
+            landed = _deck_landed(client, cid, name)
+            if landed is False:
+                ok = False
+            print("  #{}: {}".format(
+                chan, "posted ✓" if ok else
+                ("upload accepted but the deck is NOT in the channel"
+                 if landed is False else "ok=false")), flush=True)
+            out.append({"channel": chan, "ok": ok, "landed": landed})
         except Exception as e:  # noqa: BLE001
             print(f"  #{chan}: FAILED — {type(e).__name__}: {str(e)[:140]}", flush=True)
             out.append({"channel": chan, "ok": False, "error": str(e)})
@@ -1302,9 +1354,11 @@ def main() -> int:
             # only fires on a clean pull.
             try:
                 from automations.day_orchestrator import hub_publish
+                # clear_failure=False — same reason as the PDF path above: the
+                # tab is written, nothing has been SENT. --finalize closes.
                 hub_publish.publish_done("leaders_call",
                                          "Leader's Call - Weekly Recognition",
-                                         status="success")
+                                         status="success", clear_failure=False)
             except Exception:
                 pass
             return 0

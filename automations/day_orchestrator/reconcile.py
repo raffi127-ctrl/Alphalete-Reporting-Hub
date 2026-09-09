@@ -45,6 +45,8 @@ def verify(report, target_date: dt.date, *, dry_run: bool, verbose: bool = True)
             return _verify_slack_sections(vcfg, target_date)
         if vtype == "cells_nonblank":
             return _verify_cells_nonblank(vcfg, target_date)
+        if vtype == "slack_delivered":
+            return _verify_slack_delivered(vcfg, target_date)
         # not_configured / unknown
         return ReconResult(ok=True, unknown=True,
                            note=f"verify not wired ({vtype}) — confirm cells by hand")
@@ -96,6 +98,88 @@ def _verify_manifest(vcfg: dict, target_date: dt.date) -> ReconResult:
 
 
 # ---------------- slack-sections verifier (defense-in-depth) ----------------
+
+def _verify_slack_delivered(vcfg: dict, target_date: dt.date) -> ReconResult:
+    """Did the thing this report EXISTS to send actually land in its channels?
+
+    WHY (Megan 2026-09-09). Every other verifier here answers "did it write what
+    it meant to write" — a sheet, a manifest, a thread_state file the runner
+    itself keeps. None of them answers the only question a delivery report is
+    about: is it in front of the people it was for. leaders_call is the case that
+    made it matter. Its verify was `not_configured`, so `reconcile.verify`
+    soft-passed, the orchestrator wrote DONE ("ran; verify not wired"), the run
+    published success and Lucy posted "RESOLVED. It just ran clean." — twice on
+    2026-09-08, on a Monday when the recognition deck reached neither
+    #top-leaders-alphalete-org nor #alphalete-gp-sales.
+
+    So this reads the CHANNEL, the way a member would, and is the same idea as
+    slack_metrics_post.file_landed_in_thread: `files_upload_v2` answering ok is
+    not the image being in the thread (2026-09-04, the missing 30-day churn
+    board), and publish_done answering success is not the deck being in the
+    channel. What a reader can see is the claim; nothing else is.
+
+    Config:
+        {"type": "slack_delivered",
+         "channels": ["C067TTGFEFR", "C07J46MQNUX"],   # ids, not #names
+         "match": "Leader's Call",     # substring of the post's text/filename
+         "files_only": false,          # true = require an actual attachment
+         "any_of": false}              # true = one channel is enough
+
+    A channel we CANNOT READ answers unknown, never missing: several of these
+    channels are no-history-read for our token, and "I am not allowed to look"
+    must never be reported as "it wasn't sent". Same rule as
+    file_landed_in_thread — only an explicit absence counts as absent.
+    """
+    channels = [c for c in (vcfg.get("channels") or []) if c]
+    match = (vcfg.get("match") or "").lower()
+    if not channels:
+        return ReconResult(ok=True, unknown=True,
+                           note="slack_delivered has no channels configured")
+    try:
+        from automations.shared.slack_metrics_post import _client
+        client = _client()
+    except Exception as e:  # noqa: BLE001
+        return ReconResult(ok=True, unknown=True,
+                           note=f"no Slack client to confirm delivery "
+                                f"({type(e).__name__})")
+    oldest = str(int(dt.datetime.combine(target_date, dt.time.min).timestamp()))
+    landed, missing, unreadable = [], [], []
+    for cid in channels:
+        try:
+            resp = client.conversations_history(channel=cid, oldest=oldest,
+                                                limit=200)
+        except Exception:  # noqa: BLE001 — cannot look is not "not there"
+            unreadable.append(cid)
+            continue
+        hit = False
+        for m in resp.get("messages") or []:
+            files = m.get("files") or []
+            if vcfg.get("files_only") and not files:
+                continue
+            hay = " ".join([(m.get("text") or "")]
+                           + [str(f.get("name") or "") for f in files]).lower()
+            if not match or match in hay:
+                hit = True
+                break
+        (landed if hit else missing).append(cid)
+
+    if vcfg.get("any_of") and landed:
+        return ReconResult(ok=True, note=f"delivered to {len(landed)} channel(s)")
+    if missing:
+        return ReconResult(ok=False, missing=missing,
+                           note="never landed in {} — {}".format(
+                               "this channel" if len(missing) == 1
+                               else f"{len(missing)} channels",
+                               ", ".join(missing)))
+    if not landed:      # everything we were asked about was unreadable
+        return ReconResult(ok=True, unknown=True,
+                           note="could not read {} to confirm delivery".format(
+                               ", ".join(unreadable)))
+    note = f"delivered to all {len(landed)} channel(s)"
+    if unreadable:
+        note += f" ({len(unreadable)} unreadable, not counted)"
+    return ReconResult(ok=True, note=note)
+
 
 def _verify_slack_sections(vcfg: dict, target_date: dt.date) -> ReconResult:
     """Verify a threaded Slack report posted EVERY section it enumerated in its
