@@ -39,6 +39,16 @@ person above them.
 
 Re-running is safe: cells that already agree are left alone, and cells a person
 filled by hand are never replaced unless --overwrite says so.
+
+DON'T --overwrite IN THE AFTERNOON. 'Line Up WE <m>.<d>' is a LIVE document --
+row 1 names the day it is currently showing -- and it is rewritten while people
+work. On the afternoon of 2026-09-09 a pair was deleted out of the 'Is
+Training' / 'New Start Name' columns and those two shifted UP while the extra
+trainee columns beside them did NOT, so every third-trainee cell was one row
+out of line with the trainer it belonged to. An --overwrite run then read that
+as two real reassignments and wrote them. The guard below now refuses that
+case; the 4am pass was never exposed to it, because filling blanks cannot move
+anybody.
 """
 from __future__ import annotations
 
@@ -102,11 +112,35 @@ def main(argv=None) -> int:
                              counts["replaced"], counts["kept"],
                              counts["blank"]))
 
+    # THE HALF-EDITED LINE UP GUARD (2026-09-09). --overwrite is the only mode
+    # that can move a trainer somebody already wrote, so it is the only mode
+    # that can be wrong in a way nobody sees. It refuses when the line up has
+    # LOST a person the box already has a trainer for: that never happens on a
+    # settled tab, and it is exactly what a tab being rewritten looks like.
+    # Fill-blanks mode is left alone on purpose -- it cannot reassign anybody,
+    # so a half-written source there just means fewer cells filled.
+    refuse = bool(args.overwrite and counts["orphans"])
+    if refuse:
+        print("  %s: %d people in the box have a trainer written but match "
+              "nobody in %r, so that tab is mid-edit and the rest of it can't "
+              "be trusted either. Run again once it settles, or drop "
+              "--overwrite to just fill the blanks."
+              % ("WOULD REFUSE TO OVERWRITE" if args.dry_run
+                 else "REFUSING TO OVERWRITE",
+                 counts["orphans"], C.lineup_tab(day)))
+
     if args.dry_run:
         for u in updates:
             print("  DRY %s = %r" % (u["range"], u["values"][0][0]))
         print("  dry run -- nothing written")
         return 0
+
+    if refuse:
+        print("  nothing written")
+        # 2, not the repo's usual 75: a hold code would read as FAILED in the
+        # Hub, and only a HAND run can reach this line -- the 4am pass never
+        # passes --overwrite. [[project_exit-75-hold-fires-the-failed-alert]]
+        return 2
 
     wrote = F.apply(ws, updates)
     print("  wrote %d cells to %r" % (wrote, ws.title))

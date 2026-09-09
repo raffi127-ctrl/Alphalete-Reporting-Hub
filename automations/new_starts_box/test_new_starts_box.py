@@ -162,9 +162,10 @@ class Plan(unittest.TestCase):
                 ("Moises Turrubiartes", "BAS")]
     LOCS = [("Angelyn Galegos", "Rockwall"), ("Eriyana White", "Denton")]
 
-    def plan(self, entries, **kw):
+    def plan(self, entries, trainer_pairs=None, **kw):
         g = board(entries, roster=self.ROSTER)
-        return g, F.plan(g, WED, self.TRAINERS, self.LOCS, **kw)
+        pairs = self.TRAINERS if trainer_pairs is None else trainer_pairs
+        return g, F.plan(g, WED, pairs, self.LOCS, **kw)
 
     def test_fills_the_three_columns_of_an_empty_row(self):
         _g, (ups, _notes, counts) = self.plan(
@@ -205,6 +206,22 @@ class Plan(unittest.TestCase):
         self.assertEqual(ups, [{"range": "K10", "values": [["Rockwall"]]}])
         self.assertEqual(counts["replaced"], 1)
         self.assertTrue(any("'Seagonville' -> 'Rockwall'" in n for n in notes))
+
+    def test_a_lost_person_is_counted_as_an_orphan(self):
+        # The 2026-09-09 shape: the box says Angelyn Galegos was trained by
+        # Alyssa Moreno, and the line up no longer has her at all. That is the
+        # line up LOSING a row, and run.py refuses to --overwrite on it.
+        _g, (_u, _n, counts) = self.plan(
+            [("Angelyn Galegos", "Alyssa Moreno", "Rockwall", "Se7en Sins")],
+            trainer_pairs=[("Eriyana White", "MJ")])
+        self.assertEqual(counts["orphans"], 1)
+
+    def test_a_brand_new_row_is_not_an_orphan(self):
+        # Nobody has written her trainer yet, so an unmatched name here just
+        # means the line up hasn't got to her -- blanks, not a corrupt tab.
+        _g, (_u, _n, counts) = self.plan([("Angelyn Galegos", "", "", "")],
+                                         trainer_pairs=[])
+        self.assertEqual(counts["orphans"], 0)
 
     def test_it_never_writes_outside_the_three_columns(self):
         _g, (ups, _n, _c) = self.plan([("Angelyn Galegos", "", "", "")])

@@ -63,13 +63,21 @@ def plan(grid, day: dt.date, trainer_pairs: List[Tuple[str, str]],
 
     fallback = fallback_teams or []
     updates: List[Dict] = []
-    counts = {"people": 0, "filled": 0, "kept": 0, "replaced": 0, "blank": 0}
+    counts = {"people": 0, "filled": 0, "kept": 0, "replaced": 0, "blank": 0,
+              "orphans": 0}
 
     for row, name in X.entries(grid, hrow):
         counts["people"] += 1
         trainer, twhy = match(name, trainer_pairs)
         if twhy:
             notes.append("%s: trainer -- %s" % (name, twhy))
+        # THE MID-EDIT SIGNAL. Somebody already wrote this person's trainer, and
+        # the line up no longer knows who they are -- so the line up LOST them,
+        # they did not arrive. See the header of run.py for the afternoon of
+        # 2026-09-09, when exactly this happened to two people and the trainee
+        # columns silently slid a row out of line with their trainers.
+        if not trainer and X.cell(grid, row, cols[C.BOX_TRAINER_LABEL]).strip():
+            counts["orphans"] += 1
 
         city, lwhy = match(name, location_pairs)
         if lwhy:
