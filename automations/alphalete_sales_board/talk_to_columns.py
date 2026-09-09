@@ -310,12 +310,13 @@ def formulas(ss, ws, apply: bool = False) -> int:
       % of TT's per knock = Talk-To's / TK
       AVG app per TT      = Apps      / Talk-To's
 
-    NOTHING READS BLANK. A zero denominator -- no knocks yet, no talk-to's yet --
-    is not a zero, it is a ratio that cannot be measured, and the cell says `-`.
-    `N()` turns a roll-call letter into that same case, and IFERROR catches the
-    Apps cell on a day it holds a letter rather than a count, so no cell is ever
-    #DIV/0! or empty. The one blank left is a row with NO REP in it. See
-    `CANT_MEASURE` and `_no_rep`.
+    A zero denominator is not a zero, it is a ratio that cannot be measured, and
+    the cell says `-`. `N()` turns a roll-call letter into that same case, and
+    IFERROR catches the Apps cell on a day it holds a letter rather than a
+    count, so no cell is ever #DIV/0!.
+
+    A DAY WITH NO NUMBERS AT ALL STAYS EMPTY, though -- see `_day` below. That
+    is the one place the day blocks and the weekly block differ on purpose.
 
     The TOTALS row gets the same two ratios over the column totals, NOT a sum of
     the per-rep percentages -- that would be an average of averages, and it is
@@ -337,17 +338,30 @@ def formulas(ss, ws, apply: bool = False) -> int:
             continue
         A, T_, K, P, V = (_col_letter(c) for c in (apps, tt, tk, pct, avg))
         rows = list(range(SUB_ROW + 1, totals + 1))
+        def _day(r, expr):
+            """Blank the cell on a day that has NO numbers at all.
+
+            Eve, 2026-09-08: in the DAY blocks a dash is only noise. A day the
+            rep was not out has neither TK nor Talk-To's, and a grid of dashes
+            down six blocks buries the days that do have numbers. The dash is
+            kept for the WEEKLY block, where every row is a rep who was there
+            some day of the week and the reader needs to know why a cell is not
+            a number. Empty here means empty THERE -- both source cells blank.
+            """
+            return _no_rep(r, '=IF(AND(%s%d="",%s%d=""),"",%s)'
+                           % (K, r, T_, r, expr.lstrip("=")), names)
+
         data.append({
             "range": "%s%d:%s%d" % (P, rows[0], P, rows[-1]),
-            "values": [[_no_rep(r, '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
-                                % (K, r, CANT_MEASURE, T_, r, K, r,
-                                   CANT_MEASURE), names)] for r in rows],
+            "values": [[_day(r, '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
+                             % (K, r, CANT_MEASURE, T_, r, K, r,
+                                CANT_MEASURE))] for r in rows],
         })
         data.append({
             "range": "%s%d:%s%d" % (V, rows[0], V, rows[-1]),
-            "values": [[_no_rep(r, '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
-                                % (T_, r, CANT_MEASURE, A, r, T_, r,
-                                   CANT_MEASURE), names)] for r in rows],
+            "values": [[_day(r, '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
+                             % (T_, r, CANT_MEASURE, A, r, T_, r,
+                                CANT_MEASURE))] for r in rows],
         })
         said.append("  %-5s %s = %s/%s   %s = %s/%s   rows %d-%d"
                     % (lab, P, T_, K, V, A, T_, rows[0], rows[-1]))
