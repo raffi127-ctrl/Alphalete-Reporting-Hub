@@ -150,14 +150,25 @@ def widths(ss, tab: str, first_col: int) -> list:
     return [c.get("pixelSize") for c in cm][:3]
 
 
+# What a cell says when the ratio CANNOT BE MEASURED -- the denominator is zero.
+# Eve, 2026-09-08, in three steps: blank first ("si queda vacio entiendo que es
+# una falla"), then 0, then this. The reason 0 was not the end of it: a rep with
+# 116 talk-to's and no sale, and a rep who sold without talking to anybody, both
+# read 0.0 in 'AVG TTs per app', and only ONE of those is a real zero. So the
+# three cases stay apart:
+#
+#   no denominator to divide by  ->  "-"   (nothing to measure)
+#   a real zero on top           ->  0     (measured, and it is zero)
+#   no rep in the row            ->  blank (not a data cell at all)
+CANT_MEASURE = '"-"'
+
+
 def _no_rep(row: int, expr: str, name_col_letter: str) -> str:
     """`expr`, but blank on a row that holds no rep.
 
-    Every one of these columns reads 0 when there is no data, because a blank
-    cell reads as a broken report (Eve, 2026-09-08). A row with nobody in it is
-    the exception: the board keeps filler rows between the last rep and TOTALS,
-    and a strip of 0.0% down empty rows is noise, not information. The test is
-    the NAME cell, so the formula lights up the moment somebody is typed in.
+    The board keeps filler rows between the last rep and TOTALS, and a strip of
+    dashes down empty rows is noise, not information. The test is the NAME cell,
+    so the formula lights up the moment somebody is typed into one.
     """
     return '=IF($%s%d="","",%s)' % (name_col_letter, row, expr.lstrip("="))
 
@@ -299,13 +310,12 @@ def formulas(ss, ws, apply: bool = False) -> int:
       % of TT's per knock = Talk-To's / TK
       AVG app per TT      = Apps      / Talk-To's
 
-    NO DATA READS 0, NOT BLANK (Eve, 2026-09-08: *"si queda vacio entiendo que
-    es una falla"*). A zero denominator lands on 0, `N()` turns a roll-call
-    letter into 0, and IFERROR catches the Apps cell on a day it holds a letter
-    rather than a count -- so a cell is never #DIV/0! and never empty. The one
-    blank left is a row with NO REP in it: `IF($C="", ...)` keeps the filler rows
-    above TOTALS clean, and the formula lights up by itself the moment somebody
-    is typed into one.
+    NOTHING READS BLANK. A zero denominator -- no knocks yet, no talk-to's yet --
+    is not a zero, it is a ratio that cannot be measured, and the cell says `-`.
+    `N()` turns a roll-call letter into that same case, and IFERROR catches the
+    Apps cell on a day it holds a letter rather than a count, so no cell is ever
+    #DIV/0! or empty. The one blank left is a row with NO REP in it. See
+    `CANT_MEASURE` and `_no_rep`.
 
     The TOTALS row gets the same two ratios over the column totals, NOT a sum of
     the per-rep percentages -- that would be an average of averages, and it is
@@ -329,13 +339,15 @@ def formulas(ss, ws, apply: bool = False) -> int:
         rows = list(range(SUB_ROW + 1, totals + 1))
         data.append({
             "range": "%s%d:%s%d" % (P, rows[0], P, rows[-1]),
-            "values": [[_no_rep(r, '=IFERROR(IF(N(%s%d)=0,0,%s%d/%s%d),0)'
-                                % (K, r, T_, r, K, r), names)] for r in rows],
+            "values": [[_no_rep(r, '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
+                                % (K, r, CANT_MEASURE, T_, r, K, r,
+                                   CANT_MEASURE), names)] for r in rows],
         })
         data.append({
             "range": "%s%d:%s%d" % (V, rows[0], V, rows[-1]),
-            "values": [[_no_rep(r, '=IFERROR(IF(N(%s%d)=0,0,%s%d/%s%d),0)'
-                                % (T_, r, A, r, T_, r), names)] for r in rows],
+            "values": [[_no_rep(r, '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
+                                % (T_, r, CANT_MEASURE, A, r, T_, r,
+                                   CANT_MEASURE), names)] for r in rows],
         })
         said.append("  %-5s %s = %s/%s   %s = %s/%s   rows %d-%d"
                     % (lab, P, T_, K, V, A, T_, rows[0], rows[-1]))
@@ -409,9 +421,9 @@ def week_formulas(ss, ws, apply: bool = False) -> int:
       % of TT's per knock      = week Talk-To's / week TK
       AVG TTs per app          = week Talk-To's / week Apps
 
-    NO DATA READS 0, NOT BLANK — no days worked, no knocks, no apps all land on
-    0, because an empty cell reads as a broken report. Only a row with NO REP in
-    it stays blank; see `_no_rep`.
+    NOTHING READS BLANK. No days worked, no knocks or no apps means the ratio
+    cannot be measured, and the cell says `-`; a genuine zero says 0. Only a row
+    with NO REP in it stays empty. See `CANT_MEASURE` and `_no_rep`.
 
     In the TOTALS row the same formulas hold, with one thing worth knowing: the
     denominator there is the SIX working days of the office (each day's total is
@@ -475,15 +487,16 @@ def week_formulas(ss, ws, apply: bool = False) -> int:
         return ",".join("%s%d" % (_col_letter(c), r) for c in all_tt)
 
     TT = _col_letter(wanted[WEEK_TT])
-    put(WEEK_AVG_TK, lambda r: '=IFERROR(IF(%s=0,0,%s%d/%s),0)'
-        % (days(r), K, r, days(r)))
-    put(WEEK_TT, lambda r: '=SUM(%s)' % tts(r))
-    put(WEEK_AVG_TT, lambda r: '=IFERROR(IF(%s=0,0,%s%d/%s),0)'
-        % (days(r), TT, r, days(r)))
-    put(WEEK_PCT, lambda r: '=IFERROR(IF(N(%s%d)=0,0,%s%d/%s%d),0)'
-        % (K, r, TT, r, K, r))
-    put(WEEK_TT_APP, lambda r: '=IFERROR(IF(N(%s%d)=0,0,%s%d/%s%d),0)'
-        % (A, r, TT, r, A, r))
+    D = CANT_MEASURE
+    put(WEEK_AVG_TK, lambda r: '=IF(%s=0,%s,IFERROR(%s%d/%s,%s))'
+        % (days(r), D, K, r, days(r), D))
+    put(WEEK_TT, lambda r: '=SUM(%s)' % tts(r))       # a sum: 0 is a real 0
+    put(WEEK_AVG_TT, lambda r: '=IF(%s=0,%s,IFERROR(%s%d/%s,%s))'
+        % (days(r), D, TT, r, days(r), D))
+    put(WEEK_PCT, lambda r: '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
+        % (K, r, D, TT, r, K, r, D))
+    put(WEEK_TT_APP, lambda r: '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
+        % (A, r, D, TT, r, A, r, D))
 
     if not apply:
         print("\npreview only -- re-run with --apply to write.")

@@ -128,6 +128,19 @@ class RunningWeekBlock(unittest.TestCase):
         self.assertIn("SAT", work)
 
 
+class EmptyCells(unittest.TestCase):
+    """Three states, kept apart on purpose: `-` when there is no denominator to
+    divide by, 0 when the zero is real, blank only on a row with no rep."""
+
+    def test_a_row_with_no_rep_stays_blank(self):
+        out = T._no_rep(7, "=A7/B7", "C")
+        # ONE leading '=' -- the wrapped expression must lose its own.
+        self.assertEqual(out, '=IF($C7="","",A7/B7)')
+
+    def test_the_cant_measure_marker_is_a_dash(self):
+        self.assertEqual(T.CANT_MEASURE, '"-"')
+
+
 class ColumnLetters(unittest.TestCase):
     def test_round_trip_past_Z(self):
         for col, want in ((1, "A"), (26, "Z"), (27, "AA"), (56, "BD"), (82, "CD")):
