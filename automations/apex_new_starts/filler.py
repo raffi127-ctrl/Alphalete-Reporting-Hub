@@ -672,6 +672,71 @@ _JS = r"""
    try{ localStorage.setItem(IDKEY,JSON.stringify(map)); }catch(e){}
    return n;
  }
+ function filterBoxes(){
+   /* The roster's filter row: one box per column, all of them placeholder
+      "Filter". Which one is Last Name is decided by the header, not by
+      counting -- a column added upstream would otherwise shift it silently. */
+   var heads=document.querySelectorAll('th'), names=[], i;
+   for(i=0;i<heads.length;i++) names.push(norm(heads[i].textContent));
+   var boxes=document.querySelectorAll('input[placeholder="Filter" i]');
+   var idx=names.indexOf('last name');
+   if(idx<0||idx>=boxes.length) return null;
+   return {last:boxes[idx], first:names.indexOf('first name')>=0
+           ? boxes[names.indexOf('first name')] : null};
+ }
+ function applyFilters(){
+   var b=document.querySelectorAll('button,a'), i;
+   for(i=0;i<b.length;i++){ if(norm(b[i].textContent).indexOf('apply filter')>=0){ b[i].click(); return true; } }
+   return false;
+ }
+ function rowsById(){
+   var out={}, links=document.querySelectorAll('a[href*="/employees/"]'), i;
+   for(i=0;i<links.length;i++){
+     var m=(links[i].getAttribute('href')||'').match(/\/employees\/(\d+)/);
+     if(!m) continue;
+     var row=links[i].closest('tr'); if(!row) continue;
+     var c=row.querySelectorAll('td'); if(c.length<2) continue;
+     out[(norm(c[0].textContent)+' '+norm(c[1].textContent)).trim()]=m[1];
+   }
+   return out;
+ }
+ async function findEveryone(say){
+   /* Clicking the button on each page of a five-page list to teach it where
+      people are is exactly the kind of chore this is supposed to remove
+      (Megan, 2026-09-09). The roster filters in-page, so it can look each
+      person up itself. */
+   var f=filterBoxes();
+   if(!f){ say('No filter row on this page — open Roster then Employees, and the Pending tab.'); return; }
+   var map=knownIds(), missing=[], i;
+   for(i=0;i<D.length;i++){ if(!idFor(D[i])) missing.push(D[i]); }
+   if(!missing.length){ say('<b>All '+D.length+' found.</b> Ready to run the week.'); return; }
+   for(i=0;i<missing.length;i++){
+     var person=missing[i], parts=norm(person.name).split(' ');
+     var surname=person.find||parts[parts.length-1];
+     say('looking up '+person.name+' ('+(i+1)+' of '+missing.length+')…');
+     f.last.value=surname;
+     f.last.dispatchEvent(new Event('input',{bubbles:true}));
+     f.last.dispatchEvent(new Event('change',{bubbles:true}));
+     ngApply(f.last);
+     applyFilters();
+     await sleep(1200);
+     var rows=rowsById(), key, want=norm(person.name), hit=null;
+     for(key in rows){ if(key===want){ hit=rows[key]; break; } }
+     if(!hit) for(key in rows){
+       if(key.indexOf(parts[0])>=0&&key.indexOf(norm(surname))>=0){ hit=rows[key]; break; }
+     }
+     if(hit){ map[want]=hit; try{ localStorage.setItem(IDKEY,JSON.stringify(map)); }catch(e){} }
+   }
+   f.last.value='';
+   f.last.dispatchEvent(new Event('input',{bubbles:true}));
+   ngApply(f.last); applyFilters();
+   await sleep(800);
+   var lack=0;
+   for(i=0;i<D.length;i++){ if(!idFor(D[i])) lack++; }
+   say(lack? '<b style="color:#b00">'+lack+' still not found.</b> They may not be '+
+             'on the Pending tab at all — those need doing by hand.'
+      : '<b>All '+D.length+' found.</b> Ready to run the week.');
+ }
  function idFor(p){
    var map=knownIds(), want=norm(p.name);
    if(map[want]) return map[want];
@@ -822,9 +887,12 @@ _JS = r"""
    document.getElementById('ansout').innerHTML=
      (found?'Learned '+found+' more. ':'')+
      (lack? '<b style="color:#b00">'+lack+' of '+D.length+' still not found.</b> '+
-            'The Pending list has several pages — click this button on each one '+
-            'until that reaches zero, then Run the week.'
+            '<a href="#" id="ansfind">Find them all for me</a> '+
+            '(it looks each one up by surname on this list).'
           : '<b>All '+D.length+' found.</b> Ready to run the week.');
+   var fb=document.getElementById('ansfind');
+   if(fb) fb.onclick=function(e){ e.preventDefault();
+     findEveryone(function(m){ document.getElementById('ansout').innerHTML=m; }); };
  }
  document.getElementById('ansrun').onclick=async function(){
    /* One form for the whole week, then one pass. The alternative -- filling

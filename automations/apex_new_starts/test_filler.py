@@ -1114,3 +1114,66 @@ def test_no_html_entity_can_ever_ship_in_the_button():
             F.build_js(None, "WE 9.13")
     finally:
         F._JS = original
+
+
+ROSTER_WITH_FILTER = """
+<!doctype html><html><body>
+<table>
+<thead><tr><th>First Name</th><th>Last Name</th><th>User Name</th><th></th></tr>
+<tr><td><input placeholder="Filter" id="ff"></td>
+    <td><input placeholder="Filter" id="lf"></td>
+    <td><input placeholder="Filter"></td>
+    <td><button id="apply">Apply Filters</button></td></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+</body></html>
+"""
+
+ROSTER_WIRING = """() => {
+  /* A roster that filters in-page by surname, like Apex's does. */
+  const all = [
+    ['Aundre', 'Browder', '2816109'],
+    ['Cristian', 'Amaya Vega', '2816105'],
+    ['Kalynn', 'Nugent', '9999999']];
+  window.__render = () => {
+    const want = document.getElementById('lf').value.toLowerCase();
+    document.getElementById('rows').innerHTML = all
+      .filter(r => !want || r[1].toLowerCase().includes(want))
+      .map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>x</td>
+        <td><a href="/employees/${r[2]}/edit/employment-record">Edit</a></td></tr>`)
+      .join('');
+  };
+  document.getElementById('apply').addEventListener('click', window.__render);
+  /* start on a page that shows NEITHER of our people, the way page 5 of a
+     five-page roster does */
+  document.getElementById('lf').value = 'nugent';
+  window.__render();
+}"""
+
+
+def test_it_looks_everyone_up_itself(page, tmp_path):
+    """Clicking the button on each page of a five-page list to teach it where
+    people are is exactly the chore this is meant to remove. The roster filters
+    in-page, so it can find each person by surname on its own."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_WITH_FILTER)
+    page.goto(f.as_uri())
+    page.evaluate(ROSTER_WIRING)
+    page.evaluate("() => localStorage.clear()")
+
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Cristian Amaya Vega", "find": "Amaya Vega", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    assert "2 of 2 still not found" in page.locator("#ansout").inner_text()
+
+    page.locator("#ansfind").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('found')"
+        " && !document.getElementById('ansout').innerText.includes('not found')",
+        timeout=20000)
+
+    stored = page.evaluate(
+        "() => JSON.parse(localStorage.getItem('apexNewStarts.WE 9.13.ids'))")
+    assert stored["aundre browder"] == "2816109"
+    assert stored["cristian amaya vega"] == "2816105"
+    assert page.locator("#lf").input_value() == "", "the filter is put back"
