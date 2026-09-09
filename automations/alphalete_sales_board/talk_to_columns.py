@@ -585,9 +585,15 @@ def formulas(ss, ws, apply: bool = False) -> int:
 
         data.append({
             "range": "%s%d:%s%d" % (P, rows[0], P, rows[-1]),
-            "values": [[_day(r, '=IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))'
-                             % (K, r, CANT_MEASURE, T_, r, K, r,
-                                CANT_MEASURE))] for r in rows],
+            # ISNUMBER on Talk-To's, not just "is the denominator zero": mid-
+            # morning ownerville has given the knocks but not yet the talk-to's,
+            # and `TT/TK` with a blank on top is 0 -- so the column read `0.0%`
+            # for a rep who had simply not been counted yet (Eve, 2026-09-09).
+            # Knocks are there, this number is not knowable: that is `-`.
+            "values": [[_day(r, '=IF(NOT(ISNUMBER(%s%d)),%s,'
+                                'IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s)))'
+                             % (T_, r, CANT_MEASURE, K, r, CANT_MEASURE,
+                                T_, r, K, r, CANT_MEASURE))] for r in rows],
         })
         data.append({
             "range": "%s%d:%s%d" % (V, rows[0], V, rows[-1]),
