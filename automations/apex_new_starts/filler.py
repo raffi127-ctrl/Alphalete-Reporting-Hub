@@ -665,6 +665,95 @@ _JS = r"""
  }
  function genderBox(p){ return fieldFor('Gender'); }
  function blueink(p){ return 'https://secure.blueink.com/dashboard/wall?search='+encodeURIComponent(p.find||p.name); }
+ /* ------------- walking the whole week in one pass ----------------------
+    Apex is an Angular ui-router app, so moving between tabs and between
+    people happens IN-PAGE -- no reload, and a script survives all of it.
+    That is what makes one pass over the week possible instead of 69 rounds
+    of click-fill-save. Filling every field but leaving 69 Saves to a person
+    was not saving anybody meaningful time (Megan, 2026-09-09).
+
+    The Socials live in memory for the length of the run and are never
+    written anywhere. */
+ window.__ansSSN=window.__ansSSN||{};
+ window.__ansGender=window.__ansGender||{};
+ function injector(){
+   try{ return angular.element(document.body).injector(); }catch(e){ return null; }
+ }
+ async function goSpa(path){
+   var inj=injector();
+   if(inj){
+     try{
+       var $l=inj.get('$location'), $r=inj.get('$rootScope');
+       $r.$apply(function(){ $l.path(path); });
+       await sleep(900);
+       if((location.pathname||'').indexOf(path)>=0) return true;
+     }catch(e){}
+   }
+   return false;      /* a reload would kill the run, so we do not do one */
+ }
+ function saveButton(){
+   var b=document.querySelectorAll('button,a'), i;
+   for(i=0;i<b.length;i++){ if(norm(b[i].textContent)==='save'&&vis(b[i])) return b[i]; }
+   return null;
+ }
+ async function saveHere(){
+   /* Apex reports a failed save with window.alert, which would stop a run
+      dead behind a modal. Catch the text instead and hand it back. */
+   var said=null, orig=window.alert;
+   if(window.__ansNet) window.__ansNet.last=null;
+   window.alert=function(m){ said=String(m||''); };
+   try{
+     var b=saveButton(); if(!b){ return 'no Save button on this page'; }
+     b.click();
+     var waited=0;
+     while(waited<9000){ await sleep(300); waited+=300;
+       if(said) break;
+       var L=window.__ansNet&&window.__ansNet.last;
+       if(L&&L.status>=400){ said='Apex refused it ('+L.status+')'; break; }
+     }
+   } finally { window.alert=orig; }
+   return said;
+ }
+ async function doPage(p,which){
+   var set=(p.pages||{})[which]||{}, done=[], miss=[], k;
+   for(k in set){ var el=fieldFor(k);
+     if(el&&await setVal(el,set[k])) done.push(k); else miss.push(k); }
+   if(which==='profile'){
+     var g=window.__ansGender[norm(p.name)];
+     if(g){ var gb=genderBox(p); if(gb&&await setVal(gb,g)) done.push('Gender');
+            else miss.push('Gender'); }
+   }
+   if(which==='tax'){
+     var sec=window.__ansSSN[norm(p.name)];
+     if(sec){ var bx=ssnBoxes();
+       if(bx&&await setVal(bx[0],sec)&&await setVal(bx[1],sec)) done.push('Social');
+       else miss.push('Social'); }
+     if(role()) done.push('role');
+   }
+   return {done:done,miss:miss};
+ }
+ async function runPerson(p,say){
+   var id=idFor(p);
+   if(!id){ say(p.name+': not on the Pending list — skipped'); return false; }
+   var tabs=[['employment','/employees/'+id+'/edit/employment-record'],
+             ['profile','/employees/'+id+'/edit/user-profile'],
+             ['tax','/employees/'+id+'/edit/bank-info']];
+   for(var t=0;t<tabs.length;t++){
+     if(!(await goSpa(tabs[t][1]))){
+       say(p.name+': could not move to '+tabs[t][0]+' without a reload — stopped');
+       return false;
+     }
+     await sleep(800);
+     var r=await doPage(p,tabs[t][0]);
+     var err=await saveHere();
+     if(err){ say(p.name+' · '+tabs[t][0]+': '+err+
+                  (r.miss.length?' — missed '+r.miss.join(', '):'')); return false; }
+     say(p.name+' · '+tabs[t][0]+': saved'+
+         (r.miss.length?' — missed '+r.miss.join(', '):''));
+   }
+   return true;
+ }
+
  var old=document.getElementById('anspanel'); if(old) old.remove();
  var p=D[Math.min(I,D.length-1)];
  var box=document.createElement('div'); box.id='anspanel';
@@ -685,7 +774,8 @@ _JS = r"""
         ' · <a href="#" id="ansg3">3 Tax</a></div>':
         '<div style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
         '<b>Pending</b> list and it will learn where everyone is, then jump you straight to them.</div>')+
-   '<button id="ansfill" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer">Fill this page</button> '+
+   '<button id="ansrun" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:14px;font-weight:700;cursor:pointer;width:100%%;margin-bottom:6px">Run the whole week</button>'+
+   '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved → next</button>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
    '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
@@ -697,6 +787,67 @@ _JS = r"""
  }
  if(found) document.getElementById('ansout').innerHTML=
    'Learned where '+found+' more people are. Click <b>1 Employment</b> to start on '+p.name+'.';
+ document.getElementById('ansrun').onclick=async function(){
+   /* One form for the whole week, then one pass. The alternative -- filling
+      every field and leaving a person to click Save 69 times -- was not
+      saving anybody meaningful time. */
+   var needG=[], i;
+   for(i=0;i<D.length;i++){
+     var pp=D[i], has=(pp.pages&&pp.pages.profile&&pp.pages.profile.Gender);
+     needG.push({n:pp.name,g:!has});
+   }
+   var w=document.createElement('div'); w.id='anssetup';
+   w.style.cssText='position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);overflow:auto;padding:30px';
+   var rows='';
+   for(i=0;i<D.length;i++){
+     rows+='<tr><td style="padding:4px 8px">'+(i+1)+'</td>'+
+       '<td style="padding:4px 8px">'+D[i].name+'</td>'+
+       '<td style="padding:4px 8px">'+(needG[i].g?
+         '<select data-g="'+i+'"><option value="">—</option><option>Female</option><option>Male</option></select>'
+         :'<span style="color:#888">on the board</span>')+'</td>'+
+       '<td style="padding:4px 8px"><input data-s="'+i+'" type="password" size="12" autocomplete="off"> '+
+       '<a href="'+blueink(D[i])+'" target="_blank" rel="noopener" '+
+       'style="font-size:11px;color:#0F766E">packet ↗</a></td></tr>';
+   }
+   w.innerHTML='<div style="background:#fff;max-width:720px;margin:0 auto;border-radius:12px;padding:22px;font:14px -apple-system,Helvetica,sans-serif">'+
+     '<div style="font-size:20px;font-weight:700">Set up %(week)s</div>'+
+     '<div style="color:#555;margin:4px 0 14px">Fill these once. Everything else '+
+     'comes from Blue Ink and the board. Socials are held in this page only for '+
+     'the run and are never stored.</div>'+
+     '<table style="width:100%%;border-collapse:collapse;font-size:13px">'+
+     '<tr><th></th><th style="text-align:left">Name</th><th style="text-align:left">Gender</th>'+
+     '<th style="text-align:left">Social</th></tr>'+rows+'</table>'+
+     '<div style="margin-top:16px"><button id="ansgo" style="background:#0F766E;color:#fff;border:0;border-radius:8px;padding:11px 22px;font-weight:700;cursor:pointer">Start the run</button> '+
+     '<button id="anscancel" style="background:#eee;border:0;border-radius:8px;padding:11px 18px;cursor:pointer">Cancel</button>'+
+     '<div style="font-size:12px;color:#666;margin-top:8px">It stops after the '+
+     'first person so you can check the record before the rest go through.</div></div></div>';
+   document.body.appendChild(w);
+   document.getElementById('anscancel').onclick=function(){ w.remove(); };
+   document.getElementById('ansgo').onclick=async function(){
+     var gs=w.querySelectorAll('[data-g]'), ss=w.querySelectorAll('[data-s]'), j;
+     for(j=0;j<gs.length;j++){ if(gs[j].value)
+       window.__ansGender[norm(D[+gs[j].getAttribute('data-g')].name)]=gs[j].value; }
+     for(j=0;j<ss.length;j++){ var v=(ss[j].value||'').replace(/-/g,'');
+       if(/^\d{9}$/.test(v)) window.__ansSSN[norm(D[+ss[j].getAttribute('data-s')].name)]=v;
+       ss[j].value=''; }
+     w.remove();
+     var log=[], out=document.getElementById('ansout');
+     function say(m){ log.push(m); out.innerHTML=log.slice(-9).join('<br>'); }
+     for(j=I;j<D.length;j++){
+       say('<b>'+D[j].name+'</b> ('+(j+1)+' of '+D.length+')…');
+       var ok=await runPerson(D[j],say);
+       if(!ok){ say('<b style="color:#b00">Stopped.</b> Fix that one, then press '+
+                    'Run again — it picks up from here.'); break; }
+       I=j+1; try{ localStorage.setItem(KEY,String(I)); }catch(e){}
+       if(j===0||j===I-1&&j===0){}
+       if(I===1&&D.length>1){
+         if(!confirm(D[0].name+' is done, all three tabs.\n\nOpen the record and '+
+                     'check it. Continue with the remaining '+(D.length-1)+'?')) {
+           say('Paused after the first person.'); break; }
+       }
+     }
+   };
+ };
  document.getElementById('ansfill').onclick=async function(){
    document.getElementById('ansout').innerHTML='filling...';
    var r=await fill(p);
@@ -806,12 +957,25 @@ _JS = r"""
 """
 
 
-def build_js(people: List[Dict], week: str) -> str:
-    """The bookmarklet body: the week's data plus the filler, as one line."""
-    js = _JS % {"data": json.dumps(people, separators=(",", ":")),
+def build_js(people=None, week: str = "") -> str:
+    """The bookmarklet.
+
+    With `people` it embeds them (what the tests use). Without, it is CODE ONLY
+    and reads the week's list out of localStorage -- which is what the page
+    ships, so the bookmark is saved once and never again. A saved bookmarklet
+    freezes whatever was inside it, so carrying the data meant every change to
+    either the data or the code cost a delete, a copy and a re-drag.
+    """
+    js = _JS % {"data": json.dumps(people, separators=(",", ":"))
+                        if people is not None else "null",
                 "week": week.replace("'", ""),
                 "role": json.dumps(SECURITY_ROLE_LABEL.lower())}
     return "javascript:" + " ".join(js.split())
+
+
+def data_json(people: List[Dict]) -> str:
+    """The week's list, for the page's copy button."""
+    return json.dumps(people, separators=(",", ":"))
 
 
 def rows_for(values: Dict[str, str]) -> Dict[str, Dict[str, str]]:
@@ -855,6 +1019,17 @@ PAGE = """<!doctype html><meta charset="utf-8">
     cursor:pointer">Copy the button</button>
     <span id="copied" style="color:#0F766E;display:none">copied ✓</span>
   </div>
+  <div style="margin-top:20px;padding-top:16px;border-top:1px solid #dde">
+    <div style="font-size:15px;margin-bottom:10px"><b>Every week</b>, load that
+    week's people into it:</div>
+    <button id="databtn" style="font:inherit;padding:10px 20px;border:0;
+    background:#0F766E;color:#fff;border-radius:8px;cursor:pointer;
+    font-weight:700">Copy this week's list</button>
+    <span id="datacopied" style="color:#0F766E;display:none"> copied ✓ — now
+    click Fill Apex on any Apex page and paste it in</span>
+    <textarea id="thedata" style="position:absolute;left:-9999px"
+    readonly>{data}</textarea>
+  </div>
 </div>
 
 <div class="note" id="manual">
@@ -865,6 +1040,17 @@ PAGE = """<!doctype html><meta charset="utf-8">
 </div>
 
 <script>
+document.getElementById('databtn').onclick = function(){{
+  var t = document.getElementById('thedata');
+  var done = function(){{
+    var c = document.getElementById('datacopied');
+    c.style.display = 'inline'; setTimeout(function(){{c.style.display='none';}}, 6000);
+  }};
+  if (navigator.clipboard) {{ navigator.clipboard.writeText(t.value).then(done, back); }}
+  else back();
+  function back(){{ t.style.position='static'; t.style.left='0'; t.select();
+    try {{ document.execCommand('copy'); done(); }} catch(e) {{}} }}
+}};
 document.getElementById('copybtn').onclick = function(){{
   var url = document.getElementById('thebtn').getAttribute('href');
   var done = function(){{
@@ -883,6 +1069,11 @@ document.getElementById('copybtn').onclick = function(){{
 </script>
 
 <ol>
+  <li><b>Once per computer:</b> save the green button above (drag it, or use
+      <b>Copy the button</b>). It never changes, so you only do this once.</li>
+  <li><b>Once per week:</b> click <b>Copy this week's list</b>, then click
+      <b>Fill Apex</b> on any Apex page and paste it into the box that
+      appears.</li>
   <li>Log into Apex yourself, with the code it texts you.</li>
   <li>Open <b>Roster → Employees</b> and click the <b>Pending</b> tab. Everyone
       below is already there — their account exists, their profile is empty.</li>
@@ -929,5 +1120,8 @@ def build_page(people, week: str, stamp: str, notes=None) -> str:
                "warn" if gap else "", gap or "—"))
     return PAGE.format(
         week=week, n=len(people), s="" if len(people) == 1 else "s",
-        js=build_js(people, week).replace('"', "&quot;"),
+        # CODE ONLY -- the people are copied separately, so the saved bookmark
+        # never goes stale.
+        js=build_js(None, week).replace('"', "&quot;"),
+        data=data_json(people).replace("<", "&lt;"),
         rows="\n".join(rows), stamp=stamp)

@@ -958,3 +958,47 @@ def test_no_gender_prompt_on_the_tax_page(page, tmp_path):
     people = [{"name": "X", "find": "X", "pages": {"tax": {}}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
     assert page.locator("#ansgender").count() == 0
+
+
+def test_the_run_engine_and_setup_form_are_in_the_button():
+    """One form for the week, then one pass over everybody. Filling every field
+    and leaving 69 Saves to a person was not saving meaningful time."""
+    js = filler.build_js([{"name": "A", "find": "A", "pages": {"tax": {}}}],
+                         "WE 9.13")
+    for piece in ("runPerson", "goSpa", "saveHere", "ansrun", "ansgo",
+                  "Run the whole week"):
+        assert piece in js, piece
+    # it must never reload: a reload kills the script mid-run
+    assert "location.href=path" not in js
+
+
+def test_socials_are_never_persisted_by_the_run():
+    """They are typed into the setup form, held in the page for the run, and
+    that is all. Nothing about them may reach localStorage."""
+    js = filler.build_js([{"name": "A", "find": "A", "pages": {}}], "WE 9.13")
+    body = js[len("javascript:"):]
+    for chunk in body.split("localStorage.setItem")[1:]:
+        head = chunk[:80].lower()
+        assert "ssn" not in head and "__anssn" not in head
+
+
+def test_every_row_of_the_setup_form_links_to_that_persons_packet(page, tmp_path):
+    """Twenty-three Socials is only quick if the document is one click from the
+    box. The link is a SEARCH by surname, never a link to the signed document
+    itself -- a document URL here would be a link to somebody's SSN sitting in
+    a file that can be forwarded."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Cristian Amaya Vega", "find": "Vega", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansrun").click()
+
+    links = page.locator("#anssetup a")
+    assert links.count() == 2
+    hrefs = [links.nth(i).get_attribute("href") for i in range(2)]
+    assert hrefs[0].endswith("search=Browder")
+    assert hrefs[1].endswith("search=Vega")
+    for h in hrefs:
+        assert "blueinkprod.s3" not in h and "signed.pdf" not in h
