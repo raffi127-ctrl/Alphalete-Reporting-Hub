@@ -1969,6 +1969,71 @@ def resolve_report(report_id: str, *, what: str = "", note: str = "",
         return False
 
 
+_UNVERIFIED_DIR = REPO_ROOT / "output" / "state" / "delivery_unverified"
+
+
+def note_delivery_unverified(report_id: str, *, what: str = "", why: str = "",
+                             channel: str = CHANNEL,
+                             day: Optional[dt.date] = None,
+                             dry_run: bool = False, client=None) -> bool:
+    """"It ran clean — and nothing here can prove it DELIVERED." Say it once.
+
+    WHY THIS IS NOT SILENCE (Megan 2026-09-09). A clean run that cannot be
+    verified no longer closes its ticket (see delivery_check). Left at that, the
+    ticket would just sit there and the person opening it would find a thread
+    whose last word was the original failure — with no way to tell "still
+    broken" from "probably fine, nobody wired the check". That is how a channel
+    full of false red gets ignored, which costs exactly what the false green did.
+
+    So the thread is told, in the plain words this channel uses: the run went
+    clean, the delivery could not be confirmed, and here is the one thing that
+    fixes it for good — wiring that report's `verify`, or declaring
+    `close_on: exit_zero` if its delivery genuinely cannot be observed.
+
+    ONCE A DAY PER REPORT. A report can run clean twenty times in a morning and
+    this line is not news twenty times. Free when nothing is open: it reads the
+    local index, no Slack call. Never raises."""
+    day = day or dt.date.today()
+    try:
+        keys = keys_for_clean_run(report_id)
+        idx = _load_index() or {}
+        hit = next((k for k in keys
+                    if isinstance(idx.get(k), dict) and idx[k].get("ts")
+                    and not idx[k].get("resolved")), None)
+        if not hit:
+            return False
+        stamp = _UNVERIFIED_DIR / "{}-{}.txt".format(_canon(report_id),
+                                                     day.isoformat())
+        if stamp.exists():
+            return False
+        line = ("*{}* ran clean, but nothing can confirm it DELIVERED, so this "
+                "stays open. {}"
+                .format(what or report_id,
+                        why or "Its `verify` is not wired."))
+        line += ("\nTo make a clean run close this by itself: wire `verify` for "
+                 "`{}` in schedule_config, or — if what it does genuinely "
+                 "cannot be checked from the outside — declare "
+                 "`\"close_on\": \"exit_zero\"` on it.".format(report_id))
+        if dry_run:
+            print("[incident] DRY-RUN — would note unverified delivery for {}:\n"
+                  "{}".format(report_id, line))
+            return True
+        client = client or _client()
+        _send(client, channel, [line], thread_ts=idx[hit]["ts"])
+        try:
+            stamp.parent.mkdir(parents=True, exist_ok=True)
+            stamp.write_text(why or "", encoding="utf-8")
+        except Exception:  # noqa: BLE001 — worst case the line repeats tomorrow
+            pass
+        print("[incident] {}: ran clean but delivery unverified — thread told, "
+              "ticket left OPEN".format(report_id))
+        return True
+    except Exception as e:  # noqa: BLE001 — never break the run that earned it
+        print("  - couldn't note unverified delivery for {} ({}: {})".format(
+            report_id, type(e).__name__, str(e)[:80]))
+        return False
+
+
 def resolve_any(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
                 day: Optional[dt.date] = None, dry_run: bool = False,
                 client=None) -> bool:

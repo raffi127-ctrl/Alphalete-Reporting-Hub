@@ -838,9 +838,32 @@ def _clear_failure(report_id: str, report_name: str) -> None:
     try:
         marker = _fail_marker(report_id)
         from automations.shared import incident_thread as inc
-        inc.resolve_report(report_id, what=f"*{report_name or report_id}*")
-        if marker.exists():
-            marker.unlink()
+        from automations.shared import delivery_check
+
+        # RAN IS NOT DELIVERED (Megan 2026-09-09). This used to close the ticket
+        # on the exit code alone, and for the 112 reports whose `verify` says
+        # `not_configured` that is the entire evidence there was: the
+        # orchestrator writes DONE "(unverified)", publishes success, and Lucy
+        # says "RESOLVED. It just ran clean." leaders_call's deck never went out
+        # on 2026-09-08 and its thread was greened twice.
+        ok, verdict, why = delivery_check.may_close(report_id)
+        if ok:
+            inc.resolve_report(report_id, what=f"*{report_name or report_id}*")
+            if marker.exists():
+                marker.unlink()
+            return
+        if verdict == delivery_check.UNKNOWN:
+            # Not silence: say so in the thread, once a day, and leave it open.
+            # A ticket that just sits there with no explanation is how false red
+            # gets ignored, which costs the same as the false green did.
+            inc.note_delivery_unverified(report_id,
+                                         what=report_name or report_id, why=why)
+        else:
+            print(f"[hub] {report_id}: ran clean but did NOT deliver ({why}) — "
+                  f"its alert thread stays open.", flush=True)
+        # The re-alert cooldown is NOT cleared on either of these paths. It is
+        # cleared when a problem is fixed so the next break can speak
+        # immediately; nothing has been fixed here.
     except Exception:
         pass
 

@@ -895,6 +895,23 @@ def _close_recovered_incidents(cfg, reports, dry_run: bool, ts: str) -> int:
         if _classify(r["status"])[1] != "ok":
             continue
         rid = r.get("report_id") or r.get("name") or "?"
+        # A CLEAN ACTIVITY ROW IS NOT A DELIVERY (Megan 2026-09-09). This
+        # watcher closes off the Hub row a run wrote about itself, which is the
+        # same "it exited 0" claim that greened leaders_call's thread twice on a
+        # Monday when no deck went out. Ask delivery_check for proof; UNKNOWN
+        # leaves the ticket open and says why in the thread.
+        try:
+            from automations.shared import delivery_check as _dc
+            _ok, _verdict, _why = _dc.may_close(rid)
+        except Exception:  # noqa: BLE001 — a broken check must not stop a close
+            _ok, _verdict, _why = True, "", ""
+        if not _ok:
+            print(f"[{ts}] watch: {rid} ran clean but delivery {_verdict} "
+                  f"({_why}) — leaving its thread open", flush=True)
+            if _verdict == "unknown":
+                inc.note_delivery_unverified(rid, what=r.get("name") or rid,
+                                             why=_why, dry_run=dry_run)
+            continue
         for key in (f"standalone-{rid}", f"nonew-{rid}"):
             if key not in open_keys:
                 continue

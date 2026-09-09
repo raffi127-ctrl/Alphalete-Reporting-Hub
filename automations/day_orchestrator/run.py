@@ -1566,6 +1566,36 @@ def _alert_on_hold(report_id: str) -> bool:
         return False
 
 
+def _delivered_enough(report_id: str, dry_run: bool) -> bool:
+    """May a clean run of `report_id` close its ticket? (Megan 2026-09-09)
+
+    The orchestrator's own two close paths — editing today's failure alert to
+    RESOLVED, and closing a thread carried over from yesterday — both ran off
+    `rs.status == DONE`, and DONE is written for `recon.unknown` as well as for a
+    verified fill. For the 112 reports whose verify is `not_configured` that
+    means the exit code was the whole proof.
+
+    UNKNOWN says so in the thread and leaves the ticket open rather than
+    silently holding it: see incident_thread.note_delivery_unverified. Errors
+    answer True, which is the old behaviour — this gate exists to stop a
+    confident false green, not to invent a new way for the batch to go quiet."""
+    try:
+        from automations.shared import delivery_check
+        ok, verdict, why = delivery_check.may_close(report_id)
+        if ok:
+            return True
+        _log(f"  {report_id}: ran clean but delivery {verdict} ({why}) — "
+             f"leaving its thread open")
+        if verdict == delivery_check.UNKNOWN:
+            from automations.shared import incident_thread as inc
+            inc.note_delivery_unverified(report_id, what=report_id, why=why,
+                                         dry_run=dry_run)
+        return False
+    except Exception as e:  # noqa: BLE001
+        _log(f"  ({report_id}: delivery check failed: {e}) — closing as before")
+        return True
+
+
 def _resolve_failure_alerts(cfg, ds, dry_run):
     """Edit today's already-posted failure alerts into "✅ RESOLVED" for reports
     that have since gone clean (auto-retry recovered them, a scheduled floor pass
@@ -1583,6 +1613,11 @@ def _resolve_failure_alerts(cfg, ds, dry_run):
             continue
         rs = ds.reports.get(rid)
         if not rs or rs.status != state.DONE:
+            continue
+        # DONE is not delivered (Megan 2026-09-09). `recon.unknown` writes DONE
+        # too — "ran; verify not wired" — which is how a report that sent
+        # nothing edited its own alert to RESOLVED. Ask for proof.
+        if not _delivered_enough(rid, dry_run):
             continue
         try:
             done = notify.resolve_failure_alert(cfg, post, rs=rs, dry_run=dry_run)
@@ -1626,6 +1661,8 @@ def _close_carryover_incidents(cfg, ds, dry_run):
         # incident_thread.keys_for_clean_run.
         for key in (f"failure-{rs.report_id}", f"standalone-{rs.report_id}"):
             if key not in open_keys:
+                continue
+            if not _delivered_enough(rs.report_id, dry_run):
                 continue
             label = rs.display_name or rs.report_id
             lines = [
