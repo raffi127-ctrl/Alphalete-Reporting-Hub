@@ -1613,7 +1613,7 @@ def main() -> int:
                 # the AppStream account's own list, and no re-run can conjure
                 # the grant. The manifest said "failed" either way, so it went
                 # out 🚨 "dropped 2 sections — it did NOT post" every morning
-                # for Kim Rodriguez, who moved states and is waiting on a NEW
+                # for Kim Rodriguez, who moved states and lost her AppStream
                 # account — the same red-every-day that got 'owner_expected'
                 # added for daily_rep_breakdown on 09-05 (focus_office_att/
                 # daily.py:_daily_manifest_ok). Same rule as there: the quiet
