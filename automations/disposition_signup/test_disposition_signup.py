@@ -1391,3 +1391,34 @@ def test_delete_removes_every_row_for_a_key(tmp_path, monkeypatch):
     assert store.delete("zz") == "local"
     assert [d["key"] for d in json.loads(f.read_text())] == ["a"]
     assert store.delete("zz") == "missing"
+
+
+def test_the_card_name_is_the_full_icd_name():
+    """Megan 2026-09-09. It titles the EMAIL as well as the board, and
+    "Knocks & Dispositions — Isaiah" in an inbox says less than the ICD's
+    actual name — and cannot tell two Isaiahs apart."""
+    assert A._row(_rec(owner="Isaiah Revelle", label=""))["label"] \
+        == "Isaiah Revelle"
+
+
+def test_megan_can_still_override_the_card_name():
+    assert A._row(_rec(owner="Isaiah Revelle", label="Legacy"))["label"] \
+        == "Legacy"
+
+
+def test_the_board_still_shortens_it_but_the_subject_does_not():
+    """The board sits in that office's OWN channel, so the full name repeats
+    what the channel already says — that shortening is deliberate and stays.
+    The subject has no such context."""
+    import datetime as _dt
+    from automations.gap_alerts import email_send as E
+    from automations.knocks_intraday.run import first_name
+    cfg = A._row(_rec(owner="Roshan Amin Ahmad", label="", campaign_key="nds"))
+    assert first_name(cfg["label"]) == "Roshan"
+    assert "Roshan Amin Ahmad" in E.subject_for(cfg, "5:10 PM",
+                                                _dt.date(2026, 9, 9))
+
+
+def test_an_office_with_no_owner_name_falls_back_to_its_key():
+    assert A._row(_rec(key="fallback", owner="", label=""))["label"] \
+        == "fallback"

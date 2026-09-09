@@ -87,10 +87,24 @@ def _row(rec: DispositionRecord) -> dict:
 
 
 def _label(rec: DispositionRecord) -> str:
+    """The name this office is known by on its own board and in its subject
+    lines — the FULL ICD name by default (Megan 2026-09-09).
+
+    It used to be the first name alone. That reads fine on a board posted in the
+    office's own channel, but it is also what titles the EMAIL, where "Knocks &
+    Dispositions — Isaiah" in an inbox says less than the ICD's actual name and
+    cannot tell two Isaiahs apart.
+
+    The board image is unaffected: `_render_board` runs the label through
+    `knocks_intraday.first_name`, which keeps the header short for the reason it
+    always did — a board sitting in that office's own channel does not need to
+    repeat what the channel already says.
+
+    Megan can still override it per office in the confirm view.
+    """
     if rec.label.strip():
         return rec.label.strip()
-    owner = rec.owner.strip()
-    return owner.split()[0] if owner else rec.key
+    return rec.owner.strip() or rec.key
 
 
 def plan() -> "List[dict]":

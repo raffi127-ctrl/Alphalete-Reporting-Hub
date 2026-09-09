@@ -459,8 +459,12 @@ def confirm_view(key: str) -> None:
             (S.campaign(k) or {}).get("name", k),
             (S.campaign(k) or {}).get("id", "") or "no pin"),
         horizontal=True)
-    label = st.text_input("Name on the card", value=rec.label
-                          or (rec.owner.split()[0] if rec.owner else ""))
+    # Full ICD name by default (Megan 2026-09-09) — it titles the email as well
+    # as the board, and a first name alone is thin in an inbox.
+    label = st.text_input(
+        "Name on the card", value=rec.label or rec.owner.strip(),
+        help="Shows in the email subject and on the board. The board itself "
+             "shortens it to the first name; the subject uses it in full.")
     knocks_office = st.text_input(
         "Company name as it appears in OwnerVille (impersonation resolves "
         "through this)",
