@@ -110,6 +110,16 @@ _JS = r"""
    var box=el.parentElement;
    return box?box.querySelector(':scope > .k-dropdown, :scope > .k-combobox, :scope > .k-widget'):null;
  }
+ function popupLists(){
+   /* Lists that are plainly a widget's popup, not the site's furniture. */
+   var out=[], i, r, mine=document.getElementById('anspanel');
+   var c=document.querySelectorAll('.k-animation-container ul, .k-list-container ul, '+
+       '.k-popup ul, ul.k-list, ul.k-reset, [role="listbox"]');
+   for(i=0;i<c.length;i++){ if(mine&&mine.contains(c[i])) continue;
+     if(!c[i].querySelector('li,[role="option"]')) continue;
+     r=c[i].getBoundingClientRect(); if(r.width>0&&r.height>0) out.push(c[i]); }
+   return out;
+ }
  function openLists(){
    /* Any visible list of options, however Kendo happened to class it. The
       first version demanded ul.k-list / ul.k-reset and the Gender dropdown
@@ -140,16 +150,30 @@ _JS = r"""
    var sp=widgetSpan(el);
    TRACE.push('span: '+(sp?(sp.className||'').split(' ').slice(0,2).join('.'):'NONE'));
    if(!sp) return false;
+   /* Snapshot BEFORE the click, or the popup it opens is already in the
+      baseline and gets diffed straight back out again. */
+   var before=openLists();
    fire(sp,'mousedown'); fire(sp,'mouseup'); fire(sp,'click');
-   var lists=[], waited=0;
-   while(waited<2000){ lists=openLists(); if(lists.length) break; await sleep(100); waited+=100; }
+   /* Only lists that appeared BECAUSE of the click. Taking every visible <ul>
+      swept up the site's own nav menus -- three of them, present at 0ms -- and
+      the search for "male" went hunting through "log off" and "employees".
+      Snapshot first, then diff; and a proper widget popup always wins. */
+   var lists=[], waited=0, i;
+   function fresh(){
+     var now=popupLists();
+     if(now.length) return now;
+     now=openLists(); var out=[];
+     for(i=0;i<now.length;i++) if(before.indexOf(now[i])<0) out.push(now[i]);
+     return out;
+   }
+   while(waited<2500){ lists=fresh(); if(lists.length) break; await sleep(100); waited+=100; }
    TRACE.push('lists after '+waited+'ms: '+lists.length);
    if(!lists.length){
      /* Some widgets only open from the arrow, or from the input inside */
      var alt=sp.querySelector('.k-select,.k-icon,.k-input')||sp;
      fire(alt,'mousedown'); fire(alt,'mouseup'); fire(alt,'click');
      waited=0;
-     while(waited<1500){ lists=openLists(); if(lists.length) break; await sleep(100); waited+=100; }
+     while(waited<1500){ lists=fresh(); if(lists.length) break; await sleep(100); waited+=100; }
      TRACE.push('after arrow click: '+lists.length);
    }
    if(!lists.length) return false;

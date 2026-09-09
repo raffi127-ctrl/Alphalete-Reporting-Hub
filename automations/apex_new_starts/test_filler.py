@@ -490,3 +490,43 @@ def test_without_that_list_it_says_how_to_teach_it(page, tmp_path):
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
     assert page.locator("#ansg1").count() == 0
     assert "Pending" in page.locator("#anspanel").inner_text()
+
+
+NAV_PLUS_DROPDOWN = """
+<!doctype html><html><body>
+<nav><ul><li>View Profile</li><li>Account Settings</li><li>Log Off</li></ul></nav>
+<ul><li>Employees</li><li>Employment Record</li><li>Tax &amp; Bank Information</li></ul>
+<label for="GenderID_9">Gender <span>*</span></label>
+<input type="hidden" id="GenderID_9">
+<span class="k-widget k-combobox" id="gdd"><span class="k-input">Not Specified</span></span>
+<div class="k-animation-container" id="gpop" style="display:none">
+  <ul class="k-list"><li>Male</li><li>Female</li></ul>
+</div>
+</body></html>
+"""
+
+NAV_WIRING = """() => {
+  const pop = document.getElementById('gpop');
+  document.getElementById('gdd').addEventListener('mousedown', () => {
+    pop.style.display = 'block';
+  });
+  pop.querySelectorAll('li').forEach(li => li.addEventListener('click', () => {
+    document.getElementById('GenderID_9').value = li.textContent;
+    document.querySelector('#gdd .k-input').textContent = li.textContent;
+    pop.style.display = 'none';
+  }));
+}"""
+
+
+def test_the_sites_own_menus_are_not_mistaken_for_the_dropdown(page):
+    """On the live page three visible <ul>s existed before any click -- the
+    nav menus -- so the search for "male" went hunting through "log off" and
+    "employees" and reported that gender would not set. Only lists that appear
+    BECAUSE of the click count, and a real widget popup always wins."""
+    page.set_content(NAV_PLUS_DROPDOWN)
+    page.evaluate(NAV_WIRING)
+    people = [{"name": "X", "find": "X", "fields": {"Gender": "Male"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#GenderID_9").input_value() == "Male"
