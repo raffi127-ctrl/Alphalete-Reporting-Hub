@@ -150,6 +150,18 @@ def widths(ss, tab: str, first_col: int) -> list:
     return [c.get("pixelSize") for c in cm][:3]
 
 
+def _no_rep(row: int, expr: str, name_col_letter: str) -> str:
+    """`expr`, but blank on a row that holds no rep.
+
+    Every one of these columns reads 0 when there is no data, because a blank
+    cell reads as a broken report (Eve, 2026-09-08). A row with nobody in it is
+    the exception: the board keeps filler rows between the last rep and TOTALS,
+    and a strip of 0.0% down empty rows is noise, not information. The test is
+    the NAME cell, so the formula lights up the moment somebody is typed in.
+    """
+    return '=IF($%s%d="","",%s)' % (name_col_letter, row, expr.lstrip("="))
+
+
 def number_format(ws, col: int, first_row: int, last_row: int,
                   kind: str, pattern: str) -> dict:
     """A request that sets one column's number format over a row range.
@@ -287,24 +299,24 @@ def formulas(ss, ws, apply: bool = False) -> int:
       % of TT's per knock = Talk-To's / TK
       AVG app per TT      = Apps      / Talk-To's
 
-    Both guard the same two ways. `N()` around the denominator turns a roll-call
-    letter ('X', 'CR', 'T') into 0, and a zero denominator gives "" -- a rep who
-    has not knocked yet reads blank, never #DIV/0!. IFERROR catches the Apps
-    cell on a day it holds text rather than a count.
-
-    A BLANK Talk-To's cell reads blank too, not 0%. Blank on this board means
-    "ownerville has not said yet", the same rule the TK fill writes by; a column
-    of 0.0% at 9 AM looks like sixty reps who talked to nobody.
+    NO DATA READS 0, NOT BLANK (Eve, 2026-09-08: *"si queda vacio entiendo que
+    es una falla"*). A zero denominator lands on 0, `N()` turns a roll-call
+    letter into 0, and IFERROR catches the Apps cell on a day it holds a letter
+    rather than a count -- so a cell is never #DIV/0! and never empty. The one
+    blank left is a row with NO REP in it: `IF($C="", ...)` keeps the filler rows
+    above TOTALS clean, and the formula lights up by itself the moment somebody
+    is typed into one.
 
     The TOTALS row gets the same two ratios over the column totals, NOT a sum of
     the per-rep percentages -- that would be an average of averages, and it is
     what a straight copy of the neighbouring SUMIF leaves behind.
     """
-    from automations.energy_slack_fill.run import last_rep_row
+    from automations.energy_slack_fill.run import last_rep_row, name_col
 
     grid = ws.get_all_values()
     last = last_rep_row(grid)
     totals = last + 1
+    names = _col_letter(name_col(grid))
     data, said = [], []
     for lab, b in sorted(day_blocks(grid).items(), key=lambda kv: kv[1][0]):
         apps = b[0]                                   # Apps is the block's first
@@ -317,13 +329,13 @@ def formulas(ss, ws, apply: bool = False) -> int:
         rows = list(range(SUB_ROW + 1, totals + 1))
         data.append({
             "range": "%s%d:%s%d" % (P, rows[0], P, rows[-1]),
-            "values": [['=IF(OR(%s%d="",N(%s%d)=0),"",IFERROR(%s%d/%s%d,""))'
-                        % (T_, r, K, r, T_, r, K, r)] for r in rows],
+            "values": [[_no_rep(r, '=IFERROR(IF(N(%s%d)=0,0,%s%d/%s%d),0)'
+                                % (K, r, T_, r, K, r), names)] for r in rows],
         })
         data.append({
             "range": "%s%d:%s%d" % (V, rows[0], V, rows[-1]),
-            "values": [['=IFERROR(IF(N(%s%d)>0,%s%d/%s%d,""),"")'
-                        % (T_, r, A, r, T_, r)] for r in rows],
+            "values": [[_no_rep(r, '=IFERROR(IF(N(%s%d)=0,0,%s%d/%s%d),0)'
+                                % (T_, r, A, r, T_, r), names)] for r in rows],
         })
         said.append("  %-5s %s = %s/%s   %s = %s/%s   rows %d-%d"
                     % (lab, P, T_, K, V, A, T_, rows[0], rows[-1]))
@@ -384,12 +396,12 @@ def week_formulas(ss, ws, apply: bool = False) -> int:
     was not there and must not be averaged over — plus SUNDAY, which is a
     non-working day every week and so is left out of the day list entirely.
 
-    `COUNT` is what implements that, and it is exact rather than clever: the
-    per-day Apps cell is a NUMBER on a day the rep worked (0.00 included — out
-    in the field, sold nothing) and TEXT on every other kind of day, because the
-    day's Apps formula returns the roll-call letter itself (`X`, `T`, `CR`,
-    `RT`, `L`, `STF`, `ATMO`, `F`). COUNT ignores text and blanks, so it lands on
-    exactly the days that count, and it keeps working if a new letter is added.
+    ONLY `X` AND `T` ARE OFF. Eve, 2026-09-08: *"1 solo la x o T debe NO contar,
+    el resto de las letras si"*. So this counts a day when the Apps cell is
+    anything other than `X`, `T` or empty — a number (0.00 included: out in the
+    field, sold nothing) and every other roll-call letter alike. `NOT_WORKED`
+    below is the whole rule; a first pass used COUNT(), which reads "numbers
+    only" and quietly dropped the letters she wants kept.
 
       AVG Total Knocks per day = week TK       / days worked
       Total Talk-To's          = the 7 daily Talk-To's, summed
@@ -397,15 +409,16 @@ def week_formulas(ss, ws, apply: bool = False) -> int:
       % of TT's per knock      = week Talk-To's / week TK
       AVG TTs per app          = week Talk-To's / week Apps
 
-    A rep with no day worked, no knocks or no apps reads BLANK, not 0 and never
-    #DIV/0! — the same rule the per-day columns follow.
+    NO DATA READS 0, NOT BLANK — no days worked, no knocks, no apps all land on
+    0, because an empty cell reads as a broken report. Only a row with NO REP in
+    it stays blank; see `_no_rep`.
 
     In the TOTALS row the same formulas hold, with one thing worth knowing: the
     denominator there is the SIX working days of the office (each day's total is
     a number), so its 'per day' cells read office knocks/talk-to's per day. It
     is not the sum of everybody's days worked.
     """
-    from automations.energy_slack_fill.run import last_rep_row
+    from automations.energy_slack_fill.run import last_rep_row, name_col
 
     grid = ws.get_all_values()
     totals = last_rep_row(grid) + 1
@@ -440,30 +453,36 @@ def week_formulas(ss, ws, apply: bool = False) -> int:
              ", ".join(_col_letter(c) for c in day_apps), A, K))
 
     rows = list(range(SUB_ROW + 1, totals + 1))
+    names = _col_letter(name_col(grid))
     data = []
 
     def put(header, make):
         col = _col_letter(wanted[header])
-        data.append({"range": "%s%d:%s%d" % (col, rows[0], col, rows[-1]),
-                     "values": [[make(r)] for r in rows]})
+        data.append({
+            "range": "%s%d:%s%d" % (col, rows[0], col, rows[-1]),
+            "values": [[_no_rep(r, make(r), names)] for r in rows],
+        })
         print("  %-26s %s" % (header, col))
 
     def days(r):
-        return "COUNT(%s)" % ",".join("%s%d" % (_col_letter(c), r)
-                                      for c in day_apps)
+        """Days the rep was out: every day whose Apps cell is not X, T or empty."""
+        return "(%s)" % "+".join(
+            'IF(OR(%s%d="X",%s%d="T",%s%d=""),0,1)'
+            % (_col_letter(c), r, _col_letter(c), r, _col_letter(c), r)
+            for c in day_apps)
 
     def tts(r):
         return ",".join("%s%d" % (_col_letter(c), r) for c in all_tt)
 
     TT = _col_letter(wanted[WEEK_TT])
-    put(WEEK_AVG_TK, lambda r: '=IFERROR(IF(%s=0,"",%s%d/%s),"")'
+    put(WEEK_AVG_TK, lambda r: '=IFERROR(IF(%s=0,0,%s%d/%s),0)'
         % (days(r), K, r, days(r)))
-    put(WEEK_TT, lambda r: '=IF(COUNT(%s)=0,"",SUM(%s))' % (tts(r), tts(r)))
-    put(WEEK_AVG_TT, lambda r: '=IFERROR(IF(%s=0,"",%s%d/%s),"")'
+    put(WEEK_TT, lambda r: '=SUM(%s)' % tts(r))
+    put(WEEK_AVG_TT, lambda r: '=IFERROR(IF(%s=0,0,%s%d/%s),0)'
         % (days(r), TT, r, days(r)))
-    put(WEEK_PCT, lambda r: '=IF(N(%s%d)=0,"",IFERROR(%s%d/%s%d,""))'
+    put(WEEK_PCT, lambda r: '=IFERROR(IF(N(%s%d)=0,0,%s%d/%s%d),0)'
         % (K, r, TT, r, K, r))
-    put(WEEK_TT_APP, lambda r: '=IF(N(%s%d)=0,"",IFERROR(%s%d/%s%d,""))'
+    put(WEEK_TT_APP, lambda r: '=IFERROR(IF(N(%s%d)=0,0,%s%d/%s%d),0)'
         % (A, r, TT, r, A, r))
 
     if not apply:
