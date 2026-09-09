@@ -900,3 +900,29 @@ def test_a_home_address_field_never_reaches_the_tax_page(page, tmp_path):
     assert page.locator("#taxstate").input_value() == "Texas"
     assert page.locator("#fed").input_value() == "", "the money box stays empty"
     assert page.locator("#stateamt").input_value() == ""
+
+
+def test_the_button_is_handed_pages_not_a_flat_field_list():
+    """rows_for() returns {page: {label: value}}. run.py went on assigning it
+    to "fields", so the button iterated the PAGE NAMES as if they were fields
+    and wrote "[object Object]" into a money box on the tax page. The shape the
+    generator emits and the shape the button expects have to match."""
+    import datetime as dt
+    from automations.apex_new_starts import board as BRD
+    from automations.apex_new_starts import blueink_data as BID
+    from automations.apex_new_starts import run as RUN
+
+    c = BRD.Candidate(name="Ann Lee", trainer="", email="", location="",
+                      team="", reason_lost="", roll={0: "CR"}, tab="t", row=1,
+                      week_start=dt.date(2026, 9, 7), gender="Female")
+    hire = BID.NewHire(name="Ann Lee",
+                       values={"first": "Ann", "last": "Lee", "state": "TX",
+                               "city": "Plano"})
+    pages = filler.rows_for(RUN.apex_values(c, hire))
+
+    assert set(pages) <= {"employment", "profile", "tax"}
+    for page, fields in pages.items():
+        for label, value in fields.items():
+            assert isinstance(value, str), f"{page}/{label} is not a string"
+    assert pages["profile"]["State"] == "Texas"
+    assert "State" not in pages.get("tax", {})

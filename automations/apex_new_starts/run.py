@@ -565,8 +565,9 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
         # that ends up in a URL.
         people.append({"name": c.name, "fields": fields,
                        "find": c.last or c.name})
+        flat = {lbl for page in pages.values() for lbl in page}
         gaps = [lbl for lbl in ("Marital Status", "Date of Birth",
-                                "Street Address") if lbl not in fields]
+                                "Street Address") if lbl not in flat]
         if gaps:
             notes[c.name] = "set by hand: " + ", ".join(gaps)
     OUTPUT_DIR.mkdir(exist_ok=True)
