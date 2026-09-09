@@ -82,9 +82,20 @@ _JS = r"""
       not -- kendo-angular can hang the widget somewhere else entirely. Ask
       Kendo itself, then look at the k-widget span sitting beside the hidden
       input, which is the thing the user actually sees. */
+   /* The widget may live on the VISIBLE input Kendo created, not on the
+      hidden one the <label> points at. Ask every element in the group before
+      giving up: hidden input, visible input, wrapper span. */
+   var sp0=el.parentElement?el.parentElement.querySelector('.k-widget'):null;
+   var vis0=sp0?sp0.querySelector('input:not([type=hidden])'):null;
+   if(vis0){ var ve=$(vis0);
+     w=ve.data('kendoComboBox')||ve.data('kendoDropDownList')||
+       ve.data('kendoNumericTextBox')||ve.data('kendoDatePicker')||null;
+     if(w) return w; }
    if(window.kendo&&kendo.widgetInstance){
      try{ w=kendo.widgetInstance(e); }catch(x){}
      if(w&&w.value) return w;
+     if(vis0){ try{ w=kendo.widgetInstance($(vis0)); }catch(xv){}
+               if(w&&w.value) return w; }
      var box=el.parentElement, sp=box?box.querySelector('.k-widget'):null, hops=0;
      while(!sp&&box&&hops<2){ box=box.parentElement; sp=box?box.querySelector('.k-widget'):null; hops++; }
      if(sp){ try{ w=kendo.widgetInstance($(sp)); }catch(x2){}
@@ -169,8 +180,16 @@ _JS = r"""
    inp.dispatchEvent(new Event('blur',{bubbles:true}));
    await sleep(200);
    ngApply(inp);
-   TRACE.push('typed into '+(inp.className||'input').split(' ')[0]+' -> "'+inp.value+'"');
-   return norm(inp.value)===norm(v);
+   /* A ComboBox will happily keep typed text as a CUSTOM value. The screen
+      then reads "Male" while the model holds the word instead of the list
+      item's id -- Angular is satisfied, and the SERVER answers "The request is
+      invalid". So check what the bound field actually ended up holding. */
+   var bound=null, hid=sp.parentElement?sp.parentElement.querySelector('input[type=hidden]'):null;
+   if(hid) bound=hid.value;
+   TRACE.push('typed "'+inp.value+'" bound="'+(bound===null?'?':bound)+'"');
+   if(norm(inp.value)!==norm(v)) return false;
+   if(hid&&(!bound||norm(bound)===norm(v))) return false;   /* free text, not a real pick */
+   return true;
  }
  async function kendoClick(el,v){
    TRACE=[];

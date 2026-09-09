@@ -604,3 +604,40 @@ def test_it_names_the_fields_apex_is_objecting_to(page):
     assert "mobile phone" in out.lower()
     assert "emergency contact" in out.lower()
     assert "city" not in out.lower().split("invalid:")[1]   # the valid one isn't listed
+
+
+COMBO_FREETEXT = """
+<!doctype html><html><body>
+<label for="GenderID_9">Gender <span>*</span></label>
+<input type="hidden" id="GenderID_9">
+<span class="k-widget k-combobox" id="gdd">
+  <span class="k-dropdown-wrap"><input type="text" class="k-input" id="gvis"></span>
+</span>
+</body></html>
+"""
+
+FREETEXT_WIRING = """() => {
+  /* A combobox that keeps whatever you type as a CUSTOM value: the screen
+     reads Male, the bound field gets the word rather than an id. Angular is
+     happy; the server is not. */
+  const vis = document.getElementById('gvis');
+  vis.addEventListener('blur', () => {
+    document.getElementById('GenderID_9').value = vis.value;
+  });
+}"""
+
+
+def test_free_text_in_a_combobox_counts_as_a_failure(page):
+    """Apex answered "Saving failed: The request is invalid" while the page
+    showed Male and Angular reported nothing wrong. That is what a custom
+    combobox value looks like from the outside: right on screen, wrong
+    underneath. Typing only counts if the bound field ends up holding
+    something OTHER than the text we typed."""
+    page.set_content(COMBO_FREETEXT)
+    page.evaluate(FREETEXT_WIRING)
+    people = [{"name": "X", "find": "X", "fields": {"Gender": "Male"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    out = page.locator("#ansout").inner_text()
+    assert "Gender" in out and "no matching option" in out
