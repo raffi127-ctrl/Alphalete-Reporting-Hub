@@ -78,11 +78,64 @@ def days_and_talk(grid) -> dict:
     return out
 
 
+def week_of_tab(tab: str):
+    """The seven dates of a 'Sales Board WE m.d' tab, Monday first."""
+    import datetime as dt
+    import re as _re
+    m = _re.search(r"WE\s+(\d{1,2})\.(\d{1,2})", tab)
+    if not m:
+        raise SystemExit("no puedo leer la semana del nombre %r" % tab)
+    today = dt.date.today()
+    sunday = dt.date(today.year, int(m.group(1)), int(m.group(2)))
+    return [sunday - dt.timedelta(days=6 - i) for i in range(7)]
+
+
+def pull_week_talk_to(tab: str) -> dict:
+    """{normalised rep name: the week's Talk-To's} straight from ownerville.
+
+    Seven pulls in ONE session, because ownerville allows a single session per
+    account and seven separate jobs would spend the day stepping aside for each
+    other. A day that fails is reported and skipped, never guessed: a short week
+    is visible, an invented number is not.
+    """
+    from automations.alphalete_production.tk_fill import _ov_norm
+    from automations.total_knocks.pull import (
+        COL_REP, COL_TOTAL_TALK_TO, KnocksPullFailed, pull_disposition_day)
+    out = {}
+    for day in week_of_tab(tab):
+        try:
+            got, records = pull_disposition_day(day, verbose=False)
+        except KnocksPullFailed as e:
+            print("  ! %s: ownerville falló (%s) -- día salteado" % (day, e))
+            continue
+        if got != day:
+            print("  ! %s: ownerville contestó por %s -- día salteado" % (day, got))
+            continue
+        n = 0
+        for rec in records:
+            nm = str(rec.get(COL_REP, "")).strip()
+            if not nm:
+                continue
+            try:
+                v = int(float(str(rec.get(COL_TOTAL_TALK_TO, "")).replace(",", "") or 0))
+            except ValueError:
+                continue
+            out[_ov_norm(nm)] = out.get(_ov_norm(nm), 0) + v
+            n += 1
+        print("  %s: %d rep(s)" % (day, n))
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tab", default=SANDBOX_TAB, help="this week's tab")
     ap.add_argument("--from-tab", required=True, help="last week's tab")
     ap.add_argument("--sheet-id", default=PROD_SHEET_ID)
+    ap.add_argument("--pull-talk-to", action="store_true",
+                    help="take last week's Talk-To's from OWNERVILLE (7 pulls) "
+                         "instead of from last week's tab -- for a week whose "
+                         "tab never carried the column. Needs an ownerville "
+                         "session, so it runs on Lucy 3.")
     ap.add_argument("--apply", action="store_true")
     a = ap.parse_args(argv)
 
@@ -93,6 +146,22 @@ def main(argv=None) -> int:
     ws = ss.worksheet(a.tab)
     prev = days_and_talk(src.get("A1:%s200" % _col_letter(src.col_count),
                                  value_render_option="FORMATTED_VALUE"))
+    if a.pull_talk_to:
+        # Ownerville carries the legal name and the board what people are
+        # called, so the match falls back to FIRST + LAST word -- the same two
+        # passes tk_fill uses, and for the same reason.
+        from automations.alphalete_production.tk_fill import _ends
+        pulled = pull_week_talk_to(a.from_tab)
+        by_ends = {}
+        for k, v in pulled.items():
+            by_ends.setdefault(_ends(k), []).append(v)
+        def _talk(key):
+            if key in pulled:
+                return pulled[key]
+            hits = by_ends.get(_ends(key), [])
+            return hits[0] if len(hits) == 1 else None
+        prev = {k: (days, _talk(k)) for k, (days, _t) in prev.items()}
+        print("  ownerville: %d rep(s) con talk-to's esa semana" % len(pulled))
     grid = ws.get("A1:%s200" % _col_letter(ws.col_count),
                   value_render_option="FORMATTED_VALUE")
     b = _labelled_block(grid, LAST_WEEK)

@@ -5123,6 +5123,30 @@
       "timeout_minutes": 5,
       "verify": null
     },
+    "sales_board_last_week_talk_to": {
+      "hand_run_only": true,
+      "on_scheduler": true,
+      "_note": "Manual handle, hand_run_only: rellena LAST WEEK'S TOTALS de la pestana de esta semana con los Talk-To's de la semana pasada, bajados de ownerville (7 pulls en UNA sesion). Existe porque la semana WE 9.6 quedo sin su pestana sandbox -- la unica que tenia esa columna -- y el dato no vive en ningun otro lado (la hoja 'Rep Total Knocks Template' guarda un solo dia, sin historial). De WE 9.13 en adelante las pestanas llevan la columna y esto no hace falta. Corre en LUCY 3 por la sesion de ownerville. Pasar --from-tab y --tab por `lucy rerun sales_board_last_week_talk_to --machine \"Lucy 3\"`; base_args --apply porque el modulo previsualiza por defecto. cadence.weekdays [] para que el batch de las 4am nunca lo dispare.",
+      "display_name": "Sales Board — Talk-To's de la semana pasada",
+      "machine": "Lucy 3",
+      "command": [
+        "automations.alphalete_sales_board.past_week_backfill"
+      ],
+      "base_args": [
+        "--pull-talk-to",
+        "--apply"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 30,
+      "verify": null
+    },
     "production_tk_fill": {
       "hand_run_only": true,
       "on_scheduler": true,

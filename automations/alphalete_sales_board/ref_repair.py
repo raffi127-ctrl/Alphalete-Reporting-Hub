@@ -80,20 +80,64 @@ def plan_repairs(grid) -> list:
     return out
 
 
-# NOT WIRED IN, AND NOT TO BE WITHOUT A REWRITE. A second bug lives in the same
-# block: PRIOR WEEK'S TOTALS sums `$X$161:$X$171` where every other block sums
-# `$X$158:$X$172`, so it skips the first three teams -- it read 60 where Se7en
-# Sins alone had 113. A first attempt picked the "right" range by majority vote
-# and got it backwards on the sandbox, proposing to rewrite the HEALTHY cells
-# into the broken range. A majority is not the rule; "PRIOR WEEK should span
-# what LAST WEEK spans" is. Left for a named, explicit fix rather than a
-# heuristic that can eat good formulas (2026-09-09).
+PRIOR_WEEK = "PRIOR WEEK'S TOTALS"
+LAST_WEEK = "LAST WEEK'S TOTALS"
+TOTALS_SUM = re.compile(
+    r"^=SUM\(\$?([A-Z]{1,3})\$?(\d+)\s*:\s*\$?([A-Z]{1,3})\$?(\d+)\)$", re.I)
+
+
+def plan_prior_range(grid) -> list:
+    """[(row, col, broken, fixed)] for PRIOR WEEK'S TOTALS cells that sum the
+    WRONG ROWS.
+
+    Every block's totals cell spans the whole Teams list. PRIOR WEEK'S says
+    `$X$161:$X$171` where the rest say `$X$158:$X$172`, so it skips the first
+    three teams and the last row -- it read 60 where Se7en Sins alone had 113.
+    It was invisible until the `#REF!` cells above were repaired, because the
+    whole block sat at zero.
+
+    THE RULE IS NAMED, NOT VOTED ON. The span comes from LAST WEEK'S TOTALS in
+    the same row -- the block right beside it, the same shape, one week apart.
+    A first attempt picked the span by majority and got it backwards on the
+    sandbox, proposing to rewrite the HEALTHY cells into the broken range; a
+    repair that can eat good formulas is worse than the bug (2026-09-09).
+    """
+    from automations.alphalete_sales_board.talk_to_columns import _labelled_block
+    prior = _labelled_block(grid, PRIOR_WEEK)
+    last = _labelled_block(grid, LAST_WEEK)
+    if not prior[0] or not last[0]:
+        return []
+    want = None
+    for r in range(1, len(grid) + 1):
+        for c in range(last[0], last[1] + 1):
+            m = TOTALS_SUM.match(_cell(grid, r, c))
+            if m and _index(m.group(1)) == c:
+                want = (r, int(m.group(2)), int(m.group(4)))
+                break
+        if want:
+            break
+    if not want:
+        return []
+    row, lo, hi = want
+    out = []
+    for c in range(prior[0], prior[1] + 1):
+        f = _cell(grid, row, c)
+        m = TOTALS_SUM.match(f)
+        if not m or _index(m.group(1)) != c:
+            continue
+        if (int(m.group(2)), int(m.group(4))) == (lo, hi):
+            continue
+        col = _col_letter(c)
+        out.append((row, c, f, "=SUM($%s$%d:$%s$%d)" % (col, lo, col, hi)))
+    return out
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tab", default=SANDBOX_TAB)
     ap.add_argument("--sheet-id", default=PROD_SHEET_ID)
+    ap.add_argument("--prior-range", action="store_true",
+                    help="also give PRIOR WEEK'S TOTALS the span LAST WEEK'S uses")
     ap.add_argument("--apply", action="store_true",
                     help="write to the Sheet (default is a preview)")
     a = ap.parse_args(argv)
@@ -107,6 +151,8 @@ def main(argv=None) -> int:
                   value_render_option="FORMATTED_VALUE")
 
     repairs = plan_repairs(grid)
+    if a.prior_range:
+        repairs += plan_prior_range(grid)
     if not repairs:
         print("%r: ninguna celda con %s." % (a.tab, BROKEN))
         return 0
