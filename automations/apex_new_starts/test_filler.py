@@ -530,3 +530,50 @@ def test_the_sites_own_menus_are_not_mistaken_for_the_dropdown(page):
     page.locator("#ansfill").click()
     _settled(page)
     assert page.locator("#GenderID_9").input_value() == "Male"
+
+
+COMBOBOX = """
+<!doctype html><html><body>
+<label for="GenderID_9">Gender <span>*</span></label>
+<input type="hidden" id="GenderID_9">
+<span class="k-widget k-combobox" id="gdd">
+  <span class="k-dropdown-wrap"><input type="text" class="k-input" id="gvis"></span>
+</span>
+</body></html>
+"""
+
+COMBOBOX_WIRING = """() => {
+  /* A combobox that only ever commits on blur, and never opens a popup from a
+     click on its wrapper -- which is what the live one does. */
+  const vis = document.getElementById('gvis');
+  vis.addEventListener('blur', () => {
+    if (['Male', 'Female'].includes(vis.value)) {
+      document.getElementById('GenderID_9').value = vis.value;
+    } else { vis.value = ''; }
+  });
+}"""
+
+
+def test_a_combobox_is_typed_into_not_clicked(page):
+    """The live Gender control is a k-combobox and its popup never opened:
+    "lists after 2500ms: 0 / after arrow click: 0". A combobox is a text box
+    with a list attached -- typing is what it is for."""
+    page.set_content(COMBOBOX)
+    page.evaluate(COMBOBOX_WIRING)
+    people = [{"name": "X", "find": "X", "fields": {"Gender": "Male"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#gvis").input_value() == "Male"
+    assert page.locator("#GenderID_9").input_value() == "Male"
+
+
+def test_a_value_the_combobox_rejects_is_reported(page):
+    page.set_content(COMBOBOX)
+    page.evaluate(COMBOBOX_WIRING)
+    people = [{"name": "X", "find": "X", "fields": {"Gender": "Astronaut"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#GenderID_9").input_value() == ""
+    assert "Gender" in page.locator("#ansout").inner_text()

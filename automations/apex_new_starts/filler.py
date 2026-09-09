@@ -140,6 +140,38 @@ _JS = r"""
    return out;
  }
  var TRACE=[];
+ function visibleInput(sp){
+   var ins=sp.querySelectorAll('input'), i, r;
+   for(i=0;i<ins.length;i++){
+     if((ins[i].type||'text').toLowerCase()==='hidden') continue;
+     if(ins[i].getAttribute('aria-hidden')==='true') continue;
+     r=ins[i].getBoundingClientRect();
+     if(r.width>0&&r.height>0) return ins[i];
+   }
+   return null;
+ }
+ async function typeInto(sp,v){
+   /* A Kendo ComboBox is a TEXT box with a list attached -- you type into it.
+      Its popup never opened from a click on the wrapper (lists after 2500ms:
+      0, twice), which is exactly how a combobox behaves. Typing is what it is
+      for, and it is also what a person would do. */
+   var inp=visibleInput(sp); if(!inp) return false;
+   inp.focus();
+   inp.value=v;
+   ['input','keydown','keyup','change'].forEach(function(t){
+     inp.dispatchEvent(t==='input'||t==='change'
+       ? new Event(t,{bubbles:true})
+       : new KeyboardEvent(t,{bubbles:true,key:'a'}));
+   });
+   await sleep(250);
+   inp.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',keyCode:13}));
+   inp.blur();
+   inp.dispatchEvent(new Event('blur',{bubbles:true}));
+   await sleep(200);
+   ngApply(inp);
+   TRACE.push('typed into '+(inp.className||'input').split(' ')[0]+' -> "'+inp.value+'"');
+   return norm(inp.value)===norm(v);
+ }
  async function kendoClick(el,v){
    TRACE=[];
    /* Drive the dropdown the way a person does: click it, wait for the list,
@@ -153,6 +185,9 @@ _JS = r"""
    /* Snapshot BEFORE the click, or the popup it opens is already in the
       baseline and gets diffed straight back out again. */
    var before=openLists();
+   /* A combobox takes typing; a dropdown list does not. Try typing first when
+      the widget has a real text box inside it. */
+   if(/k-combobox/.test(sp.className||'')&&await typeInto(sp,v)) return true;
    fire(sp,'mousedown'); fire(sp,'mouseup'); fire(sp,'click');
    /* Only lists that appeared BECAUSE of the click. Taking every visible <ul>
       swept up the site's own nav menus -- three of them, present at 0ms -- and
@@ -176,7 +211,11 @@ _JS = r"""
      while(waited<1500){ lists=fresh(); if(lists.length) break; await sleep(100); waited+=100; }
      TRACE.push('after arrow click: '+lists.length);
    }
-   if(!lists.length) return false;
+   if(!lists.length){
+     /* last resort: type, whatever the widget calls itself */
+     if(await typeInto(sp,v)) return true;
+     return false;
+   }
    var want=norm(v), i, j, items, best=null;
    for(i=0;i<lists.length&&!best;i++){
      items=lists[i].querySelectorAll('li,[role="option"]');
