@@ -289,7 +289,26 @@ _JS = r"""
    fire(best,'mouseover'); fire(best,'mousedown'); fire(best,'mouseup'); fire(best,'click');
    await sleep(150);
    ngApply(el);
+   if(!bindingLooksReal(el,v)){ TRACE.push('clicked but binding empty'); return false; }
    return true;
+ }
+ function boundValue(el){
+   /* what the form will actually SEND for this control */
+   if(el&&(el.type||'').toLowerCase()==='hidden') return el.value;
+   var box=el?el.parentElement:null;
+   var h=box?box.querySelector('input[type=hidden]'):null;
+   return h?h.value:null;
+ }
+ function bindingLooksReal(el,v){
+   /* The screen said Texas and the server said
+      request.HomeAddress.StateProvinceID: "An error has occurred." -- the
+      display text was right and the id behind it was never set. So a widget
+      that reports success is not believed until the bound field holds
+      something, and something OTHER than the words we just put on screen. */
+   var b=boundValue(el);
+   if(b===null) return true;              /* nothing bound: nothing to check */
+   if(!String(b).trim()) return false;
+   return norm(b)!==norm(v);
  }
  function kendoSet(el,v){
    var w=kw(el); if(!w) return false;
@@ -300,12 +319,15 @@ _JS = r"""
        t=norm(tf&&d[i][tf]!==undefined?d[i][tf]:(d[i].Text||d[i].text||d[i]));
        if(t===want||(t&&(t.indexOf(want)===0||want.indexOf(t)===0))){
          w.value(vf&&d[i][vf]!==undefined?d[i][vf]:(d[i].Value||d[i].value||d[i]));
-         w.trigger('change'); ngApply(el); return true;
+         w.trigger('change'); ngApply(el);
+         if(!bindingLooksReal(el,v)){ TRACE.push('widget set but binding empty'); return false; }
+         return true;
        }
      }
      return false;
    }
-   w.value(v); w.trigger('change'); ngApply(el); return true;
+   w.value(v); w.trigger('change'); ngApply(el);
+   return bindingLooksReal(el,v);
  }
  function vis(el){ var r=el.getBoundingClientRect(); return r.width>0&&r.height>0&&!el.disabled&&!el.hasAttribute('readonly'); }
  var BAD={checkbox:1,radio:1,button:1,submit:1,reset:1,hidden:1,file:1,image:1};

@@ -641,3 +641,44 @@ def test_free_text_in_a_combobox_counts_as_a_failure(page):
     _settled(page)
     out = page.locator("#ansout").inner_text()
     assert "Gender" in out and "no matching option" in out
+
+
+LYING_WIDGET = """
+<!doctype html><html><body>
+<label for="StateID">State <span>*</span></label>
+<input type="hidden" id="StateID">
+<span class="k-widget k-dropdown" id="sdd"><span class="k-input">Select</span></span>
+<div class="k-animation-container" id="spop" style="display:none">
+  <ul class="k-list"><li>Texas</li><li>Oklahoma</li></ul>
+</div>
+</body></html>
+"""
+
+LYING_WIRING = """() => {
+  /* Updates only what you SEE and never the bound id -- exactly what happened
+     with State: the box read Texas and StateProvinceID was never set. */
+  const pop = document.getElementById('spop');
+  document.getElementById('sdd').addEventListener('mousedown', () => {
+    pop.style.display = 'block';
+  });
+  pop.querySelectorAll('li').forEach(li => li.addEventListener('click', () => {
+    document.querySelector('#sdd .k-input').textContent = li.textContent;
+    pop.style.display = 'none';                 /* bound field left empty */
+  }));
+}"""
+
+
+def test_a_widget_that_only_updates_the_display_is_not_believed(page):
+    """Apex answered request.HomeAddress.StateProvinceID: "An error has
+    occurred." while the page showed Texas. The display was right and the id
+    behind it was never set, and the button had reported success. A set is
+    only a success if the bound field ends up holding something."""
+    page.set_content(LYING_WIDGET)
+    page.evaluate(LYING_WIRING)
+    people = [{"name": "X", "find": "X", "fields": {"State": "Texas"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    out = page.locator("#ansout").inner_text()
+    assert "State" in out and "no matching option" in out
+    assert "Filled: State" not in out
