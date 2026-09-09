@@ -577,3 +577,30 @@ def test_a_value_the_combobox_rejects_is_reported(page):
     _settled(page)
     assert page.locator("#GenderID_9").input_value() == ""
     assert "Gender" in page.locator("#ansout").inner_text()
+
+
+ANGULAR_INVALID = """
+<!doctype html><html><body>
+<label for="a1">City <span>*</span></label><input id="a1" class="ng-valid">
+<label for="a2">Mobile Phone</label><input id="a2" class="ng-invalid ng-invalid-required">
+<label for="a3">Emergency Contact <span>*</span></label>
+<input id="a3" class="ng-invalid ng-invalid-required">
+</body></html>
+"""
+
+
+def test_it_names_the_fields_apex_is_objecting_to(page):
+    """Apex answers a bad save with "The form is invalid" and names nothing at
+    all. Angular has already stamped the offending controls ng-invalid, so the
+    panel asks it and reports the captions -- which is the difference between
+    a fixable message and an afternoon."""
+    page.set_content(ANGULAR_INVALID)
+    people = [{"name": "X", "find": "X", "fields": {"City": "Plano"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    out = page.locator("#ansout").inner_text()
+    assert "still says these are invalid" in out
+    assert "mobile phone" in out.lower()
+    assert "emergency contact" in out.lower()
+    assert "city" not in out.lower().split("invalid:")[1]   # the valid one isn't listed

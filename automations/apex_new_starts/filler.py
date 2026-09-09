@@ -347,6 +347,29 @@ _JS = r"""
    }
    return false;
  }
+ function labelOf(el){
+   /* the caption a person reads for this control, for naming it back */
+   if(el.id){ var l=document.querySelector('label[for="'+CSS.escape(el.id)+'"]');
+              if(l) return norm(l.textContent); }
+   var box=el.closest?el.closest('.form-group,.col-md-6,div'):null;
+   if(box){ var lb=box.querySelector('label'); if(lb) return norm(lb.textContent); }
+   return (el.name||el.id||el.tagName).toLowerCase();
+ }
+ function invalidFields(){
+   /* Apex answers a bad save with "The form is invalid" and names nothing.
+      Angular knows exactly which controls it is unhappy with -- it stamps them
+      ng-invalid -- so ask it, and hand back the captions. */
+   var mine=document.getElementById('anspanel');
+   var els=document.querySelectorAll('input.ng-invalid,select.ng-invalid,textarea.ng-invalid,.ng-invalid > input');
+   var seen={}, out=[], i;
+   for(i=0;i<els.length;i++){
+     if(mine&&mine.contains(els[i])) continue;
+     var n=labelOf(els[i]);
+     if(!n||seen[n]) continue;
+     seen[n]=1; out.push(n);
+   }
+   return out;
+ }
  async function fill(p){
    var done=[],miss=[],found=0,k;
    for(k in p.fields){ var el=fieldFor(k);
@@ -460,6 +483,9 @@ _JS = r"""
    if(s&&s.value){ var b=ssnBoxes(); if(b){ await setVal(b[0],s.value); await setVal(b[1],s.value); s.value=''; msg+='; Social entered'; } }
    if(r.miss.length) msg+='<br><span style="color:#b00">Not found here: '+r.miss.join(', ')+'</span>'+
      ' <a href="#" id="answhy" style="font-size:11px">why?</a>';
+   var bad=invalidFields();
+   if(bad.length) msg+='<br><span style="color:#b00">Apex still says these are '+
+     'invalid: '+bad.join(', ')+'</span>';
    document.getElementById('ansout').innerHTML=msg+'<br><b>Check it, then click Save in Apex.</b>';
    var w=document.getElementById('answhy');
    if(w) w.onclick=function(e){ e.preventDefault();
