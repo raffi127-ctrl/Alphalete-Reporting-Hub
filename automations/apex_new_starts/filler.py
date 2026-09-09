@@ -151,6 +151,33 @@ _JS = r"""
    return out;
  }
  var TRACE=[];
+ /* Apex answers a bad save with "The request is invalid" and nothing else,
+    while the page itself reports no invalid field. The server knows which one
+    it is -- ASP.NET model-state errors name it -- so listen for the failing
+    response and show it. Installed once per page. */
+ if(!window.__ansNet){
+   window.__ansNet={last:null};
+   var _f=window.fetch;
+   if(_f) window.fetch=function(){
+     var args=arguments;
+     return _f.apply(this,args).then(function(r){
+       if(!r.ok){ try{ r.clone().text().then(function(t){
+         window.__ansNet.last={url:(args[0]&&args[0].url)||args[0],status:r.status,body:(t||'').slice(0,1200)};
+       }); }catch(e){} }
+       return r;
+     });
+   };
+   var _o=XMLHttpRequest.prototype.open, _s=XMLHttpRequest.prototype.send;
+   XMLHttpRequest.prototype.open=function(m,u){ this.__u=u; return _o.apply(this,arguments); };
+   XMLHttpRequest.prototype.send=function(){
+     var x=this;
+     x.addEventListener('load',function(){
+       if(x.status>=400) window.__ansNet.last={url:x.__u,status:x.status,
+         body:(x.responseText||'').slice(0,1200)};
+     });
+     return _s.apply(this,arguments);
+   };
+ }
  function visibleInput(sp){
    var ins=sp.querySelectorAll('input'), i, r;
    for(i=0;i<ins.length;i++){
@@ -465,7 +492,7 @@ _JS = r"""
    '<button id="ansfill" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer">Fill this page</button> '+
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved → next</button>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
-   '<div style="margin-top:8px"><a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
+   '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
  document.body.appendChild(box);
  if(nav){
    document.getElementById('ansg1').onclick=function(e){e.preventDefault();go(nav,'employment-record');};
@@ -560,6 +587,15 @@ _JS = r"""
    var nid=idFor(D[I]);
    if(nid){ go(nid,'employment-record'); }        /* straight to the next person */
    else alert('Next: '+D[I].name+'\n\nOpen their record and click the button again.');
+ };
+ document.getElementById('anserr').onclick=function(e){ e.preventDefault();
+   var L=window.__ansNet&&window.__ansNet.last;
+   document.getElementById('ansout').innerHTML = L
+     ? '<b>'+L.status+'</b> '+String(L.url).slice(0,70)+
+       '<div style="font-size:11px;white-space:pre-wrap;max-height:180px;overflow:auto;'+
+       'background:#f6f6f6;padding:6px;margin-top:4px">'+
+       String(L.body).replace(/</g,'&lt;')+'</div><div style="font-size:11px">screenshot this</div>'
+     : 'Nothing failed yet. Click Save in Apex first, then come back here.';
  };
  document.getElementById('ansreset').onclick=function(e){ e.preventDefault();
    try{ localStorage.setItem(KEY,'0'); }catch(err){} box.remove(); alert('Back to the first person.'); };
