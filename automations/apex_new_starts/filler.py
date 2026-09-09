@@ -144,8 +144,17 @@ _JS = r"""
       there. Walking up the tree looked more forgiving and was wrong: it found
       a neighbouring field's dropdown and declared a plain text box
       Kendo-backed, so City stopped filling. */
-   var box=el.parentElement;
-   return box?box.querySelector(':scope > .k-dropdown, :scope > .k-combobox, :scope > .k-widget'):null;
+   if(!el) return null;
+   /* Two shapes, and only one was handled. On the profile page the hidden
+      input sits BESIDE the k-widget span. On the tax page the <select> the
+      label points at is INSIDE it -- so the widget is the element's own
+      parent, and looking for a k-widget child of that parent finds nothing.
+      That is why Marital Status opened its list and never got clicked. */
+   var par=el.parentElement;
+   if(par&&/(^|\s)k-widget(\s|$)/.test(par.className||'')) return par;
+   if(par&&par.parentElement&&/(^|\s)k-widget(\s|$)/.test(par.parentElement.className||''))
+     return par.parentElement;
+   return par?par.querySelector(':scope > .k-dropdown, :scope > .k-combobox, :scope > .k-widget'):null;
  }
  function popupLists(){
    /* Lists that are plainly a widget's popup, not the site's furniture. */
@@ -451,7 +460,11 @@ _JS = r"""
  }
  async function setVal(el,v){
    if(kendoSet(el,v)) return true;
-   if(el.tagName!=='SELECT'&&widgetSpan(el)){
+   /* A <select> that Kendo has taken over is hidden and driven by the widget.
+      Setting its .value directly moves the select and nothing else -- the
+      widget never fires, so whatever ng-blur was supposed to copy across never
+      runs. Only a select that is genuinely VISIBLE is a plain select. */
+   if(widgetSpan(el)&&!(el.tagName==='SELECT'&&vis(el))){
      if(await kendoClick(el,v)) return true;
      /* A Kendo control that would not take the value must NOT fall through to
         el.value: that input is hidden and holds an id, so writing 'Astronaut'

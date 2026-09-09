@@ -736,3 +736,55 @@ def test_it_blurs_so_the_id_actually_gets_written(page):
     assert page.locator("#StateProvinceID_445").input_value() == "45", \
         "the id the form submits"
     assert "Filled: State" in page.locator("#ansout").inner_text()
+
+
+SELECT_INSIDE_WIDGET = """
+<!doctype html><html><body>
+<div class="form-group">
+  <label for="MaritalStatus_1">Marital Status <span>*</span></label>
+  <span class="k-widget k-dropdown" id="mw">
+    <span class="k-dropdown-wrap"><span class="k-input">Select</span></span>
+    <select id="MaritalStatus_1" style="display:none">
+      <option value="">Select</option>
+      <option value="1">Single or Married filing separately</option>
+      <option value="2">Married filing jointly</option>
+    </select>
+  </span>
+  <input type="hidden" id="MaritalStatusID" ng-model="vm.maritalStatusId">
+</div>
+<div class="k-animation-container" id="mpop" style="display:none">
+  <ul class="k-list"><li>Select</li>
+    <li>Single or Married filing separately</li><li>Married filing jointly</li></ul>
+</div>
+</body></html>
+"""
+
+SELECT_INSIDE_WIRING = """() => {
+  const pop = document.getElementById('mpop');
+  document.getElementById('mw').addEventListener('mousedown', () => {
+    pop.style.display = 'block';
+  });
+  pop.querySelectorAll('li').forEach(li => li.addEventListener('click', () => {
+    const sel = document.getElementById('MaritalStatus_1');
+    for (const o of sel.options) if (o.text === li.textContent) sel.value = o.value;
+    document.querySelector('#mw .k-input').textContent = li.textContent;
+    pop.style.display = 'none';
+    document.getElementById('MaritalStatusID').value = sel.value;
+  }));
+}"""
+
+
+def test_a_select_inside_the_widget_is_still_reachable(page):
+    """On the tax page the <select> the label points at lives INSIDE the
+    k-widget span, so looking for a widget BESIDE it found nothing -- the list
+    opened and was never clicked. Both shapes have to work."""
+    page.set_content(SELECT_INSIDE_WIDGET)
+    page.evaluate(SELECT_INSIDE_WIRING)
+    people = [{"name": "X", "find": "X",
+               "fields": {"Marital Status": "Single or Married filing separately"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#MaritalStatus_1").input_value() == "1"
+    assert page.locator("#MaritalStatusID").input_value() == "1"
+    assert page.locator("#mpop").is_hidden(), "the list closes again"

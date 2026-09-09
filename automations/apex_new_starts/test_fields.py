@@ -248,11 +248,15 @@ def test_a_blank_total_falls_back_to_the_two_lines():
     assert v["claim_dependents"] == "4500.00"
 
 
-def test_an_untouched_step_three_claims_nothing():
-    """Somebody who left Step 3 blank gets NO value -- not a zero we invented."""
+def test_an_untouched_step_three_claims_zero():
+    """This used to leave the field empty on the grounds that a blank Step 3
+    is not a zero we should invent. Apex disagreed: Claim Dependants is
+    REQUIRED, so an empty one made it refuse the tax page for everybody who
+    left Step 3 alone -- which is most people. A blank Step 3 means they claim
+    nothing, and nothing is $0."""
     from automations.apex_new_starts import run as RUN
     v = RUN.apex_values(_cand(), BID.NewHire(name="Ann Lee", values={}))
-    assert "claim_dependents" not in v
+    assert v["claim_dependents"] == "0.00"
 
 
 def test_only_the_identified_filing_status_is_set():

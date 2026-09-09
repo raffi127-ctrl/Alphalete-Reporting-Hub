@@ -221,8 +221,10 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
         a = _dollars(hire.values.get("child_credit"))
         b = _dollars(hire.values.get("other_dep_credit"))
         dep = None if a is None and b is None else (a or 0) + (b or 0)
-    if dep is not None:
-        v["claim_dependents"] = f"{dep:.2f}"
+    # Apex REQUIRES Claim Dependants, and a blank W-4 Step 3 means they claim
+    # nothing -- which is $0, not "unknown". Leaving it empty made Apex refuse
+    # the tax page for everyone who didn't fill Step 3, which is most people.
+    v["claim_dependents"] = f"{dep or 0:.2f}"
 
     # All three filing-status boxes are identified now (see MARITAL_BY_FLAG).
     # A form with none ticked -- or somehow more than one -- sets nothing and is
