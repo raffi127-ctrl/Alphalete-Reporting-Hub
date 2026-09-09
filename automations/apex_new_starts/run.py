@@ -559,11 +559,15 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
         if hire is None or hire.missing_packet:
             notes[c.name] = "no Blue Ink packet — type this one by hand"
             continue
-        fields = filler.rows_for(apex_values(c, hire))
+        pages = filler.rows_for(apex_values(c, hire))
         # `find` is what the Blue Ink link searches for: the SURNAME, which is
         # how a person searches that dashboard, and the only thing about them
         # that ends up in a URL.
-        people.append({"name": c.name, "fields": fields,
+        people.append({"name": c.name, "pages": pages,
+                       # shown in the page's table only -- Apex holds the hire
+                       # date already and it is read-only there
+                       "hire": c.hire_date.strftime("%m/%d/%Y")
+                               if c.hire_date else "",
                        "find": c.last or c.name})
         flat = {lbl for page in pages.values() for lbl in page}
         gaps = [lbl for lbl in ("Marital Status", "Date of Birth",

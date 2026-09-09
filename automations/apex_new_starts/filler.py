@@ -916,7 +916,7 @@ def build_page(people, week: str, stamp: str, notes=None) -> str:
         gap = notes.get(p["name"], "")
         rows.append(
             "<tr><td>%d</td><td>%s</td><td>%s</td><td class=\"%s\">%s</td></tr>"
-            % (i, p["name"], p["fields"].get("Hire Date", "—"),
+            % (i, p["name"], p.get("hire") or "—",
                "warn" if gap else "", gap or "—"))
     return PAGE.format(
         week=week, n=len(people), s="" if len(people) == 1 else "s",
