@@ -1107,7 +1107,10 @@ def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
                                  (WEEK_TT, "NUMBER", "0"),
                                  (WEEK_AVG_TT, "NUMBER", "0.0"),
                                  (WEEK_PCT, "PERCENT", "0.0%"),
-                                 (WEEK_TT_APP, "PERCENT", "0.0%")):
+                                 # A COUNT, not a rate: 'AVG TTs per app' is
+                                 # talk-to's OVER sales -- 12 conversations per
+                                 # sale. As a percentage it read 1200.0%.
+                                 (WEEK_TT_APP, "NUMBER", "0.0")):
             fmt.append(number_format(ws, cols[h], SUB_ROW + 1,
                                      max(team_rows or [totals]), kind, pattern))
         said.append("  %-22s %s..%s   ratios en %d fila(s), sumas en %d de equipo"
