@@ -137,9 +137,11 @@ _KINDS = {
     # the difference — it classifies a miss as terminal (terminated ICD, pending
     # OV access, no Sheet tab) and deliberately does NOT retry those — but the
     # manifest said "failed" either way, so a known-and-waited-on absence got
-    # the same 🚨 as a real break. Kim Rodriguez moved states and is waiting on a
-    # NEW OwnerVille account: that is weeks of identical red mornings for
-    # something nobody can act on. ✅ and the unfilled_icd tone, because the run
+    # the same 🚨 as a real break. Kim Rodriguez moved states and her office
+    # dropped off the daily-focus AppStream account (NOT OwnerVille, which
+    # still reaches her — corrected 2026-09-09): that is weeks of identical
+    # red mornings for something nobody can act on. ✅ and the unfilled_icd
+    # tone, because the run
     # genuinely was fine.
     "owner_expected": {
         "what": "owner",
@@ -165,7 +167,7 @@ _KINDS = {
     # It still wrote kind="ICD", which is in _FILL_SHAPED and so reads with the
     # 'section' wording: "dropped 2 sections this run — it did NOT post", on a
     # run whose thread was live and carried every other ICD. Kim Rodriguez
-    # moved states and is waiting on a NEW account; that is weeks of identical
+    # moved states and lost her AppStream office; that is weeks of identical
     # red mornings for something nobody can act on. Same guard as its twin:
     # daily_focus only reaches for this when EVERY remaining ICD is a denial.
     "icd_expected": {

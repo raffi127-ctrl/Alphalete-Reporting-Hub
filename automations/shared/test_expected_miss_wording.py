@@ -5,7 +5,8 @@ Run:  PYTHONPATH=. .venv/bin/python -m unittest \
 
 WHAT THIS GUARDS (Megan 2026-09-05). daily_rep_breakdown ran 04:58-06:27 on
 Lucy 3, posted, and filled every owner but Kim Rodriguez — who had moved states
-and was waiting on a NEW OwnerVille account, so there was nothing to reach. The
+and her office had dropped off the daily-focus AppStream account (she still
+has OwnerVille — corrected 2026-09-09), so there was nothing to reach. The
 report knew: its own manifest note said
 
     1 owner(s) still missing after retry sweep: expected, no action —

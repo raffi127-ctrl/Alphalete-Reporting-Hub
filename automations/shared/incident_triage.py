@@ -397,8 +397,9 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     #     and then this module posted "It did not finish. Still not fixed after
     #     the noon cut-off. Re-running will not fix it." directly underneath —
     #     about a report that ran 04:58-06:27, posted, and filled every owner
-    #     but one whose OwnerVille account does not exist yet (Kim moved states
-    #     and is waiting on a new one). Same mistake _FINDING_PREFIXES was added
+    #     but one whose office is missing from the daily-focus AppStream
+    #     account (Kim moved states; she still has OwnerVille — corrected
+    #     2026-09-09). Same mistake _FINDING_PREFIXES was added
     #     for, and the same cost: a triage line that contradicts the post above
     #     it teaches people the line is noise.
     #

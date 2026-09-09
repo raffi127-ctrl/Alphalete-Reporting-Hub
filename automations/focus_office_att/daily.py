@@ -1368,8 +1368,13 @@ def _daily_manifest_ok(sweep_summary: dict = None) -> None:
         # retry — but the manifest said "failed" either way, so a pending OV
         # access read exactly like a broken scrape: 🚨, "it did NOT post", "It
         # did not finish. Re-running will not fix it", every single morning.
-        # Kim Rodriguez moved states and is waiting on a NEW OwnerVille account;
-        # that is weeks of identical red for something nobody can act on today.
+        # Kim Rodriguez moved states and her office (23576) fell off the
+        # daily-focus AppStream account; that is weeks of identical red for
+        # something nobody can act on today. NOT OwnerVille — corrected
+        # 2026-09-09: the knocks capture impersonated her in ownerville that
+        # same morning ('Confirmed on Kimberly Rodriguez (23576 - Illumane,
+        # Inc.)'). She has OwnerVille and lacks AppStream, and this comment
+        # saying otherwise sent a triage chasing the wrong grant.
         # When EVERY remaining owner is in that bucket the run really was fine,
         # so say so — section_drop_alert's 'owner_expected' is the ✅ wording.
         # A single genuine failure alongside them keeps the loud kind: the
