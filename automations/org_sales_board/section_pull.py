@@ -32,7 +32,7 @@ import datetime as dt
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from automations.alphalete_org_report import tableau_http
 from automations.org_sales_board import sara_pull
@@ -350,16 +350,48 @@ def pinned_view_url(spec: ScrapeSpec, today: Optional[dt.date] = None,
 CATCHUP_HHMM = "12:00"
 
 
+# Worksheets that hold no sales data. Tableau workbooks conventionally prefix
+# utility sheets with "Z_" so they sort last; the SARA workbook carries
+# 'Z_Last Refresh', a one-cell extract timestamp. A utility sheet renders even
+# when the pinned week is empty, because it does not depend on the week — so a
+# Crosstab dialog listing ONLY these is the same "the viz rendered nothing"
+# state as one listing none at all (Eve 2026-09-08: Retail NL + Retail Internet
+# died on "saw 1 thumb(s): ['Z_Last Refresh']" on a Monday nobody sold retail,
+# and both sections went out blank).
+NON_DATA_THUMBS = ("z_",)
+
+
+def _thumbs_listed(msg: str) -> Optional[List[str]]:
+    """The worksheet names a 'saw N thumb(s): [...]' error listed, or None if
+    the message isn't that error at all."""
+    m = re.search(r"saw \d+ thumb\(s\): \[(.*?)\]", msg, re.S)
+    if m is None:
+        return None
+    inner = m.group(1).strip()
+    if not inner:
+        return []
+    return [t.strip().strip("'\"") for t in inner.split(",") if t.strip()]
+
+
 def is_empty_crosstab_dialog(err: BaseException) -> bool:
     """True for the 'the viz rendered NOTHING' flavour of the crosstab failure.
 
     opt_phase raises "Couldn't find the <sheet> sheet in the Crosstab dialog —
-    saw N thumb(s): [...]". N > 0 means the dialog listed OTHER worksheets, i.e.
-    the sheet was renamed or the view changed — always a real failure. N == 0
-    means the dialog came up completely empty (after opt_phase's own reopen +
-    extra-hydration retry), which is what Tableau does when the view has no
-    rows at all."""
-    return "saw 0 thumb(s)" in str(err)
+    saw N thumb(s): [...]". A dialog listing OTHER DATA worksheets means the
+    sheet was renamed or the view changed — always a real failure. A dialog
+    listing NONE (after opt_phase's own reopen + extra-hydration retry), or only
+    the workbook's utility sheets (NON_DATA_THUMBS), is what Tableau does when
+    the view has no rows at all.
+
+    Deliberately still narrow: one data-looking name in that list and this is
+    False, so a rename never reads as an empty week."""
+    msg = str(err)
+    if "saw 0 thumb(s)" in msg:
+        return True
+    thumbs = _thumbs_listed(msg)
+    if not thumbs:
+        return False
+    return all(t.lower().startswith(NON_DATA_THUMBS) for t in thumbs)
 
 
 def empty_week_expected(spec: ScrapeSpec, today: Optional[dt.date] = None,

@@ -1363,8 +1363,16 @@ AUTOMATED_REPORTS.extend(r for r in _load_uploaded_reports_raw()
 # `:white_check_mark: ... ran fine, 1 ICD didn't fill` finding and resolved it at
 # 05:54. The Hub, reading only the `partial`, kept it on the triage list with a
 # red ❌ for the rest of the day. Same drift the audit had, one report over.
+#
+# digi_docs added 2026-09-08. It started writing kind='finding' (run.py) for the
+# person OwnerVille refused while the other 52 went out fine — exactly so the
+# run stops closing as FAILED with "re-run it", which for this report is worse
+# than useless: generating a bundle IS the send, there is no unsend. Missing
+# from this mirror, that same partial came straight back as a Hub page, which is
+# the half of the loop the module could not close on its own.
 FINDINGS_REPORTS = {"vantura_board_audit", "vantura-board-audit",
-                    "captainship-cancel-rate", "captainship_cancel_rate"}
+                    "captainship-cancel-rate", "captainship_cancel_rate",
+                    "digi_docs", "digi-docs"}
 
 # STOOD-DOWN reports live in day_orchestrator.paused_reports — one declaration
 # the Hub AND the watchers read. See that module for why it is not in this file

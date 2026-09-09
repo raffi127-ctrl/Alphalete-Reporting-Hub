@@ -338,8 +338,169 @@ def build_rows(per_rep, monday: dt.date, upto: dt.date, tier_fn=tier_for,
 
 
 # ------------------------------------------------------------------ image --
+# Tier chip colours: grey -> blue -> green -> gold as the tier climbs, so the
+# ladder reads at a glance (Carlos 2026-09-08 restyle).
+_TIER_CHIP = {"T0": ("#eef1f4", "#5b6770"), "T1": ("#e8f0fb", "#1d4f91"),
+              "T2": ("#dcebfa", "#174a8c"), "T3": ("#e7f4e8", "#1e7d32"),
+              "T4": ("#d9efdb", "#176426"), "T5": ("#fdf3d7", "#8a6d1a")}
+
+
 def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
            board_name: str = "Vantura B2B Revenue") -> Path:
+    """Styled board (Carlos 2026-09-08: 'i want the revenue board to be easier
+    to see', with his Daily Sales Board mock as the example): dark header,
+    stat cards, tier chips, Mon-Sun day cells, office day totals in the
+    footer. Falls back to the old PIL table if headless Chrome is unavailable
+    — a plain board beats no board at 5:20am."""
+    try:
+        return _render_html(rows, office, monday, upto, dest, board_name)
+    except Exception as e:  # noqa: BLE001
+        print(f"  styled render failed ({type(e).__name__}: "
+              f"{str(e).splitlines()[0][:90]}) — falling back to the plain "
+              "table", flush=True)
+        return _render_pil(rows, office, monday, upto, dest, board_name)
+
+
+def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
+                 board_name: str) -> Path:
+    kick = ("BOX LEADERS" if "box" in board_name.lower()
+            else "AT&T B2B LEADERS")
+    week_total = sum(r["total"] for r in rows)
+    next_total = sum(r.get("ntotal", 0) for r in rows)
+    # Only the days that have HAPPENED get a column (Carlos 2026-09-08:
+    # "every day when you send this it adds the day, and the days that
+    # haven't happened don't show yet") — Monday's board is one day wide and
+    # the table grows a column each morning.
+    shown = [(c, monday + dt.timedelta(days=i))
+             for i, c in enumerate(DAYS)
+             if monday + dt.timedelta(days=i) <= upto]
+
+    def money(v):
+        return f"${v:,.0f}"
+
+    trs = []
+    for i, row in enumerate(rows, start=1):
+        chip_bg, chip_fg = _TIER_CHIP.get(row["tier"],
+                                          ("#eef1f4", "#5b6770"))
+        days = []
+        for dcode, d in shown:
+            v = row.get(dcode)
+            if not v:
+                days.append('<td class="day zero">·</td>')
+            else:
+                days.append(f'<td class="day">{money(v)}</td>')
+        nxt = row.get("next", "")
+        nxt_cls = "max" if nxt == "MAX" else ""
+        trs.append(
+            f'<tr><td class="rk">{i}</td>'
+            f'<td class="rep">{row["rep"].upper()}</td>'
+            f'<td class="tot">{money(row["total"])}</td>'
+            f'<td><span class="chip" style="background:{chip_bg};'
+            f'color:{chip_fg}">{row["tier"]}</span></td>'
+            + "".join(days)
+            + f'<td class="nxt {nxt_cls}">{nxt}</td></tr>')
+
+    # Office totals close the table (Carlos 2026-09-08: "the total at the
+    # bottom of the monday list") — each day column sums at its foot.
+    tot_days = "".join(
+        f'<td class="day ttl">{money(office["days"].get(c, 0.0))}</td>'
+        for c, _d in shown)
+    trs.append(
+        '<tr class="totrow"><td class="rk"></td>'
+        '<td class="rep">OFFICE TOTAL</td>'
+        f'<td class="tot">{money(week_total)}</td><td></td>'
+        + tot_days + '<td class="nxt"></td></tr>')
+
+    day_ths = "".join(
+        f'<th class="dh{" cur" if d == upto else ""}">{c}<br>'
+        f'<span class="dd">{d.month}/{d.day}</span></th>'
+        for c, d in shown)
+
+    html = f"""<html><head><meta charset="utf-8"><style>
+ body{{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f6f8}}
+ .wrap{{width:1240px}}
+ .hdr{{background:#12181d;color:#fff;padding:30px 40px}}
+ .kick{{color:#f0b429;font-weight:700;letter-spacing:.08em;font-size:14px}}
+ .hrow{{display:flex;justify-content:space-between;align-items:baseline}}
+ h1{{margin:6px 0 0;font-size:46px}}
+ .date{{color:#cfd6dc;font-size:17px}}
+ .cards{{display:flex;gap:16px;padding:22px 40px 4px}}
+ .card{{flex:1;background:#fff;border-radius:8px;padding:14px 18px;
+        box-shadow:0 1px 3px rgba(0,0,0,.08);border-left:5px solid #2bb3a3}}
+ .card:nth-child(2){{border-left-color:#3ba55d}}
+ .card:nth-child(3){{border-left-color:#f0b429}}
+ .clab{{color:#5b6770;font-size:13px;letter-spacing:.06em;font-weight:600}}
+ .cval{{font-size:36px;font-weight:800;margin-top:2px}}
+ table{{border-collapse:collapse;width:1160px;margin:18px 40px;background:#fff;
+        border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
+ th{{background:#eef1f4;color:#3c4650;text-align:right;font-size:12px;
+     letter-spacing:.04em;padding:9px 10px}}
+ th.lh{{text-align:left}} .dd{{color:#8a95a0;font-weight:400}}
+ th.cur{{background:#e2ecf7}}
+ td{{padding:11px 10px;border-top:1px solid #eef1f4;font-size:15px;
+     text-align:right}}
+ .rk{{color:#2bb3a3;font-weight:700;width:26px;text-align:left}}
+ .rep{{font-weight:700;text-align:left;white-space:nowrap}}
+ .tot{{font-size:19px;font-weight:800}}
+ .chip{{padding:4px 12px;border-radius:6px;font-weight:700;font-size:13px}}
+ .day{{color:#3c4650;font-size:13px}}
+ .day.zero{{color:#c3cad1}} .day.ttl{{font-weight:800;font-size:14px}}
+ .totrow td{{background:#12181d;color:#fff;border-top:none}}
+ .totrow .rep,.totrow .tot,.totrow .day{{color:#fff}}
+ .totrow .day.ttl{{color:#f0b429}}
+ .nxt{{font-size:12px;color:#5b6770;white-space:nowrap;text-align:right}}
+ .nxt.max{{color:#1e7d32;font-weight:700}}
+ .foot{{display:flex;justify-content:space-between;background:#12181d;
+        color:#fff;margin:4px 40px 30px;padding:14px 20px;border-radius:6px;
+        width:1120px}}
+ .foot .lab{{color:#f0b429;font-weight:700;margin-right:8px}}
+ .mx{{margin-left:12px;color:#cfd6dc;font-size:13px}} .mx b{{color:#fff}}
+</style></head><body><div class="wrap">
+ <div class="hdr"><div class="kick">{kick}</div>
+  <div class="hrow"><h1>Revenue Board</h1>
+  <div class="date">Week of {monday.strftime('%b %-d')} — through
+  {upto.strftime('%A, %b %-d, %Y')}</div></div></div>
+ <div class="cards">
+  <div class="card"><div class="clab">OFFICE WEEK TOTAL</div>
+   <div class="cval">{money(week_total)}</div></div>
+  <div class="card"><div class="clab">REPS ON THE BOARD</div>
+   <div class="cval">{len(rows)}</div></div>
+  <div class="card"><div class="clab">OFFICE AT NEXT TIER</div>
+   <div class="cval">{money(next_total)}</div></div>
+ </div>
+ <table><tr><th class="lh">#</th><th class="lh">REP</th><th>WEEK TOTAL</th>
+ <th style="text-align:left">TIER</th>{day_ths}<th>NEXT TIER</th></tr>
+ {''.join(trs)}</table>
+ <div class="foot"><div><span class="lab">{kick}</span></div>
+ <div style="color:#cfd6dc;font-size:13px">{len(rows)} reps on the board</div>
+ </div></div></body></html>"""
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(".html")
+    tmp.write_text(html, encoding="utf-8")
+    from patchright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = None
+        for kw in ({"channel": "chrome"}, {}):
+            try:
+                browser = p.chromium.launch(headless=True, **kw)
+                break
+            except Exception:  # noqa: BLE001
+                continue
+        if browser is None:
+            raise RuntimeError("no headless Chrome/Chromium")
+        try:
+            page = browser.new_page(device_scale_factor=2,
+                                    viewport={"width": 1280, "height": 900})
+            page.goto(tmp.as_uri(), wait_until="networkidle")
+            page.query_selector(".wrap").screenshot(path=str(dest))
+        finally:
+            browser.close()
+    return dest
+
+
+def _render_pil(rows, office, monday: dt.date, upto: dt.date, dest: Path,
+                board_name: str = "Vantura B2B Revenue") -> Path:
     from PIL import Image, ImageDraw
     from automations.box_order_log.png import _font
 

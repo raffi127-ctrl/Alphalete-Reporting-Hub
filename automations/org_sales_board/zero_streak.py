@@ -190,40 +190,59 @@ def unrolled_boxes(boxes: list, live_sun: dt.date) -> dict:
     return late
 
 
-def build_post(flags: list, newbies: list, weeks: list, today: dt.date) -> str:
+def build_post(flags: list, newbies: list, weeks: list, today: dt.date,
+               kept: list = (), tab: str = "") -> str:
     """The Slack message. It PROPOSES; it never says anything was removed.
 
     Taking a rep off the board is irreversible for the person reading it, so
     this posts a list and the command, exactly like the new-owners gate posts a
-    name and waits for a ✅. Nothing here writes to the board."""
+    name and waits for a ✅. Nothing here writes to the board.
+
+    SAY WHICH BOARD. Two boards ride this same detector off their own Tuesday
+    roll and post into the SAME channel — the ORG board around 07:00 and the
+    Country board a couple of hours later. With the title alone they are
+    indistinguishable: on 2026-09-08 the ORG board proposed four people at
+    07:00 and the Country board posted "nadie llegó al umbral · Nada que sacar"
+    at 09:50, which reads like the first post being retracted."""
     # Date built from the fields, never '%-d' — that strftime flag is glibc-only
     # and these reports run on Windows too. [[feedback_cross_platform]]
     stamp = f"{today.day}/{today.month}"
+    which = f" · {tab}" if tab else ""
     wk = " y ".join(f"WE {d:%m.%d}" for d in weeks) or "las semanas cerradas"
-    if not flags and not newbies:
-        return (f"*Two-week zero rule* — {stamp} · nadie llegó al umbral "
+    if not flags and not newbies and not kept:
+        return (f"*Two-week zero rule*{which} — {stamp} · nadie llegó al umbral "
                 f"({wk} en 0). Nada que sacar.")
-    lines = [f"*Two-week zero rule* — {stamp}",
+    lines = [f"*Two-week zero rule*{which} — {stamp}",
              f"Cero en {wk}. Esto es una PROPUESTA: no se tocó el board."]
     if flags:
         lines.append(f"\n*Para sacar ({len({f['name'] for f in flags})} personas)*")
         for f in sorted(flags, key=lambda x: (-x["streak"], x["name"])):
-            warn = (f"  ⚠ sigue vendiendo en {', '.join(f['elsewhere'])} — sacar "
-                    f"SOLO este cuadro" if f["elsewhere"] else "")
             lines.append(f"• *{f['name']}* — {f['owner']} / {f['section']} · "
-                         f"{f['streak']} sem · últ. venta {f['last_sale']}{warn}")
+                         f"{f['streak']} sem · últ. venta {f['last_sale']}")
+    else:
+        lines.append("\n*Nadie para sacar.*")
     if newbies:
         lines.append(f"\n*Sin historial de ventas — decisión a mano*")
         for f in sorted(newbies, key=lambda x: x["name"]):
             lines.append(f"• *{f['name']}* — {f['owner']} / {f['section']} · "
                          f"{f['streak']} sem, nunca registró una venta")
-    lines.append("\n`python -m automations.org_sales_board.zero_streak --commands` "
-                 "para los pasos de baja.")
+    if kept:
+        lines.append(
+            f"\n*No salen ({len({f['name'] for f in kept})} personas)* — en cero "
+            f"en este cuadro, pero vendiendo en otro del mismo dueño. La baja es "
+            f"por DUEÑO, no por cuadro: se quedan en todos.")
+        for f in sorted(kept, key=lambda x: (-x["streak"], x["name"])):
+            vende = ", ".join(t.split("/")[-1] for t in f["kept_for"])
+            lines.append(f"• {f['name']} — {f['owner']} / {f['section']} · "
+                         f"{f['streak']} sem · vende en {vende}")
+    if flags or newbies:
+        lines.append("\n`python -m automations.org_sales_board.zero_streak "
+                     "--commands` para los pasos de baja.")
     return "\n".join(lines)
 
 
 def post_slack(flags: list, newbies: list, weeks: list, today: dt.date,
-               logfn=print) -> None:
+               logfn=print, kept: list = (), tab: str = "") -> None:
     """Post to the channel the new-owners notices already use — who comes OFF
     the board belongs next to who comes ON, in front of the same people.
 
@@ -232,7 +251,7 @@ def post_slack(flags: list, newbies: list, weeks: list, today: dt.date,
     is Evelyn's, so a hand-run would post under her name. If there is no token
     at all the text is printed and nothing is sent — a failed post must never
     fail the report, which has already done its work by now."""
-    text = build_post(flags, newbies, weeks, today)
+    text = build_post(flags, newbies, weeks, today, kept, tab)
     try:
         from automations.shared import slack_metrics_post as smp
         from automations.new_owners import notify
@@ -243,9 +262,14 @@ def post_slack(flags: list, newbies: list, weeks: list, today: dt.date,
 
 
 def score(boxes: list, live_sun: dt.date, weeks: int = DEFAULT_WEEKS):
-    """(flags, newbies) for an already-read board. Split out of main() so the
-    post-rollover hook scores exactly what the CLI scores — one rule, one
-    implementation, with no second copy to drift."""
+    """(flags, newbies, kept) for an already-read board. Split out of main() so
+    the post-rollover hook scores exactly what the CLI scores — one rule, one
+    implementation, with no second copy to drift.
+
+    `kept` is the third bucket: rows that hit the streak but are NOT a removal
+    because the rep is still warm in another box under the SAME banner. They are
+    reported so the reader knows the detector saw them, and they are left out of
+    `--commands` entirely."""
     # The guard against pulling a rep who just CHANGED campaigns: where is this
     # person still selling RIGHT NOW? Recent means the live week or the last
     # closed one — a positive number from two years ago says nothing about
@@ -267,7 +291,29 @@ def score(boxes: list, live_sun: dt.date, weeks: int = DEFAULT_WEEKS):
     active_names = {n for n, _o, _s in active}
     excluded = {norm(x) for x in roster_sync.EXCLUDE}
 
-    flags, newbies = [], []
+    # THE BANNER IS THE SMALLEST UNIT A REMOVAL CAN TOUCH (Eve, 2026-09-08:
+    # "es que ana no debe salir mientras venda una retail"). A banner can carry
+    # several campaigns — ALPHALETE ORG has Retail NL and Retail Internet, a
+    # captain team has its two fiber boxes — and going cold in one of them while
+    # still selling another is not a removal at all, in any of the boxes. So
+    # score EVERY box first, then let a warm sibling under the same banner veto
+    # the flag. This subsumes the old `elsewhere` warning, which only fired on a
+    # sale inside a two-week window and so missed Ana Griffin: her last Retail
+    # NL sale was WE 08.30, one week too old to count as "active", and the
+    # proposal to drop her went out anyway.
+    cold = {}
+    for b in boxes:
+        box_closed = [d for d, _c in b["weeks"] if d < live_sun]
+        for rep in b["reps"]:
+            cold[(norm(rep["name"]), b["owner"], b["section"])] = (
+                streak(rep["vals"], box_closed) >= weeks)
+
+    def warm_siblings(key, owner, section) -> list:
+        return sorted({f"{o}/{s}" for (nm, o, s), is_cold in cold.items()
+                       if nm == key and o == owner and s != section
+                       and not is_cold})
+
+    flags, newbies, kept = [], [], []
     for b in boxes:
         box_closed = [d for d, _c in b["weeks"] if d < live_sun]
         for rep in b["reps"]:
@@ -285,9 +331,15 @@ def score(boxes: list, live_sun: dt.date, weeks: int = DEFAULT_WEEKS):
                     "elsewhere": sorted({f"{o}/{s}" for nm, o, s in active
                                          if nm == key
                                          and (o, s) != (b["owner"], b["section"])}),
-                    "excluded": key in excluded}
-            (newbies if not ever and key not in active_names else flags).append(item)
-    return flags, newbies
+                    "excluded": key in excluded,
+                    "kept_for": warm_siblings(key, b["owner"], b["section"])}
+            if item["kept_for"]:
+                kept.append(item)
+            elif not ever and key not in active_names:
+                newbies.append(item)
+            else:
+                flags.append(item)
+    return flags, newbies, kept
 
 
 def after_rollover(sheet_id: str, tab: str, *, today=None,
@@ -326,18 +378,20 @@ def after_rollover(sheet_id: str, tab: str, *, today=None,
                   % (tab, max(late.values()).strftime("%m.%d"),
                      live_sun.strftime("%m.%d")))
             return 0
-        flags, newbies = score(boxes, live_sun, weeks)
+        flags, newbies, kept = score(boxes, live_sun, weeks)
         closed = sorted({d for b in boxes for d, _c in b["weeks"] if d < live_sun},
                         reverse=True)
-        logfn("  zero-rule: %d fila(s) para sacar, %d sin historial"
-              % (len(flags), len(newbies)))
+        logfn("  zero-rule: %d fila(s) para sacar, %d sin historial, "
+              "%d que se quedan (vendiendo en otro cuadro del mismo dueño)"
+              % (len(flags), len(newbies), len(kept)))
         for f in sorted(flags, key=lambda x: (-x["streak"], x["name"])):
             logfn("     %-24s %-26s %d sem · últ. venta %s"
                   % (f["name"][:24], f["section"][:26], f["streak"], f["last_sale"]))
         if dry_run:
             logfn("  zero-rule: dry-run — no se postea")
             return len(flags)
-        post_slack(flags, newbies, closed[:weeks], today, logfn=logfn)
+        post_slack(flags, newbies, closed[:weeks], today, logfn=logfn, kept=kept,
+                   tab=tab)
         return len(flags)
     except Exception as e:                  # noqa: BLE001 — advisory, never fatal
         logfn("  zero-rule: SALTEADO (%s: %s) — el roleo y el fill ya quedaron"
@@ -393,11 +447,7 @@ def main(argv=None) -> int:
           f"cerradas más recientes: {', '.join(f'WE {d:%m.%d}' for d in closed[:4])}")
     print(f"    umbral: {args.weeks} semana(s) cerradas en 0\n")
 
-    # The guard against pulling a rep who just CHANGED campaigns: where is this
-    # person still selling RIGHT NOW? Recent means the live week or the last
-    # closed one — a positive number from two years ago says nothing about
-    # whether they moved, and counting it would flag every veteran as "active".
-    flags, newbies = score(boxes, live_sun, args.weeks)
+    flags, newbies, kept = score(boxes, live_sun, args.weeks)
     rows = []
 
     def show(items, title):
@@ -406,7 +456,9 @@ def main(argv=None) -> int:
         print(f"--- {title}")
         for f in sorted(items, key=lambda x: (-x["streak"], x["name"])):
             tag = "  [YA EN EXCLUDE]" if f["excluded"] else ""
-            warn = ("  ⚠ ACTIVO EN OTRA: " + ", ".join(f["elsewhere"])
+            warn = ("  · vende en " + ", ".join(f["kept_for"])
+                    if f["kept_for"] else
+                    "  ⚠ ACTIVO EN OTRA: " + ", ".join(f["elsewhere"])
                     if f["elsewhere"] else "")
             print(f"  {f['name'][:22]:<22} {f['owner'][:24]:<25} {f['section'][:26]:<26} "
                   f"{f['streak']:>2} sem · últ. venta {f['last_sale']:<9} r{f['row']}{tag}{warn}")
@@ -414,10 +466,11 @@ def main(argv=None) -> int:
 
     show(flags, f"CANDIDATOS A BAJA ({len(flags)} fila(s))")
     show(newbies, f"SIN HISTORIAL DE VENTAS — decidir a mano ({len(newbies)} fila(s))")
+    show(kept, f"NO SALEN — venden en otro cuadro del mismo dueño ({len(kept)} fila(s))")
     if not flags and not newbies:
         print("nadie llega al umbral. Nada que hacer.\n")
 
-    for f in flags + newbies:
+    for f in flags + newbies + kept:
         rows.append({k: (", ".join(v) if isinstance(v, list) else v)
                      for k, v in f.items()})
     if rows:
@@ -430,12 +483,16 @@ def main(argv=None) -> int:
         print(f"CSV: {out}")
 
     if args.post:
-        post_slack(flags, newbies, closed[:args.weeks], today)
+        post_slack(flags, newbies, closed[:args.weeks], today, kept=kept,
+                   tab=args.tab)
 
     if args.commands:
-        # Only people cold EVERYWHERE can be excluded board-wide; someone still
-        # selling another campaign gets their rows removed but must NOT be
-        # excluded, or the self-heal would refuse to keep the campaign they sell.
+        # `kept` never reaches here — a rep with a warm box under the SAME
+        # banner is not a removal at all, in any box (Eve, 2026-09-08). What is
+        # left in `mixed` is the other shape: still selling under a DIFFERENT
+        # owner, i.e. they changed captain. That one does come off the old
+        # captain's boxes, but must NOT be excluded board-wide, or the campaign
+        # they moved to could not keep them.
         clean = sorted({f["name"] for f in flags
                         if not f["elsewhere"] and not f["excluded"]})
         mixed = sorted({f["name"] for f in flags if f["elsewhere"]})
@@ -449,8 +506,10 @@ def main(argv=None) -> int:
             print(f'3) python -m automations.all_campaigns_board.roster_remove --names "{names}" --apply')
             print(f"4) actualizá REMOVALS en distro_remove.py y corré --apply")
         if mixed:
-            print(f"\n⚠ estos cambiaron de campaña — borrar SOLO su caja fría, "
-                  f"SIN EXCLUDE: {', '.join(mixed)}")
+            print(f"\n⚠ estos venden bajo OTRO dueño — se cambiaron de capitanía. "
+                  f"Sacarlos de las cajas del dueño frío con --owner, SIN EXCLUDE "
+                  f"(el EXCLUDE los borraría también de donde ahora venden): "
+                  f"{', '.join(mixed)}")
     return 0
 
 

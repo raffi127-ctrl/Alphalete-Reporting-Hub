@@ -9,6 +9,9 @@ for oid, row in offices.OFFICES.items():
     want = oid in TEXTING
     assert got == want, f"office {oid} allow_retext={got}, expected {want}"
 
+# Khalil joined the LIVE rotation 9/8 and still must NEVER text (Carlos, 9/8:
+# "texting should still be off for him") — pinned so a later edit can't drift.
+assert offices.OFFICES["11901"].get("allow_retext") is False
 # A row that forgets the key must default to NOT texting, never inherit.
 assert offices.OFFICES["19592"].get("allow_retext") is False
 assert bool({}.get("allow_retext", False)) is False

@@ -30,6 +30,43 @@ from unittest import mock
 
 from automations import dashboard
 
+def _finding_kind_reports():
+    """Every report module whose run.py actually CALLS write_manifest with one
+    of notify._FINDING_KINDS, as {package_name}.
+
+    Read with `ast`, not a regex over the source text. The regex version counted
+    any line that merely mentioned `kind='finding'`, and on 2026-09-08 that made
+    an offender out of day_orchestrator — whose only match is a COMMENT
+    explaining what vantura_board_audit's manifest looks like (run.py:822). A
+    guard that fails on prose is a guard people learn to ignore, which is the
+    same rot it was written to catch. A keyword argument in a call is the thing
+    we actually mean by "writes one".
+
+    dashboard.FINDINGS_REPORTS names this function in its own comment; it lived
+    inline in the test until 2026-09-08, so the reference pointed at nothing.
+    """
+    import ast
+    from pathlib import Path
+    from automations.day_orchestrator.notify import _FINDING_KINDS
+
+    repo = Path(dashboard.__file__).resolve().parents[1]
+    found = []
+    for py in sorted((repo / "automations").rglob("*/run.py")):
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:                 # not ours to fix from in here
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if any(kw.arg == "kind" and isinstance(kw.value, ast.Constant)
+                   and kw.value.value in _FINDING_KINDS
+                   for kw in node.keywords):
+                found.append(py.parent.name)
+                break
+    return found
+
+
 HEAD = "52b5e9e"
 SHA_A = "a" * 40
 SHA_B = "b" * 40
@@ -172,25 +209,15 @@ class AnAuditsFindingsAreNotAFailure(unittest.TestCase):
         'unfilled_icd' and nobody added it here, so it sat on the triage list
         every morning it did its job.
 
-        This greps the writers instead of trusting the list: any module calling
+        This READS the writers instead of trusting the list: any module calling
         write_manifest(kind=<one of notify._FINDING_KINDS>) must appear in
         FINDINGS_REPORTS. org_sales_board is exempt — it routes its 'finding'
         through section_drop_alert as a report-only side check that never gates
         the fill, so the board's own run status is not the finding."""
-        import re
-        from pathlib import Path
-        from automations.day_orchestrator.notify import _FINDING_KINDS
-
-        repo = Path(dashboard.__file__).resolve().parents[1]
-        pat = re.compile(r"""kind\s*=\s*["'](%s)["']"""
-                         % "|".join(map(re.escape, _FINDING_KINDS)))
         EXEMPT = {"org_sales_board"}     # side-channel alert, not the run verdict
 
         offenders = []
-        for py in sorted((repo / "automations").rglob("*/run.py")):
-            if not pat.search(py.read_text(encoding="utf-8", errors="replace")):
-                continue
-            pkg = py.parent.name
+        for pkg in _finding_kind_reports():
             if pkg in EXEMPT:
                 continue
             if not ({pkg, pkg.replace("_", "-")} & dashboard.FINDINGS_REPORTS):

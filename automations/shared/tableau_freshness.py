@@ -550,9 +550,26 @@ def weekly_needs(today: dt.date) -> dt.date:
 # max — so the Saturday IS the end of the loaded data, not a straggler.
 #
 # Scoped to the CUSTOM VIEW, not the workbook: int_wow_penetration pulls the
-# same worksheet through the workbook's DEFAULT view on Tuesdays and carries
-# yesterday, so it still owes the daily bar. If it ever opens its own thread
-# that is a new fact, not this one.
+# same worksheet through the workbook's DEFAULT view on Tuesdays. It still owes
+# the daily bar and is deliberately NOT listed below — but the reason has
+# changed, so read this before adding it (Eve 2026-09-08).
+#
+# It DID open its own thread, three Tuesdays running:
+#   Tue 8/25 07:30  newest Sat 8/22, its WE closed Sun 8/23  -> short its Sunday
+#   Tue 9/01 09:10  newest Sun 8/30, its WE closed Sun 8/30  -> complete
+#   Tue 9/08 08:08  newest Sat 9/05, its WE closed Sun 9/06  -> short its Sunday
+# So the old note here ("carries yesterday") was simply wrong about the hour:
+# at ~08:00 CT this view has not loaded the weekend, and on two of those three
+# Tuesdays the day it was missing was the report's OWN weekending Sunday. The
+# alert was telling the truth; loosening the bar would have hidden a WE column
+# being written a day short.
+#
+# The feed loads LATE, not never. Same view, same day, measured:
+#   Tue 2026-09-08 08:08  newest 2026-09-05 (Sat)
+#   Tue 2026-09-08 13:21  newest 2026-09-07 (Mon)   read-only re-pull
+#   Tue 2026-05-26 15:20  newest 2026-05-25 (Mon)   the one older sample
+# Fixed where the problem is — the pull hour, not the yardstick:
+# schedule_config int_wow_penetration now carries cadence.not_before 13:30.
 #
 # Worth saying plainly: the Monday pull is not short of anything it needs. The
 # Focus week is Sun-Sat, so a Monday run reporting the week that ended Saturday

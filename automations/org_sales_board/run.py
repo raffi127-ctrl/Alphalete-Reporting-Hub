@@ -144,12 +144,15 @@ def main(argv=None) -> int:
                     help="Comma-separated captainship program keys to pull ONLY "
                          "(granular retry of just the failed programs). Omit = all.")
     ap.add_argument("--skip-compare", action="store_true",
-                    help="Don't compare against the VA tab after the fill. The "
-                         "scheduled 4am run sets this: at 4am the VAs have keyed "
-                         "NOTHING yet, so every 'difference' is just the automation "
-                         "being ahead — pure noise that marked the fill INCOMPLETE "
-                         "every morning. The compare runs on its own at 9am CST "
-                         "(report_id 'board_compare'), once the VAs are done.")
+                    help="Accepted and IGNORED — the compare is off by default "
+                         "now, so this is a no-op. Kept because the scheduled "
+                         "4am run and saved retry_args still pass it.")
+    ap.add_argument("--compare", action="store_true",
+                    help="Also diff the board against the ARCHIVED VA tab after "
+                         "the fill. Off by default, and REPORT-ONLY: it can no "
+                         "longer mark the run INCOMPLETE. That tab has been "
+                         "frozen since 2026-07-21 (tabs.ARCHIVED_VA_TAB, 'hasta "
+                         "7/21'), so every week since reads as a disagreement.")
     ap.add_argument("--no-manifest", action="store_true",
                     help="Don't write this run's outcome to the 'org-sales-board' "
                          "manifest. For an UNATTENDED SURGICAL re-pull that is not "
@@ -494,24 +497,45 @@ def main(argv=None) -> int:
             except Exception:  # noqa: BLE001 — advisory must never fail the run
                 pass
             _compare_clean = True
-            _compare_ndiff = 0
             _va_note = ""
-            # The VA compare is DEFERRED to 9am CST (Megan 2026-07-14). Running it
-            # straight after the 4am fill compared us against a VA tab the VAs had
-            # not touched yet, so every cell we were simply AHEAD on counted as a
-            # "difference": the fill logged compare=FLAGGED and closed INCOMPLETE
-            # every single morning, which is exactly the kind of routine red that
-            # trains everyone to ignore the board. The scheduled run now passes
-            # --skip-compare, and report_id 'board_compare' runs the real compare at
-            # 9am once the VAs have finished keying. A manual run still compares.
-            if not args.dry_run and not args.real and not args.skip_compare:
+            # HISTORY, because the previous note here outlived its own facts.
+            # The compare was DEFERRED to 9am (Megan 2026-07-14): run straight
+            # after the 4am fill it pitted us against a VA tab the VAs had not
+            # keyed yet, so every cell we were merely AHEAD on read as a
+            # "difference" and closed the fill INCOMPLETE every morning. The
+            # 9am job it was deferred TO — report_id 'board_compare' — was then
+            # retired on 2026-07-21, the same day the VAs' tab went out of
+            # circulation. The note kept saying "the real compare runs at 9am"
+            # for seven weeks after nothing ran at 9am.
+            #
+            # SO THE REFERENCE IS NOW A FROZEN ARCHIVE and this can never gate
+            # again. PROD_TAB is tabs.ARCHIVED_VA_TAB — "ARCHIVE — … (VAs, hasta
+            # 7/21)" — renamed + hidden 8/19. Nobody has keyed that tab in seven
+            # weeks, so a compare against it returns the whole roster's worth of
+            # drift: on 2026-09-08 it reported 28 "ICDs on the VA tab with no
+            # copy row" — every one of them somebody we retired in August (Steve
+            # McElwee 8/20, Milan Godbolt 8/21, Marcos Barbosa 8/27, Fernando
+            # Munoz 8/31, the two-week-zero batches) — plus 12,995 value diffs,
+            # and marked the board INCOMPLETE.
+            #
+            # THE PATH THAT COST US THE MORNING: the 4am run passes
+            # --skip-compare, but the granular retry THIS FILE writes into the
+            # failure manifest does not. So a board that dropped a section at 4am
+            # for an unrelated reason (that day: a week nobody sold retail) got
+            # its "Retry failed only" button pressed, the retry compared against
+            # July, and a board that had just filled correctly did not post. The
+            # retry button took the board down.
+            #
+            # Off unless asked for, and report-only when asked for. Bringing
+            # gating back means pointing it at a tab somebody actually keys —
+            # not flipping this back.
+            if not args.dry_run and not args.real and args.compare:
                 from automations.org_sales_board import compare
+                print(f"  NOTE: comparing against {PROD_TAB!r}, frozen since "
+                      f"2026-07-21 — differences below are drift since then, "
+                      f"not disagreements. Report-only; does not gate this run.")
                 _cmp = compare.run_compare()
                 _compare_clean = _cmp["clean"]
-                # gating disagreements = raw daily glitches + current-week derived
-                # concerns (frozen + catch-all are report-only, never counted here)
-                _compare_ndiff = (len(_cmp.get("glitches", []))
-                                  + len(_cmp.get("derived", [])))
                 # WHOLE-SHEET VA check — EVERY labeled cell incl. below row 1000,
                 # name-matched so sort/row-order differences don't count (only
                 # real value diffs). INFORMATIONAL: surfaced in the completion
@@ -531,7 +555,7 @@ def main(argv=None) -> int:
                 try:
                     from automations.shared import run_manifest as _rm
                     if (_skipped or _failed_prog or _failed_caps
-                            or not _compare_clean or _missing_reps or _dropped):
+                            or _missing_reps or _dropped):
                         _failed_all = (
                             [f"section: {s}" for s in _skipped]
                             + [f"dropped day — {d}; its day-number row does "
@@ -541,10 +565,7 @@ def main(argv=None) -> int:
                             + [f"program: {c}" for c in _failed_prog]
                             + [f"captainship: {c}" for c in _failed_caps]
                             + [f"roster: {m['name']} ({m['captain']} cap) has no "
-                               "copy row — add it" for m in _missing_reps]
-                            + ([] if _compare_clean
-                               else [f"compare: {_compare_ndiff} cell(s) disagree "
-                                     "with the VA tab"]))
+                               "copy row — add it" for m in _missing_reps])
                         # GRANULAR retry: re-run ONLY the failed sections and/or
                         # captainship parts, not the whole board. A failed CAPTAIN
                         # forces a full captainship re-run (can't subset by
@@ -613,9 +634,10 @@ def main(argv=None) -> int:
                         _rm.mark_clean("org-sales-board", kind="section")
                 except Exception:
                     pass
-            if (_skipped or _failed_prog or _failed_caps or not _compare_clean
+            if (_skipped or _failed_prog or _failed_caps
                     or _missing_reps or _dropped):
-                # RAN but with a note (missing pull or a VA-compare difference).
+                # RAN but with a note (a missing pull or a dropped day; the
+                # compare cannot land anything here any more).
                 # Exit 0 — NOT a hard failure: the manifest written above carries
                 # the failed parts, so the orchestrator's verify marks this
                 # INCOMPLETE → "Ran — with a note", not "Needs attention". (A
@@ -630,9 +652,11 @@ def main(argv=None) -> int:
                       f"failed captainship fill(s)={_failed_caps or 'none'}; "
                       f"missing copy row(s)="
                       f"{[m['name'] for m in _missing_reps] or 'none'}; "
-                      f"dropped day(s)={_dropped or 'none'}; "
-                      f"compare={'clean' if _compare_clean else 'FLAGGED differences'}. "
-                      "Re-run to retry the missing pull(s). ===")
+                      f"dropped day(s)={_dropped or 'none'}"
+                      + ("" if _compare_clean else
+                         "; compare=FLAGGED differences (report-only, vs the "
+                         "frozen 7/21 archive — did NOT gate this run)")
+                      + ". Re-run to retry the missing pull(s). ===")
                 return 0
     print("=== done ===")
     return 0

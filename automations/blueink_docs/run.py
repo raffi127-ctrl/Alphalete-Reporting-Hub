@@ -298,9 +298,9 @@ def _handle_held(worksheet, to_send_all: List[NewStart], held: dict):
 
 
 def _sync_completed(worksheet, people: List[NewStart],
-                    headless: bool = True) -> int:
+                    headless: bool = True, use_api: bool = True) -> int:
     """Tick the Blue Ink checkbox for anyone Blue Ink shows as signed."""
-    done = completed.find_completed(people, headless=headless)
+    done = completed.find_completed(people, headless=headless, use_api=use_api)
     return completed.tick(worksheet, people, done) if done else 0
 
 
@@ -400,6 +400,13 @@ def _main(argv=None) -> int:
                          "UNLIMITED Envelopes bucket. 'api' is faster but every "
                          "bundle costs a Bulk Envelope -- 50/YEAR on this plan, "
                          "already spent, so it 403s.")
+    ap.add_argument("--sweep-browser", action="store_true",
+                    help="make --sync-completed read the SIGNED list off the "
+                         "web app instead of the API. Debugging only: the API "
+                         "is the default because it cannot be logged out, and "
+                         "it already falls back here by itself if there is no "
+                         "key. Nothing to do with --via, which is about "
+                         "SENDING.")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser while the UI path runs")
     ap.add_argument("--slack", action="store_true",
@@ -454,12 +461,19 @@ def _main(argv=None) -> int:
 
     if args.sync_completed:
         try:
-            n = _sync_completed(ws, people, headless=not args.headed)
+            n = _sync_completed(ws, people, headless=not args.headed,
+                                use_api=not args.sweep_browser)
         except Exception as exc:
             # A dead session exits 2 correctly -- and that exit code went
             # NOWHERE, because this job deliberately doesn't publish to the
             # Hub. Fourteen silent failures a day is how 2026-09-07 came to be
             # found by hand, a day late. Now it says so, once.
+            #
+            # Still reachable, and still worth alerting on: the sweep now asks
+            # the API first, so a dead session only gets this far when THAT
+            # route was unavailable too (no blueink-creds.json on the machine).
+            # Which is precisely when a human is needed -- so the alert means
+            # more than it used to, not less.
             if session_alert.looks_dead(exc):
                 session_alert.alert_dead(
                     exc, what_failed="the every-2-hours completed sweep",

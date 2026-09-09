@@ -58,10 +58,20 @@ def _fiber_url() -> str:
     return base + qp
 
 
+# Set by --week so a RECOVERY run can target a week other than "the one that
+# just ended" — needed to verify the recovery sources against a week whose deck
+# already went out. None = derive from today, which is every normal run.
+_WEEK_END_OVERRIDE = None
+
+
 def _target_week() -> tuple:
     """(Monday, Sunday) of the just-completed week — the same target every
-    campaign fills. On a Monday run this is the week that just ended."""
+    campaign fills. On a Monday run this is the week that just ended.
+
+    --week (_WEEK_END_OVERRIDE) pins it to a specific week-ending SUNDAY."""
     import datetime as dt
+    if _WEEK_END_OVERRIDE is not None:
+        return _WEEK_END_OVERRIDE - dt.timedelta(days=6), _WEEK_END_OVERRIDE
     from automations.alphalete_org_report.opt_nds import _current_target_week_end
     sun = _current_target_week_end(None)
     return sun - dt.timedelta(days=6), sun
@@ -254,13 +264,106 @@ CAMPAIGNS: dict[str, Campaign] = {
 }
 
 
-def _download_substr(page, url: str, sheet_substr: str, out: Path) -> Path:
+# --------------------------------------------------------------- RECOVERY
+# Fiber, NDS and B2B read a RELATIVE "This Week" filter, so the moment the week
+# rolls their own views can no longer reach the completed week and no re-run
+# brings it back (PullFailure.week_rolled). Each has ONE cousin that CAN be
+# pinned to an explicit Mon..Sun, which is what makes a missed Monday
+# recoverable at all:
+#
+#   Fiber -> PRODUCT SALES SUMMARY, the only ICD-level ATT view that honours
+#            ?Sale Date Week Ending (mon-sun)=ISO (same source opt_phase uses
+#            for a week backfill). Counting every product type matches the live
+#            Fiber section, whose URL asks for all six.
+#   NDS   -> the SAME view it already reads: its worksheet is a Product Sales
+#            Summary too, so the same week param pins it. Same parser.
+#   B2B   -> ATTTRACKER-B2B / SALES SUMMARY, whose window comes from its own
+#            Start Date / End Date boxes (shared/b2b_sales_summary drives them).
+#
+# Used only by --recover. A normal Monday run never touches any of this.
+_PRODUCT_SALES_WEEK_PARAM = "Sale Date Week Ending (mon-sun)"
+
+NDS_RECOVER_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/"
+    "5e31de75-1d1c-4f23-b234-4148516134c0/Thisweekandlast?:iid=1")
+
+_FIBER_RECOVER_BASE = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
+    "f081e40f-dd21-4a09-8981-c7cce17b5381/DailyRepBDreportpull")
+
+
+def _week_pinned(base: str, sun) -> str:
+    """Append the ATT week filter, keeping whatever query the base already has."""
+    from urllib.parse import quote
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}{quote(_PRODUCT_SALES_WEEK_PARAM)}={sun.isoformat()}"
+
+
+@dataclass
+class Recovery:
+    """A campaign's week-pinnable stand-in. `hook` builds drive_crosstab_dialog's
+    pre_export for sources whose window is an on-page control, not a URL param."""
+    url_fn: object                       # (sunday) -> view url
+    sheet: str                           # crosstab dialog worksheet SUBSTRING
+    parser: str                          # "product_sales" | "b2b_summary"
+    hook: object = None                  # (monday, sunday) -> pre_export | None
+
+
+def _b2b_recover_hook(mon, sun):
+    from automations.shared import b2b_sales_summary as b2b
+    return b2b.expand_hook(mon, sun, verbose=True)
+
+
+def _b2b_recover_url(sun) -> str:
+    from automations.shared import b2b_sales_summary as b2b
+    return b2b.VIEW_URL
+
+
+def _b2b_recover_sheet() -> str:
+    from automations.shared import b2b_sales_summary as b2b
+    return b2b.SHEET_MATCH
+
+
+RECOVERY: dict = {
+    "fiber": Recovery(
+        url_fn=lambda sun: _week_pinned(_FIBER_RECOVER_BASE, sun),
+        sheet="Sales By ICD (Weekly View)",
+        parser="product_sales",
+    ),
+    "nds": Recovery(
+        # NOT a week param: the NDS workbook ignores every field name but
+        # "Sale Date Week Ending (mon-sun)", and THAT one empties the worksheet
+        # for any past week (probed 2026-09-08, both ISO and M/D/YYYY, on the
+        # custom view and the base view alike) — the data simply is not there to
+        # filter. What IS there is this custom view, 'This week and last', which
+        # renders the FINISHED week beside the in-progress one. It is the same
+        # view opt_nds already reads for personal production. The parser picks
+        # the target week's columns BY THEIR DATE HEADER, never by position.
+        url_fn=lambda sun: NDS_RECOVER_URL,
+        sheet="Sales By ICD (Weekly View)",
+        parser="product_sales_multiweek",
+    ),
+    "b2b": Recovery(
+        url_fn=_b2b_recover_url,
+        sheet="",                        # resolved lazily (shared module)
+        parser="b2b_summary",
+        hook=_b2b_recover_hook,
+    ),
+}
+
+
+
+def _download_substr(page, url: str, sheet_substr: str, out: Path,
+                     pre_export=None) -> Path:
     """Download a crosstab whose dialog worksheet name CONTAINS sheet_substr
     (Tableau appends '(3)'-style counters). Enumerate the dialog, resolve the
     exact name, then download it. Mirrors opt_b2b._download_view."""
     from automations.recruiting_report.opt_phase import drive_crosstab_dialog
     try:
-        drive_crosstab_dialog(page, url, "__enumerate__", out, verbose=False)
+        drive_crosstab_dialog(page, url, "__enumerate__", out, verbose=False,
+                              pre_export=pre_export)
     except RuntimeError as e:
         m = re.search(r":\s*(\[.*\])\.", str(e))
         avail = ast.literal_eval(m.group(1)) if m else []
@@ -268,7 +371,8 @@ def _download_substr(page, url: str, sheet_substr: str, out: Path) -> Path:
                        if sheet_substr.lower() in s.lower()), None)
         if target is None:
             raise RuntimeError(f"{sheet_substr!r} not among {avail}")
-        return drive_crosstab_dialog(page, url, target, out, verbose=False)
+        return drive_crosstab_dialog(page, url, target, out, verbose=False,
+                                     pre_export=pre_export)
     raise RuntimeError("enumerate should have raised")
 
 
@@ -388,6 +492,221 @@ def parse_rows(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
     return out
 
 
+def _clean_owner(raw: str) -> str:
+    """Owner cell -> display name. Collapse newlines FIRST: the NDS export puts
+    the '[legal entity]' suffix on its own line, and the bracket regex does not
+    cross a newline, so stripping in the other order leaves it in."""
+    one_line = (raw or "").replace("\n", " ").replace("\r", " ")
+    return re.sub(r"\s*\[.*", "", one_line).strip()
+
+
+def _mdy(cell: str):
+    """'9/6/2026' -> date, else None."""
+    import datetime as dt
+    m = re.fullmatch(r"\s*(\d{1,2})/(\d{1,2})/(\d{4})\s*", cell or "")
+    if not m:
+        return None
+    try:
+        return dt.date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return None
+
+
+def parse_product_sales_multiweek(camp: Campaign,
+                                  rows: list[list[str]]) -> list[tuple]:
+    """NDS 'This week and last' crosstab -> [(rep, owner, apps)].
+
+    TWO header rows. Row 0 carries each column's WEEK-ENDING date, repeated
+    across that week's block ('9/6/2026' x8, then '9/13/2026' x3 — the current
+    week only has the days it has). Row 1 carries the day name, with a 'Total'
+    closing each block. Data starts at row 2.
+
+    Columns are chosen BY THE DATE IN ROW 0, never by position: the in-progress
+    week grows a column a day, and 'the first block' is only last week until the
+    view is opened on a Monday. The block's own 'Total' column is skipped —
+    summing the days already gives it, and counting both doubles everyone."""
+    if len(rows) < 3:
+        return []
+    _, sun = _target_week()
+    wk_row, hdr = rows[0], rows[1]
+    day_cols = []
+    for i, label in enumerate(hdr):
+        if _mdy(wk_row[i] if i < len(wk_row) else "") != sun:
+            continue
+        name = (label or "").strip().lower()
+        if not name or "total" in name:
+            continue
+        day_cols.append(i)
+    if not day_cols:
+        seen = sorted({str(d) for d in (_mdy(c) for c in wk_row) if d})
+        raise RuntimeError(
+            f"{camp.key}: no columns for the week ending {sun.isoformat()} in "
+            f"this export (weeks present: {seen or 'none'}) — the view no longer "
+            f"carries the finished week; do not fall back to another week.")
+    oi = _find_col(hdr, camp.owner_hdr)
+    ri = _find_col(hdr, camp.rep_hdr)
+    pi = _find_col(hdr, ("product type", "product"))
+    if ri is None:
+        raise RuntimeError(f"{camp.key}: no 'Rep' column in {hdr}")
+    apps: dict = {}
+    owners: dict = {}
+    cur_owner = cur_rep = ""
+    for r in rows[2:]:
+        if len(r) <= ri:
+            continue
+        owner = (r[oi] if oi is not None and oi < len(r) else "").strip()
+        rep = (r[ri] or "").strip()
+        if owner:
+            cur_owner = _clean_owner(owner)
+        if rep:
+            cur_rep = rep
+        if not cur_rep or cur_rep.lower() in ("total", "grand total"):
+            continue
+        if re.fullmatch(r"[\d.,]+", cur_rep):
+            continue
+        ptype = ((r[pi] if pi is not None and pi < len(r) else "") or "").strip()
+        if pi is not None and ptype.lower() in ("", "total", "grand total"):
+            continue
+        total = 0
+        for i in day_cols:
+            n = _num(r[i]) if i < len(r) else None
+            if n:
+                total += int(n)
+        if not total:
+            continue
+        key = _norm(cur_rep)
+        apps[key] = apps.get(key, 0) + total
+        owners.setdefault(key, (cur_rep, cur_owner))
+    return _finish_recovery(camp, apps, owners)
+
+
+def parse_product_sales(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
+    """PRODUCT SALES SUMMARY crosstab -> [(rep, owner, apps)] for the OFF-DAY
+    recovery of Fiber / NDS.
+
+    Shape (same as opt_phase.parse_personal_production reads):
+    `Owner Name | Rep | Product Type | Mon..Sun | Product Total`. One row per
+    rep PER PRODUCT, so a rep's apps = every weekday cell of every one of their
+    product rows. Sum the DAY columns only — the trailing 'Product Total'
+    already equals the week and would double every count. Owner/Rep repeat
+    blank down a block, so both carry forward.
+
+    Counting all product types is what makes this equal the live Fiber section,
+    whose URL asks for all six (`_ATT_PRODUCTS`) so its Grand Total is all apps.
+    """
+    if not rows:
+        return []
+    h = _header_row(rows)
+    hdr = rows[h]
+    low = [(c or "").strip().lower() for c in hdr]
+    oi = _find_col(hdr, camp.owner_hdr)
+    ri = _find_col(hdr, camp.rep_hdr)
+    if ri is None:
+        raise RuntimeError(f"{camp.key}: no 'Rep' column in {hdr} — the recovery "
+                           f"view came back collapsed; not writing owner rows as reps.")
+    pi = _find_col(hdr, ("product type", "product"))
+    first_day = max(i for i in (oi or 0, ri, pi or 0)) + 1
+    day_cols = [i for i in range(first_day, len(low)) if "total" not in low[i]]
+    if not day_cols:
+        raise RuntimeError(f"{camp.key}: no weekday columns in {hdr}")
+    apps: dict = {}
+    owners: dict = {}
+    cur_owner = cur_rep = ""
+    for r in rows[h + 1:]:
+        if len(r) <= ri:
+            continue
+        owner = (r[oi] if oi is not None and oi < len(r) else "").strip()
+        rep = (r[ri] or "").strip()
+        if owner:
+            cur_owner = _clean_owner(owner)
+        if rep:
+            cur_rep = rep
+        if not cur_rep or cur_rep.lower() in ("total", "grand total"):
+            continue
+        if re.fullmatch(r"[\d.,]+", cur_rep):
+            continue
+        # SKIP the per-rep subtotal rows. The crosstab carries a blank/'Total'
+        # Product Type row alongside the real product rows; summing those too
+        # would DOUBLE every rep's apps and push people over the threshold who
+        # never earned it. Same guard opt_phase.parse_personal_production uses.
+        ptype = ((r[pi] if pi is not None and pi < len(r) else "") or "").strip()
+        if pi is not None and ptype.lower() in ("", "total", "grand total"):
+            continue
+        total = 0
+        for i in day_cols:
+            n = _num(r[i]) if i < len(r) else None
+            if n:
+                total += int(n)
+        if not total:
+            continue
+        key = _norm(cur_rep)
+        apps[key] = apps.get(key, 0) + total
+        owners.setdefault(key, (cur_rep, cur_owner))
+    return _finish_recovery(camp, apps, owners)
+
+
+def parse_b2b_summary(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
+    """ATTTRACKER-B2B / SALES SUMMARY (expanded) -> [(rep, owner, apps)] for the
+    OFF-DAY recovery of B2B.
+
+    Shape per automations.shared.b2b_sales_summary: `Owner & Office | Rep |
+    <measure, header BLANK> | products…`, three measure rows per rep. Keep the
+    `Total Volume` row (the like-for-like row for the live section's 'Sales'
+    count) and sum every product column it defines."""
+    from automations.shared import b2b_sales_summary as b2b
+    if not rows:
+        return []
+    hdr = [(c or "").strip() for c in rows[0]]
+    low = [c.lower() for c in hdr]
+    if "rep" not in low:
+        raise RuntimeError(
+            f"{camp.key}: the SALES SUMMARY export has no 'Rep' column — the "
+            f"Owner→Rep hierarchy did not expand. Not writing owner rows as reps.")
+    ri = low.index("rep")
+    oi = _find_col(rows[0], camp.owner_hdr)
+    meas_i = next((i for i in range(ri + 1, len(hdr)) if not hdr[i]), ri + 1)
+    val_cols = [hdr.index(c) for _, cols in b2b.PRODUCT_COLUMNS
+                for c in cols if c in hdr]
+    apps: dict = {}
+    owners: dict = {}
+    cur_owner = cur_rep = ""
+    for r in rows[1:]:
+        if len(r) <= meas_i:
+            continue
+        owner = (r[oi] if oi is not None and oi < len(r) else "").strip()
+        rep = (r[ri] or "").strip() if ri < len(r) else ""
+        if owner:
+            cur_owner = _clean_owner(owner)
+        if rep:
+            cur_rep = rep
+        if not cur_rep or cur_rep.lower() in ("total", "grand total"):
+            continue
+        if (r[meas_i] or "").strip() != b2b.MEASURE_ROW:
+            continue
+        total = sum(int(_num(r[i]) or 0) for i in val_cols if i < len(r))
+        key = _norm(cur_rep)
+        apps[key] = apps.get(key, 0) + total
+        owners.setdefault(key, (cur_rep, cur_owner))
+    return _finish_recovery(camp, apps, owners)
+
+
+def _finish_recovery(camp: Campaign, apps: dict, owners: dict) -> list[tuple]:
+    """Shared tail of the recovery parsers: apply the campaign's OWN owner
+    filter + threshold and sort desc, so a recovered section is filtered exactly
+    like the live one it stands in for."""
+    keep = {_owner_key(o) for o in camp.owners}
+    out = []
+    for key, val in apps.items():
+        rep, owner = owners.get(key, (key, ""))
+        if val < camp.threshold:
+            continue
+        if keep and _owner_key(owner) not in keep:
+            continue
+        out.append((rep, owner, float(val)))
+    out.sort(key=lambda t: t[2], reverse=True)
+    return out
+
+
 def parse_costco(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
     """Sara Plus crosstab -> [(rep, owner, apps)] where apps = sum of the
     configured product columns (ATV+DTV+Internet+AIA per the loom). Header is
@@ -500,18 +819,27 @@ def _is_excluded(camp: Campaign, rep: str) -> bool:
     return _name_tokens(rep) in keys
 
 
-def parse(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
-    out = _parse_inner(camp, rows)
+def parse(camp: Campaign, rows: list[list[str]],
+          parser: Optional[str] = None) -> list[tuple]:
+    out = _parse_inner(camp, rows, parser)
     if camp.exclude_reps:
         out = [t for t in out if not _is_excluded(camp, t[0])]
     return out
 
 
-def _parse_inner(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
-    if camp.parser == "costco":
+def _parse_inner(camp: Campaign, rows: list[list[str]],
+                 parser: Optional[str] = None) -> list[tuple]:
+    parser = parser or camp.parser
+    if parser == "costco":
         return parse_costco(camp, rows)
-    if camp.parser == "revenue":
+    if parser == "revenue":
         return parse_revenue(camp, rows)
+    if parser == "product_sales":
+        return parse_product_sales(camp, rows)
+    if parser == "product_sales_multiweek":
+        return parse_product_sales_multiweek(camp, rows)
+    if parser == "b2b_summary":
+        return parse_b2b_summary(camp, rows)
     return parse_rows(camp, rows)
 
 
@@ -605,10 +933,19 @@ _PULL_SETTLE_MS = 6000
 class PullFailure:
     """Sentinel: a Tableau pull/parse that failed after every retry. DISTINCT
     from None (a section legitimately left as-is, e.g. Frontier with no upload),
-    so write_report flags it loudly and NEVER leaves stale numbers in its place."""
-    def __init__(self, key: str, msg: str):
+    so write_report flags it loudly and NEVER leaves stale numbers in its place.
+
+    `week_rolled` marks the ONE failure that is not a glitch: the view's relative
+    "This Week" filter has moved on to the new week, so the completed week this
+    report writes is no longer reachable from that URL. Re-running cannot fix it
+    and neither can waiting — only Monday's run sees the right week. write_report
+    treats it as a HOLD, not a flag, so an off-day re-run can never overwrite a
+    good Monday fill with '⚠ PULL FAILED' (2026-09-08: the 9/7 fleet WiFi outage
+    killed the 2pm run, and Tuesday's re-run flagged Fiber/NDS/B2B in the tab)."""
+    def __init__(self, key: str, msg: str, week_rolled: bool = False):
         self.key = key
         self.msg = msg
+        self.week_rolled = week_rolled
 
 
 _DATE_PAREN_RE = re.compile(r"\((\d{1,2})-(\d{1,2})\)")        # Fiber 'Mon (06-22)'
@@ -670,7 +1007,8 @@ def _pull_parse(camp: Campaign, page):
             if _week_ok(rows) is False:
                 got = sorted({f"{m:02d}-{d:02d}" for m, d in _extract_week_dates(rows)})
                 return PullFailure(camp.key,
-                                   f"WRONG WEEK: data is for {got}, expected {wk}")
+                                   f"WRONG WEEK: data is for {got}, expected {wk}",
+                                   week_rolled=True)
             # Relative-week view with no dates (B2B): 0 rows usually means the
             # week rolled to the new empty week. Retry (could be a flake), then flag.
             if camp.flag_if_empty and not res:
@@ -682,7 +1020,7 @@ def _pull_parse(camp: Campaign, page):
                     continue
                 return PullFailure(camp.key, f"0 rows after {PULL_ATTEMPTS} tries — "
                                    f"likely the week hasn't rolled to {wk} yet; "
-                                   "verify run timing")
+                                   "verify run timing", week_rolled=True)
             return res
         except Exception as e:
             last = str(e).splitlines()[0][:160]
@@ -694,6 +1032,237 @@ def _pull_parse(camp: Campaign, page):
                 except Exception:
                     pass
     return PullFailure(camp.key, last)
+
+def _recover_pull_parse(camp: Campaign, page):
+    """Pull one campaign's WEEK-PINNED stand-in (RECOVERY) and parse it into the
+    same [(rep, owner, value)] the live section would have produced.
+
+    Same contract as _pull_parse: retries transient render flakes, returns a
+    PullFailure sentinel rather than anything stale. The week guard still runs —
+    if the pinned source comes back for a different week the pin did not take,
+    and that is exactly the silent failure this whole path exists to avoid."""
+    from automations.alphalete_org_report.opt_nds import _read_tab_csv
+    rec = RECOVERY[camp.key]
+    mon, sun = _target_week()
+    wk = f"{mon.isoformat()}..{sun.isoformat()}"
+    sheet = rec.sheet or _b2b_recover_sheet()
+    url = rec.url_fn(sun)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUTPUT_DIR / f"{camp.key}_recover_{sun.isoformat()}.csv"
+    last = ""
+    for attempt in range(1, PULL_ATTEMPTS + 1):
+        try:
+            # Rebuild the hook per attempt: each retry re-navigates, so the date
+            # boxes and the hierarchy expand have to be re-applied.
+            hook = rec.hook(mon, sun) if rec.hook else None
+            path = _download_substr(page, url, sheet, out, pre_export=hook)
+            rows = _read_tab_csv(path)
+            seen = {(m, d) for m, d in _extract_week_dates(rows)}
+            got = sorted(f"{m:02d}-{d:02d}" for m, d in seen)
+            if rec.parser == "product_sales_multiweek":
+                # A multi-week source is SUPPOSED to carry another week beside
+                # the target one, so the all-dates-inside guard would reject
+                # every good export. What matters here is that the target week
+                # is still present; the parser picks its columns by date and
+                # raises if they are gone.
+                if (sun.month, sun.day) not in seen:
+                    return PullFailure(
+                        camp.key, f"the export no longer carries the week "
+                                  f"ending {sun.isoformat()} (weeks present: "
+                                  f"{got}); nothing to recover from it")
+            elif _week_ok(rows) is False:
+                return PullFailure(camp.key,
+                                   f"RECOVERY pin did not take: data is for "
+                                   f"{got}, asked for {wk}")
+            res = parse(camp, rows, parser=rec.parser)
+            if not res:
+                last = f"0 qualifying reps for {wk}"
+                print(f"  ! {camp.key}: recovery empty - attempt {attempt}/"
+                      f"{PULL_ATTEMPTS}", flush=True)
+                if attempt < PULL_ATTEMPTS:
+                    page.wait_for_timeout(_PULL_SETTLE_MS)
+                    continue
+                return PullFailure(camp.key, last)
+            return res
+        except Exception as e:
+            last = str(e).splitlines()[0][:160]
+            print(f"  ! {camp.key}: recovery attempt {attempt}/{PULL_ATTEMPTS} "
+                  f"failed ({last})", flush=True)
+            if attempt < PULL_ATTEMPTS:
+                try:
+                    page.wait_for_timeout(_PULL_SETTLE_MS)
+                except Exception:
+                    pass
+    return PullFailure(camp.key, last)
+
+
+# WHY THIS PROBE EXISTS. Tableau URL filter fields match on their EXACT
+# caption, and a wrong name is SILENT — the view just renders its default week
+# and the export looks fine. Worse, a name that IS right can still come back
+# empty when the view is a CUSTOM VIEW whose saved relative "This Week" filter
+# intersects with the pinned date to nothing; the Crosstab dialog then offers
+# only 'Last Refresh', which reads like a broken view. Both happened to NDS on
+# 2026-09-08. Guessing costs a five-minute round trip to the mini each time, so
+# probe combinations instead: field name AND value format AND base-vs-custom
+# view, all in one pass.
+# Only the (mon-sun) spelling is real: probing NDS on 2026-09-08 showed
+# "Sale Date Week Ending", "Sale Date Week Ending (Mon-Sun)", "Week Ending",
+# "Sales Week Ending" and "Sale Date Weekending" ALL silently ignored (371 rows
+# of the CURRENT week every time), while the (mon-sun) spelling emptied the
+# worksheet — which is a field that matched and a value that found nothing.
+# Add a name back here only after a probe shows it changing the export.
+WEEK_PARAM_CANDIDATES = (
+    "Sale Date Week Ending (mon-sun)",
+)
+
+
+def _base_view_url(url: str) -> str:
+    """A custom-view URL reduced to its BASE view.
+
+    Tableau custom views live at `…/views/<workbook>/<view>/<guid>/<name>`. The
+    saved view carries its own filters — including the relative week filter this
+    whole path is trying to escape — so the base view is where a pinned date can
+    actually take (same lesson as the B2B TEAMSTATS section)."""
+    from urllib.parse import urlsplit
+    head, _, query = url.partition("?")
+    parts = head.split("/")
+    for i, seg in enumerate(parts):
+        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+                        r"[0-9a-f]{4}-[0-9a-f]{12}", seg):
+            head = "/".join(parts[:i])       # drop the guid AND the view name
+            break
+    return f"{head}?{query}" if query else head
+
+
+def _inspect_recovery(camp: Campaign) -> int:
+    """READ-ONLY: dump the shape of a campaign's RECOVERY crosstab."""
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.alphalete_org_report.opt_nds import _read_tab_csv
+    rec = RECOVERY[camp.key]
+    mon, sun = _target_week()
+    sheet = rec.sheet or _b2b_recover_sheet()
+    url = rec.url_fn(sun)
+    print(f"{camp.key} recovery source for {mon.isoformat()}..{sun.isoformat()}",
+          flush=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUTPUT_DIR / f"{camp.key}_inspect.csv"
+    with tableau_session(verbose=True) as page:
+        hook = rec.hook(mon, sun) if rec.hook else None
+        rows = _read_tab_csv(_download_substr(page, url, sheet, out,
+                                              pre_export=hook))
+    if not rows:
+        print("empty export")
+        return 1
+    print(f"rows={len(rows)}", flush=True)
+    for i, r in enumerate(rows[:6]):
+        print(f"  r{i}: {' | '.join((c or '')[:22] for c in r[:14])}", flush=True)
+    print(f"  dates seen: "
+          f"{sorted({f'{m:02d}-{d:02d}' for m, d in _extract_week_dates(rows)})}",
+          flush=True)
+    return 0
+
+
+def _probe_week_param(camp: Campaign) -> int:
+    """READ-ONLY: find a URL that actually pins `camp`'s view to the target week.
+
+    Tries the campaign's own URL and its BASE view, each with several field
+    names and both date formats, and reports what the week guard sees for each.
+    Writes nothing anywhere."""
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.alphalete_org_report.opt_nds import _read_tab_csv
+    from urllib.parse import quote
+    mon, sun = _target_week()
+    rec = RECOVERY.get(camp.key)
+    sheet = (rec.sheet if rec and rec.sheet else camp.crosstab_sheet)
+    base = _base_view_url(camp.url)
+    iso = sun.isoformat()
+    mdy = f"{sun.month}/{sun.day}/{sun.year}"
+
+    attempts = [("base, no param", base)]
+    for label, root in (("custom view", camp.url), ("base view", base)):
+        for name in WEEK_PARAM_CANDIDATES:
+            for fmt, val in (("ISO", iso), ("M/D/YYYY", mdy)):
+                sep = "&" if "?" in root else "?"
+                attempts.append((f"{label} · {name} · {fmt}",
+                                 f"{root}{sep}{quote(name)}={quote(val)}"))
+
+    print(f"probing {camp.key} for the week {mon.isoformat()}..{iso} "
+          f"({len(attempts)} combinations)", flush=True)
+    print(f"  base view: {base}", flush=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUTPUT_DIR / f"{camp.key}_probe.csv"
+    winners = []
+    with tableau_session(verbose=True) as page:
+        for label, url in attempts:
+            try:
+                rows = _read_tab_csv(_download_substr(page, url, sheet, out))
+                dates = sorted({f"{m:02d}-{d:02d}"
+                                for m, d in _extract_week_dates(rows)})
+                ok = _week_ok(rows)
+                n = max(0, len(rows) - 1)
+                print(f"  [{label}] rows={n} dates={dates} week_ok={ok}",
+                      flush=True)
+                if ok is True and n:
+                    winners.append(label)
+            except Exception as e:
+                print(f"  [{label}] FAILED: {str(e).splitlines()[0][:110]}",
+                      flush=True)
+    if winners:
+        print(f"OK pinned {camp.key}: {winners}", flush=True)
+        return 0
+    print(f"X nothing pinned {camp.key} to {iso}", flush=True)
+    return 1
+
+
+def _set_why(reason: str) -> None:
+    """Leave (or CLEAR) the one-line reason the next Slack failure alert quotes.
+
+    Clearing on a clean run is the half that is easy to forget: the file
+    outlives the failure that wrote it, so a week-rolled "only a MONDAY run
+    reaches it" would ride along on some unrelated break weeks later and send
+    whoever reads the channel down the wrong path. Same contract digi_docs
+    uses. Best-effort — never fails a run over a hint."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.write_failure_reason("leaders_call", reason or "")
+    except Exception:      # noqa: BLE001
+        pass
+
+
+RECOVERABLE = ("fiber", "nds", "b2b")
+
+
+def run_recovery(write: bool = False) -> dict:
+    """Refill ONLY the three relative-week sections from their week-pinned
+    stand-ins, for a Monday that never ran. BOX / Costco / Revenue are not
+    touched: their own URLs already pin the week, so whatever is on the tab for
+    them is already right, and re-pulling them would be risk for no gain."""
+    from automations.shared.tableau_patchright import tableau_session
+    mon, sun = _target_week()
+    print(f"RECOVERY for the week {mon.isoformat()} .. {sun.isoformat()} "
+          f"({', '.join(CAMPAIGNS[k].section_title for k in RECOVERABLE)} only; "
+          f"BOX / Costco / Revenue are left exactly as they are).", flush=True)
+    results: dict = {}
+    with tableau_session(verbose=True) as page:
+        for k in RECOVERABLE:
+            camp = CAMPAIGNS[k]
+            res = _recover_pull_parse(camp, page)
+            results[camp.section_title] = res
+            if isinstance(res, PullFailure):
+                print(f"\nX {camp.section_title}: RECOVERY FAILED ({res.msg})",
+                      flush=True)
+                continue
+            print(f"\n=== {camp.section_title} (recovered): {len(res)} >= "
+                  f"{camp.threshold} ===", flush=True)
+            for rep, owner, val in res:
+                print(f"   {rep} | {owner} | {val:g}", flush=True)
+    if write:
+        sh, ws = _open_tab()
+        print("\n--- writing the recovered sections ---", flush=True)
+        for ln in write_report(ws, results, dry_run=False):
+            print("  " + ln, flush=True)
+    return results
+
 
 # Section title -> regex matched against column A to locate each section's
 # header row on the Leader's Call tab (label lookup, never hardcoded rows).
@@ -746,6 +1315,19 @@ def _locate_sections(colA) -> list:
     return found
 
 
+def _section_has_data(grid, data_start: int, next_trow: int) -> bool:
+    """Does this section's block already hold REAL rows (not the failure marker)?
+
+    Rows are 1-based here to match write_report's data_start/next_trow. A block
+    that is empty, or that only carries a '⚠ PULL FAILED' marker, has nothing
+    worth protecting — a week-rolled hold there may as well write the marker."""
+    for row in grid[data_start - 1:next_trow - 1]:
+        cell = ((row[0] if row else "") or "").strip()
+        if cell and not cell.startswith(_PULL_FAILED_PREFIX):
+            return True
+    return False
+
+
 def write_report(ws, results: dict, dry_run: bool = True) -> list[str]:
     """Write each section's [(rep,owner,val)] into the Leader's Call tab.
 
@@ -774,6 +1356,16 @@ def write_report(ws, results: dict, dry_run: bool = True) -> list[str]:
         next_trow = found[idx + 1][1] if idx + 1 < len(found) else len(grid) + 1
         old_count = max(0, next_trow - data_start)
         if isinstance(rows, PullFailure):
+            # WEEK ROLLED: the view moved on to the current week, so the target
+            # week is unreachable from this URL and no re-run brings it back. If
+            # the section already holds real rows, they are the RIGHT week (a
+            # Monday fill) — flagging them would destroy the only copy over a
+            # failure that isn't one. Hold instead. See PullFailure.
+            if getattr(rows, "week_rolled", False) and _section_has_data(
+                    grid, data_start, next_trow):
+                log.append(f"[hold] {title}: view rolled to the current week — "
+                           f"existing rows left untouched ({rows.msg[:60]})")
+                continue
             # NEVER leave stale numbers for a failed pull: overwrite the section
             # with one visible failure marker so it's obvious it didn't update.
             body = [[f"⚠ PULL FAILED — not updated this week; re-run the report "
@@ -1297,7 +1889,90 @@ def main() -> int:
                          "the updated PDF as a reply in today's existing Leader's "
                          "Call thread (for last-minute promos). Add --dry-run to "
                          "preview without posting.")
+    ap.add_argument("--recover", action="store_true",
+                    help="OFF-DAY RECOVERY: refill ONLY Fiber / NDS / B2B from "
+                         "their week-PINNED stand-ins, for a Monday that never "
+                         "ran. BOX / Costco / Revenue are left untouched. Use "
+                         "with --dry-run first, then --write.")
+    ap.add_argument("--min", type=float, metavar="N", dest="min_value",
+                    help="VERIFICATION ONLY: override every campaign's apps/$ "
+                         "threshold. The point is comparing a --recover pull "
+                         "against the LIVE view for the CURRENT week, where a "
+                         "day or two of data never reaches the real threshold; "
+                         "with the same --min both sides list the same reps and "
+                         "any disagreement is a parser difference, not a filter.")
+    ap.add_argument("--inspect-recovery", action="store_true",
+                    help="READ-ONLY: with --campaign, download that campaign's "
+                         "RECOVERY source and print the header row plus a few "
+                         "data rows, so a parser is written against the real "
+                         "shape instead of a guess. Writes nothing.")
+    ap.add_argument("--probe-week-param", action="store_true",
+                    help="READ-ONLY: with --campaign, try each candidate week "
+                         "filter name against that view and report which one "
+                         "actually pins it. Writes nothing.")
+    ap.add_argument("--week", metavar="YYYY-MM-DD",
+                    help="target a specific week-ending SUNDAY instead of the "
+                         "one that just ended. Only meaningful with --recover "
+                         "(the live views can't reach an old week at all); the "
+                         "point is verifying a recovery against a week whose "
+                         "deck already went out.")
     args = ap.parse_args()
+
+    if args.min_value is not None:
+        if args.write and not args.dry_run:
+            print("--min is a verification aid; it refuses to run with --write.")
+            return 2
+        for _c in CAMPAIGNS.values():
+            _c.threshold = args.min_value
+        print(f"(--min {args.min_value:g}: every section's threshold overridden "
+              f"for this run only)", flush=True)
+
+    if args.week:
+        import datetime as dt
+        global _WEEK_END_OVERRIDE
+        try:
+            _WEEK_END_OVERRIDE = dt.date.fromisoformat(args.week)
+        except ValueError:
+            print(f"--week must be an ISO date (YYYY-MM-DD), got {args.week!r}")
+            return 2
+        if _WEEK_END_OVERRIDE.weekday() != 6:
+            print(f"--week must be a SUNDAY (the week ENDING date); "
+                  f"{args.week} is a {_WEEK_END_OVERRIDE.strftime('%A')}.")
+            return 2
+        if not (args.recover or args.probe_week_param):
+            print("--week only applies to --recover: every other path reads a "
+                  "relative 'This Week' view that cannot reach an old week.")
+            return 2
+
+    if args.inspect_recovery:
+        if not args.campaign or args.campaign not in RECOVERY:
+            print("--inspect-recovery needs --campaign one of: "
+                  + ", ".join(RECOVERY))
+            return 2
+        return _inspect_recovery(CAMPAIGNS[args.campaign])
+
+    if args.probe_week_param:
+        if not args.campaign:
+            print("--probe-week-param needs --campaign")
+            return 2
+        return _probe_week_param(CAMPAIGNS[args.campaign])
+
+    if args.recover:
+        mon, sun = _target_week()
+        results = run_recovery(write=args.write and not args.dry_run)
+        failed = _failed_sections(results)
+        if failed:
+            print(f"\nX recovery failed for: {', '.join(failed)} "
+                  f"(week {mon.isoformat()}..{sun.isoformat()}).", flush=True)
+            return 1
+        if args.dry_run or not args.write:
+            print("\n(dry run: nothing written. Re-run with --write to fill the "
+                  "three sections.)", flush=True)
+        else:
+            _set_why("")        # the week is recovered; the old reason is gone
+            print("\nOK recovered sections written. Build + post the deck with "
+                  "--finalize (add --dry-run to preview it first).", flush=True)
+        return 0
 
     if args.repost:
         return _repost(dry_run=args.dry_run)
@@ -1337,12 +2012,25 @@ def main() -> int:
         results = run_all(write=True)
         failed = _failed_sections(results)
         if failed:
-            print(f"\n❌ {len(failed)} section(s) failed to pull and were FLAGGED "
-                  f"in the sheet (not left stale): {', '.join(failed)}. Re-run the "
-                  "report to refresh them.", flush=True)
+            rolled = [t for t in failed
+                      if getattr(results[t], "week_rolled", False)]
+            print(f"\n❌ {len(failed)} section(s) failed to pull: "
+                  f"{', '.join(failed)}.", flush=True)
+            if rolled:
+                # The one failure a re-run cannot fix — say so in the log AND in
+                # the Slack alert, so nobody spends the morning re-running it.
+                mon, sun = _target_week()
+                why = (f"the {', '.join(rolled)} view(s) have rolled past the "
+                       f"target week {mon.isoformat()}..{sun.isoformat()} — only "
+                       "a MONDAY run reaches it; re-running will not help")
+                print(f"   ⏸ {why}.", flush=True)
+                _set_why(why)
+            if [t for t in failed if t not in rolled]:
+                print("   Re-run the report to refresh them.", flush=True)
             print("   ⏸ Recognition PDF NOT generated — it only builds when every "
                   "section pulled cleanly.", flush=True)
             return 1
+        _set_why("")            # clean run: no reason outlives its failure
         print("\n✅ All sections pulled and written for this week.", flush=True)
         if args.no_pdf:
             print("   (--no-pdf: tab written; the PDF + channel post runs in the "

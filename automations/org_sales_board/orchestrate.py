@@ -29,6 +29,7 @@ import datetime as dt
 from pathlib import Path
 from typing import Callable, Dict, Optional
 
+from automations.org_sales_board import data_gate as _dg
 from automations.org_sales_board import fill_section as fs
 from automations.org_sales_board import sources as src
 
@@ -70,12 +71,34 @@ def _adapter_sara_retail(ctx: AdapterContext) -> PullDict:
     same reliable path B2B / NDS / Fiber already use — and the by-day crosstab
     carries every weekday column."""
     from automations.org_sales_board import sara_pull
+    from automations.org_sales_board import section_pull
     if ctx.from_csv:
         csv_path = ctx.from_csv
         ctx.logfn(f"  [sara_retail] offline CSV {csv_path}")
     else:
-        csv_path = sara_pull.pull_retail_crosstab(
-            ctx.out_dir, ctx.page, today=ctx.today, logfn=ctx.logfn)
+        try:
+            csv_path = sara_pull.pull_retail_crosstab(
+                ctx.out_dir, ctx.page, today=ctx.today, logfn=ctx.logfn)
+        except RuntimeError as e:
+            # A WEEK NOBODY SOLD RETAIL IN. Retail is three ICDs, so an empty
+            # week is a normal outcome, and Tableau answers an empty view by
+            # leaving the sales worksheet out of the Crosstab dialog — the
+            # dialog comes up carrying only the workbook's 'Z_Last Refresh'
+            # utility sheet. That read as a broken pull: on Tue 2026-09-08 both
+            # retail sections were skipped, went out BLANK in the review link
+            # on a day whose real answer was 0, and #claudecorrections got a
+            # dropped-section alert for a board that was working perfectly.
+            #
+            # A dialog listing any DATA sheet still raises — that is a rename
+            # or a changed view, and it must keep shouting.
+            if not section_pull.is_empty_crosstab_dialog(e):
+                raise
+            ctx.logfn(
+                "  ⚠ SARA's pinned week has NO rows — Tableau's Crosstab "
+                "dialog lists only the workbook's utility sheet. Nobody sold "
+                "retail this week: filling Retail NL + Retail Internet with 0 "
+                "for every completed day (an answer, not a failed pull).")
+            return fs.EmptyPull()
     return sara_pull.parse_sara_crosstab_byday(csv_path, today=ctx.today)
 
 
@@ -267,7 +290,8 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
                 pass
 
             for sec in sections:
-                spec = fs.SectionSpec(label=sec.label, metric=sec.metric)
+                spec = fs.SectionSpec(label=sec.label, metric=sec.metric,
+                                      day_behind=_dg.is_lagging(sec.label))
                 # A section whose box was DELETED from the board must not take
                 # the whole run down with it. find_daily_section raises
                 # ValueError when no col-A header row carries 'RUNNING WEEK
@@ -304,6 +328,22 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
                           f"`python -m automations.org_sales_board."
                           f"daynum_repair --apply`, then re-run the section.")
                     summary["dropped_days"].append(f"{sec.label}: {days}")
+                # A plan with NO writes means the pull parsed nobody — the
+                # source did not answer (fill_section zero-fills a real "nobody
+                # sold" day off the sheet, so that case now has writes). For a
+                # day-behind section that is the documented wait the adapters
+                # above return {} for, and the 14:30 catchup owns it. For
+                # anything else it is missing data, and counting it as FILLED
+                # is how Retail NL + Retail Internet went out blank on
+                # 2026-09-08 with a green run behind them.
+                if not plan.updates and not _dg.is_lagging(sec.label):
+                    logfn(f"  ⚠ section {sec.label!r}: the pull parsed no "
+                          f"owners at all — NOTHING was written and the "
+                          f"section keeps whatever was already in it. Treating "
+                          f"it as missing data (INCOMPLETE), not as a day with "
+                          f"no sales.")
+                    summary["skipped"].append(sec.label)
+                    continue
                 fs.apply_plan(ws, plan, dry_run=dry_run, logfn=logfn)
                 summary["filled"].append(sec.label)
                 _pulls_by_label[sec.label] = (pull, sec.metric)

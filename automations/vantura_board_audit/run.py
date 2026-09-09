@@ -1131,8 +1131,11 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
     # 't extended' is a Territory Status VALUE, not a person: col A of a station
     # block is 'Territory Status' over 'good'/'T Extended' cells, and the two
     # capitalised tokens sail through _person_shaped. Reported every day since
-    # the status was first set (2026-08-06).
+    # the status was first set (2026-08-06). 'New T' (new territory) is the same
+    # column and the same trap — anchored, so a real 'New Tyler Smith' still
+    # gets checked (2026-09-08, A7 and A39).
     LABELS = re.compile(r"^(\d|rep #|rep list|store|territory|t extended|"
+                        r"new t$|"
                         r"car rides|"
                         r"stations|legend|off|terminated|new starts|monday|"
                         r"tuesday|wednesday|thursday|friday|in a |in both|"

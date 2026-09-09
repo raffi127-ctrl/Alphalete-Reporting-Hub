@@ -363,13 +363,11 @@
     },
     {
       "sheet_tab": "Ja Mosley",
-      "office_id": "22532",
-      "as_owner": "Francisco Castillo",
-      "as_company": "Imperium Consultants, Inc.",
+      "office_id": "23882",
+      "as_owner": "Ja Mosley",
+      "as_company": "Envision Collective",
       "confidence": 1.0,
-      "temporary_shared_office": true,
-      "owner_lookup_shared": true,
-      "note": "TEMPORARY (Eve 2026-07-27): Ja Mosley has no AppStream office of his own yet, so his recruiting funnel mirrors Francisco Castillo's office 22532. Swap office_id + as_owner the moment his own office code exists. OPT/sales half is NOT shared \u2014 it fills from Tableau under his own name."
+      "note": "Own office since 2026-09-08. Was TEMPORARILY pointed at Francisco Castillo's 22532 (Eve 2026-07-27) because Ja had no AppStream office of his own; that made his whole recruiting funnel Francisco's, cell for cell, which is what Chan Park reported twice (2026-08-31 and 2026-09-08). 23882 confirmed reachable from the fleet's `Lucy Reports` account on 2026-09-08 (`appstream_whoami --offices 23882` \u2192 `OK Ja Mosley`); office number from Eve 2026-09-01 (his ownerville office, same id space). The `temporary_shared_office` / `owner_lookup_shared` flags go away with the shared office \u2014 they only ever existed to stop the FINANCIAL and FIBER lookups from inheriting Francisco's as_owner, and there is no borrowed as_owner left to guard."
     },
     {
       "sheet_tab": "Mercy Ohiokhai",

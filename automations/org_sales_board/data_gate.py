@@ -80,9 +80,16 @@ def _grid():
     return _retry(ws.get_all_values)
 
 
-def _is_lagging(name: str) -> bool:
+def is_lagging(name: str) -> bool:
+    """Does this section's source publish a day behind? Public because it is
+    the same question fill_section has to answer before it zero-fills a
+    completed day (a day-behind section's yesterday is not late, it is not out
+    yet), and the answer has to come from ONE list."""
     n = (name or "").strip().lower()
     return any(n.startswith(s) for s in LAGGING_SECTIONS)
+
+
+_is_lagging = is_lagging   # the name the gate below has always used
 
 
 def _cell_lower(g, r: int, c: int) -> str:

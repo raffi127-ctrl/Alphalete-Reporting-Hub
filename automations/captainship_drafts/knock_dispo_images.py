@@ -1030,7 +1030,8 @@ def _load_manifest(render_dir, captain_key: str, target: dt.date,
 def capture_sections(captain, today: dt.date, render_dir, *,
                      want_daily: bool = True, want_weekly: bool = True,
                      reuse: bool = True, drop_owners=None,
-                     logfn=print, errors: Optional[dict] = None) -> dict:
+                     logfn=print, errors: Optional[dict] = None,
+                     roster_out: Optional[list] = None) -> dict:
     """Both knock sections' images for `captain`, sharing ONE roster lookup
     and ONE ownerville session (run.py passes want_* from sections_on(today),
     so the weekly work simply doesn't happen Tue–Sat).
@@ -1070,6 +1071,12 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                          "owner rows")
         return out
     logfn(f"    {len(names)} owner(s): {', '.join(names)}")
+    # Hand the roster back to the caller rather than make it ask the Sales Board
+    # for the same rows again — knocks_audit needs exactly this list to spot an
+    # owner who came back as neither a board nor a note, and a second read per
+    # captain is how section 1 lost its Sheets quota once already.
+    if roster_out is not None:
+        roster_out.extend(names)
 
     # Already captured today? Then this whole function is a no-op. THE reason
     # this exists (Eve 2026-08-24): the pull is ~2h — one ownerville session,

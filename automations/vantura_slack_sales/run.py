@@ -173,6 +173,16 @@ KNOWN_USERS = {
     # bridge it on its own (hence the NAME_ALIASES line below).
     "U0BQ3GB6RA4": "Rodolfo Bazan",
     "U0BP752M3V4": "Adabella Amaya Gallegos",   # thread: "Bella!!!!"
+    # Added 2026-09-08 after Monday 9/7 read three ids as unknown: 12 of
+    # the day's 31 sales were in the total but on no row, and only landed
+    # because somebody had already typed them on the board by hand. The
+    # board's Monday column names them one for one — Gary 1 (BOX), 8 for
+    # Fernando, 3 for Fran — and the threads agree.
+    "U0BUMUYQAGZ": "Gary Van Whitaker",     # BOX; thread: "DAMNNN GARY"
+    "U0BRWL2DW9L": "Fernando Salazar",      # thread: "YES FERNANDOOOO"
+    "U0BSBNSK9L2": "Francisco Escamilla",   # thread: "FRAN FRAN FRAN".
+    # NOT Francisco Javier Jimenez, whose threads also shout "FRANNNNNN":
+    # Jimenez has no row on the board and Escamilla's row carried the 3.
     # Not reps, but they post here — named so a mis-parse points at a person.
     "U0BCG8F9B5Z": "Lucy Reporting",
     "U046G04P5LG": "Carlos Hidalgo",
