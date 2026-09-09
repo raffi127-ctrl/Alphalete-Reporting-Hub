@@ -300,6 +300,36 @@ def find_completed(people: List[NewStart], headless: bool = True,
     return find_completed_ui(todo, headless=headless)
 
 
+def verify_ui_session(headless: bool = True) -> None:
+    """Open the dashboard for no reason except to prove we can. Raises if not.
+
+    Nothing here needs the browser when there is nothing to tick, or when the
+    API route answers -- and that is exactly the problem. A dead browser
+    session looked identical to a quiet day:
+
+      - `find_completed` returns {} the moment nothing is left to tick, BEFORE
+        opening anything. On 2026-09-09 the sweep printed "Checked off 0" and
+        exited 0 in eleven seconds having never contacted Blue Ink. I read that
+        as proof the session was healthy. It wasn't.
+      - and now the API route can do the ticking without the browser at all.
+
+    So a dead session went unnoticed for two days, and the alert built to catch
+    it could never fire, because nothing raised.
+
+    The browser session matters even when the API is carrying the ticking: the
+    Monday SEND can only go through the web app. Checking it every two hours
+    turns "the send fails on Monday morning" into "somebody re-seeds on
+    Thursday".
+    """
+    with S._sync_api()() as pw:
+        browser, ctx = S.open_context(pw, headless=headless)
+        page = ctx.new_page()
+        try:
+            recent_ui.open_dashboard(page)     # raises if signed out
+        finally:
+            browser.close()
+
+
 # --- Route 2: the web app (the only route before 2026-09-08) ---------------
 
 def find_completed_ui(people: List[NewStart],

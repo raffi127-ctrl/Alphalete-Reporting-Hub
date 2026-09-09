@@ -463,6 +463,17 @@ def _main(argv=None) -> int:
         try:
             n = _sync_completed(ws, people, headless=not args.headed,
                                 use_api=not args.sweep_browser)
+            # Tick FIRST, then prove the BROWSER session is alive -- separately,
+            # and on every sweep. Otherwise that check only happens as a side
+            # effect of having work to do and of the API route being absent, so
+            # "nothing to tick" and "can't see Blue Ink at all" print the same
+            # line and exit the same way. That is how a dead session on Lucy 2
+            # hid for two days while the alert built to catch it never fired:
+            # nothing raised. The browser matters even when the API carries the
+            # ticking, because the Monday SEND can only go through the web app --
+            # this turns "the send dies on Monday" into "someone re-seeds on
+            # Thursday".
+            completed.verify_ui_session(headless=not args.headed)
         except Exception as exc:
             # A dead session exits 2 correctly -- and that exit code went
             # NOWHERE, because this job deliberately doesn't publish to the
