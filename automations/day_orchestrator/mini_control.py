@@ -3832,6 +3832,23 @@ _CRED_FILES = {
     # the *-creds.json rule, so `lucy update` will never carry it.
     "blueink-creds":
         lambda: REPO_ROOT / "blueink-creds.json",
+    # The Blue Ink browser SESSION, so a re-seed doesn't need somebody stood at
+    # Lucy 2. A fresh login still can't be automated -- the account is Google
+    # SSO with 2FA and nothing here types a password -- but once a human has
+    # signed in ANYWHERE, that session can be shipped to the runner.
+    #
+    # Weigh this before using it: the file is a live auth session for an account
+    # that sends legally-binding documents, and push_cred_file puts it through
+    # the Mini Control sheet for the couple of minutes before set_cred_file
+    # blanks the cell. Same channel the team already uses for ownerville-creds.
+    #
+    # It also cuts against [[feedback_machines_never_depend_on_each_other]] --
+    # each Lucy is supposed to mint its own. This is a one-time HEAL, not a
+    # runtime dependency, and the alternative is a stale sheet until someone
+    # walks to the machine.
+    "blueink-session":
+        lambda: REPO_ROOT / "automations" / "blueink_docs"
+                / ".blueink_storage_state.json",
     # Cross-workspace Slack bot tokens (office_metrics.offices.CROSS_WS_TOKEN_FILES).
     # push_slack_tokens moves only the MAIN workspace pair, so an office whose
     # channel lives in another Slack (trang -> FRESH SUCCESS) was silently left
