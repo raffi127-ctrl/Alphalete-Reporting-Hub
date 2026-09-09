@@ -312,16 +312,11 @@ def find_completed_ui(people: List[NewStart],
         browser, ctx = S.open_context(pw, headless=headless)
         page = ctx.new_page()
         try:
-            page.goto(recent_ui.DASHBOARD, wait_until="domcontentloaded",
-                      timeout=recent_ui.NAV_TIMEOUT)
-            page.wait_for_timeout(12000)
-            if "/login" in page.url:
-                raise RuntimeError(
-                    "The Blue Ink session on this machine has expired, and "
-                    "there is no API key here to read the list without one. "
-                    "Either drop blueink-creds.json at the repo root, or sign "
-                    "in at this keyboard (screen sharing is fine): python -m "
-                    "automations.blueink_docs.session --login")
+            # Waits for the list to APPEAR rather than guessing a duration.
+            # Three copies of this used a fixed sleep -- 6s in the probe, 12
+            # here -- and on 2026-09-09 they disagreed about the very same
+            # session on Lucy 2. See recent_ui.open_dashboard.
+            recent_ui.open_dashboard(page)
             signed = scan_completed(page)
         finally:
             browser.close()

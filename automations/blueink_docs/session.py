@@ -224,13 +224,20 @@ def check(headless: bool = True) -> int:
     with sync_playwright() as p:
         browser, ctx = open_context(p, headless=headless)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.goto(DASHBOARD, wait_until="domcontentloaded", timeout=60_000)
-        page.wait_for_timeout(6000)     # the SPA decides who you are late
-        url = page.url
-        ok = "/login" not in url
-        print(f"landed on {url}")
-        print("session is GOOD" if ok else
-              "session EXPIRED -- rerun --login at the keyboard")
+        # The 4th copy of "wait a fixed moment, then read the URL" lived
+        # here. Same race, same wrong answer: the SPA routes through an auth
+        # check on the way in, so a URL read too early calls a healthy
+        # session EXPIRED. Imported locally -- recent_ui imports this module.
+        from automations.blueink_docs.recent_ui import open_dashboard
+        try:
+            open_dashboard(page)
+            ok = True
+            print(f"landed on {page.url}")
+            print("session is GOOD")
+        except RuntimeError as exc:
+            ok = False
+            print(f"landed on {page.url}")
+            print(str(exc).splitlines()[0])
         browser.close()
     return 0 if ok else 1
 
