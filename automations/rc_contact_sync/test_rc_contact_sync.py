@@ -72,31 +72,37 @@ class TestAddressBookIndex(unittest.TestCase):
 
 
 class TestIdentity(unittest.TestCase):
-    """The wrong-but-valid token is the failure that would look green."""
-    ME = {"name": "Taylor Miller", "email": "taylormkmiller7@gmail.com",
-          "extension_number": "134", "account_id": "111"}
+    """The wrong-but-valid token is the failure that would look green.
 
-    def test_the_right_user_passes(self):
-        RC.assert_identity(self.ME, "taylormkmiller7@gmail.com")
+    Checked on owner_id from the token response, NOT on the name/email: that
+    would need GET /extension/~ and the ReadAccounts scope this app
+    deliberately does not hold."""
+    ME = {"owner_id": "62863812006", "scope": "ReadMessages Contacts"}
 
-    def test_case_and_padding_do_not_matter(self):
-        RC.assert_identity(self.ME, "  TaylorMKMiller7@Gmail.com ")
+    def test_the_right_extension_passes(self):
+        RC.assert_identity(self.ME, "62863812006")
 
-    def test_another_user_in_the_same_account_is_refused(self):
-        carlos = dict(self.ME, name="Carlos Hidalgo",
-                      email="carloshidalgo349@gmail.com", extension_number="101")
+    def test_padding_does_not_matter(self):
+        RC.assert_identity(self.ME, "  62863812006 ")
+
+    def test_another_extension_is_refused(self):
+        carlos = dict(self.ME, owner_id="62999999999")
         with self.assertRaises(RC.RCError) as cm:
-            RC.assert_identity(carlos, "taylormkmiller7@gmail.com")
-        self.assertIn("Carlos Hidalgo", str(cm.exception))
+            RC.assert_identity(carlos, "62863812006")
+        self.assertIn("62999999999", str(cm.exception))
 
-    def test_a_token_with_no_email_is_refused(self):
+    def test_a_token_with_no_owner_is_refused(self):
         with self.assertRaises(RC.RCError):
-            RC.assert_identity(dict(self.ME, email=""),
-                               "taylormkmiller7@gmail.com")
+            RC.assert_identity(dict(self.ME, owner_id=""), "62863812006")
 
     def test_an_empty_expectation_turns_the_check_off(self):
-        """Deliberate opt-out lives in the creds file, not in a code change."""
-        RC.assert_identity(dict(self.ME, email="someone@else.com"), "")
+        RC.assert_identity(dict(self.ME, owner_id="someone-else"), "")
+
+    def test_identity_reads_the_token_response(self):
+        me = RC.identity({"owner_id": 62863812006, "scope": "Contacts",
+                          "endpoint_id": "abc", "access_token": "secret"})
+        self.assertEqual(me["owner_id"], "62863812006")
+        self.assertNotIn("access_token", me)
 
 
 class TestTexted(unittest.TestCase):

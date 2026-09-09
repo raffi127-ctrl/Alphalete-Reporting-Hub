@@ -3824,6 +3824,14 @@ _CRED_FILES = {
     # Lives in ~/.config, outside the repo, so `lucy update` never carries it.
     "saraplus-creds-b2b":
         lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds-b2b.json",
+    # RingCentral app + JWT for CARLOS's B2B account, minted on TAYLOR's login
+    # (rc_contact_sync.config.rc_creds). NOT the app baked into
+    # automations/rc_autoread/run.py -- that one belongs to the other
+    # RingCentral account in this business (Dylan/HR, main +1 207-464-7960),
+    # where Taylor has no extension at all. Lives in ~/.config, outside the
+    # repo, so `lucy update` never carries it.
+    "ringcentral-b2b-creds":
+        lambda: Path.home() / ".config" / "recruiting-report" / "ringcentral-b2b-creds.json",
     # Blue Ink private API key + envelope template id. The SEND itself goes
     # through the web app, but the pre-send dedupe (blueink_docs.recent) reads
     # Blue Ink's own bundle history over the API and needs this key. Lucy 2 --

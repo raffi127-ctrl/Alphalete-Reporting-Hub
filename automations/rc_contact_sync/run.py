@@ -135,12 +135,12 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
     #    token writes into the wrong address book and reads the wrong inbox,
     #    and the run still looks green -- so this stops before any write.
     creds = C.rc_creds()
-    token = RC.token(creds)
-    me = RC.identity(token)
-    log("RingCentral: %s <%s> (ext %s, account %s)"
-        % (me["name"] or "?", me["email"] or "no email",
-           me["extension_number"], me["account_id"]))
-    RC.assert_identity(me, creds.get("expected_email", ""))
+    info = RC.token_info(creds)
+    token = info["access_token"]
+    me = RC.identity(info)
+    log("RingCentral: extension id %s, scope [%s]"
+        % (me["owner_id"], me["scope"]))
+    RC.assert_identity(me, creds.get("expected_owner_id") or C.RC_OWNER_ID)
     contacts_ext = str(creds["contacts_extension_id"])
     watch_ext = str(creds["watch_extension_id"])
 

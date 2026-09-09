@@ -70,6 +70,13 @@ output/_credico_profile/
 # profile files were sitting untracked one `git add .` away. Never commit.
 .saraplus_profile/
 automations/b2b_sales_board/.saraplus_profile/
+# Same again for the B2B Customer Contacts report, which runs on CARLOS's
+# SaraPlus login and therefore keeps its OWN profile. The rule above does not
+# cover it -- '.saraplus_b2b_profile' is a different name, not a variant the
+# wildcard catches -- and it sat untracked holding his live session cookies,
+# one `git add .` from a public repo (2026-09-03).
+.saraplus_b2b_profile/
+automations/uploaded/.saraplus_b2b_profile/
 .saraplus_storage_state.json
 automations/b2b_sales_board/.saraplus_storage_state.json
 # Probe screenshots — throwaway debug captures written beside the _probe_*.py

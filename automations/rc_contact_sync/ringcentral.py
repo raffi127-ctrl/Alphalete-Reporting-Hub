@@ -67,7 +67,11 @@ def split_name(full: str) -> Tuple[str, str]:
 
 # --- auth ---------------------------------------------------------------------
 
-def token(creds: Dict[str, str], jwt: Optional[str] = None) -> str:
+def token_info(creds: Dict[str, str], jwt: Optional[str] = None) -> Dict:
+    """The WHOLE token response. It carries `owner_id` -- the extension this
+    token belongs to -- which is how identity is checked here: reading the
+    name/email instead means GET /extension/~, which needs a ReadAccounts
+    scope this app deliberately does not hold."""
     r = requests.post(
         "%s/restapi/oauth/token" % C.RC_BASE_URL,
         auth=(creds["client_id"], creds["client_secret"]),
@@ -77,7 +81,11 @@ def token(creds: Dict[str, str], jwt: Optional[str] = None) -> str:
     if not r.ok:
         raise RCError("RingCentral auth failed (%s): %s"
                       % (r.status_code, r.text[:300]))
-    return r.json()["access_token"]
+    return r.json()
+
+
+def token(creds: Dict[str, str], jwt: Optional[str] = None) -> str:
+    return token_info(creds, jwt)["access_token"]
 
 
 def _get(token: str, path: str, params: Optional[dict] = None) -> dict:
@@ -95,39 +103,32 @@ def _get(token: str, path: str, params: Optional[dict] = None) -> dict:
     raise RCError("GET %s: rate limited after retries" % path)
 
 
-def identity(token: str) -> Dict[str, str]:
-    """Who this token actually is, and which account."""
-    me = _get(token, "/restapi/v1.0/account/~/extension/~")
-    contact = me.get("contact", {}) or {}
-    return {"extension_id": str(me.get("id", "")),
-            "extension_number": str(me.get("extensionNumber", "")),
-            "name": ("%s %s" % (contact.get("firstName", ""),
-                                contact.get("lastName", ""))).strip(),
-            "email": (contact.get("email", "") or "").strip().lower(),
-            "account_id": str(me.get("account", {}).get("id", ""))}
+def identity(info: Dict) -> Dict[str, str]:
+    """Who this token is, straight out of the token response."""
+    return {"owner_id": str(info.get("owner_id", "")),
+            "scope": info.get("scope", ""),
+            "endpoint_id": str(info.get("endpoint_id", ""))}
 
 
-def assert_identity(me: Dict[str, str], expected_email: str) -> None:
-    """Stop unless the token is the user we meant to be.
+def assert_identity(me: Dict[str, str], expected_owner_id: str) -> None:
+    """Stop unless the token belongs to the extension we meant.
 
     The whole report is 'write into THIS address book, read THIS inbox'. A
-    token for the wrong user does both of those things successfully against
-    the wrong data, and nothing downstream would ever notice -- so the check
-    is a hard stop, not a warning. Set `expected_email` to "" in the creds
-    file to deliberately turn it off (e.g. the account's email was changed)."""
-    want = (expected_email or "").strip().lower()
+    token for the wrong user does both successfully against the wrong data
+    and nothing downstream would notice -- so this is a hard stop, not a
+    warning. Set expected_owner_id to "" to deliberately turn it off."""
+    want = (expected_owner_id or "").strip()
     if not want:
         return
-    if me.get("email") != want:
+    if me.get("owner_id") != want:
         raise RCError(
-            "this RingCentral token is %s <%s> (ext %s, account %s), not %s. "
+            "this RingCentral token belongs to extension id %s, not %s (%s). "
             "Contacts would be written into the wrong address book and the "
-            "wrong inbox would be read for the follow-up check -- both of "
-            "which would look like a successful run. Mint the JWT on %s, or "
-            "set \"expected_email\" in %s if that address really did change."
-            % (me.get("name") or "?", me.get("email") or "no email",
-               me.get("extension_number") or "?", me.get("account_id") or "?",
-               want, want, C.RC_CREDS_PATH))
+            "wrong inbox read for the follow-up check -- both of which would "
+            "look like a successful run. Mint the JWT on %s's own login, or "
+            "correct RC_OWNER_ID in %s if that extension really did change."
+            % (me.get("owner_id") or "unknown", want, C.WATCH_OWNER_NAME,
+               C.RC_LOGIN_EMAIL, C.RC_CREDS_PATH))
 
 
 def extensions(token: str) -> List[dict]:

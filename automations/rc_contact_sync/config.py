@@ -152,6 +152,19 @@ RC_BASE_URL = "https://platform.ringcentral.com"
 # Both calls therefore address extension '~' (whoever the token is), never a
 # hardcoded id: an extension number is a thing that gets reassigned.
 RC_LOGIN_EMAIL = "taylormkmiller7@gmail.com"
+
+# TAYLOR'S EXTENSION ID, as the token exchange itself reports it (owner_id).
+# This is what the identity guard compares against, NOT the email: reading the
+# email means GET /extension/~, which needs the ReadAccounts scope this app
+# deliberately does not hold. owner_id comes back in the token response, so
+# the check costs no extra call and no extra permission.
+#
+# Established by PROVENANCE on 2026-09-03: the JWT was minted at
+# developers.ringcentral.com under "Console > Taylor Miller", signed in as
+# taylormkmiller7@gmail.com, and its own `sub` claim is this id. A token for
+# Carlos, or one from the other RingCentral account, reports a different
+# owner_id and is refused.
+RC_OWNER_ID = "62863812006"
 CONTACTS_OWNER_NAME = "Taylor Miller"      # ext 134 -- and the watched line
 WATCH_OWNER_NAME = "Taylor Miller"
 SELF_EXTENSION = "~"
@@ -240,7 +253,7 @@ def rc_creds() -> Dict[str, str]:
     # change -- normally neither is set.
     data.setdefault("contacts_extension_id", SELF_EXTENSION)
     data.setdefault("watch_extension_id", SELF_EXTENSION)
-    data.setdefault("expected_email", RC_LOGIN_EMAIL)
+    data.setdefault("expected_owner_id", RC_OWNER_ID)
     return data
 
 
