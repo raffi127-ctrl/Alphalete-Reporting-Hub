@@ -370,3 +370,49 @@ class BothLoginsAreCheckedSeparately(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerdictCannotBeAssumed(unittest.TestCase):
+    """A login check that cannot go red is not a check.
+
+    On a machine that is not an AppStream runner, `run()` used to hardcode
+    ok=True and never look at the ownerville result — so a token that had been
+    dead for five days printed "FAIL Ownerville" and then "BOTH logins are live
+    on this machine" two lines later (Megan's laptop, 2026-09-09).
+    [[feedback_green_means_delivered]]
+    """
+
+    def _run_with(self, owner_ok, is_runner=False):
+        from automations.shared import login_check as LC
+        real_runner = LC._is_appstream_runner
+        real_owner = LC.check_ownerville
+        real_app = getattr(LC, "check_appstream", None)
+        real_acct = getattr(LC, "check_accounts", None)
+        LC._is_appstream_runner = lambda: is_runner
+        LC.check_ownerville = lambda: {
+            "system": "Ownerville", "ok": owner_ok,
+            "detail": "live" if owner_ok else "token EXPIRED 128h ago"}
+        if is_runner:
+            LC.check_appstream = lambda deep=False: {
+                "system": "AppStream", "ok": True, "detail": "live"}
+            LC.check_accounts = lambda: {
+                "system": "Accounts", "ok": True, "detail": "ok"}
+        try:
+            return LC.run()
+        finally:
+            LC._is_appstream_runner = real_runner
+            LC.check_ownerville = real_owner
+            if real_app is not None:
+                LC.check_appstream = real_app
+            if real_acct is not None:
+                LC.check_accounts = real_acct
+
+    def test_a_dead_ownerville_fails_the_whole_check(self):
+        res = self._run_with(owner_ok=False)
+        self.assertFalse(res["ok"], "a dead ownerville login must not read green")
+
+    def test_a_live_ownerville_still_passes(self):
+        self.assertTrue(self._run_with(owner_ok=True)["ok"])
+
+    def test_it_also_fails_on_a_real_appstream_runner(self):
+        self.assertFalse(self._run_with(owner_ok=False, is_runner=True)["ok"])

@@ -232,15 +232,22 @@ def check_accounts() -> dict:
 
 def run(deep: bool = False) -> dict:
     if not _is_appstream_runner():
+        # `ok` IS COMPUTED, NOT ASSUMED. This branch used to hardcode ok=True,
+        # so on any machine that is not an AppStream runner a DEAD ownerville
+        # login still printed "BOTH logins are live on this machine" under its
+        # own "FAIL Ownerville" line (seen 2026-09-09 on Megan's laptop: token
+        # expired 128h earlier, verdict green). A check that cannot go red is
+        # not a check — [[feedback_green_means_delivered]].
+        results = [{"system": "AppStream", "ok": True,
+                    "detail": "not an AppStream runner (no credential, no "
+                              "stored session) — nothing to check here. "
+                              "Correct for a machine that is not one of the "
+                              "three Lucys."},
+                   check_ownerville()]
         return {"machine": _machine(),
                 "at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "ok": True,
-                "results": [{"system": "AppStream", "ok": True,
-                             "detail": "not an AppStream runner (no credential, "
-                                       "no stored session) — nothing to check "
-                                       "here. Correct for a machine that is not "
-                                       "one of the three Lucys."},
-                            check_ownerville()]}
+                "ok": all(r["ok"] for r in results),
+                "results": results}
     results = [check_ownerville(), check_appstream(deep=deep), check_accounts()]
     return {"machine": _machine(),
             "at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -271,7 +278,13 @@ def main(argv=None) -> int:
         print("       %s" % r["detail"])
     print("-" * 66)
     if res["ok"]:
-        print("  BOTH logins are live on this machine.")
+        # Do not say "BOTH" when one of them was skipped rather than checked —
+        # this runs on machines that are not AppStream runners.
+        checked = [r["system"] for r in res["results"]
+                   if "nothing to check here" not in r.get("detail", "")]
+        print("  %s live on this machine."
+              % ("BOTH logins are" if len(checked) > 1
+                 else "%s is" % (checked[0] if checked else "Nothing")))
         return 0
     bad = [r["system"] for r in res["results"] if not r["ok"]]
     print("  NOT FIXED: %s" % ", ".join(bad))
