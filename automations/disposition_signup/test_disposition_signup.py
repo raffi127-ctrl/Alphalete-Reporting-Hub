@@ -172,7 +172,7 @@ def test_row_is_a_gap_alerts_office():
     assert row["key"] == "cody"
     assert row["ov"] == "impersonate"        # the login is never the enrollee
     assert row["campaign_id"] == "3"         # AT&T, the id gap_alerts pins
-    assert row["label"] == "Cody"
+    assert row["label"] == "Cody Cannon"     # full ICD name (2026-09-09)
     assert row["enabled"] is True
     assert [d["kind"] for d in row["destinations"]] == ["imessage", "slack"]
     assert row["destinations"][0]["cadence_min"] == 30
