@@ -191,10 +191,16 @@ def main(argv=None) -> int:
             tk = float(_cell(grid, r, tk_c) or 0)
         except ValueError:
             tk = 0
+        # '-' where nothing can be worked out, the number where it can, and 0
+        # when the number is really 0 (Eve, 2026-09-09). A blank in a weekly
+        # block reads as a broken report, so no cell of a real rep is left one.
         data.append({"range": "%s%d" % (_col_letter(cols[WEEK_AVG_TK]), r),
                      "values": [[round(tk / days, 1) if days else "-"]]})
         if talk is None:
             no_tt += 1
+            for h in (WEEK_TT, WEEK_AVG_TT):
+                data.append({"range": "%s%d" % (_col_letter(cols[h]), r),
+                             "values": [["-"]]})
             continue
         data.append({"range": "%s%d" % (_col_letter(cols[WEEK_TT]), r),
                      "values": [[talk]]})
@@ -239,6 +245,14 @@ def main(argv=None) -> int:
                     continue
                 data.append({"range": "%s%d" % (_col_letter(col), r),
                              "values": [[round(v / d, 1)]]})
+        # The roster's own TOTALS row, over the days EVERYBODY worked.
+        for col, src_col in ((cols[WEEK_AVG_TK], tk_c), (cols[WEEK_AVG_TT], tt_c)):
+            try:
+                v = float(_cell(grid, last + 1, src_col) or 0)
+            except ValueError:
+                continue
+            data.append({"range": "%s%d" % (_col_letter(col), last + 1),
+                         "values": [[round(v / all_days, 1) if all_days else "-"]]})
         print("  equipos: %s" % ", ".join(
             "%s=%d dias" % (k or "(sin equipo)", v)
             for k, v in sorted(days_by_team.items()) if v))

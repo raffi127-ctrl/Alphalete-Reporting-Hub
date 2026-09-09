@@ -1075,18 +1075,19 @@ def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
                          if _cell(grid, r, intc).startswith("=")]
 
         def ratio(r, num, den):
-            """Blank until the roll brings Talk-To's, '-' when the denominator
-            is zero, the number otherwise.
+            """`-` when it cannot be measured, the number when it can -- and 0
+            when the number really is 0.
 
-            The empty test is `N(TT)=0` and not `TT=""` because a TEAM row's
-            Talk-To's is a `SUMIFS` over an empty column -- it reads 0, not
-            blank, and `0.0%` down the Teams block says last week nobody talked
-            to anybody. In a FINISHED week zero talk-to's is missing data, never
-            a real zero: a team that worked a week talked to someone."""
-            return ('=IF($%s%d="","",IF(N(%s%d)=0,"",IF(N(%s%d)=0,%s,'
-                    'IFERROR(%s%d/%s%d,%s))))'
-                    % (names, r, TT, r, den, r, CANT_MEASURE,
-                       num, r, den, r, CANT_MEASURE))
+            Eve's rule for the weekly blocks, 2026-09-09: *"si no habia info ni
+            info deducible se ponia '-', y si habia y daba 0 se ponia 0"*. So
+            the test is ISNUMBER on the Talk-To's cell, not "is it zero":
+            a `-` or a blank there means nobody knows, and `-` says so; a real
+            `0` is data, and `0.0%` is the honest reading of it. Only a row with
+            NO REP stays empty."""
+            return ('=IF($%s%d="","",IF(NOT(ISNUMBER(%s%d)),%s,'
+                    'IF(N(%s%d)=0,%s,IFERROR(%s%d/%s%d,%s))))'
+                    % (names, r, TT, r, CANT_MEASURE,
+                       den, r, CANT_MEASURE, num, r, den, r, CANT_MEASURE))
 
         rows = list(range(SUB_ROW + 1, totals + 1)) + (team_rows or [])
         for r in rows:
@@ -1094,6 +1095,11 @@ def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
                          "values": [[ratio(r, TT, K_)]]})
             data.append({"range": "%s%d" % (_col_letter(cols[WEEK_TT_APP]), r),
                          "values": [[ratio(r, TT, A_)]]})
+        # The TOTALS row of the roster gets the same sum its neighbours use --
+        # without it the block's own foot is the one cell with no total.
+        f = _totals_like(grid, totals, knocks, cols[WEEK_TT])
+        if f:
+            data.append({"range": "%s%d" % (TT, totals), "values": [[f]]})
         # Team rows only: the sum, and a dash where a past week has no days.
         for r in (team_rows or []):
             base = _cell(grid, r, intc)
