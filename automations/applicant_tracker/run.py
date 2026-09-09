@@ -32,6 +32,11 @@ from .applicantstream import OfficeNotAvailable, session
 CARD_ID = "applicant-tracker-sync"
 CARD_NAME = "Applicant Tracker Sync"
 
+# Set by --office: the run looked at a SUBSET of OFFICE_IDS, so it cannot speak
+# for the ones it never selected. Read by _finish before it closes the gap
+# thread. Empty = a full sweep.
+SCOPED_TO = []
+
 ESTIMATED_MINUTES = 12
 REPORT_BREAKDOWN = """
 WHAT IT DOES: One login syncs all of ApplicantStream into the Applicant Tracker.
@@ -475,6 +480,22 @@ def _finish(phase: str, total: int, *, failed: list, no_access: list,
         # A clean sweep closes the office-gap thread — the fix for a
         # no-access office is granting access, which happens outside any
         # run, so nothing else would ever say "it's over" (Eve 2026-08-17).
+        #
+        # A SCOPED run (--office) is not a sweep. It saw `total` = the offices
+        # it was given, so "no gaps" only means "no gaps among those" — closing
+        # on it puts a ✅ on a thread whose other gaps are still open, and the
+        # detail line reads "All 1 offices synced", which is how a repair of one
+        # office gets read as the whole tracker being clean. The targeted rerun
+        # that repairs ONE timed-out office is exactly this shape, so close it
+        # by hand instead:
+        #   incident_thread --resolve-report applicant-tracker-gaps --note "..."
+        # (2026-09-09, repairing Ryan McSpadden's 120s timeout.)
+        if SCOPED_TO:
+            print("  (gap thread left OPEN — this run only covered {}; a "
+                  "scoped run can't declare the sweep clean. Close it with "
+                  "`incident_thread --resolve-report applicant-tracker-gaps`)"
+                  .format(_names(SCOPED_TO)), flush=True)
+            return
         try:
             from automations.shared import incident_thread as _inc
             _inc.resolve_if_open(
@@ -551,6 +572,7 @@ if __name__ == "__main__":
     if a.office:
         keep = {str(o).strip() for o in a.office}
         config.OFFICE_IDS = [o for o in config.OFFICE_IDS if o in keep]
+        SCOPED_TO = list(config.OFFICE_IDS)
     if a.skip_call_list and a.phase != "morning":
         p.error("--skip-call-list only means anything on the morning phase "
                 "(the evening phase never touches the Call List)")
