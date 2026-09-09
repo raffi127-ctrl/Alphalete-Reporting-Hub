@@ -829,45 +829,88 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
     if verbose:
         print(f"-> Disposition by Rep for {mdy} (rqst {rqst[:12]}…)",
               flush=True)
-    knocks._navigate(page, rqst, mdy)
-    idx = knocks._header_index(page)
-    # PROVE THE PIN TOOK, before a single number is read off this grid. Under
-    # impersonation the campaign can silently stay where it was, and a board
-    # with the right title and another campaign's numbers is worse than no
-    # board — nobody reading it can tell.
-    assert_campaign_grid(idx, expect_campaign)
-    # A WIRELESS (NDS) office's Disposition table has its own shape —
-    # scrape it with the wireless column set instead of letting the house
-    # scrape raise "missing expected column(s)". The wireless rows keep
-    # COL_TOTAL_KNOCKS, so knocks_run renders a real Total Knocks board.
-    if is_b2b_dispo(idx):
-        # BEFORE every other test: both B2B grids satisfy the wireless one (they
-        # carry Total Knocks and no house Talk-To split), and the wireless
-        # scrape zero-fills what it cannot find — so B2B would come back as a
-        # plausible board with every disposition at 0.
-        rows = _scrape_b2b_rows(page, idx)
-        if verbose:
-            print(f"-> B2B-shaped disposition: {len(rows)} rep(s)", flush=True)
-    elif _is_energywell_dispo(idx):
-        # BEFORE the wireless test: Energy Wells has no Talk-To split either,
-        # so the wireless check would claim it and drop VL and Presentation.
-        rows = _scrape_energywell_rows(page, idx)
-        if verbose:
-            print(f"-> Energy-Wells-shaped disposition: {len(rows)} rep(s)",
-                  flush=True)
-    elif _is_wireless_dispo(idx):
-        rows = _scrape_wireless_rows(page, idx)
-        if verbose:
-            print(f"-> Wireless-shaped disposition: {len(rows)} rep(s)",
-                  flush=True)
-    else:
-        rows = knocks._scrape_rows(page, idx)
+    def _read_grid() -> list:
+        """Navigate to this day and read the Disposition grid through whichever
+        shaped scraper it calls for.
+
+        A function, not the inline block it used to be, so the short-read guard
+        below can read the SAME grid a second time — with the same shape
+        decision, the same pin assertion and the same log line — instead of
+        keeping a second copy of the branch in step with this one."""
+        knocks._navigate(page, rqst, mdy)
+        idx = knocks._header_index(page)
+        # PROVE THE PIN TOOK, before a single number is read off this grid.
+        # Under impersonation the campaign can silently stay where it was, and
+        # a board with the right title and another campaign's numbers is worse
+        # than no board — nobody reading it can tell.
+        assert_campaign_grid(idx, expect_campaign)
+        # A WIRELESS (NDS) office's Disposition table has its own shape —
+        # scrape it with the wireless column set instead of letting the house
+        # scrape raise "missing expected column(s)". The wireless rows keep
+        # COL_TOTAL_KNOCKS, so knocks_run renders a real Total Knocks board.
+        if is_b2b_dispo(idx):
+            # BEFORE every other test: both B2B grids satisfy the wireless one
+            # (they carry Total Knocks and no house Talk-To split), and the
+            # wireless scrape zero-fills what it cannot find — so B2B would come
+            # back as a plausible board with every disposition at 0.
+            got = _scrape_b2b_rows(page, idx)
+            shape = "B2B-shaped"
+        elif _is_energywell_dispo(idx):
+            # BEFORE the wireless test: Energy Wells has no Talk-To split
+            # either, so the wireless check would claim it and drop VL and
+            # Presentation.
+            got = _scrape_energywell_rows(page, idx)
+            shape = "Energy-Wells-shaped"
+        elif _is_wireless_dispo(idx):
+            got = _scrape_wireless_rows(page, idx)
+            shape = "Wireless-shaped"
+        else:
+            got, shape = knocks._scrape_rows(page, idx), ""
+        if verbose and shape:
+            print(f"-> {shape} disposition: {len(got)} rep(s)", flush=True)
+        return got
+
+    rows = _read_grid()
     # Supplementary while we have disposition rows, the last source
     # standing when we don't — only then is a failed fetch fatal.
     tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose,
                                      required=not rows)
     if verbose:
         print(f"-> Time Tracker: gap data for {len(tt)} rep(s)", flush=True)
+
+    # THE GRID CAME BACK SHORT OF THE PEOPLE WHO CLOCKED IN — read it again.
+    # This capture walks ~44 owners on ONE page, so a grid can be read while it
+    # is still filling (or while the previous office's rows are still in the
+    # DOM), and nothing about a short board looks wrong: Christian Esposito's
+    # 2026-09-07 board mailed 2 reps of the 22 ownerville had, and 9/4 mailed 8
+    # of 27, with two names on it that are not in his office at all. The Time
+    # Tracker is the count that knows better, and it is a JSON fetch, so it
+    # does not share the grid's failure mode. See total_knocks.pull's
+    # SHORT_READ_* thresholds for why a small gap is left alone.
+    if knocks.disposition_read_is_short(len(rows), len(tt)):
+        if verbose:
+            print(f"-> Disposition {len(rows)} rep(s) < Time Tracker "
+                  f"{len(tt)} — re-reading the grid", flush=True)
+        try:
+            again = _read_grid()
+        except knocks.KnocksPullFailed:
+            raise
+        except Exception as e:  # noqa: BLE001 — a re-read that fails leaves
+            again = []          # us exactly where the first read left us
+            if verbose:
+                print(f"-> re-read failed ({type(e).__name__}) — keeping the "
+                      "first read", flush=True)
+        if len(again) > len(rows):
+            rows = again
+        if verbose:
+            print(f"-> re-read: {len(rows)} rep(s)", flush=True)
+    why = knocks.short_read_error(len(rows), len(tt))
+    if why:
+        # KnocksPullFailed, so this owner is reported as a FAILED capture (grey
+        # note, the captain's send held) instead of quietly mailing a board
+        # that is missing most of the office — Eve 2026-09-08: "que vuelva a
+        # leer o avise en vez de mandar el reporte corto".
+        raise KnocksPullFailed(why)
 
     # A wireless/NDS owner has NO Disposition campaign, so p=89 returns 0
     # rows and there's nothing to hang the gaps on. Build Time-Gaps rows

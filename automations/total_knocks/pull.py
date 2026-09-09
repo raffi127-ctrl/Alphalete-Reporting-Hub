@@ -331,6 +331,89 @@ def _resolve_columns(idx: dict, columns, *, label: str = "Disposition",
     return resolved, absent
 
 
+# ---- Short-read guard ------------------------------------------------------
+# The Time Tracker is a JSON fetch of everyone who clocked in that day, so it
+# is the one number that knows how many reps the Disposition grid OUGHT to
+# hold. A rep can legitimately clock in and disposition nothing (a walk-on, a
+# rep who logged in and left), so TT >= Disposition is normal and small gaps
+# mean nothing. What is NOT normal is a grid holding a fraction of the reps who
+# were out: 2 of 22 (Christian Esposito, 2026-09-07), 8 of 27 (2026-09-04).
+#
+# Two thresholds so neither reading alone can fire this: an ABSOLUTE gap (a
+# five-rep office is not judged by percentages) and a RATIO (a big office
+# missing five of forty is a normal day, not a broken read).
+SHORT_READ_MIN_GAP = 5
+SHORT_READ_RATIO = 0.5
+
+
+def disposition_read_is_short(n_rows: int, n_tt: int) -> bool:
+    """Worth READING AGAIN: the Disposition grid came back with fewer reps
+    than clocked in. Any shortfall qualifies — the re-read costs one
+    navigation, and this is the cheap half of the guard. Pure."""
+    return bool(n_rows) and bool(n_tt) and n_tt > n_rows
+
+
+def short_read_error(n_rows: int, n_tt: int) -> "str | None":
+    """The message to REFUSE on when a re-read is still drastically short of
+    the Time Tracker, else None — see SHORT_READ_MIN_GAP / SHORT_READ_RATIO.
+
+    Returns a reason rather than raising so both callers phrase the failure
+    the same way. Pure — offline-testable."""
+    if not n_rows or not n_tt:
+        return None
+    if (n_tt - n_rows) < SHORT_READ_MIN_GAP:
+        return None
+    if n_rows >= n_tt * SHORT_READ_RATIO:
+        return None
+    return ("Disposition grid returned %d rep(s) but %d clocked in on the Time "
+            "Tracker that day — it was read twice and stayed short, so this is "
+            "a partial grid, not a quiet day. Refusing to publish a board that "
+            "leaves reps off with no sign anything is missing."
+            % (n_rows, n_tt))
+
+
+def _wait_rows_settled(page, *, quiet_ms: int = 400, timeout_ms: int = 12000
+                       ) -> int:
+    """Wait until the Disposition grid STOPS growing, and return the row count.
+
+    DataTables fills #table-dispositions from an AJAX call, and _navigate then
+    asks for 100 rows per page, which fires a SECOND one. Between those the
+    tbody legitimately holds a partial set — and on the captainship capture,
+    which reuses one page for ~44 owners, it can still hold the PREVIOUS
+    office's rows. Reading at that moment is how a board publishes 2 reps of
+    22 with nothing raising (Christian Esposito, 2026-09-07).
+
+    Two conditions, both cheap: DataTables' own 'processing' overlay is gone,
+    and the row count has been unchanged for `quiet_ms`. Best-effort by
+    design — on timeout we return what is there and let the Time Tracker
+    cross-check in the callers catch a still-short read, because a wait that
+    RAISES would turn a slow grid into a missing board."""
+    import time as _time
+    deadline = _time.monotonic() + timeout_ms / 1000.0
+    last, stable_since = -1, _time.monotonic()
+    while _time.monotonic() < deadline:
+        try:
+            n = page.evaluate(
+                "() => {"
+                " const p = document.querySelector('#table-dispositions_processing');"
+                " const busy = p && p.offsetParent !== null;"
+                " const rows = document.querySelectorAll("
+                "   '#table-dispositions tbody tr').length;"
+                " return busy ? -1 : rows;"
+                "}")
+        except Exception:  # noqa: BLE001 — a wait must never be the failure
+            return max(last, 0)
+        if n != last:
+            last, stable_since = n, _time.monotonic()
+        elif n >= 0 and (_time.monotonic() - stable_since) * 1000 >= quiet_ms:
+            return n
+        try:
+            page.wait_for_timeout(150)
+        except Exception:  # noqa: BLE001
+            break
+    return max(last, 0)
+
+
 def _scrape_rows(page, idx: dict) -> list[dict]:
     """Walk every DataTables page, return one canonical-keyed dict per rep."""
     # Resolve the source column index for each Sheet column we scrape from
@@ -358,6 +441,15 @@ def _scrape_rows(page, idx: dict) -> list[dict]:
             "Disposition grid rendered no rows at all — not even DataTables' "
             "'No data available' placeholder — so the scrape failed rather "
             "than the day being empty.") from e
+    # ONE ROW IS NOT THE GRID. The wait above is satisfied by the FIRST row
+    # DataTables paints (or by the previous office's rows, still in the DOM of
+    # a session that walks ~44 owners on one page), and the walk below then
+    # reads whatever happens to be there — a short board with no error
+    # anywhere. Christian Esposito's 2026-09-07 board went out with 2 reps of
+    # the 22 ownerville had, and 2026-09-04 with 8 of 27; the same scrape,
+    # re-run by hand, returned all of them. So: let the row count SETTLE
+    # before reading it.
+    _wait_rows_settled(page)
 
     out: list[dict] = []
     seen_ids: set[str] = set()
@@ -547,6 +639,23 @@ def pull_disposition_day(target: Optional[dt.date] = None,
                                   required=not rows)
         if verbose:
             print(f"-> Time Tracker: gap data for {len(tt)} rep(s)", flush=True)
+        # SHORT READ? Read it again before publishing it. Same guard the
+        # captainship path runs (rashad_metrics.knocks_pull._scrape_day_on_page)
+        # — this is the master office's copy of the sequence, and a fix that
+        # lived in only one of them would leave Raf's own board unguarded.
+        if disposition_read_is_short(len(rows), len(tt)):
+            if verbose:
+                print(f"-> Disposition {len(rows)} rep(s) < Time Tracker "
+                      f"{len(tt)} — re-reading the grid", flush=True)
+            _navigate(page, rqst, mdy)
+            again = _scrape_rows(page, _header_index(page))
+            if len(again) > len(rows):
+                rows = again
+            if verbose:
+                print(f"-> re-read: {len(rows)} rep(s)", flush=True)
+        why = short_read_error(len(rows), len(tt))
+        if why:
+            raise KnocksPullFailed(why)
 
     # Merge gaps onto the disposition rows by badge ID. Unmatched reps keep
     # Gaps / Total Gaps unset, so fill writes them blank.
