@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 from pathlib import Path
 
@@ -533,6 +534,46 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
     return 0
 
 
+def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
+    """Write the 'Fill Apex' page: one button that fills the form in the
+    person's own signed-in browser.
+
+    This exists because nothing else can reach Apex. A fresh sign-in ends on
+    the change-password screen, and Apex asks for a texted code every time
+    anyway -- so a human signs in, and the filling happens inside the tab they
+    are already looking at.
+    """
+    from automations.apex_new_starts import filler
+
+    title, add, _skipped, hires = gather(today, tab=tab,
+                                         include_ona=include_ona)
+    people, notes = [], {}
+    for c in add:
+        hire = hires.get(c.name)
+        if hire is None or hire.missing_packet:
+            notes[c.name] = "no Blue Ink packet — type this one by hand"
+            continue
+        fields = filler.rows_for(apex_values(c, hire))
+        people.append({"name": c.name, "fields": fields})
+        gaps = [lbl for lbl in ("Marital Status", "Date of Birth",
+                                "Street Address") if lbl not in fields]
+        if gaps:
+            notes[c.name] = "set by hand: " + ", ".join(gaps)
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    out = OUTPUT_DIR / f"fill-apex-{today.isoformat()}.html"
+    out.write_text(filler.build_page(
+        people, title.replace("Sales Board ", ""),
+        today.strftime("%B %-d, %Y") if os.name != "nt"
+        else today.strftime("%B %d, %Y"), notes))
+    _log(f"{title}: {len(people)} record(s) in the button")
+    for name, why in notes.items():
+        _log(f"  ⚠️ {name}: {why}")
+    _log("")
+    _log(f"Open this and drag the button to your bookmarks bar:")
+    _log(f"  {out}")
+    return 0
+
+
 def explore(today: dt.date) -> int:
     from automations.apex_new_starts import apex as AX
     try:
@@ -566,6 +607,8 @@ def main(argv=None) -> int:
                       help="open Apex and match the fields, typing nothing")
     mode.add_argument("--assist", action="store_true",
                       help="fill each record for real (you add the SSN and save)")
+    mode.add_argument("--button", action="store_true",
+                      help="make the 'Fill Apex' page for this week")
     mode.add_argument("--explore", action="store_true",
                       help="inventory the Apex new-employee screen")
     ap.add_argument("--any-day", action="store_true",
@@ -589,6 +632,8 @@ def main(argv=None) -> int:
     if args.preflight:
         return preflight(today, any_day=args.any_day,
                          skip_apex=args.no_apex_check)
+    if args.button:
+        return make_button(today, tab=args.tab, include_ona=include_ona)
     if args.explore:
         return explore(today)
     if not check_day(today, args.any_day):
