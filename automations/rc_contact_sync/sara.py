@@ -318,6 +318,66 @@ def _submit_code(page, field: str, code: str) -> None:
     page.wait_for_timeout(1000)
 
 
+def _verify_browser(page, attempts: int = 3, log=print) -> None:
+    """Clear SaraPlus's "new location or browser" challenge, RETRYING.
+
+    A single pass is not enough, and the reason is worth writing down.
+    SaraPlus issued TWO codes one second apart on the first Lucy 2 run
+    (13:34:02 and 13:34:03) -- the Email radio's autopostback and the Get
+    Code press each reaching the server -- and the page then belonged to one
+    request while the newest code answered the other. The run entered a
+    perfectly valid code and was told to verify again.
+
+    Racing that perfectly is not worth attempting: the fix is to notice we
+    are still on the passcode page and go round again with a FRESH code.
+    Each attempt re-requests, waits only for mail newer than that request,
+    and re-finds the box -- the picker and the code box are two different
+    pages, so a field id from a previous attempt is stale.
+
+    A short settle after Get Code lets a double-issued PAIR both land before
+    the inbox is read, so the newest of the two is the one we type."""
+    last_state = ""
+    for attempt in range(1, attempts + 1):
+        # Stamped BEFORE the request and deliberately a little early: this
+        # clock and Gmail's are not identical, and a code discarded for being
+        # a second too old looks exactly like a code that never arrived.
+        since = dt.datetime.now().astimezone() - dt.timedelta(seconds=30)
+        if not _request_code(page, log=log):
+            log("  nothing to press for a code on attempt %d" % attempt)
+        try:
+            page.wait_for_load_state("networkidle", timeout=C.NAV_TIMEOUT_MS)
+        except Exception:                                  # noqa: BLE001
+            pass
+        # Settle: if SaraPlus sends two, both should be in the inbox before
+        # we read it, so wait_for_code's newest-wins pick is the real newest.
+        page.wait_for_timeout(C.VERIFY_SETTLE_MS)
+
+        field_id = _code_field(page)
+        if field_id is None:
+            raise SaraError(
+                "SaraPlus asked to verify this browser and a code was "
+                "requested, but no box to type it into appeared. Page says: "
+                "%s | %s" % (code_page_text(page), page_state(page)))
+        code = VC.wait_for_code(since, timeout_s=C.VERIFY_TIMEOUT_S,
+                                poll_s=C.VERIFY_POLL_S, query=C.VERIFY_QUERY,
+                                log=log)
+        _submit_code(page, field_id, code)
+        # Judged on the URL, not on the page's words: the Reporting Hub we
+        # land on afterwards carries enough of the same vocabulary to read as
+        # "still being asked" on a login that had in fact just succeeded.
+        if not _on_passcode_page(page):
+            log("  browser verified (attempt %d)" % attempt)
+            return
+        last_state = page_state(page)
+        log("  still on the passcode page after attempt %d — asking for a "
+            "fresh code" % attempt)
+    raise SaraError(
+        "SaraPlus would not accept a verification code after %d attempts. "
+        "Each one was read from %s and was newer than its own request, so "
+        "this is not a stale-code problem -- the challenge itself is not "
+        "clearing. %s" % (attempts, VC._ing.ACCOUNT, last_state))
+
+
 def login(page, email: str, password: str, log=print) -> str:
     """Sign in -- password, then the emailed verification code if asked --
     and return the DealerPages base url.
@@ -353,37 +413,7 @@ def login(page, email: str, password: str, log=print) -> str:
         log("  SaraPlus asked to verify this browser — reading %s"
             % VC._ing.ACCOUNT)
         log("  code page says: %s" % (code_page_text(page) or "(no text)"))
-        # The picker and the box are TWO PAGES. Request the code, let SaraPlus
-        # move us to VerifyPasscode.aspx, and only then look for the field --
-        # a field id read off the picker is stale by the time it is used.
-        requested = _request_code(page, log=log)
-        if requested:
-            try:
-                page.wait_for_load_state("networkidle", timeout=C.NAV_TIMEOUT_MS)
-            except Exception:                              # noqa: BLE001
-                pass
-            page.wait_for_timeout(1500)
-        field_id = _code_field(page)
-        if field_id is None:
-            raise SaraError(
-                "SaraPlus asked to verify this browser and a code was "
-                "requested, but no box to type it into appeared. Page says: "
-                "%s | %s" % (code_page_text(page), page_state(page)))
-        code = VC.wait_for_code(since, timeout_s=C.VERIFY_TIMEOUT_S,
-                                poll_s=C.VERIFY_POLL_S, query=C.VERIFY_QUERY,
-                                log=log)
-        _submit_code(page, field_id, code)
-        # Judged on the URL, not on the page's words. _needs_code's text
-        # match is right for SPOTTING the challenge and wrong for confirming
-        # it is over: the Reporting Hub we land on afterwards carries enough
-        # of the same vocabulary to read as "still being asked" (2026-09-03,
-        # on a login that had in fact just succeeded).
-        if _on_passcode_page(page):
-            raise SaraError(
-                "SaraPlus is still asking to verify this browser after a code "
-                "was entered. The code had already expired, or it belonged to "
-                "a different login attempt. %s" % page_state(page))
-        log("  browser verified")
+        _verify_browser(page, log=log)
 
     url = page.url
     if "login" in url.lower():

@@ -43,6 +43,11 @@ PROFILE_DIR = REPO_ROOT / "automations" / "uploaded" / ".saraplus_b2b_profile"
 # digits out of one of those and type it in as a passcode.
 VERIFY_QUERY = "from:security.info@saraplus.com newer_than:1d"
 VERIFY_TIMEOUT_S = 180
+# SaraPlus can issue TWO codes a second apart (the Email radio's autopostback
+# and the Get Code press both reaching the server). Settling before the inbox
+# is read means both have landed, so "newest wins" picks the real newest
+# instead of whichever arrived first. Measured on Lucy 2 2026-09-09.
+VERIFY_SETTLE_MS = 6000
 VERIFY_POLL_S = 10
 
 # Login page fields. The code step's own field is found by LABEL at run time
