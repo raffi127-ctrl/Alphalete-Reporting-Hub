@@ -45,8 +45,12 @@ DASH = "-"
 def audit(grid, totals_row: int, name_col: int, team_rows) -> list:
     """[(kind, row, col, block, header, value)] -- one per cell worth a look."""
     out = []
+    # A row with NO NAME is not a data row, in the roster or in the Teams
+    # cuadro: the board keeps filler rows in both, their cells are blank on
+    # purpose, and counting them made this report cry over 44 empty slots.
     rows = [r for r in range(4, totals_row + 1)
-            if _cell(grid, r, name_col) or r == totals_row] + list(team_rows)
+            if _cell(grid, r, name_col) or r == totals_row]
+    rows += [r for r in team_rows if _cell(grid, r, name_col)]
 
     def look(block, headers, cols_of, weekly: bool):
         for h in headers:

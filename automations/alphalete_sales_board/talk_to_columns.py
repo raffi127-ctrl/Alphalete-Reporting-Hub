@@ -1103,6 +1103,11 @@ def _past_weeks_formulas(ss, ws, totals: int, names: str) -> int:
         # Monday roll brings them. Until it does they say '-' and not blank --
         # a blank in a weekly block reads as a broken report (Eve, 2026-09-09).
         # Only ever seeded where the cell is EMPTY, so a real number is safe.
+        #
+        # ORDER MATTERS: run this BEFORE `past_week_backfill`, never after.
+        # Both touch the same cells and only the backfill knows the numbers;
+        # seeding second stamps '-' over a TOTALS row that had just been filled,
+        # which is exactly what Eve saw in the totals on 2026-09-09.
         for r in rows:
             if not _cell(grid, r, 3):
                 continue

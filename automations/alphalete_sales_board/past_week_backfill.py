@@ -258,13 +258,20 @@ def main(argv=None) -> int:
             data.append({"range": "%s%d" % (_col_letter(cols[WEEK_TT]), last + 1),
                          "values": [[week_tt]]})
         # The roster's own TOTALS row, over the days EVERYBODY worked.
-        for col, src_col in ((cols[WEEK_AVG_TK], tk_c), (cols[WEEK_AVG_TT], tt_c)):
-            try:
-                v = float(_cell(grid, last + 1, src_col) or 0)
-            except ValueError:
-                continue
+        #
+        # The Talk-To's total comes from `week_tt`, NOT from re-reading the
+        # cell: the grid was loaded before this run wrote anything, so that cell
+        # still holds whatever was there -- and if `--past-weeks` had seeded it
+        # with '-', float() choked and the average silently stayed a dash. That
+        # is the cell Eve found in the totals on 2026-09-09.
+        try:
+            tk_total = float(_cell(grid, last + 1, tk_c) or 0)
+        except ValueError:
+            tk_total = 0
+        for col, v in ((cols[WEEK_AVG_TK], tk_total), (cols[WEEK_AVG_TT], week_tt)):
             data.append({"range": "%s%d" % (_col_letter(col), last + 1),
-                         "values": [[round(v / all_days, 1) if all_days else "-"]]})
+                         "values": [[round(v / all_days, 1) if all_days and v
+                                     else "-"]]})
         print("  equipos: %s" % ", ".join(
             "%s=%d dias" % (k or "(sin equipo)", v)
             for k, v in sorted(days_by_team.items()) if v))
