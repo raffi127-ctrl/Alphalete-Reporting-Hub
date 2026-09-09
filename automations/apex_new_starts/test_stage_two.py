@@ -121,9 +121,14 @@ def test_gender_is_found_and_now_comes_from_the_board(page):
     assert AX.UNANSWERED == ()
 
 
+# The real Tax & Bank Information tab (2026-09-05): the existing number shown
+# masked, then TWO boxes to change it.
 SSN_FORM = """
 <!doctype html><html><body>
-<label for="s1">Social Security Number *</label><input id="s1">
+<h2>Tax &amp; Bank Information for Algemar Kennel</h2>
+<div>Social Security Number</div><div>***-**-7663</div>
+<label for="s1">Change SSN</label><input id="s1">
+<label for="s3">Confirm SSN</label><input id="s3">
 <label for="s2">City</label><input id="s2">
 </body></html>
 """
@@ -143,16 +148,25 @@ def test_the_social_goes_in_only_through_its_own_door(page):
 
     assert AX.fill_ssn(page, Secret("123456789")) is True
     assert page.locator("#s1").input_value() == "123456789"
+    assert page.locator("#s3").input_value() == "123456789"   # both boxes
 
 
-def test_fill_ssn_types_nothing_when_it_cant_find_the_box(page):
-    """The Tax & Bank tab has never been seen, so the label wordings are a
-    guess. A guess that lands on the wrong box would put a Social somewhere it
-    doesn't belong -- so a miss types nothing at all."""
+def test_fill_ssn_types_nothing_when_it_cant_find_the_boxes(page):
+    """A Social typed into some other box on a payroll page is worse than a
+    failure that says so."""
     from automations.apex_new_starts.ssn_prompt import Secret
     page.set_content('<label for="x">City</label><input id="x">')
     assert AX.fill_ssn(page, Secret("123456789")) is False
     assert page.locator("#x").input_value() == ""
+
+
+def test_half_a_social_is_never_typed(page):
+    """'Change SSN' filled with 'Confirm SSN' empty does not save. All or
+    nothing -- otherwise the run leaves a Social in a box for no benefit."""
+    from automations.apex_new_starts.ssn_prompt import Secret
+    page.set_content('<label for="s1">Change SSN</label><input id="s1">')
+    assert AX.fill_ssn(page, Secret("123456789")) is False
+    assert page.locator("#s1").input_value() == ""
 
 
 def test_the_prompt_returns_a_gender_beside_the_secret():

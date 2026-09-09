@@ -506,26 +506,28 @@ def apply_fill(page, matched: List[tuple], log=print) -> int:
     return done
 
 
-# The Social's box, looked up SEPARATELY from LABELS on purpose. Keeping it out
-# of LABELS means plan_fill -- the path every ordinary value travels -- has no
-# way to reach it even by accident; the only thing that can put a number in this
-# box is `fill_ssn`, which takes a Secret a person typed. Wordings are a guess:
-# the Tax & Bank Information tab has never been seen, so `fill_ssn` reports and
-# refuses rather than typing into something it isn't sure about.
-SSN_LABELS = ("social security number", "social security", "ssn", "ss #",
-              "ssn/itin")
+# The Social's boxes, looked up SEPARATELY from LABELS on purpose. Keeping them
+# out of LABELS means plan_fill -- the path every ordinary value travels -- has
+# no way to reach them even by accident; the only thing that can put a number
+# here is `fill_ssn`, which takes a Secret a person typed.
+#
+# CONFIRMED off the real screen (2026-09-05, /employees/<id>/edit/bank-info).
+# There are TWO boxes, not one: the page shows the existing number masked
+# ('***-**-7663') and then asks for 'Change SSN' and 'Confirm SSN'. Filling one
+# and not the other saves nothing, so this fills both or neither.
+SSN_CHANGE_LABELS = ("change ssn", "social security number", "ssn")
+SSN_CONFIRM_LABELS = ("confirm ssn", "confirm social security number")
+
+# The Social lives on the employee's third tab. Its URL is the record's own with
+# /edit/bank-info on the end, which is how the run gets there without hunting
+# for a tab by name.
+BANK_INFO_SUFFIX = "/edit/bank-info"
 
 
-def fill_ssn(page, secret) -> bool:
-    """Type ONE Social, from a Secret the operator typed, into the SSN box.
-
-    The value is revealed for exactly as long as it takes to type it, and it is
-    never returned, logged or stored. Returns whether the box was found; if it
-    wasn't, nothing was typed anywhere.
-    """
-    hit = None
+def _one_field(page, labels):
+    """The single visible box matching any of `labels`, or None."""
     for exact in (True, False):
-        for label in SSN_LABELS:
+        for label in labels:
             hits = [h for h in page.evaluate(
                         _FIND_JS, {"labels": [label], "exact": exact})
                     if h["visible"] and not h["readonly"]
@@ -534,14 +536,29 @@ def fill_ssn(page, secret) -> bool:
             if len(hits) == 1:
                 hit = dict(hits[0])
                 hit["matched_label"] = label
-                break
-        if hit:
-            break
-    if not hit:
+                return hit
+    return None
+
+
+def fill_ssn(page, secret) -> bool:
+    """Type ONE Social into BOTH boxes, from a Secret the operator typed.
+
+    All-or-nothing: if either box is missing, nothing is typed anywhere. A
+    Social in 'Change SSN' with 'Confirm SSN' left empty does not save, and a
+    Social typed into some other box on a payroll page is worse than a failure
+    that says so.
+
+    The value is revealed for exactly as long as it takes to type it, and it is
+    never returned, logged or stored.
+    """
+    change = _one_field(page, SSN_CHANGE_LABELS)
+    confirm = _one_field(page, SSN_CONFIRM_LABELS)
+    if not change or not confirm or change["id"] == confirm["id"]:
         return False
-    el = page.locator(_selector(hit)).first
-    el.fill("", timeout=8000)
-    el.type(secret.reveal(), delay=20)
+    for hit in (change, confirm):
+        el = page.locator(_selector(hit)).first
+        el.fill("", timeout=8000)
+        el.type(secret.reveal(), delay=20)
     return True
 
 
