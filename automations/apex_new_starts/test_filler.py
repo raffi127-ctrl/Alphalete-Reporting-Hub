@@ -788,3 +788,37 @@ def test_a_select_inside_the_widget_is_still_reachable(page):
     assert page.locator("#MaritalStatus_1").input_value() == "1"
     assert page.locator("#MaritalStatusID").input_value() == "1"
     assert page.locator("#mpop").is_hidden(), "the list closes again"
+
+
+NEIGHBOUR_TRAP = """
+<!doctype html><html><body>
+<div class="form-group">
+  <label for="TaxState_1">State to be taxed in <span>*</span></label>
+  <span class="k-widget k-dropdown" id="tsw">
+    <span class="k-dropdown-wrap"><span class="k-input">Select</span></span>
+    <select id="TaxState_1" style="display:none">
+      <option value="">Select</option><option value="45">Texas</option>
+    </select>
+  </span>
+</div>
+<div class="form-group">
+  <label for="FedAmt">Federal</label>
+  <input type="text" id="FedAmt" placeholder="Amount ($0.00)">
+</div>
+</body></html>
+"""
+
+
+def test_it_never_writes_into_a_neighbouring_field(page):
+    """This is the one that matters most. A widget span resolved one level too
+    high reached into the NEXT field and typed "Texas" into "Additional Tax
+    Amount Withheld -> Federal" -- a money box, on a tax record. Whatever else
+    happens, a value must never land outside the field it was meant for."""
+    page.set_content(NEIGHBOUR_TRAP)
+    people = [{"name": "X", "find": "X",
+               "fields": {"State to be taxed in": "Texas"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#FedAmt").input_value() == "", \
+        "the neighbouring money box must be untouched"

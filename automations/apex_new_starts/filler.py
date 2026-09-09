@@ -115,7 +115,7 @@ _JS = r"""
    var targets=[el], sp=el?widgetSpan(el):null, i;
    if(el&&el.tagName==='SELECT') targets.push(el);
    if(sp){ var sel=sp.querySelector('select'); if(sel) targets.push(sel);
-           var vi=visibleInput(sp); if(vi) targets.push(vi); }
+           var vi=visibleInput(sp,el); if(vi) targets.push(vi); }
    if(el&&el.parentElement){ var s2=el.parentElement.querySelector('select');
      if(s2) targets.push(s2); }
    for(i=0;i<targets.length;i++){
@@ -152,7 +152,8 @@ _JS = r"""
       That is why Marital Status opened its list and never got clicked. */
    var par=el.parentElement;
    if(par&&/(^|\s)k-widget(\s|$)/.test(par.className||'')) return par;
-   if(par&&par.parentElement&&/(^|\s)k-widget(\s|$)/.test(par.parentElement.className||''))
+   if(par&&par.parentElement&&/(^|\s)k-widget(\s|$)/.test(par.parentElement.className||'')
+      &&sameGroup(par.parentElement,el))
      return par.parentElement;
    return par?par.querySelector(':scope > .k-dropdown, :scope > .k-combobox, :scope > .k-widget'):null;
  }
@@ -213,22 +214,37 @@ _JS = r"""
      return _s.apply(this,arguments);
    };
  }
- function visibleInput(sp){
+ function sameGroup(a,b){
+   /* Two controls belong together only if they share a form-group. Without
+      this, a widget span resolved one level too high reached into the NEXT
+      field: "Texas" was typed into "Additional Tax Amount Withheld ->
+      Federal", a money box on a tax record. Nothing may ever be written
+      outside the field it was meant for. */
+   if(!a||!b||!a.closest||!b.closest) return true;
+   var ga=a.closest('.form-group'), gb=b.closest('.form-group');
+   /* Only judge when BOTH sit in a real group -- that is the case on Apex's
+      pages, and the case where reaching into a neighbour is possible. */
+   if(!ga||!gb) return true;
+   return ga===gb;
+ }
+ function visibleInput(sp,owner){
    var ins=sp.querySelectorAll('input'), i, r;
    for(i=0;i<ins.length;i++){
      if((ins[i].type||'text').toLowerCase()==='hidden') continue;
      if(ins[i].getAttribute('aria-hidden')==='true') continue;
      r=ins[i].getBoundingClientRect();
-     if(r.width>0&&r.height>0) return ins[i];
+     if(r.width<=0||r.height<=0) continue;
+     if(owner&&!sameGroup(ins[i],owner)) continue;   /* never a neighbour's box */
+     return ins[i];
    }
    return null;
  }
- async function typeInto(sp,v){
+ async function typeInto(sp,v,el){
    /* A Kendo ComboBox is a TEXT box with a list attached -- you type into it.
       Its popup never opened from a click on the wrapper (lists after 2500ms:
       0, twice), which is exactly how a combobox behaves. Typing is what it is
       for, and it is also what a person would do. */
-   var inp=visibleInput(sp); if(!inp) return false;
+   var inp=visibleInput(sp,el); if(!inp) return false;
    inp.focus();
    inp.value=v;
    ['input','keydown','keyup','change'].forEach(function(t){
@@ -246,7 +262,8 @@ _JS = r"""
       then reads "Male" while the model holds the word instead of the list
       item's id -- Angular is satisfied, and the SERVER answers "The request is
       invalid". So check what the bound field actually ended up holding. */
-   var bound=null, hid=sp.parentElement?sp.parentElement.querySelector('input[type=hidden]'):null;
+   var bound=null, grp=el&&el.closest?el.closest('.form-group'):null;
+   var hid=(grp||sp.parentElement||sp).querySelector('input[type=hidden]');
    if(hid) bound=hid.value;
    TRACE.push('typed "'+inp.value+'" bound="'+(bound===null?'?':bound)+'"');
    if(norm(inp.value)!==norm(v)) return false;
@@ -258,7 +275,7 @@ _JS = r"""
       letters and it selects the matching item itself -- which means Kendo does
       the binding, not us. Worth trying when a click updates the display and
       leaves the id empty. */
-   var target=visibleInput(sp)||sp;
+   var target=visibleInput(sp,el)||sp;
    target.focus();
    var i, ch;
    for(i=0;i<v.length&&i<12;i++){
@@ -290,7 +307,7 @@ _JS = r"""
    var before=openLists();
    /* A combobox takes typing; a dropdown list does not. Try typing first when
       the widget has a real text box inside it. */
-   if(/k-combobox/.test(sp.className||'')&&await typeInto(sp,v)) return true;
+   if(/k-combobox/.test(sp.className||'')&&await typeInto(sp,v,el)) return true;
    fire(sp,'mousedown'); fire(sp,'mouseup'); fire(sp,'click');
    /* Only lists that appeared BECAUSE of the click. Taking every visible <ul>
       swept up the site's own nav menus -- three of them, present at 0ms -- and
@@ -315,7 +332,7 @@ _JS = r"""
      TRACE.push('after arrow click: '+lists.length);
    }
    if(!lists.length){
-     if(await typeInto(sp,v)) return true;
+     if(await typeInto(sp,v,el)) return true;
      if(await keyboardPick(sp,el,v)) return true;
      return false;
    }
