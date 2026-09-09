@@ -223,6 +223,24 @@ every item cost a failed run to find:
 
 ---
 
+## The passcode challenge, in practice
+
+**It is once per browser profile, not nightly.** Only 2 codes were ever emailed
+on 2026-09-09, both from Lucy 2's cold profile; every later run on an already-
+verified profile logged straight in. So the 4am job does not email Carlos a
+code every morning — but a NEW machine, or a wiped
+`automations/uploaded/.saraplus_b2b_profile`, will be challenged once.
+
+**SaraPlus can issue two codes a second apart** (the Email radio's autopostback
+and the Get Code press each reaching the server). The page then belongs to one
+request while the newest code answers the other, and a perfectly valid code is
+refused with "still asking to verify this browser". The login therefore
+**retries up to 3 times**, each attempt requesting a fresh code and waiting
+only for mail newer than that request. If all three fail, the error says so
+explicitly — the codes were fresh, so don't start by suspecting the filter.
+
+---
+
 ## Things that will bite
 
 - **A dry run is the default and that is deliberate.** A RingCentral contact
