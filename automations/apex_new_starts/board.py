@@ -51,8 +51,27 @@ COL_GENDER = "gender"
 
 # Roll-call values. Matched as substrings of the folded cell, so 'Terminated',
 # 'TERMINATED' and a stray 'terminated 8/30' all land.
+# HOW A TERMINATION IS WRITTEN IN THIS BOX. Two ways, and both count:
+#
+#   'Terminated' / 'Terminate'   the word, spelled out
+#   'T'                          a bare T (Megan, 2026-09-09: "if they get
+#                                marked T, then we don't need to worry about
+#                                them")
+#
+# The bare T is the one this reader missed for a week. `terminated_reps` has
+# always honoured it -- a T typed anywhere in a day block is a termination
+# there -- so the two reports would have disagreed about the same box: theirs
+# filing somebody as gone while this one added them to payroll. No roll-call
+# value is a bare 'T' otherwise (CR, Hwk1C, Here, Late, Off, O-NA, NoShow), so
+# matching it exactly is safe.
 TERMINATED = "terminat"
+TERM_EXACT = {"t"}
 ONA_MARKS = ("o-na", "ona", "o/na")
+
+
+def _is_terminated(value) -> bool:
+    v = _fold(value)
+    return TERMINATED in v or v in TERM_EXACT
 
 # CLASSROOM -- their first day, and so their HIRE DATE (Megan, 2026-09-03:
 # "that monday / where they are marked as CR on the sales board for first day").
@@ -87,13 +106,13 @@ class Candidate:
 
     @property
     def terminated(self) -> bool:
-        return any(TERMINATED in _fold(v) for v in self.roll.values())
+        return any(_is_terminated(v) for v in self.roll.values())
 
     @property
     def term_day(self) -> Optional[int]:
         """First weekday offset marked Terminated, or None."""
         days = [d for d, v in sorted(self.roll.items())
-                if TERMINATED in _fold(v)]
+                if _is_terminated(v)]
         return days[0] if days else None
 
     @property

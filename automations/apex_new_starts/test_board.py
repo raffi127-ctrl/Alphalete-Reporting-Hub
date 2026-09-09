@@ -186,3 +186,29 @@ def test_gender_comes_off_the_board_not_off_a_name():
     assert [p.gender for p in people] == ["Female", ""]
     assert RUN._gender("f") == "Female" and RUN._gender("M") == "Male"
     assert RUN._gender("") == ""
+
+
+def test_a_bare_T_is_a_termination_too():
+    """Megan, 2026-09-09: "if they get marked T, then we don't need to worry
+    about them". This reader only looked for the WORD, so a T-marked person
+    would have been added to payroll while terminated_reps -- reading the same
+    box -- filed them as gone. Two reports, one box, opposite answers."""
+    people = _people([
+        _person("Marked With A T", {0: "CR", 1: "Hwk1C", 2: "T"}),
+        _person("Spelled Out", {0: "CR", 1: "Terminated"}),
+        _person("Still Here", {0: "CR", 1: "Hwk1C", 2: "Here"}),
+    ])
+    add, skipped = BRD.to_add(people)
+    assert [p.name for p in add] == ["Still Here"]
+    assert [why for _, why in skipped] == ["terminated Wednesday",
+                                           "terminated Tuesday"]
+
+
+def test_a_bare_T_does_not_swallow_ordinary_roll_call_values():
+    """'T' matches EXACTLY. The box is full of values that start with or
+    contain a t, and none of them mean gone."""
+    for value in ("Here", "Terminate", "Late", "Off", "O-NA", "NoShow",
+                  "Hwk1C", "CR", "STF"):
+        people = _people([_person("Someone", {0: value})])
+        expected = value.lower().startswith("terminat")
+        assert people[0].terminated is expected, value

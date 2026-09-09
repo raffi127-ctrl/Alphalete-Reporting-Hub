@@ -54,7 +54,10 @@ KNOWN = PERSONAL + SENSITIVE + W4
 
 _SSN = re.compile(r"^\d{3}-?\d{2}-?\d{4}$")
 _ZIP = re.compile(r"^\d{5}(-\d{4})?$")
-_PHONE = re.compile(r"^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$")
+# TEN DIGITS, however somebody chose to group them. The strict 3-3-4 pattern
+# rejected a real I-9 that read '46-9883-1630' -- ten digits, odd grouping, a
+# perfectly good phone number -- and reported its owner as needing a hand.
+_PHONE = re.compile(r"^\+?1?[\s().-]*(?:\d[\s().-]*){10}$")
 _STATE = re.compile(r"^[A-Za-z]{2}$")
 _ADDRESS = re.compile(r"^\d+\s+\w")
 _ROUTING = re.compile(r"^\d{9}$")

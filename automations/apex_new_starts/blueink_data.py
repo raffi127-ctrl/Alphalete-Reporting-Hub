@@ -29,10 +29,13 @@ DOC_PREFERENCE = ("i9", "i-9", "w4", "w-4", "dd", "direct deposit")
 
 # What each mapped value has to look like before it is allowed through. A field
 # with no rule here (city, address, names) is accepted as any non-blank text.
+# The W-4's Step 3 boxes are deliberately NOT shape-checked. People write
+# '2,000' and '$0.00' and 'N/A' in them, and all three are fine: `run._dollars`
+# parses what it can and ignores what it can't, so a dollar amount can never be
+# typed wrong. Shape-checking them only produced false alarms -- '2,000' was
+# reported as a broken field map, and somebody's 'N/A' had a human chasing a
+# form that was filled in correctly.
 SHAPE = {
-    "child_credit": re.compile(r"^\d{1,6}$"),
-    "other_dep_credit": re.compile(r"^\d{1,6}$"),
-    "dep_total": re.compile(r"^\d{1,6}$"),
     "ssn": FM._SSN,
     "zip": FM._ZIP,
     "phone": FM._PHONE,

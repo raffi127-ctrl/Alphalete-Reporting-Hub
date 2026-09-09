@@ -288,8 +288,45 @@ def _person_line(c: BRD.Candidate, hire: BID.NewHire) -> str:
     return body
 
 
+def manual_items(add, hires) -> list:
+    """[(person, [what a human still has to do])] -- only what the run cannot.
+
+    The Social and gender are typed in the pop-up for EVERY person, so they are
+    not listed: 28 identical lines would bury the three names worth chasing.
+    """
+    from automations.apex_new_starts import apex as AX
+    out = []
+    for c in add:
+        hire = hires.get(c.name)
+        if hire is None or hire.missing_packet:
+            out.append((c.name, ["no signed Blue Ink packet — the whole record "
+                                 "has to be typed by hand"]))
+            continue
+        reasons = []
+        missing = [f for f in ("first", "last", "address1", "city", "state",
+                               "zip", "dob", "phone")
+                   if not hire.values.get(f)]
+        if missing:
+            reasons.append("I-9 is missing " + ", ".join(missing))
+        ticked = [f for f in AX.MARITAL_BY_FLAG
+                  if str(hire.values.get(f) or "").strip().lower() == "true"]
+        if len(ticked) != 1:
+            reasons.append("W-4 Step 1(c) is blank — set Marital Status")
+        # hire.rejected carries the developer's version ("field_map.json may
+        # be stale, recalibrate"). Alisson and Tiff are being asked to type
+        # something into Apex, not to debug this repo, so it is rewritten as
+        # the thing they'd actually do.
+        for sem, _why in hire.rejected:
+            reasons.append("their Blue Ink form's %s doesn't read as one — "
+                           "check it and type it by hand" % sem.replace("_", " "))
+        if reasons:
+            out.append((c.name, reasons))
+    return out
+
+
 def preview(today: dt.date, *, tab=None, include_ona=True,
-            save: bool = True) -> int:
+            save: bool = True, slack: bool = False,
+            post_for_real: bool = False) -> int:
     title, add, skipped, hires = gather(today, tab=tab, include_ona=include_ona)
     _log(f"SALES BOARD → {title}  ·  'New Starts/Raf' box")
     _log()
@@ -321,6 +358,10 @@ def preview(today: dt.date, *, tab=None, include_ona=True,
              "name differently from the board:")
         for c in nopacket:
             _log(f"     {c.name}")
+    if slack:
+        from automations.apex_new_starts import slack_post
+        slack_post.post(title, len(add), manual_items(add, hires),
+                        dry_run=not post_for_real)
     if save:
         OUTPUT_DIR.mkdir(exist_ok=True)
         out = OUTPUT_DIR / f"apex-new-starts-{today.isoformat()}.txt"
@@ -505,6 +546,11 @@ def main(argv=None) -> int:
     ap.add_argument("--tab", help="a specific week tab, e.g. '9.6'")
     ap.add_argument("--no-apex-check", action="store_true",
                     help="preflight only: skip the Apex login check")
+    ap.add_argument("--slack", action="store_true",
+                    help="show the #11280 thread of what still needs doing "
+                         "by hand (prints it; posts nothing without --post)")
+    ap.add_argument("--post", action="store_true",
+                    help="with --slack, actually post it to the channel")
     ap.add_argument("--date", help="pretend it is this date (YYYY-MM-DD)")
     args = ap.parse_args(argv)
 
@@ -518,8 +564,9 @@ def main(argv=None) -> int:
         return explore(today)
     if not check_day(today, args.any_day):
         return 1
-    if args.preview:
-        return preview(today, tab=args.tab, include_ona=include_ona)
+    if args.preview or args.slack:
+        return preview(today, tab=args.tab, include_ona=include_ona,
+                       slack=args.slack, post_for_real=args.post)
     if args.assist and not _interactive():
         _log("--assist needs a terminal: it fills one record, then waits for "
              "you to add the SSN and click Save before moving on. Run it from "
