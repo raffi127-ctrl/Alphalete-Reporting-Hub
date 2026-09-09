@@ -406,3 +406,41 @@ def test_no_gender_prompt_when_the_board_supplied_one(page):
     page.locator("#ansfill").click()
     _settled(page)
     assert page.locator("#g1").input_value() == "Male"
+
+
+PLAIN_UL_DROPDOWN = """
+<!doctype html><html><body>
+<label for="GenderID_9">Gender <span>*</span></label>
+<input type="hidden" id="GenderID_9">
+<span class="k-widget k-dropdown" id="gdd"><span class="k-input">Not Specified</span></span>
+<div id="gpop" style="display:none">
+  <ul><li>Male</li><li>Female</li></ul>
+</div>
+</body></html>
+"""
+
+PLAIN_UL_WIRING = """() => {
+  const pop = document.getElementById('gpop');
+  document.getElementById('gdd').addEventListener('mousedown', () => {
+    pop.style.display = 'block';
+  });
+  pop.querySelectorAll('li').forEach(li => li.addEventListener('click', () => {
+    document.getElementById('GenderID_9').value = li.textContent;
+    document.querySelector('#gdd .k-input').textContent = li.textContent;
+    pop.style.display = 'none';
+  }));
+}"""
+
+
+def test_an_option_list_with_no_kendo_classes_still_works(page):
+    """The Gender dropdown opened on the live page and then just sat there: the
+    click had worked and the list was on screen, but the selector insisted on
+    ul.k-list / ul.k-reset and this one wears neither."""
+    page.set_content(PLAIN_UL_DROPDOWN)
+    page.evaluate(PLAIN_UL_WIRING)
+    people = [{"name": "X", "find": "X", "fields": {"Gender": "Male"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#GenderID_9").input_value() == "Male"
+    assert page.locator("#gpop").is_hidden()

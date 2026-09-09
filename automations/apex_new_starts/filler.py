@@ -111,9 +111,22 @@ _JS = r"""
    return box?box.querySelector(':scope > .k-dropdown, :scope > .k-combobox, :scope > .k-widget'):null;
  }
  function openLists(){
-   var uls=document.querySelectorAll('ul.k-list,ul.k-reset'), out=[], i;
-   for(i=0;i<uls.length;i++){ var r=uls[i].getBoundingClientRect();
-     if(r.width>0&&r.height>0) out.push(uls[i]); }
+   /* Any visible list of options, however Kendo happened to class it. The
+      first version demanded ul.k-list / ul.k-reset and the Gender dropdown
+      opened and then sat there: the click had worked, the list was on screen,
+      and nothing matched the selector. Take any visible <ul> with items, and
+      anything wearing listbox/option roles, and never our own panel. */
+   var mine=document.getElementById('anspanel'), out=[], i, r;
+   var cands=document.querySelectorAll(
+     'ul.k-list, ul.k-reset, .k-animation-container ul, .k-list-container ul, '+
+     '[role="listbox"], .k-popup ul, ul');
+   for(i=0;i<cands.length;i++){
+     var c=cands[i];
+     if(mine&&mine.contains(c)) continue;
+     if(!c.querySelector('li,[role="option"]')) continue;
+     r=c.getBoundingClientRect();
+     if(r.width>0&&r.height>0&&out.indexOf(c)<0) out.push(c);
+   }
    return out;
  }
  async function kendoClick(el,v){
@@ -129,7 +142,7 @@ _JS = r"""
    if(!lists.length) return false;
    var want=norm(v), i, j, items, best=null;
    for(i=0;i<lists.length&&!best;i++){
-     items=lists[i].querySelectorAll('li');
+     items=lists[i].querySelectorAll('li,[role="option"]');
      for(j=0;j<items.length;j++){
        var t=norm(items[j].textContent);
        if(t===want){ best=items[j]; break; }
@@ -137,6 +150,10 @@ _JS = r"""
      if(!best) for(j=0;j<items.length;j++){
        var t2=norm(items[j].textContent);
        if(t2&&(t2.indexOf(want)===0||want.indexOf(t2)===0)){ best=items[j]; break; }
+     }
+     if(!best) for(j=0;j<items.length;j++){
+       var t3=norm(items[j].textContent);
+       if(t3&&t3.indexOf(want)>=0){ best=items[j]; break; }
      }
    }
    if(!best){ fire(sp,'mousedown'); fire(document.body,'click'); return false; }
