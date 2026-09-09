@@ -145,16 +145,14 @@ CALVIN = {
     # VL where fiber has Talk To - Not Interested / Presentation - Not
     # Interested / Sale, so the fixed fiber column list raised on it). Both the
     # scrape and the board now detect the shape by its VL column.
-    # OFF 2026-09-02 (Megan: "I just need Raf's posting"). Not a decision about
-    # the office — a decision about the TICK. Neither of these can publish today:
-    # the campaign pin does not take under impersonation, so Calvin's grid comes
-    # back B2B Box-shaped and both of Jay's come back holding the same 2 reps,
-    # and the guards refuse all three. What they still cost is REAL — they are
-    # pulled in the same session as Raf, and the 15:00 tick took 5m34s against a
-    # 5-minute wake. An overrunning pass is SKIPPED by the pid lock, which is
-    # how Raf's boards thin out without anything erroring.
-    # Turn back on with the campaign, not before: [[project_gap_alerts]].
-    "enabled": False,
+    # BACK ON 2026-09-09. Parked on 09-02 because ownerville would not change
+    # the campaign for an IMPERSONATED office — the pin "loaded" and reverted,
+    # so Calvin's grid came back B2B Box-shaped and both of Jay's held the same
+    # reps. Megan reported it to the vendor and it was fixed. Proved before
+    # re-enabling, on 09-08 data: Calvin @40 -> Energy-Wells-shaped, 2 reps
+    # (Calvin Ribera, Scott Varnell); Jay @3 -> 9 reps; Jay @40 -> 2 reps, and
+    # the two sets DIFFER — which is the whole test, since identical sets are
+    # what "the pin did not take" looks like.
 }
 
 # Jay Turnage — Clear View Consultants, Inc., account 21959, 144 sales reps.
@@ -184,16 +182,14 @@ JAY_ATT = {
     "label": "Jay",
     "campaign_label": "AT&T",
     "compare": True,
-    # OFF 2026-09-02 (Megan: "I just need Raf's posting"). Not a decision about
-    # the office — a decision about the TICK. Neither of these can publish today:
-    # the campaign pin does not take under impersonation, so Calvin's grid comes
-    # back B2B Box-shaped and both of Jay's come back holding the same 2 reps,
-    # and the guards refuse all three. What they still cost is REAL — they are
-    # pulled in the same session as Raf, and the 15:00 tick took 5m34s against a
-    # 5-minute wake. An overrunning pass is SKIPPED by the pid lock, which is
-    # how Raf's boards thin out without anything erroring.
-    # Turn back on with the campaign, not before: [[project_gap_alerts]].
-    "enabled": False,
+    # BACK ON 2026-09-09. Parked on 09-02 because ownerville would not change
+    # the campaign for an IMPERSONATED office — the pin "loaded" and reverted,
+    # so Calvin's grid came back B2B Box-shaped and both of Jay's held the same
+    # reps. Megan reported it to the vendor and it was fixed. Proved before
+    # re-enabling, on 09-08 data: Calvin @40 -> Energy-Wells-shaped, 2 reps
+    # (Calvin Ribera, Scott Varnell); Jay @3 -> 9 reps; Jay @40 -> 2 reps, and
+    # the two sets DIFFER — which is the whole test, since identical sets are
+    # what "the pin did not take" looks like.
 }
 
 JAY_EW = {
@@ -205,16 +201,14 @@ JAY_EW = {
     "label": "Jay",
     "campaign_label": "EnergyWell",
     "compare": True,
-    # OFF 2026-09-02 (Megan: "I just need Raf's posting"). Not a decision about
-    # the office — a decision about the TICK. Neither of these can publish today:
-    # the campaign pin does not take under impersonation, so Calvin's grid comes
-    # back B2B Box-shaped and both of Jay's come back holding the same 2 reps,
-    # and the guards refuse all three. What they still cost is REAL — they are
-    # pulled in the same session as Raf, and the 15:00 tick took 5m34s against a
-    # 5-minute wake. An overrunning pass is SKIPPED by the pid lock, which is
-    # how Raf's boards thin out without anything erroring.
-    # Turn back on with the campaign, not before: [[project_gap_alerts]].
-    "enabled": False,
+    # BACK ON 2026-09-09. Parked on 09-02 because ownerville would not change
+    # the campaign for an IMPERSONATED office — the pin "loaded" and reverted,
+    # so Calvin's grid came back B2B Box-shaped and both of Jay's held the same
+    # reps. Megan reported it to the vendor and it was fixed. Proved before
+    # re-enabling, on 09-08 data: Calvin @40 -> Energy-Wells-shaped, 2 reps
+    # (Calvin Ribera, Scott Varnell); Jay @3 -> 9 reps; Jay @40 -> 2 reps, and
+    # the two sets DIFFER — which is the whole test, since identical sets are
+    # what "the pin did not take" looks like.
 }
 
 # Jay is BACK IN, behind a guard rather than on trust (2026-09-01). Earlier
