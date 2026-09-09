@@ -1077,3 +1077,40 @@ def test_it_says_how_many_people_it_still_cannot_find(page, tmp_path):
     page.goto(p2.as_uri())                        # same origin: ids accumulate
     page.evaluate(js)
     assert "All 2 found" in page.locator("#ansout").inner_text()
+
+
+def test_the_button_survives_being_read_out_of_an_href(page, tmp_path):
+    """THE bug that made it do nothing at all. The button ships inside an
+    href, and a browser DECODES HTML entities when it reads one. A "&#39;" I
+    had written became a real apostrophe inside a single-quoted string --
+    a syntax error, so the whole script died silently on click.
+
+    So the test does what the browser does: put the button in a real href,
+    read it back through the DOM, and run THAT."""
+    page_html = (tmp_path / "page.html")
+    js = filler.build_js(None, "WE 9.13")
+    page_html.write_text(
+        '<a id="bm" href="' + js.replace('"', "&quot;") + '">Fill Apex</a>')
+    page.goto(page_html.as_uri())
+
+    from_href = page.locator("#bm").get_attribute("href")
+    assert from_href.startswith("javascript:")
+    page.evaluate(from_href[len("javascript:"):])       # exactly what a click runs
+    assert page.locator("#anspaste").count() == 1, \
+        "it must still parse and show the paste box"
+
+
+def test_no_html_entity_can_ever_ship_in_the_button():
+    """A guard on the whole class, not just the one apostrophe."""
+    import pytest as _pytest
+    from automations.apex_new_starts import filler as F
+    good = F.build_js(None, "WE 9.13")
+    assert "&#39;" not in good and "&amp;" not in good
+
+    original = F._JS
+    F._JS = original.replace("No list loaded", "No list &#39;loaded")
+    try:
+        with _pytest.raises(RuntimeError, match="HTML entities"):
+            F.build_js(None, "WE 9.13")
+    finally:
+        F._JS = original

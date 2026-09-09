@@ -91,7 +91,7 @@ _JS = r"""
    w0.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;background:#fff;border:2px solid #0F766E;border-radius:10px;padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:340px';
    w0.innerHTML='<div style="font-weight:700">No list loaded for %(week)s</div>'+
      '<div style="color:#555;margin:4px 0 8px;font-size:12px">On the Fill Apex page click '+
-     '<b>Copy this week&#39;s list</b>, then paste it here.</div>'+
+     '<b>Copy this week\u0027s list</b>, then paste it here.</div>'+
      '<textarea id="anspaste" style="width:100%%;height:70px;font-size:11px"></textarea>'+
      '<div style="margin-top:8px"><button id="anssave" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer">Load it</button> '+
      '<span id="anspmsg" style="font-size:12px;color:#b00"></span></div>';
@@ -898,8 +898,8 @@ _JS = r"""
    if(r.offpage){
      document.getElementById('ansout').innerHTML=
        '<b>Nothing on this page belongs to '+p.name+'.</b><br>Open one of '+
-       'their three tabs: Employment Record, User Profile &amp; Account, or '+
-       'Tax &amp; Bank Information.';
+       'their three tabs: Employment Record, User Profile \u0026 Account, or '+
+       'Tax \u0026 Bank Information.';
      return;
    }
    if(!r.found && !ssnBoxes()){
@@ -954,7 +954,7 @@ _JS = r"""
        while(n&&d<4){ chain.push(n.tagName.toLowerCase()+(n.id?'#'+n.id:'')); n=n.parentElement; d++; }
        var par=el.parentElement, sibs=[], sb=par?par.children:[];
        for(var j=0;j<sb.length&&j<8;j++) sibs.push(sb[j].tagName.toLowerCase()+(sb[j].id?'#'+sb[j].id:''));
-       out.push('text in: '+chain.join(' &lt; ')+'<br>parent kids: '+sibs.join(', '));
+       out.push('text in: '+chain.join(' \u003c ')+'<br>parent kids: '+sibs.join(', '));
      }
      if(seen===0) out.push('that caption text is not on this page at all');
      var lab=null, ls=document.querySelectorAll('label');
@@ -987,7 +987,7 @@ _JS = r"""
      ? '<b>'+L.status+'</b> '+String(L.url).slice(0,70)+
        '<div style="font-size:11px;white-space:pre-wrap;max-height:180px;overflow:auto;'+
        'background:#f6f6f6;padding:6px;margin-top:4px">'+
-       String(L.body).replace(/</g,'&lt;')+'</div><div style="font-size:11px">screenshot this</div>'
+       String(L.body).replace(/</g,'\u0026lt;')+'</div><div style="font-size:11px">screenshot this</div>'
      : 'Nothing failed yet. Click Save in Apex first, then come back here.';
  };
  document.getElementById('ansreset').onclick=function(e){ e.preventDefault();
@@ -1009,7 +1009,21 @@ def build_js(people=None, week: str = "") -> str:
                         if people is not None else "null",
                 "week": week.replace("'", ""),
                 "role": json.dumps(SECURITY_ROLE_LABEL.lower())}
-    return "javascript:" + " ".join(js.split())
+    out = "javascript:" + " ".join(js.split())
+    # The button is served inside an href, and the browser DECODES HTML
+    # entities before running it. A single "&#39;" turned into a real
+    # apostrophe inside a single-quoted string, which is a syntax error, and
+    # the whole script silently did nothing when clicked. Unicode escapes
+    # survive; entities must never appear.
+    import re as _re
+    # Named entities only from the ones a browser actually decodes here, plus
+    # numeric. A loose [a-z]+ pattern matched "&&n;" in `for(var k=0;k<3&&n;`.
+    bad = _re.findall(r"&(?:#\d+|amp|lt|gt|quot|apos|nbsp);", out)
+    if bad:
+        raise RuntimeError(
+            "the bookmarklet contains HTML entities, which the browser will "
+            f"decode and break: {sorted(set(bad))[:5]}")
+    return out
 
 
 def data_json(people: List[Dict]) -> str:
