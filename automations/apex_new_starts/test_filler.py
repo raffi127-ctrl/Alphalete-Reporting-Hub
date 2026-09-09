@@ -355,3 +355,54 @@ def test_an_option_that_isnt_in_the_list_leaves_it_alone(page):
     _settled(page)
     assert page.locator("#JobTitleID_943").input_value() == ""
     assert "Position" in page.locator("#ansout").inner_text()
+
+
+PROFILE_WITH_GENDER = """
+<!doctype html><html><body>
+<label for="g1">Gender <span>*</span></label>
+<select id="g1"><option>Not Specified</option><option>Female</option>
+  <option>Male</option></select>
+<label for="c1">City <span>*</span></label><input id="c1">
+</body></html>
+"""
+
+
+def test_it_asks_for_gender_when_the_board_has_none(page):
+    """Gender is required on the profile page and the board's column is usually
+    still empty when this runs. Without it Apex refuses the WHOLE page with
+    "The request is invalid" and names no field, which is impossible to debug
+    from the outside."""
+    page.set_content(PROFILE_WITH_GENDER)
+    people = [{"name": "Aundre Browder", "find": "Browder",
+               "fields": {"City": "Dallas"}}]          # no Gender
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    assert page.locator("#ansgender").count() == 1
+
+    page.select_option("#ansgender", "Female")
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#g1").input_value() == "Female"
+    assert "gender Female" in page.locator("#ansout").inner_text()
+
+
+def test_it_warns_rather_than_saving_a_page_apex_will_reject(page):
+    """Filling without picking one leaves a required field empty. Say so, in
+    the panel, instead of letting Save fail with a message that names nothing."""
+    page.set_content(PROFILE_WITH_GENDER)
+    people = [{"name": "X", "find": "X", "fields": {"City": "Dallas"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+    out = page.locator("#ansout").inner_text()
+    assert "Gender is required" in out
+
+
+def test_no_gender_prompt_when_the_board_supplied_one(page):
+    page.set_content(PROFILE_WITH_GENDER)
+    people = [{"name": "X", "find": "X",
+               "fields": {"City": "Dallas", "Gender": "Male"}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    assert page.locator("#ansgender").count() == 0
+    page.locator("#ansfill").click()
+    _settled(page)
+    assert page.locator("#g1").input_value() == "Male"

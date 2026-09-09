@@ -260,15 +260,27 @@ _JS = r"""
       would not match got reported as "not an Apex form". */
    return {done:done,miss:miss,found:found};
  }
- function ssnBoxes(){ var a=fieldFor('Change SSN'), b=fieldFor('Confirm SSN'); return (a&&b)?[a,b]:null; }
+ function ssnBoxes(){ var a=fieldFor('SSN')||fieldFor('Change SSN'),
+                      b=fieldFor('Confirm SSN'); return (a&&b)?[a,b]:null; }
+ function genderBox(p){
+   /* Required on the profile page. Ask for it here when the board's Gender
+      column was empty -- which it usually is by the time this runs. Without
+      it Apex refuses the whole page with "The request is invalid", naming
+      nothing. */
+   if(p.fields['Gender']) return null;
+   return fieldFor('Gender');
+ }
  function blueink(p){ return 'https://secure.blueink.com/dashboard/wall?search='+encodeURIComponent(p.find||p.name); }
  var old=document.getElementById('anspanel'); if(old) old.remove();
  var p=D[Math.min(I,D.length-1)];
  var box=document.createElement('div'); box.id='anspanel';
  box.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;background:#fff;border:2px solid #0F766E;border-radius:10px;padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:330px';
- var ssn=ssnBoxes();
+ var ssn=ssnBoxes(), gnd=genderBox(p);
  box.innerHTML='<div style="font-weight:700;font-size:16px">'+p.name+'</div>'+
    '<div style="color:#555;margin:2px 0 10px">'+(I+1)+' of '+D.length+' · %(week)s</div>'+
+   (gnd?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Gender <span style="color:#b00">(required, not on the board)</span></div>'+
+        '<select id="ansgender" style="width:100%%;padding:6px;font-size:15px">'+
+        '<option value="">Pick one</option><option>Female</option><option>Male</option></select></div>':'')+
    (ssn?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Social Security number</div>'+
         '<input id="ansssn" type="password" style="width:100%%;padding:6px;font-size:15px">'+
         '<div style="margin-top:6px"><a href="'+blueink(p)+'" target="_blank" rel="noopener" id="ansbi" style="font-size:12px;color:#0F766E">Open their Blue Ink packet →</a>'+
@@ -294,6 +306,13 @@ _JS = r"""
      return;
    }
    var msg='Filled: '+(r.done.join(', ')||'nothing on this page');
+   var g=document.getElementById('ansgender');
+   if(g&&g.value){ var gb=genderBox(p);
+     if(gb&&await setVal(gb,g.value)){ msg+='; gender '+g.value; }
+     else msg+='; <span style="color:#b00">gender would not set</span>'; }
+   else if(gnd) msg+='<br><span style="color:#b00">Gender is required and '+
+     'still empty — pick one above and Fill again, or Apex will refuse to '+
+     'save this page.</span>';
    var s=document.getElementById('ansssn');
    if(s&&s.value){ var b=ssnBoxes(); if(b){ await setVal(b[0],s.value); await setVal(b[1],s.value); s.value=''; msg+='; Social entered'; } }
    if(r.miss.length) msg+='<br><span style="color:#b00">Not found here: '+r.miss.join(', ')+'</span>'+
