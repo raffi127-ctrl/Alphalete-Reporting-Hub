@@ -52,6 +52,13 @@ GAP_THRESHOLD_MIN = 15
 #              is reminted on every membership change and a stale one "sends"
 #              into a dead thread without erroring. That is how the Texas de
 #              Brazil texts vanished.
+# C09JG28CD27 is #alphalete-lvl1-chat, PRIVATE — the same channel
+# slack_metrics_post already mirrors #alphalete-sales into, so Lucy is a member.
+# A private channel Lucy has not joined fails with a 200 and sign-in HTML, not
+# a 401, so membership is the thing to check first if this ever goes quiet.
+SLACK_HOURLY_CHANNEL = "C09JG28CD27"      # #alphalete-lvl1-chat
+
+
 RAF = {
     "key": "rafael",
     "name": "Rafael Hidalgo",
@@ -63,7 +70,25 @@ RAF = {
     # Raf's office only. "Our slack lvl 1 chat" is HIS org's channel; Calvin is
     # Energy Wells, a different business, and his board landing in front of
     # Raf's reps would invite a comparison nobody asked for.
-    "slack_hourly": True,
+    #
+    # SPELLED OUT rather than left to the `slack_hourly` shorthand, because Raf
+    # now wants three destinations on two different cadences (2026-09-01, in
+    # the #l10-alphalete thread): "Can we change it to every 30minutes for the
+    # lvl 1 chat please? Can we also post it in the A-players ever 30minutes
+    # please?" The shorthand can only express one group plus an hourly Slack
+    # channel. THIS CHANGES RAF ONLY — Calvin and Jay keep the shorthand.
+    #
+    # The A-players room is the iMessage group "Alphalete A-Team Chat🔥🔥" (23
+    # participants, Lucy is a member). Matched on the emoji-free prefix: the
+    # resolver refuses on 0 or 2+ hits rather than guessing, and this prefix is
+    # unique on the machine. Note a SEPARATE chat called "NEW A Players" (15
+    # participants) also exists — it is NOT this one.
+    "destinations": [
+        {"kind": "imessage", "name": "Alphalete Partners", "cadence_min": 15},
+        {"kind": "imessage", "name": "Alphalete A-Team Chat", "cadence_min": 30},
+        {"kind": "slack", "channel_id": SLACK_HOURLY_CHANNEL,
+         "cadence_min": 30},
+    ],
 }
 
 # RES-ENERGYWELL. Megan read it off the live URL 2026-08-29
@@ -499,11 +524,6 @@ COMPARE_TO_CHAN = True
 # post has carried since it was ranked, so "ranked highest to least" needs no
 # separate sort here.
 #
-# C09JG28CD27 is #alphalete-lvl1-chat, PRIVATE — the same channel
-# slack_metrics_post already mirrors #alphalete-sales into, so Lucy is a member.
-# A private channel Lucy has not joined fails with a 200 and sign-in HTML, not
-# a 401, so membership is the thing to check first if this ever goes quiet.
-SLACK_HOURLY_CHANNEL = "C09JG28CD27"      # #alphalete-lvl1-chat
 
 
 def compares(cfg: Dict) -> bool:
