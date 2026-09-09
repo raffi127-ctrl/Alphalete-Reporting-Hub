@@ -39,10 +39,16 @@ runs every 15 minutes, so every pass sees a bigger number than the last.
     reps who knocked; absence at 9 AM means "not out yet", and writing 0 to
     sixty rows every quarter hour would bury the reps who are out.
 
-THIS WRITES NOTHING ANY OTHER JOB READS. It touches only the TK cells of the
+THIS WRITES NOTHING ANY OTHER JOB READS. It touches only the two columns of the
 current week's tab -- not the Total Knocks Sheet, not the /knocks cache, not
 the captainship sidecar. Tomorrow morning's boards re-collect the day from
 ownerville the way they always did.
+
+AND THE SANDBOX TWIN, if there is one: a tab named '<the week's tab> SANDBOX'
+gets the same two writes from the same pull, so the Talk-To columns can be
+judged on live numbers before they ship (Eve, 2026-09-09). It never affects the
+exit code and it cannot fail the run; delete that tab and this goes quiet.
+`--no-sandbox` turns it off for one run.
 
 WHERE IT RUNS. Lucy 3, from com.alphalete.production-tk (StartInterval 900).
 Ownerville allows ONE session per account, so a pass that finds a knocks pull
@@ -105,6 +111,13 @@ METRIC_TT = "Total Talk-To's"
 # tick would rewrite the same number at the price of a session. --force ignores
 # the window; TK_FILL_HOURS="5-23" moves it.
 ACTIVE_HOURS = os.environ.get("TK_FILL_HOURS", "6-23")
+
+# The SANDBOX TWIN of a week's tab: same name plus this. 'Sales Board WE 9.13'
+# -> 'Sales Board WE 9.13 SANDBOX'. Every pass writes both, from one pull, so
+# the sandbox can be judged on live numbers instead of on whatever somebody
+# last queued by hand. No tab by that name = nothing happens, which is also how
+# this switches itself off the day the sandbox is deleted.
+SANDBOX_SUFFIX = " SANDBOX"
 
 
 def _log(msg: str = "") -> None:
@@ -362,6 +375,9 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="run outside the active hours, and don't defer to "
                          "another job holding the ownerville session")
+    ap.add_argument("--no-sandbox", action="store_true",
+                    help=f"skip the '<tab>{SANDBOX_SUFFIX}' twin, which every "
+                         "pass fills from the same pull")
     a = ap.parse_args(argv)
 
     day = dt.date.fromisoformat(a.date) if a.date else central_today()
@@ -412,9 +428,43 @@ def main(argv=None) -> int:
     from automations.alphalete_production.capture import find_week_tab
     ss = open_by_key(a.sheet_id)
     ws = ss.worksheet(a.tab) if a.tab else find_week_tab(ss, day)
-    g = ws.get_all_values()
-    _log(f"sheet: {ss.title!r}  tab: {ws.title!r}"
+    _log(f"sheet: {ss.title!r}"
          f"{'' if a.sheet_id == PROD_SHEET_ID else '   (NOT the prod workbook)'}")
+
+    code = fill_tab(ws, day, knocks, talks, apply=a.apply, retry=_retry)
+
+    # THE SANDBOX TWIN, from the SAME pull. Eve, 2026-09-09: her boss evaluates
+    # the Talk-To columns on the sandbox before they ship, and a sandbox that
+    # only fills when somebody queues it by hand is not something you can judge.
+    #
+    # Same pass, not a second LaunchAgent: ownerville allows ONE session per
+    # account, so a second job on the same 15-minute tick would spend its life
+    # stepping aside for the first. One scrape, two destinations, and the two
+    # tabs cannot disagree.
+    #
+    # IT CAN NEVER AFFECT PRODUCTION. Its exit code is logged and dropped, and
+    # anything it raises is caught: a mirror for evaluation must not page anyone
+    # or hold the day. And it disappears by itself -- delete the sandbox tab
+    # after rollout and this goes quiet with no code change.
+    if not a.tab and not a.no_sandbox:
+        twin = ws.title + SANDBOX_SUFFIX
+        try:
+            other = next((w for w in ss.worksheets() if w.title == twin), None)
+            if other:
+                _log("")
+                _log(f"--- sandbox twin: {twin!r} (does not affect the exit code)")
+                fill_tab(other, day, knocks, talks, apply=a.apply, retry=_retry)
+        except Exception as e:  # noqa: BLE001 -- the twin must never fail the run
+            _log(f"sandbox twin {twin!r} failed ({e}) -- production unaffected")
+
+    return code
+
+
+def fill_tab(ws, day, knocks: dict, talks: dict, *, apply: bool, retry) -> int:
+    """Write one day's TK + Talk-To's onto ONE tab, from an ownerville pull the
+    caller already has. Returns the exit code that tab earned."""
+    g = ws.get_all_values()
+    _log(f"tab: {ws.title!r}")
 
     if not week_of(g, day):
         _log(f"{_md(day)} is not inside {ws.title!r}'s week -- writing nothing")
@@ -430,7 +480,7 @@ def main(argv=None) -> int:
     rows = roster(g)
     totals_row = last_rep_row(g) + 1
     note = ensure_tk_total(ws, g, apps_c, col, totals_row,
-                           SUB_ROW + 1, totals_row - 1, apply=a.apply)
+                           SUB_ROW + 1, totals_row - 1, apply=apply)
     if note:
         _log(note)
     if rows and apps_counts_tk(ws, apps_c, col, min(rows)):
@@ -482,8 +532,8 @@ def main(argv=None) -> int:
             _log(f"  {nm}")
 
     writes = plan + tt_plan
-    if writes and a.apply:
-        _retry(ws.batch_update,
+    if writes and apply:
+        retry(ws.batch_update,
                [{"range": a1, "values": [[new]]} for _rep, a1, _cur, new in writes])
         _log("")
         _log(f"wrote {len(plan)} TK + {len(tt_plan)} Talk-To cell(s) to {ws.title!r}")

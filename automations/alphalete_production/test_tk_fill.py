@@ -226,6 +226,57 @@ class NeverOverwritesAHuman(unittest.TestCase):
                          [("Anthony Coca", "X")])
 
 
+class SandboxTwin(unittest.TestCase):
+    """One ownerville pull, two tabs. Ownerville allows a single session per
+    account, so the sandbox has to ride the SAME pass -- and it must never be
+    able to hurt the live one."""
+
+    class _WS:
+        """Enough worksheet for fill_tab: a grid, a title, and a place to
+        record what got written."""
+
+        def __init__(self, title, grid):
+            self.title, self._g, self.written = title, grid, []
+
+        def get_all_values(self):
+            return self._g
+
+        def acell(self, a1, value_render_option=None):
+            return type("C", (), {"value": ""})()
+
+        def update_acell(self, a1, value):
+            self.written.append((a1, value))
+
+        def batch_update(self, data):
+            self.written += [(d["range"], d["values"][0][0]) for d in data]
+
+    def _tab(self, title):
+        return self._WS(title, _grid(talk_to=True))
+
+    def test_the_same_pull_lands_on_both_tabs(self):
+        live, sand = self._tab("Sales Board WE 9.13"), self._tab(
+            "Sales Board WE 9.13" + T.SANDBOX_SUFFIX)
+        knocks = {"Zoria Johnson": 120}
+        talks = {"Zoria Johnson": 18}
+        for ws in (live, sand):
+            T.fill_tab(ws, MONDAY, knocks, talks, apply=True,
+                       retry=lambda fn, *a, **k: fn(*a, **k))
+        self.assertEqual([v for _a1, v in live.written],
+                         [v for _a1, v in sand.written])
+        self.assertIn(120, [v for _a1, v in live.written])
+        self.assertIn(18, [v for _a1, v in live.written])
+
+    def test_the_twin_is_the_tab_name_plus_a_suffix(self):
+        self.assertEqual("Sales Board WE 9.13" + T.SANDBOX_SUFFIX,
+                         "Sales Board WE 9.13 SANDBOX")
+
+    def test_a_preview_writes_to_neither(self):
+        ws = self._tab("Sales Board WE 9.13")
+        T.fill_tab(ws, MONDAY, {"Zoria Johnson": 120}, {}, apply=False,
+                   retry=lambda fn, *a, **k: fn(*a, **k))
+        self.assertEqual(ws.written, [])
+
+
 class ActiveWindow(unittest.TestCase):
     def test_the_night_ticks_are_no_ops(self):
         at = lambda h: dt.datetime(2026, 8, 31, h, 0, tzinfo=T.CENTRAL)
