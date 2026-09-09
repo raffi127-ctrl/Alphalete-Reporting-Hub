@@ -863,3 +863,40 @@ def test_fields_with_no_label_element_are_still_found(page):
     assert page.locator("#taxstate").input_value() == "Texas"
     assert page.locator("#pretty").input_value() == "", \
         "the aria-hidden display input is not the one to write to"
+
+
+TAX_PAGE_WITH_STATE_CAPTION = """
+<!doctype html><html><body>
+<div class="row form-group"><div class="col-md-3"><div>
+  State to be taxed in <div class="RequiredText">*</div>
+  <span class="k-widget k-combobox"><span class="k-dropdown-wrap">
+    <input name="StateToBeTaxedIn_input" class="k-input" type="text" id="taxstate">
+  </span></span>
+</div></div></div>
+<div class="form-group">
+  Additional Tax Amount Withheld for Each Pay Statement
+  <div>Federal<input type="text" id="fed" placeholder="Amount ($0.00)"></div>
+  <div>State<input type="text" id="stateamt" placeholder="Amount ($0.00)"></div>
+</div>
+</body></html>
+"""
+
+
+def test_a_home_address_field_never_reaches_the_tax_page(page, tmp_path):
+    """"State" is the home address on the PROFILE page. On the TAX page the
+    only thing called State is the second money box under Additional Tax
+    Amount Withheld -- and "Texas" landed in the one beside it. Fields are
+    offered only to the page they belong to."""
+    f = tmp_path / "bank-info.html"          # the url is what identifies a page
+    f.write_text(TAX_PAGE_WITH_STATE_CAPTION)
+    page.goto(f.as_uri())
+    people = [{"name": "X", "find": "X", "pages": {
+        "profile": {"State": "Texas", "City": "Plano"},
+        "tax": {"State to be taxed in": "Texas"}}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    _settled(page)
+
+    assert page.locator("#taxstate").input_value() == "Texas"
+    assert page.locator("#fed").input_value() == "", "the money box stays empty"
+    assert page.locator("#stateamt").input_value() == ""

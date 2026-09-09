@@ -39,6 +39,21 @@ from typing import Dict, List
 
 # semantic name -> the label as it reads on the Apex screen. Python does the
 # mapping so the button stays dumb: it only ever looks for a label it is handed.
+# Which of Apex's three pages each field lives on. Without this, every field
+# is offered to every page and a caption that happens to repeat gets matched
+# across screens: "State" (the home address, on the profile page) found the
+# "State" caption under Additional Tax Amount Withheld on the TAX page and put
+# "Texas" in the money box beside it. A field is only ever filled on its own
+# page now.
+PAGE_OF = {
+    "employment": ("position", "rate", "pay_state", "pay_basis",
+                   "pay_frequency", "department"),
+    "profile": ("first", "middle", "last", "account_email", "dob", "gender",
+                "address1", "apt", "address2", "city", "state", "zip",
+                "country"),
+    "tax": ("marital_status", "claim_dependents", "tax_state"),
+}
+
 LABEL_FOR = {
     "first": "First Name", "middle": "Middle Name", "last": "Last Name",
     "username": "User Name", "account_email": "Account Email",
@@ -569,11 +584,30 @@ _JS = r"""
    }
    return out;
  }
+ function pageName(){
+   var u=(location.pathname||'').toLowerCase();
+   if(u.indexOf('employment-record')>=0) return 'employment';
+   if(u.indexOf('user-profile')>=0||u.indexOf('employee-profile')>=0) return 'profile';
+   if(u.indexOf('bank-info')>=0||u.indexOf('tax')>=0) return 'tax';
+   return '';
+ }
+ function fieldsHere(p){
+   /* On an Apex page, ONLY that page's fields. Anywhere else (a test page, or
+      a screen we don't recognise) fall back to a flat list if one was given --
+      the scoping exists to stop cross-page caption collisions on Apex, not to
+      make the button useless everywhere else. */
+   var pg=pageName();
+   if(pg&&p.pages) return p.pages[pg]||{};
+   if(p.pages) return null;
+   return p.fields||null;
+ }
  async function fill(p){
    var done=[],miss=[],found=0,k;
-   for(k in p.fields){ var el=fieldFor(k);
+   var set=fieldsHere(p);
+   if(!set) return {done:[],miss:[],found:0,offpage:true};
+   for(k in set){ var el=fieldFor(k);
      if(el){ found++;
-       if(await setVal(el,p.fields[k])) done.push(k); else miss.push(k+' (no matching option)'); }
+       if(await setVal(el,set[k])) done.push(k); else miss.push(k+' (no matching option)'); }
      else miss.push(k); }
    if(role()){ done.push('Sales Rep role'); found++; }
    /* `found` is boxes we LOCATED, which is not the same as boxes we filled.
@@ -614,11 +648,11 @@ _JS = r"""
  function ssnBoxes(){ var a=fieldFor('SSN')||fieldFor('Change SSN'),
                       b=fieldFor('Confirm SSN'); return (a&&b)?[a,b]:null; }
  function genderBox(p){
+   var set=fieldsHere(p); if(set&&set['Gender']) return null;
    /* Required on the profile page. Ask for it here when the board's Gender
       column was empty -- which it usually is by the time this runs. Without
       it Apex refuses the whole page with "The request is invalid", naming
       nothing. */
-   if(p.fields['Gender']) return null;
    return fieldFor('Gender');
  }
  function blueink(p){ return 'https://secure.blueink.com/dashboard/wall?search='+encodeURIComponent(p.find||p.name); }
@@ -662,6 +696,13 @@ _JS = r"""
       did the first time somebody clicked it on the wrong tab. NOTE: block
       comments only in here -- build_js collapses this to ONE line, so a
       line comment would swallow the entire rest of the script. */
+   if(r.offpage){
+     document.getElementById('ansout').innerHTML=
+       '<b>Nothing on this page belongs to '+p.name+'.</b><br>Open one of '+
+       'their three tabs: Employment Record, User Profile &amp; Account, or '+
+       'Tax &amp; Bank Information.';
+     return;
+   }
    if(!r.found && !ssnBoxes()){
      document.getElementById('ansout').innerHTML=
        '<b>This isn\'t an Apex form.</b><br>Open <b>Roster → Employees → '+
@@ -764,10 +805,15 @@ def build_js(people: List[Dict], week: str) -> str:
     return "javascript:" + " ".join(js.split())
 
 
-def rows_for(values: Dict[str, str]) -> Dict[str, str]:
-    """{Apex label: value} -- only the fields we actually have."""
-    return {LABEL_FOR[k]: v for k, v in values.items()
-            if k in LABEL_FOR and v}
+def rows_for(values: Dict[str, str]) -> Dict[str, Dict[str, str]]:
+    """{page: {Apex label: value}} -- only the fields we have, per page."""
+    out: Dict[str, Dict[str, str]] = {}
+    for page, keys in PAGE_OF.items():
+        got = {LABEL_FOR[k]: values[k] for k in keys
+               if k in LABEL_FOR and values.get(k)}
+        if got:
+            out[page] = got
+    return out
 
 
 PAGE = """<!doctype html><meta charset="utf-8">
