@@ -181,10 +181,13 @@ def resolve(page, rec, *, save: bool = True) -> Dict:
 
     THE CALLER OWNS THE SESSION, and owns not being mid-impersonation: reading
     the Office Access table navigates to the site root to mint an `rqst`, which
-    re-establishes the account's single session in MASTER mode. Doing that under
-    a live capture silently drops it back onto the master office
-    ([[reference_ownerville_session_killers]]). Preflight takes gap_alerts' pid
-    lock for exactly this reason.
+    puts THIS MACHINE's session back in MASTER mode. Every process on a box
+    restores that box's one `.ownerville_storage_state.json`, so a job running
+    beside this one is on the same server session and would silently find itself
+    back on the master office. Preflight takes gap_alerts' pid lock for that.
+
+    That is a same-machine concern ONLY. Two MACHINES on the same OwnerVille
+    login do not evict each other (`resources/lucy-login-standard.md` §1b).
     """
     name = "OwnerVille office"
     try:
@@ -346,36 +349,48 @@ def read_campaigns(page) -> "List[dict]":
 
 def campaign_check(campaigns: "List[dict]", want_id: str,
                    want_name: str = "") -> Dict:
-    """Can this office be served for `want_id`? -> a preflight-shaped check.
+    """Is this office's campaign the one they enrolled for? -> preflight check.
 
-    Three answers, and the middle one is the point:
-      * one campaign, and it is theirs      -> fine
-      * MORE THAN ONE                       -> not servable yet, whatever it is
-      * one campaign, but not the one asked -> the wrong campaign was picked
+    MULTI-CAMPAIGN IS NO LONGER DISQUALIFYING. It was, for a week: ownerville
+    would not change the TeleMapper campaign for an IMPERSONATED office — the
+    picker said "loading" and reverted — so Calvin's grid came back Box-shaped
+    and both of Jay's held the same reps. Megan reported it to the vendor and it
+    was FIXED (proved 2026-09-09 against 09-08 data: Jay @3 gives 9 reps and Jay
+    @40 gives a different 2, and it is the DIFFERENCE that proves the switch;
+    identical sets is what a dead pin looks like). Refusing a multi-campaign
+    office now would be a false block on Carlos, Calvin and Jay.
+
+    What is still worth failing on is a campaign this office does not run at all
+    — that is a mis-picked enrollment, and no vendor fix makes it right.
+
+    The real proof stays downstream: `assert_campaign_grid` checks the grid on
+    screen against the pinned campaign before a number is read, and the
+    identical-rep-set guard catches a pin that silently did not take. Those are
+    what caught this when it was broken, and a vendor fix is not a reason to
+    stop checking.
     """
     name = "Campaign"
     want_id = str(want_id or "").strip()
     if not campaigns:
-        # Unreadable is not a verdict. Say so rather than passing an office we
-        # could not check.
-        return {"name": name, "ok": False, "note":
-                "couldn't read this office's campaign picker — re-run the "
-                "preflight rather than assume it is fine"}
+        # Not a verdict either way. It used to fail here, which would block an
+        # enrollment on a flaky read; the board pull immediately below is the
+        # thing that actually proves the campaign, so say so and move on.
+        return {"name": name, "ok": True, "note":
+                "couldn't read this office's campaign picker — not confirmed "
+                "here; the board pull below is what proves it"}
     listed = ", ".join("%s (%s)" % (c["label"] or "?", c["id"])
                        for c in campaigns)
+    ids = {c["id"] for c in campaigns}
+    if want_id and want_id not in ids:
+        return {"name": name, "ok": False, "note":
+                "signed up for %s (id %s), but this office runs %s — confirm "
+                "it on a campaign it actually has."
+                % (want_name or "that campaign", want_id, listed)}
     if len(campaigns) > 1:
-        return {"name": name, "ok": False, "note":
-                "this office runs %d campaigns — %s. OwnerVille's picker "
-                "defaults for a multi-campaign office and the pin cannot move "
-                "it, so whichever one it lands on is the one we would report, "
-                "under the other's name. Not servable until that is solved."
-                % (len(campaigns), listed)}
-    only = campaigns[0]
-    if want_id and only["id"] != want_id:
-        return {"name": name, "ok": False, "note":
-                "signed up for %s (id %s), but this office runs %s (id %s) — "
-                "confirm it on the right campaign."
-                % (want_name or "that campaign", want_id,
-                   only["label"] or "?", only["id"])}
+        return {"name": name, "ok": True, "note":
+                "runs %d campaigns — %s. Pinning an impersonated office was "
+                "broken until the vendor fixed it on 2026-09-09, so the grid "
+                "check on the board pull is what confirms the right one "
+                "answered." % (len(campaigns), listed)}
     return {"name": name, "ok": True, "note":
             "runs one campaign, %s — pinnable" % listed}

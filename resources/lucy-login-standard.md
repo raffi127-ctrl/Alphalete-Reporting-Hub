@@ -57,6 +57,25 @@ In code they are `_CLOUDFLARE_WAIT_MS` and `_PRE_SUBMIT_PAUSE_MS` in
 - "can't be cleared unattended / headlessly"
 - "a human must be at the machine"
 
+### 1b. Two MACHINES may hold sessions on the same OwnerVille login
+
+Megan's laptop signs in as `rhidalgo`, and so does Lucy 1. **That is fine.** They
+do not evict each other, and logging in on one does not take the session out from
+under the other.
+
+**Stop writing these:**
+
+- "ownerville allows ONE session per account"
+- "minting a session here would pull it out from under Lucy 1"
+- "the laptop can't log in / has no holder so it can only age"
+- "run browser reports through `lucy` because this box can't hold a session"
+
+What IS true, and is a different statement, is **per box**: every process on ONE
+machine restores that machine's single `.ownerville_storage_state.json`, so they
+share one server session there and impersonation leaks between them — which is
+why `OWNERVILLE_SESSION_LOCK` exists. That is about concurrency on a box. It says
+nothing about two boxes, and must not be generalised into the sentences above.
+
 ### 2. The AppStream usernames have spaces in them
 
 These are the exact usernames. Type them **with the spaces**:

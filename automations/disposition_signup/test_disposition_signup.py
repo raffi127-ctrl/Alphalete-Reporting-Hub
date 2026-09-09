@@ -245,35 +245,52 @@ def test_a_broken_onboarded_file_does_not_take_the_report_down(monkeypatch,
 # --- destinations, inside the engine ----------------------------------------
 
 def test_hardcoded_offices_translate_to_the_destinations_they_always_had():
-    """Raf: his chat every tick + the org channel hourly. Calvin: chat only.
-    Nothing about their sends may change."""
+    """Raf's hardcoded row has to keep translating into real destinations —
+    the shape of his list is gap_alerts' business and has grown (the A-Team
+    chat and a 30-minute lvl-1 Slack post landed 2026-09-09). What this pins is
+    that the translation still happens and still carries HIS room, because that
+    is what a form-built office would be sharing the runner with."""
     raf = C.destinations(C.office("rafael"))
-    assert [d["kind"] for d in raf] == ["imessage", "slack"]
-    assert raf[0]["name"] == "Alphalete Partners"
-    assert raf[0]["cadence_min"] == C.TICK_MINUTES
-    assert raf[1]["channel_id"] == C.SLACK_HOURLY_CHANNEL
-    assert raf[1]["cadence_min"] == 60
+    kinds = [d["kind"] for d in raf]
+    assert "imessage" in kinds and "slack" in kinds
+    assert any(d.get("name") == "Alphalete Partners" for d in raf)
+    assert all(int(d["cadence_min"]) > 0 for d in raf)
     assert [d["kind"] for d in C.destinations(C.office("calvin"))] == ["imessage"]
 
 
-@pytest.mark.parametrize("cadence,minute,due", [
-    (15, 0, True), (15, 15, True), (15, 30, True), (15, 45, True),
-    (30, 0, True), (30, 15, False), (30, 30, True), (30, 45, False),
-    (60, 0, True), (60, 15, False), (60, 30, False), (60, 45, False),
+@pytest.mark.parametrize("cadence,minute,anchor_minute", [
+    (15, 0, 0), (15, 15, 15), (15, 30, 30), (15, 45, 45),
+    (30, 0, 0), (30, 15, 0), (30, 30, 30), (30, 45, 30),
+    (60, 0, 0), (60, 15, 0), (60, 30, 0), (60, 45, 0),
 ])
-def test_destination_due_on_the_quarter_hour(cadence, minute, due):
-    now = dt.datetime(2026, 9, 1, 14, minute)
-    assert R._dest_due({"cadence_min": cadence}, now) is due
+def test_a_destinations_anchor_lands_on_its_cadence(cadence, minute,
+                                                    anchor_minute):
+    """The cadence lives in the ANCHOR now, not in a due/not-due clock test.
+
+    `_dest_due` used to be `(anchor - offset) % cadence == 0` — pure clock, no
+    memory — so a tick lost to the ownerville lock, the pid lock or a failed
+    pull cost a WHOLE cadence of silence. On 2026-09-03 Raf's 8:15 tick was
+    skipped and 8:20/8:21 logged "nothing due" because they were not anchors:
+    half an hour of nothing on a report that says every fifteen minutes.
+
+    So "due" now means THIS ANCHOR HAS NOT BEEN SERVED YET, and it stays true
+    until something sends. What still has to be exactly right is the anchor
+    itself — that is what pins one board per period."""
+    got = R._dest_anchor({"cadence_min": cadence}, None,
+                         dt.datetime(2026, 9, 1, 14, minute))
+    assert got.endswith("T14:%02d" % anchor_minute)
 
 
 @pytest.mark.parametrize("drift", [0, 1, 2, 3, 4])
 def test_cadence_survives_the_wrapper_drift(drift):
     """The wrapper launches within a minute of a 5-minute boundary and Python
-    reads the clock seconds later. Anchoring on the RAW minute would make an
-    hourly destination due never; anchoring on the wake boundary absorbs the
-    whole launch window with room to spare."""
-    assert R._dest_due({"cadence_min": 60},
-                       dt.datetime(2026, 9, 1, 14, drift)) is True
+    reads the clock seconds later. Anchoring on the RAW minute would give an
+    hourly destination a different anchor every minute; anchoring on the wake
+    boundary absorbs the whole launch window with room to spare."""
+    anchors = {R._dest_anchor({"cadence_min": 60}, None,
+                              dt.datetime(2026, 9, 1, 14, d))
+               for d in range(drift + 1)}
+    assert anchors == {"2026-09-01T14:00"}
 
 
 def test_two_destinations_can_disagree_about_now():
@@ -281,10 +298,12 @@ def test_two_destinations_can_disagree_about_now():
     hourly, from one office and one pull."""
     fast = {"kind": "imessage", "cadence_min": 15}
     slow = {"kind": "slack", "cadence_min": 60}
-    at_15 = dt.datetime(2026, 9, 1, 14, 15)
-    assert R._dest_due(fast, at_15) and not R._dest_due(slow, at_15)
-    at_00 = dt.datetime(2026, 9, 1, 14, 0)
-    assert R._dest_due(fast, at_00) and R._dest_due(slow, at_00)
+    # Compared as ANCHORS: at :15 the fast one has moved to a new period and the
+    # slow one has not, which is what "disagree about now" means once due-ness
+    # is anchor-vs-sent rather than a clock match.
+    a00, a15 = dt.datetime(2026, 9, 1, 14, 0), dt.datetime(2026, 9, 1, 14, 15)
+    assert R._dest_anchor(fast, None, a15) != R._dest_anchor(fast, None, a00)
+    assert R._dest_anchor(slow, None, a15) == R._dest_anchor(slow, None, a00)
 
 
 def test_a_nonsense_cadence_falls_back_to_the_tick():
@@ -702,7 +721,11 @@ def test_an_office_wired_but_switched_off_still_gets_the_old_board(monkeypatch,
     p.write_text(json.dumps([{"key": "x", "enabled": False, "destinations": [
         {"kind": "slack", "channel_id": chan, "cadence_min": 60}]}]))
     monkeypatch.setattr(ros, "_ONBOARDED_JSON", p)
-    assert ros.disposition_channels() == set()
+    # NOT "the set is empty" — disposition_channels also reports gap_alerts'
+    # HARDCODED offices now (Megan 2026-09-04), so Raf's own Slack room is in
+    # there and should be. What this test is about is the SWITCHED-OFF office:
+    # its channel must not be claimed, or that room loses its board entirely.
+    assert chan not in ros.disposition_channels()
     assert len(ros.enrolled("eod")) == before
 
 
@@ -772,14 +795,23 @@ def test_offices_are_staggered_across_the_quarter_hour():
 
 
 def test_a_staggered_office_still_gets_exactly_its_cadence():
+    """Counted in ANCHORS, which is where the cadence lives now — one board per
+    anchor, so distinct anchors per hour IS the send count."""
     dest = {"kind": "imessage", "cadence_min": 15}
     for key in ("rafael", "calvin", "cody"):
         cfg = {"key": key}
-        fires = [m for m in range(0, 60, C.WAKE_MINUTES)
-                 if R._dest_due(dest, dt.datetime(2026, 9, 1, 13, m), cfg=cfg)]
-        assert len(fires) == 4                      # four an hour, exactly
-        gaps = {b - a for a, b in zip(fires, fires[1:])}
-        assert gaps == {15}                         # evenly spaced
+        anchors = [R._dest_anchor(dest, cfg, dt.datetime(2026, 9, 1, 13, m))
+                   for m in range(0, 60, C.WAKE_MINUTES)]
+        distinct = sorted(set(anchors))
+        # SPACING, not a count in a clock hour: a staggered office's anchors
+        # straddle the hour (offset 10 gives 12:55, 13:10, 13:25 …), so an
+        # hour's worth of wakes legitimately shows 4 or 5 of them. What must
+        # hold is that consecutive anchors are exactly one cadence apart —
+        # that is what stops a 15-minute destination firing on every wake.
+        mins = [int(a[-5:-3]) * 60 + int(a[-2:]) for a in distinct]
+        gaps = {b - a for a, b in zip(mins, mins[1:])}
+        assert gaps == {15}, key
+        assert 4 <= len(distinct) <= 5, key
 
 
 def test_the_offset_is_stable_across_processes():
@@ -1219,28 +1251,40 @@ def test_a_single_campaign_office_is_servable():
     assert res["ok"] and "pinnable" in res["note"]
 
 
-def test_a_multi_campaign_office_is_refused_whatever_it_signed_up_for():
-    """Carlos Hidalgo runs three. OwnerVille's picker defaults for a
-    multi-campaign ICD and invD2DClientId cannot move it, so whichever campaign
-    it lands on is the one we would report under the other's name — which is
-    how his Box pull came back holding AT&T's reps."""
+def test_a_multi_campaign_office_is_no_longer_refused():
+    """It was, for a week. Ownerville would not switch the campaign for an
+    IMPERSONATED office, so Calvin's grid came back Box-shaped and both of Jay's
+    held the same reps. Megan reported it and the VENDOR FIXED IT (proved
+    2026-09-09: Jay @3 gives 9 reps, Jay @40 a different 2 — the difference is
+    the proof). Refusing Carlos, Calvin or Jay now would be a false block.
+
+    The grid check on the board pull is what still confirms the right campaign
+    answered, so nothing is taken on trust — it just isn't refused up front."""
     three = [{"id": "2", "label": "B2B AT&T SBS"},
              {"id": "16", "label": "B2B-BOX-Energy"},
              {"id": "39", "label": "BASE Energy"}]
     for want in ("2", "16", "39"):
         res = _camp_check(three, want)
-        assert res["ok"] is False
+        assert res["ok"] is True
         assert "3 campaigns" in res["note"]
 
 
 def test_signing_up_for_a_campaign_the_office_does_not_run_is_caught():
+    """The one thing still worth failing on: no vendor fix makes a mis-picked
+    campaign right."""
     res = _camp_check([{"id": "1", "label": "RES AT&T OOF"}], "40",
                       "Energy Wells")
     assert res["ok"] is False
     assert "but this office runs" in res["note"]
+    # and it is not refused merely for having several
+    assert _camp_check([{"id": "1", "label": "a"}, {"id": "40", "label": "b"}],
+                       "40")["ok"] is True
 
 
-def test_an_unreadable_picker_is_not_a_pass():
-    """"Could not check" must never be recorded as "checked and fine"."""
+def test_an_unreadable_picker_says_so_without_blocking():
+    """It used to fail here, which would block an enrollment on a flaky read.
+    The board pull immediately after is what actually proves the campaign, so
+    this reports "not confirmed here" rather than pretending either way."""
     res = _camp_check([], "1")
-    assert res["ok"] is False and "couldn't read" in res["note"]
+    assert res["ok"] is True
+    assert "couldn't read" in res["note"] and "board pull" in res["note"]

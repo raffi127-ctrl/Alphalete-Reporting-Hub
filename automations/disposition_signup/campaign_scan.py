@@ -14,10 +14,12 @@ are links, so the distinct ids ARE this office's campaigns. It must be unpinned:
 an id in the URL floods the links and the scan starts answering "what did I just
 ask for". Verified 2026-09-02: Isaiah {1}, Roshan {16}, Carlos {2,16,39}.
 
-IT MUST NOT COST RAF HIS BOARDS. ownerville allows ONE session per account, and
-the gap_alerts tick shares it. So this takes that job's pid lock ONE OFFICE AT A
-TIME and lets go in between, rather than holding it for the whole run — a tick
-that wants the session waits seconds, not half an hour. `--after-hours` refuses
+IT MUST NOT COST RAF HIS BOARDS. Every process on the box shares that box's one
+ownerville session, so the gap_alerts tick and this scan are the same session. It
+takes that job's pid lock ONE OFFICE AT A TIME and lets go in between, rather
+than holding it for the whole run — a tick that wants the session waits seconds,
+not half an hour. (A box thing, not an account thing: another machine on the same
+login is not affected.) `--after-hours` refuses
 to start at all while any office is inside its selling window, which is the
 setting to use for the full 90.
 

@@ -117,11 +117,12 @@ def _check_board(rec: DispositionRecord, day: dt.date, *,
 def _wait_for_tick_lock(seconds: int = 180):
     """gap_alerts' pid lock, waited for rather than skipped.
 
-    ownerville allows ONE session per account, so a preflight opening its own
-    while a tick is mid-impersonation pulls the floor out from under the tick —
-    and the access-table read below is the worst version of it, because minting
-    an rqst at the root puts the shared session back in MASTER mode without
-    erroring. A tick is minutes at most; waiting for it beats corrupting it.
+    Every process on THIS MACHINE restores the same ownerville storage_state, so
+    a preflight opening a session while a tick is mid-impersonation pulls the
+    floor out from under the tick — and the access-table read below is the worst
+    version, because minting an rqst at the root puts that shared session back in
+    MASTER mode without erroring. A tick is minutes at most; waiting for it beats
+    corrupting it. (Same-machine only — two boxes on one login are fine.)
     Returns the held lock, or None if it never came free (the caller decides).
     """
     import time
