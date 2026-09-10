@@ -416,6 +416,15 @@ CAMPAIGN_OVERRIDES: "dict[str, str]" = {
     # A second spelling here would be the per-report patch the alias sheet
     # exists to replace, and two places to update the next time a name drifts.
     "calvin ribera": "40",
+    # carlos hidalgo -> 2 (B2B AT&T SBS). His office (11580) is B2B and does
+    # not run RES AT&T at all, so the default pin of 3 was pointing his session
+    # at a campaign his picker never offers. It "worked" only because his office
+    # falls back to rendering its own B2B AT&T grid — an unpinned read dressed
+    # as a pinned one, and unchecked, because 3 is deliberately absent from
+    # CAMPAIGN_EXPECTED_SHAPE. Pinning 2 makes the read deliberate AND puts it
+    # under the shape guard. Id read live via `b2b_dispositions --probe-campaigns`
+    # on Lucy 2, 2026-07-29 (see b2b_dispositions/config.CAMPAIGN_URL_IDS).
+    "carlos hidalgo": "2",
 }
 
 
@@ -432,10 +441,37 @@ CAMPAIGN_OVERRIDES: "dict[str, str]" = {
 # Jay Turnage knocks both and gets a separate report for each, so a /knocks
 # that silently picked one would hand back half his day as if it were all of
 # it. Ids read off the live picker: 3 = RES AT&T, 40 = RES-ENERGYWELL.
+#
+# Carlos Hidalgo (11580) knocks BOTH B2B campaigns and was missing from this
+# map until 2026-09-09, so `/knocks Carlos Hidalgo` never asked and handed back
+# whichever grid his office happened to render — his AT&T SBS numbers, with
+# nothing on the board saying so (Megan: "I asked for Carlos' knocks and it
+# didn't ask me which campaign, even though he runs 2"). Ids are the ones
+# b2b_dispositions probed live on Lucy 2 (2026-07-29): 2 = B2B AT&T SBS,
+# 16 = B2B-BOX-Energy.
 MULTI_CAMPAIGN: "dict[str, list]" = {
     "jay turnage": [("AT&T", "3", "att"),
                     ("Energy Wells", "40", "energywell")],
+    "carlos hidalgo": [("B2B AT&T SBS", "2", "att"),
+                       ("B2B Box", "16", "box")],
 }
+
+
+def campaign_label(name: str, campaign_id: "Optional[str]") -> str:
+    """The picker label for a pinned campaign, or "" when this office runs one
+    campaign (nothing to disambiguate) or the id names none of its own.
+
+    Exists so a board can SAY which campaign it is. Picking "B2B Box" and
+    getting an image headed only "TOTAL KNOCKS — CARLOS HIDALGO" leaves the
+    reader holding half an office with no way to tell.
+    """
+    cid = str(campaign_id or "").strip()
+    if not cid:
+        return ""
+    for label, this_id, _key in campaigns_for(name):
+        if this_id == cid:
+            return label
+    return ""
 
 
 def campaigns_for(name: str) -> list:

@@ -195,8 +195,37 @@ def resolve_office(office: str) -> str:
 
 
 # --------------------------------------------------------------- cache ----
-def _cache_path(canonical: str, target: dt.date) -> Path:
-    return OUT_DIR / _slug(canonical) / f"{target.isoformat()}.json"
+def _campaign_key(canonical: str, campaign: "Optional[str]") -> str:
+    """"-c16" for a NON-DEFAULT campaign of a multi-campaign office, else "".
+
+    THE CACHE IS KEYED BY OFFICE AND DAY, AND FOR ONE-CAMPAIGN OFFICES THAT IS
+    THE WHOLE STORY. It is not for Carlos or Jay: ask for Carlos's AT&T Monday
+    and then his Box Monday and the second request is a cache HIT on the first
+    — AT&T's reps and AT&T's numbers, served under a Box heading, without ever
+    opening ownerville. Exactly the failure CAMPAIGN_EXPECTED_SHAPE exists to
+    refuse, arriving by a route that never reaches the shape check.
+
+    The DEFAULT campaign keeps the bare path, so the morning build's files (and
+    every day already on disk) stay hits rather than being orphaned by a rename.
+    """
+    cid = str(campaign or "").strip()
+    if not cid:
+        return ""
+    try:
+        from automations.rashad_metrics.knocks_pull import (
+            campaign_for_office, campaigns_for,
+        )
+    except Exception:  # noqa: BLE001 — no map, no split; old behaviour
+        return ""
+    if not campaigns_for(canonical):
+        return ""                       # one campaign: nothing to keep apart
+    return "" if cid == str(campaign_for_office(canonical)) else f"-c{cid}"
+
+
+def _cache_path(canonical: str, target: dt.date,
+                campaign: "Optional[str]" = None) -> Path:
+    return (OUT_DIR / (_slug(canonical) + _campaign_key(canonical, campaign))
+            / f"{target.isoformat()}.json")
 
 
 def _build_render_dir() -> Path:
@@ -226,12 +255,13 @@ def _usable_rows(rows) -> bool:
     return isinstance(rows, list) and all(isinstance(r, dict) for r in rows)
 
 
-def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
+def cached_rows(canonical: str, target: dt.date,
+                campaign: "Optional[str]" = None) -> tuple[Optional[list], str]:
     """(rows, source) from disk, or (None, "") — see the module docstring for
     the order. Empty rows are NOT a cache hit: the build stores an empty pull
     for a real zero-knock day, but so does a failed impersonation, and a
     request should retry rather than freeze a maybe-wrong zero."""
-    own = _cache_path(canonical, target)
+    own = _cache_path(canonical, target, campaign)
     if own.exists():
         try:
             rows = json.loads(own.read_text(encoding="utf-8"))
@@ -239,6 +269,13 @@ def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
                 return rows, "cache"
         except Exception:  # noqa: BLE001 — a bad cache file just misses
             pass
+
+    # The build's tree is per OFFICE, with no record of which campaign it
+    # pulled — so it can only answer for the office's DEFAULT campaign. For a
+    # non-default pick it is not a cache miss, it is the wrong campaign, and
+    # borrowing it is the same swap _campaign_key exists to prevent.
+    if _campaign_key(canonical, campaign):
+        return None, ""
 
     from automations.captainship_drafts.knock_dispo_images import (
         _owner_png, _read_rows,
@@ -256,7 +293,8 @@ def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
     return None, ""
 
 
-def save_rows(canonical: str, target: dt.date, rows: list) -> None:
+def save_rows(canonical: str, target: dt.date, rows: list,
+              campaign: "Optional[str]" = None) -> None:
     """Park a live pull so the second person asking the same thing is free.
 
     TODAY IS NEVER CACHED. A mid-day pull is a snapshot of a day still being
@@ -264,7 +302,7 @@ def save_rows(canonical: str, target: dt.date, rows: list) -> None:
     as if they were the day's, hours later. Only a finished day is frozen."""
     if not rows or target >= central_today():
         return
-    p = _cache_path(canonical, target)
+    p = _cache_path(canonical, target, campaign)
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(rows), encoding="utf-8")
@@ -356,12 +394,15 @@ def compare_rows(canonical: str, target: dt.date, *, allow_live: bool,
 
 
 def missing_days(canonical: str, start: dt.date,
-                 end: Optional[dt.date] = None) -> List[dt.date]:
+                 end: Optional[dt.date] = None,
+                 campaign: "Optional[str]" = None) -> List[dt.date]:
     """Which days of the span are NOT already on disk for this office."""
-    return [d for d in span_days(start, end) if not cached_rows(canonical, d)[0]]
+    return [d for d in span_days(start, end)
+            if not cached_rows(canonical, d, campaign)[0]]
 
 
-def pull_plan(canonical: str, start: dt.date, end: Optional[dt.date] = None
+def pull_plan(canonical: str, start: dt.date, end: Optional[dt.date] = None,
+              campaign: "Optional[str]" = None
               ) -> "tuple[List[dt.date], List[dt.date]]":
     """(our missing days, the comparison office's missing days) — everything a
     request would open ownerville for, BEFORE it opens it.
@@ -370,7 +411,7 @@ def pull_plan(canonical: str, start: dt.date, end: Optional[dt.date] = None
     minute" and be right. The comparison office counts: its days are pulled to
     match the span, so a request can be a minute's work even when every one of
     our own days is already on disk."""
-    ours = missing_days(canonical, start, end)
+    ours = missing_days(canonical, start, end, campaign)
     compare = compare_office()
     if _norm(compare) == _norm(canonical):
         return ours, []
@@ -436,7 +477,7 @@ def board_for(office: str, target: Optional[dt.date] = None,
     theirs: dict = {}
     sources: set = set()
     for d in days:
-        rows, src = cached_rows(canonical, d)
+        rows, src = cached_rows(canonical, d, campaign)
         if rows:
             ours[d] = rows
             sources.add(src)
@@ -512,7 +553,7 @@ def board_for(office: str, target: Optional[dt.date] = None,
                 for d, rows in rows_by_day.items():
                     if rows:
                         ours[d] = rows
-                        save_rows(canonical, d, rows)
+                        save_rows(canonical, d, rows, campaign)
                 sources.add("live")
             if compare_need:
                 c_by_day, c_err = got[compare]
@@ -568,12 +609,25 @@ def board_for(office: str, target: Optional[dt.date] = None,
     # decides, so a fiber office that goes wireless needs no config change.
     b.pngs, b.shape = knocks_render.render_knocks_boards(
         target, rows=rows, out_dir=OUT_DIR / _slug(canonical),
-        title_suffix=canonical, end=end, extra_totals=extra, apps=apps)
+        title_suffix=_title_office(canonical, campaign), end=end,
+        extra_totals=extra, apps=apps)
     b.png = b.pngs[0]
     if extra and b.shape == knocks_render.SHAPE_HOUSE:
         b.compared_to = compare
     logfn(f"board -> {b.png}")
     return b
+
+
+def _title_office(canonical: str, campaign: "Optional[str]") -> str:
+    """"CARLOS HIDALGO (B2B BOX)" for a multi-campaign office, plain name for
+    everyone else. The PNG outlives the Slack message that carried it, so which
+    campaign it is has to be ON the board, not only in the caption."""
+    try:
+        from automations.rashad_metrics.knocks_pull import campaign_label
+        label = campaign_label(canonical, campaign)
+    except Exception:  # noqa: BLE001 — a missing label never costs the board
+        label = ""
+    return f"{canonical} ({label})" if label else canonical
 
 
 def _apps_for(canonical: str, days: "list", *, logfn=print):
@@ -666,6 +720,19 @@ def ownerville_near_matches(exc: BaseException) -> list:
         if name:
             out.append(name)
     return out[:6]
+
+
+def pin_did_not_take(exc: BaseException) -> bool:
+    """True when the pull was refused because the campaign pin didn't take —
+    the grid on screen belonged to another campaign (assert_campaign_grid).
+
+    Worth telling apart from every other failure, because nothing is broken and
+    nothing is missing: the office served the wrong campaign's grid and we
+    refused to publish it under this campaign's name. A requester reading
+    "KnocksPullFailed" has no way to know that.
+    """
+    m = str(exc).lower()
+    return "was pinned" in m and "did not take" in m
 
 
 def access_gap(exc: BaseException) -> bool:

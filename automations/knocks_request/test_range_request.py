@@ -103,7 +103,7 @@ class BoardForWalksTheDays(unittest.TestCase):
         self.rendered = {}        # kwargs the renderer was called with
         self.on_disk = {}         # (office, date) -> rows
 
-        def fake_cached(canonical, day):
+        def fake_cached(canonical, day, campaign=None):
             rows = self.on_disk.get((canonical, day))
             return (rows, "build") if rows else (None, "")
 
@@ -343,9 +343,11 @@ class MissingDaysReporting(unittest.TestCase):
     def setUp(self):
         self.on_disk = {}
         for attr, new in (
+            # `c` is the campaign — a multi-campaign office caches per
+            # campaign, and these offices run one, so the stub ignores it.
             ("cached_rows",
-             lambda o, d: ((rows_for(d), "build")
-                           if (o, d) in self.on_disk else (None, ""))),
+             lambda o, d, c=None: ((rows_for(d), "build")
+                                   if (o, d) in self.on_disk else (None, ""))),
             ("compare_office", lambda: "Chan Park"),
         ):
             p = mock.patch.object(service, attr, new)
@@ -571,8 +573,8 @@ class WhatTheDmPromises(unittest.TestCase):
              mock.patch.object(service, "ownerville_busy", lambda: []), \
              mock.patch.object(
                  service, "cached_rows",
-                 lambda o, d: ((rows_for(d), "build")
-                               if (o, d) in on_disk else (None, ""))), \
+                 lambda o, d, c=None: ((rows_for(d), "build")
+                                       if (o, d) in on_disk else (None, ""))), \
              mock.patch.object(
                  # Stop after the waiting message: a Board with no png is the
                  # quiet "nothing to draw" answer, so `process` says its piece

@@ -309,6 +309,19 @@ def handle_submission(web, payload: dict) -> None:
     process(web, payload["user"]["id"], office, target, end)
 
 
+def _campaign_label(office: str, campaign: "str | None") -> str:
+    """Which campaign a board is, for an office that runs two — "" otherwise.
+
+    Imported lazily: knocks_pull pulls in patchright at module load, and the
+    listener must not pay that (or fail to import) just to answer a DM.
+    """
+    try:
+        from automations.rashad_metrics.knocks_pull import campaign_label
+        return campaign_label(service.resolve_office(office), campaign)
+    except Exception:  # noqa: BLE001 — a missing label never costs the board
+        return ""
+
+
 def process(web, user_id: str, office: str, target: dt.date,
             end: Optional[dt.date] = None,
             campaign: Optional[str] = None) -> None:
@@ -360,7 +373,9 @@ def process(web, user_id: str, office: str, target: dt.date,
     # The comparison office counts toward the wait: its days are pulled to
     # match the span, so a request can take a minute even when every one of
     # our own days is already on disk.
-    need, need_cmp = service.pull_plan(canonical, target, end)
+    # The campaign rides in: for Carlos or Jay the cache is per-campaign, so
+    # asking without it promises "one second" off the OTHER campaign's days.
+    need, need_cmp = service.pull_plan(canonical, target, end, campaign)
     total = len(service.span_days(target, end))
     if not need and not need_cmp:
         say(f":door: Getting *{canonical}*'s knocks for {pretty} — one second.")
@@ -434,6 +449,18 @@ def process(web, user_id: str, office: str, target: dt.date,
                 "Ownerville account these reports run on, so there's nothing "
                 "to fetch until someone grants Office Access to it. It's a "
                 "permissions gap, not a typo.")
+        elif service.pin_did_not_take(e):
+            # NOT a crash and NOT missing data — the office served another
+            # campaign's grid and we refused to publish it under this one's
+            # name. Say that in words, or a refusal that worked reads as a bug.
+            which = _campaign_label(office, campaign)
+            say(f":no_entry: I can't give you *{canonical}*'s"
+                + (f" *{which}*" if which else "")
+                + f" board for {pretty}. Ownerville kept serving the OTHER "
+                "campaign's numbers no matter which one I asked for, and "
+                "putting those under this heading would look right and be "
+                "wrong — so I'd rather hand you nothing. The other campaign's "
+                "board still works.")
         else:
             say(f":x: Couldn't get *{canonical}* for {pretty} — "
                 f"{type(e).__name__}: {str(e)[:200]}")
@@ -449,8 +476,14 @@ def process(web, user_id: str, office: str, target: dt.date,
     # report of zero. Name it what it is and say why in one line.
     gaps_only = board.shape == "gaps_only"
     title = "TeleMapper Knocks" if gaps_only else "Total Knocks"
-    cap = (f":door: *{title} — {canonical} — {pretty}*  "
-           f"({reps} rep{'s' if reps != 1 else ''})")
+    # NAME THE CAMPAIGN when the office runs more than one. Carlos and Jay each
+    # knock two, and a board headed only "Total Knocks — Carlos Hidalgo" is half
+    # an office with nothing on it saying which half (Megan 2026-09-09). Blank
+    # for everyone else — one campaign is nothing to disambiguate.
+    which = _campaign_label(office, campaign)
+    cap = (f":door: *{title} — {canonical}"
+           + (f" ({which})" if which else "")
+           + f" — {pretty}*  ({reps} rep{'s' if reps != 1 else ''})")
     if gaps_only:
         # No "Time Gaps below" — the TeleMapper board carries the gap columns
         # itself, so there is no second image (render.needs_time_gaps).
@@ -493,8 +526,11 @@ def process(web, user_id: str, office: str, target: dt.date,
     # Most shapes are ONE image now; only the wireless board still comes back
     # with a Time Gaps companion, so the second name/caption stays available.
     span = target.isoformat() if not board.is_range else f"{target} to {end}"
-    names = [f"{canonical} knocks {span}.png",
-             f"{canonical} time gaps {span}.png"]
+    # The campaign rides in the FILENAME too — an AT&T board and a Box board
+    # downloaded from the same thread would otherwise be the same file twice.
+    tag = f" {which}" if which else ""
+    names = [f"{canonical}{tag} knocks {span}.png",
+             f"{canonical}{tag} time gaps {span}.png"]
     caps = [cap, f":hourglass: *Time Gaps — {canonical} — {pretty}*"]
     for i, img in enumerate(board.pngs or [board.png]):
         try:

@@ -64,18 +64,72 @@ class CampaignForOffice(unittest.TestCase):
         # office's whole board. Calvin is the first observed exception —
         # invD2DClientId=40 (RES-ENERGYWELL), read off his live URL on
         # 2026-08-29 — so the rule is now "only observed entries", not "none".
-        self.assertEqual(set(KP.CAMPAIGN_OVERRIDES.values()), {"40"},
+        self.assertEqual(set(KP.CAMPAIGN_OVERRIDES.values()), {"40", "2"},
                          "every override must be an observed campaign id")
         # The CANONICAL name only. "Calvin Rivera" is the alias sheet's job —
         # every caller resolves it before this map is consulted — and listing
         # it here too would be the per-report patch aliases exist to replace.
         self.assertEqual(KP.campaign_for_office("Calvin Ribera"), "40")
 
+    def test_a_b2b_office_is_not_pinned_to_a_residential_campaign(self):
+        # Carlos's office (11580) is B2B and never runs RES AT&T. The default
+        # pin sent his session to 3 anyway, and the board came back looking
+        # fine only because his office renders its own B2B AT&T grid unpinned.
+        self.assertEqual(KP.campaign_for_office("Carlos Hidalgo"), "2")
+        self.assertIn("2", KP.CAMPAIGN_EXPECTED_SHAPE,
+                      "his pin must be one the shape guard can check — the "
+                      "point of moving him off 3")
+
     def test_everyone_else_still_gets_the_default(self):
         # The override map must not leak onto offices that never asked.
         for name in ("Rafael Hidalgo", "Chan Park", "Isaiah Jones"):
             self.assertEqual(KP.campaign_for_office(name),
                              KP.KNOCKS_CAMPAIGN_ID)
+
+
+class MultiCampaignOffices(unittest.TestCase):
+    """An office that knocks two campaigns must be ASKED about, not guessed at.
+
+    Megan, 2026-09-09: "I asked for Carlos' knocks and it didn't ask me which
+    campaign, even though he runs 2." He was missing from MULTI_CAMPAIGN, so
+    `/knocks` skipped the picker and handed back one campaign as if it were
+    the office.
+    """
+
+    def test_carlos_runs_two_and_both_are_offered(self):
+        opts = KP.campaigns_for("Carlos Hidalgo")
+        self.assertEqual([cid for _l, cid, _k in opts], ["2", "16"])
+
+    def test_a_single_campaign_office_is_never_asked(self):
+        for name in ("Rafael Hidalgo", "Chan Park", "Isaiah Revelle"):
+            self.assertEqual(KP.campaigns_for(name), [],
+                             "a picker on every request taxes the many for "
+                             "the few")
+
+    def test_every_offered_campaign_is_shape_checkable(self):
+        # A pick we cannot verify is a board we cannot trust: pinning 16 on
+        # Carlos's office once returned the AT&T grid (2026-09-02). Offering a
+        # campaign whose grid has no signature would mean that swap ships.
+        for name, opts in KP.MULTI_CAMPAIGN.items():
+            for label, cid, _key in opts:
+                if cid == KP.KNOCKS_CAMPAIGN_ID:
+                    continue    # 3 is deliberately unchecked — see the map
+                with self.subTest(office=name, campaign=label):
+                    self.assertIn(cid, KP.CAMPAIGN_EXPECTED_SHAPE)
+
+    def test_a_spoken_word_picks_the_campaign(self):
+        self.assertEqual(KP.campaign_by_keyword("Carlos Hidalgo", "box"), "16")
+        self.assertEqual(KP.campaign_by_keyword("Carlos Hidalgo", "att"), "2")
+        self.assertIsNone(KP.campaign_by_keyword("Carlos Hidalgo", "energywell"))
+
+    def test_the_label_says_which_campaign_a_board_is(self):
+        self.assertEqual(KP.campaign_label("Carlos Hidalgo", "16"), "B2B Box")
+        self.assertEqual(KP.campaign_label("Jay Turnage", "40"), "Energy Wells")
+        # One-campaign office, no campaign, and a foreign id all say nothing —
+        # the label is for disambiguating, and there is nothing to disambiguate.
+        self.assertEqual(KP.campaign_label("Chan Park", "3"), "")
+        self.assertEqual(KP.campaign_label("Carlos Hidalgo", None), "")
+        self.assertEqual(KP.campaign_label("Carlos Hidalgo", "40"), "")
 
 
 class PinCampaign(unittest.TestCase):
