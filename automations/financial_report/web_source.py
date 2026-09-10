@@ -269,7 +269,11 @@ def session(*, headless: bool = True, verbose: bool = True):
 # scrape the rendered table: no layout to break, values unrounded, and the week
 # boundaries come back declared (`ranges`) instead of inferred from a header row.
 API = "https://api.doubleentry.com"
-_OWNERS_EP = f"{API}/client/org-summary/search/promoting-owner"
+# The owner picker's endpoint was renamed .../search/promoting-owner ->
+# .../search/user on 2026-09-10 (the old path answers 404, which is what broke
+# that morning's run). Only the LIST moved: the summary is still filtered with
+# `promoting_owner_id=`, and the items still come back as {id, name, ...}.
+_OWNERS_EP = f"{API}/client/org-summary/search/user"
 _SUMMARY_EP = f"{API}/client/org-summary"
 
 # How many consecutive 4-week anchors may come back empty before a history
