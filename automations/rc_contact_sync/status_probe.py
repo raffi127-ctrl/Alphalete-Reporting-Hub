@@ -133,20 +133,35 @@ def _export_csv(page, log) -> Optional[bytes]:
         log("no CSV export control found")
         return None
     sel = ("#%s" % btn["id"]) if btn["id"] else 'text="CSV"'
-    try:
-        with page.expect_download(timeout=90_000) as dl:
-            page.click(sel, timeout=20_000)
-        download = dl.value
-        path = download.path()
-        data = Path(path).read_bytes()
-        log("downloaded %r -> %s bytes"
-            % (download.suggested_filename, "{:,}".format(len(data))))
-        return data
-    except Exception as e:  # noqa: BLE001
-        log("CSV export did not produce a download: %s: %s"
-            % (type(e).__name__, str(e)[:200]))
-        log("after export click: %s" % sara.page_state(page))
-        return None
+
+    # The button is an <input type=submit> whose POST answers with the FILE
+    # (Content-Disposition), so the "navigation" it starts turns into a
+    # download and never completes as a page load. A plain click therefore
+    # hangs waiting on that navigation (proved on Lucy 2, 2026-09-10:
+    # Timeout 20000ms, page title stuck on 'Loading ...'). no_wait_after
+    # dispatches the click and returns; expect_download catches the file.
+    def _attempt(label, action):
+        try:
+            with page.expect_download(timeout=60_000) as dl:
+                action()
+            download = dl.value
+            data = Path(download.path()).read_bytes()
+            log("downloaded %r -> %s bytes  (%s)"
+                % (download.suggested_filename, "{:,}".format(len(data)), label))
+            return data
+        except Exception as e:  # noqa: BLE001
+            log("%s: no download (%s: %s)"
+                % (label, type(e).__name__, str(e)[:160]))
+            return None
+
+    data = _attempt("trusted click",
+                    lambda: page.click(sel, timeout=15_000, no_wait_after=True))
+    if data is None and btn["id"]:
+        data = _attempt("js click", lambda: page.evaluate(
+            "(id) => document.getElementById(id).click()", btn["id"]))
+    if data is None:
+        log("after export attempts: %s" % sara.page_state(page))
+    return data
 
 
 def _summarize_csv(data: bytes, log) -> None:
