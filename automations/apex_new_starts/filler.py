@@ -687,6 +687,22 @@ _JS = r"""
      else miss.push(k); }
    if(role()){ done.push('Sales Rep role'); found++; }
    else if(wantsRole()) miss.push('Sales Rep role');
+   /* The answers given once in the setup form belong to this person wherever
+      they are used. Only the whole-week run was reading them, so landing on
+      page 2 by hand and pressing "Just this page" left Gender empty and Apex
+      refused the save (Megan, 2026-09-10). */
+   if(pageName()==='profile'){
+     var g2=window.__ansGender[norm(p.name)];
+     if(g2){ var gb2=genderBox(p);
+       if(gb2&&await setVal(gb2,g2)){ done.push('Gender'); found++; }
+       else miss.push('Gender'); }
+   }
+   if(pageName()==='tax'){
+     var s2=window.__ansSSN[norm(p.name)];
+     if(s2){ var bx2=ssnBoxes();
+       if(bx2&&await setVal(bx2[0],s2)&&await setVal(bx2[1],s2)){
+         done.push('Social'); found++; } }
+   }
    /* `found` is boxes we LOCATED, which is not the same as boxes we filled.
       Without the difference, a page where every field was found but one value
       would not match got reported as "not an Apex form". */
@@ -882,6 +898,7 @@ _JS = r"""
       required field was empty when Apex refused the save. The question is
       "does this page want one", not "can I find the box". */
    if(pageName()!=='profile') return false;
+   if(window.__ansGender[norm(p.name)]) return false;   /* already answered */
    var set=fieldsHere(p);
    return !(set&&set['Gender']);
  }
@@ -1077,9 +1094,10 @@ _JS = r"""
    '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved \u2192 next</button></span>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
-   '<div style="margin-top:6px;font-size:10px;color:#aaa">button built '+BUILD+'</div>'+
-   '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a>'+
-   ' \u00b7 <a href="#" id="ansnew" style="font-size:11px;color:#888">load a new setup</a></div>';
+   '<button id="ansnew" style="background:#fff;border:1px solid #0F766E;'+
+   'color:#0F766E;border-radius:6px;padding:8px 12px;font-size:13px;'+
+   'cursor:pointer;width:100%%;margin-top:6px">Load a different setup</button>'+
+   '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
  document.body.appendChild(box);
  function refreshChrome(){
    /* The panel is built once and the app never reloads, so anything decided at
@@ -1092,9 +1110,12 @@ _JS = r"""
    var h=document.getElementById('anshead'); if(!h) return;
    h.textContent=RUNNING? 'Running the week \u00b7 %(week)s'
      : (here? 'Ready to run \u00b7 %(week)s' : p.name);
-   document.getElementById('anssub').textContent= list
+   /* Which setup is loaded, in the one place it will be looked at. The
+      bookmark runs whatever was last pasted, so "is this this week's list?"
+      has to be answerable without clicking anything (Megan, 2026-09-10). */
+   document.getElementById('anssub').textContent= (list
      ? D.length+' new starts'+(I? ' \u00b7 '+I+' done already':'')
-     : (I+1)+' of '+D.length+' \u00b7 %(week)s';
+     : (I+1)+' of '+D.length+' \u00b7 %(week)s')+' \u00b7 built '+BUILD;
    var per=document.getElementById('ansper');
    if(per) per.style.display=list?'none':'';
    var hint=document.getElementById('anshint');
@@ -1172,8 +1193,12 @@ _JS = r"""
      '<table style="width:100%%;border-collapse:collapse;font-size:13px">'+
      '<tr><th></th><th style="text-align:left">Name</th><th style="text-align:left">Gender</th>'+
      '<th style="text-align:left">Social</th></tr>'+rows+'</table>'+
+     '<div id="anssnwarn" style="margin-top:10px;font-size:13px;color:#b00"></div>'+
      '<div style="margin-top:16px"><button id="ansgo" style="background:#0F766E;color:#fff;border:0;border-radius:8px;padding:11px 22px;font-weight:700;cursor:pointer">Start the run</button> '+
-     '<button id="anscancel" style="background:#eee;border:0;border-radius:8px;padding:11px 18px;cursor:pointer">Cancel</button>'+
+     '<button id="anscancel" style="background:#eee;border:0;border-radius:8px;padding:11px 18px;cursor:pointer">Cancel</button> '+
+     '<button id="ansclear" style="background:#fff;border:1px solid #b00;'+
+     'color:#b00;border-radius:8px;padding:11px 18px;cursor:pointer">Clear '+
+     'all answers</button>'+
      '<div style="font-size:12px;color:#666;margin-top:8px">It stops after the '+
      'first person so you can check the record before the rest go through.</div></div>'+
      '</div>'+
@@ -1201,6 +1226,30 @@ _JS = r"""
    /* Hold each answer AS IT IS TYPED. Capturing only on "Start the run" meant
       Cancel -- or anything that redrew the panel -- threw away nineteen
       Socials and nineteen genders (Megan, 2026-09-10). */
+   function ssnProblems(){
+     /* Names only. The numbers are compared here and never leave here --
+        nothing about a Social is shown, logged or stored (Megan, 2026-09-10:
+        "there should also be some kind of alert here if any of the socials
+        are the exact same since we can't see them"). */
+     var byVal={}, k, i, out={dups:[], bad:[]};
+     for(i=0;i<D.length;i++){
+       var nm=norm(D[i].name), v=window.__ansSSN[nm];
+       var draft=(window.__ansDraft[nm]||'').replace(/-/g,'');
+       if(!v){ if(draft) out.bad.push(D[i].name); continue; }
+       (byVal[v]=byVal[v]||[]).push(D[i].name);
+     }
+     for(k in byVal){ if(byVal[k].length>1) out.dups.push(byVal[k]); }
+     return out;
+   }
+   function showProblems(){
+     var box=document.getElementById('anssnwarn'); if(!box) return;
+     var pr=ssnProblems(), bits=[], i;
+     for(i=0;i<pr.dups.length;i++)
+       bits.push('<b>Same Social typed for '+pr.dups[i].join(' and ')+'.</b>');
+     if(pr.bad.length)
+       bits.push('Not nine digits yet: '+pr.bad.join(', ')+'.');
+     box.innerHTML=bits.join('<br>');
+   }
    var keepG=w.querySelectorAll('[data-g]'), keepS=w.querySelectorAll('[data-s]'), kq;
    for(kq=0;kq<keepG.length;kq++) keepG[kq].onchange=function(){
      var nm=norm(D[+this.getAttribute('data-g')].name);
@@ -1212,9 +1261,33 @@ _JS = r"""
      var v=(this.value||'').replace(/-/g,'');
      window.__ansDraft[nm]=this.value||'';
      if(/^\d{9}$/.test(v)) window.__ansSSN[nm]=v; else delete window.__ansSSN[nm];
+     showProblems();
+   };
+   showProblems();
+   document.getElementById('ansclear').onclick=function(){
+     /* On purpose, and only on purpose. Everything else about this form now
+        holds on to what was typed, so there has to be a way to say no. */
+     if(!confirm('Clear every gender and Social typed in here?')) return;
+     window.__ansSSN={}; window.__ansGender={}; window.__ansDraft={};
+     try{ localStorage.removeItem(GKEY); }catch(e){}
+     var cg=w.querySelectorAll('[data-g]'), cs=w.querySelectorAll('[data-s]'), cq;
+     for(cq=0;cq<cg.length;cq++) cg[cq].value='';
+     for(cq=0;cq<cs.length;cq++) cs[cq].value='';
    };
    document.getElementById('anscancel').onclick=function(){ w.remove(); };
    document.getElementById('ansgo').onclick=async function(){
+     var pr=ssnProblems(), pi;
+     if(pr.dups.length){
+       var who=[]; for(pi=0;pi<pr.dups.length;pi++) who.push(pr.dups[pi].join(' and '));
+       alert('The same Social is typed for '+who.join('; ')+'.\n\nTwo people '+
+             'cannot share one, so one of them is off. Fix it before starting.');
+       return;
+     }
+     if(pr.bad.length){
+       alert('Not a full nine digits: '+pr.bad.join(', ')+'.\n\nApex will '+
+             'refuse the save, so finish or clear those first.');
+       return;
+     }
      var gs=w.querySelectorAll('[data-g]'), ss=w.querySelectorAll('[data-s]'), j;
      for(j=0;j<gs.length;j++){ if(gs[j].value)
        window.__ansGender[norm(D[+gs[j].getAttribute('data-g')].name)]=gs[j].value; }
@@ -1227,12 +1300,15 @@ _JS = r"""
      w.remove();
      var log=[], out=document.getElementById('ansout');
      function say(m){ log.push(m); out.innerHTML=log.slice(-9).join('<br>'); }
-     /* Find everyone FIRST, now that the form is out of the way. */
+     /* NO pre-sweep. It filtered to all nineteen, then the run filtered to
+        each of them again -- the same search twice over, in front of somebody
+        watching (Megan, 2026-09-10). The sweep could never save the second
+        one either: it only remembers an id when the row carries an
+        /employees/ link, and Apex's roster has none, so every person was
+        looked up from scratch when their turn came anyway. Whoever is missing
+        is named at the end, from the run itself. The "Find them all for me"
+        link is still there to check the list before starting, on purpose. */
      RUNNING=true; refreshChrome();
-     var need=0;
-     for(j=0;j<D.length;j++){ if(!idFor(D[j])) need++; }
-     if(need&&filterBoxes()){ say('Finding everyone on the Pending list…');
-       await findEveryone(say); }
      for(j=I;j<D.length;j++){
        say('<b>'+D[j].name+'</b> ('+(j+1)+' of '+D.length+')…');
        var ok=await runPerson(D[j],say);
@@ -1343,7 +1419,8 @@ _JS = r"""
    if(nid){ go(nid,'employment-record'); }        /* straight to the next person */
    else alert('Next: '+D[I].name+'\n\nOpen their record and click the button again.');
  };
- document.getElementById('ansnew').onclick=function(e){ e.preventDefault();
+ document.getElementById('ansnew').onclick=function(e){
+   if(e&&e.preventDefault) e.preventDefault();
    /* Hand back to the loader. This is how a fix reaches somebody now: the
       bookmark never changes, the setup behind it does. */
    var pan=document.getElementById('anspanel'); if(pan) pan.remove();

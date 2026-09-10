@@ -1775,3 +1775,95 @@ def test_a_gender_survives_the_page_being_reloaded(page, tmp_path):
 
     stored = page.evaluate("() => JSON.stringify(localStorage)")
     assert "123456789" not in stored, "and it is nowhere on disk"
+
+
+def test_just_this_page_uses_the_answers_already_given(page, tmp_path):
+    """Megan, 2026-09-10: "I had to click to go to the 2nd page here and now
+    gender doesn't fill again", then "social also not filling in". The setup
+    form held both -- only the whole-week run was reading them, so landing on
+    a tab by hand and pressing "Just this page" left the required fields empty
+    and Apex refused the save."""
+    prof = tmp_path / "user-profile.html"
+    prof.write_text("<h1>Employee Profile</h1>"
+                    "<label for='g'>Gender</label>"
+                    "<select id='g'><option></option><option>Female</option>"
+                    "<option>Male</option></select>")
+    page.goto(prof.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": "Rosa Capel", "find": "Capel", "pages": {"profile": {}}}]
+    js = filler.build_js(people, "WE 9.13")[len("javascript:"):]
+    page.evaluate(js)
+    page.evaluate("""() => { window.__ansGender['rosa capel'] = 'Female';
+                             window.__ansSSN['rosa capel'] = '123456789'; }""")
+    page.evaluate(js)                     # reopen, as a click would
+    page.locator("#ansfill").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('Filled')",
+        timeout=10000)
+    assert page.input_value("#g") == "Female"
+
+    tax = tmp_path / "bank-info.html"
+    tax.write_text("<h1>Tax</h1><label for='s1'>SSN</label><input id='s1'>"
+                   "<label for='s2'>Confirm SSN</label><input id='s2'>")
+    page.goto(tax.as_uri())
+    page.evaluate(js)
+    page.evaluate("""() => { window.__ansSSN['rosa capel'] = '123456789'; }""")
+    page.evaluate(js)
+    page.locator("#ansfill").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.length > 0",
+        timeout=10000)
+    assert page.input_value("#s1") == "123456789"
+    assert page.input_value("#s2") == "123456789"
+
+
+def test_the_same_social_twice_is_caught_before_the_run(page, tmp_path):
+    """Megan, 2026-09-10: "there should also be some kind of alert here if any
+    of the socials are the exact same since we can't see them". The boxes are
+    masked, so a slip is invisible. Names are shown; the number never is."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Rosa Capel", "find": "Capel", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansrun").click()
+    page.fill('[data-s="0"]', "123456789")
+    page.fill('[data-s="1"]', "123456789")
+
+    warn = page.locator("#anssnwarn").inner_text()
+    assert "Aundre Browder" in warn and "Rosa Capel" in warn
+    assert "123456789" not in warn, "it never shows the number"
+
+    started = []
+    page.on("dialog", lambda d: (started.append(d.message), d.dismiss()))
+    page.locator("#ansgo").click()
+    assert started and "Aundre Browder" in started[0]
+    assert page.locator("#anssetup").count() == 1, "the run did not start"
+
+
+def test_a_half_typed_social_is_caught_too(page, tmp_path):
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(filler.build_js(
+        [{"name": "Aundre Browder", "find": "Browder", "pages": {}}],
+        "WE 9.13")[len("javascript:"):])
+    page.locator("#ansrun").click()
+    page.fill('[data-s="0"]', "12345")
+    assert "Not nine digits" in page.locator("#anssnwarn").inner_text()
+
+
+def test_the_run_does_not_search_the_list_twice(page, tmp_path):
+    """Megan, 2026-09-10: "it's now searching for these names before AND after
+    the info is entered". The pre-sweep filtered to all nineteen and then the
+    run filtered to each of them again -- and it could never save that second
+    lookup, because it only remembers an id when the row carries an
+    /employees/ link and Apex's roster has none."""
+    js = filler.build_js([{"name": "Rosa Capel", "find": "Capel", "pages": {}}],
+                         "WE 9.13")
+    assert "findEveryone(say)" not in js.split("ansgo")[-1], \
+        "the run must not sweep the list before it starts"
+    assert "ansfind" in js, "the on-demand check is still offered"
