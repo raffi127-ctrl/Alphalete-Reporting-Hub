@@ -1481,3 +1481,66 @@ def test_a_late_repaint_does_not_lose_somebody(page, tmp_path):
     out = page.locator("#ansout").inner_text()
     assert "Pending tab" not in out, out
     assert "All 1 found" in out
+
+
+ROSTER_BOTH_BOXES = """(names) => {
+  /* A roster that honours BOTH filter boxes, the way Apex's does. */
+  window.__render = () => {
+    const l = document.getElementById('lf').value.toLowerCase();
+    const f = document.getElementById('ffirst').value.toLowerCase();
+    const shown = names.filter(r => (!l || r[1].toLowerCase().includes(l)) &&
+                                    (!f || r[0].toLowerCase().includes(f)));
+    document.getElementById('rows').innerHTML = shown
+      .map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>x</td>
+        <td><button class="ed" data-id="${r[2]}">Edit</button></td></tr>`).join('');
+    document.querySelectorAll('.ed').forEach(b =>
+      b.addEventListener('click', () => { window.__clicked = b.dataset.id; }));
+  };
+  document.getElementById('apply').addEventListener('click', window.__render);
+  window.__render();
+}"""
+
+
+def _roster(page, tmp_path, names):
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_NO_LINKS)
+    page.goto(f.as_uri())
+    page.evaluate(ROSTER_BOTH_BOXES, names)
+    page.evaluate("() => localStorage.clear()")
+
+
+def test_it_types_the_first_name_too(page, tmp_path):
+    """Megan, 2026-09-10: "you should be typing in first and last to get
+    exact". Filtering on the surname alone hands back everyone who shares
+    it and leaves the right row to be guessed at."""
+    _roster(page, tmp_path, [["Xzavier", "Russell", "7001"],
+                             ["Dana", "Russell", "7002"]])
+    people = [{"name": "Xzavier Russell", "find": "Russell", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.evaluate("""async () => await window.__ansOpen(
+        {name:'Xzavier Russell', find:'Russell'})""")
+
+    assert page.evaluate(
+        "() => document.getElementById('ffirst').value").lower() == "xzavier"
+    assert page.evaluate("() => window.__clicked") == "7001", "his row, not Dana's"
+
+
+def test_a_different_name_in_apex_is_reported_not_guessed(page, tmp_path):
+    """If Apex holds a different first name -- a nickname, or a middle name in
+    the box -- the surname on its own would leave one row and it is tempting
+    to take it. It is not taken: filling a stranger's record with somebody
+    else's date of birth and Social is far worse than saying "not found"."""
+    _roster(page, tmp_path, [["Terry", "Dandy", "7100"]])
+    people = [{"name": "Terrance Dandy", "find": "Dandy", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.evaluate("""async () => await window.__ansOpen(
+        {name:'Terrance Dandy', find:'Dandy'})""")
+
+    assert page.evaluate("() => window.__clicked") is None, \
+        "it did not open somebody else's record"
+
+    page.locator("#ansfind").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('Pending tab')",
+        timeout=25000)
+    assert "Terrance Dandy" in page.locator("#ansout").inner_text()

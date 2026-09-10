@@ -79,6 +79,10 @@ SECURITY_ROLE_LABEL = "Sales Rep"
 _JS = r"""
 (function(){
  var KEY='apexNewStarts.%(week)s', DKEY=KEY+'.data';
+ /* Stamped when the button was generated. A saved bookmarklet freezes
+    whatever was in it, so the only way to tell a fixed button from the one
+    saved three fixes ago is to have it say so out loud. */
+ var BUILD='%(build)s';
  /* The week's people live in this browser, not inside the button. Carrying
     them meant a saved bookmark froze that week's data AND that day's code, so
     every change cost a delete, a copy and a re-drag. Saved once now; a new
@@ -716,27 +720,29 @@ _JS = r"""
    }
    return out;
  }
- function clearBox(el){
-   if(!el||!el.value) return;
-   el.value='';
+ function setBox(el,v){
+   if(!el) return;
+   el.value=v||'';
    el.dispatchEvent(new Event('input',{bubbles:true}));
    el.dispatchEvent(new Event('change',{bubbles:true}));
    ngApply(el);
  }
- async function settleFilter(f,text){
+ async function settleFilter(f,given,surname){
    /* The rows repaint AFTER Apply Filters comes back. A fixed wait was reading
       the PREVIOUS person's rows: the screen showed "Russell" typed in the
       filter with Rosa Capel still listed underneath, so Russell was written
       down as absent while he was one repaint away (Megan, 2026-09-10).
       Wait until what is on screen agrees with what was typed. */
-   var want=norm(text), waited=0, rows, i, c, ok;
+   var wantL=norm(surname), wantF=norm(given), waited=0, rows, i, c, ok;
    await sleep(500);
    while(waited<8000){
      rows=dataRows(); ok=true;
      for(i=0;i<rows.length;i++){
        c=rows[i].querySelectorAll('td');
        if(c.length<=f.lastIdx){ ok=false; break; }
-       if(norm(c[f.lastIdx].textContent).indexOf(want)<0){ ok=false; break; }
+       if(norm(c[f.lastIdx].textContent).indexOf(wantL)<0){ ok=false; break; }
+       if(wantF&&f.firstIdx>=0&&c.length>f.firstIdx&&
+          norm(c[f.firstIdx].textContent).indexOf(wantF)<0){ ok=false; break; }
      }
      /* An empty table settles too -- that is the answer "nobody by that name",
         and it is only reached after the first wait above. */
@@ -761,6 +767,25 @@ _JS = r"""
    }
    return out;
  }
+ async function filterTo(f,given,surname){
+   setBox(f.first,given); setBox(f.last,surname);
+   applyFilters();
+   await settleFilter(f,given,surname);
+ }
+ async function lookupRow(f,p){
+   /* Type the FIRST name as well as the last, so the filter lands on the exact
+      person instead of everybody who shares a surname (Megan, 2026-09-10).
+      Apex can hold a different first name for somebody -- a nickname, or a
+      middle name sitting in the box -- and that would be a false miss, so the
+      surname on its own is still tried before giving up on them. */
+   var parts=norm(p.name).split(' ');
+   var surname=p.find||parts[parts.length-1], given=parts[0];
+   await filterTo(f,given,surname);
+   var row=rowFor(p);
+   if(row) return row;
+   await filterTo(f,'',surname);
+   return rowFor(p);
+ }
  async function findEveryone(say){
    /* Clicking the button on each page of a five-page list to teach it where
       people are is exactly the kind of chore this is supposed to remove
@@ -772,21 +797,11 @@ _JS = r"""
    for(i=0;i<D.length;i++){ if(!idFor(D[i])) missing.push(D[i]); }
    if(!missing.length){ say('<b>All '+D.length+' found.</b> Ready to run the week.'); return; }
    for(i=0;i<missing.length;i++){
-     var person=missing[i], parts=norm(person.name).split(' ');
-     var surname=person.find||parts[parts.length-1];
+     var person=missing[i], want=norm(person.name);
      say('looking up '+person.name+' ('+(i+1)+' of '+missing.length+')…');
-     clearBox(f.first);
-     f.last.value=surname;
-     f.last.dispatchEvent(new Event('input',{bubbles:true}));
-     f.last.dispatchEvent(new Event('change',{bubbles:true}));
-     ngApply(f.last);
-     applyFilters();
-     await settleFilter(f,surname);
-     var rows=rowsById(), key, want=norm(person.name), hit=null;
+     var row=await lookupRow(f,person);
+     var rows=rowsById(), key, hit=null;
      for(key in rows){ if(key===want){ hit=rows[key]; break; } }
-     if(!hit) for(key in rows){
-       if(key.indexOf(parts[0])>=0&&key.indexOf(norm(surname))>=0){ hit=rows[key]; break; }
-     }
      /* A real id if the row happens to carry a link, and otherwise nothing at
         all. Storing a placeholder here would have sent the run to
         /employees/?/edit -- the pre-flight is only allowed to REPORT. The run
@@ -795,12 +810,10 @@ _JS = r"""
         Judging it afterwards against whatever rows happen to be on screen said
         22 of 23 were missing -- including Rosa, who was visible at the time. */
      if(hit){ map[want]=hit; try{ localStorage.setItem(IDKEY,JSON.stringify(map)); }catch(e){} }
-     else if(rowFor(person)) present++;
+     else if(row) present++;
      else absent.push(person.name);
    }
-   f.last.value='';
-   f.last.dispatchEvent(new Event('input',{bubbles:true}));
-   ngApply(f.last); applyFilters();
+   setBox(f.first,''); setBox(f.last,''); applyFilters();
    await sleep(800);
    /* Name them. "5 not on the Pending tab" tells you there is a problem and
       nothing about which five, so it cannot be acted on (Megan, 2026-09-09).
@@ -935,16 +948,8 @@ _JS = r"""
      await sleep(1000);
      f=filterBoxes();
    }
-   var parts=norm(p.name).split(' ');
-   if(f){
-     clearBox(f.first);
-     var surname=p.find||parts[parts.length-1];
-     f.last.value=surname;
-     f.last.dispatchEvent(new Event('input',{bubbles:true}));
-     f.last.dispatchEvent(new Event('change',{bubbles:true}));
-     ngApply(f.last); applyFilters(); await settleFilter(f,surname);
-   }
-   var row=rowFor(p); if(!row) return null;
+   var row=f? (await lookupRow(f,p)) : rowFor(p);
+   if(!row) return null;
    var ed=editControl(row); if(!ed) return null;
    ed.click();
    var waited=0;
@@ -1021,6 +1026,7 @@ _JS = r"""
    '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved \u2192 next</button></span>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
+   '<div style="margin-top:6px;font-size:10px;color:#aaa">button built '+BUILD+'</div>'+
    '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
  document.body.appendChild(box);
  function refreshChrome(){
@@ -1272,7 +1278,12 @@ _JS = r"""
 """
 
 
-def build_js(people=None, week: str = "") -> str:
+def _now_stamp() -> str:
+    import datetime as _dt
+    return _dt.datetime.now().strftime("%b %d %H:%M")
+
+
+def build_js(people=None, week: str = "", build: str = "") -> str:
     """The bookmarklet.
 
     With `people` it embeds them (what the tests use). Without, it is CODE ONLY
@@ -1284,6 +1295,7 @@ def build_js(people=None, week: str = "") -> str:
     js = _JS % {"data": json.dumps(people, separators=(",", ":"))
                         if people is not None else "null",
                 "week": week.replace("'", ""),
+                "build": (build or _now_stamp()).replace("'", ""),
                 "role": json.dumps(SECURITY_ROLE_LABEL.lower())}
     out = "javascript:" + " ".join(js.split())
     # The button is served inside an href, and the browser DECODES HTML
@@ -1336,7 +1348,14 @@ PAGE = """<!doctype html><meta charset="utf-8">
  .warn{{color:#b00}}
 </style>
 <h1>Fill Apex — {week}</h1>
-<div class="sub">{n} new start{s} ready. Blue Ink extraction is done.</div>
+<div class="sub">{n} new start{s} ready · button built <b>{build}</b></div>
+
+<div class="note">
+  <b>Left this tab open?</b> Reload it (⌘R) before you save the button — a tab
+  from earlier still holds the older one. The panel in Apex shows the same
+  <b>button built</b> stamp at the bottom; if it doesn't say <b>{build}</b>,
+  the bookmark is the old one and needs replacing.
+</div>
 
 <div class="drag">
   <div style="margin-bottom:12px;font-size:15px">Save this <b>once on this
@@ -1447,10 +1466,11 @@ def build_page(people, week: str, stamp: str, notes=None) -> str:
             "<tr><td>%d</td><td>%s</td><td>%s</td><td class=\"%s\">%s</td></tr>"
             % (i, p["name"], p.get("hire") or "—",
                "warn" if gap else "", gap or "—"))
+    build = _now_stamp()
     return PAGE.format(
-        week=week, n=len(people), s="" if len(people) == 1 else "s",
+        week=week, n=len(people), s="" if len(people) == 1 else "s", build=build,
         # CODE ONLY -- the people are copied separately, so the saved bookmark
         # never goes stale.
-        js=build_js(None, week).replace('"', "&quot;"),
+        js=build_js(None, week, build).replace('"', "&quot;"),
         data=data_json(people).replace("<", "&lt;"),
         rows="\n".join(rows), stamp=stamp)
