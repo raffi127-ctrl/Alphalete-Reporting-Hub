@@ -1,7 +1,7 @@
 {
-  "confirmed_count": 56,
+  "confirmed_count": 55,
   "needs_review_count": 0,
-  "skip_count": 31,
+  "skip_count": 32,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -51,13 +51,6 @@
       "as_owner": "Lamar Mitchell III",
       "as_company": "Mission III Management, Inc.",
       "confidence": 0.67
-    },
-    {
-      "sheet_tab": "Eric Martinez",
-      "office_id": "20721",
-      "as_owner": "Eric Martinez",
-      "as_company": "Spartan Capital, Inc",
-      "confidence": 1.0
     },
     {
       "sheet_tab": "Trang Canavan",
@@ -426,6 +419,12 @@
   ],
   "needs_review": [],
   "skip": [
+    {
+      "sheet_tab": "Eric Martinez",
+      "office_id": "20721",
+      "reason": "oficina cerrada — Spartan Capital, Inc. Megan avisó la baja el 2026-09-10 (\"is shut down\"). Esa misma mañana knocks_access_watch posteó Office Access LOST: salió del knock board de la capitanía de Chan Park, era alcanzable como 20721 y pasó a 'not on the list'. Está en la pestaña 'Terminated ICDs' del AUTOMATION MASTER con fecha 2026-09-10 (Megan, 2026-09-10)",
+      "retired": "2026-09-10"
+    },
     {
       "sheet_tab": "Melik El Jaiez",
       "office_id": "23265",
