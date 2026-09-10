@@ -27,6 +27,7 @@ from urllib.parse import quote
 
 from automations.recruiting_report import opt_phase
 from automations.focus_office_att import aliases as _aliases
+from automations.shared import captainship_pins as _pins
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 OUT = WORKSPACE / "output"
@@ -186,6 +187,12 @@ def _parse_metrics(rows: list[list[str]], alias_raw: dict):
         if len(r) < 2:
             continue
         team, owner = r[0].strip(), r[1].strip()
+        # Un ICD cuya capitania cambio en la vida real antes de que SmartCircle
+        # re-filara el valor del equipo se cuenta en la seccion del capitan al
+        # que REALMENTE reporta. No-op para todas las demas filas, y la fila
+        # 'Total' del equipo no puede matchear (route_team se keyea por el
+        # nombre del owner). Ver captainship_pins.ADOPTED.
+        team = _pins.route_team(team, owner)
         section = TEAM_TO_SECTION.get(team)
         if team == "Grand Total":
             section = "COUNTRY"
