@@ -9,6 +9,7 @@ auth header `Authorization: Token <private key>`).
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -48,9 +49,30 @@ def _headers() -> dict:
             "Content-Type": "application/json"}
 
 
+# A read timeout on one bundle used to kill a whole run: the new-starts button
+# fetches ~20 packets in a row, and Blue Ink drops one often enough that the
+# build failed three times running with nothing to show for it (2026-09-10).
+# A timeout is not an answer, so ask again rather than treating it as one.
+RETRIES = 3
+RETRY_WAIT = 3          # seconds, doubled each time
+
+
 def _request(method: str, path: str, **kw):
     url = f"{config.API_BASE}{path}"
-    resp = requests.request(method, url, headers=_headers(), timeout=TIMEOUT, **kw)
+    wait = RETRY_WAIT
+    for attempt in range(RETRIES):
+        try:
+            resp = requests.request(method, url, headers=_headers(),
+                                    timeout=TIMEOUT, **kw)
+            break
+        except (requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError) as err:
+            if attempt == RETRIES - 1:
+                raise BlueInkError(
+                    f"{method} {path}: Blue Ink did not answer after "
+                    f"{RETRIES} tries ({err.__class__.__name__}).") from None
+            time.sleep(wait)
+            wait *= 2
     if resp.status_code == 401:
         raise BlueInkError(
             "Blue Ink rejected the API key (401). Check blueink-creds.json "
