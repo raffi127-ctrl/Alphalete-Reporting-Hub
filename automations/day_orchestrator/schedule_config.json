@@ -5105,6 +5105,36 @@
       "timeout_minutes": 5,
       "machine": "Lucy 3"
     },
+    "install_terminated_notice_agent": {
+      "on_scheduler": true,
+      "display_name": "Install: Terminated ICD Notice LaunchAgent",
+      "_note": "Instala com.alphalete.terminated-notice (cada 10 min, 24/7) en ESTA maquina. LUCY 1 Y NADA MAS: la checklist tiene que salir como Lucy, y terminated_notice.run se niega a postear desde una maquina cuya identidad de Slack es una persona — instalarlo en una laptop no rompe nada, simplemente no postea nunca. Megan 2026-09-10: \"make it fire right away instead of the next morning\"; la entrada del batch de las 4am (order 61) queda igual, como red. Correr las dos cosas es seguro: es un post por nombre y nunca mas, con el estado en output/terminated_notice/announced.json. Para bajarlo: disable_terminated_notice_agent. base_args propios porque los args extra caen DESPUES de base_args, asi que pedir prestada otra entrada install_* instala el agente equivocado. cadence.weekdays [] = el orquestador de las 4am no lo corre nunca; on_scheduler:true SOLO para que registry.load_config lo conserve y `lucy rerun` lo encuentre.",
+      "command": ["automations.day_orchestrator.install_agent"],
+      "base_args": ["terminated-notice"],
+      "cadence": {"weekdays": []},
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 5,
+      "verify": null
+    },
+    "disable_terminated_notice_agent": {
+      "on_scheduler": true,
+      "display_name": "Disable: Terminated ICD Notice LaunchAgent",
+      "_note": "Descarga com.alphalete.terminated-notice y deja su plist como .plist.disabled — el inverso documentado de install_terminated_notice_agent. Bajarlo NO apaga el aviso: la entrada terminated_notice del batch de las 4am sigue corriendo, solo que la checklist pasa a llegar a la manana siguiente en vez de dentro de los 10 minutos. Para apagarlo del todo hay que ademas poner cadence.weekdays [] y on_scheduler:false en esa entrada.",
+      "command": ["automations.day_orchestrator.disable_agent"],
+      "base_args": ["terminated-notice"],
+      "cadence": {"weekdays": []},
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 5,
+      "verify": null
+    },
     "install_knocks_access_watch_agent": {
       "on_scheduler": true,
       "_note": "NOT a report - a one-shot LaunchAgent installer, run via `lucy rerun install_knocks_access_watch_agent` (same pattern as install_knocks_intraday_agent). Bootstraps com.alphalete.knocks-access-watch on the mini from the committed plist: four quiet passes a day (10:30/13:30/16:30/19:30 machine-local) of the ownerville Office Access watch, so a grant that lands at noon is known the same afternoon instead of at tomorrow's 4am wave. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it.",

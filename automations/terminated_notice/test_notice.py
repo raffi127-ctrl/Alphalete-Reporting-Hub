@@ -301,3 +301,61 @@ class FalsePositives(unittest.TestCase):
             got = R.scan_sheets(["Eric Martinez"], logfn=lambda *a: None)
         self.assertEqual(len(got), 1)
         self.assertIn("Eric Martinez", got[0]["where"])
+
+
+class Agent(unittest.TestCase):
+    """The 10-minute LaunchAgent that makes a termination reach the channel the
+    same hour instead of the next morning (Megan, 2026-09-10)."""
+
+    PLIST = "deploy/com.alphalete.terminated-notice.plist"
+    SH = "deploy/terminated_notice_10min.sh"
+
+    def test_the_pair_is_committed(self):
+        for rel in (self.PLIST, self.SH):
+            self.assertTrue((R.REPO_ROOT / rel).exists(), f"{rel} is missing")
+
+    def test_the_plist_points_at_the_wrapper_that_exists(self):
+        import plistlib
+        data = plistlib.loads((R.REPO_ROOT / self.PLIST).read_bytes())
+        shs = [a for a in data["ProgramArguments"] if a.endswith(".sh")]
+        self.assertEqual(len(shs), 1)
+        self.assertTrue(shs[0].endswith("terminated_notice_10min.sh"))
+        # install_agent rewrites the committed laptop path to the machine's own
+        # repo root, so the tail is what has to match — not the whole path.
+        self.assertTrue((R.REPO_ROOT / self.SH).exists())
+
+    def test_the_wrapper_runs_this_module(self):
+        body = (R.REPO_ROOT / self.SH).read_text(encoding="utf-8")
+        self.assertIn("automations.terminated_notice.run", body)
+        self.assertIn("--post", body)
+
+    def test_the_wrapper_has_no_hardcoded_venv(self):
+        """Every report has to run on macOS AND Windows, and a mini without
+        .venv must not silently do nothing."""
+        body = (R.REPO_ROOT / self.SH).read_text(encoding="utf-8")
+        self.assertIn("python3", body, "no fallback interpreter")
+
+    def test_schedule_config_can_install_and_disable_it(self):
+        import json
+        cfg = json.loads((R.REPO_ROOT / "automations" / "day_orchestrator"
+                          / "schedule_config.json").read_text(encoding="utf-8"))
+        for key, mod in (("install_terminated_notice_agent",
+                          "automations.day_orchestrator.install_agent"),
+                         ("disable_terminated_notice_agent",
+                          "automations.day_orchestrator.disable_agent")):
+            e = cfg["reports"][key]
+            self.assertEqual(e["command"], [mod])
+            # Its OWN base_args: extra args land AFTER base_args, so borrowing
+            # another install_* entry would install the wrong agent.
+            self.assertEqual(e["base_args"], ["terminated-notice"])
+            self.assertEqual(e["cadence"]["weekdays"], [])
+
+    def test_the_batch_backstop_is_still_scheduled(self):
+        """The agent is the fast path, not a replacement — if it is ever
+        unloaded the checklist must still arrive, just slower."""
+        import json
+        cfg = json.loads((R.REPO_ROOT / "automations" / "day_orchestrator"
+                          / "schedule_config.json").read_text(encoding="utf-8"))
+        e = cfg["reports"]["terminated_notice"]
+        self.assertTrue(e["on_scheduler"])
+        self.assertEqual(e["cadence"]["weekdays"], [0, 1, 2, 3, 4, 5, 6])

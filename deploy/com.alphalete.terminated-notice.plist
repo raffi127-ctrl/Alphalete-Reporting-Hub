@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.terminated-notice</string>
+
+    <!-- Path is the laptop's; on the mini, regenerate with
+         `lucy rerun install_terminated_notice_agent` targeting Lucy 1.
+         (No double hyphens in an XML comment: they make the file unparseable
+         to a strict reader even though plutil accepts it.)
+         LUCY 1 ONLY: the checklist has to be posted by Lucy, and the run
+         refuses to post from a machine whose Slack identity is a person. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/terminated_notice_10min.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Every 10 min, 24/7. A termination gets logged whenever someone hears
+         about it, so there is no window to schedule around; 10 min is "right
+         away" for a checklist a person then works through, and the pass is one
+         Sheet read when there is nothing new. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Minute</key><integer>40</integer></dict>
+        <dict><key>Minute</key><integer>50</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/terminated-notice.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/terminated-notice.launchd.err.log</string>
+</dict>
+</plist>
