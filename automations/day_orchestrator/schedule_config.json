@@ -8285,7 +8285,9 @@
         "dd_populate"
       ],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "dd_special_accumulate",
+        "_note": "Wired 2026-09-10. accumulate() files a manifest naming every special-case row it wrote and every one it could not place, so a clean run PROVES the four adoption cells took this week's figures. Before this the block said not_configured, delivery_check answered UNKNOWN, and failure-dd_special_accumulate could not close itself even on the run that fixed it -- the same hole credico_fetch had the same morning. Verified, NOT declared close_on: exit_zero: the write is observable."
       },
       "machine": "Lucy 1",
       "order": 56,

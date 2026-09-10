@@ -290,24 +290,62 @@ def accumulate(write=False, page=None, verbose=True, source="program-summary"):
 
     print(f"tab current week = {tabweek!r}; special rows found = {len(special_rows)}")
     wrote = 0
+    filled, skipped = [], []
     for name, (wk, amt) in figs.items():
         rk = P._norm_name(F.canon(name, aliases))
         row = special_rows.get(rk)
         if row is None:
             print(f"  ⚠ {name}: no row in the 'ICD (Special Cases)' section — skipped")
+            skipped.append(name)
             continue
         if wk != tabweek:
             print(f"  ⚠ {name}: Tableau week {wk} != tab week {tabweek} — skipped "
                   f"(the tab has not rolled to this week yet)")
+            skipped.append(name)
             continue
         if write:
             ws.update_cell(row, wcol + 1, amt)
         print(f"  {'wrote' if write else '[dry-run] would write'} {name}: "
               f"${amt:,.2f} → row {row}, week {tabweek}")
+        filled.append(name)
         wrote += 1
     print(f"\n{'wrote' if write else 'would write'} {wrote} figure(s)"
           + ("" if write else "  (pass --write to actually write)"))
+    if write:
+        _write_accumulate_manifest(tabweek, filled, skipped)
     return figs
+
+
+def _write_accumulate_manifest(week_label, filled, skipped):
+    """File which special-case cells this run actually wrote.
+
+    WHY (2026-09-10): dd_special_accumulate's `verify` said `not_configured`, so
+    `delivery_check` answered UNKNOWN and `failure-dd_special_accumulate` could
+    not close itself even on the run that fixed it — the same hole credico_fetch
+    had the same morning. The write IS observable (we know each name and whether
+    its cell took the figure), so it gets OBSERVED rather than declared
+    `close_on: exit_zero`.
+
+    A name with no row, or a tab that has not rolled to this week, is a real
+    FAILURE here: those are exactly the cells that stayed blank on 2026-09-10,
+    and the bulletin mailed Colten's and Jairo's orgs $30,690.00 short with
+    nothing anywhere saying so.
+
+    Never raises — a manifest that cannot be written must not cast doubt on
+    cells that are already on the tab."""
+    try:
+        from automations.shared import run_manifest
+        note = ("{} special-case cell(s) written for {}".format(len(filled), week_label)
+                + ("; {} could not be placed: {}".format(len(skipped),
+                                                         ", ".join(skipped))
+                   if skipped else ""))
+        run_manifest.write_manifest(
+            "dd_special_accumulate", failed=skipped, succeeded=filled,
+            kind="special-case row", retry_args=["--accumulate", "--write"],
+            note=note)
+        print(f"-> manifest: {note}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ couldn't write the run manifest ({e})", flush=True)
 
 
 def _pull_program_summary(week_label, page=None, verbose=True):
