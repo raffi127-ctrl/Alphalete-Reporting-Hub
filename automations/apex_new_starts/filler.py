@@ -927,8 +927,15 @@ _JS = r"""
  box.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;background:#fff;border:2px solid #0F766E;border-radius:10px;padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:330px';
  var found=learnIds();
  var ssn=ssnBoxes(), gnd=needGender(p), nav=idFor(p);
- box.innerHTML='<div style="font-weight:700;font-size:16px">'+p.name+'</div>'+
-   '<div style="color:#555;margin:2px 0 10px">'+(I+1)+' of '+D.length+' · %(week)s</div>'+
+ /* On somebody's record, name them. On the roster -- which is where the
+    whole-week run is started from -- naming one person reads as though the
+    button is about to do only them (Megan, 2026-09-10). */
+ var onPerson=!!pageName();
+ box.innerHTML='<div style="font-weight:700;font-size:16px">'+
+   (onPerson? p.name : 'Ready to run \u00b7 %(week)s')+'</div>'+
+   '<div style="color:#555;margin:2px 0 10px">'+
+   (onPerson? (I+1)+' of '+D.length+' \u00b7 %(week)s'
+            : D.length+' new starts'+(I? ' \u00b7 '+I+' done already':''))+'</div>'+
    (gnd?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Gender <span style="color:#b00">(required, not on the board)</span></div>'+
         '<select id="ansgender" style="width:100%%;padding:6px;font-size:15px">'+
         '<option value="">Pick one</option><option>Female</option><option>Male</option></select></div>':'')+
@@ -939,8 +946,8 @@ _JS = r"""
    (nav?'<div style="margin-bottom:8px;font-size:12px">'+
         '<a href="#" id="ansg1">1 Employment</a> · <a href="#" id="ansg2">2 Profile</a>'+
         ' · <a href="#" id="ansg3">3 Tax</a></div>':
-        '<div style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
-        '<b>Pending</b> list and it will learn where everyone is, then jump you straight to them.</div>')+
+        (onPerson? '<div style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
+        '<b>Pending</b> list and it will learn where everyone is, then jump you straight to them.</div>':''))+
    '<button id="ansrun" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:14px;font-weight:700;cursor:pointer;width:100%%;margin-bottom:6px">Run the whole week</button>'+
    '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved → next</button>'+
@@ -991,12 +998,15 @@ _JS = r"""
          '<select data-g="'+i+'"><option value="">—</option><option>Female</option><option>Male</option></select>'
          :'<span style="color:#888">on the board</span>')+'</td>'+
        '<td style="padding:4px 8px"><input data-s="'+i+'" type="password" size="12" autocomplete="off"> '+
-       /* ONE named tab for all 23 packets, not 23 tabs each paying for Blue
-          Ink to boot -- that is the difference between "too slow" and usable. */
-       '<a href="'+blueink(D[i])+'" target="blueinkpacket" rel="noopener" '+
-       'style="font-size:11px;color:#0F766E">packet ↗</a></td></tr>';
+       /* Opens their signed W-4 in the pane beside this table. Searching Blue
+          Ink, opening the envelope and finding Quick View, 23 times over, is
+          the slow part -- the document and the box belong on one screen
+          (Megan, 2026-09-10). */
+       '<a href="#" data-doc="'+i+'" style="font-size:11px;color:#0F766E">'+
+       'packet</a></td></tr>';
    }
-   w.innerHTML='<div style="background:#fff;max-width:720px;margin:0 auto;border-radius:12px;padding:22px;font:14px -apple-system,Helvetica,sans-serif">'+
+   w.innerHTML='<div style="background:#fff;max-width:1500px;margin:0 auto;border-radius:12px;padding:22px;font:14px -apple-system,Helvetica,sans-serif;display:flex;gap:18px">'+
+     '<div style="flex:1;min-width:420px;max-height:82vh;overflow:auto">'+
      '<div style="font-size:20px;font-weight:700">Set up %(week)s</div>'+
      '<div style="color:#555;margin:4px 0 14px">Fill these once. Everything else '+
      'comes from Blue Ink and the board. Socials are held in this page only for '+
@@ -1007,11 +1017,29 @@ _JS = r"""
      '<div style="margin-top:16px"><button id="ansgo" style="background:#0F766E;color:#fff;border:0;border-radius:8px;padding:11px 22px;font-weight:700;cursor:pointer">Start the run</button> '+
      '<button id="anscancel" style="background:#eee;border:0;border-radius:8px;padding:11px 18px;cursor:pointer">Cancel</button>'+
      '<div style="font-size:12px;color:#666;margin-top:8px">It stops after the '+
-     'first person so you can check the record before the rest go through.</div></div></div>';
+     'first person so you can check the record before the rest go through.</div></div>'+
+     '</div>'+
+     '<div style="flex:1.2;min-width:420px;display:flex;flex-direction:column">'+
+     '<div id="ansdocname" style="font-size:13px;color:#555;margin-bottom:6px">'+
+     'Click <b>packet</b> beside a name and their signed W-4 opens here.</div>'+
+     '<iframe id="ansdoc" style="flex:1;min-height:70vh;border:1px solid #ddd;'+
+     'border-radius:8px;background:#fafafa"></iframe></div>'+
+     '</div>';
    document.body.appendChild(w);
    /* Warm Blue Ink up straight away, in the tab the packet links will reuse,
       so the first click is not also paying for the dashboard booting. */
-   try{ window.open('https://secure.blueink.com/dashboard/wall','blueinkpacket'); }catch(e){}
+   var docs=w.querySelectorAll('[data-doc]'), dq;
+   for(dq=0;dq<docs.length;dq++) docs[dq].onclick=function(e){
+     e.preventDefault();
+     var k=+this.getAttribute('data-doc'), person=D[k];
+     var frame=document.getElementById('ansdoc'), nm=document.getElementById('ansdocname');
+     if(person.doc){ frame.src=person.doc;
+       nm.innerHTML='<b>'+person.name+'</b> \u2014 signed W-4'; }
+     else { frame.removeAttribute('src');
+       nm.innerHTML='<b>'+person.name+'</b> \u2014 no signed packet. '+
+         '<a href="'+blueink(person)+'" target="blueinkpacket">look in Blue Ink</a>'; }
+     var box=w.querySelector('[data-s="'+k+'"]'); if(box) box.focus();
+   };
    document.getElementById('anscancel').onclick=function(){ w.remove(); };
    document.getElementById('ansgo').onclick=async function(){
      var gs=w.querySelectorAll('[data-g]'), ss=w.querySelectorAll('[data-s]'), j;

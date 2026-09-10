@@ -276,7 +276,7 @@ def for_people(people, mapping: Optional[dict] = None,
     return out
 
 
-def signed_pdf_url(bundle_id: str) -> str:
+def signed_pdf_url(bundle_id: str, prefer: str = "i9") -> str:
     """A short-lived link to the signed I-9 PDF, for the operator to read the
     SSN off. Blue Ink's own expiring S3 link -- nothing is downloaded here and
     the number never enters this report's output."""
@@ -284,10 +284,12 @@ def signed_pdf_url(bundle_id: str) -> str:
         files = B._request("GET", f"/bundles/{bundle_id}/files/") or []
     except Exception:  # noqa: BLE001
         return ""
+    want = (prefer or "i9").lower().replace("-", "")
     best = ""
     for f in files:
         url = f.get("file_url") or ""
-        if "i9" in url.lower().replace("-", "") or "i_9" in url.lower():
+        flat = url.lower().replace("-", "").replace("_", "")
+        if want and want in flat:
             return url
         best = best or url
     return best

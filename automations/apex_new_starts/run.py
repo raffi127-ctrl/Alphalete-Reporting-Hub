@@ -568,6 +568,12 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
                        # date already and it is read-only there
                        "hire": c.hire_date.strftime("%m/%d/%Y")
                                if c.hire_date else "",
+                       # A direct link to their signed W-4, so the document and
+                       # the box to type the Social into can sit side by side
+                       # instead of a search to click through. These are Blue
+                       # Ink's own expiring links -- a few hours -- so a list
+                       # generated yesterday will need regenerating.
+                       "doc": BID.signed_pdf_url(hire.bundle_id, prefer="w4"),
                        "find": c.last or c.name})
         flat = {lbl for page in pages.values() for lbl in page}
         gaps = [lbl for lbl in ("Marital Status", "Date of Birth",

@@ -497,6 +497,12 @@ def test_without_that_list_it_says_how_to_teach_it(page, tmp_path):
     people = [{"name": "Nobody Known", "find": "Known", "fields": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
     assert page.locator("#ansg1").count() == 0
+    # that hint only shows on a person's record now -- on the roster the panel
+    # is about the week, not about one person
+    f2 = tmp_path / "user-profile.html"
+    f2.write_text("<h1>profile</h1>")
+    page.goto(f2.as_uri())
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
     assert "Pending" in page.locator("#anspanel").inner_text()
 
 
@@ -983,26 +989,44 @@ def test_socials_are_never_persisted_by_the_run():
         assert "ssn" not in head and "__anssn" not in head
 
 
-def test_every_row_of_the_setup_form_links_to_that_persons_packet(page, tmp_path):
-    """Twenty-three Socials is only quick if the document is one click from the
-    box. The link is a SEARCH by surname, never a link to the signed document
-    itself -- a document URL here would be a link to somebody's SSN sitting in
-    a file that can be forwarded."""
+def test_each_row_opens_that_persons_document_in_the_pane(page, tmp_path):
+    """A deliberate reversal, and it should be visible here.
+
+    The rule used to be that a signed-document URL must never appear in this
+    list, because it is a link to somebody's SSN inside a file that can be
+    copied between machines. The search link honoured that -- and it meant
+    searching Blue Ink, opening the envelope and hunting for Quick View for
+    each of 23 people, which Megan judged too slow to use (2026-09-10).
+
+    So the list now carries Blue Ink's own expiring link to each signed W-4,
+    and it opens beside the box. What that costs: those links are live for a
+    few hours, and they travel in the pasted list. What it must never become
+    is us reading the number ITSELF -- the operator still types it.
+    """
     f = tmp_path / "user-profile.html"
     f.write_text("<h1>x</h1>")
     page.goto(f.as_uri())
-    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
-              {"name": "Cristian Amaya Vega", "find": "Vega", "pages": {}}]
-    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {},
+               "doc": "https://blueinkprod.s3.amazonaws.com/a.pdf?Signature=x"},
+              {"name": "Cristian Amaya Vega", "find": "Vega", "pages": {},
+               "doc": "https://blueinkprod.s3.amazonaws.com/c.pdf?Signature=y"}]
+    js = filler.build_js(people, "WE 9.13")
+    page.evaluate(js[len("javascript:"):])
     page.locator("#ansrun").click()
 
-    links = page.locator("#anssetup a")
-    assert links.count() == 2
-    hrefs = [links.nth(i).get_attribute("href") for i in range(2)]
-    assert hrefs[0].endswith("search=Browder")
-    assert hrefs[1].endswith("search=Vega")
-    for h in hrefs:
-        assert "blueinkprod.s3" not in h and "signed.pdf" not in h
+    rows = page.locator("#anssetup [data-doc]")
+    assert rows.count() == 2
+    rows.nth(1).click()
+    assert page.locator("#ansdoc").get_attribute("src").endswith("Signature=y")
+
+    # the line that must hold whatever else changes
+    import json
+    payload = json.loads(js.split("var D=", 1)[1].split("; if(!D)", 1)[0])
+    for person in payload:
+        for value in person.get("pages", {}).values():
+            for v in value.values():
+                assert not __import__("re").fullmatch(r"\d{3}-?\d{2}-?\d{4}",
+                                                     str(v))
 
 
 def test_the_code_only_button_asks_for_the_list(page, tmp_path):
@@ -1293,9 +1317,10 @@ def test_it_names_who_it_could_not_find_and_offers_a_retry(page, tmp_path):
     assert page.locator("#ansagain").count() == 1, "and a way to look again"
 
 
-def test_all_packet_links_share_one_tab(page, tmp_path):
-    """Twenty-three packets opening 23 tabs, each paying for Blue Ink to boot,
-    is what made this "too slow". One named tab, warmed when the form opens."""
+def test_packets_no_longer_open_tabs_at_all(page, tmp_path):
+    """First they opened 23 tabs, then one shared tab -- and both still meant
+    searching Blue Ink and hunting for Quick View. Now the document loads in a
+    pane beside the table, so nothing opens a tab."""
     f = tmp_path / "user-profile.html"
     f.write_text("<h1>x</h1>")
     page.goto(f.as_uri())
@@ -1305,8 +1330,65 @@ def test_all_packet_links_share_one_tab(page, tmp_path):
     page.evaluate("() => { window.open = () => null; }")   # no real tabs in a test
     page.locator("#ansrun").click()
 
-    links = page.locator("#anssetup a")
+    links = page.locator("#anssetup [data-doc]")
     assert links.count() == 2
     for i in range(2):
-        assert links.nth(i).get_attribute("target") == "blueinkpacket", \
-            "every packet link reuses the same tab"
+        assert links.nth(i).get_attribute("target") is None, \
+            "it loads in the pane, it does not open a tab"
+
+
+def test_the_header_says_where_you_are(page, tmp_path):
+    """On the roster, naming one person reads as though the button is about to
+    do only them -- and that is exactly where the whole-week run is started
+    from."""
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Cristian Amaya Vega", "find": "Vega", "pages": {}}]
+    js = filler.build_js(people, "WE 9.13")[len("javascript:"):]
+
+    roster = tmp_path / "roster.html"; roster.write_text("<h1>User Listing</h1>")
+    page.goto(roster.as_uri())
+    page.evaluate(js)
+    head = page.locator("#anspanel").inner_text()
+    assert "Ready to run" in head and "2 new starts" in head
+    assert "Aundre Browder" not in head, "no single name on the roster"
+
+    person = tmp_path / "user-profile.html"; person.write_text("<h1>profile</h1>")
+    page.goto(person.as_uri())
+    page.evaluate(js)
+    head = page.locator("#anspanel").inner_text()
+    assert "Aundre Browder" in head and "1 of 2" in head
+
+
+def test_the_packet_opens_beside_the_social_box(page, tmp_path):
+    """Searching Blue Ink, opening the envelope and finding Quick View, for
+    each of 23 people, is the slow part. The document and the box to type into
+    belong on one screen (Megan, 2026-09-10)."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    people = [{"name": "Rosa Capel", "find": "Capel", "pages": {},
+               "doc": "https://example.invalid/rosa-w4.pdf"},
+              {"name": "No Packet", "find": "Packet", "pages": {}, "doc": ""}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansrun").click()
+
+    assert page.locator("#ansdoc").count() == 1, "a pane for the document"
+    page.locator('[data-doc="0"]').click()
+    assert page.locator("#ansdoc").get_attribute("src") == \
+        "https://example.invalid/rosa-w4.pdf"
+    assert "Rosa Capel" in page.locator("#ansdocname").inner_text()
+    assert page.evaluate(
+        "() => document.activeElement.getAttribute('data-s')") == "0", \
+        "and the cursor lands in HER Social box"
+
+
+def test_somebody_with_no_packet_says_so_rather_than_blanking(page, tmp_path):
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    people = [{"name": "No Packet", "find": "Packet", "pages": {}, "doc": ""}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansrun").click()
+    page.locator('[data-doc="0"]').click()
+    out = page.locator("#ansdocname").inner_text()
+    assert "no signed packet" in out
