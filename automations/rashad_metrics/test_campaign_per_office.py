@@ -100,6 +100,14 @@ class MultiCampaignOffices(unittest.TestCase):
         opts = KP.campaigns_for("Carlos Hidalgo")
         self.assertEqual([cid for _l, cid, _k in opts], ["2", "16"])
 
+    def test_an_offices_default_campaign_is_one_it_actually_runs(self):
+        # The pin an unpicked path uses has to be one of the office's own
+        # campaigns. Carlos was pinned to 3, which his B2B office never runs.
+        for name in KP.MULTI_CAMPAIGN:
+            with self.subTest(office=name):
+                ids = [c for _l, c, _k in KP.campaigns_for(name)]
+                self.assertIn(KP.campaign_for_office(name), ids)
+
     def test_a_single_campaign_office_is_never_asked(self):
         for name in ("Rafael Hidalgo", "Chan Park", "Isaiah Revelle"):
             self.assertEqual(KP.campaigns_for(name), [],
@@ -154,8 +162,18 @@ class OfferedIsNotKnocked(unittest.TestCase):
     def test_the_canonical_name_only(self):
         # Same rule as CAMPAIGN_OVERRIDES: callers canonicalise first, so an
         # alias spelling here would be the per-report patch aliases replace.
-        self.assertEqual(KP.not_knocked("Calvin Ribera"), {"16"})
+        self.assertEqual(KP.not_knocked("  CARLOS   HIDALGO "), {"39"})
         self.assertEqual(KP.not_knocked("Nobody At All"), set())
+
+    def test_calvin_is_not_listed_dead_on_a_campaign_he_knocks(self):
+        # He was, for one commit, on the strength of "Calvin is ENERGY WELL
+        # only" quoted in CAMPAIGN_OVERRIDES to explain why 40 and not 3. That
+        # line was never a survey of what he knocks (Megan 2026-09-09: "calvin
+        # also runs 2 campaigns"). Dropping a real campaign is the worse of the
+        # two mistakes — a missing button is invisible.
+        self.assertEqual(KP.not_knocked("Calvin Ribera"), set())
+        self.assertEqual([c for _l, c, _k in KP.campaigns_for("Calvin Ribera")],
+                         ["16", "40"])
 
     def test_it_is_a_copy_so_a_caller_cannot_edit_the_map(self):
         got = KP.not_knocked("Carlos Hidalgo")

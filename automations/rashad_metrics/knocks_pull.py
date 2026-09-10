@@ -416,6 +416,9 @@ CAMPAIGN_OVERRIDES: "dict[str, str]" = {
     # A second spelling here would be the per-report patch the alias sheet
     # exists to replace, and two places to update the next time a name drifts.
     "calvin ribera": "40",
+    # NOTE: the "He is Energy Wells ONLY" below is STALE — Calvin knocks Box
+    # Energy too (Megan 2026-09-09), and MULTI_CAMPAIGN now offers both. What
+    # survives is the pin itself: 40 is his default, and 3 was returning zero.
     # carlos hidalgo -> 2 (B2B AT&T SBS). His office (11580) is B2B and does
     # not run RES AT&T at all, so the default pin of 3 was pointing his session
     # at a campaign his picker never offers. It "worked" only because his office
@@ -454,6 +457,11 @@ MULTI_CAMPAIGN: "dict[str, list]" = {
                     ("Energy Wells", "40", "energywell")],
     "carlos hidalgo": [("B2B AT&T SBS", "2", "att"),
                        ("B2B Box", "16", "box")],
+    # Calvin knocks BOTH (Megan 2026-09-09: "calvin also runs 2 campaigns").
+    # He was listed as Energy Wells ONLY on a line of Raf's quoted in the
+    # override below — see NOT_KNOCKED for why that is not the same evidence.
+    "calvin ribera": [("Box Energy", "16", "box"),
+                      ("Energy Wells", "40", "energywell")],
 }
 
 
@@ -471,9 +479,16 @@ MULTI_CAMPAIGN: "dict[str, list]" = {
 # reads as a broken report rather than a campaign nobody knocks.
 #
 # An entry here is an ANSWER FROM THE OWNER, not an inference from a quiet day.
+# A SECOND-HAND "X ONLY" IN A COMMENT IS NOT AN ANSWER. Calvin was listed here
+# on the strength of "Calvin is ENERGY WELL only" — Raf's line, quoted in the
+# override below on 2026-08-29 to explain a DIFFERENT thing (why 40 and not 3).
+# It was never a survey of what he knocks, and it was wrong: he runs both
+# (Megan 2026-09-09). Removing a real campaign is the more expensive mistake of
+# the two, because a missing button is invisible — nobody can see the board
+# they were never offered. So an entry needs the owner on the actual question,
+# not a quote that happens to contain the word "only".
 NOT_KNOCKED: "dict[str, set]" = {
     "carlos hidalgo": {"39"},        # BASE Energy — offered, never knocked
-    "calvin ribera": {"16"},         # Box Energy — "Calvin is ENERGY WELL only"
 }
 
 
