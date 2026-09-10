@@ -1544,3 +1544,98 @@ def test_a_different_name_in_apex_is_reported_not_guessed(page, tmp_path):
         "() => document.getElementById('ansout').innerText.includes('Pending tab')",
         timeout=25000)
     assert "Terrance Dandy" in page.locator("#ansout").inner_text()
+
+
+# ---------------------------------------------------------------------------
+# The loader. Megan, 2026-09-10: "can't you just give me a link to click each
+# time so I don't have to keep resaving this over and over". The bookmark is
+# now a stub that carries nothing; every fix and every week rides in on the
+# paste that was already a weekly step.
+# ---------------------------------------------------------------------------
+
+def _stub_host(page, tmp_path, name="host.html"):
+    """Serve the stub the way it is really served -- inside an href -- and
+    hand back what a click would actually run, entities and all."""
+    host = tmp_path / name
+    host.write_text('<a id="bm" href="'
+                    + filler.build_stub().replace('"', "&quot;")
+                    + '">Fill Apex</a><div id="apexish">roster</div>')
+    page.goto(host.as_uri())
+    return page.locator("#bm").get_attribute("href")[len("javascript:"):]
+
+
+def test_the_stub_asks_for_a_setup_when_it_has_none(page, tmp_path):
+    js = _stub_host(page, tmp_path)
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(js)
+    assert page.locator("#ansload").count() == 1
+    assert page.locator("#anspanel").count() == 0, "nothing to run yet"
+
+
+def test_a_pasted_setup_runs_and_is_remembered(page, tmp_path):
+    """The whole point: paste once, and the bookmark keeps working after."""
+    js = _stub_host(page, tmp_path)
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(js)
+
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}}]
+    page.fill("#ansblob",
+              filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansloadgo").click()
+    assert page.locator("#anspanel").count() == 1, "it ran what was pasted"
+    assert page.locator("#ansload").count() == 0
+
+    # click the bookmark again: no paste box, it runs from what it kept
+    page.evaluate(js)
+    assert page.locator("#anspanel").count() == 1
+    assert page.locator("#ansload").count() == 0
+
+
+def test_load_a_new_setup_hands_back_to_the_loader(page, tmp_path):
+    """How a fix reaches somebody now -- the bookmark never changes."""
+    js = _stub_host(page, tmp_path)
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(js)
+    page.fill("#ansblob", filler.build_js(
+        [{"name": "Aundre Browder", "find": "Browder", "pages": {}}],
+        "WE 9.13")[len("javascript:"):])
+    page.locator("#ansloadgo").click()
+
+    page.locator("#ansnew").click()
+    assert page.locator("#ansload").count() == 1, "the paste box is back"
+    assert page.evaluate(
+        "() => localStorage.getItem('apexNewStarts.code')") is None
+
+
+def test_the_setup_survives_the_page_it_is_copied_from(page, tmp_path):
+    """End to end through the REAL page: whatever the copy box hands over has
+    to still be runnable JavaScript. Escaping "<" before "&" turns "&lt;" into
+    "&amp;lt;" and the browser hands back the wrong characters -- the same
+    class of bug as the apostrophe that once killed the button outright."""
+    people = [{"name": "Aundre Browder", "find": "Browder", "hire": "9/8/2026",
+               "pages": {"employment": {"Position": "Sales Rep"}}}]
+    doc = tmp_path / "page.html"
+    doc.write_text(filler.build_page(people, "WE 9.13", "September 10, 2026"))
+    page.goto(doc.as_uri())
+    setup = page.evaluate("() => document.getElementById('thedata').value")
+
+    js = _stub_host(page, tmp_path, "apexish.html")
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(js)
+    page.fill("#ansblob", setup)
+    page.locator("#ansloadgo").click()
+
+    assert page.locator("#anspanel").count() == 1, \
+        "the setup copied off the page is still runnable"
+    assert "Aundre Browder" in page.locator("#anspanel").inner_text()
+
+
+def test_a_short_paste_is_refused_rather_than_stored(page, tmp_path):
+    js = _stub_host(page, tmp_path)
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(js)
+    page.fill("#ansblob", "hello")
+    page.locator("#ansloadgo").click()
+    assert "not the setup" in page.locator("#ansloadmsg").inner_text()
+    assert page.evaluate(
+        "() => localStorage.getItem('apexNewStarts.code')") is None

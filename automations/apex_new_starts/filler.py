@@ -1027,7 +1027,8 @@ _JS = r"""
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved \u2192 next</button></span>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
    '<div style="margin-top:6px;font-size:10px;color:#aaa">button built '+BUILD+'</div>'+
-   '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
+   '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a>'+
+   ' \u00b7 <a href="#" id="ansnew" style="font-size:11px;color:#888">load a new setup</a></div>';
  document.body.appendChild(box);
  function refreshChrome(){
    /* The panel is built once and the app never reloads, so anything decided at
@@ -1263,6 +1264,13 @@ _JS = r"""
    if(nid){ go(nid,'employment-record'); }        /* straight to the next person */
    else alert('Next: '+D[I].name+'\n\nOpen their record and click the button again.');
  };
+ document.getElementById('ansnew').onclick=function(e){ e.preventDefault();
+   /* Hand back to the loader. This is how a fix reaches somebody now: the
+      bookmark never changes, the setup behind it does. */
+   var pan=document.getElementById('anspanel'); if(pan) pan.remove();
+   if(window.__ansPaste) window.__ansPaste();
+   else alert('Click Fill Apex again and paste the new setup.');
+ };
  document.getElementById('anserr').onclick=function(e){ e.preventDefault();
    var L=window.__ansNet&&window.__ansNet.last;
    document.getElementById('ansout').innerHTML = L
@@ -1283,6 +1291,95 @@ def _now_stamp() -> str:
     return _dt.datetime.now().strftime("%b %d %H:%M")
 
 
+def _guard(out: str) -> str:
+    """A bookmarklet is served inside an href, and the browser DECODES HTML
+    entities before running it. A single "&#39;" turned into a real apostrophe
+    inside a single-quoted string -- a syntax error, and the whole script
+    silently did nothing when clicked. Unicode escapes survive; entities must
+    never appear.
+    """
+    import re as _re
+    # Named entities only from the ones a browser actually decodes here, plus
+    # numeric. A loose [a-z]+ pattern matched "&&n;" in `for(var k=0;k<3&&n;`.
+    bad = _re.findall(r"&(?:#\d+|amp|lt|gt|quot|apos|nbsp);", out)
+    if bad:
+        raise RuntimeError(
+            "the bookmarklet contains HTML entities, which the browser will "
+            f"decode and break: {sorted(set(bad))[:5]}")
+    return out
+
+
+_STUB = r"""
+(function(){
+ /* The LOADER. This is the thing that gets bookmarked, and it is the only
+    part that must never change: everything real lives under CODEKEY in this
+    browser and arrives by paste. A saved bookmarklet freezes whatever was
+    inside it, so shipping a fix used to mean asking for the bookmark to be
+    deleted, re-copied and re-dragged -- which happened four times in one
+    afternoon, and three of those the old button was still what ran
+    (Megan, 2026-09-10). */
+ var CODEKEY='apexNewStarts.code';
+ function panel(msg){
+   var old=document.getElementById('ansload'); if(old) old.remove();
+   var b=document.createElement('div'); b.id='ansload';
+   b.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;'+
+     'background:#fff;border:2px solid #0F766E;border-radius:10px;'+
+     'padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;'+
+     'box-shadow:0 6px 24px rgba(0,0,0,.25);width:320px';
+   b.innerHTML='<div style="font-weight:700;font-size:16px">Load this week</div>'+
+     '<div style="color:#555;margin:4px 0 8px;font-size:12px">'+msg+'</div>'+
+     '<textarea id="ansblob" style="width:100%;height:64px;font-size:11px"></textarea>'+
+     '<div style="margin-top:8px">'+
+     '<button id="ansloadgo" style="background:#0F766E;color:#fff;border:0;'+
+     'border-radius:6px;padding:9px 14px;font-weight:700;cursor:pointer">Load it</button> '+
+     '<button id="ansloadno" style="background:#eee;border:0;border-radius:6px;'+
+     'padding:9px 12px;cursor:pointer">Cancel</button></div>'+
+     '<div id="ansloadmsg" style="margin-top:8px;font-size:12px;color:#b00"></div>';
+   document.body.appendChild(b);
+   document.getElementById('ansloadno').onclick=function(){ b.remove(); };
+   document.getElementById('ansloadgo').onclick=function(){
+     var t=(document.getElementById('ansblob').value||'').trim();
+     if(t.indexOf('javascript:')===0) t=t.slice(11);
+     var say=document.getElementById('ansloadmsg');
+     if(t.length<2000){
+       say.textContent='That is not the setup. On the Fill Apex page click '+
+         'Copy this week\u0027s setup, then paste here.'; return; }
+     try{ localStorage.setItem(CODEKEY,t); }
+     catch(e){ say.textContent='This browser would not store it: '+e.message; return; }
+     b.remove(); run();
+   };
+   document.getElementById('ansblob').focus();
+ }
+ /* The loaded script offers "load a new setup"; this is what it calls. */
+ window.__ansPaste=function(){
+   try{ localStorage.removeItem(CODEKEY); }catch(e){}
+   panel('Paste the new setup here.');
+ };
+ function run(){
+   var c=null; try{ c=localStorage.getItem(CODEKEY); }catch(e){}
+   if(!c){ panel('On the <b>Fill Apex</b> page click <b>Copy this week\u0027s '+
+     'setup</b>, then paste it here. Only needed when the week changes.'); return; }
+   /* Apex serves no Content-Security-Policy, so this is allowed to run. */
+   try{ (new Function(c))(); }
+   catch(e){ panel('The saved setup would not run ('+e.message+'). '+
+     'Paste a fresh one.'); }
+ }
+ run();
+})()
+"""
+
+
+def build_stub() -> str:
+    """The bookmarklet that gets saved ONCE and never again.
+
+    It carries no report logic and no data -- only enough to run whatever was
+    last pasted in. Every fix and every new week then ships through the paste
+    that already happened weekly, instead of through a re-drag that kept not
+    happening.
+    """
+    return _guard("javascript:" + " ".join(_STUB.split()))
+
+
 def build_js(people=None, week: str = "", build: str = "") -> str:
     """The bookmarklet.
 
@@ -1297,21 +1394,7 @@ def build_js(people=None, week: str = "", build: str = "") -> str:
                 "week": week.replace("'", ""),
                 "build": (build or _now_stamp()).replace("'", ""),
                 "role": json.dumps(SECURITY_ROLE_LABEL.lower())}
-    out = "javascript:" + " ".join(js.split())
-    # The button is served inside an href, and the browser DECODES HTML
-    # entities before running it. A single "&#39;" turned into a real
-    # apostrophe inside a single-quoted string, which is a syntax error, and
-    # the whole script silently did nothing when clicked. Unicode escapes
-    # survive; entities must never appear.
-    import re as _re
-    # Named entities only from the ones a browser actually decodes here, plus
-    # numeric. A loose [a-z]+ pattern matched "&&n;" in `for(var k=0;k<3&&n;`.
-    bad = _re.findall(r"&(?:#\d+|amp|lt|gt|quot|apos|nbsp);", out)
-    if bad:
-        raise RuntimeError(
-            "the bookmarklet contains HTML entities, which the browser will "
-            f"decode and break: {sorted(set(bad))[:5]}")
-    return out
+    return _guard("javascript:" + " ".join(js.split()))
 
 
 def data_json(people: List[Dict]) -> str:
@@ -1351,15 +1434,17 @@ PAGE = """<!doctype html><meta charset="utf-8">
 <div class="sub">{n} new start{s} ready · button built <b>{build}</b></div>
 
 <div class="note">
-  <b>Left this tab open?</b> Reload it (⌘R) before you save the button — a tab
-  from earlier still holds the older one. The panel in Apex shows the same
-  <b>button built</b> stamp at the bottom; if it doesn't say <b>{build}</b>,
-  the bookmark is the old one and needs replacing.
+  <b>Left this tab open?</b> Reload it (⌘R) first — a tab from earlier still
+  holds the older setup. The panel in Apex prints the same <b>built</b> stamp
+  at the bottom; if it doesn't say <b>{build}</b>, click <b>load a new
+  setup</b> there and paste this page's setup in. The bookmark itself stays
+  put.
 </div>
 
 <div class="drag">
-  <div style="margin-bottom:12px;font-size:15px">Save this <b>once on this
-  computer</b> — drag it to your bookmarks bar:</div>
+  <div style="margin-bottom:12px;font-size:15px">Save this <b>once, ever</b> —
+  drag it to your bookmarks bar. It holds no report and no people, so it never
+  needs replacing again:</div>
   <a class="btn" href="{js}" id="thebtn">Fill Apex</a>
   <div style="margin-top:16px;font-size:14px;color:#555">
     No bookmarks bar? <button id="copybtn" style="font:inherit;padding:6px 12px;
@@ -1368,11 +1453,11 @@ PAGE = """<!doctype html><meta charset="utf-8">
     <span id="copied" style="color:#0F766E;display:none">copied ✓</span>
   </div>
   <div style="margin-top:20px;padding-top:16px;border-top:1px solid #dde">
-    <div style="font-size:15px;margin-bottom:10px"><b>Every week</b>, load that
-    week's people into it:</div>
+    <div style="font-size:15px;margin-bottom:10px"><b>Every week</b> (and any
+    time this page shows a newer <b>built</b> stamp), load it in:</div>
     <button id="databtn" style="font:inherit;padding:10px 20px;border:0;
     background:#0F766E;color:#fff;border-radius:8px;cursor:pointer;
-    font-weight:700">Copy this week's list</button>
+    font-weight:700">Copy this week's setup</button>
     <span id="datacopied" style="color:#0F766E;display:none"> copied ✓ — now
     click Fill Apex on any Apex page and paste it in</span>
     <textarea id="thedata" style="position:absolute;left:-9999px"
@@ -1417,11 +1502,13 @@ document.getElementById('copybtn').onclick = function(){{
 </script>
 
 <ol>
-  <li><b>Once per computer:</b> save the green button above (drag it, or use
-      <b>Copy the button</b>). It never changes, so you only do this once.</li>
-  <li><b>Once per week:</b> click <b>Copy this week's list</b>, then click
-      <b>Fill Apex</b> on any Apex page and paste it into the box that
-      appears.</li>
+  <li><b>Once, ever:</b> save the green button above (drag it, or use
+      <b>Copy the button</b>). It is a loader — it carries no report logic and
+      no people — so it is never the thing that goes stale.</li>
+  <li><b>Each week, and after any fix:</b> click <b>Copy this week's
+      setup</b>, then click <b>Fill Apex</b> on any Apex page and paste it into
+      the box that appears. Already loaded an older one? The panel has
+      <b>load a new setup</b> at the bottom.</li>
   <li>Log into Apex yourself, with the code it texts you.</li>
   <li>Open <b>Roster → Employees</b> and click the <b>Pending</b> tab. Everyone
       below is already there — their account exists, their profile is empty.</li>
@@ -1471,6 +1558,12 @@ def build_page(people, week: str, stamp: str, notes=None) -> str:
         week=week, n=len(people), s="" if len(people) == 1 else "s", build=build,
         # CODE ONLY -- the people are copied separately, so the saved bookmark
         # never goes stale.
-        js=build_js(None, week, build).replace('"', "&quot;"),
-        data=data_json(people).replace("<", "&lt;"),
+        # A LOADER, saved once and never again. Everything that changes --
+        # the week's people and every fix to the code -- rides in on the
+        # paste below, which was already a weekly step.
+        js=build_stub().replace('"', "&quot;"),
+        # & FIRST, then < -- the other order turns "&lt;" into "&amp;lt;"
+        # and the textarea hands back the wrong characters.
+        data=build_js(people, week, build)[len("javascript:"):]
+             .replace("&", "&amp;").replace("<", "&lt;"),
         rows="\n".join(rows), stamp=stamp)
