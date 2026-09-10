@@ -377,6 +377,37 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
             "AVG DD / Active Owners exclude those {} rows too, which matches "
             "the headline — nothing to fix".format(len(special)))
 
+    # The silent twin of that copied column: an EMPTY one. dd_week_roll blanks
+    # the new column and ONLY dd_special_accumulate fills it, so an accumulate
+    # that never ran leaves the block at zero — and every note above lives
+    # inside `if special_week:`, so a zero block said nothing at all.
+    #
+    # 2026-09-10: Credico's token had expired, dd_populate sat waiting on
+    # credico_fetch and was re-run by hand, the orchestrator never saw that, and
+    # dd_special_accumulate was retired MISSED at the noon backstop. The block
+    # was NOT blank at 11:20 only because somebody had typed the four figures in
+    # by hand before the send — nothing in the code was going to stop it. Had
+    # the hand fill not happened, Colten's and Jairo's orgs would have mailed
+    # $30,690.00 short and Rafael's "outside" line that much long, silently: a
+    # copied column was already caught, a blank one was not caught at all.
+    #
+    # Gated on the PRIOR week carrying money, so a genuinely quiet week is never
+    # jammed for good: once one real zero week sits behind it, the block lifts
+    # by itself. Same tier as the stale/empty week above — with --notify a
+    # `blocking` problem mails anyway, and short money on the page is a wrong
+    # number, not a gap.
+    elif special and len(weeks) > 1 and any(len(r["weeks"]) > 1 and r["weeks"][1]
+                                            for r in special):
+        _prior_special = sum(r["weeks"][1] for r in special if len(r["weeks"]) > 1)
+        msg = ("every 'ICD (Special Cases)' row is BLANK for {} ({}) while {} "
+               "carried ${:,.2f} — dd_week_roll blanks that column and only "
+               "dd_special_accumulate fills it, so this is the accumulate not "
+               "having run. `lucy rerun dd_special_accumulate`, then re-send."
+               .format(weeks[0], ", ".join(r["name"] for r in special),
+                       weeks[1], _prior_special))
+        problems.append(msg)
+        hard_block.append(msg)
+
     # ---- Credico, the second DD source, BEFORE the podium: a topped-up week
     # has to reach the leader lists that sum it.
     credico_info = _fold_credico(credico, weeks[0] if weeks else "", by_key,

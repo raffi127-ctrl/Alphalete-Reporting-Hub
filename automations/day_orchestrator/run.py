@@ -477,6 +477,25 @@ def main(argv: Optional[List[str]] = None) -> int:
             # Backstop reached → give up on stragglers, final + stop.
             if now >= backstop_at:
                 _log(f"backstop {backstop_at.time()} reached — marking stragglers MISSED.")
+                # First adopt the runs that happened OUTSIDE this loop, THEN let
+                # whatever they unblock take its last turn. _apply_backstop has
+                # always adopted such a run for the report itself, but it does so
+                # while retiring — so a DEPENDENT never got the turn the adoption
+                # just earned it, and was retired "data never ready by noon"
+                # naming a dependency that was, by then, done.
+                # 2026-09-10: Credico's bearer expired, credico_fetch failed at
+                # 4am, dd_populate sat "waiting on credico_fetch" — and was
+                # re-run BY HAND at 09:09, which filled the column but never
+                # touched day_state (`lucy rerun` doesn't). At noon the backstop
+                # adopted dd_populate DONE and, in the same loop, retired
+                # dd_special_accumulate MISSED for waiting on it — a "didn't run
+                # today" alert naming a dependency that was, by then, done, and
+                # a step that simply never ran.
+                if _adopt_out_of_band(ds):
+                    state.save(ds)
+                    _recheck_gated(cfg, ds, todays, cache, target,
+                                   dry_run=dry_run, simulate=args.simulate,
+                                   channel=channel, email_dry=email_dry)
                 _apply_backstop(ds, stale_after)
                 # Stragglers are terminal now, so a retry that had been deferred
                 # behind them (see _retry_incomplete_parts) gets its last shot
@@ -1742,6 +1761,43 @@ def _backstop_covering(backstop_at: dt.datetime, todays, target: dt.date):
     _log(f"backstop moved {backstop_at.time()} -> {latest.time()}: "
          f"{who.report_id} on this machine does not start until {who.not_before}")
     return latest
+
+
+def _adopt_out_of_band(ds) -> bool:
+    """Mark every non-terminal report that already published a successful run
+    today from outside this loop DONE, and report whether anything moved.
+
+    Same evidence and same wording as _apply_backstop's own adoption branch —
+    the difference is WHEN: run before the backstop retires anything, an adopted
+    report can still free its dependents (via _recheck_gated) instead of taking
+    them down with it. Guard order mirrors _apply_backstop exactly, so a report
+    that branch would classify some other way keeps that classification: a
+    never-launched duplicate, a dead ownerville session, and a probe that said
+    there was nothing to do are all left for the backstop to word its way.
+
+    Best-effort by construction: _ran_outside_the_flow answers False on any
+    lookup problem, so a bad Hub read can only leave today's behaviour alone."""
+    moved = False
+    for rs in list(ds.reports.values()):
+        if rs.is_terminal():
+            continue
+        if rs.waiting_on == DUPLICATE_WAITING_ON:
+            continue
+        if rs.waiting_on and "session" in (rs.waiting_on or "").lower():
+            continue
+        if rs.nothing_to_do:
+            continue
+        if not _ran_outside_the_flow(rs.report_id):
+            continue
+        ds.set(rs.report_id, state.DONE,
+               reason="already ran today outside the 4am flow (a standalone "
+                      "agent or a manual re-run published a successful run) — "
+                      "the flow copy never got its turn: "
+                      f"{rs.last_reason or 'n/a'}")
+        _log(f"  {rs.report_id}: adopted DONE at the backstop — it already ran "
+             "outside this loop")
+        moved = True
+    return moved
 
 
 def _ran_outside_the_flow(report_id: str) -> bool:
