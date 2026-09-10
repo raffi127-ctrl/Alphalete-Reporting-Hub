@@ -27,10 +27,29 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
-# The captainships whose reports carry knock sections. rafael first on purpose:
-# his access is complete, so he is the control — if HIS row shows gaps, the
-# audit is broken (stale session, renamed table), not the access list.
-CAPTAINS = ("rafael", "wayne", "starr", "chan", "tony", "sahil")
+def _captains_with_knocks() -> Tuple[str, ...]:
+    """The captainships whose reports actually carry knock sections.
+
+    DERIVED, not listed. This was a hardcoded six, and on 2026-09-04 Pat's and
+    Jess's captainship went live carrying the same knock sections (flavor
+    `fiber`) without anyone adding it here. For a week the watcher was blind to
+    exactly the offices it exists to watch: on 2026-09-10 three of Jess's
+    owners — Jess Lieberman, Ozzy Centeno, Sheree Rodriguez — fell out of her
+    report and nothing anywhere said so. A captainship now joins the audit the
+    same day it joins the report, off the one fact that decides both.
+
+    rafael stays FIRST: his access is complete, so he is the control — if HIS
+    row shows gaps, the audit is broken (stale session, renamed table), not the
+    access list.
+    """
+    from automations.captainship_drafts import config as _config
+    keys = [c.key for c in _config.CAPTAINS
+            if "daily_knocks" in _config.SECTION_KINDS.get(c.flavor, ())
+            or "knock_dispo" in _config.SECTION_KINDS.get(c.flavor, ())]
+    return tuple(sorted(keys, key=lambda k: (k != "rafael", keys.index(k))))
+
+
+CAPTAINS = _captains_with_knocks()
 
 OFFICE_ACCESS_URL = "https://v2.ownerville.com/index.cfm?p=901"
 _ROOT_URL = "https://v2.ownerville.com/"

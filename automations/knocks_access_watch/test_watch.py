@@ -263,5 +263,33 @@ class ShortRead(unittest.TestCase):
         self.assertIn("default page size", str(cm.exception))
 
 
+class CaptainsAreDerivedTests(unittest.TestCase):
+    """The audited list must follow the reports, not a tuple someone edits.
+
+    Pat's and Jess's captainship carried knock sections from 2026-09-04 and was
+    missing from the hardcoded six for a week; the day it cost something was
+    2026-09-10, when three of Jess's owners silently left her report.
+    """
+
+    def test_every_captain_with_knock_sections_is_audited(self):
+        from automations.captainship_drafts import config as C
+        want = {c.key for c in C.CAPTAINS
+                if "daily_knocks" in C.SECTION_KINDS.get(c.flavor, ())
+                or "knock_dispo" in C.SECTION_KINDS.get(c.flavor, ())}
+        self.assertEqual(set(A.CAPTAINS), want)
+
+    def test_captains_without_knock_sections_are_not_audited(self):
+        """b2b and nds offices knock nothing — auditing them would report
+        permanent gaps for offices no report ever pulls."""
+        from automations.captainship_drafts import config as C
+        for key in ("carlos", "eveliz", "luis", "atef",
+                    "khalil", "colten", "jairo"):
+            self.assertNotIn(key, A.CAPTAINS)
+        self.assertTrue(set(A.CAPTAINS) <= {c.key for c in C.CAPTAINS})
+
+    def test_rafael_is_the_control_and_goes_first(self):
+        self.assertEqual(A.CAPTAINS[0], "rafael")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
