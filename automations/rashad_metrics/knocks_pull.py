@@ -457,6 +457,32 @@ MULTI_CAMPAIGN: "dict[str, list]" = {
 }
 
 
+# CAMPAIGNS AN OFFICE IS OFFERED BUT DOES NOT KNOCK, keyed by canonical name.
+#
+# The campaign scan reads the ids off an office's own page links, so it reports
+# what ownerville OFFERS. That over-reports, and the gap is not small: Carlos's
+# links carry BASE Energy (39) and he runs TWO campaigns (Megan 2026-09-09);
+# Calvin's carry Box Energy (16) and he is Energy Wells only (Raf); Isaiah's
+# picker offered three and he knocks one (Megan 2026-08-25).
+#
+# Without this, every re-run of the scan proposes the same dead campaigns again
+# and somebody eventually adds one. A dead button is worse than a missing one:
+# it returns an empty board for an office that plainly worked that day, which
+# reads as a broken report rather than a campaign nobody knocks.
+#
+# An entry here is an ANSWER FROM THE OWNER, not an inference from a quiet day.
+NOT_KNOCKED: "dict[str, set]" = {
+    "carlos hidalgo": {"39"},        # BASE Energy — offered, never knocked
+    "calvin ribera": {"16"},         # Box Energy — "Calvin is ENERGY WELL only"
+}
+
+
+def not_knocked(name: str) -> set:
+    """Campaign ids this office is offered but does not knock. Canonical name."""
+    from automations.focus_office_att.aliases import _norm_name
+    return set(NOT_KNOCKED.get(_norm_name(name or ""), set()))
+
+
 def campaign_label(name: str, campaign_id: "Optional[str]") -> str:
     """The picker label for a pinned campaign, or "" when this office runs one
     campaign (nothing to disambiguate) or the id names none of its own.

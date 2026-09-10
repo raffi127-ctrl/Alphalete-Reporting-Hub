@@ -132,6 +132,37 @@ class MultiCampaignOffices(unittest.TestCase):
         self.assertEqual(KP.campaign_label("Carlos Hidalgo", "40"), "")
 
 
+class OfferedIsNotKnocked(unittest.TestCase):
+    """The scan reads what ownerville OFFERS; only the owner knows what they
+    knock, and the gap is wide enough to matter."""
+
+    def test_carlos_is_offered_three_and_knocks_two(self):
+        # His page links carry BASE Energy (39). Megan, 2026-09-09: "carlos
+        # runs 2 campaigns." So /knocks offers two buttons, not three.
+        self.assertEqual(KP.not_knocked("Carlos Hidalgo"), {"39"})
+        self.assertEqual(len(KP.campaigns_for("Carlos Hidalgo")), 2)
+
+    def test_a_dead_campaign_is_never_offered_as_a_button(self):
+        # A button that returns an empty board for a day the office plainly
+        # worked reads as a broken report, not as a campaign nobody knocks.
+        for name, opts in KP.MULTI_CAMPAIGN.items():
+            dead = KP.NOT_KNOCKED.get(name, set())
+            for _label, cid, _key in opts:
+                with self.subTest(office=name, campaign=cid):
+                    self.assertNotIn(cid, dead)
+
+    def test_the_canonical_name_only(self):
+        # Same rule as CAMPAIGN_OVERRIDES: callers canonicalise first, so an
+        # alias spelling here would be the per-report patch aliases replace.
+        self.assertEqual(KP.not_knocked("Calvin Ribera"), {"16"})
+        self.assertEqual(KP.not_knocked("Nobody At All"), set())
+
+    def test_it_is_a_copy_so_a_caller_cannot_edit_the_map(self):
+        got = KP.not_knocked("Carlos Hidalgo")
+        got.add("999")
+        self.assertEqual(KP.not_knocked("Carlos Hidalgo"), {"39"})
+
+
 class PinCampaign(unittest.TestCase):
 
     def test_empty_campaign_does_not_navigate(self):

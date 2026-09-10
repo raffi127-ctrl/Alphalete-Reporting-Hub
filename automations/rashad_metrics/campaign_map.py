@@ -334,6 +334,21 @@ def main() -> int:
                  "`lucy campaign_scan` first, or drop --from-scan to walk "
                  "the org live.")
             return 0
+        # Drop the ids their owner has already settled, BEFORE counting — an
+        # office is only a candidate on the campaigns it actually knocks, and
+        # Carlos with 39 removed is a question already answered.
+        from automations.rashad_metrics.knocks_pull import not_knocked
+        settled = []
+        for name, opts in list(seeded.items()):
+            dead = not_knocked(name)
+            if not dead:
+                continue
+            keep = [o for o in opts if o["id"] not in dead]
+            if len(keep) != len(opts):
+                settled.append(f"{name} (-{','.join(sorted(dead))})")
+                seeded[name] = keep
+        if settled:
+            _log("owner-settled campaigns dropped: " + "; ".join(settled))
         cands = [n for n, o in seeded.items() if 1 < len(o) <= BROAD_ACCESS_IDS]
         broad = [n for n, o in seeded.items() if len(o) > BROAD_ACCESS_IDS]
         _log(f"pass 1 from {path.name}: {len(seeded)} office(s), "
