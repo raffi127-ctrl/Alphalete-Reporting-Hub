@@ -1105,24 +1105,40 @@ _JS = r"""
       one person's name at the top saying "2 of 23" while the line below it was
       looking up number 4 (Megan, 2026-09-10). Name a person only while that
       person's record is the thing on screen. */
-   var here=(/\/roster(\/|$)/.test(location.pathname||'')||!!filterBoxes());
+   var path=(location.pathname||'');
+   var here=(/\/roster(\/|$)/.test(path)||!!filterBoxes());
+   /* The filter row vanishes for a moment every time Angular repaints the
+      table, and re-deciding on that flickers the caption while a lookup runs.
+      Same page, same answer. */
+   if(window.__ansWas&&window.__ansWas.path===path) here=window.__ansWas.here||here;
+   window.__ansWas={path:path,here:here};
    var list=(here||RUNNING);
    var h=document.getElementById('anshead'); if(!h) return;
-   h.textContent=RUNNING? 'Running the week \u00b7 %(week)s'
+   var head=RUNNING? 'Running the week \u00b7 %(week)s'
      : (here? 'Ready to run \u00b7 %(week)s' : p.name);
+   if(h.textContent!==head) h.textContent=head;
    /* Which setup is loaded, in the one place it will be looked at. The
       bookmark runs whatever was last pasted, so "is this this week's list?"
       has to be answerable without clicking anything (Megan, 2026-09-10). */
-   document.getElementById('anssub').textContent= (list
+   var sub=(list
      ? D.length+' new starts'+(I? ' \u00b7 '+I+' done already':'')
      : (I+1)+' of '+D.length+' \u00b7 %(week)s')+' \u00b7 built '+BUILD;
+   var sb=document.getElementById('anssub');
+   if(sb.textContent!==sub) sb.textContent=sub;
+   var want=list?'none':'';
    var per=document.getElementById('ansper');
-   if(per) per.style.display=list?'none':'';
+   if(per&&per.style.display!==want) per.style.display=want;
    var hint=document.getElementById('anshint');
-   if(hint) hint.style.display=list?'none':'';
+   if(hint&&hint.style.display!==want) hint.style.display=want;
  }
  refreshChrome();
- setInterval(refreshChrome,700);
+ /* Every load of a setup started ANOTHER ticker, and the old one kept
+    writing to the new panel -- so the caption alternated between what the
+    previous script thought and what this one does, twice a second
+    (Megan, 2026-09-10: "it's like blinking now with when it was built").
+    One ticker, and the previous one goes. */
+ if(window.__ansTick) clearInterval(window.__ansTick);
+ window.__ansTick=setInterval(refreshChrome,700);
  if(nav){
    document.getElementById('ansg1').onclick=function(e){e.preventDefault();go(nav,'employment-record');};
    document.getElementById('ansg2').onclick=function(e){e.preventDefault();go(nav,'user-profile');};
@@ -1159,7 +1175,10 @@ _JS = r"""
    }
    var w=document.createElement('div'); w.id='anssetup';
    w.style.cssText='position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);overflow:auto;padding:30px';
-   var rows='';
+   var rows='', pickOpts='';
+   for(i=0;i<D.length;i++)
+     pickOpts+='<option value="'+i+'"'+(i===Math.min(I,D.length-1)?' selected':'')+
+       '>'+D[i].name+'</option>';
    /* Everything already answered comes BACK into the form. Nineteen Socials
       and nineteen genders were typed in, the run stopped on the first person,
       and restarting showed a blank table -- so it read as though the lot had
@@ -1198,16 +1217,17 @@ _JS = r"""
      '<button id="anstest" style="background:#fff;border:1px solid #0F766E;'+
      'color:#0F766E;border-radius:8px;padding:11px 18px;font-weight:700;'+
      'cursor:pointer">Try one person</button> '+
+     '<select id="anspick" style="font:inherit;padding:10px 8px;'+
+     'border-radius:8px;border:1px solid #ccc">'+pickOpts+'</select> '+
      '<button id="anscancel" style="background:#eee;border:0;border-radius:8px;padding:11px 18px;cursor:pointer">Cancel</button> '+
      '<button id="ansclear" style="background:#fff;border:1px solid #b00;'+
      'color:#b00;border-radius:8px;padding:11px 18px;cursor:pointer">Clear '+
      'all answers</button>'+
      '<div style="font-size:12px;color:#666;margin-top:8px">'+
-     '<b>Try one person</b> does the first name on this list and stops, so a '+
-     'fault costs one row instead of nineteen \u2014 fill in row 1 and leave '+
-     'the rest empty. <b>Start the run</b> also stops after the first person '+
-     'so you can check the record before the rest go through. Anyone left '+
-     'blank is still filled, just without a Social.</div></div>'+
+     '<b>Try one person</b> does whoever is picked beside it and stops \u2014 so '+
+     'a fault costs one row instead of nineteen. <b>Start the run</b> goes '+
+     'straight through everybody, three tabs each, without stopping to ask. '+
+     'Anyone left blank is still filled, just without a Social.</div></div>'+
      '</div>'+
      '<div style="flex:1.2;min-width:420px;display:flex;flex-direction:column">'+
      '<div id="ansdocname" style="font-size:13px;color:#555;margin-bottom:6px">'+
@@ -1295,6 +1315,26 @@ _JS = r"""
              'refuse the save, so finish or clear those first.');
        return;
      }
+     /* Read the picker while the form is still HERE -- it was being read
+        after the form had been removed, so it always fell back to the top
+        of the list. */
+     var from=I, stop=D.length;
+     if(onlyOne){
+       var pk=document.getElementById('anspick');
+       from=pk? +pk.value : I;
+       stop=from+1;
+       /* Running a person with nothing answered just walks into Apex refusing
+          the save. Say which piece is missing and let it be a choice
+          (Megan, 2026-09-10: "it didn't stop even though I didn't enter in
+          any info and it didn't let me select who"). */
+       var who=D[from], nm2=norm(who.name), lack=[];
+       if(!window.__ansGender[nm2]&&!((who.pages||{}).profile||{})['Gender'])
+         lack.push('gender');
+       if(!window.__ansSSN[nm2]) lack.push('Social');
+       if(lack.length&&!confirm(who.name+' has no '+lack.join(' and ')+' entered.'+
+           '\n\nApex will refuse to save '+(lack.length>1?'those pages':'that page')+
+           '. Try anyway?')) return;
+     }
      var gs=w.querySelectorAll('[data-g]'), ss=w.querySelectorAll('[data-s]'), j;
      for(j=0;j<gs.length;j++){ if(gs[j].value)
        window.__ansGender[norm(D[+gs[j].getAttribute('data-g')].name)]=gs[j].value; }
@@ -1316,24 +1356,23 @@ _JS = r"""
         is named at the end, from the run itself. The "Find them all for me"
         link is still there to check the list before starting, on purpose. */
      RUNNING=true; refreshChrome();
-     var stop=onlyOne? I+1 : D.length;
-     for(j=I;j<stop;j++){
+     for(j=from;j<stop;j++){
        say('<b>'+D[j].name+'</b> ('+(j+1)+' of '+D.length+')…');
        var ok=await runPerson(D[j],say);
        if(!ok){ say('<b style="color:#b00">Stopped.</b> Fix that one, then press '+
                     'Run again — it picks up from here.'); break; }
-       I=j+1; try{ localStorage.setItem(KEY,String(I)); }catch(e){}
+       if(j===I){ I=j+1; try{ localStorage.setItem(KEY,String(I)); }catch(e){} }
        /* Trying one person is a check, not a run: say what happened and get
           out of the way. Asking "carry on?" would be asking the question the
           button already answered (Megan, 2026-09-10: filling in nineteen
           Socials to find out the first record fails is a waste of time). */
        if(onlyOne){ say('<b>'+D[j].name+' is done, all three tabs.</b> Open the '+
                         'record and check it, then Run the whole week.'); break; }
-       if(I===1&&D.length>1){
-         if(!confirm(D[0].name+' is done, all three tabs.\n\nOpen the record and '+
-                     'check it. Continue with the remaining '+(D.length-1)+'?')) {
-           say('Paused after the first person.'); break; }
-       }
+       /* No prompt in the middle. "Try one person" IS the checkpoint now, and
+          asking again after number one only stands between the operator and
+          the other eighteen (Megan, 2026-09-10: "it should just automatically
+          move through the 3 pages of each person and nav to the next person
+          automatically"). */
      }
      RUNNING=false; refreshChrome();
    }

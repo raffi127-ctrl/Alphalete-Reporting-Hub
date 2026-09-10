@@ -1897,3 +1897,53 @@ def test_try_one_person_needs_only_that_one_row(page, tmp_path):
     assert "Aundre Browder" in out
     assert "Rosa Capel" not in out and "Jene Cotton" not in out, \
         "it stopped after the one"
+
+
+def _setup_form(page, tmp_path, names):
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": n, "find": n.split()[-1], "pages": {}} for n in names]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansrun").click()
+
+
+def test_try_one_person_lets_you_choose_who(page, tmp_path):
+    """Megan, 2026-09-10: "it didn't let me select who"."""
+    _setup_form(page, tmp_path,
+                ["Aundre Browder", "Rosa Capel", "Jene Cotton"])
+    page.fill('[data-s="1"]', "123456789")
+    page.select_option('[data-g="1"]', "Female")
+    page.select_option("#anspick", "1")
+    page.locator("#anstest").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('Rosa Capel')",
+        timeout=15000)
+    out = page.locator("#ansout").inner_text()
+    assert "Aundre Browder" not in out, "it did not start at the top"
+    assert "Jene Cotton" not in out, "and it stopped after the one"
+
+
+def test_trying_someone_with_nothing_entered_asks_first(page, tmp_path):
+    """"it didn't stop even though I didn't enter in any info" -- running them
+    just walks into Apex refusing the save."""
+    _setup_form(page, tmp_path, ["Aundre Browder", "Rosa Capel"])
+    before = page.locator("#ansout").inner_text()
+    asked = []
+    page.on("dialog", lambda d: (asked.append(d.message), d.dismiss()))
+    page.locator("#anstest").click()
+    assert asked, "it asked before running"
+    assert "Aundre Browder" in asked[0]
+    assert "gender" in asked[0] and "Social" in asked[0]
+    assert page.locator("#ansout").inner_text() == before, \
+        "and saying no left it alone"
+
+
+def test_the_week_runs_straight_through(page, tmp_path):
+    """"it should just automatically move through the 3 pages of each person
+    and nav to the next person automatically". Try one person is the
+    checkpoint now, so nothing interrupts the week itself."""
+    js = filler.build_js([{"name": "Rosa Capel", "find": "Capel", "pages": {}}],
+                         "WE 9.13")
+    assert "Continue with the remaining" not in js
