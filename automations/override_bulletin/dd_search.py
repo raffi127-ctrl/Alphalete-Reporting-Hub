@@ -327,9 +327,9 @@ def _write_accumulate_manifest(week_label, filled, skipped):
     `close_on: exit_zero`.
 
     A name with no row, or a tab that has not rolled to this week, is a real
-    FAILURE here: those are exactly the cells that stayed blank on 2026-09-10,
-    and the bulletin mailed Colten's and Jairo's orgs $30,690.00 short with
-    nothing anywhere saying so.
+    FAILURE here: those are exactly the cells this step never reached on
+    2026-09-10, and only a hand fill kept Colten's and Jairo's orgs from mailing
+    $30,690.00 short that morning.
 
     Never raises — a manifest that cannot be written must not cast doubt on
     cells that are already on the tab."""

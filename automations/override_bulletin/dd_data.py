@@ -384,10 +384,12 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     #
     # 2026-09-10: Credico's token had expired, dd_populate sat waiting on
     # credico_fetch and was re-run by hand, the orchestrator never saw that, and
-    # dd_special_accumulate was retired MISSED at the noon backstop. The 11:20
-    # send went to the whole org with Colten's and Jairo's orgs $30,690.00 short
-    # and Rafael's "outside" line the same amount long. Nothing blocked, nothing
-    # alerted — a copied column would have been caught, a blank one was not.
+    # dd_special_accumulate was retired MISSED at the noon backstop. The block
+    # was NOT blank at 11:20 only because somebody had typed the four figures in
+    # by hand before the send — nothing in the code was going to stop it. Had
+    # the hand fill not happened, Colten's and Jairo's orgs would have mailed
+    # $30,690.00 short and Rafael's "outside" line that much long, silently: a
+    # copied column was already caught, a blank one was not caught at all.
     #
     # Gated on the PRIOR week carrying money, so a genuinely quiet week is never
     # jammed for good: once one real zero week sits behind it, the block lifts

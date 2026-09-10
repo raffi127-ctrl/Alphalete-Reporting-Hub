@@ -488,8 +488,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 # re-run BY HAND at 09:09, which filled the column but never
                 # touched day_state (`lucy rerun` doesn't). At noon the backstop
                 # adopted dd_populate DONE and, in the same loop, retired
-                # dd_special_accumulate MISSED for waiting on it. The four
-                # adoption rows stayed blank and the bulletin went out short.
+                # dd_special_accumulate MISSED for waiting on it — a "didn't run
+                # today" alert naming a dependency that was, by then, done, and
+                # a step that simply never ran.
                 if _adopt_out_of_band(ds):
                     state.save(ds)
                     _recheck_gated(cfg, ds, todays, cache, target,

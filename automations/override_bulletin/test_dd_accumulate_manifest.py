@@ -60,7 +60,7 @@ class AccumulateManifestTest(unittest.TestCase):
 
     def test_a_row_that_could_not_be_placed_is_a_recorded_failure(self):
         """A name with no row, or a tab that has not rolled yet, leaves a cell
-        BLANK — which is precisely how the bulletin went out short."""
+        BLANK — the shape that publishes a short bulletin."""
         S._write_accumulate_manifest("9.6.26", ["Karrington Moody"],
                                      ["Justin Fermin"])
         kw = self._kw()

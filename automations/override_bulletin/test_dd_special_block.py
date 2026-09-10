@@ -11,9 +11,11 @@ sees), and the noon backstop retired the accumulate MISSED. The rows stayed
 blank.
 
 Every existing note about that block lives inside `if special_week:`, so a block
-of zeros said NOTHING: no problem line, no blocking line, no hard block. The
-11:20 send went to the whole org with Colten's and Jairo's orgs $30,690.00 short
-and Rafael's "outside of Carlos & Colten" line the same amount long.
+of zeros says NOTHING: no problem line, no blocking line, no hard block. The
+11:20 send was correct only because somebody had typed the four figures in by
+hand first. Without that, Colten's and Jairo's orgs would have gone to the whole
+org $30,690.00 short and Rafael's "outside of Carlos & Colten" line that much
+long, with nothing anywhere saying so.
 
 A COPIED column was already caught. These pin the twin: a BLANK one, hard-blocked
 so it cannot mail, and gated on the prior week so a genuinely quiet week is not

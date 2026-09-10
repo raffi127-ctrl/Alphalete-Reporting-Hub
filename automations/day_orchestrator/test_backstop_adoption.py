@@ -13,8 +13,9 @@ dependency gate went on reading the 4am state.
 At noon `_apply_backstop` did two things in ONE loop: it adopted dd_populate
 DONE (Hub Activity had the manual run) and it retired dd_special_accumulate
 MISSED_NOT_READY for "waiting on dd_populate". The adoption came too late to be
-worth anything to the dependent — the four adoption rows on the DD tab were
-never filled, and the Organization Bulletin went out short.
+worth anything to the dependent: the four adoption cells were never filled by
+the report, and #claudecorrections announced a report that "didn't run today"
+naming a dependency that was, by then, done.
 
 The fix is order, not evidence: adopt the out-of-band runs FIRST, let
 `_recheck_gated` give whatever they free its last real turn, and only then
