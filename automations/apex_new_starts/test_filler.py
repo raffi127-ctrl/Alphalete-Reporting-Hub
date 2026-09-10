@@ -1261,3 +1261,27 @@ def test_it_opens_people_by_clicking_edit_not_by_reading_links(page, tmp_path):
 
     assert page.evaluate("() => window.__clicked") == "3001", \
         "it filtered to Rosa and clicked HER Edit, not Kalynn's"
+
+
+def test_it_names_who_it_could_not_find_and_offers_a_retry(page, tmp_path):
+    """"5 not on the Pending tab" says there is a problem and nothing about
+    which five, so nobody can act on it. Name them, and give a way to look
+    again once they have been added in Apex."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_NO_LINKS)
+    page.goto(f.as_uri())
+    page.evaluate(ROSTER_NO_LINKS_WIRING)
+    page.evaluate("() => localStorage.clear()")
+
+    people = [{"name": "Rosa Capel", "find": "Capel", "pages": {}},
+              {"name": "Nobody Here", "find": "Here", "pages": {}},
+              {"name": "Also Missing", "find": "Missing", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('Pending tab')",
+        timeout=25000)
+
+    out = page.locator("#ansout").inner_text()
+    assert "Nobody Here" in out and "Also Missing" in out
+    assert "Rosa Capel" not in out, "the one it found is not listed as missing"
+    assert page.locator("#ansagain").count() == 1, "and a way to look again"

@@ -736,12 +736,17 @@ _JS = r"""
    f.last.dispatchEvent(new Event('input',{bubbles:true}));
    ngApply(f.last); applyFilters();
    await sleep(800);
-   var lack=0;
-   for(i=0;i<D.length;i++){ if(!idFor(D[i])) lack++; }
-   lack=lack-present;
-   say(lack>0? '<b style="color:#b00">'+lack+' not on the Pending tab.</b> Those '+
-               'need doing by hand; the rest are ready.'
-      : '<b>All '+D.length+' found.</b> Ready to run the week.');
+   /* Name them. "5 not on the Pending tab" tells you there is a problem and
+      nothing about which five, so it cannot be acted on (Megan, 2026-09-09). */
+   var still=[];
+   for(i=0;i<D.length;i++){ if(!idFor(D[i])&&!rowFor(D[i])) still.push(D[i].name); }
+   if(!still.length){ say('<b>All '+D.length+' found.</b> Ready to run the week.'); return; }
+   say('<b style="color:#b00">Not on the Pending tab ('+still.length+'):</b><br>'+
+       still.join('<br>')+
+       '<div style="margin-top:6px"><a href="#" id="ansagain">look again</a> · '+
+       'or add them in Apex and look again.</div>');
+   var again=document.getElementById('ansagain');
+   if(again) again.onclick=function(e){ e.preventDefault(); findEveryone(say); };
  }
  function idFor(p){
    var map=knownIds(), want=norm(p.name);
