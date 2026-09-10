@@ -587,7 +587,17 @@ SETTLED: "dict[str, str]" = {
     "francisco castillo":
         "22532 Imperium Consultants — picker holds ONE entry, RES AT&T. Single "
         "campaign, default pin, nothing to ask.",
-    "michael antidormi": f"22697 Momentum Management Analytics — {_NO_DISPO}",
+    # ATT, derived not asked: he is in the "ICD Summary - ATT (V2)" worksheet
+    # (D2D1-PAGERV4) with Rep Count 1, in the showdown_repcount crosstab. That
+    # worksheet's membership tracks campaign exactly — checked against seven
+    # offices whose campaign we know, and it agreed on all seven: Christian,
+    # Jay and Chan Park present (all knock RES AT&T), Carlos, Benjamin, Calvin
+    # and Isaiah absent (none do). His OV still has no Disposition module, so
+    # he is not knock-pullable either way; this is metadata, not a pin.
+    "michael antidormi":
+        f"22697 Momentum Management Analytics — {_NO_DISPO} Tableau says ATT "
+        "(ICD Summary - ATT (V2), Rep Count 1, crosstab of 2026-08-19) — "
+        "DERIVED from worksheet membership, not confirmed by an owner.",
     "fabian diaz":       f"20353 Paideia Management — {_NO_DISPO}",
     "carl foss":         f"22049 Pioneer Management Enterprises — {_NO_DISPO}",
     # Office id not recorded — Megan confirmed the category, not the number,
