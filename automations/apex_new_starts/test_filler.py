@@ -1639,3 +1639,139 @@ def test_a_short_paste_is_refused_rather_than_stored(page, tmp_path):
     assert "not the setup" in page.locator("#ansloadmsg").inner_text()
     assert page.evaluate(
         "() => localStorage.getItem('apexNewStarts.code')") is None
+
+
+# ---------------------------------------------------------------------------
+# Security Roles. Megan, 2026-09-10: "it's not checking sales rep so page 1
+# isn't saving on the run". Apex refuses the save with "At least one role must
+# be assigned", and every role in the list is followed by a "?" help icon.
+# ---------------------------------------------------------------------------
+
+ROLES_WITH_HELP_ICONS = """
+<!doctype html><html><body>
+<h3>Security Roles *</h3>
+<div class="roles">
+  <div class="radio"><input type="radio" name="role" id="r1" style="display:none">
+    <label for="r1">Office Admin <span class="help">?</span></label></div>
+  <div class="radio"><input type="radio" name="role" id="r2" style="display:none">
+    <label for="r2">ICD Payroll Admin <span class="help">?</span></label></div>
+  <div class="radio"><input type="radio" name="role" id="r3" style="display:none">
+    <label for="r3">Sales Rep <span class="help">?</span></label></div>
+  <div class="radio"><input type="radio" name="role" id="r4" style="display:none">
+    <label for="r4">Owner <span class="help">?</span></label></div>
+</div>
+</body></html>
+"""
+
+
+def test_the_help_icon_does_not_stop_sales_rep_being_ticked(page, tmp_path):
+    """An exact match on the label text matched nothing, because the label
+    reads "Sales Rep ?" -- so no role was ever assigned and Apex refused to
+    save page 1."""
+    f = tmp_path / "employment-record.html"
+    f.write_text(ROLES_WITH_HELP_ICONS)
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(
+        [{"name": "Aundre Browder", "find": "Browder", "pages": {}}],
+        "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.length > 0",
+        timeout=10000)
+
+    assert page.evaluate("() => document.getElementById('r3').checked"), \
+        "Sales Rep is ticked"
+    for other in ("r1", "r2", "r4"):
+        assert not page.evaluate(
+            f"() => document.getElementById('{other}').checked"), \
+            f"{other} was left alone"
+
+
+def test_a_role_that_will_not_tick_is_reported(page, tmp_path):
+    """Silence here is what let it reach a run: nothing said the role was
+    missing until Apex refused the save."""
+    f = tmp_path / "employment-record.html"
+    # a real Apex form -- one field it CAN fill -- but no Sales Rep to tick
+    f.write_text("<label for='p'>Position</label>"
+                 "<input id='p'><h3>Security Roles *</h3><div>Office Admin</div>")
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(
+        [{"name": "Aundre Browder", "find": "Browder",
+          "pages": {"employment": {"Position": "Sales Rep"}}}],
+        "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.length > 0",
+        timeout=10000)
+    assert "Sales Rep role" in page.locator("#ansout").inner_text()
+
+
+def test_a_page_with_no_roles_section_does_not_nag(page, tmp_path):
+    """The profile and tax tabs have no Security Roles, and saying it is
+    missing there would be noise."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>User Profile</h1><label for='g'>Gender</label>"
+                 "<select id='g'><option>Female</option></select>")
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(
+        [{"name": "Aundre Browder", "find": "Browder", "pages": {}}],
+        "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfill").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.length > 0",
+        timeout=10000)
+    assert "Sales Rep role" not in page.locator("#ansout").inner_text()
+
+
+def test_answers_come_back_into_the_setup_form(page, tmp_path):
+    """Megan, 2026-09-10: "I just entered in every social and gender and it
+    wiped them all out when we restarted it". They were still in memory --
+    the form simply drew itself empty, which is indistinguishable from having
+    lost them, and means retyping nineteen of each."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Rosa Capel", "find": "Capel", "pages": {}}]
+    js = filler.build_js(people, "WE 9.13")[len("javascript:"):]
+    page.evaluate(js)
+
+    page.locator("#ansrun").click()
+    page.fill('[data-s="0"]', "123456789")
+    page.select_option('[data-g="0"]', "Female")
+    page.fill('[data-s="1"]', "987654321")
+    page.select_option('[data-g="1"]', "Male")
+    page.locator("#anscancel").click()      # stopped, for whatever reason
+
+    page.evaluate(js)                        # ...and started again
+    page.locator("#ansrun").click()
+    assert page.input_value('[data-s="0"]') == "123456789"
+    assert page.input_value('[data-s="1"]') == "987654321"
+    assert page.input_value('[data-g="0"]') == "Female"
+    assert page.input_value('[data-g="1"]') == "Male"
+
+
+def test_a_gender_survives_the_page_being_reloaded(page, tmp_path):
+    """A gender is not a secret and is a chore to re-answer, so it is kept.
+    A Social is neither kept nor written down -- it goes with the tab."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}}]
+    js = filler.build_js(people, "WE 9.13")[len("javascript:"):]
+    page.evaluate(js)
+    page.locator("#ansrun").click()
+    page.select_option('[data-g="0"]', "Male")
+    page.fill('[data-s="0"]', "123456789")
+    page.locator("#ansgo").click()
+
+    page.reload()
+    page.evaluate(js)
+    page.locator("#ansrun").click()
+    assert page.input_value('[data-g="0"]') == "Male", "the gender came back"
+    assert page.input_value('[data-s="0"]') == "", "the Social did not"
+
+    stored = page.evaluate("() => JSON.stringify(localStorage)")
+    assert "123456789" not in stored, "and it is nowhere on disk"

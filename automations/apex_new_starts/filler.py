@@ -591,11 +591,49 @@ _JS = r"""
    el.dispatchEvent(new Event('change',{bubbles:true}));
    return true;
  }
+ function cleanRole(t){
+   /* Every role in Apex is followed by a "?" help icon, and an exact match on
+      the label text therefore matched nothing: Sales Rep was never ticked and
+      page 1 refused to save with "At least one role must be assigned"
+      (Megan, 2026-09-10). Compare on letters and digits only. */
+   return norm(t).replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
+ }
+ function roleCaptions(el){
+   /* The real radio is usually hidden behind a styled circle, so the caption
+      can hang off any of these. Collect them all and compare each. */
+   var out=[], l;
+   if(el.id){ l=document.querySelector('label[for="'+CSS.escape(el.id)+'"]');
+              if(l) out.push(l.innerText); }
+   l=el.closest?el.closest('label'):null; if(l) out.push(l.innerText);
+   if(el.getAttribute('aria-label')) out.push(el.getAttribute('aria-label'));
+   if(el.value) out.push(el.value);
+   if(el.nextElementSibling) out.push(el.nextElementSibling.innerText);
+   if(el.parentElement) out.push(el.parentElement.innerText);
+   return out;
+ }
+ function wantsRole(){
+   return norm(document.body.innerText).indexOf('security roles')>=0;
+ }
  function role(){
-   var rs=document.querySelectorAll('input[type=radio]'),i;
+   var rs=document.querySelectorAll('input[type=radio],input[type=checkbox]');
+   var i, j, caps;
    for(i=0;i<rs.length;i++){
-     var lab=rs[i].closest('label')||(rs[i].id?document.querySelector('label[for="'+rs[i].id+'"]'):null);
-     if(lab&&norm(lab.innerText)===%(role)s){ rs[i].click(); return true; }
+     caps=roleCaptions(rs[i]);
+     for(j=0;j<caps.length;j++){
+       if(cleanRole(caps[j])!==%(role)s) continue;
+       try{ rs[i].click(); }catch(e){}
+       if(!rs[i].checked){
+         /* click what a PERSON clicks -- the input itself may be hidden */
+         var lab=(rs[i].id?document.querySelector('label[for="'+CSS.escape(rs[i].id)+'"]'):null)
+                 ||(rs[i].closest?rs[i].closest('label'):null);
+         if(lab) lab.click();
+       }
+       if(!rs[i].checked) rs[i].checked=true;
+       rs[i].dispatchEvent(new Event('click',{bubbles:true}));
+       rs[i].dispatchEvent(new Event('change',{bubbles:true}));
+       ngApply(rs[i]);
+       return !!rs[i].checked;
+     }
    }
    return false;
  }
@@ -648,6 +686,7 @@ _JS = r"""
        if(await setVal(el,set[k])) done.push(k); else miss.push(k+' (no matching option)'); }
      else miss.push(k); }
    if(role()){ done.push('Sales Rep role'); found++; }
+   else if(wantsRole()) miss.push('Sales Rep role');
    /* `found` is boxes we LOCATED, which is not the same as boxes we filled.
       Without the difference, a page where every field was found but one value
       would not match got reported as "not an Apex form". */
@@ -859,6 +898,17 @@ _JS = r"""
     written anywhere. */
  window.__ansSSN=window.__ansSSN||{};
  window.__ansGender=window.__ansGender||{};
+ /* What is half-typed, kept apart from what is complete. Only a full nine
+    digits is ever handed to Apex; the draft exists so the table can be drawn
+    again without anybody retyping. */
+ window.__ansDraft=window.__ansDraft||{};
+ /* A gender is not a secret and it is a chore to re-answer, so it is kept.
+    A Social is neither kept nor written down anywhere -- it lives in this
+    tab, for this run, and goes when the tab does. */
+ var GKEY=KEY+'.gender';
+ try{ var gsav=JSON.parse(localStorage.getItem(GKEY)||'{}'), gk;
+      for(gk in gsav){ if(!window.__ansGender[gk]) window.__ansGender[gk]=gsav[gk]; }
+ }catch(e){}
  function injector(){
    try{ return angular.element(document.body).injector(); }catch(e){ return null; }
  }
@@ -912,6 +962,7 @@ _JS = r"""
        if(bx&&await setVal(bx[0],sec)&&await setVal(bx[1],sec)) done.push('Social');
        else miss.push('Social'); }
      if(role()) done.push('role');
+     else if(wantsRole()) miss.push('Sales Rep role');
    }
    return {done:done,miss:miss};
  }
@@ -1088,13 +1139,22 @@ _JS = r"""
    var w=document.createElement('div'); w.id='anssetup';
    w.style.cssText='position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);overflow:auto;padding:30px';
    var rows='';
+   /* Everything already answered comes BACK into the form. Nineteen Socials
+      and nineteen genders were typed in, the run stopped on the first person,
+      and restarting showed a blank table -- so it read as though the lot had
+      been thrown away and had to be done again (Megan, 2026-09-10). */
+   function opt(v,cur){ return '<option'+(v===cur?' selected':'')+'>'+v+'</option>'; }
    for(i=0;i<D.length;i++){
+     var gh=window.__ansGender[norm(D[i].name)]||'';
+     var sh=window.__ansSSN[norm(D[i].name)]||window.__ansDraft[norm(D[i].name)]||'';
      rows+='<tr><td style="padding:4px 8px">'+(i+1)+'</td>'+
        '<td style="padding:4px 8px">'+D[i].name+'</td>'+
        '<td style="padding:4px 8px">'+(needG[i].g?
-         '<select data-g="'+i+'"><option value="">—</option><option>Female</option><option>Male</option></select>'
+         '<select data-g="'+i+'"><option value="">\u2014</option>'+
+         opt('Female',gh)+opt('Male',gh)+'</select>'
          :'<span style="color:#888">on the board</span>')+'</td>'+
-       '<td style="padding:4px 8px"><input data-s="'+i+'" type="password" size="12" autocomplete="off"> '+
+       '<td style="padding:4px 8px"><input data-s="'+i+'" type="password" size="12" '+
+       'autocomplete="off" value="'+sh+'"> '+
        /* Opens their signed W-4 in the pane beside this table. Searching Blue
           Ink, opening the envelope and finding Quick View, 23 times over, is
           the slow part -- the document and the box belong on one screen
@@ -1106,8 +1166,9 @@ _JS = r"""
      '<div style="flex:1;min-width:420px;max-height:82vh;overflow:auto">'+
      '<div style="font-size:20px;font-weight:700">Set up %(week)s</div>'+
      '<div style="color:#555;margin:4px 0 14px">Fill these once. Everything else '+
-     'comes from Blue Ink and the board. Socials are held in this page only for '+
-     'the run and are never stored.</div>'+
+     'comes from Blue Ink and the board. Genders are remembered. Socials are '+
+     'held in this tab only, for this run, and are never written down -- so '+
+     'do not reload the page until the run is done.</div>'+
      '<table style="width:100%%;border-collapse:collapse;font-size:13px">'+
      '<tr><th></th><th style="text-align:left">Name</th><th style="text-align:left">Gender</th>'+
      '<th style="text-align:left">Social</th></tr>'+rows+'</table>'+
@@ -1137,14 +1198,32 @@ _JS = r"""
          '<a href="'+blueink(person)+'" target="blueinkpacket">look in Blue Ink</a>'; }
      var box=w.querySelector('[data-s="'+k+'"]'); if(box) box.focus();
    };
+   /* Hold each answer AS IT IS TYPED. Capturing only on "Start the run" meant
+      Cancel -- or anything that redrew the panel -- threw away nineteen
+      Socials and nineteen genders (Megan, 2026-09-10). */
+   var keepG=w.querySelectorAll('[data-g]'), keepS=w.querySelectorAll('[data-s]'), kq;
+   for(kq=0;kq<keepG.length;kq++) keepG[kq].onchange=function(){
+     var nm=norm(D[+this.getAttribute('data-g')].name);
+     if(this.value) window.__ansGender[nm]=this.value; else delete window.__ansGender[nm];
+     try{ localStorage.setItem(GKEY,JSON.stringify(window.__ansGender)); }catch(e){}
+   };
+   for(kq=0;kq<keepS.length;kq++) keepS[kq].oninput=function(){
+     var nm=norm(D[+this.getAttribute('data-s')].name);
+     var v=(this.value||'').replace(/-/g,'');
+     window.__ansDraft[nm]=this.value||'';
+     if(/^\d{9}$/.test(v)) window.__ansSSN[nm]=v; else delete window.__ansSSN[nm];
+   };
    document.getElementById('anscancel').onclick=function(){ w.remove(); };
    document.getElementById('ansgo').onclick=async function(){
      var gs=w.querySelectorAll('[data-g]'), ss=w.querySelectorAll('[data-s]'), j;
      for(j=0;j<gs.length;j++){ if(gs[j].value)
        window.__ansGender[norm(D[+gs[j].getAttribute('data-g')].name)]=gs[j].value; }
+     try{ localStorage.setItem(GKEY,JSON.stringify(window.__ansGender)); }catch(e){}
      for(j=0;j<ss.length;j++){ var v=(ss[j].value||'').replace(/-/g,'');
        if(/^\d{9}$/.test(v)) window.__ansSSN[norm(D[+ss[j].getAttribute('data-s')].name)]=v;
        ss[j].value=''; }
+     /* The drafts have served their purpose; the complete ones are held. */
+     window.__ansDraft={};
      w.remove();
      var log=[], out=document.getElementById('ansout');
      function say(m){ log.push(m); out.innerHTML=log.slice(-9).join('<br>'); }
