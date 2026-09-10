@@ -265,6 +265,31 @@ CAMPAIGN_EXPECTED_SHAPE = {
 }
 
 
+# CAMPAIGNS WE OFFER BUT CANNOT VERIFY, and why that is allowed to exist.
+#
+# assert_campaign_grid refuses what it can PROVE wrong and never what it merely
+# cannot confirm, so a campaign with no signature is offered unchecked. The
+# strict alternative — never offer a campaign until someone captures its grid —
+# would have meant Christian's Quantum Fiber board could not be requested at
+# all, which trades a possible wrong board for a certain missing one.
+#
+# The cost of being wrong is not hypothetical: it is the Calvin incident
+# (2026-09-02), a board headed ENERGYWELL carrying Box's numbers, which nobody
+# reading it could tell. So the gap is WRITTEN DOWN rather than left implicit —
+# a test pins that every offered campaign is either signatured or listed here,
+# so a new one cannot slip in unnoticed.
+#
+# To close an entry: pull that campaign's Disposition grid, find a column no
+# other campaign carries (Energy Wells has VL; Box has Owner Talked To), add a
+# detector and a CAMPAIGN_EXPECTED_SHAPE row, and delete the id from here.
+UNVERIFIED_GRID: "set" = {
+    "7",    # RES-ATT-Quantum Fiber (Christian Esposito). Nobody has captured
+            # its columns. If it turns out to render the ordinary fiber grid,
+            # no signature can EVER separate it from RES AT&T and the honest
+            # fix is a rep-set check, not a column one.
+}
+
+
 def assert_campaign_grid(idx: dict, campaign_id: "Optional[str]") -> None:
     """Raise unless the grid on screen is the one this campaign should serve.
 
@@ -462,6 +487,19 @@ MULTI_CAMPAIGN: "dict[str, list]" = {
     # override below — see NOT_KNOCKED for why that is not the same evidence.
     "calvin ribera": [("Box Energy", "16", "box"),
                       ("Energy Wells", "40", "energywell")],
+    # Christian Esposito (23038 - Resound, Inc.). The 9/03 scan saw id 7 and
+    # could not name it; Megan's screenshot of his live picker on 2026-09-10
+    # shows the two entries: RES AT&T and "RES-ATT-Quantum Fi…", cut off by the
+    # dropdown's width. Recorded as Quantum Fiber, which is what the button
+    # needs to say — if the full label matters somewhere, read it off his
+    # picker rather than expanding the abbreviation from here.
+    #
+    # NO GRID SIGNATURE FOR 7 YET — see CAMPAIGN_EXPECTED_SHAPE. His AT&T grid
+    # is the ordinary fiber house shape; what Quantum's looks like nobody has
+    # captured, so a pin to 7 that does not take cannot be caught the way
+    # Carlos's Box pin is.
+    "christian esposito": [("AT&T Fiber", "3", "att"),
+                           ("Quantum Fiber", "7", "quantum")],
 }
 
 
@@ -513,6 +551,28 @@ def campaign_label(name: str, campaign_id: "Optional[str]") -> str:
         if this_id == cid:
             return label
     return ""
+
+
+# OFFICES WHOSE CAMPAIGN QUESTION IS CLOSED, and how it was closed.
+#
+# The 9/03 scan listed eight offices as "no campaigns read", which looks like a
+# question waiting to be answered and is not always one — an office can read
+# empty because it genuinely has nothing to read. Without somewhere to write
+# that down, each one gets re-investigated every time the scan runs.
+#
+# NOT a lookup anything branches on. It is the ledger: a name here has been
+# checked and needs no further work.
+SETTLED: "dict[str, str]" = {
+    "francisco castillo":
+        "22532 Imperium Consultants — picker holds ONE entry, RES AT&T. Single "
+        "campaign, default pin, nothing to ask (Megan, screenshot 2026-09-10).",
+    "michael antidormi":
+        "22697 Momentum Management Analytics — his OV has no Disposition "
+        "module at all: p=20 shows Welcome and Sales Reps and nothing else. "
+        "There is no picker to read, so the scan reading nothing is CORRECT, "
+        "not a failure. His campaign has to come from Tableau (Megan "
+        "2026-09-10).",
+}
 
 
 def campaigns_for(name: str) -> list:

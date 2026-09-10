@@ -114,16 +114,31 @@ class MultiCampaignOffices(unittest.TestCase):
                              "a picker on every request taxes the many for "
                              "the few")
 
-    def test_every_offered_campaign_is_shape_checkable(self):
+    def test_no_offered_campaign_is_unverifiable_by_accident(self):
         # A pick we cannot verify is a board we cannot trust: pinning 16 on
-        # Carlos's office once returned the AT&T grid (2026-09-02). Offering a
-        # campaign whose grid has no signature would mean that swap ships.
+        # Carlos's office once returned the AT&T grid (2026-09-02), and the
+        # same class of miss put Box's numbers under an ENERGYWELL heading.
+        #
+        # This does NOT ban an unsignatured campaign — assert_campaign_grid
+        # refuses only what it can prove wrong, and the strict rule would mean
+        # Christian's Quantum Fiber board could not be asked for at all. It
+        # bans an unsignatured campaign nobody WROTE DOWN, so the gap stays a
+        # known debt instead of becoming a silent hole.
         for name, opts in KP.MULTI_CAMPAIGN.items():
             for label, cid, _key in opts:
                 if cid == KP.KNOCKS_CAMPAIGN_ID:
                     continue    # 3 is deliberately unchecked — see the map
                 with self.subTest(office=name, campaign=label):
-                    self.assertIn(cid, KP.CAMPAIGN_EXPECTED_SHAPE)
+                    self.assertTrue(
+                        cid in KP.CAMPAIGN_EXPECTED_SHAPE
+                        or cid in KP.UNVERIFIED_GRID,
+                        f"{label} ({cid}) has no grid signature — add one, or "
+                        "record it in UNVERIFIED_GRID with why")
+
+    def test_the_unverified_list_does_not_hide_a_signature_we_have(self):
+        # An id in both places would mean a real check being ignored.
+        self.assertEqual(KP.UNVERIFIED_GRID & set(KP.CAMPAIGN_EXPECTED_SHAPE),
+                         set())
 
     def test_a_spoken_word_picks_the_campaign(self):
         self.assertEqual(KP.campaign_by_keyword("Carlos Hidalgo", "box"), "16")
