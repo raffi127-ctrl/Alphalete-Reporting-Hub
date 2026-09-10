@@ -50,6 +50,7 @@ CONTROL_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 DIAG_TAB = "SP Status Diag"
 SHOT_GRID = "SP Grid Shot"
 SHOT_CUST = "SP Cust Shot"
+CSV_TAB = "SP CSV"          # the exported file itself, base64-chunked
 
 # A header is a status CANDIDATE when it smells like one. Deliberately broad —
 # the whole point is to see what SaraPlus calls it, not to guess right first.
@@ -83,6 +84,131 @@ def _upload_shot(png_bytes: bytes, tab: str, log=print) -> None:
     except Exception as e:  # noqa: BLE001 — a lost shot must not sink the probe
         log("  (screenshot upload to %r failed: %s: %s)"
             % (tab, type(e).__name__, str(e)[:120]))
+
+
+def _upload_bytes(data: bytes, tab: str, log=print) -> None:
+    """base64-chunk ANY file into a sheet tab (the PNG uploader's pattern),
+    so the mini can pull the exported CSV down whole and parse it locally."""
+    import base64
+    try:
+        from automations.recruiting_report import fill as _fill
+        b64 = base64.b64encode(data).decode()
+        chunks = [b64[i:i + 45000] for i in range(0, len(b64), 45000)]
+        sh = _fill._client().open_by_key(CONTROL_SHEET)
+        try:
+            t = sh.worksheet(tab)
+        except Exception:  # noqa: BLE001
+            t = sh.add_worksheet(title=tab, rows=200, cols=1)
+        t.clear()
+        t.update([[c] for c in chunks], "A1")
+        log("  file -> %r (%s bytes, %d chunk(s))"
+            % (tab, "{:,}".format(len(data)), len(chunks)))
+    except Exception as e:  # noqa: BLE001 — a lost upload must not sink the run
+        log("  (file upload to %r failed: %s: %s)"
+            % (tab, type(e).__name__, str(e)[:120]))
+
+
+def _export_csv(page, log) -> Optional[bytes]:
+    """Press Export Options -> CSV and capture the download. Returns the raw
+    file bytes, or None with the reason logged."""
+    controls = page.evaluate(
+        """() => {
+             const out = [];
+             document.querySelectorAll('a,input[type=button],input[type=submit],button')
+               .forEach(e => {
+                 const t = (e.innerText || e.value || '').trim();
+                 if (/^(csv|excel)$/i.test(t))
+                   out.push({tag: e.tagName, id: e.id || '', text: t,
+                             href: (e.getAttribute('href') || '').slice(0, 120),
+                             onclick: (e.getAttribute('onclick') || '').slice(0, 120)});
+               });
+             return out;
+           }""")
+    log("-- export controls --")
+    for c in controls:
+        log("   %s id=%r text=%r href=%r onclick=%r"
+            % (c["tag"], c["id"], c["text"], c["href"], c["onclick"]))
+    btn = next((c for c in controls if c["text"].upper() == "CSV"), None)
+    if not btn:
+        log("no CSV export control found")
+        return None
+    sel = ("#%s" % btn["id"]) if btn["id"] else 'text="CSV"'
+
+    # The button is an <input type=submit> whose POST answers with the FILE
+    # (Content-Disposition), so the "navigation" it starts turns into a
+    # download and never completes as a page load. A plain click therefore
+    # hangs waiting on that navigation (proved on Lucy 2, 2026-09-10:
+    # Timeout 20000ms, page title stuck on 'Loading ...'). no_wait_after
+    # dispatches the click and returns; expect_download catches the file.
+    def _attempt(label, action):
+        try:
+            with page.expect_download(timeout=60_000) as dl:
+                action()
+            download = dl.value
+            data = Path(download.path()).read_bytes()
+            log("downloaded %r -> %s bytes  (%s)"
+                % (download.suggested_filename, "{:,}".format(len(data)), label))
+            return data
+        except Exception as e:  # noqa: BLE001
+            log("%s: no download (%s: %s)"
+                % (label, type(e).__name__, str(e)[:160]))
+            return None
+
+    data = _attempt("trusted click",
+                    lambda: page.click(sel, timeout=15_000, no_wait_after=True))
+    if data is None and btn["id"]:
+        data = _attempt("js click", lambda: page.evaluate(
+            "(id) => document.getElementById(id).click()", btn["id"]))
+    if data is None:
+        log("after export attempts: %s" % sara.page_state(page))
+    return data
+
+
+def _summarize_csv(data: bytes, log) -> None:
+    """Say what the export actually carries: columns, rows, reps, and the
+    candidate status values per order — the 'is everyone in one file' answer."""
+    import csv
+    import io
+    try:
+        text = data.decode("utf-8-sig", errors="replace")
+        rows = list(csv.reader(io.StringIO(text)))
+    except Exception as e:  # noqa: BLE001
+        log("could not parse the export as CSV: %s: %s"
+            % (type(e).__name__, str(e)[:160]))
+        log("first 400 bytes: %r" % data[:400])
+        return
+    if not rows:
+        log("the export parsed to ZERO rows")
+        return
+    heads = [(h or "").strip() for h in rows[0]]
+    body = [r for r in rows[1:] if any((c or "").strip() for c in r)]
+    log("export: %d column(s) x %d data row(s)" % (len(heads), len(body)))
+    log("-- export column headers --")
+    for i, h in enumerate(heads):
+        mark = "  <== status candidate" if STATUS_RE.search(h or "") else ""
+        log("   [%3d] %s%s" % (i, h or "(blank)", mark))
+    idx = {h: i for i, h in enumerate(heads)}
+    cand = [(i, h) for i, h in enumerate(heads) if STATUS_RE.search(h or "")]
+    if "User Name" in idx:
+        reps = sorted({(r[idx["User Name"]] or "").strip() for r in body
+                       if idx["User Name"] < len(r)} - {""})
+        log("reps in the file (%d): %s" % (len(reps), "; ".join(reps)))
+    if "Order Date" in idx:
+        days = sorted({(r[idx["Order Date"]] or "").strip() for r in body
+                       if idx["Order Date"] < len(r)} - {""})
+        log("order dates in the file: %s" % ", ".join(days))
+    log("-- candidate status values, EVERY exported row --")
+    for n, r in enumerate(body):
+        if n >= 60:
+            log("   ... (stopping the per-row dump at 60 rows)")
+            break
+        ident = " | ".join(
+            (r[idx[c]] if c in idx and idx[c] < len(r) else "")
+            for c in ID_COLS if c in idx)
+        vals = "; ".join(
+            "%s=%s" % (h, r[i] if i < len(r) else "")
+            for i, h in cand if (r[i] if i < len(r) else "").strip())
+        log("   #%02d %s || %s" % (n + 1, ident, vals or "(all blank)"))
 
 
 def _raw_grid(page) -> Dict:
@@ -283,7 +409,8 @@ def _dump_customer_view(ctx, page, links: List[Dict], log) -> Optional[bytes]:
         return None
 
 
-def run(day: dt.date, rows_n: int, tab_arg: str, headless: bool) -> int:
+def run(day: dt.date, rows_n: int, tab_arg: str, headless: bool,
+        export_range=None) -> int:
     from patchright.sync_api import sync_playwright
 
     lines: List[str] = []
@@ -292,8 +419,9 @@ def run(day: dt.date, rows_n: int, tab_arg: str, headless: bool) -> int:
         print(msg, flush=True)
         lines.append(str(msg))
 
-    log("SaraPlus status probe — day %s, %d sample row(s)%s"
-        % (day, rows_n, ("  [tab-arg %s]" % tab_arg) if tab_arg else ""))
+    log("SaraPlus status probe — day %s, %d sample row(s)%s%s"
+        % (day, rows_n, ("  [tab-arg %s]" % tab_arg) if tab_arg else "",
+           ("  [EXPORT %s..%s]" % export_range) if export_range else ""))
     cr = C.creds()
     C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -314,6 +442,49 @@ def run(day: dt.date, rows_n: int, tab_arg: str, headless: bool) -> int:
             if tab_arg:
                 _generic_tab_dump(page, tab_arg, log)
                 grid_png = page.screenshot(full_page=True)
+            elif export_range:
+                start, end = export_range
+                sara.open_order_history_panel(page, log=log)
+                sara._set_telerik_date(page, C.FIELD_START, start)
+                sara._set_telerik_date(page, C.FIELD_END, end)
+                sara._set_customer_type(page, C.CUSTOMER_TYPE_BOTH, log=log)
+                # Customer Type autoposts back and can reset the dates — same
+                # rewrite-after dance sara.open_report does for one day.
+                sara._set_telerik_date(page, C.FIELD_START, start)
+                sara._set_telerik_date(page, C.FIELD_END, end)
+                sara._submit(page, log=log)
+
+                combos = page.evaluate(
+                    """() => [...document.querySelectorAll('input[id$="_Input"]')]
+                         .filter(e => e.offsetParent !== null)
+                         .map(e => e.id + ' = ' + (e.value || ''))""")
+                log("-- visible report combos --")
+                for cb in combos or []:
+                    log("   " + cb)
+
+                raw = _raw_grid(page)
+                if raw.get("missing"):
+                    log("GRID MISSING (%s). %s"
+                        % (raw["missing"], sara.page_state(page)))
+                else:
+                    n_rows = len([r for r in raw["rows"] if any(r)])
+                    log("on-screen grid: %d column(s), %d row(s) for %s..%s"
+                        % (len(raw["headers"]), n_rows, start, end))
+                    pager = page.evaluate(
+                        """(gid) => {
+                             const g = document.getElementById(gid);
+                             const p = g && g.parentElement
+                               ? g.parentElement.querySelector('[class*="rgPager"],[id*="Pager"]')
+                               : null;
+                             return p ? (p.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 200) : '';
+                           }""", C.GRID_DATA)
+                    log("pager: %s" % (pager or "(none — single page)"))
+
+                grid_png = page.screenshot(full_page=True)
+                data = _export_csv(page, log)
+                if data is not None:
+                    _summarize_csv(data, log)
+                    _upload_bytes(data, CSV_TAB, log=log)
             else:
                 sara.open_order_history_panel(page, log=log)
                 sara._set_telerik_date(page, C.FIELD_START, day)
@@ -403,11 +574,27 @@ def main(argv=None) -> int:
                     help="open THIS Detail Reports tab index instead (e.g. "
                          "'3:1' for the tab after Sales Order History) and "
                          "dump its grids generically")
+    ap.add_argument("--export", action="store_true",
+                    help="press Export Options -> CSV for a date RANGE and "
+                         "ship the file to the 'SP CSV' tab (base64) — the "
+                         "'is everyone in one file' test")
+    ap.add_argument("--start", default=None, metavar="YYYY-MM-DD",
+                    help="export range start (default: 9 days ago)")
+    ap.add_argument("--end", default=None, metavar="YYYY-MM-DD",
+                    help="export range end (default: 3 days ago)")
     ap.add_argument("--headed", action="store_true")
     args = ap.parse_args(argv)
     day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
            if args.date else dt.date.today() - dt.timedelta(days=7))
-    return run(day, args.rows, args.tab_arg, headless=not args.headed)
+    export_range = None
+    if args.export:
+        s = (dt.datetime.strptime(args.start, "%Y-%m-%d").date()
+             if args.start else dt.date.today() - dt.timedelta(days=9))
+        e = (dt.datetime.strptime(args.end, "%Y-%m-%d").date()
+             if args.end else dt.date.today() - dt.timedelta(days=3))
+        export_range = (s, e)
+    return run(day, args.rows, args.tab_arg, headless=not args.headed,
+               export_range=export_range)
 
 
 if __name__ == "__main__":
