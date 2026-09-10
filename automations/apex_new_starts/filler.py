@@ -678,14 +678,21 @@ _JS = r"""
       First Name box -- the screen showed "david" under First Name while the
       run reported David Silva as not found, with him sitting right there
       (Megan, 2026-09-10). */
-   var heads=document.querySelectorAll('th'), idx=-1, first=-1, i;
+   var heads=document.querySelectorAll('th'), lastTh=null, firstTh=null, i;
    for(i=0;i<heads.length;i++){
      var t=norm(heads[i].textContent);
-     if(t==='last name'&&idx<0) idx=i;
-     if(t==='first name'&&first<0) first=i;
+     if(t==='last name'&&!lastTh) lastTh=heads[i];
+     if(t==='first name'&&!firstTh) firstTh=heads[i];
    }
+   if(!lastTh) return null;
+   /* The column number has to be read off the header's OWN row. Its position
+      in the page-wide list of th's is a different number the moment anything
+      else on the screen uses a table. */
+   function colOf(th){ var row=th.parentElement;
+     return row? Array.prototype.indexOf.call(row.children,th) : -1; }
+   var idx=colOf(lastTh), first=firstTh?colOf(firstTh):-1;
    if(idx<0) return null;
-   var table=heads[idx].closest?heads[idx].closest('table'):null;
+   var table=lastTh.closest?lastTh.closest('table'):null;
    if(!table) return null;
    var rows=table.querySelectorAll('tr'), r, cells, inp;
    for(r=0;r<rows.length;r++){
@@ -693,11 +700,50 @@ _JS = r"""
      if(cells.length<=idx) continue;
      inp=cells[idx].querySelector('input');
      if(!inp) continue;
-     return {last: inp,
+     return {last: inp, lastIdx: idx, firstIdx: first,
              first: (first>=0&&cells.length>first)
                     ? cells[first].querySelector('input') : null};
    }
    return null;
+ }
+ function dataRows(){
+   var rows=document.querySelectorAll('tr'), out=[], i, c;
+   for(i=0;i<rows.length;i++){
+     c=rows[i].querySelectorAll('td');
+     if(c.length<2) continue;
+     if(rows[i].querySelector('input')) continue;
+     out.push(rows[i]);
+   }
+   return out;
+ }
+ function clearBox(el){
+   if(!el||!el.value) return;
+   el.value='';
+   el.dispatchEvent(new Event('input',{bubbles:true}));
+   el.dispatchEvent(new Event('change',{bubbles:true}));
+   ngApply(el);
+ }
+ async function settleFilter(f,text){
+   /* The rows repaint AFTER Apply Filters comes back. A fixed wait was reading
+      the PREVIOUS person's rows: the screen showed "Russell" typed in the
+      filter with Rosa Capel still listed underneath, so Russell was written
+      down as absent while he was one repaint away (Megan, 2026-09-10).
+      Wait until what is on screen agrees with what was typed. */
+   var want=norm(text), waited=0, rows, i, c, ok;
+   await sleep(500);
+   while(waited<8000){
+     rows=dataRows(); ok=true;
+     for(i=0;i<rows.length;i++){
+       c=rows[i].querySelectorAll('td');
+       if(c.length<=f.lastIdx){ ok=false; break; }
+       if(norm(c[f.lastIdx].textContent).indexOf(want)<0){ ok=false; break; }
+     }
+     /* An empty table settles too -- that is the answer "nobody by that name",
+        and it is only reached after the first wait above. */
+     if(ok) return true;
+     await sleep(250); waited+=250;
+   }
+   return false;
  }
  function applyFilters(){
    var b=document.querySelectorAll('button,a'), i;
@@ -729,14 +775,13 @@ _JS = r"""
      var person=missing[i], parts=norm(person.name).split(' ');
      var surname=person.find||parts[parts.length-1];
      say('looking up '+person.name+' ('+(i+1)+' of '+missing.length+')…');
-     if(f.first){ f.first.value='';
-       f.first.dispatchEvent(new Event('input',{bubbles:true})); }
+     clearBox(f.first);
      f.last.value=surname;
      f.last.dispatchEvent(new Event('input',{bubbles:true}));
      f.last.dispatchEvent(new Event('change',{bubbles:true}));
      ngApply(f.last);
      applyFilters();
-     await sleep(1200);
+     await settleFilter(f,surname);
      var rows=rowsById(), key, want=norm(person.name), hit=null;
      for(key in rows){ if(key===want){ hit=rows[key]; break; } }
      if(!hit) for(key in rows){
@@ -892,12 +937,12 @@ _JS = r"""
    }
    var parts=norm(p.name).split(' ');
    if(f){
-     if(f.first){ f.first.value='';
-       f.first.dispatchEvent(new Event('input',{bubbles:true})); }
-     f.last.value=p.find||parts[parts.length-1];
+     clearBox(f.first);
+     var surname=p.find||parts[parts.length-1];
+     f.last.value=surname;
      f.last.dispatchEvent(new Event('input',{bubbles:true}));
      f.last.dispatchEvent(new Event('change',{bubbles:true}));
-     ngApply(f.last); applyFilters(); await sleep(1300);
+     ngApply(f.last); applyFilters(); await settleFilter(f,surname);
    }
    var row=rowFor(p); if(!row) return null;
    var ed=editControl(row); if(!ed) return null;
@@ -953,13 +998,9 @@ _JS = r"""
     the filter row, or the roster url. Keying off "can I name this page" hid
     them on every screen the button does not recognise, which took away the
     "Just this page" escape hatch exactly where somebody would need it. */
- var onRoster=(/\/roster(\/|$)/.test(location.pathname||'')||!!filterBoxes());
- var onPerson=!onRoster;
- box.innerHTML='<div style="font-weight:700;font-size:16px">'+
-   (onPerson? p.name : 'Ready to run \u00b7 %(week)s')+'</div>'+
-   '<div style="color:#555;margin:2px 0 10px">'+
-   (onPerson? (I+1)+' of '+D.length+' \u00b7 %(week)s'
-            : D.length+' new starts'+(I? ' \u00b7 '+I+' done already':''))+'</div>'+
+ var RUNNING=false;
+ box.innerHTML='<div id="anshead" style="font-weight:700;font-size:16px"></div>'+
+   '<div id="anssub" style="color:#555;margin:2px 0 10px"></div>'+
    (gnd?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Gender <span style="color:#b00">(required, not on the board)</span></div>'+
         '<select id="ansgender" style="width:100%%;padding:6px;font-size:15px">'+
         '<option value="">Pick one</option><option>Female</option><option>Male</option></select></div>':'')+
@@ -970,18 +1011,39 @@ _JS = r"""
    (nav?'<div style="margin-bottom:8px;font-size:12px">'+
         '<a href="#" id="ansg1">1 Employment</a> · <a href="#" id="ansg2">2 Profile</a>'+
         ' · <a href="#" id="ansg3">3 Tax</a></div>':
-        (onPerson? '<div style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
-        '<b>Pending</b> list and it will learn where everyone is, then jump you straight to them.</div>':''))+
+        '<div id="anshint" style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
+        '<b>Pending</b> list and it will learn where everyone is, then jump you straight to them.</div>')+
    '<button id="ansrun" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:14px;font-weight:700;cursor:pointer;width:100%%;margin-bottom:6px">Run the whole week</button>'+
    /* Both of these are about ONE person, so they only belong on that person's
       record. On the roster they read as clutter you have to think about
       (Megan, 2026-09-10). */
-   (onPerson?
-     '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
-     '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved \u2192 next</button>':'')+
+   '<span id="ansper">'+
+   '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
+   '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved \u2192 next</button></span>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
    '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
  document.body.appendChild(box);
+ function refreshChrome(){
+   /* The panel is built once and the app never reloads, so anything decided at
+      build time goes stale the moment the run moves. It sat on the roster with
+      one person's name at the top saying "2 of 23" while the line below it was
+      looking up number 4 (Megan, 2026-09-10). Name a person only while that
+      person's record is the thing on screen. */
+   var here=(/\/roster(\/|$)/.test(location.pathname||'')||!!filterBoxes());
+   var list=(here||RUNNING);
+   var h=document.getElementById('anshead'); if(!h) return;
+   h.textContent=RUNNING? 'Running the week \u00b7 %(week)s'
+     : (here? 'Ready to run \u00b7 %(week)s' : p.name);
+   document.getElementById('anssub').textContent= list
+     ? D.length+' new starts'+(I? ' \u00b7 '+I+' done already':'')
+     : (I+1)+' of '+D.length+' \u00b7 %(week)s';
+   var per=document.getElementById('ansper');
+   if(per) per.style.display=list?'none':'';
+   var hint=document.getElementById('anshint');
+   if(hint) hint.style.display=list?'none':'';
+ }
+ refreshChrome();
+ setInterval(refreshChrome,700);
  if(nav){
    document.getElementById('ansg1').onclick=function(e){e.preventDefault();go(nav,'employment-record');};
    document.getElementById('ansg2').onclick=function(e){e.preventDefault();go(nav,'user-profile');};
@@ -1080,6 +1142,7 @@ _JS = r"""
      var log=[], out=document.getElementById('ansout');
      function say(m){ log.push(m); out.innerHTML=log.slice(-9).join('<br>'); }
      /* Find everyone FIRST, now that the form is out of the way. */
+     RUNNING=true; refreshChrome();
      var need=0;
      for(j=0;j<D.length;j++){ if(!idFor(D[j])) need++; }
      if(need&&filterBoxes()){ say('Finding everyone on the Pending list…');
@@ -1097,9 +1160,10 @@ _JS = r"""
            say('Paused after the first person.'); break; }
        }
      }
+     RUNNING=false; refreshChrome();
    };
  };
- if(onPerson) document.getElementById('ansfill').onclick=async function(){
+ document.getElementById('ansfill').onclick=async function(){
    document.getElementById('ansout').innerHTML='filling...';
    var r=await fill(p);
    /* Nothing matched at all = not an Apex form. Saying so beats a wall of red
@@ -1185,7 +1249,7 @@ _JS = r"""
        '<div style="margin-top:6px;font-size:11px">screenshot this</div>';
    };
  };
- if(onPerson) document.getElementById('ansnext').onclick=function(){
+ document.getElementById('ansnext').onclick=function(){
    I++; try{ localStorage.setItem(KEY,String(I)); }catch(e){}
    box.remove();
    if(I>=D.length){ alert('That was the last one.'); return; }

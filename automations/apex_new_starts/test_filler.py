@@ -1240,6 +1240,17 @@ ROSTER_NO_LINKS = """
 </body></html>
 """
 
+ROSTER_SLOW_REPAINT = """() => {
+  /* Apex repaints AFTER Apply Filters comes back. Until it does, the previous
+     person's rows are still what is on screen -- the live page showed
+     "Russell" typed in the filter with Rosa Capel listed underneath. */
+  const btn = document.getElementById('apply');
+  const slow = btn.cloneNode(true);       /* drops the immediate listener */
+  btn.replaceWith(slow);
+  slow.addEventListener('click', () => setTimeout(window.__render, 1800));
+}"""
+
+
 ROSTER_NO_LINKS_WIRING = """() => {
   /* Apex's real roster: Edit is a BUTTON that routes in JavaScript. There is
      not one /employees/ href anywhere on the page. */
@@ -1408,11 +1419,65 @@ def test_the_roster_panel_offers_only_the_run(page, tmp_path):
     page.goto(roster.as_uri())
     page.evaluate(js)
     assert page.locator("#ansrun").count() == 1
-    assert page.locator("#ansfill").count() == 0
-    assert page.locator("#ansnext").count() == 0
+    assert not page.locator("#ansfill").is_visible()
+    assert not page.locator("#ansnext").is_visible()
+    assert "Ready to run" in page.locator("#anshead").inner_text()
+    assert "Aundre" not in page.locator("#anshead").inner_text()
 
     person = tmp_path / "user-profile.html"; person.write_text("<h1>profile</h1>")
     page.goto(person.as_uri())
     page.evaluate(js)
-    assert page.locator("#ansfill").count() == 1, "still there on a record"
-    assert page.locator("#ansnext").count() == 1
+    assert page.locator("#ansfill").is_visible(), "still there on a record"
+    assert page.locator("#ansnext").is_visible()
+    assert "Aundre Browder" in page.locator("#anshead").inner_text()
+
+
+def test_the_header_stops_naming_somebody_once_the_screen_moves(page, tmp_path):
+    """The panel is built once and Apex never reloads, so anything decided at
+    build time goes stale. It sat on the roster headed "Cristian Amaya Vega ·
+    2 of 23" while the line under it was looking up number 4."""
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Rosa Capel", "find": "Capel", "pages": {}}]
+    person = tmp_path / "user-profile.html"; person.write_text("<h1>profile</h1>")
+    page.goto(person.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    assert "Aundre Browder" in page.locator("#anshead").inner_text()
+
+    # the run moves back to the list -- in the real app without a reload
+    page.evaluate("""() => {
+      const t = document.createElement('div');
+      t.innerHTML = `<table><thead>
+        <tr><th>First Name</th><th>Last Name</th></tr>
+        <tr><td><input placeholder="Filter"></td>
+            <td><input placeholder="Filter"></td></tr></thead></table>`;
+      document.body.appendChild(t);
+    }""")
+    page.wait_for_function(
+        "() => document.getElementById('anshead').innerText.includes('Ready')",
+        timeout=5000)
+    assert "Aundre" not in page.locator("#anshead").inner_text()
+    assert not page.locator("#ansfill").is_visible()
+
+
+def test_a_late_repaint_does_not_lose_somebody(page, tmp_path):
+    """Reading the rows on a fixed timer read the PREVIOUS person's rows and
+    wrote the current one down as absent -- four people came back "not on the
+    Pending tab" who were each one repaint away (Megan, 2026-09-10)."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_NO_LINKS)
+    page.goto(f.as_uri())
+    page.evaluate(ROSTER_NO_LINKS_WIRING)
+    page.evaluate(ROSTER_SLOW_REPAINT)
+    page.evaluate("() => localStorage.clear()")
+
+    people = [{"name": "Rosa Capel", "find": "Capel", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfind").click()
+    page.wait_for_function(
+        "() => /found|Pending tab/.test(document.getElementById('ansout').innerText)",
+        timeout=25000)
+
+    out = page.locator("#ansout").inner_text()
+    assert "Pending tab" not in out, out
+    assert "All 1 found" in out
