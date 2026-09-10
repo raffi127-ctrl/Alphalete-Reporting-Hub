@@ -33,7 +33,13 @@ def _money(v):
     if v >= 1_000_000:
         return "$%.2fM" % (v / 1_000_000)
     if v >= 1000:
-        return "$%dk" % round(v / 1000)
+        # ONE DECIMAL, not whole thousands. Eve 2026-09-10: Carlos's
+        # $351,735.50 printed as "$352k" — a page whose whole job is the
+        # figure was rounding it UP by $265 in front of the org. "$351.7k"
+        # fits the 66px ring at this font size (the wire ring already renders
+        # small=True), and a trailing ".0" is dropped so a round number still
+        # reads "$250k" rather than "$250.0k".
+        return ("$%.1fk" % (v / 1000)).replace(".0k", "k")
     return "$%d" % round(v)
 
 
