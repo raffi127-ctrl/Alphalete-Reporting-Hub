@@ -37,7 +37,6 @@ OWNERS = sorted([
     "Jose Antonio Chavez",
     "Trang Canavan",
     "Nicholas Weldon",
-    "Eric Martinez",
     "Nii Tagoe",
     "Cody Cannon",
     "Tevin Sterling",

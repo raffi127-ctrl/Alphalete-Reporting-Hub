@@ -5372,6 +5372,26 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "terminated_notice": {
+      "close_on": "exit_zero",
+      "order": 61,
+      "_order_note": "Al final del batch a proposito: no bloquea ningun reporte, y su pasada cara (el barrido de workbooks) solo ocurre cuando hay un nombre nuevo.",
+      "on_scheduler": true,
+      "display_name": "Terminated ICD — removal checklist",
+      "_note": "AVISO, NO ES UN REPORTE (Megan, 2026-09-10: \"if someone is added to the termination list a list like that automatically gets sent to the slack channel so Eve and I know where to go / what to do\"). Lee la pestana 'Terminated ICDs' del AUTOMATION MASTER y, cuando aparece un NOMBRE que todavia no anuncio, sale a buscar donde sigue cableada esa persona — workbooks + rosters del repo, tabla declarativa en automations/terminated_notice/surfaces.py — y postea la checklist en #claudecorrections-and-requests. NO BORRA NADA: la lista de terminados marca, nunca saca (la POLICY de terminated_icds), asi que cada linea es para una persona, y el post dice ademas que se deja adentro a proposito (cancels/disconnects siguen listandolo para que sus filas viejas sigan tirando al total de su capitan). UN POST POR NOMBRE Y NUNCA MAS: el estado vive en output/terminated_notice/announced.json, porque la segunda copia de una checklist es como el canal deja de leerse; `--again <nombre>` la repostea a proposito. La PRIMERA corrida no postea: anota como ya anunciados los que estaban en la lista (8 el 2026-09-10, todos limpiados hace rato) y avisa desde el siguiente. Callado cuando no hay nada nuevo, que es casi siempre — una sola lectura de Sheet; el barrido caro de workbooks solo corre si hay nombre nuevo. Postea solo si la identidad de Slack de la maquina es Lucy: desde una laptop imprime la checklist y se niega, mismo guard que knocks_access_watch.",
+      "command": ["automations.terminated_notice.run"],
+      "base_args": ["--post"],
+      "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6]},
+      "data_sources": [],
+      "depends_on": [],
+      "after": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "sheet",
+      "timeout_minutes": 20,
+      "verify": null,
+      "report_id": "terminated-icd-notice"
+    },
     "daily_rep_breakdown": {
       "machine": "Lucy 3",
       "_machine_note": "Moved to Lucy 3 2026-08-22 (Megan) — heaviest report comes off Lucy 1's tail. cadence.not_before 05:00 keeps it clear of Lucy 1's 4:00-4:45 ownerville window (SAME rhidalgo account; concurrent logins can kick sessions). Runs ~5:00-6:00 vs the old 7:50-9:25.",
