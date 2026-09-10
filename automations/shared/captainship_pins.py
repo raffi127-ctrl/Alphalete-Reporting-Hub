@@ -307,9 +307,31 @@ def drop_expected_absent(went_dark: dict, slug: str, logfn=None) -> dict:
 # (owners_metrics_churn.run._backfill_moved_owners) — which needs the row to
 # already exist on the tab.
 #
+# 2026-09-10 (Eve): Alex Touati — el espejo exacto del caso Mosley, en la otra
+# direccion. Tableau lo tenia en "Pat's Team" el 2026-09-01
+# (`output/opt_captains_pat.csv`, 17 ICDs) y lo re-filo a "Tony's Team" el
+# 2026-09-02/03 — eso es lo que lo hizo aparecer en los bloques de Tony del Org
+# Sales Board ese dia. El 2026-09-03 Eve resolvio por ANTIGUEDAD que QUEDA CON
+# PAT ([[project_alex-touati-pat-to-tony]]): sus filas salieron de los bloques
+# de Tony y quedo pineado en captain_gate.EXCLUDE["Tony"], y sigue en
+# RECIPIENTS["pat"] recibiendo el correo diario de Pat.
+#
+# Esa decision nunca habia bajado a los reportes de metricas, que leen Tableau
+# directo: hasta hoy sus cinco filas se llenaban en las pestanas de TONY —
+# cancel rate, activation rate, ABP/6+ dias, churn New Internet y churn
+# wireless — y en las de Pat no existia. Eve, 2026-09-10: "move la info de
+# touati de tony a pat (...) y que a partir de ahora lo sumes en los reportes
+# de metricas de pat".
+#
+# El historico ya se movio a mano (`output/touati_move_tony_to_pat_2026-09-10.py`,
+# 182 celdas, backup en `output/touati-move-backup-2026-09-10.json`); esta
+# entrada es la que lo mantiene del lado de Pat en cada corrida diaria.
+# Borrarla el dia que SmartCircle lo pase a "Pat's Team".
+#
 # team the report is BUILDING -> {rep: the team Tableau currently files them under}
 ADOPTED: Dict[str, Dict[str, str]] = {
     "Chan": {"Ja Mosley": "Pat's Team"},
+    "Pat": {"Alex Touati": "Tony's Team"},
 }
 
 
