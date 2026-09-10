@@ -8,11 +8,18 @@ the code had him down as Energy Wells only. It also cannot see the offices whose
 OV is recruiting-only — Michael Antidormi, Fabian Diaz, Carl Foss, Ty Singkhek
 have no Disposition module at all, so there is no picker to read.
 
-WHAT THIS READS INSTEAD. D2D1-PAGERV4 holds ~14 worksheets, one "ICD Summary"
-per campaign, and AN OWNER CAN APPEAR ON SEVERAL (Megan 2026-09-10: "someone can
-be on multiple tabs so we need to look at all"). So the set of tabs an owner
-appears on IS their campaign list — from the system that bills the work, not the
-one that lists what the UI offers.
+WHAT THIS READS INSTEAD. An owner appears wherever they work, and the set of
+places they appear IS their campaign list (Megan 2026-09-10: "someone can be on
+multiple tabs so we need to look at all") — read from the system that bills the
+work, not the one that lists what the UI offers.
+
+THE SPLIT IS BY WORKBOOK, NOT BY TAB. First guess was that D2D1-PAGERV4 held one
+ICD Summary per campaign; --list-sheets on 2026-09-10 disproved it. All 14 of
+its worksheets are ATT — two ICD Summary tabs that are the SAME campaign at two
+time frames (this week / "(LW)"), two Sales By ICD, and charts. Treating tabs as
+campaigns would have invented a campaign called "ATT (2)" out of a Last Week
+tab. The campaigns are separate WORKBOOKS: ATTTRACKER2_1-D2D is ATT-D2D,
+ATTTRACKER-B2B is B2B, NDS-SNRES-ATT-OOFWorkbook is the NDS side.
 
 Checked against the ATT tab alone on the 2026-08-19 crosstab, membership agreed
 with all seven offices whose campaign we know: Christian, Jay and Chan Park
@@ -25,9 +32,9 @@ all. Absence is therefore never evidence. That is why --weeks unions several
 weeks (a quiet week cannot drop a campaign) and why the output is proposed
 ADDITIONS only: removing one stays a question for the owner.
 
-    python -m automations.rashad_metrics.tableau_campaign_map --list-sheets
+    python -m automations.rashad_metrics.tableau_campaign_map --list-workbooks
+    python -m automations.rashad_metrics.tableau_campaign_map --list-sheets <url>
     python -m automations.rashad_metrics.tableau_campaign_map --weeks 3
-    python -m automations.rashad_metrics.tableau_campaign_map --only "Sharon Miller"
 """
 from __future__ import annotations
 
@@ -68,6 +75,33 @@ def campaign_of_sheet(name: str) -> str:
     for junk in ("(V2)", "(V3)", "(V4)", "(TW)", "(LW)", "(Weekly View)"):
         label = label.replace(junk, "")
     return " ".join(label.split()).strip(" -")
+
+
+WORKBOOKS_URL = "https://us-east-1.online.tableau.com/#/site/sci/workbooks"
+
+
+def list_workbooks(page) -> list:
+    """Every workbook name this Tableau login can see.
+
+    The campaign list has to come from here rather than from the three
+    workbooks that happen to be wired into reports already — those are the ones
+    somebody needed, not the ones that exist, and an unwired campaign is exactly
+    where an unmapped multi-campaign office would hide.
+    """
+    page.goto(WORKBOOKS_URL, wait_until="networkidle", timeout=120_000)
+    page.wait_for_timeout(6000)
+    for sel in ('a[href*="/workbooks/"]',
+                '[data-tb-test-id*="workbook"] a',
+                '[class*="tb-card"] a'):
+        try:
+            names = page.eval_on_selector_all(
+                sel, "els => els.map(e => (e.innerText||'').trim())") or []
+            names = sorted({n for n in names if n and len(n) < 120})
+            if names:
+                return names
+        except Exception:  # noqa: BLE001 — try the next shape of the page
+            continue
+    return []
 
 
 def list_sheets(page, url: str = PAGER_URL) -> list:
@@ -177,8 +211,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description="Campaigns per ICD, from the D2D pager's per-campaign "
                     "tabs. Proposes additions; never removes.")
-    ap.add_argument("--list-sheets", action="store_true",
-                    help="print the workbook's worksheet names and stop")
+    ap.add_argument("--list-workbooks", action="store_true",
+                    help="print every workbook this login can see and stop — "
+                         "the campaigns are workbooks, not tabs")
+    ap.add_argument("--list-sheets", nargs="?", const=PAGER_URL,
+                    help="print one workbook view's worksheet names and stop "
+                         "(defaults to the ATT pager)")
     ap.add_argument("--weeks", type=int, default=3,
                     help="how many completed weeks to union (default 3) — a "
                          "campaign worked in only one of them still counts")
@@ -188,9 +226,20 @@ def main() -> int:
     a = ap.parse_args()
 
     from automations.shared.tableau_patchright import tableau_session
+    if a.list_workbooks:
+        with tableau_session(verbose=False, headless=not a.headed) as page:
+            books = list_workbooks(page)
+        _log(f"{len(books)} workbook(s) visible:")
+        for b in books:
+            print(f"    {b}")
+        if not books:
+            _log("none read — the workbooks page may render differently; try "
+                 "--headed to see what loaded.")
+        return 0
+
     if a.list_sheets:
         with tableau_session(verbose=False, headless=not a.headed) as page:
-            names = list_sheets(page)
+            names = list_sheets(page, a.list_sheets)
         _log(f"{len(names)} worksheet(s):")
         for n in names:
             mark = "*" if n.startswith(SHEET_PREFIX) else " "
