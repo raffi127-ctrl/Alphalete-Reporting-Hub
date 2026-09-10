@@ -1195,12 +1195,19 @@ _JS = r"""
      '<th style="text-align:left">Social</th></tr>'+rows+'</table>'+
      '<div id="anssnwarn" style="margin-top:10px;font-size:13px;color:#b00"></div>'+
      '<div style="margin-top:16px"><button id="ansgo" style="background:#0F766E;color:#fff;border:0;border-radius:8px;padding:11px 22px;font-weight:700;cursor:pointer">Start the run</button> '+
+     '<button id="anstest" style="background:#fff;border:1px solid #0F766E;'+
+     'color:#0F766E;border-radius:8px;padding:11px 18px;font-weight:700;'+
+     'cursor:pointer">Try one person</button> '+
      '<button id="anscancel" style="background:#eee;border:0;border-radius:8px;padding:11px 18px;cursor:pointer">Cancel</button> '+
      '<button id="ansclear" style="background:#fff;border:1px solid #b00;'+
      'color:#b00;border-radius:8px;padding:11px 18px;cursor:pointer">Clear '+
      'all answers</button>'+
-     '<div style="font-size:12px;color:#666;margin-top:8px">It stops after the '+
-     'first person so you can check the record before the rest go through.</div></div>'+
+     '<div style="font-size:12px;color:#666;margin-top:8px">'+
+     '<b>Try one person</b> does the first name on this list and stops, so a '+
+     'fault costs one row instead of nineteen \u2014 fill in row 1 and leave '+
+     'the rest empty. <b>Start the run</b> also stops after the first person '+
+     'so you can check the record before the rest go through. Anyone left '+
+     'blank is still filled, just without a Social.</div></div>'+
      '</div>'+
      '<div style="flex:1.2;min-width:420px;display:flex;flex-direction:column">'+
      '<div id="ansdocname" style="font-size:13px;color:#555;margin-bottom:6px">'+
@@ -1275,7 +1282,7 @@ _JS = r"""
      for(cq=0;cq<cs.length;cq++) cs[cq].value='';
    };
    document.getElementById('anscancel').onclick=function(){ w.remove(); };
-   document.getElementById('ansgo').onclick=async function(){
+   async function begin(onlyOne){
      var pr=ssnProblems(), pi;
      if(pr.dups.length){
        var who=[]; for(pi=0;pi<pr.dups.length;pi++) who.push(pr.dups[pi].join(' and '));
@@ -1309,13 +1316,19 @@ _JS = r"""
         is named at the end, from the run itself. The "Find them all for me"
         link is still there to check the list before starting, on purpose. */
      RUNNING=true; refreshChrome();
-     for(j=I;j<D.length;j++){
+     var stop=onlyOne? I+1 : D.length;
+     for(j=I;j<stop;j++){
        say('<b>'+D[j].name+'</b> ('+(j+1)+' of '+D.length+')…');
        var ok=await runPerson(D[j],say);
        if(!ok){ say('<b style="color:#b00">Stopped.</b> Fix that one, then press '+
                     'Run again — it picks up from here.'); break; }
        I=j+1; try{ localStorage.setItem(KEY,String(I)); }catch(e){}
-       if(j===0||j===I-1&&j===0){}
+       /* Trying one person is a check, not a run: say what happened and get
+          out of the way. Asking "carry on?" would be asking the question the
+          button already answered (Megan, 2026-09-10: filling in nineteen
+          Socials to find out the first record fails is a waste of time). */
+       if(onlyOne){ say('<b>'+D[j].name+' is done, all three tabs.</b> Open the '+
+                        'record and check it, then Run the whole week.'); break; }
        if(I===1&&D.length>1){
          if(!confirm(D[0].name+' is done, all three tabs.\n\nOpen the record and '+
                      'check it. Continue with the remaining '+(D.length-1)+'?')) {
@@ -1323,7 +1336,9 @@ _JS = r"""
        }
      }
      RUNNING=false; refreshChrome();
-   };
+   }
+   document.getElementById('ansgo').onclick=function(){ return begin(false); };
+   document.getElementById('anstest').onclick=function(){ return begin(true); };
  };
  document.getElementById('ansfill').onclick=async function(){
    document.getElementById('ansout').innerHTML='filling...';

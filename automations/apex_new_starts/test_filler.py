@@ -1867,3 +1867,33 @@ def test_the_run_does_not_search_the_list_twice(page, tmp_path):
     assert "findEveryone(say)" not in js.split("ansgo")[-1], \
         "the run must not sweep the list before it starts"
     assert "ansfind" in js, "the on-demand check is still offered"
+
+
+def test_try_one_person_needs_only_that_one_row(page, tmp_path):
+    """Megan, 2026-09-10: "it's really annoying that I have to fill in all the
+    info for us to test and it fails on the first one. It's a waste of time".
+    A check should cost one row, not nineteen."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Rosa Capel", "find": "Capel", "pages": {}},
+              {"name": "Jene Cotton", "find": "Cotton", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansrun").click()
+
+    # only row 1 answered; the rest deliberately left empty
+    page.fill('[data-s="0"]', "123456789")
+    page.select_option('[data-g="0"]', "Female")
+    assert page.locator("#anssnwarn").inner_text() == "", \
+        "leaving the others blank is not an error"
+
+    page.locator("#anstest").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.length > 0",
+        timeout=15000)
+    out = page.locator("#ansout").inner_text()
+    assert "Aundre Browder" in out
+    assert "Rosa Capel" not in out and "Jene Cotton" not in out, \
+        "it stopped after the one"
