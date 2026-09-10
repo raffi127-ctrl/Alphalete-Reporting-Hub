@@ -1227,9 +1227,13 @@ def test_the_lookup_waits_until_the_run_starts(page, tmp_path):
 
 ROSTER_NO_LINKS = """
 <!doctype html><html><body>
+<!-- a stray Filter box OUTSIDE the grid: counting inputs in document order
+     puts the surname in the wrong column, which is what happened live -->
+<input placeholder="Filter" id="stray">
 <table>
 <thead><tr><th>First Name</th><th>Last Name</th><th>User Name</th><th></th></tr>
-<tr><td><input placeholder="Filter"></td><td><input placeholder="Filter" id="lf"></td>
+<tr><td><input placeholder="Filter" id="ffirst"></td>
+    <td><input placeholder="Filter" id="lf"></td>
     <td><input placeholder="Filter"></td>
     <td><button id="apply">Apply Filters</button></td></tr></thead>
 <tbody id="rows"></tbody></table>
@@ -1345,7 +1349,7 @@ def test_the_header_says_where_you_are(page, tmp_path):
               {"name": "Cristian Amaya Vega", "find": "Vega", "pages": {}}]
     js = filler.build_js(people, "WE 9.13")[len("javascript:"):]
 
-    roster = tmp_path / "roster.html"; roster.write_text("<h1>User Listing</h1>")
+    roster = tmp_path / "roster.html"; roster.write_text(ROSTER_NO_LINKS)
     page.goto(roster.as_uri())
     page.evaluate(js)
     head = page.locator("#anspanel").inner_text()
@@ -1392,3 +1396,23 @@ def test_somebody_with_no_packet_says_so_rather_than_blanking(page, tmp_path):
     page.locator('[data-doc="0"]').click()
     out = page.locator("#ansdocname").inner_text()
     assert "no signed packet" in out
+
+
+def test_the_roster_panel_offers_only_the_run(page, tmp_path):
+    """"Just this page" and "Saved -> next" are about ONE person. On the
+    roster they are clutter you have to think about and then dismiss."""
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}}]
+    js = filler.build_js(people, "WE 9.13")[len("javascript:"):]
+
+    roster = tmp_path / "roster.html"; roster.write_text(ROSTER_NO_LINKS)
+    page.goto(roster.as_uri())
+    page.evaluate(js)
+    assert page.locator("#ansrun").count() == 1
+    assert page.locator("#ansfill").count() == 0
+    assert page.locator("#ansnext").count() == 0
+
+    person = tmp_path / "user-profile.html"; person.write_text("<h1>profile</h1>")
+    page.goto(person.as_uri())
+    page.evaluate(js)
+    assert page.locator("#ansfill").count() == 1, "still there on a record"
+    assert page.locator("#ansnext").count() == 1

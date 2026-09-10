@@ -673,16 +673,31 @@ _JS = r"""
    return n;
  }
  function filterBoxes(){
-   /* The roster's filter row: one box per column, all of them placeholder
-      "Filter". Which one is Last Name is decided by the header, not by
-      counting -- a column added upstream would otherwise shift it silently. */
-   var heads=document.querySelectorAll('th'), names=[], i;
-   for(i=0;i<heads.length;i++) names.push(norm(heads[i].textContent));
-   var boxes=document.querySelectorAll('input[placeholder="Filter" i]');
-   var idx=names.indexOf('last name');
-   if(idx<0||idx>=boxes.length) return null;
-   return {last:boxes[idx], first:names.indexOf('first name')>=0
-           ? boxes[names.indexOf('first name')] : null};
+   /* Tie each filter box to its COLUMN, through the table, instead of
+      counting inputs in document order. Counting put the surname into the
+      First Name box -- the screen showed "david" under First Name while the
+      run reported David Silva as not found, with him sitting right there
+      (Megan, 2026-09-10). */
+   var heads=document.querySelectorAll('th'), idx=-1, first=-1, i;
+   for(i=0;i<heads.length;i++){
+     var t=norm(heads[i].textContent);
+     if(t==='last name'&&idx<0) idx=i;
+     if(t==='first name'&&first<0) first=i;
+   }
+   if(idx<0) return null;
+   var table=heads[idx].closest?heads[idx].closest('table'):null;
+   if(!table) return null;
+   var rows=table.querySelectorAll('tr'), r, cells, inp;
+   for(r=0;r<rows.length;r++){
+     cells=rows[r].querySelectorAll('th,td');
+     if(cells.length<=idx) continue;
+     inp=cells[idx].querySelector('input');
+     if(!inp) continue;
+     return {last: inp,
+             first: (first>=0&&cells.length>first)
+                    ? cells[first].querySelector('input') : null};
+   }
+   return null;
  }
  function applyFilters(){
    var b=document.querySelectorAll('button,a'), i;
@@ -714,6 +729,8 @@ _JS = r"""
      var person=missing[i], parts=norm(person.name).split(' ');
      var surname=person.find||parts[parts.length-1];
      say('looking up '+person.name+' ('+(i+1)+' of '+missing.length+')…');
+     if(f.first){ f.first.value='';
+       f.first.dispatchEvent(new Event('input',{bubbles:true})); }
      f.last.value=surname;
      f.last.dispatchEvent(new Event('input',{bubbles:true}));
      f.last.dispatchEvent(new Event('change',{bubbles:true}));
@@ -875,6 +892,8 @@ _JS = r"""
    }
    var parts=norm(p.name).split(' ');
    if(f){
+     if(f.first){ f.first.value='';
+       f.first.dispatchEvent(new Event('input',{bubbles:true})); }
      f.last.value=p.find||parts[parts.length-1];
      f.last.dispatchEvent(new Event('input',{bubbles:true}));
      f.last.dispatchEvent(new Event('change',{bubbles:true}));
@@ -930,7 +949,12 @@ _JS = r"""
  /* On somebody's record, name them. On the roster -- which is where the
     whole-week run is started from -- naming one person reads as though the
     button is about to do only them (Megan, 2026-09-10). */
- var onPerson=!!pageName();
+ /* Hide the per-person controls only where we can POSITIVELY see a roster --
+    the filter row, or the roster url. Keying off "can I name this page" hid
+    them on every screen the button does not recognise, which took away the
+    "Just this page" escape hatch exactly where somebody would need it. */
+ var onRoster=(/\/roster(\/|$)/.test(location.pathname||'')||!!filterBoxes());
+ var onPerson=!onRoster;
  box.innerHTML='<div style="font-weight:700;font-size:16px">'+
    (onPerson? p.name : 'Ready to run \u00b7 %(week)s')+'</div>'+
    '<div style="color:#555;margin:2px 0 10px">'+
@@ -949,8 +973,12 @@ _JS = r"""
         (onPerson? '<div style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
         '<b>Pending</b> list and it will learn where everyone is, then jump you straight to them.</div>':''))+
    '<button id="ansrun" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:14px;font-weight:700;cursor:pointer;width:100%%;margin-bottom:6px">Run the whole week</button>'+
-   '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
-   '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved → next</button>'+
+   /* Both of these are about ONE person, so they only belong on that person's
+      record. On the roster they read as clutter you have to think about
+      (Megan, 2026-09-10). */
+   (onPerson?
+     '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
+     '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved \u2192 next</button>':'')+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
    '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
  document.body.appendChild(box);
@@ -1071,7 +1099,7 @@ _JS = r"""
      }
    };
  };
- document.getElementById('ansfill').onclick=async function(){
+ if(onPerson) document.getElementById('ansfill').onclick=async function(){
    document.getElementById('ansout').innerHTML='filling...';
    var r=await fill(p);
    /* Nothing matched at all = not an Apex form. Saying so beats a wall of red
@@ -1157,7 +1185,7 @@ _JS = r"""
        '<div style="margin-top:6px;font-size:11px">screenshot this</div>';
    };
  };
- document.getElementById('ansnext').onclick=function(){
+ if(onPerson) document.getElementById('ansnext').onclick=function(){
    I++; try{ localStorage.setItem(KEY,String(I)); }catch(e){}
    box.remove();
    if(I>=D.length){ alert('That was the last one.'); return; }
