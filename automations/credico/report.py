@@ -45,6 +45,9 @@ from automations.override_bulletin.dd_rows import (COMPANY_TO_OWNER, credico_sat
 REPORTS_URL = f"{BASE}/#/dashboard/sales-management"
 WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 DUMP_TAB = "_credico_discover"
+# The schedule_config id this download runs under. The run-manifest is filed
+# under the same name, which is where reconcile / delivery_check look.
+FETCH_REPORT_ID = "credico_fetch"
 OUT = Path(__file__).resolve().parents[2] / "output" / "credico"
 
 
@@ -376,6 +379,7 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
     OUT.mkdir(parents=True, exist_ok=True)
     rows = [["WHAT", "DETAIL", "VALUE"]]
     got = []
+    results = {}          # office node text -> "ok" | why it did not land
     own = page is None
     ctx = credico_session(headless=True) if own else None
     page = ctx.__enter__() if own else page
@@ -445,6 +449,7 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
             if i >= len(items):
                 break
             node, name = items[i]
+            office = name
             # THREE LEVELS: week → office → file. Clicking the office reveals a
             # single file node named `<date>~<office>~Commissions.xlsx`; the
             # download only fires on THAT. Drill to the first node whose name has
@@ -457,6 +462,7 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
                 if leaf is None:
                     rows.append(["NO FILE NODE", name,
                                  "; ".join(t for _, t in _items())[:300] or "(empty)"])
+                    results[office] = "no file node under the office"
                     page.go_back()
                     page.wait_for_timeout(2500)
                     continue
@@ -471,6 +477,7 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
                 d.save_as(str(dest))
                 size = dest.stat().st_size
                 got.append(dest)
+                results[office] = "ok"
                 rows.append(["DOWNLOADED", name,
                              f"{dest.name} · {size:,} bytes · suffix {dest.suffix or '(none)'}"])
                 if verbose:
@@ -479,6 +486,7 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
                 # No download — the click probably drilled one level deeper.
                 body = " ".join((page.inner_text("body") or "").split())
                 rows.append(["NO DOWNLOAD", name, f"{type(e).__name__}: {str(e)[:120]}"])
+                results[office] = f"no download ({type(e).__name__})"
                 rows.append(["  after-click", name, body[-500:]])
                 lst2 = page.query_selector("div.report-list")
                 if lst2:
@@ -513,7 +521,64 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
         print(f"\n✓ {len(rows)} row(s) → '{DUMP_TAB}' tab; {len(got)} file(s) in {OUT}")
     except Exception as e:  # noqa: BLE001
         print(f"\n⚠ couldn't write '{DUMP_TAB}' ({e})")
+    _write_fetch_manifest(week_label, f"{saturday:%Y-%m-%d}", results)
     return got
+
+
+def _fetch_manifest_units(saturday_label, results):
+    """Split a fetch's office nodes into (downloaded, missed, human note).
+
+    `results` is {office node text: "ok" | why it did not land}, built while the
+    download loop walks the week folder.
+
+    AN EMPTY WEEK IS A MISS, not a clean run with no work. Credico's folder for
+    the week exists before the files do, so "the page listed no office" is the
+    shape of "nothing to hand to dd_populate" — and the whole point of this
+    manifest is that a run which brought home nothing must not read as delivered.
+
+    A week that lists ONE office and downloads it IS a clean run: Credico
+    publishes each office when it is ready (DD_SOURCES.md), so a single-office
+    week is normal and must not go red every Thursday. The note names who came
+    and who has not been published yet, which is the part a person needs.
+    """
+    got = sorted(o for o, r in results.items() if r == "ok")
+    missed = sorted(o for o, r in results.items() if r != "ok")
+    if not results:
+        return [], [f"no office file published for {saturday_label}"], (
+            f"Credico listed no office at all for {saturday_label}")
+    owners = {COMPANY_TO_OWNER.get(_ckey(o)) for o in got}
+    absent = sorted(set(COMPANY_TO_OWNER.values()) - owners)
+    note = f"{len(got)}/{len(results)} office file(s) for {saturday_label}"
+    if got:
+        note += ": " + ", ".join(got)
+    if absent and not missed:
+        # Not a failure — Credico simply has not published them yet. Saying it
+        # here is what keeps a short week visible: the fold reports `ok` on one
+        # office and fills the other owner from Tableau alone.
+        note += f" — not published yet: {', '.join(absent)}"
+    return got, missed, note
+
+
+def _write_fetch_manifest(week_label, saturday_label, results):
+    """File this fetch's outcome where the orchestrator already looks.
+
+    WHY (2026-09-10): credico_fetch's `verify` said `not_configured`, so a clean
+    exit proved nothing to `delivery_check` and the incident thread stayed open
+    after the very run that fixed it ("ran clean, but nothing can confirm it
+    DELIVERED"). The download is observable, so it gets observed rather than
+    declared `close_on: exit_zero`.
+
+    Never raises: a manifest that cannot be written must not lose the files that
+    were already downloaded."""
+    try:
+        from automations.shared import run_manifest
+        succeeded, failed, note = _fetch_manifest_units(saturday_label, results)
+        run_manifest.write_manifest(
+            FETCH_REPORT_ID, failed=failed, succeeded=succeeded, kind="office",
+            retry_args=["--fetch", "--week", week_label], note=note)
+        print(f"-> manifest: {note}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ couldn't write the run manifest ({e})", flush=True)
 
 
 def inspect(verbose=True):

@@ -8489,7 +8489,9 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "credico_fetch",
+        "_note": "Wired 2026-09-10. The download IS observable — fetch_week files a manifest naming every office node it walked and which one came home — so this is verified, NOT declared close_on: exit_zero. Before this the block said not_configured, delivery_check answered UNKNOWN, and failure-credico_fetch stayed open after the run that fixed it."
       },
       "machine": "Lucy 1",
       "order": 52,
