@@ -453,6 +453,14 @@ CAMPAIGN_OVERRIDES: "dict[str, str]" = {
     # under the shape guard. Id read live via `b2b_dispositions --probe-campaigns`
     # on Lucy 2, 2026-07-29 (see b2b_dispositions/config.CAMPAIGN_URL_IDS).
     "carlos hidalgo": "2",
+    # benjamin burden -> 16 (Box Energy). Megan 2026-09-10: "Ben is box." He is
+    # single-campaign, so he needs no MULTI_CAMPAIGN entry — but he DID need
+    # this, for the same reason Carlos did: without it he is pinned to 3
+    # (RES AT&T), a residential campaign a Box office does not run, and the
+    # 9/03 scan could not read him to catch it. 16 is shape-checked, so if this
+    # is ever wrong assert_campaign_grid says so loudly instead of shipping
+    # another campaign's numbers under his name.
+    "benjamin burden": "16",
 }
 
 
@@ -478,6 +486,10 @@ CAMPAIGN_OVERRIDES: "dict[str, str]" = {
 # b2b_dispositions probed live on Lucy 2 (2026-07-29): 2 = B2B AT&T SBS,
 # 16 = B2B-BOX-Energy.
 MULTI_CAMPAIGN: "dict[str, list]" = {
+    # CONFIRMED by Megan 2026-09-10 ("he is both"). It had been the one mapped
+    # office standing on an inference nobody had checked — and the two entries
+    # checked that same day both moved: Carlos lost a campaign the scan
+    # offered, Calvin gained one it did not.
     "jay turnage": [("AT&T", "3", "att"),
                     ("Energy Wells", "40", "energywell")],
     "carlos hidalgo": [("B2B AT&T SBS", "2", "att"),
@@ -562,17 +574,63 @@ def campaign_label(name: str, campaign_id: "Optional[str]") -> str:
 #
 # NOT a lookup anything branches on. It is the ledger: a name here has been
 # checked and needs no further work.
+# A RECRUITING-ONLY OV IS A CATEGORY, NOT A MYSTERY. Several offices get the
+# Welcome / Sales Reps / Recruitment / Client Training side of ownerville and no
+# Disposition module at all, so there is no campaign picker on the account.
+# "No campaigns read" is the CORRECT answer for them, not a scan failure, and
+# chasing each one individually is wasted work — their campaign comes from
+# Tableau. All confirmed by Megan from the live OV, 2026-09-10.
+_NO_DISPO = ("recruiting-only OV — no Disposition module, so no campaign "
+             "picker exists on the account. Campaign comes from Tableau.")
+
 SETTLED: "dict[str, str]" = {
     "francisco castillo":
         "22532 Imperium Consultants — picker holds ONE entry, RES AT&T. Single "
-        "campaign, default pin, nothing to ask (Megan, screenshot 2026-09-10).",
-    "michael antidormi":
-        "22697 Momentum Management Analytics — his OV has no Disposition "
-        "module at all: p=20 shows Welcome and Sales Reps and nothing else. "
-        "There is no picker to read, so the scan reading nothing is CORRECT, "
-        "not a failure. His campaign has to come from Tableau (Megan "
-        "2026-09-10).",
+        "campaign, default pin, nothing to ask.",
+    "michael antidormi": f"22697 Momentum Management Analytics — {_NO_DISPO}",
+    "fabian diaz":       f"20353 Paideia Management — {_NO_DISPO}",
+    "carl foss":         f"22049 Pioneer Management Enterprises — {_NO_DISPO}",
+    # Office id not recorded — Megan confirmed the category, not the number,
+    # and inventing one would be worse than leaving it out.
+    "ty singkhek":       _NO_DISPO,
+    # GONE, NOT UNREADABLE. Both read empty on 9/03 for the same reason: there
+    # was no longer an office to read. An office that has wound down looks
+    # exactly like a scan failure from the scan's side, which is why the
+    # Terminated ICDs sheet is the thing to check FIRST on an empty read.
+    "lizette ruiz-conejo":
+        "TERMINATED — office 22109 Revolution Consulting Group shut down; on "
+        "the Terminated ICDs sheet, logged 2026-09-05 after the office dropped "
+        "off OwnerVille Office Access. The 9/03 scan predates that, which is "
+        "the whole of why it read empty.",
+    "jason strid":
+        "WINDING DOWN — office 21712 Vyzah, Inc. Off the Tableau Metrics view "
+        "since 2026-08-19, off Starr's captainship and the org distros, and "
+        "not on OV Office Access at all (Megan 2026-09-10). NOT on the "
+        "Terminated ICDs sheet — see the note in needs_terminated_review.",
 }
+
+
+def needs_terminated_review() -> list:
+    """Offices that look wound down but are NOT on the Terminated ICDs sheet.
+
+    Lizette's own row records the failure mode: "Removed from reports by hand
+    on 2026-08-24 / 08-31 but never logged here." She was taken off six reports
+    over two weeks and only reached the sheet on 09-05, so for those two weeks
+    every report's terminated check said she was fine. Jason Strid is in that
+    same gap right now.
+
+    RETURNS A LIST, WRITES NOTHING. The sheet is Megan's record of who is out;
+    a report adding rows to it on its own inference is how a live ICD gets
+    marked terminated by a bad week of numbers.
+    """
+    return ["jason strid"]
+
+
+def needs_tableau() -> list:
+    """Offices whose campaign cannot be read from OV at all, because their
+    account has no Disposition module. Named so the open question is a list
+    somebody can work, not a thing rediscovered per scan."""
+    return sorted(n for n, why in SETTLED.items() if "Tableau" in why)
 
 
 def campaigns_for(name: str) -> list:

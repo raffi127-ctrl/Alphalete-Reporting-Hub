@@ -64,7 +64,7 @@ class CampaignForOffice(unittest.TestCase):
         # office's whole board. Calvin is the first observed exception —
         # invD2DClientId=40 (RES-ENERGYWELL), read off his live URL on
         # 2026-08-29 — so the rule is now "only observed entries", not "none".
-        self.assertEqual(set(KP.CAMPAIGN_OVERRIDES.values()), {"40", "2"},
+        self.assertEqual(set(KP.CAMPAIGN_OVERRIDES.values()), {"40", "2", "16"},
                          "every override must be an observed campaign id")
         # The CANONICAL name only. "Calvin Rivera" is the alias sheet's job —
         # every caller resolves it before this map is consulted — and listing
@@ -153,6 +153,30 @@ class MultiCampaignOffices(unittest.TestCase):
         self.assertEqual(KP.campaign_label("Chan Park", "3"), "")
         self.assertEqual(KP.campaign_label("Carlos Hidalgo", None), "")
         self.assertEqual(KP.campaign_label("Carlos Hidalgo", "40"), "")
+
+
+class WoundDownOfficesAreNotOpenQuestions(unittest.TestCase):
+    """An office that has gone away reads EXACTLY like a scan failure, so the
+    ledger has to tell them apart or each one gets re-investigated forever."""
+
+    def test_a_terminated_office_is_recorded_as_terminated(self):
+        why = KP.SETTLED["lizette ruiz-conejo"]
+        self.assertIn("TERMINATED", why)
+
+    def test_the_terminated_gap_is_named_not_silently_fixed(self):
+        # Jason Strid is off the Metrics view, the boards, the distros and OV
+        # Office Access, and is still not on the Terminated ICDs sheet. That
+        # sheet is Megan's record: this reports the gap, it never writes a row.
+        self.assertEqual(KP.needs_terminated_review(), ["jason strid"])
+        self.assertIn("NOT on the Terminated ICDs sheet",
+                      KP.SETTLED["jason strid"])
+
+    def test_a_wound_down_office_is_never_offered_campaigns(self):
+        # Offering a picker for an office that no longer exists would be a
+        # question about nothing.
+        for name in KP.SETTLED:
+            with self.subTest(office=name):
+                self.assertEqual(KP.campaigns_for(name), [])
 
 
 class OfferedIsNotKnocked(unittest.TestCase):
