@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 55,
+  "confirmed_count": 56,
   "needs_review_count": 0,
   "skip_count": 31,
   "confirmed": [
@@ -411,6 +411,17 @@
       "promoted_from_sales_only": true,
       "was_sales_only_reason": "B2B ICD (Vernon, Inc., ownerville office 22162) \u2014 tab added 2026-08-30 from Carlos's 'B2B Template'; the '(B2B)' suffix is Eve's, so it doesn't read as one more fiber ICD, not 'Template Fiber'. No AppStream office under Raf's login yet, so the recruiting funnel (rows 2-20) stays blank until access lands; promote_when_visible flips him to confirmed the run after it does. opt_source=b2b keeps Raf's OPT phase off the tab \u2014 his OPT block is filled by alphalete_org_report.opt_b2b. as_owner is ownerville's spelling ('Ribera'); the tab is Eve's ('Ribero').",
       "opt_source": "b2b"
+    },
+    {
+      "sheet_tab": "Shealey Miller",
+      "office_id": "22400",
+      "as_owner": "Shealey Miller",
+      "as_company": "Azul Connections Inc",
+      "confidence": 1.0,
+      "hardcoded": true,
+      "siblings": [
+        "23858"
+      ]
     }
   ],
   "needs_review": [],

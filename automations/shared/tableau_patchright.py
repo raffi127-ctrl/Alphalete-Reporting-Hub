@@ -2579,6 +2579,18 @@ def _capture_appstream_state(verbose: bool = True,
 
 
 if __name__ == "__main__":
+    # This CLI prints ✅/❌/⚠ status lines, and a Windows console is cp1252:
+    # the emoji raised UnicodeEncodeError and killed --appstream-login AFTER it
+    # had already written the session file, so a good re-seed looked like a
+    # crash (Eve, 2026-09-09). Never drop the emoji instead — same class of bug
+    # as the ✓ that killed the email sweep.
+    import sys as _sys
+    for _stream in (_sys.stdout, _sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001 — a non-reconfigurable stream is fine
+            pass
+
     # Smoke tests for the patchright sessions. Run headed so you can watch
     # Cloudflare + SSO. --appstream verifies the new (unverified) AppStream
     # login; default verifies the Tableau login.

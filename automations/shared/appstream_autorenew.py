@@ -225,6 +225,16 @@ def _holder_paused(verbose: bool = True):
     """Stop the session holder for the duration, and ALWAYS restart it."""
     import os
     import subprocess
+    # The holder is a launchd agent — it only exists on the macOS machines. On
+    # Windows there is nothing to pause, and reaching for os.getuid() (POSIX
+    # only) raised AttributeError here, which the caller in tableau_patchright
+    # swallows as "re-mint failed" — so a Windows box could never self-heal an
+    # expired ownerville session and fell through to the login form (Eve,
+    # 2026-09-09).
+    if not hasattr(os, "getuid"):
+        _log("no launchd holder on this platform — nothing to pause")
+        yield
+        return
     uid = os.getuid()
     label = "gui/%d/com.alphalete.session-holder" % uid
     plist = (pathlib.Path.home() / "Library" / "LaunchAgents"
