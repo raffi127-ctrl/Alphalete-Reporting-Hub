@@ -991,7 +991,9 @@ _JS = r"""
          '<select data-g="'+i+'"><option value="">—</option><option>Female</option><option>Male</option></select>'
          :'<span style="color:#888">on the board</span>')+'</td>'+
        '<td style="padding:4px 8px"><input data-s="'+i+'" type="password" size="12" autocomplete="off"> '+
-       '<a href="'+blueink(D[i])+'" target="_blank" rel="noopener" '+
+       /* ONE named tab for all 23 packets, not 23 tabs each paying for Blue
+          Ink to boot -- that is the difference between "too slow" and usable. */
+       '<a href="'+blueink(D[i])+'" target="blueinkpacket" rel="noopener" '+
        'style="font-size:11px;color:#0F766E">packet ↗</a></td></tr>';
    }
    w.innerHTML='<div style="background:#fff;max-width:720px;margin:0 auto;border-radius:12px;padding:22px;font:14px -apple-system,Helvetica,sans-serif">'+
@@ -1007,6 +1009,9 @@ _JS = r"""
      '<div style="font-size:12px;color:#666;margin-top:8px">It stops after the '+
      'first person so you can check the record before the rest go through.</div></div></div>';
    document.body.appendChild(w);
+   /* Warm Blue Ink up straight away, in the tab the packet links will reuse,
+      so the first click is not also paying for the dashboard booting. */
+   try{ window.open('https://secure.blueink.com/dashboard/wall','blueinkpacket'); }catch(e){}
    document.getElementById('anscancel').onclick=function(){ w.remove(); };
    document.getElementById('ansgo').onclick=async function(){
      var gs=w.querySelectorAll('[data-g]'), ss=w.querySelectorAll('[data-s]'), j;

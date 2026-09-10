@@ -1291,3 +1291,22 @@ def test_it_names_who_it_could_not_find_and_offers_a_retry(page, tmp_path):
     assert "Nobody Here" in out and "Also Missing" in out
     assert "Rosa Capel" not in out, "the one it found is not listed as missing"
     assert page.locator("#ansagain").count() == 1, "and a way to look again"
+
+
+def test_all_packet_links_share_one_tab(page, tmp_path):
+    """Twenty-three packets opening 23 tabs, each paying for Blue Ink to boot,
+    is what made this "too slow". One named tab, warmed when the form opens."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    people = [{"name": "Rosa Capel", "find": "Capel", "pages": {}},
+              {"name": "Tyler Ketchum", "find": "Ketchum", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.evaluate("() => { window.open = () => null; }")   # no real tabs in a test
+    page.locator("#ansrun").click()
+
+    links = page.locator("#anssetup a")
+    assert links.count() == 2
+    for i in range(2):
+        assert links.nth(i).get_attribute("target") == "blueinkpacket", \
+            "every packet link reuses the same tab"
