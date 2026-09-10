@@ -1217,8 +1217,12 @@ ROSTER_NO_LINKS_WIRING = """() => {
   const all = [['Rosa', 'Capel', '3001'], ['Kalynn', 'Nugent', '9999']];
   window.__render = () => {
     const want = document.getElementById('lf').value.toLowerCase();
-    document.getElementById('rows').innerHTML = all
-      .filter(r => !want || r[1].toLowerCase().includes(want))
+    /* With NO filter this shows only the first row, the way page 1 of a
+       paginated roster does. Anything that judges presence after the filter is
+       cleared will decide almost everybody is missing. */
+    const shown = want ? all.filter(r => r[1].toLowerCase().includes(want))
+                       : all.slice(1, 2);
+    document.getElementById('rows').innerHTML = shown
       .map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>x</td>
         <td><button class="ed" data-id="${r[2]}">Edit</button></td></tr>`).join('');
     document.querySelectorAll('.ed').forEach(b =>

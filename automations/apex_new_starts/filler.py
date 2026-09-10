@@ -707,7 +707,7 @@ _JS = r"""
       person up itself. */
    var f=filterBoxes();
    if(!f){ say('No filter row on this page — open Roster then Employees, and the Pending tab.'); return; }
-   var map=knownIds(), missing=[], present=0, i;
+   var map=knownIds(), missing=[], present=0, absent=[], i;
    for(i=0;i<D.length;i++){ if(!idFor(D[i])) missing.push(D[i]); }
    if(!missing.length){ say('<b>All '+D.length+' found.</b> Ready to run the week.'); return; }
    for(i=0;i<missing.length;i++){
@@ -729,17 +729,21 @@ _JS = r"""
         all. Storing a placeholder here would have sent the run to
         /employees/?/edit -- the pre-flight is only allowed to REPORT. The run
         opens each person by clicking their Edit when it reaches them. */
+     /* Decide presence HERE, while this person is the one being filtered for.
+        Judging it afterwards against whatever rows happen to be on screen said
+        22 of 23 were missing -- including Rosa, who was visible at the time. */
      if(hit){ map[want]=hit; try{ localStorage.setItem(IDKEY,JSON.stringify(map)); }catch(e){} }
      else if(rowFor(person)) present++;
+     else absent.push(person.name);
    }
    f.last.value='';
    f.last.dispatchEvent(new Event('input',{bubbles:true}));
    ngApply(f.last); applyFilters();
    await sleep(800);
    /* Name them. "5 not on the Pending tab" tells you there is a problem and
-      nothing about which five, so it cannot be acted on (Megan, 2026-09-09). */
-   var still=[];
-   for(i=0;i<D.length;i++){ if(!idFor(D[i])&&!rowFor(D[i])) still.push(D[i].name); }
+      nothing about which five, so it cannot be acted on (Megan, 2026-09-09).
+      The list is what the loop actually failed to find, not a re-scan. */
+   var still=absent;
    if(!still.length){ say('<b>All '+D.length+' found.</b> Ready to run the week.'); return; }
    say('<b style="color:#b00">Not on the Pending tab ('+still.length+'):</b><br>'+
        still.join('<br>')+
