@@ -150,9 +150,12 @@ def year_weeks(today):
     return out
 
 
-def pull(weeks, offices, verbose=True):
+def pull(weeks, offices, verbose=True, base=None):
+    """Scrape the given weeks. base = previously cached raw to merge into,
+    so a partial (--recent) pull never clobbers the full-year cache — the
+    per-office checkpoint always writes the merged result."""
     from automations.shared.tableau_patchright import appstream_direct_session
-    raw = {oid: {} for oid, _ in offices}
+    raw = {oid: dict((base or {}).get(oid, {})) for oid, _ in offices}
     with appstream_direct_session(verbose=verbose) as page:
         page.wait_for_timeout(3000)
         page.wait_for_selector("#searchMC", timeout=20000)
@@ -528,6 +531,10 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-pull", action="store_true",
                     help="rebuild the tabs from output/recruiter_stats_raw.json")
+    ap.add_argument("--recent", type=int, default=None, metavar="N",
+                    help="pull only the last N weeks and merge into the cached "
+                         "raw (the daily automation's mode — old weeks never "
+                         "change); falls back to a full pull when no cache")
     ap.add_argument("--date", default=None, help="override today (YYYY-MM-DD)")
     args = ap.parse_args(argv)
 
@@ -538,6 +545,12 @@ def main(argv=None):
 
     if args.no_pull and RAW_PATH.exists():
         raw = json.loads(RAW_PATH.read_text())
+    elif args.recent and RAW_PATH.exists():
+        base = json.loads(RAW_PATH.read_text())
+        print(f"(incremental: pulling last {args.recent} week(s), "
+              f"keeping {sum(len(w) for w in base.values())} cached office-weeks)",
+              flush=True)
+        raw = pull(weeks[-args.recent:], OFFICES, base=base)
     else:
         raw = pull(weeks, OFFICES)
     build(raw, weeks, OFFICES, dry=args.dry_run)
