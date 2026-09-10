@@ -1163,8 +1163,18 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
     # in LABELS is a losing game — those labels change whenever the pitch
     # does. Skip the header rows themselves; no rep name lives on one.
     def _header_row(row):
-        return bool({str(c).strip().lower() for c in row[:8]}
-                    & {"territory leader", "rep #1", "rep list"})
+        cells = {str(c).strip().lower() for c in row[:8]}
+        if cells & {"territory leader", "rep #1", "rep list"}:
+            return True
+        # The STATIONS legend under the blocks (r42 'STATIONS', r43 headers,
+        # reps from r44) has its own header shape: the three PITCH STAGES across
+        # A/B/C. 'Pitch' and 'Closing' were already anchored in LABELS, so only
+        # the third one ever surfaced — 'Getting The Bill' reported every single
+        # day, and when somebody shortened it to 'Getting Bill' on 2026-09-10 it
+        # simply reported under the new spelling. Exactly the losing game the
+        # comment above describes: the stage names change when the pitch does,
+        # so skip the ROW rather than chase the label into LABELS.
+        return {"pitch", "closing"} <= cells
 
     unknown = set()
     for i, row in enumerate(vals, start=1):

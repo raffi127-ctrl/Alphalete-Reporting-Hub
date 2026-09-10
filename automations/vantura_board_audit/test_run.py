@@ -290,6 +290,77 @@ class ExitCodeSemantics(unittest.TestCase):
         self.assertFalse(mc.called)
 
 
+class StationsLegendHeaderRow(unittest.TestCase):
+    """The STATIONS legend's own header row is not a list of people.
+
+    Below the station blocks the tab carries a legend: r42 'STATIONS', r43 the
+    three PITCH STAGES across A/B/C, and the reps at each stage from r44 down.
+    Two of those three stage names ('Pitch', 'Closing') were anchored in LABELS,
+    so only the third was ever reported — 'Getting The Bill' as a finding every
+    single morning. On 2026-09-10 somebody shortened the cell to 'Getting Bill'
+    and it went on reporting under the new spelling, which is the point: chasing
+    the label into LABELS never ends, because the stage names change when the
+    pitch does. The ROW is what gets skipped.
+
+    The reps UNDERNEATH that header are still checked — the legend is exactly
+    where a real typo would show up, so skipping the block wholesale would be
+    worse than the noise.
+    """
+
+    def _stations_with_legend(self, stage_c, rep_name="Zed Unknownperson"):
+        rows = [[""] * 95 for _ in range(6)]
+        rows[3][0] = "Pitch"
+        rows[3][1] = "Closing"
+        rows[3][2] = stage_c
+        rows[4][0] = rep_name
+        return rows, []
+
+    def _names_reported(self, stations):
+        sheet = _sheet(*stations)
+        found = {}
+
+        def cap(report_id, **kw):
+            found["failed"] = list(kw.get("failed") or [])
+
+        with mock.patch(
+                "automations.recruiting_report.fill.open_by_key",
+                return_value=sheet),              mock.patch.object(audit_run, "_log", lambda *a, **k: None),              mock.patch("automations.shared.run_manifest.write_manifest", cap),              mock.patch("automations.shared.run_manifest.mark_clean"):
+            audit_run.main(["--no-auto-close", "--no-fix-ranges"])
+        return " ".join(found.get("failed") or [])
+
+    def test_getting_the_bill_is_not_reported(self):
+        reported = self._names_reported(
+            self._stations_with_legend("Getting The Bill"))
+        self.assertNotIn("Getting The Bill", reported)
+
+    def test_the_shortened_spelling_is_not_reported_either(self):
+        """2026-09-10: the cell was edited to 'Getting Bill' and reported again."""
+        reported = self._names_reported(self._stations_with_legend("Getting Bill"))
+        self.assertNotIn("Getting Bill", reported)
+
+    def test_a_renamed_stage_is_not_reported_either(self):
+        """The whole point of skipping the row: the next pitch rename is free."""
+        reported = self._names_reported(
+            self._stations_with_legend("Handling Objections"))
+        self.assertNotIn("Handling Objections", reported)
+
+    def test_reps_under_the_legend_header_are_still_checked(self):
+        """Skipping the header must not skip the block — a typo in a rep name
+        sitting under it is exactly what this check is for."""
+        reported = self._names_reported(
+            self._stations_with_legend("Getting Bill", rep_name="Zed Unknownperson"))
+        self.assertIn("Zed Unknownperson", reported)
+
+    def test_an_ordinary_row_is_not_mistaken_for_the_legend_header(self):
+        """Only a row carrying BOTH stage labels is a header; one of them next
+        to a real name is still a row of names."""
+        rows = [[""] * 95 for _ in range(6)]
+        rows[3][0] = "Pitch"
+        rows[3][1] = "Zed Unknownperson"
+        reported = self._names_reported((rows, []))
+        self.assertIn("Zed Unknownperson", reported)
+
+
 class ReportAnIssueDedupe(unittest.TestCase):
     """The dedupe that decides whether a finding reaches the board's tab.
 
