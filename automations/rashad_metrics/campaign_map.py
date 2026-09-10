@@ -16,9 +16,12 @@ REPS: a campaign an office does not knock returns an empty grid.
 
 Hence two passes, cheap one first:
 
-  1. Every impersonable office, its picker options + their invD2DClientIds.
-     One impersonation and one page read each. Narrows ~50 offices to the
-     handful with more than one option.
+  1. Every impersonable office, its campaign ids. `disposition_signup.
+     campaign_scan` ALREADY DOES THIS, better — it reads the distinct
+     invD2DClientIds off an unpinned p=89's own links, and its 2026-09-03 run
+     covers 70 offices. So pass 1 defaults to reading that report off disk
+     rather than re-walking the org: --from-scan is the normal way in, and the
+     live walk is the fallback for when no scan is on hand.
   2. Only those: pin each id and read the Disposition grid — how many reps
      came back, and which shape. An office is MULTI-CAMPAIGN when two or more
      of its ids return reps.
@@ -33,9 +36,9 @@ SERVER session and every process on the box shares it, so this refuses to start
 while a scheduled report is using ownerville, and drops impersonation on the way
 out.
 
-    python -m automations.rashad_metrics.campaign_map --pass1-only
+    python -m automations.rashad_metrics.campaign_map --from-scan
     python -m automations.rashad_metrics.campaign_map --office "Carlos Hidalgo"
-    python -m automations.rashad_metrics.campaign_map --headed
+    python -m automations.rashad_metrics.campaign_map --pass1-only   # re-walk
 """
 from __future__ import annotations
 
@@ -84,6 +87,36 @@ def _office_access_names(page) -> "list[str]":
             ".map(s => s.trim()).filter(Boolean)") or []
     except Exception:  # noqa: BLE001
         return []
+
+
+def latest_scan() -> "tuple[Path | None, dict]":
+    """({name: [{label,id}]}) from the newest disposition-campaign-scan JSON.
+
+    Reusing it is the point: that scan reads an office's campaigns off the
+    UNPINNED p=89 links, which is a sounder read than opening the dropdown,
+    and re-deriving it costs 30-45 minutes of the box's one ownerville session.
+    """
+    scans = sorted(OUT_DIR.glob("disposition-campaign-scan-*.json"))
+    if not scans:
+        return None, {}
+    rows = json.loads(scans[-1].read_text(encoding="utf-8"))
+    if isinstance(rows, dict):
+        rows = list(rows.get("offices", rows).values())
+    out = {}
+    for r in rows or []:
+        name = str(r.get("name") or "").strip()
+        opts = [{"label": str(c.get("label") or "").strip() or f"id {c['id']}",
+                 "id": str(c.get("id"))}
+                for c in (r.get("campaigns") or []) if c.get("id")]
+        if name:
+            out[name] = opts
+    return scans[-1], out
+
+
+# An office whose links carry this many ids is not an ICD running that many
+# campaigns — it is an account with broad access (Sharon Miller reads 29).
+# Probing each one would cost an hour and answer a question nobody asked.
+BROAD_ACCESS_IDS = 10
 
 
 def _picker_options(page) -> "list[dict]":
@@ -159,7 +192,8 @@ def _probe_days(count: int) -> "list[dt.date]":
 
 
 def sweep(offices: "list[str]", *, headless: bool = True,
-          pass1_only: bool = False, days: int = 3) -> dict:
+          pass1_only: bool = False, days: int = 3,
+          seeded: "dict | None" = None) -> dict:
     from automations.focus_office_att.aliases import load_aliases
     from automations.focus_office_att.run_all_owners import (
         _exit_impersonation, _find_owner_and_impersonate,
@@ -171,6 +205,11 @@ def sweep(offices: "list[str]", *, headless: bool = True,
     probe = _probe_days(days)
     aliases = load_aliases()
     with ownerville_session(headless=headless, verbose=False) as page:
+        if seeded is not None:
+            # Pass 1 came off disk. Only the offices with something to
+            # disambiguate need a session at all.
+            offices = offices or [n for n, o in seeded.items()
+                                  if 1 < len(o) <= BROAD_ACCESS_IDS]
         if not offices:
             _navigate_to_office_access(page)
             offices = _office_access_names(page)
@@ -194,8 +233,9 @@ def sweep(offices: "list[str]", *, headless: bool = True,
                 rec["note"] = f"not reachable — {reason}"
                 continue
 
-            rec["options"] = _picker_options(page)
-            _log(f"    picker: {[o['label'] for o in rec['options']] or 'none'}")
+            rec["options"] = (seeded or {}).get(name) or _picker_options(page)
+            _log(f"    campaigns: "
+                 f"{[o['label'] for o in rec['options']] or 'none'}")
             if pass1_only or len(rec["options"]) < 2:
                 continue
 
@@ -255,6 +295,12 @@ def main() -> int:
     ap.add_argument("--office", action="append", default=[],
                     help="probe only this office (repeatable). Default: every "
                          "office this login can impersonate.")
+    ap.add_argument("--from-scan", action="store_true",
+                    help="take pass 1 from the newest "
+                         "output/disposition-campaign-scan-*.json instead of "
+                         "re-walking the org — that scan already answers it, "
+                         "and re-deriving costs 30-45 min of the box's one "
+                         "ownerville session")
     ap.add_argument("--pass1-only", action="store_true",
                     help="read pickers only — no per-campaign grid reads. "
                          "Much faster, and over-reports (Isaiah's picker "
@@ -280,8 +326,26 @@ def main() -> int:
              "know they're not really running.")
         return 0
 
+    seeded = None
+    if a.from_scan:
+        path, seeded = latest_scan()
+        if not seeded:
+            _log("no disposition-campaign-scan-*.json under output/ — run "
+                 "`lucy campaign_scan` first, or drop --from-scan to walk "
+                 "the org live.")
+            return 0
+        cands = [n for n, o in seeded.items() if 1 < len(o) <= BROAD_ACCESS_IDS]
+        broad = [n for n, o in seeded.items() if len(o) > BROAD_ACCESS_IDS]
+        _log(f"pass 1 from {path.name}: {len(seeded)} office(s), "
+             f"{len(cands)} to probe — {', '.join(cands)}")
+        if broad:
+            # SAID OUT LOUD, not silently dropped: a skipped office looks
+            # exactly like an office that came back single-campaign.
+            _log(f"skipped as broad-access (>{BROAD_ACCESS_IDS} ids, not an "
+                 f"ICD's own campaigns): {', '.join(broad)}")
+
     findings = sweep(a.office, headless=not a.headed,
-                     pass1_only=a.pass1_only, days=a.days)
+                     pass1_only=a.pass1_only, days=a.days, seeded=seeded)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / f"campaign-map-{dt.date.today().isoformat()}.json"
