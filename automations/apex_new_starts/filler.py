@@ -967,10 +967,10 @@ _JS = r"""
    var tell=function(m){ document.getElementById('ansout').innerHTML=m; };
    var fb=document.getElementById('ansfind');
    if(fb) fb.onclick=function(e){ e.preventDefault(); findEveryone(tell); };
-   /* Do not ASK. If people are missing and this page has the roster's filter
-      row, go and find them -- being offered a chore is barely better than
-      doing it (Megan, 2026-09-09). The link stays for a retry. */
-   if(lack&&filterBoxes()) findEveryone(tell);
+   /* The lookup used to start the moment the panel opened, which meant
+      watching it grind through 23 surnames before you could do anything.
+      It is the first step of the RUN now: fill the form, then it goes
+      (Megan, 2026-09-10). The link is still here to do it early on purpose. */
  }
  document.getElementById('ansrun').onclick=async function(){
    /* One form for the whole week, then one pass. The alternative -- filling
@@ -1018,6 +1018,11 @@ _JS = r"""
      w.remove();
      var log=[], out=document.getElementById('ansout');
      function say(m){ log.push(m); out.innerHTML=log.slice(-9).join('<br>'); }
+     /* Find everyone FIRST, now that the form is out of the way. */
+     var need=0;
+     for(j=0;j<D.length;j++){ if(!idFor(D[j])) need++; }
+     if(need&&filterBoxes()){ say('Finding everyone on the Pending list…');
+       await findEveryone(say); }
      for(j=I;j<D.length;j++){
        say('<b>'+D[j].name+'</b> ('+(j+1)+' of '+D.length+')…');
        var ok=await runPerson(D[j],say);

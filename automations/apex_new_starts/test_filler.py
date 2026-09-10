@@ -1164,8 +1164,7 @@ def test_it_looks_everyone_up_itself(page, tmp_path):
     people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
               {"name": "Cristian Amaya Vega", "find": "Amaya Vega", "pages": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
-    # the lookup now starts on its own, so the "still not found" line is
-    # already being replaced by the time we could assert on it
+    page.locator("#ansfind").click()          # the run does this itself
     page.wait_for_function(
         "() => document.getElementById('ansout').innerText.includes('found')"
         " && !document.getElementById('ansout').innerText.includes('not found')",
@@ -1178,9 +1177,10 @@ def test_it_looks_everyone_up_itself(page, tmp_path):
     assert page.locator("#lf").input_value() == "", "the filter is put back"
 
 
-def test_it_looks_them_up_without_being_asked(page, tmp_path):
-    """Being offered a chore is barely better than doing it. If people are
-    missing and the roster's filter row is on screen, it just goes."""
+def test_the_lookup_waits_until_the_run_starts(page, tmp_path):
+    """It used to start the moment the panel opened, which meant watching it
+    grind through 23 surnames before you could do anything. The form comes
+    first; finding people is the first step of the RUN (Megan, 2026-09-10)."""
     f = tmp_path / "roster.html"
     f.write_text(ROSTER_WITH_FILTER)
     page.goto(f.as_uri())
@@ -1191,13 +1191,14 @@ def test_it_looks_them_up_without_being_asked(page, tmp_path):
               {"name": "Cristian Amaya Vega", "find": "Amaya Vega", "pages": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
 
-    # no click on anything -- it starts on its own
-    page.wait_for_function(
-        "() => document.getElementById('ansout').innerText.includes('All 2 found')",
-        timeout=20000)
+    page.wait_for_timeout(1500)
+    assert "still not found" in page.locator("#ansout").inner_text()
+    # reading rows already on screen is instant and still happens; what must
+    # NOT have happened is the per-person surname search
     stored = page.evaluate(
-        "() => JSON.parse(localStorage.getItem('apexNewStarts.WE 9.13.ids'))")
-    assert stored["aundre browder"] == "2816109"
+        "() => JSON.parse(localStorage.getItem('apexNewStarts.WE 9.13.ids')||'{}')")
+    assert "aundre browder" not in stored
+    assert "cristian amaya vega" not in stored
 
 
 ROSTER_NO_LINKS = """
@@ -1281,6 +1282,7 @@ def test_it_names_who_it_could_not_find_and_offers_a_retry(page, tmp_path):
               {"name": "Nobody Here", "find": "Here", "pages": {}},
               {"name": "Also Missing", "find": "Missing", "pages": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
+    page.locator("#ansfind").click()
     page.wait_for_function(
         "() => document.getElementById('ansout').innerText.includes('Pending tab')",
         timeout=25000)
