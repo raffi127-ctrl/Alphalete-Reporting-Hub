@@ -717,7 +717,12 @@ def main(argv=None) -> int:
                            allow_incomplete=args.allow_incomplete)
         if n:
             print(f"\n✗ {n} captain(s) not sent.")
-            return 1
+            # THE COUNT, not a flat 1. review_gate reads this exit code as the
+            # number of captains that failed and puts it straight in the Slack
+            # line; a flat 1 made a block where the digest guard refused
+            # EVERYTHING announce itself as "1 failure(s)", which reads as
+            # almost fine. It was zero delivered (2026-09-10).
+            return n
         print("\n=== done ===")
         return 0
 
@@ -831,6 +836,20 @@ def main(argv=None) -> int:
             review_index.build_index(today)
         except Exception as e:
             print(f"  ⚠ review index not written ({type(e).__name__}: {e})")
+        # A rebuild that lands AFTER the links are posted invalidates the PDFs
+        # the approvers are looking at, and the send refuses every block whose
+        # .eml no longer match. That is the whole of what went wrong on
+        # 2026-07-31 and 2026-09-10, and both times the missing piece was a
+        # human remembering `review_gate --refresh`. Do it here instead.
+        # Bookkeeping, so it never fails the build it is attached to.
+        try:
+            from automations.captainship_drafts import review_gate
+            review_gate.refresh_stale_blocks(
+                today, [c.key for c in selected],
+                logfn=lambda m: print(m, flush=True))
+        except Exception as e:
+            print(f"  ⚠ review PDFs not re-sealed ({type(e).__name__}: {e}) — "
+                  f"run `review_gate.py --refresh` by hand before approving")
 
     if failures:
         print(f"\n✗ {failures} captain(s) failed.")

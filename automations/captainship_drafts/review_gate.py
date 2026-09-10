@@ -56,6 +56,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -842,8 +843,14 @@ def mark_block_sent(parent: dict, block: "config.Block", failures: int,
     went = ", ".join(names.get(k, k) for k in sorted(sent))
     n_all = len(block.captains)
     if failures:
-        head = (f"⚠️ *{block.label}* — sent {len(sent)} of {n_all} with "
-                f"{failures} failure(s); see the run log. Nothing will retry on "
+        # DELIVERED, not attempted. `sent` is who this run TRIED; the only
+        # number that answers "did they get it?" is that minus the failures.
+        # "sent 3 of 3 with 1 failure(s)" for a block the digest guard refused
+        # outright read as almost-fine and cost a morning (2026-09-10) — it was
+        # 0 of 3, and the count itself was a flat exit code back then too.
+        delivered = max(len(sent) - failures, 0)
+        head = (f"⚠️ *{block.label}* — {delivered} of {n_all} delivered, "
+                f"{failures} failed; see the run log. Nothing will retry on "
                 f"its own.")
     elif len(sent) == n_all:
         head = (f"✅ *{block.label}* sent — {went}'s reports are on their way "
@@ -984,6 +991,101 @@ def scope_today(today: dt.date, *, enabled: bool = True
     if ids is None:
         return None, "no hay estado del dia: no se puede acotar la falla"
     return _scope.held_captains(ids, today)
+
+
+SEND_AGENT_PLIST = "com.alphalete.captainship-review.plist"
+
+
+def _is_the_sending_machine() -> bool:
+    """Is this the box whose .eml actually go out?
+
+    The digest guard compares the sealed PDF against the previews of THE
+    MACHINE THAT MAILS, so only that machine may re-seal. The witness is the
+    agent that does the mailing: `com.alphalete.captainship-review` is
+    installed on the sender and nowhere else — when the cycle moved off the
+    mini on 2026-08-25 its copy was stashed as `.plist.disabled`, so the
+    check follows the move on its own instead of hardcoding a hostname.
+    Windows has no LaunchAgents at all, which is the right answer there: it
+    never sends.
+    """
+    la = Path(os.path.expanduser("~/Library/LaunchAgents")) / SEND_AGENT_PLIST
+    return la.exists()
+
+
+def refresh_stale_blocks(today: dt.date, keys: Sequence[str], *,
+                         channel: Optional[str] = None,
+                         logfn=print) -> List[str]:
+    """Re-seal the review PDF of every block whose previews were just rebuilt.
+
+    Rebuilding the drafts and refreshing the PDF are two steps, and the second
+    is the one that gets forgotten. It cost the day on 2026-07-31 and again on
+    2026-09-10: a rebuild landed after the links were posted, so every approved
+    block refused to send (the .eml no longer matched the sealed fingerprint)
+    and twelve captains got nothing while Slack said "1 failure(s)". The guard
+    was right both times — what was missing is that nobody forgets a step that
+    runs itself. So the BUILD refreshes, instead of a human remembering to.
+
+    Only touches a block that (a) has captains in this rebuild, (b) already has
+    a link in today's thread, and (c) no longer matches its sealed fingerprint.
+
+    A block whose captains are ALL already mailed is left alone: its PDF is the
+    record of what actually went out, and rewriting it would replace the
+    evidence with something nobody received. Same call Eve made by hand for
+    Chan on 2026-09-03.
+
+    A block that already carries a ✅ gets a line in the thread. The tick was
+    given on the previous PDF, so silently swapping the file underneath it
+    would mean an approval standing for something nobody read — Eve's rule
+    ("si ese día ya tenía ✅, avisame") turned into code. Returns the keys of
+    the blocks it refreshed.
+    """
+    if not _is_the_sending_machine():
+        # Re-sealing from a box that does not mail would stamp the PDF with THIS
+        # machine's previews and leave the sender refusing its own — the
+        # 2026-08-27 failure, but automatic and silent. Say it instead.
+        logfn("  ⚠ the review PDFs still describe the PREVIOUS previews, and "
+              "this machine is not the one that mails them. Rebuild on the "
+              "sending box (Lucy 3) or run `review_gate.py --refresh` there "
+              "before anyone approves.")
+        return []
+    picked = set(keys)
+    parent = _find_post(today, channel)
+    if parent is None:                    # links not up yet: nothing is sealed
+        return []
+    thread = replies(parent, channel)
+    posts = block_posts(today, parent, channel, thread=thread)
+    done = _sent_keys_from(thread)
+    refreshed: List[str] = []
+    for block in config.BLOCKS:
+        if not (set(block.captains) & picked) or block.key not in posts:
+            continue
+        if set(block.captains) <= done:
+            logfn(f"  — {block.key}: already mailed, its PDF stays as sent")
+            continue
+        try:
+            want = reviewed_digest(today, block)
+            have = eml_digest(today, block)
+        except Exception as e:            # never let bookkeeping break a build
+            logfn(f"  ⚠ {block.key}: could not check the reviewed PDF "
+                  f"({type(e).__name__}: {e})")
+            continue
+        if not want or want == have:
+            continue
+        link = upload_pdf(build_pdf(today, block), description=have)
+        refreshed.append(block.key)
+        logfn(f"  ✓ {block.key}: review PDF re-sealed in place ({want} → "
+              f"{have}); the link already in the thread shows the rebuild")
+        who = _approver_of(posts[block.key])
+        if who:
+            # Posted, unlike a hand `--refresh`, and only in this case: the
+            # approval now stands for a file that changed after it was given.
+            _client().chat_postMessage(
+                channel=_channel(channel), thread_ts=parent["ts"],
+                text=(f"⚠️ *{block.label}* was rebuilt after {who[1]} approved "
+                      f"it — the link above now shows the new version. "
+                      f"{_mentions()}, please re-check it; the ✅ already there "
+                      f"was given on the previous PDF."))
+    return refreshed
 
 
 def send_reviewed(today: dt.date, verbose: bool = True,
@@ -1582,7 +1684,11 @@ def main(argv=None) -> int:
             thread = replies(parent, args.channel)
             done = _sent_keys_from(thread)
         if failures:
-            return failures
+            # NEVER 1: deploy/captainship_review.sh reads exit 1 as "still
+            # waiting for a ✅" and answers it by nudging the channel. Now that
+            # run.py returns the real count, a single failed captain would land
+            # on exactly that value and beg for an approval already given.
+            return max(failures, 2)
         # exit 1 while anything is still waiting: that is what makes
         # deploy/captainship_review.sh fire the reminder and keep ticking.
         return 1 if pending else 0
