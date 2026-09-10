@@ -2993,6 +2993,27 @@
       },
       "_note": "Posts to #a-players-b2b ONLY (Carlos 2026-09-02, narrowing the Loom's 'the A players and the B2B chat'); no iMessage ('we dont need a text. slack works'). TWO messages: a HEADER post carrying Carlos's own sentence -- 'Customers who didn't receive wrap up text' -- and the names as a REPLY in that header's thread, grouped by rep (Megan 2026-09-03). The header is top-level, not a reply inside the day's Metrics thread: Slack has no thread inside a thread. THE CHECK IS 'was this customer EVER messaged on that line', not 'did a wrap-up go out' -- Carlos's sentence names the post, it does not narrow the test (Megan corrected that reading 2026-09-03). The message window opens on the sale day and runs to now, so a customer sold at 5:55pm and messaged next morning counts as contacted. Reps are bold text, never @mentions -- no rep -> Slack-id map exists and this workspace has duplicate first names. LOGIN: SaraPlus emails a verification code, filtered to alphaletereporting@gmail.com; the run reads it from that inbox (rc_contact_sync.verify_code) and only accepts mail that arrived AFTER the submit, so Lucy 2 also needs ~/.config/recruiting-report/gmail-app-password."
     },
+    "sp_status_probe": {
+      "on_scheduler": false,
+      "_note": "MANUAL-ONLY, READ-ONLY probe (Carlos 2026-09-10): where do activation/order statuses live on SaraPlus? Toward rebuilding the Activation Report Overview on SaraPlus data -- Tableau lags days, SaraPlus updates almost live. Logs in with CARLOS's B2B SaraPlus login (rc_contact_sync creds + the already-verified .saraplus_b2b_profile, emailed-passcode flow included), opens Detail Reports -> Sales Order History for ONE day (default 7 days back so the Tableau order log has caught up for comparison), Customer Type Both, and dumps: the full Reporting Hub tab strip, ALL ~146 grid headers with status-candidate flags, the first rows in full, every row's candidate-status values keyed by Order ID/Customer/Phone (joinable against the 'Lucy At&t Data' tab on the mini), the pager, the first row's clickables, and the View Customer page's text. Writes ONLY control-sheet diag tabs: 'SP Status Diag' + 'SP Grid Shot'/'SP Cust Shot' (base64 PNGs, decode on the mini). SaraPlus itself is never written; the live activation report is untouched. `lucy rerun sp_status_probe` | `-- 2026-09-03` | `-- --rows 10` | `-- --tab-arg 3:1` (open a SIBLING Detail Reports tab, e.g. Pending Orders, and dump its grids generically -- no redeploy).",
+      "display_name": "SaraPlus status probe (read-only)",
+      "source_type": "local",
+      "_source_note": "'local' on purpose: it drives patchright's own bundled Chromium on rc_contact_sync's dedicated .saraplus_b2b_profile, so the shared real-Chrome guard ('appstream'/'tableau' rerun path) has nothing to protect and would only kill someone's open Chrome for no reason.",
+      "data_sources": [],
+      "command": [
+        "automations.rc_contact_sync.status_probe"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20,
+      "machine": "Lucy 2"
+    },
     "weekly_knock_dispositions": {
       "order": 36.5,
       "_order_position_note": "Directly AFTER the per-office Daily Metrics block (27-36.2) and NOT last (Megan 2026-08-22): every office's Sunday Metrics thread then already exists with the header its own runner writes (isaiah's NDS section list is not the default checklist — if this report ran earlier, its find-or-create would plant the wrong header and the office runner would reuse it). Chan's 'Knocks for other offices' thread (11) is up long before. Only the org boards (40+) start later, absorbing the 45-75m fleet runtime.",
