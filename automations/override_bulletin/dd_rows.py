@@ -40,6 +40,9 @@ COMPANY_TO_OWNER = {
     # exact, from Credico's "Select Office" dropdown (office id in the comment)
     "abyl acquisition group inc": "Abel Draper",        # number:2041
     "phoenix acquisition group inc": "Jahvid Thompson",  # number:2062
+    # the Fee Reports tree spells them shorter than the dropdown does —
+    # these are the exact node texts credico_fetch walks (2026-09-10)
+    "abyl acquisition grp": "Abel Draper",
     # looser spellings so either form resolves
     "able acquisitions": "Abel Draper",
     "abyl acquisitions": "Abel Draper",

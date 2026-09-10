@@ -4041,7 +4041,11 @@
       "depends_on": [
         "captainship_drafts"
       ],
-      "verify": null
+      "verify": {
+        "type": "manifest",
+        "report_id": "captainship_drafts_review"
+      },
+      "_verify_note": "Wired 2026-09-10 (Eve). It was null, and with no manifest either that made every delivery_check verdict UNKNOWN: the thread said 'ran clean, but nothing can confirm it DELIVERED' and stayed open forever - one sat open all day on 2026-09-10 with all six links posted and every captain already served. NOT close_on: exit_zero - what this report delivers is six links in a thread anybody can open, so it is checked like everything else. review_gate.record_review_posted writes the manifest by READING THE THREAD BACK (block links present vs config.BLOCKS), from both --post and --ensure-posted, so a slot that finds the links already up records the same clean answer as the slot that posted them."
     },
     "install_captainship_review_post_agent": {
       "on_scheduler": false,
@@ -8489,7 +8493,9 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "credico_fetch",
+        "_note": "Wired 2026-09-10. The download IS observable — fetch_week files a manifest naming every office node it walked and which one came home — so this is verified, NOT declared close_on: exit_zero. Before this the block said not_configured, delivery_check answered UNKNOWN, and failure-credico_fetch stayed open after the run that fixed it."
       },
       "machine": "Lucy 1",
       "order": 52,

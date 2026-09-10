@@ -548,6 +548,65 @@ def block_posts(today: dt.date, parent: dict,
     return out
 
 
+def record_review_posted(today: dt.date, channel: Optional[str] = None,
+                         parent: Optional[dict] = None,
+                         verbose: bool = True) -> Optional[dict]:
+    """Write the run-manifest that says whether the day's review links ARE UP.
+
+    WHY (Eve 2026-09-10). `delivery_check` will not close a ticket without proof
+    of delivery, and this report had none to give: `verify` was null and it
+    wrote no manifest, so its thread said "ran clean, but nothing can confirm it
+    DELIVERED" and stayed open. On 2026-09-10 one sat open all day with all six
+    links posted and every captain already served.
+
+    NOT `close_on: exit_zero`. That declaration is for a report whose delivery
+    genuinely cannot be seen from outside — a probe, an installer. What this one
+    delivers is the most visible thing in the workspace: six links in a thread
+    anybody can open. So it gets checked like everything else.
+
+    IT READS THE THREAD BACK, never what this run tried. A --post that finds a
+    block already up posts nothing and that block is still delivered; a run that
+    posts four and dies on the fifth has delivered four. That is also what makes
+    it safe to call from every slot of the 07:15 agent — the answer is the state
+    of the day, so it is the same answer each time.
+
+    THE WHOLE DAY IS JUDGED, not the scoped subset: `--post --block nds` must
+    not write a manifest claiming the day was one block long and clean.
+
+    A Slack read that FAILS writes nothing at all. No manifest is UNKNOWN, which
+    holds the ticket open and says so — the safe direction. Claiming a delivery
+    we could not see is the one way this must never fail."""
+    from automations.shared import run_manifest
+    try:
+        if parent is None:
+            parent = _find_post(today, channel)
+        posts = block_posts(today, parent, channel) if parent is not None else {}
+    except Exception as e:  # noqa: BLE001 — no manifest beats a guessed one
+        print("  (could not read the thread back, so no delivery manifest was "
+              "written: {}: {})".format(type(e).__name__, str(e)[:80]),
+              flush=True)
+        return None
+
+    up = [b.key for b in config.BLOCKS if b.key in posts]
+    missing = [b.key for b in config.BLOCKS if b.key not in posts]
+    note = "{} of {} block links up for review".format(
+        len(up), len(config.BLOCKS))
+    # ALERT ONLY ON A CLEAN RUN, and that reads backwards until you see what
+    # each branch does. Clean (`failed=[]`) is the branch that CLOSES this
+    # report's open thread — the whole point of writing this. A missing block
+    # already has its own voice (_alert_deadline_failure, and --close-day names
+    # it), so letting the manifest ping too would be a second witness to one
+    # miss: the duplicate-post problem incident_thread exists to stop.
+    run_manifest.write_manifest(
+        REPORT_ID, failed=missing, succeeded=up, kind="block",
+        retry_args=["--ensure-posted"], note=note, alert=not missing)
+    if verbose:
+        print("  delivery manifest: {}{}".format(
+            note, "" if not missing else " — missing: {}".format(
+                ", ".join(missing))), flush=True)
+    return {"succeeded": up, "failed": missing, "note": note}
+
+
 def post_block(link: str, today: dt.date, block: "config.Block", parent: dict,
                channel: Optional[str] = None, verbose: bool = True) -> str:
     """Put ONE block's review link in the day's thread. Returns its ts.
@@ -1300,6 +1359,10 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
         # here or it never closes at all.
         _close_deadline_incident(
             today, "*Captainship Reports* — every block is up for review")
+        # The links are up — that IS the delivery, whoever posted them. Without
+        # this, a morning where the 07:15 slot posted everything and this tick
+        # found nothing to do would leave the day with no manifest at all.
+        record_review_posted(today, channel, parent, verbose=verbose)
         return 0
 
     failures: List[str] = []
@@ -1382,6 +1445,7 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
     else:
         _close_deadline_incident(
             today, "*Captainship Reports* — every block is up for review")
+    record_review_posted(today, channel, parent, verbose=verbose)
     return 1 if failures else 0
 
 
@@ -1537,10 +1601,16 @@ def main(argv=None) -> int:
         return 0
     if args.post:
         parent = ensure_parent(today, args.channel)
-        for block in blocks:
-            post_block(upload_pdf(build_pdf(today, block),
-                                  description=eml_digest(today, block)),
-                       today, block, parent, args.channel)
+        try:
+            for block in blocks:
+                post_block(upload_pdf(build_pdf(today, block),
+                                      description=eml_digest(today, block)),
+                           today, block, parent, args.channel)
+        finally:
+            # In a finally: a run that dies on the fifth block still delivered
+            # four, and the manifest is how anything else finds that out. It
+            # reads the thread, so it records what is actually up either way.
+            record_review_posted(today, args.channel, parent)
         return 0
     if args.remind:
         return 0 if remind(today, args.after_hours, args.channel) else 1
