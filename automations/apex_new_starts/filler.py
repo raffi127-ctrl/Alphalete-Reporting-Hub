@@ -946,6 +946,26 @@ _JS = r"""
    for(i=0;i<b.length;i++){ if(norm(b[i].textContent)==='save'&&vis(b[i])) return b[i]; }
    return null;
  }
+ function shownValue(el){
+   var w=kw(el);
+   if(w&&w.text){ try{ return norm(String(w.text())); }catch(e){} }
+   if(w&&w.value){ try{ return norm(String(w.value())); }catch(e){} }
+   if(el.tagName==='SELECT'&&el.selectedIndex>=0)
+     return norm(el.options[el.selectedIndex].text);
+   return norm(el.value!==undefined&&el.value!==null?el.value:el.textContent);
+ }
+ function alreadyRight(p,which){
+   /* Hands back the captions that do NOT already hold what we wanted. */
+   var set=(p.pages||{})[which]||{}, k, off=[];
+   for(k in set){
+     var el=fieldFor(k);
+     if(!el){ off.push(k); continue; }
+     var want=norm(String(set[k])), got=shownValue(el);
+     if(!want) continue;
+     if(got.indexOf(want)<0&&want.indexOf(got)<0) off.push(k);
+   }
+   return off;
+ }
  async function saveHere(){
    /* Apex reports a failed save with window.alert, which would stop a run
       dead behind a modal. Catch the text instead and hand it back. */
@@ -1035,6 +1055,7 @@ _JS = r"""
  /* exposed so the way in can be tested, and so a stuck run can be poked at
     from the console without re-reading this whole script */
  window.__ansOpen=openPerson;
+ window.__ansAlreadyRight=alreadyRight;
  async function runPerson(p,say){
    var id=idFor(p);
    if(!id){ say(p.name+': finding them…'); id=await openPerson(p); }
@@ -1050,6 +1071,19 @@ _JS = r"""
      await sleep(800);
      var r=await doPage(p,tabs[t][0]);
      var err=await saveHere();
+     if(err==='no Save button on this page'){
+       /* Apex maintains the employment record through TeleMapper for these
+          people and offers no Save at all. Stopping the whole week on that is
+          wrong when the page already holds what we wanted -- but moving on
+          without looking would be worse, so look (Megan, 2026-09-10). */
+       var off=alreadyRight(p,tabs[t][0]);
+       if(!off.length){
+         say(p.name+' · '+tabs[t][0]+': already correct, and Apex offers no '+
+             'Save here — moved on');
+         continue;
+       }
+       err='no Save button, and these are not right: '+off.join(', ');
+     }
      if(err){ say(p.name+' · '+tabs[t][0]+': '+err+
                   (r.miss.length?' — missed '+r.miss.join(', '):'')); return false; }
      say(p.name+' · '+tabs[t][0]+': saved'+
@@ -1072,8 +1106,8 @@ _JS = r"""
     them on every screen the button does not recognise, which took away the
     "Just this page" escape hatch exactly where somebody would need it. */
  var RUNNING=false;
- box.innerHTML='<div id="anshead" style="font-weight:700;font-size:16px"></div>'+
-   '<div id="anssub" style="color:#555;margin:2px 0 10px"></div>'+
+ box.innerHTML='<div id="anshd" style="font-weight:700;font-size:16px"></div>'+
+   '<div id="ansub" style="color:#555;margin:2px 0 10px"></div>'+
    (gnd?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Gender <span style="color:#b00">(required, not on the board)</span></div>'+
         '<select id="ansgender" style="width:100%%;padding:6px;font-size:15px">'+
         '<option value="">Pick one</option><option>Female</option><option>Male</option></select></div>':'')+
@@ -1084,13 +1118,13 @@ _JS = r"""
    (nav?'<div style="margin-bottom:8px;font-size:12px">'+
         '<a href="#" id="ansg1">1 Employment</a> · <a href="#" id="ansg2">2 Profile</a>'+
         ' · <a href="#" id="ansg3">3 Tax</a></div>':
-        '<div id="anshint" style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
+        '<div id="anshnt" style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
         '<b>Pending</b> list and it will learn where everyone is, then jump you straight to them.</div>')+
    '<button id="ansrun" style="background:#0F766E;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:14px;font-weight:700;cursor:pointer;width:100%%;margin-bottom:6px">Run the whole week</button>'+
    /* Both of these are about ONE person, so they only belong on that person's
       record. On the roster they read as clutter you have to think about
       (Megan, 2026-09-10). */
-   '<span id="ansper">'+
+   '<span id="anspr">'+
    '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved \u2192 next</button></span>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
@@ -1113,7 +1147,7 @@ _JS = r"""
    if(window.__ansWas&&window.__ansWas.path===path) here=window.__ansWas.here||here;
    window.__ansWas={path:path,here:here};
    var list=(here||RUNNING);
-   var h=document.getElementById('anshead'); if(!h) return;
+   var h=document.getElementById('anshd'); if(!h) return;
    var head=RUNNING? 'Running the week \u00b7 %(week)s'
      : (here? 'Ready to run \u00b7 %(week)s' : p.name);
    if(h.textContent!==head) h.textContent=head;
@@ -1123,12 +1157,12 @@ _JS = r"""
    var sub=(list
      ? D.length+' new starts'+(I? ' \u00b7 '+I+' done already':'')
      : (I+1)+' of '+D.length+' \u00b7 %(week)s')+' \u00b7 built '+BUILD;
-   var sb=document.getElementById('anssub');
+   var sb=document.getElementById('ansub');
    if(sb.textContent!==sub) sb.textContent=sub;
    var want=list?'none':'';
-   var per=document.getElementById('ansper');
+   var per=document.getElementById('anspr');
    if(per&&per.style.display!==want) per.style.display=want;
-   var hint=document.getElementById('anshint');
+   var hint=document.getElementById('anshnt');
    if(hint&&hint.style.display!==want) hint.style.display=want;
  }
  refreshChrome();
@@ -1137,6 +1171,11 @@ _JS = r"""
     previous script thought and what this one does, twice a second
     (Megan, 2026-09-10: "it's like blinking now with when it was built").
     One ticker, and the previous one goes. */
+ /* clearInterval only reaches tickers this code started. A script loaded
+    before that existed keeps its own going until the page reloads -- which is
+    why the captions kept alternating even after the fix. So the panel's parts
+    are named afresh: the old ticker looks for the names it knew, finds
+    nothing, and gives up on its own. */
  if(window.__ansTick) clearInterval(window.__ansTick);
  window.__ansTick=setInterval(refreshChrome,700);
  if(nav){

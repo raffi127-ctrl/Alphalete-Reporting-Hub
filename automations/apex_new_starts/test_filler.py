@@ -1421,15 +1421,15 @@ def test_the_roster_panel_offers_only_the_run(page, tmp_path):
     assert page.locator("#ansrun").count() == 1
     assert not page.locator("#ansfill").is_visible()
     assert not page.locator("#ansnext").is_visible()
-    assert "Ready to run" in page.locator("#anshead").inner_text()
-    assert "Aundre" not in page.locator("#anshead").inner_text()
+    assert "Ready to run" in page.locator("#anshd").inner_text()
+    assert "Aundre" not in page.locator("#anshd").inner_text()
 
     person = tmp_path / "user-profile.html"; person.write_text("<h1>profile</h1>")
     page.goto(person.as_uri())
     page.evaluate(js)
     assert page.locator("#ansfill").is_visible(), "still there on a record"
     assert page.locator("#ansnext").is_visible()
-    assert "Aundre Browder" in page.locator("#anshead").inner_text()
+    assert "Aundre Browder" in page.locator("#anshd").inner_text()
 
 
 def test_the_header_stops_naming_somebody_once_the_screen_moves(page, tmp_path):
@@ -1442,7 +1442,7 @@ def test_the_header_stops_naming_somebody_once_the_screen_moves(page, tmp_path):
     page.goto(person.as_uri())
     page.evaluate("() => localStorage.clear()")
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
-    assert "Aundre Browder" in page.locator("#anshead").inner_text()
+    assert "Aundre Browder" in page.locator("#anshd").inner_text()
 
     # the run moves back to the list -- in the real app without a reload
     page.evaluate("""() => {
@@ -1454,9 +1454,9 @@ def test_the_header_stops_naming_somebody_once_the_screen_moves(page, tmp_path):
       document.body.appendChild(t);
     }""")
     page.wait_for_function(
-        "() => document.getElementById('anshead').innerText.includes('Ready')",
+        "() => document.getElementById('anshd').innerText.includes('Ready')",
         timeout=5000)
-    assert "Aundre" not in page.locator("#anshead").inner_text()
+    assert "Aundre" not in page.locator("#anshd").inner_text()
     assert not page.locator("#ansfill").is_visible()
 
 
@@ -1947,3 +1947,32 @@ def test_the_week_runs_straight_through(page, tmp_path):
     js = filler.build_js([{"name": "Rosa Capel", "find": "Capel", "pages": {}}],
                          "WE 9.13")
     assert "Continue with the remaining" not in js
+
+
+def test_a_page_apex_will_not_let_anyone_save(page, tmp_path):
+    """Apex maintains the employment record through TeleMapper for some people
+    and offers no Save button at all. Stopping the whole week on that is wrong
+    when the page already holds what we wanted -- but moving on without
+    looking would be worse (Megan, 2026-09-10: "it's not moving to page 2")."""
+    js = filler.build_js(
+        [{"name": "Rosa Capel", "find": "Capel",
+          "pages": {"employment": {"Position": "Sales Rep"}}}], "WE 9.13")
+    f = tmp_path / "employment-record.html"
+    f.write_text("<h1>Employment</h1><label for='p'>Position</label>"
+                 "<select id='p'><option>Sales Rep</option></select>")
+    page.goto(f.as_uri())
+    page.evaluate(js[len("javascript:"):])
+
+    ok = page.evaluate("""async () => {
+      const p = {name:'Rosa Capel', find:'Capel',
+                 pages:{employment:{Position:'Sales Rep'}}};
+      return window.__ansAlreadyRight(p, 'employment');
+    }""")
+    assert ok == [], "the page already holds it, so nothing is off"
+
+    page.evaluate("() => { document.getElementById('p').innerHTML "
+                  "= '<option>Office Admin</option>'; }")
+    off = page.evaluate("""async () => window.__ansAlreadyRight(
+      {name:'Rosa Capel', pages:{employment:{Position:'Sales Rep'}}},
+      'employment')""")
+    assert off == ["Position"], "and it says which one is wrong"
