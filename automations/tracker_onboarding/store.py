@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from automations.shared.sheets_retry import open_sheet
 from automations.tracker_onboarding.schema import TrackerRecord
 
 MASTER_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
@@ -54,7 +55,9 @@ def get_client():
 def _ws():
     if _CLIENT is None:
         return None
-    ss = _CLIENT.open_by_key(MASTER_SHEET_ID)
+    # Retried: this workbook is read by every Lucy job at once, so a bare
+    # open_by_key comes back 429 often enough to break a form. See sheets_retry.
+    ss = open_sheet(_CLIENT, MASTER_SHEET_ID)
     try:
         return ss.worksheet(ONBOARDING_TAB)
     except _WorksheetNotFound:              # a 429 is not a missing tab

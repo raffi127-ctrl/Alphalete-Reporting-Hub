@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from automations.shared.sheets_retry import open_sheet
 from automations.office_onboarding.schema import (
     OnboardingRecord, EnrolledReport, ChannelPlan)
 
@@ -72,7 +73,8 @@ def _ws():
     None when no client is injected — callers fall back to local JSON."""
     if _CLIENT is None:
         return None
-    ss = _CLIENT.open_by_key(MASTER_SHEET_ID)
+    # Retried through 429s/5xx — see automations.shared.sheets_retry.
+    ss = open_sheet(_CLIENT, MASTER_SHEET_ID)
     try:
         return ss.worksheet(ONBOARDING_TAB)
     except _WorksheetNotFound:
@@ -141,7 +143,8 @@ def _requests_ws():
     when no client is injected — callers fall back to local JSON."""
     if _CLIENT is None:
         return None
-    ss = _CLIENT.open_by_key(MASTER_SHEET_ID)
+    # Retried through 429s/5xx — see automations.shared.sheets_retry.
+    ss = open_sheet(_CLIENT, MASTER_SHEET_ID)
     try:
         return ss.worksheet(REQUESTS_TAB)
     except _WorksheetNotFound:              # see _ws() — never on a rate limit

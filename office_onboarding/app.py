@@ -197,13 +197,32 @@ def _enqueue_onboard(key: str, machine: str, *, post: bool) -> "tuple":
 
 
 # --------------------------------------------------------------------------
-def _pending_requests() -> "list":
-    """Owner requests still waiting to be finalized (status 'new'), newest first."""
+def _pending_requests() -> "tuple":
+    """(requests still waiting to be finalized, newest first; error sentence).
+
+    The error is RETURNED, never swallowed. Swallowing it made an unreadable
+    master sheet look identical to "nobody has requested anything" — so the
+    ?request=<key> deep link from the Slack ping opened a completely blank form
+    with no hint that anything had gone wrong (Joseph Logan, 2026-09-11).
+    """
     try:
         reqs = store.load_requests(status="new")
+    except Exception as e:                           # noqa: BLE001
+        from automations.shared.sheets_retry import explain
+        return [], explain(e)
+    return list(reversed(reqs)), ""
+
+
+def _request_any_status(key: str) -> "dict | None":
+    """A deep-linked request whatever its status — so "you already finalized
+    this one" can be said out loud instead of showing an empty picker."""
+    try:
+        for d in store.load_requests():
+            if d.get("key") == key:
+                return d
     except Exception:                                # noqa: BLE001
-        return []
-    return list(reversed(reqs))
+        pass
+    return None
 
 
 def _seed_from_request(d: dict) -> None:
@@ -268,7 +287,7 @@ def form_view() -> None:
     # Owners submit a partial request (program + metrics + who/where) on the
     # request form; pick one here to pre-fill everything they gave. You then just
     # create their Google Sheet and finalize.
-    reqs = _pending_requests()
+    reqs, req_err = _pending_requests()
     # Deep link from the corrections ping: ?request=<key> opens straight onto that
     # owner's request, pre-filled. Seed once (guarded by _prefilled_idx).
     try:
@@ -282,6 +301,25 @@ def form_view() -> None:
                 st.session_state["_prefilled_idx"] = _qp_req
                 st.session_state["_req_pick"] = _j + 1
                 st.rerun()
+    _seeded = st.session_state.get("_prefilled_idx") == _qp_req
+    # Followed the ping's link and did NOT land on a pre-filled form? Say why.
+    # A blank form is the one thing this must never silently be.
+    if _qp_req and not _seeded:
+        if req_err:
+            st.error("⚠️ Couldn't open **{}**'s request — {}".format(
+                _qp_req, req_err))
+        else:
+            _any = _request_any_status(_qp_req)
+            if _any and (_any.get("_status") or "") != "new":
+                st.info("**{}**'s request is already finalized (status: {}). "
+                        "Nothing to fill in — it's wired.".format(
+                            _qp_req, _any.get("_status")))
+            else:
+                st.warning("⚠️ No request saved under **{}**. Check the link, "
+                           "or have the owner re-submit the sign-up form."
+                           .format(_qp_req))
+    if req_err and not _qp_req:
+        st.error("⚠️ {}".format(req_err))
     if reqs:
         st.divider()
         st.markdown("### ⬇️ Start from an owner request")

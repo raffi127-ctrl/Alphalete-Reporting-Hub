@@ -444,7 +444,17 @@ def confirm_view(key: str) -> None:
     ui.render_header(f"Confirm tracker sign-up — `{key}`")
     if not _gate():
         return
-    d = store.load_one(key)
+    # The master sheet is read by every Lucy job at once; a 429 here is a wait,
+    # not an outage. store retries it — if it still fails, say so in a sentence
+    # instead of letting Streamlit print a redacted traceback (2026-09-11).
+    try:
+        d = store.load_one(key)
+    except Exception as e:                           # noqa: BLE001
+        from automations.shared.sheets_retry import explain
+        st.error(f"⚠️ Couldn't load **{key}**'s sign-up — {explain(e)}")
+        if st.button("🔄 Try again"):
+            st.rerun()
+        return
     if not d:
         st.error(f"No request found for {key!r}.")
         return
