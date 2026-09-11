@@ -662,7 +662,11 @@ RECIPIENTS: dict = {
         # walks back in (the Jeremiah Minor pattern).
         "maudmiller4@gmail.com",
         "nickopereira98@gmail.com", "dubalenoah@gmail.com",
-        "raffi127@gmail.com", "taylor.4597@gmail.com",
+        "raffi127@gmail.com",
+        # 2026-09-11 (Eve): Taylor Nickerson's correct address. Was
+        # taylor.4597@gmail.com; the contact in "Colten's Captainship" was fixed
+        # the same day.
+        "legacy.mgmtteam@gmail.com",
     ],
     "jairo": [
         "coltenwrightsc@gmail.com", "drewtepp2735@gmail.com",
