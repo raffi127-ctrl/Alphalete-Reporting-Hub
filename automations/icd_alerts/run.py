@@ -133,6 +133,10 @@ def main(argv=None) -> int:
     ap.add_argument("--headful", action="store_true",
                     help="show the browser (for watching a passcode challenge)")
     ap.add_argument("--day", help="YYYY-MM-DD (default: today, local)")
+    ap.add_argument("--if-due", action="store_true",
+                    help="with --once: do nothing outside selling hours. This "
+                         "is what the scheduled run uses, so the schedule can "
+                         "stay simple and the decision lives in one place.")
     args = ap.parse_args(argv)
 
     day = dt.date.fromisoformat(args.day) if args.day else C.today()
@@ -143,6 +147,10 @@ def main(argv=None) -> int:
     if args.check:
         return cmd_check(headless)
     if args.once:
+        if args.if_due and not C.in_selling_window():
+            # Quiet on purpose. This fires every 15 minutes on somebody's
+            # laptop; a line per skip would be the only thing in the log.
+            return 0
         return cmd_once(headless, args.dry_run, day)
     ap.print_help()
     return 2

@@ -18,6 +18,15 @@ from __future__ import annotations
 from typing import Dict, List, NamedTuple, Optional
 
 
+# The Apps Script web app every laptop hands its totals to. One url for every
+# office -- the KEY is what identifies and authorises, not the address, so
+# there is nothing per-office to get wrong here. Deployed from
+# resources/icd-alerts-relay.gs against the 'Lucy Access App' workbook.
+RELAY_URL = ("https://script.google.com/macros/s/"
+             "AKfycbwl4YR_SsJyWWRFV3cEQrNGq3vzqFDMUBGm4v692ZBJnfHVFMvnTfFm9vxG_r5cE4Wn"
+             "/exec")
+
+
 class AlertOffice(NamedTuple):
     key: str                  # matches office_metrics.offices, and the relay
     owner: str

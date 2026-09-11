@@ -97,6 +97,33 @@ def save_install(office_key: str, owner: str) -> Path:
     return INSTALL_PATH
 
 
+# --- when this office is worth reading ------------------------------------
+# THE LAPTOP'S OWN CLOCK IS THE RIGHT ONE. An ICD's machine sits in their
+# office, so local time IS office time -- unlike OwnerVille, whose timezone
+# field describes the LOGIN and not the office. No timezone has to be
+# configured, and nobody has to be asked which one they are in.
+#
+# SaraPlus is cumulative within a day, so a late start loses nothing: the first
+# sweep of the day reads the whole day so far. That makes a narrow window cheap
+# and a wide one wasteful -- the Alphalete sweep spent 36 logins before anyone
+# knocked a door until its start moved to 10:00.
+DAY_START_HHMM = (10, 0)
+DAY_END_HHMM = (21, 30)
+SATURDAY_END_HHMM = (17, 0)
+SELLING_DAYS = (0, 1, 2, 3, 4, 5)      # Mon-Sat; Sunday is not a selling day
+
+
+def in_selling_window(now: Optional[dt.datetime] = None) -> bool:
+    now = now or dt.datetime.now()
+    if now.weekday() not in SELLING_DAYS:
+        return False
+    start = now.replace(hour=DAY_START_HHMM[0], minute=DAY_START_HHMM[1],
+                        second=0, microsecond=0)
+    end_h, end_m = (SATURDAY_END_HHMM if now.weekday() == 5 else DAY_END_HHMM)
+    end = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+    return start <= now <= end
+
+
 def today() -> dt.date:
     """The ICD's LOCAL day. SaraPlus reports the day the office is selling, and
     that office is not necessarily in Central -- reading Megan's day here would
