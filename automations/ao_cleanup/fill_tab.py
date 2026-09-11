@@ -59,20 +59,43 @@ def _terminated_index(sh):
     return out
 
 
+def _duplicate_names(members, users):
+    """Real names carried by more than ONE Slack account across the 5 channels.
+
+    This is the "se coló con otro email u otro nickname" case Eve is hunting:
+    same person, second account, so a removal that only touches one of them
+    leaves the other sitting in the channel.
+    """
+    import collections
+    seen = collections.defaultdict(set)
+    for info in members.get("channels", {}).values():
+        for uid in info.get("members_api", []) or []:
+            name = ((users.get(uid) or {}).get("name") or "").strip().lower()
+            if name:
+                seen[name].add(uid)
+    return {n: ids for n, ids in seen.items() if len(ids) > 1}
+
+
 def build_rows(members, users, terminated, today):
     # type: (dict, dict, dict, dt.date) -> List[list]
+    dupes = _duplicate_names(members, users)
     rows = []
     for chan in CHANNEL_ORDER:
         info = members.get("channels", {}).get(chan)
         if not info:
             continue
         joined = info.get("joined", {})
-        entries = ([(u, True) for u in info.get("members", [])]
-                   + [(u, False) for u in info.get("no_join_event", [])])
+        # `members_api` is conversations.members — the real list. The
+        # join/leave replay under `members` is only a fallback for a channel
+        # that has not been re-pulled since the read token existed; it
+        # overcounts badly (it cannot see leaves it never recorded).
+        roster = info.get("members_api")
+        if roster is None:
+            roster = list(info.get("members", [])) + list(info.get("no_join_event", []))
         people = []
-        for uid, has_join in entries:
+        for uid in roster:
             u = users.get(uid) or {}
-            people.append((u.get("name") or "", uid, has_join, u))
+            people.append((u.get("name") or "", uid, uid in joined, u))
         # unresolved names sort last so Rafael isn't reading ids first
         people.sort(key=lambda p: (p[0] == "", p[0].lower(), p[1]))
 
@@ -83,8 +106,16 @@ def build_rows(members, users, terminated, today):
                 notes.append("cuenta ya desactivada en Slack")
             if u.get("bot"):
                 notes.append("BOT / app")
-            if not has_join:
-                notes.append("sin evento de ingreso (estaba antes)")
+            if u.get("restricted"):
+                notes.append("invitado (guest de canal)")
+            dup = dupes.get((name or "").strip().lower())
+            if dup:
+                notes.append("OJO: %d cuentas de Slack con este mismo nombre"
+                             % len(dup))
+            if u.get("external"):
+                # Slack Connect: they belong to ANOTHER workspace, so "Remove
+                # from AO" is meaningless for them — only the channel applies.
+                notes.append("EXTERNO: es de otro workspace, no de AO")
             if not name:
                 notes.append("nombre sin resolver - falta permiso users:read")
             if term:
