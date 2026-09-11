@@ -7,11 +7,14 @@
                                                             # WOULD be alerted
   python -m automations.icd_alerts.run --once               # read + record
 
-DRY RUN IS THE DEFAULT for --once until the relay exists. Nothing in this file
-posts to Slack and nothing sends: the laptop's whole job is to read its own
-office and hand the numbers over. Wiring the relay is the next piece, and
-keeping it out of this one means an ICD can prove their account works today
-without anything leaving their machine.
+NOTHING HERE POSTS TO SLACK. The laptop reads its own office and hands the
+totals over; we decide what is new and what gets said. So the local state below
+powers the PREVIEW only -- it is not what stops a duplicate alert. That job
+belongs to `post.decide` on our side, where losing a laptop's state file, or
+restoring one from a backup, cannot cause anyone to be pinged twice.
+
+--dry-run reads and shows without sending anything anywhere, which is how an
+ICD checks the thing works before it is switched on.
 
 --headful is the debugging escape hatch: SaraPlus can challenge a new browser
 with an emailed passcode, and watching that happen once beats guessing at it.
@@ -23,7 +26,7 @@ import datetime as dt
 import sys
 
 from automations.icd_alerts import config as C
-from automations.icd_alerts import sara_read, state as St
+from automations.icd_alerts import relay as R, sara_read, state as St
 
 
 def _log(msg: str) -> None:
@@ -31,12 +34,12 @@ def _log(msg: str) -> None:
 
 
 def _alert_lines(gained, totals):
-    """The line an owner actually sees, worded exactly as the AO one is:
-    ':mag: Ana Griffin just ran 1 credit check (6 today).'
+    """A PREVIEW of the line the office will see, worded exactly as the real
+    one is: ':mag: Ana Griffin just ran 1 credit check (6 today).'
 
-    Built here rather than on our side purely so --dry-run can show the owner
-    the real thing. The SENT version is composed centrally, because the wording
-    has to be changeable without reaching 52 laptops.
+    Shown here only so an owner running --dry-run sees the real thing. What is
+    actually posted is composed on our side from the same shared function, so
+    the wording can change without reaching 52 laptops.
     """
     from automations.shared.credit_check_line import records_line
     return [records_line(rep, int(totals.get(rep, 0)), int(up))
@@ -91,20 +94,29 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
     gained = St.deltas(data, day, current)
 
     if baseline:
-        _log("first sweep for %s -- recording the day, sending nothing. "
-             "(%d rep(s) already have credit checks today.)"
-             % (day.isoformat(), len(current)))
+        _log("first run today -- %d rep(s) already have credit checks. "
+             "Nothing is announced for a day we have not seen before."
+             % len(current))
     else:
-        _log("new since the last sweep: %d rep(s)" % len(gained))
-        for line in _alert_lines(gained, current):
+        lines = _alert_lines(gained, current)
+        _log("new since the last run: %d rep(s)" % len(lines))
+        for line in lines:
             print("  %s" % line)
 
+    # The real work. Totals go over; what gets SAID is decided on our side.
+    try:
+        R.send(current, day, dry_run=dry_run, log=_log)
+    except R.RelayError as e:
+        # Not fatal and not the owner's problem to solve: SaraPlus is
+        # cumulative, so the next run hands over the whole day again.
+        _log("could not send this time: %s" % e)
+        return 1
+
     if dry_run:
-        _log("dry run -- state not updated, nothing relayed.")
+        _log("dry run -- nothing sent, nothing recorded.")
         return 0
 
     St.save(St.remember(data, day, current))
-    _log("state updated (%s)" % C.STATE_PATH)
     return 0
 
 
