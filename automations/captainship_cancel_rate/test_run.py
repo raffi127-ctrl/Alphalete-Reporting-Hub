@@ -322,6 +322,8 @@ class InactiveIcdsAreExpectedBlanks(unittest.TestCase):
         # pinned out 8/19, Sassenberg 8/25.
         self.assertTrue(C.is_inactive("Melik El Jaiez"))
         self.assertTrue(C.is_inactive("William Sassenberg"))
+        # 2026-09-11: office 23576 closed 2026-09-09 (Terminated ICDs).
+        self.assertTrue(C.is_inactive("Kimberly Rodriguez"))
 
     def test_an_owner_still_on_the_team_is_not_a_winddown(self):
         """The list is per-name and only ever grows by a decision. An owner

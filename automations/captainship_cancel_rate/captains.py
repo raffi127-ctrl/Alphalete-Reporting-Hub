@@ -119,6 +119,14 @@ INACTIVE_ICDS: dict[str, str] = {
     "william sassenberg": "off the captainship 2026-08-25 (two-week zero "
                           "rule); out of the Metrics view since 2026-08-26 "
                           "(Eve)",
+    # Chan's Team. Office 23576 (Illumane, Inc.) is CLOSED — Eve 2026-09-09
+    # "she is shut down", logged in Terminated ICDs the same day and taken off
+    # Chan's distro. Her row stays on the tab until the two-week zero rule or a
+    # removal request (Eve's call). 2026-09-11 both of her boxes (0-30 and
+    # 30-60) went blank and the run flagged her as unfilled — correct blank,
+    # nothing left to sell into the window.
+    "kimberly rodriguez": "office 23576 closed 2026-09-09, in Terminated ICDs "
+                          "(Eve)",
 }
 
 
