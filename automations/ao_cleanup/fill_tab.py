@@ -193,6 +193,50 @@ def read_channel_rule(gc, sh, ws):
     return None
 
 
+def dropdown_extent(gc, sh, ws, col_idx):
+    """Last row that already carries the Channel dropdown (0 if none).
+
+    Rows at or above it inherit Eve's chips for free — we write a value into
+    the cell and the chip stays. Only rows PAST it would come out bare.
+    """
+    col = _col_letter(col_idx)
+    resp = gc.http_client.request(
+        "get", "https://sheets.googleapis.com/v4/spreadsheets/%s" % sh.id,
+        params={"ranges": "%s!%s1:%s%d" % (ws.title, col, col, ws.row_count),
+                "fields": "sheets(data(rowData(values("
+                          "dataValidation(condition(type))))))"}).json()
+    try:
+        rows = resp["sheets"][0]["data"][0].get("rowData", [])
+    except (KeyError, IndexError):
+        return 0
+    last = 0
+    for i, row in enumerate(rows, 1):
+        vals = row.get("values") or []
+        if vals and ((vals[0].get("dataValidation") or {})
+                     .get("condition", {}).get("type") == "ONE_OF_LIST"):
+            last = i
+    return last
+
+
+def extend_dropdown(sh, ws, col_idx, have_row, need_row):
+    """Carry the dropdown down to `need_row` by COPYING a cell that has it.
+
+    copyPaste with PASTE_DATA_VALIDATION duplicates the cell's rule as the
+    server holds it, chips and all. setDataValidation cannot: the colours never
+    come back from the API, so re-writing the rule wipes them
+    (see the note in write_tab). Only called when the sheet actually runs out
+    of dropdown — with ~1.700 spare rows as of 2026-09-10, that is years away.
+    """
+    return {"copyPaste": {
+        "source": {"sheetId": ws.id, "startRowIndex": FIRST_DATA_ROW - 1,
+                   "endRowIndex": FIRST_DATA_ROW,
+                   "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
+        "destination": {"sheetId": ws.id, "startRowIndex": have_row,
+                        "endRowIndex": need_row,
+                        "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
+        "pasteType": "PASTE_DATA_VALIDATION"}}
+
+
 def channel_order(rule, fallback):
     """Dropdown order = tab order, so the sheet reads like the dropdown."""
     if not rule:
@@ -202,7 +246,7 @@ def channel_order(rule, fallback):
     return [v for v in vals if v] or list(fallback)
 
 
-def write_tab(gc, sh, ws, rows, index, rule):
+def write_tab(gc, sh, ws, rows, index, rule):  # noqa: C901
     """Write only the columns we recognise, one range each. Never row 1, never
     a format, never a colour."""
     needed = FIRST_DATA_ROW + len(rows) - 1
@@ -243,11 +287,20 @@ def write_tab(gc, sh, ws, rows, index, rule):
             "rule": {"condition": {"type": "BOOLEAN"}, "showCustomUi": True}}})
     # NEVER setDataValidation on the Channel column. Eve gave each dropdown
     # value its own chip colour, and those colours are NOT in what the Sheets
-    # v4 API hands back for that rule (no conditionalFormats, nothing in
-    # dataValidation) — so re-applying the rule we just read silently resets
-    # every chip to grey. It cost her the colours once, 2026-09-10. The
-    # dropdown already covers the whole grid anyway: we only ever write inside
-    # rows that have it. Read the rule for the channel ORDER, never write it.
+    # v4 API hands back (no conditionalFormats, nothing in dataValidation) — so
+    # re-applying the rule we just read silently resets every chip to grey. It
+    # cost her the colours twice on 2026-09-10. Rows that already have the
+    # dropdown keep it when we write a value into them, so the normal monthly
+    # rerun touches nothing. Only if the list outgrows the dropdown do we
+    # extend it, and then by COPYING a cell that has it.
+    if CHANNEL_LABEL in index:
+        col = index[CHANNEL_LABEL]
+        have = dropdown_extent(gc, sh, ws, col)
+        if have < needed:
+            print("desplegable llegaba a la fila %d, hace falta hasta la %d "
+                  "-> se copia (no se re-escribe)" % (have, needed))
+            requests.append(extend_dropdown(sh, ws, col, max(have, FIRST_DATA_ROW),
+                                            needed))
     if requests:
         sh.batch_update({"requests": requests})
     return needed
