@@ -35,7 +35,7 @@ from typing import Dict, List, Optional
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CACHE_PATH = REPO_ROOT / "output" / "ao_channel_members.json"
 
-# The exact five channels on the 'Channel' dropdown of the
+# The channels on the 'Channel' dropdown of the
 # 'AO Workspace Cleanup' tab. Ids are hardcoded because the token cannot look a
 # channel up by name (conversations.list is missing_scope) — and an id survives
 # a rename, which a name does not.
@@ -45,6 +45,7 @@ CHANNELS = [
     ("l10-alphalete", "C075PCEL92M"),            # a.k.a. #level10-alphalete
     ("top-leaders-alphalete-org", "C067TTGFEFR"),
     ("rafs-office-recruiting-11280", "C0AUAS88FGW"),
+    ("alphaletesocialmedia", "C08P9T25N95"),     # Eve la agrego al desplegable 2026-09-10
 ]
 
 # Generous: the busiest channel must reach its creation message or the replay is
