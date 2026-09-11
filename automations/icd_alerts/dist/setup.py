@@ -6,14 +6,18 @@ between a shell script and a PowerShell script is a line that will be fixed in
 one of them and not the other -- and the Windows half is the one nobody can
 test until an ICD runs it.
 
-WHAT IT ASKS FOR: a SaraPlus email and password. Nothing else. The office key,
-the relay url and the relay key are already in install.json, filled in when
-this package was built for this office, so there is no code for anyone to
-mistype. See `automations/icd_alerts/package.py`.
+WHAT IT ASKS FOR: their SaraPlus login and their OwnerVille login. Nothing
+else. The office key, the relay url and the relay key are already in
+install.json, filled in when this package was built for this office, so there
+is no code for anyone to mistype. See `automations/icd_alerts/package.py`.
 
-THE PASSWORD NEVER LEAVES THIS COMPUTER. It is written to the user's own config
-directory and used to log into SaraPlus from here. What gets sent to the
-reporting team is counts, and nothing else.
+NEITHER PASSWORD LEAVES THIS COMPUTER. Both are written to the user's own
+config directory and used to sign in from here. What gets sent to the reporting
+team is counts, and nothing else.
+
+THE OWNERVILLE LOGIN IS THEIR OWN, and that is the point: an owner's account
+sees their own office natively, so the knocks read needs no impersonation --
+which is the flakiest step in the knocks stack when we do it from our side.
 
 Python 3.8-safe: this runs on whatever Python an ICD's laptop happens to have.
 """
@@ -127,29 +131,48 @@ def write_install_json():
     return rec
 
 
-def ask_for_login():
+def _ask_one(filename, title, user_label, user_field, pass_field):
+    """Ask for one login, or keep the one already saved.
+
+    Asked one at a time with its own heading. Two username boxes and two
+    password boxes on one screen is how somebody puts their SaraPlus password
+    in the OwnerVille box and then cannot be told why nothing works.
+    """
     import getpass
-    creds = CONFIG_DIR / "saraplus-creds.json"
-    if creds.exists():
-        say("      a SaraPlus login is already saved on this computer.")
-        again = input("      Enter it again? (y/N): ").strip().lower()
-        if again not in ("y", "yes"):
-            return
+    path = CONFIG_DIR / filename
+    if path.exists():
+        say("      A %s login is already saved on this computer." % title)
+        if input("      Enter it again? (y/N): ").strip().lower() not in ("y", "yes"):
+            return True
     say()
-    say("      Your SaraPlus email and password stay on THIS computer.")
-    say("      They are never sent to anyone.")
-    say()
-    email = input("      SaraPlus email: ").strip()
-    password = getpass.getpass("      SaraPlus password (typing is hidden): ")
-    if not email or not password:
-        raise SystemExit("Nothing was entered, so nothing was saved. Run the "
-                         "installer again when you have your SaraPlus login.")
+    say("      --- %s ---" % title)
+    user = input("      %s: " % user_label).strip()
+    password = getpass.getpass("      %s password (typing is hidden): " % title)
+    if not user or not password:
+        say("      Nothing entered -- skipped. You can run this installer "
+            "again later.")
+        return False
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    creds.write_text(json.dumps({"email": email, "password": password}))
+    path.write_text(json.dumps({user_field: user, pass_field: password}))
     try:
-        creds.chmod(0o600)
+        path.chmod(0o600)
     except OSError:
         pass
+    return True
+
+
+def ask_for_login():
+    say()
+    say("      Both passwords stay on THIS computer and are never sent to")
+    say("      anyone. Only the counts they produce are sent.")
+    sara = _ask_one("saraplus-creds.json", "SaraPlus", "SaraPlus email",
+                    "email", "password")
+    _ask_one("ownerville-creds.json", "OwnerVille", "OwnerVille username",
+             "username", "password")
+    if not sara:
+        raise SystemExit(
+            "The SaraPlus login is the one this cannot run without. Run the "
+            "installer again when you have it.")
 
 
 def check_account() -> bool:

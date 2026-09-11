@@ -24,8 +24,14 @@ class AccountProblem(RuntimeError):
 
 def _context(p, headless: bool):
     C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    return p.chromium.launch_persistent_context(
+    ctx = p.chromium.launch_persistent_context(
         str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
+    if not headless:
+        # Only when a person can actually see it. On the scheduled run this is
+        # headless and nothing appears on their screen at all.
+        from automations.shared import browser_banner
+        browser_banner.attach(ctx)
+    return ctx
 
 
 def _sign_in(page, log=print) -> str:

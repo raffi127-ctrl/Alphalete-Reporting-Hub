@@ -44,6 +44,7 @@ AGENT_FILES = [
     "automations/icd_alerts/run.py",
     "automations/shared/saraplus.py",
     "automations/shared/credit_check_line.py",
+    "automations/shared/browser_banner.py",
 ]
 
 # The repo's automations/__init__.py installs the Hub's auto-publish hook. That

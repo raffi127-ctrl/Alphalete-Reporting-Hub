@@ -21,6 +21,7 @@ from typing import Dict, Optional
 
 APP_DIR = Path.home() / ".config" / "alphalete-alerts"
 CREDS_PATH = APP_DIR / "saraplus-creds.json"
+OV_CREDS_PATH = APP_DIR / "ownerville-creds.json"
 INSTALL_PATH = APP_DIR / "install.json"
 STATE_PATH = APP_DIR / "state.json"
 PROFILE_DIR = APP_DIR / "chrome-profile"
@@ -77,6 +78,46 @@ def save_creds(email: str, password: str) -> Path:
     except OSError:
         pass
     return CREDS_PATH
+
+
+def ownerville_creds() -> Dict[str, str]:
+    """{'username', 'password'} for this owner's OWN OwnerVille login.
+
+    THEIR login, never ours. An owner's account sees their own office natively,
+    so the knocks read needs no impersonation at all -- which deletes the
+    single flakiest step in the knocks stack (the one that once returned
+    Calvin's seven reps under Kash's heading, and the read-only probe that
+    stranded a session and fed Raf an impersonated board twice in one
+    afternoon). Two machines on one OwnerVille login do not evict each other;
+    the one-session rule is per box, across processes.
+    """
+    env_user = os.environ.get("OWNERVILLE_USERNAME")
+    env_pass = os.environ.get("OWNERVILLE_PASSWORD")
+    if env_user and env_pass:
+        return {"username": env_user, "password": env_pass}
+    if not OV_CREDS_PATH.exists():
+        raise RuntimeError(
+            "No OwnerVille login saved yet on this computer. Open the alerts "
+            "app and enter your OwnerVille username and password.")
+    data = json.loads(OV_CREDS_PATH.read_text())
+    missing = [k for k in ("username", "password") if not data.get(k)]
+    if missing:
+        raise RuntimeError(
+            "The saved OwnerVille login is incomplete (missing %s). Open the "
+            "alerts app and enter it again." % ", ".join(missing))
+    return {"username": data["username"], "password": data["password"]}
+
+
+def save_ownerville_creds(username: str, password: str) -> Path:
+    """Saved beside the SaraPlus one, and just as local. Neither is relayed."""
+    app_dir()
+    OV_CREDS_PATH.write_text(json.dumps({"username": username,
+                                         "password": password}))
+    try:
+        OV_CREDS_PATH.chmod(0o600)
+    except OSError:
+        pass
+    return OV_CREDS_PATH
 
 
 def install() -> Dict:
