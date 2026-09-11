@@ -2107,3 +2107,38 @@ def test_the_id_behind_a_dropdown_is_filled_not_just_the_words(page, tmp_path):
                           "Married filing jointly or Qualifying surviving spouse"}}})
     assert page.locator("#sent").inner_text() == "ID-2", \
         "the id behind the words was copied across too"
+
+
+KENDO_IDS_BEHIND_LABELS = """
+<!doctype html><html><body>
+<h1>Employment Record</h1>
+<div class="form-group">
+  <label for="posid">Position</label>
+  <input type="hidden" id="posid" value="31">
+  <span class="k-widget k-dropdown"><span class="k-input">Sales Rep</span></span>
+</div>
+</body></html>
+"""
+
+
+def test_a_correct_page_is_not_called_wrong(page, tmp_path):
+    """The <label> points at the HIDDEN input, which holds an id. Reading
+    .value off it compared "Sales Rep" against "31" and reported every field
+    on a visibly correct page as wrong (Megan, 2026-09-10)."""
+    f = tmp_path / "employment-record.html"
+    f.write_text(KENDO_IDS_BEHIND_LABELS)
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(
+        [{"name": "Xzavier Russell", "find": "Russell",
+          "pages": {"employment": {"Position": "Sales Rep"}}}],
+        "WE 9.13")[len("javascript:"):])
+
+    off = page.evaluate("""() => window.__ansAlreadyRight(
+      {name:'Xzavier Russell', pages:{employment:{Position:'Sales Rep'}}},
+      'employment')""")
+    assert off == [], "the widget beside it reads Sales Rep"
+
+    off2 = page.evaluate("""() => window.__ansAlreadyRight(
+      {name:'Xzavier Russell', pages:{employment:{Position:'Owner'}}},
+      'employment')""")
+    assert off2 == ["Position"], "and a real mismatch is still caught"

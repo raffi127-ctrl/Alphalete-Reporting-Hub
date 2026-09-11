@@ -1078,6 +1078,20 @@ _JS = r"""
    var w=kw(el);
    if(w&&w.text){ try{ return norm(String(w.text())); }catch(e){} }
    if(w&&w.value){ try{ return norm(String(w.value())); }catch(e){} }
+   /* The <label> points at the HIDDEN input, which holds an id -- so reading
+      .value off it compares "Sales Rep" against "31" and calls a correct page
+      wrong. What a person reads is in the widget beside it. */
+   var sp=widgetSpan(el);
+   if(sp){
+     var inner=sp.querySelector('select'), w2=kw(inner||sp);
+     if(w2&&w2.text){ try{ return norm(String(w2.text())); }catch(e){} }
+     if(inner&&inner.selectedIndex>=0&&inner.options[inner.selectedIndex])
+       return norm(inner.options[inner.selectedIndex].text);
+     var vi=visibleInput(sp,el);
+     if(vi&&String(vi.value||'').trim()) return norm(vi.value);
+     var t=norm(sp.innerText||sp.textContent);
+     if(t) return t;
+   }
    if(el.tagName==='SELECT'&&el.selectedIndex>=0)
      return norm(el.options[el.selectedIndex].text);
    return norm(el.value!==undefined&&el.value!==null?el.value:el.textContent);
@@ -1193,6 +1207,7 @@ _JS = r"""
  window.__ansAlreadyRight=alreadyRight;
  window.__ansDoPage=doPage;
  window.__ansRoleSection=roleSection;
+ var FLAGGED=[];
  async function runPerson(p,say){
    var id=idFor(p);
    if(!id){ say(p.name+': finding them…'); id=await openPerson(p); }
@@ -1217,9 +1232,17 @@ _JS = r"""
        if(!off.length){
          say(p.name+' · '+tabs[t][0]+': already correct, and Apex offers no '+
              'Save here — moved on');
-         continue;
+       } else {
+         /* No Save means this page is not ours to change: TeleMapper owns it.
+            Halting the whole week over something nobody can fix from here
+            helps no one, so say it loudly, carry on, and list it again at the
+            end (Megan, 2026-09-10). */
+         say('<span style="color:#b00">'+p.name+' · '+tabs[t][0]+
+             ': no Save here and these look wrong: '+off.join(', ')+
+             ' — check in TeleMapper</span>');
+         FLAGGED.push(p.name+' · '+tabs[t][0]+': '+off.join(', '));
        }
-       err='no Save button, and these are not right: '+off.join(', ');
+       continue;
      }
      if(err){ say(p.name+' · '+tabs[t][0]+': '+err+
                   (r.miss.length?' — missed '+r.miss.join(', '):'')); return false; }
@@ -1548,7 +1571,7 @@ _JS = r"""
         looked up from scratch when their turn came anyway. Whoever is missing
         is named at the end, from the run itself. The "Find them all for me"
         link is still there to check the list before starting, on purpose. */
-     RUNNING=true; refreshChrome();
+     RUNNING=true; FLAGGED=[]; refreshChrome();
      for(j=from;j<stop;j++){
        say('<b>'+D[j].name+'</b> ('+(j+1)+' of '+D.length+')…');
        var ok=await runPerson(D[j],say);
@@ -1567,6 +1590,9 @@ _JS = r"""
           move through the 3 pages of each person and nav to the next person
           automatically"). */
      }
+     if(FLAGGED.length)
+       say('<b style="color:#b00">Employment records to check in TeleMapper:'+
+           '</b><br>'+FLAGGED.join('<br>'));
      RUNNING=false; refreshChrome();
    }
    document.getElementById('ansgo').onclick=function(){ return begin(false); };
