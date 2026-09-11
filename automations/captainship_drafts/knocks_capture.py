@@ -144,6 +144,10 @@ def main(argv=None) -> int:
         results[captain.key] = {
             "labels": [lab for k in wants for lab, _p in got.get(k, [])],
             "error_keys": list(errors),
+            # The notes themselves: an ownerville timeout HAS a note, so the
+            # keys alone can't tell it from an access gap (2026-09-10 read
+            # CLEAN with four offices missing).
+            "errors": dict(errors),
         }
 
     _audit(rosters, results)

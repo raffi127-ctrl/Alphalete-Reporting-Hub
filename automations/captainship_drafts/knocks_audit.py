@@ -27,6 +27,10 @@ WHAT IT LOOKS AT, all from records total_knocks.pull wrote during the pull:
     nothing upstream can catch this one
   * an owner on the captainship roster who came back neither as a board nor as
     a note — a silently vanished office
+  * an owner whose note is a real FAILURE, not an access gap or a real zero —
+    ownerville timing out on ?p=901, the Office-Access table stalling. Until
+    2026-09-11 these counted as "accounted for" (they HAVE a note), so the
+    2026-09-10 run said CLEAN with four offices missing from the email.
 
 Run as part of the capture (captainship_knocks, order 1, right before the drafts
 at 1.1), so it cannot be forgotten and needs no session of its own:
@@ -38,6 +42,11 @@ from __future__ import annotations
 import datetime as dt
 from typing import Iterable, Optional
 
+try:
+    from automations.captainship_drafts.email_build import NO_DATA_MARK
+except Exception:  # noqa: BLE001 — the audit must survive an import hiccup
+    NO_DATA_MARK = "no-data::"
+
 # The tolerated band of the FIRST gate is this module's whole beat, so it says
 # out loud where its own line sits. A shortfall at or above this many reps is
 # reported even though total_knocks.pull let it through; below it, a rep who
@@ -46,7 +55,7 @@ from typing import Iterable, Optional
 REPORT_MIN_GAP = 2
 
 INCIDENT_KEY = "knocks-short-read"
-TITLE = "Captainship knocks — a board came back short"
+TITLE = "Captainship knocks — a board came back short or failed"
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +134,31 @@ def coverage_findings(roster: Iterable[str], labels: Iterable[str],
     return out
 
 
+def failure_findings(errors: dict, *, captain: str = "") -> list[dict]:
+    """Error notes that are real FAILURES.
+
+    The capture marks the two harmless kinds of note with NO_DATA_MARK (grey
+    box): an access gap (is_access_gap) and a source that answered with a real
+    zero. Every other note is a failure the email shows as a yellow "could not
+    be captured" box — an ownerville timeout, a stalled Office-Access table, a
+    dead session. coverage_findings counts those owners as accounted for
+    (they have a note), so without this check a morning with four offices
+    missing still read CLEAN (2026-09-10)."""
+    out = []
+    for key, note in (errors or {}).items():
+        note = str(note or "")
+        if note.startswith(NO_DATA_MARK):
+            continue
+        kind, _, who = str(key).partition(":")
+        section = "weekly" if kind == "knock_dispo" else "daily"
+        out.append({
+            "office": who or f"{captain} (whole {section} section)",
+            "date": "", "kind": "failed",
+            "detail": f"{section} pull FAILED — {note[:160]}",
+        })
+    return out
+
+
 def summary_lines(records: Iterable[dict]) -> list[str]:
     """The ICD-by-ICD table, for the capture log.
 
@@ -164,15 +198,23 @@ def verdict(findings: Iterable[dict]) -> str:
 
 def alert_body(findings: Iterable[dict]) -> list[str]:
     """The Slack body. English — the whole team reads that channel."""
+    findings = list(findings or [])
     body = []
     for x in findings:
         when = f" ({x['date']})" if x.get("date") else ""
         body.append(f"• {x['office']}{when}: {x['detail']}")
     body.append("")
-    body.append("The first gate (re-read + refuse) did not fire on these — "
-                "they are inside its tolerated band, which is what this "
-                "second check is for. Look at the office in ownerville before "
-                "the captain's email is approved.")
+    if any(x["kind"] == "failed" for x in findings):
+        body.append("FAILED = ownerville broke on that office (not an access "
+                    "gap): its section shows a yellow 'could not be captured' "
+                    "box. Re-run the capture for that captain "
+                    "(knocks_capture --only <captain> --fresh) before the "
+                    "email is approved.")
+    if any(x["kind"] != "failed" for x in findings):
+        body.append("The first gate (re-read + refuse) did not fire on the "
+                    "others — they are inside its tolerated band, which is "
+                    "what this second check is for. Look at the office in "
+                    "ownerville before the captain's email is approved.")
     return body
 
 
@@ -185,7 +227,8 @@ def run(records, rosters: dict, results: dict, *, logfn=print,
     """Print the table, collect findings, and speak up in Slack if there are any.
 
     `rosters`  {captain_key: [owner name, ...]}
-    `results`  {captain_key: {"labels": [...], "error_keys": [...]}}
+    `results`  {captain_key: {"labels": [...], "error_keys": [...],
+                              "errors": {key: note}}}
 
     Returns the findings. Best-effort throughout: this runs AFTER every board is
     drawn, so nothing it does may cost the capture its exit code."""
@@ -198,6 +241,7 @@ def run(records, rosters: dict, results: dict, *, logfn=print,
         res = (results or {}).get(key) or {}
         findings += coverage_findings(roster, res.get("labels") or [],
                                       res.get("error_keys") or [], captain=key)
+        findings += failure_findings(res.get("errors") or {}, captain=key)
 
     logfn(verdict(findings))
     if not findings or not post:
@@ -267,6 +311,14 @@ def _self_test() -> int:
                             ["Ada Lovelace — ⚠ INCOMPLETE: apps unavailable"],
                             ["daily_knocks:Alan Turing"], captain="rafael")
     assert [x["office"] for x in cov] == ["Grace Hopper"], cov
+
+    fail = failure_findings({
+        "daily_knocks:Alan Turing": NO_DATA_MARK + "no ownerville office access",
+        "daily_knocks:Ada Lovelace": NO_DATA_MARK + "no knocks recorded yesterday",
+        "daily_knocks:Grace Hopper": "RuntimeError: Couldn't reach the "
+                                     "ownerville Office Access page (?p=901)",
+    }, captain="rafael")
+    assert [x["office"] for x in fail] == ["Grace Hopper"], fail
 
     assert "CLEAN" in verdict([])
     assert "5 finding" not in verdict(f)

@@ -113,6 +113,64 @@ class AnOwnerWhoVanished(unittest.TestCase):
                 ["Cody Cannon — ⚠ INCOMPLETE: apps unavailable"], []), [])
 
 
+class AFailedOwnerIsNotAnAccountedOwner(unittest.TestCase):
+    """2026-09-10: four offices fell to ownerville blips (not access), each got
+    a note, and the audit said CLEAN because a note counted as 'accounted for'.
+    The notes below are the real ones from that morning's log."""
+
+    def _notes(self):
+        from automations.captainship_drafts import knock_dispo_images as KD
+        return {
+            "daily_knocks:Jennifer Figueroa": KD._owner_error_note(RuntimeError(
+                "Couldn't reach the ownerville Office Access page (?p=901) to "
+                "impersonate 'Jennifer Figueroa'.")),
+            "daily_knocks:Jess Lieberman": KD._owner_error_note(RuntimeError(
+                "ownerville Office-Access offices table never finished loading "
+                "after 3 attempts (30000ms each) — the DataTables AJAX stalled")),
+            "daily_knocks:Sheree Rodriguez": KD._owner_error_note(RuntimeError(
+                "Couldn't impersonate 'Sheree Rodriguez' in ownerville: name "
+                "not found in ownerville")),
+            "daily_knocks:Chris Williams": KD._owner_error_note(RuntimeError(
+                "Couldn't impersonate 'Chris Williams' in ownerville: ov access "
+                "request pending (request sent in office access table)")),
+            "daily_knocks:Quiet Office": (A.NO_DATA_MARK
+                                          + "no knocks recorded yesterday"),
+        }
+
+    def test_ownerville_blips_are_reported_and_access_gaps_are_not(self):
+        f = A.failure_findings(self._notes(), captain="jess")
+        self.assertEqual(sorted(x["office"] for x in f),
+                         ["Jennifer Figueroa", "Jess Lieberman"])
+        self.assertTrue(all(x["kind"] == "failed" for x in f))
+
+    def test_run_no_longer_says_clean_over_a_failed_owner(self):
+        got = A.run([_rec("Fine", 9, 9)],
+                    {"jess": ["Jennifer Figueroa", "Sheree Rodriguez"]},
+                    {"jess": {"labels": [],
+                              "error_keys": list(self._notes()),
+                              "errors": self._notes()}},
+                    logfn=lambda *_: None, post=False)
+        self.assertEqual(sorted(x["office"] for x in got),
+                         ["Jennifer Figueroa", "Jess Lieberman"])
+
+    def test_a_dead_session_is_a_failure_of_the_whole_section(self):
+        f = A.failure_findings(
+            {"daily_knocks": "ownerville session failed: TimeoutError: x"},
+            captain="tony")
+        self.assertEqual(f[0]["office"], "tony (whole daily section)")
+
+    def test_the_capture_hands_the_notes_to_the_audit(self):
+        import inspect
+        from automations.captainship_drafts import knocks_capture as KC
+        self.assertIn('"errors": dict(errors)', inspect.getsource(KC.main))
+
+    def test_the_alert_says_what_to_do_about_a_failure(self):
+        body = "\n".join(A.alert_body(
+            A.failure_findings(self._notes(), captain="jess")))
+        self.assertIn("--fresh", body)
+        self.assertNotIn("tolerated band", body)
+
+
 class TheTablePrintsEveryMorning(unittest.TestCase):
     """A check whose output only exists on bad days cannot be trusted on good
     ones — the ICD-by-ICD table is the artefact, not the alert."""
