@@ -213,22 +213,175 @@ def scan_sheets(cands: List[str], logfn=print) -> List[dict]:
             continue
 
         # SheetCells — search the LIVE tabs only.
-        where = []
+        where, kept = [], []
         for ws in sh.worksheets():
             if surf.tabs and ws.title not in surf.tabs:
                 continue
-            found = []
+            cells = []
             for cand in cands:
                 try:
-                    found += [c.address for c in ws.findall(cand)]
+                    cells += list(ws.findall(cand))
                 except Exception:  # noqa: BLE001
                     pass
+            if cells and ws.title in surf.hidden_row_is_done:
+                hidden = _hidden_rows(sh, ws.title, {c.row for c in cells})
+                cells = [c for c in cells if c.row not in hidden]
+            if cells and ws.title in surf.keep_while_paid:
+                paid = _paid_rows(sh, ws.title, {c.row for c in cells})
+                if paid is None:        # couldn't read it -> a person checks
+                    found = sorted({c.address for c in cells})
+                    where.append(f"'{ws.title}' {', '.join(found[:8])} (only "
+                                 "once their row is at $0)")
+                    continue
+                for c in cells:
+                    if c.row in paid:
+                        kept.append(f"'{ws.title}' {c.address} ({paid[c.row]})")
+                cells = [c for c in cells if c.row not in paid]
+            found = [c.address for c in cells]
             if found:
                 where.append(f"'{ws.title}' {', '.join(sorted(set(found))[:8])}")
         if where:
             hits.append({"label": surf.label, "where": " · ".join(where),
                          "fix": surf.fix})
+        if kept:
+            hits.append({"label": surf.label, "kept": True,
+                         "where": " · ".join(sorted(set(kept))),
+                         "fix": "stays while it still shows revenue — take it "
+                                "off once it's at $0"})
     return hits
+
+
+def _money(text: str) -> Optional[float]:
+    """'$1,175' -> 1175.0, '-$20' -> -20.0; anything not a $ amount -> None."""
+    t = str(text or "").strip().replace(",", "").replace(" ", "")
+    neg = t.startswith("-") or (t.startswith("(") and t.endswith(")"))
+    t = t.strip("-()")
+    if not t.startswith("$"):
+        return None
+    try:
+        v = float(t[1:])
+    except ValueError:
+        return None
+    return -v if neg else v
+
+
+def _paid_rows(sh, title: str, rows) -> Optional[dict]:
+    """{row: '$1,175'} for the rows of `title` with any non-zero $ cell.
+
+    No column is assumed — every $ cell on the row counts, so a template that
+    moves its money column still reads right. None on a read failure: the
+    caller then lists the row as work with the $0 rule spelled out, rather
+    than guess either way."""
+    rows = sorted(rows)
+    try:
+        resp = sh.values_batch_get([f"'{title}'!A{r}:AZ{r}" for r in rows])
+    except Exception:  # noqa: BLE001
+        return None
+    out = {}
+    for r, vr in zip(rows, resp.get("valueRanges", [])):
+        vals = (vr.get("values") or [[]])[0]
+        amounts = [m for m in (_money(v) for v in vals) if m]
+        if amounts:
+            top = max(amounts, key=abs)
+            out[r] = f"${top:,.0f}"
+    return out
+
+
+def _hidden_rows(sh, title: str, rows) -> set:
+    """1-based rows of `title` that are hidden (by hand or by a filter).
+
+    Any failure returns an EMPTY set, so every cell stays on the list: 'I
+    couldn't tell' has to read as 'still to do', never as done."""
+    rows = sorted(rows)
+    if not rows:
+        return set()
+    try:
+        meta = sh.fetch_sheet_metadata(params={
+            "ranges": [f"'{title}'!A{r}:A{r}" for r in rows],
+            "includeGridData": True,
+            "fields": "sheets(properties(title),data(startRow,"
+                      "rowMetadata(hiddenByUser,hiddenByFilter)))"})
+    except Exception:  # noqa: BLE001
+        return set()
+    out = set()
+    for s in meta.get("sheets", []):
+        if s.get("properties", {}).get("title") != title:
+            continue
+        for d in s.get("data", []):
+            start = int(d.get("startRow") or 0)
+            for i, m in enumerate(d.get("rowMetadata", [])):
+                if m.get("hiddenByUser") or m.get("hiddenByFilter"):
+                    out.add(start + i + 1)
+    return out
+
+
+def _letters(s: str) -> str:
+    return "".join(ch for ch in (s or "").lower() if ch.isalpha())
+
+
+def scan_contacts(cands: List[str], logfn=print) -> Optional[dict]:
+    """Is the ICD's contact card still in a contact group? READ-ONLY.
+
+    A card matches on its display name, or — because some cards have no name
+    at all (Melik El Jaiez's is just melikeljaiez@yahoo.com) — on an address
+    whose local part spells the full name. Only USER groups count; 'My
+    Contacts' / 'Starred' mail nobody.
+
+    Returns a hit shaped like the sheet hits, or None when it can't tell (no
+    token, API error, no card matched). None keeps the generic Contacts line
+    in the post."""
+    try:
+        from googleapiclient.discovery import build
+        from automations.shared import contacts_auth as ca
+        svc = build("people", "v1", credentials=ca.load_credentials(),
+                    cache_discovery=False)
+        groups, tok = {}, None
+        while True:
+            r = svc.contactGroups().list(pageSize=200, pageToken=tok).execute()
+            for g in r.get("contactGroups", []) or []:
+                if g.get("groupType") == "USER_CONTACT_GROUP":
+                    groups[g["resourceName"]] = (g.get("formattedName")
+                                                 or g.get("name") or "")
+            tok = r.get("nextPageToken")
+            if not tok:
+                break
+        people, tok = [], None
+        while True:
+            r = svc.people().connections().list(
+                resourceName="people/me", pageSize=1000, pageToken=tok,
+                personFields="names,emailAddresses,memberships").execute()
+            people += r.get("connections", []) or []
+            tok = r.get("nextPageToken")
+            if not tok:
+                break
+    except Exception as e:  # noqa: BLE001 — can't tell -> generic line stays
+        logfn(f"  ! Contacts check skipped ({type(e).__name__})")
+        return None
+
+    names = {_key(c) for c in cands if c.strip()}
+    spelled = {_letters(c) for c in cands if len(_letters(c)) >= 8}
+    cards, in_groups = 0, []
+    for p in people:
+        shown = {_key(n.get("displayName")) for n in p.get("names", []) or []}
+        locals_ = {_letters((e.get("value") or "").split("@")[0])
+                   for e in p.get("emailAddresses", []) or []}
+        if not (shown & names or any(s in l for s in spelled for l in locals_)):
+            continue
+        cards += 1
+        for m in p.get("memberships", []) or []:
+            rn = (m.get("contactGroupMembership") or {}).get(
+                "contactGroupResourceName")
+            if rn in groups and groups[rn] not in in_groups:
+                in_groups.append(groups[rn])
+    logfn(f"  contacts: {cards} card(s), groups: {in_groups or 'none'}")
+    if not cards:
+        return None
+    if not in_groups:
+        return {"label": "Google Contacts", "done": True,
+                "where": "their card", "fix": "is in no contact group"}
+    return {"label": "Google Contacts",
+            "where": ", ".join(f"'{g}'" for g in in_groups),
+            "fix": "take them out of the group (keep the card)"}
 
 
 # --------------------------------------------------------------------------
@@ -249,7 +402,8 @@ def render(entry: dict, code_hits: List[dict], sheet_hits: List[dict]) -> str:
     lines = [head]
 
     done = [h for h in sheet_hits if h.get("done")]
-    todo = [h for h in sheet_hits if not h.get("done")]
+    kept = [h for h in sheet_hits if h.get("kept")]
+    todo = [h for h in sheet_hits if not h.get("done") and not h.get("kept")]
 
     ticked = [f":white_check_mark: {h['label']} — {h['where']} {h['fix']}"
               for h in done]
@@ -262,12 +416,17 @@ def render(entry: dict, code_hits: List[dict], sheet_hits: List[dict]) -> str:
     boxes = [f":black_square_button: *{h['label']}* — {h['where']}: {h['fix']}"
              + (f" ({h['note']})" if h.get("note") else "")
              for h in todo]
+    # An Always line gives way to a real answer for the same surface.
+    checked = {h["label"] for h in sheet_hits}
     boxes += [f":black_square_button: *{a.label}* — {a.fix}"
-              for a in S.always_surfaces()]
+              for a in S.always_surfaces() if a.label not in checked]
     lines += ["", "*To do*"] + boxes
 
     for la in S.LEAVE_ALONE:
         lines += ["", f"_Leave alone: {la.label} — {la.why}_"]
+    for h in kept:
+        lines += ["", f"_Leave alone: {h['label']} — {h['where']} "
+                      f"{h['fix']}_"]
     return "\n".join(lines)
 
 
@@ -325,6 +484,10 @@ def announce(entry: dict, *, dry_run: bool, logfn=print) -> Optional[str]:
     logfn(f"  code rosters: {len(code_hits)}")
     sheet_hits = scan_sheets(cands, logfn=logfn)
     logfn(f"  workbooks: {len(sheet_hits)}")
+    if any(a.check == "contacts" for a in S.always_surfaces()):
+        contact = scan_contacts(cands, logfn=logfn)
+        if contact:
+            sheet_hits.append(contact)
     text = render(entry, code_hits, sheet_hits)
     return text if post(text, dry_run=dry_run, logfn=logfn) else None
 

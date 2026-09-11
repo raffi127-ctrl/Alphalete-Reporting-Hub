@@ -394,3 +394,155 @@ class Agent(unittest.TestCase):
         e = cfg["reports"]["terminated_notice"]
         self.assertTrue(e["on_scheduler"])
         self.assertEqual(e["cadence"]["weekdays"], [0, 1, 2, 3, 4, 5, 6])
+
+
+class AlreadyDone(unittest.TestCase):
+    """Melik El Jaiez, 2026-09-11: the post asked for three things and two were
+    finished weeks earlier — his Captainship Bonuses row was already hidden and
+    his card had already left Tony's group. A to-do that lists done work is
+    read as 'this list exaggerates', and then the real item gets skipped."""
+
+    def _cells_scan(self, hidden_rows, title="Captainship Bonuses",
+                    meta_error=False):
+        surf = S.SheetCells("ORG Sales Board", "id", tabs=(title,),
+                            hidden_row_is_done=("Captainship Bonuses",))
+        cell = mock.Mock(); cell.row = 49; cell.address = "A49"
+        ws = mock.Mock(); ws.title = title
+        ws.findall.return_value = [cell]
+        sh = mock.Mock()
+        sh.worksheets.return_value = [ws]
+        if meta_error:
+            sh.fetch_sheet_metadata.side_effect = RuntimeError("quota")
+        else:
+            sh.fetch_sheet_metadata.return_value = {"sheets": [{
+                "properties": {"title": title},
+                "data": [{"startRow": 48, "rowMetadata": [
+                    {"hiddenByUser": 49 in hidden_rows}]}]}]}
+        client = mock.Mock(); client.open_by_key.return_value = sh
+        with mock.patch.object(S, "SURFACES", [surf]), \
+             mock.patch("automations.recruiting_report.fill._client",
+                        return_value=client):
+            return R.scan_sheets(["Melik El Jaiez"], logfn=lambda *a: None)
+
+    def test_a_hidden_row_on_captainship_bonuses_is_done(self):
+        self.assertEqual(self._cells_scan({49}), [])
+
+    def test_a_visible_row_on_captainship_bonuses_is_still_to_do(self):
+        got = self._cells_scan(set())
+        self.assertEqual(len(got), 1)
+        self.assertIn("A49", got[0]["where"])
+
+    def test_a_hidden_row_elsewhere_is_still_to_do(self):
+        """On Overrides Math a hidden row still counts in the SUM."""
+        got = self._cells_scan({49}, title="Overrides Math")
+        self.assertEqual(len(got), 1)
+
+    def test_unreadable_row_state_is_still_to_do(self):
+        self.assertEqual(len(self._cells_scan(set(), meta_error=True)), 1)
+
+    # --- Google Contacts -------------------------------------------------
+
+    def _contacts(self, people):
+        svc = mock.Mock()
+        svc.contactGroups().list().execute.return_value = {"contactGroups": [
+            {"resourceName": "contactGroups/tony", "name": "Tony's Captainship",
+             "groupType": "USER_CONTACT_GROUP"},
+            {"resourceName": "contactGroups/myContacts", "name": "myContacts",
+             "groupType": "SYSTEM_CONTACT_GROUP"}]}
+        svc.people().connections().list().execute.return_value = {
+            "connections": people}
+        with mock.patch("automations.shared.contacts_auth.load_credentials"), \
+             mock.patch("googleapiclient.discovery.build", return_value=svc):
+            return R.scan_contacts(["Melik El Jaiez"], logfn=lambda *a: None)
+
+    @staticmethod
+    def _card(groups, name="", email="melikeljaiez@yahoo.com"):
+        return {"names": [{"displayName": name}] if name else [],
+                "emailAddresses": [{"value": email}],
+                "memberships": [{"contactGroupMembership": {
+                    "contactGroupResourceName": f"contactGroups/{g}"}}
+                    for g in groups]}
+
+    def test_card_in_no_group_is_done(self):
+        hit = self._contacts([self._card(["myContacts"])])
+        self.assertTrue(hit["done"])
+
+    def test_nameless_card_still_matches_on_its_address(self):
+        hit = self._contacts([self._card(["tony"])])
+        self.assertFalse(hit.get("done"))
+        self.assertIn("Tony's Captainship", hit["where"])
+
+    def test_card_found_by_display_name(self):
+        hit = self._contacts([self._card(["tony"], name="Melik El Jaiez",
+                                         email="m@x.com")])
+        self.assertIn("Tony's Captainship", hit["where"])
+
+    def test_no_card_means_cannot_tell(self):
+        self.assertIsNone(self._contacts([self._card(["tony"], name="Someone",
+                                                     email="a@b.com")]))
+
+    def test_no_token_means_cannot_tell(self):
+        with mock.patch("automations.shared.contacts_auth.load_credentials",
+                        side_effect=RuntimeError("no token")):
+            self.assertIsNone(R.scan_contacts(["Melik El Jaiez"],
+                                              logfn=lambda *a: None))
+
+    def test_a_checked_contacts_line_replaces_the_generic_one(self):
+        txt = R.render(ENTRY, [], [{"label": "Google Contacts", "done": True,
+                                    "where": "their card",
+                                    "fix": "is in no contact group"}])
+        done, need = txt.split("*To do*")
+        self.assertIn("Google Contacts", done)
+        self.assertNotIn("Google Contacts", need)
+
+
+class OverridesMathStaysWhilePaid(unittest.TestCase):
+    """Eve, 2026-09-11, on Melik's Overrides Math row ($1,175): "cuando deje de
+    proveer revenue y esté en $0 se puede sacar". Asking for the row to come
+    off while it still carries money is asking for the opposite of the rule."""
+
+    def _scan(self, row_values=None, read_error=False):
+        surf = S.SheetCells("ORG Sales Board", "id", tabs=("Overrides Math",),
+                            keep_while_paid=("Overrides Math",))
+        cell = mock.Mock(); cell.row = 110; cell.address = "A110"
+        ws = mock.Mock(); ws.title = "Overrides Math"
+        ws.findall.return_value = [cell]
+        sh = mock.Mock(); sh.worksheets.return_value = [ws]
+        if read_error:
+            sh.values_batch_get.side_effect = RuntimeError("quota")
+        else:
+            sh.values_batch_get.return_value = {
+                "valueRanges": [{"values": [row_values]}]}
+        client = mock.Mock(); client.open_by_key.return_value = sh
+        with mock.patch.object(S, "SURFACES", [surf]), \
+             mock.patch("automations.recruiting_report.fill._client",
+                        return_value=client):
+            return R.scan_sheets(["Melik El Jaiez"], logfn=lambda *a: None)
+
+    def test_a_row_still_in_money_is_left_alone(self):
+        got = self._scan(["Melik El Jaiez", "35", "100", "81", "$1,175"])
+        self.assertEqual(len(got), 1)
+        self.assertTrue(got[0]["kept"])
+        self.assertIn("$1,175", got[0]["where"])
+        txt = R.render(ENTRY, [], got)
+        after = txt.split("*To do*")[1]
+        self.assertNotIn(":black_square_button: *ORG Sales Board*", after)
+        self.assertIn("_Leave alone: ORG Sales Board", after)
+
+    def test_a_row_at_zero_is_to_do(self):
+        got = self._scan(["Olin Salter", "0", "0", "0", "$0"])
+        self.assertEqual(len(got), 1)
+        self.assertFalse(got[0].get("kept"))
+        self.assertIn("A110", got[0]["where"])
+
+    def test_unreadable_amount_is_to_do_with_the_rule_spelled_out(self):
+        got = self._scan(read_error=True)
+        self.assertFalse(got[0].get("kept"))
+        self.assertIn("$0", got[0]["where"])
+
+    def test_money_parsing(self):
+        self.assertEqual(R._money("$1,175"), 1175.0)
+        self.assertEqual(R._money("-$20"), -20.0)
+        self.assertEqual(R._money("$0"), 0.0)
+        self.assertIsNone(R._money("81"))
+        self.assertIsNone(R._money("Melik El Jaiez"))

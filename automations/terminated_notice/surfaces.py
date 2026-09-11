@@ -21,8 +21,9 @@ Four kinds:
                with org_sales_board's roster_remove, because rows there carry
                SUM ranges and chart series that a hand-delete would shear.
   Code       — a roster literal in the repo. Fix: a one-line edit + push.
-  Always     — no way to check it from here (a Google Contacts group), so it is
-               listed every time with its instruction.
+  Always     — listed with its instruction unless run.py can check it. Google
+               Contacts is checked (read-only) since 2026-09-11; the line only
+               falls back to the generic instruction when no card matches.
 
 LEAVE_ALONE is the other half and matters just as much: surfaces where a
 terminated ICD stays ON PURPOSE. The cancels/disconnects rosters are filters
@@ -61,6 +62,20 @@ class SheetCells:
     workbook_id: str
     tabs: tuple = ()
     fix: str = "their rows come off the board"
+    # Tabs whose own convention for "this person left" is a HIDDEN ROW, so a
+    # name found in a hidden row there is the finished state, not a to-do.
+    # Captainship Bonuses is the one: raf_captainship_bonus.sheet_fill treats
+    # hidden rows as departed reps and never fills them. It is listed per tab
+    # on purpose — on Overrides Math a hidden row would still count in the
+    # SUM, so hiding there is NOT done. (Melik El Jaiez, 2026-09-11: his row
+    # 49 had been hidden for weeks and the checklist still said 'clear A49'.)
+    hidden_row_is_done: tuple = ()
+    # Tabs where a terminated ICD's row STAYS while it still shows money, and
+    # comes off only once every $ cell on it reads $0 (Eve, 2026-09-11, about
+    # Melik on Overrides Math: "cuando deje de proveer revenue y esté en $0 se
+    # puede sacar"). A row still in money is listed under Leave alone, not
+    # To do — otherwise the checklist asks for the opposite of the rule.
+    keep_while_paid: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -81,9 +96,14 @@ class Code:
 
 @dataclass(frozen=True)
 class Always:
-    """Can't be checked from here — always listed."""
+    """Listed every time UNLESS the run could check it. `check` names the
+    checker in run.py ('contacts'); when that checker comes back with an
+    answer — done or still to do — its line replaces this one. When it can't
+    tell (no token, no card that matches the name) this line stays: 'I
+    couldn't tell' has to read as 'still to do', never as done."""
     label: str
     fix: str
+    check: str = ""
 
 
 @dataclass(frozen=True)
@@ -140,6 +160,8 @@ SURFACES: List[object] = [
         "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E",
         tabs=("Alphalete ORG Sales Board", "KTS ", "Int WoW Report",
               "Captainship Bonuses", "Overrides Math"),
+        hidden_row_is_done=("Captainship Bonuses",),
+        keep_while_paid=("Overrides Math",),
     ),
     Code("Recruiting office map",
          "automations/recruiting_report/office-mapping.json",
@@ -167,7 +189,8 @@ SURFACES: List[object] = [
          "automations/owner_showdown/distro.py",
          fix="take them off the thread (skip if that contest is over)"),
     Always("Google Contacts",
-           "take them out of their captain's contact group"),
+           "take them out of their captain's contact group",
+           check="contacts"),
 ]
 
 LEAVE_ALONE: List[LeaveAlone] = [
