@@ -1976,3 +1976,28 @@ def test_a_page_apex_will_not_let_anyone_save(page, tmp_path):
       {name:'Rosa Capel', pages:{employment:{Position:'Sales Rep'}}},
       'employment')""")
     assert off == ["Position"], "and it says which one is wrong"
+
+
+def test_the_panel_says_how_old_the_list_is(page, tmp_path):
+    """Megan, 2026-09-10: "It needs to check every time it's opened to make
+    sure it's the most current". The button cannot read a Google Sheet from
+    inside Apex, so the honest thing is to say how old the snapshot is and
+    when that is old enough to matter."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_NO_LINKS)
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    js = filler.build_js([{"name": "Rosa Capel", "find": "Capel", "pages": {}}],
+                         "WE 9.13")[len("javascript:"):]
+    page.evaluate(js)
+    assert "board read" in page.locator("#ansub").inner_text()
+    assert page.locator("#ansage").inner_text() == "", "fresh, so nothing to say"
+
+    # wind the clock forward instead of waiting half a day
+    page.evaluate("""() => { const real = Date.now;
+        Date.now = () => real() + 13 * 3600 * 1000; }""")
+    page.wait_for_function(
+        "() => document.getElementById('ansage').innerText.includes('hours ago')",
+        timeout=5000)
+    out = page.locator("#ansage").inner_text()
+    assert "Rebuild it on the Hub" in out

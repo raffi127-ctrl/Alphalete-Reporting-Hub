@@ -227,12 +227,19 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     v["claim_dependents"] = f"{dep or 0:.2f}"
 
     # All three filing-status boxes are identified now (see MARITAL_BY_FLAG).
-    # A form with none ticked -- or somehow more than one -- sets nothing and is
-    # reported: a filing status nobody stated is not one to invent.
     ticked = [flag for flag in AX.MARITAL_BY_FLAG
               if str(hire.values.get(flag) or "").strip().lower() == "true"]
     if len(ticked) == 1:
         v["marital_status"] = AX.MARITAL_BY_FLAG[ticked[0]]
+    elif not ticked:
+        # NOBODY ticked is an answer now, not a gap: "Assume single and no
+        # dependents if they don't fill out" (2026-09-10, via Megan). It is
+        # still reported as an assumption -- filled AND flagged -- because it
+        # is our reading of a blank box, not something they stated.
+        v["marital_status"] = AX.MARITAL_SINGLE
+        v["claim_dependents"] = f"{dep or 0:.2f}"
+    # More than one ticked is left alone. That is a contradiction on a signed
+    # form, and picking one of them would be inventing the answer.
     return v
 
 
@@ -320,8 +327,9 @@ def manual_items(add, hires) -> list:
             reasons.append("I-9 is missing " + ", ".join(missing))
         ticked = [f for f in AX.MARITAL_BY_FLAG
                   if str(hire.values.get(f) or "").strip().lower() == "true"]
-        if len(ticked) != 1:
-            reasons.append("W-4 Step 1(c) is blank — set Marital Status")
+        if len(ticked) > 1:
+            reasons.append(
+                "their W-4 has more than one filing status ticked — pick one")
         # hire.rejected carries the developer's version ("field_map.json may
         # be stale, recalibrate"). Alisson and Tiff are being asked to type
         # something into Apex, not to debug this repo, so it is rewritten as
@@ -578,8 +586,18 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
         flat = {lbl for page in pages.values() for lbl in page}
         gaps = [lbl for lbl in ("Marital Status", "Date of Birth",
                                 "Street Address") if lbl not in flat]
+        said = []
         if gaps:
-            notes[c.name] = "set by hand: " + ", ".join(gaps)
+            said.append("set by hand: " + ", ".join(gaps))
+        # Filled AND flagged. A blank Step 1(c) is now read as Single with no
+        # dependents, which is our reading of an empty box rather than
+        # something they wrote down, so it is named.
+        if not [f for f in AX.MARITAL_BY_FLAG
+                if str(hire.values.get(f) or "").strip().lower() == "true"]:
+            said.append("W-4 Step 1(c) blank \u2014 filled as Single, "
+                        "no dependents")
+        if said:
+            notes[c.name] = "; ".join(said)
     OUTPUT_DIR.mkdir(exist_ok=True)
     out = OUTPUT_DIR / f"fill-apex-{today.isoformat()}.html"
     out.write_text(filler.build_page(

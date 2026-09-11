@@ -82,7 +82,7 @@ _JS = r"""
  /* Stamped when the button was generated. A saved bookmarklet freezes
     whatever was in it, so the only way to tell a fixed button from the one
     saved three fixes ago is to have it say so out loud. */
- var BUILD='%(build)s';
+ var BUILD='%(build)s', BUILT_AT=%(built_at)s;
  /* The week's people live in this browser, not inside the button. Carrying
     them meant a saved bookmark froze that week's data AND that day's code, so
     every change cost a delete, a copy and a re-drag. Saved once now; a new
@@ -1107,7 +1107,8 @@ _JS = r"""
     "Just this page" escape hatch exactly where somebody would need it. */
  var RUNNING=false;
  box.innerHTML='<div id="anshd" style="font-weight:700;font-size:16px"></div>'+
-   '<div id="ansub" style="color:#555;margin:2px 0 10px"></div>'+
+   '<div id="ansub" style="color:#555;margin:2px 0 4px"></div>'+
+   '<div id="ansage" style="font-size:12px;font-weight:600"></div>'+
    (gnd?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Gender <span style="color:#b00">(required, not on the board)</span></div>'+
         '<select id="ansgender" style="width:100%%;padding:6px;font-size:15px">'+
         '<option value="">Pick one</option><option>Female</option><option>Male</option></select></div>':'')+
@@ -1156,9 +1157,25 @@ _JS = r"""
       has to be answerable without clicking anything (Megan, 2026-09-10). */
    var sub=(list
      ? D.length+' new starts'+(I? ' \u00b7 '+I+' done already':'')
-     : (I+1)+' of '+D.length+' \u00b7 %(week)s')+' \u00b7 built '+BUILD;
+     : (I+1)+' of '+D.length+' \u00b7 %(week)s')+
+     ' \u00b7 board read '+BUILD;
    var sb=document.getElementById('ansub');
    if(sb.textContent!==sub) sb.textContent=sub;
+   /* This list is a SNAPSHOT of the New Starts box, taken when the setup was
+      generated. The button cannot re-read a Google Sheet from inside Apex, so
+      the only honest thing it can do is say how old the snapshot is and when
+      that is old enough to matter (Megan, 2026-09-10). */
+   var age=document.getElementById('ansage');
+   if(age){
+     var hrs=(Date.now()-BUILT_AT)/3600000, msg='', col='';
+     if(hrs>=12){ msg='This list was read off the board '+Math.round(hrs)+
+       ' hours ago. Rebuild it on the Hub before running \u2014 anyone added or '+
+       'marked T since is not in it.'; col='#b00'; }
+     else if(hrs>=3){ msg='Read off the board '+Math.round(hrs)+
+       ' hours ago. Rebuild it if the board has moved since.'; col='#a56a00'; }
+     if(age.textContent!==msg){ age.textContent=msg; age.style.color=col;
+       age.style.margin=msg?'6px 0':''; }
+   }
    var want=list?'none':'';
    var per=document.getElementById('anspr');
    if(per&&per.style.display!==want) per.style.display=want;
@@ -1535,6 +1552,11 @@ _JS = r"""
 """
 
 
+def _now_ms() -> int:
+    import datetime as _dt
+    return int(_dt.datetime.now().timestamp() * 1000)
+
+
 def _now_stamp() -> str:
     import datetime as _dt
     return _dt.datetime.now().strftime("%b %d %H:%M")
@@ -1642,6 +1664,7 @@ def build_js(people=None, week: str = "", build: str = "") -> str:
                         if people is not None else "null",
                 "week": week.replace("'", ""),
                 "build": (build or _now_stamp()).replace("'", ""),
+                "built_at": str(int(_now_ms())),
                 "role": json.dumps(SECURITY_ROLE_LABEL.lower())}
     return _guard("javascript:" + " ".join(js.split()))
 

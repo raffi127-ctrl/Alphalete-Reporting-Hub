@@ -259,17 +259,24 @@ def test_an_untouched_step_three_claims_zero():
     assert v["claim_dependents"] == "0.00"
 
 
-def test_only_the_identified_filing_status_is_set():
-    """Three W-4 boxes, one ticked per form, and only the Single one is
-    identified. The other two are reported and set by hand rather than given a
-    filing status nobody has confirmed -- it lands on a real tax record."""
+def test_a_blank_filing_status_is_read_as_single():
+    """2026-09-10, via Megan: "Assume single and no dependents if they don't
+    fill out". A blank Step 1(c) is an answer now, not a gap -- but a form
+    with two ticked is a contradiction, and picking one of them would be
+    inventing it."""
     from automations.apex_new_starts import apex as AX
     from automations.apex_new_starts import run as RUN
     v = RUN.apex_values(_cand(), BID.NewHire(
         name="Ann Lee", values={"filing_single": "True"}))
     assert v["marital_status"] == AX.MARITAL_SINGLE
-    v2 = RUN.apex_values(_cand(), BID.NewHire(name="Ann Lee", values={}))
-    assert "marital_status" not in v2
+
+    blank = RUN.apex_values(_cand(), BID.NewHire(name="Ann Lee", values={}))
+    assert blank["marital_status"] == AX.MARITAL_SINGLE
+    assert blank["claim_dependents"] == "0.00"
+
+    two = RUN.apex_values(_cand(), BID.NewHire(
+        name="Ann Lee", values={"filing_single": "True", "filing_hoh": "True"}))
+    assert "marital_status" not in two, "a contradiction is not ours to settle"
 
 
 def test_somebody_who_signed_weeks_ago_is_not_reported_as_missing():

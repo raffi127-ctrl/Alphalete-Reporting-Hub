@@ -5806,6 +5806,13 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: ["--preview"],
             },
             {
+                "label": "Build the button",
+                "icon": "\U0001F9F1",
+                "help": "Reads the New Starts box again and writes a fresh setup to output/. The list inside the button is a snapshot, so rebuild it whenever the board has moved.",
+                "module": "automations.apex_new_starts.run",
+                "args_fn": lambda: ["--button", "--any-day"],
+            },
+            {
                 "label": "Match Apex Fields",
                 "icon": "\U0001F50D",
                 "help": "Opens Apex and works out which box on the new-employee screen each answer goes in. Types nothing.",
