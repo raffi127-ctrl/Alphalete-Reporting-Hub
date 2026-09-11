@@ -228,9 +228,14 @@ def ask_for_channel():
 # install.json when the package is built, straight from
 # disposition_signup.schema, so there is one source of truth and a rebuilt
 # package picks up any change for free.
-KNOCKS_NONE = "No knocks report, thanks"
-KNOCKS_SAME = "The same channel as my credit-check alerts"
+KNOCKS_YES = "Yes, please"
+KNOCKS_NONE = "No knocks board, thanks"
 KNOCKS_OTHER = "A different channel"
+ADD_YES = "Yes, add another"
+ADD_NO = "No, that's all"
+# A ceiling, not a limit anyone will reach. It exists so a mis-clicked dialog
+# cannot loop forever on somebody's laptop.
+MAX_KNOCKS_DESTINATIONS = 4
 HOURS_OK = "Yes, those are our hours"
 HOURS_DIFFERENT = "No, ours are different"
 
@@ -244,87 +249,136 @@ def _ampm(hhmm):
 
 
 def ask_about_knocks():
-    """How often the office wants their knocks report, and where it goes.
+    """Where the knocks board goes, and how often -- PER CHANNEL.
 
-    ASKED HERE so nobody has to be chased for it later, and so the answer
-    arrives with the install rather than as a separate conversation. Like the
-    channel, it is a REQUEST: it lands on the reporting team's sheet and
-    somebody sets it up.
+    An office can want it in more than one room on more than one clock (Megan
+    2026-09-11: "they should be able to pick I want it posted every x min in
+    this channel"), which is exactly what the disposition enrolment already
+    models: a LIST of destinations, each with its own cadence, not one cadence
+    shared by everywhere. The owners' room every 15 minutes and the rep channel
+    once an hour is a normal answer, and a single picker cannot express it.
+
+    Asked one destination at a time, because "how many channels?" is a question
+    nobody can answer before they have been shown what a channel costs them.
     """
     rec = json.loads((CONFIG_DIR / "install.json").read_text())
-    if rec.get("requested_knocks_frequency"):
-        say("      already asked for: %s" % rec["requested_knocks_frequency"])
+    if rec.get("requested_knocks_destinations") is not None:
+        say("      already asked -- %d destination(s)"
+            % len(rec["requested_knocks_destinations"]))
         return
 
     picker = rec.get("knocks_picker") or []
-    labels = [o["label"] for o in picker] + [KNOCKS_NONE]
+    labels = [o["label"] for o in picker]
 
-    say("      asking about the knocks report (look for the pop-up box)...")
+    say("      asking about the knocks board (look for the pop-up boxes)...")
     try:
-        chosen = ask.choose(
-            "How often would you like your knocks and dispositions board?",
-            labels)
+        wants = ask.choose(
+            "Would you like your knocks and dispositions board posted to "
+            "Slack?", [KNOCKS_YES, KNOCKS_NONE])
     except ask.Cancelled:
         say("      skipped -- the reporting team will check with you.")
         return
 
-    if chosen == KNOCKS_NONE:
-        rec["requested_knocks_cadence_min"] = None
-        rec["requested_knocks_label"] = KNOCKS_NONE
-        (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
-        say("      noted: no knocks report.")
-        return
+    destinations = []
+    if wants == KNOCKS_YES:
+        default_channel = rec.get("requested_channel", "")
+        while len(destinations) < MAX_KNOCKS_DESTINATIONS:
+            channel = _ask_knocks_channel(default_channel, len(destinations))
+            if channel is None:
+                break
+            try:
+                chosen = ask.choose(
+                    "How often should the board be posted in %s?" % channel,
+                    labels)
+            except ask.Cancelled:
+                break
+            destinations.append({
+                "channel": channel,
+                "cadence_min": next(
+                    (o["value"] for o in picker if o["label"] == chosen), None),
+                "label": chosen,
+            })
+            say("      %s -- %s" % (channel, chosen))
+            if len(destinations) >= MAX_KNOCKS_DESTINATIONS:
+                break
+            try:
+                if ask.choose("Add another channel for the knocks board?",
+                              [ADD_NO, ADD_YES]) != ADD_YES:
+                    break
+            except ask.Cancelled:
+                break
 
-    cadence = next((o["value"] for o in picker if o["label"] == chosen), None)
+    note = _ask_field_hours(rec) if destinations else ""
 
-    channel = rec.get("requested_channel", "")
-    try:
-        where = ask.choose("Where should the knocks board be posted?",
-                           [KNOCKS_SAME, KNOCKS_OTHER])
-        if where == KNOCKS_OTHER:
-            typed = ask.text(
-                "Which Slack channel should the knocks board go to?\n\n"
-                "For example:  #palace-sales").strip()
-            if typed:
-                channel = typed if typed.startswith("#") else "#" + typed.lstrip("#")
-    except ask.Cancelled:
-        pass
-
-    # FIELD HOURS: one question for almost everybody. The enrolment form says
-    # "most offices leave these as they are", and it is right -- so the default
-    # is shown and confirmed rather than asked for field by field. An office
-    # that IS different says so in their own words and the reporting team sets
-    # it; building a time picker out of dialog boxes would be a worse way to
-    # get an answer that a person is going to check anyway.
-    hours = dict(rec.get("knocks_default_hours") or {})
-    note = ""
-    if hours:
-        sat = ("Saturdays %s to %s" % (_ampm(hours["sat_start"]),
-                                       _ampm(hours["sat_end"]))
-               if hours.get("saturday") else "no Saturdays")
-        try:
-            answer = ask.choose(
-                "We would only send during your field hours:\n\n"
-                "Monday to Friday, %s to %s\n%s\n\nSundays are off for "
-                "everyone. Is that right?"
-                % (_ampm(hours["day_start"]), _ampm(hours["day_end"]), sat),
-                [HOURS_OK, HOURS_DIFFERENT])
-            if answer == HOURS_DIFFERENT:
-                note = ask.text(
-                    "What hours are your reps in the field?\n\n"
-                    "For example:  Mon-Fri 2pm to 9pm, Saturdays 11am to 5pm"
-                ).strip()
-        except ask.Cancelled:
-            pass
-
-    rec["requested_knocks_cadence_min"] = cadence
-    rec["requested_knocks_label"] = chosen
-    rec["requested_knocks_channel"] = channel
+    rec["requested_knocks_destinations"] = destinations
     rec["requested_knocks_hours_note"] = note
     (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
-    say("      noted: %s%s" % (chosen, (" -> %s" % channel) if channel else ""))
-    if note:
-        say("      hours: %s" % note)
+    if destinations:
+        say("      noted: %s" % "; ".join(
+            "%s %s" % (d["channel"], d["label"]) for d in destinations))
+    else:
+        say("      noted: no knocks board.")
+
+
+def _ask_knocks_channel(default_channel, already):
+    """Which room this destination is. None means they are done."""
+    options = []
+    if default_channel and not already:
+        options.append("%s (same as my alerts)" % default_channel)
+    options.append(KNOCKS_OTHER)
+    if already:
+        options.append(ADD_NO)
+    try:
+        pick = ask.choose(
+            "Which Slack channel should the knocks board be posted in?"
+            if not already else
+            "Which channel should it ALSO be posted in?", options)
+    except ask.Cancelled:
+        return None
+    if pick == ADD_NO:
+        return None
+    if pick != KNOCKS_OTHER:
+        return default_channel
+    try:
+        typed = ask.text(
+            "Which Slack channel?\n\nFor example:  #palace-sales").strip()
+    except ask.Cancelled:
+        return None
+    if not typed:
+        return None
+    return typed if typed.startswith("#") else "#" + typed.lstrip("#")
+
+
+def _ask_field_hours(rec):
+    """Confirm the field hours rather than collecting them.
+
+    The enrolment form says most offices leave these as they are, and it is
+    right -- so the default is shown in their own clock and confirmed. An
+    office that differs says so in their own words for a human to set. A time
+    picker built out of dialog boxes would be a worse way to get an answer
+    somebody is going to check anyway.
+    """
+    hours = dict(rec.get("knocks_default_hours") or {})
+    if not hours:
+        return ""
+    sat = ("Saturdays %s to %s" % (_ampm(hours["sat_start"]),
+                                   _ampm(hours["sat_end"]))
+           if hours.get("saturday") else "no Saturdays")
+    try:
+        answer = ask.choose(
+            "We would only post during your field hours:\n\n"
+            "Monday to Friday, %s to %s\n%s\n\nSundays are off for "
+            "everyone. Is that right?"
+            % (_ampm(hours["day_start"]), _ampm(hours["day_end"]), sat),
+            [HOURS_OK, HOURS_DIFFERENT])
+        if answer == HOURS_DIFFERENT:
+            return ask.text(
+                "What hours are your reps in the field?\n\n"
+                "For example:  Mon-Fri 2pm to 9pm, Saturdays 11am to 5pm"
+            ).strip()
+    except ask.Cancelled:
+        pass
+    return ""
 
 
 def check_account() -> bool:

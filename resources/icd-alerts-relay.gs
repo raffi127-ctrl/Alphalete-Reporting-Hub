@@ -28,10 +28,8 @@
  *                     Agent | Last Posted JSON | Posted At
  *   'Office Channels' Office | Owner | They Asked For | Requested At |
  *                     Channel ID | Channel Name | Approved |
- *                     Knocks: How Often | Knocks: Cadence Min |
- *                     Knocks: Hours Note | Knocks: Channel Asked |
- *                     Knocks Channel ID | Knocks Channel Name |
- *                     Knocks Approved
+ *                     Knocks: Wanted | Knocks: Destinations JSON |
+ *                     Knocks: Hours Note | Knocks Approved
  *
  * THE CHANNEL IS A REQUEST, NOT A SETTING. The installer asks the owner where
  * their alerts should go and relays the answer into 'They Asked For'. Nothing
@@ -100,15 +98,24 @@ function doPost(e) {
     // change the answer. Only ever touches the columns the owner is allowed
     // to influence.
     var asked = String(body.requested_channel || '').trim();
-    var knocks = {
-      how: String(body.requested_knocks_label || '').trim(),
-      min: (body.requested_knocks_cadence_min === null ||
-            body.requested_knocks_cadence_min === undefined)
-             ? '' : String(body.requested_knocks_cadence_min),
-      hours: String(body.requested_knocks_hours_note || '').trim(),
-      channel: String(body.requested_knocks_channel || '').trim()
-    };
-    if (asked || knocks.how) {
+    // A LIST. Stored as readable text for whoever reviews it AND as JSON for
+    // whatever builds the schedule -- reading a schedule back out of a
+    // sentence is not something anyone should have to do.
+    var dests = body.requested_knocks_destinations;
+    var knocks = null;
+    if (dests !== null && dests !== undefined) {
+      var summary = dests.length
+        ? dests.map(function (d) {
+            return String(d.channel || '?') + ' - ' + String(d.label || '?');
+          }).join('; ')
+        : 'No knocks board';
+      knocks = {
+        wanted: summary,
+        json: JSON.stringify(dests),
+        hours: String(body.requested_knocks_hours_note || '').trim()
+      };
+    }
+    if (asked || knocks) {
       _recordChannelRequest(office, String(body.owner || ''), asked, knocks);
     }
 
@@ -181,10 +188,10 @@ function _recordChannelRequest(office, owner, asked, knocks) {
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === office) {
         var sameCh = String(rows[i][2]).trim() === asked;
-        var sameKn = String(rows[i][7] || '').trim() === knocks.how &&
-                     String(rows[i][8] || '').trim() === knocks.min &&
-                     String(rows[i][9] || '').trim() === knocks.hours &&
-                     String(rows[i][10] || '').trim() === knocks.channel;
+        var sameKn = !knocks ||
+                     (String(rows[i][7] || '').trim() === knocks.wanted &&
+                      String(rows[i][8] || '').trim() === knocks.json &&
+                      String(rows[i][9] || '').trim() === knocks.hours);
         if (sameCh && sameKn) return;              // nothing changed
         // Columns 3-4 and 8-9 only. Every *Channel ID*, *Channel Name* and
         // *Approved* column is OURS -- an owner asks, a human decides.
@@ -196,16 +203,16 @@ function _recordChannelRequest(office, owner, asked, knocks) {
           sh.getRange(i + 1, 7).setValue('');
         }
         if (!sameKn) {
-          sh.getRange(i + 1, 8, 1, 4)
-            .setValues([[knocks.how, knocks.min, knocks.hours, knocks.channel]]);
-          sh.getRange(i + 1, 14).setValue('');      // un-approve the knocks half
+          sh.getRange(i + 1, 8, 1, 3)
+            .setValues([[knocks.wanted, knocks.json, knocks.hours]]);
+          sh.getRange(i + 1, 11).setValue('');      // un-approve the knocks half
         }
         return;
       }
     }
     sh.appendRow([office, owner, asked, now, '', '', '',
-                  knocks.how, knocks.min, knocks.hours, knocks.channel,
-                  '', '', '']);
+                  knocks ? knocks.wanted : '', knocks ? knocks.json : '',
+                  knocks ? knocks.hours : '', '']);
   } finally {
     lock.releaseLock();
   }

@@ -112,16 +112,17 @@ def payload(records: Dict[str, int], day: dt.date,
     # What they asked for on the knocks report. Same rule: a request, decided
     # by a person, and re-sent every sweep so re-running the installer is how
     # an owner changes their mind.
-    if rec.get("requested_knocks_label"):
-        # The LABEL for a person reading the sheet, the MINUTES for the code
-        # that turns it into a schedule. Sending only the sentence would mean
-        # parsing english on our side to recover a number the installer
-        # already had.
-        body["requested_knocks_label"] = rec["requested_knocks_label"]
-        body["requested_knocks_cadence_min"] = rec.get("requested_knocks_cadence_min")
-        body["requested_knocks_channel"] = rec.get("requested_knocks_channel", "")
+    # A LIST of destinations, each with its own cadence -- the owners' room
+    # every 15 minutes and the rep channel once an hour is a normal answer, and
+    # one shared cadence cannot express it. Each carries the LABEL for whoever
+    # reads the sheet and the MINUTES for the code that builds a schedule;
+    # sending only the sentence would mean parsing english on our side to
+    # recover a number the installer already had. An empty list is a real
+    # answer -- "no knocks board" -- and is different from never being asked.
+    if rec.get("requested_knocks_destinations") is not None:
+        body["requested_knocks_destinations"] = rec["requested_knocks_destinations"]
         body["requested_knocks_hours_note"] = rec.get("requested_knocks_hours_note", "")
-    if any(k in body for k in ("requested_channel", "requested_knocks_label")):
+    if any(k in body for k in ("requested_channel", "requested_knocks_destinations")):
         body["owner"] = rec.get("owner", "")
     return body
 
