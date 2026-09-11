@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import ssl
 import urllib.error
 import urllib.request
 from typing import Dict, Optional
@@ -32,6 +33,28 @@ from automations.icd_alerts import config as C
 
 TIMEOUT_SECONDS = 30
 AGENT_VERSION = "icd_alerts/1"
+
+
+def _ssl_context() -> "ssl.SSLContext":
+    """A context that can actually verify Google, on a machine we did not set up.
+
+    A python.org Python on macOS ships with NO CA bundle until somebody runs
+    `Install Certificates.command`, and nobody runs it. Every HTTPS call then
+    dies with CERTIFICATE_VERIFY_FAILED -- which reads like the relay is
+    broken, or like the office has no internet, and is neither. Caught on
+    Megan's own Mac on 2026-09-11 the first time this endpoint was called.
+
+    certifi rides along with patchright, so it is already on any machine that
+    can drive the browser at all; the system store is the fallback for Windows,
+    where it works. Verification is never turned off -- an ICD laptop posting
+    over an unverified connection is not a trade worth making for a fix that
+    exists.
+    """
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # noqa: BLE001 -- no certifi: the system store may be fine
+        return ssl.create_default_context()
 
 
 class RelayError(RuntimeError):
@@ -82,8 +105,15 @@ def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
         rec["relay_url"], data=data, method="POST",
         headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS,
+                                    context=_ssl_context()) as resp:
             raw = resp.read().decode("utf-8", "replace")
+    except ssl.SSLCertVerificationError:
+        raise RelayError(
+            "This computer cannot verify a secure connection, so it cannot "
+            "send. On a Mac this is fixed by opening Applications > Python "
+            "3.x and double-clicking 'Install Certificates.command'. Nothing "
+            "is lost -- the next run sends today's totals again.")
     except urllib.error.HTTPError as e:
         raise RelayError(
             "The reporting server refused the update (error %s). Your alerts "
@@ -98,8 +128,15 @@ def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
     try:
         out = json.loads(raw)
     except ValueError:
-        raise RelayError("The reporting server sent back something unexpected. "
-                         "Nothing was lost; the next run will try again.")
+        # A web page instead of JSON means the relay is mis-deployed on OUR
+        # side -- the wrong url, or a deployment made before the script was
+        # saved (which answers "Script function not found"). Say so plainly:
+        # it is not the office's fault and not something they can fix.
+        snippet = " ".join(raw.split())[:120]
+        raise RelayError(
+            "The reporting server sent back a web page instead of a reply, "
+            "which means it is not set up correctly on our end -- please tell "
+            "the reporting team. Nothing is lost. (It said: %s)" % snippet)
     if not out.get("ok"):
         raise RelayError("The reporting server did not accept the update: %s"
                          % str(out.get("error") or "no reason given"))
