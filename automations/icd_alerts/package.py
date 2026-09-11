@@ -117,10 +117,16 @@ def build(office_key: str, relay_key: Optional[str] = None,
     (folder / "automations" / "__init__.py").write_text(BUNDLE_INIT)
     (folder / "automations" / "shared" / "__init__.py").write_text("")
 
-    for name in ("setup.py", "Install Alphalete Alerts.command",
-                 "Install Alphalete Alerts.bat"):
+    for name in ("setup.py", "Install Alphalete Alerts.command"):
         shutil.copy2(DIST / name, folder / name)
     (folder / "Install Alphalete Alerts.command").chmod(0o755)
+
+    # CRLF, always. A .bat with bare LF endings is parsed unreliably by
+    # cmd.exe, and this repo is developed on a Mac -- so the file on disk here
+    # has LF and would ship that way unless it is converted on the way out.
+    bat = (DIST / "Install Alphalete Alerts.bat").read_text()
+    (folder / "Install Alphalete Alerts.bat").write_bytes(
+        bat.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8"))
 
     (folder / "install.json").write_text(json.dumps({
         "office_key": office.key,
