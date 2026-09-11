@@ -557,6 +557,7 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     anyway -- so a human signs in, and the filling happens inside the tab they
     are already looking at.
     """
+    from automations.apex_new_starts import apex as AX
     from automations.apex_new_starts import filler
 
     title, add, _skipped, hires = gather(today, tab=tab,

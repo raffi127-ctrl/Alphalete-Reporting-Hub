@@ -175,11 +175,34 @@ _JS = r"""
      }catch(e){}
    }
    ngApply(el);
+   runNgHooks(el);
  }
  function ngApply(el){
    if(!window.angular) return;
    try{ var sc=angular.element(el).scope();
         if(sc&&!sc.$$phase) sc.$applyAsync(); }catch(e){}
+ }
+ function runNgHooks(el){
+   /* A blur SHOULD fire ng-blur, but which node carries it varies -- the
+      hidden input, the <select>, or the widget span. Apex answered a set
+      Marital Status with MaritalStatusID: "Marital Status is Required": the
+      dropdown showed the words and the id the form submits was never copied
+      across. So run the expression Apex put there, whichever node holds it.
+      That is exactly the work ng-blur exists to do (Megan, 2026-09-10). */
+   if(!window.angular||!el) return;
+   var box=el, d=0;
+   while(box&&d<4&&!(box.querySelector&&box.querySelector('[ng-blur],[ng-change]'))){
+     box=box.parentElement; d++;
+   }
+   if(!box||!box.querySelectorAll) return;
+   var hooks=box.querySelectorAll('[ng-blur],[ng-change]'), i, n, expr;
+   for(i=0;i<hooks.length;i++){
+     n=hooks[i];
+     expr=n.getAttribute('ng-blur')||n.getAttribute('ng-change');
+     if(!expr) continue;
+     try{ var sc=angular.element(n).scope(); if(sc) sc.$eval(expr); }catch(e){}
+   }
+   ngApply(el);
  }
  function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
  function fire(el,type){
@@ -589,6 +612,10 @@ _JS = r"""
    } else { el.value=v; }
    el.dispatchEvent(new Event('input',{bubbles:true}));
    el.dispatchEvent(new Event('change',{bubbles:true}));
+   /* A plain box needs the blur and the ng hook just as much as a Kendo one:
+      Apex copies the chosen item into the ...ID the form submits on ng-blur,
+      and only the Kendo paths were doing it. */
+   settle(el);
    return true;
  }
  function cleanRole(t){
@@ -614,6 +641,103 @@ _JS = r"""
  function wantsRole(){
    return norm(document.body.innerText).indexOf('security roles')>=0;
  }
+ function roleComplaint(){
+   return norm(document.body.innerText)
+     .indexOf('at least one role must be assigned')>=0;
+ }
+ function roleSection(){
+   /* The container holding the Security Roles list, so a fallback click can
+      never wander off into the rest of the page. */
+   var els=document.querySelectorAll('h1,h2,h3,h4,h5,h6,legend,label,span,div'), i;
+   for(i=0;i<els.length;i++){
+     if(els[i].children.length) continue;
+     if(cleanRole(els[i].textContent)!=='security roles') continue;
+     /* The heading's parent is often the whole form, which would let a
+        fallback click wander as far as a <option>Sales Rep</option> in the
+        Position dropdown. Prefer the block that FOLLOWS the heading. */
+     var after=els[i].nextElementSibling;
+     if(after&&cleanRole(after.textContent).indexOf(%(role)s)>=0) return after;
+     var par=els[i].parentElement;
+     if(par&&par!==document.body&&par.tagName!=='HTML') return par;
+     return after||par||els[i];
+   }
+   return null;
+ }
+ function ownText(el){
+   /* The text of this element alone. "Sales Rep" sits beside a <b>?</b> help
+      icon, so insisting on a childless element found nothing. */
+   var t='', n;
+   for(n=el.firstChild;n;n=n.nextSibling) if(n.nodeType===3) t+=n.nodeValue;
+   return t;
+ }
+ function looksOn(el){
+   if(!el) return false;
+   if(el.getAttribute&&el.getAttribute('aria-checked')==='true') return true;
+   return /(^|\s)(on|checked|selected|active|k-state-selected)(\s|$)/
+     .test(String(el.className||''));
+ }
+ function roleTicked(){
+   var rs=document.querySelectorAll('input[type=radio],input[type=checkbox]'), i, j, caps;
+   for(i=0;i<rs.length;i++){
+     if(!rs[i].checked) continue;
+     caps=roleCaptions(rs[i]);
+     for(j=0;j<caps.length;j++) if(cleanRole(caps[j])===%(role)s) return true;
+   }
+   return false;
+ }
+ function roleByClicking(){
+   /* No input would take it, so click what a PERSON clicks. Apex draws each
+      role as a styled circle; whether the real control underneath is an input
+      at all is not something to guess at. Confined to the Security Roles
+      section, and only elements that are their own leaf of text. */
+   var sec=roleSection(); if(!sec) return false;
+   var complained=roleComplaint();
+   function won(el,before){
+     /* Three ways to know it took, because which one Apex uses is not
+        something to guess: a real input went checked, the control marked
+        itself, or Apex stopped saying a role is missing. */
+     if(roleTicked()) return true;
+     if(looksOn(before)||looksOn(el)||looksOn(el.parentElement)) return true;
+     if(complained&&!roleComplaint()) return true;
+     return false;
+   }
+   var els=sec.querySelectorAll('*'), i, el, before;
+   for(i=0;i<els.length;i++){
+     el=els[i];
+     if(cleanRole(ownText(el))!==%(role)s&&
+        !(el.children.length===0&&cleanRole(el.textContent)===%(role)s)) continue;
+     before=el.previousElementSibling;
+     if(before){ try{ before.click(); }catch(e){} if(won(el,before)) return true; }
+     try{ el.click(); }catch(e){} if(won(el,before)) return true;
+     if(el.parentElement){ try{ el.parentElement.click(); }catch(e){}
+       if(won(el,before)) return true; }
+   }
+   return false;
+ }
+ function roleShape(){
+   /* What the Security Roles list is actually made of, for when none of the
+      above works. One screenshot instead of another round of guessing. */
+   var sec=roleSection();
+   if(!sec) return 'no Security Roles section found';
+   var els=sec.querySelectorAll('*'), i, out=[];
+   for(i=0;i<els.length&&out.length<6;i++){
+     if(els[i].children.length) continue;
+     if(cleanRole(els[i].textContent).indexOf('sales')<0) continue;
+     var e=els[i], chain=[], n=e, d=0;
+     while(n&&n!==sec&&d<4){
+       chain.push(n.tagName.toLowerCase()+
+         (n.className?('.'+String(n.className).split(' ').slice(0,2).join('.')):''));
+       n=n.parentElement; d++;
+     }
+     var sib=e.previousElementSibling;
+     out.push(chain.join(' < ')+' | before: '+
+       (sib? sib.tagName.toLowerCase()+
+        (sib.className?('.'+String(sib.className).split(' ').slice(0,2).join('.')):'')+
+        (sib.getAttribute&&sib.getAttribute('type')?'[type='+sib.getAttribute('type')+']':'')
+        : '(none)'));
+   }
+   return out.length? out.join(' ;; ') : 'nothing reading "Sales Rep" in it';
+ }
  function role(){
    var rs=document.querySelectorAll('input[type=radio],input[type=checkbox]');
    var i, j, caps;
@@ -632,10 +756,14 @@ _JS = r"""
        rs[i].dispatchEvent(new Event('click',{bubbles:true}));
        rs[i].dispatchEvent(new Event('change',{bubbles:true}));
        ngApply(rs[i]);
-       return !!rs[i].checked;
+       if(rs[i].checked) return true;
      }
    }
-   return false;
+   /* Nothing that looks like an input took it. Apex still says the role is
+      missing on a page it will not save, so try the visible control
+      (Megan, 2026-09-10: "didn't pick role again" -- the first fix only ever
+      met records TeleMapper had already ticked). */
+   return roleByClicking();
  }
  function labelOf(el){
    /* the caption a person reads for this control, for naming it back */
@@ -686,7 +814,7 @@ _JS = r"""
        if(await setVal(el,set[k])) done.push(k); else miss.push(k+' (no matching option)'); }
      else miss.push(k); }
    if(role()){ done.push('Sales Rep role'); found++; }
-   else if(wantsRole()) miss.push('Sales Rep role');
+   else if(wantsRole()) miss.push('Sales Rep role \u2014 '+roleShape());
    /* The answers given once in the setup form belong to this person wherever
       they are used. Only the whole-week run was reading them, so landing on
       page 2 by hand and pressing "Just this page" left Gender empty and Apex
@@ -998,8 +1126,15 @@ _JS = r"""
      if(sec){ var bx=ssnBoxes();
        if(bx&&await setVal(bx[0],sec)&&await setVal(bx[1],sec)) done.push('Social');
        else miss.push('Social'); }
-     if(role()) done.push('role');
-     else if(wantsRole()) miss.push('Sales Rep role');
+   }
+   /* Security Roles is on the EMPLOYMENT record, and this was only ever
+      attempting it on the tax tab -- so the whole-week run never ticked a role
+      at all, and page 1 could not save. It read as fixed because the first
+      record tried was one TeleMapper had already ticked (Megan, 2026-09-10:
+      "didn't pick role again"). Ask the PAGE whether it wants one. */
+   if(wantsRole()){
+     if(role()) done.push('Sales Rep role');
+     else miss.push('Sales Rep role \u2014 '+roleShape());
    }
    return {done:done,miss:miss};
  }
@@ -1056,6 +1191,8 @@ _JS = r"""
     from the console without re-reading this whole script */
  window.__ansOpen=openPerson;
  window.__ansAlreadyRight=alreadyRight;
+ window.__ansDoPage=doPage;
+ window.__ansRoleSection=roleSection;
  async function runPerson(p,say){
    var id=idFor(p);
    if(!id){ say(p.name+': finding them…'); id=await openPerson(p); }

@@ -336,3 +336,26 @@ def test_no_user_name_is_ever_set():
         values={"email": "aundrebrowder22@gmail.com"}))
     assert "username" not in v
     assert v["account_email"] == "aundrebrowder22@gmail.com"
+
+
+def test_the_page_says_when_a_filing_status_was_assumed(monkeypatch, tmp_path):
+    """Filled AND flagged. Reading a blank Step 1(c) as Single is our reading
+    of an empty box, so the page has to say so beside that person's name --
+    and make_button has to survive being asked (it went out once with AX
+    unimported, and no test called it)."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt
+
+    cand = _cand()
+    hires = {cand.name: BID.NewHire(name=cand.name, values={
+        "first": "Ann", "last": "Lee", "dob": "01/02/1999",
+        "address1": "1 Road", "city": "Frisco", "state": "TX", "zip": "75035"})}
+    monkeypatch.setattr(RUN, "gather",
+                        lambda *a, **k: ("Sales Board WE 9.13", [cand], [], hires))
+    monkeypatch.setattr(RUN.BID, "signed_pdf_url", lambda *a, **k: "")
+    monkeypatch.setattr(RUN, "OUTPUT_DIR", tmp_path)
+
+    assert RUN.make_button(dt.date(2026, 9, 10)) == 0
+    page = next(tmp_path.glob("fill-apex-*.html")).read_text()
+    assert "Step 1(c) blank" in page
+    assert "Single" in page

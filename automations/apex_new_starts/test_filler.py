@@ -2001,3 +2001,109 @@ def test_the_panel_says_how_old_the_list_is(page, tmp_path):
         timeout=5000)
     out = page.locator("#ansage").inner_text()
     assert "Rebuild it on the Hub" in out
+
+
+ROLES_AS_STYLED_CIRCLES = """
+<!doctype html><html><body>
+<h1>Employment Record</h1>
+<label for='p'>Position</label><select id='p'><option>Sales Rep</option></select>
+<h3>Security Roles *</h3>
+<div class="roles">
+  <div class="radio"><span class="circle" data-r="Office Admin"></span><span>Office Admin <b>?</b></span></div>
+  <div class="radio"><span class="circle" data-r="Sales Rep"></span><span>Sales Rep <b>?</b></span></div>
+  <div class="radio"><span class="circle" data-r="Owner"></span><span>Owner <b>?</b></span></div>
+</div>
+<div id="err">At least one role must be assigned.</div>
+<div id="picked"></div>
+<script>
+/* no input[type=radio] anywhere -- the circle IS the control, which is what
+   Apex actually renders */
+document.querySelectorAll('.circle').forEach(c => c.addEventListener('click',
+  () => { document.querySelectorAll('.circle').forEach(x =>
+            x.classList.remove('on'));
+          c.classList.add('on');
+          /* recorded in the DOM, not on window: patchright evaluates in an
+             isolated world and would never see a window property the page
+             itself set */
+          document.getElementById('picked').textContent = c.dataset.r;
+          document.getElementById('err').remove(); }));
+</script>
+</body></html>
+"""
+
+
+def test_the_role_is_ticked_on_the_employment_record(page, tmp_path):
+    """Megan, 2026-09-10: "didn't pick role again". Two faults at once --
+    Security Roles lives on the EMPLOYMENT record and the run only ever tried
+    it on the tax tab, and the control is a styled circle with no
+    input[type=radio] behind it. It read as fixed because the first record
+    tried was one TeleMapper had already ticked."""
+    f = tmp_path / "employment-record.html"
+    f.write_text(ROLES_AS_STYLED_CIRCLES)
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    person = {"name": "Xzavier Russell", "find": "Russell",
+              "pages": {"employment": {"Position": "Sales Rep"}}}
+    page.evaluate(filler.build_js([person], "WE 9.13")[len("javascript:"):])
+
+    r = page.evaluate("""async (p) => await window.__ansDoPage(p, 'employment')""",
+                      person)
+    assert page.locator("#picked").inner_text() == "Sales Rep", \
+        "it clicked the Sales Rep circle, not another role"
+    assert "Sales Rep role" in r["done"]
+    assert not [m for m in r["miss"] if "role" in m]
+
+
+NG_BLUR_TWO_HALVES = """
+<!doctype html><html><body>
+<h1>Tax</h1>
+<div class="form-group" id="ms">
+  <label for="msel">Marital Status</label>
+  <select id="msel" ng-blur="vm.onChangeMarital()">
+    <option></option><option>Single or Married filing separately</option>
+    <option>Married filing jointly or Qualifying surviving spouse</option>
+  </select>
+  <input type="hidden" id="msid" ng-model="vm.employeeBankInfo.MaritalStatusID">
+</div>
+<div id="sent"></div>
+</body></html>
+"""
+
+NG_STUB = """() => {
+  /* the thin slice of Angular this relies on: a scope whose $eval runs the
+     expression the attribute names, which is what copies the chosen item
+     into the ...ID the form actually submits */
+  const scope = {
+    $eval(expr) {
+      if (expr !== 'vm.onChangeMarital()') return;
+      const sel = document.getElementById('msel');
+      document.getElementById('msid').value = sel.value ? 'ID-' + sel.selectedIndex : '';
+      document.getElementById('sent').textContent = document.getElementById('msid').value;
+    },
+    $applyAsync() {},
+  };
+  window.angular = { element: () => ({ scope: () => scope }) };
+}"""
+
+
+def test_the_id_behind_a_dropdown_is_filled_not_just_the_words(page, tmp_path):
+    """Megan, 2026-09-10: "it's still struggling with the marital status
+    dropdown". Apex answered with MaritalStatusID: "Marital Status is
+    Required" -- the box showed the right words and the id the form submits
+    was never copied across. A blur should fire ng-blur, but which node
+    carries it varies, so run the expression Apex put there."""
+    f = tmp_path / "bank-info.html"
+    f.write_text(NG_BLUR_TWO_HALVES)
+    page.goto(f.as_uri())
+    page.evaluate(NG_STUB)
+    page.evaluate(filler.build_js(
+        [{"name": "Rosa Capel", "find": "Capel", "pages": {"tax": {
+            "Marital Status": "Married filing jointly or Qualifying surviving spouse"}}}],
+        "WE 9.13")[len("javascript:"):])
+
+    page.evaluate("""async (p) => await window.__ansDoPage(p, 'tax')""",
+                  {"name": "Rosa Capel", "pages": {"tax": {
+                      "Marital Status":
+                          "Married filing jointly or Qualifying surviving spouse"}}})
+    assert page.locator("#sent").inner_text() == "ID-2", \
+        "the id behind the words was copied across too"
