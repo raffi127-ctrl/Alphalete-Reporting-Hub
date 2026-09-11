@@ -142,7 +142,6 @@ ICD_NAME_TO_OFFICE_ID = {
     "jacob morgan":       "22597",
     "jennifer figueroa":  "23132",
     "nii tagoe":          "23275",
-    "melik el jaiez":     "23265",
     "kiarri mcbroom":     "23139",
     "natalia gwarda":     "23431",
     "haytham nagi":       "22524",

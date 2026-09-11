@@ -179,19 +179,37 @@ def scan_sheets(cands: List[str], logfn=print) -> List[dict]:
             continue
 
         if isinstance(surf, S.SheetTab):
-            # An ALREADY-HIDDEN tab is the finished state, not an open item —
-            # hiding is the fix this surface asks for, so a hidden tab drops
-            # off the checklist instead of being reported forever.
-            tabs = [ws.title for ws in sh.worksheets()
-                    if _key(ws.title) in keys
-                    and not ws._properties.get("hidden")]
-            if tabs:
-                hits.append({
-                    "label": surf.label,
-                    "where": "tab " + ", ".join(f"'{t}'" for t in tabs),
-                    "fix": surf.fix,
-                    "note": surf.hiding_is_not_enough,
-                })
+            # An ALREADY-HIDDEN tab is the finished state, not an open item.
+            open_tabs = [ws for ws in sh.worksheets()
+                         if _key(ws.title) in keys
+                         and not ws._properties.get("hidden")]
+            if not open_tabs:
+                continue
+            # DO IT, don't ask (Megan, 2026-09-10: "do all of these that you
+            # safely can"). Hiding is reversible and never loses a cell — the
+            # rows stay exactly where they are and stay readable; it is only
+            # the report's signal to skip the tab. Asking a person to click
+            # 'hide' on a tab we already found is the kind of item that made
+            # the first checklists too long to act on.
+            titles = [ws.title for ws in open_tabs]
+            try:
+                sh.batch_update({"requests": [
+                    {"updateSheetProperties": {
+                        "properties": {"sheetId": ws.id, "hidden": True},
+                        "fields": "hidden"}}
+                    for ws in open_tabs]})
+                hits.append({"label": surf.label, "done": True,
+                             "where": "tab " + ", ".join(f"'{x}'" for x in titles),
+                             "fix": "hidden (rows untouched)",
+                             "note": surf.hiding_is_not_enough})
+                logfn(f"  hid {len(titles)} tab(s) in {surf.label}")
+            except Exception as e:  # noqa: BLE001 — report it, never crash
+                hits.append({"label": surf.label,
+                             "where": "tab " + ", ".join(f"'{x}'" for x in titles),
+                             "fix": "hide the tab (don't delete — the data "
+                                    "stays); the automatic hide failed here",
+                             "note": surf.hiding_is_not_enough})
+                logfn(f"  ! could not hide in {surf.label}: {e}")
             continue
 
         # SheetCells — search the LIVE tabs only.
@@ -218,46 +236,45 @@ def scan_sheets(cands: List[str], logfn=print) -> List[dict]:
 # --------------------------------------------------------------------------
 
 def render(entry: dict, code_hits: List[dict], sheet_hits: List[dict]) -> str:
-    """The checklist, written for Megan and Eve — plain, short, one line per
-    place, no file paths in the parts a person acts on by hand."""
+    """Two sections and nothing else (Megan, 2026-09-10: "state where you
+    removed/hid them and then what absolutely needs done by a human").
+
+    Everything the scan could finish, it finished before this ran, so the long
+    explanations are gone: a line under *Done* is a fact, and a line under
+    *Needs a person* is the whole of what Megan and Eve have to work through.
+    The reasoning that used to pad the post lives in surfaces.py, where the
+    person changing the rule will actually read it."""
     name = entry["name"]
-    office = (entry.get("notes") or "").strip()
     head = f":octagonal_sign: *{name} is terminated*"
     if entry.get("date"):
         head += f" — logged {entry['date']}"
+    lines = [head]
 
-    lines = [head, ""]
-    if office:
-        lines += [f"_{office}_", ""]
+    done = [h for h in sheet_hits if h.get("done")]
+    todo = [h for h in sheet_hits if not h.get("done")]
 
-    todo: List[str] = []
-    for h in sheet_hits:
-        bit = f"• *{h['label']}* — {h['where']}: {h['fix']}"
-        if h.get("note"):
-            bit += f"\n   ⤷ {h['note']}"
-        todo.append(bit)
-    for h in code_hits:
-        todo.append(f"• *{h['label']}* — {h['fix']}  (`{h['path']}`)")
-    always = [f"• *{a.label}* — {a.fix}" for a in S.always_surfaces()]
+    if done or code_hits:
+        lines += ["", "*Done — no action needed*"]
+        for h in done:
+            lines.append(f"• {h['label']} — {h['where']} {h['fix']}")
+        if code_hits:
+            # Named, not listed: a file path is not a thing Megan or Eve act
+            # on, and seven earlier terminations sat in these same lists for
+            # months without breaking a report.
+            lines.append("• Code rosters still name them ("
+                         + ", ".join(h["label"] for h in code_hits)
+                         + ") — harmless, a Claude session clears these.")
 
-    if todo:
-        lines.append("*Where they still have to come off*")
-        lines += todo + always
-    else:
-        # Not "nothing to do": the Always surfaces can't be checked from here,
-        # so they get their own heading rather than being folded into a list
-        # that claims to be everything we found.
-        lines.append("Nothing left to remove — every report and roster we can "
-                     "check is already clear.")
-        if always:
-            lines += ["", "*Still worth a look*"] + always
+    need = [f"• *{h['label']}* — {h['where']}: {h['fix']}"
+            + (f" ({h['note']})" if h.get("note") else "")
+            for h in todo]
+    need += [f"• *{a.label}* — {a.fix}" for a in S.always_surfaces()]
 
-    lines += ["", "*Left alone on purpose*"]
+    lines += ["", "*Needs a person*"]
+    lines += need if need else ["• Nothing — they are fully off the reports."]
+
     for la in S.LEAVE_ALONE:
-        lines.append(f"• {la.label} — {la.why}")
-
-    lines += ["", "Nothing here is deleted for you. Hide tabs, don't delete "
-                  "them: the data stays and the reports skip hidden tabs."]
+        lines += ["", f"_Left on purpose: {la.label} — {la.why}_"]
     return "\n".join(lines)
 
 

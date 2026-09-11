@@ -56,7 +56,6 @@ OWNERS = sorted([
     "Joseph Logan",
     "Sam Park",
     "Kiarri McBroom",
-    "Melik El Jaiez",
     "Jennifer Figueroa",
     "Carissa Ng",
     "Kim Rodriguez",

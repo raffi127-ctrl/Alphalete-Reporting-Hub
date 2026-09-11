@@ -167,17 +167,14 @@ SURFACES: List[object] = [
          "automations/owner_showdown/distro.py",
          fix="take them off the thread (skip if that contest is over)"),
     Always("Google Contacts",
-           "check their captain's contact group (e.g. \"Chan's Captainship\") "
-           "— the code list above reseeds it, so both have to change"),
+           "take them out of their captain's contact group"),
 ]
 
 LEAVE_ALONE: List[LeaveAlone] = [
     LeaveAlone(
         "Canceled Orders and Disconnects",
-        "they stay on the captainship rosters so their PAST rows keep pulling "
-        "into their captain's totals — pulling a closed office out mid-week "
-        "drops that week's numbers. Kimberly Rodriguez and Melik El Jaiez are "
-        "both still listed there for the same reason."),
+        "their PAST rows keep pulling into their captain's totals. Taking a "
+        "closed office out mid-week silently drops that week's numbers."),
 ]
 
 

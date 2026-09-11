@@ -47,22 +47,41 @@ class ScanCode(unittest.TestCase):
 
 class Render(unittest.TestCase):
 
-    def test_lists_every_hit_and_the_leave_alone_note(self):
+    def test_splits_what_is_done_from_what_a_person_must_do(self):
+        """Megan 2026-09-10: "state where you removed/hid them and then what
+        absolutely needs done by a human". A hidden tab is a FACT, not a task,
+        and it must never appear under the heading Megan and Eve work from."""
         txt = R.render(ENTRY,
                        [{"label": "DD roster", "path": "a/b.json",
                          "fix": "take their name out"}],
                        [{"label": "Focus Report", "where": "tab 'Eric Martinez'",
-                         "fix": "hide the tab"}])
+                         "fix": "hidden (rows untouched)", "done": True},
+                        {"label": "ORG Sales Board", "where": "'KTS' A41",
+                         "fix": "their rows come off"}])
         self.assertIn("Eric Martinez is terminated", txt)
         self.assertIn("logged 2026-09-10", txt)
-        self.assertIn("Focus Report", txt)
-        self.assertIn("DD roster", txt)
-        self.assertIn("Left alone on purpose", txt)
-        self.assertIn("Canceled Orders", txt)
+        done, need = txt.split("*Needs a person*")
+        self.assertIn("Focus Report", done)      # finished -> Done
+        self.assertIn("DD roster", done)         # code rosters are not their job
+        self.assertIn("ORG Sales Board", need)   # genuinely human -> Needs
+        self.assertNotIn("ORG Sales Board", done)
+        self.assertNotIn("Focus Report", need)
 
-    def test_says_so_when_there_is_nothing_left(self):
+    def test_the_shortest_post_is_just_the_one_thing_we_cannot_check(self):
         txt = R.render(ENTRY, [], [])
-        self.assertIn("Nothing left to remove", txt)
+        self.assertNotIn("*Done", txt)
+        self.assertIn("Google Contacts", txt)
+        body = txt.split("*Needs a person*")[1].split("_Left on purpose")[0]
+        self.assertEqual(len([l for l in body.splitlines() if l.startswith("•")]), 1)
+
+    def test_the_leave_alone_rule_survives_without_naming_examples(self):
+        """The rule has to stay — it stops someone "finishing the job" and
+        quietly changing a captain's totals. The example names were dropped
+        because a post about Melik cited Melik as the example."""
+        txt = R.render(ENTRY, [], [])
+        self.assertIn("Left on purpose", txt)
+        self.assertIn("Canceled Orders", txt)
+        self.assertNotIn("Melik El Jaiez", txt)
 
     def test_carries_the_hiding_is_not_enough_warning(self):
         """A tab that a report fills regardless of the hidden flag has to say
@@ -74,10 +93,26 @@ class Render(unittest.TestCase):
                                     "note": "hiding won't stop it"}])
         self.assertIn("hiding won't stop it", txt)
 
-    def test_never_claims_it_removed_anything(self):
-        txt = R.render(ENTRY, [], []).lower()
-        self.assertNotIn("removed them", txt)
-        self.assertIn("nothing here is deleted for you", txt)
+    def test_never_claims_a_removal_it_did_not_make(self):
+        """The contract CHANGED on 2026-09-10: it now hides tabs itself, so
+        "it never touches anything" is no longer true and pretending otherwise
+        would be the lie. What must still hold: nothing is DELETED, and a
+        surface only reads as done when the run actually finished it."""
+        txt = R.render(ENTRY, [],
+                       [{"label": "ORG Sales Board", "where": "'KTS' A41",
+                         "fix": "their rows come off"}])
+        self.assertNotIn("*Done", txt)           # nothing finished -> no claim
+        self.assertIn("Needs a person", txt)
+
+    def test_a_failed_hide_is_reported_as_work_not_as_done(self):
+        """If the API call fails the tab is still open, and the checklist has
+        to say so — a silent failure here is how a tab keeps filling while
+        everyone believes it was handled."""
+        txt = R.render(ENTRY, [],
+                       [{"label": "Focus Report", "where": "tab 'X'",
+                         "fix": "hide the tab; the automatic hide failed here"}])
+        _done, need = txt.split("*Needs a person*")
+        self.assertIn("Focus Report", need)
 
 
 class _StateCase(unittest.TestCase):
