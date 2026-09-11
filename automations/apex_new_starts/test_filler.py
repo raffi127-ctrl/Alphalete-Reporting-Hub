@@ -2142,3 +2142,46 @@ def test_a_correct_page_is_not_called_wrong(page, tmp_path):
       {name:'Xzavier Russell', pages:{employment:{Position:'Owner'}}},
       'employment')""")
     assert off2 == ["Position"], "and a real mismatch is still caught"
+
+
+def test_the_status_on_the_employment_page_is_readable(page, tmp_path):
+    """Megan, 2026-09-10: "I can't tell if they are moving off of the pending
+    list". Apex flips Status to Active once the registration is complete, and
+    that field is on page 1."""
+    f = tmp_path / "employment-record.html"
+    f.write_text("<div class='row'><div>Status <span>*</span></div>"
+                 "<div>Active</div></div><div>Hire Date</div>")
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(
+        [{"name": "Rosa Capel", "find": "Capel", "pages": {}}],
+        "WE 9.13")[len("javascript:"):])
+    assert page.evaluate("() => window.__ansStatus()") == "active"
+
+    page.evaluate("""() => { document.querySelectorAll('div').forEach(d => {
+        if (d.textContent.trim() === 'Active') d.textContent = 'Pending'; }); }""")
+    assert page.evaluate("() => window.__ansStatus()") == "pending"
+
+
+def test_somebody_already_in_apex_is_not_run_again(page, tmp_path):
+    """Megan, 2026-09-10: "It shouldn't try running an already successful
+    entry again". WHO is finished, by name -- a count cannot survive picking
+    somebody out of order."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Rosa Capel", "find": "Capel", "pages": {}}]
+    js = filler.build_js(people, "WE 9.13")[len("javascript:"):]
+    page.evaluate(js)
+    page.evaluate("""() => localStorage.setItem(
+        'apexNewStarts.WE 9.13.done', JSON.stringify({'aundre browder': 1}))""")
+    page.evaluate(js)
+
+    page.locator("#ansrun").click()
+    page.locator("#ansgo").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('already in Apex')",
+        timeout=15000)
+    assert "Aundre Browder: already in Apex" in \
+        page.locator("#ansout").inner_text()

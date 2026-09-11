@@ -1050,7 +1050,24 @@ _JS = r"""
  /* A gender is not a secret and it is a chore to re-answer, so it is kept.
     A Social is neither kept nor written down anywhere -- it lives in this
     tab, for this run, and goes when the tab does. */
- var GKEY=KEY+'.gender';
+ var GKEY=KEY+'.gender', DONEKEY=KEY+'.done';
+ /* WHO is finished, by name -- not "how far down the list we got". A count
+    cannot survive picking somebody out of order, and it re-ran people who
+    were already in (Megan, 2026-09-10: "It shouldn't try running an already
+    successful entry again"). */
+ function doneMap(){
+   try{ return JSON.parse(localStorage.getItem(DONEKEY)||'{}'); }catch(e){ return {}; }
+ }
+ function isDone(p){ return !!doneMap()[norm(p.name)]; }
+ function markDone(p){
+   var m=doneMap(); m[norm(p.name)]=1;
+   try{ localStorage.setItem(DONEKEY,JSON.stringify(m)); }catch(e){}
+ }
+ function doneCount(){
+   var m=doneMap(), n=0, k;
+   for(k in m) if(m[k]) n++;
+   return n;
+ }
  try{ var gsav=JSON.parse(localStorage.getItem(GKEY)||'{}'), gk;
       for(gk in gsav){ if(!window.__ansGender[gk]) window.__ansGender[gk]=gsav[gk]; }
  }catch(e){}
@@ -1207,6 +1224,32 @@ _JS = r"""
  window.__ansAlreadyRight=alreadyRight;
  window.__ansDoPage=doPage;
  window.__ansRoleSection=roleSection;
+ window.__ansStatus=statusOnPage;
+ function statusOnPage(){
+   /* The Status caption sits above its value with no control of its own, so
+      read the text that follows the word. */
+   var els=document.querySelectorAll('*'), i, t;
+   for(i=0;i<els.length;i++){
+     /* "Status *" sits in a div with the asterisk in its own span, so the
+        caption is not a childless element. Read the element's own text. */
+     t=norm(ownText(els[i]));
+     if(t!=='status'&&!(els[i].children.length===0&&norm(els[i].textContent)==='status'))
+       continue;
+     var n=els[i].nextElementSibling, hop=0;
+     while(n&&hop<3){
+       var v=norm(n.textContent);
+       if(v==='active'||v==='pending'||v==='terminated') return v;
+       n=n.nextElementSibling; hop++;
+     }
+     var par=els[i].parentElement;
+     if(par){
+       var pv=norm(par.textContent).replace('status','').trim();
+       if(pv.indexOf('active')===0) return 'active';
+       if(pv.indexOf('pending')===0) return 'pending';
+     }
+   }
+   return '';
+ }
  var FLAGGED=[];
  async function runPerson(p,say){
    var id=idFor(p);
@@ -1249,6 +1292,22 @@ _JS = r"""
      say(p.name+' · '+tabs[t][0]+': saved'+
          (r.miss.length?' — missed '+r.miss.join(', '):''));
    }
+   /* Did they actually come off the Pending list? Apex flips Status to Active
+      once the registration is complete, and that field is on page 1 -- so go
+      back and read it rather than leaving anybody to guess (Megan,
+      2026-09-10: "I can't tell if they are moving off of the pending list").
+      It is an in-page route, so it costs no reload. */
+   var status='';
+   if(await goSpa(tabs[0][1])){
+     await sleep(700);
+     status=statusOnPage();
+   }
+   if(status==='active') say('<b>'+p.name+': done \u2014 now Active, off Pending</b>');
+   else if(status==='pending')
+     say('<span style="color:#b00">'+p.name+
+         ': all three saved but Apex still says Pending \u2014 something on the '+
+         'record is still incomplete</span>');
+   else say('<b>'+p.name+': done</b>');
    return true;
  }
 
@@ -1307,17 +1366,25 @@ _JS = r"""
       Same page, same answer. */
    if(window.__ansWas&&window.__ansWas.path===path) here=window.__ansWas.here||here;
    window.__ansWas={path:path,here:here};
-   var list=(here||RUNNING);
+   var list=(here||RUNNING||(window.__ansNow&&window.__ansNow.running));
    var h=document.getElementById('anshd'); if(!h) return;
-   var head=RUNNING? 'Running the week \u00b7 %(week)s'
+   /* On window, not in this closure. Clicking the button again while a run is
+      going makes a SECOND script, and its panel was naming whoever the count
+      happened to point at -- "David Silva" over a page reading Franyerd Marti
+      (Megan, 2026-09-10). Whoever is actually being filled says so here, and
+      every instance reads the same note. */
+   var now=window.__ansNow;
+   var head=(RUNNING||(now&&now.running))? 'Running the week \u00b7 %(week)s'
      : (here? 'Ready to run \u00b7 %(week)s' : p.name);
    if(h.textContent!==head) h.textContent=head;
    /* Which setup is loaded, in the one place it will be looked at. The
       bookmark runs whatever was last pasted, so "is this this week's list?"
       has to be answerable without clicking anything (Megan, 2026-09-10). */
-   var sub=(list
-     ? D.length+' new starts'+(I? ' \u00b7 '+I+' done already':'')
-     : (I+1)+' of '+D.length+' \u00b7 %(week)s')+
+   var sub=((now&&now.running)
+     ? now.name+' \u00b7 '+now.at+' of '+D.length
+     : (list
+        ? D.length+' new starts'+(doneCount()? ' \u00b7 '+doneCount()+' done already':'')
+        : (I+1)+' of '+D.length+' \u00b7 %(week)s'))+
      ' \u00b7 board read '+BUILD;
    var sb=document.getElementById('ansub');
    if(sb.textContent!==sub) sb.textContent=sub;
@@ -1544,6 +1611,8 @@ _JS = r"""
           (Megan, 2026-09-10: "it didn't stop even though I didn't enter in
           any info and it didn't let me select who"). */
        var who=D[from], nm2=norm(who.name), lack=[];
+       if(isDone(who)&&!confirm(who.name+' is already in Apex.\n\nRun them '+
+           'again anyway?')) return;
        if(!window.__ansGender[nm2]&&!((who.pages||{}).profile||{})['Gender'])
          lack.push('gender');
        if(!window.__ansSSN[nm2]) lack.push('Social');
@@ -1573,10 +1642,17 @@ _JS = r"""
         link is still there to check the list before starting, on purpose. */
      RUNNING=true; FLAGGED=[]; refreshChrome();
      for(j=from;j<stop;j++){
+       if(isDone(D[j])&&!onlyOne){
+         say(D[j].name+': already in Apex — skipped');
+         if(j===I){ I=j+1; try{ localStorage.setItem(KEY,String(I)); }catch(e){} }
+         continue;
+       }
+       window.__ansNow={running:true,name:D[j].name,at:j+1}; refreshChrome();
        say('<b>'+D[j].name+'</b> ('+(j+1)+' of '+D.length+')…');
        var ok=await runPerson(D[j],say);
        if(!ok){ say('<b style="color:#b00">Stopped.</b> Fix that one, then press '+
                     'Run again — it picks up from here.'); break; }
+       markDone(D[j]);
        if(j===I){ I=j+1; try{ localStorage.setItem(KEY,String(I)); }catch(e){} }
        /* Trying one person is a check, not a run: say what happened and get
           out of the way. Asking "carry on?" would be asking the question the
@@ -1590,6 +1666,7 @@ _JS = r"""
           move through the 3 pages of each person and nav to the next person
           automatically"). */
      }
+     window.__ansNow=null;
      if(FLAGGED.length)
        say('<b style="color:#b00">Employment records to check in TeleMapper:'+
            '</b><br>'+FLAGGED.join('<br>'));
@@ -1710,7 +1787,9 @@ _JS = r"""
      : 'Nothing failed yet. Click Save in Apex first, then come back here.';
  };
  document.getElementById('ansreset').onclick=function(e){ e.preventDefault();
-   try{ localStorage.setItem(KEY,'0'); }catch(err){} box.remove(); alert('Back to the first person.'); };
+   if(!confirm('Forget that any of them are done, and start from the top?')) return;
+   try{ localStorage.setItem(KEY,'0'); localStorage.removeItem(DONEKEY); }catch(err){}
+   box.remove(); alert('Back to the first person.'); };
 })();
 """
 
