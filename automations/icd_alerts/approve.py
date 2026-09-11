@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import sys
 from typing import Dict, List, Optional
 
@@ -123,6 +124,78 @@ def members_of(channel_id: str) -> List[str]:
             return out
 
 
+def cmd_knocks(office_key: str) -> int:
+    """Sign off an office's knocks destinations, resolving each channel.
+
+    EVERY ROOM IS CHECKED SEPARATELY. An office can ask for two, and one of
+    them being a channel Lucy was never invited to must not quietly approve
+    the other half into working while the board silently fails in the first.
+    """
+    office_key = office_key.strip().lower()
+    row = next((r for r in P.pending_knocks() if r["office"].lower() == office_key),
+               None)
+    if not row:
+        print("%s has no knocks request waiting. `approve --list` shows what does."
+              % office_key)
+        return 1
+    if not row["asked"]:
+        print("%s asked for a knocks board but named no channel." % office_key)
+        return 1
+    if row.get("hours"):
+        print("NOTE — they said their field hours differ: %s" % row["hours"])
+        print("       (set that with them; it is not stored automatically)\n")
+
+    resolved, problems = [], []
+    for dest in row["asked"]:
+        name = str(dest.get("channel") or "").strip()
+        cadence = dest.get("cadence_min")
+        print("looking up %s ..." % name)
+        ch = find_channel(name)
+        if not ch:
+            problems.append("%s — no such channel (if it is private, Lucy has "
+                            "to be invited before she can even see it)" % name)
+            continue
+        cid = ch["id"]
+        try:
+            members = members_of(cid)
+        except Exception as e:  # noqa: BLE001
+            problems.append("%s — could not read the member list (%s)" % (name, e))
+            continue
+        if LUCY_REPORTING not in members:
+            problems.append("%s — Lucy Reporting is not in it" % name)
+            continue
+        print("  #%s (%s) every %s min%s"
+              % (ch["name"], cid, cadence,
+                 "" if MEGAN in members else "   [you are NOT in this one]"))
+        resolved.append({"channel_id": cid, "channel_name": "#" + ch["name"],
+                         "cadence_min": cadence})
+
+    if problems:
+        print("\nNOT APPROVED:")
+        for p_ in problems:
+            print("  - %s" % p_)
+        print("\nFix those and run this again. Nothing was written.")
+        return 1
+
+    _write_knocks_approval(office_key, resolved)
+    print("\nApproved %d destination(s) for %s." % (len(resolved), office_key))
+    print("Preview:  python -m automations.icd_alerts.knocks_post --office %s "
+          "--force" % office_key)
+    return 0
+
+
+def _write_knocks_approval(office_key: str, resolved) -> None:
+    from automations.recruiting_report.fill import open_by_key
+    tab = open_by_key(P.RELAY_SPREADSHEET_ID).worksheet(P.CHANNELS_TAB)
+    for i, row in enumerate(tab.get_all_values()[1:], start=2):
+        if (row[P.CH_OFFICE] or "").strip().lower() == office_key:
+            tab.update(values=[[json.dumps(resolved), "TRUE"]],
+                       range_name="K%d:L%d" % (i, i))
+            return
+    raise SystemExit("no row for %r on the '%s' tab"
+                     % (office_key, P.CHANNELS_TAB))
+
+
 def cmd_list() -> int:
     pending = P.pending_requests()
     approved = P.approved_channels()
@@ -140,6 +213,14 @@ def cmd_list() -> int:
               % (r["office"], r["owner"] or "", r["asked"] or "(left blank)",
                  r["asked_at"] or "?"))
     print("\nApprove one with:  python -m automations.icd_alerts.approve <office>")
+
+    kn = P.pending_knocks()
+    if kn:
+        print("\nKnocks boards waiting on you:")
+        for r in kn:
+            print("  %-10s %-18s %s" % (r["office"], r["owner"] or "", r["wanted"]))
+        print("\nApprove one with:  python -m automations.icd_alerts.approve "
+              "<office> --knocks")
     return 0
 
 
@@ -221,9 +302,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Approve where an office's alerts post")
     ap.add_argument("office", nargs="?", help="office key, e.g. kash")
     ap.add_argument("--channel", help="override what they asked for")
+    ap.add_argument("--knocks", action="store_true",
+                    help="approve the KNOCKS board destinations instead of "
+                         "the credit-check channel")
     args = ap.parse_args(argv)
     if not args.office:
         return cmd_list()
+    if args.knocks:
+        return cmd_knocks(args.office)
     return cmd_approve(args.office, args.channel)
 
 

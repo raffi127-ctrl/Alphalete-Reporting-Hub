@@ -6,6 +6,7 @@ bit that has silently published 2 reps of 22 elsewhere in this repo.
 """
 from __future__ import annotations
 
+import datetime as dt
 import unittest
 
 from automations.shared import ownerville_knocks as K
@@ -91,3 +92,74 @@ class HeaderIndexTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CadenceTests(unittest.TestCase):
+    """Per-destination cadence: the owners' room every 15 minutes and the rep
+    channel once an hour is a normal answer, so 'is this due?' is a question
+    about ONE room and its own last post."""
+
+    def setUp(self):
+        from automations.icd_alerts import knocks_post as KP
+        self.KP = KP
+        self.now = dt.datetime(2026, 9, 11, 15, 0)
+
+    def test_never_posted_is_due(self):
+        """So an approval takes effect on the next tick, not an hour later."""
+        self.assertTrue(self.KP.is_due({"cadence_min": 60}, None, self.now))
+
+    def test_interval_waits_its_full_cadence(self):
+        last = self.now - dt.timedelta(minutes=45)
+        self.assertFalse(self.KP.is_due({"cadence_min": 60}, last, self.now))
+        self.assertTrue(self.KP.is_due({"cadence_min": 30}, last, self.now))
+
+    def test_two_rooms_on_one_office_are_judged_separately(self):
+        last_hourly = self.now - dt.timedelta(minutes=20)
+        self.assertTrue(self.KP.is_due({"cadence_min": 15}, last_hourly, self.now))
+        self.assertFalse(self.KP.is_due({"cadence_min": 60}, last_hourly, self.now))
+
+    def test_fixed_times_fire_just_after_a_slot(self):
+        at_slot = dt.datetime(2026, 9, 11, 14, 5)
+        self.assertTrue(self.KP.is_due({"cadence_min": 0}, None, at_slot))
+
+    def test_fixed_times_do_not_fire_twice_for_one_slot(self):
+        at_slot = dt.datetime(2026, 9, 11, 14, 5)
+        already = dt.datetime(2026, 9, 11, 14, 1)
+        self.assertFalse(self.KP.is_due({"cadence_min": 0}, already, at_slot))
+
+    def test_fixed_times_are_quiet_between_slots(self):
+        between = dt.datetime(2026, 9, 11, 16, 0)
+        self.assertFalse(self.KP.is_due({"cadence_min": 0}, None, between))
+
+
+class FieldHoursTests(unittest.TestCase):
+    def setUp(self):
+        from automations.icd_alerts import knocks_post as KP
+        from automations.icd_alerts import offices as O
+        self.KP, self.office = KP, O.get("kash")
+
+    def test_sunday_is_off_for_everyone(self):
+        self.assertFalse(self.KP.in_field_hours(
+            self.office, dt.datetime(2026, 9, 13, 15, 0)))
+
+    def test_a_weekday_afternoon_is_in(self):
+        self.assertTrue(self.KP.in_field_hours(
+            self.office, dt.datetime(2026, 9, 11, 15, 0)))
+
+    def test_a_weekday_morning_is_out(self):
+        self.assertFalse(self.KP.in_field_hours(
+            self.office, dt.datetime(2026, 9, 11, 9, 0)))
+
+    def test_saturday_ends_earlier_than_a_weekday(self):
+        self.assertTrue(self.KP.in_field_hours(
+            self.office, dt.datetime(2026, 9, 12, 17, 0)))
+        self.assertFalse(self.KP.in_field_hours(
+            self.office, dt.datetime(2026, 9, 12, 21, 0)))
+
+
+class ClockTests(unittest.TestCase):
+    def test_twelve_hour_clock_without_a_gnu_extension(self):
+        from automations.icd_alerts.knocks_post import _clock
+        self.assertEqual(_clock(dt.datetime(2026, 9, 11, 20, 5)), "8:05 PM")
+        self.assertEqual(_clock(dt.datetime(2026, 9, 11, 0, 30)), "12:30 AM")
+        self.assertEqual(_clock(dt.datetime(2026, 9, 11, 12, 0)), "12:00 PM")

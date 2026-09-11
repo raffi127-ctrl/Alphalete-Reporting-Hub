@@ -31,7 +31,8 @@
  *   'Office Channels' Office | Owner | They Asked For | Requested At |
  *                     Channel ID | Channel Name | Approved |
  *                     Knocks: Wanted | Knocks: Destinations JSON |
- *                     Knocks: Hours Note | Knocks Approved
+ *                     Knocks: Hours Note | Knocks Approved JSON |
+ *                     Knocks Approved
  *
  * THE CHANNEL IS A REQUEST, NOT A SETTING. The installer asks the owner where
  * their alerts should go and relays the answer into 'They Asked For'. Nothing
@@ -217,14 +218,16 @@ function _recordChannelRequest(office, owner, asked, knocks) {
         if (!sameKn) {
           sh.getRange(i + 1, 8, 1, 3)
             .setValues([[knocks.wanted, knocks.json, knocks.hours]]);
-          sh.getRange(i + 1, 11).setValue('');      // un-approve the knocks half
+          // Both knocks approval columns are ours; clear them, because the
+          // office is asking for somewhere different than was signed off.
+          sh.getRange(i + 1, 11, 1, 2).setValues([['', '']]);
         }
         return;
       }
     }
     sh.appendRow([office, owner, asked, now, '', '', '',
                   knocks ? knocks.wanted : '', knocks ? knocks.json : '',
-                  knocks ? knocks.hours : '', '']);
+                  knocks ? knocks.hours : '', '', '']);
   } finally {
     lock.releaseLock();
   }

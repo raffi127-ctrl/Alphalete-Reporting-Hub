@@ -42,6 +42,8 @@ RELAY_TAB = "ICD Relay"
 CHANNELS_TAB = "Office Channels"
 CH_OFFICE, CH_OWNER, CH_ASKED, CH_ASKED_AT = 0, 1, 2, 3
 CH_ID, CH_NAME, CH_APPROVED = 4, 5, 6
+CH_KN_WANTED, CH_KN_JSON, CH_KN_HOURS = 7, 8, 9
+CH_KN_APPROVED_JSON, CH_KN_APPROVED = 10, 11
 
 COL_OFFICE, COL_DAY, COL_RECORDS = 0, 1, 2
 COL_RECEIVED, COL_LOCAL_TIME, COL_AGENT = 3, 4, 5
@@ -241,6 +243,66 @@ def approved_channels(book=None) -> Dict[str, List]:
         ok = (row[CH_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
         if key and cid and ok:
             out.setdefault(key, []).append(Channel(cid, name))
+    return out
+
+
+def approved_knocks(book=None) -> Dict[str, List[Dict]]:
+    """{office_key: [{channel_id, channel_name, cadence_min}]}, signed off.
+
+    Read from OUR column, never from what the office asked for. The request
+    carries a channel NAME somebody typed; this carries an id a person
+    resolved and approved, which are not the same fact.
+    """
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(CHANNELS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return {}
+    out = {}
+    for row in rows[1:]:
+        if len(row) <= CH_KN_APPROVED:
+            continue
+        key = (row[CH_OFFICE] or "").strip().lower()
+        ok = (row[CH_KN_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
+        if not key or not ok:
+            continue
+        try:
+            dests = json.loads(row[CH_KN_APPROVED_JSON] or "[]")
+        except ValueError:
+            continue
+        good = [d for d in dests
+                if d.get("channel_id") and int(d.get("cadence_min") or 0) >= 0]
+        if good:
+            out[key] = good
+    return out
+
+
+def pending_knocks(book=None) -> List[Dict]:
+    """Offices that asked for a knocks board nobody has signed off yet."""
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(CHANNELS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for i, row in enumerate(rows[1:], start=2):
+        row = list(row) + [""] * (CH_KN_APPROVED + 1 - len(row))
+        wanted = (row[CH_KN_WANTED] or "").strip()
+        ok = (row[CH_KN_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
+        if not wanted or wanted == "No knocks board" or ok:
+            continue
+        try:
+            asked = json.loads(row[CH_KN_JSON] or "[]")
+        except ValueError:
+            asked = []
+        out.append({"row": i, "office": (row[CH_OFFICE] or "").strip(),
+                    "owner": (row[CH_OWNER] or "").strip(),
+                    "wanted": wanted, "asked": asked,
+                    "hours": (row[CH_KN_HOURS] or "").strip()})
     return out
 
 
