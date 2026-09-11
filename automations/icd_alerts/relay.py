@@ -175,6 +175,59 @@ def _post(url: str, data: bytes) -> str:
         "lost -- the next run sends today's totals again.")
 
 
+# A Google Sheets cell holds 50,000 characters. A day of dispositions is far
+# short of that -- 30 reps by 15 columns is a few KB -- but "far short" is not
+# "guaranteed", and a silently truncated cell would read as a half-empty board.
+MAX_KNOCKS_CHARS = 45_000
+
+
+def send_knocks(rows, day: Optional[dt.date] = None, *, dry_run: bool = False,
+                log=print) -> Dict:
+    """Hand over one day of disposition rows, raw.
+
+    Separate call, separate failure. A SaraPlus sweep that works must not be
+    lost because OwnerVille was slow, and a knocks read that works must not be
+    thrown away because a credit-check pass failed -- they are different
+    sources with different outages.
+    """
+    day = day or C.today()
+    rec = _endpoint()
+    body = {
+        "office_key": rec["office_key"],
+        "key": rec["relay_key"],
+        "day": day.isoformat(),
+        "knocks_rows": rows,
+        "agent": AGENT_VERSION,
+        "local_time": dt.datetime.now().isoformat(timespec="seconds"),
+    }
+
+    payload_json = json.dumps(body)
+    if len(json.dumps(rows)) > MAX_KNOCKS_CHARS:
+        raise RelayError(
+            "Today's knocks are too large to send in one go (%d reps). Please "
+            "tell the reporting team -- this needs splitting on our end."
+            % len(rows))
+
+    if dry_run:
+        log("dry run -- would send %d knock row(s) for %s" % (len(rows), body["day"]))
+        return {"ok": True, "dry_run": True}
+
+    raw = _post(rec["relay_url"], payload_json.encode("utf-8"))
+    try:
+        out = json.loads(raw)
+    except ValueError:
+        snippet = " ".join(raw.split())[:120]
+        raise RelayError(
+            "The reporting server sent back a web page instead of a reply, "
+            "which means it is not set up correctly on our end -- please tell "
+            "the reporting team. Nothing is lost. (It said: %s)" % snippet)
+    if not out.get("ok"):
+        raise RelayError("The reporting server did not accept the knocks: %s"
+                         % str(out.get("error") or "no reason given"))
+    log("sent %d knock row(s) for %s" % (len(rows), body["day"]))
+    return out
+
+
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
          dry_run: bool = False, log=print) -> Dict:
     """POST one sweep's totals. Returns the decoded reply, or raises RelayError

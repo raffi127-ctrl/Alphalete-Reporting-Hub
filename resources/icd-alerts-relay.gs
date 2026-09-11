@@ -22,10 +22,12 @@
  * the failure that follows looks like a bad key rather than a missing
  * spreadsheet.
  *
- * THREE TABS:
+ * FOUR TABS:
  *   'Relay Keys'      Office | Key | Active | Note      <- we control this
  *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
  *                     Agent | Last Posted JSON | Posted At
+ *   'ICD Knocks'      Office | Day | Rows JSON | Rep Count | Received At |
+ *                     Local Time | Last Posted At
  *   'Office Channels' Office | Owner | They Asked For | Requested At |
  *                     Channel ID | Channel Name | Approved |
  *                     Knocks: Wanted | Knocks: Destinations JSON |
@@ -54,6 +56,7 @@ var SHEET_ID = '1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg';
 var RELAY_TAB = 'ICD Relay';
 var KEYS_TAB = 'Relay Keys';
 var CHANNELS_TAB = 'Office Channels';
+var KNOCKS_TAB = 'ICD Knocks';
 
 function _book() {
   return SpreadsheetApp.openById(SHEET_ID);
@@ -87,6 +90,15 @@ function doPost(e) {
 
     var day = String(body.day || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return _reply({ok: false, error: 'bad day'});
+
+    // A knocks hand-over is its own call: a laptop sends dispositions and
+    // credit checks separately, because they come from different systems with
+    // different outages and one must not cost the other.
+    if (body.knocks_rows !== null && body.knocks_rows !== undefined) {
+      _upsertKnocks(office, day, JSON.stringify(body.knocks_rows),
+                    body.knocks_rows.length, String(body.local_time || ''));
+      return _reply({ok: true, knock_rows: body.knocks_rows.length});
+    }
 
     var records = body.records || {};
     // Store as text, sorted by the sender, so a diff of two days is readable
@@ -213,6 +225,35 @@ function _recordChannelRequest(office, owner, asked, knocks) {
     sh.appendRow([office, owner, asked, now, '', '', '',
                   knocks ? knocks.wanted : '', knocks ? knocks.json : '',
                   knocks ? knocks.hours : '', '']);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _upsertKnocks(office, day, rowsJson, count, localTime) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _book().getSheetByName(KNOCKS_TAB);
+    if (!sh) {
+      sh = _book().insertSheet(KNOCKS_TAB);
+      sh.appendRow(['Office', 'Day', 'Rows JSON', 'Rep Count', 'Received At',
+                    'Local Time', 'Last Posted At']);
+    }
+    var rows = sh.getDataRange().getValues();
+    var now = new Date();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]).trim().toLowerCase() === office &&
+          _dayKey(rows[i][1]) === day) {
+        // Columns 3-6 only. 'Last Posted At' is ours -- it is what stops the
+        // same board being posted twice on one cadence tick.
+        sh.getRange(i + 1, 3, 1, 4)
+          .setValues([[rowsJson, count, now, localTime]]);
+        return;
+      }
+    }
+    sh.appendRow([office, day, rowsJson, count, now, localTime, '']);
+    sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);
   } finally {
     lock.releaseLock();
   }

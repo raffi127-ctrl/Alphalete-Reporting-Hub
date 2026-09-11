@@ -26,7 +26,7 @@ import datetime as dt
 import sys
 
 from automations.icd_alerts import config as C
-from automations.icd_alerts import relay as R, sara_read, state as St
+from automations.icd_alerts import ov_read, relay as R, sara_read, state as St
 
 
 def _log(msg: str) -> None:
@@ -120,6 +120,36 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
     return 0
 
 
+def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
+    """Hand over today's disposition rows. Quiet when no OwnerVille login is
+    saved: the knocks board is optional, and an office that never gave us one
+    has not failed at anything."""
+    if not C.OV_CREDS_PATH.exists():
+        _log("no OwnerVille login saved — skipping knocks")
+        return 0
+    try:
+        rows = ov_read.read_knocks(day, headless=headless, log=_log)
+    except ov_read.KnocksProblem as e:
+        print("\n%s" % e)
+        return 1
+    except RuntimeError as e:
+        print("\n%s" % e)
+        return 1
+
+    if not rows:
+        # A real answer. Nobody has knocked yet today, and an empty grid is
+        # what that looks like -- it is not a failed read, and reporting it as
+        # one would cry wolf every morning.
+        _log("no knocks logged yet today")
+
+    try:
+        R.send_knocks(rows, day, dry_run=dry_run, log=_log)
+    except R.RelayError as e:
+        _log("could not send the knocks this time: %s" % e)
+        return 1
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="ICD credit-check alerts agent")
     ap.add_argument("--set-login", action="store_true",
@@ -127,7 +157,9 @@ def main(argv=None) -> int:
     ap.add_argument("--check", action="store_true",
                     help="step one: confirm this account can read reports")
     ap.add_argument("--once", action="store_true",
-                    help="run one sweep")
+                    help="run one sweep: credit checks, then knocks")
+    ap.add_argument("--knocks", action="store_true",
+                    help="hand over today's knocks only")
     ap.add_argument("--dry-run", action="store_true",
                     help="with --once: read and show, change nothing")
     ap.add_argument("--headful", action="store_true",
@@ -146,12 +178,20 @@ def main(argv=None) -> int:
         return cmd_set_login()
     if args.check:
         return cmd_check(headless)
+    if args.knocks:
+        return cmd_knocks(headless, args.dry_run, day)
     if args.once:
         if args.if_due and not C.in_selling_window():
             # Quiet on purpose. This fires every 15 minutes on somebody's
             # laptop; a line per skip would be the only thing in the log.
             return 0
-        return cmd_once(headless, args.dry_run, day)
+        # BOTH, INDEPENDENTLY. SaraPlus and OwnerVille are different systems
+        # with different outages, and a credit-check sweep that worked must not
+        # be thrown away because OwnerVille was slow -- nor the reverse. Each
+        # reports its own failure and the run ends unhappy if either did.
+        rc = cmd_once(headless, args.dry_run, day)
+        rk = cmd_knocks(headless, args.dry_run, day)
+        return rc or rk
     ap.print_help()
     return 2
 

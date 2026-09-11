@@ -42,6 +42,8 @@ AGENT_FILES = [
     "automations/icd_alerts/sara_read.py",
     "automations/icd_alerts/state.py",
     "automations/icd_alerts/run.py",
+    "automations/icd_alerts/ov_read.py",
+    "automations/shared/ownerville_knocks.py",
     "automations/shared/saraplus.py",
     "automations/shared/credit_check_line.py",
     "automations/shared/browser_banner.py",

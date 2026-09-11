@@ -25,6 +25,13 @@ OV_CREDS_PATH = APP_DIR / "ownerville-creds.json"
 INSTALL_PATH = APP_DIR / "install.json"
 STATE_PATH = APP_DIR / "state.json"
 PROFILE_DIR = APP_DIR / "chrome-profile"
+# A SEPARATE profile from SaraPlus's, so the two never fight over a locked
+# profile directory. Note this is NOT a separate OwnerVille session -- that
+# lives on the server, one per machine -- which is fine here precisely because
+# this read never impersonates: an owner reading their own office cannot
+# retarget anybody's session, including their own if they are signed in in
+# their normal browser at the same time.
+OV_PROFILE_DIR = APP_DIR / "chrome-profile-ov"
 LOG_PATH = APP_DIR / "agent.log"
 
 # The service filter and grid that carry credit checks. Imported rather than
