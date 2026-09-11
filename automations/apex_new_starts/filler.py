@@ -1225,6 +1225,8 @@ _JS = r"""
  window.__ansDoPage=doPage;
  window.__ansRoleSection=roleSection;
  window.__ansStatus=statusOnPage;
+ window.__ansRundown=rundown;
+ window.__ansSetReport=function(r){ REPORT=r; };
  function statusOnPage(){
    /* The Status caption sits above its value with no control of its own, so
       read the text that follows the word. */
@@ -1250,17 +1252,62 @@ _JS = r"""
    }
    return '';
  }
- var FLAGGED=[];
+ var FLAGGED=[], REPORT=[];
+ function rundown(){
+   /* What actually happened, once, at the end -- the running log scrolls and
+      only the last few lines survive, so there was no way to see the shape of
+      a nineteen-person pass (Megan, 2026-09-10: "this should give me a full
+      run down of what was done on completion"). */
+   var done=[], pend=[], failed=[], missBy={}, i, k, r;
+   for(i=0;i<REPORT.length;i++){
+     r=REPORT[i];
+     if(!r.ok) failed.push(r.name+(r.why?' \u2014 '+r.why:''));
+     else if(r.status==='pending') pend.push(r.name);
+     else done.push(r.name);
+     for(k=0;k<r.miss.length;k++){
+       (missBy[r.miss[k]]=missBy[r.miss[k]]||[]).push(r.name);
+     }
+   }
+   var out=['<b style="font-size:14px">'+REPORT.length+' of '+D.length+
+            ' run \u00b7 %(week)s</b>'];
+   if(done.length) out.push('<b style="color:#0F766E">'+done.length+
+     ' now Active, off Pending</b>');
+   if(pend.length) out.push('<b style="color:#b00">Still Pending ('+pend.length+
+     '):</b> '+pend.join(', ')+' \u2014 something on the record is incomplete');
+   if(failed.length) out.push('<b style="color:#b00">Did not finish ('+
+     failed.length+'):</b><br>'+failed.join('<br>'));
+   var names=[], every=[];
+   for(k in missBy) names.push(k);
+   names.sort();
+   var some=[];
+   for(i=0;i<names.length;i++){
+     if(missBy[names[i]].length===REPORT.length) every.push(names[i]);
+     else some.push(names[i]+' ('+missBy[names[i]].join(', ')+')');
+   }
+   if(every.length) out.push('<b>Never filled, for everybody:</b> '+
+     every.join(', ')+' \u2014 these are the ones Apex will not let anyone '+
+     'change from that screen');
+   if(some.length) out.push('<b>Not filled for some:</b><br>'+some.join('<br>'));
+   if(FLAGGED.length) out.push('<b style="color:#b00">Check in TeleMapper:'+
+     '</b><br>'+FLAGGED.join('<br>'));
+   out.push('<a href="#" id="anscopy" style="font-size:11px">copy this</a>');
+   return out.join('<div style="height:6px"></div>');
+ }
  async function runPerson(p,say){
    var id=idFor(p);
    if(!id){ say(p.name+': finding them…'); id=await openPerson(p); }
-   if(!id){ say(p.name+': not on the Pending list — skipped'); return false; }
+   if(!id){ say(p.name+': not on the Pending list — skipped');
+     REPORT.push({name:p.name,ok:false,why:'not on the Pending list',miss:[]});
+     return false; }
+   var seen=[];
    var tabs=[['employment','/employees/'+id+'/edit/employment-record'],
              ['profile','/employees/'+id+'/edit/user-profile'],
              ['tax','/employees/'+id+'/edit/bank-info']];
    for(var t=0;t<tabs.length;t++){
      if(!(await goSpa(tabs[t][1]))){
        say(p.name+': could not move to '+tabs[t][0]+' without a reload — stopped');
+       REPORT.push({name:p.name,ok:false,
+         why:'could not reach the '+tabs[t][0]+' tab',miss:seen});
        return false;
      }
      await sleep(800);
@@ -1288,7 +1335,11 @@ _JS = r"""
        continue;
      }
      if(err){ say(p.name+' · '+tabs[t][0]+': '+err+
-                  (r.miss.length?' — missed '+r.miss.join(', '):'')); return false; }
+                  (r.miss.length?' — missed '+r.miss.join(', '):''));
+       REPORT.push({name:p.name,ok:false,why:tabs[t][0]+': '+err,
+                    miss:seen.concat(r.miss)});
+       return false; }
+     seen=seen.concat(r.miss);
      say(p.name+' · '+tabs[t][0]+': saved'+
          (r.miss.length?' — missed '+r.miss.join(', '):''));
    }
@@ -1308,6 +1359,7 @@ _JS = r"""
          ': all three saved but Apex still says Pending \u2014 something on the '+
          'record is still incomplete</span>');
    else say('<b>'+p.name+': done</b>');
+   REPORT.push({name:p.name,ok:true,status:status,miss:seen});
    return true;
  }
 
@@ -1640,7 +1692,7 @@ _JS = r"""
         looked up from scratch when their turn came anyway. Whoever is missing
         is named at the end, from the run itself. The "Find them all for me"
         link is still there to check the list before starting, on purpose. */
-     RUNNING=true; FLAGGED=[]; refreshChrome();
+     RUNNING=true; FLAGGED=[]; REPORT=[]; refreshChrome();
      for(j=from;j<stop;j++){
        if(isDone(D[j])&&!onlyOne){
          say(D[j].name+': already in Apex — skipped');
@@ -1667,9 +1719,14 @@ _JS = r"""
           automatically"). */
      }
      window.__ansNow=null;
-     if(FLAGGED.length)
-       say('<b style="color:#b00">Employment records to check in TeleMapper:'+
-           '</b><br>'+FLAGGED.join('<br>'));
+     if(REPORT.length){
+       out.innerHTML=rundown();
+       var cp=document.getElementById('anscopy');
+       if(cp) cp.onclick=function(e){ e.preventDefault();
+         var txt=out.innerText.replace(/\ncopy this$/,'');
+         try{ navigator.clipboard.writeText(txt); this.textContent='copied'; }
+         catch(err){ this.textContent='select it and copy'; } };
+     }
      RUNNING=false; refreshChrome();
    }
    document.getElementById('ansgo').onclick=function(){ return begin(false); };

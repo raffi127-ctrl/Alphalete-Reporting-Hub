@@ -155,14 +155,22 @@ def test_the_hire_date_is_the_classroom_day_not_just_monday():
     assert people[1].hire_date == dt.date(2026, 9, 2)
 
 
-def test_no_classroom_day_means_no_hire_date_not_a_guess():
-    """Someone carried over from an earlier cohort has no CR this week. A
-    made-up hire date is a wrong number on a payroll record that nobody would
-    ever catch."""
+def test_no_classroom_day_falls_back_to_that_monday():
+    """Megan, 2026-09-10: "CR=Classroom = day 1 - would be the date of that
+    Monday". Three people on WE 9.13 had no CR -- absent on the Monday, there
+    on the Tuesday -- and came through with no hire date at all. The Monday is
+    the answer, flagged as assumed rather than passed off as read."""
     import datetime as dt
-    people = _people([_person("Carried Over", {0: "Here", 1: "Here"})])
+    people = _people([_person("Carried Over", {0: "", 1: "Hwk1C"})])
     people[0].week_start = dt.date(2026, 8, 31)
-    assert people[0].hire_date is None
+    assert people[0].hire_date == dt.date(2026, 8, 31)
+    assert people[0].hire_assumed is True
+
+    marked = _people([_person("Late Start", {0: "", 1: "CR"})])
+    marked[0].week_start = dt.date(2026, 8, 31)
+    assert marked[0].hire_date == dt.date(2026, 9, 1), \
+        "a CR on the Tuesday still means the Tuesday"
+    assert marked[0].hire_assumed is False
 
 
 def test_the_week_monday_comes_off_the_tab_name():

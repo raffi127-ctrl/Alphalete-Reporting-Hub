@@ -131,14 +131,22 @@ class Candidate:
     def hire_date(self) -> Optional[dt.date]:
         """Their first day: the date of the CR cell.
 
-        None when the week holds no CR -- somebody carried over from an earlier
-        cohort. That is reported, never guessed: a made-up hire date is a wrong
-        number on a payroll record and nobody would ever catch it.
+        No CR anywhere in the week falls back to that week's MONDAY -- which is
+        what CR means, classroom, day one (Megan, 2026-09-10: "CR=Classroom =
+        day 1 - would be the date of that Monday"). Somebody with no CR was
+        absent on the Monday rather than hired later, and Apex holds the
+        authoritative date regardless: that field is read-only there,
+        maintained through TeleMapper. It is still flagged as assumed rather
+        than passed off as something the board stated.
         """
-        day = self.classroom_day
-        if day is None or self.week_start is None:
+        if self.week_start is None:
             return None
-        return self.week_start + dt.timedelta(days=day)
+        return self.week_start + dt.timedelta(days=self.classroom_day or 0)
+
+    @property
+    def hire_assumed(self) -> bool:
+        """The hire date is the week's Monday because nothing was marked CR."""
+        return self.week_start is not None and self.classroom_day is None
 
     @property
     def first(self) -> str:

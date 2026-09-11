@@ -2181,7 +2181,51 @@ def test_somebody_already_in_apex_is_not_run_again(page, tmp_path):
     page.locator("#ansrun").click()
     page.locator("#ansgo").click()
     page.wait_for_function(
-        "() => document.getElementById('ansout').innerText.includes('already in Apex')",
-        timeout=15000)
-    assert "Aundre Browder: already in Apex" in \
-        page.locator("#ansout").inner_text()
+        "() => document.getElementById('ansout').innerText.includes('run \u00b7')",
+        timeout=20000)
+
+    out = page.locator("#ansout").inner_text()
+    assert "Aundre Browder" not in out, "he was never run: he is already in"
+    assert "Rosa Capel" in out, "and the one who was not is accounted for"
+    assert "1 of 2 run" in out
+
+
+def test_the_rundown_groups_what_was_missed(page, tmp_path):
+    """Megan, 2026-09-10: "this should give me a full run down of what was
+    done on completion". The running log scrolls and keeps only the last few
+    lines, so a nineteen-person pass left no way to see its shape. A field
+    missed for EVERYONE is one line, not nineteen."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(filler.build_js(
+        [{"name": "Rosa Capel", "find": "Capel", "pages": {}}],
+        "WE 9.13")[len("javascript:"):])
+
+    out = page.evaluate("""() => {
+      window.__ansSetReport([
+        {name:'Aundre Browder', ok:true, status:'active',
+         miss:['Position','Gender']},
+        {name:'Rosa Capel', ok:true, status:'pending', miss:['Position']},
+        {name:'Deric Williams', ok:false, why:'not on the Pending list',
+         miss:[]},
+      ]);
+      return window.__ansRundown();
+    }""")
+    assert "3 of 1 run" in out or "3 of" in out
+    assert "1 now Active" in out
+    assert "Still Pending (1)" in out and "Rosa Capel" in out
+    assert "Did not finish (1)" in out and "Deric Williams" in out
+    assert "Gender (Aundre Browder)" in out, "missed by one person, so named"
+    assert "Position (Aundre Browder, Rosa Capel)" in out, "two of three, so named"
+
+    every = page.evaluate("""() => {
+      window.__ansSetReport([
+        {name:'A', ok:true, status:'active', miss:['Position']},
+        {name:'B', ok:true, status:'active', miss:['Position']},
+      ]);
+      return window.__ansRundown();
+    }""")
+    assert "Never filled, for everybody" in every and "Position" in every, \
+        "a field missed by everyone is one line, not one per person"

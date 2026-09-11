@@ -597,6 +597,9 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
                 if str(hire.values.get(f) or "").strip().lower() == "true"]:
             said.append("W-4 Step 1(c) blank \u2014 filled as Single, "
                         "no dependents")
+        if c.hire_assumed:
+            said.append("nothing marked CR \u2014 hire date taken as that "
+                        "Monday")
         if said:
             notes[c.name] = "; ".join(said)
     OUTPUT_DIR.mkdir(exist_ok=True)
