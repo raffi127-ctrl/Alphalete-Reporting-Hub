@@ -227,3 +227,32 @@ class MapTests(unittest.TestCase):
     def test_gaps_phrase_is_parsed_as_a_count(self):
         self.assertEqual(self.M._gaps_count("3 gaps"), 3)
         self.assertEqual(self.M._gaps_count(""), 0)
+
+
+class EmptyGridTests(unittest.TestCase):
+    """DataTables' empty state is ONE cell spanning the table, carrying real
+    text. An all-cells-blank test misses it and it arrives looking exactly
+    like a rep whose name is that sentence -- read off the live grid on a
+    legitimately quiet morning, 2026-09-11."""
+
+    HEADERS = ["ID", "Rep", "Total Knocks", "No answer", "Sale", "Come Back"]
+
+    def test_the_empty_state_row_is_not_a_rep(self):
+        page = _Page(self.HEADERS, [["No data available in table"]])
+        self.assertEqual(K.read_rows(page, log=lambda *_: None), [])
+
+    def test_other_empty_state_wordings_too(self):
+        for text in ("No matching records found", "No records found",
+                     "Nothing found"):
+            page = _Page(self.HEADERS, [[text]])
+            self.assertEqual(K.read_rows(page, log=lambda *_: None), [], text)
+
+    def test_a_real_short_row_is_still_kept(self):
+        """A genuine rep row that happens to be short must survive."""
+        page = _Page(self.HEADERS, [["7", "Ana Griffin", "12"]])
+        rows = K.read_rows(page, log=lambda *_: None)
+        self.assertEqual(rows[0]["rep"], "Ana Griffin")
+
+    def test_a_full_width_row_is_never_second_guessed(self):
+        page = _Page(self.HEADERS, [["7", "No answer", "1", "2", "3", "4"]])
+        self.assertEqual(len(K.read_rows(page, log=lambda *_: None)), 1)

@@ -29,6 +29,10 @@ LOGIN_URL = "https://ownerville.com"
 V2_URL = "https://v2.ownerville.com/index.cfm"
 DISPOSITIONS_TABLE = "#table-dispositions"
 
+# DataTables' own empty-state text, in the variants it ships with.
+EMPTY_GRID_RE = re.compile(
+    r"no (?:data|matching|records)|nothing found|empty", re.IGNORECASE)
+
 # Lifted from shared/tableau_patchright so the two cannot drift on a form
 # change; kept here because importing that module pulls in Tableau.
 _USERNAME_SELECTOR = (
@@ -272,6 +276,15 @@ def read_rows(page, *, log=print) -> List[Dict[str, str]]:
     for row in cells:
         if not any((c or "").strip() for c in row):
             continue
+        # DataTables renders its empty state as ONE cell spanning the table --
+        # "No data available in table". It is not blank, so an all-cells-empty
+        # test misses it, and it arrives looking exactly like a rep whose name
+        # is that sentence. Read off the live grid on 2026-09-11: a legitimately
+        # quiet morning came back as "1 rep row".
+        if len(row) < max(2, len(names) // 2):
+            text = " ".join(c for c in row if c).strip().lower()
+            if not text or EMPTY_GRID_RE.search(text):
+                continue
         rows.append({names[i]: row[i] for i in range(min(len(names), len(row)))})
     log("read %d rep row(s), %d column(s)" % (len(rows), len(names)))
     return rows

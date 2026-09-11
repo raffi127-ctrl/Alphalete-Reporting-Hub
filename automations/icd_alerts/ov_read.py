@@ -15,6 +15,18 @@ the login costs a full minute of deliberate waiting (see
 shared/ownerville_knocks: the security box clears itself if you leave it
 alone). Signing in every 15 minutes would be both slow and the kind of pattern
 that earns a challenge.
+
+THE LOGIN NEEDS A VISIBLE WINDOW; THE READS DO NOT. Proven against the live
+site on 2026-09-11: headless, the password step comes back "Please complete the
+security check" no matter how long you wait -- the box does not clear for a
+headless browser. The same login headful sailed through and landed on the
+office dashboard with an rqst. Once the session is in the profile, reads run
+headless perfectly well (41 reps and 41 tracker rows, invisible).
+
+So this opens headless, and only falls back to a window when the session has
+actually lapsed -- which is rare. That window is why browser_banner exists: it
+appears on somebody's screen unannounced, and the reasonable thing for them to
+do with an unexplained browser is close it.
 """
 from __future__ import annotations
 
@@ -68,6 +80,21 @@ def _session(page, log=print) -> str:
     return rqst
 
 
+def _has_session(p, log=print) -> bool:
+    """Cheap headless probe: is the profile's OwnerVille session still live?"""
+    ctx = _context(p, True)
+    try:
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        return bool(K.capture_rqst(page))
+    except Exception:  # noqa: BLE001
+        return False
+    finally:
+        try:
+            ctx.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
                 log=print) -> Dict[str, List[Dict]]:
     """Today's grid AND time tracker for this office, both raw.
@@ -82,7 +109,15 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
     mdy = day.strftime("%m/%d/%Y")      # NOT %-m/%-d: that is not portable
 
     with sync_playwright() as p:
-        ctx = _context(p, headless)
+        # A window ONLY when one is actually needed. The security check on the
+        # password step never clears for a headless browser, so a lapsed
+        # session has to be re-established in a visible one -- but that is the
+        # rare case, and making every sweep visible would put a browser on the
+        # owner's screen four times an hour for no reason.
+        show = headless and not _has_session(p, log=log)
+        if show:
+            log("OwnerVille needs signing in again — opening a window briefly")
+        ctx = _context(p, headless and not show)
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             rqst = _session(page, log=log)
