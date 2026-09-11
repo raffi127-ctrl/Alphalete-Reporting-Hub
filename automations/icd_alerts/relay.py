@@ -109,6 +109,13 @@ def payload(records: Dict[str, int], day: dt.date,
     # It is a request: nothing posts there until a human approves it.
     if rec.get("requested_channel"):
         body["requested_channel"] = rec["requested_channel"]
+    # What they asked for on the knocks report. Same rule: a request, decided
+    # by a person, and re-sent every sweep so re-running the installer is how
+    # an owner changes their mind.
+    if rec.get("requested_knocks_frequency"):
+        body["requested_knocks_frequency"] = rec["requested_knocks_frequency"]
+        body["requested_knocks_channel"] = rec.get("requested_knocks_channel", "")
+    if any(k in body for k in ("requested_channel", "requested_knocks_frequency")):
         body["owner"] = rec.get("owner", "")
     return body
 

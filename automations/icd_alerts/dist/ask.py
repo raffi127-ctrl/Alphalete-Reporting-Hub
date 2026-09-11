@@ -117,6 +117,60 @@ def password(prompt: str) -> str:
         return getpass.getpass("      %s " % prompt)
 
 
+def choose(prompt: str, options):
+    """Pick one of a fixed set. A LIST, never a typed answer.
+
+    Anything with a fixed set of valid answers has to be a list: a free-text
+    box invites "hourly-ish", "end of night", "same as before" -- all perfectly
+    clear to a person and none of them something the code can act on. The
+    picker also means nobody has to be told the options in advance.
+    """
+    options = list(options)
+    if IS_MAC:
+        items = ", ".join('"%s"' % _esc_applescript(o) for o in options)
+        script = ('choose from list {%s} with prompt "%s" with title "%s" '
+                  'default items {"%s"}'
+                  % (items, _esc_applescript(prompt), TITLE,
+                     _esc_applescript(options[0])))
+        out = _osascript(script)
+        if out == "false":                # they pressed Cancel
+            raise Cancelled()
+        return out
+    if IS_WINDOWS:
+        items = ",".join("'%s'" % _esc_powershell(o) for o in options)
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
+            "$f=New-Object Windows.Forms.Form;$f.Text='%s';"
+            "$f.Width=480;$f.Height=200;$f.StartPosition='CenterScreen';"
+            "$f.TopMost=$true;"
+            "$l=New-Object Windows.Forms.Label;$l.Text='%s';"
+            "$l.SetBounds(12,15,445,40);"
+            "$c=New-Object Windows.Forms.ComboBox;$c.SetBounds(12,62,440,24);"
+            "$c.DropDownStyle='DropDownList';$c.Items.AddRange(@(%s));"
+            "$c.SelectedIndex=0;"
+            "$o=New-Object Windows.Forms.Button;$o.Text='OK';"
+            "$o.SetBounds(270,110,85,28);$o.DialogResult='OK';"
+            "$x=New-Object Windows.Forms.Button;$x.Text='Cancel';"
+            "$x.SetBounds(367,110,85,28);$x.DialogResult='Cancel';"
+            "$f.AcceptButton=$o;$f.CancelButton=$x;"
+            "$f.Controls.AddRange(@($l,$c,$o,$x));"
+            "if($f.ShowDialog() -eq 'OK'){Write-Output $c.SelectedItem}else{exit 2}"
+            % (TITLE, _esc_powershell(prompt), items))
+        try:
+            return _powershell(script)
+        except RuntimeError:
+            raise Cancelled()
+
+    # No dialogs available: a numbered list is the honest fallback.
+    print("\n      %s" % prompt)
+    for i, o in enumerate(options, 1):
+        print("        %d) %s" % (i, o))
+    while True:
+        raw = input("      Enter 1-%d: " % len(options)).strip()
+        if raw.isdigit() and 1 <= int(raw) <= len(options):
+            return options[int(raw) - 1]
+
+
 def message(body: str, *, error: bool = False) -> None:
     """Tell them something in a box they cannot miss. Never raises."""
     try:

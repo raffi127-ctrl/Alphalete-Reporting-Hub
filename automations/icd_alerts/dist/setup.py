@@ -221,6 +221,64 @@ def ask_for_channel():
     return answer
 
 
+# The answers offered for the knocks report. A FIXED SET, because every one of
+# them has to turn into a schedule -- and because an owner should not have to
+# guess what we can do. "No thanks" is a real answer and is offered plainly:
+# an office that does not want this should not have to cancel it later.
+KNOCKS_OPTIONS = [
+    "Once at the end of the night",
+    "Twice a day - midday and end of night",
+    "Every hour during selling hours",
+    "No knocks report, thanks",
+]
+KNOCKS_SAME = "The same channel as my credit-check alerts"
+KNOCKS_OTHER = "A different channel"
+
+
+def ask_about_knocks():
+    """How often the office wants their knocks report, and where it goes.
+
+    ASKED HERE so nobody has to be chased for it later, and so the answer
+    arrives with the install rather than as a separate conversation. Like the
+    channel, it is a REQUEST: it lands on the reporting team's sheet and
+    somebody sets it up.
+    """
+    rec = json.loads((CONFIG_DIR / "install.json").read_text())
+    if rec.get("requested_knocks_frequency"):
+        say("      already asked for: %s" % rec["requested_knocks_frequency"])
+        return
+
+    say("      asking about the knocks report (look for the pop-up box)...")
+    try:
+        how_often = ask.choose(
+            "How often would you like your knocks report?", KNOCKS_OPTIONS)
+    except ask.Cancelled:
+        say("      skipped -- the reporting team will check with you.")
+        return
+
+    channel = ""
+    if not how_often.startswith("No knocks report"):
+        try:
+            where = ask.choose("Where should the knocks report be posted?",
+                               [KNOCKS_SAME, KNOCKS_OTHER])
+            if where == KNOCKS_OTHER:
+                channel = ask.text(
+                    "Which Slack channel should the knocks report go to?\n\n"
+                    "For example:  #palace-sales").strip()
+                if channel and not channel.startswith("#"):
+                    channel = "#" + channel.lstrip("#")
+            else:
+                channel = rec.get("requested_channel", "")
+        except ask.Cancelled:
+            channel = rec.get("requested_channel", "")
+
+    rec["requested_knocks_frequency"] = how_often
+    rec["requested_knocks_channel"] = channel
+    (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
+    say("      noted: %s%s" % (how_often,
+                               (" -> %s" % channel) if channel else ""))
+
+
 def check_account() -> bool:
     say("      signing in to SaraPlus to make sure it works...")
     proc = subprocess.run(
@@ -287,7 +345,7 @@ def main() -> int:
     say("  %s -- setup" % APP_NAME)
     say("=" * 62)
 
-    total = 8
+    total = 9
     step(1, total, "Copying the program onto this computer")
     copy_app()
 
@@ -311,7 +369,10 @@ def main() -> int:
     step(7, total, "Where your alerts should go")
     ask_for_channel()
 
-    step(8, total, "Setting it to run through the day")
+    step(8, total, "Your knocks report")
+    ask_about_knocks()
+
+    step(9, total, "Setting it to run through the day")
     if IS_WINDOWS:
         schedule_windows()
     else:

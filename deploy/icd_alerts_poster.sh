@@ -48,4 +48,30 @@ echo "[$(date)] poster starting (args: ${*:-none})" >> "$LOG_FILE"
 # (always 0) and a crashed run would read green.
 rc=$?
 echo "[$(date)] poster done (exit $rc)" >> "$LOG_FILE"
+
+# Report to the Hub so the card's pill reflects a REAL run -- the orchestrator
+# never sees a standalone LaunchAgent, and without this a clean run and a
+# silent miss are indistinguishable.
+#
+# NOT ON EVERY TICK. This fires ~90 times a day and publishing each one would
+# bury Hub Activity in rows saying "nothing happened", which is how the one row
+# that matters stops being visible. Publish when the run actually DID something
+# (posted an alert, or warned that an office went quiet) and whenever it
+# failed. A preview never publishes: marking the card as ran is what a preview
+# must not do.
+case " $* " in
+  *" --send "*)
+    if [ "$rc" -ne 0 ]; then
+      _PUB=failed
+    elif grep -q "credit check line(s) ->\|^QUIET:" "$LOG_FILE" 2>/dev/null; then
+      _PUB=success
+    else
+      _PUB=""
+    fi
+    if [ -n "$_PUB" ]; then
+      "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('icd_alerts_poster','ICD Credit-Check Alerts','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+    fi
+    ;;
+esac
+
 exit $rc

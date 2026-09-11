@@ -347,6 +347,12 @@ _HUB_CARD = {
     # gap_alerts self-reports via hub_activity under the card id, but a `lucy
     # rerun gap_alerts` publishes under the SCHEDULE id — both have to land on
     # the one card or the Hub grows a hyphen/underscore twin.
+    # The ICD credit-check poster runs on its own 10-minute LaunchAgent, so
+    # the orchestrator never sees it. Without this entry a clean run and a
+    # silent miss look identical on the Hub -- and for THIS report a silent
+    # miss means an office's alerts stopped and nobody noticed, which is the
+    # exact failure it exists to prevent.
+    "icd_alerts_poster": "icd-alerts-poster",
     "gap_alerts": "gap-alerts",
     # weather_alert: Slack-only, no Hub card → not published.
 

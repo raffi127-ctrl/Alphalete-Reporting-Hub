@@ -27,7 +27,10 @@
  *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
  *                     Agent | Last Posted JSON | Posted At
  *   'Office Channels' Office | Owner | They Asked For | Requested At |
- *                     Channel ID | Channel Name | Approved
+ *                     Channel ID | Channel Name | Approved |
+ *                     Knocks: How Often | Knocks: Channel Asked |
+ *                     Knocks Channel ID | Knocks Channel Name |
+ *                     Knocks Approved
  *
  * THE CHANNEL IS A REQUEST, NOT A SETTING. The installer asks the owner where
  * their alerts should go and relays the answer into 'They Asked For'. Nothing
@@ -96,7 +99,12 @@ function doPost(e) {
     // change the answer. Only ever touches the columns the owner is allowed
     // to influence.
     var asked = String(body.requested_channel || '').trim();
-    if (asked) _recordChannelRequest(office, String(body.owner || ''), asked);
+    var knocksHow = String(body.requested_knocks_frequency || '').trim();
+    var knocksCh = String(body.requested_knocks_channel || '').trim();
+    if (asked || knocksHow) {
+      _recordChannelRequest(office, String(body.owner || ''), asked,
+                            knocksHow, knocksCh);
+    }
 
     return _reply({ok: true, reps: Object.keys(records).length});
   } catch (err) {
@@ -156,7 +164,7 @@ function _upsert(office, day, recordsJson, localTime, agent) {
   }
 }
 
-function _recordChannelRequest(office, owner, asked) {
+function _recordChannelRequest(office, owner, asked, knocksHow, knocksCh) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -166,18 +174,28 @@ function _recordChannelRequest(office, owner, asked) {
     var now = new Date();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === office) {
-        // Columns 3-4 only. Channel ID, Channel Name and Approved are OURS --
-        // an owner asks, a human decides.
-        if (String(rows[i][2]).trim() === asked) return;   // nothing changed
-        sh.getRange(i + 1, 3, 1, 2).setValues([[asked, now]]);
-        // A changed request un-approves the old one: the office is asking for
-        // somewhere different, and the previous approval was for a room they
-        // no longer named.
-        sh.getRange(i + 1, 7).setValue('');
+        var sameCh = String(rows[i][2]).trim() === asked;
+        var sameKn = String(rows[i][7] || '').trim() === knocksHow &&
+                     String(rows[i][8] || '').trim() === knocksCh;
+        if (sameCh && sameKn) return;              // nothing changed
+        // Columns 3-4 and 8-9 only. Every *Channel ID*, *Channel Name* and
+        // *Approved* column is OURS -- an owner asks, a human decides.
+        if (!sameCh) {
+          sh.getRange(i + 1, 3, 1, 2).setValues([[asked, now]]);
+          // A changed request un-approves the old one: they are asking for
+          // somewhere different, and the approval was for a room they no
+          // longer named.
+          sh.getRange(i + 1, 7).setValue('');
+        }
+        if (!sameKn) {
+          sh.getRange(i + 1, 8, 1, 2).setValues([[knocksHow, knocksCh]]);
+          sh.getRange(i + 1, 12).setValue('');
+        }
         return;
       }
     }
-    sh.appendRow([office, owner, asked, now, '', '', '']);
+    sh.appendRow([office, owner, asked, now, '', '', '',
+                  knocksHow, knocksCh, '', '', '']);
   } finally {
     lock.releaseLock();
   }
