@@ -92,6 +92,11 @@ CAPTAINSHIP = [
     # discovery the same evening (28 day-rows backfilled to 8/03 on the
     # first pull); pinned here so the Indeed source report includes her.
     ("Sabrina Alicea",   "21291", "Sabrina Alicea"),
+    # Added 2026-09-06 (Carlos): joined the captainship reporting.
+    ("Alexander Badawi", "22662", "Alexander Badawi"),   # Mountain Peak Marketing (office-mapping-carlos.json)
+    # Office id unknown yet — blank oid = run.py discovery pins it from the
+    # AppStream picker on the next funnel run and backfills history.
+    ("Nicolas Lujan",    "",      "Nicolas Lujan"),
 ]
 
 CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
