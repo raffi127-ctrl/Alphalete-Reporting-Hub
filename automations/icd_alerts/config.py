@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 from typing import Dict, Optional
 
-APP_DIR = Path.home() / ".config" / "alphalete-alerts"
+APP_DIR = Path.home() / ".config" / "lucy-reports"
 CREDS_PATH = APP_DIR / "saraplus-creds.json"
 OV_CREDS_PATH = APP_DIR / "ownerville-creds.json"
 INSTALL_PATH = APP_DIR / "install.json"
@@ -145,17 +145,18 @@ def save_install(office_key: str, owner: str) -> Path:
     return INSTALL_PATH
 
 
-def save_requested_channel(channel: str) -> Path:
+def save_requested_channels(channels) -> Path:
     """Remember where this office asked their alerts to go.
 
-    A REQUEST, not a setting. It is relayed with every sweep and somebody on
-    the reporting team decides; nothing on this machine can put a message in a
-    Slack channel. Stored here so re-running the installer is how an owner
-    changes the answer.
+    A REQUEST, not a setting, and a LIST: nothing on this machine can put a
+    message in a Slack channel, and an office can want the pings in more than
+    one room. Stored here so re-running the installer is how an owner changes
+    the answer.
     """
     app_dir()
     rec = dict(install())
-    rec["requested_channel"] = (channel or "").strip()
+    rec["requested_channels"] = [str(c).strip() for c in (channels or [])
+                                 if str(c).strip()]
     INSTALL_PATH.write_text(json.dumps(rec, indent=2))
     return INSTALL_PATH
 

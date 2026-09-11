@@ -209,9 +209,9 @@ def cmd_list() -> int:
         return 0
     print("Waiting on you:")
     for r in pending:
-        print("  %-10s %-18s asked for %-22s (%s)"
-              % (r["office"], r["owner"] or "", r["asked"] or "(left blank)",
-                 r["asked_at"] or "?"))
+        print("  %-10s %-18s asked for %-26s (%s)"
+              % (r["office"], r["owner"] or "",
+                 r["wanted"] or "(left blank)", r["asked_at"] or "?"))
     print("\nApprove one with:  python -m automations.icd_alerts.approve <office>")
 
     kn = P.pending_knocks()
@@ -225,77 +225,80 @@ def cmd_list() -> int:
 
 
 def cmd_approve(office_key: str, channel: Optional[str]) -> int:
+    """Sign off the room(s) an office's credit-check alerts post to.
+
+    EVERY ROOM IS CHECKED SEPARATELY, and none is approved unless all of them
+    resolve. Half an approval means the pings land in one room and vanish in
+    the other, which is worse than nothing happening -- nothing happening gets
+    noticed.
+    """
     office_key = office_key.strip().lower()
-    pending = {r["office"].lower(): r for r in P.pending_requests()}
-    row = pending.get(office_key)
-    asked = channel or (row or {}).get("asked") or ""
-    if not asked:
-        print("%s has not asked for a channel yet, and you did not name one. "
-              "Pass --channel to set it anyway." % office_key)
+    row = next((r for r in P.pending_requests()
+                if r["office"].lower() == office_key), None)
+    wanted = [channel] if channel else list((row or {}).get("asked") or [])
+    if not wanted:
+        print("%s has not named a channel yet, and you did not pass one. "
+              "Use --channel to set it anyway." % office_key)
         return 1
 
-    print("looking up %s ..." % asked)
-    ch = find_channel(asked)
-    if not ch:
-        print("No channel called %r in this workspace.\n"
-              "If it is PRIVATE, Lucy has to be invited before she can even "
-              "see it -- Slack hides private channels from non-members, so "
-              "'not found' and 'not a member' look identical here.\n"
-              "You can also pass the channel ID instead of the name: open the "
-              "channel in Slack, click its name, and the ID is at the bottom "
-              "of the About tab." % asked)
+    resolved, problems = [], []
+    for name in wanted:
+        print("looking up %s ..." % name)
+        ch = find_channel(name)
+        if not ch:
+            problems.append("%s — no such channel (if it is private, Lucy has "
+                            "to be invited before she can even see it)" % name)
+            continue
+        cid = ch["id"]
+        try:
+            members = members_of(cid)
+        except Exception as e:  # noqa: BLE001
+            problems.append("%s — could not read the member list (%s)" % (name, e))
+            continue
+        if LUCY_REPORTING not in members:
+            problems.append("%s — Lucy Reporting is not in it" % name)
+            continue
+        print("  #%s (%s)%s%s"
+              % (ch["name"], cid, "  [private]" if ch.get("is_private") else "",
+                 "" if MEGAN in members else "   [you are NOT in this one]"))
+        resolved.append({"channel_id": cid, "channel_name": "#" + ch["name"]})
+
+    if problems:
+        print("\nNOT APPROVED:")
+        for p_ in problems:
+            print("  - %s" % p_)
+        print("\nFix those and run this again. Nothing was written.")
         return 1
-
-    cid, cname = ch["id"], "#" + ch["name"]
-    print("  found %s (%s)%s" % (cname, cid,
-                                 "  [private]" if ch.get("is_private") else ""))
-
-    try:
-        members = members_of(cid)
-    except Exception as e:  # noqa: BLE001
-        print("  could not read the member list: %s" % e)
-        members = []
 
     here = _client().auth_test()
-    lucy_in = LUCY_REPORTING in members
-    megan_in = MEGAN in members
-    print("  Lucy Reporting is in it: %s" % ("yes" if lucy_in else "NO"))
-    print("  Megan is in it         : %s" % ("yes" if megan_in else "NO"))
     if here.get("user_id") != LUCY_REPORTING:
-        print("  (this machine's Slack token is %s / %s, not Lucy -- the "
-              "membership answer above is about Lucy either way)"
+        print("  (this machine's Slack token is %s / %s, not Lucy — the "
+              "membership answers above are about Lucy either way)"
               % (here.get("user_id"), here.get("user")))
 
-    if not lucy_in:
-        print("\nNOT APPROVED. Lucy Reporting has to be in the channel or "
-              "every post fails -- and for a private channel the failure is "
-              "`channel_not_found`, which reads like a bad id. Invite her, "
-              "then run this again.")
-        return 1
-    if not megan_in:
-        print("\n  (you are not in that channel yet -- you would not see the "
-              "alerts land. Worth adding yourself before this goes live.)")
-
-    _write_approval(office_key, cid, cname)
-    print("\nApproved: %s -> %s" % (office_key, cname))
+    _write_approval(office_key, resolved)
+    print("\nApproved %d channel(s) for %s: %s"
+          % (len(resolved), office_key,
+             ", ".join(c["channel_name"] for c in resolved)))
     print("Preview what would post:  python -m automations.icd_alerts.post "
           "--office %s" % office_key)
     return 0
 
 
-def _write_approval(office_key: str, channel_id: str, channel_name: str) -> None:
+def _write_approval(office_key: str, resolved) -> None:
     from automations.recruiting_report.fill import open_by_key
     tab = open_by_key(P.RELAY_SPREADSHEET_ID).worksheet(P.CHANNELS_TAB)
-    rows = tab.get_all_values()
-    for i, row in enumerate(rows[1:], start=2):
+    for i, row in enumerate(tab.get_all_values()[1:], start=2):
         if (row[P.CH_OFFICE] or "").strip().lower() == office_key:
-            tab.update(values=[[channel_id, channel_name, "TRUE"]],
-                       range_name="E%d:G%d" % (i, i))
+            tab.update(values=[[json.dumps(resolved), "TRUE"]],
+                       range_name="F%d:G%d" % (i, i))
             return
     office = O.get(office_key)
-    tab.append_row([office_key, office.owner if office else "", "",
+    tab.append_row([office_key, office.owner if office else "",
+                    ", ".join(c["channel_name"] for c in resolved),
+                    json.dumps([c["channel_name"] for c in resolved]),
                     dt.datetime.now().isoformat(timespec="seconds"),
-                    channel_id, channel_name, "TRUE"])
+                    json.dumps(resolved), "TRUE"])
 
 
 def main(argv=None) -> int:

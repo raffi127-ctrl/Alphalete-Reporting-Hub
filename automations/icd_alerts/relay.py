@@ -107,8 +107,12 @@ def payload(records: Dict[str, int], day: dt.date,
     # re-running the installer is how somebody changes their mind -- there is
     # no other route, and "run it again" is an instruction anyone can follow.
     # It is a request: nothing posts there until a human approves it.
-    if rec.get("requested_channel"):
-        body["requested_channel"] = rec["requested_channel"]
+    # A LIST. An office can want the pings in the owners' room and the rep
+    # channel both; asking for one and making them come back for the second is
+    # a worse conversation than asking once. An empty list is a real answer --
+    # "I am not sure, ask me" -- and differs from never having been asked.
+    if rec.get("requested_channels") is not None:
+        body["requested_channels"] = rec["requested_channels"]
     # What they asked for on the knocks report. Same rule: a request, decided
     # by a person, and re-sent every sweep so re-running the installer is how
     # an owner changes their mind.
@@ -122,7 +126,7 @@ def payload(records: Dict[str, int], day: dt.date,
     if rec.get("requested_knocks_destinations") is not None:
         body["requested_knocks_destinations"] = rec["requested_knocks_destinations"]
         body["requested_knocks_hours_note"] = rec.get("requested_knocks_hours_note", "")
-    if any(k in body for k in ("requested_channel", "requested_knocks_destinations")):
+    if any(k in body for k in ("requested_channels", "requested_knocks_destinations")):
         body["owner"] = rec.get("owner", "")
     return body
 

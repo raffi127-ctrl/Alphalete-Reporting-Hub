@@ -62,20 +62,25 @@ IF YOUR MAC SAYS IT "CANNOT BE OPENED"
     You only have to do this once.
 """
 
-README = """Alphalete Alerts -- {label}
+README = """Lucy Reports -- {label}
 {underline}
 
 WHAT THIS IS
-    It watches your own SaraPlus account during the day and tells the
-    reporting team when one of your reps runs a credit check. Those show
-    up in your team's Slack channel ({channel}).
+    Lucy watches your own SaraPlus account through the day and tells the
+    reporting team when one of your reps runs a credit check -- the same
+    Lucy that already posts in your team's Slack. Those alerts show up in
+    {channel}.
+
+    If you asked for it, she also posts your knocks and dispositions
+    board on the schedule you picked.
 
 TO INSTALL
 {how}
 
     Boxes will pop up asking for your SaraPlus login and your OwnerVille
-    login. That is the only thing it asks for. A black window will also
-    appear showing its progress -- you can ignore that one.
+    login, and where you would like things posted. That is everything it
+    asks for. A Lucy Reports window also opens showing its progress --
+    you can ignore that one and close it at the end.
 {gatekeeper}
 ABOUT YOUR PASSWORDS
     They are saved on your computer only, and are used to sign in from
@@ -89,7 +94,13 @@ AFTER IT IS INSTALLED
     connected to the internet during selling hours. If it is asleep, no
     alerts are lost -- they simply arrive when it wakes up.
 
-IF YOU CHANGE YOUR SARAPLUS PASSWORD
+IF A BROWSER WINDOW OPENS BY ITSELF
+    That is Lucy signing in to OwnerVille. It has a red bar across the
+    top. Please leave it completely alone -- do not type your password
+    and do not tick the security box. It clears on its own, and touching
+    it stops the sign-in. The window closes by itself.
+
+IF YOU CHANGE A PASSWORD
     Run the installer again and enter the new one. Nothing else changes.
 
 QUESTIONS
@@ -110,7 +121,7 @@ def build(office_key: str, relay_key: Optional[str] = None,
     if not relay_key:
         relay_key = _relay_key_from_sheet(office.key, log=log)
 
-    folder = OUT / ("alphalete-alerts-%s" % office.key)
+    folder = OUT / ("lucy-reports-%s" % office.key)
     if folder.exists():
         shutil.rmtree(folder)
     folder.mkdir(parents=True)
@@ -126,16 +137,16 @@ def build(office_key: str, relay_key: Optional[str] = None,
         shutil.copy2(DIST / name, folder / name)
 
     if platform in ("mac", "both"):
-        shutil.copy2(DIST / "Install Alphalete Alerts.command",
-                     folder / "Install Alphalete Alerts.command")
-        (folder / "Install Alphalete Alerts.command").chmod(0o755)
+        shutil.copy2(DIST / "Install Lucy Reports.command",
+                     folder / "Install Lucy Reports.command")
+        (folder / "Install Lucy Reports.command").chmod(0o755)
 
     if platform in ("windows", "both"):
         # CRLF, always. A .bat with bare LF endings is parsed unreliably by
         # cmd.exe, and this repo is developed on a Mac -- so the file on disk
         # here has LF and would ship that way unless converted on the way out.
-        bat = (DIST / "Install Alphalete Alerts.bat").read_text()
-        (folder / "Install Alphalete Alerts.bat").write_bytes(
+        bat = (DIST / "Install Lucy Reports.bat").read_text()
+        (folder / "Install Lucy Reports.bat").write_bytes(
             bat.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8"))
 
     (folder / "install.json").write_text(json.dumps({
@@ -156,14 +167,14 @@ def build(office_key: str, relay_key: Optional[str] = None,
 
     label = "%s (%s)" % (office.label, office.owner)
     how = {
-        "mac": '    Double-click "Install Alphalete Alerts.command"',
-        "windows": '    Double-click "Install Alphalete Alerts.bat"',
-        "both": ('    Mac:      double-click "Install Alphalete Alerts.command"\n'
-                 '    Windows:  double-click "Install Alphalete Alerts.bat"'),
+        "mac": '    Double-click "Install Lucy Reports.command"',
+        "windows": '    Double-click "Install Lucy Reports.bat"',
+        "both": ('    Mac:      double-click "Install Lucy Reports.command"\n'
+                 '    Windows:  double-click "Install Lucy Reports.bat"'),
     }[platform]
     gatekeeper = GATEKEEPER if platform in ("mac", "both") else ""
     (folder / "README.txt").write_text(README.format(
-        label=label, underline="=" * (len("Alphalete Alerts -- ") + len(label)),
+        label=label, underline="=" * (len("Lucy Reports -- ") + len(label)),
         channel=_channel_blurb(office), how=how, gatekeeper=gatekeeper))
 
     log("built %s" % folder)

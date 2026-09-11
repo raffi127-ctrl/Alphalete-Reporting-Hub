@@ -69,7 +69,7 @@ def _session(page, log=print) -> str:
     except Exception as e:  # noqa: BLE001
         raise KnocksProblem(
             "Could not sign in to OwnerVille. If you recently changed your "
-            "OwnerVille password, open the alerts app and enter the new one. "
+            "OwnerVille password, open Lucy Reports and enter the new one. "
             "(%s)" % type(e).__name__)
 
     rqst = K.capture_rqst(page)

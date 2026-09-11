@@ -5,8 +5,25 @@
 # setup.py, shared with the Windows installer, so a fix lands on both.
 cd "$(dirname "$0")" || exit 1
 
-echo ""
-echo "Starting Alphalete Alerts setup..."
+# PAINT THE WINDOW BEFORE ANYTHING ELSE. A .command opens Terminal in whatever
+# profile the owner happens to use, and a raw black box in front of somebody
+# who was told to ignore it does not look like the thing their reporting team
+# sent them.
+#
+# ALPHALETE'S COLOURS, sampled from the company's own artwork rather than
+# guessed: #B93037 is the red in the logo, the shield and both uniform sheets;
+# #C1B38F is the gold in the logo. Not the burnt orange on the Total Knocks
+# board -- that is the report's table styling, not the brand.
+#
+# OSC escapes, guarded on stdout being a terminal: piped into a log or run over
+# ssh they would be noise, and Terminal is the only thing that reads them.
+if [ -t 1 ]; then
+  printf '\033]0;Lucy Reports — Setup\007'   # window title
+  printf '\033]11;#141110\007'                # background: near-black
+  printf '\033]10;#C1B38F\007'                # text: brand gold
+  printf '\033]12;#B93037\007'                # cursor: brand red
+fi
+
 echo ""
 
 PY=""

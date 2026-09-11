@@ -23,7 +23,7 @@ import subprocess
 
 IS_MAC = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
-TITLE = "Alphalete Alerts"
+TITLE = "Lucy Reports"
 
 
 def _osascript(script: str) -> str:

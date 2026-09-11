@@ -40,8 +40,10 @@ RELAY_SPREADSHEET_ID = "1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg"
 RELAY_TAB = "ICD Relay"
 
 CHANNELS_TAB = "Office Channels"
-CH_OFFICE, CH_OWNER, CH_ASKED, CH_ASKED_AT = 0, 1, 2, 3
-CH_ID, CH_NAME, CH_APPROVED = 4, 5, 6
+# Both halves are the same shape: what the office asked for, then what a
+# human approved. A laptop writes only the asking columns.
+CH_OFFICE, CH_OWNER, CH_ASKED, CH_ASKED_JSON, CH_ASKED_AT = 0, 1, 2, 3, 4
+CH_APPROVED_JSON, CH_APPROVED = 5, 6
 CH_KN_WANTED, CH_KN_JSON, CH_KN_HOURS = 7, 8, 9
 CH_KN_APPROVED_JSON, CH_KN_APPROVED = 10, 11
 
@@ -218,11 +220,10 @@ def _day_key(cell: str) -> str:
 def approved_channels(book=None) -> Dict[str, List]:
     """{office_key: [Channel]} for every office a human has signed off.
 
-    APPROVED MEANS A PERSON TYPED IT. The office asks through the installer
-    and that lands in 'They Asked For'; this reads only the columns on our
-    side of the sheet, so a laptop cannot approve itself into a channel.
-    A row missing either the id or the tick is not approved, and being
-    half-filled is the normal state while somebody is still deciding.
+    APPROVED MEANS A PERSON RESOLVED IT. The office asks through the installer
+    and that lands in the asking columns; this reads only our side of the
+    sheet, so a laptop cannot approve itself into a channel. A LIST, because
+    an office can want the pings in more than one room.
     """
     from automations.icd_alerts.offices import Channel
     if book is None:
@@ -238,11 +239,17 @@ def approved_channels(book=None) -> Dict[str, List]:
         if len(row) <= CH_APPROVED:
             continue
         key = (row[CH_OFFICE] or "").strip().lower()
-        cid = (row[CH_ID] or "").strip()
-        name = (row[CH_NAME] or "").strip() or cid
         ok = (row[CH_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
-        if key and cid and ok:
-            out.setdefault(key, []).append(Channel(cid, name))
+        if not key or not ok:
+            continue
+        try:
+            chans = json.loads(row[CH_APPROVED_JSON] or "[]")
+        except ValueError:
+            continue
+        good = [Channel(c["channel_id"], c.get("channel_name") or c["channel_id"])
+                for c in chans if c.get("channel_id")]
+        if good:
+            out[key] = good
     return out
 
 
@@ -320,11 +327,17 @@ def pending_requests(book=None) -> List[Dict]:
         if len(row) <= CH_APPROVED:
             row = list(row) + [""] * (CH_APPROVED + 1 - len(row))
         approved = (row[CH_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
-        if (row[CH_ASKED] or "").strip() and not (approved and (row[CH_ID] or "").strip()):
-            out.append({"row": i, "office": (row[CH_OFFICE] or "").strip(),
-                        "owner": (row[CH_OWNER] or "").strip(),
-                        "asked": (row[CH_ASKED] or "").strip(),
-                        "asked_at": (row[CH_ASKED_AT] or "").strip()})
+        if not (row[CH_ASKED] or "").strip() or approved:
+            continue
+        try:
+            asked = json.loads(row[CH_ASKED_JSON] or "[]")
+        except ValueError:
+            asked = []
+        out.append({"row": i, "office": (row[CH_OFFICE] or "").strip(),
+                    "owner": (row[CH_OWNER] or "").strip(),
+                    "wanted": (row[CH_ASKED] or "").strip(),
+                    "asked": asked,
+                    "asked_at": (row[CH_ASKED_AT] or "").strip()})
     return out
 
 

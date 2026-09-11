@@ -33,28 +33,51 @@ from pathlib import Path
 
 import ask
 
-APP_NAME = "Alphalete Alerts"
+APP_NAME = "Lucy Reports"
 _PRIVACY = ("This stays on this computer and is never sent to anyone. "
             "Only the report counts are sent.")
 HOME = Path.home()
-BASE = HOME / ".alphalete-alerts"
+BASE = HOME / ".lucy-reports"
 APP_DIR = BASE / "app"
 VENV_DIR = BASE / "venv"
-CONFIG_DIR = HOME / ".config" / "alphalete-alerts"
+CONFIG_DIR = HOME / ".config" / "lucy-reports"
 HERE = Path(__file__).resolve().parent
 
 IS_WINDOWS = platform.system() == "Windows"
-TASK_NAME = "AlphaleteAlerts"
-PLIST_LABEL = "com.alphalete.icd-alerts"
+TASK_NAME = "LucyReports"
+PLIST_LABEL = "com.alphalete.lucy-reports"
 EVERY_MINUTES = 15
+
+
+# ALPHALETE'S OWN COLOURS -- red #B93037, gold #C1B38F, near-black -- sampled
+# from the company logo, the shield and both uniform sheets rather than
+# guessed. NOT the burnt orange on the Total Knocks board: that is the
+# report's table styling, not the brand (Megan 2026-09-11).
+_TTY = sys.stdout.isatty()
+RED = "\033[38;2;185;48;55m" if _TTY else ""
+GOLD = "\033[38;2;193;179;143m" if _TTY else ""
+DIM = "\033[38;2;138;127;105m" if _TTY else ""
+BOLD = "\033[1m" if _TTY else ""
+OFF = "\033[0m" if _TTY else ""
 
 
 def say(msg=""):
     print(msg, flush=True)
 
 
+def banner():
+    bar = "\u2501" * 58
+    say("")
+    say("  %s%s%s" % (RED, bar, OFF))
+    say("  %s%sLUCY REPORTS%s   %sAlphalete Marketing%s"
+        % (BOLD, GOLD, OFF, DIM, OFF))
+    say("  %s%s%s" % (RED, bar, OFF))
+
+
 def step(n, total, msg):
-    say("\n[%d/%d] %s" % (n, total, msg))
+    say("")
+    say("  %s%s%d of %d%s  %s%s%s"
+        % (BOLD, RED, n, total, OFF, GOLD, msg, OFF))
 
 
 def venv_python() -> Path:
@@ -185,49 +208,61 @@ def ask_for_login():
 
 
 def ask_for_channel():
-    """Where should this office's alerts go? Their answer is a REQUEST.
+    """Which Slack channel(s) the credit-check alerts go to. A REQUEST.
 
-    Asked here rather than decided for them, because nobody on our side knows
-    which room an office wants -- and a guess lands in front of their whole
-    team, which is not a thing you undo. Nothing is posted anywhere until
-    somebody on the reporting team approves the answer, so a typo costs a
-    conversation and not a misdirected alert.
+    A LIST, like the knocks board. An office can want the pings in more than
+    one room -- the owners' channel and the rep channel -- and asking for one
+    then making them come back for the second is a worse conversation than
+    asking "any others?" once, here, while they are already sitting in front
+    of it.
+
+    Nobody on our side knows which room an office wants, and a guess lands in
+    front of their whole team, which is not a thing you undo. Nothing is
+    posted anywhere until somebody on the reporting team approves the answer,
+    so a typo costs a conversation and not a misdirected alert.
     """
     rec = json.loads((CONFIG_DIR / "install.json").read_text())
-    current = rec.get("requested_channel", "")
-    if current:
-        say("      already asked for: %s" % current)
-        return current
+    if rec.get("requested_channels") is not None:
+        say("      already asked -- %d channel(s)" % len(rec["requested_channels"]))
+        return rec["requested_channels"]
 
     say("      asking where the alerts should go (look for the pop-up box)...")
-    try:
-        answer = ask.text(
-            "Which Slack channel should these alerts be posted in?\n\n"
-            "For example:  #palace-sales\n\n"
-            "If you are not sure, leave this blank and the reporting team "
-            "will check with you.").strip()
-    except ask.Cancelled:
-        answer = ""
-
-    if answer:
+    channels = []
+    while len(channels) < MAX_ALERT_CHANNELS:
+        prompt = ("Which Slack channel should these alerts be posted in?\n\n"
+                  "For example:  #palace-sales\n\n"
+                  "If you are not sure, leave this blank and the reporting "
+                  "team will check with you."
+                  if not channels else
+                  "Which channel should they ALSO be posted in?")
+        try:
+            answer = ask.text(prompt).strip()
+        except ask.Cancelled:
+            break
+        if not answer:
+            break
         if not answer.startswith("#"):
             answer = "#" + answer.lstrip("#")
-        say("      noted: %s (the reporting team will confirm it)" % answer)
-    else:
+        if answer not in channels:
+            channels.append(answer)
+            say("      noted: %s" % answer)
+        if len(channels) >= MAX_ALERT_CHANNELS:
+            break
+        try:
+            if ask.choose("Add another channel for these alerts?",
+                          [ADD_NO, ADD_YES]) != ADD_YES:
+                break
+        except ask.Cancelled:
+            break
+
+    if not channels:
         say("      left blank -- the reporting team will check with you.")
 
-    rec["requested_channel"] = answer
+    rec["requested_channels"] = channels
     (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
-    return answer
+    return channels
 
 
-# THE KNOCKS REPORT IS THE SAME THING the disposition enrolment already signs
-# offices up for (Megan 2026-09-11), so the choices here are ITS choices, in
-# ITS words, and the answer is ITS canonical value -- the cadence in minutes,
-# not a sentence we would then have to translate. The list is baked into
-# install.json when the package is built, straight from
-# disposition_signup.schema, so there is one source of truth and a rebuilt
-# package picks up any change for free.
 KNOCKS_YES = "Yes, please"
 KNOCKS_NONE = "No knocks board, thanks"
 KNOCKS_OTHER = "A different channel"
@@ -236,6 +271,7 @@ ADD_NO = "No, that's all"
 # A ceiling, not a limit anyone will reach. It exists so a mis-clicked dialog
 # cannot loop forever on somebody's laptop.
 MAX_KNOCKS_DESTINATIONS = 4
+MAX_ALERT_CHANNELS = 4
 HOURS_OK = "Yes, those are our hours"
 HOURS_DIFFERENT = "No, ours are different"
 
@@ -281,7 +317,8 @@ def ask_about_knocks():
 
     destinations = []
     if wants == KNOCKS_YES:
-        default_channel = rec.get("requested_channel", "")
+        asked = rec.get("requested_channels") or []
+        default_channel = asked[0] if asked else ""
         while len(destinations) < MAX_KNOCKS_DESTINATIONS:
             channel = _ask_knocks_channel(default_channel, len(destinations))
             if channel is None:
@@ -443,9 +480,7 @@ def schedule_windows():
 
 
 def main() -> int:
-    say("=" * 62)
-    say("  %s -- setup" % APP_NAME)
-    say("=" * 62)
+    banner()
 
     total = 9
     step(1, total, "Copying the program onto this computer")
@@ -482,8 +517,8 @@ def main() -> int:
     say("      it will check every %d minutes, 10am to 9:30pm "
         "(4pm Saturdays), and never on Sunday." % EVERY_MINUTES)
 
-    say()
-    say("=" * 62)
+    say("")
+    say("  %s%s%s" % (RED, "\u2501" * 58, OFF))
     if ok:
         done = ("All set — you do not need to do anything else.\n\n"
                 "Just leave this computer on and connected to the internet "
@@ -491,14 +526,16 @@ def main() -> int:
                 "The reporting team will confirm which Slack channel your "
                 "alerts go to, and they will start appearing there.\n\n"
                 "You can close the black window behind this box.")
-        say("  All set.")
+        say("  %s%sAll set.%s" % (BOLD, GOLD, OFF))
     else:
         done = ("Everything is installed, but signing in to SaraPlus did not "
                 "work.\n\nPlease tell the reporting team — they can sort it "
                 "out from their end. Nothing else needs doing on this "
                 "computer.")
-        say("  Installed, but SaraPlus did not check out.")
-    say("=" * 62)
+        say("  %s%sInstalled, but SaraPlus did not check out.%s"
+            % (BOLD, GOLD, OFF))
+    say("  %s%s%s" % (RED, "\u2501" * 58, OFF))
+    say("")
     ask.message(done, error=not ok)
     return 0 if ok else 1
 

@@ -28,11 +28,15 @@
  *                     Agent | Last Posted JSON | Posted At
  *   'ICD Knocks'      Office | Day | Rows JSON | Tracker JSON | Rep Count |
  *                     Received At | Local Time | Last Posted At
- *   'Office Channels' Office | Owner | They Asked For | Requested At |
- *                     Channel ID | Channel Name | Approved |
+ *   'Office Channels' Office | Owner | Alerts: Wanted |
+ *                     Alerts: Channels JSON | Requested At |
+ *                     Alerts Approved JSON | Alerts Approved |
  *                     Knocks: Wanted | Knocks: Destinations JSON |
  *                     Knocks: Hours Note | Knocks Approved JSON |
  *                     Knocks Approved
+ *
+ * BOTH HALVES ARE THE SAME SHAPE: what they asked for, then what a human
+ * approved. A laptop writes only the asking columns.
  *
  * THE CHANNEL IS A REQUEST, NOT A SETTING. The installer asks the owner where
  * their alerts should go and relays the answer into 'They Asked For'. Nothing
@@ -111,7 +115,14 @@ function doPost(e) {
     // Optional, and sent on every sweep so a re-run of the installer can
     // change the answer. Only ever touches the columns the owner is allowed
     // to influence.
-    var asked = String(body.requested_channel || '').trim();
+    var chans = body.requested_channels;
+    var asked = null;
+    if (chans !== null && chans !== undefined) {
+      asked = {
+        wanted: chans.length ? chans.join(', ') : 'Not sure yet',
+        json: JSON.stringify(chans)
+      };
+    }
     // A LIST. Stored as readable text for whoever reviews it AND as JSON for
     // whatever builds the schedule -- reading a schedule back out of a
     // sentence is not something anyone should have to do.
@@ -201,7 +212,9 @@ function _recordChannelRequest(office, owner, asked, knocks) {
     var now = new Date();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === office) {
-        var sameCh = String(rows[i][2]).trim() === asked;
+        var sameCh = !asked ||
+                     (String(rows[i][2]).trim() === asked.wanted &&
+                      String(rows[i][3] || '').trim() === asked.json);
         var sameKn = !knocks ||
                      (String(rows[i][7] || '').trim() === knocks.wanted &&
                       String(rows[i][8] || '').trim() === knocks.json &&
@@ -210,11 +223,12 @@ function _recordChannelRequest(office, owner, asked, knocks) {
         // Columns 3-4 and 8-9 only. Every *Channel ID*, *Channel Name* and
         // *Approved* column is OURS -- an owner asks, a human decides.
         if (!sameCh) {
-          sh.getRange(i + 1, 3, 1, 2).setValues([[asked, now]]);
+          sh.getRange(i + 1, 3, 1, 3)
+            .setValues([[asked.wanted, asked.json, now]]);
           // A changed request un-approves the old one: they are asking for
-          // somewhere different, and the approval was for a room they no
+          // somewhere different, and the approval was for rooms they no
           // longer named.
-          sh.getRange(i + 1, 7).setValue('');
+          sh.getRange(i + 1, 6, 1, 2).setValues([['', '']]);
         }
         if (!sameKn) {
           sh.getRange(i + 1, 8, 1, 3)
@@ -226,7 +240,9 @@ function _recordChannelRequest(office, owner, asked, knocks) {
         return;
       }
     }
-    sh.appendRow([office, owner, asked, now, '', '', '',
+    sh.appendRow([office, owner,
+                  asked ? asked.wanted : '', asked ? asked.json : '', now,
+                  '', '',
                   knocks ? knocks.wanted : '', knocks ? knocks.json : '',
                   knocks ? knocks.hours : '', '', '']);
   } finally {

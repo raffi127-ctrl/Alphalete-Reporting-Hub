@@ -18,26 +18,46 @@ the controls the report is about to click.
 """
 from __future__ import annotations
 
-DEFAULT_MESSAGE = ("Alphalete Alerts is checking your reports — "
-                   "PLEASE DO NOT CLOSE THIS WINDOW. It closes by itself.")
+DEFAULT_TITLE = "DON'T CLOSE OR CLICK THIS WINDOW"
+
+# WHY THE SECOND LINE EXISTS. The first version only said "do not close", and
+# the helpful thing for an owner to do with a half-finished login is finish it
+# -- type their password, tick the security box. That BREAKS it: the check
+# clears itself only if it is left alone (Megan 2026-09-11: "the lucy bot has
+# to be able to clear the pass"), and a human touching the box or the fields
+# mid-sign-in is how the login fails in a way that looks like a wrong
+# password. So the bar asks for the one thing that is actually needed:
+# nothing.
+DEFAULT_DETAIL = ("Lucy Reports is signing itself in — please don't type "
+                  "your password or tick the security box. It clears on its "
+                  "own and this window closes by itself.")
+
+DEFAULT_MESSAGE = DEFAULT_TITLE
 
 _SCRIPT = """
-(message) => {
+(parts) => {
   const ID = '__alphalete_alerts_banner';
   const paint = () => {
     if (!document.body || document.getElementById(ID)) return;
     const bar = document.createElement('div');
     bar.id = ID;
-    bar.textContent = message;
     bar.style.cssText = [
       'position:fixed', 'top:0', 'left:0', 'right:0',
       'z-index:2147483647',
       'background:#b30000', 'color:#ffffff',
-      'font:bold 15px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif',
+      'font:15px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif',
       'padding:12px 16px', 'text-align:center',
       'letter-spacing:.2px', 'box-shadow:0 2px 6px rgba(0,0,0,.35)',
       'pointer-events:none'
     ].join(';');
+    const head = document.createElement('div');
+    head.textContent = parts.title;
+    head.style.cssText = 'font-weight:800;font-size:16px;letter-spacing:.6px';
+    const sub = document.createElement('div');
+    sub.textContent = parts.detail;
+    sub.style.cssText = 'font-weight:500;font-size:13.5px;opacity:.95;margin-top:3px';
+    bar.appendChild(head);
+    if (parts.detail) bar.appendChild(sub);
     document.body.appendChild(bar);
   };
   // Three ways in, because the page may be at any stage when this runs and a
@@ -49,20 +69,23 @@ _SCRIPT = """
 """
 
 
-def attach(context, message: str = DEFAULT_MESSAGE) -> None:
+def attach(context, message: str = DEFAULT_TITLE,
+           detail: str = DEFAULT_DETAIL) -> None:
     """Put the bar on every page this context opens, now and later.
 
     Never raises: a missing banner must not be the reason a report fails. The
     window being unexplained is bad; the run dying because we could not explain
     it is worse.
     """
+    parts = {"title": message, "detail": detail}
     try:
-        context.add_init_script(_SCRIPT.strip(), message)
+        context.add_init_script(_SCRIPT.strip(), parts)
     except TypeError:
         # Older bindings take no argument for add_init_script.
         try:
+            import json as _json
             context.add_init_script(
-                "(%s)(%r)" % (_SCRIPT.strip(), message))
+                "(%s)(%s)" % (_SCRIPT.strip(), _json.dumps(parts)))
         except Exception:  # noqa: BLE001
             pass
     except Exception:  # noqa: BLE001

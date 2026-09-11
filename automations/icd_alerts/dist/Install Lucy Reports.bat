@@ -17,7 +17,7 @@ REM package.py writes this file as CRLF.
 cd /d "%~dp0"
 
 echo.
-echo Starting Alphalete Alerts setup...
+echo Starting Lucy Reports setup...
 echo.
 
 set "PY="

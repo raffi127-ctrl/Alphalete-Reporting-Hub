@@ -157,3 +157,50 @@ class DayKeyTests(unittest.TestCase):
         from automations.icd_alerts.post import _day_key
         self.assertEqual(_day_key("whenever"), "whenever")
         self.assertEqual(_day_key(""), "")
+
+
+class MultiChannelTests(unittest.TestCase):
+    """An office can want the pings in more than one room. Asking for one and
+    making them come back for the second is a worse conversation than asking
+    once, in the installer, while they are already sitting in front of it."""
+
+    def test_several_approved_channels_all_come_back(self):
+        import json
+        from automations.icd_alerts import post as P
+        from automations.icd_alerts.offices import Channel
+
+        class _Book:
+            def worksheet(self, _):
+                return self
+
+            def get_all_values(self):
+                return [
+                    ["Office", "Owner", "Alerts: Wanted", "Alerts: Channels JSON",
+                     "Requested At", "Alerts Approved JSON", "Alerts Approved"],
+                    ["kash", "Kash Rai", "#palace-sales, #palace-owners",
+                     json.dumps(["#palace-sales", "#palace-owners"]), "",
+                     json.dumps([{"channel_id": "C1", "channel_name": "#palace-sales"},
+                                 {"channel_id": "C2", "channel_name": "#palace-owners"}]),
+                     "TRUE"],
+                ]
+
+        got = P.approved_channels(_Book())
+        self.assertEqual([c.id for c in got["kash"]], ["C1", "C2"])
+        self.assertEqual(got["kash"][1], Channel("C2", "#palace-owners"))
+
+    def test_an_unticked_row_approves_nothing(self):
+        import json
+        from automations.icd_alerts import post as P
+
+        class _Book:
+            def worksheet(self, _):
+                return self
+
+            def get_all_values(self):
+                return [
+                    ["Office", "Owner", "W", "J", "R", "AJ", "A"],
+                    ["kash", "", "#x", "[]",
+                     "", json.dumps([{"channel_id": "C1"}]), ""],
+                ]
+
+        self.assertEqual(P.approved_channels(_Book()), {})
