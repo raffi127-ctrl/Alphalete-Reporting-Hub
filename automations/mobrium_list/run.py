@@ -37,6 +37,11 @@ hand. There is no undo — the run writes the before-state to output/ first.
 
 Exit 0 = ran (whether or not anything changed). Exit 1 = a source or the write
 failed, i.e. the list may be stale.
+
+A --real run that exits 0 also writes output/manifests/mobrium_list.json. That
+file is the PROOF of delivery shared/delivery_check looks for: without it a
+clean re-run can't close its own failure ticket ("ran clean, but nothing can
+confirm it DELIVERED" — 2026-09-11, closed by hand).
 """
 from __future__ import annotations
 
@@ -65,6 +70,9 @@ except Exception:                                               # noqa: BLE001
 
 OUT_DIR = Path(__file__).resolve().parent.parent.parent / "output" / "mobrium_list"
 
+# The schedule_config key — the first spelling delivery_check.manifest_ids tries.
+REPORT_ID = "mobrium_list"
+
 
 def today_central() -> dt.date:
     return (dt.datetime.now(CENTRAL) if CENTRAL else dt.datetime.now()).date()
@@ -84,6 +92,27 @@ def _snapshot(entries, tab: str, today: dt.date) -> Path:
           "email": e.email, "phone": e.phone} for e in entries],
         indent=2), encoding="utf-8")
     return path
+
+
+def _record_delivery(note: str, *, real: bool,
+                     run_ts: dt.datetime | None = None) -> None:
+    """Write today's run manifest — only for the REAL tab.
+
+    A preview or a sandbox run delivered nothing to anybody, so it must not
+    leave proof that says otherwise. Only called on the exit-0 paths: a failure
+    already exits 1 and the orchestrator alerts on that, so a failed manifest
+    here would only ping the channel twice. Never raises — the list is already
+    written by the time this runs."""
+    if not real:
+        return
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(REPORT_ID, succeeded=["mobrium-list"],
+                                    note=note, run_ts=run_ts)
+        print(f"  manifest: {note}")
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't write the run manifest ({type(e).__name__}: {e}) "
+              f"— the list is updated, but a failure ticket won't close itself")
 
 
 def _report(plan: mplan.Plan, logfn=print) -> None:
@@ -259,6 +288,8 @@ def main(argv=None) -> int:
         _sort(ws, target_tab, dry)
         print(f"  before-state: {snap}")
         print(f"  {msheet.tab_url(ws)}")
+        _record_delivery("nothing to change — the list was already current",
+                         real=args.real and not dry)
         return 0
     try:
         msheet.apply(ws, removals=[r.entry for r in plan.removals],
@@ -277,6 +308,9 @@ def main(argv=None) -> int:
 
     print(f"  before-state: {snap}")
     print(f"  {msheet.tab_url(ws)}")
+    _record_delivery(f"{len(plan.removals)} removed, {len(additions)} added, "
+                     f"{len(plan.fills)} blank cell(s) filled",
+                     real=args.real and not dry)
     return 0
 
 
