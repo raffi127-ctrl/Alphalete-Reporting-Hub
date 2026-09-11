@@ -160,7 +160,12 @@ def main(argv=None):
         # a single-channel rerun must not throw away the other four
         old = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
         merged = old.get("channels", {})
-        merged.update(data["channels"])
+        for cname, fresh in data["channels"].items():
+            # key-level merge: a history rerun must not drop `members_api`
+            # (conversations.members), which this module never writes.
+            base = dict(merged.get(cname) or {})
+            base.update(fresh)
+            merged[cname] = base
         data["channels"] = merged
     everyone = set()
     for info in data["channels"].values():

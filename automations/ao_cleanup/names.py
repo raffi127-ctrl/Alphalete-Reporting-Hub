@@ -60,13 +60,18 @@ def add(entries):
         uid = (e.get("id") or "").strip()
         if not uid:
             continue
-        users[uid] = {
-            "name": (e.get("name") or "").strip(),
-            "email": (e.get("email") or "").strip(),
-            "username": (e.get("username") or "").strip(),
-            "deleted": bool(e.get("deleted")),
-            "bot": bool(e.get("bot")),
-        }
+        # MERGE, never clobber: users.list without `users:read.email` returns an
+        # empty email for everyone, and a blind overwrite would wipe the ones
+        # already resolved one-by-one. A blank field never beats a filled one.
+        cur = dict(users.get(uid) or {})
+        for field in ("name", "email", "username", "team"):
+            val = (e.get(field) or "").strip()
+            if val or not cur.get(field):
+                cur[field] = val or cur.get(field, "")
+        for flag in ("deleted", "bot", "restricted", "admin", "external"):
+            if flag in e:
+                cur[flag] = bool(e.get(flag))
+        users[uid] = cur
         n += 1
     save(users)
     return n
