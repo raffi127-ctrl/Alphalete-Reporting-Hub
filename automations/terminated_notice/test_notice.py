@@ -58,9 +58,9 @@ class Render(unittest.TestCase):
                          "fix": "hidden (rows untouched)", "done": True},
                         {"label": "ORG Sales Board", "where": "'KTS' A41",
                          "fix": "their rows come off"}])
-        self.assertIn("Eric Martinez is terminated", txt)
-        self.assertIn("logged 2026-09-10", txt)
-        done, need = txt.split("*Needs a person*")
+        self.assertIn("Eric Martinez — terminated", txt)
+        self.assertIn("2026-09-10", txt)
+        done, need = txt.split("*To do*")
         self.assertIn("Focus Report", done)      # finished -> Done
         self.assertIn("DD roster", done)         # code rosters are not their job
         self.assertIn("ORG Sales Board", need)   # genuinely human -> Needs
@@ -71,15 +71,15 @@ class Render(unittest.TestCase):
         txt = R.render(ENTRY, [], [])
         self.assertNotIn("*Done", txt)
         self.assertIn("Google Contacts", txt)
-        body = txt.split("*Needs a person*")[1].split("_Left on purpose")[0]
-        self.assertEqual(len([l for l in body.splitlines() if l.startswith("•")]), 1)
+        body = txt.split("*To do*")[1].split("_Left on purpose")[0]
+        self.assertEqual(len([l for l in body.splitlines() if l.startswith(":black_square_button:")]), 1)
 
     def test_the_leave_alone_rule_survives_without_naming_examples(self):
         """The rule has to stay — it stops someone "finishing the job" and
         quietly changing a captain's totals. The example names were dropped
         because a post about Melik cited Melik as the example."""
         txt = R.render(ENTRY, [], [])
-        self.assertIn("Left on purpose", txt)
+        self.assertIn("Leave alone", txt)
         self.assertIn("Canceled Orders", txt)
         self.assertNotIn("Melik El Jaiez", txt)
 
@@ -102,7 +102,7 @@ class Render(unittest.TestCase):
                        [{"label": "ORG Sales Board", "where": "'KTS' A41",
                          "fix": "their rows come off"}])
         self.assertNotIn("*Done", txt)           # nothing finished -> no claim
-        self.assertIn("Needs a person", txt)
+        self.assertIn("*To do*", txt)
 
     def test_a_failed_hide_is_reported_as_work_not_as_done(self):
         """If the API call fails the tab is still open, and the checklist has
@@ -111,7 +111,7 @@ class Render(unittest.TestCase):
         txt = R.render(ENTRY, [],
                        [{"label": "Focus Report", "where": "tab 'X'",
                          "fix": "hide the tab; the automatic hide failed here"}])
-        _done, need = txt.split("*Needs a person*")
+        _done, need = txt.split("*To do*")
         self.assertIn("Focus Report", need)
 
 

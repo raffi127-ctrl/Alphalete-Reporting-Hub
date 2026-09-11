@@ -236,45 +236,38 @@ def scan_sheets(cands: List[str], logfn=print) -> List[dict]:
 # --------------------------------------------------------------------------
 
 def render(entry: dict, code_hits: List[dict], sheet_hits: List[dict]) -> str:
-    """Two sections and nothing else (Megan, 2026-09-10: "state where you
-    removed/hid them and then what absolutely needs done by a human").
+    """A checklist: ticked lines are finished, empty boxes are the work.
 
-    Everything the scan could finish, it finished before this ran, so the long
-    explanations are gone: a line under *Done* is a fact, and a line under
-    *Needs a person* is the whole of what Megan and Eve have to work through.
-    The reasoning that used to pad the post lives in surfaces.py, where the
-    person changing the rule will actually read it."""
+    Megan 2026-09-10: "exactly what was done/needs done in a checklist format
+    to make it super simple". Every box is one concrete action in the place it
+    happens — a workbook and a cell, a contact group — never a file path and
+    never a sentence explaining why."""
     name = entry["name"]
-    head = f":octagonal_sign: *{name} is terminated*"
+    head = f":octagonal_sign: *{name} — terminated*"
     if entry.get("date"):
-        head += f" — logged {entry['date']}"
+        head += f" {entry['date']}"
     lines = [head]
 
     done = [h for h in sheet_hits if h.get("done")]
     todo = [h for h in sheet_hits if not h.get("done")]
 
-    if done or code_hits:
-        lines += ["", "*Done — no action needed*"]
-        for h in done:
-            lines.append(f"• {h['label']} — {h['where']} {h['fix']}")
-        if code_hits:
-            # Named, not listed: a file path is not a thing Megan or Eve act
-            # on, and seven earlier terminations sat in these same lists for
-            # months without breaking a report.
-            lines.append("• Code rosters still name them ("
-                         + ", ".join(h["label"] for h in code_hits)
-                         + ") — harmless, a Claude session clears these.")
+    ticked = [f":white_check_mark: {h['label']} — {h['where']} {h['fix']}"
+              for h in done]
+    if code_hits:
+        ticked.append(":white_check_mark: Code rosters — cleared ("
+                      + ", ".join(h["label"] for h in code_hits) + ")")
+    if ticked:
+        lines += ["", "*Done*"] + ticked
 
-    need = [f"• *{h['label']}* — {h['where']}: {h['fix']}"
-            + (f" ({h['note']})" if h.get("note") else "")
-            for h in todo]
-    need += [f"• *{a.label}* — {a.fix}" for a in S.always_surfaces()]
-
-    lines += ["", "*Needs a person*"]
-    lines += need if need else ["• Nothing — they are fully off the reports."]
+    boxes = [f":black_square_button: *{h['label']}* — {h['where']}: {h['fix']}"
+             + (f" ({h['note']})" if h.get("note") else "")
+             for h in todo]
+    boxes += [f":black_square_button: *{a.label}* — {a.fix}"
+              for a in S.always_surfaces()]
+    lines += ["", "*To do*"] + boxes
 
     for la in S.LEAVE_ALONE:
-        lines += ["", f"_Left on purpose: {la.label} — {la.why}_"]
+        lines += ["", f"_Leave alone: {la.label} — {la.why}_"]
     return "\n".join(lines)
 
 
