@@ -613,10 +613,11 @@ SETTLED: "dict[str, str]" = {
         "off OwnerVille Office Access. The 9/03 scan predates that, which is "
         "the whole of why it read empty.",
     "jason strid":
-        "WINDING DOWN — office 21712 Vyzah, Inc. Off the Tableau Metrics view "
-        "since 2026-08-19, off Starr's captainship and the org distros, and "
-        "not on OV Office Access at all (Megan 2026-09-10). NOT on the "
-        "Terminated ICDs sheet — see the note in needs_terminated_review.",
+        "TERMINATED — office 21712 Vyzah, Inc shut down; on the Terminated "
+        "ICDs sheet, logged 2026-09-10 with the closure dated 2026-09-07. Off "
+        "the Tableau Metrics view since 2026-08-19, off Starr's captainship "
+        "and the org distros, and not on OV Office Access at all. Was the open "
+        "gap this module reported until Megan logged him (2026-09-10).",
 }
 
 
@@ -632,8 +633,13 @@ def needs_terminated_review() -> list:
     RETURNS A LIST, WRITES NOTHING. The sheet is Megan's record of who is out;
     a report adding rows to it on its own inference is how a live ICD gets
     marked terminated by a bad week of numbers.
+
+    EMPTY SINCE 2026-09-10: Megan logged Jason Strid, which is what this was
+    waiting for. Keep the function — it is the ledger's open-gap slot, and the
+    next wound-down office that has not reached the sheet goes here rather than
+    into a comment nobody greps.
     """
-    return ["jason strid"]
+    return []
 
 
 def needs_tableau() -> list:

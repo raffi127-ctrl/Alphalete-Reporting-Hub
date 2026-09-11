@@ -164,12 +164,15 @@ class WoundDownOfficesAreNotOpenQuestions(unittest.TestCase):
         self.assertIn("TERMINATED", why)
 
     def test_the_terminated_gap_is_named_not_silently_fixed(self):
-        # Jason Strid is off the Metrics view, the boards, the distros and OV
-        # Office Access, and is still not on the Terminated ICDs sheet. That
-        # sheet is Megan's record: this reports the gap, it never writes a row.
-        self.assertEqual(KP.needs_terminated_review(), ["jason strid"])
-        self.assertIn("NOT on the Terminated ICDs sheet",
-                      KP.SETTLED["jason strid"])
+        # The gap this test was written for CLOSED on 2026-09-10: Megan logged
+        # Jason Strid on the Terminated ICDs sheet. What the test still fixes
+        # is the rule — the module reports a gap and never writes the row
+        # itself — plus the fact that a closed gap gets recorded as terminated
+        # rather than left reading "winding down" forever.
+        self.assertEqual(KP.needs_terminated_review(), [])
+        self.assertIn("TERMINATED", KP.SETTLED["jason strid"])
+        self.assertNotIn("NOT on the Terminated ICDs sheet",
+                         KP.SETTLED["jason strid"])
 
     def test_a_wound_down_office_is_never_offered_campaigns(self):
         # Offering a picker for an office that no longer exists would be a
