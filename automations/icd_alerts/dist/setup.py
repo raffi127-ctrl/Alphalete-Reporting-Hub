@@ -184,6 +184,43 @@ def ask_for_login():
     return sara
 
 
+def ask_for_channel():
+    """Where should this office's alerts go? Their answer is a REQUEST.
+
+    Asked here rather than decided for them, because nobody on our side knows
+    which room an office wants -- and a guess lands in front of their whole
+    team, which is not a thing you undo. Nothing is posted anywhere until
+    somebody on the reporting team approves the answer, so a typo costs a
+    conversation and not a misdirected alert.
+    """
+    rec = json.loads((CONFIG_DIR / "install.json").read_text())
+    current = rec.get("requested_channel", "")
+    if current:
+        say("      already asked for: %s" % current)
+        return current
+
+    say("      asking where the alerts should go (look for the pop-up box)...")
+    try:
+        answer = ask.text(
+            "Which Slack channel should these alerts be posted in?\n\n"
+            "For example:  #palace-sales\n\n"
+            "If you are not sure, leave this blank and the reporting team "
+            "will check with you.").strip()
+    except ask.Cancelled:
+        answer = ""
+
+    if answer:
+        if not answer.startswith("#"):
+            answer = "#" + answer.lstrip("#")
+        say("      noted: %s (the reporting team will confirm it)" % answer)
+    else:
+        say("      left blank -- the reporting team will check with you.")
+
+    rec["requested_channel"] = answer
+    (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
+    return answer
+
+
 def check_account() -> bool:
     say("      signing in to SaraPlus to make sure it works...")
     proc = subprocess.run(
@@ -250,7 +287,7 @@ def main() -> int:
     say("  %s -- setup" % APP_NAME)
     say("=" * 62)
 
-    total = 7
+    total = 8
     step(1, total, "Copying the program onto this computer")
     copy_app()
 
@@ -267,11 +304,14 @@ def main() -> int:
     rec = write_install_json()
     say("      office: %s" % rec.get("office_key", "?"))
 
-    step(6, total, "Your SaraPlus login")
+    step(6, total, "Your logins")
     ask_for_login()
     ok = check_account()
 
-    step(7, total, "Setting it to run through the day")
+    step(7, total, "Where your alerts should go")
+    ask_for_channel()
+
+    step(8, total, "Setting it to run through the day")
     if IS_WINDOWS:
         schedule_windows()
     else:
@@ -285,6 +325,8 @@ def main() -> int:
         done = ("All set — you do not need to do anything else.\n\n"
                 "Just leave this computer on and connected to the internet "
                 "during selling hours.\n\n"
+                "The reporting team will confirm which Slack channel your "
+                "alerts go to, and they will start appearing there.\n\n"
                 "You can close the black window behind this box.")
         say("  All set.")
     else:

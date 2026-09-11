@@ -22,10 +22,19 @@
  * the failure that follows looks like a bad key rather than a missing
  * spreadsheet.
  *
- * TWO TABS:
- *   'Relay Keys'  Office | Key | Active | Note      <- we control this
- *   'ICD Relay'   Office | Day | Records JSON | Received At | Local Time |
- *                 Agent | Last Posted JSON | Posted At
+ * THREE TABS:
+ *   'Relay Keys'      Office | Key | Active | Note      <- we control this
+ *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
+ *                     Agent | Last Posted JSON | Posted At
+ *   'Office Channels' Office | Owner | They Asked For | Requested At |
+ *                     Channel ID | Channel Name | Approved
+ *
+ * THE CHANNEL IS A REQUEST, NOT A SETTING. The installer asks the owner where
+ * their alerts should go and relays the answer into 'They Asked For'. Nothing
+ * posts there until a human fills in Channel ID and sets Approved to TRUE.
+ * A laptop can write the first four columns of its own row and NOTHING else --
+ * if it could set Channel ID it could aim an office's alerts at any room in
+ * the AO workspace, which is the one thing this design exists to prevent.
  *
  * ONE ROW PER OFFICE PER DAY, updated in place. Appending every sweep would be
  * ~3,000 rows a day across 52 offices and would turn the poster's read into a
@@ -42,6 +51,7 @@
 var SHEET_ID = '1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg';
 var RELAY_TAB = 'ICD Relay';
 var KEYS_TAB = 'Relay Keys';
+var CHANNELS_TAB = 'Office Channels';
 
 function _book() {
   return SpreadsheetApp.openById(SHEET_ID);
@@ -81,6 +91,13 @@ function doPost(e) {
     // by a person looking at the sheet.
     _upsert(office, day, JSON.stringify(records),
             String(body.local_time || ''), String(body.agent || ''));
+
+    // Optional, and sent on every sweep so a re-run of the installer can
+    // change the answer. Only ever touches the columns the owner is allowed
+    // to influence.
+    var asked = String(body.requested_channel || '').trim();
+    if (asked) _recordChannelRequest(office, String(body.owner || ''), asked);
+
     return _reply({ok: true, reps: Object.keys(records).length});
   } catch (err) {
     return _reply({ok: false, error: String(err)});
@@ -134,6 +151,33 @@ function _upsert(office, day, recordsJson, localTime, agent) {
     // Keep the day a STRING on the way in too, so the next sweep's lookup is
     // comparing like with like even if the column format is ever reset.
     sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _recordChannelRequest(office, owner, asked) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _book().getSheetByName(CHANNELS_TAB);
+    if (!sh) return;
+    var rows = sh.getDataRange().getValues();
+    var now = new Date();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]).trim().toLowerCase() === office) {
+        // Columns 3-4 only. Channel ID, Channel Name and Approved are OURS --
+        // an owner asks, a human decides.
+        if (String(rows[i][2]).trim() === asked) return;   // nothing changed
+        sh.getRange(i + 1, 3, 1, 2).setValues([[asked, now]]);
+        // A changed request un-approves the old one: the office is asking for
+        // somewhere different, and the previous approval was for a room they
+        // no longer named.
+        sh.getRange(i + 1, 7).setValue('');
+        return;
+      }
+    }
+    sh.appendRow([office, owner, asked, now, '', '', '']);
   } finally {
     lock.releaseLock();
   }

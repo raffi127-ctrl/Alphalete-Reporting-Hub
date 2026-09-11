@@ -93,7 +93,7 @@ def _endpoint() -> Dict[str, str]:
 def payload(records: Dict[str, int], day: dt.date,
             rec: Optional[Dict] = None) -> Dict:
     rec = rec or _endpoint()
-    return {
+    body = {
         "office_key": rec["office_key"],
         "key": rec["relay_key"],
         "day": day.isoformat(),
@@ -103,6 +103,14 @@ def payload(records: Dict[str, int], day: dt.date,
         # as a stale reading rather than looking like a quiet office.
         "local_time": dt.datetime.now().isoformat(timespec="seconds"),
     }
+    # Where the owner ASKED for their alerts. Sent every sweep, not once, so
+    # re-running the installer is how somebody changes their mind -- there is
+    # no other route, and "run it again" is an instruction anyone can follow.
+    # It is a request: nothing posts there until a human approves it.
+    if rec.get("requested_channel"):
+        body["requested_channel"] = rec["requested_channel"]
+        body["owner"] = rec.get("owner", "")
+    return body
 
 
 def _is_result_url(url: str) -> bool:

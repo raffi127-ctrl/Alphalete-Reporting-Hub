@@ -93,12 +93,20 @@ def active() -> List[AlertOffice]:
     return [o for o in OFFICES.values() if o.active]
 
 
-def destinations(office: "AlertOffice"):
+def destinations(office: "AlertOffice", approved=None):
     """Where this office's alerts actually go right now.
 
-    Never empty. An office with no channel decided is HELD, not dropped: the
+    `approved` is what the 'Office Channels' tab says a human has signed off.
+    It WINS over the code, because the person approving must not need a commit
+    to do it -- an approval that waits on an engineer is an approval that does
+    not happen. The code row stays as the fallback for offices that predate
+    the tab.
+
+    Never empty. An office with nothing approved is HELD, not dropped: the
     alerts are real, somebody just has not said where they belong yet.
     """
+    if approved:
+        return list(approved), False
     if office.channels:
         return list(office.channels), False
     return [Channel(HOLDING_DM, HOLDING_LABEL)], True

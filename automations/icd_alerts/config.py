@@ -138,6 +138,21 @@ def save_install(office_key: str, owner: str) -> Path:
     return INSTALL_PATH
 
 
+def save_requested_channel(channel: str) -> Path:
+    """Remember where this office asked their alerts to go.
+
+    A REQUEST, not a setting. It is relayed with every sweep and somebody on
+    the reporting team decides; nothing on this machine can put a message in a
+    Slack channel. Stored here so re-running the installer is how an owner
+    changes the answer.
+    """
+    app_dir()
+    rec = dict(install())
+    rec["requested_channel"] = (channel or "").strip()
+    INSTALL_PATH.write_text(json.dumps(rec, indent=2))
+    return INSTALL_PATH
+
+
 # --- when this office is worth reading ------------------------------------
 # THE LAPTOP'S OWN CLOCK IS THE RIGHT ONE. An ICD's machine sits in their
 # office, so local time IS office time -- unlike OwnerVille, whose timezone

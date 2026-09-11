@@ -37,6 +37,10 @@ from automations.shared.credit_check_line import records_line
 RELAY_SPREADSHEET_ID = "1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg"
 RELAY_TAB = "ICD Relay"
 
+CHANNELS_TAB = "Office Channels"
+CH_OFFICE, CH_OWNER, CH_ASKED, CH_ASKED_AT = 0, 1, 2, 3
+CH_ID, CH_NAME, CH_APPROVED = 4, 5, 6
+
 COL_OFFICE, COL_DAY, COL_RECORDS = 0, 1, 2
 COL_RECEIVED, COL_LOCAL_TIME, COL_AGENT = 3, 4, 5
 COL_LAST_POSTED, COL_POSTED_AT = 6, 7
@@ -119,6 +123,59 @@ def _day_key(cell: str) -> str:
     return cell
 
 
+def approved_channels(book=None) -> Dict[str, List]:
+    """{office_key: [Channel]} for every office a human has signed off.
+
+    APPROVED MEANS A PERSON TYPED IT. The office asks through the installer
+    and that lands in 'They Asked For'; this reads only the columns on our
+    side of the sheet, so a laptop cannot approve itself into a channel.
+    A row missing either the id or the tick is not approved, and being
+    half-filled is the normal state while somebody is still deciding.
+    """
+    from automations.icd_alerts.offices import Channel
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(CHANNELS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001 — no tab yet is not a failure
+        return {}
+
+    out = {}
+    for row in rows[1:]:
+        if len(row) <= CH_APPROVED:
+            continue
+        key = (row[CH_OFFICE] or "").strip().lower()
+        cid = (row[CH_ID] or "").strip()
+        name = (row[CH_NAME] or "").strip() or cid
+        ok = (row[CH_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
+        if key and cid and ok:
+            out.setdefault(key, []).append(Channel(cid, name))
+    return out
+
+
+def pending_requests(book=None) -> List[Dict]:
+    """Offices that have asked for a channel nobody has approved yet."""
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(CHANNELS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for i, row in enumerate(rows[1:], start=2):
+        if len(row) <= CH_APPROVED:
+            row = list(row) + [""] * (CH_APPROVED + 1 - len(row))
+        approved = (row[CH_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
+        if (row[CH_ASKED] or "").strip() and not (approved and (row[CH_ID] or "").strip()):
+            out.append({"row": i, "office": (row[CH_OFFICE] or "").strip(),
+                        "owner": (row[CH_OWNER] or "").strip(),
+                        "asked": (row[CH_ASKED] or "").strip(),
+                        "asked_at": (row[CH_ASKED_AT] or "").strip()})
+    return out
+
+
 def _rows_for(day: dt.date, tab) -> List[Tuple[int, List[str]]]:
     """(1-based row number, row) for every relay row of `day`. The row number is
     carried because writing 'Last Posted JSON' back needs it -- and looking it
@@ -149,6 +206,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         only: Optional[str] = None, log=print) -> Dict:
     day = day or dt.date.today()
     tab = _relay_tab()
+    approved = approved_channels(tab.spreadsheet)
     rows = _rows_for(day, tab)
     if not rows:
         log("no offices have relayed anything for %s yet" % day.isoformat())
@@ -177,7 +235,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         elif not lines:
             log("%-10s nothing new (%d rep(s) tracked)" % (key, len(records)))
         else:
-            targets, held = O.destinations(office)
+            targets, held = O.destinations(office, approved.get(key))
             log("%-10s %d new credit check line(s) -> %s%s"
                 % (key, len(lines), ", ".join(t.name for t in targets),
                    "   [HELD -- no channel decided for this office]" if held else ""))
@@ -188,7 +246,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             continue
         if lines:
             text = "\n".join(lines)
-            targets, held = O.destinations(office)
+            targets, held = O.destinations(office, approved.get(key))
             if held:
                 # Say whose they are and why they are here, because the person
                 # reading them did not ask for them and cannot act on the
