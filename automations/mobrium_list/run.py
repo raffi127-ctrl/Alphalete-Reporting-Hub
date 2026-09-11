@@ -73,6 +73,10 @@ OUT_DIR = Path(__file__).resolve().parent.parent.parent / "output" / "mobrium_li
 # The schedule_config key — the first spelling delivery_check.manifest_ids tries.
 REPORT_ID = "mobrium_list"
 
+# The people removals can't reach — see _alert_near.
+NEAR_INCIDENT_KEY = "mobrium-near-miss"
+NEAR_TITLE = "Mobrium List — people who may be gone, but whose name doesn't match"
+
 
 def today_central() -> dt.date:
     return (dt.datetime.now(CENTRAL) if CENTRAL else dt.datetime.now()).date()
@@ -113,6 +117,51 @@ def _record_delivery(note: str, *, real: bool,
     except Exception as e:                                      # noqa: BLE001
         print(f"  ⚠ couldn't write the run manifest ({type(e).__name__}: {e}) "
               f"— the list is updated, but a failure ticket won't close itself")
+
+
+def near_body(plan: mplan.Plan) -> list:
+    """The Slack body — English, the whole team reads that channel."""
+    body = [f"• {n.entry.full} — terminated as {n.why}" for n in plan.near]
+    body += [f"• {f.entry.full} — the sales board marked T and contradicted "
+             f"itself ({f.why})" for f in plan.flagged]
+    body.append("")
+    body.append("Removals go on an EXACT name, so these stay on the Mobrium "
+                "List. If it's the same person, delete the row (or fix the "
+                "spelling on either tab). Nothing here gets removed on its own.")
+    return body
+
+
+def _alert_near(plan: mplan.Plan, *, real: bool, dry_run: bool = False) -> None:
+    """Say in Slack who the run could NOT remove, every Friday it happens.
+
+    A name that is one part away from a termination (plan.near) or a board T
+    that contradicts itself (plan.flagged) is never removed — deleting the
+    wrong row is the failure this module avoids. Until 2026-09-11 they were
+    only printed in the run log, which nobody reads, so they stayed on the
+    list for good (Charley Perez / Thais Fernández Salazar, removed by hand
+    that day). Eve chose the alert over an automatic removal.
+
+    Thread-per-problem: a clean Friday closes the open thread. Real runs only
+    — a preview or sandbox didn't touch the list. Never raises."""
+    if not real:
+        return
+    try:
+        if plan.near or plan.flagged:
+            from automations.day_orchestrator import notify
+            notify.post_alert(NEAR_TITLE, near_body(plan), tag="mobrium_list",
+                              incident=NEAR_INCIDENT_KEY, label="Mobrium List",
+                              dry_run=dry_run)
+            print(f"  posted {len(plan.near) + len(plan.flagged)} name(s) "
+                  f"to Slack for a human to decide")
+        else:
+            from automations.shared import incident_thread
+            incident_thread.resolve_if_open(
+                NEAR_INCIDENT_KEY,
+                what="*Mobrium List* has no near-miss names left",
+                dry_run=dry_run)
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't post the near-miss names ({type(e).__name__}: "
+              f"{e}) — they're in this log above")
 
 
 def _report(plan: mplan.Plan, logfn=print) -> None:
@@ -271,6 +320,7 @@ def main(argv=None) -> int:
               f"new people at the bottom instead of inserting them, so nothing "
               f"gets re-sorted underneath you")
     _report(plan)
+    _alert_near(plan, real=args.real and args.i_mean_it)
 
     additions = mplan.place(entries, plan)
 
