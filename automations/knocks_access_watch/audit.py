@@ -62,13 +62,20 @@ MISSING = "missing"    # not on the list under any spelling we can search for
 MASTER = "master"      # the login's OWN office — reachable without a grant
 
 
-def rosters(grid=None) -> Dict[str, Tuple[Optional[str], List[str]]]:
+def rosters(grid=None, *, is_terminated=None
+            ) -> Dict[str, Tuple[Optional[str], List[str]]]:
     """{captain key: (block title, [owner display names])} off the Org Sales
     Board, in board order.
 
     Names keep the BOARD's spelling — the same string the email sub-headings
     and the knock boards show, so a diff of this audit lines up with what Eve
-    sees in the report rather than with a canonical she never reads."""
+    sees in the report rather than with a canonical she never reads.
+
+    Terminated ICDs are removed through the SAME drop_terminated the knock
+    boards use, so the watch never announces (or counts) an office the report
+    won't carry — 2026-09-11 it posted "granted — chan/Eric Martinez" for an
+    office that had closed the day before."""
+    from automations.captainship_drafts import knock_dispo_images as KD
     from automations.captainship_drafts import sales_board as sb
     from automations.org_sales_board import captainship as cap
     from automations.icd_sales_board.board_read import clean_name
@@ -92,7 +99,7 @@ def rosters(grid=None) -> Dict[str, Tuple[Optional[str], List[str]]]:
                 continue
             seen.add(k)
             names.append(name)
-        out[key] = (title, names)
+        out[key] = (title, KD.drop_terminated(names, is_terminated))
     return out
 
 

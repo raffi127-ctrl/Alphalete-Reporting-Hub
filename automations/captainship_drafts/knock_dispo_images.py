@@ -382,11 +382,49 @@ def _slug(name: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
 
 
-def owner_names(captain_key: str, grid: Optional[List[List[str]]] = None
-                ) -> List[str]:
+def drop_terminated(names: List[str], is_terminated=None, logfn=print
+                    ) -> List[str]:
+    """`names` minus the owners on the 'Terminated ICDs' tab, order kept.
+
+    Eve 2026-09-11, after the access watch posted "Office Access granted —
+    chan/Eric Martinez" a day after his office (20721) closed: a terminated
+    ICD must not come back into the knock boards just because ownerville lists
+    the office again. His board rows stay on the Org Sales Board on purpose
+    (pulling a closed office mid-week drops the captain's totals), so the
+    roster alone can't say he's gone — the terminated list does.
+
+    Left out ENTIRELY, not like a dropped owner: no grey note, not counted in
+    "(N of M ICDs)". A closed office is not a coverage gap.
+
+    `is_terminated` is injectable for tests; None reads the tab once per
+    process (terminated_icds.terminated_lookup), and any Sheet error keeps
+    everyone — a hiccup there must never empty a captainship's email."""
+    if is_terminated is None:
+        try:
+            from automations.shared import terminated_icds as _ti
+            is_terminated = _ti.terminated_lookup()
+        except Exception as e:  # noqa: BLE001 — advisory, never fails a build
+            logfn(f"    ⚠ terminated check skipped ({type(e).__name__}: {e})")
+            return list(names)
+    keep: List[str] = []
+    for name in names:
+        try:
+            gone = is_terminated(name)
+        except Exception:  # noqa: BLE001
+            gone = False
+        if gone:
+            logfn(f"    · {name}: on Terminated ICDs — left off the knock boards")
+            continue
+        keep.append(name)
+    return keep
+
+
+def owner_names(captain_key: str, grid: Optional[List[List[str]]] = None,
+                *, is_terminated=None) -> List[str]:
     """The owner names in `captain_key`'s captainship block on the Org Sales
     Board, in board order (leaderboard first, then any daily-only stragglers),
-    field tags stripped, de-duped case-insensitively.
+    field tags stripped, de-duped case-insensitively, terminated ICDs removed
+    (drop_terminated).
 
     `grid` is injectable for offline tests; None reads the live tab through
     sales_board's process cache. Lazy imports so importing THIS module stays
@@ -420,7 +458,7 @@ def owner_names(captain_key: str, grid: Optional[List[List[str]]] = None
             continue
         seen.add(key)
         names.append(name)
-    return names
+    return drop_terminated(names, is_terminated)
 
 
 def owner_cfgs(names: List[str], aliases_raw: Dict[str, list]
