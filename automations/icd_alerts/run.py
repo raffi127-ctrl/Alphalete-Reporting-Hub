@@ -128,7 +128,8 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
         _log("no OwnerVille login saved — skipping knocks")
         return 0
     try:
-        rows = ov_read.read_knocks(day, headless=headless, log=_log)
+        payload = ov_read.read_knocks(day, headless=headless, log=_log)
+        rows, tracker = payload["rows"], payload["time_tracker"]
     except ov_read.KnocksProblem as e:
         print("\n%s" % e)
         return 1
@@ -143,7 +144,7 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
         _log("no knocks logged yet today")
 
     try:
-        R.send_knocks(rows, day, dry_run=dry_run, log=_log)
+        R.send_knocks(rows, day, time_tracker=tracker, dry_run=dry_run, log=_log)
     except R.RelayError as e:
         _log("could not send the knocks this time: %s" % e)
         return 1

@@ -209,6 +209,44 @@ def wait_rows_settled(page, *, quiet_ms: int = 400, timeout_ms: int = 12_000) ->
     return max(last, 0)
 
 
+def fetch_time_tracker(page, rqst: str, mdy: str, *, log=print) -> List[Dict]:
+    """Raw Time Tracker rows for one day, straight from its JSON endpoint.
+
+    THIS IS WHERE GAPS COME FROM. The disposition grid has no idea how long a
+    rep stood still; the board's Gaps and Total Gaps columns are this fetch, and
+    without it they render empty -- which on a board whose whole point is rep
+    gaps reads as "nobody was idle" rather than "we did not look".
+
+    A same-origin fetch from the page, so the session cookies ride along.
+    Driving the jQuery datepicker instead is not an option here: jQuery is not
+    on `window` in the world patchright evaluates in.
+
+    A 200 with no rows is a VERIFIED quiet day, never a failure. A bad status
+    leaves gaps blank rather than losing the board -- the disposition half is
+    still worth posting.
+    """
+    result = page.evaluate(
+        """async ({rqst, mdy}) => {
+            const url = `https://v2.ownerville.com/components/telemapper/`
+                + `report_timeTracker.cfc?method=getTimeTrackingData&rqst=${rqst}`
+                + `&dateToSearch=${encodeURIComponent(mdy)}&returnFormat=json`;
+            try {
+                const r = await fetch(url, {credentials: 'include'});
+                const text = await r.text();
+                try { return {status: r.status, data: (JSON.parse(text).data) || []}; }
+                catch (e) { return {status: r.status, data: [], raw: text.slice(0, 160)}; }
+            } catch (e) { return {status: 0, data: [], raw: String(e).slice(0, 160)}; }
+        }""",
+        {"rqst": rqst, "mdy": mdy})
+    rows = result.get("data") or []
+    status = result.get("status")
+    if status != 200:
+        log("time tracker unavailable (status %s) — gaps will be blank" % status)
+        return []
+    log("time tracker: %d rep(s) clocked in" % len(rows))
+    return rows
+
+
 def read_rows(page, *, log=print) -> List[Dict[str, str]]:
     """Every rep row, as {header text: cell text}.
 

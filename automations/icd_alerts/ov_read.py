@@ -69,8 +69,13 @@ def _session(page, log=print) -> str:
 
 
 def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
-                log=print) -> List[Dict[str, str]]:
-    """Today's disposition rows for this office, raw, keyed by grid header."""
+                log=print) -> Dict[str, List[Dict]]:
+    """Today's grid AND time tracker for this office, both raw.
+
+    {'rows': [...], 'time_tracker': [...]}. The gaps live in the second one --
+    the disposition grid has no idea how long a rep stood still -- and a board
+    without them reads as "nobody was idle" rather than "we did not look".
+    """
     from patchright.sync_api import sync_playwright
 
     day = day or C.today()
@@ -83,9 +88,19 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
             rqst = _session(page, log=log)
             K.navigate(page, rqst, mdy, log=log)
             try:
-                return K.read_rows(page, log=log)
+                rows = K.read_rows(page, log=log)
             except K.OwnervilleError as e:
                 raise KnocksProblem(str(e))
+            # Never fatal: the disposition half is still worth handing over,
+            # and losing the whole board because the gaps endpoint blipped
+            # would be the wrong trade.
+            try:
+                tracker = K.fetch_time_tracker(page, rqst, mdy, log=log)
+            except Exception as e:  # noqa: BLE001
+                log("time tracker failed (%s) — gaps will be blank"
+                    % type(e).__name__)
+                tracker = []
+            return {"rows": rows, "time_tracker": tracker}
         finally:
             try:
                 ctx.close()

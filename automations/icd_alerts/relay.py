@@ -181,8 +181,8 @@ def _post(url: str, data: bytes) -> str:
 MAX_KNOCKS_CHARS = 45_000
 
 
-def send_knocks(rows, day: Optional[dt.date] = None, *, dry_run: bool = False,
-                log=print) -> Dict:
+def send_knocks(rows, day: Optional[dt.date] = None, *, time_tracker=None,
+                dry_run: bool = False, log=print) -> Dict:
     """Hand over one day of disposition rows, raw.
 
     Separate call, separate failure. A SaraPlus sweep that works must not be
@@ -197,6 +197,7 @@ def send_knocks(rows, day: Optional[dt.date] = None, *, dry_run: bool = False,
         "key": rec["relay_key"],
         "day": day.isoformat(),
         "knocks_rows": rows,
+        "knocks_time_tracker": time_tracker or [],
         "agent": AGENT_VERSION,
         "local_time": dt.datetime.now().isoformat(timespec="seconds"),
     }

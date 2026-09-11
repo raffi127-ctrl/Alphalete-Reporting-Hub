@@ -26,8 +26,8 @@ from typing import Dict, List, Optional, Tuple
 from automations.icd_alerts import knocks_map as M, offices as O, post as P
 
 KNOCKS_TAB = "ICD Knocks"
-KN_OFFICE, KN_DAY, KN_ROWS, KN_COUNT = 0, 1, 2, 3
-KN_RECEIVED, KN_LOCAL, KN_POSTED = 4, 5, 6
+KN_OFFICE, KN_DAY, KN_ROWS, KN_TRACKER, KN_COUNT = 0, 1, 2, 3, 4
+KN_RECEIVED, KN_LOCAL, KN_POSTED = 5, 6, 7
 
 GAP_THRESHOLD_MIN = 15
 OUT_DIR = Path.home() / ".config" / "recruiting-report" / "icd_knocks_cards"
@@ -165,31 +165,34 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             log("%-10s knocks could not be read -- skipping" % key)
             continue
 
-        reps = M.to_reps(raw, day)
-        gaps = M.gaps(reps, now, GAP_THRESHOLD_MIN)
+        try:
+            tracker = json.loads(row[KN_TRACKER] or "[]")
+        except ValueError:
+            tracker = []
+        rows_for_board = M.to_rows(raw, tracker)
+        if not rows_for_board:
+            log("%-10s relayed nothing to draw yet today" % key)
+            continue
         posted_at = _posted_map(row[KN_POSTED])
 
         due = [d for d in dests
                if force or is_due(d, posted_at.get(d["channel_id"]), now)]
         if not due:
-            log("%-10s %d rep(s), %d over %dmin -- nothing due"
-                % (key, len(reps), len(gaps), GAP_THRESHOLD_MIN))
+            log("%-10s %d rep(s) -- nothing due" % (key, len(rows_for_board)))
             continue
 
-        log("%-10s %d rep(s), %d over %dmin -> %s"
-            % (key, len(reps), len(gaps), GAP_THRESHOLD_MIN,
+        boards, shape = _render(office, rows_for_board, day, now)
+        log("%-10s %d rep(s), %s board -> %s"
+            % (key, len(rows_for_board), shape,
                ", ".join(d.get("channel_name") or d["channel_id"] for d in due)))
-        for g in gaps[:10]:
-            log("    %-24s %s min ago" % (g["name"], g["minutesSinceLastKnock"]))
 
         if not send:
             continue
 
-        card = _render(key, gaps, day)
-        comment = _comment(office, reps, gaps, now)
+        comment = _comment(office, rows_for_board, now)
         for d in due:
             try:
-                _upload(d["channel_id"], card, comment)
+                _upload(d["channel_id"], boards, comment)
                 posted_at[d["channel_id"]] = now
                 posted_total += 1
             except Exception as e:  # noqa: BLE001 — one room must not cost the rest
@@ -204,13 +207,24 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
     return {"posted": posted_total}
 
 
-def _render(office_key: str, gaps: List[Dict], day: dt.date) -> Path:
-    from automations.b2b_dispositions.capture import render_gap_card
+def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime):
+    """The office's board(s), through the SAME renderer every other office
+    uses -- ([paths], shape).
+
+    render_knocks_boards picks the board off the row SHAPE: fiber gets the
+    Talk-To split and the rate columns, wireless gets its own flatter one plus
+    a Time Gaps twin, Energy Wells gets VL and Presentation. Drawing our own
+    card here instead would mean an ICD's board quietly diverging from
+    everyone else's the first time a column was added -- and a column IS added
+    every few weeks.
+    """
+    from automations.total_knocks import render as knocks_render
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = OUT_DIR / ("%s-%s.png" % (office_key, day.isoformat()))
-    # scale=2 to match what the live boards already post; a 1x card beside a
-    # 2x one reads as the softer of the two.
-    return render_gap_card(gaps, out, scale=2.0)
+    out_dir = OUT_DIR / office.key
+    return knocks_render.render_knocks_boards(
+        day, rows=rows, out_dir=out_dir,
+        title_suffix=office.label,
+        date_text="%s · %s" % (day.strftime("%a %m/%d"), _clock(now)))
 
 
 def _clock(now: dt.datetime) -> str:
@@ -221,19 +235,23 @@ def _clock(now: dt.datetime) -> str:
     return "%d:%02d %s" % (hour, now.minute, "AM" if now.hour < 12 else "PM")
 
 
-def _comment(office, reps: List[Dict], gaps: List[Dict], now: dt.datetime) -> str:
-    knocks = sum(r.get("total_knocks", 0) for r in reps)
-    return ("*%s — KNOCKS & DISPOSITIONS*\n%d rep(s) out · %s knocks today · "
-            "%d over %d min\n_as of %s their time_"
-            % (office.label, len(reps), "{:,}".format(knocks), len(gaps),
-               GAP_THRESHOLD_MIN, _clock(now)))
+def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
+    from automations.total_knocks import pull as TP
+    knocks = sum(int(r.get(TP.COL_TOTAL_KNOCKS) or 0) for r in rows)
+    return ("*%s — KNOCKS & DISPOSITIONS*\n%d rep(s) · %s knocks\n"
+            "_as of %s their time_"
+            % (office.label, len(rows), "{:,}".format(knocks), _clock(now)))
 
 
-def _upload(channel_id: str, card: Path, comment: str) -> None:
+def _upload(channel_id: str, boards, comment: str) -> None:
+    """Every board this shape produced, in post order. A wireless office gets
+    a pair (the board and its Time Gaps twin) and both belong in the room."""
     from automations.shared import slack_metrics_post as smp
-    smp._client().files_upload_v2(
-        channel=channel_id, file=str(card), filename=card.name,
-        initial_comment=comment)
+    client = smp._client()
+    for i, board in enumerate(boards):
+        client.files_upload_v2(
+            channel=channel_id, file=str(board), filename=Path(board).name,
+            initial_comment=comment if i == 0 else None)
 
 
 def main(argv=None) -> int:

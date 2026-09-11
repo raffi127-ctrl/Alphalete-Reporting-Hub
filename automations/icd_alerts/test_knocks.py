@@ -163,3 +163,67 @@ class ClockTests(unittest.TestCase):
         self.assertEqual(_clock(dt.datetime(2026, 9, 11, 20, 5)), "8:05 PM")
         self.assertEqual(_clock(dt.datetime(2026, 9, 11, 0, 30)), "12:30 AM")
         self.assertEqual(_clock(dt.datetime(2026, 9, 11, 12, 0)), "12:00 PM")
+
+
+class MapTests(unittest.TestCase):
+    """The re-key is the part that decides WHICH BOARD gets drawn, because
+    knocks_shape() reads the row's KEYS. Flattening every office onto one
+    fixed set of fields would draw a plausible-looking board with every
+    disposition blank."""
+
+    FIBER = {"id": "101", "rep": "Ana Griffin", "total knocks": "42",
+             "no answer": "30", "talk to - not interested": "5",
+             "presentation – not interested": "2", "come back": "3",
+             "sale": "2", "do not knock": "0", "first knock": "1:35 PM",
+             "last knock": "7:42 PM"}
+    WIRELESS = {"id": "201", "rep": "Ian", "total knocks": "20",
+                "no answer": "10", "not interested": "4", "come back": "2",
+                "first knock": "2:00 PM", "last knock": "8:00 PM"}
+
+    def setUp(self):
+        from automations.icd_alerts import knocks_map as M
+        from automations.total_knocks import pull as TP
+        self.M, self.TP = M, TP
+
+    def test_a_fiber_office_reads_as_the_house_board(self):
+        self.assertEqual(self.M.shape_of(self.M.to_rows([self.FIBER])), "house")
+
+    def test_a_wireless_office_keeps_its_own_shape(self):
+        self.assertEqual(self.M.shape_of(self.M.to_rows([self.WIRELESS])),
+                         "wireless")
+
+    def test_total_talk_to_is_calculated_for_the_split(self):
+        row = self.M.to_rows([self.FIBER])[0]
+        self.assertEqual(row[self.TP.COL_TOTAL_TALK_TO], 12)
+
+    def test_total_talk_to_is_NOT_invented_without_the_split(self):
+        """A wireless grid has Come Back and none of the other four. Summing
+        'the parts that happen to be here' publishes a number that is wrong in
+        the believable direction."""
+        row = self.M.to_rows([self.WIRELESS])[0]
+        self.assertNotIn(self.TP.COL_TOTAL_TALK_TO, row)
+
+    def test_counts_become_ints_and_times_stay_text(self):
+        row = self.M.to_rows([self.FIBER])[0]
+        self.assertEqual(row[self.TP.COL_TOTAL_KNOCKS], 42)
+        self.assertEqual(row[self.TP.COL_FIRST_KNOCK], "1:35 PM")
+
+    def test_gaps_merge_by_badge_id(self):
+        rows = self.M.to_rows(
+            [self.FIBER], [{"id": "101", "gaps": "3", "totalGapMinutes": 47}])
+        self.assertEqual(rows[0][self.TP.COL_GAPS], 3)
+        self.assertEqual(rows[0][self.TP.COL_TOTAL_GAPS], 47)
+
+    def test_a_rep_with_no_tracker_row_keeps_gaps_BLANK_not_zero(self):
+        """'Did not clock in' and 'stood still for zero minutes' are different
+        facts, and the board draws them differently."""
+        rows = self.M.to_rows([self.FIBER], [{"id": "999", "gaps": "1"}])
+        self.assertNotIn(self.TP.COL_GAPS, rows[0])
+
+    def test_a_totals_line_is_not_a_person(self):
+        rows = self.M.to_rows([self.FIBER, {"rep": "TOTAL", "total knocks": "42"}])
+        self.assertEqual(len(rows), 1)
+
+    def test_gaps_phrase_is_parsed_as_a_count(self):
+        self.assertEqual(self.M._gaps_count("3 gaps"), 3)
+        self.assertEqual(self.M._gaps_count(""), 0)

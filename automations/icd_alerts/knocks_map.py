@@ -1,38 +1,32 @@
-"""Turn an ICD's raw OwnerVille rows into the fields a board is drawn from.
+"""Re-key an ICD's relayed rows into the vocabulary the knocks board is drawn in.
 
-THE VOCABULARY LIVES HERE, NOT ON THE LAPTOP. The agent relays rows keyed by
-whatever the grid called its columns, because fiber, wireless and Energy Wells
-all render different dispositions and a laptop that shipped opinions about
-column names would need a release every time one was renamed. This is where
-those names become something we can draw.
+WHAT THIS IS NOT: a schema. The board renderer decides which board to draw by
+looking at which KEYS a row has -- a wireless office has no Talk-To split, an
+Energy Wells office has VL and Presentation, a B2B office has neither -- so
+flattening every office onto one fixed set of fields would hand
+`knocks_shape()` the wrong answer and draw a plausible-looking board with every
+disposition blank. Only the columns the office's own grid actually had come
+through, which is exactly what makes the routing work.
 
-BY LABEL, NEVER BY POSITION -- the repo rule, and the reason it exists: a grid
-that gains a column shifts every index after it, and the board would keep
-drawing, with the wrong numbers in the right places.
+THE CANONICAL NAMES ARE THE LIVE HEADERS. `total_knocks.pull._resolve_columns`
+matches `idx.get(_norm(col))` -- there is no alias table anywhere, because the
+Sheet's column names were taken from the page in the first place. So this is
+mostly a re-spelling: the agent relayed normalised header text, and this puts
+back the exact canonical casing the renderer indexes by.
+
+Total Talk To is CALCULATED, never scraped -- the same five buckets
+total_knocks sums, and for the same reason: no office's page carries it.
 """
 from __future__ import annotations
 
-import datetime as dt
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-# Each canonical field and the header texts that have meant it. Normalised
-# (lower case, collapsed whitespace) the same way ownerville_knocks reads them.
-ALIASES = {
-    "rep": ("rep", "rep name", "name", "agent", "user name"),
-    "total_knocks": ("total knocks", "knocks", "total knock"),
-    "total_leads": ("total leads knocked", "leads knocked", "total leads"),
-    "first_knock": ("first knock", "first knock time"),
-    "last_knock": ("last knock", "last knock time"),
-    "sale": ("sale", "sales"),
-}
+from automations.total_knocks import pull as TP
 
 
-def _pick(row: Dict[str, str], field: str) -> str:
-    for alias in ALIASES[field]:
-        if alias in row:
-            return (row.get(alias) or "").strip()
-    return ""
+def _norm(s) -> str:
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
 
 
 def _int(v) -> int:
@@ -42,77 +36,90 @@ def _int(v) -> int:
         return 0
 
 
-def parse_clock(value: str, day: dt.date) -> Optional[dt.datetime]:
-    """A 'Last Knock' cell as a datetime on `day`.
-
-    The grid has shown this as a bare time ('7:42 PM'), a 24-hour time, and a
-    full date-time. Each is tried; an unparseable cell returns None and the rep
-    simply has no gap, which is the safe direction -- inventing a timestamp
-    would put somebody on an inactive list for a knock they did make.
-    """
-    text = (value or "").strip()
-    if not text:
-        return None
-    for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %I:%M %p",
-                "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M",
-                "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            return dt.datetime.strptime(text, fmt)
-        except ValueError:
+# Every column the renderers know about, in every shape. Built from the pull
+# module so a column added there reaches ICD offices without a second edit.
+def _known_columns() -> List[str]:
+    seen, out = set(), []
+    for name in dir(TP):
+        if not name.startswith("COL_"):
             continue
-    for fmt in ("%I:%M:%S %p", "%I:%M %p", "%H:%M:%S", "%H:%M"):
-        try:
-            t = dt.datetime.strptime(text, fmt).time()
-            return dt.datetime.combine(day, t)
-        except ValueError:
-            continue
-    return None
-
-
-def to_reps(rows: List[Dict[str, str]], day: dt.date) -> List[Dict]:
-    """[{name, total_knocks, first_knock, last_knock, last_knock_at}] per rep.
-
-    Rows with no rep name are dropped: DataTables renders a 'no data
-    available' row, and a totals row is not a person.
-    """
-    out = []
-    for row in rows or []:
-        # Keys arrive normalised from the agent, but a hand-made row (a test,
-        # a paste into the sheet) may not be -- so normalise again here rather
-        # than trusting the sender.
-        row = {re.sub(r"\s+", " ", str(k or "")).strip().lower(): v
-               for k, v in row.items()}
-        name = _pick(row, "rep")
-        if not name or name.lower() in ("total", "totals"):
-            continue
-        last = _pick(row, "last_knock")
-        out.append({
-            "name": name,
-            "total_knocks": _int(_pick(row, "total_knocks")),
-            "total_leads": _int(_pick(row, "total_leads")),
-            "first_knock": _pick(row, "first_knock"),
-            "last_knock": last,
-            "last_knock_at": parse_clock(last, day),
-        })
+        value = getattr(TP, name)
+        if isinstance(value, str) and value not in seen:
+            seen.add(value)
+            out.append(value)
     return out
 
 
-def gaps(reps: List[Dict], now: dt.datetime, threshold_min: int = 15) -> List[Dict]:
-    """The reps who have not knocked for `threshold_min`, worst first.
+def _gaps_count(value) -> int:
+    """'3 gaps' -> 3. The endpoint has returned both a count and a phrase."""
+    m = re.search(r"(\d+)", str(value or ""))
+    return int(m.group(1)) if m else 0
 
-    A rep with NO parseable last knock is not listed. They may not have started
-    yet, and 'inactive for 1,183 minutes' in front of their team because a cell
-    was blank is a mistake that lands on a person.
-    """
-    out = []
-    for rep in reps:
-        when = rep.get("last_knock_at")
-        if not when:
+
+def gaps_by_id(tracker: List[Dict]) -> Dict[str, Dict]:
+    """{badge id: {Gaps, Total Gaps (min)}} from the Time Tracker rows."""
+    out = {}
+    for row in tracker or []:
+        rid = str((row or {}).get("id", "")).strip()
+        if not rid or rid == "0":
             continue
-        mins = int((now - when).total_seconds() // 60)
-        if mins >= threshold_min:
-            out.append({"name": rep["name"],
-                        "minutesSinceLastKnock": mins,
-                        "lastKnockDate": rep.get("last_knock") or ""})
-    out.sort(key=lambda r: -r["minutesSinceLastKnock"])
+        out[rid] = {TP.COL_GAPS: _gaps_count(row.get("gaps")),
+                    TP.COL_TOTAL_GAPS: _int(row.get("totalGapMinutes"))}
     return out
+
+
+def to_rows(raw: List[Dict[str, str]],
+            tracker: "List[Dict] | None" = None) -> List[Dict]:
+    """Relayed rows -> rows the board renderer can draw.
+
+    Rows with no Rep are dropped: DataTables renders a 'no data available'
+    row, and a totals line is not a person.
+    """
+    canonical = _known_columns()
+    by_id = gaps_by_id(tracker)
+    out = []
+    for row in raw or []:
+        row = {_norm(k): v for k, v in (row or {}).items()}
+        rep = (row.get(_norm(TP.COL_REP)) or "").strip()
+        if not rep or rep.lower() in ("total", "totals"):
+            continue
+
+        rec = {}
+        for col in canonical:
+            key = _norm(col)
+            if key not in row:
+                continue                      # absent here means absent THERE
+            value = row[key]
+            rec[col] = (_int(value) if col in TP.COUNT_COLUMNS
+                        else (value or "").strip())
+
+        rec[TP.COL_REP] = rep
+        # Calculated, exactly as the pull does it: Talk To - Not Interested +
+        # Presentation - Not Interested + Come Back + Sale + Do Not Knock.
+        #
+        # ONLY FOR AN OFFICE THAT HAS THE TALK-TO SPLIT. A wireless grid has
+        # Come Back but none of the rest, so summing "the parts that happen to
+        # be here" would publish a Total Talk To that is simply wrong -- and
+        # wrong in the believable direction, which is the kind nobody catches
+        # from the board.
+        if TP.COL_TALK_TO_NI in rec:
+            rec[TP.COL_TOTAL_TALK_TO] = sum(
+                _int(rec.get(p, 0)) for p in TP.TALK_TO_PARTS)
+
+        # Gaps ride in from the Time Tracker, matched on badge id. A rep with
+        # no tracker row keeps them BLANK rather than 0 -- "did not clock in"
+        # and "stood still for zero minutes" are different facts, and the
+        # board draws them differently.
+        merged = by_id.get(str(rec.get(TP.COL_ID, "")).strip())
+        if merged:
+            rec.update(merged)
+        out.append(rec)
+    return out
+
+
+def shape_of(rows: List[Dict]) -> str:
+    """Which board these rows will be drawn as. Empty rows -> ''. """
+    if not rows:
+        return ""
+    from automations.total_knocks.render import knocks_shape
+    return knocks_shape(rows)

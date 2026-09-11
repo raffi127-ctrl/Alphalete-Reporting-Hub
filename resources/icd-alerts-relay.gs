@@ -26,8 +26,8 @@
  *   'Relay Keys'      Office | Key | Active | Note      <- we control this
  *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
  *                     Agent | Last Posted JSON | Posted At
- *   'ICD Knocks'      Office | Day | Rows JSON | Rep Count | Received At |
- *                     Local Time | Last Posted At
+ *   'ICD Knocks'      Office | Day | Rows JSON | Tracker JSON | Rep Count |
+ *                     Received At | Local Time | Last Posted At
  *   'Office Channels' Office | Owner | They Asked For | Requested At |
  *                     Channel ID | Channel Name | Approved |
  *                     Knocks: Wanted | Knocks: Destinations JSON |
@@ -97,6 +97,7 @@ function doPost(e) {
     // different outages and one must not cost the other.
     if (body.knocks_rows !== null && body.knocks_rows !== undefined) {
       _upsertKnocks(office, day, JSON.stringify(body.knocks_rows),
+                    JSON.stringify(body.knocks_time_tracker || []),
                     body.knocks_rows.length, String(body.local_time || ''));
       return _reply({ok: true, knock_rows: body.knocks_rows.length});
     }
@@ -233,29 +234,29 @@ function _recordChannelRequest(office, owner, asked, knocks) {
   }
 }
 
-function _upsertKnocks(office, day, rowsJson, count, localTime) {
+function _upsertKnocks(office, day, rowsJson, trackerJson, count, localTime) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     var sh = _book().getSheetByName(KNOCKS_TAB);
     if (!sh) {
       sh = _book().insertSheet(KNOCKS_TAB);
-      sh.appendRow(['Office', 'Day', 'Rows JSON', 'Rep Count', 'Received At',
-                    'Local Time', 'Last Posted At']);
+      sh.appendRow(['Office', 'Day', 'Rows JSON', 'Tracker JSON', 'Rep Count',
+                    'Received At', 'Local Time', 'Last Posted At']);
     }
     var rows = sh.getDataRange().getValues();
     var now = new Date();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === office &&
           _dayKey(rows[i][1]) === day) {
-        // Columns 3-6 only. 'Last Posted At' is ours -- it is what stops the
+        // Columns 3-7 only. 'Last Posted At' is ours -- it is what stops the
         // same board being posted twice on one cadence tick.
-        sh.getRange(i + 1, 3, 1, 4)
-          .setValues([[rowsJson, count, now, localTime]]);
+        sh.getRange(i + 1, 3, 1, 5)
+          .setValues([[rowsJson, trackerJson, count, now, localTime]]);
         return;
       }
     }
-    sh.appendRow([office, day, rowsJson, count, now, localTime, '']);
+    sh.appendRow([office, day, rowsJson, trackerJson, count, now, localTime, '']);
     sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);
   } finally {
     lock.releaseLock();
