@@ -203,9 +203,8 @@ def request_view() -> None:
                 key=f"ch_name_{i}",
                 help="The channel where you want the boards posted each "
                      "morning.")
-            cid = st.text_input(
-                "Slack Channel ID *", placeholder="C0ABC12DE",
-                key=f"ch_id_{i}", help=ui.CHANNEL_ID_HELP)
+            # Validating input — see metric_request; same box, same refusal.
+            cid = ui.channel_id_input("Slack Channel ID *", key=f"ch_id_{i}")
             if i == 0:
                 ui.channel_id_help_expander(SLACK_ID_IMG)
             st.caption("Boards to post in this channel:")
@@ -223,8 +222,8 @@ def request_view() -> None:
                     here.append(t["id"])
                     if t["id"] not in picked:
                         picked.append(t["id"])
-            chan_pairs.append((cid.strip(), cname.strip()))
-            chan_plans.append({"channel_id": cid.strip(),
+            chan_pairs.append((cid, cname.strip()))
+            chan_plans.append({"channel_id": cid,
                                "channel_name": cname.strip(),
                                "trackers": here})
     picked = [t["id"] for t in catalog if t["id"] in picked]  # catalog order

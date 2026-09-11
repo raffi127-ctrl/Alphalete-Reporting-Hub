@@ -419,6 +419,19 @@ def validate(rec: OnboardingRecord, *,
         if not (val or "").strip():
             problems.append(f"{fname} is empty.")
 
+    # A channel id that can't be a channel id never reaches the sheet. The forms
+    # refuse it at the box; this is the backstop for anything else that writes a
+    # record (Joe's workspace handle got in this way, 2026-09-11).
+    from automations.shared.onboarding_ui import normalize_channel_id
+    for label, cid in ([("channel_id", rec.channel_id)] +
+                       [(f"channel_plans[{i}].channel_id", p.channel_id)
+                        for i, p in enumerate(rec.channel_plans or [])]):
+        cid = (cid or "").strip()
+        if cid and not normalize_channel_id(cid)[0]:
+            problems.append(f"{label} {cid!r} isn't a Slack channel ID — that's a "
+                            "name or a handle. The ID is a code like C0ABC12DE "
+                            "(channel name in Slack → bottom of the pop-up).")
+
     if rec.family not in ("d2d", "b2b"):
         problems.append(f"family {rec.family!r} must be 'd2d' or 'b2b'.")
 

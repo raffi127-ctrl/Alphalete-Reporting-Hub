@@ -34,6 +34,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.office_onboarding import schema as S, store  # noqa: E402
+from automations.shared import onboarding_ui as _ui  # noqa: E402
 
 # Drag-and-drop posting order (same component the ICD request form + tracker
 # sign-up use). Fall back to checkbox order if the deploy doesn't have it.
@@ -453,14 +454,14 @@ def form_view() -> None:
     st.markdown("### 3. Slack channel")
     c5, c6 = st.columns(2)
     with c5:
-        channel_id = st.text_input("Channel ID *", placeholder="C0…", key="on_channel_id",
-                                   help="The Slack channel id metrics post into. "
-                                        "Right-click the channel → View channel "
-                                        "details → the ID at the bottom.")
+        # Validating box: the owner's request may carry a name or a handle here
+        # (the sign-up forms used to accept one), so flag it where it's fixed.
+        channel_id = _ui.channel_id_input("Channel ID *", key="on_channel_id")
     with c6:
         channel_name = st.text_input("Channel name *", placeholder="#elevate-sales",
                                      key="on_channel_name")
     _plans = st.session_state.get("_req_channel_plans") or []
+    _plan_ids: list = []
     if len(_plans) > 1:
         st.info("📣 **The owner asked for a per-channel fan-out.** Give each channel "
                 "its Slack **Channel ID** below — the morning run posts each channel "
@@ -470,19 +471,17 @@ def form_view() -> None:
             st.markdown("**{}** → {}".format(
                 spec["channel_name"],
                 ", ".join(spec["labels"]) if spec["labels"] else "(no metrics)"))
-            st.text_input(f"Channel ID for {spec['channel_name']}", placeholder="C0…",
-                          key=f"chanid_{i}",
-                          help="Right-click the channel → View channel details → the "
-                               "ID at the bottom.")
+            _plan_ids.append(_ui.channel_id_input(
+                f"Channel ID for {spec['channel_name']}", key=f"chanid_{i}"))
     # Live "is Lucy in the channel" check — the same helper the tracker
     # confirm view uses. A stale id / missing invite is the #1 wiring
     # firefight (drew), so surface it BEFORE Megan submits.
     if st.button("🔄 Check Lucy's membership"):
         from automations.tracker_onboarding import slack_check
-        _pairs = [(channel_id.strip(), channel_name.strip())]
+        _pairs = [(channel_id, channel_name.strip())]
         for i, spec in enumerate(_plans):
             _pairs.append((
-                (st.session_state.get(f"chanid_{i}") or "").strip(),
+                _plan_ids[i] if i < len(_plan_ids) else "",
                 spec.get("channel_name", "")))
         seen = set()
         st.session_state["_lucy_checks"] = [
@@ -607,9 +606,9 @@ def form_view() -> None:
     # name matches the primary channel (she already typed that id in section 3).
     built_plans = []
     for i, spec in enumerate(st.session_state.get("_req_channel_plans") or []):
-        cid = (st.session_state.get(f"chanid_{i}", "") or "").strip()
+        cid = _plan_ids[i] if i < len(_plan_ids) else ""
         if not cid and spec["channel_name"] == channel_name.strip():
-            cid = channel_id.strip()
+            cid = channel_id
         built_plans.append(S.ChannelPlan(
             channel_name=spec["channel_name"], report_keys=spec["report_keys"],
             channel_id=cid))
@@ -617,7 +616,7 @@ def form_view() -> None:
         key=(key or "").strip(), owner=owner.strip(),
         knocks_office=knocks.strip() or owner.strip(),
         business_name=business.strip(), website=website.strip(),
-        channel_id=channel_id.strip(), channel_name=channel_name.strip(),
+        channel_id=channel_id, channel_name=channel_name.strip(),
         sheet_id=sheet_id, family=family, campaign=campaign,
         channel_plans=built_plans,
         ov_account=ov_account.strip(), owner_office=owner_office.strip(),

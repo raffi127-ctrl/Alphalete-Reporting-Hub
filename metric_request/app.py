@@ -153,9 +153,9 @@ def form_view() -> None:
             cname = st.text_input(
                 (f"Channel {i + 1}" if n_chan > 1 else "Channel") + " *",
                 key=f"chan_name_{i}", placeholder="#your-office-sales")
-            cid = st.text_input(
-                "Slack Channel ID *", placeholder="C0ABC12DE",
-                key=f"chan_id_{i}", help=ui.CHANNEL_ID_HELP)
+            # Validating input: a name or a workspace handle is refused here,
+            # inline, instead of saving and failing Lucy's check hours later.
+            cid = ui.channel_id_input("Slack Channel ID *", key=f"chan_id_{i}")
             if i == 0:
                 ui.channel_id_help_expander(SLACK_ID_IMG)
             st.caption("Metrics to post in this channel:")
@@ -175,7 +175,7 @@ def form_view() -> None:
                     keys_here.append(rk.key)
             plans.append(S.ChannelPlan(channel_name=cname.strip(),
                                        report_keys=keys_here,
-                                       channel_id=cid.strip()))
+                                       channel_id=cid))
 
     # ---- 4. Posting order (drag & drop) -----------------------------------
     st.divider()
