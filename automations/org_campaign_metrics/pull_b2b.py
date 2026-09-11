@@ -46,12 +46,19 @@ CHURN_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
               "ALLTEAMCHURN")
 
 
+# Captainship owners WITHOUT a sales board whose block is still computed
+# (Carlos 2026-09-06: Nic Lujan gets the block, no board). label -> ORDERLOG
+# "Owner & Office" line-1 spelling, verified against a cached export.
+EXTRA_MANAGERS = {"Nicolas Lujan": "NICOLAS LUJAN"}
+
+
 def _managers():
     """org-picker label -> ORDERLOG owner name for every computed b2b block:
-    Carlos + each captainship owner with a sales board."""
+    Carlos + each captainship owner with a sales board + EXTRA_MANAGERS."""
     out = {CARLOS: CARLOS_EXPORT}
     for label, (export, _fid) in CB.OWNERS.items():
         out[label] = export
+    out.update(EXTRA_MANAGERS)
     return out
 
 

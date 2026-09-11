@@ -57,6 +57,9 @@ MANAGER_CAMPAIGN = {
     "Joey Ramirez":      "b2b_att",
     "Vincent Smith":     "b2b_att",
     "Sabrina Alicea":    "b2b_att",
+    # No sales board by design (Carlos 2026-09-06) — computed from the order
+    # log like everyone else via pull_b2b.EXTRA_MANAGERS, not CB.OWNERS.
+    "Nicolas Lujan":     "b2b_att",
     "Ryan McSpadden":    "box",
     "Roshan Amin":       "box",
     "Khalil Mansour":    "nds",
