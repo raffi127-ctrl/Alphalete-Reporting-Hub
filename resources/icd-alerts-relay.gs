@@ -1,12 +1,26 @@
 /**
  * ICD Alerts relay — the only thing an ICD laptop is allowed to talk to.
  *
- * Deploy: Extensions > Apps Script on the relay workbook, paste this, then
- * Deploy > New deployment > Web app, "Execute as: Me", "Who has access:
- * Anyone". The /exec url is what goes in each laptop's install.json as
+ * PASTE THIS AS THE WHOLE FILE. Select all in Code.gs and replace. Pasting it
+ * INSIDE the default `function myFunction() { }` nests doPost and doGet where
+ * Apps Script cannot see them, and the deployment then answers "Script
+ * function not found: doGet" -- which reads like a bad url and is not
+ * (2026-09-11).
+ *
+ * Deploy: Deploy > New deployment > Web app, "Execute as: Me", "Who has
+ * access: Anyone". The /exec url is what goes in each laptop's install.json as
  * relay_url. "Anyone" is safe here because the KEY is what authorises, not the
  * url: a caller with no valid key can do nothing at all, and every key is
  * scoped to one office.
+ *
+ * REDEPLOYING after an edit: Deploy > Manage deployments > pencil > Version:
+ * NEW VERSION > Deploy. Leaving the version dropdown alone re-publishes the
+ * old snapshot and nothing changes.
+ *
+ * OPENS THE WORKBOOK BY ID, so this works as a STANDALONE project and not only
+ * as a container-bound one. A standalone script has no active spreadsheet, and
+ * the failure that follows looks like a bad key rather than a missing
+ * spreadsheet.
  *
  * TWO TABS:
  *   'Relay Keys'  Office | Key | Active | Note      <- we control this
@@ -24,8 +38,14 @@
  * re-announcing credit checks somebody already saw.
  */
 
+// 'Lucy Access App' -- the workbook holding both tabs.
+var SHEET_ID = '1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg';
 var RELAY_TAB = 'ICD Relay';
 var KEYS_TAB = 'Relay Keys';
+
+function _book() {
+  return SpreadsheetApp.openById(SHEET_ID);
+}
 
 function doPost(e) {
   try {
@@ -55,7 +75,7 @@ function doGet() {
 }
 
 function _keyIsGood(office, key) {
-  var sh = SpreadsheetApp.getActive().getSheetByName(KEYS_TAB);
+  var sh = _book().getSheetByName(KEYS_TAB);
   if (!sh) return false;
   var rows = sh.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
@@ -75,9 +95,9 @@ function _upsert(office, day, recordsJson, localTime, agent) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);          // two offices can relay in the same second
   try {
-    var sh = SpreadsheetApp.getActive().getSheetByName(RELAY_TAB);
+    var sh = _book().getSheetByName(RELAY_TAB);
     if (!sh) {
-      sh = SpreadsheetApp.getActive().insertSheet(RELAY_TAB);
+      sh = _book().insertSheet(RELAY_TAB);
       sh.appendRow(['Office', 'Day', 'Records JSON', 'Received At',
                     'Local Time', 'Agent', 'Last Posted JSON', 'Posted At']);
     }
