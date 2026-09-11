@@ -48,6 +48,12 @@ class Report:
     freshness_target: Optional[str]  # e.g. "monday_am"
     depends_on: List[str]
     verify: dict
+    days_of_month: List[int] = field(default_factory=list)
+    # MONTHLY cadence, additive to `weekdays` (a report is due if EITHER
+    # matches). Empty for every report that existed before 2026-09-10, so
+    # nothing about weekday scheduling changed when this arrived — it exists
+    # because ao_cleanup runs once a month and there was no way to say that
+    # without giving it its own launchd job.
     timeout_minutes: int = 45
     idempotency: dict = field(default_factory=dict)
     machine: str = DEFAULT_MACHINE   # which runner (Lucy 1 / Lucy 2) owns this
@@ -101,6 +107,7 @@ def _build_report(rid: str, r: dict) -> Report:
         command=r.get("command", []),
         base_args=r.get("base_args", []),
         weekdays=cad.get("weekdays", [0, 1, 2, 3, 4, 5, 6]),
+        days_of_month=[int(d) for d in cad.get("days_of_month", []) or []],
         not_before=cad.get("not_before"),
         priority=r.get("priority", "P2"),
         freshness_target=r.get("freshness_target"),
@@ -151,11 +158,13 @@ def resolve_report(cfg: Config, report_id: str) -> Optional[Report]:
 
 def scheduled_today(cfg: Config, date: dt.date,
                     machine: Optional[str] = None) -> List[Report]:
-    """Reports whose weekday matches `date`. If `machine` is given, keep only
+    """Reports due on `date` — weekday match, or day-of-month for a monthly
+    report. If `machine` is given, keep only
     reports assigned to that runner (entries with no 'machine' key default to
     'Lucy 1'); machine=None returns all — the Hub display path uses that."""
     wd = date.weekday()
-    out = [r for r in cfg.reports.values() if wd in r.weekdays]
+    out = [r for r in cfg.reports.values()
+           if wd in r.weekdays or date.day in r.days_of_month]
     if machine is not None:
         out = [r for r in out if r.machine == machine]
     return out

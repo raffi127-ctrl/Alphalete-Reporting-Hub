@@ -164,6 +164,32 @@ def build_rows(members, users, terminated, channel_order):
     return rows
 
 
+def existing_ticks(ws, index):
+    """{(slack id, channel): [remove_from_channel, remove_from_AO]} as the tab
+    stands right now.
+
+    A monthly rebuild must NOT throw away Rafael's decisions. Rows are matched
+    on the Slack ID, not the name: a person can be renamed, and two people can
+    share a name (11 of them do). Somebody who has left every channel since the
+    last run simply has no row to carry the tick to — that is fine, the tick
+    was about a person who is already gone.
+    """
+    if "Slack ID" not in index or "Channel" not in index:
+        return {}
+    last = _col_letter(max(index.values()))
+    out = {}
+    for row in ws.get_values("A%d:%s%d" % (FIRST_DATA_ROW, last, ws.row_count)):
+        def cell(label):
+            i = index.get(label)
+            return row[i].strip() if i is not None and i < len(row) else ""
+        uid, chan = cell("Slack ID"), cell("Channel")
+        if not uid or not chan:
+            continue
+        out[(uid, chan)] = [cell(CHECKBOX_LABELS[0]).upper() == "TRUE",
+                            cell(CHECKBOX_LABELS[1]).upper() == "TRUE"]
+    return out
+
+
 def read_layout(ws):
     """-> (header row, {label: 0-based column}). The tab describes itself."""
     header = ws.row_values(1)
@@ -246,9 +272,10 @@ def channel_order(rule, fallback):
     return [v for v in vals if v] or list(fallback)
 
 
-def write_tab(gc, sh, ws, rows, index, rule):  # noqa: C901
+def write_tab(gc, sh, ws, rows, index, rule, ticks=None):  # noqa: C901
     """Write only the columns we recognise, one range each. Never row 1, never
     a format, never a colour."""
+    ticks = ticks or {}
     needed = FIRST_DATA_ROW + len(rows) - 1
     if ws.row_count < needed:
         ws.add_rows(needed - ws.row_count)
@@ -261,13 +288,14 @@ def write_tab(gc, sh, ws, rows, index, rule):  # noqa: C901
         data.append({"range": "%s!%s%d:%s%d" % (ws.title, col, FIRST_DATA_ROW,
                                                 col, needed),
                      "values": [[r[key]] for r in rows]})
-    for label in CHECKBOX_LABELS:
+    for n, label in enumerate(CHECKBOX_LABELS):
         if label not in index:
             continue
         col = _col_letter(index[label])
         data.append({"range": "%s!%s%d:%s%d" % (ws.title, col, FIRST_DATA_ROW,
                                                 col, needed),
-                     "values": [[False] for _ in rows]})
+                     "values": [[ticks.get((r["uid"], r["channel"]),
+                                           (False, False))[n]] for r in rows]})
     sh.values_batch_update({"valueInputOption": "USER_ENTERED", "data": data})
 
     # Clear leftovers below, VALUES only — formatting and banding stay put.
@@ -349,7 +377,10 @@ def main(argv=None):
         for r in rows[:6]:
             print(r)
         return 0
-    last = write_tab(gc, sh, ws, rows, index, rule)
+    ticks = existing_ticks(ws, index)
+    kept = sum(1 for r in rows if any(ticks.get((r["uid"], r["channel"]), (0, 0))))
+    print("tildes de Rafael conservadas: %d" % kept)
+    last = write_tab(gc, sh, ws, rows, index, rule, ticks)
     print("\nescrito hasta la fila %d en '%s'" % (last, ws.title))
     return 0
 

@@ -180,6 +180,30 @@
     }
   },
   "reports": {
+    "ao_cleanup": {
+      "on_scheduler": true,
+      "machine": "Lucy 1",
+      "_note": "MENSUAL, dia 1 (Eve 2026-09-10): refresca la tab 'AO Workspace Cleanup' del workbook 'All in One Local Office - Raf' con quien esta HOY en los canales de Slack que Rafael limpia. Sin horario a proposito -- P3 es la cola mas liberada, corre al final del lote. Pide a Slack la lista real (conversations.members) y la cruza contra la tab 'Terminated Reps'; las notas van en ingles porque las lee Rafael. NO TOCA el formato de la tab: la maqueta, los colores del desplegable de Channel y los encabezados son de Eve, y el script ubica las columnas por etiqueta. Idempotente: reescribe las mismas filas, las casillas de Rafael vuelven a FALSE (todavia no conserva sus tildes -- Eve sigue manana). REQUISITO DE MAQUINA: necesita ~/.config/recruiting-report/slack-read-token (app 'AO Cleanup', scopes de usuario channels:read/groups:read/users:read/users:read.email). Hoy ese archivo solo existe en la Windows de Eve; hasta que este en Lucy 1 la corrida termina con NoReadToken y un mensaje que dice exactamente que falta.",
+      "_cadence_note": "days_of_month [1] es la cadencia MENSUAL que se agrego al registry el 2026-09-10 (aditiva: un reporte vence si matchea weekdays O day-of-month). weekdays [] para que no corra ningun otro dia.",
+      "display_name": "AO Slack channel cleanup",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.ao_cleanup.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [],
+        "days_of_month": [
+          1
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 30
+    },
     "team_tree": {
       "on_scheduler": false,
       "_note": "Alphalete team tree -> #a-players-b2b PNG, fired by com.alphalete.team-tree-daily on Lucy 2 at 6:00am (Carlos 2026-08-30). Manual: `lucy rerun team_tree -- --dm` posts to Carlos's DM; `--dry-run` renders only.",

@@ -6694,4 +6694,94 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "ao-cleanup",
+        "name": "AO Slack Channel Cleanup",
+        "creator": "Eve",
+        "emoji": "🧹",
+        "color": "#8B5CF6",
+        "category": "📲 Ops",
+        "description": "Once a month, lists everyone who is actually in the Slack "
+                       "channels Rafael is cleaning up — one row per person per "
+                       "channel — and flags who shouldn't be there: people already "
+                       "terminated, second accounts under the same name, outsiders "
+                       "from another workspace, and invitees who never posted a "
+                       "single message.",
+        "breakdown": (
+            "WHY IT MATTERS\n"
+            "People get invited to a channel and never start selling, come back "
+            "under a second account with a different email, or get let go and "
+            "sit in the channel for a year. Nobody was tracking any of it and "
+            "there was no list to work from — just the channels themselves.\n\n"
+            "WHAT IT DOES\n"
+            "Asks Slack for the REAL member list of every channel on the "
+            "**Channel** dropdown (`conversations.members`), resolves each name "
+            "and email, and writes one row per person per channel. Then it fills "
+            "**Notes** with what Rafael needs in order to decide:\n"
+            "• **Terminated MM/DD/YYYY** — cross-referenced against the "
+            "'Terminated Reps' tab in the same workbook\n"
+            "• **N Slack accounts under this name** — the second-account case\n"
+            "• **EXTERNAL** — belongs to another workspace (Slack Connect), so "
+            "only the channel applies, never 'Remove from AO'\n"
+            "• **Never posted here** — invited, never spoke\n"
+            "• the date they joined the channel, where Slack recorded it\n\n"
+            "Rafael ticks **Remove from channel** / **Remove from AO**. Those "
+            "ticks are CARRIED FORWARD on every rerun, matched by Slack ID — so "
+            "a rename, or two people sharing a name, can't move them.\n\n"
+            "WHAT IT NEVER TOUCHES\n"
+            "The tab's layout is Eve's. Columns are found by their header label "
+            "and written one range each; the header row, the banding, the column "
+            "widths and the colours on the Channel dropdown are never written. "
+            "Re-writing that dropdown is exactly what wiped its colours on "
+            "2026-09-10 — the Sheets API does not hand those colours back, so "
+            "they cannot be restored in code.\n\n"
+            "WHEN IT RUNS\n"
+            "**1st of each month, no fixed time** — P3, so it lands wherever the "
+            "queue has room.\n\n"
+            "NEEDS\n"
+            "The read-only Slack token at "
+            "`~/.config/recruiting-report/slack-read-token` (app 'AO Cleanup': "
+            "channels:read, groups:read, users:read, users:read.email). It is "
+            "separate from the token the reports post with, so revoking one "
+            "cannot take the other down."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "#gid=329631916"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "monthly",
+            "day_of_month": 1,
+            "estimated_minutes": 12,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Tab refreshed — Rafael can go tick boxes. The "
+                               "ticks he had already made were kept.",
+            "message_failed": "❌ Run failed. If the log says NoReadToken, this "
+                              "machine is missing "
+                              "~/.config/recruiting-report/slack-read-token.",
+        },
+        "actions": [
+            {
+                "label": "Refresh Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Re-read every channel and rewrite the tab. Rafael's "
+                        "ticks are preserved and no formatting is touched.",
+                "module": "automations.ao_cleanup.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Quick refresh (no history)",
+                "icon": "⚡",
+                "primary": False,
+                "help": "Same thing in about a minute. It skips the channel "
+                        "history replay, so 'Never posted here' and the join "
+                        "dates keep the previous run's values.",
+                "module": "automations.ao_cleanup.run",
+                "args_fn": lambda: ["--skip-history"],
+            },
+        ],
+    },
 ]
