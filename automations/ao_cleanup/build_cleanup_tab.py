@@ -231,6 +231,15 @@ def main(argv=None):
         for r in rows[:10]:
             print(r)
         return 0
+    if args.tab == TARGET_TAB:
+        # This module is the OLD one-row-per-person variant, kept for its
+        # 'Terminated Reps' reader. Its writer knows nothing about Eve's column
+        # layout or the chip colours on the Channel dropdown, so pointing it at
+        # the live tab would flatten both. fill_tab.py is the writer now.
+        print("Refuse: '%s' la escribe automations.ao_cleanup.fill_tab.\n"
+              "Si de verdad queres esta variante, mandala a otra tab con --tab."
+              % TARGET_TAB, file=sys.stderr)
+        return 2
     last, title = write_tab(sh, args.tab, rows)
     print("\nwrote A1:J%d on '%s'" % (last, title))
     return 0
