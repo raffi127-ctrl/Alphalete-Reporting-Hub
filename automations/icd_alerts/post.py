@@ -24,7 +24,9 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from automations.icd_alerts import offices as O
@@ -49,6 +51,24 @@ COL_LAST_POSTED, COL_POSTED_AT = 6, 7
 # Worth SAYING, never worth alerting the office about -- they cannot act on it
 # and it is not their job to.
 STALE_MINUTES = 45
+
+# One poster at a time. Two overlapping runs would each read the same
+# 'Last Posted' and each decide the same credit checks were new -- the one
+# failure this design has no way to take back, because it happens in front of
+# the office. launchd will not overlap a fast run, but a slow Sheets call is
+# exactly when a second tick arrives.
+LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "icd_alerts_post.lock"
+LOCK_STALE_MINUTES = 20
+
+# Who has already been told an office went quiet today. ONCE PER OFFICE PER
+# DAY: the poster ticks every ten minutes, and a closed laptop stays closed --
+# a warning per tick would be 60 messages about one fact, which is how people
+# learn to ignore the channel this is supposed to protect.
+WARNED_PATH = Path.home() / ".config" / "recruiting-report" / "icd_alerts_quiet.json"
+# Nobody is helped by "they have not checked in" at 10:05. An office that has
+# said nothing by lunchtime is a real problem; before that it is a morning.
+QUIET_WARN_AFTER_HOUR = 12
+QUIET_WARN_UNTIL_HOUR = 21
 
 
 class RelayNotConfigured(RuntimeError):
@@ -94,6 +114,76 @@ def is_stale(received: Optional[dt.datetime], now: Optional[dt.datetime] = None,
 
 
 # --- the sheet ---------------------------------------------------------------
+class _Lock:
+    """A pid lock that forgives a crash. Held for the length of one run."""
+
+    def __enter__(self):
+        LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if LOCK_PATH.exists():
+            age = dt.datetime.now() - dt.datetime.fromtimestamp(
+                LOCK_PATH.stat().st_mtime)
+            if age < dt.timedelta(minutes=LOCK_STALE_MINUTES):
+                self.held = False
+                return self
+            # Older than any real run: the holder died. Taking it is right --
+            # the alternative is an office going silent until someone notices
+            # a stale file.
+            LOCK_PATH.unlink(missing_ok=True)
+        LOCK_PATH.write_text(str(os.getpid()))
+        self.held = True
+        return self
+
+    def __exit__(self, *exc):
+        if getattr(self, "held", False):
+            LOCK_PATH.unlink(missing_ok=True)
+        return False
+
+
+def quiet_offices(day: Optional[dt.date] = None, minutes: int = STALE_MINUTES,
+                  book=None) -> List[Dict]:
+    """Enrolled offices whose laptop has not checked in lately, or at all.
+
+    THE FAILURE THIS CATCHES IS SILENCE, and silence is the one an alerting
+    system cannot see from the inside: a closed laptop and a quiet sales day
+    produce exactly the same empty channel. Reported to us, never to the
+    office -- they cannot act on it and it is not their job to.
+    """
+    day = day or dt.date.today()
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    seen = {}
+    for _, row in _rows_for(day, book.worksheet(RELAY_TAB)):
+        key = (row[COL_OFFICE] or "").strip().lower()
+        seen[key] = (row[COL_RECEIVED] or "").strip()
+
+    out = []
+    for office in O.active():
+        raw = seen.get(office.key)
+        if raw is None:
+            out.append({"office": office.key, "label": office.label,
+                        "last": None, "reason": "has not checked in today"})
+            continue
+        when = _parse_received(raw)
+        if is_stale(when, minutes=minutes):
+            out.append({"office": office.key, "label": office.label,
+                        "last": raw,
+                        "reason": "last checked in %s" % (raw or "never")})
+    return out
+
+
+def _parse_received(cell: str) -> Optional[dt.datetime]:
+    """The 'Received At' cell, however Sheets displays it."""
+    cell = (cell or "").strip()
+    for fmt in ("%m/%d/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S",
+                "%m/%d/%Y %I:%M:%S %p", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return dt.datetime.strptime(cell, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def _relay_tab():
     if not RELAY_SPREADSHEET_ID:
         raise RelayNotConfigured(
@@ -277,6 +367,83 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
     return {"offices": considered, "posted": posted}
 
 
+def _warned() -> Dict:
+    try:
+        return json.loads(WARNED_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
+               now: Optional[dt.datetime] = None, log=print) -> List[Dict]:
+    """Tell US about offices whose laptop has gone quiet. Never the office.
+
+    An ICD cannot act on this and it is not their job to; what they would do
+    with it is worry. It goes to whoever can actually chase it.
+    """
+    now = now or dt.datetime.now()
+    day = day or now.date()
+    if not (QUIET_WARN_AFTER_HOUR <= now.hour <= QUIET_WARN_UNTIL_HOUR):
+        return []
+    if now.weekday() == 6:               # nobody is selling on Sunday
+        return []
+
+    quiet = quiet_offices(day)
+    if not quiet:
+        return []
+
+    data = _warned()
+    already = set(data.get(day.isoformat()) or [])
+    fresh = [q for q in quiet if q["office"] not in already]
+    if not fresh:
+        return []
+
+    for q in fresh:
+        log("QUIET: %-10s %s" % (q["office"], q["reason"]))
+    if not send:
+        return fresh
+
+    lines = ["\n".join(
+        ":warning: *%s* — the alerts computer %s." % (q["label"], q["reason"])
+        for q in fresh)]
+    lines.append("_Nothing is lost: SaraPlus is cumulative, so whatever it "
+                 "missed arrives when the laptop is back online._")
+    _slack(O.HOLDING_DM, "\n\n".join(lines))
+
+    WARNED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    data[day.isoformat()] = sorted(already | {q["office"] for q in fresh})
+    # Keep only the last few days; nothing older is interesting.
+    for k in sorted(data)[:-5]:
+        data.pop(k, None)
+    WARNED_PATH.write_text(json.dumps(data, indent=2, sort_keys=True))
+    return fresh
+
+
+LUCY_REPORTING = "U0BCG8F9B5Z"
+
+
+def assert_posting_as_lucy(log=print) -> None:
+    """Refuse to send unless this machine posts as Lucy Reporting.
+
+    THE SLACK TOKEN IS PER MACHINE. A Lucy holds Lucy's; Megan's laptop holds
+    MEGAN's. A `--send` from the wrong box does not fail -- it posts credit
+    checks into an ICD's channel under Megan's own name, which is both wrong
+    and not something you can take back. This has happened before on another
+    report (a sales_boards --post from the laptop landed in #a-players-b2b as
+    Megan), so it is checked rather than remembered.
+    """
+    from automations.shared import slack_metrics_post as smp
+    who = smp._client().auth_test()
+    if who.get("user_id") != LUCY_REPORTING:
+        raise SystemExit(
+            "NOT SENDING. This machine's Slack token is %s / %s, not Lucy "
+            "Reporting (%s) -- every alert would post under that name. Run "
+            "the poster on the Lucy that holds Lucy's token, or drop --send "
+            "to preview here."
+            % (who.get("user_id"), who.get("user"), LUCY_REPORTING))
+    log("posting as %s (%s)" % (who.get("user"), who.get("user_id")))
+
+
 def _slack(channel_id: str, text: str) -> None:
     from automations.shared import slack_metrics_post as smp
     smp._client().chat_postMessage(channel=channel_id, text=text)
@@ -288,10 +455,23 @@ def main(argv=None) -> int:
                     help="actually post to Slack (default is a dry run)")
     ap.add_argument("--office", help="limit to one office key, e.g. kash")
     ap.add_argument("--day", help="YYYY-MM-DD (default: today)")
+    ap.add_argument("--watch", action="store_true",
+                    help="also report offices whose laptop has gone quiet")
     args = ap.parse_args(argv)
     day = dt.date.fromisoformat(args.day) if args.day else dt.date.today()
     try:
-        run(day, send=args.send, only=args.office)
+        with _Lock() as lock:
+            if not lock.held:
+                # Not an error. The previous tick is still working and it owns
+                # 'Last Posted'; running anyway is how the same credit checks
+                # get announced twice.
+                print("another poster run is already going -- skipping this tick")
+                return 0
+            if args.send:
+                assert_posting_as_lucy()
+            run(day, send=args.send, only=args.office)
+            if args.watch:
+                warn_quiet(day, send=args.send)
     except RelayNotConfigured as e:
         print(e)
         return 2

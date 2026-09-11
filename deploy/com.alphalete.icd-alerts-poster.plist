@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.icd-alerts-poster</string>
+
+    <!-- Path is the laptop's; regenerate with the runner's install path when
+         this is installed on a Lucy. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/icd_alerts_poster.sh</string>
+        <string>--send</string>
+        <string>--watch</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Every 10 minutes. The ICD laptops sweep every 15, so this is never the
+         thing holding an alert up, and the wrapper exits in milliseconds
+         outside 08:00-23:00 Mon-Sat. StartInterval rather than a calendar
+         list: 90 calendar entries would be unreadable, and a missed tick
+         matters far less than one firing at the wrong hour after a TZ drift. -->
+    <key>StartInterval</key>
+    <integer>600</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/icd-alerts-poster.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/icd-alerts-poster.launchd.err.log</string>
+</dict>
+</plist>

@@ -9670,6 +9670,29 @@
         "type": "not_configured"
       }
     },
+    "install_icd_alerts_poster_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_icd_alerts_poster_agent --machine \"Lucy 3\"` can install or refresh the standalone com.alphalete.icd-alerts-poster LaunchAgent. It reads what the ICD laptops relayed into the 'Lucy Access App' workbook and posts each office's credit-check alerts to their approved Slack channel; an office with nothing approved is held to Megan's DM rather than guessed into a team room. StartInterval 600 -- the wrapper, not the plist, sets the 08:00-23:00 Mon-Sat gate, deliberately wider than any one office's selling day because offices sit in different timezones and a laptop that wakes late still has a real day to hand over. MUST run on a box holding Lucy Reporting's Slack USER token: the token is per machine, and post.py refuses to --send unless auth_test() says Lucy Reporting, so a wrong box fails loudly instead of posting every ICD's alerts under Megan's name. Confirm with `lucy rerun slack_whoami --machine \"Lucy 3\"` before arming. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data. Re-run after any change to the plist.",
+      "machine": "Lucy 3",
+      "display_name": "Install ICD Credit-Check Alerts poster (10-min)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "icd-alerts-poster"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "install_gap_alerts_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_gap_alerts_agent --machine \"Lucy 1\"` can install or refresh the standalone com.alphalete.gap-alerts LaunchAgent (StartInterval 60 -- the wrapper, not the plist, sets the 10-minute cadence) on Lucy 1. Every LaunchAgent in this repo needs one of these -- the one agent that had no install_* entry is how a fully-provisioned runner still ran nothing. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data. Re-run after any change to the plist.",
