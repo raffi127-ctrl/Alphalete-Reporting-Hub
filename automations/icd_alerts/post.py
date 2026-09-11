@@ -30,10 +30,11 @@ from typing import Dict, List, Optional, Tuple
 from automations.icd_alerts import offices as O
 from automations.shared.credit_check_line import records_line
 
-# The relay workbook -- the one the Apps Script in resources/icd-alerts-relay.gs
-# is bound to. Set this once the workbook exists; until then every entry point
-# raises something that says so rather than half-working.
-RELAY_SPREADSHEET_ID = None
+# The relay workbook: 'Lucy Access App' (Megan supplied it 2026-09-11). The
+# Apps Script in resources/icd-alerts-relay.gs is bound to THIS workbook, and
+# its 'Relay Keys' tab is the list of who may hand anything in at all.
+# Sheet1 is Megan's and is left alone.
+RELAY_SPREADSHEET_ID = "1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg"
 RELAY_TAB = "ICD Relay"
 
 COL_OFFICE, COL_DAY, COL_RECORDS = 0, 1, 2
