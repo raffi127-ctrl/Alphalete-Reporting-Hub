@@ -156,13 +156,30 @@ def quiet_offices(day: Optional[dt.date] = None, minutes: int = STALE_MINUTES,
     if book is None:
         from automations.recruiting_report.fill import open_by_key
         book = open_by_key(RELAY_SPREADSHEET_ID)
+
+    tab = book.worksheet(RELAY_TAB)
+    values = tab.get_all_values()
     seen = {}
-    for _, row in _rows_for(day, book.worksheet(RELAY_TAB)):
+    # EVER, not just today. An office that has never relayed anything is not
+    # QUIET -- it is not installed yet, and warning about it every afternoon
+    # from the moment its row is added would teach us to ignore the warning
+    # before the first real one arrived. It starts being watched the day its
+    # laptop first says hello.
+    ever = set()
+    for row in values[1:]:
+        if len(row) <= COL_DAY:
+            continue
         key = (row[COL_OFFICE] or "").strip().lower()
-        seen[key] = (row[COL_RECEIVED] or "").strip()
+        if not key:
+            continue
+        ever.add(key)
+        if _day_key(row[COL_DAY]) == day.isoformat():
+            seen[key] = (row[COL_RECEIVED] or "").strip()
 
     out = []
     for office in O.active():
+        if office.key not in ever:
+            continue                      # never installed; nothing to miss
         raw = seen.get(office.key)
         if raw is None:
             out.append({"office": office.key, "label": office.label,

@@ -204,3 +204,38 @@ class MultiChannelTests(unittest.TestCase):
                 ]
 
         self.assertEqual(P.approved_channels(_Book()), {})
+
+
+class QuietWatchTests(unittest.TestCase):
+    """An office that has NEVER relayed is not quiet -- it is not installed
+    yet. Warning about it every afternoon from the moment its row is added
+    would teach us to ignore the warning before the first real one arrived."""
+
+    class _Book:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def worksheet(self, _):
+            return self
+
+        def get_all_values(self):
+            return [["Office", "Day", "Records", "Received At"]] + self.rows
+
+    def test_an_office_that_never_checked_in_is_not_warned_about(self):
+        from automations.icd_alerts import post as P
+        self.assertEqual(P.quiet_offices(dt.date(2026, 9, 11),
+                                         book=self._Book([])), [])
+
+    def test_an_office_that_relayed_before_but_not_today_IS_warned_about(self):
+        from automations.icd_alerts import post as P
+        rows = [["kash", "2026-09-10", "{}", "09/10/2026 14:00:00"]]
+        got = P.quiet_offices(dt.date(2026, 9, 11), book=self._Book(rows))
+        self.assertEqual([q["office"] for q in got], ["kash"])
+        self.assertIn("has not checked in today", got[0]["reason"])
+
+    def test_a_fresh_check_in_today_is_not_quiet(self):
+        from automations.icd_alerts import post as P
+        now = dt.datetime.now().strftime("%m/%d/%Y %H:%M:%S")
+        rows = [["kash", dt.date.today().isoformat(), "{}", now]]
+        self.assertEqual(P.quiet_offices(dt.date.today(),
+                                         book=self._Book(rows)), [])
