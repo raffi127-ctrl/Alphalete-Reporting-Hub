@@ -366,6 +366,17 @@ def _near_matches(try_search, sheet_tab_name: str, cap: int = 4) -> list:
     return out
 
 
+def _prune_results(merged: dict, live_tabs, is_terminated) -> dict:
+    """Keep only owners the daily report still EXPECTS to scrape: a live tab AND
+    not on the Terminated ICDs list. A terminated owner is skipped before the
+    scrape (tab kept, data frozen), so they never get a fresh status — without
+    this, the merge carries their last pre-termination miss forever and the daily
+    manifest re-opens INCOMPLETE every morning (Eric Martinez, terminated
+    2026-09-10, flagged 2026-09-11 with his stale 'name not found')."""
+    return {o: s for o, s in merged.items()
+            if o in live_tabs and not is_terminated(o)}
+
+
 def _not_found_reason(near: list) -> str:
     """The 'name not found' reason, carrying the near-matches when there are
     any — the caller writes it verbatim into scrape_results.json and the
@@ -914,7 +925,14 @@ def main() -> int:
         # terminated ICD (commit 1538ea0), so honor it — drop anyone with no live
         # tab (Megan 2026-07-23: Edgar Muniz II removed but still flagged). all_tabs
         # is the full live tab set, so scoped --only runs still keep every present owner.
-        merged = {o: s for o, s in merged.items() if o in all_tabs}
+        # Terminated owners are pruned too: their tab STAYS (flag, never delete),
+        # so the tab check alone let their stale miss linger.
+        try:
+            from automations.shared import terminated_icds as _ti
+            _is_term = _ti.terminated_lookup()
+        except Exception:  # noqa: BLE001 — never let the prune break the write
+            _is_term = lambda _o: False
+        merged = _prune_results(merged, all_tabs, _is_term)
         results_path.write_text(json.dumps({
             "run_at": dt.datetime.now().isoformat(timespec="seconds"),
             "results": merged,
