@@ -112,10 +112,16 @@ def payload(records: Dict[str, int], day: dt.date,
     # What they asked for on the knocks report. Same rule: a request, decided
     # by a person, and re-sent every sweep so re-running the installer is how
     # an owner changes their mind.
-    if rec.get("requested_knocks_frequency"):
-        body["requested_knocks_frequency"] = rec["requested_knocks_frequency"]
+    if rec.get("requested_knocks_label"):
+        # The LABEL for a person reading the sheet, the MINUTES for the code
+        # that turns it into a schedule. Sending only the sentence would mean
+        # parsing english on our side to recover a number the installer
+        # already had.
+        body["requested_knocks_label"] = rec["requested_knocks_label"]
+        body["requested_knocks_cadence_min"] = rec.get("requested_knocks_cadence_min")
         body["requested_knocks_channel"] = rec.get("requested_knocks_channel", "")
-    if any(k in body for k in ("requested_channel", "requested_knocks_frequency")):
+        body["requested_knocks_hours_note"] = rec.get("requested_knocks_hours_note", "")
+    if any(k in body for k in ("requested_channel", "requested_knocks_label")):
         body["owner"] = rec.get("owner", "")
     return body
 

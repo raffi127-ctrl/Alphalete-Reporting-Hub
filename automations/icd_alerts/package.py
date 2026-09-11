@@ -141,6 +141,15 @@ def build(office_key: str, relay_key: Optional[str] = None,
         "owner": office.owner,
         "relay_url": O.RELAY_URL,
         "relay_key": relay_key,
+        # The knocks report IS the KNOCKS & DISPOSITIONS board that
+        # disposition_signup already enrolls offices into (Megan 2026-09-11:
+        # "it's the same thing"), so the installer offers ITS choices, in its
+        # words, and hands back ITS canonical values. Baked in at build time
+        # rather than retyped in the installer: one source of truth, and a
+        # rebuilt package picks up any change to the picker for free. A second
+        # vocabulary would be two things to keep in step forever.
+        "knocks_picker": _knocks_picker(),
+        "knocks_default_hours": _default_hours(office),
     }, indent=2))
 
     label = "%s (%s)" % (office.label, office.owner)
@@ -170,6 +179,24 @@ def build(office_key: str, relay_key: Optional[str] = None,
         log("\nzipped -> %s (%d KB)" % (archive, archive.stat().st_size // 1024))
         return archive
     return folder
+
+
+def _knocks_picker():
+    """[{'value': minutes, 'label': '...'}] straight from the disposition schema."""
+    from automations.disposition_signup import schema as S
+    return [{"value": m, "label": S.cadence_picker_label(m)}
+            for m in S.CADENCE_PICKER]
+
+
+def _default_hours(office):
+    """The org's default field hours, in THIS office's own clock.
+
+    The timezone comes from the office record, not from the owner: it is
+    already known, and "which timezone are you in" is a question with a wrong
+    answer available (an owner travelling, or reading their laptop's clock).
+    """
+    from automations.disposition_signup import schema as S
+    return dict(S.DEFAULT_HOURS, tz=office.timezone, saturday=True)
 
 
 def _channel_blurb(office) -> str:

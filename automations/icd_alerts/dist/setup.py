@@ -221,18 +221,26 @@ def ask_for_channel():
     return answer
 
 
-# The answers offered for the knocks report. A FIXED SET, because every one of
-# them has to turn into a schedule -- and because an owner should not have to
-# guess what we can do. "No thanks" is a real answer and is offered plainly:
-# an office that does not want this should not have to cancel it later.
-KNOCKS_OPTIONS = [
-    "Once at the end of the night",
-    "Twice a day - midday and end of night",
-    "Every hour during selling hours",
-    "No knocks report, thanks",
-]
+# THE KNOCKS REPORT IS THE SAME THING the disposition enrolment already signs
+# offices up for (Megan 2026-09-11), so the choices here are ITS choices, in
+# ITS words, and the answer is ITS canonical value -- the cadence in minutes,
+# not a sentence we would then have to translate. The list is baked into
+# install.json when the package is built, straight from
+# disposition_signup.schema, so there is one source of truth and a rebuilt
+# package picks up any change for free.
+KNOCKS_NONE = "No knocks report, thanks"
 KNOCKS_SAME = "The same channel as my credit-check alerts"
 KNOCKS_OTHER = "A different channel"
+HOURS_OK = "Yes, those are our hours"
+HOURS_DIFFERENT = "No, ours are different"
+
+
+def _ampm(hhmm):
+    h, m = hhmm.split(":")
+    h = int(h)
+    suffix = "AM" if h < 12 else "PM"
+    hour = h % 12 or 12
+    return "%d:%02d %s" % (hour, int(m), suffix)
 
 
 def ask_about_knocks():
@@ -248,35 +256,75 @@ def ask_about_knocks():
         say("      already asked for: %s" % rec["requested_knocks_frequency"])
         return
 
+    picker = rec.get("knocks_picker") or []
+    labels = [o["label"] for o in picker] + [KNOCKS_NONE]
+
     say("      asking about the knocks report (look for the pop-up box)...")
     try:
-        how_often = ask.choose(
-            "How often would you like your knocks report?", KNOCKS_OPTIONS)
+        chosen = ask.choose(
+            "How often would you like your knocks and dispositions board?",
+            labels)
     except ask.Cancelled:
         say("      skipped -- the reporting team will check with you.")
         return
 
-    channel = ""
-    if not how_often.startswith("No knocks report"):
-        try:
-            where = ask.choose("Where should the knocks report be posted?",
-                               [KNOCKS_SAME, KNOCKS_OTHER])
-            if where == KNOCKS_OTHER:
-                channel = ask.text(
-                    "Which Slack channel should the knocks report go to?\n\n"
-                    "For example:  #palace-sales").strip()
-                if channel and not channel.startswith("#"):
-                    channel = "#" + channel.lstrip("#")
-            else:
-                channel = rec.get("requested_channel", "")
-        except ask.Cancelled:
-            channel = rec.get("requested_channel", "")
+    if chosen == KNOCKS_NONE:
+        rec["requested_knocks_cadence_min"] = None
+        rec["requested_knocks_label"] = KNOCKS_NONE
+        (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
+        say("      noted: no knocks report.")
+        return
 
-    rec["requested_knocks_frequency"] = how_often
+    cadence = next((o["value"] for o in picker if o["label"] == chosen), None)
+
+    channel = rec.get("requested_channel", "")
+    try:
+        where = ask.choose("Where should the knocks board be posted?",
+                           [KNOCKS_SAME, KNOCKS_OTHER])
+        if where == KNOCKS_OTHER:
+            typed = ask.text(
+                "Which Slack channel should the knocks board go to?\n\n"
+                "For example:  #palace-sales").strip()
+            if typed:
+                channel = typed if typed.startswith("#") else "#" + typed.lstrip("#")
+    except ask.Cancelled:
+        pass
+
+    # FIELD HOURS: one question for almost everybody. The enrolment form says
+    # "most offices leave these as they are", and it is right -- so the default
+    # is shown and confirmed rather than asked for field by field. An office
+    # that IS different says so in their own words and the reporting team sets
+    # it; building a time picker out of dialog boxes would be a worse way to
+    # get an answer that a person is going to check anyway.
+    hours = dict(rec.get("knocks_default_hours") or {})
+    note = ""
+    if hours:
+        sat = ("Saturdays %s to %s" % (_ampm(hours["sat_start"]),
+                                       _ampm(hours["sat_end"]))
+               if hours.get("saturday") else "no Saturdays")
+        try:
+            answer = ask.choose(
+                "We would only send during your field hours:\n\n"
+                "Monday to Friday, %s to %s\n%s\n\nSundays are off for "
+                "everyone. Is that right?"
+                % (_ampm(hours["day_start"]), _ampm(hours["day_end"]), sat),
+                [HOURS_OK, HOURS_DIFFERENT])
+            if answer == HOURS_DIFFERENT:
+                note = ask.text(
+                    "What hours are your reps in the field?\n\n"
+                    "For example:  Mon-Fri 2pm to 9pm, Saturdays 11am to 5pm"
+                ).strip()
+        except ask.Cancelled:
+            pass
+
+    rec["requested_knocks_cadence_min"] = cadence
+    rec["requested_knocks_label"] = chosen
     rec["requested_knocks_channel"] = channel
+    rec["requested_knocks_hours_note"] = note
     (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
-    say("      noted: %s%s" % (how_often,
-                               (" -> %s" % channel) if channel else ""))
+    say("      noted: %s%s" % (chosen, (" -> %s" % channel) if channel else ""))
+    if note:
+        say("      hours: %s" % note)
 
 
 def check_account() -> bool:

@@ -28,7 +28,8 @@
  *                     Agent | Last Posted JSON | Posted At
  *   'Office Channels' Office | Owner | They Asked For | Requested At |
  *                     Channel ID | Channel Name | Approved |
- *                     Knocks: How Often | Knocks: Channel Asked |
+ *                     Knocks: How Often | Knocks: Cadence Min |
+ *                     Knocks: Hours Note | Knocks: Channel Asked |
  *                     Knocks Channel ID | Knocks Channel Name |
  *                     Knocks Approved
  *
@@ -99,11 +100,16 @@ function doPost(e) {
     // change the answer. Only ever touches the columns the owner is allowed
     // to influence.
     var asked = String(body.requested_channel || '').trim();
-    var knocksHow = String(body.requested_knocks_frequency || '').trim();
-    var knocksCh = String(body.requested_knocks_channel || '').trim();
-    if (asked || knocksHow) {
-      _recordChannelRequest(office, String(body.owner || ''), asked,
-                            knocksHow, knocksCh);
+    var knocks = {
+      how: String(body.requested_knocks_label || '').trim(),
+      min: (body.requested_knocks_cadence_min === null ||
+            body.requested_knocks_cadence_min === undefined)
+             ? '' : String(body.requested_knocks_cadence_min),
+      hours: String(body.requested_knocks_hours_note || '').trim(),
+      channel: String(body.requested_knocks_channel || '').trim()
+    };
+    if (asked || knocks.how) {
+      _recordChannelRequest(office, String(body.owner || ''), asked, knocks);
     }
 
     return _reply({ok: true, reps: Object.keys(records).length});
@@ -164,7 +170,7 @@ function _upsert(office, day, recordsJson, localTime, agent) {
   }
 }
 
-function _recordChannelRequest(office, owner, asked, knocksHow, knocksCh) {
+function _recordChannelRequest(office, owner, asked, knocks) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -175,8 +181,10 @@ function _recordChannelRequest(office, owner, asked, knocksHow, knocksCh) {
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === office) {
         var sameCh = String(rows[i][2]).trim() === asked;
-        var sameKn = String(rows[i][7] || '').trim() === knocksHow &&
-                     String(rows[i][8] || '').trim() === knocksCh;
+        var sameKn = String(rows[i][7] || '').trim() === knocks.how &&
+                     String(rows[i][8] || '').trim() === knocks.min &&
+                     String(rows[i][9] || '').trim() === knocks.hours &&
+                     String(rows[i][10] || '').trim() === knocks.channel;
         if (sameCh && sameKn) return;              // nothing changed
         // Columns 3-4 and 8-9 only. Every *Channel ID*, *Channel Name* and
         // *Approved* column is OURS -- an owner asks, a human decides.
@@ -188,14 +196,16 @@ function _recordChannelRequest(office, owner, asked, knocksHow, knocksCh) {
           sh.getRange(i + 1, 7).setValue('');
         }
         if (!sameKn) {
-          sh.getRange(i + 1, 8, 1, 2).setValues([[knocksHow, knocksCh]]);
-          sh.getRange(i + 1, 12).setValue('');
+          sh.getRange(i + 1, 8, 1, 4)
+            .setValues([[knocks.how, knocks.min, knocks.hours, knocks.channel]]);
+          sh.getRange(i + 1, 14).setValue('');      // un-approve the knocks half
         }
         return;
       }
     }
     sh.appendRow([office, owner, asked, now, '', '', '',
-                  knocksHow, knocksCh, '', '', '']);
+                  knocks.how, knocks.min, knocks.hours, knocks.channel,
+                  '', '', '']);
   } finally {
     lock.releaseLock();
   }
