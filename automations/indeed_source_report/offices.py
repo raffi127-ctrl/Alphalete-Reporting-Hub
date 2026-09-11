@@ -67,7 +67,12 @@ except ImportError:                                   # roster not on this check
 def _dedupe():
     seen, out = set(), []
     for name, oid, _owner in list(ORG) + list(CAPTAINSHIP):
-        if oid is None or oid in seen:
+        # BLANK, not just None (2026-09-11). Nicolas Lujan went into the roster
+        # as "" — funnel run.py treats any falsy oid as "not discovered yet",
+        # but this only skipped None, so "" reached select_office, the switch
+        # did nothing, and the Ad Sales Board read the office before him
+        # (Alexander Badawi) and failed WRONG OFFICE on every run.
+        if not str(oid or "").strip() or oid in seen:
             continue          # no office yet, or already counted via the other list
         seen.add(oid)
         out.append((oid, name))
