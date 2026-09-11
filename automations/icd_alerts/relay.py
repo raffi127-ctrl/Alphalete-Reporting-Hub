@@ -26,6 +26,7 @@ import datetime as dt
 import json
 import ssl
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Dict, Optional
 
@@ -33,6 +34,23 @@ from automations.icd_alerts import config as C
 
 TIMEOUT_SECONDS = 30
 AGENT_VERSION = "icd_alerts/1"
+MAX_REDIRECTS = 5
+
+
+class _NoAutoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse to follow redirects automatically, so `_post` can do it properly.
+
+    urllib's default handler follows a 302 by issuing a GET -- which against an
+    Apps Script web app lands on doGet and comes back "POST only", as though
+    the relay had asked for the wrong thing. Worse, it does it INCONSISTENTLY:
+    on 2026-09-11 the same four calls returned a mix of real answers, "POST
+    only", and a 404 at the end of the redirect chain. A relay that works four
+    times out of five is the worst possible kind of broken, because the
+    failures read as an empty day.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def _ssl_context() -> "ssl.SSLContext":
@@ -87,6 +105,54 @@ def payload(records: Dict[str, int], day: dt.date,
     }
 
 
+def _is_result_url(url: str) -> bool:
+    """True for the url Apps Script parks a finished response on."""
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    return host.endswith("googleusercontent.com")
+
+
+def _post(url: str, data: bytes) -> str:
+    """POST, then follow Apps Script's redirect to the result BY HAND.
+
+    An Apps Script web app answers /exec with a 302 to
+    script.googleusercontent.com, where the actual response body lives, and it
+    is fetched with a GET. That part is by design. What is not survivable is
+    letting urllib do it: it turns the POST into a GET against /exec itself and
+    the relay silently reads doGet's reply instead of doPost's.
+    """
+    opener = urllib.request.build_opener(
+        _NoAutoRedirect, urllib.request.HTTPSHandler(context=_ssl_context()))
+    req = urllib.request.Request(
+        url, data=data, method="POST",
+        headers={"Content-Type": "application/json"})
+
+    for _ in range(MAX_REDIRECTS):
+        try:
+            with opener.open(req, timeout=TIMEOUT_SECONDS) as resp:
+                return resp.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            location = e.headers.get("Location") if e.headers else None
+            if e.code not in (301, 302, 303, 307, 308) or not location:
+                raise
+            nxt = urllib.parse.urljoin(req.full_url, location)
+            # WHICH METHOD depends on WHERE it is sending us, and getting this
+            # wrong is silent. A hop to script.googleusercontent.com is Apps
+            # Script handing back the RESULT of the POST it already ran: fetch
+            # it with a GET, because re-POSTing would submit the relay twice.
+            # A hop back to /exec itself has not run anything yet -- GET it and
+            # doGet answers "POST only", which is what made this look flaky
+            # rather than broken (2026-09-11, one call in six).
+            if _is_result_url(nxt):
+                req = urllib.request.Request(nxt, method="GET")
+            else:
+                req = urllib.request.Request(
+                    nxt, data=data, method="POST",
+                    headers={"Content-Type": "application/json"})
+    raise RelayError(
+        "The reporting server kept redirecting and never answered. Nothing is "
+        "lost -- the next run sends today's totals again.")
+
+
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
          dry_run: bool = False, log=print) -> Dict:
     """POST one sweep's totals. Returns the decoded reply, or raises RelayError
@@ -101,13 +167,8 @@ def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
         return {"ok": True, "dry_run": True}
 
     data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(
-        rec["relay_url"], data=data, method="POST",
-        headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS,
-                                    context=_ssl_context()) as resp:
-            raw = resp.read().decode("utf-8", "replace")
+        raw = _post(rec["relay_url"], data)
     except ssl.SSLCertVerificationError:
         raise RelayError(
             "This computer cannot verify a secure connection, so it cannot "

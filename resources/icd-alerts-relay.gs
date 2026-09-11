@@ -47,6 +47,24 @@ function _book() {
   return SpreadsheetApp.openById(SHEET_ID);
 }
 
+/**
+ * The Day cell as 'yyyy-MM-dd', whatever Sheets decided to store.
+ *
+ * THIS IS THE ONE THAT BIT. Sheets silently parses '2020-01-01' into a DATE,
+ * so getValues() hands back a Date object and String(it) is
+ * "Wed Jan 01 2020 00:00:00 GMT-0600 (CST)" -- which never equals the
+ * '2020-01-01' we are matching on. The upsert therefore never found the row
+ * and appended EVERY TIME: 11 rows from 11 relays on 2026-09-11, and at 52
+ * offices sweeping all day that is thousands of rows, with the poster reading
+ * the stale first one. Compare on a normalised key, never on the raw cell.
+ */
+function _dayKey(v) {
+  if (v instanceof Date) {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return String(v || '').trim();
+}
+
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
@@ -105,7 +123,7 @@ function _upsert(office, day, recordsJson, localTime, agent) {
     var now = new Date();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === office &&
-          String(rows[i][1]).trim() === day) {
+          _dayKey(rows[i][1]) === day) {
         // Columns 3-6 only. 'Last Posted JSON' and 'Posted At' are ours.
         sh.getRange(i + 1, 3, 1, 4)
           .setValues([[recordsJson, now, localTime, agent]]);
@@ -113,6 +131,9 @@ function _upsert(office, day, recordsJson, localTime, agent) {
       }
     }
     sh.appendRow([office, day, recordsJson, now, localTime, agent, '', '']);
+    // Keep the day a STRING on the way in too, so the next sweep's lookup is
+    // comparing like with like even if the column format is ever reset.
+    sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);
   } finally {
     lock.releaseLock();
   }

@@ -108,3 +108,24 @@ class RosterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DayKeyTests(unittest.TestCase):
+    """Sheets turns '2020-01-01' into a DATE, and gspread then hands back
+    whatever that displays as. Matching the raw text finds nothing, the office
+    reads as never having relayed, and the failure is SILENCE -- which looks
+    exactly like a quiet day. (2026-09-11: this shipped as 11 appended rows.)"""
+
+    def test_iso_passes_through(self):
+        from automations.icd_alerts.post import _day_key
+        self.assertEqual(_day_key("2020-01-01"), "2020-01-01")
+
+    def test_us_display_format_is_understood(self):
+        from automations.icd_alerts.post import _day_key
+        self.assertEqual(_day_key("1/1/2020"), "2020-01-01")
+        self.assertEqual(_day_key("01/01/2020"), "2020-01-01")
+
+    def test_unparseable_is_returned_unchanged_not_crashed(self):
+        from automations.icd_alerts.post import _day_key
+        self.assertEqual(_day_key("whenever"), "whenever")
+        self.assertEqual(_day_key(""), "")

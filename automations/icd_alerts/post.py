@@ -100,6 +100,25 @@ def _relay_tab():
     return open_by_key(RELAY_SPREADSHEET_ID).worksheet(RELAY_TAB)
 
 
+def _day_key(cell: str) -> str:
+    """The Day cell as 'YYYY-MM-DD', however Sheets chose to display it.
+
+    gspread hands back the DISPLAYED text, and a Day column that Sheets has
+    decided is a date displays as '1/1/2020'. Matching on the raw string then
+    finds nothing and the office reads as having never relayed -- silence,
+    which is the failure mode that looks exactly like a quiet day. The relay
+    writes this column as text for the same reason; this is the belt to that
+    pair of braces.
+    """
+    cell = (cell or "").strip()
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%m/%d/%y"):
+        try:
+            return dt.datetime.strptime(cell, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return cell
+
+
 def _rows_for(day: dt.date, tab) -> List[Tuple[int, List[str]]]:
     """(1-based row number, row) for every relay row of `day`. The row number is
     carried because writing 'Last Posted JSON' back needs it -- and looking it
@@ -108,7 +127,7 @@ def _rows_for(day: dt.date, tab) -> List[Tuple[int, List[str]]]:
     values = tab.get_all_values()
     out = []
     for i, row in enumerate(values[1:], start=2):
-        if len(row) > COL_DAY and row[COL_DAY].strip() == day.isoformat():
+        if len(row) > COL_DAY and _day_key(row[COL_DAY]) == day.isoformat():
             out.append((i, row))
     return out
 
