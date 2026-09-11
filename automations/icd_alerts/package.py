@@ -53,6 +53,13 @@ AGENT_FILES = [
 BUNDLE_INIT = '''"""Alphalete Alerts."""
 '''
 
+GATEKEEPER = """
+IF YOUR MAC SAYS IT "CANNOT BE OPENED"
+    That is macOS being careful about files from the internet. Right-click
+    (or control-click) the installer, choose Open, then click Open again.
+    You only have to do this once.
+"""
+
 README = """Alphalete Alerts -- {label}
 {underline}
 
@@ -62,20 +69,15 @@ WHAT THIS IS
     up in your team's Slack channel ({channel}).
 
 TO INSTALL
-    Mac:      double-click "Install Alphalete Alerts.command"
-    Windows:  double-click "Install Alphalete Alerts.bat"
+{how}
 
-    It will ask for your SaraPlus email and password. That is the only
-    thing it asks for.
-
-IF THE MAC SAYS IT "CANNOT BE OPENED"
-    That is macOS being careful about files from the internet. Right-click
-    (or control-click) the installer, choose Open, then click Open again.
-    You only have to do this once.
-
-ABOUT YOUR PASSWORD
-    It is saved on your computer only and is used to sign in to SaraPlus
-    from your computer. It is never sent to us or to anyone else. The only
+    Boxes will pop up asking for your SaraPlus login and your OwnerVille
+    login. That is the only thing it asks for. A black window will also
+    appear showing its progress -- you can ignore that one.
+{gatekeeper}
+ABOUT YOUR PASSWORDS
+    They are saved on your computer only, and are used to sign in from
+    your computer. They are never sent to us or to anyone else. The only
     thing that leaves your computer is the number of credit checks each
     rep has run today.
 
@@ -95,7 +97,7 @@ QUESTIONS
 
 
 def build(office_key: str, relay_key: Optional[str] = None,
-          make_zip: bool = True, log=print) -> Path:
+          make_zip: bool = True, platform: str = "both", log=print) -> Path:
     office = O.get(office_key)
     if not office:
         raise SystemExit(
@@ -118,16 +120,21 @@ def build(office_key: str, relay_key: Optional[str] = None,
     (folder / "automations" / "__init__.py").write_text(BUNDLE_INIT)
     (folder / "automations" / "shared" / "__init__.py").write_text("")
 
-    for name in ("setup.py", "Install Alphalete Alerts.command"):
+    for name in ("setup.py", "ask.py"):
         shutil.copy2(DIST / name, folder / name)
-    (folder / "Install Alphalete Alerts.command").chmod(0o755)
 
-    # CRLF, always. A .bat with bare LF endings is parsed unreliably by
-    # cmd.exe, and this repo is developed on a Mac -- so the file on disk here
-    # has LF and would ship that way unless it is converted on the way out.
-    bat = (DIST / "Install Alphalete Alerts.bat").read_text()
-    (folder / "Install Alphalete Alerts.bat").write_bytes(
-        bat.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8"))
+    if platform in ("mac", "both"):
+        shutil.copy2(DIST / "Install Alphalete Alerts.command",
+                     folder / "Install Alphalete Alerts.command")
+        (folder / "Install Alphalete Alerts.command").chmod(0o755)
+
+    if platform in ("windows", "both"):
+        # CRLF, always. A .bat with bare LF endings is parsed unreliably by
+        # cmd.exe, and this repo is developed on a Mac -- so the file on disk
+        # here has LF and would ship that way unless converted on the way out.
+        bat = (DIST / "Install Alphalete Alerts.bat").read_text()
+        (folder / "Install Alphalete Alerts.bat").write_bytes(
+            bat.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8"))
 
     (folder / "install.json").write_text(json.dumps({
         "office_key": office.key,
@@ -137,9 +144,16 @@ def build(office_key: str, relay_key: Optional[str] = None,
     }, indent=2))
 
     label = "%s (%s)" % (office.label, office.owner)
+    how = {
+        "mac": '    Double-click "Install Alphalete Alerts.command"',
+        "windows": '    Double-click "Install Alphalete Alerts.bat"',
+        "both": ('    Mac:      double-click "Install Alphalete Alerts.command"\n'
+                 '    Windows:  double-click "Install Alphalete Alerts.bat"'),
+    }[platform]
+    gatekeeper = GATEKEEPER if platform in ("mac", "both") else ""
     (folder / "README.txt").write_text(README.format(
         label=label, underline="=" * (len("Alphalete Alerts -- ") + len(label)),
-        channel=office.channel_name))
+        channel=_channel_blurb(office), how=how, gatekeeper=gatekeeper))
 
     log("built %s" % folder)
     for f in sorted(p.relative_to(folder) for p in folder.rglob("*") if p.is_file()):
@@ -156,6 +170,17 @@ def build(office_key: str, relay_key: Optional[str] = None,
         log("\nzipped -> %s (%d KB)" % (archive, archive.stat().st_size // 1024))
         return archive
     return folder
+
+
+def _channel_blurb(office) -> str:
+    """What the README tells the owner about where their alerts land.
+
+    An office with no channel decided yet must NOT be told a room name -- they
+    would go looking for it, not find it, and ask why it is broken.
+    """
+    if not office.channels:
+        return "your team's Slack channel"
+    return ", ".join(c.name for c in office.channels)
 
 
 def _relay_key_from_sheet(office_key: str, log=print) -> str:
@@ -187,8 +212,16 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Build an ICD's installer folder")
     ap.add_argument("office", help="office key, e.g. kash")
     ap.add_argument("--no-zip", action="store_true")
+    # GMAIL BLOCKS .bat FILES, INCLUDING INSIDE A ZIP. A package built "both"
+    # cannot reliably be emailed at all -- it is stripped or bounced, and the
+    # bounce does not say why. Build for the platform the office actually uses.
+    ap.add_argument("--platform", choices=("mac", "windows", "both"),
+                    default="both",
+                    help="which launcher to include (default both). Use 'mac' "
+                         "or 'windows' to make the zip emailable: gmail blocks "
+                         ".bat even inside an archive.")
     args = ap.parse_args(argv)
-    build(args.office, make_zip=not args.no_zip)
+    build(args.office, make_zip=not args.no_zip, platform=args.platform)
     return 0
 
 

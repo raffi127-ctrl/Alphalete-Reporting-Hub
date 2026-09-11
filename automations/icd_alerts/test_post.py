@@ -91,10 +91,38 @@ class StaleTests(unittest.TestCase):
 
 
 class RosterTests(unittest.TestCase):
-    def test_kash_posts_to_palace_sales(self):
-        k = O.get("kash")
-        self.assertEqual(k.channel_id, "C09AVM17PAR")
-        self.assertEqual(k.channel_name, "#palace-sales")
+    def test_kash_is_not_routed_to_a_channel_nobody_confirmed(self):
+        """Megan has not said Kash wants his pings in #palace-sales
+        (2026-09-11). Until she does, a guess would put them in front of his
+        whole team, and that is not a thing you undo."""
+        self.assertEqual(O.get("kash").channels, ())
+
+    def test_an_unrouted_office_is_held_not_dropped(self):
+        """The alerts are real; nobody has said where they belong yet."""
+        targets, held = O.destinations(O.get("kash"))
+        self.assertTrue(held)
+        self.assertEqual([t.id for t in targets], [O.HOLDING_DM])
+
+    def test_a_routed_office_goes_to_its_own_rooms_only(self):
+        from automations.icd_alerts.offices import AlertOffice, Channel
+        office = AlertOffice(key="x", owner="O", label="X", timezone="UTC",
+                             channels=(Channel("C1", "#one"),))
+        targets, held = O.destinations(office)
+        self.assertFalse(held)
+        self.assertEqual([t.id for t in targets], ["C1"])
+
+    def test_every_declared_channel_looks_like_a_channel(self):
+        for office in O.OFFICES.values():
+            for c in office.channels:
+                self.assertTrue(c.id.startswith("C"), (office.key, c.id))
+                self.assertTrue(c.name.startswith("#"), (office.key, c.name))
+
+    def test_display_names_every_room(self):
+        from automations.icd_alerts.offices import AlertOffice, Channel
+        two = AlertOffice(key="x", owner="O", label="X's Office",
+                          channels=(Channel("C1", "#one"), Channel("C2", "#two")),
+                          timezone="America/Chicago")
+        self.assertEqual(two.display(), "X's Office (#one, #two)")
 
     def test_revoking_is_one_flag(self):
         self.assertTrue(O.is_enrolled("kash"))

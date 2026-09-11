@@ -177,16 +177,37 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         elif not lines:
             log("%-10s nothing new (%d rep(s) tracked)" % (key, len(records)))
         else:
-            log("%-10s %d new credit check line(s) -> %s"
-                % (key, len(lines), office.display()))
+            targets, held = O.destinations(office)
+            log("%-10s %d new credit check line(s) -> %s%s"
+                % (key, len(lines), ", ".join(t.name for t in targets),
+                   "   [HELD -- no channel decided for this office]" if held else ""))
             for line in lines:
                 log("    %s" % line)
 
         if not send:
             continue
         if lines:
-            _slack(office.channel_id, "\n".join(lines))
-            posted += len(lines)
+            text = "\n".join(lines)
+            targets, held = O.destinations(office)
+            if held:
+                # Say whose they are and why they are here, because the person
+                # reading them did not ask for them and cannot act on the
+                # alerts themselves -- only on the routing.
+                text = ("_%s has no Slack channel set yet, so these are coming "
+                        "to you. Add their channel in "
+                        "`automations/icd_alerts/offices.py` and they will go "
+                        "straight there._\n\n%s" % (office.label, text))
+            for channel in targets:
+                # One failing room must not cost the others their alert, and
+                # it must not stop 'Last Posted' being written either -- a
+                # retry would re-announce everything to the rooms that DID get
+                # it. Say which room failed and carry on.
+                try:
+                    _slack(channel.id, text)
+                    posted += len(lines)
+                except Exception as e:  # noqa: BLE001
+                    log("%-10s FAILED to post to %s: %s: %s"
+                        % (key, channel.name, type(e).__name__, str(e)[:120]))
         if lines or baseline:
             tab.update_cell(rownum, COL_LAST_POSTED + 1, json.dumps(merged))
             tab.update_cell(rownum, COL_POSTED_AT + 1,

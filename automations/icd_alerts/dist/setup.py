@@ -31,7 +31,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import ask
+
 APP_NAME = "Alphalete Alerts"
+_PRIVACY = ("This stays on this computer and is never sent to anyone. "
+            "Only the report counts are sent.")
 HOME = Path.home()
 BASE = HOME / ".alphalete-alerts"
 APP_DIR = BASE / "app"
@@ -131,48 +135,53 @@ def write_install_json():
     return rec
 
 
-def _ask_one(filename, title, user_label, user_field, pass_field):
-    """Ask for one login, or keep the one already saved.
+def _ask_one(filename, title, user_label, user_field, pass_field, required):
+    """Ask for one login in a real dialog box, or keep the one already saved.
 
-    Asked one at a time with its own heading. Two username boxes and two
-    password boxes on one screen is how somebody puts their SaraPlus password
-    in the OwnerVille box and then cannot be told why nothing works.
+    ONE LOGIN AT A TIME, each in its own box naming the system it belongs to.
+    Two username fields and two password fields on one screen is how somebody
+    puts their SaraPlus password in the OwnerVille box and then cannot be told
+    why nothing works.
     """
-    import getpass
     path = CONFIG_DIR / filename
     if path.exists():
-        say("      A %s login is already saved on this computer." % title)
-        if input("      Enter it again? (y/N): ").strip().lower() not in ("y", "yes"):
-            return True
-    say()
-    say("      --- %s ---" % title)
-    user = input("      %s: " % user_label).strip()
-    password = getpass.getpass("      %s password (typing is hidden): " % title)
-    if not user or not password:
-        say("      Nothing entered -- skipped. You can run this installer "
-            "again later.")
+        say("      A %s login is already saved." % title)
+        return True
+
+    say("      asking for the %s login (look for the pop-up box)..." % title)
+    try:
+        user = ask.text("%s\n\nYour %s %s:"
+                        % (_PRIVACY, title, user_label)).strip()
+        if not user:
+            raise ask.Cancelled()
+        password = ask.password("Your %s password:" % title)
+        if not password:
+            raise ask.Cancelled()
+    except ask.Cancelled:
+        if required:
+            ask.message("Setup needs your %s login to continue.\n\n"
+                        "Nothing was saved. Open the installer again when you "
+                        "have it." % title, error=True)
+            raise SystemExit(1)
+        say("      skipped -- you can add it later by running this again.")
         return False
+
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({user_field: user, pass_field: password}))
     try:
         path.chmod(0o600)
     except OSError:
         pass
+    say("      %s login saved on this computer." % title)
     return True
 
 
 def ask_for_login():
-    say()
-    say("      Both passwords stay on THIS computer and are never sent to")
-    say("      anyone. Only the counts they produce are sent.")
-    sara = _ask_one("saraplus-creds.json", "SaraPlus", "SaraPlus email",
-                    "email", "password")
-    _ask_one("ownerville-creds.json", "OwnerVille", "OwnerVille username",
-             "username", "password")
-    if not sara:
-        raise SystemExit(
-            "The SaraPlus login is the one this cannot run without. Run the "
-            "installer again when you have it.")
+    sara = _ask_one("saraplus-creds.json", "SaraPlus", "email",
+                    "email", "password", required=True)
+    _ask_one("ownerville-creds.json", "OwnerVille", "username",
+             "username", "password", required=False)
+    return sara
 
 
 def check_account() -> bool:
@@ -273,14 +282,19 @@ def main() -> int:
     say()
     say("=" * 62)
     if ok:
-        say("  All set. You do not need to do anything else.")
-        say("  Leave this computer on and connected during selling hours.")
+        done = ("All set — you do not need to do anything else.\n\n"
+                "Just leave this computer on and connected to the internet "
+                "during selling hours.\n\n"
+                "You can close the black window behind this box.")
+        say("  All set.")
     else:
-        say("  Setup finished, but SaraPlus did not check out (see above).")
-        say("  Send that message to the reporting team -- everything else")
-        say("  is installed and will start working once it is sorted.")
+        done = ("Everything is installed, but signing in to SaraPlus did not "
+                "work.\n\nPlease tell the reporting team — they can sort it "
+                "out from their end. Nothing else needs doing on this "
+                "computer.")
+        say("  Installed, but SaraPlus did not check out.")
     say("=" * 62)
-    say()
+    ask.message(done, error=not ok)
     return 0 if ok else 1
 
 

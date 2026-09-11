@@ -18,6 +18,14 @@ from __future__ import annotations
 from typing import Dict, List, NamedTuple, Optional
 
 
+# Where alerts go when an office is relaying but nobody has decided its
+# channel yet. NOT a team room: a guess that lands in front of 20 people is
+# worse than one that lands in front of Megan. New ICDs will not already be
+# enrolled in anything (Megan 2026-09-11), so this is the normal state for a
+# day or two, not an error -- the alerts are real and they are held, not lost.
+HOLDING_DM = "U04G5HJBGFN"          # Megan
+HOLDING_LABEL = "Megan (no channel set yet)"
+
 # The Apps Script web app every laptop hands its totals to. One url for every
 # office -- the KEY is what identifies and authorises, not the address, so
 # there is nothing per-office to get wrong here. Deployed from
@@ -27,17 +35,35 @@ RELAY_URL = ("https://script.google.com/macros/s/"
              "/exec")
 
 
+class Channel(NamedTuple):
+    id: str
+    name: str                 # for logs and previews; Slack only needs the id
+
+
 class AlertOffice(NamedTuple):
+    """One office's alerts, and everywhere they go.
+
+    THE CHANNELS LIVE HERE, NOT ON THE LAPTOP, and that is deliberate (Megan
+    2026-09-11 asked whether the installer should ask). A laptop that could
+    name its own channel could name ANY channel in the AO workspace, and the
+    whole reason the posting stays on our side is that it cannot. Changing
+    where an office posts is a line in this file, not something 52 people can
+    each decide.
+
+    A TUPLE, because an office can have more than one room -- an owner's own
+    channel plus a regional one, say. One is the common case and reads the
+    same.
+    """
     key: str                  # matches office_metrics.offices, and the relay
     owner: str
     label: str
-    channel_id: str
-    channel_name: str
+    channels: tuple
     timezone: str
     active: bool = True
 
     def display(self) -> str:
-        return "%s (%s)" % (self.label, self.channel_name)
+        where = ", ".join(c.name for c in self.channels) or "no channel set yet"
+        return "%s (%s)" % (self.label, where)
 
 
 # Kash is the pilot (Megan 2026-09-10). Everything about him was already wired
@@ -46,7 +72,14 @@ class AlertOffice(NamedTuple):
 OFFICES: Dict[str, AlertOffice] = {
     "kash": AlertOffice(
         key="kash", owner="Kash Rai", label="Kash's Local Office",
-        channel_id="C09AVM17PAR", channel_name="#palace-sales",
+        # NO CHANNEL CONFIRMED YET. #palace-sales (C09AVM17PAR) is where
+        # office_metrics posts his metrics and where the Tableau trackers go,
+        # so Lucy is already a member and it is the obvious candidate -- but
+        # Megan has not confirmed Kash wants his credit-check pings there
+        # (2026-09-11: "Idk if he wants the palace sales channel"). Until she
+        # says so, his alerts go to the holding DM. Putting them in front of
+        # his whole team on a guess is not a thing to undo.
+        channels=(),
         timezone="America/Chicago", active=True,
     ),
 }
@@ -58,6 +91,17 @@ def get(key: str) -> Optional[AlertOffice]:
 
 def active() -> List[AlertOffice]:
     return [o for o in OFFICES.values() if o.active]
+
+
+def destinations(office: "AlertOffice"):
+    """Where this office's alerts actually go right now.
+
+    Never empty. An office with no channel decided is HELD, not dropped: the
+    alerts are real, somebody just has not said where they belong yet.
+    """
+    if office.channels:
+        return list(office.channels), False
+    return [Channel(HOLDING_DM, HOLDING_LABEL)], True
 
 
 def is_enrolled(key: str) -> bool:
