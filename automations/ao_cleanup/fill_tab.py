@@ -17,8 +17,9 @@ the Channel column and edits the dropdown by hand (she added
   * the header row is left exactly as she typed it;
   * no background colour, banding or column width is ever written, so her
     formatting survives a rebuild;
-  * the Channel dropdown is READ from the sheet and re-applied unchanged to any
-    new rows. Never hardcode that list — it would drop whatever she just added.
+  * the Channel dropdown is READ from the sheet (for the channel order) and
+    NEVER written back. Its per-value chip colours are hers and the Sheets API
+    does not return them, so any setDataValidation on that column wipes them.
 
 Notes are written in ENGLISH (Eve, 2026-09-10) because Rafael reads them.
 
@@ -240,15 +241,13 @@ def write_tab(gc, sh, ws, rows, index, rule):
                       "startColumnIndex": index[label],
                       "endColumnIndex": index[label] + 1},
             "rule": {"condition": {"type": "BOOLEAN"}, "showCustomUi": True}}})
-    if rule and CHANNEL_LABEL in index:
-        # Re-apply HER rule, unchanged, so rows past the old end get the same
-        # dropdown (and the same chips) as the rows above them.
-        requests.append({"setDataValidation": {
-            "range": {"sheetId": ws.id, "startRowIndex": FIRST_DATA_ROW - 1,
-                      "endRowIndex": needed,
-                      "startColumnIndex": index[CHANNEL_LABEL],
-                      "endColumnIndex": index[CHANNEL_LABEL] + 1},
-            "rule": rule}})
+    # NEVER setDataValidation on the Channel column. Eve gave each dropdown
+    # value its own chip colour, and those colours are NOT in what the Sheets
+    # v4 API hands back for that rule (no conditionalFormats, nothing in
+    # dataValidation) — so re-applying the rule we just read silently resets
+    # every chip to grey. It cost her the colours once, 2026-09-10. The
+    # dropdown already covers the whole grid anyway: we only ever write inside
+    # rows that have it. Read the rule for the channel ORDER, never write it.
     if requests:
         sh.batch_update({"requests": requests})
     return needed
