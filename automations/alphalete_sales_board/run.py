@@ -226,8 +226,38 @@ def week_to_date(grid, upto: dt.date) -> int:
 
 
 # --- one sweep --------------------------------------------------------------
+def _sandbox_recorrida(live_ws, live_grid, live_updates, sbx_ws, sbx_grid,
+                       sbx_updates, *, applied: bool) -> None:
+    """Log what still separates the two tabs once the mirror has run.
+
+    ONE LINE unless something differs. This is inside a job that runs every five
+    minutes; a checklist printed 150 times a day is a checklist nobody reads. The
+    terminations are the exception -- they are always named when the two tabs
+    disagree about one, because that is the step Eve has to do by hand and the
+    log is where she sees it is pending.
+
+    Never raises: a comparison is not worth failing a sweep over.
+    """
+    try:
+        from automations.alphalete_sales_board import sandbox_parity as SP
+        if live_grid is None:
+            return
+        monday = SP.week_monday(live_ws.title)
+        if monday is None:
+            _log("recorrida sandbox: %r no dice qué semana es -- salteada"
+                 % live_ws.title)
+            return
+        lg = SP.patched(live_grid, live_updates) if applied else live_grid
+        sg = SP.patched(sbx_grid, sbx_updates) if applied else sbx_grid
+        for line in SP.summary_lines(lg, live_ws.title, sg, sbx_ws.title, monday):
+            _log(line)
+    except Exception as e:  # noqa: BLE001 -- a check must not fail the sweep
+        _log("recorrida sandbox skipped: %s: %s" % (type(e).__name__, str(e)[:200]))
+
+
 def _mirror_to_sandbox(day: dt.date, agents, alias_map, live_ws,
-                       *, apply_writes: bool) -> None:
+                       *, apply_writes: bool,
+                       live_grid=None, live_updates=None) -> None:
     """Put the same day's sales on the '<tab> SANDBOX' twin, if there is one.
 
     Eve, 2026-09-09: the Talk-To columns are being judged on the sandbox, and a
@@ -244,6 +274,15 @@ def _mirror_to_sandbox(day: dt.date, agents, alias_map, live_ws,
     (`missing` is dropped on purpose: adding a rep is a decision, and it belongs
     to the real board). Anything it raises is caught and logged -- a mirror for
     evaluation must not fail a job that runs 150 times a day.
+
+    THEN IT WALKS THE TWO TABS (`sandbox_parity`) and logs what still differs.
+    Mirroring the sales is only half of "the two tabs are the same": the other
+    half is the roll-call letters and the 'T' marks, which a PERSON types and
+    this must never write. Eve, 2026-09-11: *"esos se cargan a mano, no lo haces
+    vos, por eso te pido que lo pongas como paso a chequear"*. So the walk-through
+    lists them; she loads them. Both grids are patched with the updates we just
+    sent so the check reads the tabs as they are now, not as they were before
+    the write. Read-only, in memory, no extra API call.
     """
     try:
         ws = fill.sandbox_twin(live_ws)
@@ -259,6 +298,8 @@ def _mirror_to_sandbox(day: dt.date, agents, alias_map, live_ws,
         else:
             _log("sandbox %r: %d cell(s) would change (preview)"
                  % (ws.title, len(updates)))
+        _sandbox_recorrida(live_ws, live_grid, live_updates, ws, grid, updates,
+                           applied=apply_writes)
     except Exception as e:  # noqa: BLE001 -- never let the twin fail the sweep
         _log("sandbox mirror skipped: %s: %s" % (type(e).__name__, str(e)[:200]))
 
@@ -292,7 +333,8 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
         for u in updates[:15]:
             _log("    %s -> %r" % (u["range"], u["values"][0][0]))
 
-    _mirror_to_sandbox(day, agents, alias_map, ws, apply_writes=apply_writes)
+    _mirror_to_sandbox(day, agents, alias_map, ws, apply_writes=apply_writes,
+                       live_grid=grid, live_updates=updates)
 
     # Who is on the board today that our pull can't explain? (See fill.
     # board_only_reps.) Logged every sweep so a pattern is visible in one grep.
