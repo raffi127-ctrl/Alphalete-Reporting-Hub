@@ -4776,7 +4776,7 @@ AUTOMATED_REPORTS = [
         "id": "override-bulletin",
         # Sits directly before the PNL card: the bulletin goes out first, then
         # PNL for the Office posts right after (same Friday 10am slot, Lucy 1).
-        "name": "Override Bulletin \u2192 #alphalete-sales + #alphalete-lvl1-chat + Raf's office",
+        "name": "Override Bulletin \u2192 #alphalete-sales + #alphalete-lvl1-chat",
         "creator": "Megan & Claude",
         "emoji": "\U0001F3C6",
         # Gold \u2014 matches the black/gold bulletin artwork.
@@ -4796,7 +4796,7 @@ AUTOMATED_REPORTS = [
             "Lucy posts the week's bulletin link in **#revision-emails** and "
             "@-mentions Eve. **Nothing goes out until Eve reacts "
             ":white_check_mark:** \u2014 then it posts to **#alphalete-sales + "
-            "#rafs-office-recruiting-11280** and emails both contact groups "
+            "#alphalete-lvl1-chat** and emails both contact groups "
             "(Owners/Bulletins). It **holds** if the week isn't filled yet and "
             "**never double-sends**. A checkmark from anyone but Eve does "
             "nothing.\n\n"

@@ -20,10 +20,10 @@ is deliberate — this is an outward-facing post to the whole org, and the stand
 rule is that Megan approves each send.
 
 WHAT GETS SENT
-  * Slack — the rendered PNG to #alphalete-sales, #alphalete-lvl1-chat and
-    #rafs-office-recruiting-11280,
-    posted AS LUCY (channel posts use the xoxp USER token, per
-    slack_metrics_post._client()).
+  * Slack — the rendered PNG to #alphalete-sales and #alphalete-lvl1-chat
+    (the DD bulletin ALSO posts to #rafs-office-recruiting-11280; the Override
+    one stopped on 2026-09-11), posted AS LUCY (channel posts use the xoxp USER
+    token, per slack_metrics_post._client()).
   * Email — from alphaletereporting@gmail.com to the "Alphalete Org Owners" and
     "Bulletins" contact groups, subject "Alphalete Organization Override Bulletin
     WE m.d".
@@ -73,10 +73,13 @@ from automations.override_bulletin import fill as F
 # safely; it replaces ALL the real channels (same knob as pnl_office).
 # Eve 2026-08-07: the override bulletin posts to the SAME rooms as the
 # Organization (DD) bulletin — #alphalete-lvl1-chat was the one it was missing.
+# Eve 2026-09-11: the Override bulletin STOPS posting to
+# #rafs-office-recruiting-11280 (C0AUAS88FGW) — dropped from THIS list only.
+# The DD / Organization bulletin still posts there (DD_CHANNELS below), so the
+# two lists are no longer the same rooms; don't "fix" that by re-syncing them.
 CHANNELS = [
     ("#alphalete-sales",        "C068PH3RFSM"),
     ("#alphalete-lvl1-chat",    "C09JG28CD27"),
-    ("#rafs-office-recruiting-11280", "C0AUAS88FGW"),
 ]
 # DD bulletin rooms — DD_SOURCES.md: the VA posted it to #alphalete-sales and
 # #alphalete-lvl1-chat, and Megan also lists the recruiting room. Every id

@@ -242,11 +242,13 @@ with `send.py`. PNL-for-the-office posts right after (separate —
     python -m automations.override_bulletin.send --send      # real distro
 
 * **Slack** — the rendered PNG to `#alphalete-sales` (C068PH3RFSM) and
-  `#rafs-office-recruiting` (C06881A7WLV, retired) and
-  `#rafs-office-recruiting-11280` (C0AUAS88FGW, added
-  2026-08-20), as Lucy (xoxp USER token via
-  `slack_metrics_post._client()`). `OVERRIDE_BULLETIN_CHANNEL_ID` redirects BOTH
-  to a scratch channel for a safe live test.
+  `#alphalete-lvl1-chat` (C09JG28CD27), as Lucy (xoxp USER token via
+  `slack_metrics_post._client()`). `OVERRIDE_BULLETIN_CHANNEL_ID` redirects them
+  ALL to a scratch channel for a safe live test.
+  `#rafs-office-recruiting` (C06881A7WLV) was retired 2026-08-22, and
+  `#rafs-office-recruiting-11280` (C0AUAS88FGW) was dropped 2026-09-11 (Eve) —
+  the OVERRIDE bulletin no longer posts in Raf's office room. The DD /
+  Organization bulletin still does (`DD_CHANNELS`).
 * **Email** — from alphaletereporting@ to the "Alphalete Org Owners" +
   "Bulletins" contact groups (63 addresses on 2026-07-23), subject
   "Alphalete Organization Override Bulletin WE m.d".

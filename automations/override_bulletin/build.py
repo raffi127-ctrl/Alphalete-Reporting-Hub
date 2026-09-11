@@ -88,8 +88,10 @@ EMAIL_GROUPS = ["Alphalete Org Owners", "Raf's Captain Team",
                 "Colten's Captainship"]
 # Slack targets for the posted image (informational — send.py owns the real
 # lists). #rafs-office-recruiting dropped 2026-08-22: channel being retired.
+# #rafs-office-recruiting-11280 dropped 2026-09-11 (Eve): the Override bulletin
+# no longer posts there — only the DD bulletin does.
 SLACK_CHANNELS = ["#alphalete-sales",
-                  "#rafs-office-recruiting-11280"]
+                  "#alphalete-lvl1-chat"]
 
 
 def email_subject(week_label: str) -> str:
