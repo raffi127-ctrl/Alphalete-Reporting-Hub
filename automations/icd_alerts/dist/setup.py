@@ -46,7 +46,15 @@ HERE = Path(__file__).resolve().parent
 IS_WINDOWS = platform.system() == "Windows"
 TASK_NAME = "LucyReports"
 PLIST_LABEL = "com.alphalete.lucy-reports"
-EVERY_MINUTES = 15
+# FIVE, to match the AO office. A credit check is early news -- the whole
+# value is hearing it while the rep is still on the doorstep -- and at 15
+# minutes an owner would watch the same alerts arrive three times slower than
+# the ones they already see in #alphalete-sales and reasonably call it broken.
+#
+# The cost is small: a sweep is ~30-60s against a session the profile keeps
+# warm, so this is one browser page-read every five minutes on a plugged-in
+# machine. Lucy 1 has done exactly this for the AO office all day, every day.
+EVERY_MINUTES = 5
 
 
 # ALPHALETE'S OWN COLOURS -- red #B93037, gold #C1B38F, near-black -- sampled
@@ -503,7 +511,7 @@ def first_run() -> None:
     for line in out.splitlines()[-3:]:
         if line.strip():
             say(line.strip())
-    say("      (it will try again on its own in 15 minutes — nothing is lost.)")
+    say("      (it will try again on its own in a few minutes — nothing is lost.)")
 
 
 def main() -> int:

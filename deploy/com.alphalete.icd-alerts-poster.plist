@@ -24,13 +24,17 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Every 10 minutes. The ICD laptops sweep every 15, so this is never the
-         thing holding an alert up, and the wrapper exits in milliseconds
-         outside 08:00-23:00 Mon-Sat. StartInterval rather than a calendar
-         list: 90 calendar entries would be unreadable, and a missed tick
-         matters far less than one firing at the wrong hour after a TZ drift. -->
+    <!-- Every 5 minutes, matching the laptops' own sweep so this is never the
+         thing holding an alert up. A credit check is early news and arrives
+         within a sweep of happening; a poster on a slower clock would throw
+         that away on our side after the laptop had already done the work.
+         The tick is cheap: one read of one tab, and the wrapper exits in
+         milliseconds outside 08:00-23:00 Mon-Sat. StartInterval rather than a
+         calendar list: 180 calendar entries would be unreadable, and a missed
+         tick matters far less than one firing at the wrong hour after a TZ
+         drift. -->
     <key>StartInterval</key>
-    <integer>600</integer>
+    <integer>300</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/megan/1st Claude Folder/output/logs/icd-alerts-poster.launchd.out.log</string>

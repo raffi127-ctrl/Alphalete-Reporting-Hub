@@ -89,10 +89,11 @@ ABOUT YOUR PASSWORDS
     rep has run today.
 
 AFTER IT IS INSTALLED
-    Nothing. It checks every 15 minutes between 10am and 9:30pm (4pm on
+    Nothing. It checks every few minutes between 10am and 9:30pm (4pm on
     Saturdays) and does nothing on Sundays. Just leave the computer on and
-    connected to the internet during selling hours. If it is asleep, no
-    alerts are lost -- they simply arrive when it wakes up.
+    connected to the internet during selling hours -- plugged in, so it
+    does not go to sleep. If it does sleep, no alerts are lost; they
+    simply arrive when it wakes up.
 
 IF A BROWSER WINDOW OPENS BY ITSELF
     That is Lucy signing in to OwnerVille. It has a red bar across the

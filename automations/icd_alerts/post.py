@@ -475,7 +475,7 @@ OWNER_NUDGE = (
     "  • the laptop is asleep or shut — wake it and leave the lid open\n"
     "  • it's unplugged — it has to be on power to stay awake\n"
     "  • it's off wifi\n\n"
-    "Sort any of those and it picks itself up within 15 minutes. Nothing is "
+    "Sort any of those and it picks itself up within a few minutes. Nothing is "
     "lost in the meantime. If it's none of those, just reply here.")
 
 
