@@ -196,6 +196,31 @@ DOORS_TARGET_SATURDAY = 140         # 23/hr x 6h
 FIRST_KNOCK_TARGET_MIN = 13 * 60 + 30      # 1:30 PM, minutes since midnight
 
 
+def first_knock_target(office=None, day: "dt.date | None" = None) -> int:
+    """When first knock counts as ON TIME, in minutes since midnight.
+
+    THE OFFICE'S OWN START, and its own start FOR THAT DAY -- a flat 1:30 PM
+    greened every Saturday first-knock on every board, because no office starts
+    at 1:30 on a Saturday (Megan 2026-09-12: "if the office is set to start at
+    10:15 then first knock being green at 10:15 or sooner").
+
+    `office` is anything carrying day_start / sat_start as 'HH:MM'. Without
+    one -- which is every office whose hours we do not hold yet -- this is the
+    flat target it has always been, so no existing board changes.
+    """
+    if office is None:
+        return FIRST_KNOCK_TARGET_MIN
+    saturday = bool(day) and day.weekday() == 5
+    text = getattr(office, "sat_start" if saturday else "day_start", None)
+    if not text:
+        return FIRST_KNOCK_TARGET_MIN
+    try:
+        h, m = str(text).split(":")
+        return int(h) * 60 + int(m)
+    except (TypeError, ValueError):
+        return FIRST_KNOCK_TARGET_MIN
+
+
 def doors_target(day) -> int:
     """The doors goal for `day` — Saturday is a shorter shift, so a rep who
     hits 140 on a Saturday has met the target and must read green, while the
@@ -862,6 +887,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         apps: "dict[str, int] | None" = None,
                         rate_columns: bool = True,
                         knocks_green_at: "int | None" = None,
+                        first_knock_green_at: "int | None" = None,
                         sort_by: str = "knocks",
                         base_cols: "list | None" = None,
                         out_cols: "list | None" = None) -> Path:
@@ -1034,6 +1060,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     # who was 20 doors short of what Rafael actually asks for. An explicit
     # knocks_green_at still wins, so a caller that wants its own bar keeps it.
     _goal = knocks_green_at or doors_target(target)
+    # Same shape as the doors goal: an explicit value wins, otherwise the flat
+    # org target. An office that knows its own start passes it in.
+    _fk_goal = first_knock_green_at or FIRST_KNOCK_TARGET_MIN
     _green = [(COL_TOTAL_KNOCKS,
                lambda v: v.replace(",", "").isdigit()
                and int(v.replace(",", "")) >= _goal),
@@ -1041,8 +1070,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                lambda v: _is_num(v) and float(v) >= KNOCKS_PER_HR_TARGET),
               # EARLIER is better here, unlike the other two.
               (COL_FIRST_KNOCK,
-               lambda v: (_hhmm_to_min(v) or 10 ** 6)
-               <= FIRST_KNOCK_TARGET_MIN)]
+               lambda v: (_hhmm_to_min(v) or 10 ** 6) <= _fk_goal)]
     for _col, _hit in _green:
         if _col not in cols:
             continue
@@ -1754,6 +1782,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          extra_totals=None,
                          rate_columns: bool = True,
                          knocks_green_at: "int | None" = None,
+                         first_knock_green_at: "int | None" = None,
                          sort_by: str = "knocks",
                          apps: "dict | None" = None
                          ) -> "tuple[list[Path], str]":
@@ -1792,7 +1821,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         # column Raf asks for next lands on both offices at once.
         return ([render_total_knocks(
             target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
-            knocks_green_at=knocks_green_at, sort_by=sort_by,
+            knocks_green_at=knocks_green_at,
+            first_knock_green_at=first_knock_green_at, sort_by=sort_by,
             title_suffix=title_suffix, end=end, date_text=date_text,
             extra_totals=extra_totals,
             base_cols=ENERGYWELL_KNOCKS_COLUMNS,
@@ -1814,7 +1844,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                else B2B_BOX_KNOCKS_HEADERS)
         return ([render_total_knocks(
             target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
-            knocks_green_at=knocks_green_at, sort_by=sort_by,
+            knocks_green_at=knocks_green_at,
+            first_knock_green_at=first_knock_green_at, sort_by=sort_by,
             title_suffix=title_suffix, end=end, date_text=date_text,
             base_cols=base, out_cols=out)], shape)
     elif shape == SHAPE_WIRELESS:
@@ -1833,7 +1864,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         # nothing else.
         return ([render_total_knocks(
             target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
-            knocks_green_at=knocks_green_at, sort_by=sort_by,
+            knocks_green_at=knocks_green_at,
+            first_knock_green_at=first_knock_green_at, sort_by=sort_by,
             title_suffix=title_suffix, end=end, date_text=date_text,
             extra_totals=extra_totals,
             base_cols=WIRELESS_KNOCKS_COLUMNS,
@@ -1842,6 +1874,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      rate_columns=rate_columns,
                                      knocks_green_at=knocks_green_at,
+                                     first_knock_green_at=first_knock_green_at,
                                      sort_by=sort_by, apps=apps,
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,

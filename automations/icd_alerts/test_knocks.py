@@ -293,3 +293,66 @@ class PerOfficeHoursTests(unittest.TestCase):
         when = dt.datetime(2026, 9, 12, 16, 30)
         self.assertEqual(KP.in_field_hours(self.cyrus, when),
                          self.O.in_field_hours(self.cyrus, when))
+
+
+class FirstKnockGreenTests(unittest.TestCase):
+    """First knock goes green against the OFFICE's start, on THAT day.
+
+    A flat 1:30 PM target greened every Saturday first-knock on every board,
+    because no office starts at 1:30 on a Saturday (Megan 2026-09-12: "if the
+    office is set to start at 10:15 then first knock being green at 10:15 or
+    sooner")."""
+
+    def setUp(self):
+        from automations.total_knocks import render as R
+        from automations.icd_alerts import offices as O
+        self.R, self.O = R, O
+        self.sat, self.fri = dt.date(2026, 9, 12), dt.date(2026, 9, 11)
+
+    def test_saturday_uses_the_saturday_start(self):
+        self.assertEqual(self.R.first_knock_target(self.O.get("kash"), self.sat),
+                         10 * 60 + 30)
+        self.assertEqual(self.R.first_knock_target(self.O.get("cyrus"), self.sat),
+                         11 * 60 + 15)
+
+    def test_weekdays_use_the_weekday_start(self):
+        for key in ("kash", "cyrus"):
+            self.assertEqual(
+                self.R.first_knock_target(self.O.get(key), self.fri), 13 * 60 + 30)
+
+    def test_an_office_with_no_hours_keeps_the_old_flat_target(self):
+        """Every board we do not hold hours for must be unchanged."""
+        self.assertEqual(self.R.first_knock_target(None, self.sat),
+                         self.R.FIRST_KNOCK_TARGET_MIN)
+
+    def test_a_malformed_start_falls_back_rather_than_crashing(self):
+        from automations.icd_alerts.offices import AlertOffice, Channel
+        bad = AlertOffice(key="x", owner="O", label="X", channels=(),
+                          timezone="America/Chicago", sat_start="not a time")
+        self.assertEqual(self.R.first_knock_target(bad, self.sat),
+                         self.R.FIRST_KNOCK_TARGET_MIN)
+
+
+class DoubleBoardTests(unittest.TestCase):
+    """An office posting its own board from its own laptop must drop off the
+    9 PM end-of-day roster, or its channel gets two boards -- the collision
+    that put two in #alphalete-lvl1-chat four minutes apart on 9/3."""
+
+    def test_an_approved_icd_channel_counts_as_already_served(self):
+        from automations.knocks_intraday import roster
+        from automations.icd_alerts import offices as O
+        taken = roster.disposition_channels()
+        for key in ("kash", "cyrus"):
+            # Only meaningful once that office has been approved somewhere.
+            from automations.icd_alerts import post as P
+            dests = (P.approved_knocks() or {}).get(key) or []
+            for d in dests:
+                self.assertIn(d["channel_id"], taken, key)
+
+    def test_the_eod_roster_excludes_them(self):
+        from automations.knocks_intraday import roster
+        from automations.icd_alerts import post as P
+        keys = [getattr(o, "key", o) for o in roster.enrolled("eod")]
+        for key in ("kash", "cyrus"):
+            if (P.approved_knocks() or {}).get(key):
+                self.assertNotIn(key, keys, key)

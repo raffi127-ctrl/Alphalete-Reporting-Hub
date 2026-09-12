@@ -150,6 +150,29 @@ def disposition_channels() -> set:
                     out.add(d["channel_id"].strip())
     except Exception:                                # noqa: BLE001
         pass
+
+    # THE THIRD SOURCE: offices posting their OWN board from their OWN laptop
+    # (automations/icd_alerts). Kash and Cyrus enrolled that way on 2026-09-12
+    # and are both on this module's 9 PM roster, so without this they would
+    # each have got two boards tonight -- the same collision that put two in
+    # #alphalete-lvl1-chat four minutes apart on 9/3.
+    #
+    # APPROVED ones only, which is what approved_knocks() returns. An office
+    # that has enrolled but not been signed off is not posting anything yet,
+    # and dropping it here would take away the board it does have.
+    #
+    # Best-effort like the other two, and for the reason in this docstring: a
+    # failed read leaves this module posting exactly as it did. A duplicate is
+    # noise; a board that silently stops is a report nobody notices died.
+    try:
+        from automations.icd_alerts import post as _icd
+        for dests in (_icd.approved_knocks() or {}).values():
+            for d in dests:
+                cid = (d.get("channel_id") or "").strip()
+                if cid:
+                    out.add(cid)
+    except Exception:                                # noqa: BLE001
+        pass
     return out
 
 

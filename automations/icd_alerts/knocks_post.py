@@ -212,6 +212,10 @@ def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime):
     return knocks_render.render_knocks_boards(
         day, rows=rows, out_dir=out_dir,
         title_suffix=office.label,
+        # First knock goes green against THIS office's start time on THIS day.
+        # The flat 1:30 PM target greened every Saturday first-knock on every
+        # board, because no office starts at 1:30 on a Saturday.
+        first_knock_green_at=knocks_render.first_knock_target(office, day),
         date_text="%s · %s" % (day.strftime("%a %m/%d"), _clock(now)))
 
 
