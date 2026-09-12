@@ -596,17 +596,33 @@ def mx(mgr_ref, week_ref):
     def sumifs(col):
         s = ("SUMIFS(INDEX('Daily Log'!$E:$Q,0,MATCH(VLOOKUP($B$1,%s,%d,FALSE),"
              "'Daily Log'!$E$1:$Q$1,0))" % (MX_H, col))
-        # The TOTAL row passes the whole name column ($A$4:$A$20): SUMIFS with a
-        # range criterion returns an array, and the SUM around it collapses it —
-        # so the total is the sum of the ROSTER ON SCREEN. The old '"<>"'
-        # fallback summed every manager in the log, which silently included all
-        # eleven captainship offices in the org total the moment the log grew
-        # to 28 (2026-08-21).
-        s += ",'Daily Log'!$C:$C,%s" % (mgr_ref or '$A$%d:$A$%d' % (MX_M0, MX_M0 + 16))
+        s += ",'Daily Log'!$C:$C,%s" % mgr_ref
         if week_ref:
             s += ",'Daily Log'!$B:$B,%s" % week_ref
         return "SUM(" + s + "))"
-    return ('=IFERROR(LET(n,' + sumifs(2) + ',d,' + sumifs(3) +
+
+    def member_sum(col):
+        # TOTAL row. The old shape passed the roster range ($A$4:$A$20) as a
+        # SUMIFS criterion, betting that SUM(SUMIFS(...range...)) expands per
+        # name. Google Sheets SUMIFS NEVER expands array/range criteria (unlike
+        # SUMIF) — it silently produced 0/blank, so the OFFICE TOTAL row was
+        # empty from 2026-08-21 until Carlos caught it (2026-09-11, verified
+        # against per-name sums: membership == 7,856 == truth). SUMPRODUCT +
+        # ISNUMBER(MATCH(...roster...)) sums exactly the roster ON SCREEN, so
+        # the org total still can't swallow captainship offices. Rows capped at
+        # 20000: the Daily Log holds ~7.3k rows (Sep 2026), full-column
+        # SUMPRODUCT is what would actually get slow.
+        pick = ("N(+INDEX('Daily Log'!$E$2:$Q$20000,0,MATCH(VLOOKUP($B$1,%s,"
+                "%d,FALSE),'Daily Log'!$E$1:$Q$1,0)))" % (MX_H, col))
+        member = ("ISNUMBER(MATCH('Daily Log'!$C$2:$C$20000,$A$%d:$A$%d,0))"
+                  % (MX_M0, MX_M0 + MX_MAXR - 1))
+        if week_ref:
+            return ("SUMPRODUCT(('Daily Log'!$B$2:$B$20000=%s)*%s,%s)"
+                    % (week_ref, member, pick))
+        return "SUMPRODUCT(%s*%s)" % (member, pick)
+
+    part = sumifs if mgr_ref else member_sum
+    return ('=IFERROR(LET(n,' + part(2) + ',d,' + part(3) +
             ',m,VLOOKUP($B$1,' + MX_H + ',4,FALSE),'
             'IFS(m="pct",IF(d=0,"",TEXT(n/d,"0%")),'
             'm="pctsum",IF(n+d=0,"",TEXT(n/(n+d),"0%")),'
