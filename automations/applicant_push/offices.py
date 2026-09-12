@@ -108,12 +108,14 @@ OFFICES = {
         # never show up in another office's channel.
         "post_channel": "C0B85KRS5FU",
         "post_todo": True,
-        "allow_retext": True,
+        # Texting OFF since 9/12 (Carlos) — 11580 is the only texting office.
+        "allow_retext": False,
         "remove_blocked_read": False,
         # Atef's office keeps the confirmed-uncontactable removal (a resume that
         # opened and carries no number, or no resume at all). Never fires on a
         # BLOCKED read — that is our failure, and it retries.
-        "remove_no_phone": True,
+        # 9/12 (Carlos): no-number applicants STAY in Atef's queue now, same as 11580.
+        "remove_no_phone": False,
     },
     # DIAGNOSTIC ONLY (Carlos, 2026-08-29). Added to run the same lazy-removal
     # audit we ran on Atef: restore a day of "Removed Apps at Processing" and let
