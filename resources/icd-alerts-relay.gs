@@ -125,6 +125,13 @@ function doPost(e) {
         json: JSON.stringify(chans)
       };
     }
+    var ovName = String(body.ov_name || '').trim();
+    if (ovName) {
+      // Column B is the owner as WE spell them; this is how OwnerVille does.
+      // Kept beside it rather than replacing it, because the two disagreeing
+      // is the fact worth seeing.
+      _recordOvName(office, ovName);
+    }
     // A LIST. Stored as readable text for whoever reviews it AND as JSON for
     // whatever builds the schedule -- reading a schedule back out of a
     // sentence is not something anyone should have to do.
@@ -209,6 +216,20 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson) {
     sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);
   } finally {
     lock.releaseLock();
+  }
+}
+
+function _recordOvName(office, ovName) {
+  var sh = _book().getSheetByName(CHANNELS_TAB);
+  if (!sh) return;
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim().toLowerCase() === office) {
+      if (String(rows[i][12] || '').trim() !== ovName) {
+        sh.getRange(i + 1, 13).setValue(ovName);
+      }
+      return;
+    }
   }
 }
 

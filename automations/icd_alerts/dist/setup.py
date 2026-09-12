@@ -363,6 +363,36 @@ def login_until_it_works(attempts=3):
     return False
 
 
+def ask_for_ov_name():
+    """Their name EXACTLY as OwnerVille spells it.
+
+    Their own login already lands on their own office, so nothing needs this
+    to read their knocks. It is worth asking anyway: OwnerVille spells people
+    differently from every other list we keep -- Kash Rai is "Akashdeep Rai"
+    there, and Cyrus Wade is "Cy Wade" in Slack -- and the only person who
+    knows which spelling is on their screen is the person looking at it.
+
+    Asked once, here, rather than worked out later from a name that did not
+    match anything.
+    """
+    rec = json.loads((CONFIG_DIR / "install.json").read_text())
+    if rec.get("ov_name"):
+        say("      already have your OwnerVille name: %s" % rec["ov_name"])
+        return
+    try:
+        name = ask.text(
+            "What is your name EXACTLY as it appears in OwnerVille?\n\n"
+            "Top-right of the OwnerVille page, next to your office name. "
+            "Spell it the way it is written there, even if that is not how "
+            "you normally write it.").strip()
+    except ask.Cancelled:
+        return
+    if name:
+        rec["ov_name"] = name
+        (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
+        say("      noted: %s" % name)
+
+
 def ask_for_channel():
     """Which Slack channel(s) the credit-check alerts go to. A REQUEST.
 
@@ -385,20 +415,22 @@ def ask_for_channel():
     say("      asking where the alerts should go (look for the pop-up box)...")
     channels = []
     while len(channels) < MAX_ALERT_CHANNELS:
-        prompt = ("Which Slack channel should these alerts be posted in?\n\n"
-                  "For example:  #palace-sales\n\n"
-                  "If you are not sure, leave this blank and the reporting "
-                  "team will check with you."
+        prompt = (("Which Slack channel should these alerts be posted in?\n\n"
+                   "Paste the CHANNEL ID, not the name — in Slack, click the "
+                   "channel name at the top, scroll to the bottom of the "
+                   "About tab, and copy the ID. It looks like C09AVM17PAR.\n\n"
+                   "A #name works too if you cannot find the ID. Leave it "
+                   "blank and the reporting team will check with you.")
                   if not channels else
-                  "Which channel should they ALSO be posted in?")
+                  "Which channel should they ALSO be posted in?\n\n"
+                  "Paste its channel ID, or leave blank if that is all.")
         try:
             answer = ask.text(prompt).strip()
         except ask.Cancelled:
             break
         if not answer:
             break
-        if not answer.startswith("#"):
-            answer = "#" + answer.lstrip("#")
+        answer = _tidy_channel(answer)
         if answer not in channels:
             channels.append(answer)
             say("      noted: %s" % answer)
@@ -513,6 +545,22 @@ def ask_about_knocks():
         say("      noted: no knocks board.")
 
 
+def _tidy_channel(text):
+    """A channel ID stays an ID; anything else becomes #name.
+
+    Slack IDs look like C09AVM17PAR, and prefixing one with '#' turns a value
+    that resolves in a single call into a name that resolves in none.
+    """
+    text = (text or "").strip()
+    if not text:
+        return ""
+    bare = text.lstrip("#").strip()
+    if (len(bare) >= 9 and bare[0] in "CGD" and bare.isalnum()
+            and bare.upper() == bare):
+        return bare                      # an ID, left exactly as pasted
+    return "#" + bare
+
+
 def _ask_knocks_channel(default_channel, already):
     """Which room this destination is. None means they are done."""
     options = []
@@ -539,7 +587,7 @@ def _ask_knocks_channel(default_channel, already):
         return None
     if not typed:
         return None
-    return typed if typed.startswith("#") else "#" + typed.lstrip("#")
+    return _tidy_channel(typed)
 
 
 def _ask_field_hours(rec):
@@ -689,6 +737,7 @@ def main() -> int:
     ov_ok = ownerville_until_it_works() if ok else False
 
     step(7, total, "Where your alerts should go")
+    ask_for_ov_name()
     ask_for_channel()
 
     step(8, total, "Your knocks report")

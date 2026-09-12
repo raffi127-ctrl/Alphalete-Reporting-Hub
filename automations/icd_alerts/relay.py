@@ -134,6 +134,11 @@ def payload(records: Dict[str, int], day: dt.date,
         body["requested_knocks_hours_note"] = rec.get("requested_knocks_hours_note", "")
     if any(k in body for k in ("requested_channels", "requested_knocks_destinations")):
         body["owner"] = rec.get("owner", "")
+        # How OwnerVille spells them, in their own words. OwnerVille disagrees
+        # with every other list we keep -- Kash Rai is "Akashdeep Rai" there --
+        # and the only person who can settle it is the one looking at it.
+        if rec.get("ov_name"):
+            body["ov_name"] = rec["ov_name"]
     return body
 
 
