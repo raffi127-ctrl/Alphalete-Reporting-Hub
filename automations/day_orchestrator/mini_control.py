@@ -1352,6 +1352,51 @@ def _action_install_card_scheduler(args: str) -> tuple[bool, str]:
                   f"{smoke[:110]}")
 
 
+def _action_peek(args: str) -> tuple[bool, str]:
+    """READ-ONLY: copy a text file from this machine's repo into output/logs so
+    `logtail` can read it. Writes nothing else and never leaves the repo.
+
+      peek output/_harvest_office_addresses.py
+      peek output/icd_office_addresses_unparsed/rashad-reed.html
+
+    WHY THIS EXISTS. `logtail` can only read output/logs, and the things that
+    explain a failed scrape are never there: the raw HTML a parser choked on,
+    the JSON a run left behind, the one-off script that did work once. Reading
+    those used to mean running the scrape again from a laptop, which on an
+    ownerville job means stealing the session from this very machine. Copying
+    the bytes into the one directory the existing reader can see costs nothing
+    and answers the question on the first try.
+
+    The path must resolve INSIDE the repo and the file must be text — this is a
+    diagnostic window, not a file server."""
+    raw = (args or "").strip().strip('"').strip("'")
+    if not raw:
+        return False, "usage: peek <path relative to the repo>"
+    try:
+        target = (REPO_ROOT / raw).resolve()
+        target.relative_to(REPO_ROOT.resolve())
+    except Exception:  # noqa: BLE001
+        return False, f"refused: {raw!r} is outside the repo"
+    if not target.exists() or not target.is_file():
+        return False, f"no such file: {raw}"
+    size = target.stat().st_size
+    if size > 4 * 1024 * 1024:
+        return False, f"{raw} is {size // 1024} KB — too big to copy"
+    try:
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:  # noqa: BLE001
+        return False, f"could not read {raw}: {type(e).__name__}: {e}"
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")[:60]
+    dest = REPO_ROOT / "output" / "logs" / f"peek-{slug}-{stamp}.log"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(text, encoding="utf-8")
+    lines = text.count(chr(10)) + 1
+    return True, (f"copied {raw} ({size} bytes, {lines} lines) -> "
+                  f"{dest.name} · read it with `lucy logtail {dest.stem} "
+                  f"<pattern> <n>`")
+
+
 def _action_install_night_knocks(args: str) -> tuple[bool, str]:
     """Install (or reinstall) the NIGHT KNOCKS sender on THIS machine — the
     daily knocking sheet mailed at 9 PM in each office's own clock, one thread
@@ -7628,6 +7673,7 @@ ACTIONS = {
     "restart_jiraiya": _action_restart_jiraiya,
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
+    "peek": _action_peek,
     "install_night_knocks": _action_install_night_knocks,
     "install_jiraiya": _action_install_jiraiya,
     "set_raffi_app_password": _action_set_raffi_app_password,
