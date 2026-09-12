@@ -94,6 +94,7 @@ class Reconciliation:
         self.needs_leader = 0         # new starts whose leader is gone (OBCL mark OR master list)
         self.terminated_master = {}   # type: Dict[str, str]  name -> why, from the Terminated Reps tab
         self.terminated_new = []      # type: List[str]  of those, not yet named to Raf
+        self.needs_leader_names = []  # type: List[str]  the new starts behind that count
         self.suppressed = []          # type: List[str]  on the do-not-ping list
         self.learned = {}             # type: Dict[str, str]  name -> id, from a hand-tag
 
@@ -192,6 +193,7 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
         return _assemble(monday, friday, client, ros, owed, tab,
                          _sheet_only_untaggable(monday, owed, ros)
                          if funnel["key"] == "main" else {},
+                         names_by=_names_by_interviewer(monday),
                          poster=poster)
 
     # Roster source = Aisha's weekly SCREENSHOT (the true reach-out list), read
@@ -206,9 +208,11 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
     tab = "{} screenshot".format("Aisha's" if funnel["key"] == "main"
                                  else "Tiffani's")
     sheet_only = {}  # type: Dict[str, int]
+    rows_for_names = None
     try:
         rows = screenshot_roster.fetch_roster_rows(monday.isoformat(),
                                                    poster=poster)
+        rows_for_names = rows
         owed, dropped_rows = screenshot_roster.owed_counts(rows)
         print("[roster] {}: {} new starts across {} interviewers"
               .format(tab, sum(owed.values()), len(owed)))
@@ -243,10 +247,13 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
                   "snapshot for {} instead ({} new starts across {} interviewers)."
                   .format(exc, monday.isoformat(), sum(snap_owed.values()),
                           len(snap_owed)))
+            # The snapshot carries counts only — new-start names never go in
+            # it, the repo is public — so the names come off the sheet here.
             return _assemble(monday, friday, client, ros, snap_owed,
                              tab + " (snapshot)",
                              _sheet_only_untaggable(monday, snap_owed, ros)
                              if funnel["key"] == "main" else {},
+                             names_by=_names_by_interviewer(monday),
                              poster=poster)
         if not allow_sheet_roster:
             # "This week's roster isn't up yet" is WAITING, not broken — run.py
@@ -275,7 +282,41 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
         owed = obcl.counts_by_interviewer(starts)
 
     return _assemble(monday, friday, client, ros, owed, tab, sheet_only,
+                     names_by=_names_by_interviewer(monday, rows_for_names),
                      poster=poster)
+
+
+def _names_by_interviewer(monday, screenshot_rows=None) -> Dict[str, List[str]]:
+    """interviewer -> [new start names], for naming who needs covering.
+
+    Prefers the screenshot (the roster of record). Falls back to the OBCL
+    sheet, and MERGES it in either way: a leader can be removed off a sheet-only
+    row, and then the screenshot has no name to offer. Advisory — a failure here
+    costs the names, not the alert, so the count still stands on its own.
+    """
+    out = {}  # type: Dict[str, List[str]]
+
+    def add(interviewer, name):
+        key = (interviewer or "").strip()
+        name = (name or "").strip()
+        if key and name and name not in out.setdefault(key, []):
+            out[key].append(name)
+
+    for r in screenshot_rows or []:
+        from automations.new_start_followup import screenshot_roster
+        if screenshot_roster.is_dropped(r):
+            continue
+        add(r.get("interviewer"),
+            " ".join(x for x in (r.get("name"), r.get("last_name")) if x))
+    try:
+        _, _, starts = obcl.read_new_starts(monday)
+        for ns in starts:
+            if not ns.dropped and not ns.self_assigned:
+                add(ns.interviewer, ns.name)
+    except Exception as exc:  # noqa: BLE001
+        print("[roster] couldn't read the sheet for new-start names ({})."
+              .format(str(exc)[:120]))
+    return out
 
 
 def _phone_overlay():
@@ -291,6 +332,7 @@ def _phone_overlay():
 
 
 def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
+              names_by=None,
               poster=None) -> Reconciliation:
     """Join the chosen roster against the thread. Shared by every roster source
     so they can't drift apart."""
@@ -313,8 +355,21 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
     # produce a tag, a text, or an unable-to-tag line — they're counted and Raf
     # is @'d to assign a leader. Handled here so every roster source
     # (screenshot, snapshot, sheet fallback, sheet cross-read) gets it.
+    names_by = names_by or {}
+
+    def _claim_names(key):
+        """The new starts behind a leader we're removing — Raf needs to know
+        WHICH ones (Megan 2026-09-06: "add the new start's name to this line so
+        he knows which one"). An OBCL row literally marked "Terminated" has no
+        leader name to key on, so those come back empty and the count still
+        covers them."""
+        for name in names_by.get(key, []) or []:
+            if name and name not in rec.needs_leader_names:
+                rec.needs_leader_names.append(name)
+
     for src in (owed, sheet_only):
         for key in [k for k in src if roster_mod._norm(k) == "terminated"]:
+            _claim_names(key)
             rec.needs_leader += src.pop(key)
 
     # CHECKPOINT 2 — the master "Terminated Reps" tab (Megan 2026-09-05: "they
@@ -342,6 +397,7 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
                        else gone_table.get(roster_mod._norm(key)))
                 if hit is None:
                     continue
+                _claim_names(key)
                 rec.needs_leader += src.pop(key)
                 rec.terminated_master[key] = hit.describe()
         # Named in Slack only the first time (see _needs_leader_lines). Computed
@@ -472,6 +528,9 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
     # Their new starts need somebody too. Counted here rather than announced:
     # see _departed_lines. A terminated leader can't double-count — those rows
     # were popped from `owed` before any status row existed.
+    for st in rec.departed:
+        for spelling in [st.leader.name] + list(st.leader.obcl_names or []):
+            _claim_names(spelling)
     rec.needs_leader += sum(st.owed for st in rec.departed)
     return rec
 
@@ -736,6 +795,11 @@ def _needs_leader_lines(rec: Reconciliation) -> List[str]:
                "reach-out.".format(
                    RAF_SLACK_ID, n, "" if n == 1 else "s",
                    "s" if n == 1 else "")]
+    # The NEW STARTS by name — never the leader's. Naming an incoming hire so
+    # Raf knows who to cover is the point; naming the person who left is what
+    # we removed from this post.
+    for name in sorted(rec.needs_leader_names):
+        out.append("   •  {}".format(name))
     return out
 
 
