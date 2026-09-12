@@ -362,6 +362,24 @@ def _banner_row(g, hr: int) -> int:
     return max(1, hr - 2)
 
 
+def _last_block_end(banner, hdr, col: int) -> int:
+    """One past the last column of the FINAL day block (Sunday).
+
+    WHY THIS EXISTS. Every other block stops at the next day name; the last one
+    has none, so the old code guessed `col + 9`. That guess was a hair wider
+    than the 8-column block and broke the moment the Talk-To trio made it 11:
+    Sunday was cut off at 'AVG app per TT', losing Cx and the Roll Call for the
+    one day no other block covers. Sunday ends at its own Roll Call, and failing
+    that where the per-rep attribute banner picks up."""
+    for c in range(col, len(hdr) + 1):
+        if c - 1 < len(hdr) and hdr[c - 1].strip().lower() == ROLL_CALL:
+            return c + 1
+    for c in range(col + 1, len(banner) + 1):
+        if c - 1 < len(banner) and banner[c - 1]:
+            return c
+    return len(hdr) + 1
+
+
 def _day_blocks(g, hr: int) -> list:
     """One DayBlock per weekday, located by the day name on the banner row.
 
@@ -380,8 +398,8 @@ def _day_blocks(g, hr: int) -> list:
     hdr = [(c or "").strip() for c in g[hr - 1]]
     out = []
     for n, (col, day) in enumerate(starts):
-        end = starts[n + 1][0] if n + 1 < len(starts) else min(col + 9,
-                                                               len(hdr) + 1)
+        end = (starts[n + 1][0] if n + 1 < len(starts)
+               else _last_block_end(banner, hdr, col))
         measures, roll = [], 0
         for c in range(col, end):
             name = hdr[c - 1] if c - 1 < len(hdr) else ""

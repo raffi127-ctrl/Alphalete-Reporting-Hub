@@ -1,4 +1,8 @@
-"""Render each section of the daily post to a PNG, exactly as Jolie posts them.
+"""Render each section of the daily post to a PNG.
+
+This IS the morning post now: Jolie left the company (2026-08-13) and nobody
+posts these by hand any more. The framing still matches what she used to send,
+because that is what the team reads every morning.
 
 Every image is a Google-Sheets PDF-export of the 'Sales Board WE m.d' tab, but the
 tab's live filter/column-collapse drifts all day, so we NEVER shoot the live tab.
@@ -38,7 +42,7 @@ import io
 import re
 import time
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 import requests
 from google.auth.transport.requests import Request as _GARequest
@@ -54,6 +58,12 @@ TMP_TAB = "_auto_screenshot_tmp"
 DAY_NAMES = {"MON", "TUES", "WED", "THU", "FRI", "SAT", "SUN"}
 # the New Starts table spells its days out and stops at Saturday (Eve 8/31)
 NEW_START_DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+# The day-block columns the morning photo opens up, matched on the row-3 header.
+# 'EN' and 'TK' are both here because the rename went tab by tab. The Talk-To
+# trio ("Total Talk-To's", "% of TT's per knock", "AVG app per TT") is
+# deliberately ABSENT -- an unknown header is simply not photographed, which is
+# how a new column stops changing the post on its own.
+DAY_PHOTO_HEADERS = ("apps", "int", "int up", "dtv", "nl", "en", "tk", "cx")
 
 
 # ---- small helpers -------------------------------------------------------
@@ -124,9 +134,16 @@ def _sun_apps_col(grid) -> int:
                 and _cell(grid, 2, c).strip().lower() == "apps")
 
 
-def _day_block(grid, day: dt.date) -> Tuple[int, int]:
-    """(start,end) 0-based cols of `day`'s 7-metric block (Apps..Cx), by matching
-    the day-of-month header (row 2) under a day-name header (row 1)."""
+class DayCols(NamedTuple):
+    """The columns of one day block, each found by its row-3 header."""
+    apps: int                    # the day's Apps column -- sort + filter anchor
+    metrics: List[int]           # what the photo opens up, in board order
+    roll_call: Optional[int]     # the day's Roll Call, or None if the tab has none
+
+
+def _day_span(grid, day: dt.date) -> Tuple[int, int]:
+    """(start,end) 0-based cols of `day`'s WHOLE block: its Apps column through
+    the column before the next day's banner (the last column, for Sunday)."""
     dom = str(day.day)
     start = next((c for c in range(len(grid[1]))
                   if _cell(grid, 1, c).strip() == dom
@@ -134,11 +151,36 @@ def _day_block(grid, day: dt.date) -> Tuple[int, int]:
                   and _cell(grid, 0, c).strip() in DAY_NAMES), None)
     if start is None:
         raise RuntimeError(f"no day block for {day} (day-of-month {dom})")
-    return start, start + 6
+    end = next((c for c in range(start + 1, len(grid[0]))
+                if _cell(grid, 0, c).strip() in DAY_NAMES), len(grid[0])) - 1
+    return start, end
+
+
+def _day_block(grid, day: dt.date) -> DayCols:
+    """`day`'s columns, located BY HEADER -- never by counting across.
+
+    WHY NOT `start + 6`. The block was `Apps Int Int Up DTV NL TK Cx Roll Call`
+    until the Talk-To trio landed between TK and Cx and made it eleven wide.
+    Six across then landed on 'Total Talk-To's', and 'Roll Call' was read off
+    the column where '% of TT's per knock' now sits -- so the morning post
+    silently dropped Cx AND the roll call. A header lookup survives the next
+    column somebody inserts; an offset does not.
+
+    The trio is NOT in the photo (see DAY_PHOTO_HEADERS): widening what goes out
+    every morning is Rafael's call, not a side effect of a rename."""
+    start, end = _day_span(grid, day)
+    metrics = [c for c in range(start, end + 1)
+               if _cell(grid, 2, c).strip().lower() in DAY_PHOTO_HEADERS]
+    if not metrics:
+        raise RuntimeError(f"day block for {day} has no recognisable metric "
+                           f"header in row 3 (cols {start}..{end})")
+    rc = next((c for c in range(start, end + 1)
+               if _cell(grid, 2, c).strip().lower() == "roll call"), None)
+    return DayCols(apps=start, metrics=metrics, roll_call=rc)
 
 
 def last_completed_day(today: dt.date) -> dt.date:
-    """The prior day -- what Jolie's morning post shows."""
+    """The prior day -- what the morning post shows."""
     return today - dt.timedelta(days=1)
 
 
@@ -533,13 +575,12 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
                 subtotal_cols += day_apps
                 filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
             else:                                            # normal day: this day opened up + Roll Call
-                d0, d1 = _day_block(grid, last_completed_day(today))
-                show |= set(range(d0, d1 + 1))
-                subtotal_cols += list(range(d0, d1 + 1))
-                rc = d1 + 1                                  # Roll Call sits right after the day's Cx
-                if _cell(grid, 2, rc).strip().lower() == "roll call":
-                    show.add(rc)
-                filt_specs.append({"columnIndex": d0, "filterCriteria": {"hiddenValues": ["F", "T"]}})
+                dc = _day_block(grid, last_completed_day(today))
+                show |= set(dc.metrics)
+                subtotal_cols += dc.metrics
+                if dc.roll_call is not None:                 # by header, not "the column after Cx"
+                    show.add(dc.roll_call)
+                filt_specs.append({"columnIndex": dc.apps, "filterCriteria": {"hiddenValues": ["F", "T"]}})
             # identity columns through Leadership Status (Trainer / Field Status / Team / Leadership)
             for lbl in ("Trainer", "Field Status", "Team", "Leadership Status"):
                 c = _hdr1(lbl)
@@ -557,14 +598,14 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             export_rng = f"A1:{col_letter(max(show))}{tot_row}"
 
         elif kind == "highrollers":
-            d0, d1 = _day_block(grid, last_completed_day(today))
-            show = {0, 1, 2} | set(range(d0, d1 + 1))        # #, name, day block (no running APPS)
-            export_rng = f"A1:{col_letter(d1)}{tot_row}"
-            sort_col = d0                                    # sort by the day's Apps
-            filt_specs.append({"columnIndex": d0, "filterCriteria": {
+            dc = _day_block(grid, last_completed_day(today))
+            show = {0, 1, 2} | set(dc.metrics)               # #, name, day block (no running APPS)
+            export_rng = f"A1:{col_letter(max(dc.metrics))}{tot_row}"
+            sort_col = dc.apps                               # sort by the day's Apps
+            filt_specs.append({"columnIndex": dc.apps, "filterCriteria": {
                 "condition": {"type": "NUMBER_GREATER",
                               "values": [{"userEnteredValue": "0"}]}}})
-            subtotal_cols = list(range(d0, d1 + 1))
+            subtotal_cols = list(dc.metrics)
 
         elif kind == "ranking":
             show = set(range(0, 10))                         # A..J (# name + running block)

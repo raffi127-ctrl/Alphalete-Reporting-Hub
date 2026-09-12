@@ -135,6 +135,9 @@ DAY_OFF    = 7
 # (2026-09-01 — it re-ranked the whole final August board). 'TK' is deliberately
 # absent from this map: an unmapped header scores NOTHING instead of guessing.
 DAY_COL_HEADERS = {"int": "int", "dtv": "dtv", "nl": "nl", "en": "energy"}
+# Row-1 banner that opens each day block. The block runs from its banner to the
+# next one; DAY_OFF is only a last-resort fallback for a tab with no banner.
+DAY_NAMES = {"MON", "TUES", "WED", "THU", "FRI", "SAT", "SUN"}
 
 def norm(name):
     n = re.sub(r"\([^)]*\)", " ", str(name))
@@ -261,16 +264,24 @@ def find_chrome():
             return c
     sys.exit("ERROR: Google Chrome not found. Install Chrome, then re-run.")
 
-def day_block_cols(hdr, rc):
+def day_block_cols(hdr, rc, start=None):
     """The scored columns of the day block closing at Roll Call column `rc`,
     located by HEADER TEXT (see DAY_COL_HEADERS) -> {'int','dtv','nl','energy'}.
 
     A metric whose header isn't in the block is simply ABSENT from the result
     (the caller scores it 0) — that's how a renamed column stops paying points
     for the wrong number. Only when the block has NO recognizable header at all
-    (an old tab, a blank header row) do we fall back to the fixed offsets."""
+    (an old tab, a blank header row) do we fall back to the fixed offsets.
+
+    `start` is the block's first column, taken from the row-1 day banner. WHY IT
+    IS A PARAMETER: the window used to be a fixed `rc - DAY_OFF`, i.e. seven
+    columns back. When the Talk-To trio widened the block to eleven, the window
+    no longer reached Apps/Int/Int Up — `int` fell out of the map and every rep
+    scored 0 for interior sales, silently. Scanning the REAL block instead of a
+    guessed width is the whole fix."""
+    lo = max(0, rc - DAY_OFF) if start is None else max(0, start)
     out = {}
-    for j in range(max(0, rc - DAY_OFF), rc):
+    for j in range(lo, rc):
         c = hdr[j] if j < len(hdr) else None
         if isinstance(c, str):
             key = DAY_COL_HEADERS.get(c.strip().lower())
@@ -323,11 +334,24 @@ def read_sales(sales_file):
         daterow = rows[shr - 1]
         label2date = {d.day: d for d in dates}
 
+        # Each day block opens at its row-1 banner (MON..SUN) and closes at its
+        # Roll Call. Pairing them this way is width-agnostic: the block can grow
+        # from 8 columns to 11 and both the metric scan and the date label still
+        # land on the right cells.
+        banner = rows[shr - 2] if shr >= 2 else []
+        day_starts = [j for j, c in enumerate(banner)
+                      if isinstance(c, str) and c.strip().upper() in DAY_NAMES]
+        def _block_start(rc, _st=day_starts):
+            prior = [j for j in _st if j < rc]
+            return prior[-1] if prior else None
+
         rc_date = {}
         rc_cmap = {}
         for i, rc in enumerate(rc_cols):
-            rc_cmap[rc] = day_block_cols(rows[shr], rc)
-            lbl = daterow[rc - DAY_OFF] if rc - DAY_OFF >= 0 else None
+            start = _block_start(rc)
+            rc_cmap[rc] = day_block_cols(rows[shr], rc, start)
+            lbl_col = start if start is not None else rc - DAY_OFF
+            lbl = daterow[lbl_col] if 0 <= lbl_col < len(daterow) else None
             dt = None
             if lbl is not None:
                 try:
