@@ -171,7 +171,8 @@ def write_install_json():
     return rec
 
 
-def _ask_one(filename, title, user_label, user_field, pass_field, required):
+def _ask_one(filename, title, user_label, user_field, pass_field, required,
+             replace=False):
     """Ask for one login in a real dialog box, or keep the one already saved.
 
     ONE LOGIN AT A TIME, each in its own box naming the system it belongs to.
@@ -180,7 +181,7 @@ def _ask_one(filename, title, user_label, user_field, pass_field, required):
     why nothing works.
     """
     path = CONFIG_DIR / filename
-    if path.exists():
+    if path.exists() and not replace:
         say("      A %s login is already saved." % title)
         return True
 
@@ -245,12 +246,67 @@ def confirm_office(rec):
     raise SystemExit(1)
 
 
-def ask_for_login():
+def ask_for_login(replace=False):
+    """Ask for both logins, keeping anything already saved unless told not to.
+
+    ON A RE-RUN, ASK ONCE WHETHER TO KEEP THEM. Only the SaraPlus password is
+    checked during setup, so a mistyped OwnerVille one is invisible here and
+    surfaces days later as a knocks board that never appears. Re-running the
+    installer is the only instruction we give anybody, and it has to be able
+    to fix either login -- otherwise "run it again" is advice that cannot
+    work, which is worse than no advice.
+    """
+    if not replace:
+        saved = [f for f in ("saraplus-creds.json", "ownerville-creds.json")
+                 if (CONFIG_DIR / f).exists()]
+        if saved:
+            try:
+                pick = ask.choose(
+                    "You already have your logins saved on this computer.\n\n"
+                    "Keep them, or type them in again?",
+                    ["Keep the ones I have", "Let me type them again"])
+                replace = pick.startswith("Let me")
+            except ask.Cancelled:
+                pass
+
     sara = _ask_one("saraplus-creds.json", "SaraPlus", "email",
-                    "email", "password", required=True)
+                    "email", "password", required=True, replace=replace)
     _ask_one("ownerville-creds.json", "OwnerVille", "username",
-             "username", "password", required=False)
+             "username", "password", required=False, replace=replace)
     return sara
+
+
+def login_until_it_works(attempts=3):
+    """Ask, check against the real SaraPlus, and offer another go on a typo.
+
+    A PASSWORD IS TYPED WRONG SOMETIMES, and the only moment anybody is in a
+    position to fix it is the moment they are sitting there being told. The
+    first version saved whatever they typed, reported the failure at the very
+    end, and then -- because a saved login is kept on the next run -- gave
+    them no way to correct it at all. The fix was to delete a file they would
+    never find.
+
+    So the check happens here, in a loop, while they still have the dialog
+    open. Re-entering replaces what is stored, because the reason we are
+    asking again is that what is stored is wrong.
+    """
+    ask_for_login()
+    for attempt in range(1, attempts + 1):
+        if check_account():
+            return True
+        if attempt == attempts:
+            break
+        try:
+            again = ask.choose(
+                "SaraPlus did not accept that email and password.\n\n"
+                "Would you like to type it again?",
+                ["Yes, let me try again", "No, I will sort it out later"])
+        except ask.Cancelled:
+            return False
+        if not again.startswith("Yes"):
+            return False
+        ask_for_login(replace=True)
+    return False
 
 
 def ask_for_channel():
@@ -575,8 +631,7 @@ def main() -> int:
     confirm_office(rec)
 
     step(6, total, "Your logins")
-    ask_for_login()
-    ok = check_account()
+    ok = login_until_it_works()
 
     step(7, total, "Where your alerts should go")
     ask_for_channel()
@@ -606,9 +661,11 @@ def main() -> int:
         say("  %s%sAll set.%s" % (BOLD, GOLD, OFF))
     else:
         done = ("Everything is installed, but signing in to SaraPlus did not "
-                "work.\n\nPlease tell the reporting team — they can sort it "
-                "out from their end. Nothing else needs doing on this "
-                "computer.")
+                "work.\n\nIf it was a typo, just open this installer again "
+                "and it will ask for your login.\n\nIf you are sure the "
+                "password is right, tell the reporting team — it may be that "
+                "your SaraPlus account cannot see reports, which they have to "
+                "fix from their end.")
         say("  %s%sInstalled, but SaraPlus did not check out.%s"
             % (BOLD, GOLD, OFF))
     say("  %s%s%s" % (RED, "\u2501" * 58, OFF))
