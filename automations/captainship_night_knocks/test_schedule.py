@@ -30,6 +30,25 @@ def at_central(y, m, d, hh, mm=0) -> dt.datetime:
     return dt.datetime(y, m, d, hh, mm, tzinfo=CT).astimezone(dt.timezone.utc)
 
 
+def replay(roster, day=(2026, 9, 7), hours=range(17, 24)) -> dict:
+    """{hour: [Due, ...]} for a night played tick by tick, the way run.tick
+    does — each hour sees the markers the hours before it already sent.
+
+    Passing `done` is not a detail of the test, it is the contract:
+    GRACE_MIN is an hour (a wave still owed at 9:40 because Lucy 3 was busy
+    must still go out), so "what fires at 9 PM" is only a well-formed question
+    about a night whose 8 PM wave has already gone. An UNSENT wave staying due
+    is the recovery this module is built for — `still_owed_an_hour_later`
+    below is that case, asserted on purpose.
+    """
+    done, fired = set(), {}
+    for hh in hours:
+        got = S.due(at_central(day[0], day[1], day[2], hh), roster, done=done)
+        fired[hh] = got
+        done |= {d.marker for d in got}
+    return fired
+
+
 class RafsExample(unittest.TestCase):
     """8 CEN Florida -> 9 CEN Texas -> 11 CEN California, same night."""
 
@@ -40,7 +59,7 @@ class RafsExample(unittest.TestCase):
 
     def _one(self, hh):
         # Monday 2026-09-07 is Labor Day but a working weekday for us (Mon-Sat).
-        return S.due(at_central(2026, 9, 7, hh), ROSTER)
+        return replay(ROSTER)[hh]
 
     def test_eight_central_is_the_florida_wave(self):
         got = self._one(20)
@@ -77,10 +96,11 @@ class Idempotency(unittest.TestCase):
 
     def test_a_sent_wave_does_not_fire_twice(self):
         now = at_central(2026, 9, 7, 21)
-        first = S.due(now, ROSTER)
+        done = {d.marker for d in replay(ROSTER, hours=[20])[20]}
+        first = S.due(now, ROSTER, done=done)
         self.assertEqual(len(first), 1)
         again = S.due(now + dt.timedelta(minutes=5), ROSTER,
-                      done={first[0].marker})
+                      done=done | {first[0].marker})
         self.assertEqual(again, [], "a second tick re-sent the same reply")
 
     def test_marker_uses_the_icds_own_date_not_utc(self):
@@ -91,12 +111,20 @@ class Idempotency(unittest.TestCase):
         self.assertGreater(now.astimezone(dt.timezone.utc).day, 0)
 
     def test_late_tick_inside_grace_still_fires(self):
-        got = S.due(at_central(2026, 9, 7, 21, S.GRACE_MIN), ROSTER)
-        self.assertEqual(len(got), 1)
+        late = at_central(2026, 9, 7, 21) + dt.timedelta(minutes=S.GRACE_MIN)
+        got = S.due(late, ROSTER)
+        self.assertEqual([d.label for d in got], ["Central"])
 
     def test_tick_past_grace_does_not_fire(self):
-        got = S.due(at_central(2026, 9, 7, 21, S.GRACE_MIN + 5), ROSTER)
-        self.assertEqual(got, [])
+        late = at_central(2026, 9, 7, 21) + dt.timedelta(minutes=S.GRACE_MIN + 5)
+        self.assertEqual(S.due(late, ROSTER), [])
+
+    def test_still_owed_an_hour_later_is_the_whole_point_of_the_grace(self):
+        """Lucy 3 was busy with the 9 PM intraday boards; the wave must still
+        go out when the machine frees up, not be skipped for the night."""
+        now = at_central(2026, 9, 7, 21) + dt.timedelta(minutes=40)
+        got = S.due(now, ROSTER)          # nothing marked done: nothing sent
+        self.assertEqual([d.label for d in got], ["Central"])
 
 
 class MountainSplitsInSummer(unittest.TestCase):
@@ -112,8 +140,8 @@ class MountainSplitsInSummer(unittest.TestCase):
         self.addCleanup(p.stop)
 
     def test_september_denver_and_phoenix_fire_an_hour_apart(self):
-        at_10 = S.due(at_central(2026, 9, 7, 22), self.ROSTER)
-        at_11 = S.due(at_central(2026, 9, 7, 23), self.ROSTER)
+        night = replay(self.ROSTER)
+        at_10, at_11 = night[22], night[23]
         self.assertEqual([list(d.icds) for d in at_10], [["Den Ver"]])
         self.assertEqual([list(d.icds) for d in at_11], [["Phoe Nix"]])
 
@@ -143,7 +171,8 @@ class Weekends(unittest.TestCase):
         self.addCleanup(p.stop)
 
     def test_saturday_still_sends(self):
-        self.assertEqual(len(S.due(at_central(2026, 9, 5, 21), ROSTER)), 1)
+        got = replay(ROSTER, day=(2026, 9, 5))[21]
+        self.assertEqual([d.label for d in got], ["Central"])
 
     def test_sunday_night_sends_nothing(self):
         self.assertEqual(S.due(at_central(2026, 9, 6, 21), ROSTER), [])

@@ -31,11 +31,16 @@ from automations.captainship_night_knocks import zones as Z
 # it is local and not one org-wide fire.
 HOUR, MINUTE = 21, 0
 
-# How late a wave may still go out. Covers the scheduler tick plus a busy box.
-# MUST be >= the tick or a wave can fall between two passes and never fire.
-# Deliberately smaller than knocks_intraday's sibling constant is NOT the case:
-# keep them equal, because both are sized against the same launchd interval.
-GRACE_MIN = 15
+# How late a wave may still go out. MUST be >= the tick or a wave can fall
+# between two passes and never fire.
+#
+# AN HOUR, NOT FIFTEEN MINUTES, and the reason is the machine rather than the
+# clock: this runs on Lucy 3, where `knocks_intraday` fires its own 9 PM eod
+# boards on the SAME instant and holds the ownerville session while it pulls
+# eleven offices. `run._busy()` stands down for that job and retries on a later
+# tick, which is only useful if the window is still open when it finishes. A
+# wave that goes out at 9:20 is late; a wave that never goes out is a bug.
+GRACE_MIN = 60
 
 # Python weekday(): Mon=0 … Sun=6.
 WORKING_WEEKDAYS = frozenset({0, 1, 2, 3, 4, 5})

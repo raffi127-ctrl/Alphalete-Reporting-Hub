@@ -98,6 +98,23 @@ def captain_rosters(only: Optional[str] = None) -> Dict[str, List[str]]:
     return out
 
 
+def _is_master(icd: str, aliases_raw) -> bool:
+    """Is this ICD the account the session is already logged in as (Raf)?
+
+    Resolved through the alias table against the wkd RAF row, exactly like
+    `captainship_drafts.knock_dispo_images.owner_cfgs`, so a re-spelling on the
+    Org Sales Board can never make the two reports disagree about who the
+    master is.
+    """
+    try:
+        from automations.focus_office_att.aliases import (
+            alias_to_canonical, _norm_name)
+        from automations.weekly_knock_dispositions.offices import RAF as _RAF
+        return _norm_name(alias_to_canonical(icd, aliases_raw)) ==             _norm_name(_RAF["name"])
+    except Exception:  # noqa: BLE001 — an unreadable alias sheet is not a master
+        return False
+
+
 def harvest(icds: List[str], *, logfn=print) -> Dict[str, dict]:
     """Impersonate each ICD, read its address. One failure never aborts the rest."""
     from automations.focus_office_att.aliases import load_aliases
@@ -118,14 +135,26 @@ def harvest(icds: List[str], *, logfn=print) -> Dict[str, dict]:
             rec = {"icd": icd, "city": None, "state": None, "zip": None,
                    "zone": None, "confidence": "unknown", "note": ""}
             try:
+                # THE MASTER IS NOT IMPERSONATED. The rhidalgo login IS Raf's
+                # office, so searching Office Access for his own name finds
+                # nothing and the ICD would land in the unresolved pile — with
+                # the captain's own office missing from his own email. Same
+                # master-vs-impersonate split knock_dispo_images.owner_cfgs
+                # makes, and decided the same way so the two cannot disagree.
+                master = _is_master(icd, aliases_raw)
                 if not _navigate_to_office_access(page):
                     raise RuntimeError("could not reach Office Access (p=901)")
-                rqst, reason = _find_owner_and_impersonate(
-                    page, icd, aliases_raw)
-                if not rqst:
-                    # The same two shapes the knock boards already classify:
-                    # a missing name is an alias problem, a denial is access.
-                    raise RuntimeError(reason)
+                if not master:
+                    rqst, reason = _find_owner_and_impersonate(
+                        page, icd, aliases_raw)
+                    if not rqst:
+                        # The same two shapes the knock boards already
+                        # classify: a missing name is an alias problem, a
+                        # denial is access.
+                        raise RuntimeError(reason)
+                # `rqst` is the SESSION token, not an office id — read it off
+                # whatever page we are on now. Impersonated or not, p=767 then
+                # describes the office the session is currently acting as.
                 page.goto(COMPANY_INFO % page_rqst(page), timeout=60000)
                 addr = parse_address(page.inner_text("body"))
                 if not addr:

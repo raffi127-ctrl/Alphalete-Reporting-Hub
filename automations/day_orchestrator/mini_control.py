@@ -1352,6 +1352,80 @@ def _action_install_card_scheduler(args: str) -> tuple[bool, str]:
                   f"{smoke[:110]}")
 
 
+def _action_install_night_knocks(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the NIGHT KNOCKS sender on THIS machine — the
+    daily knocking sheet mailed at 9 PM in each office's own clock, one thread
+    per captain filled in wave by wave (Raf, #l10-alphalete 2026-09-07).
+
+    INSTALL IT ON LUCY 3. It impersonates ICDs in ownerville, which needs that
+    machine's session, and it deliberately stands aside while knocks_intraday's
+    own 9 PM boards are running there.
+
+    Ships in SAMPLE mode: Raf's captainship only, mailed to Raf and Eve only,
+    which is also the only mode that trusts the harvested timezone table. Pass
+    `live` to install the real send instead — and read
+    captainship_night_knocks/zones.py first, because live refuses every zone a
+    person has not confirmed.
+
+    Run `update` + `restart_poller` first so this action exists in the running
+    poller. Read a night with `lucy logtail night_knocks_<YYYYMMDD>`."""
+    uid = os.getuid()
+    label = "com.alphalete.night-knocks"
+    live = (args or "").strip().lower() == "live"
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "night_knocks.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        if live:
+            # The committed args are the sample's. Live is the same job with
+            # the recipient allowlist off and harvested zones refused.
+            text = text.replace("<string>--sample</string>",
+                                "<string>--live</string>")
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    try:
+        os.chmod(wrapper, 0o755)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Smoke test in PLAN mode: it reads the roster and the zone table and says
+    # what tonight would send, and it opens NO browser and mails nobody. That
+    # is the half that has to work on this machine; the browser half is proven
+    # every night by the intraday boards.
+    smoke_ok, smoke = _run_cmd(
+        [sys.executable, "-u", "-m", "automations.captainship_night_knocks.run",
+         "--plan"] + ([] if live else ["--sample"]),
+        timeout_s=300, log_name="night-knocks-install-smoke.log")
+    if not smoke_ok:
+        return False, f"smoke test failed — NOT installed: {smoke[:150]}"
+
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}",
+                           str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True)
+    if boot.returncode != 0:
+        return False, (f"smoke ok; bootstrap FAILED: "
+                       f"{(boot.stdout or '').strip()[:150]}")
+    return True, (f"installed {label} · mode={'LIVE' if live else 'SAMPLE'} · "
+                  f"{smoke[:110]}")
+
+
 def _action_install_jiraiya(args: str) -> tuple[bool, str]:
     """Install 'Jiraiya' on THIS machine: the always-on /dd Socket Mode listener
     (com.alphalete.jiraiya-bot, KeepAlive) + the 3am nightly DD pre-harvest
@@ -7554,6 +7628,7 @@ ACTIONS = {
     "restart_jiraiya": _action_restart_jiraiya,
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
+    "install_night_knocks": _action_install_night_knocks,
     "install_jiraiya": _action_install_jiraiya,
     "set_raffi_app_password": _action_set_raffi_app_password,
     "set_alphalete_app_password": _action_set_alphalete_app_password,

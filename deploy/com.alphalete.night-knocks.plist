@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.alphalete.night-knocks</string>
+    <!-- PATHS ARE MEGAN'S LAPTOP and are rewritten at install time:
+         `lucy install_night_knocks` on Lucy 3 swaps them for that machine's
+         repo root. A plist pointing at a directory that isn't there fails
+         silently and nothing ever fires. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/night_knocks.sh</string>
+        <string>--tick</string>
+        <string>--send</string>
+        <string>--sample</string>
+    </array>
+    <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
+    <!-- EVERY 5 MINUTES, and the wave times are NOT here: they are 9 PM in
+         each office's own zone (schedule.py), which no calendar entry can
+         express — 9 PM Eastern and 9 PM Central are different instants.
+
+         An interval job also sidesteps the launchd zone-caching drift that has
+         fired jobs +2h on this fleet: there is no calendar to cache, and the
+         office-local arithmetic happens in Python against real tz data.
+
+         schedule.GRACE_MIN (60) must stay >= this interval or a wave can fall
+         between two passes and never fire. It is an hour rather than minutes
+         because knocks_intraday's own 9 PM boards hold this machine's
+         ownerville session on the same instant — run._busy() stands aside and
+         the wave goes out on a later tick. -->
+    <key>StartInterval</key><integer>300</integer>
+    <key>StandardOutPath</key><string>/tmp/com.alphalete.night-knocks.out</string>
+    <key>StandardErrorPath</key><string>/tmp/com.alphalete.night-knocks.err</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>

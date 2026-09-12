@@ -36,6 +36,8 @@ runs, and `waves()` will simply not emit an empty one.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 # ICD/owner name (as the Org Sales Board roster spells it) -> IANA zone.
@@ -93,6 +95,73 @@ def normalize(name: str) -> str:
 
 _BY_NORM = {normalize(k): v for k, v in ICD_TIMEZONES.items()}
 
+# ---------------------------------------------------------------------------
+# THE HARVESTED LAYER — off by default, and that default is the whole point.
+#
+# The table above is the record of what a PERSON checked. `harvest_zones.py`
+# can read ~44 addresses in one unattended pass, but a scraper writing straight
+# into that table would erase the distinction between "we know" and "a page
+# rendered plausibly at 10 PM on a Friday". So the harvest lands in a JSON file
+# and a caller must ASK for it: `enable_harvested()`.
+#
+# Eve asked for the first sample send to run unattended over the weekend
+# (2026-09-11), which is exactly the case that needs this: the addresses land at
+# ~10:45 PM Friday and nobody is at a keyboard until Monday. What makes that
+# safe is not the zones being better — it is WHO THE MAIL GOES TO. The sample
+# goes to Raf and Eve and to nobody else (mail.SAMPLE_RECIPIENTS), so a zone
+# harvested wrong costs the two of them a board at the wrong hour and costs an
+# ICD nothing. A LIVE send must never enable this layer; `run.py --live`
+# refuses to.
+#
+# `provenance()` is how the email says which is which — every harvested ICD is
+# named in the mail's footer, so the person reading it knows what still needs a
+# human's eye on Monday.
+# ---------------------------------------------------------------------------
+
+HARVESTED_JSON = Path("output") / "icd_zones_harvested.json"
+
+_HARVESTED: Dict[str, str] = {}
+_HARVESTED_PATH: Optional[str] = None
+
+
+def enable_harvested(path=None) -> int:
+    """Load the harvested zones as a SECOND lookup layer. Returns how many.
+
+    The confirmed table always wins: this only ever answers for an ICD the
+    table has no line for. Missing or unreadable file = zero loaded, which
+    leaves the module exactly as it was — an unattended run that cannot find
+    the harvest must behave like one that was never harvested (those ICDs stay
+    out of every wave), never like one that guessed.
+    """
+    global _HARVESTED, _HARVESTED_PATH
+    p = Path(path) if path else HARVESTED_JSON
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — no harvest is a state, not a crash
+        _HARVESTED, _HARVESTED_PATH = {}, None
+        return 0
+    loaded = {}
+    for icd, zone in (raw.get("zones") or {}).items():
+        if zone in ZONE_LABEL and normalize(icd) not in _BY_NORM:
+            loaded[normalize(icd)] = zone
+    _HARVESTED, _HARVESTED_PATH = loaded, str(p)
+    return len(loaded)
+
+
+def harvested_source() -> Optional[str]:
+    """Which file the harvested layer came from, or None if it is off."""
+    return _HARVESTED_PATH
+
+
+def provenance(icd: str) -> Optional[str]:
+    """'confirmed' (a person checked it), 'harvested' (a scrape did), or None."""
+    n = normalize(icd)
+    if n in _BY_NORM:
+        return "confirmed"
+    if n in _HARVESTED:
+        return "harvested"
+    return None
+
 
 def zone_for(icd: str) -> Optional[str]:
     """The ICD's IANA zone, or None if nobody has harvested it.
@@ -103,7 +172,8 @@ def zone_for(icd: str) -> Optional[str]:
     goes out with the last hour of knocking missing, which is indistinguishable
     from a slow night.
     """
-    return _BY_NORM.get(normalize(icd))
+    n = normalize(icd)
+    return _BY_NORM.get(n) or _HARVESTED.get(n)
 
 
 def label_for(icd: str) -> Optional[str]:
