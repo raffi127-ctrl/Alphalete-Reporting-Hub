@@ -95,12 +95,24 @@ def _pull_week(saturday: dt.date, log=print) -> Optional[Dict[str, List[Dict]]]:
     return None
 
 
-def _week(day: dt.date, log=print) -> Optional[Dict[str, List[Dict]]]:
+def _week(day: dt.date, *, pull: bool = False,
+          log=print) -> Optional[Dict[str, List[Dict]]]:
+    """Last week's rows from the cache. Only pulls when explicitly asked.
+
+    NEVER PULLS FROM THE POSTING PATH. The poster holds a lock while it runs
+    and the boards queue behind it; a cold cache would mean six OwnerVille
+    round-trips with an office's board waiting on them, and the very first
+    tick after a deploy is exactly when the cache is cold. A missing
+    comparison line is invisible -- a board that arrives twenty minutes late
+    is not.
+    """
     saturday = last_week_saturday(day)
     key = saturday.isoformat()
     data = _load()
     if key in data:
         return data[key]
+    if not pull:
+        return None
     pulled = _pull_week(saturday, log=log)
     if pulled is None:
         return None
@@ -136,8 +148,27 @@ def _average_rows(by_day: Dict[str, List[Dict]], days: List[str]) -> List[Dict]:
     return [{col: int(round(v / n)) for col, v in totals.items()}]
 
 
+def warm(day: Optional[dt.date] = None, log=print) -> bool:
+    """Fill the cache for `day`'s week. Run once a day, OUTSIDE the poster.
+
+      python -m automations.icd_alerts.chan --warm
+
+    Returns True when the week is on disk afterwards, either because it
+    already was or because this filled it.
+    """
+    day = day or dt.date.today()
+    got = _week(day, pull=True, log=log)
+    if got:
+        log("chan's week ending %s is cached (%d day(s))"
+            % (last_week_saturday(day).isoformat(), len(got)))
+    return bool(got)
+
+
 def comparison_for(day: dt.date, log=print) -> Optional[Tuple[str, List[Dict]]]:
-    """(label, rows) for `day`'s board, or None if there is nothing to show."""
+    """(label, rows) for `day`'s board, or None if there is nothing to show.
+
+    Cache-only by design -- see _week.
+    """
     by_day = _week(day, log=log)
     if not by_day:
         return None
@@ -151,3 +182,23 @@ def comparison_for(day: dt.date, log=print) -> Optional[Tuple[str, List[Dict]]]:
     weekdays = [(monday + dt.timedelta(days=i)).isoformat() for i in range(5)]
     rows = _average_rows(by_day, weekdays)
     return (LABEL_WEEK, rows) if rows else None
+
+
+def main(argv=None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(description="Chan's last week, for ICD boards")
+    ap.add_argument("--warm", action="store_true",
+                    help="pull and cache last week (run once a day)")
+    ap.add_argument("--day", help="YYYY-MM-DD (default: today)")
+    args = ap.parse_args(argv)
+    day = dt.date.fromisoformat(args.day) if args.day else dt.date.today()
+    if args.warm:
+        return 0 if warm(day) else 1
+    got = comparison_for(day)
+    print("cached comparison for %s: %s" % (day, got[0] if got else "(none yet)"))
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

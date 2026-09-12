@@ -550,3 +550,18 @@ class ChanComparisonTests(unittest.TestCase):
         """A comparison whose period is ambiguous is read as today's."""
         self.assertIn("Sat", self.chan.LABEL_SAT)
         self.assertIn("M-F", self.chan.LABEL_WEEK)
+
+    def test_the_posting_path_never_pulls(self):
+        """The poster holds a lock and the boards queue behind it. A cold
+        cache must cost the comparison line, not a twenty-minute-late board --
+        and the first tick after a deploy is exactly when it is cold."""
+        import inspect
+        from automations.icd_alerts import chan
+        src = inspect.getsource(chan.comparison_for)
+        self.assertNotIn("pull=True", src)
+        # _week only pulls when explicitly asked.
+        self.assertIn("if not pull:", inspect.getsource(chan._week))
+
+    def test_warming_is_its_own_command(self):
+        from automations.icd_alerts import chan
+        self.assertTrue(callable(chan.warm))
