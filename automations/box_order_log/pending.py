@@ -179,3 +179,112 @@ def build(sales: Sequence, today: Optional[dt.date] = None, *,
     ]
     return {"today": today, "count": len(pend),
             "subtitle": subtitle(len(pend), today), "sections": sections}
+
+
+# --------------------------------------------------------------------------
+# THE TAB-PATTERN WORKLIST — the Slack image since 2026-09-13.
+#
+# Carlos filtered the Box Sales Log tab by hand and said "what I currently
+# have being viewed ... are the pending orders that we want the screenshot to
+# include. Maybe we just use the box sales log." His live filter, read off the
+# tab's basicFilter that day:
+#
+#   * Week Ending: last 4 week endings only
+#   * Status: hide Accepted by Supplier + Submitted to Supplier
+#   * Secondary Status: hide already-submitted
+#   * Notes: hide "Not Saveable" / "Not Saveable. Reran" — his written-off
+#     deals; the NOTE is the triage, so the filter reads HIS column
+#   * plus the two notes columns visible ("include the notes and the other
+#     notes column")
+#
+# Sourced from the merged tab rather than the pull so the notes exist at all
+# — and so the worklist survives the export's amnesia like everything else.
+# Terminal deaths (Cancelled/Rejected/Dropped) are excluded even though his
+# hand filter didn't list them: "pending" means in flight, and a cancelled
+# row on a chase list is noise. Flagged to Carlos; one line to flip.
+
+IMAGE_COLUMNS: Tuple[str, ...] = ("Rep Name", "Sale Date", "Days Waiting",
+                                  "Business Name", "Contract ID", "Status",
+                                  "Contr. Sub-status", "Notes", "Box Notes")
+
+_EXCLUDED_STATUSES = ("Accepted by Supplier", "Submitted to Supplier",
+                      "Cancelled by Broker", "Rejected", "Dropped")
+
+
+def _written_off(note: str) -> bool:
+    """Carlos's Not-Saveable triage, spelled loosely on purpose — the tab has
+    carried 'Not Saveable', 'Not Saveable. Reran' and he quoted 'not savable
+    rerunning or something', so this matches the family, not the strings."""
+    t = (note or "").lower().replace(".", " ")
+    return "not saveable" in t or "not savable" in t
+
+
+class _TabRow:
+    """A Box Sales Log row dressed for the renderer: pre-baked cells, plus
+    the status/history pair color_for() paints with."""
+    def __init__(self, cells, status, sub_status, secondary, rep, sale_date):
+        self.cells = cells
+        self.status = status
+        self.sub_status = sub_status
+        self.history = tuple(p.strip() for p in (secondary or "").split(",")
+                             if p.strip())
+        self.rep = rep
+        self.sale_date = sale_date
+        self.fields = {"Rep Name": rep}          # by_rep/_rep_of read this
+
+
+def build_from_tab(tab_rows: Sequence[Sequence[str]],
+                   today: Optional[dt.date] = None,
+                   weeks: int = 4) -> Dict:
+    """Carlos's filter pattern over the Box Sales Log body rows."""
+    from . import flat_log
+    today = today or dt.date.today()
+    H = flat_log.HEADERS
+
+    def g(r, c):
+        r = list(r) + [""] * (len(H) - len(r))
+        return (r[H.index(c)] or "").strip()
+
+    current_we = clean.week_ending(today)
+    oldest_we = current_we - dt.timedelta(weeks=weeks - 1)
+
+    rows = []
+    for r in tab_rows:
+        if not g(r, "Contract ID"):
+            continue
+        we = clean._parse_date(g(r, "Week Ending"))
+        if not we or not (oldest_we <= we <= current_we):
+            continue
+        status = g(r, "Status")
+        if status in _EXCLUDED_STATUSES or not status:
+            continue
+        secondary = g(r, "Secondary Status")
+        if "Submitted to Supplier" in secondary:
+            continue
+        if _written_off(g(r, "Notes")):
+            continue
+        sd = clean._parse_date(g(r, "Sale Date"))
+        cells = [g(r, "Rep Name"),
+                 sd.strftime("%m/%d/%Y") if sd else "",
+                 str((today - sd).days) if sd else "",
+                 g(r, "Business Name"),
+                 g(r, "Contract ID"),
+                 status,
+                 g(r, "Contr. Sub-status"),
+                 g(r, "Notes"),
+                 g(r, "Box Notes")]
+        rows.append(_TabRow(cells, status, g(r, "Contr. Sub-status"),
+                            secondary, g(r, "Rep Name") or "(no rep)", sd))
+
+    sub = ("Pending — needs something from us. Last {} weeks, {} order{} as "
+           "of {}. Excluded: accepted, with the supplier, cancelled/rejected, "
+           "and deals noted Not Saveable. Full detail on the Box Sales Log "
+           "tab.".format(weeks, len(rows), plural(len(rows)),
+                         today.strftime("%m/%d/%Y")))
+    return {"today": today, "count": len(rows), "subtitle": sub,
+            "columns": IMAGE_COLUMNS,
+            "sections": [{"title": "", "rows": rows,
+                          "reps": by_rep(rows),
+                          "empty_note": "Nothing pending — every deal in the "
+                                        "window is accepted, with the "
+                                        "supplier, or closed."}]}

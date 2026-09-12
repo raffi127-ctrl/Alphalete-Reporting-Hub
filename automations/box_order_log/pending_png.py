@@ -45,12 +45,16 @@ MUTED = (110, 110, 110)
 
 # Which columns hang left. Everything else centers — matches the tab's
 # alignment (cells 1, 4 and 7 are LEFT there).
-LEFT_COLS = {"Rep Name", "Business Name", "Next step"}
-MIN_W = {"Rep Name": 150, "Business Name": 190, "Next step": 230}
+LEFT_COLS = {"Rep Name", "Business Name", "Next step", "Notes", "Box Notes"}
+MIN_W = {"Rep Name": 150, "Business Name": 190, "Next step": 230,
+         "Notes": 170, "Box Notes": 240}
 # Business names run long in this data ("Mariscos el puerto de acapulco"); the
 # tab can be widened by hand, an image can't, so cap and ellipsize instead of
 # letting one row set the width of the whole board.
-MAX_CHARS = {"Business Name": 34, "Next step": 46}
+MAX_CHARS = {"Business Name": 34, "Next step": 46,
+             # Notes are Carlos's own words and Box Notes whole email
+             # digests — the image shows the head, the tab holds the rest.
+             "Notes": 38, "Box Notes": 60}
 
 
 def _fsize(font) -> int:
@@ -69,7 +73,25 @@ def _rgb(hex_str: str) -> Optional[Tuple[int, int, int]]:
     return tuple(int(hex_str[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def _cells(s, today: dt.date) -> List[str]:
+def _columns(work: Dict):
+    return work.get("columns", pending.COLUMNS)
+
+
+def _cells(s, today: dt.date, columns=None) -> List[str]:
+    """One row's text, in column order. Tab-pattern rows arrive pre-baked
+    (`.cells`); pull-based Sale rows keep the old path."""
+    if hasattr(s, "cells"):
+        out = []
+        for col, val in zip(columns or pending.COLUMNS, s.cells):
+            val = str(val).replace("\n", " · ")
+            cap = MAX_CHARS.get(col)
+            out.append(val if not cap or len(val) <= cap
+                       else val[:cap - 1] + "…")
+        return out
+    return _cells_sale(s, today)
+
+
+def _cells_sale(s, today: dt.date) -> List[str]:
     """One row's text, in pending.COLUMNS order."""
     out = []
     for col, val in zip(pending.COLUMNS, pending.row_values(s, today)):
@@ -87,12 +109,13 @@ def _cells(s, today: dt.date) -> List[str]:
 def _col_widths(draw, work: Dict, fonts) -> List[int]:
     _f_title, f_head, f_cell = fonts
     widths = []
-    for i, col in enumerate(pending.COLUMNS):
+    for i, col in enumerate(_columns(work)):
         w = _text_w(draw, col, f_head) + 2 * CELL_PAD
         for section in work["sections"]:
             for s in section["rows"]:
-                w = max(w, _text_w(draw, _cells(s, work["today"])[i], f_cell)
-                        + 2 * CELL_PAD)
+                w = max(w, _text_w(draw,
+                                   _cells(s, work["today"], _columns(work))[i],
+                                   f_cell) + 2 * CELL_PAD)
         widths.append(int(max(w, MIN_W.get(col, 70) * SCALE)))
     return widths
 
@@ -129,7 +152,7 @@ def _draw_section(draw, x, y, section, widths, work, fonts) -> int:
                       section["title"], f_head, color=WHITE, center=True)
 
     cx = x
-    for col, w in zip(pending.COLUMNS, widths):
+    for col, w in zip(_columns(work), widths):
         draw.rectangle([cx, y, cx + w, y + HEADER_H], fill=HEADER_BG,
                        outline=GRID)
         draw.text((cx + (w - _text_w(draw, col, f_head)) / 2,
@@ -151,8 +174,8 @@ def _draw_section(draw, x, y, section, widths, work, fonts) -> int:
         for s in rep_rows:
             fill = _rgb(clean.color_for(s.status, s.history)) or WHITE
             cx = x
-            for col, w, text in zip(pending.COLUMNS, widths,
-                                    _cells(s, work["today"])):
+            for col, w, text in zip(_columns(work), widths,
+                                    _cells(s, work["today"], _columns(work))):
                 draw.rectangle([cx, y, cx + w, y + ROW_H], fill=fill,
                                outline=GRID)
                 tx = (cx + CELL_PAD if col in LEFT_COLS

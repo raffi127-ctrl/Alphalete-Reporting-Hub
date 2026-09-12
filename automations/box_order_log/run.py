@@ -848,7 +848,24 @@ def main(argv: Optional[list] = None) -> int:
         # that has sat unaccepted for two months is exactly the one Carlos
         # needs to see on the worklist.
         from . import pending as pending_mod, pending_png
-        work = pending_mod.build(sales, today=today, skip_yellow=True)
+        # The IMAGE follows Carlos's tab-filter pattern since 2026-09-13
+        # (last 4 weeks, his Not-Saveable triage honoured, Notes + Box Notes
+        # shown) and reads the merged Box Sales Log tab — after the sheet
+        # write above, so it sees this run's own merge. If the tab can't be
+        # read, fall back to the old pull-based worklist: a yesterday-shaped
+        # pending list beats none. The WORKBOOK tab keeps the old
+        # two-section build either way.
+        try:
+            from . import flat_log as _fl
+            from .sheet import _open as _sh_open, _retry as _sh_retry
+            _tab = _sh_retry(lambda: _sh_open(args.sheet_id or None)
+                             .worksheet(_fl.TAB).get_all_values())
+            work = pending_mod.build_from_tab(_tab[1:] if _tab else [],
+                                              today=today)
+        except Exception as exc:
+            print("  \u26a0 tab-pattern pending failed ({}) — falling back "
+                  "to the pull-based worklist".format(exc))
+            work = pending_mod.build(sales, today=today, skip_yellow=True)
         pending_png.render(work, out_pending)
 
         if verbose:
