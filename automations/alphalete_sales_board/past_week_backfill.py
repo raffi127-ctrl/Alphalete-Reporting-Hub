@@ -126,6 +126,26 @@ def pull_week_talk_to(tab: str) -> dict:
     return out
 
 
+def team_avg_formula(src_col: int, knocks_col: int, row: int, days: int) -> str:
+    """The per-day average of one team row, AS A FORMULA -- never as the number
+    this run happens to read.
+
+    WHY. A team's `Total Talk-To's` is a SUMIFS over the rep rows, so what it
+    reads depends on WHEN you look. On 2026-09-11 the rep rows still held '-'
+    when the backfill ran, the SUMIFS came back 0, and `float(cell or 0)` froze
+    a `0.0` into six team rows -- each reading "0.0 talk-to's per day" next to
+    its own 939. Numbers arriving later could not fix it: the cell was a value.
+
+    Dividing in the sheet removes the ordering hazard. The guards mirror the
+    block's own rules: no knocks that week -> the row stays clean (blank);
+    knocks but nothing countable -> '-'.
+    """
+    src = "%s%d" % (_col_letter(src_col), row)
+    knocks = "%s%d" % (_col_letter(knocks_col), row)
+    return ('=IF(N(%s)=0,"",IF(NOT(ISNUMBER(%s)),"-",IFERROR(%s/%d,"-")))'
+            % (knocks, src, src, days))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tab", default=SANDBOX_TAB, help="this week's tab")
@@ -249,14 +269,22 @@ def main(argv=None) -> int:
             d = all_days if "TOTALS" in label.upper() else days_by_team.get(label)
             if not d:
                 continue
+            # A FORMULA, not the number this run happens to see.
+            #
+            # WHY. A team's `Total Talk-To's` is itself a SUMIFS over the rep
+            # rows, so what it reads depends on WHEN you look. On 2026-09-11 the
+            # rep rows still held '-' when this ran, the SUMIFS came back 0, and
+            # `float(cell or 0)` wrote a hard `0.0` -- so six teams read "0.0
+            # talk-to's per day" next to their own 939. The numbers arriving
+            # later could not fix it: the cell was a frozen value.
+            #
+            # Dividing in the sheet removes the ordering hazard entirely. The
+            # guards mirror the block's own rules: no knocks that week -> the row
+            # stays clean; knocks but no countable talk-to's -> '-'.
             for col, src_col in ((cols[WEEK_AVG_TK], tk_c),
                                  (cols[WEEK_AVG_TT], tt_c)):
-                try:
-                    v = float(_cell(grid, r, src_col) or 0)
-                except ValueError:
-                    continue
                 data.append({"range": "%s%d" % (_col_letter(col), r),
-                             "values": [[round(v / d, 1)]]})
+                             "values": [[team_avg_formula(src_col, tk_c, r, d)]]})
         # The roster's TOTALS row holds VALUES here, not formulas (`379`, not a
         # SUMIF), so its Talk-To's total has to be added up the same way.
         week_tt = sum(t for _d, t in prev.values() if isinstance(t, int))
