@@ -1,0 +1,285 @@
+"""Read the 'Rep Count' column off every morning's Country Tracker image, per ICD
+per day, so the headcount board can carry a DAILY breakdown.
+
+WHY THE IMAGES (Eve, 2026-09-12). The trackers' `Rep Count` is a running number
+for the week: it only ever shows TODAY's value, and Tableau keeps no per-day
+history of it. The only record of what it said on Tuesday is the Tuesday post in
+the channel, so the breakdown has to be rebuilt from the posted PNGs — "si el
+tracker que subiste el lunes muestra que rafael tenía 15 personas, y al otro día
+16, el desglose dice monday 15 tuesday 16 (también puede bajar)".
+
+WHY THIS RUNS ON LUCY 1. The Windows token can't download Slack files (403 on
+url_private); Lucy 1's token is the one owner_chat_texts already downloads these
+exact PNGs with every morning. So this does the download AND the reading there,
+and leaves plain text in output/logs where `lucy logtail` can reach it.
+
+WHAT IT WRITES — nothing to any Sheet. One log per run,
+output/logs/hc-tracker-readings-<start>_<end>.log, pipe-separated:
+    F|day|tracker|file_id|reply_ts|rows_on_image|dates_printed_on_image
+    R|day|tracker|board ICD|name as printed|rep count
+    M|day|tracker|board ICD|NOT ON IMAGE
+    X|day|tracker|reason the image could not be read
+The day is the POST date. Which week/day a reading belongs to is decided by the
+caller from `dates_printed_on_image`, not guessed here: a Monday-morning board
+can still be showing the week that just closed.
+
+RE-POSTS. Tableau sometimes loads late and the board is re-posted the same day
+(8/26 inside the thread, 8/29 as a second 'UPDATED' thread). find_thread_ts takes
+the newest thread of the day and this takes the LAST matching reply in it, so the
+corrected picture always wins.
+
+TALL IMAGES ARE SLICED. The vision API downsizes anything over ~1568px on its
+long edge, which turns a 60-row table into unreadable blur. Each PNG is cut into
+overlapping horizontal bands sent in order in ONE request, so the header stays
+in context and no band is shrunk.
+
+    python -m automations.org_active_headcount.tracker_readings \
+        --start 2026-07-13 --end 2026-09-12
+Python 3.9-safe (Lucy runtime).
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import datetime as dt
+import io
+import json
+import re
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:                                                  # noqa: BLE001
+    pass
+
+REPO = Path(__file__).resolve().parents[2]
+CACHE = REPO / "output" / "_hc_trackers"
+LOGS = REPO / "output" / "logs"
+
+SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
+BOARD_TAB = "Org Active Headcount Test 2"
+
+# tracker spec id (tableau_screenshots.pages) -> the board's 'Campaign' value
+TRACKERS = {"att_country": "fiber", "nds": "nds",
+            "b2b_att_country": "b2b", "b2b_box": "box"}
+
+MODEL = "claude-opus-4-8"          # same model screenshot_roster reads images with
+BAND = 1400                        # px per slice after scaling to MAX_W
+OVERLAP = 140
+MAX_W = 1568
+
+_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "dates_printed": {"type": "string", "description":
+            "Every date / week-ending / date-range text printed on the board "
+            "(title, filters, column headers), copied exactly, joined with ' ; '. "
+            "Empty string if none."},
+        "rep_count_header": {"type": "string", "description":
+            "The exact header text of the column you read the counts from."},
+        "rows": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string", "description":
+                    "The owner / ICD name label of the row, exactly as printed."},
+                "rep_count": {"type": ["integer", "null"], "description":
+                    "The Rep Count cell of THAT SAME row. null if blank."},
+            },
+            "required": ["owner", "rep_count"],
+            "additionalProperties": False}},
+    },
+    "required": ["dates_printed", "rep_count_header", "rows"],
+    "additionalProperties": False,
+}
+
+_PROMPT = (
+    "These {n} images are consecutive horizontal slices, top to bottom, of ONE "
+    "tall screenshot of a sales tracker table (consecutive slices overlap a "
+    "little, so a row may appear twice — list it once). The table has one row "
+    "per owner (ICD) and a column headed 'Rep Count' (or very close to that).\n\n"
+    "Return every owner row with its Rep Count, copying the numbers exactly — "
+    "never compute or estimate. Read the count from the SAME horizontal row as "
+    "the name; if the name and the counts sit in side-by-side tables, follow the "
+    "row line across carefully. Skip grand-total / header rows. Also copy every "
+    "date or date range printed anywhere on the board.")
+
+
+def _bands(png: Path) -> List[bytes]:
+    from PIL import Image
+    with Image.open(png) as im:
+        im = im.convert("RGB")
+        if im.width > MAX_W:
+            im = im.resize((MAX_W, round(im.height * MAX_W / im.width)))
+        out, top = [], 0
+        while True:
+            box = im.crop((0, top, im.width, min(top + BAND, im.height)))
+            buf = io.BytesIO()
+            box.save(buf, format="PNG")
+            out.append(buf.getvalue())
+            if top + BAND >= im.height or len(out) >= 20:
+                return out
+            top += BAND - OVERLAP
+
+
+def read_image(png: Path) -> dict:
+    """{dates_printed, rep_count_header, rows:[{owner, rep_count}]} — cached
+    next to the PNG so a re-run never pays for the same picture twice."""
+    cached = png.with_suffix(".json")
+    if cached.exists():
+        return json.loads(cached.read_text(encoding="utf-8"))
+    import anthropic
+    from automations.brand_audit import credentials
+    bands = _bands(png)
+    content = [{"type": "image", "source": {
+        "type": "base64", "media_type": "image/png",
+        "data": base64.standard_b64encode(b).decode()}} for b in bands]
+    content.append({"type": "text", "text": _PROMPT.format(n=len(bands))})
+    client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
+    resp = client.messages.create(
+        model=MODEL, max_tokens=8000,
+        output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
+        messages=[{"role": "user", "content": content}])
+    text = next((b.text for b in resp.content if b.type == "text"), "{}")
+    data = json.loads(text)
+    cached.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    return data
+
+
+def board_icds() -> Dict[str, List[str]]:
+    """{campaign lowercase: [ICD as the board writes it]} from the tab's All
+    Units block (col B + its 'Campaign' column), found by label."""
+    from automations.recruiting_report.fill import open_by_key
+    ws = next(w for w in open_by_key(SHEET_ID).worksheets()
+              if w.title.strip() == BOARD_TAB)
+    g = ws.get_all_values()
+
+    def c(r, k):
+        row = g[r] if r < len(g) else []
+        return row[k].strip() if k < len(row) else ""
+    hdr = next(i for i in range(len(g)) if c(i, 0).lower() == "all units")
+    camp_col = next(k for k in range(len(g[hdr])) if c(hdr, k).lower() == "campaign")
+    out: Dict[str, List[str]] = {}
+    r = hdr + 1
+    while r < len(g) and not c(r, 1):
+        r += 1
+    while r < len(g) and c(r, 1):
+        out.setdefault(c(r, camp_col).lower(), []).append(c(r, 1))
+        r += 1
+    return out
+
+
+def _tokens(s: str) -> List[str]:
+    return [t for t in re.split(r"[^a-z]+", (s or "").lower()) if t]
+
+
+def match(icd: str, rows: List[dict]) -> List[dict]:
+    """Rows whose printed owner is this ICD: every word of the source name
+    appears in the label (labels can carry an office suffix)."""
+    from automations.org_active_headcount import sources as src
+    want = _tokens(src.source_name(icd))
+    return [row for row in rows if all(t in _tokens(row["owner"]) for t in want)]
+
+
+def _latest_files(client, channel: str, day: dt.date) -> Tuple[Optional[str], Dict[str, dict]]:
+    from automations.tableau_screenshots import pages as pages_mod
+    from automations.tableau_screenshots import slack_post as sp
+    ts, _legacy = sp.find_thread_ts(client, channel, day)
+    if not ts:
+        return None, {}
+    replies = sp._image_replies(client, channel, ts)
+    got = {}
+    for tid in TRACKERS:
+        spec = pages_mod.by_id(tid)
+        hits = sorted((m for m in replies if sp._reply_matches(m, spec, day)),
+                      key=lambda m: float(m["ts"]))
+        if hits:
+            f = next((f for f in hits[-1].get("files") or [] if f.get("url_private")), None)
+            if f:
+                got[tid] = {"file": f, "reply_ts": hits[-1]["ts"]}
+    return ts, got
+
+
+def run(start: dt.date, end: dt.date, workers: int = 6) -> Path:
+    from automations.shared import slack_metrics_post as smp
+    from automations.tableau_screenshots.slack_post import ORG_CHANNELS
+    from automations.owner_chat_texts.slack_fetch import _download
+
+    client, token = smp._client(), smp._load_token()
+    channel = ORG_CHANNELS["alphalete"][0]            # #alphalete-sales
+    icds = board_icds()
+    lines: List[str] = []
+    jobs = []
+    day = start
+    while day <= end:
+        try:
+            thread, files = _latest_files(client, channel, day)
+        except Exception as e:                                     # noqa: BLE001
+            thread, files = None, {}
+            lines.append(f"X|{day}|*|thread read failed: {type(e).__name__}: {e}")
+        if not thread:
+            lines.append(f"X|{day}|*|no tracker thread that day")
+        for tid in TRACKERS:
+            if thread and tid not in files:
+                lines.append(f"X|{day}|{tid}|no image reply for this tracker")
+                continue
+            if tid not in files:
+                continue
+            png = CACHE / day.isoformat() / f"{tid}.png"
+            try:
+                if not png.exists():
+                    _download(files[tid]["file"]["url_private"], token, png)
+                jobs.append((day, tid, png, files[tid]))
+            except Exception as e:                                 # noqa: BLE001
+                lines.append(f"X|{day}|{tid}|download failed: {type(e).__name__}: {e}")
+        day += dt.timedelta(days=1)
+    print(f"{len(jobs)} image(s) to read, {workers} at a time", flush=True)
+
+    def work(job):
+        d, tid, png, meta = job
+        try:
+            return job, read_image(png), None
+        except Exception as e:                                     # noqa: BLE001
+            return job, None, f"{type(e).__name__}: {e}"
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for (d, tid, png, meta), data, err in pool.map(work, jobs):
+            if err:
+                lines.append(f"X|{d}|{tid}|read failed: {err}")
+                continue
+            rows = data.get("rows") or []
+            dates = (data.get("dates_printed") or "").replace("|", "/")
+            lines.append(f"F|{d}|{tid}|{meta['file'].get('id')}|{meta['reply_ts']}|"
+                         f"{len(rows)}|{dates}|header={data.get('rep_count_header')}")
+            for icd in icds.get(TRACKERS[tid], []):
+                hits = match(icd, rows)
+                if not hits:
+                    lines.append(f"M|{d}|{tid}|{icd}|NOT ON IMAGE")
+                for h in hits:
+                    lines.append(f"R|{d}|{tid}|{icd}|{h['owner']}|{h['rep_count']}")
+            print(f"  {d} {tid:16s} {len(rows)} rows", flush=True)
+
+    lines.sort(key=lambda s: (s.split("|")[1], s.split("|")[2], s[0]))
+    LOGS.mkdir(parents=True, exist_ok=True)
+    out = LOGS / f"hc-tracker-readings-{start}_{end}.log"
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    bad = sum(1 for s in lines if s[0] in "XM")
+    print(f"wrote {out.name}: {len(lines)} line(s), {bad} gap/failure line(s)", flush=True)
+    return out
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--start", required=True, type=dt.date.fromisoformat)
+    ap.add_argument("--end", required=True, type=dt.date.fromisoformat)
+    ap.add_argument("--workers", type=int, default=6)
+    a = ap.parse_args(argv)
+    run(a.start, a.end, a.workers)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

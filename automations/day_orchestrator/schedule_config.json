@@ -5880,6 +5880,27 @@
       },
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "hc_tracker_readings": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "MANUAL-ONLY (Eve 2026-09-12). Reads the 'Rep Count' column off the posted Country Tracker PNGs (Fiber, NDS, B2B AT&T, BOX) in #alphalete-sales, per ICD per day, for the Org Active Headcount daily breakdown. Runs on Lucy 1 because the Windows token can't download Slack files. Writes NOTHING to any Sheet: only output/logs/hc-tracker-readings-<start>_<end>.log. Usage: `lucy rerun hc_tracker_readings --start 2026-07-13 --end 2026-09-12`.",
+      "display_name": "Headcount - tracker Rep Count readings",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.org_active_headcount.tracker_readings"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 90
+    },
     "leaders_call": {
       "on_scheduler": false,
       "_off_scheduler_note": "Run by the dedicated com.alphalete.leaders-call-mon launchd job at Mon 10:00am CST (deploy/leaders_call_mon.sh), NOT the morning orchestrator, so it fires at a fixed 10am. Maud 2026-06-29.",
