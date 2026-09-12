@@ -48,13 +48,9 @@ def _slots():
 
 
 def _office_now(office) -> dt.datetime:
-    """Now, on the OFFICE's clock. A board that says a rep has been quiet for
-    48 minutes is a claim about their evening, not about the runner's."""
-    try:
-        from zoneinfo import ZoneInfo
-        return dt.datetime.now(ZoneInfo(office.timezone)).replace(tzinfo=None)
-    except Exception:  # noqa: BLE001
-        return dt.datetime.now()
+    """Now, on the OFFICE's clock. One definition, in offices.py, because the
+    quiet-laptop nudge asks the same question and the two must not drift."""
+    return O.office_now(office)
 
 
 def in_field_hours(office, now: Optional[dt.datetime] = None) -> bool:

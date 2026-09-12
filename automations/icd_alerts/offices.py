@@ -66,6 +66,12 @@ class AlertOffice(NamedTuple):
     # say why. Knowing the office's platform is what lets the build be right
     # the first time instead of after a rebuild.
     platform: str = "mac"
+    # The OWNER's Slack id, for the 11am nudge when their laptop has not
+    # checked in. Empty = nudge Megan only, which is the safe default: a DM to
+    # the wrong person about a machine they do not own is worse than no DM.
+    # Fill it with `python -m automations.icd_alerts.whois "Kash Rai"`, or from
+    # Slack: click their name, the three dots, Copy member ID.
+    slack_user_id: str = ""
 
     def display(self) -> str:
         where = ", ".join(c.name for c in self.channels) or "no channel set yet"
@@ -87,6 +93,7 @@ OFFICES: Dict[str, AlertOffice] = {
         # his whole team on a guess is not a thing to undo.
         channels=(),
         timezone="America/Chicago", active=True, platform="mac",
+        slack_user_id="U046XBPN0G2",     # Kash Rai, @palace.kash
     ),
     "cyrus": AlertOffice(
         key="cyrus", owner="Cyrus Wade", label="Cyrus's Local Office",
@@ -99,8 +106,34 @@ OFFICES: Dict[str, AlertOffice] = {
         channels=(),
         timezone="America/Chicago", active=True,     # Tyler, TX
         platform="mac",                              # confirmed 2026-09-12
+        # HE IS "Cy Wade" IN SLACK, not Cyrus Wade -- which is why a search on
+        # his canonical name found nobody in his own channel. Found by
+        # searching #ambient-sales-1 for 'wade'; @wadebusiness7 is the only
+        # Wade in the room. Worth a glance from Megan before the first nudge:
+        # this id is a DM recipient, and the cost of the wrong one is a
+        # message to a stranger about a machine they do not own.
+        slack_user_id="U06A1QA642X",     # Cy Wade, @wadebusiness7
     ),
 }
+
+
+def office_now(office: "AlertOffice", fallback=None):
+    """Now, on THIS office's clock.
+
+    Everything that judges an office judges it here: a board saying a rep has
+    been quiet 48 minutes is a claim about their evening, and 11am means 11am
+    where they are. An Eastern office is an hour further into its morning than
+    a Central one, and a single shared cutoff would nag one early and let the
+    other slide.
+    """
+    import datetime as _dt
+    if fallback is not None:
+        return fallback
+    try:
+        from zoneinfo import ZoneInfo
+        return _dt.datetime.now(ZoneInfo(office.timezone)).replace(tzinfo=None)
+    except Exception:  # noqa: BLE001 — a missing tzdata must not stop a report
+        return _dt.datetime.now()
 
 
 def get(key: str) -> Optional[AlertOffice]:

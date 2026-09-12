@@ -239,3 +239,49 @@ class QuietWatchTests(unittest.TestCase):
         rows = [["kash", dt.date.today().isoformat(), "{}", now]]
         self.assertEqual(P.quiet_offices(dt.date.today(),
                                          book=self._Book(rows)), [])
+
+
+class NudgeTests(unittest.TestCase):
+    """The 11am nudge. I first built this to warn US only, reasoning an ICD
+    cannot act on it — wrong for THIS failure (Megan, 2026-09-12): a laptop
+    asleep, shut or unplugged is the one thing only they can fix, in seconds."""
+
+    def setUp(self):
+        from automations.icd_alerts import offices as O
+        self.O = O
+
+    def test_both_pilot_offices_can_be_reached(self):
+        for key in ("kash", "cyrus"):
+            self.assertTrue(self.O.get(key).slack_user_id, key)
+
+    def test_ids_look_like_slack_users_not_channels(self):
+        for key in ("kash", "cyrus"):
+            uid = self.O.get(key).slack_user_id
+            self.assertTrue(uid.startswith("U"), (key, uid))
+
+    def test_the_two_offices_are_not_the_same_person(self):
+        """A copy-paste slip here DMs one owner about the other's laptop."""
+        self.assertNotEqual(self.O.get("kash").slack_user_id,
+                            self.O.get("cyrus").slack_user_id)
+
+    def test_an_office_with_no_id_still_reaches_us(self):
+        """No Slack id is not a reason to stay silent — it means Megan gets
+        told and nudges them herself."""
+        from automations.icd_alerts.offices import AlertOffice
+        o = AlertOffice(key="x", owner="O", label="X", channels=(),
+                        timezone="America/Chicago")
+        self.assertEqual(o.slack_user_id, "")
+
+    def test_eleven_am_is_read_on_the_offices_own_clock(self):
+        from automations.icd_alerts import post as P
+        self.assertEqual(P.QUIET_WARN_AFTER_HOUR, 11)
+        k = self.O.get("kash")
+        self.assertEqual(self.O.office_now(k, fallback=dt.datetime(2026, 9, 12, 11, 0)),
+                         dt.datetime(2026, 9, 12, 11, 0))
+
+    def test_the_nudge_names_them_and_says_what_to_check(self):
+        from automations.icd_alerts.post import OWNER_NUDGE
+        text = OWNER_NUDGE % "Kash"
+        self.assertIn("Kash", text)
+        for cue in ("asleep", "unplugged", "wifi", "15 minutes"):
+            self.assertIn(cue, text)

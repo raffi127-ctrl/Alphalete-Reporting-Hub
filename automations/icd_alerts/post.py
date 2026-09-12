@@ -69,9 +69,11 @@ LOCK_STALE_MINUTES = 20
 # a warning per tick would be 60 messages about one fact, which is how people
 # learn to ignore the channel this is supposed to protect.
 WARNED_PATH = Path.home() / ".config" / "recruiting-report" / "icd_alerts_quiet.json"
-# Nobody is helped by "they have not checked in" at 10:05. An office that has
-# said nothing by lunchtime is a real problem; before that it is a morning.
-QUIET_WARN_AFTER_HOUR = 12
+# 11am on the OFFICE'S clock. Their agent starts sweeping at 10:00 local, so
+# by 11 it has had four chances to say hello -- silence then is a real problem,
+# and it is early enough that a nudge still saves the day rather than reporting
+# on a lost one. Nobody is helped by "they have not checked in" at 10:05.
+QUIET_WARN_AFTER_HOUR = 11
 QUIET_WARN_UNTIL_HOUR = 21
 
 
@@ -466,17 +468,31 @@ def _warned() -> Dict:
         return {}
 
 
+OWNER_NUDGE = (
+    "Morning %s — your Lucy Reports computer hasn't checked in today, so your "
+    "office's alerts aren't running.\n\n"
+    "It's almost always one of these:\n"
+    "  • the laptop is asleep or shut — wake it and leave the lid open\n"
+    "  • it's unplugged — it has to be on power to stay awake\n"
+    "  • it's off wifi\n\n"
+    "Sort any of those and it picks itself up within 15 minutes. Nothing is "
+    "lost in the meantime. If it's none of those, just reply here.")
+
+
 def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
                now: Optional[dt.datetime] = None, log=print) -> List[Dict]:
-    """Tell US about offices whose laptop has gone quiet. Never the office.
+    """Nudge the OFFICE, and tell us. 11am on their own clock.
 
-    An ICD cannot act on this and it is not their job to; what they would do
-    with it is worry. It goes to whoever can actually chase it.
+    I built this to warn us only, reasoning that an ICD cannot act on it. That
+    was wrong for THIS failure and Megan said so (2026-09-12): a laptop that is
+    asleep, shut or unplugged is the one thing only they can fix, and it is
+    fixed in ten seconds. Telling the person who can act is the whole point.
+
+    They are nudged ONCE a day. A second message about a laptop somebody has
+    already been asked to wake is nagging, and the first one stops being read.
     """
     now = now or dt.datetime.now()
     day = day or now.date()
-    if not (QUIET_WARN_AFTER_HOUR <= now.hour <= QUIET_WARN_UNTIL_HOUR):
-        return []
     if now.weekday() == 6:               # nobody is selling on Sunday
         return []
 
@@ -486,17 +502,46 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
 
     data = _warned()
     already = set(data.get(day.isoformat()) or [])
-    fresh = [q for q in quiet if q["office"] not in already]
+    fresh = []
+    for q in quiet:
+        if q["office"] in already:
+            continue
+        office = O.get(q["office"])
+        # Each office is judged on ITS OWN clock. An Eastern office is an hour
+        # further into its morning than a Central one, and a single shared
+        # cutoff would nag one of them early and let the other slide.
+        local = O.office_now(office) if office else now
+        if not (QUIET_WARN_AFTER_HOUR <= local.hour <= QUIET_WARN_UNTIL_HOUR):
+            continue
+        q["office_time"] = local.strftime("%H:%M")
+        fresh.append(q)
     if not fresh:
         return []
 
     for q in fresh:
-        log("QUIET: %-10s %s" % (q["office"], q["reason"]))
+        log("QUIET: %-10s %s (%s their time)"
+            % (q["office"], q["reason"], q.get("office_time", "?")))
     if not send:
         return fresh
 
+    nudged = []
+    for q in fresh:
+        office = O.get(q["office"])
+        if not (office and office.slack_user_id):
+            continue
+        first = (office.owner or "").split()[0] if office.owner else "there"
+        try:
+            _dm(office.slack_user_id, OWNER_NUDGE % first)
+            nudged.append(q["office"])
+        except Exception as e:  # noqa: BLE001 — a failed nudge must still reach us
+            log("could not DM %s: %s: %s" % (q["office"], type(e).__name__,
+                                             str(e)[:100]))
+
     lines = ["\n".join(
-        ":warning: *%s* — the alerts computer %s." % (q["label"], q["reason"])
+        ":warning: *%s* — the alerts computer %s (%s their time).%s"
+        % (q["label"], q["reason"], q.get("office_time", "?"),
+           "  _Nudged them._" if q["office"] in nudged
+           else "  _No Slack id on file — nudge them yourself._")
         for q in fresh)]
     lines.append("_Nothing is lost: SaraPlus is cumulative, so whatever it "
                  "missed arrives when the laptop is back online._")
@@ -539,6 +584,15 @@ def assert_posting_as_lucy(log=print) -> None:
 def _slack(channel_id: str, text: str) -> None:
     from automations.shared import slack_metrics_post as smp
     smp._client().chat_postMessage(channel=channel_id, text=text)
+
+
+def _dm(user_id: str, text: str) -> None:
+    """Open a DM with one person and send. Opening is idempotent -- Slack
+    returns the existing conversation rather than starting a second one."""
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    channel = client.conversations_open(users=user_id)["channel"]["id"]
+    client.chat_postMessage(channel=channel, text=text)
 
 
 def main(argv=None) -> int:
