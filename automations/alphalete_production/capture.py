@@ -412,6 +412,32 @@ def _duplicate(ss, source_ws) -> int:
     return rep["replies"][0]["duplicateSheet"]["properties"]["sheetId"]
 
 
+def _filter_end(ncols: int, filt_specs: list, sorts: list) -> int:
+    """endColumnIndex for setBasicFilter — wide enough to CONTAIN every column
+    the filter sorts or filters on.
+
+    This was the literal 104 from the first commit (2026-07-05), back when the
+    board ended around column CZ. The Talk-To columns (3 per day x 7 days, plus
+    the weekly block) pushed the identity columns right, and by 2026-09-12 the
+    board was 221 columns wide with Field Status at 120 and Team at 122 — both
+    OUTSIDE a filter that still claimed to end at 104.
+
+    Sheets does not answer that with a 400. It answers `[500]: Internal error
+    encountered`, which reads exactly like a transient blip: the section dropped
+    at 04:05, the noon retry produced the identical 500 eight hours later, and
+    nothing in the message named a column. An out-of-range *filterSpec* is
+    tolerated (every other section filters the F/T column at 106 and renders
+    fine) — it is the out-of-range SORT that kills the request, which is why
+    this one section of eleven failed.
+
+    Derived, never a literal: `ncols` is the same board width _hide_cols already
+    works in, and the max() keeps the range honest if a spec ever references a
+    column past the populated grid."""
+    referenced = [s["columnIndex"] + 1 for s in filt_specs]
+    referenced += [c + 1 for c, _ in sorts]
+    return max([ncols] + referenced)
+
+
 def _hide_cols(gid, show: set, ncols: int) -> list:
     """updateDimensionProperties requests: only `show` columns visible in [0,ncols)."""
     reqs = []
@@ -705,7 +731,8 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
         reqs += _hide_cols(gid, show, ncols)
         reqs.append({"setBasicFilter": {"filter": {
             "range": {"sheetId": gid, "startRowIndex": 2, "endRowIndex": tot_row - 1,
-                      "startColumnIndex": 1, "endColumnIndex": 104},
+                      "startColumnIndex": 1,
+                      "endColumnIndex": _filter_end(ncols, filt_specs, sorts)},
             "sortSpecs": [{"dimensionIndex": c, "sortOrder": o} for c, o in sorts],
             "filterSpecs": filt_specs}}})
         ss.batch_update({"requests": reqs})

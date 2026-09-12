@@ -160,3 +160,41 @@ class DayColsIsIndexSafe(unittest.TestCase):
         src = inspect.getsource(zeros_streak)
         self.assertNotIn("_day_block(grid, d)[0]", src)
         self.assertIn("_day_block(grid, d).apps", src)
+
+
+class FilterRangeCoversWhatItSorts(unittest.TestCase):
+    """2026-09-12: `daily_production_el` dropped out of the post twice with
+    `APIError: [500]: Internal error encountered.` — the setBasicFilter range
+    ended at a hardcoded column 104 while the board had grown to 221 columns and
+    the section sorted on Team at 122. Sheets reports an out-of-range sort as a
+    500, so it read as a transient and the noon retry produced the same error.
+    """
+
+    def test_range_covers_an_out_of_range_sort_column(self):
+        end = capture._filter_end(104, [{"columnIndex": 2}], [(122, "ASCENDING")])
+        self.assertGreater(end, 122, "a sort column outside the range 500s")
+
+    def test_range_covers_an_out_of_range_filter_column(self):
+        end = capture._filter_end(104, [{"columnIndex": 120}], [(3, "DESCENDING")])
+        self.assertGreater(end, 120)
+
+    def test_the_real_board_geometry_that_broke_it(self):
+        """The exact payload captured off the WE 9.13 tab."""
+        end = capture._filter_end(
+            221,
+            [{"columnIndex": 2}, {"columnIndex": 106}, {"columnIndex": 120}],
+            [(122, "ASCENDING"), (3, "DESCENDING")])
+        self.assertEqual(end, 221)
+
+    def test_it_never_narrows_below_the_board_width(self):
+        """Every column the photo hides has to stay inside the filter, or the
+        board sorts rows the picture doesn't show."""
+        end = capture._filter_end(221, [{"columnIndex": 2}], [(3, "DESCENDING")])
+        self.assertEqual(end, 221)
+
+    def test_no_literal_column_bound_is_left_in_the_filter(self):
+        """The bug was a number typed once in July and never revisited. Keep it
+        gone — CLAUDE.md: no hardcoded rows or columns."""
+        import inspect
+        src = inspect.getsource(capture._render)
+        self.assertNotIn('"endColumnIndex": 104', src)
