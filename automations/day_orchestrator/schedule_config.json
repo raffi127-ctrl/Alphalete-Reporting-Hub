@@ -9672,6 +9672,36 @@
         "type": "not_configured"
       }
     },
+    "icd_alerts_chan_warm": {
+      "on_scheduler": true,
+      "_note": "Pulls Chan's COMPLETED last week once and caches it, so every ICD knocks board that week can carry his comparison line for free. It runs HERE and never inside the poster: the poster holds a lock and the boards queue behind it, so a cold cache there would mean six ownerville round-trips with an office's board waiting on them. A missing comparison line is invisible; a board twenty minutes late is not. Cheap after the first run of a week -- a completed week is frozen, so every later day is a cache hit. Source: automations/icd_alerts/chan.py.",
+      "machine": "Lucy 3",
+      "display_name": "Cache Chan's last week (for ICD boards)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.icd_alerts.chan"
+      ],
+      "base_args": [
+        "--warm"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "icd_alerts_announce": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false — a one-off a PERSON decides to send, never a scheduled job. `lucy rerun icd_alerts_announce --machine \"Lucy 3\" --office kash` posts the 'Lucy is now watching this office's numbers' note into that office's APPROVED channels. It can only reach a room a human already approved, and it refuses to claim a knocks board unless that office's laptop has actually handed a knocks read over — approval is not evidence the OwnerVille login works, which is exactly where Kash was on 2026-09-12. Must run on a box holding Lucy Reporting's Slack USER token: from Megan's laptop it would announce Lucy under her own name. Drop --send from base_args to preview.",
