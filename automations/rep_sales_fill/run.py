@@ -614,8 +614,16 @@ def main(argv=None) -> int:
                 else " -- re-correr con --apply para escribir"))
         return 0
 
+    # USER_ENTERED, not gspread's RAW default. RAW stores the string "2" as
+    # TEXT, and every roll-up on this board is a SUM/SUMIFS -- which skips text
+    # in silence. Found 2026-09-11: Andrew Sanborn is the only rep this module
+    # writes, and all seven of his cells were text, so his 7 Thursday apps never
+    # reached his team's row in the Teams cuadro. The cell LOOKS identical, which
+    # is why it went a month unnoticed. `alphalete_sales_board/fill.py` has
+    # always passed USER_ENTERED; this was the one writer that did not.
     _retry(ws.batch_update, [{"range": a1, "values": [[new]]}
-                             for a1, _m, _o, new in plan])
+                             for a1, _m, _o, new in plan],
+           value_input_option="USER_ENTERED")
     _log(f"wrote {len(plan)} cell(s) to {ws.title!r}")
     return 0
 
