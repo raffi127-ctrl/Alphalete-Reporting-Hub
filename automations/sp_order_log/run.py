@@ -416,12 +416,18 @@ def _orderlog_attrs(log=print) -> dict:
     repo = Path(__file__).resolve().parents[2]
     fields = ("CRU/IRU", "Auto Bill Pay", "IF/OOF",
               "Wireless Installment Plan", "Package")
+    # MERGE both sources — never stop at the first. The captainship export
+    # only spans the CURRENT week (the revenue board pulls Mon->yesterday),
+    # so on its own it matched 68/613 lines (2026-09-14); the 31-day shared
+    # crosstab backfills everything older, captainship still wins per-TN for
+    # its ABP field.
     out: dict = {}
     for sub in ("captainship_boards", "b2b_metrics/_shared"):
         cands = sorted((repo / "output" / sub).glob("orderlog_*.csv"))
         if not cands:
             continue
         src = cands[-1]
+        added = 0
         try:
             with open(src, newline="", encoding="utf-8-sig",
                       errors="replace") as fh:
@@ -431,13 +437,13 @@ def _orderlog_attrs(log=print) -> dict:
                         continue
                     out[tn] = {f: str(r.get(f) or "").strip()
                                for f in fields}
+                    added += 1
         except Exception as e:  # noqa: BLE001
             log("orderlog attrs: %s unreadable (%s)" % (src.name,
                                                         type(e).__name__))
             continue
-        log("orderlog attrs: %d TN(s) from %s" % (len(out), src.name))
-        if out:
-            break
+        log("orderlog attrs: +%d TN(s) from %s (total %d)"
+            % (added, src.name, len(out)))
     return out
 
 
