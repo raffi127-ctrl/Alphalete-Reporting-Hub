@@ -230,5 +230,50 @@ class StateFile(unittest.TestCase):
         self.assertEqual(again, [])
 
 
+class HarvestOwnership(unittest.TestCase):
+    """The agent owns the address harvest, so the weekend does not depend on a
+    terminal staying open on Eve's laptop."""
+
+    def _at(self, hh, mm=0, day=11):
+        return dt.datetime(2026, 9, day, hh, mm,
+                           tzinfo=CT).astimezone(dt.timezone.utc)
+
+    def test_never_runs_while_the_addresses_are_already_on_disk(self):
+        from automations.captainship_night_knocks import run as R
+        from automations.captainship_night_knocks import ingest as I
+        with tempfile.TemporaryDirectory() as d:
+            here = Path(d) / "addresses.json"
+            here.write_text("{}", encoding="utf-8")
+            saved, I.IN_JSON = I.IN_JSON, here
+            try:
+                self.assertFalse(R.maybe_harvest(self._at(22, 5), run_it=False,
+                                                 logfn=lambda *a, **k: None))
+            finally:
+                I.IN_JSON = saved
+
+    def test_only_after_ten_pm_central(self):
+        from automations.captainship_night_knocks import run as R
+        from automations.captainship_night_knocks import ingest as I
+        with tempfile.TemporaryDirectory() as d:
+            saved, I.IN_JSON = I.IN_JSON, Path(d) / "missing.json"
+            said = []
+            try:
+                # 9 PM: the intraday boards are still running on this machine.
+                self.assertFalse(R.maybe_harvest(self._at(21, 0), run_it=False,
+                                                 logfn=said.append))
+                self.assertEqual(said, [])
+                # 10 PM: owed, and it says so.
+                self.assertFalse(R.maybe_harvest(self._at(22, 5), run_it=False,
+                                                 logfn=said.append))
+                self.assertTrue(any("harvest owed" in s for s in said), said)
+                # Midnight: the 4 AM wave is too close.
+                said.clear()
+                self.assertFalse(R.maybe_harvest(self._at(0, 30), run_it=False,
+                                                 logfn=said.append))
+                self.assertEqual(said, [])
+            finally:
+                I.IN_JSON = saved
+
+
 if __name__ == "__main__":
     unittest.main()

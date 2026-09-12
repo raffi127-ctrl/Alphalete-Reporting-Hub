@@ -86,6 +86,19 @@ BUSY_PATTERNS = ("automations.knocks_intraday.run",
 # sample starts on the Saturday, with the zones in. Live mode has no such gate.
 SAMPLE_FIRST_NIGHT = dt.date(2026, 9, 12)
 
+# THE HARVEST THIS MODULE IS WAITING ON — and why the AGENT owns it rather
+# than a person's terminal. The address harvest was first queued by hand from
+# Eve's Windows box, which meant the whole weekend depended on that window
+# staying open until 10 PM. It does not any more: after 10 PM Central, a tick
+# that finds no harvest on disk runs it itself, stands aside for whatever else
+# holds the session, and tries again on a later tick. That also makes it a
+# RETRY — a harvest that dies at 10 PM Friday is re-attempted Saturday night
+# instead of leaving the sample with no zones and nobody awake to notice.
+#
+# 10 PM: the 9 PM boards (knocks_intraday, same machine) are done by then and
+# the 4 AM wave is six hours away.
+HARVEST_HOUR = 22
+
 # WHEN THE FAILURE NOTICE GOES OUT: 00:45 Central, about the night that just
 # ended. Late enough that the last wave a night can have (9 PM Pacific = 11 PM
 # Central, plus the hour of grace) has either gone out or failed; early enough
@@ -260,6 +273,45 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
                   % (type(exc).__name__, str(exc)[:160]))
             notes.append("summary board unavailable (%s)" % type(exc).__name__)
     return boards, notes
+
+
+def maybe_harvest(now_utc: dt.datetime, *, run_it: bool = True,
+                  logfn=print) -> bool:
+    """Run the address harvest if it has never landed. True if it ran.
+
+    Deliberately ONE attempt per tick and none at all once the file exists:
+    ~44 impersonations single-file is a 45-minute job, and the wrapper's own
+    guard keeps a second tick from starting while it runs.
+    """
+    if ingest.IN_JSON.exists():
+        return False
+    local = now_utc.astimezone(CT)
+    if not (HARVEST_HOUR <= local.hour < 23):
+        return False
+    busy = _busy()
+    if busy:
+        logfn("[night-knocks] harvest owed but %s is running — later tick" % busy)
+        return False
+    if not run_it:
+        logfn("[night-knocks] harvest owed (no %s yet)" % ingest.IN_JSON)
+        return False
+    import subprocess
+    logfn("[night-knocks] no addresses on disk — running the harvest now "
+          "(~45 min, read-only)")
+    cmd = [sys.executable, "-u", "-m",
+           "automations.captainship_night_knocks.harvest_zones"]
+    try:
+        proc = subprocess.run(cmd, timeout=75 * 60, capture_output=True,
+                              text=True)
+    except Exception as exc:  # noqa: BLE001 — a dead harvest is not a dead tick
+        logfn("[night-knocks] harvest failed to start: %s: %s"
+              % (type(exc).__name__, str(exc)[:200]))
+        return False
+    tail = "\n".join((proc.stdout or "").splitlines()[-25:])
+    logfn("[night-knocks] harvest rc=%d\n%s" % (proc.returncode, tail))
+    if proc.returncode == 0:
+        ingest.run(logfn=logfn)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +622,10 @@ def main(argv=None) -> int:
 
     now_utc = dt.datetime.now(dt.timezone.utc)
     rc = 0
+    if args.tick or args.plan:
+        # Before anything else: if the addresses this whole module waits on are
+        # still not on disk and it is late enough, go get them. See HARVEST_HOUR.
+        maybe_harvest(now_utc, run_it=not args.plan)
     if args.tick or args.plan:
         n = tick(now_utc, send=args.send and not args.plan, sample=sample,
                  captain_keys=keys, plan=args.plan)
