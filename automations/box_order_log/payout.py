@@ -68,7 +68,8 @@ def _in_week(d: Optional[dt.date], start: dt.date, end: dt.date) -> bool:
     return d is not None and start <= d <= end
 
 
-def build_week_tables(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
+def build_week_tables(sales: Sequence, today: Optional[dt.date] = None,
+                      money_fn=None) -> Dict:
     """Roll the collapsed sales into the two weekly payout tables.
 
     Returns {"last": {"label", "rows"}, "this": {"label", "rows"}} where each
@@ -92,6 +93,11 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
         rep = (s.fields.get("Rep Name") or "").strip()
         if not rep:
             continue
+        # money_fn (Carlos 2026-09-13: "show me the revenue count") prices the
+        # deal and each bucket sums DOLLARS instead of counting 1s. Same
+        # buckets, same dates, same sort — only the unit changes, so the two
+        # screenshots read as the same board in two currencies.
+        unit = 1 if money_fn is None else money_fn(s)[0]
         agg = reps.setdefault(rep, {
             "pending": 0, "submitted": 0, "posted_last": 0, "posted_this": 0,
             "canceled_last": 0, "canceled_this": 0,
@@ -103,18 +109,18 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
 
         if s.status in POSTED_STATUSES:
             if _in_week(paid_on, last_start, last_end):
-                agg["posted_last"] += 1
+                agg["posted_last"] += unit
             if _in_week(paid_on, this_start, this_end):
-                agg["posted_this"] += 1
+                agg["posted_this"] += unit
         elif s.status in CANCEL_STATUSES:
             if _in_week(dead_on, last_start, last_end):
-                agg["canceled_last"] += 1
+                agg["canceled_last"] += unit
             if _in_week(dead_on, this_start, this_end):
-                agg["canceled_this"] += 1
+                agg["canceled_this"] += unit
         elif s.status:
-            agg["pending"] += 1
+            agg["pending"] += unit
             if s.status in SUBMITTED_STATUSES:
-                agg["submitted"] += 1
+                agg["submitted"] += unit
 
     def make_rows(posted_key: str, canceled_key: str) -> List[Dict]:
         rows = []
@@ -170,3 +176,31 @@ def by_week_matrix(sales: Sequence):
             pending[rep] += 1
     reps = sorted(totals, key=lambda r: (-totals[r], r.lower()))
     return reps, sorted(weeks, reverse=True), posted, pending
+
+
+def filter_active(tables: Dict, active, terminated, names_match) -> Dict:
+    """Drop Terminated reps' ROWS; keep them in the TOTAL strip.
+
+    Carlos 2026-09-13: "cross-reference only the active reps to be shown. I do
+    still want the totals to include any reps that may no longer be around."
+    Same terminated-driven rule as the activation board: hidden only on an
+    explicit Terminated match with no Active row, because the roster has gaps
+    and hiding an unmatched seller silently is worse than showing one who
+    left. The all-rep sums land in table["totals"]; the renderer prefers them
+    over summing the visible rows, which is exactly the asked-for behaviour.
+    """
+    hidden = set()
+    for which in ("last", "this"):
+        t = tables[which]
+        t["totals"] = {k: sum(r[k] for r in t["rows"])
+                       for k in ("posted", "submitted", "canceled", "pending")}
+        kept = []
+        for r in t["rows"]:
+            if any(names_match(r["rep"], x) for x in terminated) and not any(
+                    names_match(r["rep"], x) for x in active):
+                hidden.add(r["rep"])
+            else:
+                kept.append(r)
+        t["rows"] = kept
+    tables["hidden"] = sorted(hidden)
+    return tables

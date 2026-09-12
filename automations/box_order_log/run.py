@@ -114,11 +114,22 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
         return out, tier_png, tier_note
 
 
+REVENUE_LINE = (":moneybag: Revenue by status — same board as Accepted by "
+                "supplier, in dollars (New Comp grid, per-deal; weekly Volume "
+                "bonus lives on the Revenue Board)")
+REVENUE_SUBTITLE = ("Dollars on the New Compensation grid (base by BF tier + "
+                    "term + kWh), per deal — the weekly Volume bonus is NOT "
+                    "in these cells; see the Revenue Board. Accepted & "
+                    "Cancelled are that week; Still Open / Submitted are "
+                    "all-time, identical in both tables.")
+
+
 def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                  payout_path: Path, tier_path: Optional[Path],
                  tier_line: str, sections=None,
                  pending_path: Optional[Path] = None,
                  activations_path: Optional[Path] = None,
+                 revenue_path: Optional[Path] = None,
                  contents: str = "") -> str:
     """Post one dated thread — parent, then its attachments — and return its ts.
 
@@ -163,6 +174,12 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
             channel=channel, thread_ts=ts, file=str(pending_path),
             filename=pending_path.name, title=pending_path.stem,
             initial_comment=PENDING_LINE,
+        )
+    if revenue_path and "revenue" in sections:
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(revenue_path),
+            filename=revenue_path.name, title=revenue_path.stem,
+            initial_comment=REVENUE_LINE,
         )
     if activations_path and "activations" in sections:
         from . import activations as _act
@@ -408,9 +425,10 @@ def main(argv: Optional[list] = None) -> int:
                              tier_bonus.DEFAULT_OWNER))
     ap.add_argument("--no-tier", action="store_true",
                     help="leave the Box Tier Bonus board out of the thread")
+    # (revenue image subtitle lives at module scope? keep local-simple)
     ap.add_argument("--sections",
                     default="order_log,accepted,pending,tier_bonus,"
-                            "activations",
+                            "activations,revenue",
                     help="which thread sections to post, csv of: order_log "
                          "(the workbook), accepted (the payout board), "
                          "pending (the pending-orders worklist image), "
@@ -632,6 +650,8 @@ def main(argv: Optional[list] = None) -> int:
     # survives the export's amnesia — so an erased history can't shrink a
     # window's denominator. Own guard: this image must never sink the post.
     out_activations = None
+    out_revenue = None   # set in the artifact block below; init here because
+                         # that block is conditional and attach_lines is not
     if "activations" in sections:
         try:
             from . import activations as _act
@@ -698,11 +718,46 @@ def main(argv: Optional[list] = None) -> int:
             print("    All Reps summary + Payout by Week + {} rep tabs, "
                   "{} sales".format(n_reps, len(sales)))
 
-        # The payout image that goes inline in Slack.
+        # The payout image that goes inline in Slack. Rows are Roll Call
+        # actives only; the TOTAL strip still counts everyone (Carlos
+        # 2026-09-13). Roster trouble fails open into showing all rows.
         from . import payout, png
+        from . import activations as _act_roster
         tables = payout.build_week_tables(sales, today)
+        try:
+            _ract, _rterm = _act_roster.roll_call_status(args.sheet_id or None)
+            tables = payout.filter_active(tables, _ract, _rterm,
+                                          _act_roster._names_match)
+        except Exception as exc:
+            print("  ⚠ Roll Call filter skipped on the payout image: {}"
+                  .format(exc))
         png.render(tables, out_png,
                    subtitle=png.SUBTITLE)
+
+        # Its REVENUE twin (Carlos 2026-09-13: same screenshot, "show me the
+        # revenue count") — same buckets and dates, dollars instead of 1s,
+        # priced on the New Compensation grid the Box Revenue Board already
+        # uses (one pricer, one truth). Per-deal money only: the weekly
+        # Volume bonus can't sit in a per-deal bucket and already lives on
+        # the Revenue Board. Own guard — never sinks the post.
+        if "revenue" in sections:
+            try:
+                from automations.vantura_revenue_board.run import price_box
+                out_revenue = OUTPUT_DIR / "BOX Revenue by Status {}.png".format(
+                    today.strftime("%m-%d-%Y"))
+                rtables = payout.build_week_tables(sales, today,
+                                                   money_fn=price_box)
+                try:
+                    rtables = payout.filter_active(
+                        rtables, _ract, _rterm, _act_roster._names_match)
+                except NameError:
+                    pass
+                png.render(rtables, out_revenue, money=True,
+                           subtitle=REVENUE_SUBTITLE)
+            except Exception as exc:
+                out_revenue = None
+                print("✗ revenue image failed (thread continues without it): "
+                      "{}".format(exc), file=sys.stderr)
         # The Pending Orders tab, drawn as its own image. Built off the FULL
         # pull like the workbook it mirrors, not the six-week window: a deal
         # that has sat unaccepted for two months is exactly the one Carlos
@@ -744,6 +799,8 @@ def main(argv: Optional[list] = None) -> int:
         attach_lines.append(PAYOUT_LINE)
     if "pending" in sections:
         attach_lines.append(PENDING_LINE)
+    if out_revenue and "revenue" in sections:
+        attach_lines.append(REVENUE_LINE)
     if out_activations and "activations" in sections:
         from . import activations as _act_lines
         attach_lines.append(_act_lines.ACTIVATIONS_LINE)
@@ -855,6 +912,7 @@ def main(argv: Optional[list] = None) -> int:
                 _post_thread(client, target, text, out_xlsx, out_png, tier_png,
                              tier_bonus.TIER_LINE, sections=sections,
                              activations_path=out_activations,
+                             revenue_path=out_revenue,
                              pending_path=out_pending, contents=contents)
             except Exception as exc:                      # noqa: BLE001
                 failed_channels.append("{} — {}: {}".format(

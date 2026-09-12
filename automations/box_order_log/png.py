@@ -45,6 +45,17 @@ COLS: List[Tuple[str, str, str]] = [
 
 # (min PAID inclusive, RGB) — first match wins, high to low. Keyed on what
 # pays that week, which is what the row is ranked by.
+# Money twin of BANDS, for the revenue board — thresholds on ACCEPTED $ that
+# week. Defaults (a BOX deal prices ~$300-900 on the New Comp grid), stated
+# here for Carlos to adjust like the activation-board bands.
+BANDS_MONEY = [
+    (4000, (169, 208, 142)),
+    (2500, (159, 227, 240)),
+    (1500, (255, 229, 153)),
+    (1,    (217, 217, 217)),
+    (0,    (234, 153, 153)),
+]
+
 BANDS = [
     (8, (169, 208, 142)),
     (5, (159, 227, 240)),
@@ -83,18 +94,22 @@ def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def _band(total: int) -> Tuple[int, int, int]:
-    for floor, rgb in BANDS:
+def _band(total, money: bool = False) -> Tuple[int, int, int]:
+    for floor, rgb in (BANDS_MONEY if money else BANDS):
         if total >= floor:
             return rgb
     return WHITE
+
+
+def _fmt_val(v, money: bool) -> str:
+    return "${:,.0f}".format(v) if money else str(v)
 
 
 def _text_w(draw, text, font) -> int:
     return int(draw.textlength(str(text), font=font))
 
 
-def _col_widths(draw, rows, font, head_font) -> List[int]:
+def _col_widths(draw, rows, font, head_font, money=False) -> List[int]:
     """Width per column, sized to its own header and values.
 
     Was a flat NUM_W for every numeric column, which clipped a long header
@@ -104,7 +119,8 @@ def _col_widths(draw, rows, font, head_font) -> List[int]:
     for i, (head, key, _align) in enumerate(COLS):
         w = _text_w(draw, head, head_font) + 2 * CELL_PAD
         for r in rows:
-            w = max(w, _text_w(draw, r[key], font) + 2 * CELL_PAD)
+            v = r[key] if key == "rep" else _fmt_val(r[key], money)
+            w = max(w, _text_w(draw, v, font) + 2 * CELL_PAD)
         if i == 0:
             w = max(w, MIN_REP_W)
         else:
@@ -113,15 +129,15 @@ def _col_widths(draw, rows, font, head_font) -> List[int]:
     return widths
 
 
-def _table_width(draw, rows, font, head_font) -> int:
-    widths = _col_widths(draw, rows, font, head_font)
+def _table_width(draw, rows, font, head_font, money=False) -> int:
+    widths = _col_widths(draw, rows, font, head_font, money)
     return sum(widths), widths
 
 
 def _draw_table(draw, x: int, y: int, title: str, rows: Sequence[Dict],
-                fonts) -> int:
+                fonts, money: bool = False, totals: Dict = None) -> int:
     f_title, f_head, f_cell = fonts
-    total_w, widths = _table_width(draw, rows, f_cell, f_head)
+    total_w, widths = _table_width(draw, rows, f_cell, f_head, money)
 
     draw.text((x, y), title, font=f_title, fill=TEXT)
     y += TITLE_H
@@ -135,11 +151,11 @@ def _draw_table(draw, x: int, y: int, title: str, rows: Sequence[Dict],
     y += HEADER_H
 
     for r in rows:
-        fill = _band(r["posted"])
+        fill = _band(r["posted"], money)
         cx = x
         for (_head, key, align), w in zip(COLS, widths):
             draw.rectangle([cx, y, cx + w, y + ROW_H], fill=fill, outline=GRID)
-            val = str(r[key])
+            val = r[key] if key == "rep" else _fmt_val(r[key], money)
             if align == "left":
                 draw.text((cx + CELL_PAD, y + 4 * SCALE), val, font=f_cell, fill=TEXT)
             else:
@@ -150,10 +166,14 @@ def _draw_table(draw, x: int, y: int, title: str, rows: Sequence[Dict],
 
     # TOTAL strip
     cx = x
-    sums = {k: sum(r[k] for r in rows) for _h, k, _a in COLS if k != "rep"}
+    # `totals` (Carlos 2026-09-13) overrides the visible-row sums: with the
+    # Terminated reps' rows hidden, the strip still counts EVERYONE, so the
+    # bottom line reconciles with the order log rather than the roster.
+    sums = totals or {k: sum(r[k] for r in rows)
+                      for _h, k, _a in COLS if k != "rep"}
     for (_head, key, align), w in zip(COLS, widths):
         draw.rectangle([cx, y, cx + w, y + ROW_H], fill=HEADER_BG, outline=GRID)
-        val = "TOTAL" if key == "rep" else str(sums[key])
+        val = "TOTAL" if key == "rep" else _fmt_val(sums[key], money)
         if align == "left":
             draw.text((cx + CELL_PAD, y + 4 * SCALE), val, font=_font(13 * SCALE, True),
                       fill=TEXT)
@@ -165,7 +185,8 @@ def _draw_table(draw, x: int, y: int, title: str, rows: Sequence[Dict],
     return total_w
 
 
-def render(tables: Dict, out_path: Path, *, subtitle: str = "") -> Path:
+def render(tables: Dict, out_path: Path, *, subtitle: str = "",
+           money: bool = False) -> Path:
     """Draw both week tables and save the PNG."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,13 +197,15 @@ def render(tables: Dict, out_path: Path, *, subtitle: str = "") -> Path:
     # Measure on a scratch canvas first.
     probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     last, this = tables["last"], tables["this"]
-    w_last, _ = _table_width(probe, last["rows"], fonts[2], fonts[1])
-    w_this, _ = _table_width(probe, this["rows"], fonts[2], fonts[1])
+    w_last, _ = _table_width(probe, last["rows"], fonts[2], fonts[1], money)
+    w_this, _ = _table_width(probe, this["rows"], fonts[2], fonts[1], money)
     rows_h = max(len(last["rows"]), len(this["rows"])) + 1     # +1 TOTAL strip
 
     sub_h = 26 * SCALE if subtitle else 0
+    hidden = tables.get("hidden") or []
+    foot_h = 20 * SCALE if hidden else 0
     W = PAD * 2 + w_last + GAP + w_this
-    H = PAD * 2 + sub_h + TITLE_H + HEADER_H + rows_h * ROW_H
+    H = PAD * 2 + sub_h + TITLE_H + HEADER_H + rows_h * ROW_H + foot_h
 
     img = Image.new("RGB", (int(W), int(H)), WHITE)
     draw = ImageDraw.Draw(img)
@@ -193,9 +216,16 @@ def render(tables: Dict, out_path: Path, *, subtitle: str = "") -> Path:
         y0 += sub_h
 
     _draw_table(draw, PAD, y0,
-                "LAST WEEK  ({})".format(last["label"]), last["rows"], fonts)
+                "LAST WEEK  ({})".format(last["label"]), last["rows"], fonts,
+                money=money, totals=last.get("totals"))
     _draw_table(draw, PAD + w_last + GAP, y0,
-                "THIS WEEK  ({})".format(this["label"]), this["rows"], fonts)
+                "THIS WEEK  ({})".format(this["label"]), this["rows"], fonts,
+                money=money, totals=this.get("totals"))
+    if hidden:
+        draw.text((PAD, int(H) - PAD - 14 * SCALE),
+                  "Terminated on Roll Call, rows hidden (still in TOTAL): "
+                  + ", ".join(hidden)[:170],
+                  font=_font(10 * SCALE), fill=(120, 120, 120))
 
     img = img.resize((int(W / SCALE), int(H / SCALE)), Image.LANCZOS)
     img.save(out_path)
