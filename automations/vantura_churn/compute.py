@@ -4,11 +4,16 @@ Implements the runbook exactly (Vantura Master Sales Board, 2026-07-13):
   * Churn counts by POSTED date (last 30 days); Activations by ORDER date.
   * Product mapping: WIRELESS→Wireless, AIR/AWB→Air, NEW INTERNET→Internet;
     every other product type is ignored for churn.
-  * Helper block (hidden R:AE) = one row per disconnected account
+  * Helper block (hidden, 15 cols) = one row per disconnected account
     (product+customer+posted-date), sorted soonest-to-fall-off first
     within each product, products in Wireless/Air/Internet order.
-  * AE = lines still on the 0-30 list AFTER this row's disconnect date
-    rolls off (drives the "Churn % after rolloff" formula in U).
+    Col 2 is the FALL-OFF date (activation posted + 30 — when the row
+    leaves the 0-30 report; it was mislabeled 'Disconnect Date' until
+    2026-09-08, Carlos); the REAL disconnect date (DTR Status Date of the
+    disconnected lines) sits right after Activation Date since the same
+    change.
+  * Last col = lines still on the 0-30 list AFTER this row's fall-off
+    (drives the "Churn % after rolloff" formula).
 
 Validated against the hand-reconciled 7/13/2026 numbers: Carlos
 321/58/67 bases + 8/5/2 disconnects (15/446 = 3.4%), Atef 549/111/1 +
@@ -221,25 +226,32 @@ def helper_block(lines: list[dict], today: dt.date) -> list[list]:
         prod.sort(key=lambda kv: (min(u["posted"] for u in kv[1]), kv[0][1]))
         for (_, customer, _ban), grp in prod:
             posted = min(u["posted"] for u in grp)
-            disc_date = posted + dt.timedelta(days=30)
+            falloff = posted + dt.timedelta(days=30)
+            # The REAL disconnect date (Carlos 2026-09-08): the day the
+            # customer disconnected = DTR Status Date of the disconnected
+            # line(s); earliest across the account's lines.
+            disc_real = min(
+                (d for d in (_parse_date(g.get("status_date"))
+                             for g in grp) if d), default=None)
             remaining = sum(len(v) for _, v in prod
                             if min(u["posted"] for u in v) > posted)
             rows.append([
-                f"{(disc_date - today).days}d",          # R Days Left
-                _fmt_date(disc_date),                    # S Disconnect Date
-                len(grp),                                # T Lines
-                None,                                    # U churn-after formula
-                customer,                                # V Customer
-                _join_uniq(g["rep"] for g in grp),       # W Sales Rep
+                f"{(falloff - today).days}d",            # +0  Days Left
+                _fmt_date(falloff),                      # +1  Fall-Off Date
+                len(grp),                                # +2  Lines
+                None,                                    # +3  churn-after formula
+                customer,                                # +4  Customer
+                _join_uniq(g["rep"] for g in grp),       # +5  Sales Rep
                 _fmt_date(min((g["order_date"] for g in grp
-                               if g["order_date"]), default=None)),  # X Order Date
-                _fmt_date(posted),                       # Y Activation Date
-                _join_uniq((g["cru_iru"] for g in grp), sep="/"),  # Z CRU/IRU
-                _join_uniq(_device(g) for g in grp),     # AA Phone/BYOD
-                p,                                       # AB Product Type
-                None,                                    # AC notes formula
-                p,                                       # AD Product key
-                remaining,                               # AE remaining after
+                               if g["order_date"]), default=None)),  # +6 Order Date
+                _fmt_date(posted),                       # +7  Activation Date
+                _fmt_date(disc_real),                    # +8  Disconnect Date (real)
+                _join_uniq((g["cru_iru"] for g in grp), sep="/"),  # +9 CRU/IRU
+                _join_uniq(_device(g) for g in grp),     # +10 Phone/BYOD
+                p,                                       # +11 Product Type
+                None,                                    # +12 notes formula
+                p,                                       # +13 Product key
+                remaining,                               # +14 remaining after
             ])
     return rows
 

@@ -104,10 +104,17 @@ def open_sheet(sheet_id: str = None):
     return open_by_key(sheet_id or SHEET_ID)
 
 
-# Helper-block column offsets from its FIRST column (the block is 14 wide).
+# Helper-block column offsets from its FIRST column (the block is 15 wide).
+# 2026-09-08 (Carlos): a REAL 'Disconnect Date' column (DTR Status Date) was
+# inserted right after Activation Date (offset 8), and the old col at offset
+# 1 was relabeled 'Fall-Off Date' — it always was posted+30, the day the row
+# leaves the 0-30 report, not the disconnect day. Everything from CRU/IRU on
+# shifted right by one; the sheets got a matching physical column insert the
+# same evening (helper_bounds' key-offset check refuses to run on a tab where
+# the two moves ever get out of step).
 H_LINES, H_CHURN_F, H_CUSTOMER = 2, 3, 4
-H_NOTES_F, H_KEY, H_REMAINING = 11, 12, 13
-H_WIDTH = 14
+H_NOTES_F, H_KEY, H_REMAINING = 12, 13, 14
+H_WIDTH = 15
 # Gap between the helper block and the per-rep list.
 REP_GAP = 2
 # Keep every churn tab's helper formulas covering at least this many rows.
