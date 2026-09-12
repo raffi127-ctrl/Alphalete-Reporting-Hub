@@ -474,20 +474,13 @@ class RafsBoardUnchangedTests(unittest.TestCase):
         self.assertNotIn("first_knock_green_at",
                          inspect.getsource(G._render_board))
 
-    def test_the_knock_target_follows_the_day_on_rafs_board(self):
-        """THE ONE CHANGE Raf's board is meant to get (Megan 2026-09-12).
-
-        gap_alerts passed a flat 140, and an explicit value BEATS the day's
-        target -- so a weekday rep greened 20 doors short of the 160 Raf asks
-        for, every weekday. 140 was never wrong, it was Saturday's number
-        written down during a Saturday conversation."""
-        import datetime as dt
+    def test_rafs_knock_target_is_a_flat_140(self):
+        """Megan 2026-09-12: "knock count stays the same". The renderer's
+        default varies by day; this explicit value overrides it on purpose,
+        and was briefly changed to None on the mistaken belief that the flat
+        number was a leftover."""
         from automations.gap_alerts import config as C
-        from automations.total_knocks.render import doors_target
-        self.assertIsNone(C.KNOCKS_GREEN_AT,
-                          "a number here overrides the day's real target")
-        self.assertEqual(C.KNOCKS_GREEN_AT or doors_target(dt.date(2026, 9, 11)), 160)
-        self.assertEqual(C.KNOCKS_GREEN_AT or doors_target(dt.date(2026, 9, 12)), 140)
+        self.assertEqual(C.KNOCKS_GREEN_AT, 140)
 
     def test_raf_keeps_his_9pm_board(self):
         """The dedupe drops offices that post their OWN board. Raf does not."""
