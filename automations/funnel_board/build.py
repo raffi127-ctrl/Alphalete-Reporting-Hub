@@ -445,6 +445,17 @@ if "Campaign Log" not in SID:
     SID["Campaign Log"] = _res["replies"][0]["addSheet"]["properties"]["sheetId"]
     print("created: Campaign Log")
 
+# The Info Box's data store (Carlos 2026-09-12): per-manager typed answers for
+# the RECRUITING / SCHEDULE box under the campaign zone. Same split as the
+# Campaign Log: the hourly wipe re-renders the box's FORMULAS; the typed DATA
+# lives here (key "manager|label" in A, value in B, written by goal_sync.gs).
+if "Info Box" not in SID:
+    _res = batch([{"addSheet": {"properties": {
+        "title": "Info Box", "hidden": True,
+        "gridProperties": {"rowCount": 2000, "columnCount": 4}}}}])
+    SID["Info Box"] = _res["replies"][0]["addSheet"]["properties"]["sheetId"]
+    print("created: Info Box")
+
 # A Trend tab is 2 + 8 columns per week and keeps growing; a freshly created
 # sheet only has 60, and writing past the grid is a 400, not a resize.
 for _t in (TREND,):
@@ -779,6 +790,63 @@ def budget(sid, title, nrows, row0):
             "userEnteredFormat(backgroundColor,numberFormat,textFormat,"
             "horizontalAlignment,borders)"),
     ])
+# ---- Info Box: per-manager RECRUITING / SCHEDULE answers (Carlos 2026-09-12).
+# Labels in A, Carlos types the answer in the violet B cell; goal_sync.gs
+# writes it to the hidden 'Info Box' tab keyed "manager|label" and the next
+# rebuild's VLOOKUP shows it again — the typed-goals pattern exactly.
+# COUPLING: goal_sync.gs hardcodes the box's first row (INFO_Z0) the same way
+# it hardcodes CAMP_Z0 — if the box moves, update and re-install the script.
+INFO_FIELDS = [
+    ("RECRUITING", None),
+    ("Ad poster", "ans"),
+    ("SCHEDULE", None),
+    ("A player meeting", "ans"),
+    ("Leaders meeting", "ans"),
+    ("2nd round times", "ans"),
+    ("Free flow time", "ans"),
+    ("Stations", "ans"),
+    ("Practice pitching", "ans"),
+    ("Announcements / high rollers / impact", "ans"),
+]
+
+
+def info_box(sid, title, row0):
+    # re-runs re-merge the answer cells; clear any existing merges first so
+    # the hourly rebuild never 400s on an overlapping merge.
+    F.append({"unmergeCells": {"range": gr(sid, row0 - 1,
+                                           row0 - 1 + len(INFO_FIELDS), 0, 4)}})
+    rows = []
+    for lab, kind in INFO_FIELDS:
+        if kind is None:
+            rows.append([lab, ""])
+        else:
+            rows.append([lab,
+                         '=IFERROR(VLOOKUP($A$1&"|"&"%s",'
+                         "'Info Box'!$A:$B,2,FALSE),\"\")" % lab])
+    LEGEND_VALUES.append({"range": "'%s'!A%d" % (title, row0), "values": rows})
+    r0 = row0 - 1                       # 0-based first row
+    for i, (lab, kind) in enumerate(INFO_FIELDS):
+        if kind is None:                # section header band, like the legend's
+            F.append(fmt(sid, r0 + i, r0 + i + 1, 0, 4, {"userEnteredFormat": {
+                "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
+                "horizontalAlignment": "LEFT"}},
+                "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"))
+        else:
+            F.append({"mergeCells": {"range": gr(sid, r0 + i, r0 + i + 1, 1, 4),
+                                     "mergeType": "MERGE_ALL"}})
+            F.append(fmt(sid, r0 + i, r0 + i + 1, 1, 4, {"userEnteredFormat": {
+                "backgroundColor": rgb(EDIT_BG), "textFormat": txt(EDIT, True, 11, FONT),
+                "horizontalAlignment": "LEFT"}},
+                "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"))
+            F.append(fmt(sid, r0 + i, r0 + i + 1, 0, 1, {"userEnteredFormat": {
+                "textFormat": txt(INK, False, 11, FONT),
+                "horizontalAlignment": "LEFT"}},
+                "userEnteredFormat(textFormat,horizontalAlignment)"))
+    F.append({"updateBorders": {"range": gr(sid, r0, r0 + len(INFO_FIELDS), 0, 4),
+                                "top": bdt(INK), "bottom": bdt(INK),
+                                "left": bdt(INK), "right": bdt(INK)}})
+
+
 # ---- colour key, repeated on each manager tab below its data
 def legend(sid, title, row0):
     n = len(LEGEND)
@@ -1472,6 +1540,7 @@ def build_trend(sid, title, heading, roster):
 
     campaign_zone(sid, title)
     legend(sid, title, CAMP_Z0 + CAMP_SLOTS + 2)
+    info_box(sid, title, CAMP_Z0 + CAMP_SLOTS + 2 + 9 + 2)
     F.append(fmt(sid, THDR - 2, TF + len(METRICS) - 1, 0, ncols, CENTER, FC))
     # On the Trend the counts are the story and the rates are support, so bold
     # the count rows only — bolding both flattens that back out.
