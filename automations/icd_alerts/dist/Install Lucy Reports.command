@@ -26,11 +26,16 @@ cd "$(dirname "$0")/program files" || {
 #
 # OSC escapes, guarded on stdout being a terminal: piped into a log or run over
 # ssh they would be noise, and Terminal is the only thing that reads them.
+# ONLY THE TITLE. The colours are gone on purpose.
+#
+# This used to set the background to near-black and the text to brand gold. A
+# terminal is free to honour one OSC and ignore another -- and a Mac that took
+# the BACKGROUND and not the FOREGROUND showed black text on black, with the
+# installer running perfectly and invisibly behind it. That is precisely what
+# "nothing is happening" looks like, and it cost an enrolment call
+# (2026-09-12). Branding is not worth a window somebody cannot read.
 if [ -t 1 ]; then
-  printf '\033]0;Lucy Reports — Setup\007'   # window title
-  printf '\033]11;#141110\007'                # background: near-black
-  printf '\033]10;#C1B38F\007'                # text: brand gold
-  printf '\033]12;#B93037\007'                # cursor: brand red
+  printf '\033]0;Lucy Reports — Setup\007'
 fi
 
 echo ""

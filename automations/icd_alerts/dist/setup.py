@@ -57,14 +57,19 @@ PLIST_LABEL = "com.alphalete.lucy-reports"
 EVERY_MINUTES = 5
 
 
-# ALPHALETE'S OWN COLOURS -- red #B93037, gold #C1B38F, near-black -- sampled
-# from the company logo, the shield and both uniform sheets rather than
-# guessed. NOT the burnt orange on the Total Knocks board: that is the
-# report's table styling, not the brand (Megan 2026-09-11).
-_TTY = sys.stdout.isatty()
+# READABLE ON ANY BACKGROUND, which is the only requirement that actually
+# matters here. Alphalete's red (#B93037) reads on both light and dark, so it
+# carries the brand; everything else uses the terminal's OWN foreground, bold
+# or plain. The gold went the same way as the background repaint: #C1B38F is
+# lovely on near-black and nearly invisible on the default white, and we do
+# not get to choose which one an owner has.
+#
+# NO_COLOR is honoured because it is the one thing a person can set when our
+# colours are wrong on their machine.
+_TTY = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
 RED = "\033[38;2;185;48;55m" if _TTY else ""
-GOLD = "\033[38;2;193;179;143m" if _TTY else ""
-DIM = "\033[38;2;138;127;105m" if _TTY else ""
+GOLD = "\033[1m" if _TTY else ""          # bold, not a colour
+DIM = "" if _TTY else ""                   # the terminal's own foreground
 BOLD = "\033[1m" if _TTY else ""
 OFF = "\033[0m" if _TTY else ""
 
