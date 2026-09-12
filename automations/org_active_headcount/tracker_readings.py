@@ -76,6 +76,19 @@ BAND = 1400                        # px per slice after scaling to MAX_W
 OVERLAP = 140
 MAX_W = 1568
 
+# The column to read, per tracker. BOX carries BOTH 'Selling Rep Count' and
+# 'Total Rep Count'; left to choose, the first run read one or the other day to
+# day, and only the 'Total Rep Count' days matched the weekly history.
+COLUMN = {"b2b_box": "Total Rep Count"}
+
+# Trackers read as TWO COLUMN STRIPS at full resolution instead of whole bands.
+# The Fiber board is wide: scaled down to fit, '17' read as '7' and '18' as '8'
+# (checked against the weekly history, 2026-09-12). So a first call only LOCATES
+# the name column and the count column, and the second reads just those two
+# strips, cut from the original pixels and placed side by side on the same rows.
+# NDS is not here: its whole-band reading matched the weekly history 100%.
+STRIPS = {"att_country", "b2b_att_country", "b2b_box"}
+
 _SCHEMA = {
     "type": "object",
     "properties": {
@@ -104,51 +117,130 @@ _PROMPT = (
     "These {n} images are consecutive horizontal slices, top to bottom, of ONE "
     "tall screenshot of a sales tracker table (consecutive slices overlap a "
     "little, so a row may appear twice — list it once). The table has one row "
-    "per owner (ICD) and a column headed 'Rep Count' (or very close to that).\n\n"
-    "Return every owner row with its Rep Count, copying the numbers exactly — "
+    "per owner (ICD) and a column headed '{col}'.\n\n"
+    "Return every owner row with its '{col}' value, copying the numbers exactly — "
     "never compute or estimate. Read the count from the SAME horizontal row as "
     "the name; if the name and the counts sit in side-by-side tables, follow the "
     "row line across carefully. Skip grand-total / header rows. Also copy every "
     "date or date range printed anywhere on the board.")
 
+_LOCATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "dates_printed": {"type": "string", "description":
+            "Every date / week-ending / date-range text printed on the board, "
+            "copied exactly, joined with ' ; '."},
+        "count_header": {"type": "string", "description":
+            "The exact header text of the count column you located."},
+        "name_left": {"type": "number"}, "name_right": {"type": "number"},
+        "count_left": {"type": "number"}, "count_right": {"type": "number"},
+    },
+    "required": ["dates_printed", "count_header", "name_left", "name_right",
+                 "count_left", "count_right"],
+    "additionalProperties": False,
+}
+
+_LOCATE_PROMPT = (
+    "These {n} images are consecutive horizontal slices, top to bottom, of ONE "
+    "tall screenshot of a sales tracker, all at the same width. Find the table "
+    "that lists owners (ICDs) one per row and has a column headed exactly "
+    "'{col}' (if several count columns look alike, it is the one with that exact "
+    "header). Return the LEFT and RIGHT edges of (a) the column holding the owner "
+    "names and (b) the '{col}' column, as FRACTIONS of the image width (0 = left "
+    "edge, 1 = right edge). Also copy every date or date range printed anywhere "
+    "on the board.")
+
+_STRIP_PROMPT = (
+    "These {n} images are consecutive horizontal slices, top to bottom, of ONE "
+    "tall image made of two vertical strips cut from the same table and placed "
+    "side by side: the LEFT strip is the owner (ICD) name column, the RIGHT strip "
+    "is the '{col}' column. Both strips keep their original vertical positions, "
+    "so a name and its count sit on the SAME horizontal line. Consecutive slices "
+    "overlap a little — list each row once. Return every owner row with its "
+    "'{col}' value, copying the numbers exactly; never compute or estimate. Skip "
+    "header and total rows.")
+
+
+def _slice(im) -> List[bytes]:
+    if im.width > MAX_W:
+        im = im.resize((MAX_W, round(im.height * MAX_W / im.width)))
+    out, top = [], 0
+    while True:
+        box = im.crop((0, top, im.width, min(top + BAND, im.height)))
+        buf = io.BytesIO()
+        box.save(buf, format="PNG")
+        out.append(buf.getvalue())
+        if top + BAND >= im.height or len(out) >= 20:
+            return out
+        top += BAND - OVERLAP
+
 
 def _bands(png: Path) -> List[bytes]:
     from PIL import Image
     with Image.open(png) as im:
+        return _slice(im.convert("RGB"))
+
+
+def _strip_bands(png: Path, loc: dict) -> List[bytes]:
+    """The name column and the count column, cut from the ORIGINAL pixels and
+    pasted side by side on the same rows, then sliced like any band."""
+    from PIL import Image
+    with Image.open(png) as im:
         im = im.convert("RGB")
-        if im.width > MAX_W:
-            im = im.resize((MAX_W, round(im.height * MAX_W / im.width)))
-        out, top = [], 0
-        while True:
-            box = im.crop((0, top, im.width, min(top + BAND, im.height)))
-            buf = io.BytesIO()
-            box.save(buf, format="PNG")
-            out.append(buf.getvalue())
-            if top + BAND >= im.height or len(out) >= 20:
-                return out
-            top += BAND - OVERLAP
+        w, h = im.size
+        pad = max(6, w // 200)
+
+        def edges(left, right):
+            a = max(0, round(float(left) * w) - pad)
+            b = min(w, round(float(right) * w) + pad)
+            if b - a < 10:
+                raise ValueError(f"located column too narrow ({left}..{right})")
+            return a, b
+        nl, nr = edges(loc["name_left"], loc["name_right"])
+        cl, cr = edges(loc["count_left"], loc["count_right"])
+        names, counts = im.crop((nl, 0, nr, h)), im.crop((cl, 0, cr, h))
+        gap = 16
+        strip = Image.new("RGB", (names.width + gap + counts.width, h), "white")
+        strip.paste(names, (0, 0))
+        strip.paste(counts, (names.width + gap, 0))
+        return _slice(strip)
 
 
-def read_image(png: Path) -> dict:
-    """{dates_printed, rep_count_header, rows:[{owner, rep_count}]} — cached
-    next to the PNG so a re-run never pays for the same picture twice."""
-    cached = png.with_suffix(".json")
-    if cached.exists():
-        return json.loads(cached.read_text(encoding="utf-8"))
+def _ask(images: List[bytes], prompt: str, schema: dict, max_tokens: int = 8000) -> dict:
     import anthropic
     from automations.brand_audit import credentials
-    bands = _bands(png)
     content = [{"type": "image", "source": {
         "type": "base64", "media_type": "image/png",
-        "data": base64.standard_b64encode(b).decode()}} for b in bands]
-    content.append({"type": "text", "text": _PROMPT.format(n=len(bands))})
+        "data": base64.standard_b64encode(b).decode()}} for b in images]
+    content.append({"type": "text", "text": prompt})
     client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
     resp = client.messages.create(
-        model=MODEL, max_tokens=8000,
-        output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
+        model=MODEL, max_tokens=max_tokens,
+        output_config={"format": {"type": "json_schema", "schema": schema}},
         messages=[{"role": "user", "content": content}])
-    text = next((b.text for b in resp.content if b.type == "text"), "{}")
-    data = json.loads(text)
+    return json.loads(next((b.text for b in resp.content if b.type == "text"), "{}"))
+
+
+def read_image(png: Path, tid: str) -> dict:
+    """{dates_printed, rep_count_header, rows:[{owner, rep_count}]} — cached
+    next to the PNG so a re-run never pays for the same picture twice. The strip
+    method caches under its own name, so the first run's whole-band readings of
+    those trackers are never reused."""
+    col = COLUMN.get(tid, "Rep Count")
+    strips = tid in STRIPS
+    cached = png.with_name(png.stem + (".strips.json" if strips else ".json"))
+    if cached.exists():
+        return json.loads(cached.read_text(encoding="utf-8"))
+    bands = _bands(png)
+    if not strips:
+        data = _ask(bands, _PROMPT.format(n=len(bands), col=col), _SCHEMA)
+    else:
+        loc = _ask(bands, _LOCATE_PROMPT.format(n=len(bands), col=col),
+                   _LOCATE_SCHEMA, max_tokens=2000)
+        cut = _strip_bands(png, loc)
+        data = _ask(cut, _STRIP_PROMPT.format(n=len(cut), col=col), _SCHEMA)
+        data["dates_printed"] = loc.get("dates_printed", "")
+        data["rep_count_header"] = f"{loc.get('count_header', '')} (strips)"
     cached.write_text(json.dumps(data, indent=1), encoding="utf-8")
     return data
 
@@ -182,10 +274,26 @@ def _tokens(s: str) -> List[str]:
 
 def match(icd: str, rows: List[dict]) -> List[dict]:
     """Rows whose printed owner is this ICD: every word of the source name
-    appears in the label (labels can carry an office suffix)."""
+    appears in the label (labels can carry an office suffix).
+
+    A label the board CUT OFF ('ATEF CHOUDHU..', 'CARLOS HIDAL..') matches when
+    the first name is exact and the cut last name is a prefix of 3+ letters —
+    the B2B and BOX trackers truncate long names, and an exact-word test missed
+    Atef, Carlos and Valeria on all 60 B2B images of the first run."""
     from automations.org_active_headcount import sources as src
     want = _tokens(src.source_name(icd))
-    return [row for row in rows if all(t in _tokens(row["owner"]) for t in want)]
+    out = []
+    for row in rows:
+        label = (row.get("owner") or "").strip()
+        got = _tokens(label)
+        if label.endswith("..") and len(got) >= 2:
+            ok = (got[0] == want[0] and len(got[-1]) >= 3
+                  and want[-1].startswith(got[-1]))
+        else:
+            ok = all(t in got for t in want)
+        if ok:
+            out.append(row)
+    return out
 
 
 def _latest_files(client, channel: str, day: dt.date) -> Tuple[Optional[str], Dict[str, dict]]:
@@ -246,7 +354,7 @@ def run(start: dt.date, end: dt.date, workers: int = 6) -> Path:
     def work(job):
         d, tid, png, meta = job
         try:
-            return job, read_image(png), None
+            return job, read_image(png, tid), None
         except Exception as e:                                     # noqa: BLE001
             return job, None, f"{type(e).__name__}: {e}"
 
