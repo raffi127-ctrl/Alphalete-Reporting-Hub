@@ -6,9 +6,9 @@ Item 4 of the VA replacement. Reverse-engineered from the VA's Loom walkthrough
 Cadence: VA builds it **Wednesday**, posts **Thursday morning by 10am**. Numbers
 were still moving Thursday morning, so she moved to building it very early
 Thursday instead. Goes to Slack **#alphalete-sales + #alphalete-lvl1-chat**
-(Megan also lists the recruiting rooms — #rafs-office-recruiting (retired) and, from
-2026-08-20, #rafs-office-recruiting-11280) AND by email
-to **Alphalete Org
+(Megan's list also had the recruiting rooms — #rafs-office-recruiting, retired
+2026-08-22, and #rafs-office-recruiting-11280, dropped 2026-09-11 at Eve's
+request) AND by email to **Alphalete Org
 Owners** + a 4-person **Bulletins** distro.
 
 A separate **"Alphalete Up and Coming RCs and NCs"** email follows — email only,
@@ -736,13 +736,14 @@ a rival sender. `--dd` switches artwork, rooms and state file:
     python -m automations.override_bulletin.send --dd --preview    # Megan only
     python -m automations.override_bulletin.send --dd --send       # the real distro
 
-- **Slack**: `#alphalete-sales` (C068PH3RFSM), `#alphalete-lvl1-chat`
-  (C09JG28CD27), `#rafs-office-recruiting` (C06881A7WLV, retired),
-  `#rafs-office-recruiting-11280` (C0AUAS88FGW, added
-  2026-08-20) — every id resolved
-  against the workspace 2026-07-24, not copied from this doc. Both pages go up as
-  ONE message per channel (`file_uploads`); two posts in a row read as two
-  bulletins.
+- **Slack**: `#alphalete-sales` (C068PH3RFSM) and `#alphalete-lvl1-chat`
+  (C09JG28CD27) — every id resolved against the workspace 2026-07-24, not copied
+  from this doc. Both pages go up as ONE message per channel (`file_uploads`);
+  two posts in a row read as two bulletins.
+  `#rafs-office-recruiting` (C06881A7WLV) was retired 2026-08-22, and
+  `#rafs-office-recruiting-11280` (C0AUAS88FGW) was dropped 2026-09-11 (Eve) —
+  NEITHER bulletin posts in Raf's office room any more. Lucy stays in the
+  channel; other reports still post there.
 - **Email**: `Alphalete Org Owners` + `Bulletins` (63 addresses), subject
   **`Alphalete Organization Bulletin WE 7.19`**, both pages as inline `cid:`
   images. PNG over `data:` URIs because Gmail strips those.

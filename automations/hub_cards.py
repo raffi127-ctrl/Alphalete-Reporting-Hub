@@ -4654,7 +4654,7 @@ AUTOMATED_REPORTS = [
         "id": "dd-bulletin",
         # Thursday's bulletin, so it sits directly before the Friday Override
         # Bulletin — which in turn stays adjacent to the PNL card below it.
-        "name": "DD Bulletin → #alphalete-sales + #alphalete-lvl1-chat + Raf's office",
+        "name": "DD Bulletin → #alphalete-sales + #alphalete-lvl1-chat",
         "creator": "Megan & Claude",
         "emoji": "\U0001F3C6",
         # Same gold as the Override Bulletin — they are the same artwork family.
@@ -4680,8 +4680,8 @@ AUTOMATED_REPORTS = [
             "out on the next pass after Evelyn's ✅ (it re-checks every 25 "
             "minutes until **1:00pm CST**).\n\n"
             "WHERE IT GOES\n"
-            "Slack: **#alphalete-sales**, **#alphalete-lvl1-chat**, and "
-            "**#rafs-office-recruiting-11280**. Email (the PNG pages, from "
+            "Slack: **#alphalete-sales** and **#alphalete-lvl1-chat**. "
+            "Email (the PNG pages, from "
             "alphaletereporting@gmail.com): the **Alphalete Org Owners** and "
             "**Bulletins** contact groups.\n\n"
             "SAFETY\n"
