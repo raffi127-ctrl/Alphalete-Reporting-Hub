@@ -421,22 +421,33 @@ def _restore_controls(page):
         return []
 
 
-def _click_restore_js(page) -> bool:
-    """Click the FIRST Restore control via JS. Returns False when there is none
-    left — which is how the loop knows it is finished."""
+def _click_restore_js(page, reason_re: str = "") -> bool:
+    """Click the FIRST Restore control via JS — optionally only one whose table
+    ROW matches reason_re (case-insensitive), so a restore can target e.g. only
+    'Insufficient Contact Info' rows and leave legitimate duplicate-removals
+    removed (Carlos, 2026-09-12, Khalil's week). Returns False when no
+    (matching) control is left."""
     try:
         return bool(page.evaluate(
-            """() => { const el = document.querySelector('a.restore-applicant');
+            """(rx) => {
+               const els = [...document.querySelectorAll('a.restore-applicant')];
+               let el = null;
+               if (rx) {
+                 const re = new RegExp(rx, 'i');
+                 el = els.find(e => { const tr = e.closest('tr');
+                                      return tr && re.test(tr.innerText || ''); });
+               } else { el = els[0] || null; }
                if (!el) return false;
                el.scrollIntoView({block: 'center'});
                el.click();
-               return true; }"""))
+               return true; }""", reason_re or ""))
     except Exception as e:  # noqa: BLE001
         _log(f"[rm] JS restore click err: {type(e).__name__}: {str(e)[:120]}")
         return False
 
 
-def restore_all(page, expected: int, limit: int = 0) -> int:
+def restore_all(page, expected: int, limit: int = 0,
+                reason_re: str = "") -> int:
     """Click Restore on every row.
 
     Re-reads the control list after EACH click: a restore takes that row off the
@@ -461,7 +472,9 @@ def restore_all(page, expected: int, limit: int = 0) -> int:
         if before == 0:
             _log("[rm] no Restore controls left on the page")
             break
-        if not _click_restore_js(page):
+        # With a reason filter, stop when no MATCHING row remains even though
+        # other rows still show controls.
+        if not _click_restore_js(page, reason_re):
             _log("[rm] restore click found no control — stopping")
             break
         page.wait_for_timeout(1200)
@@ -489,7 +502,7 @@ def restore_all(page, expected: int, limit: int = 0) -> int:
 # --------------------------------------------------------------------------- #
 def run(office: str, start: str, end: str = "", live: bool = False,
         limit: int = 0, debug: bool = False, tab: str = "",
-        names_out: str = "") -> int:
+        names_out: str = "", reason: str = "") -> int:
     o = offices.activate(office)
     # A DEDICATED Chrome profile + port, NOT the office's own. The scheduled
     # applicant-push fires every 5 min and each office's run pkills `-f` its own
@@ -533,6 +546,12 @@ def run(office: str, start: str, end: str = "", live: bool = False,
         if debug:
             probe_restore_mechanism(page)
         header, rows = scrape_rows(page)
+        if reason:
+            _rx = re.compile(reason, re.I)
+            _match = [r for r in rows if _rx.search(" | ".join(r))]
+            _log(f"[rm] reason filter {reason!r}: {len(_match)} of {len(rows)} "
+                 f"row(s) match — ONLY those will be restored")
+            rows = _match
         if names_out:
             _names = sorted({(r[0] or "").strip() for r in rows
                              if (r[0] or "").strip()})
@@ -550,7 +569,8 @@ def run(office: str, start: str, end: str = "", live: bool = False,
             _log(f"[rm] DRY-RUN — would restore {len(rows)} applicant(s); "
                  "nothing clicked")
             return 0
-        n = restore_all(page, expected=len(rows), limit=limit)
+        n = restore_all(page, expected=len(rows), limit=limit,
+                        reason_re=reason)
         _log(f"[rm] ===== RESTORED {n} of {len(rows)} =====")
         # Re-read the filtered list as the proof: a real restore takes the row
         # OFF this page, so a non-empty list here means some did not take.
@@ -587,6 +607,10 @@ def main(argv=None) -> int:
     p.add_argument("--debug", action="store_true",
                    help="dump the page's controls + tables (selector discovery)")
     p.add_argument("--tab", default="", help="Sheet tab for the scrape")
+    p.add_argument("--reason", default="", metavar="REGEX",
+                   help="restore ONLY rows whose text matches this regex "
+                        "(case-insensitive), e.g. 'insufficient contact' — "
+                        "other rows stay removed")
     p.add_argument("--names-out", default="", metavar="PATH",
                    help="also write the unique applicant names to PATH, one per "
                         "line — feeds applicant_push --only-names so a follow-up "
@@ -594,7 +618,7 @@ def main(argv=None) -> int:
     a = p.parse_args(argv)
     return run(office=a.office, start=a.start, end=a.end,
                live=a.live and not a.dry_run, limit=a.limit, debug=a.debug,
-               tab=a.tab, names_out=a.names_out)
+               tab=a.tab, names_out=a.names_out, reason=a.reason)
 
 
 if __name__ == "__main__":
