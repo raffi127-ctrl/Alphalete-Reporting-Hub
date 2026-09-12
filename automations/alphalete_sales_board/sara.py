@@ -43,50 +43,17 @@ from automations.shared.saraplus import (  # noqa: F401  (re-exported API)
 from automations.shared import saraplus as _sp
 
 
-def _read_passcode(since):
-    """The 6 digits SaraPlus emails when it does not recognise the browser.
+def _open_and_login(playwright, *, headless: bool, log=print):
+    """(ctx, page, base_url) with a stuck Chrome profile healed automatically.
 
-    Imported HERE and not at module scope on purpose: this pulls in IMAP and
-    the reporting inbox's app password, and every ordinary sweep -- the ones
-    on a browser SaraPlus already remembers -- must not need either.
-
-    THIS ACCOUNT IS NOT THE B2B ONE. SaraPlus mails the passcode to the
-    address on the account, and this account is alphaletemarketing@gmail.com
-    (Megan 2026-09-12) -- NOT the reporting inbox every other reader here
-    uses. The B2B account only works because Carlos forwards its codes to
-    reporting; the same forward is what makes this one unattended.
-
-    So: read the reporting inbox if the forward is in place, and fall back to
-    alphaletemarketing directly if an app password for it has been saved. If
-    neither is true the error says both ways out rather than timing out after
-    three minutes and reading as a broken mail filter.
-    [[reference_hub_source_email_access]]"""
-    from automations.rc_contact_sync import verify_code as VC
-    for inbox in (None, C.PASSCODE_INBOX):
-        try:
-            return VC.wait_for_code(since, timeout_s=_sp.VERIFY_TIMEOUT_S,
-                                    poll_s=_sp.VERIFY_POLL_S, inbox=inbox)
-        except VC.CodeNotFound:
-            continue
-    raise VC.CodeNotFound(
-        "no SaraPlus passcode arrived for %s. It is mailed to %s: either "
-        "forward security.info@saraplus.com from there to %s (how the B2B "
-        "account works), or save that mailbox's app password at %s."
-        % (C.SARA_ACCOUNT, C.SARA_ACCOUNT, "alphaletereporting@gmail.com",
-           C.PASSCODE_PW_PATH))
-
-
-def _login(page, email: str, password: str, log=print) -> str:
-    """Sign in with THIS office's login, naming this office's creds file if it
-    bounces. A password change is the usual cause and the error has to say
-    where to fix it.
-
-    `read_code` is what lets an unattended sweep clear SaraPlus's "new
-    location or browser" wall instead of dying on it -- which is exactly what
-    took the board down all day on 2026-09-12."""
-    return _sp.login(page, email, password, login_url=C.LOGIN_URL,
-                     creds_hint=str(C.CREDS_PATH),
-                     read_code=_read_passcode, log=log)
+    A Change Password page from SaraPlus is nearly always THIS PROFILE, not the
+    account; login_healing proves which by retrying once on an empty one. Only
+    a wall that survives that raises SaraPasswordChangeRequired, and run.py
+    turns that one into a Slack ping (2026-09-12)."""
+    cr = C.creds()
+    return _sp.login_healing(playwright, C.PROFILE_DIR, cr["email"],
+                             cr["password"], headless=headless,
+                             creds_hint=str(C.CREDS_PATH), log=log)
 
 
 # --- the one public entry point ---------------------------------------------
@@ -96,15 +63,10 @@ def scrape(day: Optional[dt.date] = None, *, headless: bool = True,
     from patchright.sync_api import sync_playwright
 
     day = day or dt.date.today()
-    cr = C.creds()
-    C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
+        ctx, page, base = _open_and_login(p, headless=headless, log=log)
         try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = _login(page, cr["email"], cr["password"], log=log)
             log("logged in: %s" % base)
 
             att = parse_att(_run_report(page, base, day, "AT&T", GRID_ATT, log=log))
@@ -134,15 +96,10 @@ def probe(*, headless: bool = True, log=print) -> Dict:
     """
     from patchright.sync_api import sync_playwright
 
-    cr = C.creds()
-    C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     out = {}
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
+        ctx, page, base = _open_and_login(p, headless=headless, log=log)
         try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = _login(page, cr["email"], cr["password"], log=log)
             out["base_url"] = base
             log("LOGIN OK -> %s" % base)
             log("after login: %s" % page_state(page))
@@ -224,15 +181,10 @@ def probe_grid(service: str = "AT&T Internet", *, headless: bool = True,
     if not grid:
         raise SaraError("unknown service %r -- try one of %s"
                         % (service, ", ".join(grid_for)))
-    cr = C.creds()
-    C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     out = {}
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
+        ctx, page, base = _open_and_login(p, headless=headless, log=log)
         try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = _login(page, cr["email"], cr["password"], log=log)
             rows = _run_report(page, base, _dt.date.today(), service, grid, log=log)
             headers = page.evaluate(
                 """(sel) => {

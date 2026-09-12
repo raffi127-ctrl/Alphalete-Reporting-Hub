@@ -62,6 +62,7 @@ from automations.alphalete_sales_board import (aliases, apply_replies,
 from automations.alphalete_sales_board import notify as N
 from automations.alphalete_sales_board import sara, state as S
 from automations.alphalete_sales_board import times_of_sales as TOS
+from automations.shared import saraplus as _sp
 from automations.rep_sales_fill import board as B
 from automations.shared import name_case
 
@@ -125,6 +126,60 @@ def _fails() -> Dict:
         return json.loads(FAIL_PATH.read_text())
     except (OSError, ValueError):
         return {}
+
+
+# Who gets woken when SaraPlus wants a new password. Megan 2026-09-12:
+# "it should alert eve and I". Both, because either of them can go and set it
+# and the board is dark until one does.
+MEGAN = "U04G5HJBGFN"          # Megan Hidalgo
+EVE = "U088E2KJEV8"            # Evelyn Sobrino
+CORRECTIONS = "C0BK5PRG259"    # #claudecorrections-and-requests
+_PW_ALERT_PATH = FAIL_PATH.with_name("alphalete_sales_board_pw_alert.txt")
+PW_ALERT_COOLDOWN_H = 6.0
+
+
+def _pw_alert_recent() -> bool:
+    """One ping per 6h. The sweep runs every 5 minutes, so without this a
+    password SaraPlus wants is 130 identical @-mentions a day."""
+    try:
+        last = dt.datetime.fromisoformat(_PW_ALERT_PATH.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    return (dt.datetime.now() - last).total_seconds() / 3600.0 < PW_ALERT_COOLDOWN_H
+
+
+def _alert_password_reset(detail: str, *, dry_run: bool) -> None:
+    """@-mention Megan and Eve in #claudecorrections. Never raises: an alert
+    that crashes the sweep is worse than no alert."""
+    msg = ("<@%s> <@%s> :key: *SaraPlus wants a new password* — Sales Text "
+           "Updates is stopped until somebody sets one, and the board and the "
+           "chats get nothing meanwhile.\n\nThis is the every-few-weeks "
+           "SaraPlus reset, not a bug: a brand-new browser profile hit the "
+           "same Change Password page, which rules out the usual stuck-profile "
+           "cause.\n\n*To fix:* sign in at https://ui.saraplus.com as "
+           "`alphaletemarketing@gmail.com`, set a new password — 8-15 "
+           "characters, 1 upper, 1 lower, 1 number, not any of the last 5, and "
+           "no run of 3+ characters from the old one — then store it:\n"
+           "```ssh -t alphalete@alphaletes-mac-mini.local 'cd ~/recruiting-report "
+           "&& PYTHONPATH=. .venv/bin/python -m "
+           "automations.alphalete_sales_board.set_credentials "
+           "--email alphaletemarketing@gmail.com'```\n"
+           "The sweep picks it up on the next 5-minute tick by itself."
+           % (MEGAN, EVE))
+    if dry_run:
+        _log("[pw-alert] would post to #claudecorrections:\n%s" % msg)
+        return
+    if _pw_alert_recent():
+        _log("[pw-alert] already pinged inside the %gh cooldown" % PW_ALERT_COOLDOWN_H)
+        return
+    try:
+        from automations.shared import slack_metrics_post as smp
+        smp._client().chat_postMessage(channel=CORRECTIONS, text=msg)
+        _PW_ALERT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _PW_ALERT_PATH.write_text(dt.datetime.now().isoformat())
+        _log("[pw-alert] pinged Megan + Eve in #claudecorrections")
+    except Exception as e:  # noqa: BLE001 — an alert must never crash the sweep
+        _log("[pw-alert] could not post: %s: %s" % (type(e).__name__, str(e)[:200]))
 
 
 def _record_failure(err: str, *, dry_run: bool) -> None:
@@ -614,6 +669,15 @@ def main(argv=None) -> int:
         try:
             sweep(day, apply_writes=apply_writes, send=send,
                   headless=not args.headed, times_label=times_label)
+        except _sp.SaraPasswordChangeRequired as e:
+            # NOT a breakage, and not something a retry or a rotated profile
+            # can fix -- SaraPlus asks for a new password every few weeks
+            # (Megan 2026-09-12) and only a person can choose one. Ping
+            # immediately instead of waiting out the failure streak: every
+            # tick until somebody acts is a tick the chats get nothing.
+            _alert_password_reset(str(e), dry_run=not send)
+            _record_failure("%s: %s" % (type(e).__name__, e), dry_run=not send)
+            return 1
         except Exception as e:  # noqa: BLE001
             _record_failure("%s: %s" % (type(e).__name__, e), dry_run=not send)
             return 1
