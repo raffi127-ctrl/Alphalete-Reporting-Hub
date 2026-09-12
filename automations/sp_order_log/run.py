@@ -402,6 +402,45 @@ def build_overview_png(lines, today: dt.date, log=print,
     return out
 
 
+def _orderlog_attrs(log=print) -> dict:
+    """{10-digit TN: {pricing fields}} from the newest Tableau order-log
+    export on this box — the cross-reference Carlos named ('just look up the
+    sale in the order log'). Sources, best first:
+      1. output/captainship_boards/orderlog_*.csv — the 47-col export the
+         Vantura revenue board prices (carries Auto Bill Pay).
+      2. output/b2b_metrics/_shared/orderlog_*.csv — the 17-col crosstab
+         (no ABP, but CRU/IRU / BYOD / OOF / Package).
+    Best-effort: no file -> {} and the conservative defaults stand."""
+    import csv as _csv
+    from automations.sp_order_log.wireless_lines import norm_tn
+    repo = Path(__file__).resolve().parents[2]
+    fields = ("CRU/IRU", "Auto Bill Pay", "IF/OOF",
+              "Wireless Installment Plan", "Package")
+    out: dict = {}
+    for sub in ("captainship_boards", "b2b_metrics/_shared"):
+        cands = sorted((repo / "output" / sub).glob("orderlog_*.csv"))
+        if not cands:
+            continue
+        src = cands[-1]
+        try:
+            with open(src, newline="", encoding="utf-8-sig",
+                      errors="replace") as fh:
+                for r in _csv.DictReader(fh):
+                    tn = norm_tn(str(r.get("spe.TN") or ""))
+                    if not tn or tn in out:
+                        continue
+                    out[tn] = {f: str(r.get(f) or "").strip()
+                               for f in fields}
+        except Exception as e:  # noqa: BLE001
+            log("orderlog attrs: %s unreadable (%s)" % (src.name,
+                                                        type(e).__name__))
+            continue
+        log("orderlog attrs: %d TN(s) from %s" % (len(out), src.name))
+        if out:
+            break
+    return out
+
+
 def build_revenue_png(lines, today: dt.date, log=print,
                       out_path: Optional[Path] = None) -> Path:
     """The Activation Overview's REVENUE TWIN (Carlos 2026-09-14: copy what
@@ -426,20 +465,44 @@ def build_revenue_png(lines, today: dt.date, log=print,
     from automations.box_order_log import png as bpng
     from automations.vantura_payout_estimate.run import price
     from automations.vantura_revenue_board.run import tier_for
+    from automations.sp_order_log.wireless_lines import norm_tn
+
+    # Cross-reference the ORDER LOG for the fields SaraPlus doesn't carry
+    # (Carlos 2026-09-14: "you still have access to the order log ... it's
+    # still the same sale" — the log lags on STATUS, not on the sale's own
+    # attributes). Joined by line number (TN); the 47-col captainship export
+    # (the DD-reconciled pricing source) is preferred because it carries
+    # Auto Bill Pay; the 17-col shared crosstab backfills CRU/IRU, BYOD,
+    # OOF and Package when that's all we have.
+    ENRICH_FIELDS = ("CRU/IRU", "Auto Bill Pay", "IF/OOF",
+                     "Wireless Installment Plan", "Package")
+    attrs = _orderlog_attrs(log=log)
+    matched = [0]
 
     def _amount(ln) -> float:
         row = dict(ln)
+        hit = attrs.get(norm_tn(str(row.get("spe.TN") or "")))
+        if hit:
+            matched[0] += 1
+            for f in ENRICH_FIELDS:
+                if hit.get(f) and not str(row.get(f) or "").strip():
+                    row[f] = hit[f]
         pkg = str(row.get("Package") or "")
         if not str(row.get("Wireless Installment Plan") or "").strip() \
                 and "BYOD" in pkg.upper():
             row["Wireless Installment Plan"] = "BYOD"
+        # keep the enriched CRU/IRU on the line for the payable rule below
+        ln["_cru"] = str(row.get("CRU/IRU") or "").strip().upper() or "CRU"
         amt, _label, _notes = price(row)
         return float(amt or 0)
 
     def _eligible(ln) -> bool:
         prod = str(ln.get("Product Type (Broken Out)") or "").upper()
         tn = str(ln.get("spe.TN Type") or "").lower()
-        return prod not in ("VOICE", "VIDEO") and tn != "upgrade"
+        if prod in ("VOICE", "VIDEO") or tn == "upgrade":
+            return False
+        # vantura rule: IRU Air is not payable toward the tier bonus.
+        return not (prod == "AIR/AWB" and ln.get("_cru") == "IRU")
 
     ls, le, ts, te = ap.week_bounds(today)
     reps: dict = {}
@@ -493,16 +556,19 @@ def build_revenue_png(lines, today: dt.date, log=print,
         ("Cancelled $", "canceled", "center"),
         ("Still Open $", "pending", "center"),
     ]
+    n_lines = sum(1 for ln in lines if str(ln.get("Rep") or "").strip())
     try:
         bpng.render(
             tables, out, money=True,
             subtitle="Activated $ by activation week, weekly tier bonus "
-                     "included. Priced as CRU, no ABP/OOF (not in "
-                     "SaraPlus); tablets unpriced.")
+                     "included. CRU/IRU, ABP, OOF, BYOD cross-referenced "
+                     "from the order log by line ({}/{} lines matched); "
+                     "unmatched priced as CRU, no ABP/OOF. Tablets "
+                     "unpriced.".format(matched[0], n_lines))
     finally:
         bpng.COLS[:] = saved_cols
-    log("activation revenue -> %s (%s bytes)"
-        % (out.name, "{:,}".format(out.stat().st_size)))
+    log("activation revenue -> %s (%s bytes, %d/%d lines enriched)"
+        % (out.name, "{:,}".format(out.stat().st_size), matched[0], n_lines))
     return out
 
 
