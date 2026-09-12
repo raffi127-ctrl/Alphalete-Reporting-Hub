@@ -26,6 +26,17 @@ from typing import Dict, List, NamedTuple, Optional
 HOLDING_DM = "U04G5HJBGFN"          # Megan
 HOLDING_LABEL = "Megan (no channel set yet)"
 
+# Where OUR problems go: an office gone quiet, an enrolment waiting on a
+# human. #claudecorrections-and-requests, not Megan's DM (Megan 2026-09-12).
+#
+# A DM is one person's inbox, and these are things anyone on the team may need
+# to pick up -- the channel is where every other report already reports its
+# failures, so this stops being a separate place to remember to look.
+# HELD OFFICE ALERTS still go to the DM: those are an office's real numbers
+# waiting on a routing decision, not an operational fault, and a channel of
+# failures is the wrong place for somebody's credit checks.
+OPS_CHANNEL = "C0BK5PRG259"         # #claudecorrections-and-requests
+
 # The Apps Script web app every laptop hands its totals to. One url for every
 # office -- the KEY is what identifies and authorises, not the address, so
 # there is nothing per-office to get wrong here. Deployed from

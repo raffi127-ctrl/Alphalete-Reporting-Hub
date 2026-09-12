@@ -22,6 +22,10 @@ from automations.icd_alerts import offices as O, post as P
 
 RAW = ("https://raw.githubusercontent.com/raffi127-ctrl/"
        "Alphalete-Reporting-Hub/main/automations/icd_alerts")
+# The LINK is what an office gets. The raw command is printed underneath for
+# whoever is helping them over the phone -- the page is friendlier, but a
+# command you can read aloud is the fallback when a link will not open.
+PAGE = "https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/?code=%s"
 INSTALL = "curl -fsSL %s/install.sh | bash -s -- %%s" % RAW
 UPDATE = "curl -fsSL %s/update.sh | bash" % RAW
 
@@ -61,7 +65,13 @@ def show(office_key: str, rows: Dict, log=print) -> bool:
     log("  %s — %s" % (office.owner, office.label))
     log("=" * 72)
     log("")
-    log("  Paste this into Terminal:")
+    log("  SEND THEM THIS LINK:")
+    log("")
+    log("  " + PAGE % rec["key"])
+    log("")
+    log("  (it shows them one Copy button and three steps)")
+    log("")
+    log("  If a link will not open, the command it gives them is:")
     log("")
     log("  " + INSTALL % rec["key"])
     log("")

@@ -589,7 +589,7 @@ def notify_pending(*, send: bool = False, book=None, log=print) -> List[Dict]:
                      % (r["office"], " --knocks" if r.get("knocks") else ""))
     lines.append("_Nothing posts to their team until you do. Their laptop is "
                  "already relaying, so the data is not being lost._")
-    _slack(O.HOLDING_DM, "\n".join(lines))
+    _slack(O.OPS_CHANNEL, "\n".join(lines))
 
     ENROLLED_PATH.parent.mkdir(parents=True, exist_ok=True)
     for r in fresh:
@@ -707,7 +707,7 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         for q in fresh)]
     lines.append("_Nothing is lost: SaraPlus is cumulative, so whatever it "
                  "missed arrives when the laptop is back online._")
-    _slack(O.HOLDING_DM, "\n\n".join(lines))
+    _slack(O.OPS_CHANNEL, "\n\n".join(lines))
 
     WARNED_PATH.parent.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().isoformat(timespec="seconds")
