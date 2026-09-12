@@ -1100,6 +1100,19 @@ def _drop_duplicate_offices(out: Dict, plan: List) -> Dict:
     return out
 
 
+def _first_knock_goal(day: dt.date) -> "int | None":
+    """Minutes since midnight that first knock must beat to read green.
+
+    None on a day with no window (Sunday), which leaves the renderer on its
+    own flat default rather than inventing a target for a day nobody works.
+    """
+    window = C.window_for(day.weekday())
+    if not window:
+        return None
+    (h, m), _end = window
+    return h * 60 + m
+
+
 def _render_board(cfg: Dict, rows: List, extra: List, day: dt.date,
                   out_dir: Path, slot: str) -> List[Path]:
     """The drawing half of pull_board — no network, so it runs per office
@@ -1115,7 +1128,14 @@ def _render_board(cfg: Dict, rows: List, extra: List, day: dt.date,
         title_suffix=_who, date_text=_when, extra_totals=extra,
         rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
                       else RATES_OVERRIDE),
-        knocks_green_at=C.KNOCKS_GREEN_AT, sort_by="knocks")
+        knocks_green_at=C.KNOCKS_GREEN_AT,
+        # FIRST KNOCK greens against the start of THIS DAY's window, not a
+        # flat 1:30 PM (Megan 2026-09-12). Saturday starts at 10:45, so every
+        # Saturday first-knock came out green and the column said nothing.
+        # The window is already kept here for the capture, so the board and
+        # the schedule cannot disagree.
+        first_knock_green_at=_first_knock_goal(day),
+        sort_by="knocks")
     _log("  %s: %d rep(s) -> %s (%s)"
          % (cfg["key"], len(rows), ", ".join(p.name for p in pngs), shape))
     return list(pngs)

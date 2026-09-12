@@ -544,7 +544,7 @@ RATE_COLUMNS = True
 # 140 was never wrong, it was just Saturday's number written down during a
 # Saturday conversation. Set an integer here again only to pin a bar that is
 # genuinely the same every day.
-KNOCKS_GREEN_AT = None
+KNOCKS_GREEN_AT = 140
 
 # The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
 # a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps

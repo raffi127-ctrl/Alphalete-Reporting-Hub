@@ -468,11 +468,27 @@ class RafsBoardUnchangedTests(unittest.TestCase):
                 inspect.signature(fn).parameters["first_knock_green_at"].default,
                 fn.__name__)
 
-    def test_gap_alerts_does_not_pass_office_hours(self):
-        import inspect
-        from automations.gap_alerts import run as G
-        self.assertNotIn("first_knock_green_at",
-                         inspect.getsource(G._render_board))
+    def test_rafs_first_knock_follows_his_own_saturday(self):
+        """The ONE change his board gets (Megan 2026-09-12): first knock, not
+        the knock count. A flat 1:30 PM greened every Saturday first-knock,
+        because his Saturday starts at 10:45."""
+        import datetime as dt
+        from automations.gap_alerts.run import _first_knock_goal
+        self.assertEqual(_first_knock_goal(dt.date(2026, 9, 11)), 13 * 60 + 30)
+        self.assertEqual(_first_knock_goal(dt.date(2026, 9, 12)), 10 * 60 + 45)
+
+    def test_a_day_with_no_window_invents_no_target(self):
+        import datetime as dt
+        from automations.gap_alerts.run import _first_knock_goal
+        self.assertIsNone(_first_knock_goal(dt.date(2026, 9, 13)))
+
+    def test_the_board_and_the_capture_read_the_same_window(self):
+        """They must not disagree about when Saturday starts."""
+        import datetime as dt
+        from automations.gap_alerts import config as C
+        from automations.gap_alerts.run import _first_knock_goal
+        (h, m), _ = C.window_for(5)
+        self.assertEqual(_first_knock_goal(dt.date(2026, 9, 12)), h * 60 + m)
 
     def test_rafs_knock_target_is_a_flat_140(self):
         """Megan 2026-09-12: "knock count stays the same". The renderer's
