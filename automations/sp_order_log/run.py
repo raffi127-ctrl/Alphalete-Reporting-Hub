@@ -645,15 +645,14 @@ def build_revenue_png(lines, today: dt.date, log=print,
     for _key, (_ak, _nk) in (("last", ("act_last", "n_last")),
                              ("this", ("act_this", "n_this"))):
         _t = tables[_key]
-        _parts = []
         for _rep, _a in sorted(reps.items(), key=lambda kv: -kv[1][_ak]):
             if not _a[_ak] and not _a[_nk]:
                 continue
             _t2, _rate = tier_for(_a[_nk])
-            _parts.append("%s $%d+%db/%dn" % (_rep, round(_a[_ak]),
-                                              round(_rate * _a[_nk]), _a[_nk]))
-        log("WEEKREPORT %s TOTAL $%d :: %s"
-            % (_t["label"], _t["totals"]["posted"], "; ".join(_parts)))
+            log("WEEKREPORT %s | %s $%d+%db/%dn"
+                % (_t["label"], _rep, round(_a[_ak]),
+                   round(_rate * _a[_nk]), _a[_nk]))
+        log("WEEKREPORT %s TOTAL $%d" % (_t["label"], _t["totals"]["posted"]))
     out = out_path or (OUT_DIR / "activation_revenue.png")
     saved_cols = list(bpng.COLS)
     bpng.COLS[:] = [
