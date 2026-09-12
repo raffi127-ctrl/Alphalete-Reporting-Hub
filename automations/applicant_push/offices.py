@@ -334,8 +334,10 @@ OFFICES = {
         "post_channel": "C0AUKHN120L",
         "post_todo": True,
         "allow_retext": False,
-        "remove_blocked_read": True,
-        "remove_no_phone": True,
+        # 9/12 (Carlos): "If the page won't open or there's no number found, let's
+        # leave it." Both removal policies OFF — Khalil matches 11580/23467.
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
     },
     # LIVE PUSH OFFICE #4 (Carlos, 2026-09-10): Rafael's iMessage-funnel TEST
     # office. Standard non-texting policies; no Slack channel wired yet (flags

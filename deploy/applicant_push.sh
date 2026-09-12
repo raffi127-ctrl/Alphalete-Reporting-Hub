@@ -168,7 +168,7 @@ case "$OFFICE" in
     export OAT_WALK_DIAG_TAB="OAT Walk Diag 11901"
     export OAT_OFFICE_LABEL="office 11901 · Khalil Mansour — Alphalete Management Group"
     export OAT_OFFICE_SHORT="office 11901, Khalil"
-    export OAT_REMOVE_NO_PHONE="1"
+    export OAT_REMOVE_NO_PHONE="0"
     # #11901-alphalete-management-group-inc-khalil-mansour (private; the Lucy
     # apps were added 2026-09-08). His to-do post goes HERE and nowhere else.
     export OAT_SCORECARD_CHANNEL="C0AUKHN120L"
