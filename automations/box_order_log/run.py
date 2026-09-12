@@ -127,6 +127,8 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                  pending_path: Optional[Path] = None,
                  activations_path: Optional[Path] = None,
                  revenue_path: Optional[Path] = None,
+                 revboard_path: Optional[Path] = None,
+                 revboard_caption: str = "",
                  contents: str = "") -> str:
     """Post one dated thread — parent, then its attachments — and return its ts.
 
@@ -154,6 +156,12 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
     # dollar twin. A section whose artifact isn't in hand is skipped and the
     # contents list (built in this same order) never names it — "at that
     # point, the thread just needs to be adjusted."
+    if revboard_path and "revenue_board" in sections:
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(revboard_path),
+            filename=revboard_path.name, title=revboard_path.stem,
+            initial_comment=revboard_caption,
+        )
     if tier_path and "tier_bonus" in sections:
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(tier_path),
@@ -424,8 +432,8 @@ def main(argv: Optional[list] = None) -> int:
                     help="leave the Box Tier Bonus board out of the thread")
     # (revenue image subtitle lives at module scope? keep local-simple)
     ap.add_argument("--sections",
-                    default="order_log,accepted,pending,tier_bonus,"
-                            "activations,revenue",
+                    default="revenue_board,order_log,accepted,pending,"
+                            "tier_bonus,activations,revenue",
                     help="which thread sections to post, csv of: order_log "
                          "(the workbook), accepted (the payout board), "
                          "pending (the pending-orders worklist image), "
@@ -665,6 +673,42 @@ def main(argv: Optional[list] = None) -> int:
             print("✗ activation board failed (thread continues without it): "
                   "{}".format(exc), file=sys.stderr)
 
+    # ---- 3c. the styled BOX Revenue Board (Carlos 2026-09-13: "recreate
+    # something like that as well ... this one I would want to actually be
+    # the first post"). Built with vantura_revenue_board's own pieces — same
+    # aggregation, tier ladder and HTML renderer as the AT&T board, BOX
+    # LEADERS skin — off the csv THIS run just pulled. Caption + filename
+    # carry the "Box Revenue Board <tag>" marker the 7:25 vantura job dedupes
+    # on, so the old late reply skips itself instead of doubling up.
+    out_revboard, revboard_caption = None, ""
+    if "revenue_board" in sections:
+        try:
+            from automations.vantura_revenue_board.run import (
+                load_box_priced, build_rows, render as vr_render,
+                box_tier_for, BOX_TIERS, week_of)
+            upto = today - dt.timedelta(days=1)
+            monday = week_of(upto)
+            per_box = load_box_priced(src, monday, upto)
+            if per_box:
+                rows_b, office_b = build_rows(per_box, monday, upto,
+                                              tier_fn=box_tier_for,
+                                              tiers=BOX_TIERS)
+                tag = "{}.{}".format(upto.month, upto.day)
+                out_revboard = OUTPUT_DIR / "Box Revenue Board {}.png".format(tag)
+                vr_render(rows_b, office_b, monday, upto, out_revboard,
+                          board_name="Vantura BOX Revenue")
+                revboard_caption = (":bar_chart: *Box Revenue Board {}*"
+                                    .format(tag))
+                if verbose:
+                    print("  revenue board: {} reps, office ${:,.0f}".format(
+                        len(rows_b), sum(r["total"] for r in rows_b)))
+            elif verbose:
+                print("  revenue board: no priced BOX sales in the window")
+        except Exception as exc:
+            out_revboard = None
+            print("✗ revenue board failed (thread continues without it): "
+                  "{}".format(exc), file=sys.stderr)
+
     # ---- 4. write the Sheet ---------------------------------------------
     if args.sheet and args.no_sheet:
         print("\n  --no-sheet: skipping the board write (dry run)")
@@ -818,6 +862,8 @@ def main(argv: Optional[list] = None) -> int:
     # Same order as the uploads below — Carlos 2026-09-13: "the wording
     # should line up in the post."
     attach_lines = []
+    if out_revboard and "revenue_board" in sections:
+        attach_lines.append(revboard_caption)
     if tier_png:
         attach_lines.append(tier_bonus.TIER_LINE)
     if out_activations and "activations" in sections:
@@ -938,6 +984,8 @@ def main(argv: Optional[list] = None) -> int:
                              tier_bonus.TIER_LINE, sections=sections,
                              activations_path=out_activations,
                              revenue_path=out_revenue,
+                             revboard_path=out_revboard,
+                             revboard_caption=revboard_caption,
                              pending_path=out_pending, contents=contents)
             except Exception as exc:                      # noqa: BLE001
                 failed_channels.append("{} — {}: {}".format(
