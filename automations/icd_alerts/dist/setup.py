@@ -207,6 +207,39 @@ def _ask_one(filename, title, user_label, user_field, pass_field, required):
     return True
 
 
+def confirm_office(rec):
+    """Make them say out loud whose office this package is for.
+
+    CAUGHT LIVE ON THE ENROLMENT CALL (2026-09-12): Cyrus ran Kash's package
+    on his own MacBook. It failed only because the folder was not there --
+    had he downloaded the right zip under the wrong name, or been handed the
+    wrong attachment, it would have installed perfectly and relayed his
+    office's credit checks under Kash's office key, into Kash's channel, as
+    Kash's numbers. Nothing downstream could have told the difference: the
+    relay key would have been valid and the data plausible.
+
+    One dialog, once, and the whole class of mistake is gone.
+    """
+    owner = rec.get("owner") or "this office"
+    try:
+        answer = ask.choose(
+            "This copy of Lucy Reports is set up for:\n\n    %s\n\n"
+            "Is that you?" % owner,
+            ["Yes, that's me", "No, that's not me"])
+    except ask.Cancelled:
+        raise SystemExit("Setup stopped. Nothing was changed.")
+
+    if answer.startswith("Yes"):
+        return
+
+    ask.message(
+        "Then this is the wrong copy — each office gets its own, and this one "
+        "would report your numbers as %s's.\n\n"
+        "Ask the reporting team to send you yours. Nothing has been changed "
+        "on this computer." % owner, error=True)
+    raise SystemExit(1)
+
+
 def ask_for_login():
     sara = _ask_one("saraplus-creds.json", "SaraPlus", "email",
                     "email", "password", required=True)
@@ -532,7 +565,9 @@ def main() -> int:
 
     step(5, total, "Reading your office's settings")
     rec = write_install_json()
-    say("      office: %s" % rec.get("office_key", "?"))
+    say("      office: %s (%s)" % (rec.get("office_key", "?"),
+                                   rec.get("owner", "?")))
+    confirm_office(rec)
 
     step(6, total, "Your logins")
     ask_for_login()
