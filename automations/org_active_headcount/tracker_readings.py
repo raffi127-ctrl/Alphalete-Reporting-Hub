@@ -87,7 +87,44 @@ COLUMN = {"b2b_box": "Total Rep Count"}
 # the name column and the count column, and the second reads just those two
 # strips, cut from the original pixels and placed side by side on the same rows.
 # NDS is not here: its whole-band reading matched the weekly history 100%.
-STRIPS = {"att_country", "b2b_att_country", "b2b_box"}
+STRIPS = {"att_country", "b2b_att_country"}
+
+# BOX is read by VOTE. Its board is small and prints 'Selling Rep Count' and
+# 'Total Rep Count' side by side; both the band and the strip method mixed them
+# up (and the strip locator sometimes landed on a units column: 80, 94, 142 for
+# owners with ~20 heads). So: upscale the small image, ask for BOTH columns by
+# name in every row, read it BOX_VOTES times, and keep a Total only when a
+# majority of the reads agree. No majority = null, never a guess.
+BOX = "b2b_box"
+BOX_VOTES = 3
+
+_BOX_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "dates_printed": {"type": "string"},
+        "rows": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "selling_rep_count": {"type": ["integer", "null"]},
+                "total_rep_count": {"type": ["integer", "null"]},
+            },
+            "required": ["owner", "selling_rep_count", "total_rep_count"],
+            "additionalProperties": False}},
+    },
+    "required": ["dates_printed", "rows"],
+    "additionalProperties": False,
+}
+
+_BOX_PROMPT = (
+    "These {n} images are consecutive horizontal slices, top to bottom, of ONE "
+    "screenshot of the B2B Box tracker. Its table has one row per owner and, "
+    "among other columns, TWO different count columns: 'Selling Rep Count' and "
+    "'Total Rep Count'. For EVERY owner row return the owner name exactly as "
+    "printed, the value under 'Selling Rep Count' and the value under 'Total Rep "
+    "Count' of that SAME row — two separate numbers, never swapped, never taken "
+    "from a units/sales column. Copy numbers exactly; null if a cell is blank. "
+    "Skip header and grand-total rows. Also copy every date printed on the board.")
 
 _SCHEMA = {
     "type": "object",
@@ -221,11 +258,51 @@ def _ask(images: List[bytes], prompt: str, schema: dict, max_tokens: int = 8000)
     return json.loads(next((b.text for b in resp.content if b.type == "text"), "{}"))
 
 
+def _read_box(png: Path) -> dict:
+    """BOX by majority vote over BOX_VOTES reads of the upscaled board."""
+    cached = png.with_name(png.stem + ".vote.json")
+    if cached.exists():
+        return json.loads(cached.read_text(encoding="utf-8"))
+    from PIL import Image
+    with Image.open(png) as im:
+        im = im.convert("RGB")
+        scale = min(2.0, MAX_W / im.width) if im.width < MAX_W else 1.0
+        if scale > 1.0:
+            im = im.resize((round(im.width * scale), round(im.height * scale)),
+                           Image.LANCZOS)
+        bands = _slice(im)
+    reads = [_ask(bands, _BOX_PROMPT.format(n=len(bands)), _BOX_SCHEMA)
+             for _ in range(BOX_VOTES)]
+    votes: Dict[str, List] = {}
+    order: List[str] = []
+    for rd in reads:
+        for row in rd.get("rows") or []:
+            key = " ".join(_tokens(row.get("owner") or ""))
+            if key not in votes:
+                votes[key] = []
+                order.append(row.get("owner") or "")
+            votes[key].append(row.get("total_rep_count"))
+    rows = []
+    for owner in order:
+        vals = [v for v in votes[" ".join(_tokens(owner))] if v is not None]
+        best = max(set(vals), key=vals.count) if vals else None
+        ok = best is not None and vals.count(best) * 2 > BOX_VOTES
+        rows.append({"owner": owner, "rep_count": best if ok else None,
+                     "votes": votes[" ".join(_tokens(owner))]})
+    data = {"dates_printed": reads[0].get("dates_printed", ""),
+            "rep_count_header": f"Total Rep Count (vote x{BOX_VOTES})",
+            "rows": rows}
+    cached.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    return data
+
+
 def read_image(png: Path, tid: str) -> dict:
     """{dates_printed, rep_count_header, rows:[{owner, rep_count}]} — cached
     next to the PNG so a re-run never pays for the same picture twice. The strip
     method caches under its own name, so the first run's whole-band readings of
     those trackers are never reused."""
+    if tid == BOX:
+        return _read_box(png)
     col = COLUMN.get(tid, "Rep Count")
     strips = tid in STRIPS
     cached = png.with_name(png.stem + (".strips.json" if strips else ".json"))
@@ -315,7 +392,10 @@ def _latest_files(client, channel: str, day: dt.date) -> Tuple[Optional[str], Di
     return ts, got
 
 
-def run(start: dt.date, end: dt.date, workers: int = 6) -> Path:
+def run(start: dt.date, end: dt.date, workers: int = 6,
+        only: Optional[str] = None) -> Path:
+    """`only` = one tracker id: read just that board, into its own tabs/log so
+    the other trackers' last readings are left untouched."""
     from automations.shared import slack_metrics_post as smp
     from automations.tableau_screenshots.slack_post import ORG_CHANNELS
     from automations.owner_chat_texts.slack_fetch import _download
@@ -336,6 +416,8 @@ def run(start: dt.date, end: dt.date, workers: int = 6) -> Path:
         if not thread:
             lines.append(f"X|{day}|*|no tracker thread that day")
         for tid in TRACKERS:
+            if only and tid != only:
+                continue
             if thread and tid not in files:
                 lines.append(f"X|{day}|{tid}|no image reply for this tracker")
                 continue
@@ -379,14 +461,16 @@ def run(start: dt.date, end: dt.date, workers: int = 6) -> Path:
 
     lines.sort(key=lambda s: (s.split("|")[1], s.split("|")[2], s[0]))
     LOGS.mkdir(parents=True, exist_ok=True)
-    out = LOGS / f"hc-tracker-readings-{start}_{end}.log"
+    suffix = f"-{only}" if only else ""
+    out = LOGS / f"hc-tracker-readings{suffix}-{start}_{end}.log"
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     bad = sum(1 for s in lines if s[0] in "XM")
     print(f"wrote {out.name}: {len(lines)} line(s), {bad} gap/failure line(s)", flush=True)
     raw.sort(key=lambda r: (r[0], r[1]))
-    _to_sheet(READINGS_TAB, [["kind", "day", "tracker", "a", "b", "c", "d", "e"]]
+    tab_suffix = f" ({only})" if only else ""
+    _to_sheet(READINGS_TAB + tab_suffix, [["kind", "day", "tracker", "a", "b", "c", "d", "e"]]
               + [s.split("|") for s in lines])
-    _to_sheet(RAW_TAB, [["day", "tracker", "owner as printed", "rep count"]] + raw)
+    _to_sheet(RAW_TAB + tab_suffix, [["day", "tracker", "owner as printed", "rep count"]] + raw)
     return out
 
 
@@ -421,8 +505,10 @@ def main(argv=None) -> int:
     ap.add_argument("--start", required=True, type=dt.date.fromisoformat)
     ap.add_argument("--end", required=True, type=dt.date.fromisoformat)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--only", choices=sorted(TRACKERS),
+                    help="read just this tracker, into its own log and tabs")
     a = ap.parse_args(argv)
-    run(a.start, a.end, a.workers)
+    run(a.start, a.end, a.workers, a.only)
     return 0
 
 
