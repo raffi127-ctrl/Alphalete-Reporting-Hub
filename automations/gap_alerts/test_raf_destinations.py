@@ -52,10 +52,29 @@ class RafsDestinations(unittest.TestCase):
 
 
 class NobodyElseMoved(unittest.TestCase):
-    def test_calvin_and_jay_keep_one_room_at_15(self):
+    def test_calvin_and_jay_keep_one_room_at_30(self):
+        """One room, and it is the Energy Wells chat — never Raf's.
+
+        WAS 15 UNTIL 2026-09-12 (Raf: "for the energy well group chat, it's
+        pulling every 15 minutes — can you change it to every 30 minutes
+        instead?"). ALL THREE assert together on purpose: they share one chat,
+        so one of them left at 15 would still be filling that room every
+        quarter hour and the change would read as not having taken.
+        """
         for key in ("calvin", "jay_att", "jay_ew"):
             self.assertEqual(
-                _dests(key), [("imessage", "ENERGY WELLS DOMINATION", 15)], key)
+                _dests(key), [("imessage", "ENERGY WELLS DOMINATION", 30)], key)
+
+    def test_rafs_own_rooms_did_not_move_with_the_energy_wells_change(self):
+        """The 09-12 change was scoped to one chat. Raf's Partners room is the
+        one that would notice: it is the only 15-minute destination left, and
+        it is fed by the same TICK_MINUTES default the Energy Wells offices
+        just stopped inheriting."""
+        self.assertEqual(
+            _dests("rafael"),
+            [("imessage", "Alphalete Partners", 15),
+             ("imessage", "Alphalete A-Team Chat", 30),
+             ("slack", C.SLACK_HOURLY_CHANNEL, 30)])
 
     def test_no_other_office_posts_to_rafs_slack_channel(self):
         """SLACK_HOURLY_CHANNEL is Raf's org's room; another office's numbers

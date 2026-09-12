@@ -129,6 +129,13 @@ CALVIN = {
     # say 40; change them together.
     "campaign_id": ENERGY_WELLS_CAMPAIGN_ID,
     "group": "ENERGY WELLS DOMINATION",
+    # EVERY 30, not the 15-minute default (Raf, 2026-09-12: "for the energy
+    # well group chat, it's pulling every 15 minutes — can you change it to
+    # every 30 minutes instead?"). Set on all THREE offices that feed this
+    # chat — Calvin, JAY_ATT and JAY_EW — because the cadence Raf is watching
+    # is the chat's, and leaving any one of them at 15 would keep boards
+    # landing in that room on the old rhythm. Raf's own rooms are untouched.
+    "cadence_min": 30,
     "label": "Calvin",
     # Shown in the post's header (Megan 2026-08-30). Raf's office runs one
     # campaign and its name would say nothing; this chat is named for the
@@ -179,6 +186,7 @@ JAY_ATT = {
     "ov": "impersonate",
     "campaign_id": "3",              # RES AT&T, same id Raf's office pins
     "group": "ENERGY WELLS DOMINATION",
+    "cadence_min": 30,               # Raf 2026-09-12 — see CALVIN
     "label": "Jay",
     "campaign_label": "AT&T",
     "compare": True,
@@ -198,6 +206,7 @@ JAY_EW = {
     "ov": "impersonate",
     "campaign_id": ENERGY_WELLS_CAMPAIGN_ID,
     "group": "ENERGY WELLS DOMINATION",
+    "cadence_min": 30,               # Raf 2026-09-12 — see CALVIN
     "label": "Jay",
     "campaign_label": "EnergyWell",
     "compare": True,
