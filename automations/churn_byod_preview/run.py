@@ -92,17 +92,18 @@ def collect(sheet_id: str = SHEET_ID, tab: str = TAB, rows_of=None) -> dict:
     # fixed indices below are WHY this render read rows=0 for a few hours
     # that day — this reader and the tab's layout must move together (README
     # playbook: Google Sheets changes).
-    roll = rows_of("A15:M80")
+    # 14 cols since 2026-09-12: 'Lines on Acct' inserted after CRU/IRU.
+    roll = rows_of("A15:N80")
     rows = []
     for row in roll[1:]:
-        row += [""] * (13 - len(row))
-        if (row[11] or "").strip().upper() != "WIRELESS":
+        row += [""] * (14 - len(row))
+        if (row[12] or "").strip().upper() != "WIRELESS":
             continue
         try:
             lines = int(row[2])
         except (TypeError, ValueError):
             continue
-        dev = row[10] or ""
+        dev = row[11] or ""
         has_byod = "BYOD" in dev
         has_dev = bool(re.sub(r"BYOD|/|\s", "", dev))
         if has_byod and not has_dev:
@@ -115,7 +116,8 @@ def collect(sheet_id: str = SHEET_ID, tab: str = TAB, rows_of=None) -> dict:
         rows.append({"days": row[0], "date": row[1], "lines": lines,
                      "cust": row[4], "rep": row[5], "ordered": row[6],
                      "posted": row[7], "disc": row[8], "cru": row[9],
-                     "dev": dev, "b": b, "n": n, "approx": approx})
+                     "acct_lines": row[10], "dev": dev,
+                     "b": b, "n": n, "approx": approx})
     return {"prods": prods, "rows": rows}
 
 
@@ -152,6 +154,18 @@ def build_html(data: dict, *, label: str = "", team_ref=None) -> str:
 
     # per-bucket churn-after-rolloff, walking the list top to bottom
     b_rem, n_rem = b_disc, n_disc
+    def _recent_disc_style(disc: str) -> str:
+        """Green cell when the disconnect happened in the last 7 days —
+        Carlos 2026-09-12: mark what's NEW on the report this week."""
+        try:
+            m, d, y = (int(x) for x in disc.strip().split("/"))
+            when = dt.date(y if y > 99 else 2000 + y, m, d)
+        except Exception:  # noqa: BLE001 — blank/odd date = no highlight
+            return ""
+        if 0 <= (dt.date.today() - when).days <= 7:
+            return ' style="background:#a9d18e;color:#173404;font-weight:600"'
+        return ""
+
     body = []
     for r in rows:
         b_rem -= r["b"]
@@ -169,8 +183,11 @@ def build_html(data: dict, *, label: str = "", team_ref=None) -> str:
             f"text-align:center\">{b_after:.1f}%</td>"
             f"<td>{html.escape(r['cust'])}</td><td>{html.escape(r['rep'])}</td>"
             f"<td>{html.escape(r['ordered'])}</td><td>{html.escape(r['posted'])}</td>"
-            f"<td>{html.escape(r.get('disc', ''))}</td>"
+            f"<td{_recent_disc_style(r.get('disc', ''))}>"
+            f"{html.escape(r.get('disc', ''))}</td>"
             f"<td style=\"text-align:center\">{html.escape(r['cru'])}</td>"
+            f"<td style=\"text-align:center\">"
+            f"{html.escape(str(r.get('acct_lines', '')))}</td>"
             f"<td class=\"dev\">{html.escape(r['dev'][:60])}</td></tr>")
 
     def prod_row(label, a, d, pct, indent=False, hot=False):
@@ -291,7 +308,7 @@ td {{ border:1px solid #b9c2cf; padding:4px 7px; }}
 <table class="roll"><tr class="hd"><td>Days</td><td>Falls Off</td>
 <td>Lines (N/B)*</td><td>After: Non-BYOD</td><td>After: BYOD</td><td>Customer</td>
 <td>Sales Rep</td><td>Ordered</td><td>Activated</td><td>Disconnected</td>
-<td>CRU/IRU</td><td>Phone / BYOD</td></tr>{''.join(body)}</table>
+<td>CRU/IRU</td><td>Lines on Acct</td><td>Phone / BYOD</td></tr>{''.join(body)}</table>
 {decel_html}
 <p class="foot">Lines (N/B) = non-BYOD / BYOD lines in the group; rows marked *
  mix BYOD and financed phones so the split is approximate. Base split assumes

@@ -215,6 +215,14 @@ def helper_block(lines: list[dict], today: dt.date) -> list[list]:
             continue
         groups[(u["prod"], u["customer"], u["ban"])].append(u)
 
+    # Total lines on the ACCOUNT (Carlos 2026-09-12: "how many total lines
+    # were on that account") — every distinct SPE on the BAN across the whole
+    # export, any product, any status; not just the disconnected group.
+    ban_total: dict = defaultdict(set)
+    for ln in lines:
+        if ln.get("ban") and ln.get("spe"):
+            ban_total[ln["ban"]].add(ln["spe"])
+
     def _device(g):
         # Sheet's "Phone / BYOD" column: BYOD when the line has no
         # installment device, else the device name.
@@ -224,7 +232,7 @@ def helper_block(lines: list[dict], today: dt.date) -> list[list]:
     for p in PRODUCT_ORDER:
         prod = [(k, v) for k, v in groups.items() if k[0] == p]
         prod.sort(key=lambda kv: (min(u["posted"] for u in kv[1]), kv[0][1]))
-        for (_, customer, _ban), grp in prod:
+        for (_, customer, ban), grp in prod:
             posted = min(u["posted"] for u in grp)
             falloff = posted + dt.timedelta(days=30)
             # The REAL disconnect date (Carlos 2026-09-08): the day the
@@ -247,11 +255,12 @@ def helper_block(lines: list[dict], today: dt.date) -> list[list]:
                 _fmt_date(posted),                       # +7  Activation Date
                 _fmt_date(disc_real),                    # +8  Disconnect Date (real)
                 _join_uniq((g["cru_iru"] for g in grp), sep="/"),  # +9 CRU/IRU
-                _join_uniq(_device(g) for g in grp),     # +10 Phone/BYOD
-                p,                                       # +11 Product Type
-                None,                                    # +12 notes formula
-                p,                                       # +13 Product key
-                remaining,                               # +14 remaining after
+                len(ban_total.get(ban, ())) or "",       # +10 Lines on Acct
+                _join_uniq(_device(g) for g in grp),     # +11 Phone/BYOD
+                p,                                       # +12 Product Type
+                None,                                    # +13 notes formula
+                p,                                       # +14 Product key
+                remaining,                               # +15 remaining after
             ])
     return rows
 
