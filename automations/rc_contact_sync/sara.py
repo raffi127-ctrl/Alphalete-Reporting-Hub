@@ -29,7 +29,6 @@ import re
 from typing import Dict, List, Optional
 
 from automations.alphalete_sales_board.sara import SaraError, _set_telerik_date
-from automations.shared import saraplus as _sp
 from automations.rc_contact_sync import config as C
 from automations.rc_contact_sync import verify_code as VC
 
@@ -422,12 +421,6 @@ def login(page, email: str, password: str, log=print) -> str:
             "SaraPlus login failed -- still on the login page after submit. "
             "Check the credentials in %s (a password change is the usual "
             "cause); nothing was written. %s" % (C.CREDS_PATH, page_state(page)))
-    if _sp.RESET_PATH.lower() in url.lower():
-        # Same wall as the sales board hits, different account and different
-        # creds file -- see the note on RESET_PATH in shared/saraplus.py.
-        raise _sp._reset_password_error(
-            url, email, str(C.CREDS_PATH),
-            "python -m automations.rc_contact_sync.set_credentials")
     # THE DEALER ROOT -- everything up to and including the session segment,
     # e.g. https://www.saraplus.com/e/(S(<session>))/ .
     #

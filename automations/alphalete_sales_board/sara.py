@@ -43,12 +43,35 @@ from automations.shared.saraplus import (  # noqa: F401  (re-exported API)
 from automations.shared import saraplus as _sp
 
 
-def _login(page, email: str, password: str) -> str:
+def _read_passcode(since):
+    """The 6 digits SaraPlus emails when it does not recognise the browser.
+
+    Imported HERE and not at module scope on purpose: this pulls in IMAP and
+    the reporting inbox's app password, and every ordinary sweep -- the ones
+    on a browser SaraPlus already remembers -- must not need either.
+
+    Borrowed from rc_contact_sync, which built and proved this reader on
+    2026-09-03. The codes land in the same mailbox for both accounts
+    (security.info@saraplus.com -> alphaletereporting@gmail.com); if this
+    account's code goes somewhere else instead, THIS is the line that says so
+    -- the run logs the destination SaraPlus offers before it asks for one.
+    [[reference_hub_source_email_access]]"""
+    from automations.rc_contact_sync import verify_code as VC
+    return VC.wait_for_code(since, timeout_s=_sp.VERIFY_TIMEOUT_S,
+                            poll_s=_sp.VERIFY_POLL_S)
+
+
+def _login(page, email: str, password: str, log=print) -> str:
     """Sign in with THIS office's login, naming this office's creds file if it
     bounces. A password change is the usual cause and the error has to say
-    where to fix it."""
+    where to fix it.
+
+    `read_code` is what lets an unattended sweep clear SaraPlus's "new
+    location or browser" wall instead of dying on it -- which is exactly what
+    took the board down all day on 2026-09-12."""
     return _sp.login(page, email, password, login_url=C.LOGIN_URL,
-                     creds_hint=str(C.CREDS_PATH))
+                     creds_hint=str(C.CREDS_PATH),
+                     read_code=_read_passcode, log=log)
 
 
 # --- the one public entry point ---------------------------------------------
@@ -66,7 +89,7 @@ def scrape(day: Optional[dt.date] = None, *, headless: bool = True,
             str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = _login(page, cr["email"], cr["password"])
+            base = _login(page, cr["email"], cr["password"], log=log)
             log("logged in: %s" % base)
 
             att = parse_att(_run_report(page, base, day, "AT&T", GRID_ATT, log=log))
@@ -104,7 +127,7 @@ def probe(*, headless: bool = True, log=print) -> Dict:
             str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = _login(page, cr["email"], cr["password"])
+            base = _login(page, cr["email"], cr["password"], log=log)
             out["base_url"] = base
             log("LOGIN OK -> %s" % base)
             log("after login: %s" % page_state(page))
@@ -194,7 +217,7 @@ def probe_grid(service: str = "AT&T Internet", *, headless: bool = True,
             str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = _login(page, cr["email"], cr["password"])
+            base = _login(page, cr["email"], cr["password"], log=log)
             rows = _run_report(page, base, _dt.date.today(), service, grid, log=log)
             headers = page.evaluate(
                 """(sel) => {

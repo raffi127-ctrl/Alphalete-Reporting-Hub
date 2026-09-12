@@ -59,28 +59,299 @@ class SaraError(RuntimeError):
     pass
 
 
-# The forced-password-change page. SaraPlus serves it UNDER the dealer session
-# root -- https://www.saraplus.com/e/(S(<session>))/Security/ResetPassword.aspx
-# -- which means the credentials were ACCEPTED and a session was minted; the
-# app then refused to hand over any other page until the password is changed.
-# So this is not a bad password, not a changed selector, and not something a
-# retry fixes: every pass lands here until a human sets a new one (first seen
-# 2026-09-12, after 3 straight failed sweeps reported only "landed somewhere
-# unexpected", which reads like a site change and sent the first look at it in
-# the wrong direction).
-RESET_PATH = "/Security/ResetPassword.aspx"
+# SARAPLUS'S SECURITY AREA -- the browser-verification wall, NOT a password
+# problem. Everything under /Security/ on the dealer session root
+# (https://www.saraplus.com/e/(S(<session>))/Security/...) is SaraPlus saying
+# "it appears that this is a new location or browser" and refusing to serve
+# the Hub until an emailed passcode clears. The session id in that url is the
+# proof: the PASSWORD WAS ACCEPTED before we ever got here.
+#
+# 2026-09-12, read the wrong way twice: the sales board sweep failed 3 passes
+# with only "landed somewhere unexpected" (reads like a moved page), and the
+# first fix called it a forced password change (reads like an expired
+# password). Megan: the SaraPlus password had not changed. Both wrong for the
+# same reason -- the URL was never checked against what /Security/ means.
+# rc_contact_sync already hit this wall on the B2B account on 2026-09-03 and
+# built the passcode flow for it; the shared login never got one, so it walks
+# into the challenge and gives up. [[reference_saraplus_reporting_hub]]
+SECURITY_PATH = "/security/"
 
 
-def _reset_password_error(url: str, email: str, creds_hint: str,
-                          set_cmd: str) -> "SaraError":
+def _security_wall_error(url: str, email: str, creds_hint: str) -> "SaraError":
     return SaraError(
-        "SaraPlus is FORCING A PASSWORD CHANGE on %s -- the login worked and "
-        "landed on %s. Nothing is wrong with this code and a retry cannot "
-        "clear it: SaraPlus serves that page instead of every other page until "
-        "somebody signs in as this account by hand and sets a new password. "
-        "Fix: set the new password at %s in a browser, then put it on the "
-        "runner with `%s` (it writes %s). Nothing was read and nothing was "
-        "written." % (email, url, LOGIN_URL, set_cmd, creds_hint))
+        "SaraPlus is CHALLENGING THIS BROWSER for %s and this login was given "
+        "no way to read the code. The password was accepted -- that url "
+        "carries a real session id -- and SaraPlus then sent us to its "
+        "Security area instead of the Hub: %s. NOT an expired password: do "
+        "not go changing the one in %s. Pass read_code= to login() (the "
+        "Alphalete reports hand it rc_contact_sync.verify_code.wait_for_code), "
+        "or sign in once by hand in this Chrome profile so SaraPlus remembers "
+        "the browser. Nothing was read and nothing was written."
+        % (email, url, creds_hint))
+
+
+# --- the passcode wall -------------------------------------------------------
+# Every line below was paid for on the B2B account on 2026-09-03 and is lifted
+# from rc_contact_sync/sara.py, comments and all. It is HERE because the wall
+# is the site's, not one report's: the sales board hit the identical challenge
+# on 2026-09-12 and had nothing to answer it with.
+#
+# rc_contact_sync still runs its own copy on purpose -- it is live at 4am and
+# collapsing a working login into a fresh refactor on the same day as an
+# outage is how one broken report becomes two. Collapse them once this one has
+# run clean for a week. [[reference_saraplus_reporting_hub]]
+VERIFY_SETTLE_MS = 2500
+VERIFY_TIMEOUT_S = 180
+VERIFY_POLL_S = 10
+
+
+def code_page_text(page, limit: int = 400) -> str:
+    """What the challenge page actually SAYS, trimmed. Every 'no code box'
+    report is really 'not the page you think', and its own words settle it."""
+    try:
+        txt = page.evaluate("() => (document.body.innerText || '').trim()") or ""
+    except Exception:  # noqa: BLE001
+        return "(unreadable)"
+    return " ".join(txt.split())[:limit]
+
+
+def _on_passcode_page(page) -> bool:
+    """Still sitting in SaraPlus's Security area. The URL is the honest
+    signal that the challenge has not been cleared -- the Hub we land on
+    afterwards carries enough of the same vocabulary to read as 'still being
+    asked' on a login that had in fact just succeeded."""
+    try:
+        url = (page.url or "").lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return "passcode" in url or "verifycode" in url or SECURITY_PATH in url
+
+
+def _needs_code(page) -> bool:
+    """Is this login being asked to prove the browser? Judged on the PAGE, not
+    on finding a text box -- the first screen is a destination picker that has
+    no code box on it at all, and the box only appears on the next one."""
+    try:
+        url = (page.url or "").lower()
+        body = (page.evaluate("() => (document.body.innerText || '')") or "").lower()
+    except Exception:  # noqa: BLE001
+        return False
+    if "passcode" in url or "verifycode" in url or SECURITY_PATH in url:
+        return True
+    return any(n in body for n in
+               ("confirmation code", "verification code", "security code",
+                "new location or browser", "enter the code"))
+
+
+def _code_field(page):
+    """The input to TYPE the code into, or None if this page has no such box.
+
+    TEXT-LIKE INPUTS ONLY. It used to accept any non-password input whose id
+    matched /code/, and on the picker screen that is `btnGetCodeEmail` -- the
+    Get Code BUTTON. The code was then 'typed' into a submit button, which
+    does exactly nothing, and the run failed one page later claiming the code
+    had expired (2026-09-03)."""
+    return page.evaluate(
+        """() => {
+             const typable = e => ['text', 'tel', 'number', 'search', ''].includes(e.type);
+             const els = [...document.querySelectorAll('input')].filter(typable);
+             for (const e of els) {
+               if (e.readOnly || e.disabled) continue;
+               const hay = [e.id, e.name, e.placeholder,
+                            e.getAttribute('aria-label') || ''].join(' ').toLowerCase();
+               if (/code|otp|verif|token|pin/.test(hay)) return e.id || e.name || '';
+             }
+             const body = (document.body.innerText || '').toLowerCase();
+             if (!/verification|security code|confirmation code|one-time|enter the code/.test(body))
+               return null;
+             const visible = els.filter(e => !e.readOnly && !e.disabled &&
+                                             e.offsetParent !== null);
+             return visible.length === 1 ? (visible[0].id || visible[0].name || '') : null;
+           }""")
+
+
+def _choose_email_destination(page, log=print) -> bool:
+    """Tick the EMAIL radio, then pick the address. Both, in that order.
+
+    THE RADIO IS NOT AN <input type=radio>. It is a Telerik RadButton toggle
+    -- a <span id=...rbEmailRadio> whose real state lives in a hidden
+    ClientState blob ('"checked":false', '"autoPostBack":true'). Nothing in a
+    normal control dump sees it, which is why three attempts in a row reported
+    "no email destination" while looking straight at one.
+
+    Get Code with the radio unticked sends NOTHING and says nothing -- it
+    reads as a broken mail filter.
+
+    It has to be email: the other destination is a mobile number an unattended
+    run cannot read, and which would text a person at 4am."""
+    radio = page.evaluate(
+        """() => {
+             const els = [...document.querySelectorAll('span,div,label')];
+             const e = els.find(x => /emailradio/i.test(x.id || ''))
+                    || els.find(x => /rbToggle|RadButton/.test(x.className || '') &&
+                                     /^email:?$/i.test((x.innerText || '').trim()));
+             if (!e) return '';
+             e.click();
+             return e.id || 'email-toggle';
+           }""")
+    if radio:
+        log("  ticked the Email radio (%s)" % radio)
+        # autoPostBack:true -- the page reloads itself before Get Code means
+        # anything, and every element found before this is now stale.
+        try:
+            page.wait_for_load_state("networkidle", timeout=NAV_TIMEOUT_MS)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(1500)
+
+    combo = page.evaluate(
+        """() => {
+             const els = [...document.querySelectorAll('input')].filter(e => e.type !== 'hidden');
+             const e = els.find(x => /email/i.test(x.id || '') || /email/i.test(x.name || ''))
+                    || els.find(x => /@/.test(x.value || ''));
+             return e ? {id: e.id, value: e.value || ''} : null;
+           }""")
+    if not combo:
+        return bool(radio)
+    # LOGGED ON PURPOSE. Which mailbox SaraPlus will send to is the one thing
+    # about this wall we cannot know from here, and an unattended run that
+    # picks an address nobody reads waits 3 minutes and blames the mail filter.
+    log("  email destination on file: %s" % (combo["value"] or "(blank)"))
+    try:
+        page.click("#%s" % combo["id"])
+        page.wait_for_timeout(900)
+    except Exception:  # noqa: BLE001
+        pass
+    picked = page.evaluate(
+        """() => {
+             const items = document.querySelectorAll('.rcbList li, [class*="rcbItem"]');
+             for (const el of items) {
+               const t = (el.textContent || '').trim();
+               if (/@/.test(t)) { el.click(); return t; }
+             }
+             return '';
+           }""")
+    if picked:
+        log("  address chosen from the list: %s" % picked)
+        page.wait_for_timeout(900)
+        return True
+    if "@" in (combo["value"] or ""):
+        log("  no dropdown list appeared -- using the address already in the box")
+        return True
+    return bool(radio)
+
+
+def _request_code(page, log=print) -> bool:
+    """Choose EMAIL, then press Get Code.
+
+    The screen is a destination picker -- 'It appears that this is a new
+    location or browser for you to login from' -- offering a mobile number and
+    an email combo. Pressing Get Code without choosing sends nothing at all,
+    silently: that is what the first two attempts did, and it read as a broken
+    mail filter rather than an unpicked control."""
+    if not _choose_email_destination(page, log=log):
+        raise SaraError(
+            "SaraPlus wants a confirmation code for this browser but no EMAIL "
+            "destination could be found on the picker -- and the only other "
+            "option is the mobile number, which an unattended run cannot read "
+            "and which would text a person at 4am. Nothing was requested. "
+            "Page says: %s" % code_page_text(page))
+    clicked = page.evaluate(
+        """() => {
+             const els = [...document.querySelectorAll(
+               'input[type=submit],input[type=button],button,a')];
+             // The EMAIL button by id first (MainContent_btnGetCodeEmail on
+             // the live page): the screen carries one Get Code per
+             // destination, and matching on the visible text alone could
+             // press the phone's.
+             const want = /get code|send.*code|email.*code|request.*code|resend|send me/i;
+             const b = els.find(e => /getcodeemail/i.test(e.id || e.name || ''))
+                    || els.find(e => {
+                         const t = (e.value || e.innerText || '').trim();
+                         return t && t.length < 40 && want.test(t);
+                       });
+             if (!b) return '';
+             b.click();
+             return ((b.value || b.innerText || '').trim() + ' [' + (b.id || '?') + ']');
+           }""")
+    if clicked:
+        log("  asked SaraPlus to send the code (%r)" % clicked)
+        page.wait_for_timeout(2500)
+        return True
+    log("  no 'Get Code' button found -- assuming the code was already sent")
+    return False
+
+
+def _submit_code(page, field: str, code: str) -> None:
+    """Type the code and press whatever continues. Typed character by
+    character like the password: this is the same old ASP.NET form, and it
+    drops a value that arrives in one paste-like event."""
+    sel = ("#%s" % field) if field else "input[type=text]:visible"
+    box = page.locator(sel).first
+    box.click()
+    if hasattr(box, "press_sequentially"):
+        box.press_sequentially(code, delay=50)
+    else:
+        box.type(code, delay=50)
+    try:
+        with page.expect_navigation(timeout=NAV_TIMEOUT_MS):
+            page.keyboard.press("Enter")
+    except Exception:  # noqa: BLE001
+        page.wait_for_timeout(2000)
+
+
+def _verify_browser(page, read_code, attempts: int = 3, log=print) -> None:
+    """Clear SaraPlus's "new location or browser" challenge, RETRYING.
+
+    A single pass is not enough, and the reason is worth writing down.
+    SaraPlus issued TWO codes one second apart on the first Lucy 2 run
+    (13:34:02 and 13:34:03) -- the Email radio's autopostback and the Get Code
+    press each reaching the server -- and the page then belonged to one
+    request while the newest code answered the other. The run entered a
+    perfectly valid code and was told to verify again.
+
+    Racing that perfectly is not worth attempting: notice we are still on the
+    passcode page and go round again with a FRESH code. Each attempt
+    re-requests and re-finds the box -- the picker and the code box are two
+    different pages, so a field id from a previous attempt is stale.
+
+    `read_code(since)` returns the 6 digits; this module deliberately does not
+    know which mailbox that is [[module docstring]]."""
+    import datetime as _dt
+    last_state = ""
+    for attempt in range(1, attempts + 1):
+        # Stamped BEFORE the request and deliberately a little early: this
+        # clock and Gmail's are not identical, and a code discarded for being
+        # a second too old looks exactly like a code that never arrived.
+        since = _dt.datetime.now().astimezone() - _dt.timedelta(seconds=30)
+        if not _request_code(page, log=log):
+            log("  nothing to press for a code on attempt %d" % attempt)
+        try:
+            page.wait_for_load_state("networkidle", timeout=NAV_TIMEOUT_MS)
+        except Exception:  # noqa: BLE001
+            pass
+        # Settle: if SaraPlus sends two, both should be in the inbox before we
+        # read it, so a newest-wins reader picks the real newest.
+        page.wait_for_timeout(VERIFY_SETTLE_MS)
+
+        field_id = _code_field(page)
+        if field_id is None:
+            raise SaraError(
+                "SaraPlus asked to verify this browser and a code was "
+                "requested, but no box to type it into appeared. Page says: "
+                "%s | %s" % (code_page_text(page), page_state(page)))
+        _submit_code(page, field_id, read_code(since))
+        if not _on_passcode_page(page):
+            log("  browser verified (attempt %d)" % attempt)
+            return
+        last_state = page_state(page)
+        log("  still on the passcode page after attempt %d -- asking for a "
+            "fresh code" % attempt)
+    raise SaraError(
+        "SaraPlus would not accept a verification code after %d attempts. "
+        "Each one was newer than its own request, so this is not a stale-code "
+        "problem -- the challenge itself is not clearing. %s"
+        % (attempts, last_state))
 
 
 def _int(v) -> int:
@@ -99,7 +370,8 @@ def strip_office(name: str) -> str:
 
 # --- browser ----------------------------------------------------------------
 def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
-           creds_hint: str = "the saved SaraPlus login") -> str:
+           creds_hint: str = "the saved SaraPlus login",
+           read_code=None, log=print) -> str:
     """Sign in and return the DealerPages base url. Raises if we land back on
     the login page -- a silent bounce there is how a whole day of sweeps can
     read as 'no sales' instead of 'not logged in'."""
@@ -126,10 +398,24 @@ def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
             "SaraPlus login failed -- still on the login page after submit. "
             "Check the credentials in %s (a password change is the usual "
             "cause); nothing was written." % creds_hint)
-    if RESET_PATH.lower() in url.lower():
-        raise _reset_password_error(
-            url, email, creds_hint,
-            "python -m automations.alphalete_sales_board.set_credentials")
+    # THE BROWSER-VERIFICATION WALL, before any "where are we" judgement: a
+    # challenged login is not lost, it is unanswered. Without read_code there
+    # is nothing to answer it with, and _security_wall_error says so.
+    if _needs_code(page):
+        if read_code is None:
+            raise _security_wall_error(url, email, creds_hint)
+        log("SaraPlus is asking to verify this browser -- clearing it")
+        _verify_browser(page, read_code, log=log)
+        url = page.url
+    # TWO LANDING PAGES: a remembered browser lands on DealerPages/, while a
+    # login that has just cleared the challenge lands straight on
+    # Reports/ReportingHub.aspx. Splitting on 'DealerPages/' alone called that
+    # second one "somewhere unexpected" and threw away a login that had just
+    # succeeded (rc_contact_sync, 2026-09-03).
+    if "DealerPages/" not in url and "Reports/" in url:
+        return url.split("Reports/")[0]
+    if SECURITY_PATH in url.lower():
+        raise _security_wall_error(url, email, creds_hint)
     if "DealerPages/" not in url:
         raise SaraError("logged in but landed somewhere unexpected: %s" % url)
     # The DEALER ROOT -- everything up to and including the session segment,
