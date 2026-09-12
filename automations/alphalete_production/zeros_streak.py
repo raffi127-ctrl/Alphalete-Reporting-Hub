@@ -138,7 +138,7 @@ def _load_day_values(ss, dates, cur_ws, cur_grid) -> dict:
             grid = _retry(tab.get_all_values)
             cache[tab.title] = grid
         try:
-            c = _day_block(grid, d)[0]
+            c = _day_block(grid, d).apps        # la columna Apps del dia
         except RuntimeError:
             out[d] = {}
             continue
@@ -199,7 +199,7 @@ def _day_positions(grid, days, board_we) -> dict:
     """{date: column} for the shown days. Current-week days use their native day
     column; older (cross-week) days get a spare column just left of the earliest
     current-week day — kept inside the board's 0-pinks-itself range (cols 25–80)."""
-    current = {d: _day_block(grid, d)[0] for d in days if we_label(d) == board_we}
+    current = {d: _day_block(grid, d).apps for d in days if we_label(d) == board_we}
     older = [d for d in days if we_label(d) != board_we]        # oldest first
     pos = dict(current)
     if older:

@@ -139,3 +139,24 @@ class RatesAreNotSummed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DayColsIsIndexSafe(unittest.TestCase):
+    """`_day_block` used to return a plain `(start, end)` tuple and `zeros_streak`
+    reads it as `[0]`. Turning it into a NamedTuple kept `[0]` meaning the Apps
+    column ONLY because `apps` is declared first — a field reorder would silently
+    point the Zero Streak screenshots at the wrong column. Pinned here, and the
+    caller now says `.apps` out loud."""
+
+    def test_index_zero_is_the_apps_column(self):
+        g = grid(DAY_NEW)
+        dc = capture._day_block(g, WEEK[2])
+        self.assertEqual(dc[0], dc.apps)
+        self.assertEqual(g[2][dc[0]], "Apps")
+
+    def test_zeros_streak_asks_for_apps_by_name(self):
+        import inspect
+        from automations.alphalete_production import zeros_streak
+        src = inspect.getsource(zeros_streak)
+        self.assertNotIn("_day_block(grid, d)[0]", src)
+        self.assertIn("_day_block(grid, d).apps", src)
