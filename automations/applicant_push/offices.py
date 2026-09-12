@@ -335,6 +335,33 @@ OFFICES = {
         "remove_blocked_read": True,
         "remove_no_phone": True,
     },
+    # LIVE PUSH OFFICE #4 (Carlos, 2026-09-10): Rafael's iMessage-funnel TEST
+    # office. Standard non-texting policies; no Slack channel wired yet (flags
+    # stay in the diag tab until Carlos names one). Joins the wrapper ROTATION
+    # only after tonight's window closes so its first ticks land 2026-09-11
+    # 7:00 AM — "have her start tomorrow at our regular time".
+    "23965": {
+        "office_id": "23965",
+        "account": "lucyresume",
+        "hint": "RAFAEL HIDALGO",
+        "owner": "Rafael Hidalgo",
+        "label": "office 23965 · Rafael Hidalgo — 2nd Funnel iMessage Test",
+        "short": "office 23965, Rafael 2nd funnel",
+        "suffix": "-23965",
+        "cdp_profile": "/tmp/rp_cdp_23965",
+        "cdp_port": "9255",
+        "cdp_kill_pat": "rp_cdp_23965",
+        "walk_diag_tab": "OAT Walk Diag 23965",
+        "push_diag_tab": "Applicant Push Diag 23965",
+        "log_stem": "applicant-push-23965",
+        "hub_report_id": "applicant_push_raf_funnel2",
+        "hub_display": "Applicant Push (Raf 2nd Funnel)",
+        "post_channel": "",
+        "post_todo": False,
+        "allow_retext": False,
+        "remove_blocked_read": True,
+        "remove_no_phone": True,
+    },
 }
 
 DEFAULT_OFFICE = "11580"
@@ -344,7 +371,7 @@ DEFAULT_OFFICE = "11580"
 # risking the wrapper's hard time cap), and a bad tick for one office cannot
 # starve the other — which running both inside one tick would do, since the first
 # office's wedge burns the cap before the second ever opens a session.
-ROTATION = ["11580", "23467", "11901"]
+ROTATION = ["11580", "23467", "11901", "23965"]
 
 
 def get(office_id: str) -> dict:
