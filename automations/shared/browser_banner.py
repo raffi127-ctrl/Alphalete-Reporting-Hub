@@ -18,19 +18,23 @@ the controls the report is about to click.
 """
 from __future__ import annotations
 
-DEFAULT_TITLE = "DON'T CLOSE OR CLICK THIS WINDOW"
+DEFAULT_TITLE = "DO NOT MANUALLY LOG IN OR CLEAR CLOUDFLARE"
 
-# WHY THE SECOND LINE EXISTS. The first version only said "do not close", and
-# the helpful thing for an owner to do with a half-finished login is finish it
-# -- type their password, tick the security box. That BREAKS it: the check
-# clears itself only if it is left alone (Megan 2026-09-11: "the lucy bot has
-# to be able to clear the pass"), and a human touching the box or the fields
-# mid-sign-in is how the login fails in a way that looks like a wrong
-# password. So the bar asks for the one thing that is actually needed:
-# nothing.
-DEFAULT_DETAIL = ("Lucy Reports is signing itself in — please don't type "
-                  "your password or tick the security box. It clears on its "
-                  "own and this window closes by itself.")
+# THE HEADLINE IS THE INSTRUCTION, and it is deliberately enormous (Megan
+# 2026-09-12: "really really big").
+#
+# The first version only said "do not close", and the helpful thing for an
+# owner to do with a half-finished login is FINISH it -- type their password,
+# tick the security box. That breaks it: the check clears itself only if it is
+# left alone (Megan 2026-09-11: "the lucy bot has to be able to clear the
+# pass"), and a human touching the box or the fields mid-sign-in fails the
+# login in a way that looks exactly like a wrong password -- which then sends
+# somebody off re-entering a password that was never wrong.
+#
+# So the bar names the two specific things not to do, rather than a polite
+# general request nobody reads.
+DEFAULT_DETAIL = ("Lucy is signing herself in. This window closes by itself — "
+                  "usually within a minute. Just leave it alone.")
 
 DEFAULT_MESSAGE = DEFAULT_TITLE
 
@@ -46,16 +50,24 @@ _SCRIPT = """
       'z-index:2147483647',
       'background:#b30000', 'color:#ffffff',
       'font:15px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif',
-      'padding:12px 16px', 'text-align:center',
+      'padding:22px 18px', 'text-align:center',
       'letter-spacing:.2px', 'box-shadow:0 2px 6px rgba(0,0,0,.35)',
       'pointer-events:none'
     ].join(';');
     const head = document.createElement('div');
     head.textContent = parts.title;
-    head.style.cssText = 'font-weight:800;font-size:16px;letter-spacing:.6px';
+    head.style.cssText = [
+      'font-weight:900',
+      // Scales with the window and never smaller than 26px: this is the one
+      // sentence the whole bar exists to deliver.
+      'font-size:clamp(26px,3.4vw,44px)',
+      'line-height:1.12',
+      'letter-spacing:.5px',
+      'text-transform:uppercase'
+    ].join(';');
     const sub = document.createElement('div');
     sub.textContent = parts.detail;
-    sub.style.cssText = 'font-weight:500;font-size:13.5px;opacity:.95;margin-top:3px';
+    sub.style.cssText = 'font-weight:600;font-size:16px;opacity:.95;margin-top:8px';
     bar.appendChild(head);
     if (parts.detail) bar.appendChild(sub);
     document.body.appendChild(bar);

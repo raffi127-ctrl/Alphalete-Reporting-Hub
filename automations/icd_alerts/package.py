@@ -225,14 +225,19 @@ def _knocks_picker():
 
 
 def _default_hours(office):
-    """The org's default field hours, in THIS office's own clock.
+    """THIS office's field hours, in its own clock.
 
-    The timezone comes from the office record, not from the owner: it is
-    already known, and "which timezone are you in" is a question with a wrong
-    answer available (an owner travelling, or reading their laptop's clock).
+    Off the office record, NOT the org default. The record is what the board
+    is actually gated on, so shipping the org's 10:45-18:30 to an office whose
+    Saturday is 10:30-17:00 would show the owner hours to confirm that are not
+    the hours we use -- and they would confirm them, because they were asked.
+
+    The timezone comes from the record too: it is already known, and "which
+    timezone are you in" is a question with a wrong answer available.
     """
-    from automations.disposition_signup import schema as S
-    return dict(S.DEFAULT_HOURS, tz=office.timezone, saturday=True)
+    return {"day_start": office.day_start, "day_end": office.day_end,
+            "sat_start": office.sat_start, "sat_end": office.sat_end,
+            "saturday": office.saturday, "tz": office.timezone}
 
 
 def _channel_blurb(office) -> str:

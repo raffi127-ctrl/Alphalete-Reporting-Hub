@@ -1,0 +1,70 @@
+{
+  "_note": "Public, on purpose: office keys, owners, timezones and field hours are not secrets. The RELAY KEY is, and it never appears here -- it is passed on the install command line, which is why each office gets its own line.",
+  "relay_url": "https://script.google.com/macros/s/AKfycbwl4YR_SsJyWWRFV3cEQrNGq3vzqFDMUBGm4v692ZBJnfHVFMvnTfFm9vxG_r5cE4Wn/exec",
+  "offices": {
+    "kash": {
+      "office_key": "kash",
+      "owner": "Kash Rai",
+      "label": "Kash's Local Office",
+      "timezone": "America/Chicago",
+      "knocks_picker": [
+        {
+          "value": 15,
+          "label": "Every 15 minutes"
+        },
+        {
+          "value": 30,
+          "label": "Every 30 minutes"
+        },
+        {
+          "value": 60,
+          "label": "Once an hour"
+        },
+        {
+          "value": 0,
+          "label": "Set times \u2014 First Knocks 2:00 PM \u00b7 Money Lap 5:15 PM \u00b7 End of Day 9:00 PM"
+        }
+      ],
+      "knocks_default_hours": {
+        "day_start": "13:30",
+        "day_end": "20:30",
+        "sat_start": "10:30",
+        "sat_end": "17:00",
+        "saturday": true,
+        "tz": "America/Chicago"
+      }
+    },
+    "cyrus": {
+      "office_key": "cyrus",
+      "owner": "Cyrus Wade",
+      "label": "Cyrus's Local Office",
+      "timezone": "America/Chicago",
+      "knocks_picker": [
+        {
+          "value": 15,
+          "label": "Every 15 minutes"
+        },
+        {
+          "value": 30,
+          "label": "Every 30 minutes"
+        },
+        {
+          "value": 60,
+          "label": "Once an hour"
+        },
+        {
+          "value": 0,
+          "label": "Set times \u2014 First Knocks 2:00 PM \u00b7 Money Lap 5:15 PM \u00b7 End of Day 9:00 PM"
+        }
+      ],
+      "knocks_default_hours": {
+        "day_start": "13:30",
+        "day_end": "20:30",
+        "sat_start": "11:15",
+        "sat_end": "16:00",
+        "saturday": true,
+        "tz": "America/Chicago"
+      }
+    }
+  }
+}
