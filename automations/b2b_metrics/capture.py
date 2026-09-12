@@ -273,6 +273,20 @@ def order_log_workbook(o: B2BOffice, out_dir: Path, log=print) -> Path:
     return out
 
 
+def activation_revenue_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
+    """The Activation Overview's REVENUE TWIN (Carlos 2026-09-14, mirroring
+    the Box thread's): same two week tables in dollars — units priced on the
+    office comp, weekly tier bonus rolled in — from the SaraPlus artifacts.
+    Carlos only, SaraPlus only: there is no Tableau fallback for this section
+    on purpose (a fallback would price Tableau's stale week and post a wrong-
+    looking dollar figure; a skipped section is honest)."""
+    path = _saraplus_artifacts(o, out_dir, log=log).get("revenue")
+    if not path:
+        raise RuntimeError("SaraPlus artifacts carry no revenue image")
+    log("   \u2713 activation revenue [carlos]: SARAPLUS priced + tier bonus")
+    return path
+
+
 # --- #7 : the Activation-report-overview image -----------------------------
 def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     """Two-week Activated/Cancelled/Still-Open per rep, rendered like BOX's

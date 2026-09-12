@@ -402,6 +402,110 @@ def build_overview_png(lines, today: dt.date, log=print,
     return out
 
 
+def build_revenue_png(lines, today: dt.date, log=print,
+                      out_path: Optional[Path] = None) -> Path:
+    """The Activation Overview's REVENUE TWIN (Carlos 2026-09-14: copy what
+    the Box thread just got — 'Box now has a version where it shows the
+    revenue that got activated' — for AT&T B2B off the SaraPlus
+    activations). Same two week tables, same renderer, money=True: every
+    unit priced on the office comp (vantura_payout_estimate.price — the
+    pricer the Vantura revenue board uses) and the weekly Tiered Volume
+    bonus rolled into each rep's activated $.
+
+    Deliberately a LOCAL money variant rather than a money_fn bolted onto
+    att_order_log.payout.build_week_tables — that builder feeds every
+    office's Tableau path (see README playbook: change one layer, watch
+    another break).
+
+    PRICING ASSUMPTIONS (SaraPlus doesn't carry these fields; stated in the
+    image subtitle so the number reads as what it is): CRU/IRU unknown ->
+    priced as CRU and every eligible unit counts toward the tier bonus; no
+    ABP/OOF flags -> those bumps aren't added (conservative); BYOD read
+    from the device string; TABLET units unpriced ($0)."""
+    from automations.att_order_log import payout as ap
+    from automations.box_order_log import png as bpng
+    from automations.vantura_payout_estimate.run import price
+    from automations.vantura_revenue_board.run import tier_for
+
+    def _amount(ln) -> float:
+        row = dict(ln)
+        pkg = str(row.get("Package") or "")
+        if not str(row.get("Wireless Installment Plan") or "").strip() \
+                and "BYOD" in pkg.upper():
+            row["Wireless Installment Plan"] = "BYOD"
+        amt, _label, _notes = price(row)
+        return float(amt or 0)
+
+    def _eligible(ln) -> bool:
+        prod = str(ln.get("Product Type (Broken Out)") or "").upper()
+        tn = str(ln.get("spe.TN Type") or "").lower()
+        return prod not in ("VOICE", "VIDEO") and tn != "upgrade"
+
+    ls, le, ts, te = ap.week_bounds(today)
+    reps: dict = {}
+    for ln in lines:
+        rep = str(ln.get("Rep", "") or "").strip()
+        if not rep:
+            continue
+        a = reps.setdefault(rep, {"open": 0.0, "act_last": 0.0,
+                                  "act_this": 0.0, "can_last": 0.0,
+                                  "can_this": 0.0, "n_last": 0, "n_this": 0})
+        posted = ap._parse_date(ln.get(ap.POSTED_DATE_COL))
+        status = str(ln.get("DTR Status (enriched)", "")).strip().lower()
+        amt = _amount(ln)
+        if status in ap.CANCEL_STATUSES:
+            if ap._in_week(posted, ls, le):
+                a["can_last"] += amt
+            elif ap._in_week(posted, ts, te):
+                a["can_this"] += amt
+        elif posted is None:
+            a["open"] += amt
+        else:
+            if ap._in_week(posted, ls, le):
+                a["act_last"] += amt
+                a["n_last"] += 1 if _eligible(ln) else 0
+            elif ap._in_week(posted, ts, te):
+                a["act_this"] += amt
+                a["n_this"] += 1 if _eligible(ln) else 0
+
+    def _table(start, end, act_key, can_key, n_key):
+        rows = []
+        for rep, a in reps.items():
+            _t, rate = tier_for(a[n_key])
+            rows.append({"rep": rep,
+                         "posted": round(a[act_key] + rate * a[n_key]),
+                         "pending": round(a["open"]),
+                         "canceled": round(a[can_key])})
+        rows.sort(key=lambda r: (-r["posted"], -r["pending"],
+                                 r["rep"].lower()))
+        totals = {k: sum(r[k] for r in rows)
+                  for k in ("posted", "pending", "canceled")}
+        return {"label": ap.label(start, end), "rows": rows,
+                "totals": totals}
+
+    tables = {"last": _table(ls, le, "act_last", "can_last", "n_last"),
+              "this": _table(ts, te, "act_this", "can_this", "n_this")}
+    out = out_path or (OUT_DIR / "activation_revenue.png")
+    saved_cols = list(bpng.COLS)
+    bpng.COLS[:] = [
+        ("Rep Name", "rep", "left"),
+        ("Posted $", "posted", "center"),
+        ("Cancelled $", "canceled", "center"),
+        ("Still Open $", "pending", "center"),
+    ]
+    try:
+        bpng.render(
+            tables, out, money=True,
+            subtitle="Activated $ by activation week, weekly tier bonus "
+                     "included. Priced as CRU, no ABP/OOF (not in "
+                     "SaraPlus); tablets unpriced.")
+    finally:
+        bpng.COLS[:] = saved_cols
+    log("activation revenue -> %s (%s bytes)"
+        % (out.name, "{:,}".format(out.stat().st_size)))
+    return out
+
+
 # --- SaraPlus pull (Lucy 2) ---------------------------------------------------
 
 def pull_csv(start: dt.date, end: dt.date, *, headless: bool = True,
@@ -513,7 +617,9 @@ def build_artifacts(out_dir: Optional[Path] = None,
         out_path=dest / "ATT Order Log {}.xlsx".format(today.strftime("%m-%d-%Y")))
     png_path = build_overview_png(
         lines, today, log=log, out_path=dest / "activation_overview.png")
-    return {"xlsx": xlsx_path, "png": png_path}
+    revenue_path = build_revenue_png(
+        lines, today, log=log, out_path=dest / "activation_revenue.png")
+    return {"xlsx": xlsx_path, "png": png_path, "revenue": revenue_path}
 
 
 # --- main ---------------------------------------------------------------------

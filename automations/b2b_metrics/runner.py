@@ -101,6 +101,11 @@ def _churn_by_rep(o: B2BOffice, out_dir: Path, log, today=None):
     return rep_boards.churn_by_rep_capture(o, out_dir, log=log, today=today)
 
 
+def _activation_revenue(o: B2BOffice, out_dir: Path, log, today=None):
+    from automations.b2b_metrics import capture
+    return capture.activation_revenue_image(o, out_dir, log=log)
+
+
 def _activation_board(o: B2BOffice, out_dir: Path, log, today=None):
     """#2 Activation Rate — recreated full-height board (every rep) instead of
     Tableau's scroll-clipped Download→Image. Applies to EVERY office that posts
@@ -147,6 +152,10 @@ ITEMS = [
          capture=_tableau_shot("order_tiered_bonus")),
     dict(id="activation_overview", emoji="\U0001F4B5",
          title="Activation Report Overview", capture=_payout),
+    # Carlos-only (rep_boards gate in expected_items): the overview's revenue
+    # twin off the SaraPlus activations (Carlos 2026-09-14, mirroring Box).
+    dict(id="activation_revenue", emoji="\U0001F4B0",
+         title="Activation Revenue Overview", capture=_activation_revenue),
     dict(id="out_of_bounds", emoji="\U0001F6A7", title="Out of Bounds",
          capture=_tableau_shot("out_of_bounds"), post_when_blank=True),
 ]
@@ -453,7 +462,8 @@ def expected_items(o: B2BOffice) -> list:
     except the ones this office gates out via `skip_views`."""
     from automations.shared import thread_plans as tp
     default = [i for i in ITEMS if i["id"] not in o.skip_views
-               and (i["id"] != "churn_by_rep" or o.rep_boards)]
+               and (i["id"] not in ("churn_by_rep", "activation_revenue")
+                    or o.rep_boards)]
     # rep_boards offices (Carlos 2026-09-05: "both those screenshots should
     # come in back to back"): Activation Rate by Rep moves up to follow
     # Activation Rate directly.
