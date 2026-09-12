@@ -6,6 +6,7 @@ open a thread), so it must never win while the orchestrator still has retry
 budget and the failure looks transient.
 """
 import datetime as dt
+import pathlib
 import unittest
 from unittest import mock
 
@@ -82,6 +83,19 @@ class Buckets(unittest.TestCase):
         v = _classify(tail="exit 75 — ran, held with a note (see orch.log)")
         self.assertEqual(v.bucket, tri.WAITING)
 
+    def test_a_google_500_is_a_blip_like_502_and_503(self):
+        """The real 2026-09-12 drop: `daily_production_el: APIError: [500]:
+        Internal error encountered.` 502 and 503 were listed and 500 was not, so
+        the one Google actually returns fell past every signature."""
+        v = _classify(tail="apierror: apierror: [500]: internal error encountered.")
+        self.assertEqual(v.bucket, tri.LUCY)
+        self.assertIn("briefly down", v.reason)
+
+    def test_a_five_hundred_inside_a_bigger_number_is_not_a_signature(self):
+        """Bare "500" would match 1500 knocks and half the timestamps in a log."""
+        v = _classify(tail="filled 1500 rows; no error")
+        self.assertNotIn("briefly down", v.reason)
+
 
 class NobodyIsComingBackForIt(unittest.TestCase):
     """:pending: and the purple circle both say 'it gets picked up on its own'.
@@ -133,6 +147,44 @@ class NobodyIsComingBackForIt(unittest.TestCase):
         """A `drop-` key can name a SOURCE. Inventing a rerun command for it is
         worse than the promise we're removing."""
         v = self._with({}, key="drop-box-order-log", tail="connection reset")
+        self.assertEqual(v.bucket, tri.LUCY)
+
+    # THE DASHED-ID CASES. Every test above hands the classifier a key spelled
+    # the same way as its config entry; real `drop-` keys are not spelled that
+    # way, which is why this whole class passed while doing nothing in
+    # production for the half of the channel that arrives as a dropped section.
+    # section_drop_alert: "this side has the dashed manifest id, notify.py the
+    # underscore registry one."
+
+    def test_a_dashed_drop_key_still_finds_its_config_entry(self):
+        """`drop-alphalete-production` IS `alphalete_production`. Before
+        2026-09-12 the lookup missed, took the unknown-id branch, and promised a
+        retry for all 409 reports — 275 of which nothing re-runs."""
+        v = self._with({"owner_chat_texts": {"source_type": "local",
+                                             "data_sources": []}},
+                       key="drop-owner-chat-texts", tail="connection reset")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("Nothing re-runs it", tri.line_for(v))
+
+    def test_the_rerun_command_uses_the_id_lucy_actually_accepts(self):
+        """`lucy rerun` resolves by exact dict lookup (registry.resolve_report),
+        so the dashed manifest id comes back 'unknown report_id'. A line that
+        hands somebody a command that errors is worse than no line."""
+        v = self._with({"owner_chat_texts": {"source_type": "local",
+                                             "data_sources": []}},
+                       key="drop-owner-chat-texts", tail="connection reset")
+        self.assertIn("lucy rerun owner_chat_texts", tri.line_for(v))
+        self.assertNotIn("owner-chat-texts", tri.line_for(v))
+
+    def test_a_dashed_drop_key_on_a_manifest_report_is_still_lucys(self):
+        """The parts retry DOES press 'retry failed only' on a manifest-verified
+        report — alphalete_production's real shape. Resolving the id must not
+        turn a true promise into a red circle."""
+        v = self._with({"alphalete_production": {
+                            "source_type": "local", "data_sources": [],
+                            "verify": {"type": "manifest",
+                                       "report_id": "alphalete-production"}}},
+                       key="drop-alphalete-production", tail="connection reset")
         self.assertEqual(v.bucket, tri.LUCY)
 
 
@@ -446,3 +498,45 @@ class FinishesStrandedMarkers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheLogItReads(unittest.TestCase):
+    """The log is named after the SCHEDULE key; a `drop-` key carries the DASHED
+    manifest id. Reading only the incident's spelling meant a dropped section
+    never had a log, never matched a signature, and was told in its own thread
+    that the reason wasn't in the log — with the reason quoted directly above.
+    """
+
+    def _repo(self, filename, body):
+        import tempfile
+        d = pathlib.Path(tempfile.mkdtemp())
+        (d / "output" / "logs").mkdir(parents=True)
+        (d / "output" / "logs" / filename).write_text(body)
+        return d
+
+    def test_a_dashed_incident_id_finds_the_underscore_log(self):
+        repo = self._repo("orch-2026-08-26-alphalete_production.log",
+                          "Traceback\nview not found: OPT AUTOMATIONPULL")
+        cfg = {"alphalete_production": {"source_type": "local",
+                                        "data_sources": [],
+                                        "verify": {"type": "manifest"}}}
+        with mock.patch.object(tri, "REPO_ROOT", repo), \
+             mock.patch.object(tri, "_reports", return_value=cfg):
+            v = tri.classify("drop-alphalete-production", day=DAY,
+                             opened=DAY.isoformat(), now_hour=6)
+        # The deleted-view signature has to win at 4am — that is the whole point
+        # of _CODE_CHANGE, and it could never fire on a dropped section before.
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("Tableau view", v.reason)
+
+    def test_no_log_anywhere_does_not_claim_one_was_read(self):
+        """Triage grades incidents from all three machines but reads logs off
+        the local disk, so "the reason isn't in the log" is a claim about a file
+        this machine never had."""
+        repo = self._repo("unrelated.log", "x")
+        with mock.patch.object(tri, "REPO_ROOT", repo), \
+             mock.patch.object(tri, "_reports", return_value={}):
+            v = tri.classify("drop-something", day=DAY,
+                             opened=DAY.isoformat(), now_hour=6)
+        self.assertIn("no log for it on this machine", v.reason)
+        self.assertNotIn("isn't in the log", v.reason)

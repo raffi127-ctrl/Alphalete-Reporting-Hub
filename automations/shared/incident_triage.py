@@ -160,6 +160,16 @@ _TRANSIENT: Sequence[Tuple[str, str]] = (
     ("temporarily unavailable", "The source was briefly down."),
     ("502", "The source was briefly down."),
     ("503", "The source was briefly down."),
+    # Google's APIs answer a routine blip with 500 "Internal error encountered"
+    # (Sheets and Slack both), and 500 was the one of the three not listed —
+    # so it fell past every signature to the no-signature branch and got told
+    # "the reason isn't in the log" with the reason quoted in the post above.
+    # Bracketed/suffixed rather than bare: a naked "500" matches 1500, 4500 and
+    # any timestamp that happens to contain it.
+    ("[500]", "The source was briefly down."),
+    ("500:", "The source was briefly down."),
+    ("internal error encountered", "The source was briefly down."),
+    ("internal server error", "The source was briefly down."),
 )
 
 # The source simply hasn't landed yet. Not a failure at all before the backstop.
@@ -272,12 +282,36 @@ def _log_tail(rid: str, day: dt.date, n: int = 80) -> str:
 
     Same file the failure alert reads (output/logs/orch-<date>-<id>.log), so a
     verdict here and the reason in the alert can never disagree about the facts.
+
+    TRIED UNDER BOTH SPELLINGS OF THE ID (Megan 2026-09-12). The log is named
+    after the SCHEDULE key (`orch-<date>-alphalete_production.log`, run.py:
+    `f"orch-{target}-{r.report_id}.log"` where report_id is the config key), but
+    a `drop-` incident key carries the DASHED MANIFEST id — section_drop_alert
+    says so itself: "this side has the dashed manifest id, notify.py the
+    underscore registry one". So `drop-alphalete-production` looked for a file
+    that has never existed under that name, read "" for the tail, missed every
+    signature, and fell to branch (6): "It failed and the reason isn't in the
+    log." It was in the log. It was even in the post directly above the line —
+    `daily_production_el: APIError: [500]` — which is how a triage line teaches
+    people to stop reading triage lines. Worse, _CODE_CHANGE could never fire
+    for a dropped section either: a deleted Tableau view sat in :pending: until
+    noon instead of going red at 4am.
     """
-    p = REPO_ROOT / "output" / "logs" / f"orch-{day.isoformat()}-{rid}.log"
-    try:
-        return "\n".join(p.read_text(errors="replace").splitlines()[-n:]).lower()
-    except Exception:  # noqa: BLE001 — no log is itself a signal; caller decides
-        return ""
+    for name in _log_id_spellings(rid):
+        p = REPO_ROOT / "output" / "logs" / f"orch-{day.isoformat()}-{name}.log"
+        try:
+            return "\n".join(
+                p.read_text(errors="replace").splitlines()[-n:]).lower()
+        except Exception:  # noqa: BLE001 — absent under this spelling; try next
+            continue
+    return ""  # no log under any spelling — caller decides what that means
+
+
+def _log_id_spellings(rid: str) -> Tuple[str, ...]:
+    """`rid` first, then the schedule key it resolves to. Order matters only in
+    the freak case where both files exist; the incident's own id wins then."""
+    resolved = schedule_key(rid)
+    return (rid,) if not resolved or resolved == rid else (rid, resolved)
 
 
 # THE TWO AUTOMATIC PATHS, READ FROM schedule_config RATHER THAN ASSUMED.
@@ -312,6 +346,41 @@ def _reports() -> dict:
     return _CFG_CACHE
 
 
+# THE INCIDENT'S ID AND THE SCHEDULE'S ID ARE NOT THE SAME STRING.
+#
+# schedule_config is keyed with underscores (`alphalete_production`); a `drop-`
+# key carries the dashed manifest id (`alphalete-production`). A raw
+# `_reports().get(rid)` therefore MISSED ON EVERY `drop-` INCIDENT, took the
+# unknown-id branch below, and answered "yes, something re-runs this" for all
+# 409 reports — 275 of which nothing re-runs. That is the exact false all-clear
+# _if_it_reruns was built to stop (recruiter_retention_daily, 2026-08-27); it
+# just never fired for the half of the channel that arrives as a dropped
+# section. Resolve through the same canon + alias map incident_thread uses to
+# decide which thread a report's alerts share, so the two layers can't disagree
+# about which report an id names.
+#
+# The EXACT spelling always wins; the alias map is only consulted when the id is
+# not a registered report at all (a manifest-only or per-owner id), so a variant
+# that IS in the schedule is never resolved up to its base.
+#
+# Memoised against the identity of the reports dict, not unconditionally:
+# _reports() is itself cached in prod, so this builds once — but a caller (or a
+# test) that swaps the config in must not keep answering out of the old index.
+_KEY_INDEX: Tuple[int, Dict[str, str]] = (0, {})
+
+
+def schedule_key(rid: str) -> Optional[str]:
+    """The schedule_config key `rid` names, whatever spelling it arrives in, or
+    None when it names nothing in the schedule (a source, a manifest-only id)."""
+    global _KEY_INDEX
+    reports = _reports()
+    if _KEY_INDEX[0] != id(reports):
+        _KEY_INDEX = (id(reports), {inc._canon(k): k for k in reports})
+    idx = _KEY_INDEX[1]
+    c = inc._canon(rid)
+    return idx.get(c) or idx.get(inc._root(c))
+
+
 def reruns_itself(rid: str, *, partial: bool = False) -> bool:
     """Will anything re-run `rid` today without a person asking?
 
@@ -326,7 +395,7 @@ def reruns_itself(rid: str, *, partial: bool = False) -> bool:
     only ever DOWNGRADES a promise, and inventing work for an id we can't even
     find in the schedule is the more expensive mistake.
     """
-    r = _reports().get(rid)
+    r = _reports().get(schedule_key(rid) or rid)
     if not isinstance(r, dict):
         return True
     if r.get("source_type") == "tableau" or r.get("data_sources"):
@@ -451,10 +520,19 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     if reason:
         return _if_it_reruns(key, rid, LUCY, reason)
 
-    # 6) No log, no signature, still early. The loop has budget left, so let it
-    #    spend it — this becomes NEEDS_YOU on its own at noon via (4).
-    return _if_it_reruns(key, rid, LUCY,
-                         "It failed and the reason isn't in the log.")
+    # 6) No signature, still early. The loop has budget left, so let it spend
+    #    it — this becomes NEEDS_YOU on its own at noon via (4).
+    #
+    #    Which of the two sentences depends on whether there WAS a log to read.
+    #    Triage grades every incident in the channel — Lucy 1's, Lucy 2's and
+    #    the mini's alike, deliberately (see _open_incidents) — but it reads
+    #    logs off the local disk, so for an incident opened by another machine
+    #    there is no log here to have a reason in. Saying "the reason isn't in
+    #    the log" there states a fact about a file this machine never had.
+    return _if_it_reruns(
+        key, rid, LUCY,
+        "It failed and the reason isn't in the log." if tail
+        else "It failed and there's no log for it on this machine.")
 
 
 def _if_it_reruns(key: str, rid: str, bucket: str, reason: str) -> Verdict:
@@ -467,9 +545,14 @@ def _if_it_reruns(key: str, rid: str, bucket: str, reason: str) -> Verdict:
     """
     if reruns_itself(rid, partial=key.startswith("drop-")):
         return Verdict(key, bucket, reason)
+    # The command has to carry the SCHEDULE key: `lucy rerun` resolves its
+    # argument by exact dict lookup (registry.resolve_report), so the dashed
+    # manifest id off a `drop-` key comes back "unknown report_id". A line that
+    # hands somebody a command that errors is worse than no line.
     return Verdict(key, NEEDS_YOU, reason,
                    line=("*Needs one of you.* {} Nothing re-runs it on its "
-                         "own — `lucy rerun {}`.".format(reason, rid)))
+                         "own — `lucy rerun {}`.".format(
+                             reason, schedule_key(rid) or rid)))
 
 
 # --------------------------------------------------------------- the line ----
