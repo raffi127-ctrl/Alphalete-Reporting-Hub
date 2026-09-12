@@ -69,11 +69,17 @@ STALE_MINUTES = 45
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "icd_alerts_post.lock"
 LOCK_STALE_MINUTES = 20
 
-# Who has already been told an office went quiet today. ONCE PER OFFICE PER
-# DAY: the poster ticks every ten minutes, and a closed laptop stays closed --
-# a warning per tick would be 60 messages about one fact, which is how people
-# learn to ignore the channel this is supposed to protect.
+# When each office was last told it had gone quiet. REPEATED EVERY 30 MINUTES
+# while it stays down (Megan 2026-09-12), not once a day.
+#
+# It was once a day, reasoning that a second message about a laptop somebody
+# had already been asked to wake is nagging. That is true of a five-minute
+# tick and false of a half-hour one: an office whose machine is off is losing
+# its alerts the whole time, and one message at 11am that they scrolled past
+# is not a fix. Half an hour is slow enough not to hector and often enough to
+# be noticed.
 WARNED_PATH = Path.home() / ".config" / "recruiting-report" / "icd_alerts_quiet.json"
+NUDGE_REPEAT_MIN = 30
 # 11am on the OFFICE'S clock. Their agent starts sweeping at 10:00 local, so
 # by 11 it has had four chances to say hello -- silence then is a real problem,
 # and it is early enough that a nudge still saves the day rather than reporting
@@ -231,6 +237,17 @@ def quiet_offices(day: Optional[dt.date] = None, minutes: int = STALE_MINUTES,
                         "last": raw,
                         "reason": "last checked in %s" % (raw or "never")})
     return out
+
+
+def _parse_when(text: str) -> Optional[dt.datetime]:
+    """An ISO stamp we wrote ourselves, or None."""
+    text = (text or "").strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return dt.datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def _parse_received(cell: str) -> Optional[dt.datetime]:
@@ -626,8 +643,10 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
     asleep, shut or unplugged is the one thing only they can fix, and it is
     fixed in ten seconds. Telling the person who can act is the whole point.
 
-    They are nudged ONCE a day. A second message about a laptop somebody has
-    already been asked to wake is nagging, and the first one stops being read.
+    REPEATED EVERY 30 MINUTES while the machine stays down. One message they
+    scrolled past is not a fix, and an office whose laptop is off is losing
+    its alerts the entire time -- but a message per tick would be a dozen an
+    hour, which is how a useful nudge becomes one people mute.
     """
     now = now or dt.datetime.now()
     day = day or now.date()
@@ -639,10 +658,14 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         return []
 
     data = _warned()
-    already = set(data.get(day.isoformat()) or [])
+    sent = dict(data.get(day.isoformat()) or {})
+    if isinstance(sent, list):          # the old once-a-day shape
+        sent = {k: "" for k in sent}
     fresh = []
     for q in quiet:
-        if q["office"] in already:
+        last = _parse_when(sent.get(q["office"]) or "")
+        if last and (dt.datetime.now() - last) < dt.timedelta(
+                minutes=NUDGE_REPEAT_MIN):
             continue
         office = O.get(q["office"])
         # Each office is judged on ITS OWN clock. An Eastern office is an hour
@@ -686,7 +709,10 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
     _slack(O.HOLDING_DM, "\n\n".join(lines))
 
     WARNED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    data[day.isoformat()] = sorted(already | {q["office"] for q in fresh})
+    stamp = dt.datetime.now().isoformat(timespec="seconds")
+    for q in fresh:
+        sent[q["office"]] = stamp
+    data[day.isoformat()] = sent
     # Keep only the last few days; nothing older is interesting.
     for k in sorted(data)[:-5]:
         data.pop(k, None)

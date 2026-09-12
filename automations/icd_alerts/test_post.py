@@ -301,3 +301,54 @@ class NudgeTests(unittest.TestCase):
         self.assertIn("gone quiet", text)
         self.assertIn("10:56:34", text)
         self.assertNotIn("hasn't checked in at all", text)
+
+
+class NudgeRepeatTests(unittest.TestCase):
+    """The nudge repeats every 30 minutes while the machine stays down (Megan
+    2026-09-12). It was once a day, which is right for a five-minute tick and
+    wrong for a half-hour one: an office whose laptop is off loses its alerts
+    the whole time, and one message they scrolled past is not a fix."""
+
+    def setUp(self):
+        import json, tempfile
+        from pathlib import Path
+        from automations.icd_alerts import post as P
+        self.P = P
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig = P.WARNED_PATH
+        P.WARNED_PATH = Path(self._tmp.name) / "quiet.json"
+        self.json = json
+
+    def tearDown(self):
+        self.P.WARNED_PATH = self._orig
+        self._tmp.cleanup()
+
+    def _write(self, minutes_ago):
+        day = dt.date.today().isoformat()
+        stamp = (dt.datetime.now()
+                 - dt.timedelta(minutes=minutes_ago)).isoformat(timespec="seconds")
+        self.P.WARNED_PATH.write_text(self.json.dumps({day: {"kash": stamp}}))
+
+    def test_half_an_hour_is_the_gap(self):
+        self.assertEqual(self.P.NUDGE_REPEAT_MIN, 30)
+
+    def test_a_recent_nudge_is_not_repeated(self):
+        self._write(10)
+        last = self.P._parse_when(
+            self.P._warned()[dt.date.today().isoformat()]["kash"])
+        self.assertLess((dt.datetime.now() - last).total_seconds() / 60,
+                        self.P.NUDGE_REPEAT_MIN)
+
+    def test_an_old_nudge_is_due_again(self):
+        self._write(40)
+        last = self.P._parse_when(
+            self.P._warned()[dt.date.today().isoformat()]["kash"])
+        self.assertGreaterEqual((dt.datetime.now() - last).total_seconds() / 60,
+                                self.P.NUDGE_REPEAT_MIN)
+
+    def test_the_old_once_a_day_shape_does_not_crash(self):
+        """Yesterday's file held a LIST of office keys, not a map of stamps."""
+        day = dt.date.today().isoformat()
+        self.P.WARNED_PATH.write_text(self.json.dumps({day: ["kash"]}))
+        sent = self.P._warned().get(day)
+        self.assertIsInstance(sent, list)
