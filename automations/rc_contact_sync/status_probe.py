@@ -409,8 +409,69 @@ def _dump_customer_view(ctx, page, links: List[Dict], log) -> Optional[bytes]:
         return None
 
 
+def _view_orders_dump(page, ctx, view_orders: List[str], log) -> List[bytes]:
+    """Open each order's View Customer card off the loaded grid and dump it —
+    the per-LINE status hunt (does the card say WHICH lines are active?)."""
+    shots: List[bytes] = []
+    for oid in view_orders:
+        res = page.evaluate(
+            """(cfg) => {
+                 const data = document.getElementById(cfg.gid);
+                 if (!data) return 'no grid';
+                 const row = [...data.querySelectorAll('tbody > tr')]
+                   .find(r => (r.innerText || '').includes(cfg.oid));
+                 if (!row) return 'row not found';
+                 const e = [...row.querySelectorAll('a')]
+                   .find(x => /view/i.test(x.innerText || ''));
+                 if (!e) return 'no View link on the row';
+                 e.click();
+                 return 'clicked';
+               }""", {"gid": C.GRID_DATA, "oid": oid})
+        log("view %s: %s" % (oid, res))
+        if res != "clicked":
+            continue
+        try:
+            page.wait_for_load_state("networkidle", timeout=C.NAV_TIMEOUT_MS)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(2500)
+        for fr in page.frames:
+            if fr == page.main_frame:
+                continue
+            try:
+                txt = fr.evaluate("() => (document.body.innerText || '')") or ""
+            except Exception:  # noqa: BLE001
+                continue
+            if txt.strip():
+                log("-- [%s] iframe %s --" % (oid, (fr.url or "")[:120]))
+                kept = 0
+                for ln in txt.splitlines():
+                    if ln.strip():
+                        log("   | " + ln.strip()[:180])
+                        kept += 1
+                        if kept >= 250:
+                            log("   | ... (truncated at 250 lines)")
+                            break
+        try:
+            shots.append(page.screenshot(full_page=True))
+        except Exception as e:  # noqa: BLE001
+            log("(screenshot failed: %s)" % type(e).__name__)
+        closed = page.evaluate(
+            """() => {
+                 const els = [...document.querySelectorAll('a')];
+                 const b = els.find(e => /rwCloseButton|CloseButton/i.test(e.className || ''))
+                        || els.find(e => /^close$/i.test((e.textContent || '').trim()));
+                 if (b) { b.click(); return true; }
+                 return false;
+               }""")
+        log("  closed the customer window" if closed
+            else "  (no Close control found — continuing anyway)")
+        page.wait_for_timeout(1500)
+    return shots
+
+
 def run(day: dt.date, rows_n: int, tab_arg: str, headless: bool,
-        export_range=None) -> int:
+        export_range=None, view_orders=None) -> int:
     from patchright.sync_api import sync_playwright
 
     lines: List[str] = []
@@ -442,6 +503,18 @@ def run(day: dt.date, rows_n: int, tab_arg: str, headless: bool,
             if tab_arg:
                 _generic_tab_dump(page, tab_arg, log)
                 grid_png = page.screenshot(full_page=True)
+            elif view_orders:
+                start, end = export_range
+                sara.open_order_history_panel(page, log=log)
+                sara._set_telerik_date(page, C.FIELD_START, start)
+                sara._set_telerik_date(page, C.FIELD_END, end)
+                sara._set_customer_type(page, C.CUSTOMER_TYPE_BOTH, log=log)
+                sara._set_telerik_date(page, C.FIELD_START, start)
+                sara._set_telerik_date(page, C.FIELD_END, end)
+                sara._submit(page, log=log)
+                shots = _view_orders_dump(page, ctx, view_orders, log)
+                for i, png in enumerate(shots, 1):
+                    _upload_shot(png, "SP Cust Shot %d" % i, log=log)
             elif export_range:
                 start, end = export_range
                 sara.open_order_history_panel(page, log=log)
@@ -582,19 +655,24 @@ def main(argv=None) -> int:
                     help="export range start (default: 9 days ago)")
     ap.add_argument("--end", default=None, metavar="YYYY-MM-DD",
                     help="export range end (default: 3 days ago)")
+    ap.add_argument("--view-orders", default="", metavar="ID[,ID...]",
+                    help="open these orders' View Customer cards off a range "
+                         "grid (uses --start/--end) and dump each — the "
+                         "per-line status hunt")
     ap.add_argument("--headed", action="store_true")
     args = ap.parse_args(argv)
     day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
            if args.date else dt.date.today() - dt.timedelta(days=7))
     export_range = None
-    if args.export:
+    if args.export or args.view_orders:
         s = (dt.datetime.strptime(args.start, "%Y-%m-%d").date()
              if args.start else dt.date.today() - dt.timedelta(days=9))
         e = (dt.datetime.strptime(args.end, "%Y-%m-%d").date()
              if args.end else dt.date.today() - dt.timedelta(days=3))
         export_range = (s, e)
+    view_orders = [o.strip() for o in args.view_orders.split(",") if o.strip()]
     return run(day, args.rows, args.tab_arg, headless=not args.headed,
-               export_range=export_range)
+               export_range=export_range, view_orders=view_orders or None)
 
 
 if __name__ == "__main__":
