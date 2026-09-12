@@ -19,6 +19,10 @@ output/logs/hc-tracker-readings-<start>_<end>.log, pipe-separated:
     R|day|tracker|board ICD|name as printed|rep count
     M|day|tracker|board ICD|NOT ON IMAGE
     X|day|tracker|reason the image could not be read
+The same lines also land in the 'HC Tracker Readings' tab of the Mini Control
+workbook, and every row read off every image in 'HC Tracker Raw' — `logtail`
+returns 470 characters, which can't carry ~2,000 lines back to a laptop. Those
+two tabs are this job's own scratch output; nothing else reads them.
 The day is the POST date. Which week/day a reading belongs to is decided by the
 caller from `dates_printed_on_image`, not guessed here: a Monday-morning board
 can still be showing the week that just closed.
@@ -212,6 +216,7 @@ def run(start: dt.date, end: dt.date, workers: int = 6) -> Path:
     channel = ORG_CHANNELS["alphalete"][0]            # #alphalete-sales
     icds = board_icds()
     lines: List[str] = []
+    raw: List[list] = []
     jobs = []
     day = start
     while day <= end:
@@ -251,6 +256,8 @@ def run(start: dt.date, end: dt.date, workers: int = 6) -> Path:
                 lines.append(f"X|{d}|{tid}|read failed: {err}")
                 continue
             rows = data.get("rows") or []
+            raw.extend([str(d), tid, r.get("owner") or "", r.get("rep_count")]
+                       for r in rows)
             dates = (data.get("dates_printed") or "").replace("|", "/")
             lines.append(f"F|{d}|{tid}|{meta['file'].get('id')}|{meta['reply_ts']}|"
                          f"{len(rows)}|{dates}|header={data.get('rep_count_header')}")
@@ -268,7 +275,37 @@ def run(start: dt.date, end: dt.date, workers: int = 6) -> Path:
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     bad = sum(1 for s in lines if s[0] in "XM")
     print(f"wrote {out.name}: {len(lines)} line(s), {bad} gap/failure line(s)", flush=True)
+    raw.sort(key=lambda r: (r[0], r[1]))
+    _to_sheet(READINGS_TAB, [["kind", "day", "tracker", "a", "b", "c", "d", "e"]]
+              + [s.split("|") for s in lines])
+    _to_sheet(RAW_TAB, [["day", "tracker", "owner as printed", "rep count"]] + raw)
     return out
+
+
+READINGS_TAB = "HC Tracker Readings"
+RAW_TAB = "HC Tracker Raw"
+
+
+def _to_sheet(title: str, rows: List[list]) -> None:
+    """Replace this job's own scratch tab in the Mini Control workbook (the one
+    a laptop can read). Best-effort: the log on disk is already written."""
+    try:
+        from automations.day_orchestrator.mini_control import CONTROL_SHEET_ID
+        from automations.recruiting_report.fill import open_by_key
+        width = max(len(r) for r in rows)
+        rows = [[("" if v is None else v) for v in r] + [""] * (width - len(r))
+                for r in rows]
+        sh = open_by_key(CONTROL_SHEET_ID)
+        ws = next((w for w in sh.worksheets() if w.title == title), None)
+        if ws is None:
+            ws = sh.add_worksheet(title=title, rows=len(rows) + 10, cols=width)
+        else:
+            ws.clear()
+            ws.resize(rows=len(rows) + 10, cols=width)
+        ws.update(range_name="A1", values=rows, value_input_option="RAW")
+        print(f"  -> '{title}' tab: {len(rows) - 1} row(s)", flush=True)
+    except Exception as e:                                         # noqa: BLE001
+        print(f"  -> '{title}' tab NOT written: {type(e).__name__}: {e}", flush=True)
 
 
 def main(argv=None) -> int:
