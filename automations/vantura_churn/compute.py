@@ -218,10 +218,24 @@ def helper_block(lines: list[dict], today: dt.date) -> list[list]:
     # Total lines on the ACCOUNT (Carlos 2026-09-12: "how many total lines
     # were on that account") — every distinct SPE on the BAN across the whole
     # export, any product, any status; not just the disconnected group.
-    ban_total: dict = defaultdict(set)
+    # Shown as total + product mix, '4 (3W · 1INT)' (Carlos same day:
+    # "let's do number two" — the split display).
+    _ABBR = {"Wireless": "W", "Internet": "INT", "Air": "AIR"}
+    ban_prod: dict = defaultdict(lambda: defaultdict(set))
     for ln in lines:
         if ln.get("ban") and ln.get("spe"):
-            ban_total[ln["ban"]].add(ln["spe"])
+            lbl = _ABBR.get(
+                PRODUCT_MAP.get(str(ln.get("product", "")).upper()), "OTH")
+            ban_prod[ln["ban"]][lbl].add(ln["spe"])
+
+    def _acct_lines(ban) -> str:
+        prods = ban_prod.get(ban)
+        if not prods:
+            return ""
+        parts = ["{}{}".format(len(prods[k]), k)
+                 for k in ("W", "INT", "AIR", "OTH") if prods.get(k)]
+        return "{} ({})".format(sum(len(v) for v in prods.values()),
+                                " · ".join(parts))
 
     def _device(g):
         # Sheet's "Phone / BYOD" column: BYOD when the line has no
@@ -255,7 +269,7 @@ def helper_block(lines: list[dict], today: dt.date) -> list[list]:
                 _fmt_date(posted),                       # +7  Activation Date
                 _fmt_date(disc_real),                    # +8  Disconnect Date (real)
                 _join_uniq((g["cru_iru"] for g in grp), sep="/"),  # +9 CRU/IRU
-                len(ban_total.get(ban, ())) or "",       # +10 Lines on Acct
+                _acct_lines(ban),                        # +10 Lines on Acct
                 _join_uniq(_device(g) for g in grp),     # +11 Phone/BYOD
                 p,                                       # +12 Product Type
                 None,                                    # +13 notes formula
