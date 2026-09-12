@@ -238,18 +238,45 @@ class HarvestOwnership(unittest.TestCase):
         return dt.datetime(2026, 9, day, hh, mm,
                            tzinfo=CT).astimezone(dt.timezone.utc)
 
-    def test_never_runs_while_the_addresses_are_already_on_disk(self):
+    def test_stands_down_once_somebody_is_actually_placed(self):
         from automations.captainship_night_knocks import run as R
-        from automations.captainship_night_knocks import ingest as I
         with tempfile.TemporaryDirectory() as d:
-            here = Path(d) / "addresses.json"
-            here.write_text("{}", encoding="utf-8")
-            saved, I.IN_JSON = I.IN_JSON, here
+            f = Path(d) / "zones.json"
+            f.write_text(json.dumps({"zones": {"Rashad Reed": "America/Chicago"}}),
+                         encoding="utf-8")
+            saved, Z.HARVESTED_JSON = Z.HARVESTED_JSON, f
             try:
+                self.assertTrue(R.harvest_landed())
                 self.assertFalse(R.maybe_harvest(self._at(22, 5), run_it=False,
                                                  logfn=lambda *a, **k: None))
             finally:
-                I.IN_JSON = saved
+                Z.HARVESTED_JSON = saved
+
+    def test_a_harvest_that_placed_NOBODY_does_not_count_as_done(self):
+        """The 2026-09-11 failure: a complete addresses file in which every
+        office had failed. Keyed on the file's existence, the retry would have
+        stood down for ever on the strength of it."""
+        from automations.captainship_night_knocks import run as R
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "zones.json"
+            f.write_text(json.dumps({"zones": {}, "unresolved": {"A": "no address"}}),
+                         encoding="utf-8")
+            saved, Z.HARVESTED_JSON = Z.HARVESTED_JSON, f
+            try:
+                self.assertFalse(R.harvest_landed())
+            finally:
+                Z.HARVESTED_JSON = saved
+
+    def test_the_saturday_morning_window_exists(self):
+        """Without it the only retry after a Friday-night failure landed at 10
+        PM Saturday — hours after the waves it feeds."""
+        from automations.captainship_night_knocks import run as R
+        sat_morning = dt.datetime(2026, 9, 12, 10, 0, tzinfo=CT)
+        thu_morning = dt.datetime(2026, 9, 10, 10, 0, tzinfo=CT)
+        self.assertTrue(R.in_harvest_window(sat_morning))
+        self.assertFalse(R.in_harvest_window(thu_morning))
+        self.assertTrue(R.in_harvest_window(
+            dt.datetime(2026, 9, 10, 22, 30, tzinfo=CT)))
 
     def test_only_after_ten_pm_central(self):
         from automations.captainship_night_knocks import run as R

@@ -275,6 +275,36 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
     return boards, notes
 
 
+def harvest_landed() -> bool:
+    """Has a harvest ever actually PLACED an office? (Not: did one run.)"""
+    try:
+        import json
+        data = json.loads(Z.HARVESTED_JSON.read_text(encoding="utf-8"))
+        return bool(data.get("zones"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def in_harvest_window(local: dt.datetime) -> bool:
+    """May a harvest start at this local (Central) moment?
+
+    TWO WINDOWS, both chosen around what else holds this machine's ownerville
+    session:
+
+      22:00-23:00 any day — the 9 PM boards are done, the 4 AM wave is hours
+                            away. The original slot.
+      09:00-12:00 Sat/Sun — added 2026-09-11 after the first harvest failed at
+                            10 PM on a Friday. Without it the only retry landed
+                            at 10 PM SATURDAY, hours AFTER the Saturday waves
+                            it exists to feed. Weekend mornings are the quietest
+                            hours this machine has: the intraday boards' first
+                            slot is 2 PM local.
+    """
+    if HARVEST_HOUR <= local.hour < 23:
+        return True
+    return local.weekday() in (5, 6) and 9 <= local.hour < 12
+
+
 def maybe_harvest(now_utc: dt.datetime, *, run_it: bool = True,
                   logfn=print) -> bool:
     """Run the address harvest if it has never landed. True if it ran.
@@ -283,10 +313,19 @@ def maybe_harvest(now_utc: dt.datetime, *, run_it: bool = True,
     ~44 impersonations single-file is a 45-minute job, and the wrapper's own
     guard keeps a second tick from starting while it runs.
     """
-    if ingest.IN_JSON.exists():
+    # "THE FILE EXISTS" IS NOT "THE HARVEST WORKED". The first live run
+    # (2026-09-11) wrote a complete addresses file in which every single office
+    # had failed, and a retry keyed on that file's existence would have stood
+    # down for ever on the strength of it. What counts as done is somebody
+    # PLACED — so fold in whatever is on disk and ask that instead.
+    try:
+        ingest.run(logfn=lambda *_a, **_k: None)
+    except Exception:  # noqa: BLE001
+        pass
+    if harvest_landed():
         return False
     local = now_utc.astimezone(CT)
-    if not (HARVEST_HOUR <= local.hour < 23):
+    if not in_harvest_window(local):
         return False
     busy = _busy()
     if busy:

@@ -75,6 +75,77 @@ def parse_address(text: str) -> Optional[Dict[str, str]]:
             "zip": m.group(3)}
 
 
+INPUT_RE = re.compile(r"<input\b[^>]*>", re.I)
+SELECT_RE = re.compile(r"<select\b[^>]*name=[\"']([^\"']+)[\"'][^>]*>(.*?)</select>",
+                       re.I | re.S)
+OPTION_RE = re.compile(r"<option\b[^>]*>", re.I)
+ATTR_RE = re.compile(r"(\w[\w-]*)\s*=\s*[\"']([^\"']*)[\"']")
+
+
+def form_fields(html: str) -> Dict[str, str]:
+    """{field name: value} for every filled input and select on the page. Pure.
+
+    THE PAGE IS A FORM, NOT PROSE — the thing the first live run got wrong.
+    p=767 renders the office's address into `value=` attributes
+    (`<input name="city" ... value="Lubbock">`), and `inner_text` cannot see an
+    attribute, so a text scrape of that page finds no address at all while the
+    page has loaded perfectly. Every office failed identically on 2026-09-11
+    for exactly this reason.
+    """
+    out: Dict[str, str] = {}
+    for tag in INPUT_RE.findall(html or ""):
+        attrs = {k.lower(): v for k, v in ATTR_RE.findall(tag)}
+        name = attrs.get("name") or attrs.get("id")
+        val = (attrs.get("value") or "").strip()
+        if name and val:
+            out.setdefault(name.strip(), val)
+    for name, body in SELECT_RE.findall(html or ""):
+        # The selected option, whatever order its attributes come in —
+        # `value="TX" selected` is as common as `selected value="TX"`, and a
+        # regex that only knows one of them reads a filled dropdown as empty.
+        for tag in OPTION_RE.findall(body or ""):
+            if "selected" not in tag.lower():
+                continue
+            attrs = {k.lower(): v for k, v in ATTR_RE.findall(tag)}
+            val = (attrs.get("value") or "").strip()
+            if val:
+                out.setdefault(name.strip(), val)
+                break
+    return out
+
+
+def _pick(fields: Dict[str, str], *wanted: str) -> Optional[str]:
+    """First field whose NAME contains one of `wanted` (case-insensitive)."""
+    for want in wanted:
+        for name, val in fields.items():
+            if want in name.lower():
+                return val
+    return None
+
+
+def parse_form(html: str) -> Optional[Dict[str, str]]:
+    """City/state/ZIP out of the Company Information form, or None. Pure.
+
+    THE STATE IS DERIVED FROM THE ZIP when the form has no state field — and on
+    the page we actually got back it has none: no `name="state"`, no
+    `value="TX"`, nothing, in 9,600 lines. A ZIP pins its state exactly
+    (addresses.state_for_zip), so there is nothing to guess. A form field wins
+    when it is there and says something two letters long.
+    """
+    fields = form_fields(html)
+    city = _pick(fields, "city", "town")
+    zip_code = _pick(fields, "zip", "postal")
+    state = _pick(fields, "state", "province")
+    if state and len(state.strip()) != 2:
+        state = None          # "Texas" / a numeric id: let the ZIP answer
+    if not state and zip_code:
+        state = addresses.state_for_zip(zip_code)
+    if not (city and state):
+        return None
+    return {"city": city.strip(), "state": state.strip().upper()[:2],
+            "zip": (zip_code or "").strip()}
+
+
 def captain_rosters(only: Optional[str] = None) -> Dict[str, List[str]]:
     """{captain_key: [ICD name, ...]} off the Org Sales Board — the roster is
     truth (the same lookup the knock boards use, so this can never drift from
@@ -156,13 +227,19 @@ def harvest(icds: List[str], *, logfn=print) -> Dict[str, dict]:
                 # whatever page we are on now. Impersonated or not, p=767 then
                 # describes the office the session is currently acting as.
                 page.goto(COMPANY_INFO % page_rqst(page), timeout=60000)
-                addr = parse_address(page.inner_text("body"))
+                html = page.content()
+                # The form first (that is where the address lives), then the
+                # text scrape — some pages do print it as prose.
+                addr = parse_form(html) or parse_address(page.inner_text("body"))
                 if not addr:
                     dump = DEBUG_DIR / ("%s.html"
                                         % re.sub(r"\W+", "-", icd.lower()))
-                    dump.write_text(page.content(), encoding="utf-8")
-                    raise RuntimeError("no 'City, ST ZIP' on p=767 — raw HTML "
-                                       "saved to %s" % dump)
+                    dump.write_text(html, encoding="utf-8")
+                    # NAME THE FIELDS WE DID SEE. A dump nobody can read costs a
+                    # whole round trip per guess; the names are the answer.
+                    seen = ", ".join(sorted(form_fields(html))[:25]) or "none"
+                    raise RuntimeError("no address on p=767 — raw HTML saved to "
+                                       "%s · form fields seen: %s" % (dump, seen))
                 rec.update(addr)
                 r = addresses.resolve(addr["city"], addr["state"])
                 rec.update(zone=r.zone, confidence=r.confidence, note=r.note)
