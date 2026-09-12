@@ -411,21 +411,25 @@ def _sp_parse_date(s: str):
         return None
 
 
-def _load_churn_tiers(log=print) -> dict:
-    """{week-ending date: {internet, nonbyod, byod, air}} from
-    churn_tiers.json next to this module — the weekly bonus-email numbers."""
+def _load_sow_periods(log=print) -> list:
+    """[{effective: date, nonbyod_tier, byod_tier, air_tier}] sorted by
+    effective date, from sow_tiers.json — the SOW Change Notice periods."""
     import json as _json
-    p = Path(__file__).resolve().parent / "churn_tiers.json"
+    p = Path(__file__).resolve().parent / "sow_tiers.json"
     try:
-        raw = _json.loads(p.read_text())["weeks"]
-        out = {dt.date.fromisoformat(k): v for k, v in raw.items()}
-        log("churn tiers: %d week(s), newest %s" % (len(out),
-                                                    max(out).isoformat()))
+        raw = _json.loads(p.read_text())["periods"]
+        out = sorted(
+            ({**r, "effective": dt.date.fromisoformat(r["effective"])}
+             for r in raw), key=lambda r: r["effective"])
+        log("SOW periods: %d, newest effective %s (NB T%s / BYOD T%s / AIR T%s)"
+            % (len(out), out[-1]["effective"].isoformat(),
+               out[-1]["nonbyod_tier"], out[-1]["byod_tier"],
+               out[-1]["air_tier"]))
         return out
     except Exception as e:  # noqa: BLE001
-        log("churn tiers unavailable (%s) — impacts skipped"
+        log("SOW periods unavailable (%s) — legacy base rates stand"
             % type(e).__name__)
-        return {}
+        return []
 
 
 def _orderlog_attrs(log=print) -> dict:
@@ -511,55 +515,59 @@ def build_revenue_png(lines, today: dt.date, log=print,
     attrs = _orderlog_attrs(log=log)
     matched = [0]
 
-    # Churn-tier impacts by SALE DATE (Carlos 2026-09-14: "look through my
-    # email that tells you what tier we're on ... go off of the sales date").
-    # churn_tiers.json holds the office's PERSONAL 0-30 churn per product per
-    # DD week (from the weekly 'B2B ATT Captains Bonus Breakdown' emails);
-    # a sale's tier = the latest week at-or-before its sale week. The tables
-    # and edges are churn_byod_preview's own (the board Carlos reads).
-    # BYOD-split tiers apply from the 2026-09-07 comp cutover; older sales
-    # keep base rates. Pay hits per the board: Non-BYOD impact on CRU + IRU
-    # port lines, BYOD impact on CRU BYOD port lines, AIR by CRU/IRU (the
-    # pricer's hardcoded tier-3 AIR base is swapped for the real tier's).
-    NONBYOD_IMPACT = (30, 10, 0, -10, -20, -30)
-    BYOD_IMPACT = (50, 25, 0, -25, -50, -75)
-    AIR_EDGES = (2.0, 4.0, 5.0, 8.0)
-    AIR_IMPACT = {"CRU": (60, 40, 20, -40, -60),
-                  "IRU": (30, 20, 10, -20, -30)}
-    AIR_BASE_T3 = {"CRU": 20, "IRU": 10}       # what price() already adds
-    CUTOVER = dt.date(2026, 9, 7)
-    tier_weeks = _load_churn_tiers(log=log)
+    # SOW-declared tier pricing by SALE DATE (Carlos 2026-09-14: the
+    # 'ATT-B2B-SBS SOW Revised Change and Churn Notice' email declares the
+    # office's Port/AIR commission tiers per period — 'any sales from that
+    # date forward are in whatever tier the email says', a near-identical
+    # notice lands before each month). sow_tiers.json holds the periods; the
+    # rate tables below are Schedule A's own (Effective 09/07/2026). For a
+    # sale on/after a period's effective date, the port/AIR BASE price is
+    # swapped from the legacy comp-sheet base to the SOW rate at the declared
+    # tier — price()'s add-ons (ABP, Next Up, premium, internet/AIR ABP)
+    # stay on top, untouched.
+    NONBYOD_SOW = {1: (150, 135, 230, 135), 2: (160, 145, 240, 145),
+                   3: (170, 155, 250, 155), 4: (180, 165, 260, 165),
+                   5: (190, 175, 270, 175), 6: (210, 195, 290, 195)}
+    BYOD_SOW = {1: (60, 75, 145, 75), 2: (85, 95, 170, 95),
+                3: (110, 115, 195, 115), 4: (135, 125, 220, 125),
+                5: (160, 135, 245, 135), 6: (185, 155, 270, 155)}
+    AIR_SOW = {1: (208, 70), 2: (228, 80), 3: (288, 110),
+               4: (308, 120), 5: (328, 130)}
+    periods = _load_sow_periods(log=log)
 
-    def _tier_pcts(sale_date):
-        past = [w for w in sorted(tier_weeks) if w <= sale_date]
-        wk = past[-1] if past else (sorted(tier_weeks)[0]
-                                    if tier_weeks else None)
-        return tier_weeks.get(wk) if wk else None
-
-    def _churn_impact(row, sale_date) -> float:
-        if sale_date is None or sale_date < CUTOVER:
+    def _sow_adjust(row, sale_date) -> float:
+        """SOW base minus the legacy base price() already charged, or 0."""
+        per = None
+        for pd_ in periods:
+            if sale_date is not None and sale_date >= pd_["effective"]:
+                per = pd_
+        if per is None:
             return 0.0
-        pct = _tier_pcts(sale_date)
-        if not pct:
-            return 0.0
-        from automations.churn_byod_preview.run import (
-            _tier_ix, BYOD_EDGES, NONBYOD_EDGES)
         prod = str(row.get("Product Type (Broken Out)") or "").upper()
         cru = str(row.get("CRU/IRU") or "").strip().upper() or "CRU"
         tn = str(row.get("spe.TN Type") or "").lower()
+        oof = str(row.get("IF/OOF") or "").strip().upper() == "OOF"
         byod = str(row.get("Wireless Installment Plan") or "").upper() == "BYOD"
         if prod == "WIRELESS" and tn == "port":
-            if byod:
-                return (BYOD_IMPACT[_tier_ix(pct["byod"], BYOD_EDGES)]
-                        if cru == "CRU" else 0.0)
-            return NONBYOD_IMPACT[_tier_ix(pct["nonbyod"], NONBYOD_EDGES)]
+            table = BYOD_SOW if byod else NONBYOD_SOW
+            tier = per["byod_tier"] if byod else per["nonbyod_tier"]
+            r = table.get(tier)
+            if not r:
+                return 0.0
+            sow = (r[2] if cru == "CRU" else r[3]) if oof else \
+                  (r[0] if cru == "CRU" else r[1])
+            if cru == "CRU":
+                legacy = (255 if byod else 295) if oof else (170 if byod else 215)
+            else:
+                legacy = 25 if byod else 165
+            return float(sow - legacy)
         if prod == "AIR/AWB":
-            # _tier_ix falls through to a HARDCODED 5 (it was built for the
-            # 6-tier wireless tables); the AIR table has 5 tiers, so clamp —
-            # 11.1% AIR churn IndexError'd the first live run (2026-09-14).
-            table = AIR_IMPACT.get(cru, AIR_IMPACT["CRU"])
-            ix = min(_tier_ix(pct["air"], AIR_EDGES), len(table) - 1)
-            return table[ix] - AIR_BASE_T3.get(cru, AIR_BASE_T3["CRU"])
+            r = AIR_SOW.get(per["air_tier"])
+            if not r:
+                return 0.0
+            sow = r[0] if cru == "CRU" else r[1]
+            legacy = (268 + 20) if cru == "CRU" else (100 + 10)
+            return float(sow - legacy)
         return 0.0
 
     def _amount(ln) -> float:
@@ -578,7 +586,7 @@ def build_revenue_png(lines, today: dt.date, log=print,
         ln["_cru"] = str(row.get("CRU/IRU") or "").strip().upper() or "CRU"
         amt, _label, _notes = price(row)
         sale_date = _sp_parse_date(str(row.get("sp.Order Date (copy)") or ""))
-        return float(amt or 0) + _churn_impact(row, sale_date)
+        return float(amt or 0) + _sow_adjust(row, sale_date)
 
     def _eligible(ln) -> bool:
         prod = str(ln.get("Product Type (Broken Out)") or "").upper()
@@ -641,14 +649,23 @@ def build_revenue_png(lines, today: dt.date, log=print,
         ("Still Open $", "pending", "center"),
     ]
     n_lines = sum(1 for ln in lines if str(ln.get("Rep") or "").strip())
+    if periods:
+        pp = periods[-1]
+        sow_note = ("SOW tiers NB T{} / BYOD T{} / AIR T{} (eff {}) by sale "
+                    "date. ").format(pp["nonbyod_tier"], pp["byod_tier"],
+                                     pp["air_tier"],
+                                     pp["effective"].strftime("%-m/%-d"))
+    else:
+        sow_note = ""
     try:
         bpng.render(
             tables, out, money=True,
-            subtitle="Activated $ by activation week, weekly tier bonus "
-                     "included. CRU/IRU, ABP, OOF, BYOD cross-referenced "
-                     "from the order log by line ({}/{} lines matched); "
-                     "unmatched priced as CRU, no ABP/OOF. Tablets "
-                     "unpriced.".format(matched[0], n_lines))
+            subtitle="Activated $ by activation week, weekly volume bonus "
+                     "included. " + sow_note +
+                     "CRU/IRU, ABP, OOF, BYOD cross-referenced from the "
+                     "order log by line ({}/{} matched); unmatched priced "
+                     "as CRU, no ABP/OOF. Tablets unpriced.".format(
+                         matched[0], n_lines))
     finally:
         bpng.COLS[:] = saved_cols
     log("activation revenue -> %s (%s bytes, %d/%d lines enriched)"

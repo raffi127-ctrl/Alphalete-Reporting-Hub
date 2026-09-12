@@ -1,0 +1,7 @@
+{
+  "_source": "The 'ATT-B2B-SBS SOW Revised Change and Churn Notice' emails (rshah@/nsharma-gp@ thesmartcircle.com, sent to Carlos a few days before each effective date; the tiers 'remain in effect until a new Change Notice'). Each period declares the office's Non-BYOD Port, BYOD Port, and AIR&AWB commission tiers; sp_order_log.build_revenue_png prices port/AIR lines from the SOW rate tables at these tiers, by SALE DATE. Append a period per notice; never edit past ones. If a notice ever changes the RATE TABLES themselves (not just the tier), flag for manual review — the tables live in run.py.",
+  "periods": [
+    {"effective": "2026-09-07", "nonbyod_tier": 1, "byod_tier": 1, "air_tier": 1,
+     "notice": "ATT-B2B-SBS SOW Revised Change and Churn Notice - Effective 09/07/2026 - (U-20099), 2026-09-04"}
+  ]
+}
