@@ -533,8 +533,18 @@ RATE_COLUMNS = True
 
 # Raf 2026-08-29: "can we turn the total doors knocked bright green once the
 # rep hits 140 please". Rep rows only — the target is a rep's day, and a green
-# office total would be claiming something else. None turns it off.
-KNOCKS_GREEN_AT = 140
+# office total would be claiming something else.
+#
+# NONE, NOT 140 (Megan 2026-09-12). A number here is an explicit override that
+# BEATS the day's real target, so a flat 140 greened a weekday rep who was 20
+# doors short of the 160 Raf actually asks for — every weekday since. The
+# renderer's default already varies by day (160 weekday / 140 Saturday); this
+# override was what kept that fix from ever reaching his board.
+#
+# 140 was never wrong, it was just Saturday's number written down during a
+# Saturday conversation. Set an integer here again only to pin a bar that is
+# genuinely the same every day.
+KNOCKS_GREEN_AT = None
 
 # The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
 # a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps
