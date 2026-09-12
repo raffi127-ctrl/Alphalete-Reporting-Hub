@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Set up Lucy Reports</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+  :root{
+    --red:#B93037; --gold:#C1B38F; --ink:#16130F; --muted:#6F675D;
+    --ground:#FAF8F5; --panel:#FFF; --rule:#E3DED4; --ok:#2C6A4C;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--ground:#131110;--panel:#1D1A18;--ink:#F2EDE6;--muted:#A79E93;
+          --rule:#332E29;--red:#E0636A;--ok:#7CC49C}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:400 18px/1.6 "Source Sans 3",-apple-system,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 22px 80px}
+  .brand{font:600 12px/1 "IBM Plex Mono",monospace;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--red);margin-bottom:14px}
+  h1{margin:0 0 10px;font:800 clamp(32px,6vw,50px)/1.05 Archivo,sans-serif;
+    letter-spacing:-.02em}
+  .who{margin:0 0 30px;font-size:20px;color:var(--muted)}
+  .who b{color:var(--ink)}
+  .step{display:flex;gap:16px;padding:22px 0;border-top:1px solid var(--rule)}
+  .num{flex:0 0 auto;width:30px;height:30px;border-radius:50%;
+    background:var(--red);color:#fff;display:grid;place-items:center;
+    font:800 15px/1 Archivo,sans-serif}
+  .step h2{margin:2px 0 6px;font:600 21px/1.3 Archivo,sans-serif}
+  .step p{margin:0;color:var(--muted);font-size:17px}
+  .cmd{margin-top:14px;background:#141110;color:var(--gold);border-radius:10px;
+    padding:16px 18px;font:400 13px/1.6 "IBM Plex Mono",monospace;
+    word-break:break-all;position:relative}
+  button{margin-top:12px;background:var(--red);color:#fff;border:0;
+    border-radius:9px;padding:14px 24px;font:600 17px/1 "Source Sans 3",sans-serif;
+    cursor:pointer;width:100%}
+  button:hover{filter:brightness(1.08)}
+  button.done{background:var(--ok)}
+  .note{margin-top:34px;border-left:3px solid var(--gold);padding:12px 18px;
+    background:var(--panel);border-radius:0 8px 8px 0;color:var(--muted);
+    font-size:16px}
+  .note b{color:var(--ink)}
+  .err{background:var(--panel);border:1px solid var(--red);border-radius:10px;
+    padding:20px;color:var(--ink)}
+  code{font:400 .92em "IBM Plex Mono",monospace;background:var(--panel);
+    border:1px solid var(--rule);border-radius:5px;padding:1px 5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">Alphalete Marketing</div>
+  <h1>Set up Lucy Reports</h1>
+  <p class="who" id="who">Takes about five minutes. You will not need to do anything afterwards.</p>
+
+  <div id="main">
+    <div class="step">
+      <div class="num">1</div>
+      <div>
+        <h2>Open Terminal</h2>
+        <p>Press <b>⌘ + Space</b>, type <code>terminal</code>, press <b>Return</b>.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">2</div>
+      <div style="min-width:0;flex:1">
+        <h2>Copy this, and paste it into Terminal</h2>
+        <p>Then press <b>Return</b> and leave it running.</p>
+        <div class="cmd" id="cmd">loading…</div>
+        <button id="copy">Copy the command</button>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">3</div>
+      <div>
+        <h2>Answer the boxes that pop up</h2>
+        <p>Your SaraPlus login, your OwnerVille login, and where you would like
+           things posted in Slack. That is everything it asks.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>A browser window may open by itself with a big red bar.</b> That is Lucy
+    signing in. Leave it completely alone — do not type your password and do not
+    touch the security box. It closes by itself.
+  </div>
+
+  <div class="note">
+    <b>Your passwords never leave your computer.</b> They are saved on your Mac
+    and used to sign in from it. Only the report counts are sent.
+  </div>
+</div>
+
+<script>
+(function () {
+  var RAW = "https://raw.githubusercontent.com/raffi127-ctrl/" +
+            "Alphalete-Reporting-Hub/main/automations/icd_alerts/install.sh";
+  var code = new URLSearchParams(location.search).get("code") || "";
+  code = code.trim().toUpperCase();
+
+  // No code means somebody opened the bare page. Say so plainly rather than
+  // handing them a command that cannot work.
+  if (!/^[A-Z0-9]+(-[A-Z0-9]+)+$/.test(code)) {
+    document.getElementById("main").innerHTML =
+      '<div class="err"><b>This link is missing your office code.</b><br><br>' +
+      'Each office gets its own link. Ask the reporting team to send you ' +
+      'yours, and open that one instead.</div>';
+    document.getElementById("who").textContent =
+      "This page needs the link that was sent to you.";
+    return;
+  }
+
+  var office = code.split("-")[0];
+  office = office.charAt(0) + office.slice(1).toLowerCase();
+  document.getElementById("who").innerHTML =
+    "This link is for <b>" + office + "'s office</b>. Takes about five " +
+    "minutes, and you will not need to do anything afterwards.";
+
+  var cmd = "curl -fsSL " + RAW + " | bash -s -- " + code;
+  document.getElementById("cmd").textContent = cmd;
+
+  var btn = document.getElementById("copy");
+  btn.addEventListener("click", function () {
+    function ok() {
+      btn.textContent = "Copied — now paste it into Terminal";
+      btn.className = "done";
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).then(ok, fallback);
+    } else { fallback(); }
+    function fallback() {
+      // Older Safari, and any browser that refuses the clipboard API.
+      var r = document.createRange();
+      r.selectNodeContents(document.getElementById("cmd"));
+      var sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(r);
+      try { document.execCommand("copy"); ok(); }
+      catch (e) { btn.textContent = "Select the text above and copy it"; }
+    }
+  });
+})();
+</script>
+</body>
+</html>
