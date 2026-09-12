@@ -76,6 +76,51 @@ class SaraError(RuntimeError):
 # into the challenge and gives up. [[reference_saraplus_reporting_hub]]
 SECURITY_PATH = "/security/"
 
+# TWO DIFFERENT WALLS LIVE UNDER /Security/, and telling them apart is the
+# whole lesson of 2026-09-12. Both land on a url with a real session id, so
+# "the password was accepted" is true of both -- and that is where the reading
+# stopped, three times:
+#   read 1: "somewhere unexpected"       -> sounds like SaraPlus moved a page
+#   read 2: "forced password change"     -> right, but retracted when Megan
+#                                           said the password had not changed
+#   read 3: "browser passcode challenge" -> wrong, and it sent the sweep into
+#                                           the passcode picker, which then
+#                                           failed with "no EMAIL destination"
+#                                           because there is no picker there
+# What settled it was the page's OWN WORDS, which nobody had read until the
+# flow logged them: "SARA Plus requires a reset of your SARA Password."
+#
+# Nobody changed the password. SaraPlus is DEMANDING a new one -- both facts at
+# once, which is exactly why read 2 got talked out of. So: match the reset page
+# FIRST and by its text as well as its url, because it is _needs_code()'s
+# /security/ test that swallows it otherwise.
+RESET_PATH = "/security/resetpassword.aspx"
+RESET_WORDS = ("requires a reset of your sara password", "change password")
+
+
+def _is_password_reset(page, url: str) -> bool:
+    if RESET_PATH in (url or "").lower():
+        return True
+    try:
+        body = (page.evaluate("() => (document.body.innerText || '')") or "").lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return any(w in body for w in RESET_WORDS)
+
+
+def _password_reset_error(url: str, email: str, creds_hint: str,
+                          set_cmd: str) -> "SaraError":
+    return SaraError(
+        "SaraPlus is FORCING A PASSWORD CHANGE on %s. The login worked -- that "
+        "url carries a real session id -- and SaraPlus then served its Change "
+        "Password page (%s) and will serve nothing else until a NEW password "
+        "is set. NOBODY CHANGED IT: SaraPlus is demanding the change, so "
+        "'the password is unchanged' and this error are both true at once. No "
+        "retry and no passcode clears it. Fix, and it needs a human: sign in "
+        "at %s, set a new password (SaraPlus requires 8-15 characters), then "
+        "`%s` to put it on the runner (it writes %s). Nothing was read and "
+        "nothing was written." % (email, url, LOGIN_URL, set_cmd, creds_hint))
+
 
 def _security_wall_error(url: str, email: str, creds_hint: str) -> "SaraError":
     return SaraError(
@@ -401,6 +446,10 @@ def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
     # THE BROWSER-VERIFICATION WALL, before any "where are we" judgement: a
     # challenged login is not lost, it is unanswered. Without read_code there
     # is nothing to answer it with, and _security_wall_error says so.
+    if _is_password_reset(page, url):
+        raise _password_reset_error(
+            url, email, creds_hint,
+            "python3 -m automations.alphalete_sales_board.set_credentials")
     if _needs_code(page):
         if read_code is None:
             raise _security_wall_error(url, email, creds_hint)

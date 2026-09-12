@@ -20,8 +20,11 @@ import unittest
 
 from automations.shared import saraplus as sp
 
-WALL_URL = ("https://www.saraplus.com/e/(S(ujsu4nwkbwvzfsicqn3xd00l))"
-            "/Security/ResetPassword.aspx")
+# The PASSCODE wall and the PASSWORD-RESET wall both live under /Security/.
+WALL_URL = "https://www.saraplus.com/e/(S(ujsu4nwkbwvzfsicqn3xd00l))/Security/VerifyPasscode.aspx"
+RESET_URL = "https://www.saraplus.com/e/(S(ujsu4nwkbwvzfsicqn3xd00l))/Security/ResetPassword.aspx"
+RESET_TEXT = ("Change Password SARA Plus requires a reset of your SARA "
+              "Password. New passwords are required to be between 8 and 15 characters")
 HUB_URL = "https://www.saraplus.com/e/(S(abc123))/Reports/ReportingHub.aspx"
 DEALER_URL = "https://www.saraplus.com/e/(S(abc123))/DealerPages/Default.aspx"
 
@@ -221,3 +224,51 @@ class PasscodeInboxTest(unittest.TestCase):
         from automations.alphalete_sales_board import config as C
         self.assertEqual(C.SARA_ACCOUNT, "alphaletemarketing@gmail.com")
         self.assertEqual(C.PASSCODE_INBOX[0], C.SARA_ACCOUNT)
+
+
+
+class PasswordResetTest(unittest.TestCase):
+    """The OTHER /Security/ wall. Read off the live page 2026-09-12 after the
+    passcode flow ran into it and reported 'no EMAIL destination' — there is no
+    picker on a Change Password page, so the sweep has to stop here instead."""
+
+    def _msg(self, page):
+        with self.assertRaises(sp.SaraError) as cm:
+            _login(page, read_code=lambda s: "123456")
+        return str(cm.exception)
+
+    def test_the_reset_page_is_not_mistaken_for_the_passcode_wall(self):
+        msg = self._msg(_Page(RESET_URL, body=RESET_TEXT))
+        self.assertIn("FORCING A PASSWORD CHANGE", msg)
+        self.assertNotIn("EMAIL destination", msg)
+
+    def test_it_says_both_things_are_true_at_once(self):
+        # The exact confusion that cost 2026-09-12: nobody changed the
+        # password AND SaraPlus is demanding a change.
+        self.assertIn("NOBODY CHANGED IT", self._msg(_Page(RESET_URL, body=RESET_TEXT)))
+
+    def test_it_carries_the_rule_a_human_needs(self):
+        msg = self._msg(_Page(RESET_URL, body=RESET_TEXT))
+        self.assertIn("8-15 characters", msg)     # SaraPlus's own rule
+        self.assertIn("set_credentials", msg)     # what to run after
+        self.assertIn("needs a human", msg)
+
+    def test_the_code_reader_is_never_asked_on_a_reset_page(self):
+        asked = []
+        with self.assertRaises(sp.SaraError):
+            _login(_Page(RESET_URL, body=RESET_TEXT),
+                   read_code=lambda s: asked.append(s) or "123456")
+        self.assertEqual(asked, [], "requested a passcode for a password reset")
+
+    def test_the_page_text_alone_is_enough(self):
+        # Belt and braces: if SaraPlus renames the .aspx, its own words still
+        # identify it. The URL here is an ordinary one.
+        msg = self._msg(_Page("https://www.saraplus.com/e/(S(x))/Default.aspx",
+                              body=RESET_TEXT))
+        self.assertIn("FORCING A PASSWORD CHANGE", msg)
+
+    def test_a_real_passcode_wall_still_clears(self):
+        # The reset check must not swallow the challenge it sits next to.
+        page = _Page(WALL_URL, after_code=HUB_URL)
+        self.assertEqual(_login(page, read_code=lambda s: "123456"),
+                         "https://www.saraplus.com/e/(S(abc123))/")
