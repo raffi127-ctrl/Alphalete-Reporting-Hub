@@ -84,10 +84,11 @@ _EXTRA_COLORS = {
     "resolution required - porting": colors.YELLOW,  # ≈ Tableau Porting Issue
     "pending confirmation":          colors.YELLOW,
     "processing":                    colors.YELLOW,
-    # per-LINE words off the customer card + the no-card-data partial filler
+    # per-LINE words off the customer card / Wireless panel
     "partial - pending":             colors.YELLOW,
     "intransit":                     colors.YELLOW,
     "in transit":                    colors.YELLOW,
+    "pending activation":            colors.YELLOW,
 }
 
 
@@ -156,10 +157,10 @@ def _map_status(raw: str, active_date: str, cancel_date: str):
 
 
 def _map_line_status(raw_line_status: str, active_date: str, cancel_date: str):
-    """A SINGLE wireless line's status word (from the customer card:
-    'Active' / 'Delivered' / 'Shipped' / 'InTransit' / 'Cancelled' / ...)
-    -> (display status, posted date, status date). Active = the activated
-    unit (green 'Posted'); everything else keeps its word and stays open."""
+    """A SINGLE wireless line's status word ('Active' / 'Delivered' /
+    'Shipped' / 'Porting Issue' / ...) -> (display status, posted date,
+    status date). Active = the activated unit (green 'Posted'); everything
+    else keeps its word and stays open."""
     s = " ".join((raw_line_status or "").split())
     low = s.lower()
     if low == "active":
@@ -173,22 +174,41 @@ def _map_line_status(raw_line_status: str, active_date: str, cancel_date: str):
     return (s or "Pending", "", "")
 
 
+def _iso_to_us(iso: str) -> str:
+    """Tracked dates are ISO; the line dicts carry M/D/YYYY like Tableau."""
+    try:
+        d = dt.date.fromisoformat(iso)
+        return "%d/%02d/%d" % (d.month, d.day, d.year)
+    except (ValueError, TypeError):
+        return ""
+
+
 def shape_lines(csv_bytes: bytes, log=print,
-                per_line_splits: Optional[Dict[str, list]] = None
+                wl_lines: Optional[list] = None,
+                act_dates: Optional[Dict[str, str]] = None
                 ) -> List[Dict[str, str]]:
     """Tableau-shaped lines from the SaraPlus export — ONE LINE PER UNIT.
 
-    A wireless order fans out to its line count (Carlos 2026-09-12: count each
-    unit as one activation). `per_line_splits` maps an order id to the list of
-    that order's per-line status words read off its customer card — supplied
-    for Partial orders so the active/pending split is exact; absent, a Partial
-    counts one line active and holds the rest open."""
+    Wireless orders are built from the Wireless panel's PER-LINE rows
+    (`wl_lines`, wireless_lines.parse_wireless_xls) with each Active line
+    dated by the tracker (`act_dates`, {line key: ISO date}) — the same
+    per-line activation basis the DD pays on. An order missing from the
+    wireless report falls back to the order-level fan-out (every line gets
+    the order's status and first-activation date)."""
+    from automations.sp_order_log import wireless_lines as WL
+
     text = csv_bytes.decode("utf-8-sig", errors="replace")
     rows = list(csv.DictReader(io.StringIO(text)))
     from automations.shared.name_case import titlecase_name
 
+    wl_by_order: Dict[str, list] = {}
+    for wl in (wl_lines or []):
+        wl_by_order.setdefault(wl["order_id"], []).append(wl)
+    act_dates = act_dates or {}
+
     lines: List[Dict[str, str]] = []
     skipped = 0
+    from_panel = 0
     for row in rows:
         order_id = _get(row, "Order ID")
         if not order_id:
@@ -213,51 +233,61 @@ def shape_lines(csv_bytes: bytes, log=print,
         made_one = False
         # -- wireless: ONE LINE PER UNIT (Carlos 2026-09-12: "count each
         # individual product sold, each unit sold, each application sold as
-        # one activation or one post"). N comes from the grid's line count;
-        # a uniform order stamps every line with the order's status, and a
-        # Partial order's exact active/pending split is resolved from the
-        # customer card (per_line_splits) when we have it.
+        # one activation or one post"). The Wireless panel's per-line rows
+        # carry each unit's own status; the tracker dates each Active line
+        # by the day it FIRST showed Active (the DD's own pay basis).
         if _get(row, "Wireless Status"):
-            raw_status = _get(row, "Wireless Status")
-            mapped = _map_status(raw_status,
-                                 _get(row, "Wireless Active Date"),
-                                 _get(row, "Wireless Cancel Date"))
-            if mapped:
-                status, posted, sdate = mapped
-                try:
-                    n = max(1, int(float(_get(row, "Wireless Line Count") or 1)))
-                except ValueError:
-                    n = 1
-                split = (per_line_splits or {}).get(order_id)
-                for i in range(n):
-                    li_status, li_posted, li_sdate = status, posted, sdate
-                    if split:
-                        li_raw = split[i] if i < len(split) else split[-1]
-                        m = _map_line_status(
-                            li_raw, _get(row, "Wireless Active Date"),
-                            _get(row, "Wireless Cancel Date"))
-                        li_status, li_posted, li_sdate = m
-                    elif status == "Posted - Partial":
-                        # No card data for this partial: count ONE line
-                        # activated (a Partial guarantees at least one) and
-                        # hold the rest open — never over-counts.
-                        if i == 0:
-                            li_status = "Posted"
-                        else:
-                            li_status, li_posted, li_sdate = \
-                                "Partial - pending", "", ""
+            panel = wl_by_order.get(order_id)
+            if panel:
+                for wl in panel:
+                    key = WL.line_key(wl)
+                    a_us = (_iso_to_us(act_dates.get(key, ""))
+                            or _get(row, "Wireless Active Date"))
+                    li_status, li_posted, li_sdate = _map_line_status(
+                        wl["line_status"], a_us,
+                        _get(row, "Wireless Cancel Date"))
                     ln = dict(base)
                     ln.update({
-                        "Product Type (Broken Out)": "WIRELESS",
+                        "Product Type (Broken Out)": WL.product_of(wl),
                         "DTR Status (enriched)": li_status,
                         "DTR Status Date": li_sdate,
                         POSTED_COL: li_posted,
-                        "spe.TN": "line %d of %d" % (i + 1, n),
+                        "spe.TN": wl["tn"],
+                        "spe.TN Type": wl["line_type"],
                         "spe.Account BAN": _get(row, "Wireless Acct #"),
-                        "Package": _wireless_package(row),
+                        "Package": wl["device"] or wl["plan"],
                     })
                     lines.append(ln)
+                    from_panel += 1
                 made_one = True
+            else:
+                # Not in the wireless report (window edge / non-mobility):
+                # order-level fan-out, every line on the order's status and
+                # first-activation date.
+                mapped = _map_status(_get(row, "Wireless Status"),
+                                     _get(row, "Wireless Active Date"),
+                                     _get(row, "Wireless Cancel Date"))
+                if mapped:
+                    status, posted, sdate = mapped
+                    if status == "Posted - Partial":
+                        status = "Posted"
+                    try:
+                        n = max(1, int(float(_get(row, "Wireless Line Count") or 1)))
+                    except ValueError:
+                        n = 1
+                    for i in range(n):
+                        ln = dict(base)
+                        ln.update({
+                            "Product Type (Broken Out)": "WIRELESS",
+                            "DTR Status (enriched)": status,
+                            "DTR Status Date": sdate,
+                            POSTED_COL: posted,
+                            "spe.TN": "line %d of %d" % (i + 1, n),
+                            "spe.Account BAN": _get(row, "Wireless Acct #"),
+                            "Package": _wireless_package(row),
+                        })
+                        lines.append(ln)
+                    made_one = True
         # -- internet ------------------------------------------------------
         if _get(row, "Internet Status"):
             mapped = _map_status(_get(row, "Internet Status"),
@@ -308,8 +338,9 @@ def shape_lines(csv_bytes: bytes, log=print,
             log("  (no product status on order %s — %s; skipped)"
                 % (order_id, _get(row, "Customer Name") or "?"))
 
-    log("shaped %d line(s) from %d SaraPlus order row(s)%s"
-        % (len(lines), len(rows),
+    log("shaped %d line(s) from %d SaraPlus order row(s) (%d per-line from "
+        "the wireless panel)%s"
+        % (len(lines), len(rows), from_panel,
            ("; %d had no product status" % skipped) if skipped else ""))
     unknown = colors.unmapped(
         ln.get("DTR Status (enriched)", "") for ln in lines)
@@ -370,97 +401,11 @@ def build_overview_png(lines, today: dt.date, log=print) -> Path:
 
 # --- SaraPlus pull (Lucy 2) ---------------------------------------------------
 
-def _partial_orders(csv_bytes: bytes) -> Dict[str, int]:
-    """{order id: wireless line count} for orders whose wireless status is
-    'Partial - …' — the ones whose active/pending split only the customer
-    card can settle."""
-    text = csv_bytes.decode("utf-8-sig", errors="replace")
-    out: Dict[str, int] = {}
-    for row in csv.DictReader(io.StringIO(text)):
-        oid = _get(row, "Order ID")
-        if not oid:
-            continue
-        if _get(row, "Wireless Status").lower().startswith("partial"):
-            try:
-                out[oid] = max(1, int(float(_get(row, "Wireless Line Count") or 1)))
-            except ValueError:
-                out[oid] = 1
-    return out
-
-
-def _read_partial_splits(page, partials: Dict[str, int], log=print
-                         ) -> Dict[str, list]:
-    """Open each Partial order's View Customer card off the loaded grid and
-    read its per-line statuses ('Line Status: Active / Delivered / …').
-
-    The RadWindow reuses one iframe and can briefly show the PREVIOUS
-    customer (seen on the 2026-09-12 probe), so the card is only trusted
-    once a frame carries THIS order's id. A split is kept only when the card
-    yields exactly the order's line count — a customer with two wireless
-    orders merges their tracking blocks, and a miscounted split would
-    misattribute lines."""
-    from automations.rc_contact_sync import config as C
-
-    splits: Dict[str, list] = {}
-    for oid, n in partials.items():
-        res = page.evaluate(
-            """(cfg) => {
-                 const data = document.getElementById(cfg.gid);
-                 if (!data) return 'no grid';
-                 const row = [...data.querySelectorAll('tbody > tr')]
-                   .find(r => (r.innerText || '').includes(cfg.oid));
-                 if (!row) return 'row not found';
-                 const e = [...row.querySelectorAll('a')]
-                   .find(x => /view/i.test(x.innerText || ''));
-                 if (!e) return 'no View link';
-                 e.click();
-                 return 'clicked';
-               }""", {"gid": C.GRID_DATA, "oid": oid})
-        if res != "clicked":
-            log("  card %s: %s" % (oid, res))
-            continue
-        txt = ""
-        for _ in range(10):                       # up to ~15s for the RIGHT card
-            page.wait_for_timeout(1500)
-            for fr in page.frames:
-                if fr == page.main_frame:
-                    continue
-                try:
-                    t = fr.evaluate("() => (document.body.innerText || '')") or ""
-                except Exception:  # noqa: BLE001
-                    continue
-                if oid in t:
-                    txt = t
-                    break
-            if txt:
-                break
-        if txt:
-            sts = [s.strip() for s in
-                   re.findall(r"Line Status:\s*\n\s*([^\n]+)", txt)]
-            if len(sts) == n:
-                splits[oid] = sts
-                log("  card %s: %s" % (oid, ", ".join(sts)))
-            else:
-                log("  card %s: %d Line Status block(s) for %d line(s) — "
-                    "NOT trusted (multi-order customer?)" % (oid, len(sts), n))
-        else:
-            log("  card %s: never showed this order — skipped" % oid)
-        page.evaluate(
-            """() => {
-                 const els = [...document.querySelectorAll('a')];
-                 const b = els.find(e => /rwCloseButton|CloseButton/i.test(e.className || ''))
-                        || els.find(e => /^close$/i.test((e.textContent || '').trim()));
-                 if (b) b.click();
-               }""")
-        page.wait_for_timeout(1200)
-    return splits
-
-
 def pull_csv(start: dt.date, end: dt.date, *, headless: bool = True,
              log=print):
-    """-> (csv bytes, {partial order id: per-line status list}). One browser
-    session does both: export the grid, then open only the Partial orders'
-    customer cards to settle their line splits."""
+    """-> (soh csv bytes, wireless report bytes or None). One browser
+    session, two downloads: the Sales Order History export and the Wireless
+    panel's per-LINE report."""
     from patchright.sync_api import sync_playwright
 
     from automations.rc_contact_sync import config as C
@@ -490,11 +435,11 @@ def pull_csv(start: dt.date, end: dt.date, *, headless: bool = True,
             data = _export_csv(page, log)
             if data is None:
                 raise sara.SaraError("the CSV export produced no download")
-            partials = _partial_orders(data)
-            log("%d Partial order(s) need their customer card" % len(partials))
-            splits = _read_partial_splits(page, partials, log=log) \
-                if partials else {}
-            return data, splits
+            # Same session, one more download: the Wireless panel's per-LINE
+            # report — every order's individual lines with their own status.
+            from automations.sp_order_log import wireless_lines as WL
+            wl_bytes = WL.pull_wireless(page, start, end, log=log)
+            return data, wl_bytes
         finally:
             ctx.close()
 
@@ -519,6 +464,9 @@ def main(argv=None) -> int:
                      help="'today' for the week tables (default: real today)")
     ap_.add_argument("--from-file", default=None, metavar="CSV",
                      help="parse this SaraPlus export instead of pulling")
+    ap_.add_argument("--wireless-file", default=None, metavar="XLS",
+                     help="with --from-file: this Wireless Resolution Report "
+                          "export (offline testing)")
     ap_.add_argument("--push", action="store_true",
                      help="base64 the two artifacts into the control sheet "
                           "('%s' / '%s') for the mini" % (XLSX_TAB, SHOT_TAB))
@@ -530,22 +478,53 @@ def main(argv=None) -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     _register_colors()
 
-    splits: Dict[str, list] = {}
+    from automations.sp_order_log import wireless_lines as WL
+
+    wl_bytes = None
     if args.from_file:
         data = Path(args.from_file).read_bytes()
-        print("using %s (%s bytes; no card visits — Partial orders count "
-              "one line active)" % (args.from_file, "{:,}".format(len(data))))
+        print("using %s (%s bytes)" % (args.from_file, "{:,}".format(len(data))))
+        if args.wireless_file:
+            wl_bytes = Path(args.wireless_file).read_bytes()
     else:
         start = (dt.date.fromisoformat(args.start) if args.start
                  else today - dt.timedelta(days=WINDOW_DAYS))
         end = dt.date.fromisoformat(args.end) if args.end else today
         print("SaraPlus pull %s..%s (Customer Type Both)" % (start, end))
-        data, splits = pull_csv(start, end, headless=not args.headed)
+        data, wl_bytes = pull_csv(start, end, headless=not args.headed)
         raw = OUT_DIR / "sp_export_{}.csv".format(today.isoformat())
         raw.write_bytes(data)
         print("export saved: %s (%s bytes)" % (raw.name, "{:,}".format(len(data))))
 
-    lines = shape_lines(data, per_line_splits=splits)
+    # The activation-date tracker: fold today's per-line statuses into the
+    # state file; a line's date is the day WE first saw it Active (seeded
+    # from Tableau's per-line posted history / the order date on adoption).
+    wl_parsed: list = []
+    act_dates: Dict[str, str] = {}
+    if wl_bytes:
+        wl_parsed = WL.parse_wireless_xls(wl_bytes)
+        print("wireless report: %d line(s) across %d order(s)"
+              % (len(wl_parsed), len({w["order_id"] for w in wl_parsed})))
+        state = WL.load_state()
+        needs_seed = any(
+            w["line_status"].strip().lower() == "active"
+            and "first_active" not in state.get(WL.line_key(w), {})
+            for w in wl_parsed)
+        seed = WL.build_tableau_seed() if needs_seed else {}
+        soh_active = {}
+        for row in csv.DictReader(io.StringIO(
+                data.decode("utf-8-sig", errors="replace"))):
+            oid, ad = _get(row, "Order ID"), _get(row, "Wireless Active Date")
+            d = _parse_us_date(ad)
+            if oid and d:
+                soh_active[oid] = d.isoformat()
+        act_dates = WL.update_state(state, wl_parsed, today, seed, soh_active)
+        WL.save_state(WL.prune_state(state, today))
+    else:
+        print("NO wireless per-line report — wireless orders fall back to "
+              "order-level dating")
+
+    lines = shape_lines(data, wl_lines=wl_parsed, act_dates=act_dates)
     if not lines:
         print("no lines shaped — nothing to build")
         print("=== done ===", flush=True)
