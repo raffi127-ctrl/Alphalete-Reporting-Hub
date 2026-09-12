@@ -143,6 +143,21 @@ def decide_sales(sales: Dict, last_posted: Optional[Dict]
     if last_posted is None:
         return [], sales, True
 
+    # A BACKLOG ARRIVING IN ONE TICK IS NOT LIVE ACTIVITY. When an office turns
+    # sales on mid-day, its first payload carries everything sold since
+    # morning, and the rule above cannot see it: something already recorded an
+    # empty {} as "posted", so this reads as ordinary movement and the whole
+    # day is declared at once. Cyrus, 2026-09-12: five sales announced in one
+    # burst at 14:18, the oldest three hours stale.
+    #
+    # What separates the two cases is HOW MANY REPS MOVE AT ONCE. Reps do not
+    # all sell inside the same two-minute tick, so a jump from nothing to
+    # several reps is a backlog being handed over, while a genuine first sale
+    # of the day is exactly one rep -- and that one still announces normally.
+    if not last_posted and len([r for r, m in sales.items()
+                                if any(m.values())]) > 1:
+        return [], sales, True
+
     prev = {str(k): {m: int(v.get(m, 0) or 0) for m in H.METRICS}
             for k, v in last_posted.items()}
     merged = {k: dict(v) for k, v in prev.items()}

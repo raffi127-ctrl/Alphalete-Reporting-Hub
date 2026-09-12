@@ -11,6 +11,7 @@ import datetime as dt
 import unittest
 
 from automations.icd_alerts import offices as O
+from automations.icd_alerts import post as P
 from automations.icd_alerts.post import decide, is_stale
 
 
@@ -357,3 +358,54 @@ class NudgeRepeatTests(unittest.TestCase):
         self.P.WARNED_PATH.write_text(self.json.dumps({day: ["kash"]}))
         sent = self.P._warned().get(day)
         self.assertIsInstance(sent, list)
+
+
+class SalesBacklogOnEnrolment(unittest.TestCase):
+    """Turning sales ON mid-day must not declare the whole day at once.
+
+    CYRUS, 2026-09-12. His agent relayed no sales at all until 14:18; a tick
+    before that had already recorded an empty {} as "posted", so the baseline
+    rule (which only fires on a never-written cell) could not see that this was
+    a first sight. His first real payload read as ordinary movement and five
+    sales went out in one burst, the oldest three hours stale.
+
+    The discriminator is how many reps move at once: reps do not all sell
+    inside one two-minute tick, so several at once is a handover, and exactly
+    one is a real sale that must still be announced.
+    """
+
+    M = staticmethod(lambda i=0, u=0, d=0, n=0:
+                     {"Int": i, "Int Up": u, "DTV": d, "NL": n})
+
+    def test_backlog_is_baselined_not_announced(self):
+        sales = {n: self.M(1) for n in ("A", "B", "C", "D", "E")}
+        sold, merged, baseline = P.decide_sales(sales, {})
+        self.assertEqual(sold, [])
+        self.assertTrue(baseline)
+        self.assertEqual(merged, sales, "the backlog must still be recorded")
+
+    def test_the_days_first_real_sale_still_announces(self):
+        # The cost of getting this wrong is silence on a real sale, which is
+        # worse than a late one -- so it is pinned separately.
+        sold, _merged, baseline = P.decide_sales({"A": self.M(1)}, {})
+        self.assertEqual(sold, ["A"])
+        self.assertFalse(baseline)
+
+    def test_reps_with_no_sales_do_not_count_as_a_backlog(self):
+        # A payload listing every rep with zeroes is not a backlog; the one rep
+        # who actually sold must be announced.
+        sales = {"A": self.M(1), "B": self.M(), "C": self.M(), "D": self.M()}
+        sold, _merged, baseline = P.decide_sales(sales, {})
+        self.assertEqual(sold, ["A"])
+        self.assertFalse(baseline)
+
+    def test_normal_movement_is_untouched(self):
+        sold, _merged, baseline = P.decide_sales(
+            {"A": self.M(2), "B": self.M(1)}, {"A": self.M(1)})
+        self.assertEqual(sold, ["A", "B"])
+        self.assertFalse(baseline)
+
+    def test_a_fresh_day_still_baselines(self):
+        sold, _merged, baseline = P.decide_sales({"A": self.M(3)}, None)
+        self.assertEqual(sold, [])
+        self.assertTrue(baseline)
