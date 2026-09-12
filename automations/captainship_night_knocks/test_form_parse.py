@@ -113,8 +113,30 @@ class ZipToState(unittest.TestCase):
     def test_a_derived_state_still_obeys_the_split_state_rule(self):
         """Deriving the STATE never loosens the zone rule: an unconfirmed city
         in a split state is still nobody's wave."""
-        r = A.resolve("Pensacola", A.state_for_zip("32501"))
+        r = A.resolve("Crestview", A.state_for_zip("32536"))
+        self.assertEqual(r.confidence, "unknown")
         self.assertIsNone(r.zone)
+
+
+class TrailingPunctuation(unittest.TestCase):
+    """ownerville returned Kash Rai's city as "Fort Worth," — comma and all,
+    inside the field's own value. A confirmed city that fails to match is worse
+    than an unknown one: it reads as a split-state refusal and sends somebody
+    to check a city that was already checked."""
+
+    def test_a_trailing_comma_does_not_hide_a_confirmed_city(self):
+        self.assertEqual(A.resolve("Fort Worth,", "TX").zone, "America/Chicago")
+        self.assertEqual(A.resolve("Fort Worth,", "TX").confidence, "city")
+
+    def test_the_cities_the_first_captainship_harvest_landed_on(self):
+        for city, state, zone in (("Grandville", "MI", "America/Detroit"),
+                                  ("Memphis", "TN", "America/Chicago"),
+                                  ("Pensacola", "FL", "America/Chicago"),
+                                  ("Knoxville", "TN", "America/New_York")):
+            self.assertEqual(A.resolve(city, state).zone, zone, city)
+
+    def test_an_unknown_city_in_a_split_state_is_still_refused(self):
+        self.assertIsNone(A.resolve("Somewhere", "MI").zone)
 
 
 if __name__ == "__main__":

@@ -71,6 +71,26 @@ KNOWN_CITIES: Dict[Tuple[str, str], str] = {
     ("IN", "indianapolis"): "America/Indiana/Indianapolis",
     ("MI", "southfield"): "America/Detroit",
     ("MI", "detroit"): "America/Detroit",
+    # Added 2026-09-11 when the first captainship harvest landed on them. Each
+    # one is a settled geographic fact, not an inference from an area code:
+    # Michigan's Central counties are the four in the far western Upper
+    # Peninsula (Gogebic, Iron, Dickinson, Menominee) and nothing else, and
+    # Tennessee's line runs between Nashville and Chattanooga.
+    ("MI", "grandville"): "America/Detroit",       # Kent County — Eastern
+    ("MI", "grand rapids"): "America/Detroit",
+    ("TN", "memphis"): "America/Chicago",          # West TN — Central
+    ("TN", "nashville"): "America/Chicago",
+    ("TN", "knoxville"): "America/New_York",       # East TN — Eastern
+    ("TN", "chattanooga"): "America/New_York",
+    ("IN", "fort wayne"): "America/Indiana/Indianapolis",
+    ("IN", "evansville"): "America/Chicago",       # SW Indiana — Central
+    ("FL", "orlando"): "America/New_York",
+    ("FL", "tampa"): "America/New_York",
+    ("FL", "miami"): "America/New_York",
+    ("FL", "jacksonville"): "America/New_York",
+    ("FL", "pensacola"): "America/Chicago",        # panhandle — Central
+    ("KY", "louisville"): "America/New_York",
+    ("KY", "lexington"): "America/New_York",
 }
 
 
@@ -82,7 +102,16 @@ class Resolved:
 
 
 def _norm(s: str) -> str:
-    return " ".join((s or "").strip().split()).lower()
+    """Lowercase, collapse whitespace, and drop trailing punctuation.
+
+    THE TRAILING COMMA IS NOT HYPOTHETICAL. ownerville's Company Information
+    form returned Kash Rai's city as "Fort Worth," — comma included, inside the
+    field's own value — and "fort worth," matched nothing in KNOWN_CITIES while
+    "fort worth" was sitting right there. A confirmed city that fails to match
+    is worse than an unknown one: it reads as a split-state refusal and sends
+    somebody to check a city that was already checked.
+    """
+    return " ".join((s or "").strip().split()).strip(" ,.;:-").lower()
 
 
 def resolve(city: str, state: str) -> Resolved:

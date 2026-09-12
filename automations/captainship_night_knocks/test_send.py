@@ -120,7 +120,7 @@ class HarvestedZones(unittest.TestCase):
 
 class Ingest(unittest.TestCase):
     def test_split_state_without_a_known_city_stays_out(self):
-        recs = {"A": {"city": "Pensacola", "state": "FL"},
+        recs = {"A": {"city": "Crestview", "state": "FL"},
                 "B": {"city": "Dallas", "state": "TX"}}
         res = ingest.reduce_records(recs)
         self.assertNotIn("A", res)
