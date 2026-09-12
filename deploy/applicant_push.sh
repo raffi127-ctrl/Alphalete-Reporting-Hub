@@ -63,7 +63,7 @@ for a in "$@"; do [ "$a" = "--dry-run" ] && DRYRUN=1; done
 # somewhere before LOG_FILE. Do NOT re-add until the wrapper's per-office
 # handling is fixed and a supervised WRAPPER-PATH test passes. Khalil is
 # served by manual reruns meanwhile.
-ROTATION="11580 23467 11901"
+ROTATION="11580 23467 11901 23965"
 OFFICE=""
 _prev=""
 for a in "$@"; do
@@ -117,6 +117,13 @@ case "$OFFICE" in
     HUB_NAME="Applicant Push (Khalil)"
     POST_TODO=1
     ;;
+  23965)
+    OFFICE_SLUG="-23965"
+    OFFICE_LABEL="office 23965 (Raf 2nd funnel)"
+    HUB_ID="applicant_push_raf_funnel2"
+    HUB_NAME="Applicant Push (Raf 2nd Funnel)"
+    POST_TODO=0
+    ;;
   *)
     # An unknown office must SKIP THIS TICK, not kill the agent: on 9/8 this
     # arm was `exit 1` and, because the rotation marker only advances on
@@ -165,6 +172,15 @@ case "$OFFICE" in
     # #11901-alphalete-management-group-inc-khalil-mansour (private; the Lucy
     # apps were added 2026-09-08). His to-do post goes HERE and nowhere else.
     export OAT_SCORECARD_CHANNEL="C0AUKHN120L"
+    ;;
+  23965)
+    export OAT_OFFICE_ID="23965"
+    export OAT_FILE_SUFFIX="-23965"
+    export OAT_WALK_DIAG_TAB="OAT Walk Diag 23965"
+    export OAT_OFFICE_LABEL="office 23965 · Rafael Hidalgo — 2nd Funnel iMessage Test"
+    export OAT_OFFICE_SHORT="office 23965, Raf 2nd funnel"
+    export OAT_REMOVE_NO_PHONE="1"
+    # No Slack channel wired yet — flags stay in the diag tab.
     ;;
 esac
 
