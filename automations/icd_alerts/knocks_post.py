@@ -207,11 +207,18 @@ def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime):
     every few weeks.
     """
     from automations.total_knocks import render as knocks_render
+    from automations.icd_alerts import chan
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out_dir = OUT_DIR / office.key
+    # Chan's LAST week, so a rep is always reading their day against a pace.
+    # His same-day line is impossible here -- the numbers come off the office's
+    # own laptop, which cannot see his office -- and no comparison is not a
+    # failed board, so this is allowed to come back empty.
+    compare = chan.comparison_for(day, log=lambda *_: None)
     return knocks_render.render_knocks_boards(
         day, rows=rows, out_dir=out_dir,
         title_suffix=office.label,
+        extra_totals=[compare] if compare else None,
         # First knock goes green against THIS office's start time on THIS day.
         # The flat 1:30 PM target greened every Saturday first-knock on every
         # board, because no office starts at 1:30 on a Saturday.

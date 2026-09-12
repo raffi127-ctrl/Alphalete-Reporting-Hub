@@ -503,3 +503,50 @@ class RafsBoardUnchangedTests(unittest.TestCase):
         from automations.knocks_intraday import roster
         keys = [getattr(o, "key", o) for o in roster.enrolled("eod")]
         self.assertIn("raf", keys)
+
+
+class ChanComparisonTests(unittest.TestCase):
+    """Chan's LAST week on an ICD board. His same-day line is impossible
+    there: the numbers come off the office's own laptop, which cannot see his
+    office at all. Raf set the shape (via Megan 2026-09-12): "Saturday to
+    Saturday. And then Monday - Friday it can just be chans avg for Monday -
+    Friday." """
+
+    def setUp(self):
+        from automations.icd_alerts import chan
+        self.chan = chan
+
+    def test_a_week_runs_monday_to_saturday(self):
+        # Any day this week compares to the week that ended the prior Saturday.
+        for d in (dt.date(2026, 9, 7), dt.date(2026, 9, 11), dt.date(2026, 9, 12)):
+            self.assertEqual(self.chan.last_week_saturday(d), dt.date(2026, 9, 5))
+
+    def test_sunday_belongs_to_the_week_that_just_ended(self):
+        self.assertEqual(self.chan.last_week_saturday(dt.date(2026, 9, 13)),
+                         dt.date(2026, 9, 5))
+
+    def test_monday_moves_on_to_the_new_week(self):
+        self.assertEqual(self.chan.last_week_saturday(dt.date(2026, 9, 14)),
+                         dt.date(2026, 9, 12))
+
+    def test_the_weekday_average_divides_by_the_days_actually_pulled(self):
+        """A week missing Wednesday must average over four days, not five --
+        dividing by five would quietly report Chan 20% slower than he was."""
+        from automations.total_knocks import pull as TP
+        by_day = {"2026-08-31": [{TP.COL_TOTAL_KNOCKS: 100}],
+                  "2026-09-01": [{TP.COL_TOTAL_KNOCKS: 200}],
+                  "2026-09-03": [{TP.COL_TOTAL_KNOCKS: 300}]}
+        days = ["2026-08-31", "2026-09-01", "2026-09-02",
+                "2026-09-03", "2026-09-04"]
+        rows = self.chan._average_rows(by_day, days)
+        self.assertEqual(rows[0][TP.COL_TOTAL_KNOCKS], 200)   # 600 / 3
+
+    def test_an_empty_week_averages_to_nothing_rather_than_zero(self):
+        """A zero line would read as 'Chan knocked nothing', which is a claim.
+        No line at all is the truth: we do not have his week."""
+        self.assertEqual(self.chan._average_rows({}, ["2026-09-01"]), [])
+
+    def test_the_label_says_which_period_it_is(self):
+        """A comparison whose period is ambiguous is read as today's."""
+        self.assertIn("Sat", self.chan.LABEL_SAT)
+        self.assertIn("M-F", self.chan.LABEL_WEEK)
