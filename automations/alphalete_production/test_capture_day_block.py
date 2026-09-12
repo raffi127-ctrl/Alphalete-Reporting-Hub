@@ -1,13 +1,19 @@
-"""The day block of the morning photo is found BY HEADER, at any width.
+"""The blocks of the morning photo are found BY HEADER, at any width.
 
-The block was `Apps Int Int Up DTV NL TK Cx Roll Call` for a year, and
-`capture._day_block` counted six columns across to find Cx and seven to find
-Roll Call. When the Talk-To trio landed between TK and Cx the block became
-eleven wide: six across became 'Total Talk-To's' and the roll-call probe landed
-on '% of TT's per knock', so the morning post silently lost Cx and the roll call.
+Two things used to be spelled out in numbers and broke when the Talk-To columns
+landed:
 
-These tests pin the property that matters: the SAME seven metrics and the real
-Roll Call come back from both layouts, and the trio is never photographed.
+  * the DAY block -- `_day_block` counted six columns across for Cx and seven for
+    Roll Call. The trio made the block eleven wide, so six across became
+    'Total Talk-To's' and the roll-call probe landed on '% of TT's per knock':
+    the post silently lost Cx and the roll call.
+  * the RUNNING WEEK block -- the 'ranking' section showed A..J. The five weekly
+    Talk-To columns pushed the block to D..O, so J cut it off mid-block.
+
+Rafael asked for the new columns IN the screenshots (2026-09-11), daily and
+weekly. That makes a third thing matter: the totals row is rewritten as a SUM,
+and four of the new columns are rates. Summing them is nonsense, so they are
+shown and left alone.
 """
 import datetime as dt
 import unittest
@@ -15,70 +21,73 @@ import unittest
 from automations.alphalete_production import capture
 
 
-OLD = ["Apps", "Int", "Int Up", "DTV", "NL", "TK", "Cx", "Roll Call"]
-NEW = ["Apps", "Int", "Int Up", "DTV", "NL", "TK",
-       "Total Talk-To's", "% of TT's per knock", "AVG app per TT",
-       "Cx", "Roll Call"]
+DAY_OLD = ["Apps", "Int", "Int Up", "DTV", "NL", "TK", "Cx", "Roll Call"]
+DAY_NEW = ["Apps", "Int", "Int Up", "DTV", "NL", "TK",
+           "Total Talk-To's", "% of TT's per knock", "AVG app per TT",
+           "Cx", "Roll Call"]
+WK_OLD = ["APPS", "INT", "INT UP", "DTV", "NL", "TK", "Cx"]
+WK_NEW = ["APPS", "INT", "INT UP", "DTV", "NL", "TK",
+          "AVG Total Knocks per day", "Total Talk-To's", "AVG TT's per day",
+          "% of TT's per knock", "AVG TTs per app", "Cx"]
 DAYS = ["MON", "TUES", "WED", "THU", "FRI", "SAT", "SUN"]
-# Mon 2026-09-07 .. Sun 2026-09-13
 WEEK = [dt.date(2026, 9, 7) + dt.timedelta(days=i) for i in range(7)]
 
 
-def grid(block):
-    """A board with a running-week block then the seven day blocks."""
-    r1 = ["", "", "", "RUNNING WEEK TOTALS", "", ""]
-    r2 = ["", "", "", "", "", ""]
-    r3 = ["#", "", "Rep", "APPS", "INT", "NL"]
+def grid(block, weekly=WK_OLD):
+    """Row 1 banners, row 2 day-of-month, row 3 sub-headers."""
+    r1 = ["", "", "", "RUNNING WEEK TOTALS"] + [""] * (len(weekly) - 1)
+    r2 = ["", "", ""] + [""] * len(weekly)
+    r3 = ["#", "", "Rep"] + list(weekly)
+    r1 += ["LAST WEEK'S TOTALS"]; r2 += [""]; r3 += ["APPS"]
     for day, date in zip(DAYS, WEEK):
         r1 += [day] + [""] * (len(block) - 1)
         r2 += [str(date.day)] + [""] * (len(block) - 1)
         r3 += list(block)
-    r1 += ["Trainer"]
-    r2 += [""]
-    r3 += [""]
+    r1 += ["Trainer"]; r2 += [""]; r3 += [""]
     return [r1, r2, r3]
 
 
 class DayBlockByHeader(unittest.TestCase):
     def test_old_layout_unchanged(self):
-        dc = capture._day_block(grid(OLD), WEEK[2])          # Wednesday
-        heads = [grid(OLD)[2][c] for c in dc.metrics]
-        self.assertEqual(heads, ["Apps", "Int", "Int Up", "DTV", "NL", "TK", "Cx"])
-        self.assertEqual(grid(OLD)[2][dc.roll_call], "Roll Call")
-
-    def test_trio_does_not_change_the_photo(self):
-        """Eleven columns wide, the SAME seven are shot -- and Cx survives."""
-        g = grid(NEW)
+        g = grid(DAY_OLD)
         dc = capture._day_block(g, WEEK[2])
         self.assertEqual([g[2][c] for c in dc.metrics],
                          ["Apps", "Int", "Int Up", "DTV", "NL", "TK", "Cx"])
         self.assertEqual(g[2][dc.roll_call], "Roll Call")
 
-    def test_trio_is_never_photographed(self):
-        g = grid(NEW)
+    def test_cx_and_roll_call_survive_the_wider_block(self):
+        """The actual regression: both used to fall off the right edge."""
+        g = grid(DAY_NEW)
         dc = capture._day_block(g, WEEK[2])
-        shot = {g[2][c] for c in dc.metrics}
+        self.assertIn("Cx", [g[2][c] for c in dc.metrics])
+        self.assertEqual(g[2][dc.roll_call], "Roll Call")
+
+    def test_trio_is_photographed(self):
+        """Rafael, 2026-09-11: the new columns go in the screenshots."""
+        g = grid(DAY_NEW)
+        shot = [g[2][c] for c in capture._day_block(g, WEEK[2]).metrics]
         for h in ("Total Talk-To's", "% of TT's per knock", "AVG app per TT"):
-            self.assertNotIn(h, shot)
+            self.assertIn(h, shot)
+
+    def test_unknown_header_is_still_not_photographed(self):
+        g = grid(DAY_NEW[:6] + ["Something Maud Added"] + DAY_NEW[6:])
+        shot = [g[2][c] for c in capture._day_block(g, WEEK[2]).metrics]
+        self.assertNotIn("Something Maud Added", shot)
 
     def test_sunday_is_not_truncated(self):
-        """The last block has no next banner to stop at -- it used to be the
-        one that lost columns."""
-        g = grid(NEW)
+        g = grid(DAY_NEW)
         dc = capture._day_block(g, WEEK[6])
-        self.assertEqual([g[2][c] for c in dc.metrics],
-                         ["Apps", "Int", "Int Up", "DTV", "NL", "TK", "Cx"])
+        self.assertIn("Cx", [g[2][c] for c in dc.metrics])
         self.assertEqual(g[2][dc.roll_call], "Roll Call")
 
     def test_apps_is_the_filter_and_sort_anchor(self):
-        for block in (OLD, NEW):
+        for block in (DAY_OLD, DAY_NEW):
             g = grid(block)
             dc = capture._day_block(g, WEEK[3])
             self.assertEqual(g[2][dc.apps], "Apps")
             self.assertEqual(dc.metrics[0], dc.apps)
 
     def test_energy_era_tab_still_reads(self):
-        """'EN' was the sixth column before the TK rename; old tabs still shoot."""
         g = grid(["Apps", "Int", "Int Up", "DTV", "NL", "EN", "Cx", "Roll Call"])
         dc = capture._day_block(g, WEEK[1])
         self.assertEqual([g[2][c] for c in dc.metrics],
@@ -86,7 +95,46 @@ class DayBlockByHeader(unittest.TestCase):
 
     def test_unknown_day_is_named_in_the_error(self):
         with self.assertRaises(RuntimeError):
-            capture._day_block(grid(NEW), dt.date(2026, 9, 20))
+            capture._day_block(grid(DAY_NEW), dt.date(2026, 9, 20))
+
+
+class RunningBlockByHeader(unittest.TestCase):
+    def test_old_width(self):
+        g = grid(DAY_OLD, WK_OLD)
+        self.assertEqual([g[2][c] for c in capture._running_block(g)], WK_OLD)
+
+    def test_five_weekly_columns_are_included(self):
+        """'ranking' showed A..J; the block is D..O now."""
+        g = grid(DAY_NEW, WK_NEW)
+        self.assertEqual([g[2][c] for c in capture._running_block(g)], WK_NEW)
+
+    def test_falls_back_to_running_apps_without_banners(self):
+        self.assertEqual(capture._running_block([["", "", ""], [], []]), [3])
+
+
+class RatesAreNotSummed(unittest.TestCase):
+    def test_rate_columns_are_left_out_of_the_subtotal(self):
+        g = grid(DAY_NEW, WK_NEW)
+        kept = [g[2][c] for c in capture._summable(g, capture._running_block(g))]
+        self.assertIn("Total Talk-To's", kept)          # a count -- sum it
+        for h in ("AVG Total Knocks per day", "AVG TT's per day",
+                  "% of TT's per knock", "AVG TTs per app"):
+            self.assertNotIn(h, kept)                   # a rate -- never sum it
+
+    def test_day_rates_are_left_out_too(self):
+        g = grid(DAY_NEW, WK_NEW)
+        dc = capture._day_block(g, WEEK[2])
+        kept = [g[2][c] for c in capture._summable(g, dc.metrics)]
+        self.assertIn("Total Talk-To's", kept)
+        self.assertNotIn("% of TT's per knock", kept)
+        self.assertNotIn("AVG app per TT", kept)
+
+    def test_the_old_metrics_are_all_still_summed(self):
+        g = grid(DAY_NEW, WK_NEW)
+        dc = capture._day_block(g, WEEK[2])
+        kept = [g[2][c] for c in capture._summable(g, dc.metrics)]
+        for h in ("Apps", "Int", "Int Up", "DTV", "NL", "TK", "Cx"):
+            self.assertIn(h, kept)
 
 
 if __name__ == "__main__":

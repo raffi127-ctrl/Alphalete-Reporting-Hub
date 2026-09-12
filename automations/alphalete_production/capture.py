@@ -60,10 +60,21 @@ DAY_NAMES = {"MON", "TUES", "WED", "THU", "FRI", "SAT", "SUN"}
 NEW_START_DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
 # The day-block columns the morning photo opens up, matched on the row-3 header.
 # 'EN' and 'TK' are both here because the rename went tab by tab. The Talk-To
-# trio ("Total Talk-To's", "% of TT's per knock", "AVG app per TT") is
-# deliberately ABSENT -- an unknown header is simply not photographed, which is
-# how a new column stops changing the post on its own.
-DAY_PHOTO_HEADERS = ("apps", "int", "int up", "dtv", "nl", "en", "tk", "cx")
+# trio is in because Rafael asked for it (2026-09-11: the new columns go in the
+# screenshots, daily and weekly alike). An unknown header is still never
+# photographed -- that is what keeps the next column from changing the post on
+# its own.
+DAY_PHOTO_HEADERS = ("apps", "int", "int up", "dtv", "nl", "en", "tk",
+                     "total talk-to's", "% of tt's per knock", "avg app per tt",
+                     "cx")
+
+# Headers whose TOTALS cell must NEVER be rewritten as a SUM. `_subtotal_totals`
+# turns the totals row into SUBTOTAL(109,...) so a filtered photo totals only the
+# rows it shows -- right for counts, nonsense for a rate: summing
+# "% of TT's per knock" down 60 reps reads 1,200%. These keep the board's own
+# formula instead, which is a ratio and already says something true.
+RATE_HEADERS = ("% of tt's per knock", "avg app per tt", "avg tt's per day",
+                "avg tts per app", "avg total knocks per day")
 
 
 # ---- small helpers -------------------------------------------------------
@@ -428,6 +439,28 @@ def _clean_number_col(ss, gid_ws, tot_row: int):
         value_input_option="USER_ENTERED")
 
 
+def _running_block(grid) -> List[int]:
+    """The RUNNING WEEK TOTALS columns, banner to banner.
+
+    The block grew by five when the weekly Talk-To columns landed, so anything
+    that spelled it out (the 'ranking' section used A..J) now cuts it off. Read
+    it from the row-1 banners and the width stops mattering."""
+    def _hdr1(label):
+        return next((c for c in range(len(grid[0]))
+                     if _cell(grid, 0, c).strip().upper() == label), None)
+    rw = _hdr1("RUNNING WEEK TOTALS")
+    lw = _hdr1("LAST WEEK'S TOTALS")
+    if rw is None or lw is None or lw <= rw:
+        return [3]                               # D -- the running Apps, as before
+    return list(range(rw, lw))
+
+
+def _summable(grid, cols) -> List[int]:
+    """`cols` minus the rate/average columns -- see RATE_HEADERS."""
+    return [c for c in cols
+            if _cell(grid, 2, c).strip().lower() not in RATE_HEADERS]
+
+
 def _subtotal_totals(ss, gid_ws, cols: List[int], tot_row: int):
     """Rewrite the TOTALS row for `cols` to SUBTOTAL(109,..) so it sums only the
     shown rows (per-team / per-section subtotal, ignoring X/F/T text)."""
@@ -559,11 +592,10 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             def _hdr1(label):
                 return next((c for c in range(len(grid[0]))
                              if _cell(grid, 0, c).strip() == label), None)
-            rw = _hdr1("RUNNING WEEK TOTALS")
             lw = _hdr1("LAST WEEK'S TOTALS")
-            run_block = list(range(rw, lw)) if (rw is not None and lw is not None) else [3]
+            run_block = _running_block(grid)
             show = {0, 1, 2} | set(run_block)               # #, name, full running-week block
-            subtotal_cols = list(run_block)
+            subtotal_cols = _summable(grid, run_block)
             if lw is not None:                               # LAST WEEK'S TOTALS -> APPS only
                 show.add(lw)
                 subtotal_cols.append(lw)
@@ -577,7 +609,7 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             else:                                            # normal day: this day opened up + Roll Call
                 dc = _day_block(grid, last_completed_day(today))
                 show |= set(dc.metrics)
-                subtotal_cols += dc.metrics
+                subtotal_cols += _summable(grid, dc.metrics)
                 if dc.roll_call is not None:                 # by header, not "the column after Cx"
                     show.add(dc.roll_call)
                 filt_specs.append({"columnIndex": dc.apps, "filterCriteria": {"hiddenValues": ["F", "T"]}})
@@ -605,11 +637,12 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             filt_specs.append({"columnIndex": dc.apps, "filterCriteria": {
                 "condition": {"type": "NUMBER_GREATER",
                               "values": [{"userEnteredValue": "0"}]}}})
-            subtotal_cols = list(dc.metrics)
+            subtotal_cols = _summable(grid, dc.metrics)
 
         elif kind == "ranking":
-            show = set(range(0, 10))                         # A..J (# name + running block)
-            export_rng = f"A1:J{tot_row}"
+            run_block = _running_block(grid)
+            show = {0, 1, 2} | set(run_block)                # #, name, running block
+            export_rng = f"A1:{col_letter(max(show))}{tot_row}"
             # Running-block metric header, matched drift-tolerantly. Maud renamed the
             # running Apps header "APPS" -> "Total Apps" (7/2026); an exact match then
             # StopIterationed and took down the WHOLE post. Accept the "Total " prefix,
@@ -618,12 +651,13 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             def _is_rank_hdr(c, _w=want):
                 h = _cell(grid, 2, c).strip().upper()
                 return h == _w or h == "TOTAL " + _w
-            sort_col = next((c for c in range(3, 10) if _is_rank_hdr(c)),
-                            3 if want in ("APPS", "TOTAL APPS") else None)
+            sort_col = next((c for c in run_block if _is_rank_hdr(c)),
+                            run_block[0] if want in ("APPS", "TOTAL APPS") else None)
             if sort_col is None:
                 raise RuntimeError(
-                    f"ranking sort header {spec['sort']!r} not found in running block D:J "
-                    f"(row-3 headers: {[_cell(grid, 2, c).strip() for c in range(3, 10)]})")
+                    f"ranking sort header {spec['sort']!r} not found in the running "
+                    f"block {col_letter(run_block[0])}:{col_letter(run_block[-1])} "
+                    f"(row-3 headers: {[_cell(grid, 2, c).strip() for c in run_block]})")
             filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
 
         elif kind == "field_status":
