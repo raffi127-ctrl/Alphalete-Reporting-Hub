@@ -484,13 +484,18 @@ def _parse_date(value: str) -> Optional[dt.date]:
 
 
 def week_ending(d: dt.date) -> dt.date:
-    """Saturday of the Sun-Sat week containing `d`.
+    """SUNDAY of the Mon-Sun week containing `d`.
 
-    Same convention as Raf's Fiber Order Log (`order_log._week_bounds`), so
-    the two reports line up week-for-week.
+    Carlos 2026-09-13: "Sales are Monday through Sunday ... for box only,
+    you're good to change it to Monday through Sunday." Until then this was
+    Saturday of a Sun-Sat week, inherited from Raf's Fiber Order Log for
+    cross-report alignment — a convention that never matched how Carlos
+    counts a BOX week, and which put every Sunday sale in the wrong week.
+    It now also matches the DD week (WE = Sunday), so the revenue board
+    reconciles against the paycheck feed date-for-date. BOX ONLY — the Fiber
+    and AT&T logs keep their own conventions.
     """
-    sunday = d - dt.timedelta(days=(d.weekday() + 1) % 7)
-    return sunday + dt.timedelta(days=6)
+    return d + dt.timedelta(days=6 - d.weekday())
 
 
 # TWO DATES, TWO PURPOSES — do not merge them again.

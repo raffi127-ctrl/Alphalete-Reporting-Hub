@@ -448,6 +448,14 @@ def merge_rows(existing: Sequence[Sequence[str]], sales: Sequence,
             purged += 1
             continue
         wk = clean._parse_date(row[_COL_WEEK])
+        # HEAL the Sun-Sat era: Week Endings written before the 2026-09-13
+        # Mon-Sun switch are Saturdays; a carried row the pull no longer
+        # replaces would keep its Saturday forever and split the dropdown
+        # into two label sets for the same week. Idempotent — Sundays pass
+        # through untouched, and no writer produces Saturdays any more.
+        if wk and wk.weekday() == 5:
+            wk = wk + dt.timedelta(days=1)
+            row[_COL_WEEK] = _fmt_date(wk)
         if wk and wk < oldest:
             aged += 1
             continue

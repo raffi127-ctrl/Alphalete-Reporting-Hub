@@ -114,14 +114,11 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
         return out, tier_png, tier_note
 
 
-REVENUE_LINE = (":moneybag: Revenue by status — same board as Accepted by "
-                "supplier, in dollars (New Comp grid, per-deal; weekly Volume "
-                "bonus lives on the Revenue Board)")
+REVENUE_LINE = ":moneybag: BOX Revenue by Status"
 REVENUE_SUBTITLE = ("Dollars on the New Compensation grid (base by BF tier + "
-                    "term + kWh), per deal — the weekly Volume bonus is NOT "
-                    "in these cells; see the Revenue Board. Accepted & "
-                    "Cancelled are that week; Still Open / Submitted are "
-                    "all-time, identical in both tables.")
+                    "term + kWh). Accepted INCLUDES the weekly Volume bonus "
+                    "at the rep's tier for that week; Still Open / Submitted "
+                    "are all-time, per-deal, no bonus. Weeks are Mon-Sun.")
 
 
 def _post_thread(client, channel: str, text: str, xlsx_path: Path,
@@ -742,11 +739,37 @@ def main(argv: Optional[list] = None) -> int:
         # the Revenue Board. Own guard — never sinks the post.
         if "revenue" in sections:
             try:
-                from automations.vantura_revenue_board.run import price_box
+                from automations.vantura_revenue_board.run import (
+                    price_box, price_box_tx, box_tier_for, TX_TIERS)
+                # THE 9/7 CUTOVER (Carlos 2026-09-13: "the new Texas payout
+                # was started from sales as of 9/7"): deals SOLD before 9/7
+                # pay on the old TX Grid — exactly what the WE 9.6 DD showed,
+                # line for line, when we reconciled Kandice — and 9/7+ on the
+                # New Compensation grid. Same for the weekly volume bonus:
+                # the scale follows the week being paid.
+                CUTOVER = dt.date(2026, 9, 7)
+
+                def _price(s):
+                    # price_box returns (amt, notes); price_box_tx a bare
+                    # number — normalise to the tuple the aggregator indexes.
+                    if s.sale_date and s.sale_date < CUTOVER:
+                        return (price_box_tx(s), "tx")
+                    return price_box(s)
+
+                def _bonus(week_end, n):
+                    if week_end < CUTOVER:
+                        for floor, rate in TX_TIERS:
+                            if n >= floor:
+                                return rate * n
+                        return 0
+                    _t, rate = box_tier_for(n)
+                    return rate * n
+
                 out_revenue = OUTPUT_DIR / "BOX Revenue by Status {}.png".format(
                     today.strftime("%m-%d-%Y"))
                 rtables = payout.build_week_tables(sales, today,
-                                                   money_fn=price_box)
+                                                   money_fn=_price,
+                                                   bonus_fn=_bonus)
                 try:
                     rtables = payout.filter_active(
                         rtables, _ract, _rterm, _act_roster._names_match)

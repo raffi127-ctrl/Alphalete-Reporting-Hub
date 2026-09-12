@@ -46,13 +46,15 @@ SUBMITTED_STATUSES = ("Submitted to Supplier",)
 
 
 def week_bounds(today: dt.date):
-    """(last_start, last_end, this_start, this_end) as Sun-Sat weeks.
+    """(last_start, last_end, this_start, this_end) as MON-SUN weeks.
 
-    Same arithmetic as rep_activations.aggregate.week_bounds, so the two
-    reports never disagree about which week is which.
+    Carlos 2026-09-13, BOX only. Was Sun-Sat (rep_activations' arithmetic);
+    Mon-Sun makes LAST WEEK the exact window the week's DD pays on, so the
+    revenue board reconciles against the paycheck feed line-for-line — the
+    comparison that surfaced the TX-Grid-vs-New-Comp scale gap in the first
+    place.
     """
-    days_since_sunday = (today.weekday() + 1) % 7      # Mon=0..Sun=6 -> Sun=0
-    this_start = today - dt.timedelta(days=days_since_sunday)
+    this_start = today - dt.timedelta(days=today.weekday())
     this_end = this_start + dt.timedelta(days=6)
     last_start = this_start - dt.timedelta(days=7)
     last_end = this_start - dt.timedelta(days=1)
@@ -69,7 +71,7 @@ def _in_week(d: Optional[dt.date], start: dt.date, end: dt.date) -> bool:
 
 
 def build_week_tables(sales: Sequence, today: Optional[dt.date] = None,
-                      money_fn=None) -> Dict:
+                      money_fn=None, bonus_fn=None) -> Dict:
     """Roll the collapsed sales into the two weekly payout tables.
 
     Returns {"last": {"label", "rows"}, "this": {"label", "rows"}} where each
@@ -101,6 +103,7 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None,
         agg = reps.setdefault(rep, {
             "pending": 0, "submitted": 0, "posted_last": 0, "posted_this": 0,
             "canceled_last": 0, "canceled_this": 0,
+            "n_posted_last": 0, "n_posted_this": 0,
         })
         # Accepted Date for a paid sale; for a dead one fall back to the sale
         # date so a cancel still lands in a week rather than vanishing.
@@ -110,8 +113,10 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None,
         if s.status in POSTED_STATUSES:
             if _in_week(paid_on, last_start, last_end):
                 agg["posted_last"] += unit
+                agg["n_posted_last"] += 1
             if _in_week(paid_on, this_start, this_end):
                 agg["posted_this"] += unit
+                agg["n_posted_this"] += 1
         elif s.status in CANCEL_STATUSES:
             if _in_week(dead_on, last_start, last_end):
                 agg["canceled_last"] += unit
@@ -126,6 +131,24 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None,
         rows = []
         for rep, a in reps.items():
             posted = a[posted_key]
+            if money_fn is not None:
+                # THE WEEKLY VOLUME BONUS RIDES IN ACCEPTED $ (Carlos
+                # 2026-09-13: "You know what the rep is qualifying for, so
+                # can't you add it in there?"). Tier from that week's accepted
+                # COUNT, bonus = rate x count, straight onto the week figure.
+                # Still Open / Submitted get none — an unaccepted deal has no
+                # tier yet. bonus_fn(week_end, n) picks the SCALE — the new
+                # Texas payout starts with sales as of 9/7 (Carlos), so the
+                # week that straddles the cutover pays on the right card.
+                n = a["n_" + posted_key]
+                week_end = (last_end if posted_key == "posted_last"
+                            else this_end)
+                if bonus_fn is not None:
+                    posted += bonus_fn(week_end, n)
+                else:
+                    from automations.vantura_revenue_board.run import box_tier_for
+                    _t, rate = box_tier_for(n)
+                    posted += rate * n
             pending = a["pending"]
             rows.append({"rep": rep, "posted": posted, "pending": pending,
                          "submitted": a["submitted"],
