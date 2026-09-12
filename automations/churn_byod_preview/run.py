@@ -87,17 +87,22 @@ def collect(sheet_id: str = SHEET_ID, tab: str = TAB, rows_of=None) -> dict:
             prods[name.title()] = {
                 "act": row[1], "disc": row[2], "churn": row[3],
                 "act30": row[4], "act3160": row[5]}
-    roll = rows_of("A15:L80")
+    # 13 cols since 2026-09-08: a REAL 'Disconnect Date' was inserted after
+    # Activation Date (col I) and the old col B is 'Fall-Off Date' now. The
+    # fixed indices below are WHY this render read rows=0 for a few hours
+    # that day — this reader and the tab's layout must move together (README
+    # playbook: Google Sheets changes).
+    roll = rows_of("A15:M80")
     rows = []
     for row in roll[1:]:
-        row += [""] * (12 - len(row))
-        if (row[10] or "").strip().upper() != "WIRELESS":
+        row += [""] * (13 - len(row))
+        if (row[11] or "").strip().upper() != "WIRELESS":
             continue
         try:
             lines = int(row[2])
         except (TypeError, ValueError):
             continue
-        dev = row[9] or ""
+        dev = row[10] or ""
         has_byod = "BYOD" in dev
         has_dev = bool(re.sub(r"BYOD|/|\s", "", dev))
         if has_byod and not has_dev:
@@ -109,8 +114,8 @@ def collect(sheet_id: str = SHEET_ID, tab: str = TAB, rows_of=None) -> dict:
             n, approx = lines - b, True
         rows.append({"days": row[0], "date": row[1], "lines": lines,
                      "cust": row[4], "rep": row[5], "ordered": row[6],
-                     "posted": row[7], "cru": row[8], "dev": dev,
-                     "b": b, "n": n, "approx": approx})
+                     "posted": row[7], "disc": row[8], "cru": row[9],
+                     "dev": dev, "b": b, "n": n, "approx": approx})
     return {"prods": prods, "rows": rows}
 
 
@@ -164,6 +169,7 @@ def build_html(data: dict, *, label: str = "", team_ref=None) -> str:
             f"text-align:center\">{b_after:.1f}%</td>"
             f"<td>{html.escape(r['cust'])}</td><td>{html.escape(r['rep'])}</td>"
             f"<td>{html.escape(r['ordered'])}</td><td>{html.escape(r['posted'])}</td>"
+            f"<td>{html.escape(r.get('disc', ''))}</td>"
             f"<td style=\"text-align:center\">{html.escape(r['cru'])}</td>"
             f"<td class=\"dev\">{html.escape(r['dev'][:60])}</td></tr>")
 
@@ -282,10 +288,10 @@ td {{ border:1px solid #b9c2cf; padding:4px 7px; }}
 <tr><td>1</td><td style="background:#e24b4a;color:#fff;text-align:center">&gt;8.01%</td><td style="text-align:center">($60)</td><td style="text-align:center">($30)</td></tr>
 </table><p class="note">Unchanged by the comp email</p></div>
 </div>
-<table class="roll"><tr class="hd"><td>Days</td><td>Disc. Date</td>
+<table class="roll"><tr class="hd"><td>Days</td><td>Falls Off</td>
 <td>Lines (N/B)*</td><td>After: Non-BYOD</td><td>After: BYOD</td><td>Customer</td>
-<td>Sales Rep</td><td>Ordered</td><td>Activated</td><td>CRU/IRU</td>
-<td>Phone / BYOD</td></tr>{''.join(body)}</table>
+<td>Sales Rep</td><td>Ordered</td><td>Activated</td><td>Disconnected</td>
+<td>CRU/IRU</td><td>Phone / BYOD</td></tr>{''.join(body)}</table>
 {decel_html}
 <p class="foot">Lines (N/B) = non-BYOD / BYOD lines in the group; rows marked *
  mix BYOD and financed phones so the split is approximate. Base split assumes
