@@ -283,5 +283,9 @@ class NudgeTests(unittest.TestCase):
         from automations.icd_alerts.post import OWNER_NUDGE
         text = OWNER_NUDGE % "Kash"
         self.assertIn("Kash", text)
-        for cue in ("asleep", "unplugged", "wifi", "15 minutes"):
+        for cue in ("asleep", "unplugged", "wifi"):
             self.assertIn(cue, text)
+        # It must promise a RECOVERY, not a duration -- a number here and a
+        # different one in the plist is a promise people check and we break.
+        self.assertIn("picks itself up", text)
+        self.assertNotIn("15 minutes", text)
