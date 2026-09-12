@@ -1,0 +1,6 @@
+{
+  "_source": "B2B ATT Captains Bonus Breakdown emails (poshin@thesmartcircle.com) — Carlos's PERSONAL (office) 0-30 day churn per product, per DD week-ending. Drives the per-line churn-tier impacts in sp_order_log.build_revenue_png for sales dated on/after the 2026-09-07 comp cutover. Append a row per weekly email; the pricer uses the latest week at-or-before each sale's week.",
+  "weeks": {
+    "2026-09-06": {"internet": 3.8, "nonbyod": 4.9, "byod": 6.3, "air": 11.1}
+  }
+}

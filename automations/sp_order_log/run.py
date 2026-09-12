@@ -402,6 +402,32 @@ def build_overview_png(lines, today: dt.date, log=print,
     return out
 
 
+def _sp_parse_date(s: str):
+    """M/D/YYYY (or MM/DD/YYYY) -> date, else None."""
+    try:
+        m, d, y = (int(x) for x in s.strip().split("/"))
+        return dt.date(y if y > 99 else 2000 + y, m, d)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _load_churn_tiers(log=print) -> dict:
+    """{week-ending date: {internet, nonbyod, byod, air}} from
+    churn_tiers.json next to this module — the weekly bonus-email numbers."""
+    import json as _json
+    p = Path(__file__).resolve().parent / "churn_tiers.json"
+    try:
+        raw = _json.loads(p.read_text())["weeks"]
+        out = {dt.date.fromisoformat(k): v for k, v in raw.items()}
+        log("churn tiers: %d week(s), newest %s" % (len(out),
+                                                    max(out).isoformat()))
+        return out
+    except Exception as e:  # noqa: BLE001
+        log("churn tiers unavailable (%s) — impacts skipped"
+            % type(e).__name__)
+        return {}
+
+
 def _orderlog_attrs(log=print) -> dict:
     """{10-digit TN: {pricing fields}} from the newest Tableau order-log
     export on this box — the cross-reference Carlos named ('just look up the
@@ -485,6 +511,53 @@ def build_revenue_png(lines, today: dt.date, log=print,
     attrs = _orderlog_attrs(log=log)
     matched = [0]
 
+    # Churn-tier impacts by SALE DATE (Carlos 2026-09-14: "look through my
+    # email that tells you what tier we're on ... go off of the sales date").
+    # churn_tiers.json holds the office's PERSONAL 0-30 churn per product per
+    # DD week (from the weekly 'B2B ATT Captains Bonus Breakdown' emails);
+    # a sale's tier = the latest week at-or-before its sale week. The tables
+    # and edges are churn_byod_preview's own (the board Carlos reads).
+    # BYOD-split tiers apply from the 2026-09-07 comp cutover; older sales
+    # keep base rates. Pay hits per the board: Non-BYOD impact on CRU + IRU
+    # port lines, BYOD impact on CRU BYOD port lines, AIR by CRU/IRU (the
+    # pricer's hardcoded tier-3 AIR base is swapped for the real tier's).
+    NONBYOD_IMPACT = (30, 10, 0, -10, -20, -30)
+    BYOD_IMPACT = (50, 25, 0, -25, -50, -75)
+    AIR_EDGES = (2.0, 4.0, 5.0, 8.0)
+    AIR_IMPACT = {"CRU": (60, 40, 20, -40, -60),
+                  "IRU": (30, 20, 10, -20, -30)}
+    AIR_BASE_T3 = {"CRU": 20, "IRU": 10}       # what price() already adds
+    CUTOVER = dt.date(2026, 9, 7)
+    tier_weeks = _load_churn_tiers(log=log)
+
+    def _tier_pcts(sale_date):
+        past = [w for w in sorted(tier_weeks) if w <= sale_date]
+        wk = past[-1] if past else (sorted(tier_weeks)[0]
+                                    if tier_weeks else None)
+        return tier_weeks.get(wk) if wk else None
+
+    def _churn_impact(row, sale_date) -> float:
+        if sale_date is None or sale_date < CUTOVER:
+            return 0.0
+        pct = _tier_pcts(sale_date)
+        if not pct:
+            return 0.0
+        from automations.churn_byod_preview.run import (
+            _tier_ix, BYOD_EDGES, NONBYOD_EDGES)
+        prod = str(row.get("Product Type (Broken Out)") or "").upper()
+        cru = str(row.get("CRU/IRU") or "").strip().upper() or "CRU"
+        tn = str(row.get("spe.TN Type") or "").lower()
+        byod = str(row.get("Wireless Installment Plan") or "").upper() == "BYOD"
+        if prod == "WIRELESS" and tn == "port":
+            if byod:
+                return (BYOD_IMPACT[_tier_ix(pct["byod"], BYOD_EDGES)]
+                        if cru == "CRU" else 0.0)
+            return NONBYOD_IMPACT[_tier_ix(pct["nonbyod"], NONBYOD_EDGES)]
+        if prod == "AIR/AWB":
+            ix = _tier_ix(pct["air"], AIR_EDGES)
+            return AIR_IMPACT[cru][ix] - AIR_BASE_T3[cru]
+        return 0.0
+
     def _amount(ln) -> float:
         row = dict(ln)
         hit = attrs.get(norm_tn(str(row.get("spe.TN") or "")))
@@ -500,7 +573,8 @@ def build_revenue_png(lines, today: dt.date, log=print,
         # keep the enriched CRU/IRU on the line for the payable rule below
         ln["_cru"] = str(row.get("CRU/IRU") or "").strip().upper() or "CRU"
         amt, _label, _notes = price(row)
-        return float(amt or 0)
+        sale_date = _sp_parse_date(str(row.get("sp.Order Date (copy)") or ""))
+        return float(amt or 0) + _churn_impact(row, sale_date)
 
     def _eligible(ln) -> bool:
         prod = str(ln.get("Product Type (Broken Out)") or "").upper()
