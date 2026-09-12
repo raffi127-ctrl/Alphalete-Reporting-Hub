@@ -73,7 +73,18 @@ PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded" / "_shared"
 # Jobs that hold the machine's ownerville session. A tick that lands while one
 # of these is running steps aside and tries again on the next pass.
 BUSY_PATTERNS = ("automations.knocks_intraday.run",
-                 "automations.captainship_drafts.run")
+                 "automations.captainship_drafts.run",
+                 # The address harvest holds the session for ~45 minutes and it
+                 # is the thing this whole module is waiting on — a wave that
+                 # elbows into it costs the zones every later night needs.
+                 "automations.captainship_night_knocks.harvest_zones")
+
+# THE FIRST NIGHT THE SAMPLE MAY GO OUT. The harvest that places Raf's offices
+# runs the night of Friday 2026-09-11 at 10 PM Central; before it lands, only
+# two of his thirteen ICDs have a zone at all, and a first email showing two
+# offices would read as a broken report rather than an unfinished one. So the
+# sample starts on the Saturday, with the zones in. Live mode has no such gate.
+SAMPLE_FIRST_NIGHT = dt.date(2026, 9, 12)
 
 # WHEN THE FAILURE NOTICE GOES OUT: 00:45 Central, about the night that just
 # ended. Late enough that the last wave a night can have (9 PM Pacific = 11 PM
@@ -346,6 +357,10 @@ def tick(now_utc: dt.datetime, *, send: bool, sample: bool,
 
     sent = 0
     for d in owed:
+        if sample and d.local_date < SAMPLE_FIRST_NIGHT:
+            logfn("[night-knocks] %s wave for %s skipped — the sample starts %s"
+                  % (d.label, d.local_date, SAMPLE_FIRST_NIGHT))
+            continue
         data = ST.load(d.local_date)
         subject_base = mail.subject_for(captain_display(d.captain_key),
                                         d.local_date, sample=sample)
@@ -427,7 +442,11 @@ def notice_due(now_utc: dt.datetime) -> Optional[dt.date]:
     if not (start <= local < start + dt.timedelta(hours=1)):
         return None
     night = local.date() - dt.timedelta(days=1)
-    return night if night.weekday() in S.WORKING_WEEKDAYS else None
+    if night.weekday() not in S.WORKING_WEEKDAYS:
+        return None
+    # Nothing was owed before the sample's first night, so there is nothing to
+    # explain either — a notice then would be a false alarm.
+    return night if night >= SAMPLE_FIRST_NIGHT else None
 
 
 def notice_html(night: dt.date, data: dict, rosters: Dict[str, List[str]],
