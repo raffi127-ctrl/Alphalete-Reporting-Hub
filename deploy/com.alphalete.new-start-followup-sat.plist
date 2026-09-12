@@ -28,13 +28,19 @@
     </dict>
 
     <!-- Saturday only (Weekday 6), machine LOCAL time (mini is Central).
-         ONE nudge at 1pm. Cut from three (10am/1pm/5pm) on 2026-07-26 — a
+         ONE nudge at 10:15am. Cut from three (10am/1pm/5pm) on 2026-07-26 — a
          straggler was getting @-tagged 5x a weekend (8am roll call + 3 nudges +
          Sun checklist) and Megan called it too many pings. Now: 8am roll call +
-         this one 1pm nudge + Sun checklist = ~3 tags max.
+         this one 10:15am nudge + Sun checklist = ~3 tags max.
+         MOVED 13:00 -> 10:15 on 2026-09-06 (Raf: "on Saturdays at 10:15 am, it
+         gives an update on who still needs to send the text message... It'll be
+         in our announcements, and we'll force them to do it"). MOVED, never
+         added: a second nudge would undo the 7/26 cut and put a straggler back
+         to 5 tags a weekend. 10:15 also still reads as "morning" to
+         "when auto", so the neutral wording below is unchanged.
          The run re-reads the thread and tags ONLY whoever still hasn't replied,
          so leaders who already sent don't get pinged.
-         "--when morning" is the neutral "Reminder — if you haven't texted…"
+         "when morning" is the neutral "Reminder — if you haven't texted…"
          wording (not "Second reminder"/"Last call"), which fits a lone nudge.
          The 5pm -sat-pm plist was RETIRED in the same change (uninstall via
          `lucy rerun uninstall_new_start_nudge_pm_agent`); one interval here is
@@ -43,8 +49,8 @@
     <array>
         <dict>
             <key>Weekday</key><integer>6</integer>
-            <key>Hour</key><integer>13</integer>
-            <key>Minute</key><integer>0</integer>
+            <key>Hour</key><integer>10</integer>
+            <key>Minute</key><integer>15</integer>
         </dict>
     </array>
 
