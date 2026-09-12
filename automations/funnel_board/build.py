@@ -811,10 +811,6 @@ INFO_FIELDS = [
 
 
 def info_box(sid, title, row0):
-    # re-runs re-merge the answer cells; clear any existing merges first so
-    # the hourly rebuild never 400s on an overlapping merge.
-    F.append({"unmergeCells": {"range": gr(sid, row0 - 1,
-                                           row0 - 1 + len(INFO_FIELDS), 0, 4)}})
     rows = []
     for lab, kind in INFO_FIELDS:
         if kind is None:
@@ -832,8 +828,11 @@ def info_box(sid, title, row0):
                 "horizontalAlignment": "LEFT"}},
                 "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"))
         else:
-            F.append({"mergeCells": {"range": gr(sid, r0 + i, r0 + i + 1, 1, 4),
-                                     "mergeType": "MERGE_ALL"}})
+            # No merge here on purpose: the tab has frozen columns and a merge
+            # crossing the freeze line 400s the whole build ("You can't merge
+            # frozen and non-frozen columns", took the dashboard down
+            # 2026-09-12). The answer lives in B; C:D stay empty so long text
+            # just overflows across the violet strip.
             F.append(fmt(sid, r0 + i, r0 + i + 1, 1, 4, {"userEnteredFormat": {
                 "backgroundColor": rgb(EDIT_BG), "textFormat": txt(EDIT, True, 11, FONT),
                 "horizontalAlignment": "LEFT"}},
