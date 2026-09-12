@@ -859,6 +859,7 @@ def main(argv=None) -> int:
 
     xlsx_path = build_xlsx(lines, today)
     png_path = build_overview_png(lines, today)
+    build_revenue_png(lines, today)   # logs WEEKREPORT per-rep $ lines
     if args.push:
         _push(xlsx_path, XLSX_TAB)
         _push(png_path, SHOT_TAB)
