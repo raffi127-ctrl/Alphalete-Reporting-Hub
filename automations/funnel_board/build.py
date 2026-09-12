@@ -823,9 +823,9 @@ def info_box(sid, title, row0):
     r0 = row0 - 1                       # 0-based first row
     for i, (lab, kind) in enumerate(INFO_FIELDS):
         if kind is None:                # section header band, like the legend's
-            F.append(fmt(sid, r0 + i, r0 + i + 1, 0, 4, {"userEnteredFormat": {
+            F.append(fmt(sid, r0 + i, r0 + i + 1, 0, 2, {"userEnteredFormat": {
                 "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
-                "horizontalAlignment": "LEFT"}},
+                "horizontalAlignment": "CENTER"}},
                 "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"))
         else:
             # No merge here on purpose: the tab has frozen columns and a merge
@@ -833,15 +833,15 @@ def info_box(sid, title, row0):
             # frozen and non-frozen columns", took the dashboard down
             # 2026-09-12). The answer lives in B; C:D stay empty so long text
             # just overflows across the violet strip.
-            F.append(fmt(sid, r0 + i, r0 + i + 1, 1, 4, {"userEnteredFormat": {
+            F.append(fmt(sid, r0 + i, r0 + i + 1, 1, 2, {"userEnteredFormat": {
                 "backgroundColor": rgb(EDIT_BG), "textFormat": txt(EDIT, True, 11, FONT),
-                "horizontalAlignment": "LEFT"}},
+                "horizontalAlignment": "CENTER"}},
                 "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"))
             F.append(fmt(sid, r0 + i, r0 + i + 1, 0, 1, {"userEnteredFormat": {
                 "textFormat": txt(INK, False, 11, FONT),
-                "horizontalAlignment": "LEFT"}},
+                "horizontalAlignment": "CENTER"}},
                 "userEnteredFormat(textFormat,horizontalAlignment)"))
-    F.append({"updateBorders": {"range": gr(sid, r0, r0 + len(INFO_FIELDS), 0, 4),
+    F.append({"updateBorders": {"range": gr(sid, r0, r0 + len(INFO_FIELDS), 0, 2),
                                 "top": bdt(INK), "bottom": bdt(INK),
                                 "left": bdt(INK), "right": bdt(INK)}})
 
