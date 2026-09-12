@@ -461,6 +461,72 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
     return {"offices": considered, "posted": posted}
 
 
+ENROLLED_PATH = (Path.home() / ".config" / "recruiting-report"
+                 / "icd_alerts_enrolled.json")
+
+
+def _seen_requests() -> Dict:
+    try:
+        return json.loads(ENROLLED_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def notify_pending(*, send: bool = False, book=None, log=print) -> List[Dict]:
+    """Tell Megan when an office has enrolled and is waiting on her.
+
+    THE APPROVAL WAS SOMETHING YOU HAD TO GO AND CHECK. An office installs,
+    their request lands on a tab, and nothing anywhere says so -- which is
+    workable for two offices on a call and useless at fifty, where the first
+    sign of a forgotten approval is an owner asking why they see nothing
+    (Megan 2026-09-12, having just enrolled two).
+
+    Told ONCE per request. Keyed on what they actually asked for, so a changed
+    answer is a new thing worth a second message and an unchanged one is not.
+    """
+    pending = pending_requests(book) + [
+        dict(r, knocks=True) for r in pending_knocks(book)]
+    if not pending:
+        return []
+
+    seen = _seen_requests()
+    fresh = []
+    for r in pending:
+        key = "%s:%s:%s" % (r["office"], "knocks" if r.get("knocks") else "alerts",
+                            r.get("wanted", ""))
+        if seen.get(key):
+            continue
+        r["_key"] = key
+        fresh.append(r)
+    if not fresh:
+        return []
+
+    for r in fresh:
+        log("PENDING: %-10s %s %s"
+            % (r["office"], "knocks" if r.get("knocks") else "alerts",
+               r.get("wanted", "")))
+    if not send:
+        return fresh
+
+    lines = [":inbox_tray: *An office is waiting on you.*"]
+    for r in fresh:
+        what = "knocks board" if r.get("knocks") else "credit-check alerts"
+        lines.append("• *%s* (%s) asked for their %s in  `%s`"
+                     % (r.get("owner") or r["office"], r["office"], what,
+                        r.get("wanted") or "(not sure yet)"))
+        lines.append("   `python -m automations.icd_alerts.approve %s%s`"
+                     % (r["office"], " --knocks" if r.get("knocks") else ""))
+    lines.append("_Nothing posts to their team until you do. Their laptop is "
+                 "already relaying, so the data is not being lost._")
+    _slack(O.HOLDING_DM, "\n".join(lines))
+
+    ENROLLED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    for r in fresh:
+        seen[r["_key"]] = dt.datetime.now().isoformat(timespec="seconds")
+    ENROLLED_PATH.write_text(json.dumps(seen, indent=2, sort_keys=True))
+    return fresh
+
+
 def _warned() -> Dict:
     try:
         return json.loads(WARNED_PATH.read_text())
@@ -617,6 +683,7 @@ def main(argv=None) -> int:
                 assert_posting_as_lucy()
             run(day, send=args.send, only=args.office)
             if args.watch:
+                notify_pending(send=args.send)
                 warn_quiet(day, send=args.send)
     except RelayNotConfigured as e:
         print(e)
