@@ -554,8 +554,12 @@ def build_revenue_png(lines, today: dt.date, log=print,
                         if cru == "CRU" else 0.0)
             return NONBYOD_IMPACT[_tier_ix(pct["nonbyod"], NONBYOD_EDGES)]
         if prod == "AIR/AWB":
-            ix = _tier_ix(pct["air"], AIR_EDGES)
-            return AIR_IMPACT[cru][ix] - AIR_BASE_T3[cru]
+            # _tier_ix falls through to a HARDCODED 5 (it was built for the
+            # 6-tier wireless tables); the AIR table has 5 tiers, so clamp —
+            # 11.1% AIR churn IndexError'd the first live run (2026-09-14).
+            table = AIR_IMPACT.get(cru, AIR_IMPACT["CRU"])
+            ix = min(_tier_ix(pct["air"], AIR_EDGES), len(table) - 1)
+            return table[ix] - AIR_BASE_T3.get(cru, AIR_BASE_T3["CRU"])
         return 0.0
 
     def _amount(ln) -> float:
