@@ -148,35 +148,17 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                                     text=contents)
         except Exception as e:  # noqa: BLE001 — the list must never sink the post
             print("  ⚠ contents reply failed: {}".format(e), flush=True)
-    # Workbook first — the overall log plus a tab per rep plus the payout grid.
-    # Then the payout image, which Slack renders inline so the numbers are
-    # readable without opening anything. Same pairing as the Fiber post. Last
-    # the pending worklist and the tier board, so the thread reads log -> pay
-    # -> what's still open -> where each rep sits on the ladder; each goes in
-    # only when we have it, matching the header.
-    if "order_log" in sections:
+    # POSTING ORDER IS CARLOS'S (2026-09-13): tier board, activation rates,
+    # accepted, revenue, pending, and the workbook last. He listed five; the
+    # Revenue board (added the same day) rides directly after Accepted as its
+    # dollar twin. A section whose artifact isn't in hand is skipped and the
+    # contents list (built in this same order) never names it — "at that
+    # point, the thread just needs to be adjusted."
+    if tier_path and "tier_bonus" in sections:
         client.files_upload_v2(
-            channel=channel, thread_ts=ts, file=str(xlsx_path),
-            filename=xlsx_path.name, title=xlsx_path.stem,
-            initial_comment=WORKBOOK_LINE,
-        )
-    if "accepted" in sections:
-        client.files_upload_v2(
-            channel=channel, thread_ts=ts, file=str(payout_path),
-            filename=payout_path.name, title=payout_path.stem,
-            initial_comment=PAYOUT_LINE,
-        )
-    if pending_path and "pending" in sections:
-        client.files_upload_v2(
-            channel=channel, thread_ts=ts, file=str(pending_path),
-            filename=pending_path.name, title=pending_path.stem,
-            initial_comment=PENDING_LINE,
-        )
-    if revenue_path and "revenue" in sections:
-        client.files_upload_v2(
-            channel=channel, thread_ts=ts, file=str(revenue_path),
-            filename=revenue_path.name, title=revenue_path.stem,
-            initial_comment=REVENUE_LINE,
+            channel=channel, thread_ts=ts, file=str(tier_path),
+            filename=tier_path.name, title=tier_path.stem,
+            initial_comment=tier_line,
         )
     if activations_path and "activations" in sections:
         from . import activations as _act
@@ -185,11 +167,29 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
             filename=activations_path.name, title=activations_path.stem,
             initial_comment=_act.ACTIVATIONS_LINE,
         )
-    if tier_path and "tier_bonus" in sections:
+    if "accepted" in sections:
         client.files_upload_v2(
-            channel=channel, thread_ts=ts, file=str(tier_path),
-            filename=tier_path.name, title=tier_path.stem,
-            initial_comment=tier_line,
+            channel=channel, thread_ts=ts, file=str(payout_path),
+            filename=payout_path.name, title=payout_path.stem,
+            initial_comment=PAYOUT_LINE,
+        )
+    if revenue_path and "revenue" in sections:
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(revenue_path),
+            filename=revenue_path.name, title=revenue_path.stem,
+            initial_comment=REVENUE_LINE,
+        )
+    if pending_path and "pending" in sections:
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(pending_path),
+            filename=pending_path.name, title=pending_path.stem,
+            initial_comment=PENDING_LINE,
+        )
+    if "order_log" in sections:
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(xlsx_path),
+            filename=xlsx_path.name, title=xlsx_path.stem,
+            initial_comment=WORKBOOK_LINE,
         )
     return ts
 
@@ -815,20 +815,22 @@ def main(argv: Optional[list] = None) -> int:
     # The header lists exactly what's in the thread — so the tier line goes in
     # only when the board is actually in hand. A capture that failed is called
     # out below instead of being quietly left off.
+    # Same order as the uploads below — Carlos 2026-09-13: "the wording
+    # should line up in the post."
     attach_lines = []
-    if "order_log" in sections:
-        attach_lines.append(WORKBOOK_LINE)
-    if "accepted" in sections:
-        attach_lines.append(PAYOUT_LINE)
-    if "pending" in sections:
-        attach_lines.append(PENDING_LINE)
-    if out_revenue and "revenue" in sections:
-        attach_lines.append(REVENUE_LINE)
+    if tier_png:
+        attach_lines.append(tier_bonus.TIER_LINE)
     if out_activations and "activations" in sections:
         from . import activations as _act_lines
         attach_lines.append(_act_lines.ACTIVATIONS_LINE)
-    if tier_png:
-        attach_lines.append(tier_bonus.TIER_LINE)
+    if "accepted" in sections:
+        attach_lines.append(PAYOUT_LINE)
+    if out_revenue and "revenue" in sections:
+        attach_lines.append(REVENUE_LINE)
+    if "pending" in sections:
+        attach_lines.append(PENDING_LINE)
+    if "order_log" in sections:
+        attach_lines.append(WORKBOOK_LINE)
     # SHORT PARENT + RENAME (Carlos 2026-09-05): the parent is just
     # "Box Metrics — <date>"; the attachment list posts as the thread's first
     # reply (`contents` below). Thread finders elsewhere (sales_boards
