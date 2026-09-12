@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import unittest
+from unittest import mock
 
 from automations.icd_alerts import offices as O
 from automations.icd_alerts import post as P
@@ -409,3 +410,77 @@ class SalesBacklogOnEnrolment(unittest.TestCase):
         sold, _merged, baseline = P.decide_sales({"A": self.M(3)}, None)
         self.assertEqual(sold, [])
         self.assertTrue(baseline)
+
+
+class QuietNudgeThreading(unittest.TestCase):
+    """One thread per ICD, however long the laptop stays down.
+
+    Cyrus's machine went down at 10:56 on 2026-09-12 and the nudge posted as a
+    fresh top-level message every 30 minutes -- three identical warnings by
+    13:21, pushing real incidents off the screen. Megan: "1 thread per ICD so
+    it's not clogging up the channel."
+    """
+
+    def setUp(self):
+        import tempfile, pathlib
+        self.tmp = pathlib.Path(tempfile.mkdtemp()) / "warned.json"
+        self.posts = []          # (text, thread_ts) in order
+
+        def fake_slack(channel, text, thread_ts=None):
+            self.posts.append((text, thread_ts))
+            return "ts%d" % len(self.posts)
+
+        self.fake_slack = fake_slack
+        self.quiet = [{"office": "cyrus", "label": "Cyrus's Local Office",
+                       "reason": "last checked in 10:56:34",
+                       "last": "9/12/2026 10:56:34"}]
+
+    def _run(self, now):
+        office = O.AlertOffice(
+            key="cyrus", owner="Cyrus Wade", label="Cyrus's Local Office",
+            channels=(), timezone="America/Chicago", slack_user_id="U06A1QA642X")
+        with mock.patch.object(P, "WARNED_PATH", self.tmp), \
+             mock.patch.object(P, "_slack", self.fake_slack), \
+             mock.patch.object(P, "_dm", lambda *a, **k: None), \
+             mock.patch.object(P, "quiet_offices",
+                               lambda *a, **k: [dict(q) for q in self.quiet]), \
+             mock.patch.object(P.O, "get", lambda k: office), \
+             mock.patch.object(P.O, "office_now", lambda o: now):
+            return P.warn_quiet(day=dt.date(2026, 9, 12), send=True, now=now,
+                                log=lambda *a, **k: None)
+
+    def test_first_nudge_opens_a_thread(self):
+        self._run(dt.datetime(2026, 9, 12, 12, 18))
+        self.assertEqual(len(self.posts), 1)
+        text, thread = self.posts[0]
+        self.assertIsNone(thread, "the first one is top-level")
+        self.assertIn("Cyrus's Local Office", text)
+
+    def test_repeats_reply_instead_of_posting_again(self):
+        self._run(dt.datetime(2026, 9, 12, 12, 18))
+        self._run(dt.datetime(2026, 9, 12, 12, 50))
+        self._run(dt.datetime(2026, 9, 12, 13, 21))
+        self.assertEqual(len(self.posts), 3)
+        tops = [t for _txt, t in self.posts if t is None]
+        self.assertEqual(len(tops), 1,
+                         "only ONE top-level post for this office all day")
+        for _txt, thread in self.posts[1:]:
+            self.assertEqual(thread, "ts1", "repeats hang off the first one")
+
+    def test_the_repeat_is_terse(self):
+        self._run(dt.datetime(2026, 9, 12, 12, 18))
+        self._run(dt.datetime(2026, 9, 12, 12, 50))
+        reply = self.posts[1][0]
+        self.assertIn("still quiet", reply)
+        self.assertNotIn("Nothing is lost", reply,
+                         "the parent already said it")
+
+    def test_an_old_string_state_still_opens_a_thread(self):
+        # The state file outlives its own format; a pre-threading entry must
+        # not crash and must not silently thread onto nothing.
+        import json
+        self.tmp.parent.mkdir(parents=True, exist_ok=True)
+        self.tmp.write_text(json.dumps(
+            {"2026-09-12": {"cyrus": "2026-09-12T09:00:00"}}))
+        self._run(dt.datetime(2026, 9, 12, 12, 18))
+        self.assertEqual(self.posts[0][1], None)

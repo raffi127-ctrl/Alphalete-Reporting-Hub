@@ -35,6 +35,32 @@ VENV_PY=".venv/bin/python"
 
 LOG_DIR="output/logs"
 mkdir -p "$LOG_DIR"
+
+# PULL ONCE A DAY, on the first tick inside the window.
+#
+# This machine ran a whole afternoon on code that had been fixed and pushed
+# hours earlier (2026-09-12): the fix existed, the runner did not have it, and
+# the only thing that moved it across was somebody remembering to type
+# `lucy update --machine "Lucy 3"`. A report nobody has to remember to deploy
+# is the whole point of this thing being on a schedule.
+#
+# ONCE A DAY, NOT EVERY TICK. This wrapper fires every two minutes; pulling
+# that often would be pointless traffic and would keep swapping code under a
+# run that is already going. The first tick of the day is the quiet moment --
+# offices are not selling yet at 08:00.
+#
+# Same flags and same best-effort stance as deploy/day_orchestrator.sh, which
+# has pulled before every batch for months: --ff-only never merges and never
+# forces, --autostash parks local edits and puts them back, and a failure is
+# swallowed so a network blip can never stop an office's alerts.
+PULL_STAMP="$LOG_DIR/.pulled-$(date +%Y-%m-%d)"
+if [ -d .git ] && [ ! -f "$PULL_STAMP" ]; then
+  touch "$PULL_STAMP"          # BEFORE the pull: a hanging fetch must not
+                               # make every later tick retry it.
+  git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
+fi
+
+mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/icd-alerts-poster-$(date +%Y-%m-%d).log"
 
 export NO_PROXY='*'

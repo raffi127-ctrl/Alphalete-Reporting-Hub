@@ -674,14 +674,27 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         return []
 
     data = _warned()
-    sent = dict(data.get(day.isoformat()) or {})
-    if isinstance(sent, list):          # the old once-a-day shape
+    sent = data.get(day.isoformat()) or {}
+    if isinstance(sent, list):          # the oldest once-a-day shape
         sent = {k: "" for k in sent}
+    sent = dict(sent)
+
+    def _last_at(v):
+        # THREE SHAPES, because this state file outlives its own format: a
+        # bare timestamp string (the every-30-minutes version) and the dict
+        # that carries the thread ts as well.
+        return (v or {}).get("at") if isinstance(v, dict) else (v or "")
+
+    def _thread_of(v):
+        return (v or {}).get("ts") if isinstance(v, dict) else None
     fresh = []
     for q in quiet:
-        last = _parse_when(sent.get(q["office"]) or "")
-        if last and (dt.datetime.now() - last) < dt.timedelta(
-                minutes=NUDGE_REPEAT_MIN):
+        last = _parse_when(_last_at(sent.get(q["office"])))
+        # AGAINST `now`, NOT THE WALL CLOCK. They are the same in production,
+        # but a repeat gate that reads dt.datetime.now() cannot be tested at
+        # all -- and this gate is the only thing standing between one office
+        # and a message every two minutes.
+        if last and (now - last) < dt.timedelta(minutes=NUDGE_REPEAT_MIN):
             continue
         office = O.get(q["office"])
         # Each office is judged on ITS OWN clock. An Eastern office is an hour
@@ -714,20 +727,41 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
             log("could not DM %s: %s: %s" % (q["office"], type(e).__name__,
                                              str(e)[:100]))
 
-    lines = ["\n".join(
-        ":warning: *%s* — the alerts computer %s (%s their time).%s"
-        % (q["label"], q["reason"], q.get("office_time", "?"),
-           "  _Nudged them._" if q["office"] in nudged
-           else "  _No Slack id on file — nudge them yourself._")
-        for q in fresh)]
-    lines.append("_Nothing is lost: SaraPlus is cumulative, so whatever it "
-                 "missed arrives when the laptop is back online._")
-    _slack(O.OPS_CHANNEL, "\n\n".join(lines))
+    # ONE THREAD PER OFFICE PER DAY (Megan 2026-09-12: "1 thread per ICD so
+    # it's not clogging up the channel"). A laptop that stays down all
+    # afternoon produced a top-level post every 30 minutes -- Cyrus had three
+    # identical ones by 13:21, and they pushed real incidents off the screen.
+    # The first nudge for an office opens a thread; every repeat lands under
+    # it, so the channel shows ONE line per office no matter how long it is
+    # down, and the history is all in one place.
+    stamp = now.isoformat(timespec="seconds")
+    for q in fresh:
+        key = q["office"]
+        parent = _thread_of(sent.get(key))
+        tail = ("  _Nudged them._" if key in nudged
+                else "  _No Slack id on file — nudge them yourself._")
+        if parent:
+            # A REPLY, and deliberately terse: the parent already explains
+            # what this is, and a thread of identical paragraphs is the same
+            # noise one level down.
+            text = ("still quiet — last check-in %s (%s their time).%s"
+                    % (q.get("last") or "?", q.get("office_time", "?"), tail))
+        else:
+            text = ("\n\n".join([
+                ":warning: *%s* — the alerts computer %s (%s their time).%s"
+                % (q["label"], q["reason"], q.get("office_time", "?"), tail),
+                "_Nothing is lost: SaraPlus is cumulative, so whatever it "
+                "missed arrives when the laptop is back online._",
+                "_Updates follow in this thread until it is back._"]))
+        try:
+            ts = _slack(O.OPS_CHANNEL, text, thread_ts=parent)
+        except Exception as e:  # noqa: BLE001 — one office must not stop the rest
+            log("could not post quiet notice for %s: %s: %s"
+                % (key, type(e).__name__, str(e)[:100]))
+            continue
+        sent[key] = {"at": stamp, "ts": parent or ts}
 
     WARNED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    stamp = dt.datetime.now().isoformat(timespec="seconds")
-    for q in fresh:
-        sent[q["office"]] = stamp
     data[day.isoformat()] = sent
     # Keep only the last few days; nothing older is interesting.
     for k in sorted(data)[:-5]:
@@ -761,9 +795,18 @@ def assert_posting_as_lucy(log=print) -> None:
     log("posting as %s (%s)" % (who.get("user"), who.get("user_id")))
 
 
-def _slack(channel_id: str, text: str) -> None:
+def _slack(channel_id: str, text: str,
+           thread_ts: Optional[str] = None) -> Optional[str]:
+    """Post, optionally into a thread, and return the message ts.
+
+    The ts is what lets the NEXT nudge for an office land under the same
+    parent instead of as another top-level post [[warn_quiet]].
+    """
     from automations.shared import slack_metrics_post as smp
-    smp._client().chat_postMessage(channel=channel_id, text=text)
+    kw = {"channel": channel_id, "text": text}
+    if thread_ts:
+        kw["thread_ts"] = thread_ts
+    return (smp._client().chat_postMessage(**kw) or {}).get("ts")
 
 
 def _dm(user_id: str, text: str) -> None:
