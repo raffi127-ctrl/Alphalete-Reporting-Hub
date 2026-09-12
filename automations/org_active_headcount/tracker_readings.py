@@ -102,29 +102,40 @@ _BOX_SCHEMA = {
     "type": "object",
     "properties": {
         "dates_printed": {"type": "string"},
+        "section_read": {"type": "string", "description":
+            "The day / week headers of the section you read the counts from."},
         "rows": {"type": "array", "items": {
             "type": "object",
             "properties": {
-                "owner": {"type": "string"},
+                "owner": {"type": "string", "description":
+                    "The owner's NAME (letters), never the row number / rank."},
                 "selling_rep_count": {"type": ["integer", "null"]},
                 "total_rep_count": {"type": ["integer", "null"]},
             },
             "required": ["owner", "selling_rep_count", "total_rep_count"],
             "additionalProperties": False}},
     },
-    "required": ["dates_printed", "rows"],
+    "required": ["dates_printed", "section_read", "rows"],
     "additionalProperties": False,
 }
 
+# 2nd BOX attempt (2026-09-12): the first vote run put the ROW NUMBER in
+# 'owner' on most images (so every row collapsed into one), and the board shows
+# the current week AND the week before, each with its own count columns — the
+# only readings that matched the weekly history were the most recent section.
 _BOX_PROMPT = (
     "These {n} images are consecutive horizontal slices, top to bottom, of ONE "
-    "screenshot of the B2B Box tracker. Its table has one row per owner and, "
-    "among other columns, TWO different count columns: 'Selling Rep Count' and "
-    "'Total Rep Count'. For EVERY owner row return the owner name exactly as "
-    "printed, the value under 'Selling Rep Count' and the value under 'Total Rep "
-    "Count' of that SAME row — two separate numbers, never swapped, never taken "
-    "from a units/sales column. Copy numbers exactly; null if a cell is blank. "
-    "Skip header and grand-total rows. Also copy every date printed on the board.")
+    "screenshot of the B2B Box tracker. It can show MORE THAN ONE week (e.g. "
+    "'Mon (08-31)..Sun (09-06)' and an older 'Mon (08-24)..'). Use ONLY the "
+    "section for the MOST RECENT week (the latest dates), and in it the table "
+    "with one row per owner. That table has two different count columns, "
+    "'Selling Rep Count' and 'Total Rep Count'. For EVERY owner row return: the "
+    "owner's NAME as printed (letters — never the rank / row number beside it), "
+    "the 'Selling Rep Count' value and the 'Total Rep Count' value of that SAME "
+    "row — two separate numbers, never swapped, never from a units/sales column. "
+    "Copy numbers exactly; null if blank. Skip header and grand-total rows. Also "
+    "copy every date printed on the board, and the headers of the section you "
+    "read.")
 
 _SCHEMA = {
     "type": "object",
@@ -259,18 +270,13 @@ def _ask(images: List[bytes], prompt: str, schema: dict, max_tokens: int = 8000)
 
 
 def _read_box(png: Path) -> dict:
-    """BOX by majority vote over BOX_VOTES reads of the upscaled board."""
-    cached = png.with_name(png.stem + ".vote.json")
+    """BOX by majority vote over BOX_VOTES reads of the board (native size —
+    the upscaled first attempt is what read row numbers as names). Its own
+    cache name, so that attempt's collapsed readings are never reused."""
+    cached = png.with_name(png.stem + ".vote2.json")
     if cached.exists():
         return json.loads(cached.read_text(encoding="utf-8"))
-    from PIL import Image
-    with Image.open(png) as im:
-        im = im.convert("RGB")
-        scale = min(2.0, MAX_W / im.width) if im.width < MAX_W else 1.0
-        if scale > 1.0:
-            im = im.resize((round(im.width * scale), round(im.height * scale)),
-                           Image.LANCZOS)
-        bands = _slice(im)
+    bands = _bands(png)
     reads = [_ask(bands, _BOX_PROMPT.format(n=len(bands)), _BOX_SCHEMA)
              for _ in range(BOX_VOTES)]
     votes: Dict[str, List] = {}
@@ -278,6 +284,8 @@ def _read_box(png: Path) -> dict:
     for rd in reads:
         for row in rd.get("rows") or []:
             key = " ".join(_tokens(row.get("owner") or ""))
+            if not key:
+                continue          # a rank / row number, not a name: never a key
             if key not in votes:
                 votes[key] = []
                 order.append(row.get("owner") or "")
@@ -290,7 +298,8 @@ def _read_box(png: Path) -> dict:
         rows.append({"owner": owner, "rep_count": best if ok else None,
                      "votes": votes[" ".join(_tokens(owner))]})
     data = {"dates_printed": reads[0].get("dates_printed", ""),
-            "rep_count_header": f"Total Rep Count (vote x{BOX_VOTES})",
+            "rep_count_header": f"Total Rep Count (vote x{BOX_VOTES}; section: "
+                                f"{(reads[0].get('section_read') or '')[:60].replace('|', '/')})",
             "rows": rows}
     cached.write_text(json.dumps(data, indent=1), encoding="utf-8")
     return data
