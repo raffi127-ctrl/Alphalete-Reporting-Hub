@@ -968,9 +968,16 @@ def main(argv: Optional[list] = None) -> int:
             # Say plainly that this is a preview — a DM that looks exactly
             # like the real post is otherwise easy to mistake for the feed
             # having already gone live.
-            text = (header + "\n_Preview — this is what would post to "
-                    "{} every morning. Nothing has been posted to the "
-                    "channel._".format(chan_name))
+            # Stamped with build time (Carlos 2026-09-13: four identical
+            # preview parents in one afternoon were indistinguishable in the
+            # DM list — "I don't see anything. Is it in an older thread?").
+            # The real channel post keeps its clean dated header; only DM
+            # previews carry the stamp.
+            text = (header + "\n_Preview built {} — this is what would post "
+                    "to {} every morning. Nothing has been posted to the "
+                    "channel._".format(
+                        dt.datetime.now().strftime("%-I:%M%p").lower(),
+                        chan_name))
         if args.note:
             text = text + "\n" + args.note
         posted, failed_channels = [], []
