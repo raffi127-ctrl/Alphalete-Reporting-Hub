@@ -311,9 +311,21 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     if not args.office:
         return cmd_list()
-    if args.knocks:
-        return cmd_knocks(args.office)
-    return cmd_approve(args.office, args.channel)
+    rc = cmd_knocks(args.office) if args.knocks \
+        else cmd_approve(args.office, args.channel)
+    if rc == 0:
+        # THE HUB CARD READS A CACHE, NOT THE SHEET (a Sheets read at Hub
+        # import hung the whole app). Approving is the only moment an office's
+        # channels or cadence actually change, so refreshing here is what keeps
+        # "Lucy Eco Relay — ICD Offices" honest without anyone remembering to.
+        # Never fatal: the approval already succeeded and must not be undone by
+        # a cache write.
+        try:
+            from automations.icd_alerts import schedule_cache
+            schedule_cache.refresh()
+        except Exception as e:  # noqa: BLE001
+            print("(hub schedule cache not refreshed: %s)" % e)
+    return rc
 
 
 if __name__ == "__main__":

@@ -42,25 +42,122 @@ def _context(p, headless: bool):
     return ctx
 
 
-def _sign_in(page, log=print) -> str:
-    """Sign in, returning the dealer root. Re-raises login trouble as something
-    an owner can act on -- a password change is the common case and reads as a
-    bounce back to the login page, not as an error."""
+def _sign_in_raw(page, log=print) -> str:
+    """The login, with SaraPlus's own exception classes intact.
+
+    UNTRANSLATED ON PURPOSE: _heal_and_login has to tell a stuck profile from
+    a real password demand, and that difference lives in the exception CLASS.
+    Translating here would flatten both into one AccountProblem and make the
+    heal impossible to trigger.
+    """
     cr = C.creds()
+    return S._login(page, cr["email"], cr["password"],
+                    creds_hint="the SaraPlus login saved on this computer",
+                    log=log)
+
+
+def _sign_in(page, log=print, interactive: bool = False) -> str:
+    """Sign in, returning the dealer root, with trouble phrased for an owner.
+
+    INTERACTIVE is kept in the signature because the human paths pass it; it
+    no longer changes the login. It used to carry a passcode prompt, from when
+    /security/ was modelled as an emailed browser challenge; that model is
+    gone [[_heal_and_login]].
+    """
     try:
-        return S._login(page, cr["email"], cr["password"])
+        return _sign_in_raw(page, log=log)
     except S.SaraError as e:
-        msg = str(e)
-        if "still on the login page" in msg:
-            raise AccountProblem(
-                "SaraPlus did not accept that email and password. If you "
-                "recently changed your SaraPlus password, open the alerts app "
-                "and enter the new one.")
-        raise AccountProblem(
-            "Could not finish signing in to SaraPlus. %s" % msg)
+        raise _as_owner_problem(e) from e
 
 
-def check_account(*, headless: bool = True, log=print) -> Dict:
+def _as_owner_problem(e: Exception) -> "AccountProblem":
+    """Translate SaraPlus's own words into the one action an owner can take.
+
+    The shared messages are written for US -- they name Chrome profiles,
+    set_credentials and password character rules. An ICD in another state can
+    act on exactly two things: re-enter the password, or tell us. So that is
+    all this says.
+    """
+    msg = str(e)
+    change_required = getattr(S, "SaraPasswordChangeRequired", None)
+    wall = getattr(S, "SaraPasswordWall", None)
+    if change_required is not None and isinstance(e, change_required):
+        return AccountProblem(
+            "SaraPlus is asking for a NEW password on this account — it does "
+            "that every few weeks, and it is not a fault.\n\n"
+            "Sign in to SaraPlus in your normal browser, set a new password, "
+            "then open the alerts app and run the password step so this "
+            "computer knows it too.")
+    if wall is not None and isinstance(e, wall):
+        # Should not escape _heal_and_login, which rotates the profile and
+        # retries. If it does, say the true thing rather than blaming the
+        # password -- that mistake cost a day on 2026-09-12.
+        return AccountProblem(
+            "SaraPlus would not open past its Change Password page on this "
+            "computer. Nothing was read and nothing was changed — please tell "
+            "Megan & Eve, this one is ours to fix.")
+    if "still on the login page" in msg:
+        return AccountProblem(
+            "SaraPlus did not accept that email and password. If you recently "
+            "changed your SaraPlus password, open the alerts app and enter "
+            "the new one.")
+    return AccountProblem("Could not finish signing in to SaraPlus. %s" % msg)
+
+
+def _heal_and_login(p, headless: bool, log=print):
+    """Open a context, sign in, and HEAL a stuck Chrome profile by itself.
+
+    Returns (ctx, page, base). The caller owns ctx and must close it.
+
+    WHY THIS IS NOT saraplus.login_healing, which does the same job: that one
+    opens its own context, and this one has to attach the red DO-NOT-TOUCH
+    banner BEFORE the login page loads. Attaching it afterwards would leave
+    the sign-in -- the exact moment somebody is tempted to "help" by typing
+    their password or clearing Cloudflare -- as the one unbannered page.
+
+    The heal itself is the shared rule, and the reasoning belongs to
+    saraplus._stuck_profile_error: SaraPlus's Change Password page is usually
+    a WEDGED BROWSER PROFILE, not an expired account, and throwing the profile
+    away and trying once more is what tells the two apart. An ICD laptop is
+    the best possible place for that to happen by itself -- nobody is sitting
+    there, and the alternative is an office silently dark until somebody
+    notices.
+    """
+    def _open():
+        ctx = _context(p, headless)
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            return ctx, page, _sign_in_raw(page, log=log)
+        except Exception:
+            try:
+                ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+            raise
+
+    wall = getattr(S, "SaraPasswordWall", None)
+    try:
+        return _open()
+    except S.SaraError as first:
+        if wall is None or not isinstance(first, wall):
+            raise _as_owner_problem(first) from first
+        log("SaraPlus served its Change Password page -- testing whether it "
+            "is this profile or the account")
+        S.rotate_profile(C.PROFILE_DIR, log=log)
+        try:
+            return _open()
+        except S.SaraError as second:
+            if isinstance(second, wall):
+                # A BRAND-NEW EMPTY PROFILE HIT THE SAME PAGE. That is the one
+                # thing that rules out a wedged profile, so this is the real
+                # every-few-weeks reset and it needs the owner, not us.
+                raise _as_owner_problem(
+                    S.SaraPasswordChangeRequired(str(second))) from second
+            raise _as_owner_problem(second) from second
+
+
+def check_account(*, headless: bool = True, log=print,
+                  interactive: bool = False) -> Dict:
     """STEP ONE of the app: can this login actually read reports?
 
     Answers, read-only, in a single pass: does the login work, does this
@@ -73,10 +170,8 @@ def check_account(*, headless: bool = True, log=print) -> Dict:
     from patchright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        ctx = _context(p, headless)
+        ctx, page, base = _heal_and_login(p, headless, log=log)
         try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = _sign_in(page, log=log)
             log("signed in: %s" % base)
 
             # The Reporting Hub is a SIBLING of DealerPages, not a child. A bad
@@ -130,10 +225,8 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
 
     day = day or C.today()
     with sync_playwright() as p:
-        ctx = _context(p, headless)
+        ctx, page, base = _heal_and_login(p, headless, log=log)
         try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            base = _sign_in(page, log=log)
 
             records = S.parse_records(
                 S._run_report(page, base, day, C.SERVICE_INTERNET,

@@ -81,7 +81,8 @@ def cmd_set_login(headless: bool = True) -> int:
         C.save_creds(email, password)
         _log("checking it against SaraPlus...")
         try:
-            result = sara_read.check_account(headless=headless, log=_log)
+            result = sara_read.check_account(headless=headless, log=_log,
+                                         interactive=True)
             ok = result.get("ok")
         except sara_read.AccountProblem as e:
             ok, result = False, {"message": str(e)}
@@ -112,7 +113,8 @@ def cmd_set_login(headless: bool = True) -> int:
 
 def cmd_check(headless: bool) -> int:
     try:
-        result = sara_read.check_account(headless=headless, log=_log)
+        result = sara_read.check_account(headless=headless, log=_log,
+                                         interactive=True)
     except sara_read.AccountProblem as e:
         print("\n%s" % e)
         return 1

@@ -522,6 +522,101 @@ def _tableau_box_card() -> dict:
             for o in _sp.ORGS
         ],
     }
+# --------------------------------------------------------------------------
+# LUCY ECO RELAY -- the enrolled-office roster AND each office's own posting
+# schedule. Hours and timezone come from the registry the poster iterates
+# (automations.icd_alerts.offices); the CADENCE does not live in code at all --
+# each owner picks it during setup and it is stored on the relay workbook, so
+# it has to be read from there.
+#
+# READ FROM A CACHE FILE, NEVER FROM SHEETS. This is import-time code in the
+# Hub, and a Sheets round trip here hung the whole app on a cold auth. The
+# cache is refreshed by automations.icd_alerts.schedule_cache.
+# --------------------------------------------------------------------------
+_ICD_SCHED_CACHE = Path("output") / ".icd_relay_schedule.json"
+
+
+def _icd_hm12(text: str) -> str:
+    """'13:30' -> '1:30 PM'. Built by hand, not strftime: %-I is glibc-only and
+    every report here has to run on Windows too."""
+    try:
+        h, m = [int(x) for x in str(text).split(":")[:2]]
+    except Exception:  # noqa: BLE001
+        return str(text)
+    ampm = "AM" if h < 12 else "PM"
+    h12 = h % 12 or 12
+    return "%d:%02d %s" % (h12, m, ampm)
+
+
+def _icd_cadence_label(minutes) -> str:
+    try:
+        n = int(minutes or 0)
+    except Exception:  # noqa: BLE001
+        return "on its own schedule"
+    if n == 0:
+        # cadence_min 0 is the FIXED-SLOT choice, not "never" [[knocks_post]].
+        return "at 2:00 PM · 5:15 PM · 9:00 PM"
+    if n == 60:
+        return "once an hour"
+    return "every %d minutes" % n
+
+
+def _icd_schedule_by_office() -> dict:
+    """{office_key: {'alerts': [names], 'knocks': [[name, cadence_min]]}}.
+
+    CACHE-ONLY, AND DELIBERATELY SO. This runs at Hub import. A Sheets round
+    trip here hung the Hub for minutes on a cold auth when it was first tried
+    (2026-09-12) -- every card in the app waiting on one card's detail line.
+    The cache is refreshed out of band by
+
+        python -m automations.icd_alerts.schedule_cache --refresh
+
+    and a missing cache costs this card its cadence line, nothing else.
+    """
+    import json as _json
+    try:
+        return _json.loads(_ICD_SCHED_CACHE.read_text())
+    except Exception:  # noqa: BLE001 — no cache yet is not a failure
+        return {}
+
+
+def _icd_relay_roster() -> str:
+    try:
+        from automations.icd_alerts import offices as _icd
+        rows = _icd.active()
+    except Exception:  # noqa: BLE001
+        return ("**•** Roster unavailable — read the **Office Channels** tab "
+                "of the *Lucy Access App* workbook.")
+    if not rows:
+        return "**•** No offices enrolled yet."
+
+    sched = _icd_schedule_by_office()
+    out = []
+    for o in rows:
+        s = sched.get(o.key) or {}
+        out.append("**• %s — %s**" % (o.owner, o.label))
+
+        alerts = s.get("alerts") or []
+        out.append("   ◦ Credit checks & sales → %s, within a few minutes"
+                   % (", ".join(alerts) if alerts
+                      else "_no channel approved yet_"))
+
+        kn = s.get("knocks") or []
+        if kn:
+            out.append("   ◦ Knock boards → %s"
+                       % " · ".join("%s %s" % (name, _icd_cadence_label(cad))
+                                    for name, cad in kn))
+        else:
+            out.append("   ◦ Knock boards → _none approved yet_")
+
+        sat = ("Sat %s–%s" % (_icd_hm12(o.sat_start), _icd_hm12(o.sat_end))
+               if o.saturday else "no Saturday")
+        out.append("   ◦ Only posts M–F %s–%s · %s · %s"
+                   % (_icd_hm12(o.day_start), _icd_hm12(o.day_end), sat,
+                      o.timezone.split("/")[-1].replace("_", " ")))
+    return "\n".join(out)
+
+
 AUTOMATED_REPORTS = [
     # Intraday knock boards — its own LaunchAgent (com.alphalete.knocks-intraday)
     # ticking every 5 min, NOT the 4am batch, so self_scheduled puts it under
@@ -646,6 +741,96 @@ AUTOMATED_REPORTS = [
         "post_run": {
             "message_success": "✅ Intraday Knocks — every due office posted.",
             "message_failed": "❌ Intraday Knocks failed — see the log above.",
+        },
+    },
+    # 🏢 Other Offices — LUCY ECO RELAY. The ICD-laptop ecosystem: an office
+    # reads its OWN SaraPlus and Ownerville with its OWN credentials and relays
+    # COUNTS ONLY to the relay workbook; Lucy 3 reads that and does the posting.
+    #
+    # CARD ID IS LOAD-BEARING. deploy/icd_alerts_poster.sh publishes under
+    # report_id `icd_alerts_poster`, which hub_publish maps to `icd-alerts-poster`
+    # -- this id. Rename either side and the poster's runs file themselves under
+    # a library card of its own and this one reads "no run logged" forever.
+    {
+        "id": "icd-alerts-poster",
+        "name": "Lucy Eco Relay — ICD Offices 🛰️",
+        "category": "🏢 Other Offices",
+        "creator": "Megan & Claude",
+        "emoji": "🛰️",
+        # Alphalete red — this is the ICD-facing ecosystem, not an internal report.
+        "color": "#B91C1C",
+        # Lucy 3 HOLDS LUCY REPORTING'S SLACK USER TOKEN, and that is the whole
+        # reason this runs there. post.py refuses to --send unless auth_test()
+        # returns Lucy Reporting, so a wrong box fails loudly rather than
+        # posting every ICD's alerts under Megan's name.
+        "assignees": ["Lucy 3"],
+        "run_machine": "Lucy 3",
+        # NO run_rerun_id ON PURPOSE. The only registered action is
+        # install_icd_alerts_poster_agent, which reinstalls the LaunchAgent --
+        # not a re-run of the report. A button that silently reinstalls when
+        # somebody means "post now" is worse than no button.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "8:00 AM",
+            "time_label": "every 2 min · 8 AM–11 PM · Mon–Sat",
+            "estimated_minutes": 1,
+        },
+        "description": (
+            "Credit-check alerts, sales and knock boards for ICD offices that "
+            "are NOT on our Slack workspace tooling — each one running on the "
+            "office's own laptop, under the office's own logins.\n\n"
+            "**Enrolled right now:**\n" + _icd_relay_roster() + "\n\n"
+            "An office enrolls itself from a one-line install and then "
+            "*requests* its channels; nothing posts anywhere until a human "
+            "approves that request on the **Office Channels** tab."
+        ),
+        "breakdown": (
+            "HOW IT WORKS\n"
+            "**•** The ICD's laptop signs in to **their** SaraPlus and "
+            "**their** Ownerville, every few minutes, and relays **counts "
+            "only** — names and numbers, no credentials — to the *Lucy Access "
+            "App* workbook.\n"
+            "**•** **No Slack token is ever on an ICD laptop.** Lucy 3 reads "
+            "the workbook and does all the posting, which is what keeps the "
+            "ecosystem ours to control and to fix remotely.\n"
+            "**•** Their SaraPlus and Ownerville passwords never leave their "
+            "machine. We cannot read them, and do not want to.\n\n"
+            "WHAT EACH OFFICE GETS\n"
+            "**•** **Credit checks** — the same 🔍 line the AO room gets, "
+            "within a few minutes of the check.\n"
+            "**•** **Sales** — the same hype lines, off the same arithmetic as "
+            "the AO board.\n"
+            "**•** **Knocks & Dispositions boards** on the office's own "
+            "cadence (15 / 30 / 60 minutes, or the fixed 2 PM · 5:15 PM · "
+            "9 PM slots), inside that office's own field hours.\n"
+            "**•** Boards carry **Chan's last week** as a comparison line — "
+            "his numbers cannot be pulled live from a relay laptop, so they "
+            "come from a cache warmed once a day.\n\n"
+            "WHAT KEEPS IT HONEST\n"
+            "**•** **Counts only ever go up.** The first relay of a day sets a "
+            "baseline, so enrolling mid-afternoon never fires forty alerts for "
+            "checks that happened before we were watching.\n"
+            "**•** **Nothing posts unapproved.** An office that has requested "
+            "channels but not been approved is held, and the waiting request "
+            "is announced in the corrections channel.\n"
+            "**•** **A quiet laptop is chased, not ignored.** An office that "
+            "stops relaying gets its owner DMed every 30 minutes between 11 AM "
+            "and 9 PM their time, and the corrections channel is told. Only "
+            "offices that have EVER relayed can go quiet, so a newly-enrolled "
+            "office is never accused of being down.\n"
+            "**•** **An office that enrolls here is dropped** from the 9 PM "
+            "Intraday Knocks roster, so nobody gets the same board twice.\n"
+            "**•** **The poster refuses to post as the wrong identity** — if "
+            "Lucy 3's Slack token is not Lucy Reporting, it sends nothing.\n\n"
+            "WHEN IT GOES RED\n"
+            "**•** It publishes only on a tick that actually did something — "
+            "posted, nudged, or failed. A quiet tick is not a run, so the card "
+            "does not flicker green every two minutes on an empty Sunday."
+        ),
+        "post_run": {
+            "message_success": "✅ Lucy Eco Relay — every enrolled office is current.",
+            "message_failed": "❌ Lucy Eco Relay failed — see the log above.",
         },
     },
     # 🏢 Office Operations — New-Hire Swag Texts. Renders a custom upload →
