@@ -46,9 +46,10 @@ INK_ON = {"green": "#ffffff", "yellow": "#000000", "red": "#ffffff"}
 NAVY = "#1f3b64"
 GREY = "#ededed"
 
-ACTIVATIONS_LINE = (":zap: BOX Activation Rates — accepted by supplier over "
-                    "all sales, by how long ago the sale was made (0-30 / "
-                    "31-60 days)")
+# Just the name (Carlos 2026-09-13: "It can just say 'Box activation rates.'
+# That's it.") — the image's own title already says the rest, and the caption
+# repeating it read as saying it twice.
+ACTIVATIONS_LINE = ":zap: BOX Activation Rates (0-30 / 31-60 days)"
 
 
 def _is_activated(row) -> bool:
