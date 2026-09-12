@@ -14,7 +14,7 @@ REM reads the errorlevel from BEFORE the block and silently picks the wrong
 REM answer. goto labels have no such trap. Blocks are also the construct that
 REM misbehaves if the file ever loses its CRLF line endings, which is why
 REM package.py writes this file as CRLF.
-cd /d "%~dp0"
+cd /d "%~dp0program files"
 
 echo.
 echo Starting Lucy Reports setup...

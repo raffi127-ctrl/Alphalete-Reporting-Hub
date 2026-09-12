@@ -28,6 +28,7 @@ from typing import Optional
 
 from automations.icd_alerts import offices as O
 
+APP_SUBDIR = "program files"        # a name that says "not for you"
 REPO = Path(__file__).resolve().parents[2]
 DIST = Path(__file__).resolve().parent / "dist"
 OUT = REPO / "output" / "icd-alerts"
@@ -56,9 +57,19 @@ BUNDLE_INIT = '''"""Alphalete Alerts."""
 '''
 
 GATEKEEPER = """
-IF YOUR MAC SAYS IT "CANNOT BE OPENED"
-    That is macOS being careful about files from the internet. Right-click
-    (or control-click) the installer, choose Open, then click Open again.
+IF NOTHING HAPPENS WHEN YOU DOUBLE-CLICK IT
+    That is macOS being careful about files from the internet, not
+    something being wrong. Two ways past it -- try the first, and if your
+    Mac is a recent one, use the second.
+
+    1. Right-click (or control-click) the installer, choose Open, then
+       click Open again.
+
+    2. Double-click it once and let it be blocked. Then open
+       System Settings > Privacy & Security, scroll down, and you will
+       see a line about "Install Lucy Reports" with an "Open Anyway"
+       button. Click that, then double-click the installer again.
+
     You only have to do this once.
 """
 
@@ -76,6 +87,9 @@ WHAT THIS IS
 
 TO INSTALL
 {how}
+
+    (The "program files" folder next to it is the program itself -- you
+    never need to open it.)
 
     Boxes will pop up asking for your SaraPlus login and your OwnerVille
     login, and where you would like things posted. That is everything it
@@ -127,15 +141,22 @@ def build(office_key: str, relay_key: Optional[str] = None,
         shutil.rmtree(folder)
     folder.mkdir(parents=True)
 
+    # EVERYTHING EXCEPT THE INSTALLER GOES IN A SUBFOLDER. An owner who
+    # unzipped this saw six items -- ask.py, setup.py, install.json, a folder
+    # called automations -- and told Megan "nothing happened, there are just a
+    # bunch of files" (2026-09-12, live on the enrolment call). The installer
+    # has no icon and does not stand out among them. Two items, one of which
+    # says Install, is a folder somebody can act on.
+    app = folder / APP_SUBDIR
     for rel in AGENT_FILES:
-        dest = folder / rel
+        dest = app / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO / rel, dest)
-    (folder / "automations" / "__init__.py").write_text(BUNDLE_INIT)
-    (folder / "automations" / "shared" / "__init__.py").write_text("")
+    (app / "automations" / "__init__.py").write_text(BUNDLE_INIT)
+    (app / "automations" / "shared" / "__init__.py").write_text("")
 
     for name in ("setup.py", "ask.py"):
-        shutil.copy2(DIST / name, folder / name)
+        shutil.copy2(DIST / name, app / name)
 
     if platform in ("mac", "both"):
         shutil.copy2(DIST / "Install Lucy Reports.command",
@@ -150,7 +171,7 @@ def build(office_key: str, relay_key: Optional[str] = None,
         (folder / "Install Lucy Reports.bat").write_bytes(
             bat.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8"))
 
-    (folder / "install.json").write_text(json.dumps({
+    (app / "install.json").write_text(json.dumps({
         "office_key": office.key,
         "owner": office.owner,
         "relay_url": O.RELAY_URL,

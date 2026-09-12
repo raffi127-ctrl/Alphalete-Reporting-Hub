@@ -3,7 +3,16 @@
 #
 # THIS FILE FINDS A PYTHON AND GETS OUT OF THE WAY. All the real work is in
 # setup.py, shared with the Windows installer, so a fix lands on both.
-cd "$(dirname "$0")" || exit 1
+# The installer sits ABOVE the code, so an owner opening the folder sees two
+# things and one of them says Install.
+cd "$(dirname "$0")/program files" || {
+  echo "This installer is missing its program files folder."
+  echo "Please ask the reporting team to send the whole folder again."
+  echo ""
+  echo "Press return to close."
+  read -r _
+  exit 1
+}
 
 # PAINT THE WINDOW BEFORE ANYTHING ELSE. A .command opens Terminal in whatever
 # profile the owner happens to use, and a raw black box in front of somebody
