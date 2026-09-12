@@ -59,6 +59,30 @@ class SaraError(RuntimeError):
     pass
 
 
+# The forced-password-change page. SaraPlus serves it UNDER the dealer session
+# root -- https://www.saraplus.com/e/(S(<session>))/Security/ResetPassword.aspx
+# -- which means the credentials were ACCEPTED and a session was minted; the
+# app then refused to hand over any other page until the password is changed.
+# So this is not a bad password, not a changed selector, and not something a
+# retry fixes: every pass lands here until a human sets a new one (first seen
+# 2026-09-12, after 3 straight failed sweeps reported only "landed somewhere
+# unexpected", which reads like a site change and sent the first look at it in
+# the wrong direction).
+RESET_PATH = "/Security/ResetPassword.aspx"
+
+
+def _reset_password_error(url: str, email: str, creds_hint: str,
+                          set_cmd: str) -> "SaraError":
+    return SaraError(
+        "SaraPlus is FORCING A PASSWORD CHANGE on %s -- the login worked and "
+        "landed on %s. Nothing is wrong with this code and a retry cannot "
+        "clear it: SaraPlus serves that page instead of every other page until "
+        "somebody signs in as this account by hand and sets a new password. "
+        "Fix: set the new password at %s in a browser, then put it on the "
+        "runner with `%s` (it writes %s). Nothing was read and nothing was "
+        "written." % (email, url, LOGIN_URL, set_cmd, creds_hint))
+
+
 def _int(v) -> int:
     try:
         return int(str(v).strip().replace(",", "") or 0)
@@ -102,6 +126,10 @@ def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
             "SaraPlus login failed -- still on the login page after submit. "
             "Check the credentials in %s (a password change is the usual "
             "cause); nothing was written." % creds_hint)
+    if RESET_PATH.lower() in url.lower():
+        raise _reset_password_error(
+            url, email, creds_hint,
+            "python -m automations.alphalete_sales_board.set_credentials")
     if "DealerPages/" not in url:
         raise SaraError("logged in but landed somewhere unexpected: %s" % url)
     # The DEALER ROOT -- everything up to and including the session segment,
