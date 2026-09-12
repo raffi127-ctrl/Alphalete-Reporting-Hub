@@ -1,0 +1,14 @@
+# The files that make up the Lucy Reports agent, one per line.
+# Generated from package.AGENT_FILES -- see test_knocks.UpdateScriptTests.
+automations/icd_alerts/__init__.py
+automations/icd_alerts/config.py
+automations/icd_alerts/relay.py
+automations/icd_alerts/sara_read.py
+automations/icd_alerts/state.py
+automations/icd_alerts/run.py
+automations/icd_alerts/ov_read.py
+automations/shared/ownerville_knocks.py
+automations/shared/saraplus.py
+automations/shared/credit_check_line.py
+automations/shared/sale_hype.py
+automations/shared/browser_banner.py

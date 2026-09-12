@@ -420,12 +420,23 @@ class UpdateScriptTests(unittest.TestCase):
         from pathlib import Path
         return (Path(__file__).resolve().parent / "update.sh").read_text()
 
-    def test_it_lists_exactly_what_the_package_ships(self):
+    def test_the_manifest_matches_what_the_package_ships(self):
+        from pathlib import Path
         from automations.icd_alerts.package import AGENT_FILES
-        listed = set(re.findall(r'^  "(automations/[^"]+)"$',
-                                self._script(), re.M))
-        self.assertEqual(listed, set(AGENT_FILES),
-                         "update.sh has drifted from the package")
+        txt = (Path(__file__).resolve().parent / "agent_files.txt").read_text()
+        listed = [l.strip() for l in txt.splitlines()
+                  if l.strip() and not l.startswith("#")]
+        self.assertEqual(set(listed), set(AGENT_FILES),
+                         "agent_files.txt has drifted from the package")
+
+    def test_the_script_carries_no_baked_in_list(self):
+        """A list inside the script goes stale behind GitHub's CDN cache, and
+        a stale update reports success while installing the wrong thing."""
+        self.assertNotIn('FILES=(', self._script())
+        self.assertIn("agent_files.txt", self._script())
+
+    def test_every_fetch_busts_the_cache(self):
+        self.assertIn("?t=$BUST", self._script())
 
     def test_it_refuses_when_lucy_is_not_installed(self):
         self.assertIn("is not installed on this computer", self._script())
