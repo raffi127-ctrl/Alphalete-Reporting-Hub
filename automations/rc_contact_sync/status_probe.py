@@ -409,6 +409,61 @@ def _dump_customer_view(ctx, page, links: List[Dict], log) -> Optional[bytes]:
         return None
 
 
+def _click_in_card(page, oid: str, pattern: str, log) -> bool:
+    """Click a control inside the customer-card IFRAME (the card's buttons —
+    Order History, Order Summary — live in CustomerRecords.aspx, not the top
+    page). The frame is identified by carrying THIS order's id."""
+    for fr in page.frames:
+        if fr == page.main_frame:
+            continue
+        try:
+            txt = fr.evaluate("() => (document.body.innerText || '')") or ""
+        except Exception:  # noqa: BLE001
+            continue
+        if oid not in txt:
+            continue
+        try:
+            hit = fr.evaluate(
+                """(pat) => {
+                     const re = new RegExp(pat, 'i');
+                     const els = [...document.querySelectorAll(
+                       'a,input[type=button],input[type=submit],button')];
+                     const e = els.find(x =>
+                       re.test((x.innerText || x.value || '').trim()));
+                     if (!e) return '';
+                     e.click();
+                     return ((e.innerText || e.value || '').trim()
+                             + ' [' + (e.id || e.tagName) + ']');
+                   }""", pattern)
+        except Exception:  # noqa: BLE001
+            hit = ""
+        if hit:
+            log("  clicked %r in the card" % hit)
+            return True
+    log("  (no /%s/ control found in the card)" % pattern)
+    return False
+
+
+def _dump_all_frames(page, label: str, log, cap: int = 200) -> None:
+    for fr in page.frames:
+        if fr == page.main_frame:
+            continue
+        try:
+            txt = fr.evaluate("() => (document.body.innerText || '')") or ""
+        except Exception:  # noqa: BLE001
+            continue
+        if txt.strip():
+            log("-- %s frame %s --" % (label, (fr.url or "")[:110]))
+            kept = 0
+            for ln in txt.splitlines():
+                if ln.strip():
+                    log("   | " + ln.strip()[:180])
+                    kept += 1
+                    if kept >= cap:
+                        log("   | ... (truncated at %d lines)" % cap)
+                        break
+
+
 def _view_orders_dump(page, ctx, view_orders: List[str], log) -> List[bytes]:
     """Open each order's View Customer card off the loaded grid and dump it —
     the per-LINE status hunt (does the card say WHICH lines are active?)."""
@@ -456,6 +511,16 @@ def _view_orders_dump(page, ctx, view_orders: List[str], log) -> List[bytes]:
             shots.append(page.screenshot(full_page=True))
         except Exception as e:  # noqa: BLE001
             log("(screenshot failed: %s)" % type(e).__name__)
+        # The per-line ACTIVATION DATE hunt (Carlos 2026-09-12: "it should say
+        # what the activation date for each individual line is"): the card's
+        # Order History button should open the status-change log.
+        if _click_in_card(page, oid, "order history", log):
+            page.wait_for_timeout(3000)
+            _dump_all_frames(page, "[%s after Order History]" % oid, log)
+            try:
+                shots.append(page.screenshot(full_page=True))
+            except Exception:  # noqa: BLE001
+                pass
         closed = page.evaluate(
             """() => {
                  const els = [...document.querySelectorAll('a')];
@@ -501,7 +566,9 @@ def run(day: dt.date, rows_n: int, tab_arg: str, headless: bool,
             _dump_tab_strip(page, log)
 
             if tab_arg:
-                _generic_tab_dump(page, tab_arg, log)
+                for one in [t.strip() for t in tab_arg.split(",") if t.strip()]:
+                    log("===== tab index %s =====" % one)
+                    _generic_tab_dump(page, one, log)
                 grid_png = page.screenshot(full_page=True)
             elif view_orders:
                 start, end = export_range
