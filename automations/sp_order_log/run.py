@@ -133,11 +133,16 @@ def _map_status(raw: str, active_date: str, cancel_date: str):
         return ("Posted", active_date, active_date)
     if low.startswith("partial - active"):
         return ("Posted - Partial", active_date, active_date)
-    if low in ("cancelled", "canceled"):
-        # The cancel date doubles as the "posted" date so payout counts the
-        # cancel in the week it happened — the Tableau version's semantics
-        # ("Cancelled counts in the week it posted").
-        return (s, cancel_date, cancel_date)
+    # Activated-then-churned orders ("Active/Cancelled", "Active/Disconnected")
+    # get the plain terminal word — exactly what Tableau's log shows for them,
+    # and the only spelling payout's cancelled bucket matches. The date is the
+    # cancel date so the loss lands in the week it happened.
+    if low in ("cancelled", "canceled", "active/cancelled", "active/canceled"):
+        d = cancel_date or active_date
+        return ("Cancelled", d, d)
+    if low in ("disconnected", "active/disconnected"):
+        d = cancel_date or active_date
+        return ("Disconnected", d, d)
     return (s, "", "")
 
 
