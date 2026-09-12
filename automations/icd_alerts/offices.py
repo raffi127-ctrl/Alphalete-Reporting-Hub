@@ -82,6 +82,17 @@ OFFICES: Dict[str, AlertOffice] = {
         channels=(),
         timezone="America/Chicago", active=True,
     ),
+    "cyrus": AlertOffice(
+        key="cyrus", owner="Cyrus Wade", label="Cyrus's Local Office",
+        # UNROUTED until he asks and Megan approves, same as Kash.
+        # #ambient-sales-1 (C0B1DHEFVLH, private, 53 people) is where
+        # office_metrics already posts his daily metrics, so Lucy is a member
+        # and it is the obvious candidate -- but "obvious to us" is not the
+        # same as "what he wants his credit-check pings in", and the installer
+        # asks him.
+        channels=(),
+        timezone="America/Chicago", active=True,     # Tyler, TX
+    ),
 }
 
 
