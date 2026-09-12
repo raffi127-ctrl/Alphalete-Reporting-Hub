@@ -224,11 +224,22 @@ def _clock(now: dt.datetime) -> str:
 
 
 def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
-    from automations.total_knocks import pull as TP
-    knocks = sum(int(r.get(TP.COL_TOTAL_KNOCKS) or 0) for r in rows)
-    return ("*%s — KNOCKS & DISPOSITIONS*\n%d rep(s) · %s knocks\n"
-            "_as of %s their time_"
-            % (office.label, len(rows), "{:,}".format(knocks), _clock(now)))
+    """THE SAME HEADER RAF'S BOARD CARRIES (Megan 2026-09-12).
+
+    Taken from gap_alerts rather than retyped, so the two cannot drift: one
+    board in two rooms with two different headers is the kind of difference
+    somebody has to explain.
+
+    No office name, and no rep/knock summary. Raf's has neither -- the channel
+    IS the office, so naming it in the header is telling a room whose room it
+    is, and the counts are in the image directly beneath.
+    """
+    try:
+        from automations.gap_alerts.config import CARD_TITLE
+    except Exception:  # noqa: BLE001
+        CARD_TITLE = "KNOCKS & DISPOSITIONS"
+    return "*%s — %s*  ·  ranked by total knocks" % (CARD_TITLE.title(),
+                                                     _clock(now))
 
 
 def _upload(channel_id: str, boards, comment: str) -> None:

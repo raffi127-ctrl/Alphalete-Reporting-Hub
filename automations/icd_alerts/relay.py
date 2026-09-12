@@ -33,7 +33,8 @@ from typing import Dict, Optional
 from automations.icd_alerts import config as C
 
 TIMEOUT_SECONDS = 30
-AGENT_VERSION = "icd_alerts/1"
+AGENT_VERSION = "icd_alerts/2"          # 2 = carries sales
+SALE_METRICS = ("Int", "Int Up", "DTV", "NL")
 MAX_REDIRECTS = 5
 
 
@@ -91,13 +92,18 @@ def _endpoint() -> Dict[str, str]:
 
 
 def payload(records: Dict[str, int], day: dt.date,
-            rec: Optional[Dict] = None) -> Dict:
+            rec: Optional[Dict] = None, sales: Optional[Dict] = None) -> Dict:
     rec = rec or _endpoint()
     body = {
         "office_key": rec["office_key"],
         "key": rec["relay_key"],
         "day": day.isoformat(),
         "records": {str(k): int(v) for k, v in sorted(records.items())},
+        # {REP: {Int, Int Up, DTV, NL}} -- the same four numbers the AO board
+        # keeps. Sent as the totals so far today, like the credit checks: what
+        # is NEW is worked out on our side, where the last-posted state lives.
+        "sales": {str(k): {m: int(v.get(m, 0) or 0) for m in SALE_METRICS}
+                  for k, v in sorted((sales or {}).items())},
         "agent": AGENT_VERSION,
         # The laptop's own clock, so a machine that has been asleep is visible
         # as a stale reading rather than looking like a quiet office.
@@ -234,16 +240,18 @@ def send_knocks(rows, day: Optional[dt.date] = None, *, time_tracker=None,
 
 
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
-         dry_run: bool = False, log=print) -> Dict:
+         sales: Optional[Dict] = None, dry_run: bool = False,
+         log=print) -> Dict:
     """POST one sweep's totals. Returns the decoded reply, or raises RelayError
     with something an owner can act on."""
     day = day or C.today()
     rec = _endpoint()
-    body = payload(records, day, rec)
+    body = payload(records, day, rec, sales=sales)
 
     if dry_run:
-        log("dry run -- would send %d rep(s) for %s to %s"
-            % (len(body["records"]), body["day"], rec["relay_url"]))
+        log("dry run -- would send %d rep(s) with credit checks and %d with "
+            "sales for %s" % (len(body["records"]), len(body["sales"]),
+                              body["day"]))
         return {"ok": True, "dry_run": True}
 
     data = json.dumps(body).encode("utf-8")
@@ -281,5 +289,6 @@ def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
     if not out.get("ok"):
         raise RelayError("The reporting server did not accept the update: %s"
                          % str(out.get("error") or "no reason given"))
-    log("sent %d rep(s) for %s" % (len(body["records"]), body["day"]))
+    log("sent %d rep(s) with credit checks, %d with sales, for %s"
+        % (len(body["records"]), len(body["sales"]), body["day"]))
     return out

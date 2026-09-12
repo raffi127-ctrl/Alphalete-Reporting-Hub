@@ -81,7 +81,8 @@ def cmd_check(headless: bool) -> int:
 
 def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
     try:
-        current = sara_read.read_records(day, headless=headless, log=_log)
+        read = sara_read.read_day(day, headless=headless, log=_log)
+        current, sales = read["records"], read["sales"]
     except sara_read.AccountProblem as e:
         print("\n%s" % e)
         return 1
@@ -105,7 +106,7 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
 
     # The real work. Totals go over; what gets SAID is decided on our side.
     try:
-        R.send(current, day, dry_run=dry_run, log=_log)
+        R.send(current, day, sales=sales, dry_run=dry_run, log=_log)
     except R.RelayError as e:
         # Not fatal and not the owner's problem to solve: SaraPlus is
         # cumulative, so the next run hands over the whole day again.

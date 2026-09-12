@@ -1,9 +1,17 @@
-"""Log into THIS machine's SaraPlus account and read today's credit checks.
+"""Log into THIS machine's SaraPlus account and read today's numbers.
 
-ONE PASS, not three. The sales board needs the AT&T, All and AT&T-Internet
-grids to fill four measures; a credit-check alert needs only the third. That
-makes an ICD sweep about a third of the work of the Alphalete one -- which
-matters on a laptop somebody is also using.
+THREE PASSES, the same three the AO office makes, because no single service
+filter carries every measure:
+
+  1. 'AT&T'          -> Internet Sales / Internet Upgrades / AIA / Wireless Lines
+  2. 'All'           -> DTV Streaming   (the AT&T-filtered grid always says 0)
+  3. 'AT&T Internet' -> Records, i.e. credit checks
+
+It started as one pass -- credit checks only -- and grew the other two when
+Megan asked for sales as well (2026-09-12: "it should work exactly like the AO
+workspace"). All three run in ONE browser session: the login is the expensive
+part and doing it three times would treble the cost of a sweep that now fires
+every three minutes.
 
 Every selector, column index and row marker comes from
 automations.shared.saraplus. Nothing here re-derives them: every SaraPlus is
@@ -108,10 +116,17 @@ def check_account(*, headless: bool = True, log=print) -> Dict:
                 pass
 
 
-def read_records(day: Optional[dt.date] = None, *, headless: bool = True,
-                 log=print) -> Dict[str, int]:
-    """{UPPERCASE REP NAME: credit checks today} for ONE day."""
+def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
+             log=print) -> Dict:
+    """{'records': {REP: credit checks}, 'sales': {REP: {Int, Int Up, DTV, NL}}}.
+
+    ONE SESSION, THREE PASSES. A failure in the sales half must not cost the
+    credit checks: they are the faster-moving alert and the one this started
+    as, so they are read FIRST and the other two are allowed to come back
+    empty. An office whose grid has no AT&T rows yet still gets its pings.
+    """
     from patchright.sync_api import sync_playwright
+    from automations.shared import sale_hype as H
 
     day = day or C.today()
     with sync_playwright() as p:
@@ -119,13 +134,38 @@ def read_records(day: Optional[dt.date] = None, *, headless: bool = True,
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             base = _sign_in(page, log=log)
-            rows = S._run_report(page, base, day, C.SERVICE_INTERNET,
-                                 S.GRID_INTERNET, log=log)
-            records = S.parse_records(rows)
+
+            records = S.parse_records(
+                S._run_report(page, base, day, C.SERVICE_INTERNET,
+                              S.GRID_INTERNET, log=log))
             log("credit-check pass: %d rep(s)" % len(records))
-            return records
+
+            sales = {}
+            try:
+                agents = S.parse_att(
+                    S._run_report(page, base, day, "AT&T", S.GRID_ATT, log=log))
+                log("AT&T pass: %d rep(s)" % len(agents))
+                dtv = S.parse_dtv(
+                    S._run_report(page, base, day, "All", S.GRID_ALL, log=log))
+                log("All pass: DTV for %d rep(s)" % len(dtv))
+                for a in S.merge_dtv(agents, dtv):
+                    name = S.strip_office(a.get("name"))
+                    if name:
+                        sales[name] = H.metrics_for(a)
+            except Exception as e:  # noqa: BLE001 — credit checks still stand
+                log("sales passes failed (%s) — credit checks are unaffected"
+                    % type(e).__name__)
+
+            return {"records": records, "sales": sales}
         finally:
             try:
                 ctx.close()
             except Exception:  # noqa: BLE001
                 pass
+
+
+def read_records(day: Optional[dt.date] = None, *, headless: bool = True,
+                 log=print) -> Dict[str, int]:
+    """Credit checks only. Kept for `--check` and anything that wants the
+    cheap read."""
+    return read_day(day, headless=headless, log=log)["records"]
