@@ -273,6 +273,36 @@ def order_log_workbook(o: B2BOffice, out_dir: Path, log=print) -> Path:
     return out
 
 
+def revenue_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
+    """The Vantura B2B Revenue Board as the thread's OPENING section (Carlos
+    2026-09-14: "let's make the revenue board number one"). Reuses
+    vantura_revenue_board's own pull -> price -> render pipeline; the file
+    and caption carry the same 'Revenue Board M.D' name its standalone 5:20
+    agent dedups on, so that agent skips instead of double-posting. Raising
+    here lets the runner skip+flag and retry on a later pass (the export can
+    lack yesterday's rows on the earliest run)."""
+    import time as _time
+    from automations.vantura_revenue_board import run as rb
+    upto = dt.date.today() - dt.timedelta(days=1)
+    monday = rb.week_of(upto)
+    src_csv = rb.OUT_DIR / "orderlog_{}_{}.csv".format(monday, upto)
+    if not (src_csv.exists()
+            and src_csv.stat().st_mtime > _time.time() - 3600):
+        from automations.captainship_boards.run import pull_orderlog
+        pull_orderlog(monday, upto, src_csv)
+    per_rep, _unpriced = rb.load_priced(src_csv, monday, upto)
+    if not any(rec["days"].get(upto) for rec in per_rep.values()):
+        raise RuntimeError(
+            "revenue board: export has no rows for {} yet — retry later"
+            .format(upto))
+    rows, office = rb.build_rows(per_rep, monday, upto)
+    out = Path(out_dir) / "Revenue Board {}.{}.png".format(upto.month,
+                                                           upto.day)
+    rb.render(rows, office, monday, upto, out)
+    log("   \u2713 revenue board [carlos]: priced + rendered for the thread")
+    return out
+
+
 def activation_revenue_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     """The Activation Overview's REVENUE TWIN (Carlos 2026-09-14, mirroring
     the Box thread's): same two week tables in dollars — units priced on the

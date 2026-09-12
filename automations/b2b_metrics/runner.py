@@ -106,6 +106,11 @@ def _activation_revenue(o: B2BOffice, out_dir: Path, log, today=None):
     return capture.activation_revenue_image(o, out_dir, log=log)
 
 
+def _revenue_board(o: B2BOffice, out_dir: Path, log, today=None):
+    from automations.b2b_metrics import capture
+    return capture.revenue_board_image(o, out_dir, log=log)
+
+
 def _activation_board(o: B2BOffice, out_dir: Path, log, today=None):
     """#2 Activation Rate — recreated full-height board (every rep) instead of
     Tableau's scroll-clipped Download→Image. Applies to EVERY office that posts
@@ -125,6 +130,11 @@ def _payout(o: B2BOffice, out_dir: Path, log, today=None):
 
 
 ITEMS = [
+    # Carlos-only (rep_boards gate): the Vantura Revenue Board opens his
+    # thread (2026-09-14: "let's make the revenue board number one"); its
+    # standalone 5:20 agent dedups on the same 'Revenue Board M.D' name.
+    dict(id="revenue_board", emoji="\U0001F4B0", title="Revenue Board",
+         capture=_revenue_board),
     dict(id="sales_metrics", emoji="\U0001F4CA", title="Sales Metrics",
          capture=_tableau_shot("sales_metrics")),
     dict(id="activation_rate", emoji="\U000026A1", title="Activation Rate",
@@ -462,17 +472,22 @@ def expected_items(o: B2BOffice) -> list:
     except the ones this office gates out via `skip_views`."""
     from automations.shared import thread_plans as tp
     default = [i for i in ITEMS if i["id"] not in o.skip_views
-               and (i["id"] not in ("churn_by_rep", "activation_revenue")
+               and (i["id"] not in ("churn_by_rep", "activation_revenue",
+                                    "revenue_board")
                     or o.rep_boards)]
-    # rep_boards offices (Carlos 2026-09-05: "both those screenshots should
-    # come in back to back"): Activation Rate by Rep moves up to follow
-    # Activation Rate directly.
+    # rep_boards offices post in CARLOS'S ORDER (2026-09-14, dictated in
+    # full): money first, then activations, then churn (customer churn ahead
+    # of the rate boards), then the log. sales_metrics went unmentioned in
+    # his list — kept at #2 rather than silently dropped. Sections not named
+    # here append at the end, so a future ITEMS addition can never vanish.
     if o.rep_boards:
-        ids = [i["id"] for i in default]
-        if "activation_rate" in ids and "activation_by_rep" in ids:
-            abr = default.pop(ids.index("activation_by_rep"))
-            default.insert([i["id"] for i in default].index(
-                "activation_rate") + 1, abr)
+        want = ["revenue_board", "sales_metrics", "order_tiered_bonus",
+                "activation_overview", "activation_revenue",
+                "activation_rate", "activation_by_rep", "customer_churn",
+                "churn_wireless", "churn_by_rep", "order_log",
+                "out_of_bounds"]
+        rank = {sid: i for i, sid in enumerate(want)}
+        default.sort(key=lambda it: rank.get(it["id"], len(want)))
     return tp.resolve_sections("b2b", o.key, ITEMS, default, id_key="id")
 
 
