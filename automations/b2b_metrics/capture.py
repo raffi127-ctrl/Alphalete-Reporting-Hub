@@ -230,8 +230,39 @@ def _order_lines(o: B2BOffice, out_dir: Path, log=print):
     return lines
 
 
+# --- SaraPlus-first for Carlos's order-log + activation sections ------------
+# Carlos 2026-09-14: "have this replace the one that was being made through
+# Tableau." His two order-log-family sections (#8 Order Log, #9 Activation
+# Report Overview) now build from SaraPlus via sp_order_log — near-live data,
+# one unit per LINE, each Active line dated by the flip tracker (verified
+# 2026-09-14: settled-week Posted reconciles DD = Tableau = SaraPlus at 75).
+# CARLOS ONLY: the SaraPlus login is his dealer; other offices keep Tableau.
+# Tableau stays as the FALLBACK on any failure so the thread never goes
+# without its sections (same pattern as the activation board's fallback).
+_SP_ARTIFACTS: dict = {}
+
+
+def _saraplus_artifacts(o: B2BOffice, out_dir: Path, log=print) -> dict:
+    """{"xlsx": Path, "png": Path} from ONE SaraPlus pull per batch/day."""
+    if o.key != "carlos":
+        raise RuntimeError("SaraPlus source is Carlos's dealer login only")
+    key = dt.date.today().isoformat()
+    if key not in _SP_ARTIFACTS:
+        from automations.sp_order_log import run as sp
+        _SP_ARTIFACTS[key] = sp.build_artifacts(Path(out_dir), log=log)
+    return _SP_ARTIFACTS[key]
+
+
 # --- #6 : the order-log workbook -------------------------------------------
 def order_log_workbook(o: B2BOffice, out_dir: Path, log=print) -> Path:
+    if o.key == "carlos":
+        try:
+            path = _saraplus_artifacts(o, out_dir, log=log)["xlsx"]
+            log("   ✓ order log [carlos]: SARAPLUS per-line (near-live)")
+            return path
+        except Exception as e:  # noqa: BLE001 — fall back, never drop the section
+            log("   ⚠ SaraPlus order log failed ({}: {}) — falling back to "
+                "Tableau".format(type(e).__name__, str(e)[:160]))
     from automations.att_order_log import xlsx
     lines = _order_lines(o, out_dir, log=log)
     # Pending-by-Rep tab is derived from the order-log lines themselves (in-flight
@@ -250,6 +281,14 @@ def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     from automations.att_order_log import payout as ap
     from automations.box_order_log import png as bpng
 
+    if o.key == "carlos":
+        try:
+            path = _saraplus_artifacts(o, out_dir, log=log)["png"]
+            log("   ✓ activation overview [carlos]: SARAPLUS per-line tracked")
+            return path
+        except Exception as e:  # noqa: BLE001 — fall back, never drop the section
+            log("   ⚠ SaraPlus activation overview failed ({}: {}) — falling "
+                "back to Tableau".format(type(e).__name__, str(e)[:160]))
     lines = _order_lines(o, out_dir, log=log)
     tables = ap.build_week_tables(lines, dt.date.today())
     # box png's rows use keys: rep / posted / canceled / pending. Map ours.
@@ -257,6 +296,13 @@ def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
         for r in tables[wk]["rows"]:
             r["posted"] = r.pop("activated")
             r["pending"] = r.pop("open")
+        # The renderer's TOTAL strip reads the table's own totals dict since
+        # box png 31ddeb9d — its keys need the same remap or the render
+        # KeyErrors on 'posted'.
+        t = tables[wk].get("totals")
+        if t and "activated" in t:
+            t["posted"] = t.pop("activated")
+            t["pending"] = t.pop("open")
     out = out_dir / "activation_overview.png"
     # Swap the box renderer's column HEADERS to AT&T's for this render — the
     # count key stays "posted" but the header reads "Posted" (Carlos 2026-07-20),

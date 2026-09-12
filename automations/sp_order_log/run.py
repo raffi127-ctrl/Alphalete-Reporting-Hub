@@ -352,16 +352,19 @@ def shape_lines(csv_bytes: bytes, log=print,
 
 # --- the two deliverables -----------------------------------------------------
 
-def build_xlsx(lines, today: dt.date, log=print) -> Path:
+def build_xlsx(lines, today: dt.date, log=print,
+               out_path: Optional[Path] = None) -> Path:
     from automations.att_order_log import xlsx
-    out = OUT_DIR / "SP ATT Order Log {}.xlsx".format(today.strftime("%m-%d-%Y"))
+    out = out_path or (OUT_DIR / "SP ATT Order Log {}.xlsx".format(
+        today.strftime("%m-%d-%Y")))
     xlsx.build(lines, out, today=today)
     log("order log workbook -> %s (%s bytes)"
         % (out.name, "{:,}".format(out.stat().st_size)))
     return out
 
 
-def build_overview_png(lines, today: dt.date, log=print) -> Path:
+def build_overview_png(lines, today: dt.date, log=print,
+                       out_path: Optional[Path] = None) -> Path:
     """The Activation Report Overview, exactly as capture.payout_image builds
     it — same tables, same renderer, same column headers — from these lines."""
     from automations.att_order_log import payout as ap
@@ -378,7 +381,7 @@ def build_overview_png(lines, today: dt.date, log=print) -> Path:
         if t and "activated" in t:
             t["posted"] = t.pop("activated")
             t["pending"] = t.pop("open")
-    out = OUT_DIR / "sp_activation_overview.png"
+    out = out_path or (OUT_DIR / "sp_activation_overview.png")
     saved_cols = list(bpng.COLS)
     bpng.COLS[:] = [
         ("Rep Name", "rep", "left"),
@@ -449,6 +452,70 @@ def _push(path: Path, tab: str, log=print) -> None:
     _upload_bytes(path.read_bytes(), tab, log=log)
 
 
+def track_lines(data: bytes, wl_bytes, today: dt.date, log=print):
+    """The activation-date tracker: fold today's per-line statuses into the
+    state file; a line's date is the day WE first saw it Active (seeded from
+    Tableau's per-line posted history / the order date on adoption).
+    -> (parsed wireless lines, {line key: activation date ISO})."""
+    from automations.sp_order_log import wireless_lines as WL
+
+    wl_parsed: list = []
+    act_dates: Dict[str, str] = {}
+    if wl_bytes:
+        wl_parsed = WL.parse_wireless_xls(wl_bytes)
+        log("wireless report: %d line(s) across %d order(s)"
+            % (len(wl_parsed), len({w["order_id"] for w in wl_parsed})))
+        state = WL.load_state()
+        needs_seed = any(
+            w["line_status"].strip().lower() == "active"
+            and "first_active" not in state.get(WL.line_key(w), {})
+            for w in wl_parsed)
+        seed = WL.build_tableau_seed(log=log) if needs_seed else {}
+        soh_active: Dict[str, str] = {}
+        for row in csv.DictReader(io.StringIO(
+                data.decode("utf-8-sig", errors="replace"))):
+            oid, ad = _get(row, "Order ID"), _get(row, "Wireless Active Date")
+            d = _parse_us_date(ad)
+            if oid and d:
+                soh_active[oid] = d.isoformat()
+        act_dates = WL.update_state(state, wl_parsed, today, seed, soh_active,
+                                    log=log)
+        WL.save_state(WL.prune_state(state, today))
+    else:
+        log("NO wireless per-line report — wireless orders fall back to "
+            "order-level dating")
+    return wl_parsed, act_dates
+
+
+def build_artifacts(out_dir: Optional[Path] = None,
+                    today: Optional[dt.date] = None, log=print) -> Dict[str, Path]:
+    """One-call build for the B2B Metrics runner (Carlos 2026-09-14: 'have
+    this replace the one that was being made through Tableau'): pull
+    SaraPlus, update the line tracker, and write BOTH artifacts under the
+    runner's own filenames. Returns {"xlsx": Path, "png": Path}; raises on
+    any failure so the caller (b2b_metrics.capture) can fall back to the
+    Tableau path and the thread never goes without its sections."""
+    today = today or dt.date.today()
+    _register_colors()
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    start = today - dt.timedelta(days=WINDOW_DAYS)
+    log("SaraPlus pull %s..%s (Customer Type Both)" % (start, today))
+    data, wl_bytes = pull_csv(start, today)
+    (OUT_DIR / "sp_export_{}.csv".format(today.isoformat())).write_bytes(data)
+    wl_parsed, act_dates = track_lines(data, wl_bytes, today, log=log)
+    lines = shape_lines(data, log=log, wl_lines=wl_parsed, act_dates=act_dates)
+    if not lines:
+        raise RuntimeError("no lines shaped from the SaraPlus export")
+    dest = Path(out_dir) if out_dir else OUT_DIR
+    dest.mkdir(parents=True, exist_ok=True)
+    xlsx_path = build_xlsx(
+        lines, today, log=log,
+        out_path=dest / "ATT Order Log {}.xlsx".format(today.strftime("%m-%d-%Y")))
+    png_path = build_overview_png(
+        lines, today, log=log, out_path=dest / "activation_overview.png")
+    return {"xlsx": xlsx_path, "png": png_path}
+
+
 # --- main ---------------------------------------------------------------------
 
 def main(argv=None) -> int:
@@ -496,34 +563,7 @@ def main(argv=None) -> int:
         raw.write_bytes(data)
         print("export saved: %s (%s bytes)" % (raw.name, "{:,}".format(len(data))))
 
-    # The activation-date tracker: fold today's per-line statuses into the
-    # state file; a line's date is the day WE first saw it Active (seeded
-    # from Tableau's per-line posted history / the order date on adoption).
-    wl_parsed: list = []
-    act_dates: Dict[str, str] = {}
-    if wl_bytes:
-        wl_parsed = WL.parse_wireless_xls(wl_bytes)
-        print("wireless report: %d line(s) across %d order(s)"
-              % (len(wl_parsed), len({w["order_id"] for w in wl_parsed})))
-        state = WL.load_state()
-        needs_seed = any(
-            w["line_status"].strip().lower() == "active"
-            and "first_active" not in state.get(WL.line_key(w), {})
-            for w in wl_parsed)
-        seed = WL.build_tableau_seed() if needs_seed else {}
-        soh_active = {}
-        for row in csv.DictReader(io.StringIO(
-                data.decode("utf-8-sig", errors="replace"))):
-            oid, ad = _get(row, "Order ID"), _get(row, "Wireless Active Date")
-            d = _parse_us_date(ad)
-            if oid and d:
-                soh_active[oid] = d.isoformat()
-        act_dates = WL.update_state(state, wl_parsed, today, seed, soh_active)
-        WL.save_state(WL.prune_state(state, today))
-    else:
-        print("NO wireless per-line report — wireless orders fall back to "
-              "order-level dating")
-
+    wl_parsed, act_dates = track_lines(data, wl_bytes, today, log=print)
     lines = shape_lines(data, wl_lines=wl_parsed, act_dates=act_dates)
     if not lines:
         print("no lines shaped — nothing to build")
