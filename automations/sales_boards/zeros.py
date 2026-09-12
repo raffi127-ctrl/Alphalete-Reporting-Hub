@@ -1,11 +1,11 @@
 """Zero Streak screenshots — the escalating 'zeros in a row' callout (Carlos 7/23).
 
-Replaces the VA's manual pass (Jolie's 5:41am "Zero-Sales 7.22" post): she clears
-the board's filters, keeps only reps who rolled a literal 0 yesterday, screenshots
-it, then adds the prior day to the filter and screenshots again, and again.
+Replaces the VA's manual pass (Jolie's 5:41am "Zero-Sales 7.22" post): she cleared
+the board's filters, kept only reps who rolled a literal 0 yesterday, screenshotted
+it, then added the prior day to the filter and screenshotted again, and again.
 
-TWO differences from how she posts it today, both from Carlos's 7/23 Loom:
-  * she ships ONE image per campaign per level (8 files under a 3-bullet caption);
+TWO differences from how she used to post it, both from Carlos's 7/23 Loom:
+  * she shipped ONE image per campaign per level (8 files under a 3-bullet caption);
     he asked for it "organized by campaign" in a SINGLE image per level — the rows
     are already colour-coded by campaign, so one grouped image reads the same and
     turns 8 unlabelled files into a few labelled thread replies.
@@ -316,7 +316,7 @@ def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
         # Levels are nested (everyone at n+1 is also at n), so a level whose roster
         # is identical to the next one deeper says strictly less than that one —
         # post only the deeper. Without this, one rep on a 7-day run would ship
-        # four near-identical images (4/5/6/7 Days). Jolie does the same by hand:
+        # four near-identical images (4/5/6/7 Days). The manual post did the same:
         # her 7.22 post has no BOX 3-day image because it duplicated her BOX 2-day.
         rosters = {}
         for n in range(1, len(days) + 1):

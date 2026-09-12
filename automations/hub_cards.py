@@ -2340,7 +2340,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🐺",
         "color": "#6A4C93",
         "category": "📊 Metrics",
-        "description": "Combines Jolie's two manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales AND #alphalete-lvl1-chat: Daily Production, an All Teams Sales Board, an Entry Level (Wk 1–4) board, a Back-to-Back Zeros callout, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
+        "description": "Combines the two old manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales AND #alphalete-lvl1-chat: Daily Production, an All Teams Sales Board, an Entry Level (Wk 1–4) board, a Back-to-Back Zeros callout, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
         "breakdown": (
             "WHAT IT DOES\n"
             "Takes screenshots the Sales Board tab into clean PNGs and posts "

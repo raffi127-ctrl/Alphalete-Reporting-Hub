@@ -110,7 +110,7 @@ SPECS = [
         # Sorted by the 0-30 Day DISCONNECT COUNT desc (3, 2, 1, 1, ..., 0, 0) —
         # NOT by the percentage. Reading the % column makes it look unsorted; it
         # isn't. The view carries this itself under Carlos's login, so there is
-        # nothing to apply here. Matches Jolie's post row-for-row.
+        # nothing to apply here. Matches the old manual post row-for-row.
         "data_cols": 5,          # 0-30 / 30 / 60 / 90 / 120
     },
 ]
@@ -300,7 +300,7 @@ def _rep_table_header(fr, header: str):
 
 
 def apply_sort(page, header: str, clicks: int = 1, verbose: bool = False) -> bool:
-    """Click a measure column's sort button, high→low — the manual step Jolie does
+    """Click a measure column's sort button, high→low — the step that used to be done
     before she downloads (Megan 2026-07-18: "you just hit the sorter button on
     tableau then take a screenshot and clip it").
 
@@ -309,7 +309,7 @@ def apply_sort(page, header: str, clicks: int = 1, verbose: bool = False) -> boo
     bug behind both Activation Rate and Churn Rate posting wrong.
 
     Session-local: a header sort is not written back to the shared custom view, so
-    Carlos's and Jolie's own Tableau are untouched. Returns False (and leaves the
+    Carlos's own Tableau is untouched. Returns False (and leaves the
     view alone) if the header or its control can't be found — the caller still
     captures, because an unsorted image beats no image.
     """

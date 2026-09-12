@@ -1,6 +1,6 @@
 """Capture a Tableau view as a full-board PNG via Tableau's own Download → Image.
 
-Target framing (Jolie's posts, confirmed 2026-07-04): the ENTIRE dashboard — its
+Target framing (from the manual posts, confirmed 2026-07-04): the ENTIRE dashboard — its
 blue title bar, the filter/parameter row, and every table/rep row — with NO
 browser chrome, NO Tableau viewer toolbar, NO gray canvas, and no clipping.
 That is exactly what Tableau's Download → Image produces, so this module drives
@@ -109,7 +109,7 @@ def _maybe_click_export_dialog(viz, page) -> None:
 
 
 # These pager dashboards stack PAGE 1 (This Week) + a PAGE 2 (Last Week) + maybe a
-# Trends page in one tall dashboard; Download→Image exports all of it. Jolie posts
+# Trends page in one tall dashboard; Download→Image exports all of it. The manual post sent
 # only PAGE 1, so we find the header that starts page 2 and crop the image to just
 # above it. The page-2 header text differs per workbook, so each multi-page
 # tracker sets spec['crop_before'] (a regex); the default catches the "PAGE 2"
@@ -368,7 +368,7 @@ def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14,
                  spec_id: str = "", peel_footer: bool = True) -> None:
     """Trim the bottom of the PNG to the board's real end. Download→Image leaves a
     big blank gap + a small footer ('Last Object Update…', '***CONFIDENTIAL***')
-    below the content that Jolie's posts don't have. Split the image into content
+    below the content the manual posts didn't have. Split the image into content
     BANDS (runs of non-blank rows) and cut just below the last real content.
 
     peel_footer=True (single-page boards): also drop trailing bands under 100px —

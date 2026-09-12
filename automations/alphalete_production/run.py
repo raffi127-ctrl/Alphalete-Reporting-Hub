@@ -1,4 +1,4 @@
-"""Daily 'Alphalete Production' post -- combines Jolie's two manual morning
+"""Daily 'Alphalete Production' post -- combines the two manual morning
 screenshot posts into ONE automated thread in #alphalete-sales (as Lucy).
 
     python -m automations.alphalete_production.run --dry-run            # render PNGs, post nothing

@@ -1,5 +1,5 @@
 """Render Local Office canceled orders as a PNG for the Metrics thread post.
-Mirrors the layout Jolie/Eve post manually: 10 cols, blue header bar,
+Mirrors the layout that used to be posted by hand: 10 cols, blue header bar,
 light-blue highlight on new rows."""
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ ROW_H = 26
 HEADER_H = 50
 PAD = 10
 
-# Display label + min width — order matches Jolie's manual post.
+# Display label + min width — order matches the old manual post.
 COLS = [
     ("Rep", 140),
     ("Customer Name", 140),

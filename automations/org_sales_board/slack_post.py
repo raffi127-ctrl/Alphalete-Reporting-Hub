@@ -15,7 +15,7 @@ Board layout on the live tab (found dynamically, never hardcoded):
   - Each section header row has "RUNNING WEEK TOTALS" in col J and Monday..Sunday
     in cols C..I; the next row holds the day-of-month dates (e.g. 13..19).
   - Rep rows follow (rank in col A, name in col B) until a "Totals" row.
-  - Columns A..L are shown (col M "Org Head" is cropped off, matching Jolie).
+  - Columns A..L are shown (col M "Org Head" is cropped off, as the manual post did).
 
 Gate (LIGHT, Megan 2026-07-18): runs 8:30am CST daily, retrying q25m. Posts
 unless YESTERDAY is entirely empty across every section (board never updated).
@@ -67,7 +67,7 @@ SECTION_GAP = 30    # sections in the org board are ≤20 rows apart; the next
 
 def board_range(g):
     """A{first_header}:L{last_data_row} for the FIRST contiguous run of daily
-    sections (the 8 org-wide product boards Jolie posts) — not the unit-level
+    sections (the 8 org-wide product boards this post carries) — not the unit-level
     breakdown blocks further down the tab."""
     heads = _header_rows(g)
     if not heads:

@@ -2,7 +2,7 @@
 
 Two §2 kinds, both captured as full-board Download→Image PNGs through the shared
 `tableau_screenshots.capture` engine (blue title bar + filter row + every table
-row, no browser/toolbar chrome — the framing Jolie's posts use):
+row, no browser/toolbar chrome — the framing the morning posts use):
 
   • cancel_tableau    (rafael + fiber) — the Internet Cancel Rates (DoD) board.
   • teamstats_tableau (b2b + nds)      — the Captain Team Stats Breakout board,

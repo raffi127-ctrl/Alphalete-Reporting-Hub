@@ -8,7 +8,7 @@ tracker's emoji reacted onto the parent (the header's checkmark-emoji row).
 
 Layout mirrors the Metrics thread (Megan 2026-07-04). The automation creates its
 OWN parent in each channel each morning (find-or-create), posted AS Lucy -- no
-human, no dependency on Jolie's post, not the Metrics thread.
+human, no dependency on any manual post, not the Metrics thread.
 
 Reuses the shared Slack token path (slack_metrics_post._client -> the 'Lucy'
 xoxp user token that daily_metrics uses) and files_upload_v2.
