@@ -276,6 +276,59 @@ def ask_for_login(replace=False):
     return sara
 
 
+def check_ownerville() -> bool:
+    """Sign in to OwnerVille for real, the same way the knocks read will.
+
+    WHY THIS IS WORTH A MINUTE. Setup verified SaraPlus and said "you are good
+    to go" while accepting the OwnerVille password completely untested. Kash's
+    install passed, told him everything was fine, and his knocks board then
+    failed on the first run with "signed in but it did not open a working
+    session" -- a message nobody was watching for, about a login nobody had
+    reason to doubt (2026-09-12).
+
+    It costs about a minute, because the security check on the password step
+    only clears if it is left alone. That is the right trade against an office
+    believing it is set up and silently having no board.
+    """
+    if not (CONFIG_DIR / "ownerville-creds.json").exists():
+        return True                      # they skipped it; nothing to verify
+    say("      checking the OwnerVille login (this one takes a minute)...")
+    proc = subprocess.run(
+        [str(venv_python()), "-m", "automations.icd_alerts.run", "--knocks",
+         "--dry-run"],
+        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode == 0:
+        say("      OwnerVille login works.")
+        return True
+    for line in proc.stdout.decode("utf-8", "replace").splitlines()[-2:]:
+        if line.strip():
+            say(line.strip())
+    return False
+
+
+def ownerville_until_it_works(attempts=2):
+    """Same offer as SaraPlus: told at the moment it can still be fixed."""
+    for attempt in range(1, attempts + 1):
+        if check_ownerville():
+            return True
+        if attempt == attempts:
+            break
+        try:
+            again = ask.choose(
+                "OwnerVille did not accept that username and password.\n\n"
+                "Would you like to type it again?\n\n"
+                "(Your credit-check alerts work either way — this one is only "
+                "for the knocks board.)",
+                ["Yes, let me try again", "Skip it for now"])
+        except ask.Cancelled:
+            return False
+        if not again.startswith("Yes"):
+            return False
+        _ask_one("ownerville-creds.json", "OwnerVille", "username",
+                 "username", "password", required=False, replace=True)
+    return False
+
+
 def login_until_it_works(attempts=3):
     """Ask, check against the real SaraPlus, and offer another go on a typo.
 
@@ -632,6 +685,7 @@ def main() -> int:
 
     step(6, total, "Your logins")
     ok = login_until_it_works()
+    ov_ok = ownerville_until_it_works() if ok else False
 
     step(7, total, "Where your alerts should go")
     ask_for_channel()
@@ -657,7 +711,16 @@ def main() -> int:
                 "during selling hours.\n\n"
                 "The reporting team will confirm which Slack channel your "
                 "alerts go to, and they will start appearing there.\n\n"
-                "You can close the black window behind this box.")
+                "You can close the window behind this box.")
+        if not ov_ok and (CONFIG_DIR / "ownerville-creds.json").exists():
+            # Say which half is short, and say it is not fatal. "All set" over
+            # a broken knocks login is how an office waits a week for a board
+            # that was never coming.
+            done = ("Your credit-check alerts are all set.\n\n"
+                    "The OwnerVille login did not work, so your knocks and "
+                    "dispositions board will not post yet. Everything else is "
+                    "running.\n\nOpen this installer again when you have the "
+                    "right OwnerVille password, or tell the reporting team.")
         say("  %s%sAll set.%s" % (BOLD, GOLD, OFF))
     else:
         done = ("Everything is installed, but signing in to SaraPlus did not "
