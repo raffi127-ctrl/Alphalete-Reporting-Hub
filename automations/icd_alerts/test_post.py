@@ -290,6 +290,11 @@ class NudgeTests(unittest.TestCase):
         # different one in the plist is a promise people check and we break.
         self.assertIn("picks itself up", text)
         self.assertNotIn("15 minutes", text)
+        # It must send them to a PERSON. "Reply here" points at a bot DM that
+        # nobody reads, which for the one message asking for help is the one
+        # place it must not point.
+        self.assertIn("Megan & Eve", text)
+        self.assertNotIn("reply here", text)
 
     def test_a_machine_that_ran_and_stopped_is_not_told_it_never_started(self):
         """Cyrus's laptop ran all morning and stopped at 10:56. Telling him it
