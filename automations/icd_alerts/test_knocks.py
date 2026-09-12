@@ -7,6 +7,7 @@ bit that has silently published 2 reps of 22 elsewhere in this repo.
 from __future__ import annotations
 
 import datetime as dt
+import re
 import unittest
 
 from automations.shared import ownerville_knocks as K
@@ -407,3 +408,32 @@ class ShippedClosureTests(unittest.TestCase):
     def test_the_sale_module_specifically_is_shipped(self):
         from automations.icd_alerts.package import AGENT_FILES
         self.assertIn("automations/shared/sale_hype.py", AGENT_FILES)
+
+
+class UpdateScriptTests(unittest.TestCase):
+    """update.sh carries a HARDCODED file list, generated from AGENT_FILES.
+    It went stale the moment a file was added to the package and not to it --
+    the update ran, said "up to date", and left the machine without the module
+    it needed (2026-09-12)."""
+
+    def _script(self):
+        from pathlib import Path
+        return (Path(__file__).resolve().parent / "update.sh").read_text()
+
+    def test_it_lists_exactly_what_the_package_ships(self):
+        from automations.icd_alerts.package import AGENT_FILES
+        listed = set(re.findall(r'^  "(automations/[^"]+)"$',
+                                self._script(), re.M))
+        self.assertEqual(listed, set(AGENT_FILES),
+                         "update.sh has drifted from the package")
+
+    def test_it_refuses_when_lucy_is_not_installed(self):
+        self.assertIn("is not installed on this computer", self._script())
+
+    def test_it_proves_the_agent_still_starts(self):
+        """A syntax error in a file we just replaced would otherwise show up
+        as silence at the next tick."""
+        self.assertIn("import automations.icd_alerts.run", self._script())
+
+    def test_a_failed_download_does_not_half_replace_a_file(self):
+        self.assertIn(".new", self._script())

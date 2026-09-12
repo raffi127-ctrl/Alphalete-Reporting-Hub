@@ -37,6 +37,7 @@ FILES=(
   "automations/shared/ownerville_knocks.py"
   "automations/shared/saraplus.py"
   "automations/shared/credit_check_line.py"
+  "automations/shared/sale_hype.py"
   "automations/shared/browser_banner.py"
 )
 
