@@ -280,8 +280,9 @@ class NudgeTests(unittest.TestCase):
                          dt.datetime(2026, 9, 12, 11, 0))
 
     def test_the_nudge_names_them_and_says_what_to_check(self):
-        from automations.icd_alerts.post import OWNER_NUDGE
-        text = OWNER_NUDGE % "Kash"
+        from automations.icd_alerts.post import _nudge_text
+        text = _nudge_text("Kash", {"last": None,
+                                    "reason": "has not checked in today"})
         self.assertIn("Kash", text)
         for cue in ("asleep", "unplugged", "wifi"):
             self.assertIn(cue, text)
@@ -289,3 +290,14 @@ class NudgeTests(unittest.TestCase):
         # different one in the plist is a promise people check and we break.
         self.assertIn("picks itself up", text)
         self.assertNotIn("15 minutes", text)
+
+    def test_a_machine_that_ran_and_stopped_is_not_told_it_never_started(self):
+        """Cyrus's laptop ran all morning and stopped at 10:56. Telling him it
+        "hasn't checked in today" is wrong in a way he would notice, and a
+        nudge that gets the basics wrong is one people stop reading."""
+        from automations.icd_alerts.post import _nudge_text
+        text = _nudge_text("Cyrus", {"last": "9/12/2026 10:56:34",
+                                     "reason": "last checked in 9/12/2026 10:56:34"})
+        self.assertIn("gone quiet", text)
+        self.assertIn("10:56:34", text)
+        self.assertNotIn("hasn't checked in at all", text)

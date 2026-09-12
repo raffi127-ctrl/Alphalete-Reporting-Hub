@@ -25,7 +25,8 @@
  * FOUR TABS:
  *   'Relay Keys'      Office | Key | Active | Note      <- we control this
  *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
- *                     Agent | Last Posted JSON | Posted At
+ *                     Agent | Last Posted JSON | Posted At |
+ *                     Sales JSON | Last Posted Sales JSON
  *   'ICD Knocks'      Office | Day | Rows JSON | Tracker JSON | Rep Count |
  *                     Received At | Local Time | Last Posted At
  *   'Office Channels' Office | Owner | Alerts: Wanted |
@@ -110,7 +111,8 @@ function doPost(e) {
     // Store as text, sorted by the sender, so a diff of two days is readable
     // by a person looking at the sheet.
     _upsert(office, day, JSON.stringify(records),
-            String(body.local_time || ''), String(body.agent || ''));
+            String(body.local_time || ''), String(body.agent || ''),
+            JSON.stringify(body.sales || {}));
 
     // Optional, and sent on every sweep so a re-run of the installer can
     // change the answer. Only ever touches the columns the owner is allowed
@@ -172,7 +174,7 @@ function _keyIsGood(office, key) {
   return false;
 }
 
-function _upsert(office, day, recordsJson, localTime, agent) {
+function _upsert(office, day, recordsJson, localTime, agent, salesJson) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);          // two offices can relay in the same second
   try {
@@ -190,10 +192,18 @@ function _upsert(office, day, recordsJson, localTime, agent) {
         // Columns 3-6 only. 'Last Posted JSON' and 'Posted At' are ours.
         sh.getRange(i + 1, 3, 1, 4)
           .setValues([[recordsJson, now, localTime, agent]]);
+        // Sales sit in an APPENDED column (9), written separately on purpose:
+        // adding them in the middle would have shifted every position this
+        // function already writes, and the deployed script and the sheet
+        // cannot be changed in the same instant. An older script simply never
+        // writes column 9, which reads as "this office sends no sales yet"
+        // rather than as corruption.
+        sh.getRange(i + 1, 9).setValue(salesJson || '{}');
         return;
       }
     }
-    sh.appendRow([office, day, recordsJson, now, localTime, agent, '', '']);
+    sh.appendRow([office, day, recordsJson, now, localTime, agent, '', '',
+                  salesJson || '{}', '']);
     // Keep the day a STRING on the way in too, so the next sweep's lookup is
     // comparing like with like even if the column format is ever reset.
     sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);

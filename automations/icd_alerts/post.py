@@ -50,6 +50,11 @@ CH_KN_APPROVED_JSON, CH_KN_APPROVED = 10, 11
 COL_OFFICE, COL_DAY, COL_RECORDS = 0, 1, 2
 COL_RECEIVED, COL_LOCAL_TIME, COL_AGENT = 3, 4, 5
 COL_LAST_POSTED, COL_POSTED_AT = 6, 7
+# APPENDED, not inserted. Sales arrived after offices were already relaying,
+# and the deployed script and the sheet cannot be changed in the same instant
+# -- so the new columns went on the END and every position above is untouched.
+# An office still running the older agent simply leaves these blank.
+COL_SALES, COL_LAST_POSTED_SALES = 8, 9
 
 # A laptop that has not checked in for this long is asleep, shut, or off wifi.
 # Worth SAYING, never worth alerting the office about -- they cannot act on it
@@ -109,6 +114,39 @@ def decide(records: Dict[str, int],
             lines.append(records_line(rep, n, n - was))
             merged[rep] = n
     return lines, merged, False
+
+
+def decide_sales(sales: Dict, last_posted: Optional[Dict]
+                 ) -> Tuple[List[str], Dict, bool]:
+    """(hype lines, what to record as posted, was this a baseline).
+
+    Same two rules the credit checks follow, for the same reasons. BASELINE:
+    the first sight of a day announces nothing, or an office enrolling at 3pm
+    would have every sale since lunchtime declared as if it had just landed.
+    ONLY UP: a short or half-rendered grid reads LOW, and believing it would
+    let the next good pass re-announce a sale that is already on the board.
+
+    One line per REP, not per metric -- a rep who puts up an Int and two lines
+    in the same sweep made ONE sale, and the tier is read off their whole day
+    exactly as the AO board reads it.
+    """
+    from automations.shared import sale_hype as H
+
+    sales = {str(k): {m: int(v.get(m, 0) or 0) for m in H.METRICS}
+             for k, v in (sales or {}).items()}
+    if last_posted is None:
+        return [], sales, True
+
+    prev = {str(k): {m: int(v.get(m, 0) or 0) for m in H.METRICS}
+            for k, v in last_posted.items()}
+    merged = {k: dict(v) for k, v in prev.items()}
+    moved = []
+    for rep, now_m in sorted(sales.items()):
+        was = prev.get(rep) or {m: 0 for m in H.METRICS}
+        if any(now_m.get(m, 0) > was.get(m, 0) for m in H.METRICS):
+            moved.append(rep)
+        merged[rep] = {m: max(now_m.get(m, 0), was.get(m, 0)) for m in H.METRICS}
+    return moved, merged, False
 
 
 def is_stale(received: Optional[dt.datetime], now: Optional[dt.datetime] = None,
@@ -413,10 +451,21 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         last = _loads(row[COL_LAST_POSTED] if len(row) > COL_LAST_POSTED else "")
         lines, merged, baseline = decide(records, last)
 
+        # Sales ride the same row and the same rules. An office still on the
+        # older agent sends none, and this stays empty rather than erroring.
+        sales = _loads(row[COL_SALES] if len(row) > COL_SALES else "") or {}
+        last_sales = _loads(row[COL_LAST_POSTED_SALES]
+                            if len(row) > COL_LAST_POSTED_SALES else "")
+        sold, merged_sales, sales_baseline = decide_sales(sales, last_sales)
+        hype_lines = []
+        if sold:
+            from automations.shared import sale_hype as H
+            hype_lines = [H.hype(rep, sales.get(rep) or {}, day) for rep in sold]
+
         if baseline:
             log("%-10s first relay of %s -- recording %d rep(s), posting nothing"
                 % (key, day.isoformat(), len(records)))
-        elif not lines:
+        elif not lines and not hype_lines:
             log("%-10s nothing new (%d rep(s) tracked)" % (key, len(records)))
         else:
             targets, held = O.destinations(office, approved.get(key))
@@ -428,8 +477,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
 
         if not send:
             continue
-        if lines:
-            text = "\n".join(lines)
+        if hype_lines or lines:
+            # SALES FIRST. A rep's sale is the louder news and the credit
+            # checks are the early warning behind it; in one message the order
+            # is the story.
+            text = "\n".join(hype_lines + lines)
             targets, held = O.destinations(office, approved.get(key))
             if held:
                 # Say whose they are and why they are here, because the person
@@ -450,8 +502,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 except Exception as e:  # noqa: BLE001
                     log("%-10s FAILED to post to %s: %s: %s"
                         % (key, channel.name, type(e).__name__, str(e)[:120]))
-        if lines or baseline:
+        if lines or hype_lines or baseline or sales_baseline:
             tab.update_cell(rownum, COL_LAST_POSTED + 1, json.dumps(merged))
+            tab.update_cell(rownum, COL_LAST_POSTED_SALES + 1,
+                            json.dumps(merged_sales))
             tab.update_cell(rownum, COL_POSTED_AT + 1,
                             dt.datetime.now().isoformat(timespec="seconds"))
 
@@ -534,15 +588,33 @@ def _warned() -> Dict:
         return {}
 
 
+# TWO OPENINGS, because they are two different facts and the office knows
+# which one is true. "Hasn't checked in today" sent to somebody whose machine
+# ran all morning and stopped at 10:56 is wrong in a way they will notice, and
+# a nudge that gets the basics wrong is one they stop reading.
+NUDGE_NEVER = ("your Lucy Reports computer hasn't checked in at all today, so "
+               "your office's alerts aren't running")
+NUDGE_STOPPED = ("your Lucy Reports computer has gone quiet — it last checked "
+                 "in at %s, so your office's alerts have stopped")
+
 OWNER_NUDGE = (
-    "Morning %s — your Lucy Reports computer hasn't checked in today, so your "
-    "office's alerts aren't running.\n\n"
+    "Hi %s — %s.\n\n"
     "It's almost always one of these:\n"
     "  • the laptop is asleep or shut — wake it and leave the lid open\n"
     "  • it's unplugged — it has to be on power to stay awake\n"
     "  • it's off wifi\n\n"
     "Sort any of those and it picks itself up within a few minutes. Nothing is "
     "lost in the meantime. If it's none of those, just reply here.")
+
+
+def _nudge_text(first: str, quiet: Dict) -> str:
+    """The nudge, opening with whichever thing actually happened."""
+    last = (quiet.get("last") or "").strip()
+    if quiet.get("last") and "not checked in" not in (quiet.get("reason") or ""):
+        # Just the clock, not the date -- they are reading this today.
+        stamp = last.split(" ")[-1] if " " in last else last
+        return OWNER_NUDGE % (first, NUDGE_STOPPED % stamp)
+    return OWNER_NUDGE % (first, NUDGE_NEVER)
 
 
 def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
@@ -597,7 +669,7 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
             continue
         first = (office.owner or "").split()[0] if office.owner else "there"
         try:
-            _dm(office.slack_user_id, OWNER_NUDGE % first)
+            _dm(office.slack_user_id, _nudge_text(first, q))
             nudged.append(q["office"])
         except Exception as e:  # noqa: BLE001 — a failed nudge must still reach us
             log("could not DM %s: %s: %s" % (q["office"], type(e).__name__,
