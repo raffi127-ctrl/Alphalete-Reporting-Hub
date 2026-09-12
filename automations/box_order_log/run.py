@@ -118,6 +118,7 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                  payout_path: Path, tier_path: Optional[Path],
                  tier_line: str, sections=None,
                  pending_path: Optional[Path] = None,
+                 activations_path: Optional[Path] = None,
                  contents: str = "") -> str:
     """Post one dated thread — parent, then its attachments — and return its ts.
 
@@ -162,6 +163,13 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
             channel=channel, thread_ts=ts, file=str(pending_path),
             filename=pending_path.name, title=pending_path.stem,
             initial_comment=PENDING_LINE,
+        )
+    if activations_path and "activations" in sections:
+        from . import activations as _act
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(activations_path),
+            filename=activations_path.name, title=activations_path.stem,
+            initial_comment=_act.ACTIVATIONS_LINE,
         )
     if tier_path and "tier_bonus" in sections:
         client.files_upload_v2(
@@ -401,11 +409,13 @@ def main(argv: Optional[list] = None) -> int:
     ap.add_argument("--no-tier", action="store_true",
                     help="leave the Box Tier Bonus board out of the thread")
     ap.add_argument("--sections",
-                    default="order_log,accepted,pending,tier_bonus",
+                    default="order_log,accepted,pending,tier_bonus,"
+                            "activations",
                     help="which thread sections to post, csv of: order_log "
                          "(the workbook), accepted (the payout board), "
                          "pending (the pending-orders worklist image), "
-                         "tier_bonus. Per-office enrollment subsets from the "
+                         "tier_bonus, activations (0-30 / 31-60 day BOX "
+                         "activation rates — accepted by supplier / all sales). Per-office enrollment subsets from the "
                          "onboarding form pass this; default = the full "
                          "thread.")
     args = ap.parse_args(argv)
@@ -617,6 +627,27 @@ def main(argv: Optional[list] = None) -> int:
         print("\n  {} of {} sales fall in the last {} weeks".format(
             len(window_sales), len(sales), args.weeks))
 
+    # ---- 3b. BOX activation rates (Carlos 2026-09-12) --------------------
+    # Built from the merged Box Sales Log tab — the 60-day record that
+    # survives the export's amnesia — so an erased history can't shrink a
+    # window's denominator. Own guard: this image must never sink the post.
+    out_activations = None
+    if "activations" in sections:
+        try:
+            from . import activations as _act
+            _data = _act.build_from_sheet(today=today)
+            out_activations = OUTPUT_DIR / "BOX Activation Rates {}.png".format(
+                today.strftime("%m-%d-%Y"))
+            _act.render(_data, out_activations)
+            if verbose:
+                t = _data["total"]
+                print("  activation rates: " + " · ".join(
+                    "{} {}/{}".format(w, a, v) for w, (a, v) in t.items()))
+        except Exception as exc:
+            out_activations = None
+            print("✗ activation board failed (thread continues without it): "
+                  "{}".format(exc), file=sys.stderr)
+
     # ---- 4. write the Sheet ---------------------------------------------
     if args.sheet and args.no_sheet:
         print("\n  --no-sheet: skipping the board write (dry run)")
@@ -713,6 +744,9 @@ def main(argv: Optional[list] = None) -> int:
         attach_lines.append(PAYOUT_LINE)
     if "pending" in sections:
         attach_lines.append(PENDING_LINE)
+    if out_activations and "activations" in sections:
+        from . import activations as _act_lines
+        attach_lines.append(_act_lines.ACTIVATIONS_LINE)
     if tier_png:
         attach_lines.append(tier_bonus.TIER_LINE)
     # SHORT PARENT + RENAME (Carlos 2026-09-05): the parent is just
@@ -820,6 +854,7 @@ def main(argv: Optional[list] = None) -> int:
             try:
                 _post_thread(client, target, text, out_xlsx, out_png, tier_png,
                              tier_bonus.TIER_LINE, sections=sections,
+                             activations_path=out_activations,
                              pending_path=out_pending, contents=contents)
             except Exception as exc:                      # noqa: BLE001
                 failed_channels.append("{} — {}: {}".format(
