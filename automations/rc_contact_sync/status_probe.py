@@ -535,8 +535,105 @@ def _view_orders_dump(page, ctx, view_orders: List[str], log) -> List[bytes]:
     return shots
 
 
+def _wireless_panel_dump(page, start: dt.date, end: dt.date, log) -> Optional[bytes]:
+    """Open the WIRELESS panel (tab index 2 — its own date range, status
+    filter and Excel export, found 2026-09-12), run last week, and dump
+    whatever grid appears. The hunt: per-LINE rows with ACTIVATION dates."""
+    posted = page.evaluate(
+        """(cfg) => {
+             const t = document.getElementsByName('__EVENTTARGET')[0];
+             const a = document.getElementsByName('__EVENTARGUMENT')[0];
+             if (!t || !a) return 'no __EVENTTARGET/__EVENTARGUMENT';
+             t.value = cfg.target;
+             a.value = JSON.stringify({type: 0, index: cfg.index});
+             const f = document.getElementById(cfg.form) || document.forms[0];
+             if (!f) return 'no form';
+             f.submit();
+             return 'posted';
+           }""",
+        {"target": C.TAB_POSTBACK_TARGET, "index": "2", "form": C.FORM_ID})
+    log("wireless panel postback: %s" % posted)
+    try:
+        page.wait_for_load_state("networkidle", timeout=C.NAV_TIMEOUT_MS)
+    except Exception:  # noqa: BLE001
+        pass
+    page.wait_for_timeout(2000)
+
+    # The status filter's vocabulary, before anything else.
+    try:
+        page.click("#ctl00_MainContent_rcbWirelessStatuses_Input", timeout=15_000)
+        page.wait_for_timeout(900)
+        items = page.evaluate(
+            """() => [...document.querySelectorAll('.rcbList li, [class*="rcbItem"]')]
+                 .map(e => (e.textContent || '').trim()).filter(Boolean)""")
+        log("wireless status filter options: %s" % "; ".join(items[:40]))
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(500)
+    except Exception as e:  # noqa: BLE001
+        log("(status combo dump failed: %s)" % type(e).__name__)
+
+    sara._set_telerik_date(page, "ctl00_MainContent_rdpWirelessStartDate", start)
+    sara._set_telerik_date(page, "ctl00_MainContent_rdpWirelessEndDate", end)
+    log("wireless range %s..%s" % (start, end))
+    page.click("#MainContent_btnSubmitWirelessDateRange", timeout=30_000)
+    try:
+        page.wait_for_load_state("networkidle", timeout=C.GRID_TIMEOUT_MS)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        page.wait_for_selector('table[id$="_Header"]', timeout=C.GRID_TIMEOUT_MS)
+    except Exception:  # noqa: BLE001
+        log("(no grid header table appeared)")
+    page.wait_for_timeout(1000)
+
+    grids = page.evaluate(
+        """() => {
+             const out = [];
+             document.querySelectorAll('table[id$="_Header"]').forEach(h => {
+               const dataId = h.id.replace(/_Header$/, '');
+               const data = document.getElementById(dataId);
+               const hr = h.querySelector('tr');
+               const headers = hr
+                 ? [...hr.querySelectorAll('th,td')]
+                     .map(c => (c.innerText || '').replace(/\\s+/g, ' ').trim())
+                 : [];
+               const rows = data
+                 ? [...data.querySelectorAll('tbody > tr')]
+                     .map(r => [...r.querySelectorAll('td')]
+                       .map(c => (c.innerText || '').replace(/\\s+/g, ' ').trim()))
+                 : [];
+               out.push({id: dataId, headers: headers,
+                         nrows: rows.length, rows: rows.slice(0, 8)});
+             });
+             return out;
+           }""")
+    for g in grids:
+        log("grid %s: %d row(s)" % (g["id"], g["nrows"]))
+        for i, h in enumerate(g["headers"]):
+            if h:
+                log("   [%2d] %s%s" % (i, h,
+                    "  <== date/status" if (STATUS_RE.search(h)
+                                            or "date" in h.lower()) else ""))
+        for n, r in enumerate(g["rows"]):
+            log("   ROW %d: %s" % (n + 1, " | ".join(c for c in r if c)[:400]))
+
+    # The panel's own Excel export — same download trick as the CSV button.
+    try:
+        with page.expect_download(timeout=60_000) as dl:
+            page.click("#MainContent_btnExportWirelessExcel",
+                       timeout=15_000, no_wait_after=True)
+        data = Path(dl.value.path()).read_bytes()
+        log("wireless export downloaded %r -> %s bytes"
+            % (dl.value.suggested_filename, "{:,}".format(len(data))))
+        return data
+    except Exception as e:  # noqa: BLE001
+        log("wireless export: no download (%s: %s)"
+            % (type(e).__name__, str(e)[:160]))
+        return None
+
+
 def run(day: dt.date, rows_n: int, tab_arg: str, headless: bool,
-        export_range=None, view_orders=None) -> int:
+        export_range=None, view_orders=None, wireless: bool = False) -> int:
     from patchright.sync_api import sync_playwright
 
     lines: List[str] = []
@@ -565,7 +662,13 @@ def run(day: dt.date, rows_n: int, tab_arg: str, headless: bool,
                       timeout=C.NAV_TIMEOUT_MS)
             _dump_tab_strip(page, log)
 
-            if tab_arg:
+            if wireless:
+                start, end = export_range
+                data = _wireless_panel_dump(page, start, end, log)
+                if data is not None:
+                    _upload_bytes(data, CSV_TAB, log=log)
+                grid_png = page.screenshot(full_page=True)
+            elif tab_arg:
                 for one in [t.strip() for t in tab_arg.split(",") if t.strip()]:
                     log("===== tab index %s =====" % one)
                     _generic_tab_dump(page, one, log)
@@ -722,6 +825,10 @@ def main(argv=None) -> int:
                     help="export range start (default: 9 days ago)")
     ap.add_argument("--end", default=None, metavar="YYYY-MM-DD",
                     help="export range end (default: 3 days ago)")
+    ap.add_argument("--wireless", action="store_true",
+                    help="open the WIRELESS panel (tab 2) for --start/--end, "
+                         "dump its grid and capture its Excel export — the "
+                         "per-line activation-date hunt")
     ap.add_argument("--view-orders", default="", metavar="ID[,ID...]",
                     help="open these orders' View Customer cards off a range "
                          "grid (uses --start/--end) and dump each — the "
@@ -731,7 +838,7 @@ def main(argv=None) -> int:
     day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
            if args.date else dt.date.today() - dt.timedelta(days=7))
     export_range = None
-    if args.export or args.view_orders:
+    if args.export or args.view_orders or args.wireless:
         s = (dt.datetime.strptime(args.start, "%Y-%m-%d").date()
              if args.start else dt.date.today() - dt.timedelta(days=9))
         e = (dt.datetime.strptime(args.end, "%Y-%m-%d").date()
@@ -739,7 +846,8 @@ def main(argv=None) -> int:
         export_range = (s, e)
     view_orders = [o.strip() for o in args.view_orders.split(",") if o.strip()]
     return run(day, args.rows, args.tab_arg, headless=not args.headed,
-               export_range=export_range, view_orders=view_orders or None)
+               export_range=export_range, view_orders=view_orders or None,
+               wireless=args.wireless)
 
 
 if __name__ == "__main__":
