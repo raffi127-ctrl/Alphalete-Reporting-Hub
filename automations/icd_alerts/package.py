@@ -43,6 +43,7 @@ AGENT_FILES = [
     "automations/icd_alerts/sara_read.py",
     "automations/icd_alerts/state.py",
     "automations/icd_alerts/run.py",
+    "automations/icd_alerts/dialogs.py",
     "automations/icd_alerts/ov_read.py",
     "automations/shared/ownerville_knocks.py",
     "automations/shared/saraplus.py",
@@ -156,8 +157,7 @@ def build(office_key: str, relay_key: Optional[str] = None,
     (app / "automations" / "__init__.py").write_text(BUNDLE_INIT)
     (app / "automations" / "shared" / "__init__.py").write_text("")
 
-    for name in ("setup.py", "ask.py"):
-        shutil.copy2(DIST / name, app / name)
+    shutil.copy2(DIST / "setup.py", app / "setup.py")
 
     if platform in ("mac", "both"):
         shutil.copy2(DIST / "Install Lucy Reports.command",

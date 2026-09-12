@@ -46,22 +46,68 @@ def _alert_lines(gained, totals):
             for rep, up in sorted(gained.items())]
 
 
-def cmd_set_login() -> int:
-    import getpass
-    print("Enter the SaraPlus login for THIS office.")
-    print("It is saved on this computer only and is never sent to anyone.\n")
-    email = input("SaraPlus email: ").strip()
-    if not email:
-        print("Nothing entered; nothing saved.")
-        return 1
-    password = getpass.getpass("SaraPlus password: ")
-    if not password:
-        print("Nothing entered; nothing saved.")
-        return 1
-    path = C.save_creds(email, password)
-    print("\nSaved to %s" % path)
-    print("Now run:  python -m automations.icd_alerts.run --check")
-    return 0
+def cmd_set_login(headless: bool = True) -> int:
+    """Take a new SaraPlus password and PROVE it works before saying so.
+
+    SARAPLUS ROTATES PASSWORDS OFTEN (Megan 2026-09-12), so this is not a
+    setup-only path -- it is the thing an owner runs months later, on their
+    own, when their alerts have gone quiet. It therefore asks in a dialog like
+    the installer does, and it verifies: "saved" on a password that does not
+    work is the same silence they already had, except now they think it is
+    fixed.
+    """
+    from automations.icd_alerts import dialogs as ask
+
+    try:
+        current = C.creds().get("email", "")
+    except RuntimeError:
+        current = ""
+
+    for attempt in (1, 2, 3):
+        try:
+            email = ask.text(
+                "Your SaraPlus email:%s" % ("\n\n(currently %s)" % current
+                                            if current else "")).strip()
+            if not email:
+                email = current
+            password = ask.password("Your NEW SaraPlus password:")
+        except ask.Cancelled:
+            print("Nothing was changed.")
+            return 1
+        if not email or not password:
+            print("Nothing entered; nothing changed.")
+            return 1
+
+        C.save_creds(email, password)
+        _log("checking it against SaraPlus...")
+        try:
+            result = sara_read.check_account(headless=headless, log=_log)
+            ok = result.get("ok")
+        except sara_read.AccountProblem as e:
+            ok, result = False, {"message": str(e)}
+        except RuntimeError as e:
+            ok, result = False, {"message": str(e)}
+
+        if ok:
+            ask.message("That worked — your alerts will start again within a "
+                        "few minutes.\n\nNothing else to do.")
+            print("OK")
+            return 0
+        if attempt == 3:
+            break
+        try:
+            again = ask.choose(
+                "%s\n\nTry again?" % result.get("message", "It did not work."),
+                ["Yes, let me retype it", "No, I'll sort it out later"])
+        except ask.Cancelled:
+            return 1
+        if not again.startswith("Yes"):
+            return 1
+
+    ask.message("That password did not work either.\n\nPlease DM Megan & Eve "
+                "— it may be that your SaraPlus account needs looking at from "
+                "their end.", error=True)
+    return 1
 
 
 def cmd_check(headless: bool) -> int:
@@ -155,7 +201,7 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="ICD credit-check alerts agent")
     ap.add_argument("--set-login", action="store_true",
-                    help="save this office's SaraPlus login on this computer")
+                    help="change the saved SaraPlus password, and check it")
     ap.add_argument("--check", action="store_true",
                     help="step one: confirm this account can read reports")
     ap.add_argument("--once", action="store_true",
@@ -177,7 +223,7 @@ def main(argv=None) -> int:
     headless = not args.headful
 
     if args.set_login:
-        return cmd_set_login()
+        return cmd_set_login(headless)
     if args.check:
         return cmd_check(headless)
     if args.knocks:

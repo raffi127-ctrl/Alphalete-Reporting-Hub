@@ -448,3 +448,34 @@ class UpdateScriptTests(unittest.TestCase):
 
     def test_a_failed_download_does_not_half_replace_a_file(self):
         self.assertIn(".new", self._script())
+
+
+class RafsBoardUnchangedTests(unittest.TestCase):
+    """Raf's reports must not change (Megan 2026-09-12). Everything the ICD
+    boards needed was added as an opt-in with the old behaviour as default, so
+    a caller that passes nothing gets exactly what it got before."""
+
+    def test_the_first_knock_target_is_unchanged_without_an_office(self):
+        from automations.total_knocks import render as R
+        self.assertEqual(R.first_knock_target(None, dt.date(2026, 9, 12)),
+                         R.FIRST_KNOCK_TARGET_MIN)
+
+    def test_the_new_render_argument_defaults_to_off(self):
+        import inspect
+        from automations.total_knocks import render as R
+        for fn in (R.render_knocks_boards, R.render_total_knocks):
+            self.assertIsNone(
+                inspect.signature(fn).parameters["first_knock_green_at"].default,
+                fn.__name__)
+
+    def test_gap_alerts_does_not_pass_office_hours(self):
+        import inspect
+        from automations.gap_alerts import run as G
+        self.assertNotIn("first_knock_green_at",
+                         inspect.getsource(G._render_board))
+
+    def test_raf_keeps_his_9pm_board(self):
+        """The dedupe drops offices that post their OWN board. Raf does not."""
+        from automations.knocks_intraday import roster
+        keys = [getattr(o, "key", o) for o in roster.enrolled("eod")]
+        self.assertIn("raf", keys)

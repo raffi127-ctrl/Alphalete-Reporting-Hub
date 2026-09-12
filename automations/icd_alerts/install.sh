@@ -76,7 +76,7 @@ while IFS= read -r f; do
   fetch "$f" "$f" || fail=1
 done <<< "$LIST"
 fetch "automations/icd_alerts/dist/setup.py" "setup.py" || fail=1
-fetch "automations/icd_alerts/dist/ask.py" "ask.py" || fail=1
+
 fetch "automations/icd_alerts/offices_public.json" "offices.json" || fail=1
 [ "$fail" -eq 0 ] || { echo ""; echo "Some files did not download. Nothing was changed — try again on a normal wifi network."; exit 1; }
 

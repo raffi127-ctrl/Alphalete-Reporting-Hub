@@ -31,7 +31,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import ask
+from automations.icd_alerts import dialogs as ask
 
 APP_NAME = "Lucy Reports"
 _PRIVACY = ("This stays on this computer and is never sent to anyone. "

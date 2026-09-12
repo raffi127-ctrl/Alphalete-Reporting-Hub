@@ -1,4 +1,9 @@
-"""Native dialog boxes, so nobody has to read a Terminal to set this up.
+"""Native dialog boxes, so nobody has to read a Terminal.
+
+IT LIVES IN THE PACKAGE, not beside the installer, because the installer is
+not the only thing that has to ask. SaraPlus rotates passwords often (Megan
+2026-09-12), so the agent itself has to be able to ask for a new one months
+after setup -- and it only has what was copied onto the machine.
 
 A NON-TECHNICAL OWNER SHOULD NEVER BE TYPING A PASSWORD INTO A TERMINAL
 (Megan 2026-09-11: "they need to see what they're doing and the terminal is
