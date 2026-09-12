@@ -150,6 +150,17 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                                     text=contents)
         except Exception as e:  # noqa: BLE001 — the list must never sink the post
             print("  ⚠ contents reply failed: {}".format(e), flush=True)
+    # Uploads are SPACED (time.sleep below): files_upload_v2 completes the
+    # share asynchronously, and two uploads fired in the same second can land
+    # in the thread swapped — the 15:04 preview on 2026-09-12 showed the tier
+    # board above the Revenue Board despite being posted after it. A second
+    # of spacing per file keeps Carlos's order actually visible, which is the
+    # whole point of it.
+    import time as _time
+
+    def _spaced():
+        _time.sleep(1.2)
+
     # POSTING ORDER IS CARLOS'S (2026-09-13): tier board, activation rates,
     # accepted, revenue, pending, and the workbook last. He listed five; the
     # Revenue board (added the same day) rides directly after Accepted as its
@@ -162,12 +173,14 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
             filename=revboard_path.name, title=revboard_path.stem,
             initial_comment=revboard_caption,
         )
+        _spaced()
     if tier_path and "tier_bonus" in sections:
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(tier_path),
             filename=tier_path.name, title=tier_path.stem,
             initial_comment=tier_line,
         )
+        _spaced()
     if activations_path and "activations" in sections:
         from . import activations as _act
         client.files_upload_v2(
@@ -175,30 +188,35 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
             filename=activations_path.name, title=activations_path.stem,
             initial_comment=_act.ACTIVATIONS_LINE,
         )
+        _spaced()
     if "accepted" in sections:
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(payout_path),
             filename=payout_path.name, title=payout_path.stem,
             initial_comment=PAYOUT_LINE,
         )
+        _spaced()
     if revenue_path and "revenue" in sections:
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(revenue_path),
             filename=revenue_path.name, title=revenue_path.stem,
             initial_comment=REVENUE_LINE,
         )
+        _spaced()
     if pending_path and "pending" in sections:
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(pending_path),
             filename=pending_path.name, title=pending_path.stem,
             initial_comment=PENDING_LINE,
         )
+        _spaced()
     if "order_log" in sections:
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(xlsx_path),
             filename=xlsx_path.name, title=xlsx_path.stem,
             initial_comment=WORKBOOK_LINE,
         )
+        _spaced()
     return ts
 
 
