@@ -479,6 +479,33 @@ def schedule_windows():
                     "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def first_run() -> None:
+    """Sweep ONCE, right now, before the installer finishes.
+
+    WITHOUT --if-due, deliberately. The scheduled run is fenced to selling
+    hours, so an office installing at 9am would not relay anything until 10 --
+    and their channel request rides along with that relay, which means nobody
+    could approve them until an hour after they were sitting on the call
+    asking to be set up. This is the run that makes the enrolment land while
+    somebody is still there to see it.
+
+    Never fatal: everything is installed and scheduled by this point, and a
+    first sweep that fails costs a wait, not a setup.
+    """
+    say("      saying hello to the reporting team...")
+    proc = subprocess.run(
+        [str(venv_python()), "-m", "automations.icd_alerts.run", "--once"],
+        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    out = proc.stdout.decode("utf-8", "replace")
+    if proc.returncode == 0:
+        say("      done — your office is enrolled.")
+        return
+    for line in out.splitlines()[-3:]:
+        if line.strip():
+            say(line.strip())
+    say("      (it will try again on its own in 15 minutes — nothing is lost.)")
+
+
 def main() -> int:
     banner()
 
@@ -516,6 +543,8 @@ def main() -> int:
         schedule_mac()
     say("      it will check every %d minutes, 10am to 9:30pm "
         "(4pm Saturdays), and never on Sunday." % EVERY_MINUTES)
+    if ok:
+        first_run()
 
     say("")
     say("  %s%s%s" % (RED, "\u2501" * 58, OFF))
