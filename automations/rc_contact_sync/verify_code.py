@@ -23,6 +23,7 @@ from __future__ import annotations
 import datetime as dt
 import email
 import imaplib
+import pathlib
 import re
 import time
 from email.utils import parsedate_to_datetime
@@ -103,11 +104,42 @@ def _candidates(M, query: str) -> List[bytes]:
     return (data[0] or b"").split()
 
 
-def _newest_code(since: dt.datetime, query: str) -> Optional[Tuple[str, dt.datetime]]:
+# WHICH MAILBOX. The B2B account's codes reach alphaletereporting@gmail.com
+# because Carlos FORWARDS them there (Megan 2026-09-03) -- SaraPlus itself only
+# ever mails the address on the account. The sales board account is
+# alphaletemarketing@gmail.com (Megan 2026-09-12), so its codes land in ITS
+# inbox unless the same forward is set up.
+#
+# Hence `inbox=`: default unchanged, and a caller that must read somewhere else
+# says so instead of a second copy of this file existing. An inbox is
+# (address, app-password-file); nothing here holds a secret.
+DEFAULT_INBOX = None          # None -> shared.email_ingest's reporting account
+
+
+def _inbox(inbox):
+    """(address, password) for an inbox spec, or the reporting account."""
+    if inbox is None:
+        return _ing.ACCOUNT, _ing._app_password()
+    addr, pw_path = inbox
+    pw_path = pathlib.Path(pw_path).expanduser()
+    if not pw_path.exists():
+        raise CodeNotFound(
+            "SaraPlus emails this account's passcode to %s, and there is no "
+            "app password for it at %s. Two ways out, and the FORWARD is the "
+            "one already proven here: have %s auto-forward "
+            "security.info@saraplus.com to %s (that is how the B2B account "
+            "works), or save an app password for %s at that path."
+            % (addr, pw_path, addr, _ing.ACCOUNT, addr))
+    return addr, pw_path.read_text(encoding="utf-8-sig").strip().replace(" ", "")
+
+
+def _newest_code(since: dt.datetime, query: str,
+                 inbox=DEFAULT_INBOX) -> Optional[Tuple[str, dt.datetime]]:
     """The newest code in a mail that ARRIVED AFTER `since`, or None."""
+    account, password = _inbox(inbox)
     M = imaplib.IMAP4_SSL(_ing.IMAP_HOST)
     try:
-        M.login(_ing.ACCOUNT, _ing._app_password())
+        M.login(account, password)
         M.select('"[Gmail]/All Mail"', readonly=True)
         best = None
         for uid in reversed(_candidates(M, query)):        # newest first
@@ -139,7 +171,7 @@ def _newest_code(since: dt.datetime, query: str) -> Optional[Tuple[str, dt.datet
 
 def wait_for_code(since: dt.datetime, *, timeout_s: int = 180,
                   poll_s: int = 10, query: str = GMAIL_QUERY,
-                  log=print) -> str:
+                  inbox=DEFAULT_INBOX, log=print) -> str:
     """Poll the inbox until a code newer than `since` shows up.
 
     `since` should be a moment or two BEFORE the login was submitted -- clocks
@@ -149,7 +181,7 @@ def wait_for_code(since: dt.datetime, *, timeout_s: int = 180,
     attempt = 0
     while True:
         attempt += 1
-        hit = _newest_code(since, query)
+        hit = _newest_code(since, query, inbox)
         if hit:
             code, when = hit
             log("  verification code received %s (attempt %d)"

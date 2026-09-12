@@ -50,15 +50,30 @@ def _read_passcode(since):
     the reporting inbox's app password, and every ordinary sweep -- the ones
     on a browser SaraPlus already remembers -- must not need either.
 
-    Borrowed from rc_contact_sync, which built and proved this reader on
-    2026-09-03. The codes land in the same mailbox for both accounts
-    (security.info@saraplus.com -> alphaletereporting@gmail.com); if this
-    account's code goes somewhere else instead, THIS is the line that says so
-    -- the run logs the destination SaraPlus offers before it asks for one.
+    THIS ACCOUNT IS NOT THE B2B ONE. SaraPlus mails the passcode to the
+    address on the account, and this account is alphaletemarketing@gmail.com
+    (Megan 2026-09-12) -- NOT the reporting inbox every other reader here
+    uses. The B2B account only works because Carlos forwards its codes to
+    reporting; the same forward is what makes this one unattended.
+
+    So: read the reporting inbox if the forward is in place, and fall back to
+    alphaletemarketing directly if an app password for it has been saved. If
+    neither is true the error says both ways out rather than timing out after
+    three minutes and reading as a broken mail filter.
     [[reference_hub_source_email_access]]"""
     from automations.rc_contact_sync import verify_code as VC
-    return VC.wait_for_code(since, timeout_s=_sp.VERIFY_TIMEOUT_S,
-                            poll_s=_sp.VERIFY_POLL_S)
+    for inbox in (None, C.PASSCODE_INBOX):
+        try:
+            return VC.wait_for_code(since, timeout_s=_sp.VERIFY_TIMEOUT_S,
+                                    poll_s=_sp.VERIFY_POLL_S, inbox=inbox)
+        except VC.CodeNotFound:
+            continue
+    raise VC.CodeNotFound(
+        "no SaraPlus passcode arrived for %s. It is mailed to %s: either "
+        "forward security.info@saraplus.com from there to %s (how the B2B "
+        "account works), or save that mailbox's app password at %s."
+        % (C.SARA_ACCOUNT, C.SARA_ACCOUNT, "alphaletereporting@gmail.com",
+           C.PASSCODE_PW_PATH))
 
 
 def _login(page, email: str, password: str, log=print) -> str:

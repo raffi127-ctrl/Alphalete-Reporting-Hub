@@ -190,3 +190,34 @@ class OrdinaryLoginsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PasscodeInboxTest(unittest.TestCase):
+    """SaraPlus mails THIS account's code to alphaletemarketing@gmail.com, not
+    the reporting inbox — so the reader must be able to look in either, and
+    must say so plainly when it can look in neither (Megan 2026-09-12)."""
+
+    def test_the_reader_can_be_pointed_at_another_mailbox(self):
+        import inspect
+        from automations.rc_contact_sync import verify_code as VC
+        self.assertIn("inbox", inspect.signature(VC.wait_for_code).parameters)
+
+    def test_a_missing_app_password_names_both_ways_out(self):
+        from automations.rc_contact_sync import verify_code as VC
+        with self.assertRaises(VC.CodeNotFound) as cm:
+            VC._inbox(("someone@example.com", "/nope/not/here"))
+        msg = str(cm.exception)
+        self.assertIn("forward", msg.lower())          # the proven route
+        self.assertIn("app password", msg.lower())     # the other one
+        self.assertIn("someone@example.com", msg)
+
+    def test_the_default_inbox_is_still_the_reporting_account(self):
+        from automations.rc_contact_sync import verify_code as VC
+        from automations.shared import email_ingest as _ing
+        self.assertIsNone(VC.DEFAULT_INBOX)
+        self.assertEqual(_ing.ACCOUNT, "alphaletereporting@gmail.com")
+
+    def test_the_sales_board_knows_which_account_saraplus_mails(self):
+        from automations.alphalete_sales_board import config as C
+        self.assertEqual(C.SARA_ACCOUNT, "alphaletemarketing@gmail.com")
+        self.assertEqual(C.PASSCODE_INBOX[0], C.SARA_ACCOUNT)

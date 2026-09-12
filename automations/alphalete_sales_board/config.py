@@ -30,6 +30,17 @@ LOGIN_URL = "https://ui.saraplus.com"
 # File shape: {"email": "...", "password": "..."}
 CREDS_PATH = Path.home() / ".config" / "recruiting-report" / "saraplus-creds.json"
 
+# WHERE SARAPLUS MAILS THIS ACCOUNT'S PASSCODE. SaraPlus sends the "new
+# location or browser" code to the address ON THE ACCOUNT, which for the sales
+# board is alphaletemarketing@gmail.com (Megan 2026-09-12) -- not the reporting
+# inbox every other mail reader here uses. The sweep tries reporting first (a
+# forward from marketing is how the B2B account is made unattended) and falls
+# back to reading marketing directly if an app password for it is saved here.
+SARA_ACCOUNT = "alphaletemarketing@gmail.com"
+PASSCODE_PW_PATH = (Path.home() / ".config" / "recruiting-report"
+                    / "gmail-app-password-alphaletemarketing")
+PASSCODE_INBOX = (SARA_ACCOUNT, PASSCODE_PW_PATH)
+
 # Its own Chrome profile, under automations/uploaded/ so chrome_guard's
 # close_stray_chrome() protects it and the Tableau/ownerville profiles are
 # never shared. [[reference_chrome_collision_guard]]
