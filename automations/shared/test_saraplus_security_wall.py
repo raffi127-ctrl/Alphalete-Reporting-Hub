@@ -111,7 +111,7 @@ class WallIsNamedTest(unittest.TestCase):
         msg = self._msg()
         self.assertIn("somebody@example.com", msg)
         self.assertIn("read_code", msg)          # the unattended fix
-        self.assertIn("by hand", msg)            # the one-time manual fix
+        self.assertIn("Chrome profile", msg)     # and the cheaper one to try first
 
     def test_nothing_was_read_or_written(self):
         self.assertIn("Nothing was read", self._msg())
@@ -227,48 +227,54 @@ class PasscodeInboxTest(unittest.TestCase):
 
 
 
-class PasswordResetTest(unittest.TestCase):
-    """The OTHER /Security/ wall. Read off the live page 2026-09-12 after the
-    passcode flow ran into it and reported 'no EMAIL destination' — there is no
-    picker on a Change Password page, so the sweep has to stop here instead."""
+class StuckProfileTest(unittest.TestCase):
+    """The Change Password page is a PROFILE symptom. Proved 2026-09-12: the
+    same credential went straight into DealerPages from an incognito window and
+    from a new empty profile, while the sweep's own profile sat on this page
+    for 30 passes. Moving the profile aside fixed it on the next tick.
+
+    These tests exist so nobody reads that page's words and changes a password
+    that was never wrong -- which is exactly what happened, twice."""
 
     def _msg(self, page):
         with self.assertRaises(sp.SaraError) as cm:
             _login(page, read_code=lambda s: "123456")
         return str(cm.exception)
 
-    def test_the_reset_page_is_not_mistaken_for_the_passcode_wall(self):
+    def test_the_profile_is_named_before_the_password(self):
         msg = self._msg(_Page(RESET_URL, body=RESET_TEXT))
-        self.assertIn("FORCING A PASSWORD CHANGE", msg)
-        self.assertNotIn("EMAIL destination", msg)
+        self.assertIn("THIS BROWSER PROFILE", msg)
+        self.assertLess(msg.index("PROFILE"), msg.index("set_credentials"),
+                        "the password remedy must not come first")
 
-    def test_it_says_both_things_are_true_at_once(self):
-        # The exact confusion that cost 2026-09-12: nobody changed the
-        # password AND SaraPlus is demanding a change.
-        self.assertIn("NOBODY CHANGED IT", self._msg(_Page(RESET_URL, body=RESET_TEXT)))
+    def test_it_warns_against_touching_the_password_first(self):
+        self.assertIn("BEFORE TOUCHING THE PASSWORD",
+                      self._msg(_Page(RESET_URL, body=RESET_TEXT)))
 
-    def test_it_carries_the_rule_a_human_needs(self):
+    def test_it_gives_the_test_that_tells_the_two_apart(self):
+        # A new empty profile landing here too is the ONLY thing that makes it
+        # a real account reset.
+        self.assertIn("new empty profile",
+                      self._msg(_Page(RESET_URL, body=RESET_TEXT)))
+
+    def test_the_password_rules_are_still_there_for_the_rare_real_case(self):
         msg = self._msg(_Page(RESET_URL, body=RESET_TEXT))
-        self.assertIn("8-15 characters", msg)     # SaraPlus's own rule
-        self.assertIn("set_credentials", msg)     # what to run after
-        self.assertIn("needs a human", msg)
+        self.assertIn("8-15 chars", msg)
+        self.assertIn("3+ characters", msg)
 
-    def test_the_code_reader_is_never_asked_on_a_reset_page(self):
+    def test_no_passcode_is_requested_on_this_page(self):
         asked = []
         with self.assertRaises(sp.SaraError):
             _login(_Page(RESET_URL, body=RESET_TEXT),
                    read_code=lambda s: asked.append(s) or "123456")
-        self.assertEqual(asked, [], "requested a passcode for a password reset")
+        self.assertEqual(asked, [], "requested a passcode on a Change Password page")
 
     def test_the_page_text_alone_is_enough(self):
-        # Belt and braces: if SaraPlus renames the .aspx, its own words still
-        # identify it. The URL here is an ordinary one.
-        msg = self._msg(_Page("https://www.saraplus.com/e/(S(x))/Default.aspx",
-                              body=RESET_TEXT))
-        self.assertIn("FORCING A PASSWORD CHANGE", msg)
+        self.assertIn("Change Password page",
+                      self._msg(_Page("https://www.saraplus.com/e/(S(x))/Default.aspx",
+                                      body=RESET_TEXT)))
 
     def test_a_real_passcode_wall_still_clears(self):
-        # The reset check must not swallow the challenge it sits next to.
         page = _Page(WALL_URL, after_code=HUB_URL)
         self.assertEqual(_login(page, read_code=lambda s: "123456"),
                          "https://www.saraplus.com/e/(S(abc123))/")

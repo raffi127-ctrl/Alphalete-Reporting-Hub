@@ -76,24 +76,25 @@ class SaraError(RuntimeError):
 # into the challenge and gives up. [[reference_saraplus_reporting_hub]]
 SECURITY_PATH = "/security/"
 
-# TWO DIFFERENT WALLS LIVE UNDER /Security/, and telling them apart is the
-# whole lesson of 2026-09-12. Both land on a url with a real session id, so
-# "the password was accepted" is true of both -- and that is where the reading
-# stopped, three times:
-#   read 1: "somewhere unexpected"       -> sounds like SaraPlus moved a page
-#   read 2: "forced password change"     -> right, but retracted when Megan
-#                                           said the password had not changed
-#   read 3: "browser passcode challenge" -> wrong, and it sent the sweep into
-#                                           the passcode picker, which then
-#                                           failed with "no EMAIL destination"
-#                                           because there is no picker there
-# What settled it was the page's OWN WORDS, which nobody had read until the
-# flow logged them: "SARA Plus requires a reset of your SARA Password."
+# THE RESET PAGE IS A PROFILE SYMPTOM, NOT AN ACCOUNT ONE. Proved on
+# 2026-09-12 by running the SAME credential three ways within one minute:
 #
-# Nobody changed the password. SaraPlus is DEMANDING a new one -- both facts at
-# once, which is exactly why read 2 got talked out of. So: match the reset page
-# FIRST and by its text as well as its url, because it is _needs_code()'s
-# /security/ test that swallows it otherwise.
+#   Megan's incognito Chrome        -> DealerPages/SubmitOrders.aspx   OK
+#   a brand NEW empty profile here  -> DealerPages/SubmitOrders.aspx   OK
+#   the sweep's .saraplus_profile   -> Security/ResetPassword.aspx     STUCK
+#
+# Same account, same password file, same machine, same minute. The only
+# variable was the Chrome profile, and moving it aside fixed the sweep on the
+# very next tick after 30 straight failures.
+#
+# So do NOT read this page's words as truth about the account. It says "SARA
+# Plus requires a reset of your SARA Password" and that sentence is a lie about
+# everything except this browser -- it cost a whole day, two password changes
+# Megan did not need to make, and three wrong diagnoses in a row:
+#   "SaraPlus moved a page" -> "the password expired" -> "a passcode challenge"
+# Megan said twice that the password had not changed. She was right twice.
+#
+# THE FIRST THING TO TRY IS ALWAYS THE PROFILE.
 RESET_PATH = "/security/resetpassword.aspx"
 RESET_WORDS = ("requires a reset of your sara password", "change password")
 
@@ -108,18 +109,30 @@ def _is_password_reset(page, url: str) -> bool:
     return any(w in body for w in RESET_WORDS)
 
 
-def _password_reset_error(url: str, email: str, creds_hint: str,
-                          set_cmd: str) -> "SaraError":
+def _stuck_profile_error(url: str, email: str, creds_hint: str,
+                         profile_hint: str = "this report's Chrome profile") -> "SaraError":
     return SaraError(
-        "SaraPlus is FORCING A PASSWORD CHANGE on %s. The login worked -- that "
-        "url carries a real session id -- and SaraPlus then served its Change "
-        "Password page (%s) and will serve nothing else until a NEW password "
-        "is set. NOBODY CHANGED IT: SaraPlus is demanding the change, so "
-        "'the password is unchanged' and this error are both true at once. No "
-        "retry and no passcode clears it. Fix, and it needs a human: sign in "
-        "at %s, set a new password (SaraPlus requires 8-15 characters), then "
-        "`%s` to put it on the runner (it writes %s). Nothing was read and "
-        "nothing was written." % (email, url, LOGIN_URL, set_cmd, creds_hint))
+        "SaraPlus served its Change Password page to %s (%s). READ THIS BEFORE "
+        "TOUCHING THE PASSWORD: that page is almost always about THIS BROWSER "
+        "PROFILE, not the account. On 2026-09-12 the identical credential went "
+        "straight into DealerPages from an incognito window AND from a new "
+        "empty profile, while this profile got stuck here for 30 passes. "
+        "FIX, in order: (1) move %s aside -- it is only browser state and the "
+        "next run recreates it; the sweep recovered on the very next tick. "
+        "(2) ONLY if a brand-new empty profile ALSO lands here is the account "
+        "really being asked to reset, in which case sign in at %s and set a "
+        "new password (8-15 chars, 1 upper, 1 lower, 1 number, not the last 5, "
+        "and no run of 3+ characters from the old one), then store it with "
+        "set_credentials (%s). Nothing was read and nothing was written."
+        % (email, url, profile_hint, LOGIN_URL, creds_hint))
+
+
+# --- the OTHER /Security/ wall: the browser-verification passcode ----------
+# Real, and separate from the stuck-profile case above. Lifted from
+# rc_contact_sync, which met it on the B2B account on 2026-09-03.
+VERIFY_SETTLE_MS = 2500
+VERIFY_TIMEOUT_S = 180
+VERIFY_POLL_S = 10
 
 
 def _security_wall_error(url: str, email: str, creds_hint: str) -> "SaraError":
@@ -128,31 +141,16 @@ def _security_wall_error(url: str, email: str, creds_hint: str) -> "SaraError":
         "no way to read the code. The password was accepted -- that url "
         "carries a real session id -- and SaraPlus then sent us to its "
         "Security area instead of the Hub: %s. NOT an expired password: do "
-        "not go changing the one in %s. Pass read_code= to login() (the "
-        "Alphalete reports hand it rc_contact_sync.verify_code.wait_for_code), "
-        "or sign in once by hand in this Chrome profile so SaraPlus remembers "
-        "the browser. Nothing was read and nothing was written."
+        "not go changing the one in %s. Pass read_code= to login(), or move "
+        "this report's Chrome profile aside and let the next run build a "
+        "fresh one. Nothing was read and nothing was written."
         % (email, url, creds_hint))
-
-
-# --- the passcode wall -------------------------------------------------------
-# Every line below was paid for on the B2B account on 2026-09-03 and is lifted
-# from rc_contact_sync/sara.py, comments and all. It is HERE because the wall
-# is the site's, not one report's: the sales board hit the identical challenge
-# on 2026-09-12 and had nothing to answer it with.
-#
-# rc_contact_sync still runs its own copy on purpose -- it is live at 4am and
-# collapsing a working login into a fresh refactor on the same day as an
-# outage is how one broken report becomes two. Collapse them once this one has
-# run clean for a week. [[reference_saraplus_reporting_hub]]
-VERIFY_SETTLE_MS = 2500
-VERIFY_TIMEOUT_S = 180
-VERIFY_POLL_S = 10
 
 
 def code_page_text(page, limit: int = 400) -> str:
     """What the challenge page actually SAYS, trimmed. Every 'no code box'
-    report is really 'not the page you think', and its own words settle it."""
+    report is really 'not the page you think', and its own words settle it --
+    as they eventually did on 2026-09-12."""
     try:
         txt = page.evaluate("() => (document.body.innerText || '').trim()") or ""
     except Exception:  # noqa: BLE001
@@ -161,10 +159,9 @@ def code_page_text(page, limit: int = 400) -> str:
 
 
 def _on_passcode_page(page) -> bool:
-    """Still sitting in SaraPlus's Security area. The URL is the honest
-    signal that the challenge has not been cleared -- the Hub we land on
-    afterwards carries enough of the same vocabulary to read as 'still being
-    asked' on a login that had in fact just succeeded."""
+    """Still sitting in SaraPlus's Security area. Judged on the URL: the Hub we
+    land on afterwards carries enough of the same vocabulary to read as 'still
+    being asked' on a login that had in fact just succeeded."""
     try:
         url = (page.url or "").lower()
     except Exception:  # noqa: BLE001
@@ -447,9 +444,7 @@ def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
     # challenged login is not lost, it is unanswered. Without read_code there
     # is nothing to answer it with, and _security_wall_error says so.
     if _is_password_reset(page, url):
-        raise _password_reset_error(
-            url, email, creds_hint,
-            "python3 -m automations.alphalete_sales_board.set_credentials")
+        raise _stuck_profile_error(url, email, creds_hint)
     if _needs_code(page):
         if read_code is None:
             raise _security_wall_error(url, email, creds_hint)
