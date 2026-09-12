@@ -356,3 +356,54 @@ class DoubleBoardTests(unittest.TestCase):
         for key in ("kash", "cyrus"):
             if (P.approved_knocks() or {}).get(key):
                 self.assertNotIn(key, keys, key)
+
+
+class ShippedClosureTests(unittest.TestCase):
+    """Every module the agent imports must actually be in the package.
+
+    sale_hype.py was not, and it imports LAZILY inside read_day -- so the
+    package imported cleanly and would have failed at sweep time on someone
+    else's laptop, which is the worst place to find out (2026-09-12)."""
+
+    def test_every_import_the_agent_makes_is_shipped(self):
+        import ast
+        from pathlib import Path
+        from automations.icd_alerts.package import AGENT_FILES
+        shipped = set(AGENT_FILES)
+        # The builder writes these two itself rather than copying them.
+        shipped |= {"automations/__init__.py",
+                    "automations/shared/__init__.py"}
+        repo = Path(__file__).resolve().parents[2]
+
+        def wanted(module, names):
+            """Every repo path an import statement could be reaching for."""
+            out = []
+            if module and module.startswith("automations"):
+                base = module.replace(".", "/")
+                out.append(base + ".py")                  # a module
+                out.append(base + "/__init__.py")         # a package
+                for n in names:                           # from pkg import mod
+                    out.append("%s/%s.py" % (base, n))
+            return out
+
+        missing = []
+        for rel in AGENT_FILES:
+            tree = ast.parse((repo / rel).read_text())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    paths = wanted(node.module or "",
+                                   [a.name for a in node.names])
+                elif isinstance(node, ast.Import):
+                    paths = []
+                    for a in node.names:
+                        paths += wanted(a.name, [])
+                else:
+                    continue
+                if paths and not any(q in shipped for q in paths):
+                    missing.append((rel, paths[0]))
+        self.assertEqual(sorted(set(missing)), [],
+                         "shipped code imports something not in the package")
+
+    def test_the_sale_module_specifically_is_shipped(self):
+        from automations.icd_alerts.package import AGENT_FILES
+        self.assertIn("automations/shared/sale_hype.py", AGENT_FILES)
