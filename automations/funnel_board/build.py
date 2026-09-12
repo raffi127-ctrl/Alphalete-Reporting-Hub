@@ -612,14 +612,19 @@ def mx(mgr_ref, week_ref):
         # the org total still can't swallow captainship offices. Rows capped at
         # 20000: the Daily Log holds ~7.3k rows (Sep 2026), full-column
         # SUMPRODUCT is what would actually get slow.
-        pick = ("N(+INDEX('Daily Log'!$E$2:$Q$20000,0,MATCH(VLOOKUP($B$1,%s,"
-                "%d,FALSE),'Daily Log'!$E$1:$Q$1,0)))" % (MX_H, col))
+        # No N()/coercion wrapper here: the total lives inside LET(n,...) and
+        # the variable n SHADOWS the N() function — "Invalid call to
+        # non-function: N" (found 2026-09-12, Removal % total blank). The
+        # comma-argument form of SUMPRODUCT already treats text/blank cells
+        # as 0, which is all N() was for.
+        pick = ("INDEX('Daily Log'!$E$2:$Q$20000,0,MATCH(VLOOKUP($B$1,%s,"
+                "%d,FALSE),'Daily Log'!$E$1:$Q$1,0))" % (MX_H, col))
         member = ("ISNUMBER(MATCH('Daily Log'!$C$2:$C$20000,$A$%d:$A$%d,0))"
                   % (MX_M0, MX_M0 + MX_MAXR - 1))
         if week_ref:
             return ("SUMPRODUCT(('Daily Log'!$B$2:$B$20000=%s)*%s,%s)"
                     % (week_ref, member, pick))
-        return "SUMPRODUCT(%s*%s)" % (member, pick)
+        return "SUMPRODUCT(%s*1,%s)" % (member, pick)
 
     part = sumifs if mgr_ref else member_sum
     return ('=IFERROR(LET(n,' + part(2) + ',d,' + part(3) +
