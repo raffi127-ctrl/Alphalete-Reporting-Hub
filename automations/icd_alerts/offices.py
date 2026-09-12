@@ -60,6 +60,12 @@ class AlertOffice(NamedTuple):
     channels: tuple
     timezone: str
     active: bool = True
+    # WHICH LAUNCHER THEIR PACKAGE CARRIES, recorded once so nobody has to
+    # remember. It is not cosmetic: GMAIL STRIPS .bat EVEN INSIDE A ZIP, so a
+    # "both" package cannot reliably be emailed at all and the bounce does not
+    # say why. Knowing the office's platform is what lets the build be right
+    # the first time instead of after a rebuild.
+    platform: str = "mac"
 
     def display(self) -> str:
         where = ", ".join(c.name for c in self.channels) or "no channel set yet"
@@ -80,7 +86,7 @@ OFFICES: Dict[str, AlertOffice] = {
         # says so, his alerts go to the holding DM. Putting them in front of
         # his whole team on a guess is not a thing to undo.
         channels=(),
-        timezone="America/Chicago", active=True,
+        timezone="America/Chicago", active=True, platform="mac",
     ),
     "cyrus": AlertOffice(
         key="cyrus", owner="Cyrus Wade", label="Cyrus's Local Office",
@@ -92,6 +98,7 @@ OFFICES: Dict[str, AlertOffice] = {
         # asks him.
         channels=(),
         timezone="America/Chicago", active=True,     # Tyler, TX
+        platform="mac",                              # confirmed 2026-09-12
     ),
 }
 

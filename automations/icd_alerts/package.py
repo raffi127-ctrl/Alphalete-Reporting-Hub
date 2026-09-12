@@ -256,12 +256,15 @@ def main(argv=None) -> int:
     # cannot reliably be emailed at all -- it is stripped or bounced, and the
     # bounce does not say why. Build for the platform the office actually uses.
     ap.add_argument("--platform", choices=("mac", "windows", "both"),
-                    default="both",
-                    help="which launcher to include (default both). Use 'mac' "
-                         "or 'windows' to make the zip emailable: gmail blocks "
-                         ".bat even inside an archive.")
+                    default=None,
+                    help="which launcher to include. Defaults to the office's "
+                         "own `platform` in offices.py, because GMAIL BLOCKS "
+                         ".bat EVEN INSIDE A ZIP -- a 'both' package cannot "
+                         "reliably be emailed and the bounce does not say why.")
     args = ap.parse_args(argv)
-    build(args.office, make_zip=not args.no_zip, platform=args.platform)
+    office = O.get(args.office)
+    platform = args.platform or (office.platform if office else "both")
+    build(args.office, make_zip=not args.no_zip, platform=platform)
     return 0
 
 
