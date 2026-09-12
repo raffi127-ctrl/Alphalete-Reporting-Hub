@@ -185,7 +185,22 @@ def _find_roster_image(client, monday_iso: Optional[str] = None,
                if POST_RE.search(m.get("text", "") or "")
                and (not poster or m.get("user") == poster)]
     if not matches:
-        return None
+        # NOBODY HAS POSTED THIS WEEK'S ROSTER YET — waiting, not broken.
+        # Aisha posts it Friday afternoon, and the thread-scan agent ticks
+        # every 30 minutes from Monday, so this branch is the normal state for
+        # most of the week. It used to fall through to a plain RuntimeError,
+        # which the caller reports as INCOMPLETE: that opened a failure
+        # incident on 2026-09-11 and re-alerted on every tick after it.
+        #
+        # Distinct from "a post exists but carries no image" further down,
+        # which keeps the generic error — a roster post WITHOUT its screenshot
+        # is a real problem somebody has to fix.
+        raise RosterNotPostedYet(
+            "No 'New Starts Scheduled for Monday' post in {}{} for the week of "
+            "{} yet. Aisha posts it Friday afternoon; nothing to do until "
+            "then.".format(CHANNEL_ID,
+                           " by <@{}>".format(poster) if poster else "",
+                           monday_iso or "this week"))
     if monday_iso:
         # Two guards, both learned the week of 8/24:
         #  - A week where the roster hasn't been posted yet would otherwise
