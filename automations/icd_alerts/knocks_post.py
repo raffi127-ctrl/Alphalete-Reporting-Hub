@@ -54,23 +54,15 @@ def _office_now(office) -> dt.datetime:
 
 
 def in_field_hours(office, now: Optional[dt.datetime] = None) -> bool:
-    """Only post while their reps are actually out. Sunday is off for everyone."""
-    now = now or _office_now(office)
-    if now.weekday() == 6:
-        return False
-    try:
-        from automations.disposition_signup.schema import DEFAULT_HOURS as H
-    except Exception:  # noqa: BLE001
-        H = {"day_start": "13:30", "day_end": "22:00",
-             "sat_start": "10:45", "sat_end": "18:30"}
-    start, end = ((H["sat_start"], H["sat_end"]) if now.weekday() == 5
-                  else (H["day_start"], H["day_end"]))
-    return _hm(start) <= (now.hour, now.minute) <= _hm(end)
+    """Only post while THIS office's reps are out. One definition, in
+    offices.py, because each office carries its own window now."""
+    return O.in_field_hours(office, now)
 
 
-def _hm(text: str) -> Tuple[int, int]:
-    h, m = str(text).split(":")
-    return int(h), int(m)
+# Re-exported: _slot_due still parses the fixed-time slots, and moving
+# in_field_hours out took the helper with it. A NameError in a due-check
+# reads as "no destination is ever due", which is silence.
+_hm = O._hm
 
 
 def is_due(dest: Dict, last_posted: Optional[dt.datetime],

@@ -256,3 +256,40 @@ class EmptyGridTests(unittest.TestCase):
     def test_a_full_width_row_is_never_second_guessed(self):
         page = _Page(self.HEADERS, [["7", "No answer", "1", "2", "3", "4"]])
         self.assertEqual(len(K.read_rows(page, log=lambda *_: None)), 1)
+
+
+class PerOfficeHoursTests(unittest.TestCase):
+    """Each office carries its own window. A single org-wide one posted into
+    both of these offices' quiet time (Megan supplied the real hours
+    2026-09-12): Kash's Saturday starts 45 minutes earlier than Cyrus's and
+    ends an hour later."""
+
+    def setUp(self):
+        from automations.icd_alerts import offices as O
+        self.O, self.kash, self.cyrus = O, O.get("kash"), O.get("cyrus")
+
+    def test_weekday_window_is_shared_and_ends_at_830(self):
+        for o in (self.kash, self.cyrus):
+            self.assertTrue(self.O.in_field_hours(o, dt.datetime(2026, 9, 11, 13, 30)))
+            self.assertTrue(self.O.in_field_hours(o, dt.datetime(2026, 9, 11, 20, 30)))
+            self.assertFalse(self.O.in_field_hours(o, dt.datetime(2026, 9, 11, 20, 31)))
+            self.assertFalse(self.O.in_field_hours(o, dt.datetime(2026, 9, 11, 13, 29)))
+
+    def test_saturdays_genuinely_differ(self):
+        early = dt.datetime(2026, 9, 12, 10, 30)      # Kash in, Cyrus not yet
+        late = dt.datetime(2026, 9, 12, 16, 30)       # Kash in, Cyrus done
+        self.assertTrue(self.O.in_field_hours(self.kash, early))
+        self.assertFalse(self.O.in_field_hours(self.cyrus, early))
+        self.assertTrue(self.O.in_field_hours(self.kash, late))
+        self.assertFalse(self.O.in_field_hours(self.cyrus, late))
+
+    def test_sunday_is_off_for_everyone(self):
+        for o in (self.kash, self.cyrus):
+            self.assertFalse(self.O.in_field_hours(o, dt.datetime(2026, 9, 13, 15, 0)))
+
+    def test_the_board_asks_the_same_question_as_the_roster(self):
+        """knocks_post must not keep its own idea of when an office is out."""
+        from automations.icd_alerts import knocks_post as KP
+        when = dt.datetime(2026, 9, 12, 16, 30)
+        self.assertEqual(KP.in_field_hours(self.cyrus, when),
+                         self.O.in_field_hours(self.cyrus, when))

@@ -24,17 +24,18 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Every 5 minutes, matching the laptops' own sweep so this is never the
-         thing holding an alert up. A credit check is early news and arrives
-         within a sweep of happening; a poster on a slower clock would throw
-         that away on our side after the laptop had already done the work.
-         The tick is cheap: one read of one tab, and the wrapper exits in
-         milliseconds outside 08:00-23:00 Mon-Sat. StartInterval rather than a
-         calendar list: 180 calendar entries would be unreadable, and a missed
-         tick matters far less than one firing at the wrong hour after a TZ
-         drift. -->
+    <!-- Every 2 minutes. The requirement is an alert within 3-5 minutes of the
+         credit check, and the lag is the laptop's sweep (3 min) plus this. At
+         two, the worst case is five minutes and the typical case is under
+         three; at five, the worst case was ten and the promise would have
+         been broken half the time.
+         The tick is genuinely cheap -- one read of one tab -- and the wrapper
+         exits in milliseconds outside 08:00-23:00 Mon-Sat, so the off-hours
+         ticks cost nothing. StartInterval rather than a calendar list: 450
+         calendar entries would be unreadable, and a missed tick matters far
+         less than one firing at the wrong hour after a TZ drift. -->
     <key>StartInterval</key>
-    <integer>300</integer>
+    <integer>120</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/megan/1st Claude Folder/output/logs/icd-alerts-poster.launchd.out.log</string>

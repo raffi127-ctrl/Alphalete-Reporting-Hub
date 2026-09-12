@@ -46,15 +46,16 @@ HERE = Path(__file__).resolve().parent
 IS_WINDOWS = platform.system() == "Windows"
 TASK_NAME = "LucyReports"
 PLIST_LABEL = "com.alphalete.lucy-reports"
-# FIVE, to match the AO office. A credit check is early news -- the whole
-# value is hearing it while the rep is still on the doorstep -- and at 15
-# minutes an owner would watch the same alerts arrive three times slower than
-# the ones they already see in #alphalete-sales and reasonably call it broken.
+# THREE, because the requirement is an alert within 3-5 minutes of the credit
+# check (Megan 2026-09-12) and the total lag is this plus the poster's tick.
+# At three here and two there, the worst case is five minutes and the typical
+# case is under three.
 #
-# The cost is small: a sweep is ~30-60s against a session the profile keeps
-# warm, so this is one browser page-read every five minutes on a plugged-in
-# machine. Lucy 1 has done exactly this for the AO office all day, every day.
-EVERY_MINUTES = 5
+# The cost is still small: a sweep is ~30-60s against a session the Chrome
+# profile keeps warm, so this is one page-read every three minutes on a
+# plugged-in machine. It is the laptop's own SaraPlus account, so no office
+# is competing with another for a rate limit.
+EVERY_MINUTES = 3
 
 
 # READABLE ON ANY BACKGROUND, which is the only requirement that actually

@@ -72,6 +72,20 @@ class AlertOffice(NamedTuple):
     # Fill it with `python -m automations.icd_alerts.whois "Kash Rai"`, or from
     # Slack: click their name, the three dots, Copy member ID.
     slack_user_id: str = ""
+    # WHEN THIS OFFICE'S REPS ARE ACTUALLY OUT, on their own clock. The knocks
+    # board only posts inside these hours: a board at 9pm about an office that
+    # stopped at 8:30 is a report on a finished day, and a gap alert after the
+    # last knock is noise with somebody's name on it.
+    #
+    # PER OFFICE, not one shared default. Kash finishes at 8:30 and Cyrus at
+    # 8:30, but their Saturdays differ by 45 minutes at the start and an hour
+    # at the end (Megan 2026-09-12) -- and a single org-wide window would have
+    # posted into both of their quiet time.
+    day_start: str = "13:30"
+    day_end: str = "20:30"
+    sat_start: str = "10:45"
+    sat_end: str = "17:00"
+    saturday: bool = True
 
     def display(self) -> str:
         where = ", ".join(c.name for c in self.channels) or "no channel set yet"
@@ -94,6 +108,9 @@ OFFICES: Dict[str, AlertOffice] = {
         channels=(),
         timezone="America/Chicago", active=True, platform="mac",
         slack_user_id="U046XBPN0G2",     # Kash Rai, @palace.kash
+        # Megan 2026-09-12, from Kash.
+        day_start="13:30", day_end="20:30",
+        sat_start="10:30", sat_end="17:00",
     ),
     "cyrus": AlertOffice(
         key="cyrus", owner="Cyrus Wade", label="Cyrus's Local Office",
@@ -113,8 +130,36 @@ OFFICES: Dict[str, AlertOffice] = {
         # this id is a DM recipient, and the cost of the wrong one is a
         # message to a stranger about a machine they do not own.
         slack_user_id="U06A1QA642X",     # Cy Wade, @wadebusiness7
+        # Megan 2026-09-12, from Cyrus. Saturday starts 45 minutes later than
+        # Kash's and ends an hour earlier.
+        day_start="13:30", day_end="20:30",
+        sat_start="11:15", sat_end="16:00",
     ),
 }
+
+
+def in_field_hours(office: "AlertOffice", now=None) -> bool:
+    """Is this office's field actually out right now, on their own clock?
+
+    Sunday is off for everyone. Each office carries its own window, because
+    they genuinely differ -- and posting a board into a room whose day ended
+    an hour ago is how a useful feed becomes one people mute.
+    """
+    now = now or office_now(office)
+    if now.weekday() == 6:
+        return False
+    if now.weekday() == 5:
+        if not office.saturday:
+            return False
+        start, end = office.sat_start, office.sat_end
+    else:
+        start, end = office.day_start, office.day_end
+    return _hm(start) <= (now.hour, now.minute) <= _hm(end)
+
+
+def _hm(text: str):
+    h, m = str(text).split(":")
+    return int(h), int(m)
 
 
 def office_now(office: "AlertOffice", fallback=None):
