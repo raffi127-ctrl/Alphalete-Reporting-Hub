@@ -1519,7 +1519,7 @@ def _relay_week(office_key: str, week_ending: dt.date) -> dict:
     return RL.week(office_key, week_ending)
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def _sheet_tenure(icd: str) -> dict:
     """{lowered rep name: tenure label} from an office's own board sheet.
 
@@ -1541,23 +1541,18 @@ def _sheet_tenure(icd: str) -> dict:
         sh = open_by_key(RAF_SHEET)
         tabs = [w.title for w in sh.worksheets()]
         tab, _d = B.week_tab_dates(tabs)[0]
-        # TWO COLUMNS, not the whole grid. get_all_values on this sheet pulls
-        # 247 columns and took the page from seconds to minutes; the name and
-        # the tenure are all that is wanted here. Column C is the name and DQ
-        # the Field Status, found by value on the live board 2026-09-13.
-        names, tenures = sh.worksheet(tab).batch_get(["C5:C200", "DQ5:DQ200"])
+        # THE FULL PARSE, not a column window. Reading C5:C600 + DQ5:DQ600
+        # looked cheap and was WRONG: it found 76 of the reps and silently
+        # dropped the rest, because this board does not keep every name in one
+        # column. board_read.parse_week locates them the way the rest of this
+        # module does, by label. It is a heavy read, so it is cached for half
+        # an hour and paid once.
+        week = B.parse_week(sh.worksheet(tab).get_all_values(), tab)
         out = {}
-        for nrow, trow in zip(names, tenures):
-            raw = (nrow[0] if nrow else "").strip()
-            label = (trow[0] if trow else "").strip()
-            # ONLY REAL TENURE VALUES. The column is read by position for
-            # speed, so rows outside the rep block bring back whatever sits
-            # there — '3.00', '7', 'Total Leaders'. Anything that is not a
-            # tenure we know is dropped rather than coloured at random.
-            if not raw or label.lower() not in _KNOWN_TENURES:
-                continue
-            clean, _tags = B.clean_name(raw)
-            if clean:
+        for r in week.reps:
+            clean, _tags = B.clean_name(r.get("name") or "")
+            label = (r.get("attrs", {}).get(B.ATTR_TENURE) or "").strip()
+            if clean and label.lower() in _KNOWN_TENURES:
                 out[clean.strip().lower()] = label
         return out
     except Exception:
@@ -1693,14 +1688,33 @@ def relay_board(icd: str, office_key: str) -> None:
     by_rep = _relay_week(office_key, week_ending)
     days = sorted({d for r in by_rep.values() for d in r["days"]})
 
+    # CLICK A DAY TO SEE WHAT IT WAS MADE OF (Megan 2026-09-13). Streamlit's
+    # grid has no per-cell tooltip — help= is per COLUMN — so hovering a day
+    # cannot show its split. Picking the day instead re-scopes the whole board
+    # to it, which is the same control Raf's sheet board already uses, and it
+    # answers the same question: that 5 was 1 INT and 1 DTV and 3 NL.
+    week_days_all = [week_ending - dt.timedelta(days=i)
+                     for i in range(6, -1, -1)
+                     if week_ending - dt.timedelta(days=i) <= dt.date.today()]
+    day_pick = st.radio(
+        "Show", ["Week"] + [d.strftime("%a") for d in week_days_all],
+        horizontal=True, key=f"relayday_{office_key}")
+    picked_day = next((d for d in week_days_all
+                       if d.strftime("%a") == day_pick), None)
+
+
     # SAY WHICH DAYS THIS IS (Megan 2026-09-13). A board with no dates on it
     # reads as "how the office is doing"; it is one Mon-Sun week, and often a
     # PART of one — an office three days into the week has a board that is
     # correct and incomplete at the same time, and only the dates say so.
     started = week_ending - dt.timedelta(days=6)
-    st.subheader(f"Sales board · Monday {started.strftime('%b')} "
-                 f"{_ord(started.day)} – Sunday {week_ending.strftime('%b')} "
-                 f"{_ord(week_ending.day)}")
+    st.subheader(
+        f"Sales board · {picked_day.strftime('%A')} "
+        f"{picked_day.strftime('%b')} {_ord(picked_day.day)}"
+        if picked_day else
+        f"Sales board · Monday {started.strftime('%b')} "
+        f"{_ord(started.day)} – Sunday {week_ending.strftime('%b')} "
+        f"{_ord(week_ending.day)}")
     # A PART WEEK HAS TO SAY SO LOUDLY. Megan read a one-day board as a week
     # and asked why the numbers were so low (2026-09-13) — they were right,
     # they were just one day. A caption under the table was not enough, so the
@@ -1765,8 +1779,8 @@ def relay_board(icd: str, office_key: str) -> None:
 
     # Only days that have happened — a column of zeros for Thursday when it
     # is Tuesday reads as a bad day rather than a day that has not come.
-    week_days = [week_ending - dt.timedelta(days=i) for i in range(6, -1, -1)
-                 if week_ending - dt.timedelta(days=i) <= dt.date.today()]
+    # One day picked: that day's PRODUCTS replace the seven day columns.
+    week_days = [] if picked_day else week_days_all
 
     rows = []
     for low, shown in names.items():
@@ -1778,8 +1792,8 @@ def relay_board(icd: str, office_key: str) -> None:
         sd = next((d for n, d in settled_reps.items()
                    if n.strip().lower() == low), {})
         tot = {m: 0 for m in RELAY_MEASURES}
-        for i in range(7):
-            d = week_ending - dt.timedelta(days=i)
+        for d in ([picked_day] if picked_day else
+                  [week_ending - dt.timedelta(days=i) for i in range(7)]):
             if d > dt.date.today():
                 continue
             # Closed day: Tableau, falling back to the relay if Tableau has
@@ -1808,10 +1822,12 @@ def relay_board(icd: str, office_key: str) -> None:
             src = (sd.get(d) or live_days.get(d) or {}) if d < dt.date.today() \
                 else (live_days.get(d) or {})
             row[d.strftime("%a")] = _units(src) if src else 0
+        # On a single day the split IS the answer, so it shows without
+        # needing Expand — that is the whole point of clicking the day.
+        if picked_day or expand:
+            row.update({m: tot[m] for m in RELAY_MEASURES})
         row["Apps"] = _apps(tot)
         row["Total units"] = _units(tot)
-        if expand:
-            row.update({m: tot[m] for m in RELAY_MEASURES})
         rows.append(row)
     rows.sort(key=lambda r: (-r["Apps"], -r["Total units"], r["Rep"]))
 
@@ -1831,7 +1847,8 @@ def relay_board(icd: str, office_key: str) -> None:
     settled = _settled_days(icd, week_ending)
     today = dt.date.today()
     tot = {m: 0 for m in RELAY_MEASURES}
-    for d in (week_ending - dt.timedelta(days=i) for i in range(7)):
+    for d in ([picked_day] if picked_day else
+              [week_ending - dt.timedelta(days=i) for i in range(7)]):
         if d > today:
             continue
         src = settled.get(d) if d < today else None
@@ -1869,7 +1886,7 @@ def relay_board(icd: str, office_key: str) -> None:
                                         for r in rows) for d in week_days}
     totals_row = dict({"Rep": TOTALS_LABEL}, **day_totals,
                       **{"Apps": _apps(tot), "Total units": _units(tot)})
-    if expand:
+    if picked_day or expand:
         totals_row.update({m: tot[m] for m in RELAY_MEASURES})
     # Built from the FIRST row's keys so the totals line carries every column
     # in the same order, rather than however a dict merge happened to land.
