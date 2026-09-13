@@ -326,6 +326,14 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
                                 .map(r => r.innerText.replace(/\s+/g,' ').trim())
                                 .filter(t => /\d{1,2}[\/-]\d{1,2}|20\d\d|Mon|Sat/.test(t))
                                 .slice(0, 2).join(' || ')""")[:230]
+                    _LAST_DIAG["rows"] = app.page.evaluate(
+                        r"""() => [...document.querySelectorAll('tr')]
+                                .map(tr => {
+                                    const c = tr.querySelector('td,th');
+                                    return c ? c.innerText.replace(/\s+/g,' ').trim() : '';
+                                })
+                                .filter(t => t && t.length < 46)
+                                .join(' | ')""")[:400]
                 except Exception:   # noqa: BLE001
                     _LAST_DIAG["headers"] = "unreadable"
             for i in range(7):
@@ -360,7 +368,9 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     # fixed width, and the box is already known.
     landed = _LAST_DIAG.get("landed")
     why = ""
-    if _LAST_DIAG.get("headers"):
+    if _LAST_DIAG.get("rows"):
+        why = f" · rows: {_LAST_DIAG['rows']}"
+    elif _LAST_DIAG.get("headers"):
         why = f" · headers: {_LAST_DIAG['headers']}"
     elif _LAST_DIAG.get("fields") and opened < len(weeks):
         why = f" · fields: {_LAST_DIAG['fields']}"
