@@ -306,6 +306,32 @@ ARGS="--live --oat-only"
 # session holder's or Tableau's profile) or it would hold the profile lock.
 MAX_RUN_S=${APPLICANT_PUSH_MAX_RUN_S:-1200}
 
+# ---- DON'T START ON TOP OF A HAND-RUN (2026-09-13) ---------------------------
+# The collision guard was one-sided. mini_control REFUSES a rerun while a walk is
+# running ("applicant_push is ALREADY running here (pid N) — not starting a second
+# copy"), but nothing stopped the reverse: a hand-run already in flight, launchd
+# fires this wrapper, and now two processes share one warm AppStream session.
+# launchd's single-instance rule covers wrapper-vs-wrapper only.
+#
+# That is the crossed-session hazard offices.py calls irreversible: the session
+# gets switched to the other office underneath whichever walk did not do the
+# switching. On 2026-09-13 Khalil's office logged office_guard_refused=14 in one
+# walk while another session was hand-running `applicant_push --office 11901
+# --live` against it. The office guard failed closed and nothing was sent
+# wrongly — but the guard is the last line, not the plan.
+#
+# Matching the PYTHON module path, not "applicant_push": this wrapper's own
+# command line is `bash deploy/applicant_push.sh`, and the module path only
+# appears on the child we are about to start — which does not exist yet.
+_OTHER=$(pgrep -f "automations\.applicant_push\.run" 2>/dev/null | tr '\n' ' ')
+if [ -n "${_OTHER// /}" ]; then
+  echo "[$(date)] SKIPPING this tick for $OFFICE_LABEL — a push is already running (pid ${_OTHER% }), most likely a hand-run via mini_control. Two runs share one AppStream session and can switch each other's office mid-walk." >> "$LOG_FILE"
+  # Advance the rotation so this office is not re-picked next tick and starved
+  # behind a long hand-run; it comes round again on the next cycle.
+  [ -n "$OFFICE_ARG" ] && echo "$OFFICE" > "$ROTATE_MARK"
+  exit 0
+fi
+
 "$VENV_PY" -u -m automations.applicant_push.run $ARGS $OFFICE_ARG "$@" >> "$LOG_FILE" 2>&1 &
 _RUN_PID=$!
 _waited=0
