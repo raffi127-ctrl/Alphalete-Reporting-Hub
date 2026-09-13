@@ -2291,8 +2291,35 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                 _log(f"    remove-for-no-contact FAILED → flag: "
                      f"{a.first_name} {a.last_name}")
             else:
-                _log(f"    no resume on file ({detail}) → flag: "
+                _log(f"    no resume on file ({detail}) → flag + remember (won't "
+                     f"re-check for "
+                     f"{getattr(config, 'SETTLED_RECHECK_DAYS', 7)} days): "
                      f"{a.first_name} {a.last_name}")
+                # SETTLE IT (2026-09-13). This branch was the only terminal path in
+                # flag_no_phone that did NOT record a verdict, so an applicant with
+                # no resume attached was re-decided on EVERY walk forever — and
+                # each re-decision spends one of the run's MAX_PER_RUN work slots.
+                #
+                # In an office that leaves these people in the queue (11580 and
+                # 11901, and 23467 since 9/12) they collect at the front, so once
+                # there are 60 of them the walk burns its whole budget on the same
+                # names every pass and never reaches anyone behind them. Measured
+                # 2026-09-13: Carlos's queue 178 -> 185 across three walks with
+                # flag_no_phone=60/60/62, ONE send and a no-number cache still
+                # reading 0, while Atef — same code, same box, same hour — sent 28
+                # and drained 113 -> 82. Megan: "it should be processing all apps."
+                #
+                # Settling it makes them page-turns instead of slots (see run_walk's
+                # _SETTLED_SKIPS), which is exactly what the 2026-09-03 cap change
+                # was built for — it just never fired here, because nothing ever
+                # marked these applicants settled.
+                #
+                # Confirmed, not blocked: the code above already treats a missing
+                # link as "panel blank AND no resume", distinct from a read we were
+                # denied. It still re-checks on the SETTLED_RECHECK_DAYS cadence, so
+                # a resume uploaded later, or a link we missed to a render race, is
+                # picked up within the week rather than never.
+                _mark_nophone_checked(key, confirmed=True)
         else:
             # The resume OPENED and genuinely carries no number. Confirmed
             # uncontactable — distinct from a blocked read, which is OUR failure and

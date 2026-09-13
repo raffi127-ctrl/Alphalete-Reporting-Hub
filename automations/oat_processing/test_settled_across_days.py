@@ -106,5 +106,55 @@ check("settled before the recheck", o.skips("wrongly written off"), True)
 run.reset_nophone_cache()
 check("re-read after the recheck", o.skips("wrongly written off"), False)
 
+print("EVERY terminal branch of flag_no_phone records a verdict:")
+# THE BUG THIS PINS (2026-09-13). flag_no_phone has three ways to end without
+# sending: the resume was blocked, there is no resume link at all, or the resume
+# opened and carried no number. Two of them recorded a verdict. The no-link one
+# did not — so those applicants were re-decided on every single walk, and each
+# re-decision spends one of MAX_PER_RUN's work slots. Once 60 of them collect at
+# the front of a queue, the walk never reaches anyone behind them: Carlos's queue
+# went 178 -> 185 across three walks, one send, cache still 0.
+#
+# Read the SOURCE rather than driving a browser: the point is that no future edit
+# adds a fourth silent exit. A branch that neither sends, removes, nor records is
+# the whole failure mode.
+import inspect as _inspect
+import re as _re
+
+_src = _inspect.getsource(run.flag_no_phone)
+
+
+def _branch(start_needle, end_needle=None):
+    """The source of ONE arm — from its log line to where the next arm begins.
+    Slicing by a character count instead would silently pass the moment someone
+    adds a comment, which is how this test would stop testing anything."""
+    i = _src.find(start_needle)
+    if i < 0:
+        return ""
+    j = _src.find(end_needle, i) if end_needle else -1
+    return _src[i:j] if j > i else _src[i:]
+
+
+# The two arms that end in a FLAG. Each must record a confirmed verdict, or the
+# applicant is re-decided — and re-charged a work slot — on every future walk.
+for _label, _seg in (
+        ("no resume attached",
+         _branch("no resume on file", "The resume OPENED")),
+        ("resume opened, no number",
+         _branch("no resume phone"))):
+    check("%s: branch found" % _label, bool(_seg), True)
+    check("%s: records a verdict" % _label,
+          "_mark_nophone_checked" in _seg, True)
+    check("%s: records it as CONFIRMED (survives the day)" % _label,
+          "confirmed=True" in _seg, True)
+
+# The blocked branch must NOT settle — we never saw that resume. Its bookkeeping
+# is _mark_nophone_blocked, which retries and only settles after the last try.
+_bidx = _src.find("resume read BLOCKED")
+_btail = _src[_bidx:_bidx + 700] if _bidx >= 0 else ""
+check("blocked read is tracked separately", "_mark_nophone_blocked" in _src, True)
+check("blocked read does NOT get a confirmed verdict",
+      "confirmed=True" in _btail, False)
+
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)
