@@ -106,6 +106,96 @@ def probe() -> None:
     _to_sheet(PROBE_TAB, rows_out or [["probe produced nothing"]])
 
 
+COUNTS_TAB = "HC JE Counts"
+DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def _num(s) -> float:
+    try:
+        return float(str(s).replace(",", "").strip() or 0)
+    except ValueError:
+        return 0.0
+
+
+def _key(s) -> str:
+    return " ".join(str(s or "").lower().split())
+
+
+def count_by_owner(rows, owners):
+    """{owner: {'reps': [...], 'with_rows': n, 'with_sales': n, 'by_day': [n x7]}}.
+
+    Pure — no I/O. `rows` is the 'WTD Sales by Rep (2)' crosstab: a header row
+    carrying 'Rep Name', an ICD column, 'Grand Total' and the weekday columns,
+    then one row per (rep, ICD). A rep can have a second row under another ICD
+    with no numbers; only the row under the OWNER counts for that owner.
+
+    Three readings, because 'count the reps of that owner' can mean more than
+    one thing and Eve checks it by hand on the filtered view:
+      with_rows  — distinct reps listed under the owner at all
+      with_sales — of those, reps whose row has a Grand Total > 0
+      by_day[i]  — reps that sold on any day up to weekday i (the running count
+                   a snapshot taken that day would have shown)
+    """
+    hdr_i = next(i for i, r in enumerate(rows)
+                 if any(_key(c) == "rep name" for c in r))
+    hdr = [_key(c) for c in rows[hdr_i]]
+    rep_c = hdr.index("rep name")
+    icd_c = next(i for i, h in enumerate(hdr) if "icd" in h)
+    tot_c = hdr.index("grand total") if "grand total" in hdr else None
+    day_c = [hdr.index(d.lower()) if d.lower() in hdr else None for d in DAYS]
+    out = {}
+    for owner in owners:
+        mine = [r for r in rows[hdr_i + 1:]
+                if len(r) > max(rep_c, icd_c) and _key(r[icd_c]) == _key(owner)
+                and _key(r[rep_c]) not in ("", "grand total")]
+        reps = {}
+        for r in mine:
+            days = [_num(r[c]) if c is not None and c < len(r) else 0.0 for c in day_c]
+            tot = _num(r[tot_c]) if tot_c is not None and tot_c < len(r) else sum(days)
+            prev = reps.get(_key(r[rep_c]))
+            if prev:
+                days = [a + b for a, b in zip(prev["days"], days)]
+                tot += prev["total"]
+            reps[_key(r[rep_c])] = {"name": r[rep_c].strip(), "total": tot, "days": days}
+        by_day = []
+        for i in range(7):
+            by_day.append(sum(1 for v in reps.values() if sum(v["days"][:i + 1]) > 0))
+        out[owner] = {"reps": sorted(reps.values(), key=lambda v: -v["total"]),
+                      "with_rows": len(reps),
+                      "with_sales": sum(1 for v in reps.values() if v["total"] > 0),
+                      "by_day": by_day}
+    return out
+
+
+def counts() -> None:
+    """Download the rep sheet ONCE and write the per-owner counts, plus every
+    rep behind each count so the number can be checked against the view."""
+    os.environ.setdefault("ALPHALETE_SKIP_FRESHNESS", "1")
+    from automations.shared.tableau_patchright import (
+        tableau_session, download_crosstab_patchright)
+    from automations.org_active_headcount.pull import _read_crosstab
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
+    with tableau_session(verbose=False) as page:
+        path = download_crosstab_patchright(
+            VIEW_URL, REP_SHEET, OUT / f"je_reps_counts_{stamp}.csv", verbose=False, page=page)
+    rows = _read_crosstab(path)
+    res = count_by_owner(rows, BOARD_OWNERS)
+    table = [["owner", "reps listed", "reps with sales"] + [f"sold by {d[:3]}" for d in DAYS]]
+    for owner, r in res.items():
+        table.append([owner, r["with_rows"], r["with_sales"]] + r["by_day"])
+        print(f"{owner}: listed {r['with_rows']}, with sales {r['with_sales']}, "
+              f"by day {r['by_day']}", flush=True)
+    table.append([])
+    table.append(["owner", "rep", "week total"] + [d[:3] for d in DAYS])
+    for owner, r in res.items():
+        for v in r["reps"]:
+            table.append([owner, v["name"], v["total"]] + v["days"])
+    table.append([])
+    table.append([f"source: {VIEW_URL} -> '{REP_SHEET}', {len(rows)} crosstab rows, "
+                  f"downloaded {stamp}"])
+    _to_sheet(COUNTS_TAB, table)
+
+
 def _to_sheet(title, rows) -> None:
     from automations.org_active_headcount.tracker_readings import _to_sheet as write
     write(title, rows)
@@ -115,10 +205,15 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--probe", action="store_true",
                     help="download the export and copy it to the 'HC JE Probe' tab")
+    ap.add_argument("--counts", action="store_true",
+                    help="count each board owner's reps into the 'HC JE Counts' tab")
     a = ap.parse_args(argv)
-    if not a.probe:
-        ap.error("only --probe exists so far")
-    probe()
+    if a.counts:
+        counts()
+    elif a.probe:
+        probe()
+    else:
+        ap.error("pass --counts or --probe")
     return 0
 
 
