@@ -214,7 +214,15 @@ def _jsonable(v: Any) -> Any:
 # Tracker record — for Raf's Saturday clock-in column. A schema-4 row cannot be
 # topped up: "no record" and "record with no gaps" both stored 0 minutes, so
 # the distinction has to come from a fresh pull.
-SCHEMA = 5
+# 6 (2026-09-13): per-day LEADS and per-day TALK-TO's — K_DAILY_LEADS /
+# K_DAILY_TALK_TO — for Raf's Mon–Fri leads column and the new Saturday
+# talk-to's column. A schema-5 row carries only the week totals for both, and
+# a week total cannot be split into weekdays and Saturday after the fact, so
+# those two columns would draw blank down every ICD row (OPTIONAL_COLUMNS
+# would drop them entirely). Exactly the 2026-08-30 failure the schema exists
+# to stop — bumped in the same commit that added the fields, not the morning
+# after somebody spots it on a board.
+SCHEMA = 6
 
 
 def get(office: str, saturday, *,
