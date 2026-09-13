@@ -111,6 +111,11 @@ def _revenue_board(o: B2BOffice, out_dir: Path, log, today=None):
     return capture.revenue_board_image(o, out_dir, log=log)
 
 
+def _pending_orders(o: B2BOffice, out_dir: Path, log, today=None):
+    from automations.b2b_metrics import capture
+    return capture.pending_orders_image(o, out_dir, log=log)
+
+
 def _activation_board(o: B2BOffice, out_dir: Path, log, today=None):
     """#2 Activation Rate — recreated full-height board (every rep) instead of
     Tableau's scroll-clipped Download→Image. Applies to EVERY office that posts
@@ -155,6 +160,8 @@ ITEMS = [
          capture=_sheet_shot("customer_churn")),
     dict(id="activation_by_rep", emoji="\U0001F4C8", title="Activation Rate by Rep",
          capture=_activation_by_rep),
+    dict(id="pending_orders", emoji="\u23F3", title="Pending Orders",
+         capture=_pending_orders),
     dict(id="order_log", emoji="\U0001F4C4", title="Order Log", is_file=True,
          capture=_order_log),
     dict(id="order_tiered_bonus", emoji="\U0001F3C6",
@@ -473,7 +480,7 @@ def expected_items(o: B2BOffice) -> list:
     from automations.shared import thread_plans as tp
     default = [i for i in ITEMS if i["id"] not in o.skip_views
                and (i["id"] not in ("churn_by_rep", "activation_revenue",
-                                    "revenue_board")
+                                    "revenue_board", "pending_orders")
                     or o.rep_boards)]
     # rep_boards offices post in CARLOS'S ORDER (2026-09-14, dictated in
     # full): money first, then activations, then churn (customer churn ahead
@@ -483,7 +490,8 @@ def expected_items(o: B2BOffice) -> list:
     if o.rep_boards:
         want = ["revenue_board", "sales_metrics", "order_tiered_bonus",
                 "activation_overview", "activation_revenue",
-                "activation_rate", "activation_by_rep", "customer_churn",
+                "activation_rate", "activation_by_rep", "pending_orders",
+                "customer_churn",
                 "churn_wireless", "churn_by_rep", "order_log",
                 "out_of_bounds"]
         rank = {sid: i for i, sid in enumerate(want)}

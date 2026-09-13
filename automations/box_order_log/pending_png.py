@@ -172,7 +172,10 @@ def _draw_section(draw, x, y, section, widths, work, fonts) -> int:
                                                  pending.plural(len(rep_rows))),
                       f_band)
         for s in rep_rows:
-            fill = _rgb(clean.color_for(s.status, s.history)) or WHITE
+            # sp_order_log's AT&T worklist rides this renderer with its own
+            # status palette; BOX keeps clean.color_for when none is given.
+            color_of = work.get("color_fn") or clean.color_for
+            fill = _rgb(color_of(s.status, s.history)) or WHITE
             cx = x
             for col, w, text in zip(_columns(work), widths,
                                     _cells(s, work["today"], _columns(work))):
@@ -209,7 +212,8 @@ def render(work: Dict, out_path: Path) -> Path:
     draw = ImageDraw.Draw(img)
 
     y = PAD
-    draw.text((PAD, y), pending.TITLE, font=f_title, fill=TEXT)
+    draw.text((PAD, y), work.get("title") or pending.TITLE,
+              font=f_title, fill=TEXT)
     y += TITLE_H
     draw.text((PAD, y), work["subtitle"], font=f_cell, fill=MUTED)
     y += SUB_H

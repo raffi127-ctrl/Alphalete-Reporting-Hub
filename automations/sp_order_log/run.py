@@ -799,7 +799,11 @@ def build_artifacts(out_dir: Optional[Path] = None,
         lines, today, log=log, out_path=dest / "activation_overview.png")
     revenue_path = build_revenue_png(
         lines, today, log=log, out_path=dest / "activation_revenue.png")
-    return {"xlsx": xlsx_path, "png": png_path, "revenue": revenue_path}
+    from automations.sp_order_log import pending as sp_pending
+    pending_path = sp_pending.build_png(
+        lines, today, log=log, out_path=dest / "pending_orders.png")
+    return {"xlsx": xlsx_path, "png": png_path, "revenue": revenue_path,
+            "pending": pending_path}
 
 
 # --- main ---------------------------------------------------------------------

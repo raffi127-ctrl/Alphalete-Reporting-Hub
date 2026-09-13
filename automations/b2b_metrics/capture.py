@@ -317,6 +317,18 @@ def activation_revenue_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     return path
 
 
+def pending_orders_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
+    """Carlos only, SaraPlus only (2026-09-13: "like the Box Metrics thread
+    ... pending orders on B2B AT&T, right after the activation rate by
+    rep"). No Tableau fallback — the per-line in-flight statuses only exist
+    in the SaraPlus pull; a skipped section is honest."""
+    path = _saraplus_artifacts(o, out_dir, log=log).get("pending")
+    if not path:
+        raise RuntimeError("SaraPlus artifacts carry no pending image")
+    log("   \u2713 pending orders [carlos]: SARAPLUS worklist")
+    return path
+
+
 # --- #7 : the Activation-report-overview image -----------------------------
 def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     """Two-week Activated/Cancelled/Still-Open per rep, rendered like BOX's
