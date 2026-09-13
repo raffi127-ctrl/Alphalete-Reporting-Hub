@@ -1749,68 +1749,6 @@ def _this_sunday_site() -> dt.date:
     return _week_end(dt.date.today())
 
 
-def _hover_table(grid: list, splits: dict, day_labels: list,
-                 total_col: str = "Total units") -> str:
-    """The board as a real HTML table, so a day cell can carry a TOOLTIP.
-
-    Streamlit's grid renders to a canvas and has no per-cell tooltip — help=
-    is per COLUMN — so hovering a number cannot show what it was made of
-    (Megan 2026-09-13). A plain table can: every day cell gets a title
-    attribute with its split, which the browser shows on hover.
-
-    What this gives up is the grid's sorting and editing, which is why it is
-    only the COLLAPSED view: "Expand your board" goes back to the real editor
-    with every measure as its own column."""
-    head = "".join(f"<th style='padding:6px 10px;text-align:center;"
-                   f"font-weight:600;opacity:.7;font-size:.78rem'>{c}</th>"
-                   for c in grid[0])
-    body = []
-    for row in grid:
-        is_total = str(row.get("Rep", "")).strip() == TOTALS_LABEL
-        # The tenure tint goes on each CELL, not on the <tr>. On the row it
-        # painted straight through a blank day, so an unreported Sunday looked
-        # like a reported one for anyone with a tenure colour (Megan
-        # 2026-09-13).
-        tint = "" if is_total else tenure_style(row.get("Tenure"))
-        tr = ["<tr>"]
-        for col, val in row.items():
-            css = ("padding:5px 10px;text-align:center;"
-                   "border-top:1px solid rgba(128,128,128,.18);")
-            blank_day = col in day_labels and str(val).strip() == ""
-            if tint and not blank_day:
-                css += tint
-            if is_total:
-                css += _TOTAL_TINT + ";font-weight:600;"
-            elif col == total_col:
-                css += _TOTAL_TINT + ";"
-            if col == "Rep":
-                css += "text-align:left;white-space:nowrap;"
-            title = ""
-            if col in day_labels and not is_total:
-                sp = (splits.get(row.get("Rep"), {}) or {}).get(col) or {}
-                # Raf's scale wins over the row's tenure tint on a day cell:
-                # the day colour is production, which is what he reads across.
-                # A rep with NO reading that day is left plain rather than
-                # painted as a worked zero.
-                # "" means nothing reported — no colour. A real 0 means
-                # somebody went out and got nothing, which IS the dark red.
-                if str(val).strip() != "":
-                    css += _scale(val, worked=True)
-                if sp:
-                    title = " · ".join(f"{v} {m}" for m, v in sp.items() if v)
-                    title = title or "nothing sold"
-            elif col in ("Apps", "Total units") and not is_total:
-                css += _week_scale(val)
-            tr.append(f"<td style='{css}'"
-                      + (f" title='{title}'" if title else "")
-                      + f">{val}</td>")
-        tr.append("</tr>")
-        body.append("".join(tr))
-    return (f"<div style='overflow-x:auto'><table style='border-collapse:"
-            f"collapse;width:100%;font-size:.86rem'><thead><tr>{head}</tr>"
-            f"</thead><tbody>{''.join(body)}</tbody></table></div>")
-
-
 def _colour_key() -> str:
     """A one-line legend. The colours carry real meaning — tenure on the name,
     production on the day — and a board full of colour nobody can read is just
@@ -1916,8 +1854,12 @@ def relay_board(icd: str, office_key: str) -> None:
     # so the value is read from state and the widget is rendered into a slot
     # further down: on a rerun the click has already landed, which is exactly
     # how Streamlit behaves anyway.
-    prod_key, exp_key = f"relayprod_{office_key}", f"relayexp_{office_key}"
-    products = bool(st.session_state.get(prod_key, False))
+    exp_key = f"relayexp_{office_key}"
+    # PRODUCTS SHOW ON THE DAILY COUNTS, always (Megan 2026-09-13). Raf's sheet
+    # gives every day its own Apps / Int / Int Up / DTV / NL block, so a single
+    # number per day with the split on hover was never the daily breakdown he
+    # reads. It stopped being a toggle.
+    products = True
     expand = bool(st.session_state.get(exp_key, False))
 
     # REP ROWS COME FROM TABLEAU for closed days (Megan pointed at the
@@ -1983,7 +1925,6 @@ def relay_board(icd: str, office_key: str) -> None:
     reported_days = {d for d in week_days if _has_data(d)}
 
     rows = []
-    splits: dict = collections.defaultdict(dict)
     measures: dict = {}
     for low, shown in names.items():
         rec = by_rep.get(shown) or by_rep.get(shown.upper()) or {}
@@ -2028,6 +1969,19 @@ def relay_board(icd: str, office_key: str) -> None:
             row["Team"] = (rep.team if rep else "") or BLANK_OPTION
             row["Leadership"] = (rep.level if rep else "") or BLANK_OPTION
             row["Status"] = (rep.status if rep else "") or BLANK_OPTION
+        # THE WEEK TOTALS COME FIRST, then the days — the column order on
+        # Raf's own board (Megan 2026-09-13): name, RUNNING WEEK TOTALS
+        # (APPS, INT, INT UP, DTV, NL), then MON..SUN, each day carrying the
+        # same five. They used to sit at the far right, and the measures only
+        # appeared when something was expanded.
+        row["Apps"] = _apps(tot)
+        row.update({m: tot[m] for m in RELAY_MEASURES})
+        # Total units only differs from Apps by the upgrades, and upgrades
+        # count as zero — so on an office that sells none the two columns are
+        # the same number twice (Megan 2026-09-13). Dropped below when that is
+        # the case, kept where it says something: Cyrus runs 13 Int Up in a
+        # week, Raf none.
+        row["Total units"] = _units(tot)
         # A DAY PER COLUMN, and they come FIRST. The settled pull is already
         # per-day — it was just being summed away — and a week total cannot
         # answer "who fell off midweek", which is most of what an owner opens
@@ -2042,38 +1996,16 @@ def relay_board(icd: str, office_key: str) -> None:
             # clicking anything, so a single units-per-day number was not the
             # daily breakdown he means (Megan 2026-09-13).
             lab = d.strftime("%a")
-            if products:
-                # Expanded: every measure gets its own column, Raf's layout.
-                blank = 0 if d in reported_days else ""
-                row[f"{lab} Apps"] = _apps(src) if src else blank
-                for m in RELAY_MEASURES:
-                    row[f"{lab} {m}"] = (int(src.get(m, 0) or 0) if src
-                                         else blank)
-            else:
-                # Collapsed: one number per day, with the split on HOVER.
-                row[lab] = (_apps(src) if src
-                            else (0 if d in reported_days else ""))
-                # Keyed by the DISPLAYED name, which is what the lookup has.
-                # Keyed by the raw one, every rep whose source spells them in
-                # caps (the relay does) silently missed: the office Apps read
-                # 328 against a day row adding to 343.
-                splits[row["Rep"]][lab] = {m: int(src.get(m, 0) or 0)
-                                           for m in RELAY_MEASURES}
+            # Every measure its own column, Raf's layout.
+            blank = 0 if d in reported_days else ""
+            row[f"{lab} Apps"] = _apps(src) if src else blank
+            for m in RELAY_MEASURES:
+                row[f"{lab} {m}"] = int(src.get(m, 0) or 0) if src else blank
+
         # Kept on every row whatever the view, so the office totals can be
         # summed from the SAME rows the table shows — after road trips are
         # dropped — instead of from a settled total that still includes them.
         measures[row["Rep"]] = dict(tot)
-        # On a single day the split IS the answer, so it shows without
-        # needing Expand — that is the whole point of clicking the day.
-        if picked_day or expand:
-            row.update({m: tot[m] for m in RELAY_MEASURES})
-        row["Apps"] = _apps(tot)
-        # Total units only differs from Apps by the upgrades, and upgrades
-        # count as zero — so on an office that sells none the two columns are
-        # the same number twice (Megan 2026-09-13). It is dropped below when
-        # that is the case, and kept where it says something: Cyrus runs 13
-        # Int Up in a week, Raf none.
-        row["Total units"] = _units(tot)
         rows.append(row)
     # ROAD TRIP SALES ARE NOT COUNTED (Raf, 2026-09-13). They are dropped from
     # the board rather than shown at zero: the sale happened, it just is not
@@ -2167,8 +2099,10 @@ def relay_board(icd: str, office_key: str) -> None:
                       **{"Apps": _apps(tot)})
     if has_upgrades:
         totals_row["Total units"] = _units(tot)
-    if picked_day or expand:
-        totals_row.update({m: tot[m] for m in RELAY_MEASURES})
+    # The measures are columns on every view now, so the totals line carries
+    # them unconditionally — gated, it left Int / Int Up / DTV / NL blank
+    # under columns that were plainly there.
+    totals_row.update({m: tot[m] for m in RELAY_MEASURES})
     # Built from the FIRST row's keys so the totals line carries every column
     # in the same order, rather than however a dict merge happened to land.
     grid = rows + [{k: totals_row.get(k, "") for k in rows[0]}]
@@ -2183,6 +2117,14 @@ def relay_board(icd: str, office_key: str) -> None:
             cfg[k] = dict(cfg.get(k) or {}, width=52, disabled=True,
                           label=m if (products and m != "Apps") else lab,
                           help=f"{m} on {d:%A %b %d}")
+    # The week block and every day block carry the SAME five labels now, the
+    # way they do on Raf's sheet — where a merged "RUNNING WEEK TOTALS" header
+    # sits above them and tells them apart. A Streamlit grid cannot merge a
+    # header, so the tooltip does that job instead.
+    for k in ["Apps", "Total units"] + RELAY_MEASURES:
+        if k in grid[0]:
+            cfg[k] = dict(cfg.get(k) or {},
+                          help=f"{k} — running week total")
     cfg["Rep"] = dict(cfg.get("Rep") or {}, pinned=True)
     cfg["Tenure"] = dict(cfg.get("Tenure") or {}, width=90, disabled=True,
                          help="Weeks since their first day — computed from "
@@ -2205,33 +2147,12 @@ def relay_board(icd: str, office_key: str) -> None:
     # Streamlit paints Styler output onto NON-editable columns only, which is
     # why the tint survives: the measures are always locked and only the three
     # owner columns ever unlock.
-    if not expand and not products:
-        # Read-only anyway, so the hover table costs nothing and buys the
-        # per-day breakdown on hover.
-        c_key, c_a, c_b = st.columns([5, 2, 2])
-        with c_key:
-            st.markdown(_colour_key(), unsafe_allow_html=True)
-        c_a.toggle("Products by day", key=prod_key,
-                   help="Int / Int Up / DTV / NL under every day. Collapsed, "
-                        "hover a day instead.")
-        c_b.toggle("Rep details", key=exp_key,
-                   help="Team, Leadership and Status — and where they are "
-                        "edited.")
-        st.markdown(_hover_table(grid, splits,
-                                 [d.strftime("%a") for d in week_days]),
-                    unsafe_allow_html=True)
-        relay_wow(office_key)
-        return
-
-    c_key, c_a, c_b = st.columns([5, 2, 2])
+    c_key, c_b = st.columns([6, 3])
     with c_key:
         st.markdown(_colour_key(), unsafe_allow_html=True)
-    c_a.toggle("Products by day", key=prod_key,
-           help="Int / Int Up / DTV / NL under every day. Collapsed, "
-            "hover a day instead.")
     c_b.toggle("Rep details", key=exp_key,
-           help="Team, Leadership and Status — and where they are "
-            "edited.")
+               help="Team, Leadership and Status — and where they are "
+                    "edited.")
 
     frame = pd.DataFrame(grid).astype("string").fillna("")
 
