@@ -1968,12 +1968,16 @@ def relay_board(icd: str, office_key: str) -> None:
             else:
                 # Collapsed: one number per day, with the split on HOVER.
                 row[lab] = _apps(src) if src else 0
-                splits[shown][lab] = {m: int(src.get(m, 0) or 0)
-                                      for m in RELAY_MEASURES}
+                # Keyed by the DISPLAYED name, which is what the lookup has.
+                # Keyed by the raw one, every rep whose source spells them in
+                # caps (the relay does) silently missed: the office Apps read
+                # 328 against a day row adding to 343.
+                splits[row["Rep"]][lab] = {m: int(src.get(m, 0) or 0)
+                                           for m in RELAY_MEASURES}
         # Kept on every row whatever the view, so the office totals can be
         # summed from the SAME rows the table shows — after road trips are
         # dropped — instead of from a settled total that still includes them.
-        measures[shown] = dict(tot)
+        measures[row["Rep"]] = dict(tot)
         # On a single day the split IS the answer, so it shows without
         # needing Expand — that is the whole point of clicking the day.
         if picked_day or expand:
@@ -2032,21 +2036,12 @@ def relay_board(icd: str, office_key: str) -> None:
     # Built from the rows that SURVIVED the road-trip filter, so the boxes and
     # the table cannot disagree. The office-level settled total still counts
     # road trips, which is exactly what Raf says not to do.
+    # ONE source for this, not two. This used to be seeded at zero and then
+    # accumulated from the office-level settled days; replacing the seed with
+    # the row sum left that loop in place, so every number was counted twice —
+    # Raf's Apps read 671 against a day row that added to 343.
     tot = {m: sum(int(measures.get(r["Rep"], {}).get(m, 0) or 0) for r in rows)
            for m in RELAY_MEASURES}
-    for d in ([picked_day] if picked_day else
-              [week_ending - dt.timedelta(days=i) for i in range(7)]):
-        if d > today:
-            continue
-        src = settled.get(d) if d < today else None
-        if src is None and d == today:
-            src = {m: sum((r["days"].get(d) or {}).get(m, 0)
-                          for r in by_rep.values()) for m in RELAY_MEASURES}
-        if src is None:                      # closed day Tableau doesn't have
-            src = {m: sum((r["days"].get(d) or {}).get(m, 0)
-                          for r in by_rep.values()) for m in RELAY_MEASURES}
-        for m in RELAY_MEASURES:
-            tot[m] += src.get(m, 0)
 
     # Int Up only earns a card where the office sells them; on Raf's board it
     # is a permanent 0 sitting next to a Total units that equals Apps.
