@@ -205,9 +205,24 @@ function doGet(e) {
       return out || dflt;
     }
     var owner = v('owner', '');
+    // WHAT THEY ALREADY ANSWERED ON THE FORM. setup.py skips a question whose
+    // answer is already in install.json, so handing these over means an office
+    // that filled the form is not asked the same thing twice by the installer
+    // five minutes later. They are REQUESTS either way -- a human still
+    // approves where anything posts.
+    function jlist(name) {
+      var c = col(name);
+      if (c < 0) return [];
+      try {
+        var parsed = JSON.parse(String(rows[i][c] || '[]'));
+        return Object.prototype.toString.call(parsed) === '[object Array]' ? parsed : [];
+      } catch (err) { return []; }
+    }
     return _reply({ok: true, office: {
       office_key: office,
       owner: owner,
+      requested_channels: jlist('alert_channels_json'),
+      requested_knocks_destinations: jlist('knocks_json'),
       label: v('office_label', '') || (owner.split(' ')[0] + "'s Local Office"),
       timezone: v('timezone', 'America/Chicago'),
       knocks_default_hours: {

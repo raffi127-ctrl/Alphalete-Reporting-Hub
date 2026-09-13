@@ -28,11 +28,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import json
+
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.icd_signup import schema as S, store          # noqa: E402
 from automations.shared import onboarding_ui as ui             # noqa: E402
+
+MAX_CHANNELS = 3      # the installer allows 4; three is plenty to type
+MAX_KNOCKS = 3
 
 st.set_page_config(page_title="Join Lucy Eco", page_icon="🛰️")
 ui.render_header(
@@ -89,30 +94,64 @@ with st.form("icd_signup"):
     sat_start = c3.text_input("Saturday, start", value="10:45")
     sat_end = c4.text_input("Saturday, end", value="17:00")
 
-    st.subheader("Your knocks and dispositions board")
-    cadence = st.radio(
-        "How often should the board post?",
-        options=[c[0] for c in S.KNOCKS_CHOICES],
-        format_func=lambda v: dict(S.KNOCKS_CHOICES)[v],
-        index=1)
+    st.subheader("Where your credit checks and sales should post")
+    st.caption("Most offices pick one channel. Add a second if the owners' "
+               "room and the rep channel should both get them.")
+    st.caption("A channel **ID** is safest — in Slack, click the channel name "
+               "at the top, scroll to the bottom of the About tab, and copy "
+               "the ID (it looks like C09AVM17PAR). A #name works too.")
+    alert_channels = []
+    for i in range(MAX_CHANNELS):
+        label = ("Channel for alerts" if i == 0
+                 else "Another channel (optional)")
+        val = st.text_input(label, key="alert_ch_%d" % i,
+                            placeholder="C09AVM17PAR  or  #palace-sales")
+        alert_channels.append(val.strip())
 
-    st.subheader("Where it should post")
-    wanted = st.text_input(
-        "Which Slack channel(s)?",
-        placeholder="e.g. #palace-sales",
-        help="A name is fine. Nothing posts anywhere until someone on the "
-             "reporting team approves it.")
+    st.subheader("Your knocks and dispositions board")
+    st.caption("This is the board showing who is out, who is knocking and who "
+               "has gone quiet. Each channel can post on its own schedule.")
+    knocks = []
+    for i in range(MAX_KNOCKS):
+        c1, c2 = st.columns([3, 2])
+        label = ("Channel for the board" if i == 0
+                 else "Another channel (optional)")
+        ch = c1.text_input(label, key="kn_ch_%d" % i,
+                           placeholder="Leave blank if not needed"
+                           if i else "C09AVM17PAR  or  #palace-sales")
+        cad = c2.selectbox("How often?", key="kn_cad_%d" % i,
+                           options=[c[0] for c in S.KNOCKS_CHOICES if c[0] != -1],
+                           format_func=lambda v: dict(S.KNOCKS_CHOICES)[v],
+                           index=1)
+        knocks.append((ch.strip(), int(cad)))
+    st.caption("Do not want this board at all? Leave every channel above "
+               "blank.")
 
     submitted = st.form_submit_button("Send my sign-up", type="primary")
 
 if submitted:
+    alerts = [c for c in alert_channels if c]
+    dests = [{"channel": c, "cadence_min": n,
+              "label": dict(S.KNOCKS_CHOICES).get(n, "")}
+             for c, n in knocks if c]
+    # -1 is the installer's "no board at all". Deriving it from an empty list
+    # keeps ONE way of saying that, rather than a checkbox that can disagree
+    # with the channels underneath it.
+    first_cadence = dests[0]["cadence_min"] if dests else -1
+    summary = ", ".join(alerts) or "(not sure yet)"
+    if dests:
+        summary += "  ·  board: " + ", ".join(
+            "%s %s" % (d["channel"], d["label"]) for d in dests)
+
     rec = S.IcdSignup(
         owner=owner, office_label="", platform=platform, timezone=tz,
         day_start=day_start.strip(), day_end=day_end.strip(),
         saturday=bool(saturday),
         sat_start=sat_start.strip(), sat_end=sat_end.strip(),
-        ov_name=ov_name.strip(), knocks_cadence=int(cadence),
-        wanted_channels=wanted.strip(), contact=contact.strip())
+        ov_name=ov_name.strip(), knocks_cadence=first_cadence,
+        wanted_channels=summary, contact=contact.strip(),
+        alert_channels_json=json.dumps(alerts),
+        knocks_json=json.dumps(dests))
     problems = rec.problems()
     if problems:
         for p in problems:

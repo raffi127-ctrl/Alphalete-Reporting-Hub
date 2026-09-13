@@ -133,3 +133,49 @@ class TheAlert(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MultipleChannelsSurvive(unittest.TestCase):
+    """An office can want more than one room, at more than one cadence.
+
+    Megan 2026-09-13, looking at the deployed form: "we lost the option for
+    multi channel options for both sara and knock reporting." The installer
+    has always allowed four alert channels and four knocks destinations each
+    with its OWN cadence -- the owners' room hourly and the rep channel every
+    fifteen minutes is a normal answer. The form had flattened both into one
+    text box and one cadence, which silently narrowed what an office could ask
+    for at the exact moment they were asked.
+    """
+
+    def _rec(self, alerts, dests):
+        import json
+        return _rec(alert_channels_json=json.dumps(alerts),
+                    knocks_json=json.dumps(dests))
+
+    def test_several_alert_channels_survive_the_round_trip(self):
+        r = self._rec(["C1", "#two"], [])
+        self.assertEqual(r.alert_channels, ["C1", "#two"])
+
+    def test_each_knocks_destination_keeps_its_own_cadence(self):
+        r = self._rec([], [{"channel": "#reps", "cadence_min": 15},
+                           {"channel": "C0OWN", "cadence_min": 60}])
+        self.assertEqual([d["cadence_min"] for d in r.knocks_destinations],
+                         [15, 60])
+
+    def test_a_junk_cell_does_not_lose_the_signup(self):
+        # Sheets hands back whatever is in the cell; an unparseable one must
+        # cost the channels, never the whole record.
+        r = _rec(alert_channels_json="not json at all")
+        self.assertEqual(r.alert_channels, [])
+        self.assertEqual(r.owner, "Cyrus Wade")
+
+    def test_the_alert_names_both_lists(self):
+        r = self._rec(["C1"], [{"channel": "#reps", "cadence_min": 15,
+                                "label": "Every 15 minutes"}])
+        body = "\n".join(N.lines(r, link="x")[1])
+        self.assertIn("Alerts → C1", body)
+        self.assertIn("#reps Every 15 minutes", body)
+
+    def test_no_board_requested_is_said_plainly(self):
+        body = "\n".join(N.lines(self._rec(["C1"], []), link="x")[1])
+        self.assertIn("did not ask for one", body)

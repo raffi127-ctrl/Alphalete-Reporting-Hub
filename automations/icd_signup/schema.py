@@ -49,8 +49,16 @@ class IcdSignup(NamedTuple):
     sat_end: str
     ov_name: str
     knocks_cadence: int
+    # A SUMMARY FOR HUMANS reading the sheet. The real answers are the two
+    # JSON fields below -- an office can want alerts in the owners' room AND
+    # the rep channel, and a knocks board in each at a DIFFERENT cadence, and
+    # none of that fits in one line of text.
     wanted_channels: str
     contact: str
+    # ["C09AVM17PAR", "#palace-sales"] -- ids preferred, names accepted.
+    alert_channels_json: str = "[]"
+    # [{"channel": "...", "cadence_min": 30, "label": "Every 30 minutes"}]
+    knocks_json: str = "[]"
     status: str = STATUS_PENDING
     submitted_at: str = ""
     office_key: str = ""
@@ -75,6 +83,14 @@ class IcdSignup(NamedTuple):
                     out.append("The Saturday %s time should look like 10:45."
                                % label)
         return out
+
+    @property
+    def alert_channels(self) -> List[str]:
+        return _loads_list(self.alert_channels_json)
+
+    @property
+    def knocks_destinations(self) -> List[Dict]:
+        return _loads_list(self.knocks_json)
 
     def as_row(self) -> Dict:
         return {k: ("" if v is None else v) for k, v in self._asdict().items()}
@@ -108,7 +124,21 @@ class IcdSignup(NamedTuple):
             submitted_at=str(row.get("submitted_at") or "").strip(),
             office_key=str(row.get("office_key") or "").strip().lower(),
             note=str(row.get("note") or "").strip(),
+            alert_channels_json=str(row.get("alert_channels_json") or "[]"),
+            knocks_json=str(row.get("knocks_json") or "[]"),
         )
+
+
+def _loads_list(text) -> List:
+    """A list, whatever the sheet hands back. A cell can come through as an
+    empty string, as None, or as text that is not JSON at all -- and a sign-up
+    must not be lost to any of those."""
+    import json
+    try:
+        out = json.loads(text or "[]")
+    except (TypeError, ValueError):
+        return []
+    return out if isinstance(out, list) else []
 
 
 def stamp() -> str:

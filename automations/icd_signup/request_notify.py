@@ -33,13 +33,21 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
         "• Selling hours: M–F %s–%s · %s · %s"
         % (rec.day_start, rec.day_end, sat, rec.timezone.split("/")[-1]),
         "• Computer: %s" % ("Mac" if rec.platform == "mac" else "Windows PC"),
-        "• Knocks board: %s" % CADENCE_WORDS.get(rec.knocks_cadence, "?"),
         "• Reach them at: %s" % (rec.contact or "_not given_"),
     ]
     if rec.ov_name:
         detail.append("• Their name in OwnerVille: %s" % rec.ov_name)
-    if rec.wanted_channels:
-        detail.append("• Channels they mentioned: %s" % rec.wanted_channels)
+    alerts = rec.alert_channels
+    detail.append("• Alerts → %s"
+                  % (", ".join(alerts) if alerts else "_not sure yet_"))
+    dests = rec.knocks_destinations
+    if dests:
+        detail.append("• Knocks board → %s"
+                      % " · ".join("%s %s" % (d.get("channel"),
+                                              d.get("label") or "")
+                                   for d in dests))
+    else:
+        detail.append("• Knocks board → _they did not ask for one_")
     detail += [
         "",
         (("• _They already have their setup link and can install now — "
