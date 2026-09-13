@@ -65,7 +65,8 @@ CACHE = REPO / "output" / "_hc_trackers"
 LOGS = REPO / "output" / "logs"
 
 SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
-BOARD_TAB = "Org Active Headcount Test 2"
+BOARD_TAB = "Org Active Headcount"      # renamed from '... Test 2' 2026-09-13
+BOARD_GID = 1529537631                  # opened by gid: survives the next rename
 
 # tracker spec id (tableau_screenshots.pages) -> the board's 'Campaign' value
 TRACKERS = {"att_country": "fiber", "nds": "nds",
@@ -368,8 +369,11 @@ def board_icds() -> Dict[str, List[str]]:
     """{campaign lowercase: [ICD as the board writes it]} from the tab's All
     Units block (col B + its 'Campaign' column), found by label."""
     from automations.recruiting_report.fill import open_by_key
-    ws = next(w for w in open_by_key(SHEET_ID).worksheets()
-              if w.title.strip() == BOARD_TAB)
+    sh = open_by_key(SHEET_ID)
+    try:
+        ws = sh.get_worksheet_by_id(BOARD_GID)
+    except Exception:                                              # noqa: BLE001
+        ws = next(w for w in sh.worksheets() if w.title.strip() == BOARD_TAB)
     g = ws.get_all_values()
 
     def c(r, k):

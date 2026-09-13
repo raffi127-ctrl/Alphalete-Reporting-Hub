@@ -1585,7 +1585,7 @@ AUTOMATED_REPORTS = [
         "category": "\U0001F4CA Metrics",
         "description": (
             "Every morning, after the Country Trackers post, fills YESTERDAY's "
-            "headcount for every owner on the 'Org Active Headcount Test 2' tab. "
+            "headcount for every owner on the 'Org Active Headcount' tab. "
             "On Tuesday it first rolls the week, like the ORG Sales Board."
         ),
         "breakdown": (

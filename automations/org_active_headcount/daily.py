@@ -1,4 +1,4 @@
-"""Org Active Headcount — the DAILY run on 'Org Active Headcount Test 2'.
+"""Org Active Headcount — the DAILY run on the 'Org Active Headcount' tab.
 
 Eve, 2026-09-13: "armá la corrida diaria automática ... mayormente necesitás los
 datos de los trackers que posteás en la mañana", and "el roleo de esta tabla se
@@ -59,8 +59,22 @@ except Exception:                                                  # noqa: BLE00
     pass
 
 SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
-TAB = "Org Active Headcount Test 2"
+# The production tab — built as 'Org Active Headcount Test 2' and renamed
+# 'Org Active Headcount' by Eve on 2026-09-13 (the old 'Org Active Headcount
+# Board', gid 1937067034, is hidden). Opened by GID so the next rename cannot
+# silently point the run at nothing; the name is only the fallback + log label.
+TAB = "Org Active Headcount"
+TAB_GID = 1529537631
 BACKUP_TAB = "backup_pre_rollover_headcount"
+
+
+def open_tab():
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key(SHEET_ID)
+    try:
+        return sh.get_worksheet_by_id(TAB_GID)
+    except Exception:                                              # noqa: BLE001
+        return next(w for w in sh.worksheets() if w.title.strip() == TAB)
 DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 WE_LONG = re.compile(r"^WE\s+(\d{2})\.(\d{2})$", re.I)
 WE_ANY = re.compile(r"^WE\s+(\d{1,2})\.(\d{1,2})$", re.I)
@@ -434,7 +448,7 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None, logfn=prin
     from automations.recruiting_report.fill import open_by_key, _retry
     from automations.org_sales_board.week import reporting_sunday, completed_days
     today = today or dt.date.today()
-    ws = next(w for w in open_by_key(SHEET_ID).worksheets() if w.title.strip() == TAB)
+    ws = open_tab()
     V = ws.get_all_values()
     F = ws.get_all_values(value_render_option="FORMULA")
     target = reporting_sunday(today)
