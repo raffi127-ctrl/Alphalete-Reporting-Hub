@@ -5880,6 +5880,40 @@
       },
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "org_active_headcount_daily": {
+      "on_scheduler": true,
+      "machine": "Lucy 1",
+      "order": 58,
+      "_note": "Eve 2026-09-13: the DAILY run of 'Org Active Headcount Test 2'. Every day it (1) rolls the tab when its week is behind the reporting week — first true on TUESDAY, same as the ORG / Country / All Campaigns boards — and (2) fills every completed day still empty: Fiber/NDS/B2B/BOX off the Country Tracker PNGs of the NEXT day's #alphalete-sales thread (a post shows the day before), Retail NL off SARA (focus-report count), JE off Productive Rep Count (yesterday only). A day that could not be collected is '-'; a source not posted yet leaves the cell empty for the next run. Waits on slack:owner_tracker_pngs so it never reads a half-posted thread. Runs on Lucy 1: its Slack token is the one that can download the PNGs. Built dry (no --apply) until Eve checks the first plan.",
+      "display_name": "Org Active Headcount - Daily (Test 2)",
+      "source_type": "tableau",
+      "data_sources": [
+        "slack:owner_tracker_pngs"
+      ],
+      "command": [
+        "automations.org_active_headcount.daily"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "07:00"
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 60
+    },
     "hc_retail_daily": {
       "on_scheduler": false,
       "_off_scheduler_note": "MANUAL-ONLY for now (Eve 2026-09-12). Retail NL daily headcount for 'Org Active Headcount Test 2': the Monday focus report's own count (SARA Plus View Data, distinct reps for the range) with Min Date = Monday and Max Date = each day. Writes only the 'HC Retail Daily' tab of the Mini Control workbook. Usage: `lucy rerun hc_retail_daily --start 2026-08-31 --end 2026-09-11`.",

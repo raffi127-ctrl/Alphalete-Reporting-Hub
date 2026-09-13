@@ -1577,6 +1577,80 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "org-active-headcount-daily",
+        "name": "Org Active Headcount - Daily",
+        "creator": "Eve",
+        "emoji": "\U0001F4C8",
+        "color": "#4C9AFF",
+        "category": "\U0001F4CA Metrics",
+        "description": (
+            "Every morning, after the Country Trackers post, fills YESTERDAY's "
+            "headcount for every owner on the 'Org Active Headcount Test 2' tab. "
+            "On Tuesday it first rolls the week, like the ORG Sales Board."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Fills yesterday's column of the daily breakdown, one number "
+            "per owner.\n"
+            "**•** On **Tuesday** it rolls the week first (history row, Last / "
+            "Previous Week, delta box) and then fills Monday.\n\n"
+            "WHERE EACH NUMBER COMES FROM\n"
+            "**•** Fiber / NDS / B2B / BOX — `Rep Count` off the Country "
+            "Tracker Lucy posts that morning (it shows the day before).\n"
+            "**•** Retail NL — reps in SARA, the focus report's count.\n"
+            "**•** JE — `Productive Rep Count`.\n\n"
+            "RULES\n"
+            "**•** A day that could not be read shows **-**, never 0.\n"
+            "**•** It only writes EMPTY cells — anything typed by hand "
+            "stays.\n"
+            "**•** The week total is the LAST day with a number, not a sum."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
+                      "?gid=1529537631#gid=1529537631"),
+        "assignees": ["Lucy 1"],
+        # Lucy 1's Slack token is the one that can download the tracker PNGs.
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "org_active_headcount_daily",
+        "self_scheduled": False,
+        "schedule": {
+            "frequency": "daily",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
+            "time": "after the morning Country Trackers",
+            "estimated_minutes": 15,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": (
+                "✅ Daily headcount done — yesterday filled (and the week "
+                "rolled if it was Tuesday). Any '-' is a day that could not be read."
+            ),
+            "message_failed": (
+                "❌ Run failed. Check the log above, fix the issue, then run "
+                "again."
+            ),
+        },
+        "actions": [
+            {
+                "label": "Fill Yesterday",
+                "icon": "▶",
+                "primary": True,
+                "help": ("Rolls the week if it is due, then fills every empty day "
+                         "that already happened."),
+                "module": "automations.org_active_headcount.daily",
+                "args_fn": lambda: ["--apply"],
+            },
+            {
+                "label": "Preview (no writes)",
+                "icon": "\U0001F441",
+                "primary": False,
+                "help": "Shows what it WOULD roll and fill, writes nothing.",
+                "module": "automations.org_active_headcount.daily",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "carlos-captainship-headcount",
         "name": "Carlos Captainship Headcount",
         "creator": "Maud",
