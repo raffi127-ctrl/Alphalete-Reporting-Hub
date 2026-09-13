@@ -769,6 +769,14 @@ def main(argv=None) -> int:
                 print(f"  sales_boards: {line}")
             held = held or r.returncode == 75
         for png, kind, plain, caption in boards:
+            # The ATT board is posted by the b2b_metrics runner as the
+            # thread's #1 section (Carlos 2026-09-13: it double-posted; keep
+            # only the runner's plain-titled one). Standalone still renders
+            # it, and still DMs it for tests.
+            if kind == "b2b" and not a.dm:
+                print(f"skip live post of {plain!r} — the B2B Metrics runner "
+                      "owns the ATT board now")
+                continue
             rc = post(png, plain, caption, kind, dm_user=a.dm or "")
             held = held or rc == 75
         return 75 if held else 0

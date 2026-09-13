@@ -256,12 +256,10 @@ def metrics_thread_ts(client, chan: str, today) -> str:
     from automations.b2b_metrics import offices as MO
     from automations.b2b_metrics import runner as MR
     o = MO.OFFICES["carlos"]
+    # Parent is the bare title+date (Carlos 2026-09-13: no board lines under
+    # the title — the first-reply contents list covers what's inside).
     header = MR.header_text(o, today)
-    lines = header.split("\n")
-    # The board + revenue ride ahead of the metrics sections in the thread, so
-    # the parent's contents list says so too.
-    lines[1:1] = [":briefcase: B2B Sales Board", ":moneybag: Revenue Board"]
-    ts = client.chat_postMessage(channel=chan, text="\n".join(lines)).get("ts")
+    ts = client.chat_postMessage(channel=chan, text=header).get("ts")
     bq._save_state(today, chan, ts, list(state.get("posted") or []))
     print(f"    opened B2B Metrics thread in {chan} ts={ts}")
     return ts
