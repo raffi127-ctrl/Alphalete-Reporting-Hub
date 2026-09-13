@@ -174,79 +174,55 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
                 _LAST_DIAG["fields"] = "unreadable"
         log(f"    week {wk_start}: box={found}")
 
-        # TRY THE URL FIRST. This was tried once and judged a failure — but it
-        # was judged with the header string, which was itself wrong, so the
-        # verdict was worthless. The box is the test now, so it is worth one
-        # honest attempt: a GET needs no form, no readonly workaround and no
-        # synthetic submit, and it is the one route that cannot be undone by a
-        # handler re-reading the calendar widget.
-        from urllib.parse import quote
-        base = page.url.split("#")[0]
-        joiner = "&" if "?" in base else "?"
-        url = (f"{base}{joiner}weekStart={quote(want_value)}"
-               f"&startDate2={quote(wk_start.strftime('%m/%d/%Y'))}")
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-            page.wait_for_timeout(1200)
-            if page_week(page) == wk_start:
-                log(f"    week {wk_start}: opened by url")
-                return True
-        except Exception:   # noqa: BLE001 — fall through to the form
-            pass
+        # DRIVE THE CALENDAR, because that is the only mechanism the page
+        # has. The week cannot be posted (weekStart and startDate2 both go up
+        # and the server still renders its own week), it cannot be passed in
+        # the URL, and the nav dump found no prev/next control anywhere on the
+        # report. What is left is the popup in the screenshot — the same thing
+        # a person clicks.
+        box = page.locator("input[name='weekStart']").first
+        box.click()
+        page.wait_for_timeout(600)
 
-        # The box is READONLY and the form is a POST. That is both failures
-        # explained at once: typing into a readonly input does nothing, and a
-        # POST form reads form scope, not the URL. So set the value directly
-        # and post the form natively.
-        #
-        # Native submit, not a click: the Get Report control is NAMED "submit",
-        # which shadows form.submit on the element, and whatever handler sits
-        # on it is free to re-read the calendar widget and put the old week
-        # back. HTMLFormElement.prototype.submit.call() steps around both. A
-        # readonly field is still submitted (unlike a disabled one), and the
-        # native submit omits the button's own name/value pair, so that gets
-        # added as a hidden field in case the page tests for it.
-        page.evaluate(
-            r"""([idx, want]) => {
-                const box = [...document.querySelectorAll('input')][idx];
-                const form = box.form;
-                // The form's action is a bare "index.cfm" — posting it as-is
-                // drops p=701, rqst and newOfficeId and lands on the home
-                // page, which is exactly what the last run recorded. Point it
-                // at the URL we are already on so the query string survives
-                // and weekStart rides in the body.
-                if (form) form.action = location.href;
-                box.removeAttribute('readonly');
-                box.value = want;
-                box.dispatchEvent(new Event('change', {bubbles: true}));
-                if (!form) return;
-                let h = form.querySelector("input[type=hidden][name=submit]");
-                if (!h) {
-                    h = document.createElement('input');
-                    h.type = 'hidden'; h.name = 'submit'; h.value = 'Get Report';
-                    form.appendChild(h);
-                }
-            }""", [found["idx"], want_value])
-        # The field dump showed a SECOND date on the form — startDate2, in
-        # MM/DD/YYYY with slashes, while weekStart uses dashes. That is the one
-        # the datepicker actually writes, which is why posting weekStart alone
-        # kept landing a week off. Set every startDate* field too, in its own
-        # format, before the submit.
-        page.evaluate(
-            r"""(slashed) => {
-                document.querySelectorAll("input[name^='startDate']")
-                    .forEach(e => {
-                        e.removeAttribute('readonly');
-                        e.value = slashed;
-                        e.dispatchEvent(new Event('change', {bubbles: true}));
-                    });
-            }""", wk_start.strftime("%m/%d/%Y"))
-        page.evaluate(
-            r"""() => {
-                const box = [...document.querySelectorAll('input')]
-                              .find(x => x.name === 'weekStart');
-                HTMLFormElement.prototype.submit.call(box.form);
-            }""")
+        # Most ColdFusion pages of this vintage use the jQuery UI datepicker.
+        # If this one does not, record what DID open so the next run knows.
+        if "picker" not in _LAST_DIAG:
+            try:
+                _LAST_DIAG["picker"] = page.evaluate(
+                    r"""() => [...document.querySelectorAll('div,table')]
+                            .filter(e => e.offsetParent &&
+                                    /picker|calendar|cal_/i.test(
+                                        e.className + ' ' + e.id))
+                            .map(e => `${e.tagName}.${e.className}#${e.id}`)
+                            .slice(0, 6).join(' ;; ') || '(no popup)'""")[:220]
+            except Exception:   # noqa: BLE001
+                _LAST_DIAG["picker"] = "unreadable"
+
+        # Walk the picker back to the target month, then click the day.
+        want_title = wk_start.strftime("%B %Y")
+        for _ in range(24):
+            title = page.evaluate(
+                """() => {
+                    const t = document.querySelector('.ui-datepicker-title');
+                    return t ? t.innerText.replace(/\\s+/g,' ').trim() : '';
+                }""")
+            if not title:
+                break
+            if title.lower() == want_title.lower():
+                page.evaluate(
+                    """(d) => {
+                        const a = [...document.querySelectorAll(
+                            '.ui-datepicker-calendar a')]
+                            .find(x => x.innerText.trim() === String(d));
+                        if (a) a.click();
+                    }""", wk_start.day)
+                page.wait_for_timeout(1200)
+                break
+            prev = page.locator(".ui-datepicker-prev").first
+            if not prev.count():
+                break
+            prev.click()
+            page.wait_for_timeout(250)
 
         # CONFIRM THE PAGE ACTUALLY CHANGED — and confirm it against the BOX,
         # not against a header string I formatted myself. The box is what the
@@ -385,8 +361,8 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     # fixed width, and the box is already known.
     landed = _LAST_DIAG.get("landed")
     why = ""
-    if _LAST_DIAG.get("nav"):
-        why = f" · nav: {_LAST_DIAG['nav']}"
+    if _LAST_DIAG.get("picker") and opened < len(weeks):
+        why = f" · picker: {_LAST_DIAG['picker']}"
     elif _LAST_DIAG.get("rows"):
         why = f" · rows: {_LAST_DIAG['rows']}"
     elif _LAST_DIAG.get("headers"):
