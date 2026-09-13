@@ -174,6 +174,26 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
                 _LAST_DIAG["fields"] = "unreadable"
         log(f"    week {wk_start}: box={found}")
 
+        # TRY THE URL FIRST. This was tried once and judged a failure — but it
+        # was judged with the header string, which was itself wrong, so the
+        # verdict was worthless. The box is the test now, so it is worth one
+        # honest attempt: a GET needs no form, no readonly workaround and no
+        # synthetic submit, and it is the one route that cannot be undone by a
+        # handler re-reading the calendar widget.
+        from urllib.parse import quote
+        base = page.url.split("#")[0]
+        joiner = "&" if "?" in base else "?"
+        url = (f"{base}{joiner}weekStart={quote(want_value)}"
+               f"&startDate2={quote(wk_start.strftime('%m/%d/%Y'))}")
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+            page.wait_for_timeout(1200)
+            if page_week(page) == wk_start:
+                log(f"    week {wk_start}: opened by url")
+                return True
+        except Exception:   # noqa: BLE001 — fall through to the form
+            pass
+
         # The box is READONLY and the form is a POST. That is both failures
         # explained at once: typing into a readonly input does nothing, and a
         # POST form reads form scope, not the URL. So set the value directly
