@@ -6072,7 +6072,7 @@ AUTOMATED_REPORTS = [
             # (Megan, 2026-09-13: "what list above?").
             # One line. Nothing about logs, nothing about anything "below" --
             # the next click is not in the Hub at all (Megan, 2026-09-13).
-            "message_success": "\u2705 Copied. Go to Apex and click your Fill Apex bookmark.",
+            "message_success": "\u2705 This week's list is on your clipboard \u2014 go to Apex and click your Fill Apex bookmark now. If you copy something else first, the bookmark will say so and run the list saved on this computer instead.",
             # Named the Apex login whatever had actually failed -- and two of
             # the three actions never open Apex at all.
             "message_failed": "\u274C Run failed \u2014 the log above says why. Nothing was written to Apex or to the board. If it mentions a login, sign into Apex in this machine's Chrome; if it mentions Blue Ink, the key file is missing.",

@@ -1380,6 +1380,7 @@ _JS = r"""
  box.innerHTML='<div id="anshd" style="font-weight:700;font-size:16px"></div>'+
    '<div id="ansub" style="color:#555;margin:2px 0 4px"></div>'+
    '<div id="ansage" style="font-size:12px;font-weight:600"></div>'+
+   '<div id="anssrc" style="font-size:12px;font-weight:600;color:#a56a00"></div>'+
    (gnd?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Gender <span style="color:#b00">(required, not on the board)</span></div>'+
         '<select id="ansgender" style="width:100%%;padding:6px;font-size:15px">'+
         '<option value="">Pick one</option><option>Female</option><option>Male</option></select></div>':'')+
@@ -1451,6 +1452,16 @@ _JS = r"""
       generated. The button cannot re-read a Google Sheet from inside Apex, so
       the only honest thing it can do is say how old the snapshot is and when
       that is old enough to matter (Megan, 2026-09-10). */
+   var src=document.getElementById('anssrc');
+   if(src){
+     var m=(window.__ansSetupFrom==='saved')
+       ? 'Your clipboard did not have this week\u0027s list, so this is the one '+
+         'saved on this computer \u2014 read off the board '+BUILD+'. If that '+
+         'is not the week you want, press Get this week\u0027s setup on the Hub '+
+         'and click this again.'
+       : '';
+     if(src.textContent!==m){ src.textContent=m; src.style.margin=m?'6px 0':''; }
+   }
    var age=document.getElementById('ansage');
    if(age){
      var hrs=(Date.now()-BUILT_AT)/3600000, msg='', col='';
@@ -1966,10 +1977,15 @@ _STUB = r"""
    var fresh=await fromClipboard();
    if(fresh){
      try{ localStorage.setItem(CODEKEY,fresh); }catch(e){}
+     window.__ansSetupFrom='clipboard';
      exec(fresh); return;
    }
    var c=null; try{ c=localStorage.getItem(CODEKEY); }catch(e){}
-   if(c){ exec(c); return; }
+   /* Anything copied between the Hub and here -- a phone number, a name --
+      and the clipboard no longer holds the setup. Falling back to the saved
+      one is right, but doing it SILENTLY would run whatever week was loaded
+      last (Megan, 2026-09-13). The panel says so, in amber. */
+   if(c){ window.__ansSetupFrom='saved'; exec(c); return; }
    panel('Build it on the Hub \u2014 it lands on your clipboard and this '+
      'button picks it up. Or paste it here.');
  }

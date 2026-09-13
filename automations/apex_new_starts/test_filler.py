@@ -2289,3 +2289,30 @@ def test_unrelated_clipboard_text_is_ignored(page, tmp_path):
     page.evaluate(js)
     assert page.locator("#ansload").count() == 1, "it asks, rather than guessing"
     assert page.locator("#anspanel").count() == 0
+
+
+def test_a_saved_setup_says_it_is_the_saved_one(page, tmp_path):
+    """Megan, 2026-09-13: "I don't like that it just says copied. What if they
+    copy something else in between." Then the clipboard no longer holds the
+    setup, and falling back to the saved one SILENTLY would run whatever week
+    was loaded last."""
+    js = _stub_host(page, tmp_path)
+    page.evaluate("() => localStorage.clear()")
+    setup = filler.build_js(
+        [{"name": "Rosa Capel", "find": "Capel", "pages": {}}],
+        "WE 9.13")[len("javascript:"):]
+
+    # first click: the setup is on the clipboard
+    page.evaluate("""(text) => Object.defineProperty(navigator, 'clipboard',
+        { value: { readText: async () => text }, configurable: true })""", setup)
+    page.evaluate(js)
+    assert page.locator("#anssrc").inner_text() == "", "came off the clipboard"
+
+    # second click: somebody copied a phone number in between
+    page.evaluate("""() => Object.defineProperty(navigator, 'clipboard',
+        { value: { readText: async () => '214-555-0134' }, configurable: true })""")
+    page.evaluate(js)
+    assert page.locator("#anspanel").count() == 1, "it still runs"
+    warn = page.locator("#anssrc").inner_text()
+    assert "clipboard did not have" in warn
+    assert "saved on this computer" in warn
