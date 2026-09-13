@@ -37,8 +37,20 @@ echo ""
 echo "Your numbers in Slack are not affected by this, and nothing on"
 echo "Alphalete's side is deleted."
 echo ""
+# READ FROM THE TERMINAL, NOT STDIN. This script is delivered by
+# `curl ... | bash`, which makes stdin the PIPE -- so a plain `read` gets EOF
+# immediately, takes it as "no", and prints "Nothing was changed" before the
+# person has typed anything. Megan hit exactly that on 2026-09-13 and was left
+# believing it had been removed when nothing had (she then typed REMOVE at her
+# shell prompt, which is what a script that answers its own question looks
+# like from the outside).
+if [ ! -r /dev/tty ]; then
+  echo "This needs to be run somewhere it can ask you a question."
+  echo "Open Terminal and paste the command there."
+  exit 1
+fi
 printf "Type REMOVE and press Return to go ahead: "
-read -r answer
+read -r answer < /dev/tty
 if [ "$answer" != "REMOVE" ]; then
   echo ""
   echo "Nothing was changed."

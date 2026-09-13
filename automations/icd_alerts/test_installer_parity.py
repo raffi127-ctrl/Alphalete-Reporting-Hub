@@ -98,6 +98,16 @@ class UninstallersDoTheSameThings(unittest.TestCase):
             self.assertIn("REMOVE", text,
                           "%s deletes a login without asking" % name)
 
+    def test_the_prompt_reads_from_the_terminal_not_stdin(self):
+        """`curl ... | bash` makes stdin the PIPE.
+
+        A plain `read` then gets EOF immediately, takes it as "no", and prints
+        "Nothing was changed" before the person has typed anything -- leaving
+        them believing it was removed when nothing was (Megan, 2026-09-13).
+        """
+        self.assertIn("read -r answer < /dev/tty", XSH,
+                      "uninstall.sh asks a question it cannot hear the answer to")
+
     def test_both_remove_the_saved_logins(self):
         # They live ONLY on that machine. Leaving them on a computer that is
         # finished with the program is the worst of both.
