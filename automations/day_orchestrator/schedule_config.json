@@ -10596,7 +10596,7 @@
       "_order_note": "44.5 = straight after the LAST settle pass (44, 14:00) so it audits a finished day. Before that a held board may still be coming and flagging it would be a false alarm every morning."
     },
     "icd_start_dates": {
-      "on_scheduler": false,
+      "on_scheduler": true,
       "_note": "Rep START DATES from AppStream, for the ICD sales board's tenure colours (Raf's Loom 2026-09-13: 'days worked based off the start date ... can be pulled off of AppStream'). One page load per day per office, so ~5 weeks back is the whole job: a rep outside that window is a veteran, not an unknown. Run it manually first with --dry-run.",
       "label": "ICD start dates (AppStream)",
       "source_type": "appstream",
@@ -10604,9 +10604,12 @@
       "command": [
         "automations.icd_sales_board.start_dates"
       ],
-      "base_args": [],
+      "base_args": [
+        "--weeks",
+        "6"
+      ],
       "cadence": {
-        "weekdays": []
+        "weekdays": [0, 1, 2, 3, 4, 5]
       },
       "priority": "P2",
       "freshness_target": null,
