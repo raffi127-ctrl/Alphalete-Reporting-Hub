@@ -6070,7 +6070,9 @@ AUTOMATED_REPORTS = [
             # Written for a Preview button that no longer exists -- it told
             # people to look at a list that was never on the page
             # (Megan, 2026-09-13: "what list above?").
-            "message_success": "\u2705 This week's setup is on your clipboard. Now open Apex \u2014 Roster \u2192 Employees \u2192 Pending \u2014 and click your Fill Apex bookmark. The run log below says who is in it and who needs something by hand.",
+            # One line. Nothing about logs, nothing about anything "below" --
+            # the next click is not in the Hub at all (Megan, 2026-09-13).
+            "message_success": "\u2705 Copied. Go to Apex and click your Fill Apex bookmark.",
             # Named the Apex login whatever had actually failed -- and two of
             # the three actions never open Apex at all.
             "message_failed": "\u274C Run failed \u2014 the log above says why. Nothing was written to Apex or to the board. If it mentions a login, sign into Apex in this machine's Chrome; if it mentions Blue Ink, the key file is missing.",
