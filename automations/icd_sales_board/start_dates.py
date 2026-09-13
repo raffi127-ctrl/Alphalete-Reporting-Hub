@@ -116,33 +116,34 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
             _LAST_DIAG.update(found)   # rides the summary line; see harvest()
         log(f"    week {wk_start}: box={found}")
 
-        # 1) try it as a URL parameter, which needs no click at all
-        if found.get("name"):
-            from urllib.parse import quote
-            base = page.url.split("#")[0]
-            url = f"{base}&{quote(found['name'])}={quote(want_value)}"
-            if found.get("submitName"):
-                url += f"&{quote(found['submitName'])}={quote(found['submitValue'] or 'Get Report')}"
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-                page.wait_for_timeout(1500)
-                if page.evaluate("(w) => document.body.innerText.includes(w)",
-                                 want_header):
-                    return True
-            except Exception:   # noqa: BLE001 — fall through to the form
-                pass
-
-        # 2) fall back to driving the form like a person
-        box = page.locator("input").nth(found["idx"])
-        box.click()
-        box.press("Meta+A")
-        box.type(want_value, delay=40)
-        page.keyboard.press("Escape")
-        try:
-            page.get_by_role("button", name="Get Report").click(timeout=5_000)
-        except Exception:   # noqa: BLE001 — it is an <input type=submit> here
-            page.locator("input[value='Get Report'], button:has-text('Get Report')"
-                         ).first.click(timeout=5_000)
+        # The box is READONLY and the form is a POST. That is both failures
+        # explained at once: typing into a readonly input does nothing, and a
+        # POST form reads form scope, not the URL. So set the value directly
+        # and post the form natively.
+        #
+        # Native submit, not a click: the Get Report control is NAMED "submit",
+        # which shadows form.submit on the element, and whatever handler sits
+        # on it is free to re-read the calendar widget and put the old week
+        # back. HTMLFormElement.prototype.submit.call() steps around both. A
+        # readonly field is still submitted (unlike a disabled one), and the
+        # native submit omits the button's own name/value pair, so that gets
+        # added as a hidden field in case the page tests for it.
+        page.evaluate(
+            r"""([idx, want]) => {
+                const box = [...document.querySelectorAll('input')][idx];
+                const form = box.form;
+                box.removeAttribute('readonly');
+                box.value = want;
+                box.dispatchEvent(new Event('change', {bubbles: true}));
+                if (!form) return;
+                let h = form.querySelector("input[type=hidden][name=submit]");
+                if (!h) {
+                    h = document.createElement('input');
+                    h.type = 'hidden'; h.name = 'submit'; h.value = 'Get Report';
+                    form.appendChild(h);
+                }
+                HTMLFormElement.prototype.submit.call(form);
+            }""", [found["idx"], want_value])
 
         # CONFIRM THE PAGE ACTUALLY CHANGED. Clicking is not loading.
         for _ in range(20):
