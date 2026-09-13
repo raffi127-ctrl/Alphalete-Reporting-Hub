@@ -30,17 +30,16 @@ GP_SALES = ("#alphalete-gp-sales", "C07J46MQNUX")
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BYOD_BASE_SHARE = 0.40                   # assumed until the order-log split is built
 
-# Captain payout decelerator (new comp, first applied WE 08/22): brackets on
-# 0-30 day churn, applied at the WORSE of team vs personal (office) churn.
-DECEL = [("<4%", "100%"), ("4-4.9%", "75%"), ("5-5.9%", "50%"),
-         ("6-6.9%", "25%"), ("7%+", "0%")]
-DECEL_EDGES = [4.0, 5.0, 6.0, 7.0]           # bracket upper bounds (strict)
-# Latest weekly "Captains Bonus Breakdown" team churn, per office key —
-# update by hand when the Wednesday email lands. None -> line omitted.
-TEAM_CHURN_REF = {
-    "carlos": ("4.70%", "WE 08/22"),
-    "atef": ("3.10%", "WE 08/22"),
-}
+# Captain payout decelerator: PER PRODUCT since DD WE 08/29 (Joshua Orton
+# 2026-09-02: "we split out churn decelerators based on product
+# (AIR,INTERNET,BYOD,NONBYOD)... based on the greater of your office or your
+# captainship"). Thresholds + weekly team/personal churn seeds live in
+# carlos_captainship_bonus/sc_program.json (single source with the bonus
+# projection; refreshed when each Wednesday's breakdown email lands). The old
+# single 4/5/6/7% table (WE 08/22 program) is GONE — Carlos 2026-09-13:
+# "There's a decelerator for every single product... rebuild it properly."
+DECEL_PROG = (Path(__file__).resolve().parents[1] /
+              "carlos_captainship_bonus" / "sc_program.json")
 
 NONBYOD_TIERS = [("6", "≤1.0%", "$30"), ("5", "1.0–2.0%", "$10"),
                  ("4", "2.0–2.5%", "$0"), ("3", "2.5–3.0%", "($10)"),
@@ -121,7 +120,7 @@ def collect(sheet_id: str = SHEET_ID, tab: str = TAB, rows_of=None) -> dict:
     return {"prods": prods, "rows": rows}
 
 
-def build_html(data: dict, *, label: str = "", team_ref=None) -> str:
+def build_html(data: dict, *, label: str = "", office_key: str = "") -> str:
     wl = data["prods"].get("Wireless", {})
     try:
         act = int(wl.get("act") or 0)
@@ -201,58 +200,112 @@ def build_html(data: dict, *, label: str = "", team_ref=None) -> str:
     air = data["prods"].get("Air", {})
     net = data["prods"].get("Internet", {})
 
-    # ---- captain decelerator block (under the customer list) ----
-    tot_act = tot_disc = 0
-    for v in data["prods"].values():
-        try:
-            tot_act += int(v.get("act") or 0)
-            tot_disc += int(v.get("disc") or 0)
-        except ValueError:
-            pass
-    office_pct = 100.0 * tot_disc / tot_act if tot_act else 0.0
-    team_line = (f" · Team churn {team_ref[0]} ({team_ref[1]} bonus email) —"
-                 f" the decelerator uses the WORSE of the two, so keep both down."
-                 if team_ref else
-                 " · decelerator uses the WORSE of team vs office churn.")
-    d_ix = 0
-    for i, e in enumerate(DECEL_EDGES):
-        if office_pct >= e:
-            d_ix = i + 1
-    cells = []
-    for i, (rng, mult) in enumerate(DECEL):
-        hot = i == d_ix
-        style = ("background:#e24b4a;color:#fff;font-weight:700;outline:3px solid #c00;"
-                 if hot else "background:#eef2f8;")
-        cells.append(f"<td style=\"text-align:center;{style}\">{rng}<br>"
-                     f"<span style=\"font-size:15px\">{mult}</span>"
-                     f"{' ◀' if hot else ''}</td>")
-    climbs = []
+    # ---- captain decelerator block: ONE ROW PER PRODUCT (DD WE 8/29 comp;
+    # Carlos 2026-09-13: "There's a decelerator for every single product") ----
+    import json as _json
     import math
-    for e, mult in ((7.0, "25%"), (6.0, "50%"), (5.0, "75%"), (4.0, "100%")):
-        if office_pct < e:
-            continue
-        allowed = math.ceil(tot_act * e / 100.0) - 1
-        need = max(0, tot_disc - allowed)
-        # estimated date: walk the wireless rolloff list until `need` lines aged off
-        cum, when = 0, None
-        for r in rows:
-            cum += r["lines"]
-            if cum >= need:
-                when = r["date"]
-                break
-        when_s = f" (≈ after {when})" if when else ""
-        climbs.append(f"<li>&lt;{e:g}% → {mult}: {need} lines must roll off{when_s}</li>")
-    climb_html = ("<ul style=\"margin:4px 0 0 18px;padding:0\">" + "".join(climbs) + "</ul>"
-                  if climbs else "<p class=\"note\">already in the best bracket</p>")
+    prog = _json.loads(DECEL_PROG.read_text())
+    d_thr = prog["decel_thresholds"]
+    d_scale = prog["decel_scale"]
+    seeds = prog["seed_rates"]
+    # sc_program.json is CARLOS's program — other offices get live-only rows.
+    is_carlos = (office_key or "carlos") == "carlos"
+    team = (seeds.get("team_churn_pct") or {}) if is_carlos else {}
+    pers = (seeds.get("personal_churn_pct") or {}) if is_carlos else {}
+    tr = prog.get("transition") or {}
+    tr_on = bool(tr) and dt.date.today() <= dt.date.fromisoformat(
+        tr["through_dd_we"])
+
+    def _live(prod_name):
+        v = data["prods"].get(prod_name, {})
+        try:
+            a, d = int(v.get("act") or 0), int(v.get("disc") or 0)
+        except ValueError:
+            return None, 0, 0
+        return (100.0 * d / a if a else 0.0), a, d
+
+    live_net, net_a, net_d = _live("Internet")
+    live_air, air_a, air_d = _live("Air")
+    live_wl, _wa, _wd = _live("Wireless")
+
+    #      label      key         office churn, source tag,        act, disc
+    prods_cfg = [
+        ("Internet", "internet", live_net, "live board", net_a, net_d),
+        ("Non-BYOD", "nonbyod",
+         pers.get("nonbyod"), "WE %s email" % prog["dd_we"][5:], None, None),
+        ("BYOD", "byod",
+         pers.get("byod"), "WE %s email" % prog["dd_we"][5:], None, None),
+        ("AIR/AWB", "air", live_air, "live board", air_a, air_d),
+    ]
+
+    def _band(pct, thr):
+        ix = 0
+        for i, e in enumerate(thr):
+            if pct >= e:
+                ix = i + 1
+        return ix
+
+    prow_html, climbs = [], []
+    for plabel, key, office_pct, src, p_act, p_disc in prods_cfg:
+        t_pct = team.get(key)
+        if office_pct is None and t_pct is None:
+            # non-carlos office with no split: band combined wireless, noted
+            office_pct, src = live_wl, "live board (wireless combined)"
+        used = max(x for x in (office_pct, t_pct) if x is not None)
+        binding = "office" if (t_pct is None or (office_pct or 0) >= t_pct) \
+            else "team"
+        ix = _band(used, d_thr[key])
+        raw = d_scale[ix]
+        eff = min(1.0, raw + tr["add_points"]) if tr_on and raw < 1.0 else raw
+        cells = []
+        labels = ["<%.1f%%" % d_thr[key][0]] + \
+                 ["≥%.1f%%" % e for e in d_thr[key]]
+        for i, mult in enumerate(d_scale):
+            hot = i == ix
+            style = ("background:#e24b4a;color:#fff;font-weight:700;"
+                     "outline:2px solid #c00;" if hot else "background:#eef2f8;")
+            cells.append(
+                f"<td style=\"text-align:center;{style}\">{labels[i]}<br>"
+                f"<span style=\"font-size:13px\">{100 * mult:.0f}%</span></td>")
+        eff_s = (f"{100 * raw:.0f}% <b>→ {100 * eff:.0f}%</b>" if eff != raw
+                 else f"<b>{100 * raw:.0f}%</b>")
+        team_s = f" · team {t_pct:.1f}%" if t_pct is not None else ""
+        prow_html.append(
+            f"<tr><td style=\"font-weight:700\">{plabel}</td>"
+            f"<td style=\"text-align:center\"><b>{used:.1f}%</b><br>"
+            f"<span style=\"font-size:10.5px;color:#667\">{src}{team_s}"
+            f" · {binding} is worse</span></td>"
+            + "".join(cells) +
+            f"<td style=\"text-align:center;font-size:14px\">{eff_s}</td></tr>")
+        # lines-to-climb only where the LIVE office number is the binding one
+        if p_act and binding == "office" and ix > 0:
+            nxt_thr = d_thr[key][ix - 1]
+            allowed = math.ceil(p_act * nxt_thr / 100.0) - 1
+            need = max(0, (p_disc or 0) - allowed)
+            climbs.append(f"<li>{plabel}: {need} line(s) off → &lt;{nxt_thr:g}% "
+                          f"= {100 * d_scale[ix - 1]:.0f}%</li>")
+    climb_html = ("<ul style=\"margin:4px 0 0 18px;padding:0\">"
+                  + "".join(climbs) + "</ul>" if climbs else
+                  "<p class=\"note\">no live-tracked product can climb right "
+                  "now (or team churn is the binding number)</p>")
+    tr_note = (" +25 pts transition support on any decel under 100%% "
+               "(SC, thru DD WE %s) — shown as raw → effective."
+               % tr["through_dd_we"] if tr_on else "")
     decel_html = f"""<div style=\"margin-top:14px;border:1px solid #ccd\">
-<div class=\"hdr\">Captain decelerator — payout multiplier (worse of team vs yours)</div>
-<div style=\"display:grid;grid-template-columns:1.6fr 1fr;gap:10px;padding:10px\">
-<div><table><tr>{''.join(cells)}</tr></table>
-<p class=\"note\">Office 0-30 (all products): <b>{office_pct:.1f}%</b>
- ({tot_disc} of {tot_act}){team_line}</p></div>
+<div class=\"hdr\">Captain decelerator — per product (worse of team vs office 0-30 churn)</div>
+<div style=\"display:grid;grid-template-columns:2.2fr 1fr;gap:10px;padding:10px\">
+<div><table><tr><td style=\"font-weight:700\">Product</td>
+<td style=\"text-align:center;font-weight:700\">Churn used</td>
+<td colspan=\"5\" style=\"text-align:center;font-weight:700\">Brackets</td>
+<td style=\"text-align:center;font-weight:700\">Decel</td></tr>
+{''.join(prow_html)}</table>
+<p class=\"note\">Payout × Σ(product volume × product decel) ÷ total volume
+ (weighted by DD volume).{tr_note} BYOD / Non-BYOD office churn comes from the
+ weekly bonus email — the board has no live BYOD split yet.</p></div>
 <div><div style=\"font-size:12.5px;font-weight:600\">Lines to climb a bracket</div>
 <div style=\"font-size:12.5px\">{climb_html}</div>
-<p class=\"note\">Dates estimated from the wireless rolloff schedule only.</p></div>
+<p class=\"note\">Only products tracked live on this board, and only when the
+ office number (not team) is the one binding the bracket.</p></div>
 </div></div>"""
     today = dt.date.today().strftime("%a %-m/%-d/%y")
     label_sfx = f" — {html.escape(label)}" if label else ""
@@ -329,7 +382,7 @@ def render_office_png(sheet_id: str, tab: str, out_png: Path, *,
     if not data["rows"] or not data["prods"]:
         raise ValueError(f"no churn data on {tab!r} (rows={len(data['rows'])})")
     html_txt = build_html(data, label=label,
-                          team_ref=TEAM_CHURN_REF.get(office_key))
+                          office_key=office_key)
     html_path = out_png.with_suffix(".html")
     html_path.write_text(html_txt, encoding="utf-8")
     render_png(html_path, out_png)
@@ -398,7 +451,7 @@ def main() -> int:
     png_path = out / "churn_byod_preview.png"
     html_path.write_text(
         build_html(data, label="Carlos's B2B Office",
-                   team_ref=TEAM_CHURN_REF.get("carlos")), encoding="utf-8")
+                   office_key="carlos"), encoding="utf-8")
     print("Rendering PNG...")
     render_png(html_path, png_path)
     print(f"  {png_path} ({png_path.stat().st_size:,} bytes)")

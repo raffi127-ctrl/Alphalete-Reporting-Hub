@@ -239,18 +239,29 @@ def _decel(churn_pct: float, thresholds: List[float], scale: List[float]) -> flo
     return d
 
 
-def bonus(vol_by_product: Dict[str, float], prog: dict, rates: dict) -> dict:
+def transition_active(prog: dict, week_sat: dt.date) -> bool:
+    """Andrew Park 2026-09-09: +25 points to any decel below 100% (capped),
+    DD WE 8/29 through WE 9/19."""
+    tr = prog.get("transition")
+    return bool(tr) and week_sat <= dt.date.fromisoformat(tr["through_dd_we"])
+
+
+def bonus(vol_by_product: Dict[str, float], prog: dict, rates: dict,
+          week_sat: Optional[dt.date] = None) -> dict:
     vol = sum(vol_by_product.values())
     tier_i, rate = _tier(vol, prog)
     a_add = _adder(rates["activation_31_60_pct"], prog["activation_adder"], True)
     c_add = _adder(rates["team_total_churn_pct"], prog["churn_adder"], False)
     per_pc = rate + a_add + c_add
     payout = max(vol * per_pc, prog["payout_floor"]) if vol else 0.0
+    trans = week_sat is not None and transition_active(prog, week_sat)
     dec_vol = 0.0
     decels = {}
     for p in PRODUCTS:
         d = _decel(rates["churn_pct"][p], prog["decel_thresholds"][p],
                    prog["decel_scale"])
+        if trans and d < 1.0:
+            d = min(1.0, d + prog["transition"]["add_points"])
         decels[p] = d
         dec_vol += vol_by_product.get(p, 0) * d
     wdecel = (dec_vol / vol) if vol else 0.0
@@ -271,8 +282,8 @@ def build_report(today: dt.date, wtd, share, per_owner, prog) -> str:
     proj_by_p = ({p: wtd[p] / cs for p in PRODUCTS} if can_project
                  else {p: float(wtd[p]) for p in PRODUCTS})
 
-    now = bonus({p: float(wtd[p]) for p in PRODUCTS}, prog, rates)
-    proj = bonus(proj_by_p, prog, rates)
+    now = bonus({p: float(wtd[p]) for p in PRODUCTS}, prog, rates, week_sat=we)
+    proj = bonus(proj_by_p, prog, rates, week_sat=we)
 
     tier_names = ["Base"] + ["Tier %d" % i for i in range(1, 8)]
     nxt = ""
@@ -323,6 +334,10 @@ def build_report(today: dt.date, wtd, share, per_owner, prog) -> str:
         "If churn were clean (100%% decel): ≈ $%s"
         % "{:,.0f}".format(proj["payout"]),
     ]
+    if transition_active(prog, we):
+        lines.append("_Transition support applied: +25 pts to every decel "
+                     "under 100%% (SC, thru DD WE %s)._"
+                     % prog["transition"]["through_dd_we"])
     age = (today - dt.date.fromisoformat(prog["as_of"])).days
     if age > 9:
         lines.append("⚠️ sc_program.json is %d days old — refresh from the "
@@ -339,9 +354,10 @@ def _money(v) -> str:
     return "$" + "{:,.0f}".format(v)
 
 
-def _bonus_col(prog, vols, rates, status, posted_so_far=None):
+def _bonus_col(prog, vols, rates, status, posted_so_far=None, week_sat=None):
     """One sheet column (list of display strings) from computed inputs."""
-    b = bonus({p: float(vols.get(p, 0)) for p in PRODUCTS}, prog, rates)
+    b = bonus({p: float(vols.get(p, 0)) for p in PRODUCTS}, prog, rates,
+              week_sat=week_sat)
     thr = prog["tier_thresholds"][b["tier"]]
     col = [
         status,
@@ -427,7 +443,7 @@ def build_sheet(today, wtd, share, weekly, prog, log=print):
 
     cols = [("DD WE %d/%d" % (we.month, we.day),
              _bonus_col(prog, cur_vols, rates, cur_status,
-                        posted_so_far=sum(wtd.values())))]
+                        posted_so_far=sum(wtd.values()), week_sat=we))]
     # prior weeks, newest first: SC actual > our estimate > skip
     prior = ws - dt.timedelta(days=7)
     hist_keys = sorted(hist.keys(), reverse=True)
@@ -442,7 +458,8 @@ def build_sheet(today, wtd, share, weekly, prog, log=print):
         elif wk in weekly:
             cols.append((label + " *",
                          _bonus_col(prog, dict(weekly[wk]), rates,
-                                    "ESTIMATE (SC email pending)")))
+                                    "ESTIMATE (SC email pending)",
+                                    week_sat=sat)))
         wk -= dt.timedelta(days=7)
 
     ncol = len(cols) + 1

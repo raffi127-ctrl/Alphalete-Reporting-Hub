@@ -1,7 +1,7 @@
 {
-  "_source": "SC email 'B2B ATT Captains Bonus Breakdown DD WE 08/29' (Priyanka Oshin, 2026-09-02). Refresh when each Wednesday's breakdown lands — thresholds move when SC recalibrates, churn/activation rates weekly.",
-  "as_of": "2026-09-02",
-  "dd_we": "2026-08-29",
+  "_source": "SC email 'B2B ATT Captains Bonus Breakdown DD WE 09/06' (Priyanka Oshin, 2026-09-09) + Andrew Park's transition-support reply same day. Refresh when each Wednesday's breakdown lands — thresholds move when SC recalibrates, churn/activation rates weekly.",
+  "as_of": "2026-09-09",
+  "dd_we": "2026-09-06",
   "grade": "Senior",
   "tier_thresholds": [119, 131, 143, 155, 167, 179, 191, 203],
   "tier_rates": [0.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.5, 12.5],
@@ -15,10 +15,17 @@
     "byod": [6.0, 7.0, 8.0, 9.0],
     "air": [6.5, 7.5, 8.5, 9.5]
   },
+  "transition": {
+    "_note": "Andrew Park 2026-09-09: four weeks of transition support, WE 8/29 through WE 9/19 DD — +25 points to any decelerator below 100%, capped at 100%. Verified: WE 9/06 shown decels (50/25/100/25) = banded worse-of churn (3.8/4.9/6.3/11.1 -> 25/0/75/0) +25pts.",
+    "add_points": 0.25,
+    "through_dd_we": "2026-09-19"
+  },
   "seed_rates": {
-    "_note": "Worse of team/personal per product from the same email (decel uses MAX of the two); total churn/activation drive the $/pc adders.",
-    "churn_pct": {"internet": 3.9, "nonbyod": 9.2, "byod": 8.2, "air": 10.0},
+    "_note": "From the same email: churn_pct = WORSE of team/personal per product (what the decel bands); team/personal also kept separately so the churn preview can label its sources. Total churn/activation drive the $/pc adders.",
+    "churn_pct": {"internet": 3.8, "nonbyod": 4.9, "byod": 6.3, "air": 11.1},
+    "team_churn_pct": {"internet": 0.8, "nonbyod": 3.2, "byod": 5.3, "air": 6.7},
+    "personal_churn_pct": {"internet": 3.8, "nonbyod": 4.9, "byod": 6.3, "air": 11.1},
     "team_total_churn_pct": 4.3,
-    "activation_31_60_pct": 79.5
+    "activation_31_60_pct": 81.0
   }
 }
