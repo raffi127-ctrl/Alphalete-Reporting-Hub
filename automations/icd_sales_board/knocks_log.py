@@ -79,3 +79,61 @@ def append_day(day: dt.date, office: str, records: list,
         if verbose:
             print(f"   knocks log: SKIPPED ({type(e).__name__}: {e})")
         return 0
+
+
+def roster_for(office: str, start=None, end=None,
+               sheet_id: str = SHEET_ID) -> set:
+    """Every rep who KNOCKED for this office in the window.
+
+    THIS IS THE ROSTER THE BOARD SHOULD USE (Megan 2026-09-13). A sales feed
+    only knows who sold, so a rep who worked all week and rolled a zero is
+    simply absent from it — and the zeros are what an owner opens a board to
+    find. Knocking is the proof somebody was out there.
+
+    Matched on the office's OWNER NAME, which is how the knocks run writes it
+    ('Cyrus Wade'), with the ICD alias table as the fallback: this tab also
+    holds spellings like 'Akashdeep Rai' and 'Muhammad UI Haque' that no other
+    report uses.
+
+    Never raises — an office with no knocks logged returns an empty set, and
+    the board falls back to whoever sold."""
+    try:
+        from automations.recruiting_report.fill import open_by_key, _retry
+
+        wanted = {(office or "").strip().lower()}
+        try:
+            from automations.focus_office_att import aliases as _al
+            wanted |= {n.strip().lower() for n in
+                       _al.get_search_candidates(office, _al.load_aliases())
+                       if n}
+        except Exception:  # noqa: BLE001 — aliases are a nicety here
+            pass
+
+        grid = _retry(open_by_key(sheet_id).worksheet(TAB).get_all_values)
+        if not grid:
+            return set()
+        header = [str(h).strip() for h in grid[0]]
+        i_date, i_office, i_rep = (header.index("Date"), header.index("Office"),
+                                   header.index("Rep"))
+        out = set()
+        for row in grid[1:]:
+            if len(row) <= i_rep:
+                continue
+            name = str(row[i_office]).strip().lower()
+            # An office cell like 'Next Horizon Group, Inc. Nii Tagoe' carries
+            # the company AND the owner, so a substring match is what works.
+            if not any(w and (w == name or w in name) for w in wanted):
+                continue
+            if start or end:
+                try:
+                    d = dt.date.fromisoformat(str(row[i_date]).strip()[:10])
+                except ValueError:
+                    continue
+                if (start and d < start) or (end and d > end):
+                    continue
+            rep = str(row[i_rep]).strip()
+            if rep:
+                out.add(rep)
+        return out
+    except Exception:  # noqa: BLE001 — a board must not die over a roster
+        return set()

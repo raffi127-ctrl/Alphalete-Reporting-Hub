@@ -1484,6 +1484,12 @@ def _relay_week(office_key: str, week_ending: dt.date) -> dict:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
+def _knock_roster(icd: str, week_ending: dt.date) -> set:
+    from automations.icd_sales_board import knocks_log as KL
+    return KL.roster_for(icd, week_ending - dt.timedelta(days=6), week_ending)
+
+
+@st.cache_data(ttl=900, show_spinner=False)
 def _settled_reps(icd: str, week_ending: dt.date) -> dict:
     """{rep: {date: measures}} — settled per-rep days for the whole office."""
     from automations.icd_sales_board import tableau_days as TD
@@ -1541,6 +1547,15 @@ def _relay_status(office_key: str) -> dict:
     return RL.last_reading(office_key)
 
 
+def _week_end(d: dt.date) -> dt.date:
+    """The Sunday that closes d's week — the board's boundary everywhere."""
+    return d + dt.timedelta(days=(6 - d.weekday()) % 7)
+
+
+def _this_sunday_site() -> dt.date:
+    return _week_end(dt.date.today())
+
+
 def relay_board(icd: str, office_key: str) -> None:
     """An office's board, filled from its OWN SaraPlus via the ICD agent.
 
@@ -1560,14 +1575,18 @@ def relay_board(icd: str, office_key: str) -> None:
     would read as "nobody sold anything" when it means "nobody told us"."""
     status = _relay_status(office_key)
 
-    if not status["day"]:
+    # THE RELAY IS OPTIONAL NOW. It used to be the only source, so no reading
+    # meant no board; since closed days come from Tableau an office with no
+    # agent at all still has a full week. Raf has no agent and 343 units.
+    # Only give up when NEITHER source has anything.
+    weeks = _relay_weeks(office_key)
+    settled_any = _settled_days(icd, _this_sunday_site())
+    if not status["day"] and not settled_any:
         st.info(
-            f"No reading from {icd}'s office yet. The board fills itself once "
-            "the Lucy agent is installed on a machine in that office — it "
-            "reads their own SaraPlus there, so nobody hands over a password.",
-            icon="🔌")
+            f"Nothing for {icd} yet — no settled Tableau day and no reading "
+            "from the office's own machine.", icon="🔌")
         return
-    if not status["sends_sales"]:
+    if status["day"] and not status["sends_sales"]:
         # A reading arrived but carried no sales. If credit checks DID come
         # through, the laptop is fine and the agent is simply an old build
         # from before the sales passes — a different fix, and a different
@@ -1581,9 +1600,11 @@ def relay_board(icd: str, office_key: str) -> None:
         else:
             st.warning(f"{icd}'s last reading carried nothing. Last heard "
                        f"{status['day']:%b %d}.", icon="🚧")
-        return
 
-    weeks = _relay_weeks(office_key)
+    # Weeks come from BOTH sources, newest first — an office with no agent
+    # still has every week Tableau has settled.
+    weeks = sorted(set(weeks) | {_week_end(d) for d in settled_any},
+                   reverse=True) or [_this_sunday_site()]
     week_ending = st.sidebar.selectbox(
         "Week Ending", weeks, key=f"relaywk_{office_key}",
         format_func=lambda d: f"{d.strftime('%b')} {_ord(d.day)}, {d.year}")
@@ -1652,6 +1673,11 @@ def relay_board(icd: str, office_key: str) -> None:
     for n in RL.worked_names(office_key, week_ending - dt.timedelta(days=6),
                              week_ending):
         names.setdefault(n.strip().lower(), n)
+    # AND EVERYONE WHO KNOCKED. A sales feed only knows who sold; the knocks
+    # report knows who was out there, so this is what puts a rep who worked
+    # all week and rolled a zero on the board (Megan 2026-09-13).
+    for n in _knock_roster(icd, week_ending):
+        names.setdefault(n.strip().lower(), n)
     for low, rep in roster.items():
         names.setdefault(low, rep.name)
 
@@ -1687,7 +1713,10 @@ def relay_board(icd: str, office_key: str) -> None:
         rows.append(row)
     rows.sort(key=lambda r: (-r["Apps"], -r["Total units"], r["Rep"]))
 
-    sold = sum(1 for r in rows if any(r[m] for m in RELAY_MEASURES))
+    # NOT "sold of total": a rep only appears in the settled pull BECAUSE they
+    # sold, so that card read 17/17 every time and told nobody anything
+    # (Megan 2026-09-13). The honest count is how many reps are on the board.
+    active = len(rows)
 
     # CLOSED DAYS COME FROM TABLEAU, TODAY FROM THE RELAY (Megan 2026-09-13).
     # An intraday reading of a finished day runs light — Cyrus's Saturday was
@@ -1711,7 +1740,7 @@ def relay_board(icd: str, office_key: str) -> None:
 
     cols = st.columns(6, gap="small")
     _vital(cols[0], "Total units", str(_units(tot)), None)
-    _vital(cols[1], "Sold / reps", f"{sold}/{len(rows)}", None)
+    _vital(cols[1], "Active reps", str(active), None)
     for col, m in zip(cols[2:], RELAY_MEASURES):
         _vital(col, m, str(tot[m]), None)
 
@@ -2512,7 +2541,15 @@ def main() -> None:
         goals_editor(key, icd)
         return
 
-    if icd != RAF_ICD:
+    # EVERY office reads the same settled Tableau pull now, Raf included
+    # (Megan 2026-09-13). His Google Sheet board is still there behind the
+    # toggle below — it carries roll call, zero streaks and the per-day
+    # product blocks that only exist in that sheet — but the numbers an owner
+    # is judged on come from the same place for everybody.
+    if icd != RAF_ICD or not st.sidebar.toggle(
+            "Raf's sheet board", value=False, key="raf_sheet",
+            help="The original Google-Sheet board: roll call, zero streaks, "
+                 "per-day products."):
         relay_board(icd, key)
         return
 
