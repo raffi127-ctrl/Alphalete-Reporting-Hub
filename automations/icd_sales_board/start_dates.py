@@ -154,6 +154,24 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
             return False
         if not _LAST_DIAG:
             _LAST_DIAG.update(found)   # rides the summary line; see harvest()
+        if "fields" not in _LAST_DIAG:
+            # EVERY field, once. The POST lands a week EARLIER than asked for,
+            # so weekStart is plainly not the only thing steering it, and one
+            # more hypothesis per run is not a way to find the other one.
+            try:
+                _LAST_DIAG["fields"] = page.evaluate(
+                    r"""() => {
+                        const box = [...document.querySelectorAll('input')]
+                                      .find(x => x.name === 'weekStart');
+                        const f = box && box.form;
+                        if (!f) return '(no form)';
+                        return [...f.querySelectorAll('input,select')]
+                            .map(e => `${e.name || e.id || e.type}=${
+                                 (e.value || '').slice(0, 12)}`)
+                            .join(' ');
+                    }""")[:300]
+            except Exception:   # noqa: BLE001
+                _LAST_DIAG["fields"] = "unreadable"
         log(f"    week {wk_start}: box={found}")
 
         # The box is READONLY and the form is a POST. That is both failures
@@ -290,7 +308,9 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     # fixed width, and the box is already known.
     landed = _LAST_DIAG.get("landed")
     why = ""
-    if _LAST_DIAG.get("headers"):
+    if _LAST_DIAG.get("fields") and opened < len(weeks):
+        why = f" · fields: {_LAST_DIAG['fields']}"
+    elif _LAST_DIAG.get("headers"):
         why = f" · headers: {_LAST_DIAG['headers']}"
     elif opened < len(weeks) and landed:
         why = f" · {_LAST_DIAG.get('raised', '')} landed: {landed}"
