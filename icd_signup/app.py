@@ -112,15 +112,6 @@ with st.form("icd_signup"):
     st.caption("A channel **ID** is safest — in Slack, click the channel name "
                "at the top, scroll to the bottom of the About tab, and copy "
                "the ID (it looks like C09AVM17PAR). A #name works too.")
-    # ONLY THEIR JOB, not ours (Megan 2026-09-13: "this reads like they need
-    # to add lucy which isn't the case"). Lucy does have to be in the room
-    # before anything posts -- approve.py refuses otherwise -- but getting her
-    # there is OUR half. An office reading that it must invite a bot has been
-    # handed a task it cannot do and a reason to wait.
-    st.info(
-        "**Add Megan and Eve to any channel you name here.** They cannot "
-        "switch your alerts on for a channel they are not in — this is the "
-        "most common reason a sign-up stalls.")
     alert_channels = []
     for i in range(MAX_CHANNELS):
         label = ("Channel for alerts" if i == 0
@@ -147,6 +138,18 @@ with st.form("icd_signup"):
         knocks.append((ch.strip(), int(cad)))
     st.caption("Do not want this board at all? Leave every channel above "
                "blank.")
+
+    # LAST THING BEFORE THEY SEND, because it is the one action of theirs
+    # that has to happen OUTSIDE this page -- sitting up beside the channel
+    # boxes, it read as advice about typing rather than a thing to go and do.
+    #
+    # Only their half: Lucy also has to be in the room, and getting her there
+    # is ours (Megan 2026-09-13: "this reads like they need to add lucy which
+    # isn't the case").
+    st.info(
+        "**Before you send this — add Megan and Eve to every channel you "
+        "named above.** They cannot switch your alerts on for a channel they "
+        "are not in, and that is the most common reason a sign-up stalls.")
 
     submitted = st.form_submit_button("Send my sign-up", type="primary")
 
