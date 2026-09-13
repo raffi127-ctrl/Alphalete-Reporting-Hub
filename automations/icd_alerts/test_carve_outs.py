@@ -86,14 +86,16 @@ class EitherOfThemCanFinishTheSetUp(unittest.TestCase):
     """
 
     def test_the_runner_is_reported_on_even_if_unlisted(self):
-        from automations.icd_alerts import approve as A
-        # Somebody approving who is not in APPROVERS yet -- Eve today -- must
-        # still be told when SHE is the one missing from the room.
-        self.assertIn("you", A._missing_people(["U04G5HJBGFN"], "UEVE"))
+        from automations.icd_alerts import approve as A, offices as O
+        # Somebody approving who is not on APPROVERS -- a third person helping
+        # out -- must still be told when THEY are the one missing.
+        gone = A._missing_people(list(O.APPROVERS), "USOMEBODYELSE")
+        self.assertIn("you", gone)
 
     def test_everyone_present_reports_nothing(self):
-        from automations.icd_alerts import approve as A
-        self.assertEqual(A._missing_people(["U04G5HJBGFN", "UEVE"], "UEVE"), [])
+        from automations.icd_alerts import approve as A, offices as O
+        present = list(O.APPROVERS)
+        self.assertEqual(A._missing_people(present, present[0]), [])
 
     def test_a_missing_approver_is_named(self):
         from automations.icd_alerts import approve as A, offices as O
