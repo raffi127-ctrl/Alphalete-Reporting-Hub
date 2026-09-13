@@ -142,9 +142,13 @@ def _assert_rolloff_has_data(ws, o: B2BOffice) -> None:
         "an empty template".format(ws.title))
 
 
-# Offices whose #6 Customer Churn posts the rendered new-comp image (BYOD /
-# Non-BYOD churn tiers + captain decelerator) instead of the raw tab shot.
-NEW_COMP_CHURN_OFFICES = {"carlos", "atef"}
+# Offices whose #6 Customer Churn posts the rendered new-comp image instead
+# of the raw tab shot. Carlos 2026-09-13: Jamis and Sabrina "should look
+# exactly like mine, except for the cap[tain decelerator] section and below"
+# — churn_byod_preview drops that block for non-captains, so adding them
+# here gives them everything above it. Any render failure still falls back
+# to the plain sheet screenshot.
+NEW_COMP_CHURN_OFFICES = {"carlos", "atef", "jamis", "sabrina"}
 
 
 def churn_tab_image(o: B2BOffice, which: str, out_dir: Path, log=print) -> Path:
