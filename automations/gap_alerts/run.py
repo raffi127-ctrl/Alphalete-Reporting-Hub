@@ -1123,9 +1123,17 @@ def _render_board(cfg: Dict, rows: List, extra: List, day: dt.date,
                                   first_name(cfg.get("label") or cfg["name"]))
                       if x)
     _when = _date_text(day) + (" — %s" % slot if slot else "")
+    # Broken up by team (Raf 2026-09-13, "the team breakdown for all his
+    # daily interval knock dispo posts"). THESE are the interval posts — this
+    # office's board goes out every 15 or 30 minutes of the selling day, where
+    # knocks_intraday only fires at 2pm / 5:15 / 9pm. Same lookup, same cache.
+    # RAF'S IS THE ONLY ONE THAT CHANGES: teams.SALES_BOARDS holds only his
+    # sales board, so Calvin's and Jay's boards are untouched.
+    from automations.weekly_knock_dispositions import teams as TEAMS
     pngs, shape = knocks_render.render_knocks_boards(
         day, rows=rows, out_dir=out_dir / cfg["key"],
         title_suffix=_who, date_text=_when, extra_totals=extra,
+        teams=TEAMS.for_office(cfg["name"], day),
         rate_columns=(C.RATE_COLUMNS if RATES_OVERRIDE is None
                       else RATES_OVERRIDE),
         knocks_green_at=C.KNOCKS_GREEN_AT,
