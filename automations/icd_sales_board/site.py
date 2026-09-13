@@ -1795,9 +1795,18 @@ def relay_board(icd: str, office_key: str) -> None:
             + ". A missing day is one neither Tableau nor the office's own "
               "machine has reported — not a day nobody sold.", icon="📅")
 
-    expand = st.toggle(
-        "Expand your board", value=False, key=f"relayexp_{office_key}",
-        help="Show Team, Leadership, Tenure and Status.")
+    # TWO SEPARATE EXPANSIONS (Megan 2026-09-13). One toggle put the per-day
+    # product split AND the owner fields on screen together — 35+ columns,
+    # "hard to see". They answer different questions, so they open separately
+    # and either one alone stays readable.
+    c_a, c_b = st.columns(2)
+    products = c_a.toggle(
+        "Products by day", value=False, key=f"relayprod_{office_key}",
+        help="Int / Int Up / DTV / NL under every day, the way the sheet "
+             "lays it out. Collapsed, hover a day instead.")
+    expand = c_b.toggle(
+        "Rep details", value=False, key=f"relayexp_{office_key}",
+        help="Team, Leadership and Status — and where they are edited.")
     edit = False
     if expand:
         edit = st.toggle("Edit rows", value=False, key=f"relayed_{office_key}",
@@ -1882,7 +1891,7 @@ def relay_board(icd: str, office_key: str) -> None:
             # clicking anything, so a single units-per-day number was not the
             # daily breakdown he means (Megan 2026-09-13).
             lab = d.strftime("%a")
-            if expand:
+            if products:
                 # Expanded: every measure gets its own column, Raf's layout.
                 row[f"{lab} Apps"] = _apps(src) if src else 0
                 for m in RELAY_MEASURES:
@@ -1971,7 +1980,7 @@ def relay_board(icd: str, office_key: str) -> None:
     for d in week_days:
         lab = d.strftime("%a")
         cols_for_day = ([f"{lab} Apps"] + [f"{lab} {m}" for m in RELAY_MEASURES]
-                        if expand else [lab])
+                        if products else [lab])
         for col in cols_for_day:
             day_totals[col] = sum(r.get(col, 0) for r in rows)
     totals_row = dict({"Rep": TOTALS_LABEL}, **day_totals,
@@ -1986,11 +1995,11 @@ def relay_board(icd: str, office_key: str) -> None:
     for d in week_days:
         lab = d.strftime("%a")
         keys = ([f"{lab} {m}" for m in ["Apps"] + RELAY_MEASURES]
-                if expand else [lab])
+                if products else [lab])
         for k in keys:
             m = k[len(lab):].strip() or "Apps"
             cfg[k] = dict(cfg.get(k) or {}, width=52, disabled=True,
-                          label=m if (expand and m != "Apps") else lab,
+                          label=m if (products and m != "Apps") else lab,
                           help=f"{m} on {d:%A %b %d}")
     cfg["Rep"] = dict(cfg.get("Rep") or {}, pinned=True)
     cfg["Tenure"] = dict(cfg.get("Tenure") or {}, width=90, disabled=True,
@@ -2014,16 +2023,16 @@ def relay_board(icd: str, office_key: str) -> None:
     # Streamlit paints Styler output onto NON-editable columns only, which is
     # why the tint survives: the measures are always locked and only the three
     # owner columns ever unlock.
-    if not expand:
+    if not expand and not products:
         # Read-only anyway, so the hover table costs nothing and buys the
         # per-day breakdown on hover.
         st.markdown(_hover_table(grid, splits,
                                  [d.strftime("%a") for d in week_days]),
                     unsafe_allow_html=True)
         st.caption(
-            "Hover a day to see what it was made of. **Expand your board** "
-            "lays every day out in full, the way the sheet does, and is where "
-            "Team, Leadership and Status are edited.")
+            "Hover a day to see what it was made of. **Products by day** lays "
+            "the split out in full; **Rep details** is where Team, Leadership "
+            "and Status are edited.")
         relay_wow(office_key)
         return
 
