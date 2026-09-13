@@ -51,6 +51,9 @@ from automations.icd_sales_board import recruiting_read as RR  # noqa: E402
 RAF_SHEET = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"
 RAF_ICD = "Rafael Hidalgo"
 
+# The four the relayed boards keep, in board order.
+RELAY_MEASURES = ["Int", "Int Up", "DTV", "NL"]
+
 # An office's brand, which is not its owner's name. Only Raf's is known today;
 # office_metrics.Office already carries a `business_name` field for onboarded
 # offices, so this map is the stopgap until every ICD has one there.
@@ -1425,6 +1428,91 @@ ORG_DD_GID = "423082205"
 # out whether things are fine.
 
 
+@st.cache_data(ttl=300, show_spinner="Reading today's relay…")
+def _relay_week(office_key: str, week_ending: dt.date) -> dict:
+    from automations.icd_sales_board import relay_read as RL
+    return RL.week(office_key, week_ending)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _relay_status(office_key: str) -> dict:
+    from automations.icd_sales_board import relay_read as RL
+    return RL.last_reading(office_key)
+
+
+def relay_board(icd: str, office_key: str) -> None:
+    """An office's board, filled from its OWN SaraPlus via the ICD agent.
+
+    Raf's board is a sheet we can read. Nobody else's is — but every office
+    that installs the agent reads its own SaraPlus on its own laptop and
+    relays the numbers, which is what makes this a service rather than a
+    one-office favour (automations/icd_alerts).
+
+    NOTHING IS DRAWN WITHOUT A READING. An office whose agent has not run gets
+    told which of the three things is wrong — never a board of zeros, which
+    would read as "nobody sold anything" when it means "nobody told us"."""
+    st.subheader("Sales board")
+    status = _relay_status(office_key)
+
+    if not status["day"]:
+        st.info(
+            f"No reading from {icd}'s office yet. The board fills itself once "
+            "the Lucy agent is installed on a machine in that office — it "
+            "reads their own SaraPlus there, so nobody hands over a password.",
+            icon="🔌")
+        return
+    if not status["sends_sales"]:
+        # A reading arrived but carried no sales. If credit checks DID come
+        # through, the laptop is fine and the agent is simply an old build
+        # from before the sales passes — a different fix, and a different
+        # thing to tell them.
+        if status["has_records"]:
+            st.warning(
+                f"{icd}'s agent is sending credit checks but no sales — it is "
+                f"an older build ({status['agent'] or 'unknown version'}). "
+                "Re-running the installer on that machine picks up the sales "
+                "passes.", icon="⬆️")
+        else:
+            st.warning(f"{icd}'s last reading carried nothing. Last heard "
+                       f"{status['day']:%b %d}.", icon="🚧")
+        return
+
+    weeks = [status["day"] + dt.timedelta(days=(6 - status["day"].weekday()) % 7)]
+    week_ending = st.sidebar.selectbox(
+        "Week Ending", weeks, key=f"relaywk_{office_key}",
+        format_func=lambda d: f"{d.strftime('%b')} {_ord(d.day)}, {d.year}")
+
+    by_rep = _relay_week(office_key, week_ending)
+    if not by_rep:
+        st.info(f"Nothing relayed for the week ending {week_ending}.",
+                icon="🗓️")
+        return
+
+    days = sorted({d for r in by_rep.values() for d in r["days"]})
+    rows = []
+    for name, rec in sorted(by_rep.items(),
+                            key=lambda kv: -sum(kv[1]["total"].values())):
+        row = {"Rep": name.title()}
+        row.update({m: rec["total"][m] for m in RELAY_MEASURES})
+        row["Apps"] = rec["total"]["Int"] + rec["total"]["NL"]
+        rows.append(row)
+
+    tot = {m: sum(r[m] for r in rows) for m in RELAY_MEASURES}
+    cols = st.columns(5, gap="small")
+    _vital(cols[0], "Reps on the board", str(len(rows)), None)
+    for col, m in zip(cols[1:], RELAY_MEASURES):
+        _vital(col, m, str(tot[m]), None)
+
+    st.dataframe(rows, use_container_width=True, hide_index=True,
+                 column_config=_centered(rows[0]),
+                 height=_grid_height(len(rows)))
+    st.caption(
+        f"{len(rows)} reps · {len(days)} day(s) relayed this week · read on "
+        f"the office's own machine at {status['local_time'] or 'unknown time'}"
+        f" · agent {status['agent'] or '?'}. Only reps who sold appear — "
+        "SaraPlus lists what happened, not who was rostered.")
+
+
 def summary_page(icd: str, office_key: str) -> None:
     """One landing page that says where everything is.
 
@@ -2094,11 +2182,7 @@ def main() -> None:
         return
 
     if icd != RAF_ICD:
-        st.warning(
-            f"{icd} has no board wired yet — Raf's is the only one with real "
-            "data so far. This office shows its campaign profile only.",
-            icon="🚧")
-        vitals_row(None, R.load(key))
+        relay_board(icd, key)
         return
 
     data = load_raf_board(st.session_state.get("tab", ""))
