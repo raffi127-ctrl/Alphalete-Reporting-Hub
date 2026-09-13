@@ -3264,7 +3264,8 @@ def run_walk(page, live: bool = False, limit: int = None,
         _log(f"[oat] PARTIAL walk: touched {processed} of {_start_total} in the "
              f"queue — keeping the last full snapshot instead of publishing a "
              f"short list")
-    _write_flagged_snapshot(flagged_now, _end_total, today, complete=walked_all)
+    _write_flagged_snapshot(flagged_now, _end_total, today, complete=walked_all,
+                            covered=processed)
     # Queue-independent proof of the walk (readable from the Sheet directly).
     # The cache column also carries how many applicants are still owed a blocked-read
     # retry, so a Cloudflare day is visible from the Sheet alone (a big "+N blocked"
@@ -3278,15 +3279,47 @@ def run_walk(page, live: bool = False, limit: int = None,
     return 0
 
 
-def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool) -> None:
+def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool,
+                            covered=None) -> None:
     """Overwrite output/oat-flagged-<date>.json with THIS walk's still-flagged apps
     (no-phone + needs-manual-text) so the Slack post reflects the CURRENT queue, not
-    the day's cumulative log. Deduped, order-preserved. `complete` False (a partial
-    walk) → leave the last good snapshot untouched rather than post a short list."""
+    the day's cumulative log. Deduped, order-preserved.
+
+    A PARTIAL walk is now recorded too, carrying how much of the queue it actually
+    covered, and the post labels it (2026-09-13, Megan: "yes do both").
+
+    WHY THIS CHANGED. A partial walk used to write nothing at all, so the to-do post
+    found no snapshot and skipped. That is safe but it fails SILENTLY, and it fails
+    exactly where the list matters most: a walk is partial whenever the queue is
+    bigger than MAX_PER_RUN, so the office with the biggest backlog is the one whose
+    humans stop being told who to chase. Carlos's queue crossed 60 and his noon AND
+    4pm lists simply stopped, with nothing saying so.
+
+    The 2026-08-27 bug that the all-or-nothing rule was written for is still guarded,
+    just differently: the danger was a short list being passed off as the WHOLE
+    backlog ("you have follow up need for 6 on atef but his inbox is 23"). A partial
+    snapshot that states its own coverage cannot do that.
+
+    Best-available wins, so a partial never overwrites something better: a COMPLETE
+    snapshot from earlier today is kept, and between two partials the one that
+    covered more of the queue is kept.
+    """
     import json as _json
+    path = f"output/oat-flagged-{today.isoformat()}{config.FILE_SUFFIX}.json"
     if not complete:
-        _log("[oat] partial walk — keeping the last flagged snapshot (not overwriting)")
-        return
+        prev = {}
+        try:
+            with open(path) as _fh:
+                prev = _json.load(_fh) or {}
+        except Exception:  # noqa: BLE001 — no snapshot yet today
+            prev = {}
+        if prev.get("complete"):
+            _log("[oat] partial walk — keeping today's COMPLETE snapshot")
+            return
+        if prev and int(prev.get("covered") or 0) >= int(covered or 0):
+            _log(f"[oat] partial walk covered {covered} — keeping the better "
+                 f"partial snapshot ({prev.get('covered')})")
+            return
 
     def _dedup(entries):
         seen, out = set(), []
@@ -3305,13 +3338,17 @@ def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool) -
         "queue_total": queue_total,
         "at": dt.datetime.now().strftime("%H:%M"),
         "date": today.isoformat(),
+        # What the post needs to label itself honestly.
+        "complete": bool(complete),
+        "covered": int(covered or 0),
     }
     try:
         os.makedirs("output", exist_ok=True)
-        path = f"output/oat-flagged-{today.isoformat()}{config.FILE_SUFFIX}.json"
         with open(path, "w") as fh:
             _json.dump(snap, fh)
-        _log(f"[oat] flagged snapshot: {len(snap['nophone'])} need a number, "
+        _log(f"[oat] flagged snapshot ({'complete' if complete else 'PARTIAL, '
+             f'covered {covered} of {queue_total}'}): "
+             f"{len(snap['nophone'])} need a number, "
              f"{len(snap['retext'])} need a manual text (queue={queue_total})")
     except Exception as e:  # noqa: BLE001
         _log(f"[oat] could not write flagged snapshot: {e}")

@@ -402,7 +402,7 @@ def _find_today_parent(c, date_str: str):
 
 
 def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
-                        edit: bool = False) -> dict:
+                        edit: bool = False, coverage: dict = None) -> dict:
     """Post the daily 'manual to-do' report to #alphaletegp-recruiting as Lucy —
     REPLACES the scorecard (Megan 2026-08-06). It lists the ONLY two buckets the bot
     legitimately can't process, so a human can finish them by hand:
@@ -419,8 +419,20 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
 
     # Cross-platform date (no %-d): "Fri, Aug 8".
     date_str = date.strftime("%a, %b ") + str(date.day)
+    # SAY SO WHEN THE LIST IS PARTIAL (2026-09-13). A walk stops at MAX_PER_RUN, so
+    # once a queue is bigger than that the list only covers the front of it. The old
+    # rule was to post nothing at all in that case — safe, but it silently withheld
+    # the list from exactly the offices with the biggest backlogs. The 2026-08-27
+    # failure this guards against was a short list read as the WHOLE backlog
+    # ("you have follow up need for 6 on atef but his inbox is 23"); a list that
+    # states its own coverage cannot be misread that way.
+    _cov = ""
+    if coverage and not coverage.get("complete", True):
+        _seen = coverage.get("covered") or 0
+        _tot = coverage.get("queue_total") or "?"
+        _cov = f" · partial: walk covered {_seen} of {_tot} in the queue"
     header = (f"\U0001F4CB {date_str} — recruiting to-do: "
-              f"{n_num} need a number, {n_txt} need a manual text")
+              f"{n_num} need a number, {n_txt} need a manual text{_cov}")
 
     def _section(title, entries):
         if not entries:
@@ -557,6 +569,24 @@ def main(argv=None) -> int:
         # never to post. A file that EXISTS with empty lists is different — the
         # walk ran and genuinely found nothing to hand a human — and still posts.
         if not snap:
+            # NO SNAPSHOT. Two very different reasons, and they must not look alike.
+            #
+            # Nothing walked at all (the weekend hold, a dark machine) → correct to
+            # post nothing, and not worth waking anyone.
+            #
+            # Walks DID run and still produced no snapshot → the list has silently
+            # stopped, which is the failure this alert exists for. Before partial
+            # snapshots were recorded that happened every day an office's queue was
+            # bigger than MAX_PER_RUN, and nothing anywhere said so. Exit non-zero so
+            # the wrapper's loud branch fires (deploy/applicant_push.sh logs
+            # TO-DO POST FAILED and notifies) rather than swallowing it.
+            _ran = bool(load_rows(date))
+            if _ran:
+                print(f"[report] ALERT: walks ran on {date} but no flagged "
+                      f"snapshot was written, so there is no to-do list to post. "
+                      f"Someone's queue is going unlisted — check the walk log for "
+                      f"'flagged snapshot'.", flush=True)
+                return 2
             print(f"[report] no walk snapshot for {date} — nothing was walked "
                   f"today, so there is no to-do list to post. Skipping.",
                   flush=True)
@@ -565,11 +595,16 @@ def main(argv=None) -> int:
         # _entries_of in the report tolerates both.
         t_snap = {"nophone": snap.get("nophone", []),
                   "retext": snap.get("retext", [])}
-        print(f"[report] snapshot {date} @ {snap.get('at','?')} — "
+        print(f"[report] snapshot {date} @ {snap.get('at','?')} "
+              f"({'complete' if snap.get('complete', True) else 'PARTIAL, covered '
+                 + str(snap.get('covered'))}) — "
               f"queue={snap.get('queue_total','?')} · "
               f"{len(t_snap['nophone'])} need a number, "
               f"{len(t_snap['retext'])} need a manual text", flush=True)
-        res = post_nophone_report(date, t_snap, dry_run=args.dry_run, edit=args.edit)
+        res = post_nophone_report(date, t_snap, dry_run=args.dry_run, edit=args.edit,
+                                  coverage={"complete": snap.get("complete", True),
+                                            "covered": snap.get("covered"),
+                                            "queue_total": snap.get("queue_total")})
         return 0 if res.get("ok") else 1
 
     rows = load_rows(date)
