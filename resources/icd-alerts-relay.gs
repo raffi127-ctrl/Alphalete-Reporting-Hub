@@ -128,7 +128,8 @@ function doPost(e) {
     // by a person looking at the sheet.
     _upsert(office, day, JSON.stringify(records),
             String(body.local_time || ''), String(body.agent || ''),
-            JSON.stringify(body.sales || {}));
+            JSON.stringify(body.sales || {}),
+            String(body.machine || ''), String(body.machine_name || ''));
 
     // Optional, and sent on every sweep so a re-run of the installer can
     // change the answer. Only ever touches the columns the owner is allowed
@@ -258,7 +259,8 @@ function _keyIsGood(office, key) {
   return false;
 }
 
-function _upsert(office, day, recordsJson, localTime, agent, salesJson) {
+function _upsert(office, day, recordsJson, localTime, agent, salesJson,
+                 machine, machineName) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);          // two offices can relay in the same second
   try {
@@ -283,6 +285,7 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson) {
         // writes column 9, which reads as "this office sends no sales yet"
         // rather than as corruption.
         sh.getRange(i + 1, 9).setValue(salesJson || '{}');
+        _mergeMachine(sh, i + 1, machine, machineName);
         return;
       }
     }
@@ -428,6 +431,22 @@ function _upsertFault(office, day, stage, summary, detail, localTime,
   } finally {
     lock.releaseLock();
   }
+}
+
+function _mergeMachine(sh, rowNum, machine, machineName) {
+  // MERGED, NEVER OVERWRITTEN. The whole point is to see BOTH machines: an
+  // office can install on a back-office PC as a backup, and last-writer-wins
+  // would hide whichever one wrote second. Column 11, appended, so nothing
+  // this function already writes shifts position.
+  if (!machine) return;
+  var cell = sh.getRange(rowNum, 11);
+  var seen = {};
+  try {
+    var raw = String(cell.getValue() || '{}');
+    if (raw) seen = JSON.parse(raw) || {};
+  } catch (err) { seen = {}; }
+  seen[machine] = {name: machineName || '', last: new Date().toISOString()};
+  cell.setValue(JSON.stringify(seen));
 }
 
 function _reply(obj) {

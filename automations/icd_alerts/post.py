@@ -61,6 +61,10 @@ COL_LAST_POSTED, COL_POSTED_AT = 6, 7
 # -- so the new columns went on the END and every position above is untouched.
 # An office still running the older agent simply leaves these blank.
 COL_SALES, COL_LAST_POSTED_SALES = 8, 9
+# {machine_id: {name, last}} -- merged by the relay, never overwritten, so an
+# office running two computers shows both. Appended, like the sales columns,
+# because the deployed script writes by POSITION.
+COL_MACHINES = 10
 
 # A laptop that has not checked in for this long is asleep, shut, or off wifi.
 # Worth SAYING, never worth alerting the office about -- they cannot act on it
@@ -894,6 +898,128 @@ def run_requested_approvals(*, send: bool = False, book=None, log=print) -> List
     return done
 
 
+def machines_for(row: List[str]) -> Dict:
+    """{machine_id: {name, last}} off a relay row. Never raises."""
+    try:
+        out = json.loads(row[COL_MACHINES] or "{}") if len(row) > COL_MACHINES else {}
+    except (TypeError, ValueError):
+        return {}
+    return out if isinstance(out, dict) else {}
+
+
+def stale_machines(row: List[str], now: Optional[dt.datetime] = None,
+                   minutes: int = STALE_MINUTES) -> List[Dict]:
+    """The machines on this row that have stopped, when others have NOT.
+
+    THE CASE THE OFFICE-LEVEL NUDGE CANNOT SEE. An office that installs on two
+    computers keeps relaying while either one lives, so the office looks alive
+    and nobody is told that half its redundancy is gone. That is precisely the
+    situation somebody set up a second machine to avoid.
+
+    Returns nothing when every machine is quiet -- that is the whole office
+    being down, which warn_quiet already says, and saying it twice in two
+    different shapes is how people stop reading both.
+    """
+    seen = machines_for(row)
+    if len(seen) < 2:
+        return []
+    now = now or dt.datetime.now()
+    out, alive = [], 0
+    for mid, info in seen.items():
+        when = _parse_when(str((info or {}).get("last") or "").replace("Z", "")[:19])
+        if when is None:
+            continue
+        if (now - when) > dt.timedelta(minutes=minutes):
+            out.append({"id": mid, "name": (info or {}).get("name") or mid,
+                        "last": when})
+        else:
+            alive += 1
+    return out if alive else []
+
+
+MACHINES_WARNED_PATH = (Path.home() / ".config" / "recruiting-report"
+                        / "icd_alerts_machines_warned.json")
+
+
+def warn_stale_machines(day: Optional[dt.date] = None, *, send: bool = False,
+                        now: Optional[dt.datetime] = None, book=None,
+                        log=print) -> List[Dict]:
+    """Say when ONE of an office's machines has stopped and another has not.
+
+    The office-level nudge cannot see this: the office keeps relaying while
+    either computer lives, so it looks alive. Somebody who set up a second
+    machine as a backup has quietly lost the backup, and the first they would
+    know is the day the remaining one goes down too.
+
+    TOLD TO US, NOT TO THEM, and once per machine per day. Their numbers are
+    still arriving -- nothing is broken from where they sit -- so this is a
+    thing to mention, not a thing to chase somebody about.
+    """
+    from automations.recruiting_report.fill import open_by_key
+
+    day = day or dt.date.today()
+    now = now or dt.datetime.now()
+    book = book or open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(RELAY_TAB).get_all_values()
+    except Exception as e:  # noqa: BLE001
+        log("could not read the relay tab: %s" % type(e).__name__)
+        return []
+
+    found = []
+    for row in rows[1:]:
+        if not row or not (row[COL_OFFICE] or "").strip():
+            continue
+        if _day_key(row[COL_DAY]) != day.isoformat():
+            continue
+        key = (row[COL_OFFICE] or "").strip().lower()
+        for m in stale_machines(row, now):
+            found.append(dict(m, office=key))
+    if not found:
+        return []
+
+    try:
+        warned = json.loads(MACHINES_WARNED_PATH.read_text())
+    except (OSError, ValueError):
+        warned = {}
+    today = day.isoformat()
+    fresh = [f for f in found
+             if warned.get("%s|%s|%s" % (today, f["office"], f["id"])) is None]
+    if not fresh:
+        return []
+
+    for f in fresh:
+        log("MACHINE QUIET: %-10s %s (last %s)"
+            % (f["office"], f["name"], f["last"].strftime("%H:%M")))
+    if not send:
+        return fresh
+
+    stamp = now.isoformat(timespec="seconds")
+    for f in fresh:
+        office = O.get(f["office"])
+        label = office.label if office else f["office"]
+        text = (":desktop_computer: *%s* — one of their computers has stopped, "
+                "the other is still going.\n"
+                "> *%s* last checked in at %s.\n"
+                "_Their numbers are still arriving, so nothing is missing "
+                "right now — but the backup they set up is not there any "
+                "more._" % (label, f["name"], f["last"].strftime("%H:%M")))
+        try:
+            _slack(O.OPS_CHANNEL, text)
+        except Exception as e:  # noqa: BLE001
+            log("could not post machine notice: %s" % type(e).__name__)
+            continue
+        warned["%s|%s|%s" % (today, f["office"], f["id"])] = stamp
+
+    MACHINES_WARNED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Yesterday's keys are noise; keep a few days so a restart does not
+    # re-announce everything.
+    for k in sorted(warned)[:-40]:
+        warned.pop(k, None)
+    MACHINES_WARNED_PATH.write_text(json.dumps(warned, indent=2, sort_keys=True))
+    return fresh
+
+
 def _warned() -> Dict:
     try:
         return json.loads(WARNED_PATH.read_text())
@@ -1126,6 +1252,7 @@ def main(argv=None) -> int:
                 notify_pending(send=args.send)
                 notify_faults(day, send=args.send)
                 warn_quiet(day, send=args.send)
+                warn_stale_machines(day, send=args.send)
     except RelayNotConfigured as e:
         print(e)
         return 2

@@ -8,6 +8,7 @@ pings in front of the whole team.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import unittest
 from unittest import mock
 
@@ -652,3 +653,56 @@ class SignUpsAreAnnouncedFromHere(unittest.TestCase):
         out, posts, tmp = self._run([self._signup()], send=False)
         self.assertEqual(len(out), 1)
         self.assertEqual(posts, [])
+
+
+class TwoMachinesOnOneOffice(unittest.TestCase):
+    """An office can install on two computers, and we have to see both.
+
+    Megan 2026-09-13: "what happens if they install their link on multiple
+    machines?" Nothing breaks -- both write the same office+day row and the
+    only-ever-up rule stops any double announcement. But the row could not
+    tell them apart, so a SECOND machine was invisible: if one died the office
+    kept relaying, looked alive, and nobody was told that the backup somebody
+    deliberately set up was gone.
+    """
+
+    HEAD = ["Office", "Day", "Records", "Received", "Local", "Agent",
+            "LastPosted", "PostedAt", "Sales", "LastPostedSales", "Machines"]
+
+    def _row(self, machines, office="kash", day="2026-09-13"):
+        r = [office, day, "{}", "", "", "", "", "", "{}", "{}",
+             json.dumps(machines)]
+        return r
+
+    def test_a_stopped_machine_is_named_when_another_is_alive(self):
+        row = self._row({
+            "aaa": {"name": "Front Desk", "last": "2026-09-13T15:00:00"},
+            "bbb": {"name": "Back Office", "last": "2026-09-13T09:00:00"}})
+        out = P.stale_machines(row, dt.datetime(2026, 9, 13, 15, 5))
+        self.assertEqual([m["name"] for m in out], ["Back Office"])
+
+    def test_one_machine_alone_is_left_to_the_office_nudge(self):
+        # Saying it twice in two shapes is how people stop reading both.
+        row = self._row({"aaa": {"name": "Only",
+                                 "last": "2026-09-13T09:00:00"}})
+        self.assertEqual(P.stale_machines(row, dt.datetime(2026, 9, 13, 15, 5)), [])
+
+    def test_every_machine_down_is_the_office_being_down(self):
+        row = self._row({"aaa": {"last": "2026-09-13T09:00:00"},
+                         "bbb": {"last": "2026-09-13T08:00:00"}})
+        self.assertEqual(P.stale_machines(row, dt.datetime(2026, 9, 13, 15, 5)), [])
+
+    def test_both_alive_says_nothing(self):
+        row = self._row({"aaa": {"last": "2026-09-13T15:00:00"},
+                         "bbb": {"last": "2026-09-13T15:01:00"}})
+        self.assertEqual(P.stale_machines(row, dt.datetime(2026, 9, 13, 15, 5)), [])
+
+    def test_a_junk_machines_cell_costs_nothing(self):
+        row = self._row({})
+        row[P.COL_MACHINES] = "not json"
+        self.assertEqual(P.machines_for(row), {})
+        self.assertEqual(P.stale_machines(row, dt.datetime(2026, 9, 13, 15, 5)), [])
+
+    def test_an_office_that_never_sent_one_is_fine(self):
+        # Offices on the older agent send no machine id at all.
+        self.assertEqual(P.machines_for(["kash", "2026-09-13", "{}"]), {})

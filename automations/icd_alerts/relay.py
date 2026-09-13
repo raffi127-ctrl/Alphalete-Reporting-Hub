@@ -93,6 +93,51 @@ def _endpoint() -> Dict[str, str]:
     return rec
 
 
+
+# --- which computer this is --------------------------------------------------
+# An office can install on two machines -- a back-office PC as a backup is a
+# reasonable thing to do -- and until now the relay could not tell them apart.
+# Both wrote the same office+day row, last writer winning, so a SECOND machine
+# was invisible: if one died the office kept relaying, looked alive, and
+# nobody was told that half its redundancy was gone (Megan 2026-09-13).
+#
+# The id is random and per INSTALL, not derived from anything about the
+# computer. It only has to be stable and distinct; a hostname or a MAC address
+# would be needlessly identifying for something whose entire job is "not the
+# other one".
+MACHINE_ID_PATH = C.APP_DIR / "machine-id.txt"
+
+
+def machine_id() -> str:
+    """This install's id, made once and kept. Never raises: a relay that could
+    not name its machine is still worth far more than one that did not go."""
+    try:
+        existing = MACHINE_ID_PATH.read_text().strip()
+        if existing:
+            return existing[:36]
+    except OSError:
+        pass
+    try:
+        import uuid
+        made = uuid.uuid4().hex[:12]
+        MACHINE_ID_PATH.parent.mkdir(parents=True, exist_ok=True)
+        MACHINE_ID_PATH.write_text(made)
+        return made
+    except Exception:  # noqa: BLE001 — read-only disk, odd permissions
+        return ""
+
+
+def machine_label() -> str:
+    """Something a person can recognise in a list. The computer's own name is
+    what an owner would use to tell two of their machines apart, and it is not
+    a secret -- it is already on their wifi."""
+    try:
+        import socket
+        return socket.gethostname().split(".")[0][:40]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def payload(records: Dict[str, int], day: dt.date,
             rec: Optional[Dict] = None, sales: Optional[Dict] = None) -> Dict:
     rec = rec or _endpoint()
@@ -107,6 +152,10 @@ def payload(records: Dict[str, int], day: dt.date,
         "sales": {str(k): {m: int(v.get(m, 0) or 0) for m in SALE_METRICS}
                   for k, v in sorted((sales or {}).items())},
         "agent": AGENT_VERSION,
+        # WHICH computer this came from. An older relay ignores the key, so an
+        # office that has not updated simply stays as one unnamed machine.
+        "machine": machine_id(),
+        "machine_name": machine_label(),
         # The laptop's own clock, so a machine that has been asleep is visible
         # as a stale reading rather than looking like a quiet office.
         "local_time": dt.datetime.now().isoformat(timespec="seconds"),
