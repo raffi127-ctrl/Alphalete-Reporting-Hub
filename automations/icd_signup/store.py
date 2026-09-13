@@ -15,7 +15,8 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from automations.icd_signup.schema import IcdSignup, STATUS_PENDING, stamp
+from automations.icd_signup.schema import (IcdSignup, STATUS_PENDING,
+                                          STATUS_APPROVE_REQUESTED, stamp)
 
 SIGNUP_TAB = "ICD Signup"
 _HEADER = ["office_key", "owner", "office_label", "contact", "platform",
@@ -275,3 +276,23 @@ def set_status(office_key: str, status: str, note: str = "", book=None) -> bool:
                 tab.update_cell(i, c_note + 1, note)
             return True
     return False
+
+
+def request_approval(office_key: str, by: str = "", book=None) -> bool:
+    """Mark an office APPROVE_REQUESTED. The click, not the work.
+
+    A person pressing a button in a browser cannot do the approving: it means
+    resolving Slack channels, checking Lucy is in each one and writing the
+    sign-off, and this form runs on Streamlit Cloud with a token that is a
+    stranger to that workspace -- which is exactly how the sign-up ping failed
+    (2026-09-13). So the click leaves a mark and the poster on Lucy 3 does the
+    real thing, with every check intact, and says what happened.
+    """
+    return set_status(office_key, STATUS_APPROVE_REQUESTED,
+                      note="approve clicked%s %s" % (" by %s" % by if by else "",
+                                                     stamp()), book=book)
+
+
+def approval_requested(book=None) -> List[IcdSignup]:
+    return [s_ for s_ in all_signups(book)
+            if s_.status == STATUS_APPROVE_REQUESTED]

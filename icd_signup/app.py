@@ -46,6 +46,70 @@ ui.render_header(
 
 ui.inject_slack_token()
 
+# --- the approve view -------------------------------------------------------
+# Reached from the link in Megan's Slack ping: ?approve=<office>. Gated by the
+# same access code the dispositions confirm view uses, because this is the
+# switch that puts an office's numbers in front of their whole team.
+#
+# The click does NOT do the approving. It marks the row, and the poster on
+# Lucy 3 does the real work -- resolving channels, checking Lucy is in each
+# one, writing the sign-off -- and reports back in the thread. This app cannot
+# do that itself: it runs on Streamlit Cloud with a token that is a stranger
+# to the workspace, which is exactly how the sign-up ping failed.
+_approve_for = (st.query_params.get("approve") or "").strip().lower()
+if _approve_for:
+    from automations.icd_signup import store as _store
+
+    st.title("Approve an office")
+    try:
+        _code = st.secrets.get("disposition_signup_code")
+    except Exception:  # noqa: BLE001
+        _code = None
+    if not _code:
+        st.error("This view is locked: add a `disposition_signup_code` secret.")
+        st.stop()
+
+    _rec = _store.get(_approve_for)
+    if not _rec:
+        st.error("No sign-up for **%s**." % _approve_for)
+        st.stop()
+
+    st.markdown("### %s — `%s`" % (_rec.owner, _rec.office_key))
+    _rooms = []
+    for _c in list(_rec.alert_channels) + [d.get("channel") for d
+                                           in _rec.knocks_destinations]:
+        if _c and _c not in _rooms:
+            _rooms.append(_c)
+    st.markdown("**Lucy has to be in every one of these before you approve:**")
+    for _c in _rooms:
+        st.markdown("- `%s`" % _c)
+    st.caption("She cannot post into a room she has not been invited to, and "
+               "approving one she is not in signs off a channel that will "
+               "stay silent.")
+    st.divider()
+
+    if _rec.status == "approved":
+        st.success("**%s** is already approved." % _rec.owner)
+        st.stop()
+
+    _typed = st.text_input("Access code", type="password")
+    _ok = st.checkbox("Lucy is in every channel listed above")
+    if st.button("Approve this office", type="primary",
+                 disabled=not _ok):
+        if _typed != _code:
+            st.error("That access code is not right.")
+        elif _store.request_approval(_rec.office_key, by="the approve link"):
+            st.success(
+                "**Sent.** Lucy will switch %s on within a couple of minutes "
+                "and post the result in #claudecorrections — including if "
+                "anything was wrong." % _rec.owner)
+        else:
+            st.error("Could not record that. Run it from the terminal "
+                     "instead: `python -m automations.icd_signup.approve %s`"
+                     % _rec.office_key)
+    st.stop()
+
+
 # THE SHEETS CLIENT, BUILT FROM STREAMLIT'S SECRETS. Without this the store
 # falls back to authenticating from credential files in the repo -- which do
 # not exist on Community Cloud, so every submission threw and was silently

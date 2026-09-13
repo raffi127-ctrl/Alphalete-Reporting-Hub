@@ -67,12 +67,25 @@ class ThePasswordsAreNeverOnTheForm(unittest.TestCase):
     is the cheapest place to notice.
     """
 
-    def test_the_form_has_no_password_input(self):
+    def test_the_form_never_collects_a_saraplus_or_ownerville_login(self):
+        """The thing that must never appear, named precisely.
+
+        A masked field is not the problem -- the approve view uses one for the
+        access code, and should. The problem would be THIS form asking for the
+        credential that is supposed to live only on the office's own machine.
+        """
         lowered = FORM.lower()
-        self.assertNotIn("type=\"password\"", lowered)
-        self.assertNotIn("st.text_input(\"password", lowered)
-        for word in ("saraplus password", "ownerville password"):
-            self.assertNotIn(word, lowered)
+        for word in ("saraplus password", "ownerville password",
+                     "your saraplus login", "your ownerville login"):
+            self.assertNotIn(word, lowered,
+                             "the sign-up form is asking for %r" % word)
+
+    def test_the_only_masked_field_is_the_access_code(self):
+        import re
+        masked = re.findall(r'st\.text_input\(\s*"([^"]+)"[^)]*type="password"',
+                            FORM)
+        self.assertEqual([m.lower() for m in masked], ["access code"],
+                         "a new masked field appeared: %s" % masked)
 
     def test_the_installer_still_asks_for_them(self):
         self.assertIn("ask_for_login", SETUP)

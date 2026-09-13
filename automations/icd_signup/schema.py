@@ -18,6 +18,16 @@ PLATFORMS = ("mac", "windows")
 STATUS_PENDING = "pending"
 STATUS_APPROVED = "approved"
 STATUS_DECLINED = "declined"
+# A HUMAN HAS CLICKED APPROVE, and the work has not happened yet.
+#
+# The click cannot do the work itself: approving means resolving Slack
+# channels, checking Lucy is in each one and writing the sign-off, and the
+# form runs on Streamlit Cloud with a token that is a stranger to that
+# workspace -- which is exactly how the sign-up ping failed. So the click
+# leaves this, and the poster on Lucy 3 -- which already reads this tab every
+# couple of minutes and already holds the right token -- does the real thing
+# and reports back.
+STATUS_APPROVE_REQUESTED = "approve_requested"
 
 # The same picker the installer shows, so the answer means the same thing in
 # both places and nobody has to translate it later.

@@ -837,6 +837,63 @@ def _book_for_keys():
     return open_by_key(RELAY_SPREADSHEET_ID)
 
 
+def run_requested_approvals(*, send: bool = False, book=None, log=print) -> List:
+    """Do the approving a click asked for, and say what happened.
+
+    THE CLICK CANNOT DO THIS ITSELF. Approving resolves Slack channels, checks
+    Lucy is in each one and writes the sign-off; the form runs on Streamlit
+    Cloud with a token that is a stranger to the workspace -- which is exactly
+    how the sign-up ping failed. So the browser marks the row and this runs
+    the real thing, on the machine that already holds the right token, with
+    every check intact.
+
+    REPORTS BACK EITHER WAY. A click that quietly did nothing is worse than a
+    command that printed an error, because the person who clicked has already
+    walked away believing the office is live.
+    """
+    from automations.icd_signup import approve as SA
+    from automations.icd_signup import store as SS
+    from automations.icd_signup.schema import STATUS_PENDING
+
+    try:
+        waiting = SS.approval_requested(book)
+    except Exception as e:  # noqa: BLE001
+        log("could not read approval requests: %s" % type(e).__name__)
+        return []
+    if not waiting:
+        return []
+
+    done = []
+    for rec in waiting:
+        log("APPROVE REQUESTED: %s (%s)" % (rec.office_key, rec.owner))
+        if not send:
+            done.append(rec)
+            continue
+        said = []
+        try:
+            # Put it back to pending FIRST. If this run dies halfway, the next
+            # tick must not try again forever -- a person can click again,
+            # and a loop that re-approves every two minutes cannot be seen.
+            SS.set_status(rec.office_key, STATUS_PENDING,
+                          note="approving…", book=book)
+            rc = SA.approve(rec.office_key, log=said.append)
+        except Exception as e:  # noqa: BLE001 — one office must not stop the rest
+            rc, said = 1, said + ["%s: %s" % (type(e).__name__, str(e)[:200])]
+        tail = "\n".join(str(x) for x in said[-12:]) or "(no output)"
+        head = ("✅ *%s* is live — approved from the link."
+                % (rec.owner or rec.office_key)
+                if rc == 0 else
+                ":x: *%s* could not be approved yet." % (rec.owner or rec.office_key))
+        try:
+            ts = _slack(O.OPS_CHANNEL, head)
+            _slack(O.OPS_CHANNEL, "```%s```" % tail[:2800], thread_ts=ts)
+        except Exception as e:  # noqa: BLE001
+            log("approved %s but could not say so: %s"
+                % (rec.office_key, type(e).__name__))
+        done.append(rec)
+    return done
+
+
 def _warned() -> Dict:
     try:
         return json.loads(WARNED_PATH.read_text())
@@ -1064,6 +1121,7 @@ def main(argv=None) -> int:
                 assert_posting_as_lucy()
             run(day, send=args.send, only=args.office)
             if args.watch:
+                run_requested_approvals(send=args.send)
                 notify_new_signups(send=args.send)
                 notify_pending(send=args.send)
                 notify_faults(day, send=args.send)

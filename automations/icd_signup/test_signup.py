@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 from automations.icd_signup import approve as A, request_notify as N, store
+from automations.icd_signup import schema as S
 from automations.icd_signup.schema import (IcdSignup, STATUS_APPROVED,
                                            STATUS_PENDING)
 
@@ -345,3 +346,49 @@ class TheFormUsesStreamlitsCredentials(unittest.TestCase):
                / "icd_signup" / "app.py").read_text()
         self.assertIn("build_gs_client", app)
         self.assertIn("store.set_client", app)
+
+
+class OneClickApproval(unittest.TestCase):
+    """The link marks the row; Lucy 3 does the approving.
+
+    Megan 2026-09-13: "this should be a link that we can just click and it
+    runs." It cannot run there. Approving means resolving Slack channels,
+    checking Lucy is in each one and writing the sign-off, and the form runs
+    on Streamlit Cloud with a token that is a stranger to that workspace --
+    which is exactly how the sign-up ping failed earlier the same day.
+
+    So the click leaves APPROVE_REQUESTED and the poster does the real thing,
+    with every check intact, and reports back either way.
+    """
+
+    def test_the_click_only_marks_the_row(self):
+        with mock.patch.object(store, "set_status", return_value=True) as ss:
+            self.assertTrue(store.request_approval("cy", by="the link"))
+        args = ss.call_args[0]
+        self.assertEqual(args[1], S.STATUS_APPROVE_REQUESTED)
+
+    def test_the_ping_carries_a_clickable_link(self):
+        body = "\n".join(N.lines(_rec(), link="x")[1])
+        self.assertIn("?approve=cyrus", body)
+        # and still offers the terminal, for whoever prefers it
+        self.assertIn("icd_signup.approve cyrus", body)
+
+    def test_the_ping_lists_every_room_lucy_needs(self):
+        import json as _json
+        r = _rec(alert_channels_json=_json.dumps(["#a", "#shared"]),
+                 knocks_json=_json.dumps([{"channel": "#shared",
+                                           "cadence_min": 30},
+                                          {"channel": "#b",
+                                           "cadence_min": 60}]))
+        body = "\n".join(N.lines(r, link="x")[1])
+        self.assertIn("add Lucy to these channels", body)
+        for room in ("#a", "#b", "#shared"):
+            self.assertIn(room, body)
+        # deduped -- one line per room, however many ways it was asked for
+        self.assertEqual(body.count("   • #shared"), 1)
+
+    def test_an_office_with_no_rooms_says_so_rather_than_nothing(self):
+        import json as _json
+        r = _rec(alert_channels_json="[]", knocks_json="[]")
+        body = "\n".join(N.lines(r, link="x")[1])
+        self.assertIn("did not name one yet", body)

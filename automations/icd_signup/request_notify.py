@@ -16,6 +16,11 @@ from typing import List, Optional, Tuple
 
 from automations.icd_signup.schema import IcdSignup, tz_label
 
+# The one-click approve, straight from the ping. Gated by the access code on
+# the other side -- this is the switch that puts an office's numbers in front
+# of their whole team.
+APPROVE_URL = "https://lucyeco.streamlit.app/join-lucy-eco?approve=%s"
+
 CADENCE_WORDS = {15: "every 15 minutes", 30: "every 30 minutes",
                  60: "once an hour", 0: "at 2:00, 5:15 and 9:00",
                  -1: "not wanted"}
@@ -48,6 +53,29 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
                                    for d in dests))
     else:
         detail.append("• Knocks board → _they did not ask for one_")
+    # EVERY ROOM LUCY HAS TO BE IN, listed, before the approve command.
+    # Approving a channel she was never invited to writes a sign-off for a
+    # room she cannot post in -- the office then sits silent with everything
+    # looking correct on our side. It is the most common reason a sign-up
+    # stalls after everything else went right (Megan 2026-09-13).
+    rooms = []
+    for c in alerts:
+        if c and c not in rooms:
+            rooms.append(c)
+    for d in dests:
+        c = d.get("channel")
+        if c and c not in rooms:
+            rooms.append(c)
+    detail += [
+        "",
+        ":lock: *Before you approve — add Lucy to these channels:*",
+    ] + (["   • %s" % c for c in rooms] if rooms
+         else ["   _they did not name one yet_"]) + [
+        "_She cannot post into a room she has not been invited to, and "
+        "approving one she is not in signs off a channel that will stay "
+        "silent._",
+    ]
+
     detail += [
         "",
         (("• _They already have their setup link and can install now — "
@@ -56,8 +84,9 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
          "• _No key was written, so SEND THEM THEIR LINK by hand:_ "
          "`python -m automations.icd_alerts.invite %s`" % rec.office_key),
         "",
-        "Approve them with:",
-        "```python -m automations.icd_signup.approve %s```" % rec.office_key,
+        "*Approve them:*  %s" % (APPROVE_URL % rec.office_key),
+        "_or from a terminal:_  "
+        "`python -m automations.icd_signup.approve %s`" % rec.office_key,
         ("_That is what turns their numbers into posts. Until you run it they "
          "can install and relay, and nothing reaches a channel._" if link else
          "_Nothing exists until you run it._"),
