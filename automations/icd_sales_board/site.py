@@ -1713,10 +1713,12 @@ def relay_board(icd: str, office_key: str) -> None:
         rows.append(row)
     rows.sort(key=lambda r: (-r["Apps"], -r["Total units"], r["Rep"]))
 
-    # NOT "sold of total": a rep only appears in the settled pull BECAUSE they
-    # sold, so that card read 17/17 every time and told nobody anything
-    # (Megan 2026-09-13). The honest count is how many reps are on the board.
-    active = len(rows)
+    # SELLING reps, not a row count (Megan 2026-09-13). This was "sold of
+    # total" and read N/N every time, because a rep only appeared in the sales
+    # pull BECAUSE they sold. Now that the roster also carries everyone who
+    # KNOCKED, the two numbers differ again and the count means something: it
+    # is how many of the people who went out actually got on the board.
+    selling = sum(1 for r in rows if any(r[m] for m in RELAY_MEASURES))
 
     # CLOSED DAYS COME FROM TABLEAU, TODAY FROM THE RELAY (Megan 2026-09-13).
     # An intraday reading of a finished day runs light — Cyrus's Saturday was
@@ -1740,7 +1742,7 @@ def relay_board(icd: str, office_key: str) -> None:
 
     cols = st.columns(6, gap="small")
     _vital(cols[0], "Total units", str(_units(tot)), None)
-    _vital(cols[1], "Active reps", str(active), None)
+    _vital(cols[1], "Selling reps", str(selling), None)
     for col, m in zip(cols[2:], RELAY_MEASURES):
         _vital(col, m, str(tot[m]), None)
 
