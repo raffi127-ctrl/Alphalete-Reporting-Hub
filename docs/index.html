@@ -49,6 +49,42 @@
     padding:20px;color:var(--ink)}
   code{font:400 .92em "IBM Plex Mono",monospace;background:var(--panel);
     border:1px solid var(--rule);border-radius:5px;padding:1px 5px}
+  /* A key you press, drawn like a key. Nobody who has never opened Terminal
+     reads "⌘ + Space" as two objects on a keyboard. */
+  kbd{display:inline-block;min-width:34px;text-align:center;
+    background:var(--panel);border:1px solid var(--rule);
+    border-bottom-width:3px;border-radius:7px;padding:5px 9px;margin:0 2px;
+    font:600 15px/1 "Source Sans 3",sans-serif;color:var(--ink)}
+  .keys{margin:12px 0 4px}
+  .plus{color:var(--muted);margin:0 4px;font-weight:600}
+  /* Mock-ups. Drawn in the page, not screenshots: a screenshot of somebody
+     else's Mac goes stale and shows the wrong macOS. */
+  .shot{margin-top:14px;border-radius:12px;overflow:hidden;
+    border:1px solid var(--rule);background:var(--panel)}
+  .spotlight{background:rgba(240,238,234,.98);padding:14px 16px;
+    display:flex;align-items:center;gap:12px}
+  @media (prefers-color-scheme:dark){.spotlight{background:#2A2724}}
+  .spotlight .mag{font-size:20px;opacity:.5}
+  .spotlight .typed{font:400 20px/1 "Source Sans 3",sans-serif;color:var(--ink)}
+  .spotlight .caret{display:inline-block;width:2px;height:20px;
+    background:var(--red);vertical-align:-3px;margin-left:2px}
+  .hit{display:flex;align-items:center;gap:11px;padding:10px 16px;
+    background:var(--red);color:#fff;font-size:15px}
+  .hit .ico{width:22px;height:22px;border-radius:5px;background:#141110;
+    display:grid;place-items:center;color:var(--gold);
+    font:400 11px/1 "IBM Plex Mono",monospace}
+  .term{background:#141110;border-radius:12px;overflow:hidden;margin-top:14px;
+    border:1px solid #2A2724}
+  .term .bar{display:flex;gap:7px;padding:10px 13px;background:#232020}
+  .term .dot{width:11px;height:11px;border-radius:50%}
+  .term .body{padding:14px 16px;font:400 12px/1.7 "IBM Plex Mono",monospace;
+    color:#D8D2C8;word-break:break-all}
+  .term .prompt{color:var(--gold)}
+  .cap{margin:8px 0 0;font-size:15px;color:var(--muted)}
+  .pill{display:inline-block;background:var(--panel);border:1px solid var(--rule);
+    border-radius:999px;padding:4px 12px;font-size:14px;color:var(--muted);
+    cursor:pointer;margin-top:6px}
+  .pill:hover{border-color:var(--red);color:var(--ink)}
 </style>
 </head>
 <body>
@@ -60,25 +96,63 @@
   <div id="main">
     <div class="step">
       <div class="num">1</div>
-      <div>
+      <div style="min-width:0;flex:1">
         <h2>Open Terminal</h2>
-        <p>Press <b>⌘ + Space</b>, type <code>terminal</code>, press <b>Return</b>.</p>
+        <p>Hold down the Command key and tap Space. A search bar appears in the
+           middle of the screen.</p>
+        <div class="keys"><kbd>&#8984;</kbd><span class="plus">+</span><kbd>Space</kbd></div>
+        <p>Type <b>terminal</b> and press Return.</p>
+        <div class="shot">
+          <div class="spotlight">
+            <span class="mag">&#128269;</span>
+            <span class="typed">terminal<span class="caret"></span></span>
+          </div>
+          <div class="hit">
+            <span class="ico">&gt;_</span>
+            <span><b>Terminal</b> &nbsp;&mdash;&nbsp; Application</span>
+          </div>
+        </div>
+        <p class="cap">A black window opens. That is Terminal. It is supposed to
+           look like that &mdash; nothing is wrong.</p>
       </div>
     </div>
 
     <div class="step">
       <div class="num">2</div>
       <div style="min-width:0;flex:1">
-        <h2>Copy this, and paste it into Terminal</h2>
-        <p>Then press <b>Return</b> and leave it running.</p>
-        <div class="cmd" id="cmd">loading…</div>
+        <h2>Copy your line</h2>
+        <p>Press the button. Nothing visible happens &mdash; that is normal, it
+           is held ready to paste.</p>
+        <div class="cmd" id="cmd">loading&#8230;</div>
         <button id="copy">Copy the command</button>
       </div>
     </div>
 
     <div class="step">
       <div class="num">3</div>
-      <div>
+      <div style="min-width:0;flex:1">
+        <h2>Paste it into the black window and press Return</h2>
+        <p>Click once anywhere inside the black window first, so it is the
+           window you are typing into. Then:</p>
+        <div class="keys"><kbd>&#8984;</kbd><span class="plus">+</span><kbd>V</kbd>
+          <span class="plus">then</span><kbd>Return</kbd></div>
+        <div class="term">
+          <div class="bar">
+            <span class="dot" style="background:#FF5F57"></span>
+            <span class="dot" style="background:#FEBC2E"></span>
+            <span class="dot" style="background:#28C840"></span>
+          </div>
+          <div class="body"><span class="prompt">$</span>
+            <span id="termcmd">curl -fsSL &#8230;</span></div>
+        </div>
+        <p class="cap">A lot of text will scroll past for a few minutes. Leave
+           it alone and let it finish &mdash; do not close the window.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">4</div>
+      <div style="min-width:0;flex:1">
         <h2>Answer the boxes that pop up</h2>
         <p>Your SaraPlus login, your OwnerVille login, and where you would like
            things posted in Slack. That is everything it asks.</p>
@@ -125,6 +199,24 @@
 
   var cmd = "curl -fsSL " + RAW + " | bash -s -- " + code;
   document.getElementById("cmd").textContent = cmd;
+  document.getElementById("termcmd").textContent = cmd;
+
+  // THIS LINE IS bash. It does not run on Windows, and handing a PC owner a
+  // command that cannot work would cost them the same hour it cost us to
+  // learn that. Say so instead, and let them tell us.
+  var plat = (navigator.userAgentData && navigator.userAgentData.platform) ||
+             navigator.platform || "";
+  if (/win/i.test(plat)) {
+    document.getElementById("main").innerHTML =
+      '<div class="err"><b>This looks like a Windows PC.</b><br><br>' +
+      'These steps are for a Mac. Windows needs a different set, and we would ' +
+      'rather send you the right one than have you paste something that will ' +
+      'not work.<br><br>Tell the reporting team you are on Windows and they ' +
+      'will send it over.</div>';
+    document.getElementById("who").textContent =
+      "Windows setup \u2014 the reporting team will send you these.";
+    return;
+  }
 
   var btn = document.getElementById("copy");
   btn.addEventListener("click", function () {
