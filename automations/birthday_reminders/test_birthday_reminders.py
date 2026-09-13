@@ -385,6 +385,41 @@ class Planning(unittest.TestCase):
         self.assertEqual(p["send"], [])
 
 
+class HubPublish(unittest.TestCase):
+    """publish_done has NO `note` kwarg. Passing one raised TypeError on every
+    run and the bare except ate it, so nothing was ever published and the pill
+    would have stayed white while the texts went out fine."""
+
+    def test_publish_calls_publish_done_with_a_signature_it_actually_has(self):
+        from automations.day_orchestrator import hub_publish
+        import inspect
+        sig = inspect.signature(hub_publish.publish_done)
+        self.assertNotIn("note", sig.parameters)
+        with mock.patch.object(hub_publish, "publish_done",
+                               return_value=True) as pd:
+            R._publish("success", "texted 1 birthday(s)")
+        pd.assert_called_once()
+        self.assertNotIn("note", pd.call_args.kwargs)
+        self.assertEqual(pd.call_args.kwargs.get("status"), "success")
+
+    def test_a_publish_failure_is_printed_not_swallowed(self):
+        from automations.day_orchestrator import hub_publish
+        said = []
+        with mock.patch.object(hub_publish, "publish_done",
+                               side_effect=TypeError("boom")), \
+             mock.patch("builtins.print", lambda *a, **k: said.append(a)):
+            R._publish("success", "x")          # must not raise
+        self.assertTrue(any("Hub publish failed" in str(s) for s in said))
+
+    def test_no_card_found_says_so_loudly(self):
+        from automations.day_orchestrator import hub_publish
+        said = []
+        with mock.patch.object(hub_publish, "publish_done", return_value=False), \
+             mock.patch("builtins.print", lambda *a, **k: said.append(a)):
+            R._publish("success", "x")
+        self.assertTrue(any("no card" in str(s) for s in said))
+
+
 class Sending(unittest.TestCase):
     def _run(self, group, **kw):
         patch, _ws = fake_store([["Ann Lee", "09/14", "", "", "", ""]])

@@ -170,13 +170,31 @@ def _publish_if_real(dry_run: bool, status: str, note: str) -> None:
 
 def _publish(status: str, note: str) -> None:
     """Best-effort Hub publish -- a Hub write must never fail the send.
-    [[a LaunchAgent report publishes to the Hub]]"""
+    [[a LaunchAgent report publishes to the Hub]]
+
+    THERE IS NO `note` PARAMETER. Calling it with one raised TypeError on every
+    single run, and the bare `except` below swallowed it, so this report would
+    have published NOTHING and its pill would have sat white forever while the
+    texts went out fine (found 2026-09-13, only because the Hub Activity tab was
+    actually checked). `note` is kept in this signature because the reason IS
+    worth seeing -- it goes to the log instead, where it costs nothing.
+
+    The failure is printed, not swallowed silently: "best-effort" has to mean
+    "does not kill the run", never "fails invisibly". That distinction is the
+    whole bug. [[exit-0 alone is not green]]
+    """
     try:
         from automations.day_orchestrator import hub_publish
-        hub_publish.publish_done(C.HUB_REPORT_ID, C.HUB_CARD,
-                                 status=status, note=note)
-    except Exception:
-        pass
+        ok = hub_publish.publish_done(C.HUB_REPORT_ID, C.HUB_CARD, status=status)
+        if not ok:
+            print("\u26a0 Hub publish found no card for %r -- the pill will not "
+                  "paint. Check hub_publish._HUB_CARD." % C.HUB_REPORT_ID,
+                  flush=True)
+        else:
+            print("Hub: %s (%s)" % (status, note), flush=True)
+    except Exception as e:  # noqa: BLE001
+        print("\u26a0 Hub publish failed (%s: %s) -- the run itself was fine."
+              % (type(e).__name__, str(e)[:120]), flush=True)
 
 
 def main() -> int:
