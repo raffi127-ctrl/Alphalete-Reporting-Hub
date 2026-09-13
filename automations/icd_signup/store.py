@@ -47,12 +47,51 @@ def _book():
 def _tab(book=None):
     book = book or _book()
     try:
-        return book.worksheet(SIGNUP_TAB)
+        tab = book.worksheet(SIGNUP_TAB)
     except _WorksheetNotFound:
         tab = book.add_worksheet(title=SIGNUP_TAB, rows=200,
                                  cols=len(_HEADER))
         tab.append_row(_HEADER)
         return tab
+    _ensure_header(tab)
+    return tab
+
+
+def _ensure_header(tab) -> None:
+    """Add any column _HEADER has gained since this tab was created.
+
+    THE BUG THIS FIXES WAS INVISIBLE. Adding alert_channels_json and
+    knocks_json to _HEADER did not add them to a tab that already existed, so
+    append_row wrote those values PAST the end of the header -- present in the
+    sheet, under no column name. Everything looked like it had worked: the
+    sign-up saved, the key was minted, the link came back. But the relay reads
+    those columns BY NAME to hand them to the installer, found no such column,
+    and served an empty list. The office's channels were silently dropped
+    between the form and their own machine (caught live 2026-09-13).
+
+    APPENDS ONLY, never reorders or renames. Somebody may be reading this tab,
+    and a column that moves under them is worse than a column that is missing.
+    """
+    try:
+        head = tab.row_values(1)
+    except Exception:  # noqa: BLE001
+        return
+    missing = [h for h in _HEADER if h not in head]
+    if not missing:
+        return
+    try:
+        tab.update(range_name="%s1" % _a1_col(len(head) + 1),
+                   values=[missing], value_input_option="RAW")
+    except Exception:  # noqa: BLE001 — a sign-up must never be lost to this
+        pass
+
+
+def _a1_col(n: int) -> str:
+    out = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        out = chr(65 + r) + out
+    return out
 
 
 def _local() -> List[Dict]:

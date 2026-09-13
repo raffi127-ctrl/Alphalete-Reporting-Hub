@@ -179,3 +179,61 @@ class MultipleChannelsSurvive(unittest.TestCase):
     def test_no_board_requested_is_said_plainly(self):
         body = "\n".join(N.lines(self._rec(["C1"], []), link="x")[1])
         self.assertIn("did not ask for one", body)
+
+
+class TheTabGrowsItsOwnColumns(unittest.TestCase):
+    """A new field must reach the sheet under a NAME, not just a position.
+
+    Caught live 2026-09-13. alert_channels_json and knocks_json were added to
+    _HEADER, but the tab already existed, so its header row never gained them.
+    append_row wrote the values PAST the end of the header -- in the sheet,
+    under no column name.
+
+    Everything looked like it worked: the sign-up saved, the key was minted,
+    the setup link came back. But the relay reads those columns BY NAME to
+    hand them to the installer, found no such column, and served an empty
+    list -- so an office's channels were dropped silently between the form
+    they typed them into and their own machine.
+    """
+
+    def test_a_missing_column_is_appended_to_the_header(self):
+        existing = store._HEADER[:-2]          # a tab from before the change
+        written = {}
+
+        class FakeTab:
+            def row_values(self, _n):
+                return list(existing)
+
+            def update(self, range_name=None, values=None, **kw):
+                written["range"] = range_name
+                written["values"] = values
+
+        store._ensure_header(FakeTab())
+        self.assertEqual(written.get("values"), [store._HEADER[-2:]])
+        # Appended AFTER the last existing column, never over one.
+        self.assertEqual(written.get("range"),
+                         "%s1" % store._a1_col(len(existing) + 1))
+
+    def test_a_current_header_is_left_alone(self):
+        touched = []
+
+        class FakeTab:
+            def row_values(self, _n):
+                return list(store._HEADER)
+
+            def update(self, **kw):
+                touched.append(kw)
+
+        store._ensure_header(FakeTab())
+        self.assertEqual(touched, [], "an up-to-date header must not be rewritten")
+
+    def test_a_sheet_that_will_not_answer_does_not_lose_the_signup(self):
+        class FakeTab:
+            def row_values(self, _n):
+                raise RuntimeError("sheets is having a day")
+
+        store._ensure_header(FakeTab())      # must not raise
+
+    def test_column_letters_survive_past_z(self):
+        self.assertEqual(store._a1_col(26), "Z")
+        self.assertEqual(store._a1_col(27), "AA")
