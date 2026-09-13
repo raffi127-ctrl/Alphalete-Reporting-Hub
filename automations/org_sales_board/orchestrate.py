@@ -161,6 +161,15 @@ def _make_section_adapter(spec_key: str):
                     f"Crosstab dialog lists no sheets. Not filling it; the "
                     f"14:30 board-catchup pulls it. Self-heals.")
                 return {}
+        # The ICD sales-board site needs SETTLED per-day numbers, and this
+        # pull already has them — the fiber crosstab is one row per owner per
+        # product with a column per weekday. Storing them here costs no extra
+        # Tableau session and no second login. Never fatal: filling the org
+        # board is this job's real work.
+        if spec_key == "fiber":
+            from automations.icd_sales_board import tableau_days
+            tableau_days.log_days(csv_path, week_ending=today,
+                                  log=ctx.logfn)
         return section_pull.parse_byday(spec, csv_path, today)
     return _adapter
 

@@ -135,3 +135,105 @@ def for_owner(owner: str, path=DEFAULT_PATH,
         if name.strip().lower() == want:
             return days
     return {}
+
+
+# --------------------------------------------------------------- the store
+# Where settled days live so a PAGE can read them. The crosstab itself lands
+# on whichever machine ran the harvest (the mini), and the site may run
+# somewhere else entirely, so the parsed rows go to a sheet — the same shape
+# knocks_log uses for the same reason.
+SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"   # AUTOMATION MASTER
+TAB = "Board Days"
+COLUMNS = ["Date", "Owner"] + MEASURES + ["Total", "Source"]
+
+
+def log_days(path=DEFAULT_PATH, week_ending: dt.date | None = None,
+             sheet_id: str = SHEET_ID, log=print) -> int:
+    """Write a pulled crosstab's settled days to the sheet. Returns rows written.
+
+    IDEMPOTENT per owner+day: a day already stored is REPLACED, not appended.
+    The harvest re-runs and the same week gets pulled again at 14:30 catch-up,
+    and a day that settles further has to be able to correct itself.
+
+    NEVER FATAL. This hangs off a harvest whose real job is filling the org
+    board; a logging problem must not take that down. Every failure returns 0
+    and says why.
+    """
+    try:
+        from automations.recruiting_report.fill import open_by_key, _retry
+
+        by_owner = parse(path, week_ending)
+        if not by_owner:
+            log("  board days: nothing parsed (no crosstab?)")
+            return 0
+
+        sh = open_by_key(sheet_id)
+        try:
+            ws = sh.worksheet(TAB)
+        except Exception:
+            ws = sh.add_worksheet(title=TAB, rows=2000, cols=len(COLUMNS))
+            ws.update("A1", [COLUMNS])
+
+        grid = _retry(ws.get_all_values) or []
+        header = [str(h).strip() for h in grid[0]] if grid else COLUMNS
+        idx = {name: header.index(name) for name in COLUMNS if name in header}
+
+        # TODAY IS NOT SETTLED. Only closed days are stored, or the first
+        # write of the morning would freeze a part-day as final.
+        today = dt.date.today()
+        merged = {}
+        for row in grid[1:] if grid else []:
+            if len(row) <= max(idx.get("Owner", 1), idx.get("Date", 0)):
+                continue
+            merged[(str(row[idx["Date"]]).strip()[:10],
+                    str(row[idx["Owner"]]).strip().lower())] = list(row)
+
+        wrote = 0
+        for owner, days in by_owner.items():
+            for day, vals in days.items():
+                if day >= today:
+                    continue
+                merged[(day.isoformat(), owner.strip().lower())] = (
+                    [day.isoformat(), owner]
+                    + [vals[m] for m in MEASURES]
+                    + [sum(vals.values()), "tableau"])
+                wrote += 1
+
+        # ONE WRITE, NOT ONE PER ROW. Updating each row on its own took 84
+        # calls for a single week and ran for minutes; a write loop like that
+        # is also exactly what trips the Sheets 429 quota for whatever runs
+        # next. The whole tab is rewritten in a single call instead, which is
+        # idempotent by construction — re-running a day replaces it.
+        body = [COLUMNS] + [merged[k] for k in sorted(merged)]
+        _retry(ws.clear)
+        _retry(ws.update, "A1", body, value_input_option="USER_ENTERED")
+        log(f"  board days: {wrote} settled day-rows stored "
+            f"({len(merged)} in the tab)")
+        return wrote
+    except Exception as e:   # noqa: BLE001 — never take the harvest down
+        log(f"  board days: SKIPPED ({type(e).__name__}: {e})")
+        return 0
+
+
+def stored_days(owner: str = "", sheet_id: str = SHEET_ID) -> dict:
+    """{owner: {date: {measures}}} straight from the sheet — no Tableau, no
+    browser, safe to call from a page."""
+    from automations.recruiting_report.fill import open_by_key
+
+    grid = open_by_key(sheet_id).worksheet(TAB).get_all_values()
+    if not grid:
+        return {}
+    header = [str(h).strip() for h in grid[0]]
+    want = (owner or "").strip().lower()
+    out: dict = collections.defaultdict(dict)
+    for row in grid[1:]:
+        rec = dict(zip(header, row))
+        name = str(rec.get("Owner") or "").strip()
+        if not name or (want and name.lower() != want):
+            continue
+        try:
+            day = dt.date.fromisoformat(str(rec.get("Date") or "")[:10])
+        except ValueError:
+            continue
+        out[name][day] = {m: _int(rec.get(m)) for m in MEASURES}
+    return dict(out)

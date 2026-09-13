@@ -1490,6 +1490,17 @@ def _settled_days(icd: str, week_ending: dt.date) -> dict:
     Reads a crosstab a scheduled pull already downloaded; it never opens a
     browser itself. Missing file means {} and the board falls back to live."""
     from automations.icd_sales_board import tableau_days as TD
+    # THE SHEET FIRST. The crosstab file lands on whichever machine ran the
+    # harvest — the mini — and this page may be running anywhere, so the
+    # stored rows are the portable source. The local file is the fallback for
+    # a machine that just pulled one itself.
+    try:
+        got = TD.stored_days(icd).get(icd, {})
+        if got:
+            return {d: v for d, v in got.items()
+                    if week_ending - dt.timedelta(days=6) <= d <= week_ending}
+    except Exception:
+        pass
     try:
         return TD.for_owner(icd, week_ending=week_ending)
     except Exception:
