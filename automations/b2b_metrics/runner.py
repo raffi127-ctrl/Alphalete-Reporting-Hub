@@ -623,10 +623,11 @@ def _dm_captures(captured: dict, user: str, o: B2BOffice, day: dt.date,
         path = captured.get(item["id"])
         if not path:
             continue
-        smp.dm_user_with_file(
-            path, user=u, file_name=path.name,
-            comment="{} *{}* — B2B Metrics preview ({}). Not posted.".format(
-                item["emoji"], item["title"], o.label))
+        for p in (path if isinstance(path, (list, tuple)) else [path]):
+            smp.dm_user_with_file(
+                p, user=u, file_name=p.name,
+                comment="{} *{}* — B2B Metrics preview ({}). Not posted.".format(
+                    item["emoji"], item["title"], o.label))
         log("  DM'd {}".format(item["id"]))
 
 
@@ -849,8 +850,14 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
                 log("  [{}] {} already in thread — skip".format(chan, item["id"]))
                 continue
             caption = "{} *{}*".format(item["emoji"], item["title"])
-            client.files_upload_v2(channel=chan, thread_ts=ts, file=str(path),
-                                   filename=path.name, initial_comment=caption)
+            # A section may be a PAIR of images (pending_orders splits past
+            # 20 rows — Carlos 2026-09-13); both ride ONE message so the
+            # thread stays one reply per section and dedup stays one id.
+            paths = list(path) if isinstance(path, (list, tuple)) else [path]
+            client.files_upload_v2(
+                channel=chan, thread_ts=ts, initial_comment=caption,
+                file_uploads=[{"file": str(p), "filename": p.name}
+                              for p in paths])
             posted.append(item["id"])
             already.append(item["id"])
             bq._save_state(today, chan, ts, already)  # after EACH, crash-safe

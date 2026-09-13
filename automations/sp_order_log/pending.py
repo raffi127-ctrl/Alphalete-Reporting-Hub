@@ -124,14 +124,46 @@ def build(lines, today: Optional[dt.date] = None) -> Dict:
                                         "window is activated or closed."}]}
 
 
+# Beyond this many rows one image needs too much zoom on a phone (Carlos
+# 2026-09-13: "definitely too long... better in two screenshots").
+SPLIT_AT = 20
+
+
 def build_png(lines, today: Optional[dt.date] = None, log=print,
-              out_path: Optional[Path] = None) -> Path:
+              out_path: Optional[Path] = None) -> List[Path]:
+    """One or two PNGs (both halves ride ONE Slack message). The split is by
+    whole rep bands, balanced by line count, A-Z order preserved across the
+    pair — so part 1 ends where a rep ends and nobody's block is torn."""
     from automations.box_order_log import pending_png
     from automations.sp_order_log.run import OUT_DIR, _register_colors
     _register_colors()
     work = build(lines, today)
-    out = out_path or (OUT_DIR / "pending_orders.png")
-    pending_png.render(work, out)
-    log("pending orders -> %s (%d line(s) in flight)" % (out.name,
-                                                         work["count"]))
-    return out
+    out = Path(out_path) if out_path else (OUT_DIR / "pending_orders.png")
+    sec = work["sections"][0]
+    if work["count"] <= SPLIT_AT or len(sec["reps"]) < 2:
+        pending_png.render(work, out)
+        log("pending orders -> %s (%d line(s) in flight)"
+            % (out.name, work["count"]))
+        return [out]
+    reps, total, acc, cut = sec["reps"], work["count"], 0, 1
+    for i, (_rep, rrows) in enumerate(reps):
+        acc += len(rrows)
+        if acc >= total / 2:
+            cut = i + 1
+            break
+    cut = min(cut, len(reps) - 1)
+    outs: List[Path] = []
+    for i, part in enumerate((reps[:cut], reps[cut:]), 1):
+        prows = [r for _rep, rs in part for r in rs]
+        w = dict(work)
+        w["title"] = "{} ({} of 2)".format(work["title"], i)
+        w["count"] = len(prows)
+        w["subtitle"] = work["subtitle"] + "  Part {} of 2 — reps {}–{}.".format(
+            i, part[0][0].split()[0], part[-1][0].split()[0])
+        w["sections"] = [dict(sec, rows=prows, reps=part)]
+        p = out.with_name("{}_{}{}".format(out.stem, i, out.suffix))
+        pending_png.render(w, p)
+        outs.append(p)
+    log("pending orders -> %s + %s (%d line(s) in flight, split at %d rows)"
+        % (outs[0].name, outs[1].name, total, SPLIT_AT))
+    return outs
