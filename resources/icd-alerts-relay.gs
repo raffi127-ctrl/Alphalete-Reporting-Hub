@@ -223,6 +223,11 @@ function doGet(e) {
       owner: owner,
       requested_channels: jlist('alert_channels_json'),
       requested_knocks_destinations: jlist('knocks_json'),
+      ov_name: v('ov_name', ''),
+      // THEY TYPED THESE HOURS ON THE FORM MINUTES AGO. Without this the
+      // installer shows them their own answer and asks them to confirm it,
+      // which is the same question twice in one sitting.
+      hours_from_signup: true,
       label: v('office_label', '') || (owner.split(' ')[0] + "'s Local Office"),
       timezone: v('timezone', 'America/Chicago'),
       knocks_default_hours: {

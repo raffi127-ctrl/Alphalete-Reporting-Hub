@@ -602,6 +602,14 @@ def _ask_field_hours(rec):
     hours = dict(rec.get("knocks_default_hours") or {})
     if not hours:
         return ""
+    # THEY ALREADY TOLD US, ON THE FORM, MINUTES AGO (Megan 2026-09-13: "the
+    # installer shouldn't ask for the same things they are already filling out
+    # on the form"). Confirming an answer somebody has just typed is the same
+    # question twice, and every extra box is another place an install stalls
+    # while nobody is watching.
+    if rec.get("hours_from_signup"):
+        say("      using the selling hours from your sign-up")
+        return ""
     sat = ("Saturdays %s to %s" % (_ampm(hours["sat_start"]),
                                    _ampm(hours["sat_end"]))
            if hours.get("saturday") else "no Saturdays")
