@@ -120,7 +120,8 @@ def collect(sheet_id: str = SHEET_ID, tab: str = TAB, rows_of=None) -> dict:
     return {"prods": prods, "rows": rows}
 
 
-def build_html(data: dict, *, label: str = "", office_key: str = "") -> str:
+def build_html(data: dict, *, label: str = "", office_key: str = "",
+               show_decel: bool = True) -> str:
     wl = data["prods"].get("Wireless", {})
     try:
         act = int(wl.get("act") or 0)
@@ -201,7 +202,10 @@ def build_html(data: dict, *, label: str = "", office_key: str = "") -> str:
     net = data["prods"].get("Internet", {})
 
     # ---- captain decelerator block: ONE ROW PER PRODUCT (DD WE 8/29 comp;
-    # Carlos 2026-09-13: "There's a decelerator for every single product") ----
+    # Carlos 2026-09-13: "There's a decelerator for every single product").
+    # Captains only — Carlos 2026-09-13: "for Jamis and Sabrina, take out the
+    # Captain Decelerator portion" (they aren't captains; the block is noise
+    # on their boards). ----
     import json as _json
     import math
     prog = _json.loads(DECEL_PROG.read_text())
@@ -267,8 +271,16 @@ def build_html(data: dict, *, label: str = "", office_key: str = "") -> str:
             cells.append(
                 f"<td style=\"text-align:center;{style}\">{labels[i]}<br>"
                 f"<span style=\"font-size:13px\">{100 * mult:.0f}%</span></td>")
-        eff_s = (f"{100 * raw:.0f}% <b>→ {100 * eff:.0f}%</b>" if eff != raw
-                 else f"<b>{100 * raw:.0f}%</b>")
+        # Carlos 2026-09-13 misread "0% -> 25%" as losing 25%: SC's decel is
+        # the share KEPT, so say kept AND lost in words, no arrows.
+        lost = 1.0 - eff
+        eff_s = (f"<b>keeps {100 * eff:.0f}%</b><br>"
+                 f"<span style=\"font-size:10.5px;color:"
+                 f"{'#a00' if lost > 0 else '#286b2a'}\">"
+                 + (f"losing {100 * lost:.0f}% of this $" if lost > 0
+                    else "losing nothing") +
+                 (f" · {100 * raw:.0f}% before the +25pt support"
+                  if eff != raw else "") + "</span>")
         team_s = f" · team {t_pct:.1f}%" if t_pct is not None else ""
         prow_html.append(
             f"<tr><td style=\"font-weight:700\">{plabel}</td>"
@@ -291,13 +303,13 @@ def build_html(data: dict, *, label: str = "", office_key: str = "") -> str:
     tr_note = (" +25 pts transition support on any decel under 100%% "
                "(SC, thru DD WE %s) — shown as raw → effective."
                % tr["through_dd_we"] if tr_on else "")
-    decel_html = f"""<div style=\"margin-top:14px;border:1px solid #ccd\">
+    decel_html = "" if not show_decel else f"""<div style=\"margin-top:14px;border:1px solid #ccd\">
 <div class=\"hdr\">Captain decelerator — per product (worse of team vs office 0-30 churn)</div>
 <div style=\"display:grid;grid-template-columns:2.2fr 1fr;gap:10px;padding:10px\">
 <div><table><tr><td style=\"font-weight:700\">Product</td>
 <td style=\"text-align:center;font-weight:700\">Churn used</td>
-<td colspan=\"5\" style=\"text-align:center;font-weight:700\">Brackets</td>
-<td style=\"text-align:center;font-weight:700\">Decel</td></tr>
+<td colspan=\"5\" style=\"text-align:center;font-weight:700\">Brackets (% of payout kept)</td>
+<td style=\"text-align:center;font-weight:700\">Payout kept</td></tr>
 {''.join(prow_html)}</table>
 <p class=\"note\">Payout × Σ(product volume × product decel) ÷ total volume
  (weighted by DD volume).{tr_note} BYOD / Non-BYOD office churn comes from the
@@ -381,8 +393,8 @@ def render_office_png(sheet_id: str, tab: str, out_png: Path, *,
     data = collect(sheet_id, tab, rows_of=rows_of)
     if not data["rows"] or not data["prods"]:
         raise ValueError(f"no churn data on {tab!r} (rows={len(data['rows'])})")
-    html_txt = build_html(data, label=label,
-                          office_key=office_key)
+    html_txt = build_html(data, label=label, office_key=office_key,
+                          show_decel=office_key in ("carlos", "atef"))
     html_path = out_png.with_suffix(".html")
     html_path.write_text(html_txt, encoding="utf-8")
     render_png(html_path, out_png)
