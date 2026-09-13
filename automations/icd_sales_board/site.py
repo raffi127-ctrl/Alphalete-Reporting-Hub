@@ -1483,6 +1483,19 @@ def _relay_week(office_key: str, week_ending: dt.date) -> dict:
     return RL.week(office_key, week_ending)
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def _settled_days(icd: str, week_ending: dt.date) -> dict:
+    """{date: {Int, Int Up, DTV, NL}} — Tableau's settled office totals.
+
+    Reads a crosstab a scheduled pull already downloaded; it never opens a
+    browser itself. Missing file means {} and the board falls back to live."""
+    from automations.icd_sales_board import tableau_days as TD
+    try:
+        return TD.for_owner(icd, week_ending=week_ending)
+    except Exception:
+        return {}
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _relay_weeks(office_key: str) -> list:
     """Week-endings that actually carry a reading, newest first. Offering a
@@ -1616,13 +1629,49 @@ def relay_board(icd: str, office_key: str) -> None:
         rows.append(row)
     rows.sort(key=lambda r: (-r["Apps"], -r["Total units"], r["Rep"]))
 
-    tot = {m: sum(r[m] for r in rows) for m in RELAY_MEASURES}
+    live_tot = {m: sum(r[m] for r in rows) for m in RELAY_MEASURES}
     sold = sum(1 for r in rows if any(r[m] for m in RELAY_MEASURES))
+
+    # CLOSED DAYS COME FROM TABLEAU, TODAY FROM THE RELAY (Megan 2026-09-13).
+    # An intraday reading of a finished day runs light — Cyrus's Saturday was
+    # 16 at 5pm and 19 settled — so a day that is over is taken from Tableau
+    # and only today is left on the live feed.
+    settled = _settled_days(icd, week_ending)
+    today = dt.date.today()
+    tot = {m: 0 for m in RELAY_MEASURES}
+    for d in (week_ending - dt.timedelta(days=i) for i in range(7)):
+        if d > today:
+            continue
+        src = settled.get(d) if d < today else None
+        if src is None and d == today:
+            src = {m: sum((r["days"].get(d) or {}).get(m, 0)
+                          for r in by_rep.values()) for m in RELAY_MEASURES}
+        if src is None:                      # closed day Tableau doesn't have
+            src = {m: sum((r["days"].get(d) or {}).get(m, 0)
+                          for r in by_rep.values()) for m in RELAY_MEASURES}
+        for m in RELAY_MEASURES:
+            tot[m] += src.get(m, 0)
+
     cols = st.columns(6, gap="small")
     _vital(cols[0], "Total units", str(_units(tot)), None)
     _vital(cols[1], "On the board", f"{sold} of {len(rows)}", None)
     for col, m in zip(cols[2:], RELAY_MEASURES):
         _vital(col, m, str(tot[m]), None)
+
+    settled_days = [d for d in settled if d <= today]
+    if settled_days:
+        st.caption(
+            f"Office totals above are SETTLED from Tableau for "
+            f"{len(settled_days)} day(s) — {min(settled_days):%b %d} to "
+            f"{max(settled_days):%b %d} — with today live from SaraPlus. "
+            "The rep table below only covers days the office's own machine "
+            "relayed, because Tableau's weekly view counts the office, not "
+            "each rep."
+            + (f" Live relay for the same span reads "
+               f"{_units(live_tot)} units." if live_tot != tot else ""))
+    else:
+        st.caption("No settled Tableau day for this week yet — everything "
+                   "here is the live SaraPlus reading.")
 
     # The totals line is the last ROW of the grid, not a table underneath: a
     # separate table scrolls on its own and stops lining up with its columns
