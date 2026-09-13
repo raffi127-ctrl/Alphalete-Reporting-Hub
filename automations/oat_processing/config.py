@@ -107,7 +107,20 @@ POST_MUTATION_SETTLE_MS = int(os.environ.get("OAT_POST_MUTATION_SETTLE_MS", "700
 # This applies ONLY to confirmed-empty reads. A BLOCKED read — Cloudflare, the
 # Indeed sign-in wall, a tab that never opened — is OUR failure and we never saw
 # the resume, so it stays day-scoped and retries tomorrow exactly as before.
-SETTLED_RECHECK_DAYS = int(os.environ.get("OAT_SETTLED_RECHECK_DAYS", "7"))
+# 1 DAY UNTIL THE VERDICT IS TRUSTED (2026-09-13). This shipped as 7, which is
+# right for a resume we OPENED and read. It is NOT yet proven right for the other
+# case that now settles: "no view-resume link", i.e. no resume attached at all.
+# That fired 219 times in Carlos's office on its first afternoon, which Megan
+# flagged as implausibly high, and nobody has yet confirmed against the ATS
+# whether those applicants really have no resume or whether the link detection is
+# missing one that is there.
+#
+# The asymmetry decides the number. The WIN of settling — the walk stops spending
+# its 60 work slots re-deciding the same people — is entirely within-day, so a
+# 1-day window keeps all of it. The RISK is hiding a reachable applicant, and 7
+# days of that is a week of someone never being called. So bound the downside and
+# keep the upside until a human spot-checks a few names; then put it back to 7.
+SETTLED_RECHECK_DAYS = int(os.environ.get("OAT_SETTLED_RECHECK_DAYS", "1"))
 
 # --- Multi-office namespacing (2026-08-26) --------------------------------- #
 # The push works more than one office now (Carlos 11580, Atef 23467 — see
