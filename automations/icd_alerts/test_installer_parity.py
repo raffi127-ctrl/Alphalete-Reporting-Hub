@@ -117,3 +117,29 @@ class UninstallersDoTheSameThings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheNameOnScreenIsNotTheNameOnDisk(unittest.TestCase):
+    """Offices see "Lucy Ecosystem"; the disk still says lucy-reports.
+
+    Renaming the paths would orphan Kash's and Cyrus's installs -- their
+    program, their logins and their LaunchAgent are all at lucy-reports, and
+    an uninstaller looking somewhere else would report "not installed" on a
+    machine that is very much still running it.
+    """
+
+    SETUP = (HERE / "dist" / "setup.py").read_text()
+
+    def test_the_display_name_is_the_ecosystem(self):
+        self.assertIn('APP_NAME = "Lucy Ecosystem"', self.SETUP)
+
+    def test_the_paths_are_untouched(self):
+        for needle in ('BASE = HOME / ".lucy-reports"',
+                       'CONFIG_DIR = HOME / ".config" / "lucy-reports"',
+                       'PLIST_LABEL = "com.alphalete.lucy-reports"'):
+            self.assertIn(needle, self.SETUP,
+                          "an installed office would be orphaned by this rename")
+
+    def test_the_uninstaller_still_looks_where_things_actually_are(self):
+        self.assertIn('.lucy-reports', XSH)
+        self.assertIn('com.alphalete.lucy-reports.plist', XSH)

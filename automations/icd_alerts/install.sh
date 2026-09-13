@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install Lucy Reports on this computer. ONE LINE, pasted into Terminal:
+# Install the Lucy Ecosystem on this computer. ONE LINE, pasted into Terminal:
 #
 #   curl -fsSL https://raw.githubusercontent.com/raffi127-ctrl/Alphalete-Reporting-Hub/main/automations/icd_alerts/install.sh | bash -s -- KASH-XXXXX-XXXXX-XXXXX
 #
@@ -40,7 +40,7 @@ fi
 OFFICE="$(printf '%s' "$KEY" | cut -d- -f1 | tr '[:upper:]' '[:lower:]')"
 
 echo ""
-echo "Setting up Lucy Reports for: $OFFICE"
+echo "Setting up the Lucy Ecosystem for: $OFFICE"
 echo ""
 
 PY=""

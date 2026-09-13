@@ -13,7 +13,7 @@ $CONFIG = Join-Path $env:USERPROFILE '.config\lucy-reports'
 $TASK   = 'Lucy Reports'
 
 Write-Host ''
-Write-Host 'This removes Lucy Reports from this computer:'
+Write-Host 'This removes the Lucy Ecosystem from this computer:'
 Write-Host ''
 $found = $false
 $task = schtasks /Query /TN "$TASK" 2>$null
@@ -50,7 +50,7 @@ foreach ($d in @($BASE, $CONFIG)) {
 }
 
 Write-Host ''
-Write-Host 'Lucy Reports is off this computer.'
+Write-Host 'The Lucy Ecosystem is off this computer.'
 Write-Host ''
 Write-Host 'If this office is coming back, the setup link you were sent still works.'
 Write-Host ''

@@ -754,6 +754,89 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
     return faults
 
 
+SIGNUPS_SEEN_PATH = (Path.home() / ".config" / "recruiting-report"
+                     / "icd_alerts_signups_seen.json")
+
+
+def notify_new_signups(*, send: bool = False, book=None, log=print) -> List:
+    """Announce offices that filled the sign-up form. FROM HERE, NOT THE FORM.
+
+    The form posted its own ping and it never arrived. Megan's own sign-up
+    landed perfectly on the tab -- row, key, setup link -- and nothing reached
+    the corrections channel, so the only way to know an office had signed up
+    was to go and look at a spreadsheet (2026-09-13).
+
+    THE FORM IS THE WRONG PLACE TO POST FROM, and that is the real lesson. It
+    runs on Streamlit Cloud with whatever token is in that app's secrets, in a
+    Slack workspace it is otherwise a stranger to: a bot that is not in the
+    channel, a scope nobody granted, a secret that expires -- three ways to be
+    silent, none of them visible from here. This poster already runs every
+    couple of minutes on a Lucy that holds Lucy Reporting's token and already
+    posts to this exact channel. Announcing from the machine that is already
+    talking removes the whole class of failure.
+
+    Told ONCE per office, keyed on when they submitted, so a resubmission is a
+    new thing worth saying and a rerun of this is not.
+    """
+    from automations.icd_signup import request_notify as RN
+    from automations.icd_signup import store as SS
+
+    try:
+        pending = SS.pending(book)
+    except Exception as e:  # noqa: BLE001 — no tab yet, or Sheets is down
+        log("could not read sign-ups: %s" % type(e).__name__)
+        return []
+    if not pending:
+        return []
+
+    try:
+        seen = json.loads(SIGNUPS_SEEN_PATH.read_text())
+    except (OSError, ValueError):
+        seen = {}
+
+    fresh = [r for r in pending
+             if seen.get("%s|%s" % (r.office_key, r.submitted_at)) is None]
+    if not fresh:
+        return []
+
+    for r in fresh:
+        log("SIGN-UP: %-10s %s" % (r.office_key, r.owner))
+    if not send:
+        return fresh
+
+    stamp = dt.datetime.now().isoformat(timespec="seconds")
+    for r in fresh:
+        # Their link, rebuilt from the key we already gave them, so Megan can
+        # re-send it without going to look the key up.
+        link = ""
+        try:
+            keys = {row[0].strip().lower(): (row[1] or "").strip()
+                    for row in (book or _book_for_keys()).worksheet(
+                        "Relay Keys").get_all_values()[1:] if row and row[0]}
+            if keys.get(r.office_key):
+                link = SS.setup_link(keys[r.office_key])
+        except Exception:  # noqa: BLE001 — the announcement matters more
+            pass
+        head, detail = RN.lines(r, link)
+        try:
+            ts = _slack(O.OPS_CHANNEL, head)
+            _slack(O.OPS_CHANNEL, "\n".join(detail), thread_ts=ts)
+        except Exception as e:  # noqa: BLE001 — one office must not stop the rest
+            log("could not announce %s: %s: %s"
+                % (r.office_key, type(e).__name__, str(e)[:120]))
+            continue
+        seen["%s|%s" % (r.office_key, r.submitted_at)] = stamp
+
+    SIGNUPS_SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SIGNUPS_SEEN_PATH.write_text(json.dumps(seen, indent=2, sort_keys=True))
+    return fresh
+
+
+def _book_for_keys():
+    from automations.recruiting_report.fill import open_by_key
+    return open_by_key(RELAY_SPREADSHEET_ID)
+
+
 def _warned() -> Dict:
     try:
         return json.loads(WARNED_PATH.read_text())
@@ -981,6 +1064,7 @@ def main(argv=None) -> int:
                 assert_posting_as_lucy()
             run(day, send=args.send, only=args.office)
             if args.watch:
+                notify_new_signups(send=args.send)
                 notify_pending(send=args.send)
                 notify_faults(day, send=args.send)
                 warn_quiet(day, send=args.send)

@@ -572,3 +572,83 @@ class FaultReporting(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(posts, [])
         tab.update_cell.assert_not_called()
+
+
+class SignUpsAreAnnouncedFromHere(unittest.TestCase):
+    """The poster announces new sign-ups, not the form.
+
+    Megan's own sign-up landed perfectly -- row, key, setup link -- and
+    nothing reached the corrections channel (2026-09-13). The form posts from
+    Streamlit Cloud with whatever token is in that app's secrets, in a
+    workspace it is otherwise a stranger to: a bot not in the channel, a scope
+    nobody granted, a secret that expires. Three ways to be silent, none of
+    them visible from our side.
+
+    This poster already runs every couple of minutes on a Lucy holding Lucy
+    Reporting's token, and already posts to that exact channel.
+    """
+
+    def _run(self, pending, seen=None, send=True):
+        import tempfile, pathlib, json as _json
+        tmp = pathlib.Path(tempfile.mkdtemp()) / "seen.json"
+        if seen:
+            tmp.write_text(_json.dumps(seen))
+        posts = []
+        with mock.patch("automations.icd_signup.store.pending",
+                        return_value=pending), \
+             mock.patch("automations.icd_signup.store.setup_link",
+                        return_value="https://link"), \
+             mock.patch.object(P, "SIGNUPS_SEEN_PATH", tmp), \
+             mock.patch.object(P, "_slack",
+                               lambda ch, text, thread_ts=None: (
+                                   posts.append((text, thread_ts)) or "ts1")), \
+             mock.patch.object(P, "_book_for_keys", side_effect=RuntimeError("no keys")):
+            out = P.notify_new_signups(send=send, log=lambda *a, **k: None)
+        return out, posts, tmp
+
+    def _signup(self, key="cy", when="2026-09-13T10:00:00"):
+        from automations.icd_signup.schema import IcdSignup
+        return IcdSignup(
+            owner="Cy Wade", office_label="", platform="mac",
+            timezone="America/Chicago", day_start="13:30", day_end="20:30",
+            saturday=True, sat_start="11:15", sat_end="16:00", ov_name="",
+            knocks_cadence=15, wanted_channels="x", contact="c@x.com",
+            office_key=key, submitted_at=when)
+
+    def test_a_new_signup_is_announced(self):
+        out, posts, _ = self._run([self._signup()])
+        self.assertEqual(len(out), 1)
+        self.assertTrue(posts, "nothing was posted")
+        self.assertIn("Cy Wade", posts[0][0])
+
+    def test_it_is_announced_once_not_every_tick(self):
+        # This runs every couple of minutes; announcing each time would bury
+        # the channel in the same office.
+        seen = {"cy|2026-09-13T10:00:00": "already"}
+        out, posts, _ = self._run([self._signup()], seen=seen)
+        self.assertEqual(out, [])
+        self.assertEqual(posts, [])
+
+    def test_a_resubmission_is_a_new_thing_worth_saying(self):
+        seen = {"cy|2026-09-13T10:00:00": "already"}
+        out, _posts, _ = self._run([self._signup(when="2026-09-13T15:00:00")],
+                                   seen=seen)
+        self.assertEqual(len(out), 1)
+
+    def test_a_failed_post_does_not_mark_it_announced(self):
+        # Otherwise one Slack hiccup loses the office silently and forever.
+        import tempfile, pathlib, json as _json
+        tmp = pathlib.Path(tempfile.mkdtemp()) / "seen.json"
+        with mock.patch("automations.icd_signup.store.pending",
+                        return_value=[self._signup()]), \
+             mock.patch.object(P, "SIGNUPS_SEEN_PATH", tmp), \
+             mock.patch.object(P, "_slack", side_effect=RuntimeError("slack down")), \
+             mock.patch.object(P, "_book_for_keys", side_effect=RuntimeError("x")):
+            P.notify_new_signups(send=True, log=lambda *a, **k: None)
+        self.assertFalse(tmp.exists() and "cy|" in tmp.read_text(),
+                         "a failed announcement was recorded as done")
+
+    def test_a_dry_run_posts_nothing(self):
+        out, posts, tmp = self._run([self._signup()], send=False)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(posts, [])

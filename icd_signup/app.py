@@ -228,21 +228,16 @@ if submitted:
                 "minutes.")
             st.stop()
 
-        try:
-            from automations.icd_signup import request_notify
-            pinged, why = request_notify.notify(saved, send=True, link=link,
-                                                log=lambda *a, **k: None)
-        except Exception as e:  # noqa: BLE001 — their sign-up is already saved
-            pinged, why = False, "%s: %s" % (type(e).__name__, str(e)[:160])
-        if not pinged and why:
-            # WRITE IT WHERE SOMEBODY WILL SEE IT. A log line on Streamlit
-            # Cloud goes nowhere; the row is the thing Megan actually looks
-            # at, so the row carries the reason nobody was told.
-            try:
-                store.set_status(saved.office_key, saved.status,
-                                 note="no Slack ping — %s" % why)
-            except Exception:  # noqa: BLE001
-                pass
+        # THE FORM DOES NOT POST TO SLACK. It used to, and it never arrived:
+        # this app runs on Streamlit Cloud with whatever token is in its
+        # secrets, in a workspace it is otherwise a stranger to -- a bot that
+        # is not in the channel, a scope nobody granted, a secret that
+        # expires, and every one of those is silent from here.
+        #
+        # The poster on Lucy 3 announces it instead, within a couple of
+        # minutes, from the machine that already holds Lucy's token and
+        # already posts to that channel [[post.notify_new_signups]]. One path,
+        # and it is the one that was already working.
 
         # NOT "that is in" (Megan 2026-09-13: "it shouldn't say 'thanks -
         # that's it' when there is another step"). Their sign-up is saved, but
