@@ -6051,7 +6051,12 @@ AUTOMATED_REPORTS = [
             "weekdays": [3, 4],   # Thursday / Friday
             "time": "Thu or Fri, by hand",
             "time_label": "Raf's Office \u00b7 Thu/Fri, once Apex is open",
-            "estimated_minutes": 20,
+            # Measured, not guessed: a full build is ~27 seconds. This used to
+            # say 20, which the Hub shows as "~19 min left" on every action --
+            # so "Get this week's setup" looked broken and got stopped
+            # (Megan, 2026-09-13). The typing that follows is a person's time,
+            # not a run.
+            "estimated_minutes": 1,
         },
         "checklist": [
             {"text": "Sign into Apex in this machine's normal Chrome "
@@ -6060,13 +6065,14 @@ AUTOMATED_REPORTS = [
         ],
         "post_run": {
             "message_success": "\u2705 Read the board and Blue Ink. See the list above for who gets added and who was left out.",
-            "message_failed": "\u274C Run failed. Most often it's the Apex login \u2014 sign into Apex in this machine's Chrome and run Preflight again. Nothing was typed.",
+            # Named the Apex login whatever had actually failed -- and two of
+            # the three actions never open Apex at all.
+            "message_failed": "\u274C Run failed \u2014 the log above says why. Nothing was written to Apex or to the board. If it mentions a login, sign into Apex in this machine's Chrome; if it mentions Blue Ink, the key file is missing.",
         },
         "actions": [
             {
                 "label": "Preflight",
                 "icon": "\U0001FA7A",
-                "primary": True,
                 "help": "Checks the day, Blue Ink, and whether Apex is signed in on this machine. Opens nothing and types nothing.",
                 "module": "automations.apex_new_starts.run",
                 "args_fn": lambda: ["--preflight"],
@@ -6081,6 +6087,9 @@ AUTOMATED_REPORTS = [
             {
                 "label": "Get this week's setup",
                 "icon": "\U0001F4CB",
+                # THE button. It was under "More actions", so the one thing
+                # anybody needs weekly had to be dug for (Megan, 2026-09-13).
+                "primary": True,
                 "help": "Reads the New Starts box and everyone's Blue Ink packet, then puts this week's setup on your clipboard. Then open Apex and click your Fill Apex bookmark \u2014 nothing to copy, nothing to paste.",
                 "module": "automations.apex_new_starts.run",
                 "args_fn": lambda: ["--button", "--any-day"],
