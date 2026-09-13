@@ -81,65 +81,45 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
     # index.cfm?p=701&rqst=…&newOfficeId=… — a "?p=", not an "&p=" — so
     # splitting on "&p=" returned the whole url and appended a SECOND p
     # parameter, landing somewhere with no date box at all.
+    want_value = wk_start.strftime("%m-%d-%Y")
+    want_header = _header(wk_start)
     try:
-        ok = page.evaluate(
-            r"""(want) => {
-                const looksLikeDate = v => /^\d{2}-\d{2}-\d{4}$/.test((v||'').trim());
-                const box = [...document.querySelectorAll('input')]
-                    .find(i => looksLikeDate(i.value));
-                if (!box) return false;
-                box.value = want;
-                box.dispatchEvent(new Event('input', {bubbles: true}));
-                box.dispatchEvent(new Event('change', {bubbles: true}));
-                const btn = [...document.querySelectorAll('input,button,a')]
-                    .find(b => /get\s*report/i.test(b.value || b.innerText || ''));
-                if (!btn) return false;
-                btn.click();
-                return true;
-            }""", wk_start.strftime("%m-%d-%Y"))
-        if ok:
-            # CONFIRM THE PAGE ACTUALLY CHANGED. Clicking Get Report is not
-            # the same as the week having loaded: the first working run
-            # reported 6/6 weeks "opened" and returned 41 dates that were all
-            # from ONE week — the default the report lands on — because every
-            # set silently failed and the header lookup then matched nothing.
-            # So wait for the week we asked for to appear in the grid, and
-            # call it opened only then.
-            want = _header(wk_start)
-            for _ in range(20):
-                page.wait_for_timeout(750)
-                try:
-                    if page.evaluate(
-                            "(w) => document.body.innerText.includes(w)",
-                            want):
-                        return True
-                except Exception:  # noqa: BLE001
-                    pass
-            log(f"    week {wk_start}: submitted but {want!r} never appeared")
+        # DRIVE IT LIKE A PERSON. Setting .value in JS and dispatching change
+        # left the page on whatever week it opened with — 1 of 6 weeks "opened"
+        # and nothing found. The box is a real text input with a calendar
+        # attached, so it is typed into, the calendar is dismissed, and the
+        # button is really clicked.
+        idx = page.evaluate(
+            r"""() => {
+                const ins = [...document.querySelectorAll('input')];
+                return ins.findIndex(
+                    i => /^\d{2}-\d{2}-\d{4}$/.test((i.value||'').trim()));
+            }""")
+        if idx is None or idx < 0:
+            log(f"    week {wk_start}: no date box on the page")
             return False
 
-        if not ok:
-            # SAY WHAT WAS ON THE PAGE. Two runs returned "0 found, exit 0"
-            # and there was no way to tell a missing week picker from an empty
-            # week — the status line only shows stdout, so the diagnosis has
-            # to be IN it.
-            try:
-                seen = page.evaluate(
-                    r"""() => ({
-                        url: location.href.slice(0, 120),
-                        inputs: document.querySelectorAll('input').length,
-                        dateish: [...document.querySelectorAll('input')]
-                            .map(i => (i.value||'').trim())
-                            .filter(v => /\d{2}-\d{2}-\d{4}/.test(v)).length,
-                        getReport: /get\s*report/i.test(document.body.innerText),
-                        rows: document.querySelectorAll('tr').length,
-                    })""")
-                _LAST_DIAG.clear()
-                _LAST_DIAG.update(seen)
-                log(f"    week {wk_start}: picker not usable — {seen}")
-            except Exception:  # noqa: BLE001
-                log(f"    week {wk_start}: picker not found, page unreadable")
-            return False
+        box = page.locator("input").nth(idx)
+        box.click()
+        box.press("Meta+A")
+        box.type(want_value, delay=40)
+        page.keyboard.press("Escape")     # close the calendar overlay
+        try:
+            page.get_by_role("button", name="Get Report").click(timeout=5_000)
+        except Exception:   # noqa: BLE001 — it is an <input type=submit> here
+            page.locator("input[value='Get Report'], button:has-text('Get Report')"
+                         ).first.click(timeout=5_000)
+
+        # CONFIRM THE PAGE ACTUALLY CHANGED. Clicking is not loading: the
+        # earlier run reported 6/6 "opened" and returned 41 dates that were all
+        # from the ONE week the report lands on by default.
+        for _ in range(20):
+            page.wait_for_timeout(750)
+            if page.evaluate("(w) => document.body.innerText.includes(w)",
+                             want_header):
+                return True
+        log(f"    week {wk_start}: submitted but {want_header!r} never appeared")
+        return False
     except Exception as e:   # noqa: BLE001
         log(f"    week {wk_start}: {type(e).__name__}")
         return False
