@@ -40,7 +40,7 @@ fi
 OFFICE="$(printf '%s' "$KEY" | cut -d- -f1 | tr '[:upper:]' '[:lower:]')"
 
 echo ""
-echo "Setting up the Lucy Ecosystem for: $OFFICE"
+echo "Setting up Lucy ECOsystem for: $OFFICE"
 echo ""
 
 PY=""

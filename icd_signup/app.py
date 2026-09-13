@@ -39,9 +39,9 @@ from automations.shared import onboarding_ui as ui             # noqa: E402
 MAX_CHANNELS = 3      # the installer allows 4; three is plenty to type
 MAX_KNOCKS = 3
 
-st.set_page_config(page_title="Join Lucy Eco", page_icon="🛰️")
+st.set_page_config(page_title="Join Lucy ECOsystem", page_icon="🛰️")
 ui.render_header(
-    "Join Lucy Eco",
+    "Join Lucy ECOsystem",
     "Your office's numbers, in your team's Slack channel, all day long.")
 
 ui.inject_slack_token()
@@ -223,7 +223,7 @@ if submitted:
                 "**Something went wrong on our end and your sign-up was not "
                 "saved.**\n\n"
                 "Nothing you did caused this, and nothing was lost on your "
-                "computer. Please tell Megan or Eve that the Lucy Eco form is "
+                "computer. Please tell Megan or Eve that the Lucy ECOsystem form "
                 "not saving — they can add you by hand in a couple of "
                 "minutes.")
             st.stop()
@@ -281,5 +281,5 @@ if submitted:
             # what they need here is to know it landed and stop waiting for a
             # screen that is not coming.
             st.markdown(
-                "**Thanks for joining the Lucy Ecosystem.** We will process "
+                "**Thanks for joining Lucy ECOsystem.** We will process "
                 "your request and reach out soon.")

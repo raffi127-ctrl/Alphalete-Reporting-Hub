@@ -36,7 +36,7 @@ from automations.icd_alerts import dialogs as ask
 # DISPLAY NAME ONLY. BASE, CONFIG_DIR and PLIST_LABEL below stay
 # "lucy-reports": two offices already have those paths on disk, and
 # renaming them would orphan their installs (Megan 2026-09-13).
-APP_NAME = "Lucy Ecosystem"
+APP_NAME = "Lucy ECOsystem"
 _PRIVACY = ("This stays on this computer and is never sent to anyone. "
             "Only the report counts are sent.")
 HOME = Path.home()
@@ -233,7 +233,7 @@ def confirm_office(rec):
     owner = rec.get("owner") or "this office"
     try:
         answer = ask.choose(
-            "This copy of the Lucy Ecosystem is set up for:\n\n    %s\n\n"
+            "This copy of Lucy ECOsystem is set up for:\n\n    %s\n\n"
             "Is that you?" % owner,
             ["Yes, that's me", "No, that's not me"])
     except ask.Cancelled:

@@ -24,7 +24,7 @@ CADENCE_WORDS = {15: "every 15 minutes", 30: "every 30 minutes",
 def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
     """(headline, thread detail). Corrections-channel house style: one line in
     the room, the detail in the thread."""
-    head = ("*New Lucy Eco sign-up — %s* wants their office on credit-check "
+    head = ("*New Lucy ECOsystem sign-up — %s* wants their office on credit-check "
             "alerts." % rec.owner)
     sat = ("Sat %s–%s" % (rec.sat_start, rec.sat_end) if rec.saturday
            else "no Saturday")

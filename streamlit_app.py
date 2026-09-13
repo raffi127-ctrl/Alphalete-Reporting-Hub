@@ -42,12 +42,12 @@ import streamlit as st
 # link is how a sign-up already in flight gets approved, and deleting the page
 # would break that silently. So it keeps its url and loses its billing.
 TOOLS = [
-    ("icd_signup/app.py", "join-lucy-eco", "Join Lucy Eco",
+    ("icd_signup/app.py", "join-lucy-eco", "Join Lucy ECOsystem",
      ":material/rocket_launch:",
      "ICD owners — get your office's numbers posted in Slack", True),
     ("disposition_signup/app.py", "daily-dispositions", "Daily Dispositions",
      ":material/schedule:",
-     "Being replaced by Lucy Eco — reachable by link only", False),
+     "Being replaced by Lucy ECOsystem — reachable by link only", False),
 ]
 
 

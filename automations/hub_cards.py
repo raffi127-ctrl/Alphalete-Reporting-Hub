@@ -767,7 +767,7 @@ AUTOMATED_REPORTS = [
     # a library card of its own and this one reads "no run logged" forever.
     {
         "id": "icd-alerts-poster",
-        "name": "Lucy Eco Relay — ICD Offices 🛰️",
+        "name": "Lucy ECOsystem Relay — ICD Offices 🛰️",
         "category": "🏢 Other Offices",
         "creator": "Megan & Claude",
         "emoji": "🛰️",
@@ -843,8 +843,8 @@ AUTOMATED_REPORTS = [
             "does not flicker green every two minutes on an empty Sunday."
         ),
         "post_run": {
-            "message_success": "✅ Lucy Eco Relay — every enrolled office is current.",
-            "message_failed": "❌ Lucy Eco Relay failed — see the log above.",
+            "message_success": "✅ Lucy ECOsystem Relay — every enrolled office is current.",
+            "message_failed": "❌ Lucy ECOsystem Relay failed — see the log above.",
         },
     },
     # 🏢 Office Operations — New-Hire Swag Texts. Renders a custom upload →

@@ -23,7 +23,7 @@ CONFIG="$HOME/.config/lucy-reports"
 PLIST="$HOME/Library/LaunchAgents/com.alphalete.lucy-reports.plist"
 
 echo ""
-echo "This removes the Lucy Ecosystem from this computer:"
+echo "This removes Lucy ECOsystem from this computer:"
 echo ""
 [ -f "$PLIST" ]     && echo "  • the schedule that wakes it up"
 [ -d "$BASE" ]      && echo "  • the program itself       ($BASE)"
@@ -78,7 +78,7 @@ for d in "$BASE" "$CONFIG"; do
 done
 
 echo ""
-echo "The Lucy Ecosystem is off this computer."
+echo "Lucy ECOsystem is off this computer."
 echo ""
 echo "If this office is coming back, the setup link you were sent still works."
 echo ""

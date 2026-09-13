@@ -131,7 +131,10 @@ class TheNameOnScreenIsNotTheNameOnDisk(unittest.TestCase):
     SETUP = (HERE / "dist" / "setup.py").read_text()
 
     def test_the_display_name_is_the_ecosystem(self):
-        self.assertIn('APP_NAME = "Lucy Ecosystem"', self.SETUP)
+        # Megan's spelling, exactly: "Lucy ECOsystem". An office sees this on
+        # the form, on the setup page and in their terminal, and three
+        # spellings of one name reads like three different things.
+        self.assertIn('APP_NAME = "Lucy ECOsystem"', self.SETUP)
 
     def test_the_paths_are_untouched(self):
         for needle in ('BASE = HOME / ".lucy-reports"',
