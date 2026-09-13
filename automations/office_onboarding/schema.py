@@ -172,7 +172,11 @@ SHEET_TAB_TEMPLATES: "Dict[str, list]" = {
     # legacy hardcoded offices). Same physical tabs the B2B churns use.
     "churn_ni": [{"tab": "Lucy New INT Churn",  "template": _tpl("1578352442")}],
     "churn_wl": [{"tab": "Lucy Wireless Churn", "template": _tpl("0")}],
-    "abp":      [{"tab": "Lucy New INT ABP%",   "template": ""}],
+    # gid 908713317. The link was "" and the tab name here disagreed with the
+    # workbook's own ('LUCY New Internet ABP%'), so the form asked Megan to make
+    # a tab under a name the template did not contain — reconciled 2026-09-13 by
+    # renaming the template's tab to match the code and the live offices.
+    "abp":      [{"tab": "Lucy New INT ABP%",   "template": _tpl("908713317")}],
     # --- B2B (all in the Master Templates workbook) — one churn tab per product,
     # so an office only needs the tabs for the churn metrics it actually enrolls ---
     "b2b_churn_wireless": [{"tab": "Lucy Wireless Churn", "template": _tpl("0")}],

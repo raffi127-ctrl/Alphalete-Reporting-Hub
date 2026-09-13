@@ -31,7 +31,13 @@ except Exception:                        # noqa: BLE001
 
 
 def _row_values(rec: TrackerRecord) -> list:
-    channels = ", ".join(n for _, n in rec.channel_pairs() if n)
+    # The `channel` column is what a human scanning the tab reads to see where an
+    # office's boards go. An email office has no channel, so it names the inbox —
+    # otherwise the one column whose job is the destination sits empty.
+    if rec.emails_only():
+        channels = "email: " + ", ".join(a for a in rec.emails if a.strip())
+    else:
+        channels = ", ".join(n for _, n in rec.channel_pairs() if n)
     return [rec.key, json.dumps(rec.to_json()), channels or rec.channel_name,
             len(rec.trackers), rec.submitted_at, rec.submitted_by]
 

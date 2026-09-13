@@ -106,8 +106,35 @@ def style_for(ws) -> Optional[dict]:
 def open_ws(sheet_id: Optional[str] = None):
     """Open the ABP tab. `sheet_id` overrides the office's sheet (the
     combined runner passes Raf's vs Rashad's sheet explicitly). The TAB
-    title is identical across offices, so only the sheet id differs."""
-    return open_by_key(sheet_id or SHEET_ID).worksheet(TAB)
+    title is identical across offices, so only the sheet id differs.
+
+    A MISSING TAB NAMES ITSELF. The lookup is exact, so one character of drift
+    between the office's sheet and ABP_TAB raises gspread's WorksheetNotFound —
+    which prints the tab name and nothing else, leaving whoever reads the 4am
+    alert to guess whether the sheet is wrong, the config is wrong, or the sheet
+    is unreachable. The Master Metrics Templates workbook shipped this tab as
+    'LUCY New Internet ABP%' while onboarding stamped 'Lucy New INT ABP%' on
+    every new office (found + reconciled 2026-09-13), so the drift is not
+    hypothetical. Listing the tabs the sheet ACTUALLY has turns that morning
+    into a rename. [[project_office_metrics]]"""
+    ss = open_by_key(sheet_id or SHEET_ID)
+    try:
+        return ss.worksheet(TAB)
+    except Exception as e:                           # noqa: BLE001
+        if type(e).__name__ != "WorksheetNotFound":
+            raise                                    # a 429 / auth error is not this
+        try:
+            have = [w.title for w in ss.worksheets()]
+        except Exception:                            # noqa: BLE001
+            have = []
+        raise RuntimeError(
+            f"ABP tab {TAB!r} is not in this office's sheet ({ss.id}). "
+            + (f"It has: {have}. " if have else "")
+            + "Rename the tab to match, or set ABP_TAB (the office's `abp_tab` "
+              "in onboarded_offices.json) to the name it already uses. The "
+              "Master Metrics Templates workbook is the source every office's "
+              "sheet is copied from — if the template drifted, fix it there too "
+              "or every office onboarded after today inherits this.") from e
 
 
 def _norm(s: str) -> str:
