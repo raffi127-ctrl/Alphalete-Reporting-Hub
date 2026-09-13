@@ -1601,6 +1601,8 @@ def test_load_a_new_setup_hands_back_to_the_loader(page, tmp_path):
         "WE 9.13")[len("javascript:"):])
     page.locator("#ansloadgo").click()
 
+    # the panel shows ONE button now; the rest lives behind "something wrong?"
+    page.locator("#ansmoretoggle").click()
     page.locator("#ansnew").click()
     assert page.locator("#ansload").count() == 1, "the paste box is back"
     assert page.evaluate(
@@ -2229,3 +2231,61 @@ def test_the_rundown_groups_what_was_missed(page, tmp_path):
     }""")
     assert "Never filled, for everybody" in every and "Position" in every, \
         "a field missed by everyone is one line, not one per person"
+
+
+def test_the_panel_shows_one_button(page, tmp_path):
+    """Megan, 2026-09-13: "still too complex/glitchy for a 7 year old". Seven
+    controls is not something anybody uses once a week without stopping to
+    think. One button; everything else behind one link."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_NO_LINKS)
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(filler.build_js(
+        [{"name": "Rosa Capel", "find": "Capel", "pages": {}}],
+        "WE 9.13")[len("javascript:"):])
+
+    assert page.locator("#ansrun").is_visible()
+    for hidden in ("#ansnew", "#anserr", "#ansreset", "#ansfill", "#ansnext"):
+        assert not page.locator(hidden).is_visible(), f"{hidden} is out of the way"
+
+    page.locator("#ansmoretoggle").click()
+    assert page.locator("#ansnew").is_visible(), "and reachable when needed"
+    assert page.locator("#anserr").is_visible()
+
+
+def test_the_button_takes_this_weeks_setup_off_the_clipboard(page, tmp_path):
+    """Megan, 2026-09-13. The Hub puts the setup on the clipboard when it
+    builds it, so clicking the button is the whole job -- no page to find,
+    nothing to copy, nothing to paste."""
+    js = _stub_host(page, tmp_path)
+    page.evaluate("() => localStorage.clear()")
+    setup = filler.build_js(
+        [{"name": "Rosa Capel", "find": "Capel", "pages": {}}],
+        "WE 9.13")[len("javascript:"):]
+    page.evaluate("""(text) => {
+        // navigator.clipboard is a read-only accessor, so plain assignment
+        // silently does nothing
+        Object.defineProperty(navigator, 'clipboard',
+          { value: { readText: async () => text }, configurable: true });
+    }""", setup)
+
+    page.evaluate(js)
+    assert page.locator("#anspanel").count() == 1, "it ran straight off the clipboard"
+    assert page.locator("#ansload").count() == 0, "with no paste box at all"
+    assert page.evaluate(
+        "() => (localStorage.getItem('apexNewStarts.code') || '').length > 2000"), \
+        "and kept it, so the next click works with an empty clipboard"
+
+
+def test_unrelated_clipboard_text_is_ignored(page, tmp_path):
+    """It only ever touches text shaped like our own setup."""
+    js = _stub_host(page, tmp_path)
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate("""() => {
+        Object.defineProperty(navigator, 'clipboard',
+          { value: { readText: async () => 'a private note' }, configurable: true });
+    }""")
+    page.evaluate(js)
+    assert page.locator("#ansload").count() == 1, "it asks, rather than guessing"
+    assert page.locator("#anspanel").count() == 0

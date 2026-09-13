@@ -612,9 +612,41 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     for name, why in notes.items():
         _log(f"  ⚠️ {name}: {why}")
     _log("")
-    _log(f"Open this and drag the button to your bookmarks bar:")
-    _log(f"  {out}")
+    # Put the setup straight on the clipboard, so nobody has to find the page,
+    # scroll it and click Copy before they can start. The button reads it from
+    # there (Megan, 2026-09-13: "still too complex/glitchy for a 7 year old").
+    setup = filler.build_js(people, title.replace("Sales Board ", ""))
+    if _to_clipboard(setup[len("javascript:"):]):
+        _log("This week's setup is on your clipboard.")
+        _log("Open Apex, then click your Fill Apex bookmark. That is all.")
+    else:
+        _log("Open this and click 'Copy this week's setup':")
+        _log(f"  {out}")
     return 0
+
+
+def _to_clipboard(text: str) -> bool:
+    """macOS pbcopy / Windows clip, then READ IT BACK.
+
+    An exit code of 0 is not evidence the clipboard holds anything -- pbcopy
+    returns 0 inside a sandbox that has its own pasteboard. Telling somebody
+    "it is on your clipboard" when it is not is the whole failure mode this
+    is supposed to remove, so check before saying so.
+    """
+    import subprocess
+    put = ["pbcopy"] if os.name != "nt" else ["clip"]
+    get = ["pbpaste"] if os.name != "nt" else [
+        "powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"]
+    try:
+        if subprocess.run(put, input=text.encode("utf-8"),
+                          timeout=20).returncode != 0:
+            return False
+        back = subprocess.run(get, capture_output=True, timeout=20)
+        if back.returncode != 0:
+            return False
+        return back.stdout.decode("utf-8", "replace").strip() == text.strip()
+    except Exception:
+        return False
 
 
 def explore(today: dt.date) -> int:

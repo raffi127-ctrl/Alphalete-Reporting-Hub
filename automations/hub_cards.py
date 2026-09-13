@@ -6065,9 +6065,9 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: ["--preview"],
             },
             {
-                "label": "Build the button",
-                "icon": "\U0001F9F1",
-                "help": "Reads the New Starts box again and writes a fresh setup to output/. The list inside the button is a snapshot, so rebuild it whenever the board has moved.",
+                "label": "Get this week's setup",
+                "icon": "\U0001F4CB",
+                "help": "Reads the New Starts box and everyone's Blue Ink packet, then puts this week's setup on your clipboard. Then open Apex and click your Fill Apex bookmark \u2014 nothing to copy, nothing to paste.",
                 "module": "automations.apex_new_starts.run",
                 "args_fn": lambda: ["--button", "--any-day"],
             },

@@ -1387,7 +1387,7 @@ _JS = r"""
         '<input id="ansssn" type="password" style="width:100%%;padding:6px;font-size:15px">'+
         '<div style="margin-top:6px"><a href="'+blueink(p)+'" target="_blank" rel="noopener" id="ansbi" style="font-size:12px;color:#0F766E">Open their Blue Ink packet →</a>'+
         '<span style="font-size:11px;color:#888"> (I-9 → Quick View)</span></div></div>':'')+
-   (nav?'<div style="margin-bottom:8px;font-size:12px">'+
+   (nav?'<div id="ansnav" style="margin-bottom:8px;font-size:12px;display:none">'+
         '<a href="#" id="ansg1">1 Employment</a> · <a href="#" id="ansg2">2 Profile</a>'+
         ' · <a href="#" id="ansg3">3 Tax</a></div>':
         '<div id="anshnt" style="margin-bottom:8px;font-size:11px;color:#b00">Click this once on the '+
@@ -1400,10 +1400,17 @@ _JS = r"""
    '<button id="ansfill" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer">Just this page</button> '+
    '<button id="ansnext" style="background:#eee;border:0;border-radius:6px;padding:8px 12px;cursor:pointer">Saved \u2192 next</button></span>'+
    '<div id="ansout" style="margin-top:9px;font-size:12px;color:#333"></div>'+
+   /* One button, and everything else out of the way. Seven controls on a
+      panel is not something somebody uses once a week without stopping to
+      think (Megan, 2026-09-13). */
+   '<div id="ansmore" style="display:none">'+
    '<button id="ansnew" style="background:#fff;border:1px solid #0F766E;'+
    'color:#0F766E;border-radius:6px;padding:8px 12px;font-size:13px;'+
    'cursor:pointer;width:100%%;margin-top:6px">Load a different setup</button>'+
-   '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>';
+   '<div style="margin-top:8px"><a href="#" id="anserr" style="font-size:11px;color:#b00">what did Apex say?</a> · <a href="#" id="ansreset" style="font-size:11px;color:#888">start the week again</a></div>'+
+   '</div>'+
+   '<div style="margin-top:8px"><a href="#" id="ansmoretoggle" '+
+   'style="font-size:11px;color:#888">something wrong?</a></div>';
  document.body.appendChild(box);
  function refreshChrome(){
    /* The panel is built once and the app never reloads, so anything decided at
@@ -1826,6 +1833,14 @@ _JS = r"""
    if(nid){ go(nid,'employment-record'); }        /* straight to the next person */
    else alert('Next: '+D[I].name+'\n\nOpen their record and click the button again.');
  };
+ document.getElementById('ansmoretoggle').onclick=function(e){
+   e.preventDefault();
+   var m=document.getElementById('ansmore'), nv=document.getElementById('ansnav');
+   var open=(m.style.display==='none');
+   m.style.display=open?'':'none';
+   if(nv) nv.style.display=open?'':'none';
+   this.textContent=open?'hide':'something wrong?';
+ };
  document.getElementById('ansnew').onclick=function(e){
    if(e&&e.preventDefault) e.preventDefault();
    /* Hand back to the loader. This is how a fix reaches somebody now: the
@@ -1880,7 +1895,7 @@ def _guard(out: str) -> str:
 
 
 _STUB = r"""
-(function(){
+(async function(){
  /* The LOADER. This is the thing that gets bookmarked, and it is the only
     part that must never change: everything real lives under CODEKEY in this
     browser and arrives by paste. A saved bookmarklet freezes whatever was
@@ -1911,12 +1926,12 @@ _STUB = r"""
      var t=(document.getElementById('ansblob').value||'').trim();
      if(t.indexOf('javascript:')===0) t=t.slice(11);
      var say=document.getElementById('ansloadmsg');
-     if(t.length<2000){
-       say.textContent='That is not the setup. On the Fill Apex page click '+
-         'Copy this week\u0027s setup, then paste here.'; return; }
+     if(!looksLikeSetup(t)){
+       say.textContent='That is not the setup. Build it on the Hub, then '+
+         'click this button again.'; return; }
      try{ localStorage.setItem(CODEKEY,t); }
      catch(e){ say.textContent='This browser would not store it: '+e.message; return; }
-     b.remove(); run();
+     b.remove(); exec(t);
    };
    document.getElementById('ansblob').focus();
  }
@@ -1925,16 +1940,40 @@ _STUB = r"""
    try{ localStorage.removeItem(CODEKEY); }catch(e){}
    panel('Paste the new setup here.');
  };
- function run(){
-   var c=null; try{ c=localStorage.getItem(CODEKEY); }catch(e){}
-   if(!c){ panel('On the <b>Fill Apex</b> page click <b>Copy this week\u0027s '+
-     'setup</b>, then paste it here. Only needed when the week changes.'); return; }
+ function exec(c){
    /* Apex serves no Content-Security-Policy, so this is allowed to run. */
-   try{ (new Function(c))(); }
-   catch(e){ panel('The saved setup would not run ('+e.message+'). '+
-     'Paste a fresh one.'); }
+   try{ (new Function(c))(); return true; }
+   catch(e){ panel('That setup would not run ('+e.message+').'); return false; }
  }
- run();
+ function looksLikeSetup(t){
+   return t.length>2000&&t.indexOf('apexNewStarts')>=0&&t.indexOf('function')>=0;
+ }
+ async function fromClipboard(){
+   /* The Hub puts this week's setup on the clipboard when it builds it, so
+      clicking the button is the whole job -- no page to find, nothing to
+      copy, nothing to paste (Megan, 2026-09-13). Only text shaped like our
+      own setup is ever touched; anything else is ignored and the saved one
+      runs instead. */
+   try{
+     if(!navigator.clipboard||!navigator.clipboard.readText) return null;
+     var t=(await navigator.clipboard.readText()||'').trim();
+     if(t.indexOf('javascript:')===0) t=t.slice(11);
+     if(looksLikeSetup(t)) return t;
+   }catch(e){}
+   return null;
+ }
+ async function run(){
+   var fresh=await fromClipboard();
+   if(fresh){
+     try{ localStorage.setItem(CODEKEY,fresh); }catch(e){}
+     exec(fresh); return;
+   }
+   var c=null; try{ c=localStorage.getItem(CODEKEY); }catch(e){}
+   if(c){ exec(c); return; }
+   panel('Build it on the Hub \u2014 it lands on your clipboard and this '+
+     'button picks it up. Or paste it here.');
+ }
+ await run();
 })()
 """
 
@@ -1987,130 +2026,92 @@ def rows_for(values: Dict[str, str]) -> Dict[str, Dict[str, str]]:
 PAGE = """<!doctype html><meta charset="utf-8">
 <title>Fill Apex — {week}</title>
 <style>
- body{{font:16px/1.55 -apple-system,Helvetica,sans-serif;max-width:720px;
-      margin:40px auto;padding:0 20px;color:#111}}
- h1{{font-size:26px;margin:0 0 4px}} .sub{{color:#666;margin-bottom:26px}}
+ body{{font:17px/1.6 -apple-system,Helvetica,sans-serif;max-width:640px;
+      margin:60px auto;padding:0 20px;color:#111}}
+ h1{{font-size:28px;margin:0 0 6px}} .sub{{color:#666;margin-bottom:30px}}
  .btn{{display:inline-block;background:#0F766E;color:#fff;text-decoration:none;
-      padding:14px 26px;border-radius:10px;font-weight:700;font-size:18px}}
+      padding:14px 28px;border-radius:10px;font-weight:700;font-size:18px}}
  .drag{{background:#f4f7f7;border:2px dashed #0F766E;border-radius:12px;
-       padding:22px;text-align:center;margin:22px 0}}
- ol{{padding-left:22px}} li{{margin:10px 0}}
- .note{{background:#fffbe6;border-left:4px solid #e0b500;padding:12px 16px;
-       margin:22px 0;font-size:15px}}
+       padding:24px;text-align:center;margin:24px 0}}
+ .ok{{background:#effaf7;border-left:4px solid #0F766E;padding:14px 18px;
+     margin:24px 0}}
+ ol{{padding-left:22px}} li{{margin:12px 0}}
  table{{border-collapse:collapse;width:100%;font-size:14px;margin-top:10px}}
  td,th{{border-bottom:1px solid #eee;padding:6px 8px;text-align:left}}
- .warn{{color:#b00}}
+ .warn{{color:#b00}} .quiet{{color:#888;font-size:14px}}
 </style>
 <h1>Fill Apex — {week}</h1>
-<div class="sub">{n} new start{s} ready · button built <b>{build}</b></div>
+<div class="sub">{n} new start{s} · read off the board {build}</div>
 
-<div class="note">
-  <b>Left this tab open?</b> Reload it (⌘R) first — a tab from earlier still
-  holds the older setup. The panel in Apex prints the same <b>built</b> stamp
-  at the bottom; if it doesn't say <b>{build}</b>, click <b>load a new
-  setup</b> there and paste this page's setup in. The bookmark itself stays
-  put.
+<div class="ok">
+  <b>This week is already on your clipboard.</b> Open Apex and click your
+  <b>Fill Apex</b> bookmark. That is the whole job — there is nothing to copy
+  and nothing to paste.
 </div>
 
 <div class="drag">
-  <div style="margin-bottom:12px;font-size:15px">Save this <b>once, ever</b> —
-  drag it to your bookmarks bar. It holds no report and no people, so it never
-  needs replacing again:</div>
+  <div style="margin-bottom:14px;font-size:16px">Haven't saved the button on
+  this computer yet? Drag it to your bookmarks bar. Once, ever:</div>
   <a class="btn" href="{js}" id="thebtn">Fill Apex</a>
   <div style="margin-top:16px;font-size:14px;color:#555">
     No bookmarks bar? <button id="copybtn" style="font:inherit;padding:6px 12px;
     border:1px solid #0F766E;background:#fff;color:#0F766E;border-radius:6px;
     cursor:pointer">Copy the button</button>
     <span id="copied" style="color:#0F766E;display:none">copied ✓</span>
-  </div>
-  <div style="margin-top:20px;padding-top:16px;border-top:1px solid #dde">
-    <div style="font-size:15px;margin-bottom:10px"><b>Every week</b> (and any
-    time this page shows a newer <b>built</b> stamp), load it in:</div>
-    <button id="databtn" style="font:inherit;padding:10px 20px;border:0;
-    background:#0F766E;color:#fff;border-radius:8px;cursor:pointer;
-    font-weight:700">Copy this week's setup</button>
-    <span id="datacopied" style="color:#0F766E;display:none"> copied ✓ — now
-    click Fill Apex on any Apex page and paste it in</span>
-    <textarea id="thedata" style="position:absolute;left:-9999px"
-    readonly>{data}</textarea>
+    then <b>Bookmarks → Open Bookmarks Manager → ⋮ → Add new bookmark</b>,
+    and paste into the URL box.
   </div>
 </div>
-
-<div class="note" id="manual">
-  <b>If you can't drag it:</b> click <b>Copy the button</b> above, then
-  <b>Bookmarks → Open Bookmarks Manager</b> → the <b>⋮</b> at the top right →
-  <b>Add new bookmark</b>. Name it <b>Fill Apex</b> and paste into the URL box.
-  It then lives in your Bookmarks menu — no bar needed.
-</div>
-
-<script>
-document.getElementById('databtn').onclick = function(){{
-  var t = document.getElementById('thedata');
-  var done = function(){{
-    var c = document.getElementById('datacopied');
-    c.style.display = 'inline'; setTimeout(function(){{c.style.display='none';}}, 6000);
-  }};
-  if (navigator.clipboard) {{ navigator.clipboard.writeText(t.value).then(done, back); }}
-  else back();
-  function back(){{ t.style.position='static'; t.style.left='0'; t.select();
-    try {{ document.execCommand('copy'); done(); }} catch(e) {{}} }}
-}};
-document.getElementById('copybtn').onclick = function(){{
-  var url = document.getElementById('thebtn').getAttribute('href');
-  var done = function(){{
-    var c = document.getElementById('copied');
-    c.style.display = 'inline'; setTimeout(function(){{c.style.display='none';}}, 2500);
-  }};
-  if (navigator.clipboard) {{ navigator.clipboard.writeText(url).then(done, fallback); }}
-  else fallback();
-  function fallback(){{
-    var t = document.createElement('textarea');
-    t.value = url; document.body.appendChild(t); t.select();
-    try {{ document.execCommand('copy'); done(); }} catch(e) {{ alert('Select and copy this:\\n\\n' + url); }}
-    t.remove();
-  }}
-}};
-</script>
 
 <ol>
-  <li><b>Once, ever:</b> save the green button above (drag it, or use
-      <b>Copy the button</b>). It is a loader — it carries no report logic and
-      no people — so it is never the thing that goes stale.</li>
-  <li><b>Each week, and after any fix:</b> click <b>Copy this week's
-      setup</b>, then click <b>Fill Apex</b> on any Apex page and paste it into
-      the box that appears. Already loaded an older one? The panel has
-      <b>load a new setup</b> at the bottom.</li>
   <li>Log into Apex yourself, with the code it texts you.</li>
-  <li>Open <b>Roster → Employees</b> and click the <b>Pending</b> tab. Everyone
-      below is already there — their account exists, their profile is empty.</li>
-  <li>Click <b>Edit</b> on the person the panel names.</li>
-  <li>Click <b>Fill Apex</b>. It fills whatever belongs to the tab you're on,
-      then you click <b>Save</b> in Apex.</li>
-  <li>Do the same on their other tabs — <b>Employment Record</b>,
-      <b>User Profile &amp; Account</b>, <b>Tax &amp; Bank Information</b>.
-      The tax tab is where it asks you for their Social.</li>
-  <li>Press <b>Saved → next</b> in the panel to move to the next person.</li>
+  <li>Open <b>Roster → Employees</b> and click the <b>Pending</b> tab.</li>
+  <li>Click <b>Fill Apex</b>. Fill in the Socials it asks for, then
+      <b>Start the run</b>.</li>
 </ol>
 
-<div class="note">
-  <b>Nobody is being created.</b> These people are already in Apex on the
-  Pending tab, so their name, user name and email are left exactly as they are.
-  This only fills in what's blank.
-</div>
+<p class="quiet">Clipboard empty? Click <b>Get this week's setup</b> on the Hub
+card again, or use the button below.
+<button id="databtn" style="font:inherit;padding:6px 12px;border:1px solid #0F766E;
+background:#fff;color:#0F766E;border-radius:6px;cursor:pointer">Copy this week's
+setup</button>
+<span id="datacopied" style="color:#0F766E;display:none"> copied ✓</span>
+<textarea id="thedata" style="position:absolute;left:-9999px"
+readonly>{data}</textarea></p>
 
-<div class="note">
-  <b>The Social is never in this page.</b> You type it into the panel on Apex's
-  tax screen and it goes straight into Apex's own boxes, in your browser. It is
-  not stored here, in the report, or anywhere else.
-</div>
+<script>
+function copier(btn, get, flag) {{
+  document.getElementById(btn).onclick = function(){{
+    var text = get();
+    var done = function(){{
+      var c = document.getElementById(flag);
+      c.style.display = 'inline'; setTimeout(function(){{c.style.display='none';}}, 4000);
+    }};
+    if (navigator.clipboard) {{ navigator.clipboard.writeText(text).then(done, back); }}
+    else back();
+    function back(){{
+      var t = document.createElement('textarea');
+      t.value = text; document.body.appendChild(t); t.select();
+      try {{ document.execCommand('copy'); done(); }} catch(e) {{}}
+      t.remove();
+    }}
+  }};
+}}
+copier('copybtn', function(){{ return document.getElementById('thebtn').getAttribute('href'); }}, 'copied');
+copier('databtn', function(){{ return document.getElementById('thedata').value; }}, 'datacopied');
+</script>
 
-<h3>Who's in this batch</h3>
-<table><tr><th>#</th><th>Name</th><th>Hire date</th><th>Needs a hand</th></tr>
+<h2 style="font-size:19px;margin-top:38px">Who's in this batch</h2>
+<table>
+<tr><th>#</th><th>Name</th><th>Hire date</th><th>Needs a hand</th></tr>
 {rows}
 </table>
-<p class="sub" style="margin-top:24px">Generated {stamp}. If the board changes,
-re-run the report and open this page again — the button carries the data, so an
-old bookmark holds old data. Re-drag it after a new run.</p>
+
+<p class="quiet">The people and their answers come from the <b>New Starts/Raf</b>
+box on <b>{week}</b> and their signed Blue Ink packets. Nobody is created in
+Apex — they are already on the Pending tab, so their name, user name and email
+are left exactly as they are. Socials are never stored anywhere: they live in
+the tab you type them into, for that run only.</p>
 """
 
 
