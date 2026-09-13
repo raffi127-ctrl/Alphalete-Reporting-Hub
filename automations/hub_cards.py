@@ -6034,16 +6034,11 @@ AUTOMATED_REPORTS = [
         # off the roster. Office Operations is the profile for exactly this — an
         # office workflow anyone on staff can pick up (Megan 2026-09-03).
         "assignees": ["Office Operations"],
-        # STILL BEING BUILT (Megan 2026-09-03). self_scheduled keeps it out of the
-        # due-today tallies but NOT out of "Needs attention" — that list only
-        # skips a report on _paused_reason — so its Thu/Fri weekday entry made it
-        # read "no run logged" every Thursday afternoon for a report that is (a)
-        # unfinished and (b) hand-driven by design: nothing is late when a person
-        # decides when it runs. LIFT THIS LINE when the Apex typing is done.
-        "paused": ("Still being built (2026-09-03) — not finished, and hand-run "
-                   "by design: Apex has no API, so a person has to be signed in "
-                   "and at the keyboard. It is never 'late'. Buttons still work; "
-                   "remove the pause when the Apex fill is done."),
+        # The pause came off 2026-09-13: the Apex typing is done and all 19
+        # of WE 9.13 went through it. self_scheduled still keeps it out of the
+        # due-today tallies -- nothing is late when a person decides when it
+        # runs -- but it no longer wears a PAUSED badge for a report that
+        # works.
         # Push-a-button by design: Apex has no API and no session this repo can
         # hold, so a person has to be signed in and at the keyboard. Not on any
         # schedule, and self_scheduled keeps it out of the due-today tallies.
@@ -6060,12 +6055,8 @@ AUTOMATED_REPORTS = [
             # not a run.
             "estimated_minutes": 1,
         },
-        "checklist": [
-            {"text": "Sign into Apex in this machine's normal Chrome "
-                     "(tick remember-this-device on the 2FA prompt)"},
-            {"text": "Press Get this week's setup and wait for the green tick "
-                      "(about a minute)"},
-        ],
+        # No checklist. Two ticks in front of a two-click job is a third
+        # thing to read (Megan, 2026-09-13).
         "post_run": {
             # Written for a Preview button that no longer exists -- it told
             # people to look at a list that was never on the page
