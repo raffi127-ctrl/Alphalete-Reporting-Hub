@@ -1215,6 +1215,18 @@ _KNOWN_TENURES = {"1st wk", "2nd wk", "3rd wk", "4th wk", "5th wk+", "rt",
 _FIRST_WEEK = {"1st wk", "wk 1"}
 
 
+_TENURE_WORDING = {
+    "veteran": "5th wk+", "wk 1": "1st Wk", "wk 2": "2nd Wk",
+    "wk 3": "3rd Wk", "wk 4": "4th Wk",
+}
+
+
+def _board_tenure(label) -> str:
+    """Raf's spelling for a tenure, whatever spelling arrives."""
+    v = str(label or "").strip()
+    return _TENURE_WORDING.get(v.lower(), v)
+
+
 def is_road_trip(label) -> bool:
     """RT — a road trip. Raf: "we don't count road trip sales." Their units
     are real and they are paid, but they do not belong to this office's
@@ -1710,11 +1722,18 @@ def _hover_table(grid: list, splits: dict, day_labels: list,
     body = []
     for row in grid:
         is_total = str(row.get("Rep", "")).strip() == TOTALS_LABEL
+        # The tenure tint goes on each CELL, not on the <tr>. On the row it
+        # painted straight through a blank day, so an unreported Sunday looked
+        # like a reported one for anyone with a tenure colour (Megan
+        # 2026-09-13).
         tint = "" if is_total else tenure_style(row.get("Tenure"))
-        tr = [f"<tr style='{tint}'>"]
+        tr = ["<tr>"]
         for col, val in row.items():
             css = ("padding:5px 10px;text-align:center;"
                    "border-top:1px solid rgba(128,128,128,.18);")
+            blank_day = col in day_labels and str(val).strip() == ""
+            if tint and not blank_day:
+                css += tint
             if is_total:
                 css += _TOTAL_TINT + ";font-weight:600;"
             elif col == total_col:
@@ -1971,8 +1990,12 @@ def relay_board(icd: str, office_key: str) -> None:
         row = {"Rep": shown.title()}
         # Tenure is COMPUTED from the start date (roster.tenure_label), never
         # typed — so it is right without anybody bumping it every Monday.
-        row["Tenure"] = (sheet_tenure.get(low)
-                         or (rep.tenure_label(week_ending) if rep else ""))
+        # Spelled the way the board spells it: roster.tenure_label says
+        # "Veteran" and "Wk 3", Raf's board says "5th wk+" and "3rd Wk". One
+        # wording, or the colour key stops matching the column.
+        row["Tenure"] = _board_tenure(
+            sheet_tenure.get(low)
+            or (rep.tenure_label(week_ending) if rep else ""))
         if expand:
             row["Team"] = (rep.team if rep else "") or BLANK_OPTION
             row["Leadership"] = (rep.level if rep else "") or BLANK_OPTION

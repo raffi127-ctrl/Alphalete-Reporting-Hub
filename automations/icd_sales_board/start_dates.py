@@ -45,10 +45,19 @@ def _header(day: dt.date) -> str:
     return f"{day.strftime('%b')} {day.day}, {day.year}"
 
 
+def _week_start(d: dt.date) -> dt.date:
+    """The SATURDAY that opens d's retention week.
+
+    AppStream's retention report runs Saturday -> Friday, not Monday -> Sunday
+    (screenshot 2026-09-13: Week 09-12-2026 renders Sep 12 Saturday … Sep 18
+    Friday). Feeding it a Monday is part of why the first runs opened nothing.
+    Python's weekday() is Mon=0 … Sat=5."""
+    return d - dt.timedelta(days=(d.weekday() - 5) % 7)
+
+
 def _weeks_between(start: dt.date, end: dt.date) -> list:
-    """The Monday of every week the range touches."""
-    first = start - dt.timedelta(days=start.weekday())
-    out, cur = [], first
+    """The opening SATURDAY of every retention week the range touches."""
+    out, cur = [], _week_start(start)
     while cur <= end:
         out.append(cur)
         cur += dt.timedelta(days=7)
@@ -58,7 +67,7 @@ def _weeks_between(start: dt.date, end: dt.date) -> list:
 _LAST_DIAG: dict = {}
 
 
-def _show_week(page, monday: dt.date, log=print) -> bool:
+def _show_week(page, wk_start: dt.date, log=print) -> bool:
     """Put the retention report on `monday`'s week and submit.
 
     The Week box and its button are found by what they LOOK like rather than
@@ -67,13 +76,11 @@ def _show_week(page, monday: dt.date, log=print) -> bool:
     control, so a shape match survives a rename where a hardcoded id does not.
     Returns False rather than raising — a week that will not open is a week to
     skip, not a failed harvest."""
-    from automations.applicant_tracker.applicantstream import PAGES
-
-    try:
-        page.goto(page.url.split("&p=")[0] + f"&p={PAGES['retention_details']}",
-                  wait_until="domcontentloaded", timeout=60_000)
-    except Exception:   # noqa: BLE001 — fall through to the form below
-        pass
+    # The caller re-opens the report through the DRIVER. Building the url by
+    # hand here was the first fault: the real one is
+    # index.cfm?p=701&rqst=…&newOfficeId=… — a "?p=", not an "&p=" — so
+    # splitting on "&p=" returned the whole url and appended a SECOND p
+    # parameter, landing somewhere with no date box at all.
     try:
         ok = page.evaluate(
             r"""(want) => {
@@ -89,7 +96,7 @@ def _show_week(page, monday: dt.date, log=print) -> bool:
                 if (!btn) return false;
                 btn.click();
                 return true;
-            }""", monday.strftime("%m-%d-%Y"))
+            }""", wk_start.strftime("%m-%d-%Y"))
         if not ok:
             # SAY WHAT WAS ON THE PAGE. Two runs returned "0 found, exit 0"
             # and there was no way to tell a missing week picker from an empty
@@ -108,14 +115,14 @@ def _show_week(page, monday: dt.date, log=print) -> bool:
                     })""")
                 _LAST_DIAG.clear()
                 _LAST_DIAG.update(seen)
-                log(f"    week {monday}: picker not usable — {seen}")
+                log(f"    week {wk_start}: picker not usable — {seen}")
             except Exception:  # noqa: BLE001
-                log(f"    week {monday}: picker not found, page unreadable")
+                log(f"    week {wk_start}: picker not found, page unreadable")
             return False
         page.wait_for_timeout(2500)
         return True
     except Exception as e:   # noqa: BLE001
-        log(f"    week {monday}: {type(e).__name__}")
+        log(f"    week {wk_start}: {type(e).__name__}")
         return False
 
 
@@ -137,13 +144,14 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
         # exit 0. Set the week, submit, then read its days.
         weeks = _weeks_between(start, end)
         opened = 0
-        for monday in weeks:
-            if not _show_week(app.page, monday, log=log):
-                log(f"  {owner}: could not open week of {monday} — skipped")
+        for wk_start in weeks:
+            app.open_retention_details()
+            if not _show_week(app.page, wk_start, log=log):
+                log(f"  {owner}: could not open week of {wk_start} — skipped")
                 continue
             opened += 1
             for i in range(7):
-                day = monday + dt.timedelta(days=i)
+                day = wk_start + dt.timedelta(days=i)
                 if day < start or day > end:
                     continue
                 try:
@@ -161,7 +169,8 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
                             found[key] = (name, day)
                     # scrape_at navigates AWAY from the report, so the week has
                     # to be re-shown before the next day is looked up.
-                    _show_week(app.page, monday, log=log)
+                    app.open_retention_details()
+                    _show_week(app.page, wk_start, log=log)
                 except Exception as e:   # noqa: BLE001 — one day is not the run
                     log(f"  {owner} {day}: skipped ({type(e).__name__})")
     # The diagnosis rides the SUMMARY line, because the queue's status view
