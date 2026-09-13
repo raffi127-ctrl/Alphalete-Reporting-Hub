@@ -45,272 +45,82 @@ def _header(day: dt.date) -> str:
     return f"{day.strftime('%b')} {day.day}, {day.year}"
 
 
-def page_week(page) -> "dt.date | None":
-    """The week the retention report is ALREADY showing, read off the box.
+def _sundays(start: dt.date, end: dt.date) -> list:
+    """Every week-opening SUNDAY the range touches.
 
-    Every failure so far came from guessing this. A Monday anchor was wrong;
-    a Saturday anchor was wrong too — the page's own default came back
-    09-06-2026, a Sunday. So the anchor is not assumed any more, it is read,
-    and the weeks are stepped back from it. That also makes this correct for
-    any office whose report is set up differently."""
-    try:
-        v = page.evaluate(
-            """() => {
-                const b = [...document.querySelectorAll('input')]
-                            .find(x => x.name === 'weekStart');
-                return b ? (b.value || '').trim() : '';
-            }""")
-        return dt.datetime.strptime(v, "%m-%d-%Y").date() if v else None
-    except Exception:   # noqa: BLE001 — caller falls back
-        return None
+    Proven against the live report, not assumed: post any date and the server
+    snaps it back to the Sunday on or before it, then renders Sunday through
+    Saturday. Asking for 09-05, a Saturday, returns the week of 08-30. That
+    one rule is behind every run that landed a week early."""
+    first = start - dt.timedelta(days=(start.weekday() + 1) % 7)
+    out, cur = [], first
+    while cur <= end:
+        out.append(cur)
+        cur += dt.timedelta(days=7)
+    return out
 
 
-def _weeks_back_from(anchor: dt.date, start: dt.date, end: dt.date) -> list:
-    """Every week opening from `anchor` back far enough to cover `start`.
-
-    Anchor comes from the page, so the weekday is whatever AppStream uses."""
-    out, cur = [], anchor
-    while cur + dt.timedelta(days=6) >= start:
-        if cur <= end:
-            out.append(cur)
-        cur -= dt.timedelta(days=7)
-        if len(out) > 60:           # a guard, not a limit anyone should hit
-            break
-    return sorted(out)
-
-
-_LAST_DIAG: dict = {}
+def _form_base(page) -> dict:
+    """The retention form's own fields, so a week can be asked for directly."""
+    return page.evaluate(
+        """() => {
+            const f = document.forms['frmRR'];
+            if (!f) return null;
+            const o = {};
+            [...f.querySelectorAll('input,select')].forEach(e => {
+                if (e.name) o[e.name] = e.value || '';
+            });
+            return o;
+        }""")
 
 
-def _capture(page) -> None:
-    """Record where a failed week attempt actually landed.
+def _week_links(page, base: dict, sunday: dt.date) -> dict:
+    """{iso date: detail href} for the BOB row of one week.
 
-    Every failure so far has been a wrong guess about what the page did, and
-    the exception path used to skip this entirely — a navigation destroys the
-    polling context, so the run ended with nothing to show for it.
-    """
-    if "landed" in _LAST_DIAG:
-        return
-    try:
-        _LAST_DIAG["landed"] = page.evaluate(
-            r"""() => {
-                const box = [...document.querySelectorAll('input')]
-                              .find(x => x.name === 'weekStart');
-                return {
-                    url: location.href.slice(-90),
-                    box: box ? box.value : '(gone)',
-                    head: (document.body.innerText || '')
-                            .replace(/\s+/g, ' ').trim().slice(0, 220),
-                };
-            }""")
-    except Exception:   # noqa: BLE001 — diagnostics never break a run
-        _LAST_DIAG["landed"] = "unreadable"
-
-
-def _show_week(page, wk_start: dt.date, log=print) -> bool:
-    """Put the retention report on `monday`'s week and submit.
-
-    The Week box and its button are found by what they LOOK like rather than
-    by id: an input holding a MM-DD-YYYY date, and the control whose text is
-    "Get Report". AppStream's ids are generated and this page is not one we
-    control, so a shape match survives a rename where a hardcoded id does not.
-    Returns False rather than raising — a week that will not open is a week to
-    skip, not a failed harvest."""
-    # The caller re-opens the report through the DRIVER. Building the url by
-    # hand here was the first fault: the real one is
-    # index.cfm?p=701&rqst=…&newOfficeId=… — a "?p=", not an "&p=" — so
-    # splitting on "&p=" returned the whole url and appended a SECOND p
-    # parameter, landing somewhere with no date box at all.
-    want_value = wk_start.strftime("%m-%d-%Y")
-    want_header = _header(wk_start)
-    try:
-        # WHAT IS THIS BOX CALLED? Driving the form — setting .value, and then
-        # really typing into it and clicking Get Report — left the page on the
-        # week it loads with, both times. This is a ColdFusion page, and those
-        # generally accept their own form fields as URL parameters, so the
-        # field NAME is worth more than another synthetic click.
-        found = page.evaluate(
-            r"""() => {
-                const ins = [...document.querySelectorAll('input')];
-                const i = ins.findIndex(
-                    x => /^\d{2}-\d{2}-\d{4}$/.test((x.value||'').trim()));
-                if (i < 0) return null;
-                const box = ins[i];
-                const form = box.form;
-                const submit = [...document.querySelectorAll('input,button')]
-                    .find(b => /get\s*report/i.test(b.value || b.innerText || ''));
-                return {
-                    idx: i,
-                    name: box.name || '', id: box.id || '',
-                    readOnly: !!box.readOnly,
-                    action: form ? (form.getAttribute('action') || '') : null,
-                    method: form ? (form.method || '') : null,
-                    submitName: submit ? (submit.name || '') : '',
-                    submitValue: submit ? (submit.value || '') : '',
-                };
-            }""")
-        if not found:
-            log(f"    week {wk_start}: no date box on the page")
-            return False
-        if not _LAST_DIAG:
-            _LAST_DIAG.update(found)   # rides the summary line; see harvest()
-        if "fields" not in _LAST_DIAG:
-            # EVERY field, once. The POST lands a week EARLIER than asked for,
-            # so weekStart is plainly not the only thing steering it, and one
-            # more hypothesis per run is not a way to find the other one.
-            try:
-                _LAST_DIAG["fields"] = page.evaluate(
-                    r"""() => {
-                        const box = [...document.querySelectorAll('input')]
-                                      .find(x => x.name === 'weekStart');
-                        const f = box && box.form;
-                        if (!f) return '(no form)';
-                        return [...f.querySelectorAll('input,select')]
-                            .map(e => `${e.name || e.id || e.type}=${
-                                 (e.value || '').slice(0, 12)}`)
-                            .join(' ');
-                    }""")[:300]
-            except Exception:   # noqa: BLE001
-                _LAST_DIAG["fields"] = "unreadable"
-        log(f"    week {wk_start}: box={found}")
-
-        # DRIVE THE CALENDAR, because that is the only mechanism the page
-        # has. The week cannot be posted (weekStart and startDate2 both go up
-        # and the server still renders its own week), it cannot be passed in
-        # the URL, and the nav dump found no prev/next control anywhere on the
-        # report. What is left is the popup in the screenshot — the same thing
-        # a person clicks.
-        box = page.locator("input[name='weekStart']").first
-        box.click()
-        page.wait_for_timeout(600)
-
-        # Most ColdFusion pages of this vintage use the jQuery UI datepicker.
-        # If this one does not, record what DID open so the next run knows.
-        if "picker" not in _LAST_DIAG:
-            try:
-                _LAST_DIAG["picker"] = page.evaluate(
-                    r"""() => [...document.querySelectorAll('div,table')]
-                            .filter(e => e.offsetParent &&
-                                    /picker|calendar|cal_/i.test(
-                                        e.className + ' ' + e.id))
-                            .map(e => `${e.tagName}.${e.className}#${e.id}`)
-                            .slice(0, 6).join(' ;; ') || '(no popup)'""")[:220]
-            except Exception:   # noqa: BLE001
-                _LAST_DIAG["picker"] = "unreadable"
-
-        # Walk the picker back to the target month, then click the day.
-        want_title = wk_start.strftime("%B %Y")
-        for _ in range(24):
-            title = page.evaluate(
-                """() => {
-                    const t = document.querySelector('.ui-datepicker-title');
-                    return t ? t.innerText.replace(/\\s+/g,' ').trim() : '';
-                }""")
-            if not title:
-                break
-            if title.lower() == want_title.lower():
-                page.evaluate(
-                    """(d) => {
-                        const a = [...document.querySelectorAll(
-                            '.ui-datepicker-calendar a')]
-                            .find(x => x.innerText.trim() === String(d));
-                        if (a) a.click();
-                    }""", wk_start.day)
-                page.wait_for_timeout(1200)
-                break
-            prev = page.locator(".ui-datepicker-prev").first
-            if not prev.count():
-                break
-            prev.click()
-            page.wait_for_timeout(250)
-
-        # THEN ASK FOR THE REPORT. The picker only fills the field — replacing
-        # the POST block with the calendar took the submit out with it, so the
-        # last run set the week and never requested it.
-        #
-        # A real click this time, not a synthetic submit: the value arrived
-        # through the picker the way the page expects, so its own handler has
-        # nothing to undo. The action is still pinned first, because the form
-        # posts to a bare index.cfm and lands on the home page otherwise.
-        page.evaluate(
-            """() => {
-                const b = [...document.querySelectorAll('input')]
-                            .find(x => x.name === 'weekStart');
-                if (b && b.form) b.form.action = location.href;
-            }""")
-        # TRACE THE WHOLE SEQUENCE IN ONE RUN. One hypothesis per run has cost
-        # far too many of these: record what the box holds after the pick, then
-        # what the URL and the box hold after the submit. Those three facts
-        # separate "the pick did not take" from "the pick took and the submit
-        # threw it away" without another round trip.
-        picked = page.evaluate(
-            """() => {
-                const b = [...document.querySelectorAll('input')]
-                            .find(x => x.name === 'weekStart');
-                return b ? b.value : '(gone)';
-            }""")
-        try:
-            page.locator("input[value='Get Report'], button:has-text('Get Report')"
-                         ).first.click(timeout=8_000)
-            clicked = "yes"
-        except Exception as ce:   # noqa: BLE001 — verification below is the judge
-            clicked = type(ce).__name__
-        page.wait_for_timeout(2500)
-        if "trace" not in _LAST_DIAG:
-            try:
-                after = page.evaluate(
-                    """() => {
-                        const b = [...document.querySelectorAll('input')]
-                                    .find(x => x.name === 'weekStart');
-                        return (b ? b.value : '(gone)') + ' @ ' +
-                               location.href.slice(-46);
-                    }""")
-            except Exception:   # noqa: BLE001
-                after = "unreadable"
-            _LAST_DIAG["trace"] = (f"want={want_value} picked={picked} "
-                                   f"click={clicked} after={after}")
-
-        # CONFIRM THE PAGE ACTUALLY CHANGED — and confirm it against the BOX,
-        # not against a header string I formatted myself. The box is what the
-        # server echoes back, so it says what the server actually honoured;
-        # a header guess can only ever tell me my guess was wrong.
-        for _ in range(20):
-            page.wait_for_timeout(750)
-            try:
-                if page_week(page) == wk_start:
-                    # The box is the server's own answer, so this is the test.
-                    # The header string is NOT a test — it is my formatting
-                    # guess, and requiring it was rejecting weeks that had in
-                    # fact opened. Record the real headers instead: the same
-                    # guess is what detail_href matches day columns on, so it
-                    # is also why every opened week yielded nothing.
-                    if "headers" not in _LAST_DIAG:
-                        try:
-                            _LAST_DIAG["headers"] = page.evaluate(
-                                r"""() => [...document.querySelectorAll('table tr')]
-                                        .map(r => r.innerText.replace(/\s+/g,' ').trim())
-                                        .filter(t => /\d{4}|Mon|Sat|Sun/.test(t))[0]
-                                        || '(no dated row)'""")[:200]
-                        except Exception:   # noqa: BLE001
-                            _LAST_DIAG["headers"] = "unreadable"
-                    return True
-            except Exception:   # noqa: BLE001 — navigation destroyed the context
-                continue
-
-        _capture(page)
-        log(f"    week {wk_start}: submitted but {want_header!r} never appeared")
-        return False
-    except Exception as e:   # noqa: BLE001
-        _LAST_DIAG.setdefault("raised", type(e).__name__)
-        _capture(page)
-        log(f"    week {wk_start}: {type(e).__name__}")
-        return False
+    Asks the server for the week and reads its answer, rather than driving the
+    page to it. Everything else was tried and ruled out: the week box is
+    readonly and wired to a jQuery UI calendar, the report carries no
+    prev/next control, and the week cannot be passed in the URL. The form
+    answers plainly, so this asks it."""
+    payload = dict(base)
+    payload["weekStart"] = sunday.strftime("%m-%d-%Y")
+    payload["startDate2"] = sunday.strftime("%m/%d/%Y")
+    days = [sunday + dt.timedelta(days=i) for i in range(7)]
+    return page.evaluate(
+        r"""async ([payload, labels, rowLabel]) => {
+            const body = new URLSearchParams(payload).toString();
+            const r = await fetch('index.cfm', {
+                method: 'POST', body, credentials: 'include',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            });
+            const doc = new DOMParser()
+                .parseFromString(await r.text(), 'text/html');
+            const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const trs = [...doc.querySelectorAll('tr')];
+            const row = trs.find(tr => {
+                const c = tr.querySelector('td,th');
+                return c && norm(c.innerText).startsWith(norm(rowLabel));
+            });
+            if (!row) return {};
+            const out = {};
+            for (const [iso, label] of labels) {
+                const cells = trs.map(tr => [...tr.children]).find(
+                    cs => cs.some(c => norm(c.innerText).includes(norm(label))));
+                if (!cells) continue;
+                const col = cells.findIndex(
+                    c => norm(c.innerText).includes(norm(label)));
+                const a = row.children[col]
+                          && row.children[col].querySelector('a');
+                if (a) out[iso] = a.getAttribute('href');
+            }
+            return out;
+        }""",
+        [payload, [[d.isoformat(), _header(d)] for d in days], BOB_ROW])
 
 
 def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
             log=print) -> dict:
-    """{rep: earliest date seen} for one office, by walking the BOB detail
-    page for every day in the range.
+    """{rep: earliest date seen} for one office, from the BOB detail pages.
 
     A day with no arrivals has no detail link and is skipped, not retried —
     that is the ordinary case, not a failure."""
@@ -319,106 +129,43 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     found: dict = {}
     with A.session() as app:
         app.select_office(str(office_id))
-        # ONE PASS PER WEEK, not per day. The retention report renders ONE
-        # week at a time — the first run walked 35 days against a page that
-        # only ever showed the current week's seven columns and found nothing,
-        # exit 0. Set the week, submit, then read its days.
         app.open_retention_details()
-        anchor = page_week(app.page)
-        if anchor is None:
-            log(f"  {owner}: no week box on the retention report — skipped")
+        base = _form_base(app.page)
+        if not base:
+            log(f"  {owner}: retention form not found — skipped")
             return {}
-        log(f"  {owner}: report opens on the week of {anchor}")
-        weeks = _weeks_back_from(anchor, start, end)
-        opened = 0
-        for wk_start in weeks:
-            app.open_retention_details()
-            if not _show_week(app.page, wk_start, log=log):
-                log(f"  {owner}: could not open week of {wk_start} — skipped")
+
+        # EVERY href first, then the visits. scrape_at navigates away from the
+        # report, and re-showing the week after each day was most of this
+        # report's cost; asking for a week is one request.
+        weeks = _sundays(start, end)
+        links: dict = {}
+        for sunday in weeks:
+            try:
+                links.update(_week_links(app.page, base, sunday))
+            except Exception as e:   # noqa: BLE001 — one week is not the run
+                log(f"  {owner}: week of {sunday} failed ({type(e).__name__})")
+        log(f"  {owner}: {len(links)} day(s) with arrivals "
+            f"across {len(weeks)} week(s)")
+
+        for iso in sorted(links):
+            day = dt.date.fromisoformat(iso)
+            if day < start or day > end:
                 continue
-            opened += 1
-            if "headers" not in _LAST_DIAG:
-                # The one week that opens still yields nothing, because
-                # detail_href matches day columns on a header string I made
-                # up. Record the report's real dated row so the format stops
-                # being a guess.
-                try:
-                    _LAST_DIAG["headers"] = app.page.evaluate(
-                        r"""() => [...document.querySelectorAll('table tr')]
-                                .map(r => r.innerText.replace(/\s+/g,' ').trim())
-                                .filter(t => /\d{1,2}[\/-]\d{1,2}|20\d\d|Mon|Sat/.test(t))
-                                .slice(0, 2).join(' || ')""")[:230]
-                    _LAST_DIAG["rows"] = app.page.evaluate(
-                        r"""() => [...document.querySelectorAll('tr')]
-                                .map(tr => {
-                                    const c = tr.querySelector('td,th');
-                                    return c ? c.innerText.replace(/\s+/g,' ').trim() : '';
-                                })
-                                .filter(t => t && t.length < 46 &&
-                                        /bob|book|show|train|first day/i.test(t))
-                                .join(' | ')""")[:400]
-                    # HOW DOES THE PAGE ITSELF CHANGE WEEK? Posting the date
-                    # does not work, and a report rendering one week at a time
-                    # almost always has its own prev/next control. If it does,
-                    # clicking it is the mechanism, and no date needs posting.
-                    _LAST_DIAG["nav"] = app.page.evaluate(
-                        r"""() => [...document.querySelectorAll('a,button,img,input')]
-                                .map(e => ({
-                                    t: (e.innerText || e.value || e.alt ||
-                                        e.title || '').replace(/\s+/g,' ').trim(),
-                                    h: e.getAttribute('href') || '',
-                                    o: e.getAttribute('onclick') || '',
-                                }))
-                                .filter(x => /week|prev|next|back|forward|«|»|‹|›/i
-                                             .test(x.t + ' ' + x.h + ' ' + x.o))
-                                .map(x => `${x.t}|${x.h.slice(0,40)}|${x.o.slice(0,40)}`)
-                                .join(' ;; ')""")[:400]
-                except Exception:   # noqa: BLE001
-                    _LAST_DIAG["headers"] = "unreadable"
-            for i in range(7):
-                day = wk_start + dt.timedelta(days=i)
-                if day < start or day > end:
-                    continue
-                try:
-                    href = app.detail_href(BOB_ROW, _header(day))
-                    if not href:
+            try:
+                for r in app.scrape_at(links[iso], BOB_COLS):
+                    name = " ".join(str(x).strip()
+                                    for x in r[:2] if str(x).strip())
+                    if not name:
                         continue
-                    for r in app.scrape_at(href, BOB_COLS):
-                        name = " ".join(str(x).strip()
-                                        for x in r[:2] if str(x).strip())
-                        if not name:
-                            continue
-                        key = name.strip().lower()
-                        # EARLIEST wins: a rep who returns did not start again.
-                        if key not in found or day < found[key][1]:
-                            found[key] = (name, day)
-                    # scrape_at navigates AWAY from the report, so the week has
-                    # to be re-shown before the next day is looked up.
-                    app.open_retention_details()
-                    _show_week(app.page, wk_start, log=log)
-                except Exception as e:   # noqa: BLE001 — one day is not the run
-                    log(f"  {owner} {day}: skipped ({type(e).__name__})")
-    # The diagnosis rides the SUMMARY line, because the queue's status view
-    # shows only the tail of stdout — the per-week lines were being cut off,
-    # which is how "0/5 opened" arrived with no reason attached.
-    # The queue's status view shows only the TAIL of stdout, so anything that
-    # matters has to be ON the summary line.
-    # Only the LANDING goes on the line — the status view truncates it at a
-    # fixed width, and the box is already known.
-    landed = _LAST_DIAG.get("landed")
-    why = ""
-    if _LAST_DIAG.get("trace") and opened < len(weeks):
-        why = f" · {_LAST_DIAG['trace']}"
-    elif _LAST_DIAG.get("rows"):
-        why = f" · rows: {_LAST_DIAG['rows']}"
-    elif _LAST_DIAG.get("headers"):
-        why = f" · headers: {_LAST_DIAG['headers']}"
-    elif _LAST_DIAG.get("fields") and opened < len(weeks):
-        why = f" · fields: {_LAST_DIAG['fields']}"
-    elif opened < len(weeks) and landed:
-        why = f" · {_LAST_DIAG.get('raised', '')} landed: {landed}"
-    log(f"  {owner}: {len(found)} start date(s) between {start} and {end} "
-        f"— {opened}/{len(weeks)} week(s) opened{why}")
+                    key = name.strip().lower()
+                    # EARLIEST wins: a rep who returns did not start again.
+                    if key not in found or day < found[key][1]:
+                        found[key] = (name, day)
+            except Exception as e:   # noqa: BLE001 — one day is not the run
+                log(f"  {owner} {day}: skipped ({type(e).__name__})")
+
+    log(f"  {owner}: {len(found)} start date(s) between {start} and {end}")
     return {v[0]: v[1] for v in found.values()}
 
 
