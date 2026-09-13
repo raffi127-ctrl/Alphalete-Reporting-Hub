@@ -142,6 +142,19 @@ def _report(stage: str, e: Exception, detail: str = "") -> None:
 
 
 def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
+    # FIRST, AND ONCE A DAY. Getting a fix onto an office's machine used to
+    # mean messaging a person and hoping they pasted a line -- which is how
+    # Kash ran a whole day on the first agent with no sales at all. The files
+    # replaced here are used by the NEXT run, not this one: the modules for
+    # this sweep are already imported, and swapping code under a running
+    # process is a much worse idea than waiting three minutes.
+    if not dry_run:
+        try:
+            from automations.icd_alerts import selfupdate
+            selfupdate.run(log=_log, today=day)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("self-update skipped: %s" % type(e).__name__)
+
     try:
         read = sara_read.read_day(day, headless=headless, log=_log)
         current, sales = read["records"], read["sales"]

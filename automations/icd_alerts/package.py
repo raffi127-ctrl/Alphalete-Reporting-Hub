@@ -40,6 +40,10 @@ AGENT_FILES = [
     "automations/icd_alerts/__init__.py",
     "automations/icd_alerts/config.py",
     "automations/icd_alerts/relay.py",
+    # Ships itself, necessarily: an office that does not have this file
+    # can never receive it automatically, so the one manual update that
+    # delivers it is the last one they ever have to run.
+    "automations/icd_alerts/selfupdate.py",
     "automations/icd_alerts/sara_read.py",
     "automations/icd_alerts/state.py",
     "automations/icd_alerts/run.py",

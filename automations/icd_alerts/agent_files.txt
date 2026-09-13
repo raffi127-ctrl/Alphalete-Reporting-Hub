@@ -3,6 +3,7 @@
 automations/icd_alerts/__init__.py
 automations/icd_alerts/config.py
 automations/icd_alerts/relay.py
+automations/icd_alerts/selfupdate.py
 automations/icd_alerts/sara_read.py
 automations/icd_alerts/state.py
 automations/icd_alerts/run.py
