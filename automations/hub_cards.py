@@ -4323,6 +4323,108 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "birthday-reminders",
+        "name": "Birthday Reminders",
+        "creator": "Claude",
+        "emoji": "\U0001F382",
+        "color": "#C026D3",
+        "category": "\U0001F4CA Metrics",
+        "description": (
+            "Texts the **Admin Staff** iMessage chat the DAY BEFORE a rep\u2019s "
+            "birthday, so somebody has a working day to get a photo and the "
+            "birthday post is ready to go out on the actual day.\n\n"
+            "Raf\u2019s ask (2026-09-13). **Raf\u2019s office only.** Most days "
+            "it sends nothing \u2014 that is a clean run, not a miss."
+        ),
+        "breakdown": (
+            "WHERE THE BIRTHDAYS COME FROM\n"
+            "**\u2022** The **DOB LUCY** tab in *All in One Local Office - Raf* "
+            "\u2014 `Rep Name` / `Birthday (MM/DD)` / `Source` / `Added` / "
+            "`Skip` / `Notes`, found by LABEL, never by column position.\n"
+            "**\u2022** Filled from each rep\u2019s **signed Blue Ink I-9** "
+            "(`apex_new_starts/blueink_data.py` already read it; nothing kept "
+            "it until now). 53 of 61 on the roster as of 2026-09-13 \u2014 the "
+            "other 8 have no signed packet.\n"
+            "**\u2022** **MONTH AND DAY ONLY.** The year never lands in the "
+            "Sheet: it is PII with no purpose here, and \u201cis it "
+            "tomorrow\u201d is all this ever asks.\n\n"
+            "NOBODY TERMINATED EVER GETS A TEXT\n"
+            "The tab is APPEND-ONLY \u2014 a terminated rep stays on it and is "
+            "simply never texted, because pruning would cost every rehire "
+            "their birthday (64 names on \u2018Terminated Reps\u2019 hold more "
+            "than one row). Suppression happens at SEND time instead, and it "
+            "wants POSITIVE evidence: the rep has to be on the current "
+            "roster/board, not merely absent from a terminated list. That also "
+            "gets rehires right, which a list lookup cannot.\n"
+            "**\u2022** This report FAILS CLOSED, unlike the rest of the Hub. "
+            "An unsent reminder costs nothing; one sent to somebody we let go "
+            "costs a real apology. A degraded read texts NOBODY.\n"
+            "**\u2022** **FFP still gets a birthday text** (Megan, "
+            "2026-09-13) \u2014 only \u2018Terminated\u2019 blocks one. Being "
+            "off on a Tuesday does not cancel your birthday.\n"
+            "**\u2022** Live check on 2026-09-13: 12 of the 53 stored "
+            "birthdays belong to terminated people. All 12 are blocked.\n\n"
+            "RUNS ON LUCY 1\n"
+            "Because the **Admin Staff** chat exists only in ITS Messages "
+            "(9 participants \u2014 Megan is not in it, Lucy is). The room is "
+            "resolved by NAME on every send, never a stored chat id, so a "
+            "failure reads as \u201cLucy was removed from the chat\u201d "
+            "rather than a silent skip.\n\n"
+            "THE SOURCE IS ABOUT TO MOVE\n"
+            "The weekly sales board is being retired for the ICD sales-board "
+            "site. `liveness.read()` is the seam: it prefers the site roster "
+            "and falls back to the board. It has NOT switched \u2014 that "
+            "roster holds 61 reps all reading \u2018Active\u2019 with no "
+            "termination ever recorded, so it cannot suppress anybody yet."
+        ),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "birthday_reminders",
+        "schedule": {
+            "frequency": "daily",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],   # every day \u2014 birthdays don't skip weekends
+            "time": "9:00 AM",
+            "time_label": "Daily 9:00am",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Done \u2014 any birthday tomorrow has been texted (most days there is none).",
+            "message_failed": "\u274C Couldn\u2019t reach the Admin Staff chat. `lucy logtail birthday-reminders` on Lucy 1.",
+        },
+        "actions": [
+            {
+                "label": "Preview (texts nobody)",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Shows who has a birthday tomorrow, who was skipped and why, and resolves the Admin Staff chat so you can see it is still reachable. Sends nothing.",
+                "module": "automations.birthday_reminders.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Text it now",
+                "icon": "\U0001F382",
+                "help": "Sends tomorrow's birthday reminder to the Admin Staff chat for real. Terminated reps are skipped whatever this button says.",
+                "module": "automations.birthday_reminders.run",
+                "args_fn": lambda: ["--send"],
+            },
+            {
+                "label": "Who would we text?",
+                "icon": "\U0001F50E",
+                "help": "READ-ONLY: prints tomorrow's list with a reason beside every name that was skipped \u2014 terminated, off the board, or opted out by hand in the Skip column.",
+                "module": "automations.birthday_reminders.run",
+                "args_fn": lambda: ["--who"],
+            },
+            {
+                "label": "Fill in missing birthdays",
+                "icon": "\U0001F4C5",
+                "help": "Sweeps the roster and adds anyone missing from the DOB LUCY tab, reading each signed Blue Ink I-9. Append-only: it never overwrites a birthday already there, and a disagreement is reported rather than resolved.",
+                "module": "automations.birthday_reminders.backfill",
+                "args_fn": lambda: ["--board", "--send"],
+            },
+        ],
+    },
+    {
         "id": "gap-alerts",
         "name": "Knocks & Dispositions (self-serve)",
         "creator": "Claude",

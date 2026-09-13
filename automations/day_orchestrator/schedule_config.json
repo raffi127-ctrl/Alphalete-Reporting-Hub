@@ -10614,6 +10614,30 @@
       "verify": null,
       "timeout_minutes": 45,
       "machine": "Lucy 1"
+    },
+    "birthday_reminders": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Birthday Reminders runs itself at 9:00am machine-local EVERY day from the standalone com.alphalete.birthday-reminders LaunchAgent on Lucy 1. Every day including Sunday on purpose: birthdays do not skip weekends, and this reads a stored MM/DD rather than a day's production, so a Sunday run is meaningful. LUCY 1 ONLY -- the 'Admin Staff' iMessage chat exists in ITS Messages and not on Megan's laptop, so a run anywhere else fails at group resolution. MOST DAYS IT SENDS NOTHING AND EXITS 0: roughly 10 sends in 120 days. That is a clean run, not a silent failure -- do not wire a no-output alert to it.",
+      "machine": "Lucy 1",
+      "display_name": "Birthday Reminders (day before -> Admin Staff chat)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.birthday_reminders.run"
+      ],
+      "base_args": [
+        "--send"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 10,
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {
