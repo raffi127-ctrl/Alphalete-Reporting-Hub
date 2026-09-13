@@ -35,7 +35,10 @@ from typing import Dict, Optional
 from automations.icd_alerts import config as C
 
 TIMEOUT_SECONDS = 30
-AGENT_VERSION = "icd_alerts/2"          # 2 = carries sales
+AGENT_VERSION = "icd_alerts/3"          # 2 = sales, 3 = names its machine
+# THE VERSION IS HOW WE SEE WHO HAS UPDATED, from the relay row, without
+# asking anybody. Kash sat on /1 for a day with no sales and it was only
+# visible because somebody went looking at the right column.
 SALE_METRICS = ("Int", "Int Up", "DTV", "NL")
 MAX_REDIRECTS = 5
 
