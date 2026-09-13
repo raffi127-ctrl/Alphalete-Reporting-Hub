@@ -37,6 +37,13 @@ TOOLS = [
     ("icd_signup/app.py", "join-lucy-eco", "Join Lucy Eco",
      ":material/rocket_launch:",
      "ICD owners — get your office's numbers posted in Slack"),
+    # FOLDED IN because this site took over its subdomain (2026-09-13). Its
+    # confirm view is a deep link Megan holds -- ?confirm=<key> -- so it has
+    # to stay reachable, now at /daily-dispositions?confirm=<key>. Dropping
+    # the tool instead would have broken that quietly.
+    ("disposition_signup/app.py", "daily-dispositions", "Daily Dispositions",
+     ":material/schedule:",
+     "Office owners — get your knocks and dispositions board on a schedule"),
 ]
 
 
