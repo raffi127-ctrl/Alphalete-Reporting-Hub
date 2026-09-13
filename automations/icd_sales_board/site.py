@@ -1735,13 +1735,14 @@ def _days_worked(start, on: dt.date):
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-def _last_week_apps(icd: str, week_ending: dt.date) -> dict:
-    """{rep lowered: apps} for the week BEFORE this one.
+def _week_apps_back(icd: str, week_ending: dt.date, weeks: int = 1) -> dict:
+    """{rep lowered: apps} for a week BEFORE this one.
 
-    Raf's sheet carries LAST WEEK'S TOTALS beside the running week, which is
-    how an owner sees at a glance who has dropped off (Megan 2026-09-13). Same
-    settled Tableau source as this week — just the seven days before it."""
-    prior = _settled_reps(icd, week_ending - dt.timedelta(days=7))
+    Raf's sheet carries LAST WEEK'S and PRIOR WEEK'S TOTALS beside the running
+    week, which is how an owner sees at a glance who has dropped off (Megan
+    2026-09-13). Same settled Tableau source as this week — just further
+    back."""
+    prior = _settled_reps(icd, week_ending - dt.timedelta(days=7 * weeks))
     out: dict = {}
     for rep, days in (prior or {}).items():
         tot = {m: 0 for m in RELAY_MEASURES}
@@ -2021,7 +2022,8 @@ def relay_board(icd: str, office_key: str) -> None:
     # the week-1..week-5 colours come off a start date rather than off a field
     # status somebody has to advance every Monday.
     start_tenure = _appstream_tenure(icd, week_ending)
-    last_apps = _last_week_apps(icd, week_ending)
+    last_apps = _week_apps_back(icd, week_ending, 1)
+    prior_apps = _week_apps_back(icd, week_ending, 2)
     knocks = _knocks(icd, week_ending)
     starts = _start_dates(icd)
     roster = {r.name.strip().lower(): r for r in R.load(office_key)}
@@ -2137,6 +2139,7 @@ def relay_board(icd: str, office_key: str) -> None:
         # week, Raf none.
         row["Total units"] = _units(tot)
         row["Last wk Apps"] = last_apps.get(low, 0)
+        row["Prior wk Apps"] = prior_apps.get(low, 0)
 
         # THE KNOCKS HALF of Raf's board: TK and Talk-To's, then the ratios he
         # reads off them. Blank — never zero — for an office with no knocks
@@ -2274,8 +2277,8 @@ def relay_board(icd: str, office_key: str) -> None:
     # them unconditionally — gated, it left Int / Int Up / DTV / NL blank
     # under columns that were plainly there.
     totals_row.update({m: tot[m] for m in RELAY_MEASURES})
-    totals_row["Last wk Apps"] = sum(int(r.get("Last wk Apps", 0) or 0)
-                                     for r in rows)
+    for _k in ("Last wk Apps", "Prior wk Apps"):
+        totals_row[_k] = sum(int(r.get(_k, 0) or 0) for r in rows)
     # Built from the FIRST row's keys so the totals line carries every column
     # in the same order, rather than however a dict merge happened to land.
     grid = rows + [{k: totals_row.get(k, "") for k in rows[0]}]
@@ -2350,8 +2353,10 @@ def relay_board(icd: str, office_key: str) -> None:
         # it is how an owner sees who has dropped off. Only shown once there
         # IS a prior week settled, so a new office does not get a column of
         # zeros that reads as everybody blanking.
-        if any(r.get("Last wk Apps") for r in grid):
-            groups.append(("Last wk", [("Apps", "Last wk Apps", "wk", True)]))
+        for _title, _key in (("Last wk", "Last wk Apps"),
+                             ("Prior wk", "Prior wk Apps")):
+            if any(r.get(_key) for r in grid):
+                groups.append((_title, [("Apps", _key, "wk", True)]))
         for d in week_days:
             lab = d.strftime("%a")
             groups.append((
