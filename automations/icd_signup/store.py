@@ -196,26 +196,37 @@ def submit(rec: IcdSignup, book=None) -> IcdSignup:
     try:
         _tab(book).append_row(["TRUE" if v is True else
                                "FALSE" if v is False else v for v in ordered])
-    except Exception:  # noqa: BLE001 — the owner's submission must not be lost
+        return rec, True
+    except Exception:  # noqa: BLE001 — the owner's answers must not be lost
+        # A LOCAL DRAFT IS NOT A SAVE, and the caller has to know the
+        # difference. On Streamlit Cloud this file is on a disposable
+        # filesystem, so the draft is gone the moment the app restarts. Megan
+        # submitted on 2026-09-13, was told "that is in", and nothing existed
+        # anywhere: no row, no key, no ping. Reporting success for a write
+        # that failed is worse than failing loudly, because nobody goes
+        # looking for something they were told had worked.
         rows = _local()
         rows.append(row)
         _save_local(rows)
-    return rec
+        return rec, False
 
 
 def submit_and_key(rec: IcdSignup, book=None) -> tuple:
-    """Save the sign-up AND give them their key. Returns (record, setup_link).
+    """Save the sign-up AND give them their key.
 
-    The link is empty if the key could not be written -- the sign-up is still
-    saved, and the alert tells Megan to send the link by hand. Losing their
-    answers because a key write failed would be the worse trade.
+    Returns (record, setup_link, landed) where `landed` says whether the
+    sign-up actually reached the sheet. An empty link with landed=True is a
+    real sign-up whose key failed -- Megan sends the link by hand. landed=
+    False means nobody has it at all and the page must say so.
     """
-    saved = submit(rec, book=book)
+    saved, landed = submit(rec, book=book)
+    if not landed:
+        return saved, "", False
     try:
         key = mint_and_record_key(saved.office_key, saved.owner, book=book)
     except Exception:  # noqa: BLE001
-        return saved, ""
-    return saved, setup_link(key) if key else ""
+        return saved, "", True
+    return saved, (setup_link(key) if key else ""), True
 
 
 def set_status(office_key: str, status: str, note: str = "", book=None) -> bool:

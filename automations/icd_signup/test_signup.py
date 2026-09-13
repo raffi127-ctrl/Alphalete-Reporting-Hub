@@ -237,3 +237,51 @@ class TheTabGrowsItsOwnColumns(unittest.TestCase):
     def test_column_letters_survive_past_z(self):
         self.assertEqual(store._a1_col(26), "Z")
         self.assertEqual(store._a1_col(27), "AA")
+
+
+class AFailedSaveIsNeverReportedAsSuccess(unittest.TestCase):
+    """Megan submitted on 2026-09-13 and was told "that is in". Nothing
+    existed: no row on the tab, no key, no ping. The write had thrown, and
+    submit() had quietly written a local draft instead -- on Streamlit Cloud
+    that file sits on a disposable filesystem, so it was gone immediately.
+
+    Reporting success for a write that failed is worse than failing loudly,
+    because nobody goes looking for something they were told had worked.
+    """
+
+    def test_a_failed_write_reports_landed_false(self):
+        with mock.patch.object(store, "_tab", side_effect=RuntimeError("no sheet")), \
+             mock.patch.object(store, "_save_local"), \
+             mock.patch.object(store, "_local", return_value=[]), \
+             mock.patch.object(store, "all_signups", return_value=[]):
+            _rec_out, landed = store.submit(_rec())
+        self.assertFalse(landed)
+
+    def test_a_good_write_reports_landed_true(self):
+        class FakeTab:
+            def append_row(self, *a, **k):
+                pass
+
+        with mock.patch.object(store, "_tab", return_value=FakeTab()), \
+             mock.patch.object(store, "all_signups", return_value=[]):
+            _rec_out, landed = store.submit(_rec())
+        self.assertTrue(landed)
+
+    def test_no_key_is_minted_for_a_signup_that_never_saved(self):
+        # Handing out a relay key for a sign-up nobody has a record of would
+        # leave a machine able to relay into an office that does not exist.
+        with mock.patch.object(store, "submit", return_value=(_rec(), False)), \
+             mock.patch.object(store, "mint_and_record_key") as mint:
+            _r, link, landed = store.submit_and_key(_rec())
+        mint.assert_not_called()
+        self.assertFalse(landed)
+        self.assertEqual(link, "")
+
+    def test_a_saved_signup_whose_key_fails_still_counts_as_landed(self):
+        # Their answers ARE on the tab; Megan can send the link by hand.
+        with mock.patch.object(store, "submit", return_value=(_rec(), True)), \
+             mock.patch.object(store, "mint_and_record_key",
+                               side_effect=RuntimeError("relay keys locked")):
+            _r, link, landed = store.submit_and_key(_rec())
+        self.assertTrue(landed)
+        self.assertEqual(link, "")

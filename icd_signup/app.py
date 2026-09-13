@@ -68,7 +68,12 @@ st.warning(
 
 st.divider()
 
-with st.form("icd_signup"):
+# NOT st.form, deliberately. A form batches every widget until submit, so the
+# Saturday checkbox could not grey out the Saturday times under it -- an
+# office unticking it was still shown two boxes asking for hours it had just
+# said it does not work (Megan 2026-09-13). A bordered container looks the
+# same and re-runs on every change.
+with st.container(border=True):
     st.subheader("Who you are")
     owner = st.text_input("Your full name",
                           placeholder="e.g. Cyrus Wade")
@@ -88,9 +93,6 @@ with st.form("icd_signup"):
                         options=["mac", "windows"],
                         format_func=lambda p: "Mac" if p == "mac" else "Windows PC",
                         horizontal=True)
-    st.caption("It needs to stay on and plugged in during selling hours. "
-               "A laptop that goes to sleep just means late numbers, not lost "
-               "ones.")
 
     st.subheader("Your selling hours")
     st.caption("Nothing posts outside these — this is how Lucy knows your reps "
@@ -98,13 +100,21 @@ with st.form("icd_signup"):
     tz = st.selectbox("Your timezone",
                       options=[z for z, _label in S.TIMEZONES],
                       format_func=S.tz_label)
+    def _time_picker(col, label, default, key, disabled=False):
+        return col.selectbox(label, options=list(S.TIME_CHOICES),
+                             index=S.TIME_CHOICES.index(default),
+                             format_func=S.time_label, key=key,
+                             disabled=disabled)
+
     c1, c2 = st.columns(2)
-    day_start = c1.text_input("Monday–Friday, start", value="13:30")
-    day_end = c2.text_input("Monday–Friday, end", value="20:30")
+    day_start = _time_picker(c1, "Monday–Friday, start", "13:30", "d_start")
+    day_end = _time_picker(c2, "Monday–Friday, end", "20:30", "d_end")
     saturday = st.checkbox("We sell on Saturdays too", value=True)
     c3, c4 = st.columns(2)
-    sat_start = c3.text_input("Saturday, start", value="10:45")
-    sat_end = c4.text_input("Saturday, end", value="17:00")
+    sat_start = _time_picker(c3, "Saturday, start", "10:45", "s_start",
+                             disabled=not saturday)
+    sat_end = _time_picker(c4, "Saturday, end", "17:00", "s_end",
+                           disabled=not saturday)
 
     st.subheader("Where your credit checks and sales should post")
     st.caption("Most offices pick one channel. Add a second if the owners' "
@@ -160,7 +170,7 @@ with st.form("icd_signup"):
         "named above.** They cannot switch your alerts on for a channel they "
         "are not in, and that is the most common reason a sign-up stalls.")
 
-    submitted = st.form_submit_button("Send my sign-up", type="primary")
+    submitted = st.button("Send my sign-up", type="primary")
 
 if submitted:
     alerts = [c for c in alert_channels if c]
@@ -190,7 +200,21 @@ if submitted:
         for p in problems:
             st.error(p)
     else:
-        saved, link = store.submit_and_key(rec)
+        saved, link, landed = store.submit_and_key(rec)
+
+        if not landed:
+            # NOTHING WAS SAVED. Saying "that is in" here is how an office
+            # waits a week for a reply nobody can send -- there is no row, no
+            # key and no ping, and only they know they tried.
+            st.error(
+                "**Something went wrong on our end and your sign-up was not "
+                "saved.**\n\n"
+                "Nothing you did caused this, and nothing was lost on your "
+                "computer. Please tell Megan or Eve that the Lucy Eco form is "
+                "not saving — they can add you by hand in a couple of "
+                "minutes.")
+            st.stop()
+
         try:
             from automations.icd_signup import request_notify
             request_notify.notify(saved, send=True, link=link,
@@ -228,7 +252,11 @@ if submitted:
                 "2. **Leave that computer on** during selling hours — on "
                 "power, lid open, on wifi. Nothing posts while it is asleep.")
         else:
+            # THE FALLBACK, shown when no key could be written -- Sheets was
+            # unreachable, or the relay refused. Their answers are saved
+            # either way, and Megan's alert says to send the link by hand, so
+            # what they need here is to know it landed and stop waiting for a
+            # screen that is not coming.
             st.markdown(
-                "The reporting team has been told and will send you a "
-                "**setup link** for your office — one line you paste into "
-                "your computer, and it asks you the rest.")
+                "**Thanks for joining the Lucy Ecosystem.** We will process "
+                "your request and reach out soon.")

@@ -54,6 +54,24 @@ def tz_label(zone: str) -> str:
 
 _TIME = re.compile(r"^\d{1,2}:\d{2}$")
 
+# EVERY QUARTER HOUR FROM 6 AM TO 11.45 PM. Wide enough for an office that
+# starts early or runs late, and a list rather than a text box because
+# "1:30pm", "1.30", "130" and "13:30" are all things a person types into a
+# time field -- and the value has to come out as HH:MM or the field-hours
+# check silently never matches.
+TIME_CHOICES = tuple("%02d:%02d" % (h, m)
+                     for h in range(6, 24) for m in (0, 15, 30, 45))
+
+
+def time_label(hhmm: str) -> str:
+    """'13:30' -> '1:30 PM'. Built by hand rather than strftime: %-I is
+    glibc-only and every part of this has to run on Windows too."""
+    try:
+        h, m = [int(x) for x in str(hhmm).split(":")[:2]]
+    except Exception:  # noqa: BLE001
+        return str(hhmm)
+    return "%d:%02d %s" % (h % 12 or 12, m, "AM" if h < 12 else "PM")
+
 
 class IcdSignup(NamedTuple):
     owner: str
