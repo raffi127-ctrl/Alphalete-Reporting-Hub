@@ -1876,14 +1876,26 @@ def relay_board(icd: str, office_key: str) -> None:
     frame = pd.DataFrame(grid).astype("string").fillna("")
 
     def _style_board_rows(df):
-        out = _style_totals(df)
+        """Tenure colours THE WHOLE ROW (Megan 2026-09-13).
+
+        Raf's sheet only fills the name cell, but the row is what an owner
+        reads across — and on a wide board the colour has to still be there
+        when your eye reaches the numbers. The totals tint is applied AFTER,
+        so the totals row and the Total units column keep their own colour
+        rather than being repainted by whatever tenure sits on that line."""
+        out = pd.DataFrame("", index=df.index, columns=df.columns)
         if "Tenure" in df.columns and "Rep" in df.columns:
             for i in df.index:
                 if str(df.at[i, "Rep"]).strip() == TOTALS_LABEL:
                     continue
                 css = tenure_style(df.at[i, "Tenure"])
                 if css:
-                    out.at[i, "Rep"] = css
+                    out.loc[i, :] = css
+        totals = _style_totals(df)
+        for col in df.columns:
+            for i in df.index:
+                if totals.at[i, col]:
+                    out.at[i, col] = totals.at[i, col]
         return out
 
     edited = st.data_editor(
