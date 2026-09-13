@@ -541,6 +541,13 @@ def main(argv=None) -> int:
                          "report (header + names in-thread) instead of the scorecard. "
                          "This is the daily 8pm post now (Megan 2026-08-06).")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today)")
+    ap.add_argument("--office", default=None,
+                    help="Which ApplicantStream office this is for, e.g. 23467. "
+                         "Points the report at THAT office's day-files and posts "
+                         "to THAT office's channel. The scheduled run gets this "
+                         "from the wrapper's exported OAT_* env; a hand-run has "
+                         "no env, so without this flag it silently defaults to "
+                         "Carlos (11580) and would edit the wrong channel's post.")
     ap.add_argument("--dry-run", action="store_true", help="build the PDF, don't post")
     ap.add_argument("--emit", action="store_true",
                     help="print per-applicant bucket lines to stdout (lets a remote "
@@ -558,6 +565,15 @@ def main(argv=None) -> int:
                     help="With --nophone: rewrite today's existing thread reply in "
                          "place (e.g. to add accounts) instead of posting a new one")
     args = ap.parse_args(argv)
+    if args.office:
+        # activate() rebinds this module's CHANNEL_ID / OFFICE_LABEL / OFFICE_SHORT
+        # and config.FILE_SUFFIX, which is exactly the set of things that decide
+        # WHICH office's snapshot is read and WHICH channel is written to.
+        from automations.applicant_push import offices as _offices
+        _o = _offices.activate(args.office)
+        globals()["CHANNEL_ID"] = _o["post_channel"] or CHANNEL_ID
+        print("[report] office %s (%s) -> channel %s"
+              % (_o["office_id"], _o["owner"], globals()["CHANNEL_ID"]), flush=True)
 
     if args.fix_header:
         return fix_last_header()
