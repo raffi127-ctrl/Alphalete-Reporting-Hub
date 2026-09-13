@@ -6023,9 +6023,11 @@ AUTOMATED_REPORTS = [
             "rather than guessing. `--explore` writes the real screen's "
             "field list to `apex_screen.json`; send that back and the label "
             "list gets made exact."),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc/edit"
-                      "?gid=263241811#gid=263241811"),
+        # No "Open Sheet" button. Nobody opens the board to run this -- the
+        # card reads it for them -- and it was one more thing on a card whose
+        # whole point is a single click (Megan, 2026-09-13). The board is the
+        # SALES BOARD workbook, 'New Starts/Raf' box on the week tab:
+        # docs.google.com/spreadsheets/d/1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc
         # "Megan" is NOT one of the Pack profiles (Lucy 1/2/3 + Office
         # Operations), so this card counted toward the header's due total while
         # appearing on NO profile — the Hub read 60/64 with only 1+2+0 = 3 due
