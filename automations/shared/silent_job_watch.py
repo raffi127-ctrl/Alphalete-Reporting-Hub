@@ -153,34 +153,17 @@ JOBS: Dict[str, dict] = {
         # Grace: the beat ships in deploy/applicant_push.sh, which Lucy 2 has to
         # pull. Armed the day after so the agent gets one clean day to prove it.
         "watch_from": "2026-09-14",
-        "means": ("applicants stop being pushed to the AI call list for Carlos "
-                  "AND Atef at once, since they share one agent. Khalil and "
-                  "Raf's 2nd funnel are on Lucy 3 and keep running, so the push "
-                  "will not look dead from the outside. The Hub cards keep "
-                  "showing this morning's green, so nothing else will tell you."),
+        "means": ("applicants stop being pushed to the AI call list entirely — "
+                  "all four live offices share this one agent. The Hub cards "
+                  "keep showing this morning's green, so nothing else will "
+                  "tell you."),
         "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 2\"",
     },
-    # Lucy 3 works Raf's 2nd funnel (23965) and Khalil (11901), both moved off
-    # Lucy 2 on 2026-09-13 to split the four live offices two and two. Its own
-    # row, because beat() keeps one row per job id: a shared id would let either
-    # machine's beat light the other one green, which is the exact false-healthy
-    # this module exists to prevent.
-    "applicant_push_lucy_3": {
-        "name": "Applicant Push (Khalil + Raf 2nd funnel)",
-        "machine": "Lucy 3",
-        "first_by": "07:30",
-        "max_gap_min": 45,
-        "active_until": "22:00",
-        "weekdays": None,
-        # One day behind Lucy 2's so the split gets a full day to land. If Lucy 3
-        # is not pushing by then the alert is CORRECT and not noise — it means the
-        # move never happened and Raf's office is being worked by nobody.
-        "watch_from": "2026-09-15",
-        "means": ("Khalil's applicants (11901) and Raf's 2nd funnel (23965) stop "
-                  "being pushed. Carlos and Atef are on Lucy 2 and keep running, "
-                  "so nothing else in the push looks wrong."),
-        "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 3\"",
-    },
+    # NO Lucy 3 ROW YET. The two-machine split is parked (see
+    # applicant_push/offices.py: Lucy 3 cannot hold an AppStream session), and a
+    # heartbeat for an agent nobody installed would page about the absence of a
+    # thing that was never there. It comes back in the same change that flips the
+    # split on — the row is in git history at bd7979f if you need it verbatim.
 }
 
 # --- the watchdog is itself a silent job --------------------------------------

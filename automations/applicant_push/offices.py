@@ -416,9 +416,24 @@ ROTATION = ["11580", "23467", "11901", "23965"]
 # `.machine-profile`, so hub_identity.machine_name() falls back to its hostname,
 # and a default-to-something here would let a laptop start sending real
 # applicants. Nothing scheduled means nothing runs.
+# PARKED 2026-09-13, SAME DAY: the split is built and tested but NOT in effect.
+# Lucy 3's supervised dry-run could not get an AppStream session at all —
+# "no AppStream session after 3 attempts (console never rendered #searchMC)" —
+# so it cannot sign in as `lucyresume` yet. Until it can, assigning offices to
+# Lucy 3 means those offices are worked by NOBODY: Lucy 2's wrapper skips them
+# because they are not its rotation, and Lucy 3 never runs. That is the silent
+# drop this repo keeps getting bitten by, so the assignment goes back to Lucy 2
+# and the split flips on in ONE line once a Lucy 3 dry-run comes back clean.
+#
+#   "Lucy 2": ["11580", "23467"],
+#   "Lucy 3": ["23965", "11901"],
+#
+# What the probe proved and did not prove: it did NOT test whether two machines
+# can hold the `lucyresume` session at once — Lucy 3 never got a session to
+# begin with. That question is still open and still needs Lucy 2 checked
+# immediately after Lucy 3's first successful login.
 ROTATION_BY_MACHINE = {
-    "Lucy 2": ["11580", "23467"],
-    "Lucy 3": ["23965", "11901"],
+    "Lucy 2": ["11580", "23467", "11901", "23965"],
 }
 
 

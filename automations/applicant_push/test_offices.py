@@ -162,17 +162,14 @@ check("no office is assigned to two machines",
       len(_assigned), len(set(_assigned)))
 check("every ROTATION office has a machine",
       sorted(set(_assigned)), sorted(offices.ROTATION))
-check("Lucy 2 keeps Carlos and Atef",
-      offices.rotation_for("Lucy 2"), ["11580", "23467"])
-check("Lucy 3 works Raf's 2nd funnel and Khalil",
-      offices.rotation_for("Lucy 3"), ["23965", "11901"])
-# Two and two. An uneven split is not wrong, but it is worth noticing: the
-# per-office wait IS the count on that box, so a 3/1 split means one machine's
-# offices wait three times as long as the other's for no reason.
-check("the four live offices are split evenly across the two boxes",
-      sorted(len(v) for v in offices.ROTATION_BY_MACHINE.values()), [2, 2])
+# The Lucy 3 split is PARKED until Lucy 3 can hold an AppStream session, so all
+# four live offices are Lucy 2's. The check that actually protects production is
+# not which box owns what — it is that NOTHING is orphaned, pinned just below.
+check("every live office is worked by Lucy 2 while the split is parked",
+      offices.rotation_for("Lucy 2"), ["11580", "23467", "11901", "23965"])
+check("Lucy 3 is assigned nothing yet", offices.rotation_for("Lucy 3"), [])
 check("a marker written in lower case still resolves",
-      offices.rotation_for("lucy 3"), ["23965", "11901"])
+      offices.rotation_for("lucy 2"), ["11580", "23467", "11901", "23965"])
 check("an unknown machine gets no offices at all",
       offices.rotation_for("Megans-MacBook.local"), [])
 check("so does a machine with no name", offices.rotation_for(""), [])
