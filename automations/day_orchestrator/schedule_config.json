@@ -5880,6 +5880,27 @@
       },
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "hc_je_scorecard": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "MANUAL-ONLY for now (Eve 2026-09-12). Retail JE daily headcount for 'Org Active Headcount Test 2': Tableau JEWeeklyTracker -> JE REP Scorecard, filter ICD Owner, COUNT the owner's reps (no column carries the number; current week only, no history). This first version only PROBES the view's .csv export into the 'HC JE Probe' tab of the Mini Control workbook; it writes nothing to the board. Usage: `lucy rerun hc_je_scorecard --probe`.",
+      "display_name": "Headcount - JE REP Scorecard probe",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.org_active_headcount.je_scorecard"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 20
+    },
     "hc_tracker_readings": {
       "on_scheduler": false,
       "_off_scheduler_note": "MANUAL-ONLY (Eve 2026-09-12). Reads the 'Rep Count' column off the posted Country Tracker PNGs (Fiber, NDS, B2B AT&T, BOX) in #alphalete-sales, per ICD per day, for the Org Active Headcount daily breakdown. Runs on Lucy 1 because the Windows token can't download Slack files. Writes NOTHING to any Sheet: only output/logs/hc-tracker-readings-<start>_<end>.log. Usage: `lucy rerun hc_tracker_readings --start 2026-07-13 --end 2026-09-12`.",
