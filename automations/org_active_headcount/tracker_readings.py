@@ -98,44 +98,56 @@ STRIPS = {"att_country", "b2b_att_country"}
 BOX = "b2b_box"
 BOX_VOTES = 3
 
+# 3rd BOX attempt (2026-09-13) — WHY THE FIRST TWO FAILED, from Eve's own
+# screenshots of the board: the 'Daily Tracker Metrics' table (where 'Total Rep
+# Count' lives) has NO OWNER NAMES, only 'Rank'. Its owner is found in the
+# 'Daily Tracker Sales' table next to it: a Rank's 'Sales ELE' + 'Sales Gas'
+# equals that owner's 'Grand Total' (9/4: rank 1 = 126 = Roshan, rank 4 = 61 =
+# Ryan, rank 5 = 37 = Carlos, rank 10 = 8 = Abel). Reading "by position" only
+# works while both tables happen to be in the same order, which is exactly what
+# breaks early in a week — so the two tables are read SEPARATELY and joined on
+# that sum, in code, where the join can be checked.
 _BOX_SCHEMA = {
     "type": "object",
     "properties": {
-        "dates_printed": {"type": "string"},
-        "section_read": {"type": "string", "description":
-            "The day / week headers of the section you read the counts from."},
-        "rows": {"type": "array", "items": {
-            "type": "object",
-            "properties": {
-                "owner": {"type": "string", "description":
-                    "The owner's NAME (letters), never the row number / rank."},
+        "section_dates": {"type": "string", "description":
+            "The day headers of the CURRENT-week section you read (e.g. "
+            "'Mon (08-31) .. Fri (09-04)')."},
+        "sales": {"type": "array", "description":
+            "'Daily Tracker Sales' (current week): one item per owner row.",
+            "items": {"type": "object", "properties": {
+                "owner": {"type": "string"},
+                "grand_total": {"type": ["integer", "null"]}},
+                "required": ["owner", "grand_total"], "additionalProperties": False}},
+        "metrics": {"type": "array", "description":
+            "'Daily Tracker Metrics' (current week): one item per Rank row.",
+            "items": {"type": "object", "properties": {
+                "rank": {"type": ["integer", "null"]},
                 "selling_rep_count": {"type": ["integer", "null"]},
                 "total_rep_count": {"type": ["integer", "null"]},
-            },
-            "required": ["owner", "selling_rep_count", "total_rep_count"],
-            "additionalProperties": False}},
+                "sales_ele": {"type": ["integer", "null"]},
+                "sales_gas": {"type": ["integer", "null"]}},
+                "required": ["rank", "selling_rep_count", "total_rep_count",
+                             "sales_ele", "sales_gas"],
+                "additionalProperties": False}},
     },
-    "required": ["dates_printed", "section_read", "rows"],
+    "required": ["section_dates", "sales", "metrics"],
     "additionalProperties": False,
 }
 
-# 2nd BOX attempt (2026-09-12): the first vote run put the ROW NUMBER in
-# 'owner' on most images (so every row collapsed into one), and the board shows
-# the current week AND the week before, each with its own count columns — the
-# only readings that matched the weekly history were the most recent section.
 _BOX_PROMPT = (
     "These {n} images are consecutive horizontal slices, top to bottom, of ONE "
-    "screenshot of the B2B Box tracker. It can show MORE THAN ONE week (e.g. "
-    "'Mon (08-31)..Sun (09-06)' and an older 'Mon (08-24)..'). Use ONLY the "
-    "section for the MOST RECENT week (the latest dates), and in it the table "
-    "with one row per owner. That table has two different count columns, "
-    "'Selling Rep Count' and 'Total Rep Count'. For EVERY owner row return: the "
-    "owner's NAME as printed (letters — never the rank / row number beside it), "
-    "the 'Selling Rep Count' value and the 'Total Rep Count' value of that SAME "
-    "row — two separate numbers, never swapped, never from a units/sales column. "
-    "Copy numbers exactly; null if blank. Skip header and grand-total rows. Also "
-    "copy every date printed on the board, and the headers of the section you "
-    "read.")
+    "screenshot of the 'Box Daily Tracker'. Read ONLY the CURRENT-week section "
+    "at the top: the 'Daily Tracker Sales' table on the left and the 'Daily "
+    "Tracker Metrics' table on the right. IGNORE 'Current vs Prior Weeks', "
+    "'Previous Week Sales' and 'Previous Week Metrics'.\n"
+    "1) sales: every owner row of 'Daily Tracker Sales' — the owner name exactly "
+    "as printed and its 'Grand Total' (the last column). Skip the 'Grand Total' "
+    "row itself.\n"
+    "2) metrics: every row of 'Daily Tracker Metrics' — Rank, 'Selling Rep "
+    "Count', 'Total Rep Count', 'Sales ELE', 'Sales Gas'. This table has NO "
+    "names; do not invent any. Skip its 'Grand Total' row. A blank cell is null.\n"
+    "Copy every number exactly as printed; never compute or reorder.")
 
 _SCHEMA = {
     "type": "object",
@@ -269,11 +281,33 @@ def _ask(images: List[bytes], prompt: str, schema: dict, max_tokens: int = 8000)
     return json.loads(next((b.text for b in resp.content if b.type == "text"), "{}"))
 
 
+def box_join(sales: List[dict], metrics: List[dict]) -> Dict[str, Optional[int]]:
+    """{owner as printed: Total Rep Count} — pure, no I/O.
+
+    Each metrics row belongs to the owner whose sales 'Grand Total' equals that
+    row's Sales ELE + Sales Gas. Owners sharing a Grand Total are handed out in
+    the order the sales table lists them (both tables rank by the same sales),
+    and a metrics row whose sum matches NO unused owner is dropped — its owner
+    reads as unknown, never as someone else's number."""
+    used = set()
+    out: Dict[str, Optional[int]] = {}
+    for m in sorted(metrics, key=lambda m: (m.get("rank") is None, m.get("rank") or 0)):
+        target = (m.get("sales_ele") or 0) + (m.get("sales_gas") or 0)
+        for i, s in enumerate(sales):
+            if i not in used and s.get("grand_total") is not None \
+                    and int(s["grand_total"]) == target:
+                used.add(i)
+                out[s["owner"]] = m.get("total_rep_count")
+                break
+    return out
+
+
 def _read_box(png: Path) -> dict:
-    """BOX by majority vote over BOX_VOTES reads of the board (native size —
-    the upscaled first attempt is what read row numbers as names). Its own
-    cache name, so that attempt's collapsed readings are never reused."""
-    cached = png.with_name(png.stem + ".vote2.json")
+    """BOX: read both current-week tables BOX_VOTES times, join each read by
+    ELE+Gas = Grand Total (box_join), keep an owner's Total Rep Count only when a
+    majority of the joined reads agree. No majority = null (the fill writes '-').
+    Its own cache name, so the two earlier attempts' readings are never reused."""
+    cached = png.with_name(png.stem + ".rank.json")
     if cached.exists():
         return json.loads(cached.read_text(encoding="utf-8"))
     bands = _bands(png)
@@ -282,14 +316,14 @@ def _read_box(png: Path) -> dict:
     votes: Dict[str, List] = {}
     order: List[str] = []
     for rd in reads:
-        for row in rd.get("rows") or []:
-            key = " ".join(_tokens(row.get("owner") or ""))
+        for owner, total in box_join(rd.get("sales") or [], rd.get("metrics") or []).items():
+            key = " ".join(_tokens(owner))
             if not key:
-                continue          # a rank / row number, not a name: never a key
+                continue
             if key not in votes:
                 votes[key] = []
-                order.append(row.get("owner") or "")
-            votes[key].append(row.get("total_rep_count"))
+                order.append(owner)
+            votes[key].append(total)
     rows = []
     for owner in order:
         vals = [v for v in votes[" ".join(_tokens(owner))] if v is not None]
@@ -297,9 +331,8 @@ def _read_box(png: Path) -> dict:
         ok = best is not None and vals.count(best) * 2 > BOX_VOTES
         rows.append({"owner": owner, "rep_count": best if ok else None,
                      "votes": votes[" ".join(_tokens(owner))]})
-    data = {"dates_printed": reads[0].get("dates_printed", ""),
-            "rep_count_header": f"Total Rep Count (vote x{BOX_VOTES}; section: "
-                                f"{(reads[0].get('section_read') or '')[:60].replace('|', '/')})",
+    data = {"dates_printed": reads[0].get("section_dates", ""),
+            "rep_count_header": f"Total Rep Count (rank-join vote x{BOX_VOTES})",
             "rows": rows}
     cached.write_text(json.dumps(data, indent=1), encoding="utf-8")
     return data
