@@ -1830,7 +1830,14 @@ def relay_board(icd: str, office_key: str) -> None:
         for d in week_days:
             src = (sd.get(d) or live_days.get(d) or {}) if d < dt.date.today() \
                 else (live_days.get(d) or {})
-            row[d.strftime("%a")] = _units(src) if src else 0
+            # EVERY DAY IN FULL, the way Raf's sheet lays it out: Apps first,
+            # then the product split. He reads the whole week across without
+            # clicking anything, so a single units-per-day number was not the
+            # daily breakdown he means (Megan 2026-09-13).
+            lab = d.strftime("%a")
+            row[f"{lab} Apps"] = _apps(src) if src else 0
+            for m in RELAY_MEASURES:
+                row[f"{lab} {m}"] = int(src.get(m, 0) or 0) if src else 0
         # On a single day the split IS the answer, so it shows without
         # needing Expand — that is the whole point of clicking the day.
         if picked_day or expand:
@@ -1902,8 +1909,11 @@ def relay_board(icd: str, office_key: str) -> None:
     # The totals line is the last ROW of the grid, not a table underneath: a
     # separate table scrolls on its own and stops lining up with its columns
     # the moment the board is scrolled sideways.
-    day_totals = {d.strftime("%a"): sum(r.get(d.strftime("%a"), 0)
-                                        for r in rows) for d in week_days}
+    day_totals = {}
+    for d in week_days:
+        lab = d.strftime("%a")
+        for col in [f"{lab} Apps"] + [f"{lab} {m}" for m in RELAY_MEASURES]:
+            day_totals[col] = sum(r.get(col, 0) for r in rows)
     totals_row = dict({"Rep": TOTALS_LABEL}, **day_totals,
                       **{"Apps": _apps(tot), "Total units": _units(tot)})
     if picked_day or expand:
@@ -1914,9 +1924,13 @@ def relay_board(icd: str, office_key: str) -> None:
 
     cfg = _centered(grid[0])
     for d in week_days:
-        k = d.strftime("%a")
-        cfg[k] = dict(cfg.get(k) or {}, width=58, disabled=True,
-                      help=f"Units on {d:%a %b %d} — all products.")
+        lab = d.strftime("%a")
+        for m in ["Apps"] + RELAY_MEASURES:
+            k = f"{lab} {m}"
+            cfg[k] = dict(cfg.get(k) or {}, width=52, disabled=True,
+                          label=m if m != "Apps" else lab,
+                          help=f"{m} on {d:%A %b %d}")
+    cfg["Rep"] = dict(cfg.get("Rep") or {}, pinned=True)
     cfg["Tenure"] = dict(cfg.get("Tenure") or {}, width=90, disabled=True,
                          help="Weeks since their first day — computed from "
                               "the start date, and the colour on the name.")
