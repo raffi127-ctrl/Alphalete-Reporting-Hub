@@ -5880,6 +5880,27 @@
       },
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "hc_retail_daily": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "MANUAL-ONLY for now (Eve 2026-09-12). Retail NL daily headcount for 'Org Active Headcount Test 2': the Monday focus report's own count (SARA Plus View Data, distinct reps for the range) with Min Date = Monday and Max Date = each day. Writes only the 'HC Retail Daily' tab of the Mini Control workbook. Usage: `lucy rerun hc_retail_daily --start 2026-08-31 --end 2026-09-11`.",
+      "display_name": "Headcount - Retail NL daily (SARA)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.org_active_headcount.retail_daily"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 90
+    },
     "hc_je_scorecard": {
       "on_scheduler": false,
       "_off_scheduler_note": "MANUAL-ONLY for now (Eve 2026-09-12). Retail JE daily headcount for 'Org Active Headcount Test 2': Tableau JEWeeklyTracker -> JE REP Scorecard, filter ICD Owner, COUNT the owner's reps (no column carries the number; current week only, no history). This first version only PROBES the view's .csv export into the 'HC JE Probe' tab of the Mini Control workbook; it writes nothing to the board. Usage: `lucy rerun hc_je_scorecard --probe`.",
