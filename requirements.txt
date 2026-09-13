@@ -1,0 +1,38 @@
+# Streamlit Community Cloud deps for the COMBINED site (entry: streamlit_app.py).
+#
+# THIS FILE IS A SUPERSET OF EVERY APP'S OWN requirements.txt, ON PURPOSE, and
+# it must stay one.
+#
+# Seven tools in this repo are ALSO deployed as their own Community Cloud apps
+# and owners hold links to them. Cloud resolves dependencies from a file next
+# to the entry script or from the repo root, and which one wins is not worth
+# betting seven working tools on: if root ever wins, an app whose dependency is
+# missing here loses it on its next rebuild. document_builder would stop making
+# PDFs (reportlab, PyMuPDF) and four tools would lose drag-and-drop ordering
+# (streamlit-sortables) -- all from a file that looks like it only concerns the
+# combined site.
+#
+# So: adding a tool to streamlit_app.py means adding its dependencies here,
+# and removing one never means removing a line unless no tool needs it.
+
+streamlit>=1.36              # st.navigation / st.Page
+
+# Sheets + auth — every tool reads or writes a workbook
+gspread>=6.0
+google-auth>=2.30
+
+# Slack pings (corrections channel, Lucy membership checks)
+slack_sdk>=3.21
+certifi>=2023.7              # SSL bundle for the Slack client
+
+pandas>=2.0
+
+# document_builder: branded PDFs, QR codes, image handling
+reportlab>=4.0
+segno>=1.6
+Pillow>=10.0
+PyMuPDF>=1.24
+
+# office_onboarding / tracker_onboarding / metric_request / metric_edit:
+# drag-and-drop ordering
+streamlit-sortables>=0.3.1
