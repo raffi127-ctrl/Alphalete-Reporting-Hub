@@ -22,6 +22,7 @@ Run:
 """
 from __future__ import annotations
 
+import collections
 import datetime as dt
 import re
 import sys
@@ -1641,6 +1642,51 @@ def _this_sunday_site() -> dt.date:
     return _week_end(dt.date.today())
 
 
+def _hover_table(grid: list, splits: dict, day_labels: list,
+                 total_col: str = "Total units") -> str:
+    """The board as a real HTML table, so a day cell can carry a TOOLTIP.
+
+    Streamlit's grid renders to a canvas and has no per-cell tooltip — help=
+    is per COLUMN — so hovering a number cannot show what it was made of
+    (Megan 2026-09-13). A plain table can: every day cell gets a title
+    attribute with its split, which the browser shows on hover.
+
+    What this gives up is the grid's sorting and editing, which is why it is
+    only the COLLAPSED view: "Expand your board" goes back to the real editor
+    with every measure as its own column."""
+    head = "".join(f"<th style='padding:6px 10px;text-align:center;"
+                   f"font-weight:600;opacity:.7;font-size:.78rem'>{c}</th>"
+                   for c in grid[0])
+    body = []
+    for row in grid:
+        is_total = str(row.get("Rep", "")).strip() == TOTALS_LABEL
+        tint = "" if is_total else tenure_style(row.get("Tenure"))
+        tr = [f"<tr style='{tint}'>"]
+        for col, val in row.items():
+            css = ("padding:5px 10px;text-align:center;"
+                   "border-top:1px solid rgba(128,128,128,.18);")
+            if is_total:
+                css += _TOTAL_TINT + ";font-weight:600;"
+            elif col == total_col:
+                css += _TOTAL_TINT + ";"
+            if col == "Rep":
+                css += "text-align:left;white-space:nowrap;"
+            title = ""
+            if col in day_labels and not is_total:
+                sp = (splits.get(row.get("Rep"), {}) or {}).get(col) or {}
+                if sp:
+                    title = " · ".join(f"{v} {m}" for m, v in sp.items() if v)
+                    title = title or "nothing sold"
+            tr.append(f"<td style='{css}'"
+                      + (f" title='{title}'" if title else "")
+                      + f">{val}</td>")
+        tr.append("</tr>")
+        body.append("".join(tr))
+    return (f"<div style='overflow-x:auto'><table style='border-collapse:"
+            f"collapse;width:100%;font-size:.86rem'><thead><tr>{head}</tr>"
+            f"</thead><tbody>{''.join(body)}</tbody></table></div>")
+
+
 def relay_board(icd: str, office_key: str) -> None:
     """An office's board, filled from its OWN SaraPlus via the ICD agent.
 
@@ -1792,6 +1838,7 @@ def relay_board(icd: str, office_key: str) -> None:
     week_days = [] if picked_day else week_days_all
 
     rows = []
+    splits: dict = collections.defaultdict(dict)
     for low, shown in names.items():
         rec = by_rep.get(shown) or by_rep.get(shown.upper()) or {}
         live_days = rec.get("days") or {}
@@ -1835,9 +1882,16 @@ def relay_board(icd: str, office_key: str) -> None:
             # clicking anything, so a single units-per-day number was not the
             # daily breakdown he means (Megan 2026-09-13).
             lab = d.strftime("%a")
-            row[f"{lab} Apps"] = _apps(src) if src else 0
-            for m in RELAY_MEASURES:
-                row[f"{lab} {m}"] = int(src.get(m, 0) or 0) if src else 0
+            if expand:
+                # Expanded: every measure gets its own column, Raf's layout.
+                row[f"{lab} Apps"] = _apps(src) if src else 0
+                for m in RELAY_MEASURES:
+                    row[f"{lab} {m}"] = int(src.get(m, 0) or 0) if src else 0
+            else:
+                # Collapsed: one number per day, with the split on HOVER.
+                row[lab] = _apps(src) if src else 0
+                splits[shown][lab] = {m: int(src.get(m, 0) or 0)
+                                      for m in RELAY_MEASURES}
         # On a single day the split IS the answer, so it shows without
         # needing Expand — that is the whole point of clicking the day.
         if picked_day or expand:
@@ -1860,8 +1914,12 @@ def relay_board(icd: str, office_key: str) -> None:
     # section, so counting them here counts them twice and drags the number
     # down with people nobody expected to sell yet. No tenure on file still
     # counts — unknown is not the same as first week.
+    # "GOT ON THE BOARD" IS APPS, NOT UNITS (Raf's Loom, 2026-09-13). He walks
+    # through Kenneth, who took an upgrade: "it's not an app, so it does not
+    # count as he got on the board." Counting Total units here put every
+    # upgrade-only rep on the board who should not be there.
     eligible = [r for r in rows if not is_first_week(r.get("Tenure"))]
-    selling = sum(1 for r in eligible if r.get("Total units"))
+    selling = sum(1 for r in eligible if r.get("Apps"))
     first_week = len(rows) - len(eligible)
 
     # CLOSED DAYS COME FROM TABLEAU, TODAY FROM THE RELAY (Megan 2026-09-13).
@@ -1912,7 +1970,9 @@ def relay_board(icd: str, office_key: str) -> None:
     day_totals = {}
     for d in week_days:
         lab = d.strftime("%a")
-        for col in [f"{lab} Apps"] + [f"{lab} {m}" for m in RELAY_MEASURES]:
+        cols_for_day = ([f"{lab} Apps"] + [f"{lab} {m}" for m in RELAY_MEASURES]
+                        if expand else [lab])
+        for col in cols_for_day:
             day_totals[col] = sum(r.get(col, 0) for r in rows)
     totals_row = dict({"Rep": TOTALS_LABEL}, **day_totals,
                       **{"Apps": _apps(tot), "Total units": _units(tot)})
@@ -1925,10 +1985,12 @@ def relay_board(icd: str, office_key: str) -> None:
     cfg = _centered(grid[0])
     for d in week_days:
         lab = d.strftime("%a")
-        for m in ["Apps"] + RELAY_MEASURES:
-            k = f"{lab} {m}"
+        keys = ([f"{lab} {m}" for m in ["Apps"] + RELAY_MEASURES]
+                if expand else [lab])
+        for k in keys:
+            m = k[len(lab):].strip() or "Apps"
             cfg[k] = dict(cfg.get(k) or {}, width=52, disabled=True,
-                          label=m if m != "Apps" else lab,
+                          label=m if (expand and m != "Apps") else lab,
                           help=f"{m} on {d:%A %b %d}")
     cfg["Rep"] = dict(cfg.get("Rep") or {}, pinned=True)
     cfg["Tenure"] = dict(cfg.get("Tenure") or {}, width=90, disabled=True,
@@ -1952,6 +2014,19 @@ def relay_board(icd: str, office_key: str) -> None:
     # Streamlit paints Styler output onto NON-editable columns only, which is
     # why the tint survives: the measures are always locked and only the three
     # owner columns ever unlock.
+    if not expand:
+        # Read-only anyway, so the hover table costs nothing and buys the
+        # per-day breakdown on hover.
+        st.markdown(_hover_table(grid, splits,
+                                 [d.strftime("%a") for d in week_days]),
+                    unsafe_allow_html=True)
+        st.caption(
+            "Hover a day to see what it was made of. **Expand your board** "
+            "lays every day out in full, the way the sheet does, and is where "
+            "Team, Leadership and Status are edited.")
+        relay_wow(office_key)
+        return
+
     frame = pd.DataFrame(grid).astype("string").fillna("")
 
     def _style_board_rows(df):
