@@ -1,17 +1,23 @@
 #!/bin/bash
-# Applicant Push — every 5 min, 7:00 AM–10:00 PM CST, EVERY DAY, on Lucy 2 via
-# launchd (com.alphalete.applicant-push).
+# Applicant Push — every 5 min, 7:00 AM–10:00 PM CST, EVERY DAY, on Lucy 2 AND
+# Lucy 3 via launchd (com.alphalete.applicant-push). Same wrapper on both boxes;
+# each one works only the offices assigned to it.
 #
-# TWO OFFICES, ONE PER TICK (2026-08-26, Carlos asked for Atef's to be pushed on
-# the same schedule as his): the tick alternates 11580 (Carlos) → 23467 (Atef) →
-# 11580 → … so each office gets a pass every ~10 minutes and every tick stays ONE
-# ~5-minute warm session. We do NOT do both offices inside one tick: the first
+# ONE OFFICE PER TICK, ROUND-ROBIN OVER THE OFFICES THIS MACHINE OWNS. The
+# assignment lives in offices.ROTATION_BY_MACHINE — Lucy 2 works Carlos and Atef;
+# Lucy 3 works Khalil and Raf's 2nd funnel. A box runs its ticks back to back, so
+# every office added to a machine slows every other office on it: all four on
+# Lucy 2 meant a pass every ~25 minutes each, and split two and two it is ~12.
+# Each office gets a pass every (offices on this machine) x ~6 minutes, and every
+# tick stays ONE warm session.
+#
+# We do NOT do both offices inside one tick: the first
 # office's wedge would burn the hard time cap and starve the second, and we do NOT
 # run two warm AppStream sessions at once — a crossed session would send one
 # office's applicants out of the other's queue, which is irreversible. Offices are
 # declared in automations/applicant_push/offices.py (own Chrome profile, port,
-# day-files, Sheet tabs, Hub id each); adding a third is a row there + a ROTATION
-# entry, nothing here.
+# day-files, Sheet tabs, Hub id each); adding one is a row there plus a
+# ROTATION + ROTATION_BY_MACHINE entry, nothing here.
 #   bash deploy/applicant_push.sh --office 23467 --dry-run   # probe one office
 #
 # The UNIFIED recruiting push: one warm real-Chrome/CDP AppStream session runs
@@ -34,6 +40,35 @@
 # long combined run never stacks a second copy.
 # TIME KNOB: edit the window gate below (not the plist) to change hours.
 set -u
+
+# ---- HARD CAP FOR ANY STEP THAT TALKS TO THE NETWORK ------------------------
+# launchd keeps ONE instance per label, so ANY step of this wrapper that hangs
+# does not just lose its own tick — it swallows every tick after it, silently,
+# for as long as it hangs. The walk itself has had a cap since 8/18 (MAX_RUN_S
+# below), but the git pull and the three best-effort post-run steps did not, and
+# each of them is a network call. The push went quiet from 2026-09-11 12:56 to
+# 2026-09-13 with Lucy 2 up the whole time and every other job on the box
+# beating normally, which is exactly what a hang OUTSIDE the guarded section
+# looks like from the outside.
+#
+# `timeout` is not on stock macOS, so cap it the same way MAX_RUN_S does.
+# Best-effort by design: a capped step that times out logs and moves on.
+_capped() {   # _capped <seconds> <label> <cmd...>
+  local _cap="$1" _label="$2"; shift 2
+  "$@" &
+  local _pid=$! _w=0
+  while kill -0 "$_pid" 2>/dev/null && [ "$_w" -lt "$_cap" ]; do
+    sleep 2; _w=$((_w + 2))
+  done
+  if kill -0 "$_pid" 2>/dev/null; then
+    echo "[$(date)] CAP: $_label still running after ${_cap}s — killing it so this tick can finish" >&2
+    kill -TERM "$_pid" 2>/dev/null; sleep 3; kill -KILL "$_pid" 2>/dev/null
+    wait "$_pid" 2>/dev/null
+    return 124
+  fi
+  wait "$_pid"
+}
+
 cd "$(dirname "$0")/.." || exit 1
 
 VENV_PY=".venv/bin/python3.14"
@@ -56,14 +91,28 @@ for a in "$@"; do [ "$a" = "--dry-run" ] && DRYRUN=1; done
 # 11901 (Khalil) REJOINED 9/8 2:35pm after the full gauntlet: the crash was a
 # missing "account" key in his offices.py row (fixed), then the scoped login
 # needed Megan to grant the office (done), then the supervised dry-run probe
-# passed (rerun-2026-09-08-142852: switch ok, walk ok). See the README ledger.
-# 11901 OUT of the launchd rotation again (9/8 8:35pm): with him in it the
-# AGENT dies pre-log on his slot even after the account-key fix — the rerun
-# path works (48 sent today) but the wrapper path crashes on a third office
-# somewhere before LOG_FILE. Do NOT re-add until the wrapper's per-office
-# handling is fixed and a supervised WRAPPER-PATH test passes. Khalil is
-# served by manual reruns meanwhile.
-ROTATION="11580 23467 11901 23965"
+# passed (rerun-2026-09-08-142852: switch ok, walk ok). He was pulled back OUT
+# the same evening — the agent died pre-log on his slot — and the cause was the
+# unknown-office arm below calling `exit 1`, so the rotation marker never
+# advanced and every later tick re-picked the same bad office. That arm now
+# advances and exits 0 (9/9, f58495c), Khalil has been in the rotation since,
+# and the walk-diag tab shows him running normally 9/9-9/11 (48 walks on 9/10).
+# Leaving the old "do NOT re-add" warning here would now be the stale half of a
+# contradiction, so it is retired rather than kept.
+# WHICH OFFICES THIS MACHINE OWNS — read from offices.py, not hardcoded here.
+# Two boxes now share the push (Lucy 2: Carlos, Atef · Lucy 3: Khalil, Raf's 2nd
+# funnel), and the same wrapper ships to both, so the split has to come from one
+# place that both read. offices.ROTATION_BY_MACHINE is that place.
+#
+# An unknown machine gets an EMPTY rotation and this tick does nothing. That is
+# the safe default, not an oversight: Megan's laptop has no `.machine-profile`,
+# so it resolves to its hostname, and anything other than "do nothing" would let
+# a laptop start sending real applicants to the AI call list.
+ROTATION=$(PYTHONPATH="$(pwd)" "$VENV_PY" -c "from automations.applicant_push import offices; print(' '.join(offices.rotation_for()))" 2>/dev/null)
+if [ -z "${ROTATION// /}" ]; then
+  echo "[$(date)] this machine owns no push offices (see ROTATION_BY_MACHINE in automations/applicant_push/offices.py) — nothing to do" >&2
+  exit 0
+fi
 OFFICE=""
 _prev=""
 for a in "$@"; do
@@ -210,7 +259,11 @@ fi
 # because Lucy 2 has been blocked before by a file-MODE change with zero content
 # behind it (see day_orchestrator.sh's note).
 if [ -d .git ]; then
-  git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
+  # 90s: a fast-forward against an unchanged remote is milliseconds; anything
+  # past a minute and a half is a stuck fetch, and running on yesterday's code
+  # beats not running at all (the whole reason this pull is best-effort).
+  _capped 90 "git pull" \
+    sh -c 'git pull --ff-only --autostash --quiet origin main >/dev/null 2>&1' || true
 fi
 # -----------------------------------------------------------------------------
 
@@ -262,9 +315,16 @@ if kill -0 "$_RUN_PID" 2>/dev/null; then
   sleep 20
   kill -KILL "$_RUN_PID" 2>/dev/null
   wait "$_RUN_PID" 2>/dev/null
+  # EVERY office, not just the first two. 11901 and 23965 were missing here, so
+  # a wedge kill on their slot left the CDP Chrome alive holding the profile
+  # lock — and the next tick for that office cannot relaunch on a locked
+  # profile. The pattern is the office's OWN profile marker (never the session
+  # holder's or Tableau's), which is what offices.py's cdp_kill_pat states.
   case "$OFFICE" in
     11580) pkill -f rp_cdp_profile >/dev/null 2>&1 ;;
     23467) pkill -f rp_cdp_23467   >/dev/null 2>&1 ;;
+    11901) pkill -f rp_cdp_11901   >/dev/null 2>&1 ;;
+    23965) pkill -f rp_cdp_23965   >/dev/null 2>&1 ;;
   esac
   ST=124
 else
@@ -301,8 +361,24 @@ case " $* " in
       _POST_MARK="$LOG_DIR/.applicant-push-posted${OFFICE_SLUG}-$_SLOT-$(date +%Y-%m-%d)"
       if [ ! -f "$_POST_MARK" ]; then
         echo "[$(date)] posting the $_SLOT manual-to-do report for $OFFICE_LABEL (needs-number + needs-text)" >> "$LOG_FILE"
-        "$VENV_PY" -u -m automations.oat_processing.summary --nophone >> "$LOG_FILE" 2>&1 \
-          && touch "$_POST_MARK" || true
+        # A FAILED to-do post used to be swallowed by `|| true`, and the only
+        # symptom was a list that quietly stopped appearing while the walk that
+        # produced it kept running green — the office looks healthy and the
+        # people who need chasing are simply never named. Say so instead.
+        #
+        # NOT about which machine posts: Lucy has the SAME Slack access on all
+        # three Lucys (Megan 2026-09-13), so an office moving boxes keeps its
+        # channel and its thread. The real causes are an expired token, Lucy
+        # being removed from a private channel (which reads `channel_not_found`,
+        # never `not_in_channel`), or Slack being down.
+        if _capped 300 "the $_SLOT to-do post" \
+             "$VENV_PY" -u -m automations.oat_processing.summary --nophone \
+             >> "$LOG_FILE" 2>&1; then
+          touch "$_POST_MARK"
+        else
+          echo "[$(date)] TO-DO POST FAILED for $OFFICE_LABEL ($_SLOT) — the walk ran fine, but the flagged-applicant list did NOT reach Slack. Probe the channel read-only with: lucy slack_channel <id>  (a private channel Lucy was removed from answers channel_not_found, not not_in_channel)" >> "$LOG_FILE"
+          osascript -e "display notification \"$HUB_NAME: the $_SLOT to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
+        fi
       fi
     elif [ -n "$_SLOT" ]; then
       echo "[$(date)] $_SLOT to-do post HELD for $OFFICE_LABEL — no Slack channel set for this office yet (see offices.py)" >> "$LOG_FILE"
@@ -312,7 +388,8 @@ esac
 
 # ---- Session-wedge watch (best-effort): scans the merged log for the office-11580
 # Cloudflare/Indeed wedge signature and pings Slack once per outage.
-"$VENV_PY" -m automations.oat_processing.session_wedge_watch >> "$LOG_FILE" 2>&1 || true
+_capped 180 "session_wedge_watch" \
+  "$VENV_PY" -m automations.oat_processing.session_wedge_watch >> "$LOG_FILE" 2>&1 || true
 
 # ---- Publish a REAL success/failure to the Hub (streak-gated + date-scoped, same
 # proven logic as the old resume wrapper: a lone Cloudflare/Indeed blip is a SKIP;
@@ -326,7 +403,8 @@ _OUTAGE_FILE="$LOG_DIR/.applicant-push-outage${OFFICE_SLUG}-$(date +%Y-%m-%d)"
 # Each office publishes to its OWN Hub card, so one office being wedged never
 # shows the other one red (or, worse, green).
 _publish() {   # $1 = success|failed
-  "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('$HUB_ID','$HUB_NAME','$1')" >> "$LOG_FILE" 2>&1
+  _capped 180 "hub publish ($1)" \
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('$HUB_ID','$HUB_NAME','$1')" >> "$LOG_FILE" 2>&1
 }
 
 _NOTIFY=0
@@ -374,6 +452,30 @@ esac
 # every 10 min trained everyone to ignore it). exit=2 = no AppStream session
 # (login/Cloudflare); a batch Indeed-Turnstile wedge alone does NOT fail the run
 # (the leftovers stage still runs), so a streak here means the whole session is down.
+# ---- HEARTBEAT: prove the AGENT ITSELF is still ticking ----------------------
+# The Hub tells you whether a PASS succeeded. It cannot tell you the agent stopped
+# firing, because a dead agent publishes nothing and the card just keeps showing
+# this morning's green — which is how the push stayed silent from 2026-09-11
+# 12:56 to 2026-09-13 without a single alert, while Lucy 2 was up and every other
+# job on the box beat normally.
+#
+# So stamp the heartbeat tab on EVERY completed tick, whatever the office and
+# whatever the exit code: the claim is "the wrapper reached its end", not "the
+# walk went well" — the streak logic above owns that. silent_job_watch then
+# alerts on a gap (see its JOBS entry), which is the only signal that catches an
+# agent that is not running at all.
+#
+# NOT on a manual --dry-run: a hand-run must never make a dead agent look alive.
+case " $* " in
+  *" --dry-run "*) : ;;
+  *)
+    _capped 120 "heartbeat" \
+      "$VENV_PY" -m automations.shared.silent_job_watch \
+        --beat-machine applicant_push --exit "$ST" --note "$OFFICE_LABEL" \
+      >> "$LOG_FILE" 2>&1 || true
+    ;;
+esac
+
 if [ "$_NOTIFY" -eq 1 ]; then
   osascript -e "display notification \"$HUB_NAME failed $FAIL_STREAK passes in a row (exit $ST) — the AppStream session for $OFFICE_LABEL may have expired, or Cloudflare needs a human clear on Lucy 2\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
 fi

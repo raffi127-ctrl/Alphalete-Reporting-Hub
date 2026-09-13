@@ -118,6 +118,54 @@ JOBS: Dict[str, dict] = {
                   "Nothing is sent or lost — only the ticks go cold."),
         "fix": "lucy rerun install_blueink_sweep_agent --machine \"Lucy 2\"",
     },
+    # The push fires every 5 minutes, 07:00-22:00, rotating one ApplicantStream
+    # office per tick. It publishes a Hub row ONCE a day per office, so a card
+    # that went green at 07:08 keeps reading green for the rest of the day no
+    # matter what — and on 2026-09-11 the agent stopped ticking at 12:56 and
+    # nothing said so until someone read the walk-diag tab two days later. Lucy 2
+    # was up the whole time; every other job on the box beat normally. A missing
+    # pass here is applicants sitting uncalled, which is the entire product.
+    "applicant_push_lucy_2": {
+        "name": "Applicant Push (all offices)",
+        "machine": "Lucy 2",
+        "first_by": "07:30",       # window opens 07:00; first tick + grace
+        # A tick is ~6 min and the wedge guard kills a stuck walk at 20 min, so
+        # 45 tolerates a wedged pass plus the tick it swallows, and still catches
+        # a stopped agent inside an hour instead of two days.
+        "max_gap_min": 45,
+        "active_until": "22:00",
+        "weekdays": None,          # runs every day
+        # Grace: the beat ships in deploy/applicant_push.sh, which Lucy 2 has to
+        # pull. Armed the day after so the agent gets one clean day to prove it.
+        "watch_from": "2026-09-14",
+        "means": ("applicants stop being pushed to the AI call list for Carlos "
+                  "AND Atef at once, since they share one agent. Khalil and "
+                  "Raf's 2nd funnel are on Lucy 3 and keep running, so the push "
+                  "will not look dead from the outside. The Hub cards keep "
+                  "showing this morning's green, so nothing else will tell you."),
+        "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 2\"",
+    },
+    # Lucy 3 works Raf's 2nd funnel (23965) and Khalil (11901), both moved off
+    # Lucy 2 on 2026-09-13 to split the four live offices two and two. Its own
+    # row, because beat() keeps one row per job id: a shared id would let either
+    # machine's beat light the other one green, which is the exact false-healthy
+    # this module exists to prevent.
+    "applicant_push_lucy_3": {
+        "name": "Applicant Push (Khalil + Raf 2nd funnel)",
+        "machine": "Lucy 3",
+        "first_by": "07:30",
+        "max_gap_min": 45,
+        "active_until": "22:00",
+        "weekdays": None,
+        # One day behind Lucy 2's so the split gets a full day to land. If Lucy 3
+        # is not pushing by then the alert is CORRECT and not noise — it means the
+        # move never happened and Raf's office is being worked by nobody.
+        "watch_from": "2026-09-15",
+        "means": ("Khalil's applicants (11901) and Raf's 2nd funnel (23965) stop "
+                  "being pushed. Carlos and Atef are on Lucy 2 and keep running, "
+                  "so nothing else in the push looks wrong."),
+        "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 3\"",
+    },
 }
 
 # --- the watchdog is itself a silent job --------------------------------------

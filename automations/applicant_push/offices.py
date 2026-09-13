@@ -377,6 +377,68 @@ DEFAULT_OFFICE = "11580"
 # office's wedge burns the cap before the second ever opens a session.
 ROTATION = ["11580", "23467", "11901", "23965"]
 
+# WHICH MACHINE WORKS WHICH OFFICES (2026-09-13, Megan: "we can move Raf's push
+# to lucy 3 since she's not got a lot on her").
+#
+# One machine runs one office per tick, ticks are ~6 minutes, and the box is
+# already running them back to back — 144 walks in the 900-minute window on 9/10.
+# So an office's wait between passes is simply (offices on that machine) x ~6 min,
+# and every office added to a machine slows down every other office on it. Raf's
+# 23965 joining on 9/12 pushed Carlos, Atef and Khalil from ~19 to ~25 minutes.
+#
+# Splitting across machines is the only lever that changes that number by more
+# than a few percent: Lucy 3 has spare capacity, so Raf's office moves there and
+# gets a pass every ~6 minutes instead of every ~25, while the other three drop
+# back to ~19 on Lucy 2.
+#
+# THE SAME SCOPED ACCOUNT SIGNS IN ON BOTH BOXES, which is new and is the thing to
+# watch: `lucyresume` has only ever been used from Lucy 2. Each machine keeps its
+# own Chrome profile and mints its own session, so they do not SHARE one — but if
+# applicantstream turns out to allow only one live session per account, Lucy 3
+# signing in would log Lucy 2 out and take the offices still on it down too. That
+# is why the first Lucy 3 pass must be a supervised --dry-run with Lucy 2's next
+# tick checked afterwards, before anything else moves.
+#
+# WHY TWO AND TWO (2026-09-13, Megan: "let's move another one to lucy 3"). With
+# four live offices the per-office wait is the same whichever pair sits on which
+# box — both machines end up working two, so everybody lands at ~2 x ~6 min
+# instead of Lucy 2's three at ~19 and Lucy 3's one at ~6. Since throughput does
+# not care which office moves, the choice is purely which move risks least, and
+# that is Khalil's 11901: it is the newest live office (9/8), its queue actually
+# drains (2 -> 8 across 9/10, against Atef's 16 -> 33), and it is the only live
+# office with no `machine`-pinned rerun entry in schedule_config — Carlos's
+# `applicant_push` and Atef's `applicant_push_atef` are both bound to Lucy 2, and
+# 11580 additionally carries the unsuffixed day-files and the v2->classic
+# Cloudflare quirk. Moving either of those is a bigger change for an identical
+# result.
+#
+# An UNKNOWN machine gets an EMPTY rotation on purpose — Megan's laptop has no
+# `.machine-profile`, so hub_identity.machine_name() falls back to its hostname,
+# and a default-to-something here would let a laptop start sending real
+# applicants. Nothing scheduled means nothing runs.
+ROTATION_BY_MACHINE = {
+    "Lucy 2": ["11580", "23467"],
+    "Lucy 3": ["23965", "11901"],
+}
+
+
+def rotation_for(machine: str = None) -> list:
+    """The offices THIS machine is responsible for, in tick order.
+
+    Empty for any machine not named above — see the note on ROTATION_BY_MACHINE.
+    Matched case-insensitively so a marker written "lucy 3" still resolves."""
+    if machine is None:
+        try:
+            from automations.shared import hub_identity
+            machine = hub_identity.machine_name()
+        except Exception:  # noqa: BLE001
+            machine = ""
+    want = str(machine or "").strip().lower()
+    for name, offices in ROTATION_BY_MACHINE.items():
+        if name.lower() == want:
+            return list(offices)
+    return []
+
 
 def get(office_id: str) -> dict:
     try:

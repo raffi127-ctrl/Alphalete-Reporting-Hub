@@ -93,6 +93,22 @@ POST_MUTATION_STRIKES = int(os.environ.get("OAT_POST_MUTATION_STRIKES", "8"))
 # Settle time between blank reads while the list is re-rendering after a mutation.
 POST_MUTATION_SETTLE_MS = int(os.environ.get("OAT_POST_MUTATION_SETTLE_MS", "700"))
 
+# --- How long a CONFIRMED-empty resume stays settled ----------------------- #
+# The no-number cache is keyed by DATE, so it resets every midnight and the whole
+# flagged backlog gets its resume reopened again each morning — the same dead ends,
+# every day, forever, until a human clears them. In Carlos's office that is ~26
+# people x ~12s, re-paid daily, out of a walk budget that is already the thing
+# deciding how fast a NEW applicant gets called.
+#
+# A resume we actually OPENED and found no number on is the one case where the
+# answer keeps: resumes do not grow a phone number overnight. So that verdict now
+# carries across days, and re-checks on this cadence instead of tomorrow morning.
+#
+# This applies ONLY to confirmed-empty reads. A BLOCKED read — Cloudflare, the
+# Indeed sign-in wall, a tab that never opened — is OUR failure and we never saw
+# the resume, so it stays day-scoped and retries tomorrow exactly as before.
+SETTLED_RECHECK_DAYS = int(os.environ.get("OAT_SETTLED_RECHECK_DAYS", "7"))
+
 # --- Multi-office namespacing (2026-08-26) --------------------------------- #
 # The push works more than one office now (Carlos 11580, Atef 23467 — see
 # automations/applicant_push/offices.py). Every per-day artefact this module

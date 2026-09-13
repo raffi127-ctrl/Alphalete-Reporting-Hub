@@ -140,8 +140,46 @@ for _oid in sorted(offices.OFFICES):
 offices.activate("11580")
 check("11580 LEAVES no-phone applicants", _oat_config.REMOVE_NO_PHONE, False)
 offices.activate("23467")
-check("23467 removes confirmed-uncontactable", _oat_config.REMOVE_NO_PHONE, True)
+# 9/12 (Carlos): Atef's office joined Carlos's rule — a no-number applicant STAYS
+# in the queue. This assertion still read True from the 8/27 policy and had been
+# failing since the row flipped; the row is what Carlos asked for, so the test
+# moved, not the config.
+check("23467 LEAVES no-phone applicants too (Carlos, 9/12)",
+      _oat_config.REMOVE_NO_PHONE, False)
 offices.activate("11580")
+
+# --- which machine works which offices (2026-09-13) -------------------------
+# Raf's 23965 moved to Lucy 3 so the other three stop paying for it. Three things
+# have to stay true, and each one has cost a real outage in this repo's history:
+#   * every LIVE office is worked by exactly one machine — assigned twice and two
+#     boxes race the same queue; assigned zero times and it is worked by nobody
+#     while every Hub card stays green;
+#   * an unknown machine gets NOTHING, so Megan's marker-less laptop can never
+#     start sending real applicants;
+#   * the diagnostic offices stay out of every machine's rotation.
+_assigned = [o for offs in offices.ROTATION_BY_MACHINE.values() for o in offs]
+check("no office is assigned to two machines",
+      len(_assigned), len(set(_assigned)))
+check("every ROTATION office has a machine",
+      sorted(set(_assigned)), sorted(offices.ROTATION))
+check("Lucy 2 keeps Carlos and Atef",
+      offices.rotation_for("Lucy 2"), ["11580", "23467"])
+check("Lucy 3 works Raf's 2nd funnel and Khalil",
+      offices.rotation_for("Lucy 3"), ["23965", "11901"])
+# Two and two. An uneven split is not wrong, but it is worth noticing: the
+# per-office wait IS the count on that box, so a 3/1 split means one machine's
+# offices wait three times as long as the other's for no reason.
+check("the four live offices are split evenly across the two boxes",
+      sorted(len(v) for v in offices.ROTATION_BY_MACHINE.values()), [2, 2])
+check("a marker written in lower case still resolves",
+      offices.rotation_for("lucy 3"), ["23965", "11901"])
+check("an unknown machine gets no offices at all",
+      offices.rotation_for("Megans-MacBook.local"), [])
+check("so does a machine with no name", offices.rotation_for(""), [])
+for _oid in _assigned:
+    check("assigned office %s exists" % _oid, _oid in offices.OFFICES, True)
+    check("assigned office %s uses the resume login" % _oid,
+          offices.OFFICES[_oid]["account"], offices.RESUME_ACCOUNT)
 
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)

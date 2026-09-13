@@ -343,6 +343,57 @@ def read_current_applicant(page, today: dt.date = None) -> Applicant:
     return a
 
 
+# --- pager settle ----------------------------------------------------------- #
+# After clicking Next the walk used to sleep a flat 1800ms, chosen as "long
+# enough for the slowest re-render". It is paid on EVERY page-turn, and a walk
+# page-turns once per applicant — roughly 4,000 times a day across the office
+# rotation, which is over an hour of the push's day spent waiting on renders that
+# had already finished. The pager is usually back in ~200-400ms.
+#
+# So POLL for the panel to actually change instead of assuming the worst case.
+# The cap is unchanged, so a genuinely slow re-render waits exactly as long as it
+# always did; we only return early once the new applicant is provably on screen.
+# When we cannot read a signature at all (evaluate unavailable), we fall back to
+# the old flat wait rather than guessing the page turned.
+_ADVANCE_SETTLE_CAP_MS = 1800
+_ADVANCE_SETTLE_POLL_MS = 150
+
+_PANEL_SIG_JS = r"""() => {
+  const v = n => { const e = document.querySelector(`[name='${n}']`);
+                   return e ? (e.value || '') : ''; };
+  const m = (document.body.innerText || '').match(/(\d+)\s+of\s+\d+\s+emails/i);
+  return (m ? m[1] : '') + '|' + v('fname') + '|' + v('lname') + '|' + v('email');
+}"""
+
+
+def _panel_signature(page) -> str:
+    """A cheap fingerprint of who is on the panel right now — pager position plus
+    the name/email fields. Empty string means we could not read one."""
+    try:
+        return str(page.evaluate(_PANEL_SIG_JS) or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _settle_after_advance(page, before: str) -> int:
+    """Wait for the pager click to land. Returns the ms waited.
+
+    Two applicants in a row with the same name AND email (real duplicates do
+    occur in this queue) read as an unchanged signature, so that case waits the
+    full cap — the same wall-clock as before this existed, never less safe."""
+    if not before:
+        page.wait_for_timeout(_ADVANCE_SETTLE_CAP_MS)
+        return _ADVANCE_SETTLE_CAP_MS
+    waited = 0
+    while waited < _ADVANCE_SETTLE_CAP_MS:
+        page.wait_for_timeout(_ADVANCE_SETTLE_POLL_MS)
+        waited += _ADVANCE_SETTLE_POLL_MS
+        now = _panel_signature(page)
+        if now and now != before:
+            return waited
+    return waited
+
+
 def advance_to_next(page) -> bool:
     """Advance the OAT pager ("<page> of <N> Emails", top-right of the dup area)
     to the next applicant. Returns False when there's no next control (end of
@@ -372,6 +423,7 @@ def advance_to_next(page) -> bool:
     import time as _t
     _deadline = _t.monotonic() + 6.0
     _polls = 0
+    _before = _panel_signature(page)
     while True:
         for xp in candidates:
             try:
@@ -379,7 +431,7 @@ def advance_to_next(page) -> bool:
                 if loc.count() == 0:
                     continue
                 loc.click(timeout=5000, no_wait_after=True)
-                page.wait_for_timeout(1800)
+                _settle_after_advance(page, _before)
                 if _polls:
                     _log(f"[oat] next-pager appeared after {_polls} extra poll(s) "
                          f"— a single look would have ended this walk early")
@@ -1945,6 +1997,56 @@ def _nophone_checked_path():
             f"oat-nophone-checked-{dt.date.today().isoformat()}{config.FILE_SUFFIX}.json")
 
 
+def _nophone_settled_path():
+    """The CROSS-DAY store of applicants whose resume we opened and confirmed
+    carries no number. NOT date-keyed — that is the whole point."""
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[2]
+    (root / "output").mkdir(parents=True, exist_ok=True)
+    return (root / "output" / f"oat-nophone-settled{config.FILE_SUFFIX}.json")
+
+
+def _load_nophone_settled() -> dict:
+    """{key: 'YYYY-MM-DD'} — the day we last CONFIRMED this resume has no number.
+
+    Entries past the re-check window are dropped on load, which is how the
+    periodic re-read happens: forget the verdict and the next walk earns it again.
+    """
+    import json as _json
+    try:
+        with open(_nophone_settled_path()) as _fh:
+            raw = _json.load(_fh)
+        if not isinstance(raw, dict):
+            return {}
+    except Exception:  # noqa: BLE001
+        return {}
+    window = int(getattr(config, "SETTLED_RECHECK_DAYS", 7))
+    cutoff = dt.date.today() - dt.timedelta(days=window)
+    out = {}
+    for k, v in raw.items():
+        try:
+            if dt.date.fromisoformat(str(v)) > cutoff:
+                out[k] = str(v)
+        except Exception:  # noqa: BLE001 — an unparseable date re-reads, which is safe
+            continue
+    return out
+
+
+def _mark_nophone_settled(key: str) -> None:
+    """Record a CONFIRMED-empty resume so later DAYS skip it too. Only ever called
+    for a read that actually opened the resume — never for a blocked one."""
+    if not key:
+        return
+    import json as _json
+    state = _load_nophone_settled()          # already pruned to the window
+    state[key] = dt.date.today().isoformat()
+    try:
+        with open(_nophone_settled_path(), "w") as _fh:
+            _json.dump(state, _fh, indent=0, sort_keys=True)
+    except Exception as _e:  # noqa: BLE001
+        _log(f"[oat] WARN could not persist the settled no-number store: {_e}")
+
+
 def _load_nophone_checked() -> set:
     """Applicants whose resume we already opened TODAY and found no number — so a
     later walk skips re-reading the same dead-end resume (Megan 2026-08-06: don't
@@ -1958,12 +2060,31 @@ def _load_nophone_checked() -> set:
                 _NOPHONE_CHECKED = set(_json.load(_fh))
         except Exception:  # noqa: BLE001
             _NOPHONE_CHECKED = set()
+        # Carry forward the CONFIRMED-empty verdicts from earlier days. Without
+        # this the whole flagged backlog gets its resume reopened every morning —
+        # the same dead ends, daily, while new applicants wait behind them.
+        _carried = set(_load_nophone_settled()) - _NOPHONE_CHECKED
+        if _carried:
+            _NOPHONE_CHECKED |= _carried
+            _log(f"[oat] carried {len(_carried)} confirmed-empty resume(s) over "
+                 f"from earlier days (re-checked every "
+                 f"{getattr(config, 'SETTLED_RECHECK_DAYS', 7)} days) — not "
+                 f"re-opening those today")
         _log(f"[oat] no-number cache loaded: {len(_NOPHONE_CHECKED)} app(s) already "
              f"checked today (these skip the resume re-read)")
     return _NOPHONE_CHECKED
 
 
-def _mark_nophone_checked(key: str) -> None:
+def _mark_nophone_checked(key: str, *, confirmed: bool = False) -> None:
+    """Stop re-reading this applicant's resume today.
+
+    `confirmed=True` means we OPENED the resume and it carries no number — a
+    verdict that keeps, so it also goes in the cross-day store. The default is
+    for the blocked-read path, which gives up for TODAY having never seen the
+    resume: that one must come back tomorrow.
+    """
+    if confirmed:
+        _mark_nophone_settled(key)
     s = _load_nophone_checked()
     if key and key not in s:
         s.add(key)
@@ -2180,8 +2301,12 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                      f"{a.first_name} {a.last_name}")
             else:
                 _log(f"    no resume phone ({detail}) → flag + remember (won't "
-                     f"re-read today): {a.first_name} {a.last_name}")
-            _mark_nophone_checked(key)
+                     f"re-read for "
+                     f"{getattr(config, 'SETTLED_RECHECK_DAYS', 7)} days): "
+                     f"{a.first_name} {a.last_name}")
+            # CONFIRMED empty: the resume opened and carries no number. That
+            # verdict holds across days — see config.SETTLED_RECHECK_DAYS.
+            _mark_nophone_checked(key, confirmed=True)
     _NO_PHONE_ROWS.append([
         dt.date.today().isoformat(), a.first_name, a.last_name,
         a.email, a.job_board, a.position,
@@ -2250,8 +2375,12 @@ def reset_nophone_cache() -> int:
     global _NOPHONE_CHECKED, _NOPHONE_BLOCKED, _NOTHREAD
     stamp = dt.datetime.now().strftime("%H%M%S")
     moved = []
+    # The cross-day store is archived here too. This helper exists for the case
+    # where the REASON a read failed has been fixed (the 2026-08-27 frame-blind
+    # read wrote off 43 applicants between the two offices), and a stale verdict
+    # that now outlives the day would otherwise pin those people for a week.
     for path in (_nophone_checked_path(), _nophone_blocked_path(),
-                 _nothread_path()):
+                 _nophone_settled_path(), _nothread_path()):
         path = str(path)
         if os.path.exists(path):
             try:

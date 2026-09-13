@@ -123,7 +123,15 @@ class DeploymentAndRecovery(unittest.TestCase):
         bad = {j["job_id"] for j in sjw.overdue(now, beats)}
         good = set(sjw.healthy(now, beats))
         self.assertEqual(bad & good, set())
-        self.assertEqual(bad | good, set(sjw.JOBS))
+        # Every job that is ARMED at `now` must land in exactly one of the two
+        # sets. Scoped to armed jobs on purpose: a job still inside its
+        # deployment grace is deliberately neither — overdue() skips it and
+        # healthy() will not vouch for a job it has never heard from. Comparing
+        # against all of JOBS made adding any new job with a future watch_from
+        # fail this test for the one reason that is not a bug.
+        armed = {j for j, spec in sjw.JOBS.items()
+                 if dt.date.fromisoformat(spec["watch_from"]) <= now.date()}
+        self.assertEqual(bad | good, armed)
 
     def test_a_job_that_never_beat_is_never_called_healthy(self):
         """healthy() closes incident threads — it must not close one for a job

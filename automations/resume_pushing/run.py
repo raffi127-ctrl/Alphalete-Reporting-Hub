@@ -1451,6 +1451,45 @@ def _invalidate_cdp_profile() -> None:
         pass
 
 
+# Chrome startup used to be a flat `sleep(22)` at all three launch sites. That
+# number was picked as "long enough on a bad day", and the push pays it on EVERY
+# tick — ~144 ticks a day across the office rotation, i.e. most of an hour of the
+# day spent watching a browser that was ready in four seconds. Poll the debug
+# port instead: the moment /json/version answers, Chrome is up and CDP will
+# accept a connection.
+#
+# The cap is unchanged (CDP_STARTUP_CAP_S), so a genuinely slow start is no worse
+# off than before — we only stop waiting once there is proof we don't have to.
+# CDP_STARTUP_SETTLE_S is kept AFTER the port answers on purpose: the port opens
+# before the profile's extensions finish booting, and the batch stage needs the
+# Resume Helper service worker alive. Four seconds is the observed gap; the old
+# code hid it inside the 22.
+CDP_STARTUP_CAP_S = 22
+CDP_STARTUP_SETTLE_S = 4
+
+
+def _await_cdp_ready(port=None, cap_s: float = None) -> float:
+    """Block until Chrome's debug port answers (or the cap elapses). Returns the
+    seconds waited, for the log line."""
+    import json as _json
+    import time as _t
+    import urllib.request as _u
+    port = port or CDP_PORT
+    cap = CDP_STARTUP_CAP_S if cap_s is None else cap_s
+    start = _t.monotonic()
+    deadline = start + cap
+    while _t.monotonic() < deadline:
+        try:
+            with _u.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1) as r:
+                _json.loads(r.read().decode() or "{}")
+            break
+        except Exception:  # noqa: BLE001 — not up yet
+            _t.sleep(0.4)
+    # Settle for the extensions, but never past the cap we already promised.
+    _t.sleep(max(0.0, min(CDP_STARTUP_SETTLE_S, deadline - _t.monotonic())))
+    return _t.monotonic() - start
+
+
 def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
     """Launch the REAL Google Chrome on the copied profile with the debug port and
     return the Popen. Real Chrome (no patchright mock-keychain) runs the extension
@@ -1537,8 +1576,9 @@ def _cdp_warm(force_fresh: bool = True) -> int:
     _log(f"[warm] profile {'fresh-copied from Default' if force_fresh else 'reused'}; "
          f"plugin present: {os.path.isdir(dst + '/Default/Extensions/' + EXT_ID)}")
     proc = _launch_cdp_chrome()
-    _log(f"[warm] launched real Chrome pid={proc.pid}; waiting 22s for startup")
-    _t.sleep(22)
+    _waited = _await_cdp_ready()
+    _log(f"[warm] launched real Chrome pid={proc.pid}; debug port ready in "
+         f"{_waited:.1f}s (cap {CDP_STARTUP_CAP_S}s)")
     rc = 2
     try:
         with sync_playwright() as p:
@@ -1653,8 +1693,9 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
     _log(f"[cdp] profile copy; plugin present: "
          f"{os.path.isdir(dst + '/Default/Extensions/' + EXT_ID)}")
     proc = _launch_cdp_chrome()
-    _log(f"[cdp] launched real Chrome pid={proc.pid}; waiting 22s for startup")
-    _t.sleep(22)
+    _waited = _await_cdp_ready()
+    _log(f"[cdp] launched real Chrome pid={proc.pid}; debug port ready in "
+         f"{_waited:.1f}s (cap {CDP_STARTUP_CAP_S}s)")
     # Watch the extractor's own fetches so an exit=3 wedge names the RIGHT cause
     # (Indeed's employer-portal Turnstile, not AppStream). See _cdp_run's comment.
     net = {"indeed_403": False, "turnstile": False}
@@ -1887,8 +1928,9 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
     _log(f"[cdp] profile copy; plugin present: "
          f"{os.path.isdir(dst + '/Default/Extensions/' + EXT_ID)}")
     proc = _launch_cdp_chrome()
-    _log(f"[cdp] launched real Chrome pid={proc.pid}; waiting 22s for startup")
-    _t.sleep(22)
+    _waited = _await_cdp_ready()
+    _log(f"[cdp] launched real Chrome pid={proc.pid}; debug port ready in "
+         f"{_waited:.1f}s (cap {CDP_STARTUP_CAP_S}s)")
     rc = 1
     # Watch the extractor's own fetches so an exit=3 wedge names the RIGHT cause.
     # The resumes are pulled from the Indeed EMPLOYER portal
