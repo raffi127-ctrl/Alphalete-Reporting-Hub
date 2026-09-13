@@ -15,6 +15,7 @@ refused by the relay is a worse first impression than being told to wait.
 from __future__ import annotations
 
 import argparse
+import pathlib
 import sys
 from typing import Dict, Optional
 
@@ -46,11 +47,34 @@ def keys(book=None) -> Dict[str, Dict]:
     return out
 
 
+def in_public_roster(office_key: str) -> bool:
+    """Is this office in the file the INSTALLER actually reads?
+
+    offices_public.json is hand-maintained and separate from offices.py, and
+    nothing keeps the two in step. An office added to one and not the other
+    passes every check we have and then dies on the ICD's own machine with
+    "That code is for an office I do not recognise" -- the exact bad first
+    impression the one-line installer was built to remove.
+    """
+    import json
+    path = (pathlib.Path(__file__).resolve().parent / "offices_public.json")
+    try:
+        pub = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001
+        return False
+    return office_key in (pub.get("offices") or {})
+
+
 def show(office_key: str, rows: Dict, log=print) -> bool:
     office = O.get(office_key)
     rec = rows.get(office_key)
     if not office:
         log("%s is not in offices.py — add the row first." % office_key)
+        return False
+    if not in_public_roster(office_key):
+        log("%s is in offices.py but NOT in offices_public.json, which is the "
+            "file their installer downloads. Add them there and push, or the "
+            "install stops with \"an office I do not recognise\"." % office_key)
         return False
     if not rec or not rec["key"]:
         log("%s has no relay key on the 'Relay Keys' tab." % office_key)
