@@ -285,7 +285,11 @@ class SiteSource(unittest.TestCase):
 
     def test_being_OFF_today_does_not_cancel_your_birthday(self):
         """The site's NOT_IN_FIELD also covers OFF/O-NA/FFP -- right for 'did
-        they roll a zero', wrong here. Only 'Terminated' vetoes."""
+        they roll a zero', wrong here. Only 'Terminated' vetoes.
+
+        FFP is Megan's explicit call, 2026-09-13: "moving forward you will just
+        get the DOB and won't have FFP so they can have a birthday alert."
+        """
         for status in ("OFF", "O-NA", "FFP", "Roadtrip", "New Start", "STF"):
             reps = [self.FakeRep("Ann Lee", status),
                     self.FakeRep("Gone Guy", "Terminated", "2026-01-02")]

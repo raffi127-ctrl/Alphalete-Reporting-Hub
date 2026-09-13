@@ -50,12 +50,18 @@ So: prefer the site roster whenever the office has one, fall back to the week
 tabs while it doesn't, and when the Sheet finally goes, delete `_from_sheet`.
 Nothing else in this module or in run.py changes.
 
-ONLY 'TERMINATED' DISQUALIFIES. The site's `NOT_IN_FIELD` also covers OFF, O-NA
-and FFP, which is right for "did they roll a zero" and wrong here: being
-scheduled off on a Tuesday does not mean you don't have a birthday. Megan's ask
-was literal -- *"only send reminders for reps that are not terminated"* -- so
-that is the only status that vetoes. The fail-closed half is the OTHER
-direction: somebody who is not on the roster at all is still refused.
+ONLY 'TERMINATED' DISQUALIFIES -- FFP INCLUDED, CONFIRMED BY MEGAN.
+The site's `NOT_IN_FIELD` also covers OFF, O-NA and FFP, which is right for "did
+they roll a zero" and wrong here: being scheduled off on a Tuesday does not mean
+you don't have a birthday. Megan's ask was literal -- *"only send reminders for
+reps that are not terminated"* -- and she settled the FFP case directly on
+2026-09-13, asked after Raf marked Kelvinton Scarbough FFP: *"moving forward you
+will just get the DOB and won't have FFP so they can have a birthday alert."*
+FFP means still in the business, so they still get one. Do not "tighten" this
+later: it was decided, not defaulted.
+
+The fail-closed half runs the OTHER direction -- somebody who is not on the
+roster or board at all is still refused.
 
 NAMES ARE COMPARED FOLDED, NEVER RAW. 122 of 2527 rows on that tab carry a
 literal TAB inside the name ('Christian\tWilliams') and 310 carry parentheses or

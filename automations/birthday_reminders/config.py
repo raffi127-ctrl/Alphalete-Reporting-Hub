@@ -31,10 +31,16 @@ HEADERS = [COL_NAME, COL_MMDD, COL_SOURCE, COL_ADDED, COL_SKIP, COL_NOTES]
 # Never a chat.db ROWID/GUID: those name a DIFFERENT room on a different Mac,
 # which is why every send resolves by name afresh.
 #
-# *** NOT SET YET. Megan is getting the exact chat name (2026-09-13). ***
-# Until it is filled in, run.py refuses to send and says so. Override for a
-# test with BIRTHDAY_GROUP="<needle>".
-GROUP_ADMIN_STAFF = os.environ.get("BIRTHDAY_GROUP", "").strip()
+# Set 2026-09-13 from Megan's screenshot of the chat: it is titled "Admin Staff"
+# (party-popper icon). Kept as a NEEDLE, not a GUID, so it resolves fresh on
+# whichever Lucy runs the job.
+#
+# LUCY MUST BE A MEMBER OF THIS CHAT or resolve_group raises -- and that is the
+# right thing for it to mean. The visible participants are Megan, Raf, Bas
+# Elhassan, Aimee Garibay and Dylan Twaddle; alphaletereporting@ (the account
+# Lucy 1's Messages is signed in as) is NOT among them, so somebody has to add
+# it, exactly as Megan did for "Alphalete Partners" on 2026-08-26.
+GROUP_ADMIN_STAFF = os.environ.get("BIRTHDAY_GROUP", "Admin Staff").strip()
 
 # The reminder fires the DAY BEFORE, so there is a day to get the photo.
 DAYS_AHEAD = 1
