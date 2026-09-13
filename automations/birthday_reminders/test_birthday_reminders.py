@@ -322,6 +322,17 @@ class Message(unittest.TestCase):
         got = R.compose(["Ann Lee", "Bob Cruz"], dt.date(2026, 9, 14))
         self.assertIn("Birthdays tomorrow (Monday 9/14): Ann Lee, Bob Cruz", got)
 
+    def test_it_says_where_the_photo_goes_and_to_name_them(self):
+        """Megan's wording, 2026-09-13. Without the channel and the name, the
+        social channel gets a picture nobody can caption."""
+        got = R.compose(["Jessie Gomez"], dt.date(2026, 9, 15))
+        self.assertIn("#alphaletesocialmedia", got)
+        self.assertIn("include their name!", got)
+
+    def test_the_name_ask_is_plural_for_two_people(self):
+        got = R.compose(["Kaleb Muvunyi", "Pranish Shrestha"], dt.date(2026, 10, 6))
+        self.assertIn("include their names!", got)
+
     def test_the_emoji_is_a_real_character_not_a_shortcode(self):
         """iMessage renders ':cake:' literally."""
         got = R.compose(["Ann Lee"], dt.date(2026, 9, 14))

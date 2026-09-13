@@ -49,5 +49,10 @@ DAYS_AHEAD = 1
 # Emoji go in as REAL characters -- iMessage renders ':cake:' literally.
 CAKE = "\U0001F382"
 
+# Where the photo goes once somebody has it (Megan, 2026-09-13). Named in the
+# TEXT only -- this report posts nothing to Slack itself, so this is a label a
+# person reads, not a channel id to resolve.
+SOCIAL_CHANNEL = "#alphaletesocialmedia"
+
 HUB_CARD = "Birthday Reminders"
 HUB_REPORT_ID = "birthday_reminders"

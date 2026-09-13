@@ -56,7 +56,13 @@ def compose(names: list, day: dt.date) -> str:
     else:
         head = "%s Birthdays tomorrow (%s): %s" % (
             C.CAKE, when, ", ".join(names))
-    return head + "\n\nGrab a photo today so the post is ready to go out."
+    # Megan's wording, 2026-09-13: the ask is not just "get a photo" -- it has
+    # to say WHERE it goes and to name the person, or the channel gets a
+    # nameless picture nobody can caption.
+    whose = "their name" if len(names) == 1 else "their names"
+    return (head + "\n\nGrab a photo today and send it in the "
+            + C.SOCIAL_CHANNEL + " Slack channel \u2014 make sure to include "
+            + whose + "!")
 
 
 def plan(today: dt.date, *, logfn=print, source: str = "auto") -> dict:
