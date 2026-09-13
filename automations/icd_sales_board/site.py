@@ -1144,6 +1144,42 @@ METRIC_COLORS = {
 }
 _FALLBACK_COLOR = "#79706E"
 
+# TENURE COLOURS, READ OFF RAF'S BOARD — not chosen (Megan 2026-09-13: "we
+# need to match the colors ... I guess they all mean something"). They do: the
+# fill on a rep's NAME cell is how long they have been here. Sampled from the
+# live 'Sales Board WE 9.13' tab, name column against the Field Status column.
+# The tenure cell itself is white; the colour is always on the name.
+TENURE_COLORS = {
+    "wk 1": "#D9D2E9",      # 1st Wk  — light purple
+    "wk 2": "#FFE599",      # 2nd Wk  — light yellow
+    "wk 3": "#CFE2F3",      # 3rd Wk  — light blue
+    "wk 4": "#B45F06",      # 4th Wk  — brown, the only DARK one
+    "veteran": "#B6D7A8",   # 5th wk+ — light green
+    "rt": "#00FFFF",        # roadtrip — cyan
+}
+# #B45F06 is dark enough that black text on it is hard to read, so that one
+# row gets white text. The rest are pastels and keep the default ink.
+_DARK_TENURE = {"#B45F06"}
+
+# Exactly what Raf's board writes in that column, and nothing else.
+_KNOWN_TENURES = {"1st wk", "2nd wk", "3rd wk", "4th wk", "5th wk+", "rt",
+                  "wk 1", "wk 2", "wk 3", "wk 4", "veteran"}
+
+
+def tenure_style(label: str) -> str:
+    """A CSS declaration for a tenure label, or '' when it is not one we know.
+
+    Raf's board says '4th Wk' where roster.tenure_label() says 'Wk 4', and
+    '5th wk+' where it says 'Veteran' — both spellings map to one colour."""
+    key = str(label or "").strip().lower()
+    key = {"1st wk": "wk 1", "2nd wk": "wk 2", "3rd wk": "wk 3",
+           "4th wk": "wk 4", "5th wk+": "veteran"}.get(key, key)
+    colour = TENURE_COLORS.get(key)
+    if not colour:
+        return ""
+    ink = "color:#FFFFFF;" if colour in _DARK_TENURE else ""
+    return f"background-color:{colour};{ink}"
+
 # What the columns MEAN (Raf, 2026-08-17). Worth carrying in code: 'NL' reading
 # as wireless and 'Cx' as a customer count are not guessable from the header.
 MEASURE_MEANINGS = {
@@ -1484,6 +1520,51 @@ def _relay_week(office_key: str, week_ending: dt.date) -> dict:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
+def _sheet_tenure(icd: str) -> dict:
+    """{lowered rep name: tenure label} from an office's own board sheet.
+
+    Tenure is normally COMPUTED from a start date, but most reps have no start
+    date on file yet — 42 of Raf's 61 — so that would leave the colours off
+    for the people they exist to describe. Raf's sheet states the tenure
+    outright ('5th wk+', '3rd Wk'), so for his office that is simply read.
+    Everyone else falls back to the computed label, which fills in as start
+    dates get seeded."""
+    if icd != RAF_ICD:
+        return {}
+    try:
+        # Imported HERE, like every other sheet reader in this module — it is
+        # not a module-level name, and leaning on it as one raised NameError
+        # into the except below, which turned a bug into a silently empty
+        # column.
+        from automations.recruiting_report.fill import open_by_key
+
+        sh = open_by_key(RAF_SHEET)
+        tabs = [w.title for w in sh.worksheets()]
+        tab, _d = B.week_tab_dates(tabs)[0]
+        # TWO COLUMNS, not the whole grid. get_all_values on this sheet pulls
+        # 247 columns and took the page from seconds to minutes; the name and
+        # the tenure are all that is wanted here. Column C is the name and DQ
+        # the Field Status, found by value on the live board 2026-09-13.
+        names, tenures = sh.worksheet(tab).batch_get(["C5:C200", "DQ5:DQ200"])
+        out = {}
+        for nrow, trow in zip(names, tenures):
+            raw = (nrow[0] if nrow else "").strip()
+            label = (trow[0] if trow else "").strip()
+            # ONLY REAL TENURE VALUES. The column is read by position for
+            # speed, so rows outside the rep block bring back whatever sits
+            # there — '3.00', '7', 'Total Leaders'. Anything that is not a
+            # tenure we know is dropped rather than coloured at random.
+            if not raw or label.lower() not in _KNOWN_TENURES:
+                continue
+            clean, _tags = B.clean_name(raw)
+            if clean:
+                out[clean.strip().lower()] = label
+        return out
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=900, show_spinner=False)
 def _knock_roster(icd: str, week_ending: dt.date) -> set:
     from automations.icd_sales_board import knocks_log as KL
     return KL.roster_for(icd, week_ending - dt.timedelta(days=6), week_ending)
@@ -1662,6 +1743,7 @@ def relay_board(icd: str, office_key: str) -> None:
     # day for EVERY office, so a rep-level board no longer waits on that
     # office having the agent installed. The relay still owns today.
     settled_reps = _settled_reps(icd, week_ending)
+    sheet_tenure = _sheet_tenure(icd)
     roster = {r.name.strip().lower(): r for r in R.load(office_key)}
     names = {n.strip().lower(): n for n in by_rep}
     for n in settled_reps:
@@ -1703,6 +1785,10 @@ def relay_board(icd: str, office_key: str) -> None:
                 tot[m] += int(src.get(m, 0) or 0)
         rep = roster.get(low)
         row = {"Rep": shown.title()}
+        # Tenure is COMPUTED from the start date (roster.tenure_label), never
+        # typed — so it is right without anybody bumping it every Monday.
+        row["Tenure"] = (sheet_tenure.get(low)
+                         or (rep.tenure_label(week_ending) if rep else ""))
         if expand:
             row["Team"] = (rep.team if rep else "") or BLANK_OPTION
             row["Leadership"] = (rep.level if rep else "") or BLANK_OPTION
@@ -1766,6 +1852,9 @@ def relay_board(icd: str, office_key: str) -> None:
                         **{"Apps": _apps(tot), "Total units": _units(tot)})]
 
     cfg = _centered(grid[0])
+    cfg["Tenure"] = dict(cfg.get("Tenure") or {}, width=90, disabled=True,
+                         help="Weeks since their first day — computed from "
+                              "the start date, and the colour on the name.")
     if edit:
         cfg["Team"] = st.column_config.SelectboxColumn(
             options=[BLANK_OPTION] + sorted({(r.team or "").strip()
@@ -1785,8 +1874,20 @@ def relay_board(icd: str, office_key: str) -> None:
     # why the tint survives: the measures are always locked and only the three
     # owner columns ever unlock.
     frame = pd.DataFrame(grid).astype("string").fillna("")
+
+    def _style_board_rows(df):
+        out = _style_totals(df)
+        if "Tenure" in df.columns and "Rep" in df.columns:
+            for i in df.index:
+                if str(df.at[i, "Rep"]).strip() == TOTALS_LABEL:
+                    continue
+                css = tenure_style(df.at[i, "Tenure"])
+                if css:
+                    out.at[i, "Rep"] = css
+        return out
+
     edited = st.data_editor(
-        frame.style.apply(_style_totals, axis=None),
+        frame.style.apply(_style_board_rows, axis=None),
         use_container_width=True, hide_index=True, num_rows="fixed",
         column_config=cfg, height=_grid_height(len(grid)),
         key=f"relaygrid_{office_key}_{week_ending}")
