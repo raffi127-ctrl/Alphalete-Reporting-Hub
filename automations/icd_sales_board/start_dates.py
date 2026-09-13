@@ -145,12 +145,30 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
                 HTMLFormElement.prototype.submit.call(form);
             }""", [found["idx"], want_value])
 
-        # CONFIRM THE PAGE ACTUALLY CHANGED. Clicking is not loading.
+        # CONFIRM THE PAGE ACTUALLY CHANGED. Submitting is not arriving.
         for _ in range(20):
             page.wait_for_timeout(750)
             if page.evaluate("(w) => document.body.innerText.includes(w)",
                              want_header):
                 return True
+
+        # WHERE DID IT LAND? Guessing at this has cost enough runs. Record the
+        # URL, what the box holds now, and the top of the page it produced.
+        if "landed" not in _LAST_DIAG:
+            try:
+                _LAST_DIAG["landed"] = page.evaluate(
+                    r"""() => {
+                        const ins = [...document.querySelectorAll('input')];
+                        const box = ins.find(x => x.name === 'weekStart');
+                        return {
+                            url: location.href.slice(-90),
+                            box: box ? box.value : '(gone)',
+                            head: (document.body.innerText || '')
+                                    .replace(/\s+/g, ' ').trim().slice(0, 220),
+                        };
+                    }""")
+            except Exception:   # noqa: BLE001 — diagnostics never break a run
+                _LAST_DIAG["landed"] = "unreadable"
         log(f"    week {wk_start}: submitted but {want_header!r} never appeared")
         return False
     except Exception as e:   # noqa: BLE001
