@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import traceback
 import sys
 
 from automations.icd_alerts import config as C
@@ -127,15 +128,38 @@ def cmd_check(headless: bool) -> int:
     return 0 if result["ok"] else 1
 
 
+def _report(stage: str, e: Exception, detail: str = "") -> None:
+    """Tell us what broke here. Never makes the failure worse.
+
+    NOT FOR A RelayError. When the relay itself is what failed, reporting to
+    the relay is a second failed call and tells nobody anything -- the quiet
+    nudge already covers "this laptop stopped talking to us".
+    """
+    if isinstance(e, R.RelayError):
+        return
+    R.report_fault(stage, "%s: %s" % (type(e).__name__, str(e)[:200]),
+                   detail or traceback.format_exc(), log=_log)
+
+
 def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
     try:
         read = sara_read.read_day(day, headless=headless, log=_log)
         current, sales = read["records"], read["sales"]
     except sara_read.AccountProblem as e:
         print("\n%s" % e)
+        _report("sweep", e)
         return 1
     except RuntimeError as e:
         print("\n%s" % e)
+        _report("sweep", e)
+        return 1
+    except Exception as e:  # noqa: BLE001
+        # THE ONE THAT USED TO VANISH. An unexpected crash printed a traceback
+        # into a log file on a laptop in another state and told us nothing at
+        # all; the office simply went quiet and we guessed. Now the traceback
+        # comes to us.
+        _log("unexpected failure: %s" % traceback.format_exc())
+        _report("sweep", e)
         return 1
 
     data = St.load()
@@ -181,9 +205,15 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
         rows, tracker = payload["rows"], payload["time_tracker"]
     except ov_read.KnocksProblem as e:
         print("\n%s" % e)
+        _report("knocks", e)
         return 1
     except RuntimeError as e:
         print("\n%s" % e)
+        _report("knocks", e)
+        return 1
+    except Exception as e:  # noqa: BLE001 — see cmd_once
+        _log("unexpected failure: %s" % traceback.format_exc())
+        _report("knocks", e)
         return 1
 
     if not rows:

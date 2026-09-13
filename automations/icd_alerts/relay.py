@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import platform
+import re
 import ssl
 import urllib.error
 import urllib.parse
@@ -242,6 +244,102 @@ def send_knocks(rows, day: Optional[dt.date] = None, *, time_tracker=None,
                          % str(out.get("error") or "no reason given"))
     log("sent %d knock row(s) for %s" % (len(rows), body["day"]))
     return out
+
+
+# --- telling us what broke, without a Zoom ---------------------------------
+# An office that stops relaying shows up as SILENCE. We learn THAT it stopped
+# from the quiet nudge, and nothing at all about WHY -- which on 2026-09-12
+# meant working out Cyrus's outage by elimination while he sat on a call.
+# Multiply that by office #12 and the rollout stops scaling.
+#
+# So the laptop reports its own faults up the same one-way pipe it already
+# uses. Same key, same endpoint, same guarantee about what travels.
+
+# Anything matching these is stripped before a fault leaves the machine. A
+# crash message is the one place a password reliably turns up as plain text --
+# patchright prints the arguments it was called with -- and a diagnostic that
+# leaks the thing this whole design protects would be a bad trade.
+_SECRET_KEYS = ("password", "passwd", "pwd", "secret", "token", "key")
+
+
+def _scrub(text: str, rec: Optional[Dict] = None) -> str:
+    """Remove this office's own secrets from a message before sending it."""
+    out = str(text or "")
+    try:
+        cr = C.creds()
+    except Exception:  # noqa: BLE001 — no creds saved yet is normal at install
+        cr = {}
+    secrets = [str(cr.get(k) or "") for k in ("password", "passwd")]
+    secrets.append(str((rec or {}).get("relay_key") or ""))
+    for s in secrets:
+        if s and len(s) >= 4:
+            out = out.replace(s, "[removed]")
+    # The email is not a secret, but it is the account name and there is no
+    # diagnostic value in it -- we already know whose office this is.
+    email = str(cr.get("email") or "")
+    if email and len(email) >= 4:
+        out = out.replace(email, "[their login]")
+    # ANY email address, not just theirs. A traceback can carry a customer's,
+    # and "no customer data leaves the laptop" is a promise worth keeping
+    # literally rather than approximately.
+    out = re.sub(r"[\w.+-]+@[\w-]+\.[\w.]+", "[email]", out)
+    # A belt-and-braces pass for anything that LOOKS like a credential in a
+    # repr we did not anticipate: key=value where the key smells secret.
+    for k in _SECRET_KEYS:
+        out = re.sub(r"(?i)\b%s\b(\s*[=:]\s*)(\S+)" % re.escape(k),
+                     r"%s\1[removed]" % k, out)
+    return out[:1500]
+
+
+def report_fault(stage: str, summary: str, detail: str = "",
+                 day: Optional[dt.date] = None, log=None) -> bool:
+    """Tell us something broke here. BEST EFFORT, and NEVER raises.
+
+    This runs inside exception handlers and at the end of a failed install.
+    A reporter that can itself throw would turn a diagnosable failure into a
+    crash with no message at all -- so every path here swallows, including a
+    missing config, an unreachable network and a malformed reply.
+
+    `stage` is the coarse where: "install", "sweep", "knocks", "login".
+    `summary` is one line we can read in a channel. `detail` is the traceback
+    or command output, trimmed and scrubbed.
+
+    Returns True only if the relay accepted it -- callers may use that to
+    decide whether to also tell the person sitting there, but must not depend
+    on it.
+    """
+    try:
+        rec = _endpoint()
+    except Exception:  # noqa: BLE001 — not enrolled yet; nothing to report to
+        return False
+    try:
+        body = {
+            "office_key": rec["office_key"],
+            "key": rec["relay_key"],
+            # THE DAY RIDES INSIDE THE FAULT, DELIBERATELY. A relay that has
+            # not been redeployed yet does not know what a fault is, and would
+            # fall through to its records branch and upsert an EMPTY {} over
+            # this office's real day. Without a top-level `day` that older
+            # script fails its own format check and does nothing at all, which
+            # is exactly the right outcome: a fault report must never be able
+            # to damage the numbers.
+            "fault": {
+                "day": (day or C.today()).isoformat(),
+                "stage": str(stage or "")[:40],
+                "summary": _scrub(summary, rec)[:300],
+                "detail": _scrub(detail, rec),
+                "agent": AGENT_VERSION,
+                "platform": "%s %s" % (platform.system(), platform.release()),
+                "python": platform.python_version(),
+            },
+            "local_time": dt.datetime.now().isoformat(timespec="seconds"),
+        }
+        raw = _post(rec["relay_url"], json.dumps(body).encode("utf-8"))
+        return bool(json.loads(raw).get("ok"))
+    except Exception as e:  # noqa: BLE001 — see docstring
+        if log:
+            log("could not report the fault upstream: %s" % type(e).__name__)
+        return False
 
 
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,

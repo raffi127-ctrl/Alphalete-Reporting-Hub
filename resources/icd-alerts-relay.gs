@@ -22,7 +22,7 @@
  * the failure that follows looks like a bad key rather than a missing
  * spreadsheet.
  *
- * FOUR TABS:
+ * FIVE TABS:
  *   'Relay Keys'      Office | Key | Active | Note      <- we control this
  *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
  *                     Agent | Last Posted JSON | Posted At |
@@ -63,6 +63,7 @@ var RELAY_TAB = 'ICD Relay';
 var KEYS_TAB = 'Relay Keys';
 var CHANNELS_TAB = 'Office Channels';
 var KNOCKS_TAB = 'ICD Knocks';
+var FAULTS_TAB = 'ICD Faults';
 
 function _book() {
   return SpreadsheetApp.openById(SHEET_ID);
@@ -93,6 +94,20 @@ function doPost(e) {
     var key = String(body.key || '').trim();
     if (!office || !key) return _reply({ok: false, error: 'missing office or key'});
     if (!_keyIsGood(office, key)) return _reply({ok: false, error: 'not authorised'});
+
+    // FAULTS ARE HANDLED BEFORE THE DAY CHECK, because they carry their own
+    // day and deliberately send no top-level one -- that is what makes a
+    // fault harmless to a relay running older code [[relay.report_fault]].
+    if (body.fault) {
+      var f = body.fault;
+      var fday = String(f.day || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fday)) return _reply({ok: false, error: 'bad fault day'});
+      _upsertFault(office, fday, String(f.stage || ''), String(f.summary || ''),
+                   String(f.detail || ''), String(body.local_time || ''),
+                   String(f.agent || ''),
+                   String(f.platform || '') + ' / py' + String(f.python || ''));
+      return _reply({ok: true, fault: 'recorded'});
+    }
 
     var day = String(body.day || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return _reply({ok: false, error: 'bad day'});
@@ -304,6 +319,49 @@ function _upsertKnocks(office, day, rowsJson, trackerJson, count, localTime) {
       }
     }
     sh.appendRow([office, day, rowsJson, trackerJson, count, now, localTime, '']);
+    sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _upsertFault(office, day, stage, summary, detail, localTime,
+                      agent, platform) {
+  // UPSERT ON (office, day, stage, summary), NOT APPEND. A laptop whose sweep
+  // is broken retries every couple of minutes, and appending would bury the
+  // tab in three hundred copies of one problem -- and bury the SECOND problem
+  // with it. Counting instead turns that into one row that says "47 times
+  // since 09:12", which is the more useful fact anyway.
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _book().getSheetByName(FAULTS_TAB);
+    if (!sh) {
+      sh = _book().insertSheet(FAULTS_TAB);
+      sh.appendRow(['Office', 'Day', 'Stage', 'Summary', 'Detail', 'Count',
+                    'First At', 'Last At', 'Local Time', 'Agent', 'Platform',
+                    'Last Posted At']);
+    }
+    var rows = sh.getDataRange().getValues();
+    var now = new Date();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]).trim().toLowerCase() === office &&
+          _dayKey(rows[i][1]) === day &&
+          String(rows[i][2]) === stage &&
+          String(rows[i][3]) === summary) {
+        var n = Number(rows[i][5] || 0) + 1;
+        // Detail and Count and Last At move; First At stays. 'Last Posted At'
+        // is OURS and is deliberately left alone -- except that a fault which
+        // is still happening should be re-announced, and our side decides
+        // that by comparing Last At against it.
+        sh.getRange(i + 1, 5, 1, 1).setValue(detail);
+        sh.getRange(i + 1, 6, 1, 1).setValue(n);
+        sh.getRange(i + 1, 8, 1, 4).setValues([[now, localTime, agent, platform]]);
+        return;
+      }
+    }
+    sh.appendRow([office, day, stage, summary, detail, 1, now, now, localTime,
+                  agent, platform, '']);
     sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);
   } finally {
     lock.releaseLock();

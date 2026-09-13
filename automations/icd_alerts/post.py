@@ -40,6 +40,12 @@ RELAY_SPREADSHEET_ID = "1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg"
 RELAY_TAB = "ICD Relay"
 
 CHANNELS_TAB = "Office Channels"
+FAULTS_TAB = "ICD Faults"
+# The fault row, written by the laptop except for the last column, which
+# is ours and is what stops one problem being announced twice.
+F_OFFICE, F_DAY, F_STAGE, F_SUMMARY, F_DETAIL = 0, 1, 2, 3, 4
+F_COUNT, F_FIRST, F_LAST, F_LOCAL, F_AGENT, F_PLATFORM = 5, 6, 7, 8, 9, 10
+F_POSTED = 11
 # Both halves are the same shape: what the office asked for, then what a
 # human approved. A laptop writes only the asking columns.
 CH_OFFICE, CH_OWNER, CH_ASKED, CH_ASKED_JSON, CH_ASKED_AT = 0, 1, 2, 3, 4
@@ -613,6 +619,141 @@ def notify_pending(*, send: bool = False, book=None, log=print) -> List[Dict]:
     return fresh
 
 
+FAULT_THREADS_PATH = (Path.home() / ".config" / "recruiting-report"
+                      / "icd_fault_threads.json")
+
+# How a stage reads in a channel. The laptop sends the short word; nobody
+# reading #claudecorrections should have to know our module names.
+FAULT_STAGE_LABEL = {
+    "install": "during setup",
+    "sweep": "reading SaraPlus",
+    "knocks": "reading OwnerVille",
+    "login": "signing in",
+}
+
+
+def _fault_threads() -> Dict:
+    try:
+        return json.loads(FAULT_THREADS_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def open_faults(day: Optional[dt.date] = None, book=None) -> List[Dict]:
+    """Faults this office's laptop reported and we have not announced yet.
+
+    ANNOUNCED ONCE, NOT WHILE IT LASTS. A broken sweep retries every couple of
+    minutes and the relay counts the repeats into one row, so re-announcing on
+    every recurrence would rebuild exactly the flood the threading fixed. The
+    row's own Count carries "still happening"; the quiet nudge carries "this
+    office is dark". This carries WHAT BROKE, once.
+    """
+    from automations.recruiting_report.fill import open_by_key
+
+    day = day or dt.date.today()
+    book = book or open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(FAULTS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001 — no tab until the first fault ever
+        return []
+
+    out = []
+    for i, row in enumerate(rows[1:], start=2):
+        if len(row) <= F_POSTED or not (row[F_OFFICE] or "").strip():
+            continue
+        if _day_key(row[F_DAY]) != day.isoformat():
+            continue
+        if (row[F_POSTED] or "").strip():
+            continue
+        out.append({
+            "rownum": i,
+            "office": (row[F_OFFICE] or "").strip().lower(),
+            "stage": (row[F_STAGE] or "").strip(),
+            "summary": (row[F_SUMMARY] or "").strip(),
+            "detail": (row[F_DETAIL] or "").strip(),
+            "count": (row[F_COUNT] or "").strip(),
+            "first": (row[F_FIRST] or "").strip(),
+            "platform": (row[F_PLATFORM] or "").strip(),
+        })
+    return out
+
+
+def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
+                  book=None, log=print) -> List[Dict]:
+    """Put what broke on an ICD laptop in front of us, once per fault.
+
+    Megan 2026-09-13: "build the installer failure reporting". The gap it
+    closes: an office that breaks goes SILENT, and silence names neither the
+    cause nor the step. Working Cyrus's outage out by elimination on 2026-09-12
+    took a call; office #12 will not get a call.
+
+    One thread per office per day, like the quiet nudge, for the same reason --
+    a laptop with a broken sweep and a broken knocks read is two faults, and
+    two top-level posts per office does not scale past a handful of them.
+    """
+    from automations.recruiting_report.fill import open_by_key
+
+    day = day or dt.date.today()
+    book = book or open_by_key(RELAY_SPREADSHEET_ID)
+    faults = open_faults(day, book=book)
+    if not faults:
+        return []
+
+    for f in faults:
+        log("FAULT: %-10s %s -- %s" % (f["office"], f["stage"], f["summary"]))
+    if not send:
+        return faults
+
+    threads = _fault_threads()
+    key_for = lambda f: "%s|%s" % (day.isoformat(), f["office"])   # noqa: E731
+    tab = book.worksheet(FAULTS_TAB)
+    stamp = dt.datetime.now().isoformat(timespec="seconds")
+
+    for f in faults:
+        office = O.get(f["office"])
+        label = office.label if office else f["office"]
+        where = FAULT_STAGE_LABEL.get(f["stage"], f["stage"] or "on the laptop")
+        parent = threads.get(key_for(f))
+        head = (":rotating_light: *%s* — something broke %s." % (label, where)
+                if not parent else
+                "*Also %s:*" % where)
+        body = [head, "> %s" % f["summary"]]
+        if f["count"] and f["count"] not in ("1", ""):
+            body.append("_Happened %s times, first at %s._"
+                        % (f["count"], f["first"] or "?"))
+        if f["platform"]:
+            body.append("_%s_" % f["platform"])
+        if not parent:
+            body.append("_The office was not asked to send anything — their "
+                        "laptop reported this by itself._")
+        text = "\n".join(body)
+        try:
+            ts = _slack(O.OPS_CHANNEL, text, thread_ts=parent)
+            if not parent and ts:
+                threads[key_for(f)] = ts
+                parent = ts
+            if f["detail"]:
+                # THE TRACEBACK GOES IN THE THREAD, never the channel. It is
+                # for whoever picks the ticket up, and it is the wrong size
+                # for a room people are scanning.
+                _slack(O.OPS_CHANNEL, "```%s```" % f["detail"][:2800],
+                       thread_ts=parent or ts)
+        except Exception as e:  # noqa: BLE001 — one fault must not stop the rest
+            log("could not post fault for %s: %s: %s"
+                % (f["office"], type(e).__name__, str(e)[:100]))
+            continue
+        try:
+            tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
+        except Exception as e:  # noqa: BLE001
+            # If this fails we would re-announce next tick. Say so rather than
+            # letting it look like a duplicate bug later.
+            log("posted the fault but could not mark it: %s" % type(e).__name__)
+
+    FAULT_THREADS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FAULT_THREADS_PATH.write_text(json.dumps(threads, indent=2, sort_keys=True))
+    return faults
+
+
 def _warned() -> Dict:
     try:
         return json.loads(WARNED_PATH.read_text())
@@ -841,6 +982,7 @@ def main(argv=None) -> int:
             run(day, send=args.send, only=args.office)
             if args.watch:
                 notify_pending(send=args.send)
+                notify_faults(day, send=args.send)
                 warn_quiet(day, send=args.send)
     except RelayNotConfigured as e:
         print(e)

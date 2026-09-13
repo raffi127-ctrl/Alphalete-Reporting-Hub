@@ -484,3 +484,91 @@ class QuietNudgeThreading(unittest.TestCase):
             {"2026-09-12": {"cyrus": "2026-09-12T09:00:00"}}))
         self._run(dt.datetime(2026, 9, 12, 12, 18))
         self.assertEqual(self.posts[0][1], None)
+
+
+class FaultReporting(unittest.TestCase):
+    """What an ICD laptop tells us when it breaks.
+
+    Megan 2026-09-13: "build the installer failure reporting". Before this, an
+    office that broke went SILENT, and silence names neither the cause nor the
+    step -- working Cyrus's outage out by elimination on 2026-09-12 took a
+    call, and office #12 will not get a call.
+    """
+
+    HEAD = ["Office", "Day", "Stage", "Summary", "Detail", "Count",
+            "First At", "Last At", "Local Time", "Agent", "Platform",
+            "Last Posted At"]
+
+    def _row(self, office="kash", stage="sweep", summary="boom",
+             detail="Traceback...", count="1", posted=""):
+        return [office, "2026-09-13", stage, summary, detail, count,
+                "9/13/2026 09:00", "9/13/2026 09:02", "", "icd_alerts/2",
+                "Darwin 24.0 / py3.11", posted]
+
+    def _book(self, rows):
+        tab = mock.MagicMock()
+        tab.get_all_values.return_value = [self.HEAD] + rows
+        book = mock.MagicMock()
+        book.worksheet.return_value = tab
+        return book, tab
+
+    def _run(self, rows, send=True):
+        import tempfile, pathlib
+        book, tab = self._book(rows)
+        posts = []
+
+        def fake_slack(channel, text, thread_ts=None):
+            posts.append((text, thread_ts))
+            return "ts%d" % len(posts)
+
+        tmp = pathlib.Path(tempfile.mkdtemp()) / "threads.json"
+        office = O.AlertOffice(key="kash", owner="Kash Rai",
+                               label="Kash's Local Office", channels=(),
+                               timezone="America/Chicago")
+        with mock.patch.object(P, "_slack", fake_slack), \
+             mock.patch.object(P, "FAULT_THREADS_PATH", tmp), \
+             mock.patch.object(P.O, "get", lambda k: office):
+            out = P.notify_faults(dt.date(2026, 9, 13), send=send, book=book,
+                                  log=lambda *a, **k: None)
+        return out, posts, tab
+
+    def test_a_fault_is_announced_with_its_traceback_threaded(self):
+        out, posts, _tab = self._run([self._row()])
+        self.assertEqual(len(out), 1)
+        self.assertIsNone(posts[0][1], "the headline is top-level")
+        self.assertIn("Kash's Local Office", posts[0][0])
+        self.assertIn("reading SaraPlus", posts[0][0])
+        self.assertEqual(posts[1][1], "ts1", "the traceback goes in the thread")
+        self.assertIn("```", posts[1][0])
+
+    def test_an_already_posted_fault_is_not_announced_again(self):
+        # The row's Count carries "still happening"; re-announcing a recurring
+        # fault would rebuild the flood the threading just fixed.
+        out, posts, _tab = self._run([self._row(posted="2026-09-13T09:05:00")])
+        self.assertEqual(out, [])
+        self.assertEqual(posts, [])
+
+    def test_two_faults_for_one_office_share_a_thread(self):
+        out, posts, _tab = self._run([self._row(stage="sweep"),
+                                      self._row(stage="knocks",
+                                                summary="ov down",
+                                                detail="")])
+        tops = [t for _x, t in posts if t is None]
+        self.assertEqual(len(tops), 1, "one top-level post per office")
+        self.assertIn("Also reading OwnerVille", posts[-1][0])
+
+    def test_the_row_is_marked_so_it_is_not_repeated(self):
+        _out, _posts, tab = self._run([self._row()])
+        tab.update_cell.assert_called_once()
+        args = tab.update_cell.call_args[0]
+        self.assertEqual(args[1], P.F_POSTED + 1)
+
+    def test_a_repeat_count_is_shown(self):
+        _out, posts, _tab = self._run([self._row(count="47")])
+        self.assertIn("47 times", posts[0][0])
+
+    def test_dry_run_says_what_it_would_do_and_posts_nothing(self):
+        out, posts, tab = self._run([self._row()], send=False)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(posts, [])
+        tab.update_cell.assert_not_called()

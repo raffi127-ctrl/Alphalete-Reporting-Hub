@@ -710,8 +710,44 @@ def first_run() -> None:
     say("      (it will try again on its own in a few minutes — nothing is lost.)")
 
 
+def seed_install_json() -> None:
+    """Put the office's key where the relay can find it BEFORE step 1.
+
+    write_install_json does this properly at step 5, with merging. This is the
+    cheap early copy, and it exists for one reason: a fault cannot be reported
+    without the relay key, so without it the first four steps -- copying,
+    the venv, the dependencies, the browser download -- are exactly the ones
+    that fail on a machine we cannot see and tell us nothing.
+    """
+    try:
+        src_file = HERE / "install.json"
+        target = CONFIG_DIR / "install.json"
+        if src_file.is_file() and not target.exists():
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            target.write_text(src_file.read_text())
+    except Exception:  # noqa: BLE001 — step 5 will do it properly
+        pass
+
+
+def report_fault(stage: str, summary: str, detail: str = "") -> None:
+    """Hand a setup failure back to us. Never raises, never blocks the install.
+
+    THIS IS THE POINT OF THE WHOLE EXERCISE (Megan 2026-09-13). An install
+    that goes wrong on office #12's laptop currently produces a dialog THEY
+    read and we never see, and the first we know is that no numbers ever
+    arrive. The relay is the one channel out of that machine, and it already
+    carries this office's key.
+    """
+    try:
+        from automations.icd_alerts import relay as R
+        R.report_fault(stage, summary, detail)
+    except Exception:  # noqa: BLE001 — a diagnostic must never break a setup
+        pass
+
+
 def main() -> int:
     banner()
+    seed_install_json()
 
     total = 9
     step(1, total, "Copying the program onto this computer")
@@ -783,6 +819,20 @@ def main() -> int:
             % (BOLD, GOLD, OFF))
     say("  %s%s%s" % (RED, "\u2501" * 58, OFF))
     say("")
+
+    # THE QUIET FAILURES. Neither of these raises -- the installer finishes,
+    # tells the owner, and without this we would never hear about it. An
+    # office believing it is set up while half of it is dead is precisely the
+    # week-long silence this is meant to end.
+    if not ok:
+        report_fault("install", "SaraPlus did not verify during setup",
+                     "The installer completed but could not sign in to "
+                     "SaraPlus, so no alerts will be sent from this machine.")
+    elif not ov_ok and (CONFIG_DIR / "ownerville-creds.json").exists():
+        report_fault("install", "OwnerVille did not verify during setup",
+                     "Credit-check alerts are working. The OwnerVille login "
+                     "failed, so no knocks/dispositions board will post.")
+
     ask.message(done, error=not ok)
     return 0 if ok else 1
 
@@ -794,4 +844,24 @@ if __name__ == "__main__":
         raise
     except KeyboardInterrupt:
         say("\nStopped. Nothing was changed.")
+        sys.exit(1)
+    except BaseException as e:  # noqa: BLE001
+        # A CRASH IS THE CASE WE WERE BLINDEST TO. It used to print a
+        # traceback into a terminal window an ICD closes, and we would be
+        # told "it didn't work" with nothing to go on.
+        import traceback as _tb
+        detail = _tb.format_exc()
+        try:
+            report_fault("install", "setup crashed: %s" % type(e).__name__,
+                         detail)
+        finally:
+            say("\nSomething went wrong during setup.")
+            try:
+                ask.message(
+                    "Setup hit a problem and could not finish.\n\n"
+                    "The reporting team has been told what happened "
+                    "automatically — you do not need to send anything.\n\n"
+                    "They will get back to you.", error=True)
+            except Exception:  # noqa: BLE001
+                pass
         sys.exit(1)
