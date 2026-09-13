@@ -170,6 +170,18 @@ def _make_section_adapter(spec_key: str):
             from automations.icd_sales_board import tableau_days
             tableau_days.log_days(csv_path, week_ending=today,
                                   log=ctx.logfn)
+            # The per-REP view is a second crosstab off the SAME workbook and
+            # the same live session, so it costs a download and no extra
+            # login. It is what lets every office have a rep-level board
+            # without the agent being installed there.
+            try:
+                rep_csv = tableau_days.pull_reps_with(
+                    ctx.page, week_ending=today, out_dir=ctx.out_dir,
+                    log=ctx.logfn)
+                tableau_days.log_rep_days(rep_csv, week_ending=today,
+                                          log=ctx.logfn)
+            except Exception as e:   # noqa: BLE001 — never fatal
+                ctx.logfn(f"  board rep days: SKIPPED ({type(e).__name__}: {e})")
         return section_pull.parse_byday(spec, csv_path, today)
     return _adapter
 

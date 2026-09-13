@@ -1484,6 +1484,24 @@ def _relay_week(office_key: str, week_ending: dt.date) -> dict:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
+def _settled_reps(icd: str, week_ending: dt.date) -> dict:
+    """{rep: {date: measures}} — settled per-rep days for the whole office."""
+    from automations.icd_sales_board import tableau_days as TD
+    try:
+        got = TD.stored_rep_days(icd)
+        if got:
+            lo = week_ending - dt.timedelta(days=6)
+            return {r: {d: v for d, v in days.items() if lo <= d <= week_ending}
+                    for r, days in got.items()}
+    except Exception:
+        pass
+    try:
+        return TD.parse_reps(week_ending=week_ending).get(icd, {})
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=900, show_spinner=False)
 def _settled_days(icd: str, week_ending: dt.date) -> dict:
     """{date: {Int, Int Up, DTV, NL}} — Tableau's settled office totals.
 
@@ -1612,8 +1630,15 @@ def relay_board(icd: str, office_key: str) -> None:
     # what happened, so a rep who blanked is simply absent from it — and a
     # board that quietly drops whoever sold nothing is the one board an owner
     # cannot use, because the blanks are the thing they are looking for.
+    # REP ROWS COME FROM TABLEAU for closed days (Megan pointed at the
+    # ALLICDSALLREPSBD view, 2026-09-13). It carries Owner + Rep + product +
+    # day for EVERY office, so a rep-level board no longer waits on that
+    # office having the agent installed. The relay still owns today.
+    settled_reps = _settled_reps(icd, week_ending)
     roster = {r.name.strip().lower(): r for r in R.load(office_key)}
     names = {n.strip().lower(): n for n in by_rep}
+    for n in settled_reps:
+        names.setdefault(n.strip().lower(), n)
     # Plus anyone who ran a CREDIT CHECK this week: that is a rep in front of
     # a customer, so a name there with no sale worked and blanked. On Cyrus's
     # first relayed day three reps did exactly that and none of them appeared.
@@ -1627,7 +1652,23 @@ def relay_board(icd: str, office_key: str) -> None:
     rows = []
     for low, shown in names.items():
         rec = by_rep.get(shown) or by_rep.get(shown.upper()) or {}
-        tot = rec.get("total") or {m: 0 for m in RELAY_MEASURES}
+        live_days = rec.get("days") or {}
+        # Tableau writes 'Berkley Garman', SaraPlus writes 'BERKLEY GARMAN',
+        # and the roster whatever the owner typed — so match on the lowered
+        # name rather than hoping three systems agree on capitals.
+        sd = next((d for n, d in settled_reps.items()
+                   if n.strip().lower() == low), {})
+        tot = {m: 0 for m in RELAY_MEASURES}
+        for i in range(7):
+            d = week_ending - dt.timedelta(days=i)
+            if d > dt.date.today():
+                continue
+            # Closed day: Tableau, falling back to the relay if Tableau has
+            # no row for it. Today: the relay, which is the only live source.
+            src = (sd.get(d) or live_days.get(d) or {}) if d < dt.date.today() \
+                else (live_days.get(d) or {})
+            for m in RELAY_MEASURES:
+                tot[m] += int(src.get(m, 0) or 0)
         rep = roster.get(low)
         row = {"Rep": shown.title()}
         if expand:

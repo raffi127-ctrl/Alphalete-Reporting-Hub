@@ -105,6 +105,117 @@ def _this_sunday(today: dt.date | None = None) -> dt.date:
     return today + dt.timedelta(days=(6 - today.weekday()) % 7)
 
 
+# THE REP-LEVEL VIEW (Megan pointed at it, 2026-09-13). Same workbook as the
+# office view, different dashboard: ALLICDSALLREPSBD — "all ICDs, all reps".
+# Its crosstab carries a Rep column the office view does not:
+#
+#   Owner Name | Rep | Product Type (Broken Out) | Monday … Sunday | Product Total
+#
+# That is the whole board, for every office, without any laptop: 516 rows and
+# 19 reps for Cyrus alone. WEEK-PINNED like everything else here — the bare
+# URL returns whatever week the view defaults to, which read 177 units for
+# Cyrus against 157 for the week actually being looked at.
+REP_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
+            "7ea543c9-3d5a-462e-9cc1-ccbfd4f8e953/ALLICDSALLREPSBD")
+REP_SHEET = "Sales By ICD (Weekly View)"
+REP_PATH = Path("output") / "icd_board_reps_byday.csv"
+
+
+def rep_spec():
+    """A ScrapeSpec for the rep view, borrowing the office spec's pinning so
+    both read the SAME week rather than two views drifting apart."""
+    import dataclasses
+    from automations.org_sales_board import section_pull as SP
+    # dataclasses.replace, not _replace — ScrapeSpec is a dataclass, not a
+    # namedtuple, and the two spell this differently.
+    return dataclasses.replace(
+        SP.FIBER_SPEC,
+        section_label="ICD board — all reps",
+        view_url=REP_VIEW,
+        crosstab_sheet=REP_SHEET,
+        out_name=REP_PATH.name)
+
+
+def pull_reps_with(page, week_ending: dt.date | None = None,
+                   out_dir=Path("output"), log=print) -> Path:
+    """Pull the rep crosstab onto an ALREADY-OPEN Tableau page.
+
+    The harvest holds a live session; opening a second one would be a second
+    login against an access budget that is watched."""
+    from automations.org_sales_board import section_pull as SP
+    from automations.shared.tableau_patchright import (
+        download_crosstab_patchright)
+
+    week_ending = week_ending or _this_sunday()
+    url = SP.pinned_view_url(rep_spec(), week_ending, logfn=log)
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    out = Path(out_dir) / REP_PATH.name
+    download_crosstab_patchright(url, REP_SHEET, out, page=page, verbose=False)
+    log(f"  saved {out}")
+    return out
+
+
+def pull_reps(week_ending: dt.date | None = None, out_dir=Path("output"),
+              log=print) -> Path:
+    """Pull the rep-level crosstab, week-pinned. Headed browser — scheduled
+    jobs only, never a page render."""
+    from automations.org_sales_board import section_pull as SP
+    from automations.shared.tableau_patchright import (
+        tableau_session, download_crosstab_patchright)
+
+    week_ending = week_ending or _this_sunday()
+    url = SP.pinned_view_url(rep_spec(), week_ending, logfn=log)
+    out = Path(out_dir) / REP_PATH.name
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    # Downloading DIRECTLY rather than through pull_section_byday: routed
+    # through that wrapper this view dies every time on "Download.save_as:
+    # Target page ... has been closed", and downloads first try when called
+    # straight. Not worth chasing — the wrapper adds nothing here but a
+    # day-behind branch this view does not need.
+    with tableau_session(headless=False, verbose=False) as page:
+        download_crosstab_patchright(url, REP_SHEET, out, page=page,
+                                     verbose=False)
+    log(f"  saved {out}")
+    return out
+
+
+def parse_reps(path=REP_PATH, week_ending: dt.date | None = None) -> dict:
+    """{owner: {rep: {date: {Int, Int Up, DTV, NL}}}}.
+
+    Tableau's own subtotal rows carry Rep 'Total' or Product 'Total'; both are
+    skipped, or every number would be counted twice."""
+    path = Path(path)
+    if not path.exists():
+        return {}
+    week_ending = week_ending or _this_sunday()
+    monday = week_ending - dt.timedelta(days=6)
+    day_of = {name: monday + dt.timedelta(days=i)
+              for i, name in enumerate(_WEEKDAYS)}
+
+    out: dict = collections.defaultdict(lambda: collections.defaultdict(dict))
+    with open(path, encoding="utf-16") as fh:
+        for row in csv.DictReader(fh, delimiter="\t"):
+            owner = str(row.get("Owner Name") or "").strip()
+            rep = str(row.get("Rep") or "").strip()
+            product = str(row.get("Product Type (Broken Out)")
+                          or "").strip().upper()
+            if (not owner or owner.lower() == _TOTAL_ROW
+                    or not rep or rep.lower() == "total"):
+                continue
+            measure = PRODUCT_TO_MEASURE.get(product)
+            if measure is None:
+                continue
+            for name, day in day_of.items():
+                n = _int(row.get(name))
+                if not n:
+                    continue
+                cell = out[owner][rep].setdefault(
+                    day, {m: 0 for m in MEASURES})
+                cell[measure] += n
+    return {o: dict(reps) for o, reps in out.items()}
+
+
 def pull(week_ending: dt.date | None = None, out_dir=Path("output"),
          log=print) -> Path:
     """Pull the week-pinned crosstab and return its path.
@@ -236,4 +347,89 @@ def stored_days(owner: str = "", sheet_id: str = SHEET_ID) -> dict:
         except ValueError:
             continue
         out[name][day] = {m: _int(rec.get(m)) for m in MEASURES}
+    return dict(out)
+
+
+# Rep rows get their OWN tab rather than a Rep column on the office one: the
+# office totals are already stored and read, and adding a column would mean
+# migrating them for no gain. Same write discipline — one call, whole tab.
+REP_TAB = "Board Rep Days"
+REP_COLUMNS = ["Date", "Owner", "Rep"] + MEASURES + ["Total", "Source"]
+
+
+def log_rep_days(path=REP_PATH, week_ending: dt.date | None = None,
+                 sheet_id: str = SHEET_ID, log=print) -> int:
+    """Store settled per-REP days. Idempotent, never fatal — see log_days."""
+    try:
+        from automations.recruiting_report.fill import open_by_key, _retry
+
+        by_owner = parse_reps(path, week_ending)
+        if not by_owner:
+            log("  board rep days: nothing parsed (no crosstab?)")
+            return 0
+
+        sh = open_by_key(sheet_id)
+        try:
+            ws = sh.worksheet(REP_TAB)
+        except Exception:
+            ws = sh.add_worksheet(title=REP_TAB, rows=4000,
+                                  cols=len(REP_COLUMNS))
+
+        grid = _retry(ws.get_all_values) or []
+        header = [str(h).strip() for h in grid[0]] if grid else REP_COLUMNS
+        idx = {n: header.index(n) for n in REP_COLUMNS if n in header}
+
+        merged = {}
+        for row in grid[1:] if grid else []:
+            if len(row) <= max(idx.get("Rep", 2), idx.get("Date", 0)):
+                continue
+            merged[(str(row[idx["Date"]]).strip()[:10],
+                    str(row[idx["Owner"]]).strip().lower(),
+                    str(row[idx["Rep"]]).strip().lower())] = list(row)
+
+        today = dt.date.today()
+        wrote = 0
+        for owner, reps in by_owner.items():
+            for rep, days in reps.items():
+                for day, vals in days.items():
+                    if day >= today:          # today is not settled
+                        continue
+                    merged[(day.isoformat(), owner.strip().lower(),
+                            rep.strip().lower())] = (
+                        [day.isoformat(), owner, rep]
+                        + [vals[m] for m in MEASURES]
+                        + [sum(vals.values()), "tableau"])
+                    wrote += 1
+
+        body = [REP_COLUMNS] + [merged[k] for k in sorted(merged)]
+        _retry(ws.clear)
+        _retry(ws.update, "A1", body, value_input_option="USER_ENTERED")
+        log(f"  board rep days: {wrote} stored ({len(merged)} in the tab)")
+        return wrote
+    except Exception as e:   # noqa: BLE001
+        log(f"  board rep days: SKIPPED ({type(e).__name__}: {e})")
+        return 0
+
+
+def stored_rep_days(owner: str, sheet_id: str = SHEET_ID) -> dict:
+    """{rep: {date: {measures}}} for one owner, straight from the sheet."""
+    from automations.recruiting_report.fill import open_by_key
+
+    grid = open_by_key(sheet_id).worksheet(REP_TAB).get_all_values()
+    if not grid:
+        return {}
+    header = [str(h).strip() for h in grid[0]]
+    want = (owner or "").strip().lower()
+    out: dict = collections.defaultdict(dict)
+    for row in grid[1:]:
+        rec = dict(zip(header, row))
+        if str(rec.get("Owner") or "").strip().lower() != want:
+            continue
+        rep = str(rec.get("Rep") or "").strip()
+        try:
+            day = dt.date.fromisoformat(str(rec.get("Date") or "")[:10])
+        except ValueError:
+            continue
+        if rep:
+            out[rep][day] = {m: _int(rec.get(m)) for m in MEASURES}
     return dict(out)
