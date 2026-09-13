@@ -206,8 +206,27 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
                     h.type = 'hidden'; h.name = 'submit'; h.value = 'Get Report';
                     form.appendChild(h);
                 }
-                HTMLFormElement.prototype.submit.call(form);
             }""", [found["idx"], want_value])
+        # The field dump showed a SECOND date on the form — startDate2, in
+        # MM/DD/YYYY with slashes, while weekStart uses dashes. That is the one
+        # the datepicker actually writes, which is why posting weekStart alone
+        # kept landing a week off. Set every startDate* field too, in its own
+        # format, before the submit.
+        page.evaluate(
+            r"""(slashed) => {
+                document.querySelectorAll("input[name^='startDate']")
+                    .forEach(e => {
+                        e.removeAttribute('readonly');
+                        e.value = slashed;
+                        e.dispatchEvent(new Event('change', {bubbles: true}));
+                    });
+            }""", wk_start.strftime("%m/%d/%Y"))
+        page.evaluate(
+            r"""() => {
+                const box = [...document.querySelectorAll('input')]
+                              .find(x => x.name === 'weekStart');
+                HTMLFormElement.prototype.submit.call(box.form);
+            }""")
 
         # CONFIRM THE PAGE ACTUALLY CHANGED — and confirm it against the BOX,
         # not against a header string I formatted myself. The box is what the
