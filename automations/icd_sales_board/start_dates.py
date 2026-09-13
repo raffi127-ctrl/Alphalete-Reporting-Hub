@@ -84,35 +84,65 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
     want_value = wk_start.strftime("%m-%d-%Y")
     want_header = _header(wk_start)
     try:
-        # DRIVE IT LIKE A PERSON. Setting .value in JS and dispatching change
-        # left the page on whatever week it opened with — 1 of 6 weeks "opened"
-        # and nothing found. The box is a real text input with a calendar
-        # attached, so it is typed into, the calendar is dismissed, and the
-        # button is really clicked.
-        idx = page.evaluate(
+        # WHAT IS THIS BOX CALLED? Driving the form — setting .value, and then
+        # really typing into it and clicking Get Report — left the page on the
+        # week it loads with, both times. This is a ColdFusion page, and those
+        # generally accept their own form fields as URL parameters, so the
+        # field NAME is worth more than another synthetic click.
+        found = page.evaluate(
             r"""() => {
                 const ins = [...document.querySelectorAll('input')];
-                return ins.findIndex(
-                    i => /^\d{2}-\d{2}-\d{4}$/.test((i.value||'').trim()));
+                const i = ins.findIndex(
+                    x => /^\d{2}-\d{2}-\d{4}$/.test((x.value||'').trim()));
+                if (i < 0) return null;
+                const box = ins[i];
+                const form = box.form;
+                const submit = [...document.querySelectorAll('input,button')]
+                    .find(b => /get\s*report/i.test(b.value || b.innerText || ''));
+                return {
+                    idx: i,
+                    name: box.name || '', id: box.id || '',
+                    readOnly: !!box.readOnly,
+                    action: form ? (form.getAttribute('action') || '') : null,
+                    method: form ? (form.method || '') : null,
+                    submitName: submit ? (submit.name || '') : '',
+                    submitValue: submit ? (submit.value || '') : '',
+                };
             }""")
-        if idx is None or idx < 0:
+        if not found:
             log(f"    week {wk_start}: no date box on the page")
             return False
+        log(f"    week {wk_start}: box={found}")
 
-        box = page.locator("input").nth(idx)
+        # 1) try it as a URL parameter, which needs no click at all
+        if found.get("name"):
+            from urllib.parse import quote
+            base = page.url.split("#")[0]
+            url = f"{base}&{quote(found['name'])}={quote(want_value)}"
+            if found.get("submitName"):
+                url += f"&{quote(found['submitName'])}={quote(found['submitValue'] or 'Get Report')}"
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+                page.wait_for_timeout(1500)
+                if page.evaluate("(w) => document.body.innerText.includes(w)",
+                                 want_header):
+                    return True
+            except Exception:   # noqa: BLE001 — fall through to the form
+                pass
+
+        # 2) fall back to driving the form like a person
+        box = page.locator("input").nth(found["idx"])
         box.click()
         box.press("Meta+A")
         box.type(want_value, delay=40)
-        page.keyboard.press("Escape")     # close the calendar overlay
+        page.keyboard.press("Escape")
         try:
             page.get_by_role("button", name="Get Report").click(timeout=5_000)
         except Exception:   # noqa: BLE001 — it is an <input type=submit> here
             page.locator("input[value='Get Report'], button:has-text('Get Report')"
                          ).first.click(timeout=5_000)
 
-        # CONFIRM THE PAGE ACTUALLY CHANGED. Clicking is not loading: the
-        # earlier run reported 6/6 "opened" and returned 41 dates that were all
-        # from the ONE week the report lands on by default.
+        # CONFIRM THE PAGE ACTUALLY CHANGED. Clicking is not loading.
         for _ in range(20):
             page.wait_for_timeout(750)
             if page.evaluate("(w) => document.body.innerText.includes(w)",
