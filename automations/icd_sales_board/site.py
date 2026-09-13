@@ -1763,6 +1763,11 @@ def relay_board(icd: str, office_key: str) -> None:
     for low, rep in roster.items():
         names.setdefault(low, rep.name)
 
+    # Only days that have happened — a column of zeros for Thursday when it
+    # is Tuesday reads as a bad day rather than a day that has not come.
+    week_days = [week_ending - dt.timedelta(days=i) for i in range(6, -1, -1)
+                 if week_ending - dt.timedelta(days=i) <= dt.date.today()]
+
     rows = []
     for low, shown in names.items():
         rec = by_rep.get(shown) or by_rep.get(shown.upper()) or {}
@@ -1793,9 +1798,20 @@ def relay_board(icd: str, office_key: str) -> None:
             row["Team"] = (rep.team if rep else "") or BLANK_OPTION
             row["Leadership"] = (rep.level if rep else "") or BLANK_OPTION
             row["Status"] = (rep.status if rep else "") or BLANK_OPTION
-        row.update({m: tot[m] for m in RELAY_MEASURES})
+        # A DAY PER COLUMN, and they come FIRST. The settled pull is already
+        # per-day — it was just being summed away — and a week total cannot
+        # answer "who fell off midweek", which is most of what an owner opens
+        # a board to see. Rep + tenure + 4 products + apps + total + 7 days is
+        # 14 columns and the days landed off the right edge, so the product
+        # split moved behind "Expand your board" with the days in plain view.
+        for d in week_days:
+            src = (sd.get(d) or live_days.get(d) or {}) if d < dt.date.today() \
+                else (live_days.get(d) or {})
+            row[d.strftime("%a")] = _units(src) if src else 0
         row["Apps"] = _apps(tot)
         row["Total units"] = _units(tot)
+        if expand:
+            row.update({m: tot[m] for m in RELAY_MEASURES})
         rows.append(row)
     rows.sort(key=lambda r: (-r["Apps"], -r["Total units"], r["Rep"]))
 
@@ -1804,7 +1820,9 @@ def relay_board(icd: str, office_key: str) -> None:
     # pull BECAUSE they sold. Now that the roster also carries everyone who
     # KNOCKED, the two numbers differ again and the count means something: it
     # is how many of the people who went out actually got on the board.
-    selling = sum(1 for r in rows if any(r[m] for m in RELAY_MEASURES))
+    # Off "Total units", not the product columns — those only exist in the
+    # expanded view now, so reading them collapsed raised KeyError: 'Int'.
+    selling = sum(1 for r in rows if r.get("Total units"))
 
     # CLOSED DAYS COME FROM TABLEAU, TODAY FROM THE RELAY (Megan 2026-09-13).
     # An intraday reading of a finished day runs light — Cyrus's Saturday was
@@ -1847,11 +1865,21 @@ def relay_board(icd: str, office_key: str) -> None:
     # The totals line is the last ROW of the grid, not a table underneath: a
     # separate table scrolls on its own and stops lining up with its columns
     # the moment the board is scrolled sideways.
-    grid = rows + [dict({"Rep": TOTALS_LABEL},
-                        **{m: tot[m] for m in RELAY_MEASURES},
-                        **{"Apps": _apps(tot), "Total units": _units(tot)})]
+    day_totals = {d.strftime("%a"): sum(r.get(d.strftime("%a"), 0)
+                                        for r in rows) for d in week_days}
+    totals_row = dict({"Rep": TOTALS_LABEL}, **day_totals,
+                      **{"Apps": _apps(tot), "Total units": _units(tot)})
+    if expand:
+        totals_row.update({m: tot[m] for m in RELAY_MEASURES})
+    # Built from the FIRST row's keys so the totals line carries every column
+    # in the same order, rather than however a dict merge happened to land.
+    grid = rows + [{k: totals_row.get(k, "") for k in rows[0]}]
 
     cfg = _centered(grid[0])
+    for d in week_days:
+        k = d.strftime("%a")
+        cfg[k] = dict(cfg.get(k) or {}, width=58, disabled=True,
+                      help=f"Units on {d:%a %b %d} — all products.")
     cfg["Tenure"] = dict(cfg.get("Tenure") or {}, width=90, disabled=True,
                          help="Weeks since their first day — computed from "
                               "the start date, and the colour on the name.")
