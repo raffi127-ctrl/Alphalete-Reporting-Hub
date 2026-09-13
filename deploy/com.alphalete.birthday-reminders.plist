@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.birthday-reminders</string>
+
+    <!-- Birthday Reminders: text the Admin Staff chat the day before a rep's
+         birthday, so somebody gets a photo and the social post is ready.
+
+         LUCY 1 ONLY. The "Admin Staff" chat resolves on Lucy 1 and nowhere else
+         (Megan is not in it; Lucy is). Installing this anywhere else produces a
+         run that fails at group resolution every morning.
+
+         Path is the laptop placeholder; install_agent.py rewrites it to the
+         installing machine's repo path:
+         python -m automations.day_orchestrator.install_agent birthday-reminders -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/birthday_reminders.sh</string>
+        <string>--send</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 9:00am machine-local, EVERY day including Sunday. Birthdays do not skip
+         weekends, and unlike the sales reports this reads a stored MM/DD rather
+         than a day's production, so a Sunday run is meaningful.
+
+         Morning on purpose: the whole point is the day BEFORE, so admin staff
+         have a full working day to get the photo. An evening slot would leave
+         them the night.
+
+         Most days this sends nothing and exits 0 -- that is a success, not a
+         no-op to alarm at. [[findings are not failures]]
+
+         TIME KNOB: edit this array, then re-install:
+           lucy rerun install_birthday_reminders_agent (machine: Lucy 1) -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.birthday-reminders.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.birthday-reminders.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

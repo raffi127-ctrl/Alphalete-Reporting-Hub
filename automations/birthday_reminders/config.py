@@ -35,11 +35,12 @@ HEADERS = [COL_NAME, COL_MMDD, COL_SOURCE, COL_ADDED, COL_SKIP, COL_NOTES]
 # (party-popper icon). Kept as a NEEDLE, not a GUID, so it resolves fresh on
 # whichever Lucy runs the job.
 #
-# LUCY MUST BE A MEMBER OF THIS CHAT or resolve_group raises -- and that is the
-# right thing for it to mean. The visible participants are Megan, Raf, Bas
-# Elhassan, Aimee Garibay and Dylan Twaddle; alphaletereporting@ (the account
-# Lucy 1's Messages is signed in as) is NOT among them, so somebody has to add
-# it, exactly as Megan did for "Alphalete Partners" on 2026-08-26.
+# *** THIS REPORT RUNS ON LUCY 1. *** Megan, 2026-09-13: "lucy is in the imessage
+# chat. I'm not. So it needs to run on Lucy 1." Verified there the same day --
+# find_groups("Admin Staff") returns exactly one chat, 9 participants. It does
+# NOT resolve from Megan's laptop (14 other groups do, including all three
+# Alphalete ones), so a run from anywhere else fails at resolution. That failure
+# is correct and loud, never a silent skip.
 GROUP_ADMIN_STAFF = os.environ.get("BIRTHDAY_GROUP", "Admin Staff").strip()
 
 # The reminder fires the DAY BEFORE, so there is a day to get the photo.
