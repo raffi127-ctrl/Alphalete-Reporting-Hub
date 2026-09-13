@@ -18,7 +18,12 @@ from automations.disposition_signup.schema import DispositionRecord
 
 # The deployed form. The ping deep-links to ?confirm=<key>, which opens the
 # access-code-gated confirm view. MUST match the deployed subdomain.
-FORM_URL = "https://alphaletedispositions.streamlit.app"
+# The subdomain alphaletedispositions was retired on 2026-09-13 when the
+# tools moved onto one site. The form now lives at a PATH on that site,
+# and the confirm deep link with it -- a ping still pointing at the old
+# host would hand Megan a dead link at the moment she tried to approve
+# somebody.
+FORM_URL = "https://lucyeco.streamlit.app/daily-dispositions"
 
 
 def _lines(rec: DispositionRecord, lucy: "Optional[dict]" = None

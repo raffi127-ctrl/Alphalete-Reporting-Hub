@@ -19,7 +19,8 @@ until Megan opens ?confirm=<key> (access-code gated), sets the campaign, checks
 Office Access, and clicks Confirm.
 
 Run locally:   .venv/bin/streamlit run disposition_signup/app.py
-On the web:    Streamlit Community Cloud, subdomain alphaletedispositions.
+On the web:    lucyeco.streamlit.app/daily-dispositions (part of the
+               combined site; its own subdomain was retired 2026-09-13).
 
 Secrets: [gcp_service_account]/[gcp_oauth] for the master sheet,
 `slack_user_token` (TOP-LEVEL, above any [section]!) for the ping + the

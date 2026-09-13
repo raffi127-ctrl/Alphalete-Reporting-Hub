@@ -26,24 +26,28 @@ from __future__ import annotations
 
 import streamlit as st
 
-# (script path, url, label, icon, who it is for). Sidebar order = this order.
+# (script path, url, label, icon, who it is for, LISTED).
 #
 # THE URL IS SET EXPLICITLY AND THAT IS NOT OPTIONAL. Streamlit derives a
 # page's url from its FILENAME, and every tool in this repo is called app.py --
 # so the second one added would silently collide with the first on /app. It is
-# also the half of the address an owner sees, and "alphalete.../join-lucy-eco"
+# also the half of the address an owner sees, and "lucyeco.../join-lucy-eco"
 # is a link somebody can be read down a phone.
+#
+# LISTED=False MEANS REACHABLE BUT NOT OFFERED. Daily Dispositions is the thing
+# Lucy Eco replaces -- knocks and dispositions are moving onto the ICDs' own
+# machines -- so putting the two side by side on the front page invites an
+# office to pick the one we are retiring (Megan 2026-09-13: "this shouldn't
+# offer 2 different things?"). It still has to EXIST: its ?confirm=<key> deep
+# link is how a sign-up already in flight gets approved, and deleting the page
+# would break that silently. So it keeps its url and loses its billing.
 TOOLS = [
     ("icd_signup/app.py", "join-lucy-eco", "Join Lucy Eco",
      ":material/rocket_launch:",
-     "ICD owners — get your office's numbers posted in Slack"),
-    # FOLDED IN because this site took over its subdomain (2026-09-13). Its
-    # confirm view is a deep link Megan holds -- ?confirm=<key> -- so it has
-    # to stay reachable, now at /daily-dispositions?confirm=<key>. Dropping
-    # the tool instead would have broken that quietly.
+     "ICD owners — get your office's numbers posted in Slack", True),
     ("disposition_signup/app.py", "daily-dispositions", "Daily Dispositions",
      ":material/schedule:",
-     "Office owners — get your knocks and dispositions board on a schedule"),
+     "Being replaced by Lucy Eco — reachable by link only", False),
 ]
 
 
@@ -52,7 +56,9 @@ def home():
     st.title("Reporting tools")
     st.write("Pick the one you were sent here for.")
     st.divider()
-    for path, _url, label, _icon, who in TOOLS:
+    for path, _url, label, _icon, who, listed in TOOLS:
+        if not listed:
+            continue
         st.markdown("### %s" % label)
         st.caption(who)
         st.page_link(path, label="Open %s" % label)
@@ -61,6 +67,11 @@ def home():
 
 pages = [st.Page(home, title="Home", icon=":material/home:", default=True)]
 pages += [st.Page(p, title=t, icon=i, url_path=u)
-          for p, u, t, i, _who in TOOLS]
+          for p, u, t, i, _who, _listed in TOOLS]
 
-st.navigation(pages).run()
+# EVERY page is registered -- that is what keeps an unlisted tool's url alive --
+# but the sidebar is hidden, because a sidebar is a list of offers and the
+# unlisted ones are not on offer. Somebody who was sent a direct link lands
+# exactly where they were sent; nobody browses into a tool they should not be
+# picking.
+st.navigation(pages, position="hidden").run()

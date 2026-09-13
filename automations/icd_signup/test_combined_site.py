@@ -67,6 +67,23 @@ class EveryListedToolExists(unittest.TestCase):
         urls = [u for _p, u in self._tools()]
         self.assertEqual(len(urls), len(set(urls)), "two tools share a url")
 
+    def test_an_unlisted_tool_is_still_registered(self):
+        """Unlisted means NOT OFFERED, never NOT REACHABLE.
+
+        Daily Dispositions is being retired, so it is off the front page -- but
+        its ?confirm=<key> deep link is how a sign-up already in flight gets
+        approved. Dropping the page instead of unlisting it would break that
+        at the moment Megan next tried to approve somebody, with nothing to
+        connect the failure to this change.
+        """
+        src = (ROOT / "streamlit_app.py").read_text()
+        block = src[src.index("TOOLS = ["):src.index("]\n\n\ndef home")]
+        self.assertIn("daily-dispositions", block)
+        # and it must still be handed to st.navigation, not filtered out
+        nav = src[src.index("pages = ["):]
+        self.assertIn("for p, u, t, i, _who, _listed in TOOLS", nav)
+        self.assertNotIn("if _listed", nav)
+
     def test_the_entry_script_sets_no_page_config(self):
         # Each tool calls its own as its first Streamlit command; a second call
         # in the same run raises and takes the whole site down.

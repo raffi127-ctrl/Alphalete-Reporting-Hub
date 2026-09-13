@@ -8612,7 +8612,7 @@ else:  # st.session_state.view == "user"
                     "confirm it.")
                 _safe_link_button(
                     "🚪 Open dispositions sign-up",
-                    "https://alphaletedispositions.streamlit.app",
+                    "https://lucyeco.streamlit.app/daily-dispositions",
                     use_container_width=True)
                 st.caption("Send to an office owner")
             st.markdown("---")

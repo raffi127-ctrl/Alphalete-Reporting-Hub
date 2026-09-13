@@ -8,7 +8,10 @@ The enrollment link an office owner fills in to start getting their own
 - **Owner-facing:** `disposition_signup/app.py`
 - **Megan's confirm view:** the same app at `?confirm=<office key>`, gated by
   the `disposition_signup_code` secret
-- **Deploy:** Streamlit Community Cloud, subdomain `alphaletedispositions`
+- **Deploy:** part of the combined site (`streamlit_app.py`), at
+  `lucyeco.streamlit.app/daily-dispositions`. Its own subdomain was
+  retired 2026-09-13; it is UNLISTED on the site's front page because
+  Lucy Eco replaces it, but the url stays live for `?confirm=<key>`.
 - **Linked from the Hub:** Office Operations → *Daily Dispositions Sign-Up*
 
 ## The five questions → what they wire
