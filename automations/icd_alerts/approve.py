@@ -28,6 +28,36 @@ from typing import Dict, List, Optional
 from automations.icd_alerts import offices as O, post as P
 
 MEGAN = O.HOLDING_DM                 # U04G5HJBGFN
+
+
+def _me() -> str:
+    """Whoever is RUNNING this, by their own token.
+
+    auth_test is exactly right here and exactly wrong for the Lucy check
+    below. "Is Lucy in this channel" must be asked by ID, because the token is
+    per machine. "Am I in this channel" can only be asked of the token in
+    hand -- and hardcoding Megan meant that when Eve ran it she was told
+    whether MEGAN was in the room, which is the one thing she did not ask.
+    """
+    try:
+        from automations.shared import slack_metrics_post as smp
+        return smp._client().auth_test().get("user_id") or ""
+    except Exception:  # noqa: BLE001 — a missing answer must not stop approval
+        return ""
+
+
+def _missing_people(members: List[str], me: str) -> List[str]:
+    """Which of the people who should be in this room are not.
+
+    Reported, never enforced. Lucy not being in the channel is fatal -- she
+    physically cannot post. A person missing is a thing to fix in Slack in ten
+    seconds, and blocking the approval on it would mean an office waits on a
+    click that has nothing to do with them.
+    """
+    want = dict(O.APPROVERS)
+    if me and me not in want:
+        want[me] = "you"
+    return [name for uid, name in want.items() if uid not in members]
 # 'Lucy Reporting' -- the identity the POSTER runs as, on a Lucy box.
 #
 # NOT whatever auth_test() says here. The Slack token is per MACHINE: a Lucy
@@ -145,6 +175,7 @@ def cmd_knocks(office_key: str) -> int:
         print("NOTE — they said their field hours differ: %s" % row["hours"])
         print("       (set that with them; it is not stored automatically)\n")
 
+    me = _me()
     resolved, problems = [], []
     for dest in row["asked"]:
         name = str(dest.get("channel") or "").strip()
@@ -164,9 +195,10 @@ def cmd_knocks(office_key: str) -> int:
         if LUCY_REPORTING not in members:
             problems.append("%s — Lucy Reporting is not in it" % name)
             continue
+        gone = _missing_people(members, me)
         print("  #%s (%s) every %s min%s"
               % (ch["name"], cid, cadence,
-                 "" if MEGAN in members else "   [you are NOT in this one]"))
+                 "" if not gone else "   [NOT in this one: %s]" % ", ".join(gone)))
         resolved.append({"channel_id": cid, "channel_name": "#" + ch["name"],
                          "cadence_min": cadence})
 
@@ -241,6 +273,7 @@ def cmd_approve(office_key: str, channel: Optional[str]) -> int:
               "Use --channel to set it anyway." % office_key)
         return 1
 
+    me = _me()
     resolved, problems = [], []
     for name in wanted:
         print("looking up %s ..." % name)
@@ -258,9 +291,10 @@ def cmd_approve(office_key: str, channel: Optional[str]) -> int:
         if LUCY_REPORTING not in members:
             problems.append("%s — Lucy Reporting is not in it" % name)
             continue
+        gone = _missing_people(members, me)
         print("  #%s (%s)%s%s"
               % (ch["name"], cid, "  [private]" if ch.get("is_private") else "",
-                 "" if MEGAN in members else "   [you are NOT in this one]"))
+                 "" if not gone else "   [NOT in this one: %s]" % ", ".join(gone)))
         resolved.append({"channel_id": cid, "channel_name": "#" + ch["name"]})
 
     if problems:

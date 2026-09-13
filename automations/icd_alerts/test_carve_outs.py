@@ -74,3 +74,49 @@ class AOStaysOnOurMachines(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EitherOfThemCanFinishTheSetUp(unittest.TestCase):
+    """Megan or Eve, not Megan only (Megan 2026-09-13).
+
+    Nothing ever BLOCKED Eve from approving an office -- but the room check
+    was hardcoded to Megan's id, so when Eve ran it she was told whether MEGAN
+    was in the channel, which is the one thing she did not ask and the one
+    thing she could not act on.
+    """
+
+    def test_the_runner_is_reported_on_even_if_unlisted(self):
+        from automations.icd_alerts import approve as A
+        # Somebody approving who is not in APPROVERS yet -- Eve today -- must
+        # still be told when SHE is the one missing from the room.
+        self.assertIn("you", A._missing_people(["U04G5HJBGFN"], "UEVE"))
+
+    def test_everyone_present_reports_nothing(self):
+        from automations.icd_alerts import approve as A
+        self.assertEqual(A._missing_people(["U04G5HJBGFN", "UEVE"], "UEVE"), [])
+
+    def test_a_missing_approver_is_named(self):
+        from automations.icd_alerts import approve as A
+        self.assertEqual(A._missing_people(["UEVE"], "UEVE"), ["Megan"])
+
+    def test_a_missing_person_never_blocks_an_approval(self):
+        """Lucy missing is fatal; a person missing is a ten-second fix in Slack.
+
+        Blocking on it would leave an office waiting on a click that has
+        nothing to do with them.
+        """
+        from automations.icd_alerts import approve as A
+        src = pathlib.Path(A.__file__).read_text()
+        # the fatal one appends to `problems` and continues; the people one
+        # only decorates the printed line
+        self.assertIn('problems.append("%s — Lucy Reporting is not in it"', src)
+        self.assertNotIn("problems.append(\"%s — Megan", src)
+
+    def test_lucy_is_still_checked_by_id_not_by_whoever_is_running_it(self):
+        """The token is per MACHINE. Asking auth_test "is Lucy here" from
+        Megan's laptop answers about Megan, says yes, and approves a room the
+        poster cannot reach."""
+        from automations.icd_alerts import approve as A
+        self.assertEqual(A.LUCY_REPORTING, "U0BCG8F9B5Z")
+        src = pathlib.Path(A.__file__).read_text()
+        self.assertIn("if LUCY_REPORTING not in members", src)

@@ -24,7 +24,20 @@ from typing import Dict, List, NamedTuple, Optional
 # worse than one that lands in front of Megan. New ICDs will not already be
 # enrolled in anything (Megan 2026-09-11), so this is the normal state for a
 # day or two, not an error -- the alerts are real and they are held, not lost.
-HOLDING_DM = "U04G5HJBGFN"          # Megan
+HOLDING_DM = "U04G5HJBGFN"
+
+# WHO CAN FINISH AN OFFICE'S SET-UP, and who has to be in the room before one
+# is switched on (Megan 2026-09-13: "I want it so Eve or I can complete the
+# set up"). Either of them runs the approval; the check reports on ALL of
+# them, so it does not matter which.
+#
+# Eve's id is not here yet -- searching Slack for "Eve" returned twenty people
+# and none was obviously her, and a guess here is a channel approved on a
+# membership nobody actually has. Add her line when somebody can confirm it;
+# until then the check simply says less, rather than saying something wrong.
+APPROVERS = {
+    "U04G5HJBGFN": "Megan",
+}          # Megan
 HOLDING_LABEL = "Megan (no channel set yet)"
 
 # Where OUR problems go: an office gone quiet, an enrolment waiting on a
