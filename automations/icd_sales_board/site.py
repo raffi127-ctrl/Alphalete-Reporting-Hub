@@ -1728,8 +1728,10 @@ def _hover_table(grid: list, splits: dict, day_labels: list,
                 # the day colour is production, which is what he reads across.
                 # A rep with NO reading that day is left plain rather than
                 # painted as a worked zero.
-                worked = bool(sp) and any(sp.values())
-                css += _scale(val, worked=worked or bool(sp))
+                # "" means nothing reported — no colour. A real 0 means
+                # somebody went out and got nothing, which IS the dark red.
+                if str(val).strip() != "":
+                    css += _scale(val, worked=True)
                 if sp:
                     title = " · ".join(f"{v} {m}" for m, v in sp.items() if v)
                     title = title or "nothing sold"
@@ -1935,7 +1937,13 @@ def relay_board(icd: str, office_key: str) -> None:
             return True
         return any((r["days"].get(d) or {}) for r in by_rep.values())
 
-    week_days = [d for d in week_days_all if _has_data(d)]
+    # EVERY DAY UP TO TODAY KEEPS ITS COLUMN, today included: Sunday is not
+    # mandatory but some reps still go sell (Megan 2026-09-13), and live sales
+    # need a column to land in. What was wrong was the CONTENT — a day nobody
+    # has reported yet drew zeros, and the production scale paints a zero dark
+    # red for "worked and blanked", so an empty Sunday accused the office.
+    week_days = list(week_days_all)
+    reported_days = {d for d in week_days if _has_data(d)}
 
     rows = []
     splits: dict = collections.defaultdict(dict)
@@ -1992,7 +2000,8 @@ def relay_board(icd: str, office_key: str) -> None:
                                          else blank)
             else:
                 # Collapsed: one number per day, with the split on HOVER.
-                row[lab] = _apps(src) if src else 0
+                row[lab] = (_apps(src) if src
+                            else (0 if d in reported_days else ""))
                 # Keyed by the DISPLAYED name, which is what the lookup has.
                 # Keyed by the raw one, every rep whose source spells them in
                 # caps (the relay does) silently missed: the office Apps read
@@ -2098,7 +2107,7 @@ def relay_board(icd: str, office_key: str) -> None:
     # separate table scrolls on its own and stops lining up with its columns
     # the moment the board is scrolled sideways.
     day_totals = {}
-    for d in week_days:
+    for d in [x for x in week_days if x in reported_days]:
         lab = d.strftime("%a")
         cols_for_day = ([f"{lab} Apps"] + [f"{lab} {m}" for m in RELAY_MEASURES]
                         if products else [lab])
