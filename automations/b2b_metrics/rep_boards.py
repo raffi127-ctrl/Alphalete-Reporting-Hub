@@ -428,6 +428,37 @@ def _render_both(log=print) -> int:
             "product URL filter looks INERT — all four pulls carry the same "
             f"Grand Total ({sig}); not rendering a wrong board")
     total = parse_office_churn(compute._load_grid(OUT_DIR / "office_churn.csv"))
+    # Cache the per-product OFFICE 0-30 churn for the churn preview's
+    # decelerator block (Carlos 2026-09-13: his live Non-BYOD was 1.6%%
+    # while the block showed the week-old email's 4.9%% — the preview reads
+    # this instead of the email seed whenever it's fresh).
+    try:
+        import json as _json
+        _pmap = {"NEW INTERNET": "internet", "NON BYOD WIRELESS": "nonbyod",
+                 "BYOD WIRELESS": "byod", "AIR/AWB": "air"}
+        _cache = {"date": dt.date.today().isoformat(), "office": "carlos",
+                  "churn_0_30": {}}
+        for _prod, _key in _pmap.items():
+            _c = (prod_totals.get(_prod) or {}).get("0-30 Day") or {}
+            _r = str(_c.get("rate") or "").replace("%", "").strip()
+            if not _r:
+                continue
+            def _f(v):
+                try:
+                    return float(str(v).strip())
+                except (TypeError, ValueError):
+                    return None
+            _cache["churn_0_30"][_key] = {
+                "pct": float(_r), "act": _f(_c.get("act")),
+                "disc": _f(_c.get("disc"))}
+        if _cache["churn_0_30"]:
+            (OUT_DIR / "office_churn_by_product.json").write_text(
+                _json.dumps(_cache))
+            log("  cached per-product office churn for the decel block: "
+                + ", ".join("%s %.1f%%" % (k, v["pct"])
+                            for k, v in _cache["churn_0_30"].items()))
+    except Exception as _e:  # noqa: BLE001 — cache is a bonus, never fatal
+        log(f"  (per-product churn cache skipped: {_e})")
     all_reps = sorted({r for d in per_product.values() for r in d})
     rows, dropped = [("Office Total (all reps)", "All products", True,
                       total)], 0

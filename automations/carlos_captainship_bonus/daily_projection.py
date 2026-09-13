@@ -214,6 +214,53 @@ def tally(paths, today: dt.date, log=print):
     return wtd, share, per_owner, weekly
 
 
+TEAM_CHURN_CACHE = OUT_DIR / "team_churn_by_product.json"
+
+
+def team_churn_live(paths, today: dt.date, log=print) -> Dict[str, dict]:
+    """LIVE per-product 0-30 team churn from the roster's own order log
+    (Carlos 2026-09-13: 'don't go off of just the email, because that email
+    is for one day, and this is updating every day'). Base = the
+    captainship's lines POSTED in the last 30 days (disconnected ones
+    included — they were activations that fell); churned = those now
+    showing disconnected. Written to TEAM_CHURN_CACHE for the churn
+    preview's decelerator block."""
+    from automations.att_order_log import clean
+
+    lo = today - dt.timedelta(days=29)
+    act = collections.Counter()
+    dis = collections.Counter()
+    for path in paths:
+        for ln in clean.load_rows(str(path), owner_prefix=None):
+            owner = _norm_owner(ln.get("Owner & Office"))
+            if not owner or owner == "ALL" or not _on_team(owner):
+                continue
+            posted = _parse_date(ln.get(POSTED_COL))
+            if posted is None or not (lo <= posted <= today):
+                continue
+            prod = _product(ln)
+            if prod is None:
+                continue
+            act[prod] += 1
+            status = str(ln.get("DTR Status (enriched)", "") or "").strip().lower()
+            if "disconnect" in status:
+                dis[prod] += 1
+    out = {}
+    for p in PRODUCTS:
+        if act[p]:
+            out[p] = {"pct": round(100.0 * dis[p] / act[p], 2),
+                      "act": act[p], "disc": dis[p]}
+    if out:
+        TEAM_CHURN_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        TEAM_CHURN_CACHE.write_text(json.dumps(
+            {"date": today.isoformat(), "churn_0_30": out}))
+        log("  [team churn live] " + "  ".join(
+            "%s %.1f%% (%d/%d)" % (PROD_LABEL[p], out[p]["pct"],
+                                   out[p]["disc"], out[p]["act"])
+            for p in PRODUCTS if p in out))
+    return out
+
+
 def _tier(vol: float, prog: dict) -> Tuple[int, float]:
     """-> (tier index 0=Base..7, $/pc)."""
     idx = 0
@@ -321,7 +368,8 @@ def build_report(today: dt.date, wtd, share, per_owner, prog) -> str:
         % (tier_names[proj["tier"]], proj["rate"], nxt,
            rates["activation_31_60_pct"], proj["act_add"],
            rates["team_total_churn_pct"], proj["churn_add"]),
-        "*Weighted decel:* %.1f%%  (%s — churn as of SC's DD WE %s email)"
+        "*Weighted decel:* %.1f%%  (%s — worse of LIVE team/office churn; "
+        "email WE %s only where no live number)"
         % (100 * proj["wdecel"],
            " · ".join("%s %.0f%%" % (PROD_LABEL[p], 100 * proj["decels"][p])
                       for p in PRODUCTS),
@@ -622,6 +670,31 @@ def main(argv=None) -> int:
     paths = ([Path(p) for p in args.from_file] if args.from_file
              else pull(today, log=log))
     wtd, share, per_owner, weekly = tally(paths, today, log=log)
+    # LIVE decel churn (Carlos 2026-09-13: the email is one day old the
+    # moment it lands — the decel must track daily): worse of live team
+    # (this pull) vs live office (rep_boards' churn-board cache), falling
+    # back to the email seed per product only when neither is available.
+    team_live = team_churn_live(paths, today, log=log)
+    if not args.churn:
+        office_live = {}
+        try:
+            oc = json.loads((Path(__file__).resolve().parents[2] / "output" /
+                             "b2b_metrics_preview" /
+                             "office_churn_by_product.json").read_text())
+            if (today - dt.date.fromisoformat(oc["date"])).days <= 2:
+                office_live = {k: v["pct"]
+                               for k, v in oc["churn_0_30"].items()}
+        except Exception:  # noqa: BLE001 — no cache yet
+            pass
+        used = []
+        for p in PRODUCTS:
+            cands = [x for x in (team_live.get(p, {}).get("pct"),
+                                 office_live.get(p)) if x is not None]
+            if cands:
+                prog["seed_rates"]["churn_pct"][p] = max(cands)
+                used.append("%s %.1f%%" % (PROD_LABEL[p], max(cands)))
+        if used:
+            log("  [decel churn LIVE worse-of] " + " · ".join(used))
     text = build_report(today, wtd, share, per_owner, prog)
     log("")
     log(text)

@@ -216,6 +216,22 @@ def build_html(data: dict, *, label: str = "", office_key: str = "",
     is_carlos = (office_key or "carlos") == "carlos"
     team = (seeds.get("team_churn_pct") or {}) if is_carlos else {}
     pers = (seeds.get("personal_churn_pct") or {}) if is_carlos else {}
+    # LIVE team churn beats the email seed (Carlos 2026-09-13: "don't go off
+    # of just the email... this is updating every day") — written daily by
+    # carlos_bonus_projection.team_churn_live from the roster's order log.
+    team_src = "WE %s email" % prog["dd_we"][5:]
+    if is_carlos:
+        try:
+            tc = _json.loads((Path(__file__).resolve().parents[2] / "output" /
+                              "carlos_bonus_projection" /
+                              "team_churn_by_product.json").read_text())
+            age = (dt.date.today() - dt.date.fromisoformat(tc["date"])).days
+            if age <= 2:
+                team = {k: v["pct"] for k, v in tc["churn_0_30"].items()}
+                team_src = ("team order log today" if age == 0
+                            else "team order log %s" % tc["date"][5:])
+        except Exception:  # noqa: BLE001 — no cache yet -> email seed
+            pass
     tr = prog.get("transition") or {}
     tr_on = bool(tr) and dt.date.today() <= dt.date.fromisoformat(
         tr["through_dd_we"])
@@ -232,13 +248,42 @@ def build_html(data: dict, *, label: str = "", office_key: str = "",
     live_air, air_a, air_d = _live("Air")
     live_wl, _wa, _wd = _live("Wireless")
 
-    #      label      key         office churn, source tag,        act, disc
+    # BYOD / Non-BYOD office churn: prefer the churn-by-rep run's cached
+    # per-product office totals (Tableau, daily) over the weekly email seed
+    # — Carlos 2026-09-13: live Non-BYOD 1.6% vs the email's stale 4.9%.
+    b_off = n_off = None
+    b_src = n_src = "WE %s email" % prog["dd_we"][5:]
+    b_a = b_d = n_a = n_d = None
+    if is_carlos:
+        try:
+            cache_p = (Path(__file__).resolve().parents[2] / "output" /
+                       "b2b_metrics_preview" / "office_churn_by_product.json")
+            c = _json.loads(cache_p.read_text())
+            age = (dt.date.today()
+                   - dt.date.fromisoformat(c["date"])).days
+            if age <= 2:
+                tag = ("churn board today" if age == 0
+                       else "churn board %s" % c["date"][5:])
+                nb = c["churn_0_30"].get("nonbyod")
+                bd = c["churn_0_30"].get("byod")
+                if nb:
+                    n_off, n_src = nb["pct"], tag
+                    n_a, n_d = nb.get("act"), nb.get("disc")
+                if bd:
+                    b_off, b_src = bd["pct"], tag
+                    b_a, b_d = bd.get("act"), bd.get("disc")
+        except Exception:  # noqa: BLE001 — no cache yet -> email seed
+            pass
+    if n_off is None:
+        n_off = pers.get("nonbyod")
+    if b_off is None:
+        b_off = pers.get("byod")
+
+    #      label      key         office churn, source tag,   act, disc
     prods_cfg = [
         ("Internet", "internet", live_net, "live board", net_a, net_d),
-        ("Non-BYOD", "nonbyod",
-         pers.get("nonbyod"), "WE %s email" % prog["dd_we"][5:], None, None),
-        ("BYOD", "byod",
-         pers.get("byod"), "WE %s email" % prog["dd_we"][5:], None, None),
+        ("Non-BYOD", "nonbyod", n_off, n_src, n_a, n_d),
+        ("BYOD", "byod", b_off, b_src, b_a, b_d),
         ("AIR/AWB", "air", live_air, "live board", air_a, air_d),
     ]
 
@@ -281,7 +326,8 @@ def build_html(data: dict, *, label: str = "", office_key: str = "",
                     else "losing nothing") +
                  (f" · {100 * raw:.0f}% before the +25pt support"
                   if eff != raw else "") + "</span>")
-        team_s = f" · team {t_pct:.1f}%" if t_pct is not None else ""
+        team_s = (f" · team {t_pct:.1f}% ({team_src})"
+                  if t_pct is not None else "")
         prow_html.append(
             f"<tr><td style=\"font-weight:700\">{plabel}</td>"
             f"<td style=\"text-align:center\"><b>{used:.1f}%</b><br>"
@@ -312,8 +358,9 @@ def build_html(data: dict, *, label: str = "", office_key: str = "",
 <td style=\"text-align:center;font-weight:700\">Payout kept</td></tr>
 {''.join(prow_html)}</table>
 <p class=\"note\">Payout × Σ(product volume × product decel) ÷ total volume
- (weighted by DD volume).{tr_note} BYOD / Non-BYOD office churn comes from the
- weekly bonus email — the board has no live BYOD split yet.</p></div>
+ (weighted by DD volume).{tr_note} Every number's source is labeled under
+ it: 'churn board' and 'team order log' are LIVE daily; 'WE … email'
+ appears only when no live number exists yet.</p></div>
 <div><div style=\"font-size:12.5px;font-weight:600\">Lines to climb a bracket</div>
 <div style=\"font-size:12.5px\">{climb_html}</div>
 <p class=\"note\">Only products tracked live on this board, and only when the
