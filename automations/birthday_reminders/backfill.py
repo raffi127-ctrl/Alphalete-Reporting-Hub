@@ -95,6 +95,59 @@ def board_names(today: dt.date, *, logfn=print) -> list:
     return people
 
 
+def _mapped_dob(bundle_id: str, mapping) -> str:
+    """The 'dob' value in one bundle, straight off its field rows. '' if absent."""
+    from automations.apex_new_starts import blueink_data as BD
+    want = {k for d in mapping.values() if isinstance(d, dict)
+            for k, v in d.items() if v == "dob"}
+    if not want:
+        return ""
+    for row in BD.bundle_data(bundle_id) or []:
+        if isinstance(row, dict) and row.get("field_key") in want:
+            got = S.mmdd(row.get("value") or "")
+            if got:
+                return got
+    return ""
+
+
+def _second_look(name: str, mapping, *, logfn=print) -> str:
+    """When the main path finds no DOB, check the person's OTHER bundles.
+
+    THE CASE THIS EXISTS FOR (Deavion Allen, 2026-09-13). He has TWO complete
+    bundles: a 1-document one carrying only the W-4, and a 3-document one with
+    the I-9. `blueink_data.index_by_person` keys by person and keeps ONE bundle
+    per name, so it handed back the W-4-only one -- which maps to zero fields --
+    and he was reported as having no usable date of birth. His I-9 has it:
+    1999-05-22.
+
+    Fixed HERE rather than in `blueink_data.for_people` on purpose. That module
+    is the shared path `apex_new_starts` types Socials and payroll details
+    through; changing which bundle it picks is a real change to a live report
+    and is Megan's call, not a side effect of a birthday feature. What this does
+    is read-only and scoped to this one report. THE UNDERLYING PICK IS STILL
+    WRONG FOR apex_new_starts -- anyone with two bundles fills from the thinner
+    one -- and that is worth raising separately.
+    """
+    from automations.apex_new_starts import blueink_data as BD
+    surname = str(name or "").split()[-1] if name else ""
+    if not surname:
+        return ""
+    try:
+        hits = BD.search_bundles(surname, limit=10)
+    except Exception as e:  # noqa: BLE001
+        logfn("        (second look failed for %s: %s)" % (name, str(e)[:60]))
+        return ""
+    key = BD._key(name)
+    for b in hits:
+        signers = [s.get("name") or "" for s in (b.get("packets") or [])]
+        if not any(BD._key(s) == key for s in signers):
+            continue
+        got = _mapped_dob(b.get("id") or "", mapping)
+        if got:
+            return got
+    return ""
+
+
 def gather(names: list, *, logfn=print) -> list:
     """Look each name up in Blue Ink -> [store.Entry] for the ones with a DOB.
 
@@ -102,20 +155,26 @@ def gather(names: list, *, logfn=print) -> list:
     deliberately -- a per-person search would rate-limit the account).
     """
     from automations.apex_new_starts import blueink_data as BD
+    from automations.apex_new_starts import fieldmap as FM
     today = dt.date.today().isoformat()
-    hires = BD.for_people(names)
+    mapping = FM.load()
+    hires = BD.for_people(names, mapping)
 
     out, gaps = [], []
     for name, hire in hires.items():
         if hire.missing_packet:
             gaps.append((name, "no signed packet found"))
             continue
-        raw = (hire.values or {}).get("dob", "")
-        got = S.mmdd(raw)
+        got = S.mmdd((hire.values or {}).get("dob", ""))
+        source = "blueink"
         if not got:
-            gaps.append((name, "packet has no usable date of birth"))
+            got = _second_look(name, mapping, logfn=logfn)
+            if got:
+                source = "blueink (2nd bundle)"
+        if not got:
+            gaps.append((name, "packet has no date of birth filled in"))
             continue
-        out.append(S.Entry(name=name, mmdd=got, source="blueink", added=today))
+        out.append(S.Entry(name=name, mmdd=got, source=source, added=today))
     for name, why in gaps:
         logfn("  --    %s -- %s" % (name, why))
     return out
