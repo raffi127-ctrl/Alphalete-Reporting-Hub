@@ -4383,8 +4383,8 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "weekdays": [0, 1, 2, 3, 4, 5, 6],   # every day \u2014 birthdays don't skip weekends
-            "time": "9:00 AM",
-            "time_label": "Daily 9:00am",
+            "time": "10:00 AM",
+            "time_label": "Daily 10:00am",
             "estimated_minutes": 1,
         },
         "checklist": [],

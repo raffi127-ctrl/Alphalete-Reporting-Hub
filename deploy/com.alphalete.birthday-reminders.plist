@@ -31,7 +31,8 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 9:00am machine-local, EVERY day including Sunday. Birthdays do not skip
+    <!-- 10:00am machine-local, EVERY day including Sunday.
+         (Moved from 9:00 by Megan, 2026-09-13.) Birthdays do not skip
          weekends, and unlike the sales reports this reads a stored MM/DD rather
          than a day's production, so a Sunday run is meaningful.
 
@@ -46,7 +47,7 @@
            lucy rerun install_birthday_reminders_agent (machine: Lucy 1) -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
