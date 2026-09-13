@@ -1701,6 +1701,58 @@ def _settled_reps(icd: str, week_ending: dt.date) -> dict:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
+def _knocks(icd: str, week_ending: dt.date) -> dict:
+    """{rep lowered: {date: {TK, TT}}} — the knocks half of Raf's board.
+
+    Every knock ratio on his sheet (knocks per day, talk-tos per knock,
+    talk-tos per app) comes from these two numbers. An office that does not
+    run the knocks scraper has none, and those columns stay BLANK rather than
+    showing zeros nobody measured — Raf's own office is one of them today."""
+    from automations.icd_sales_board import knocks_log as K
+    return K.activity_for(icd, week_ending - dt.timedelta(days=6), week_ending)
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _start_dates(icd: str) -> dict:
+    """{rep lowered: start date} from the AppStream harvest."""
+    try:
+        from automations.icd_sales_board import start_dates as SD
+
+        return SD.stored(icd)
+    except Exception:   # noqa: BLE001 — a missing tab is not a broken page
+        return {}
+
+
+def _days_worked(start, on: dt.date):
+    """Raf's '# Days Worked' — a SIX day week, Monday through Saturday.
+
+    Sunday is not a work day on his board, so counting calendar days would
+    overstate everybody by a sixth."""
+    if not start or start > on:
+        return ""
+    return sum(1 for i in range((on - start).days + 1)
+               if (start + dt.timedelta(days=i)).weekday() != 6)
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _last_week_apps(icd: str, week_ending: dt.date) -> dict:
+    """{rep lowered: apps} for the week BEFORE this one.
+
+    Raf's sheet carries LAST WEEK'S TOTALS beside the running week, which is
+    how an owner sees at a glance who has dropped off (Megan 2026-09-13). Same
+    settled Tableau source as this week — just the seven days before it."""
+    prior = _settled_reps(icd, week_ending - dt.timedelta(days=7))
+    out: dict = {}
+    for rep, days in (prior or {}).items():
+        tot = {m: 0 for m in RELAY_MEASURES}
+        for v in days.values():
+            for m in RELAY_MEASURES:
+                tot[m] += int(v.get(m, 0) or 0)
+        out[str(rep).strip().lower()] = _apps(tot)
+    return out
+
+
+@st.cache_data(ttl=900, show_spinner=False)
 def _settled_days(icd: str, week_ending: dt.date) -> dict:
     """{date: {Int, Int Up, DTV, NL}} — Tableau's settled office totals.
 
@@ -1783,67 +1835,63 @@ _SB_CSS = """
 """
 
 
-def _grouped_board(grid: list, week_days: list, reported: set,
-                   measures: list, has_units: bool) -> str:
-    """The board as a real table, with each day SPANNING its breakdown.
+def _grouped_board(grid: list, groups: list) -> str:
+    """The board as a real table, with each block SPANNING its columns.
 
-    Raf's sheet puts MON above its own Apps / Int / Int Up / DTV / NL block,
-    and a Streamlit grid cannot merge a header — so a flat run of repeating
-    'Int, DTV, NL' was the best it could do, and it read as one long row of
-    numbers (Megan 2026-09-13). This is two header rows: the day on top, its
+    Raf's sheet puts MON above its own Apps / Int / DTV / NL block, and a
+    Streamlit grid cannot merge a header — so a flat run of repeating
+    Int / DTV / NL was the best it could do, and it read as one long row of
+    numbers (Megan 2026-09-13). This is two header rows: the block on top, its
     measures underneath, with a rule down the left of every block so the eye
-    lands on the day first.
+    lands on the block first.
+
+    `groups` is [(title, [(label, row key, colour mode, day was reported)])],
+    built by the caller — which is what lets LAST WK sit beside the running
+    week exactly as it does on his sheet, rather than the layout being fixed
+    to seven days and nothing else.
 
     Read-only by design. 'Rep details' still opens the editable grid, which is
     where Team, Leadership and Status are changed."""
-    week_cols = ["Apps"] + measures + (["Total units"] if has_units else [])
-    day_cols = ["Apps"] + measures
+    def _sub(i, label, mode):
+        return (f'<th class="sub{" edge" if i == 0 else ""}'
+                f'{" apps" if mode else ""}">{label}</th>')
 
     head1 = ['<th class="name" rowspan="2">Rep</th>',
-             '<th rowspan="2">Tenure</th>',
-             f'<th class="grp" colspan="{len(week_cols)}">Week</th>']
-    def _sub(i, c):
-        return (f'<th class="sub{" edge" if i == 0 else ""}'
-                f'{" apps" if c == "Apps" else ""}">{c}</th>')
-
-    head2 = [_sub(i, c) for i, c in enumerate(week_cols)]
-    for d in week_days:
-        head1.append(f'<th class="grp" colspan="{len(day_cols)}">'
-                     f'{d:%a} {d.day}</th>')
-        head2 += [_sub(i, c) for i, c in enumerate(day_cols)]
+             '<th rowspan="2">Tenure</th>']
+    head2 = []
+    for title, cells in groups:
+        head1.append(f'<th class="grp" colspan="{len(cells)}">{title}</th>')
+        head2 += [_sub(i, lab, mode)
+                  for i, (lab, _k, mode, _r) in enumerate(cells)]
 
     body = []
     for row in grid:
         is_tot = str(row.get("Rep", "")).strip() == TOTALS_LABEL
         tint = "" if is_tot else tenure_style(row.get("Tenure"))
         base = _TOTAL_TINT + ";" if is_tot else tint
-        cells = [f'<td class="name" style="{base}">{row.get("Rep", "")}</td>',
-                 f'<td style="{base}">{"" if is_tot else row.get("Tenure", "")}'
-                 f'</td>']
-        for i, c in enumerate(week_cols):
-            v = row.get(c, "")
-            # The running-week total gets Raf's week colours; its parts do not
-            # — colouring every product would turn the block into a wall.
-            css = _week_scale(v) if c == "Apps" else ""
-            cells.append(f'<td class="{"edge" if i == 0 else ""}'
-                         f'{" apps" if c == "Apps" else " part"}" '
-                         f'style="{css or base}">{v}</td>')
-        for d in week_days:
-            lab = d.strftime("%a")
-            for i, c in enumerate(day_cols):
-                v = row.get(f"{lab} {c}", "")
-                css = (_scale(v, d in reported) if c == "Apps" else "")
-                cells.append(f'<td class="{"edge" if i == 0 else ""}'
-                             f'{" apps" if c == "Apps" else " part"}" '
-                             f'style="{css or base}">{v}</td>')
+        cells_html = [
+            f'<td class="name" style="{base}">{row.get("Rep", "")}</td>',
+            f'<td style="{base}">{"" if is_tot else row.get("Tenure", "")}'
+            f'</td>']
+        for _title, cells in groups:
+            for i, (_lab, key, mode, reported) in enumerate(cells):
+                v = row.get(key, "")
+                # Only the APPS figure is coloured. Colouring every product
+                # would turn each block into a wall and lose the one number
+                # the board is actually read for.
+                css = (_week_scale(v) if mode == "wk"
+                       else _scale(v, reported) if mode == "day" else "")
+                cells_html.append(
+                    f'<td class="{"edge" if i == 0 else ""}'
+                    f'{" apps" if mode else " part"}" '
+                    f'style="{css or base}">{v}</td>')
         body.append(f'<tr class="{"tot" if is_tot else ""}">'
-                    + "".join(cells) + "</tr>")
+                    + "".join(cells_html) + "</tr>")
 
     return (_SB_CSS + '<div class="sb-wrap"><table class="sb"><thead><tr>'
             + "".join(head1) + "</tr><tr>" + "".join(head2)
             + "</tr></thead><tbody>" + "".join(body)
             + "</tbody></table></div>")
-
 
 def _colour_key() -> str:
     """A one-line legend. The colours carry real meaning — tenure on the name,
@@ -1973,6 +2021,9 @@ def relay_board(icd: str, office_key: str) -> None:
     # the week-1..week-5 colours come off a start date rather than off a field
     # status somebody has to advance every Monday.
     start_tenure = _appstream_tenure(icd, week_ending)
+    last_apps = _last_week_apps(icd, week_ending)
+    knocks = _knocks(icd, week_ending)
+    starts = _start_dates(icd)
     roster = {r.name.strip().lower(): r for r in R.load(office_key)}
     names = {n.strip().lower(): n for n in by_rep}
     for n in settled_reps:
@@ -2061,10 +2112,17 @@ def relay_board(icd: str, office_key: str) -> None:
             or start_tenure.get(low)
             or (rep.tenure_label(week_ending) if rep else "")
             or ("5th wk+" if start_tenure else ""))
-        if expand:
-            row["Team"] = (rep.team if rep else "") or BLANK_OPTION
-            row["Leadership"] = (rep.level if rep else "") or BLANK_OPTION
-            row["Status"] = (rep.status if rep else "") or BLANK_OPTION
+        # THESE ARE NOT HIDDEN ANY MORE (Megan 2026-09-13): "we should have
+        # every column that Raf's google sales board does — some of ours is
+        # just collapsed." Team, Leadership and Status were behind a toggle;
+        # they are columns on his sheet, so they are columns here. The toggle
+        # now only decides whether they can be EDITED.
+        row["Team"] = (rep.team if rep else "") or BLANK_OPTION
+        row["Leadership"] = (rep.level if rep else "") or BLANK_OPTION
+        row["Status"] = (rep.status if rep else "") or BLANK_OPTION
+        began = starts.get(low)
+        row["Start date"] = began.strftime("%b %d") if began else ""
+        row["Days worked"] = _days_worked(began, week_ending)
         # THE WEEK TOTALS COME FIRST, then the days — the column order on
         # Raf's own board (Megan 2026-09-13): name, RUNNING WEEK TOTALS
         # (APPS, INT, INT UP, DTV, NL), then MON..SUN, each day carrying the
@@ -2078,6 +2136,23 @@ def relay_board(icd: str, office_key: str) -> None:
         # the case, kept where it says something: Cyrus runs 13 Int Up in a
         # week, Raf none.
         row["Total units"] = _units(tot)
+        row["Last wk Apps"] = last_apps.get(low, 0)
+
+        # THE KNOCKS HALF of Raf's board: TK and Talk-To's, then the ratios he
+        # reads off them. Blank — never zero — for an office with no knocks
+        # logged, because "nobody measured" and "they knocked nothing" are not
+        # the same statement.
+        kn = knocks.get(low, {})
+        wk_tk = sum(v.get("TK", 0) for v in kn.values())
+        wk_tt = sum(v.get("TT", 0) for v in kn.values())
+        n_days = len([v for v in kn.values() if v.get("TK")])
+        row["TK"] = wk_tk if kn else ""
+        row["K/day"] = f"{wk_tk / n_days:.0f}" if n_days else ""
+        row["TT"] = wk_tt if kn else ""
+        row["TT/day"] = f"{wk_tt / n_days:.1f}" if n_days else ""
+        row["%TT"] = f"{wk_tt / wk_tk * 100:.1f}%" if wk_tk else ""
+        row["TT/app"] = (f"{wk_tt / _apps(tot):.1f}"
+                         if wk_tt and _apps(tot) else "")
         # A DAY PER COLUMN, and they come FIRST. The settled pull is already
         # per-day — it was just being summed away — and a week total cannot
         # answer "who fell off midweek", which is most of what an owner opens
@@ -2199,6 +2274,8 @@ def relay_board(icd: str, office_key: str) -> None:
     # them unconditionally — gated, it left Int / Int Up / DTV / NL blank
     # under columns that were plainly there.
     totals_row.update({m: tot[m] for m in RELAY_MEASURES})
+    totals_row["Last wk Apps"] = sum(int(r.get("Last wk Apps", 0) or 0)
+                                     for r in rows)
     # Built from the FIRST row's keys so the totals line carries every column
     # in the same order, rather than however a dict merge happened to land.
     grid = rows + [{k: totals_row.get(k, "") for k in rows[0]}]
@@ -2257,12 +2334,35 @@ def relay_board(icd: str, office_key: str) -> None:
     # underneath. The editable grid is still one toggle away, which is where
     # Team, Leadership and Status are changed.
     if not expand:
-        st.markdown(
-            _grouped_board(grid, week_days, reported_days,
-                           [m for m in RELAY_MEASURES
-                            if m != "Int Up" or has_upgrades],
-                           has_upgrades),
-            unsafe_allow_html=True)
+        shown = [m for m in RELAY_MEASURES
+                 if m != "Int Up" or has_upgrades]
+        # RAF'S WEEK BLOCK IN FULL: the products, then the knock numbers and
+        # the ratios he reads off them. The knock columns are dropped whole
+        # when the office logs no knocks — his does not today — rather than
+        # standing empty across every row.
+        has_knocks = any(r.get("TK") != "" for r in grid)
+        week_cols = ["Apps"] + shown + (["Total units"] if has_upgrades else [])
+        if has_knocks:
+            week_cols += ["TK", "K/day", "TT", "TT/day", "%TT", "TT/app"]
+        groups = [("Week", [(c, c, "wk" if c == "Apps" else "", True)
+                            for c in week_cols])]
+        # LAST WEEK sits beside the running week, as it does on Raf's sheet —
+        # it is how an owner sees who has dropped off. Only shown once there
+        # IS a prior week settled, so a new office does not get a column of
+        # zeros that reads as everybody blanking.
+        if any(r.get("Last wk Apps") for r in grid):
+            groups.append(("Last wk", [("Apps", "Last wk Apps", "wk", True)]))
+        for d in week_days:
+            lab = d.strftime("%a")
+            groups.append((
+                f"{d:%a} {d.day}",
+                [(c, f"{lab} {c}", "day" if c == "Apps" else "",
+                  d in reported_days) for c in ["Apps"] + shown]))
+        # The rep's own details close the board, as they do on his sheet.
+        groups.append(("Rep", [(c, c, "", True) for c in
+                               ["Team", "Leadership", "Status",
+                                "Start date", "Days worked"]]))
+        st.markdown(_grouped_board(grid, groups), unsafe_allow_html=True)
         relay_wow(office_key)
         return
 

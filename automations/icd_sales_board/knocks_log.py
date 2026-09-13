@@ -137,3 +137,69 @@ def roster_for(office: str, start=None, end=None,
         return out
     except Exception:  # noqa: BLE001 — a board must not die over a roster
         return set()
+
+
+def activity_for(office: str, start=None, end=None,
+                 sheet_id: str = SHEET_ID) -> dict:
+    """{rep lowered: {date: {"TK": knocks, "TT": talk-tos}}} for one office.
+
+    Raf's board carries TK and Total Talk-To's beside the sales, per day AND
+    for the week, and every ratio on it (knocks per day, talk-tos per knock,
+    talk-tos per app) is derived from those two numbers — so this is what lets
+    the site show his columns rather than a subset (Megan 2026-09-13).
+
+    Same office matching as roster_for, for the same reason: this tab spells
+    owners its own way. Never raises — no knocks logged is an empty dict, and
+    the board leaves those columns blank rather than printing zeros nobody
+    measured."""
+    try:
+        from automations.recruiting_report.fill import open_by_key, _retry
+
+        wanted = {(office or "").strip().lower()}
+        try:
+            from automations.focus_office_att import aliases as _al
+            wanted |= {n.strip().lower() for n in
+                       _al.get_search_candidates(office, _al.load_aliases())
+                       if n}
+        except Exception:  # noqa: BLE001 — aliases are a nicety here
+            pass
+
+        grid = _retry(open_by_key(sheet_id).worksheet(TAB).get_all_values)
+        if not grid:
+            return {}
+        header = [str(h).strip() for h in grid[0]]
+        idx = {n: header.index(n) for n in
+               ("Date", "Office", "Rep", "Total Knocks", "Total Talk to")
+               if n in header}
+        if len(idx) < 5:
+            return {}
+
+        def _n(v):
+            try:
+                return int(float(str(v).replace(",", "").strip() or 0))
+            except ValueError:
+                return 0
+
+        out: dict = {}
+        for row in grid[1:]:
+            if len(row) <= max(idx.values()):
+                continue
+            name = str(row[idx["Office"]]).strip().lower()
+            if not any(w and (w == name or w in name) for w in wanted):
+                continue
+            try:
+                d = dt.date.fromisoformat(str(row[idx["Date"]]).strip()[:10])
+            except ValueError:
+                continue
+            if (start and d < start) or (end and d > end):
+                continue
+            rep = str(row[idx["Rep"]]).strip()
+            if not rep:
+                continue
+            cell = out.setdefault(rep.lower(), {}).setdefault(
+                d, {"TK": 0, "TT": 0})
+            cell["TK"] += _n(row[idx["Total Knocks"]])
+            cell["TT"] += _n(row[idx["Total Talk to"]])
+        return out
+    except Exception:   # noqa: BLE001 — knocks are a decoration on the board
+        return {}
