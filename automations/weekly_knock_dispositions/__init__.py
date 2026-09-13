@@ -18,6 +18,13 @@ Sources (each pulled fresh by this report — no cross-report reuse):
   * Tableau DailyRepBDreportpull (PRODUCT SALES SUMMARY 4WK, rep-level) —
     ONE org-wide crosstab serves every office in the run.
 
+BROKEN UP BY TEAM (Raf 2026-09-13). The rep list sits in blocks — one per
+team, each led by that team's own totals band, computed over that team's reps
+by the same code that computes the office's. Who is on what team is READ, not
+maintained here: it is the "Team" column the office already fills in on its
+sales board (teams.py). An office with no sales board keeps the flat board,
+byte for byte.
+
 Built multi-office from day one (Megan 2026-08-22): Raf's office ships
 enabled; every office already enrolled for the daily Knocks/Time-Gaps board
 in its metrics thread is DERIVED from office_metrics' table behind the

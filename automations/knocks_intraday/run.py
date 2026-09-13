@@ -56,6 +56,7 @@ except Exception:  # noqa: BLE001 — Windows console, best effort
     pass
 
 from automations.knocks_intraday import roster
+from automations.weekly_knock_dispositions import teams as TEAMS
 
 OUT_DIR = Path("output") / "knocks_intraday"
 # Our OWN Chrome profile: the shared one is first-come-first-served and this
@@ -222,10 +223,19 @@ def build(slot, jobs_in, *, logfn=print) -> List[dict]:
             elif not chan_rows:
                 logfn(f"[knocks] {o.key}: no {compare} rows for {day} — "
                       "board goes out without the comparison line")
+            # Broken up by team for an office whose sales board can say who
+            # is on what (Raf 2026-09-13, "the team breakdown for all his
+            # daily interval knock dispo posts"). RAF'S IS THE ONLY ONE THAT
+            # CHANGES (Megan, same day): teams.SALES_BOARDS holds his board
+            # and no one else's, so for_office returns None for every other
+            # office and their boards are untouched. It is cached per office
+            # per week, so the slots after the first cost no Sheets read.
+            _teams = TEAMS.for_office(o.knocks_office, day)
             pngs, shape = knocks_render.render_knocks_boards(
                 day, rows=rows, out_dir=OUT_DIR / _slug(o.knocks_office),
                 title_suffix=first_name(rec["label"]),
-                date_text=_date_text(day), extra_totals=extra)
+                date_text=_date_text(day), extra_totals=extra,
+                teams=_teams)
             rec["png"] = pngs[0]
             rec["shape"] = shape
             logfn(f"[knocks] {o.key}: {len(rows)} rep(s) -> {pngs[0].name}")

@@ -66,6 +66,67 @@ GRID      = (224, 214, 204)
 TEXT      = (38, 34, 30)
 NAME_FG   = (20, 18, 16)
 
+# A TEAM band's label, on the boards that are broken up by team (Raf
+# 2026-09-13 — the weekly board, then "the team breakdown for all his daily
+# interval knock dispo posts"). Defined HERE, where both the daily and the
+# weekly board can see it, so the two boards can never disagree about what a
+# band row looks like or how a renderer recognises one.
+OFFICE_TOTAL_LABEL = "OFFICE TOTAL"
+
+TEAM_BAND_PREFIX = "TEAM \u2014 "
+
+
+def is_team_band(row: list, name_col: int = 1) -> bool:
+    """Is this row a team band? (Its name cell, by prefix.)"""
+    return (len(row) > name_col
+            and str(row[name_col]).startswith(TEAM_BAND_PREFIX))
+
+
+# ONE COLOUR PER TEAM (Megan 2026-09-13: "let's make the team total lines a
+# different color - like each team is it's own color"). A team's colour is the
+# same on the daily board and the weekly one, and the same every post, so the
+# colour itself becomes how a team finds its block.
+#
+# Every fill is dark enough for _draw's luminance rule to reverse the text to
+# white (all are under ~95 against its threshold of 150), and none of them is
+# the teal that means "a guest office" (THEME_TEAL), the amber or plum a TOTAL
+# row draws on, or the green that means "target hit".
+TEAM_COLORS = {
+    "alphaletes":     (58, 58, 140),      # indigo
+    "ceaseless":      (26, 95, 62),       # forest
+    "hashiras":       (145, 40, 50),      # maroon
+    "mindset engine": (120, 40, 105),     # magenta
+    "se7en sins":     (38, 80, 125),      # slate blue
+}
+# A team not in the map yet — a new one, or a typo in the board's Team cell —
+# still gets a colour, picked by CRC of its name so it is the same colour on
+# every machine and every run. (hash() is salted per process and would repaint
+# the board between the 2pm and 5pm posts.)
+TEAM_PALETTE = [(130, 88, 22), (96, 62, 140), (20, 94, 98), (150, 70, 30),
+                (70, 96, 36), (128, 46, 82)]
+# Unassigned is deliberately NOT a team colour: grey says "no team yet", which
+# is the thing to go fix on the sales board.
+UNASSIGNED_COLOR = (90, 90, 95)
+
+
+def team_color(team: str) -> tuple:
+    """The fill for one team's band. Stable for a given name, forever."""
+    import zlib
+    key = " ".join(str(team or "").split()).lower()
+    if not key or key == "unassigned":
+        return UNASSIGNED_COLOR
+    if key in TEAM_COLORS:
+        return TEAM_COLORS[key]
+    return TEAM_PALETTE[zlib.crc32(key.encode("utf-8")) % len(TEAM_PALETTE)]
+
+
+def band_color(label: str) -> tuple:
+    """The fill for a band row, taken from its drawn label."""
+    return team_color(str(label or "")[len(TEAM_BAND_PREFIX):]
+                      if str(label or "").startswith(TEAM_BAND_PREFIX)
+                      else label)
+
+
 # Total Knocks shows columns A–N (the first 14); Gaps / Total Gaps are excluded.
 TOTAL_KNOCKS_NCOL = 14
 # The COMBINED fiber Total Knocks board (Raf's Loom 2026-08-22): no ID, Gaps +
@@ -613,7 +674,9 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           top_row_colors: "list | None" = None,
           total_row_bgs: "list | None" = None,
           cell_bgs: "dict | None" = None,
-          col_min_w: "dict | None" = None) -> Path:
+          col_min_w: "dict | None" = None,
+          section_rows: "dict | None" = None,
+          header_before: "set | None" = None) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
     wrap_headers=False (default): every existing board unchanged — column
@@ -645,6 +708,18 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     "# Reps (TeleMapper)" over a column of two-digit counts came out
     "TeleM-apper". This is the opt-in exception, per column, so no other board
     moves.
+    header_before (Raf 2026-09-13, "add in what the headers are on each
+    team"): {row_index, ...} — re-draw the column header band directly ABOVE
+    each of those rows, so a group part-way down a long board carries its own
+    labels and nobody has to scroll back to the top to read a column. Same
+    band repeat_header_before draws, addressable anywhere instead of only at
+    the bottom. None = every existing board byte-identical.
+    section_rows (Raf 2026-09-13, the knocks board broken up by team):
+    {row_index: fill} — a row INSIDE the table that draws like a totals row
+    (bold, reversed on a dark fill) on its own colour, so a mid-table band
+    can lead the group of rows under it. highlight_first_row /
+    highlight_last_row can only ever reach the two ENDS of the table, which
+    is why this exists. None = every existing board byte-identical.
     total_row_bgs (Megan 2026-08-23, "make Chan's row teal"): per-row fills
     for the trailing highlighted rows, in order — e.g. [plum, teal] paints
     the host OFFICE TOTALS plum and the comparison row teal. None = the
@@ -722,10 +797,15 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     banner_w = max(table_w,
                    _text_w(probe, title, f_title) + 2 * CELL_PAD_X)
 
+    # Every row that gets a header band drawn above it: the trailing block
+    # repeat_header_before asks for, plus whatever header_before names.
     _rep_at = (len(rows) - repeat_header_before
                if 0 < repeat_header_before < len(rows) else -1)
+    _bands = {i for i in (header_before or set()) if 0 < i < len(rows)}
+    if _rep_at >= 0:
+        _bands.add(_rep_at)
     img_h = (PAD + TITLE_H + header_h + ROW_H * len(rows) + PAD
-             + (header_h if _rep_at >= 0 else 0))
+             + header_h * len(_bands))
     img = Image.new("RGB", (banner_w + 2 * PAD, img_h), (255, 255, 255))
     d = ImageDraw.Draw(img)
 
@@ -753,17 +833,25 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     y = _header_band(PAD + TITLE_H)
     _n_hl = int(highlight_last_row or 0)   # True==1; int N = last N rows
     for ri, r in enumerate(rows):
-        if ri == _rep_at:
-            # The bottom header band — lighter shade when the theme has one
-            # (Megan 2026-08-23).
+        if ri in _bands:
+            # A repeated header band — lighter shade when the theme has one
+            # (Megan 2026-08-23), so it never reads as the top of a second
+            # screenshot.
             y = _header_band(y, theme.get("repeat_header_bg"))
         # highlight_first_row mirrors highlight_last_row: True==1; int N =
         # the first N rows (a board carrying other offices' totals above its
         # own, Raf 2026-08-23).
         _n_top = int(highlight_first_row or 0)
-        is_total = (_n_hl and ri >= len(rows) - _n_hl) or ri < _n_top
+        # A mid-table section band (a team's row on the weekly knocks board)
+        # draws with the totals treatment — bold, its own fill — without
+        # being part of either END block.
+        _sec = (section_rows or {}).get(ri)
+        is_total = bool((_n_hl and ri >= len(rows) - _n_hl)
+                        or ri < _n_top or _sec)
         bg = (theme.get("total_bg", theme["header_bg"]) if is_total
               else ROW_BG_A if ri % 2 == 0 else theme["stripe"])
+        if _sec:
+            bg = _sec
         # Per-row override for the top block (another office's totals line
         # draws in its own colour — Megan 2026-08-23).
         if ri < _n_top and top_row_colors and ri < len(top_row_colors) \
@@ -772,7 +860,7 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
         # …and for the trailing block: total_row_bgs in order — e.g.
         # [plum, teal] = host OFFICE TOTALS plum, comparison row teal
         # (Megan 2026-08-23).
-        _blk = ri - (len(rows) - _n_hl) if _n_hl else -1
+        _blk = ri - (len(rows) - _n_hl) if (_n_hl and not _sec) else -1
         if (is_total and total_row_bgs and 0 <= _blk < len(total_row_bgs)
                 and total_row_bgs[_blk]):
             bg = total_row_bgs[_blk]
@@ -814,8 +902,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=SCALE)
     yy += header_h
     for ri in range(len(rows) + 1):
-        if ri == _rep_at and ri:
-            yy += header_h                 # jump the bottom header band
+        if ri in _bands:
+            yy += header_h                 # jump a repeated header band
         d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=SCALE)
         yy += ROW_H
 
@@ -874,6 +962,51 @@ def _file_span(target: dt.date, end: "dt.date | None" = None) -> str:
     return f"{target.isoformat()}_{end.isoformat()}"
 
 
+def _team_blocks(sub: list, out_cols: list, teams,
+                 *, offset: int) -> tuple:
+    """(rows to draw, {band index: its rep indexes}, {band index: knockers},
+    {band index: its "#" cell}) — `sub` regrouped into team blocks.
+
+    `teams` is anything with a `.team_for(rep name)`; None (an office with no
+    sales board to read, which is every office but Raf's today) returns `sub`
+    untouched and three empty maps, so that board is byte-for-byte the board
+    it has always been.
+
+    Indexes are into the DRAWN table, which is why `offset` — the comparison
+    offices and this office's TOTAL sit above the block list.
+
+    Team order is alphabetical with Unassigned last, matching the weekly
+    board, so a team keeps its place from one post to the next and a reader
+    looks in the same spot every time. Within a team the reps keep the order
+    render_total_knocks already sorted them into (highest knocks first), so
+    each block is its own leaderboard."""
+    if teams is None:
+        return sub, {}, {}, {}
+    from automations.weekly_knock_dispositions.teams import (UNASSIGNED,
+                                                             team_order)
+    rep_at = out_cols.index(COL_REP)
+    buckets: dict = {}
+    for r in sub:
+        buckets.setdefault(teams.team_for(r[rep_at]) or UNASSIGNED,
+                           []).append(r)
+
+    display: list = []
+    bands: dict = {}
+    band_knockers: dict = {}
+    band_counts: dict = {}
+    for team in team_order(buckets):
+        reps = buckets[team]
+        at = offset + len(display)
+        display.append(_combined_totals(f"{TEAM_BAND_PREFIX}{team.upper()}",
+                                        reps, out_cols))
+        bands[at] = list(range(at + 1, at + 1 + len(reps)))
+        k = len(_knockers(reps, out_cols))
+        band_knockers[at] = k
+        band_counts[at] = _reps_cell(k, len(reps))
+        display.extend(reps)
+    return display, bands, band_knockers, band_counts
+
+
 def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         sheet_id: str = SHEET_ID,
                         out_dir: Path = OUT_DIR_DEFAULT,
@@ -890,7 +1023,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         first_knock_green_at: "int | None" = None,
                         sort_by: str = "knocks",
                         base_cols: "list | None" = None,
-                        out_cols: "list | None" = None) -> Path:
+                        out_cols: "list | None" = None,
+                        teams=None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -972,7 +1106,15 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     _out = list(out_cols or COMBINED_KNOCKS_HEADERS)
     sub = _combined_sub(header, rows, sort_by=sort_by, where=f"tab {tab!r}",
                         base_cols=_base, out_cols=_out)
-    totals = _combined_totals("TOTAL", sub, _out)
+    # "OFFICE TOTAL", not a bare "TOTAL" (Megan 2026-09-13: "this brown total
+    # row is the Alphalete Office overall total? If so, label it please").
+    # Sitting under a row that names itself CHAN PARK TOTAL, a row labelled
+    # only TOTAL leaves the reader working out whose it is — and the answer
+    # matters, because one is the guest office and the other is theirs. Same
+    # wording the weekly board has carried since it shipped (board.py's
+    # TOTALS_LABEL = "OFFICE TOTALS"), so the two boards in one thread say it
+    # the same way. The office's NAME is already in the title above.
+    totals = _combined_totals(OFFICE_TOTAL_LABEL, sub, _out)
 
     # Extra offices' totals rows ABOVE ours (Raf 2026-08-23: "add Chan's
     # totals above ours daily") — each is (office name, records keyed by
@@ -1006,18 +1148,37 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # TOTAL line survives into the drawn table.
         extra_rates.append(_mean_rate(x_sub))
 
+    # BROKEN UP BY TEAM (Raf 2026-09-13, "the team breakdown for all his daily
+    # interval knock dispo posts") — the same split the Sunday weekly board
+    # got, off the same source: the Team column on the office's sales board.
+    #
+    # `sub` stays the REP-ONLY list, so every aggregate taken from it below
+    # (the office TOTAL above, the knocker count, the divisors) is exactly
+    # what it was before the split. `display` is what gets DRAWN. A band is
+    # _combined_totals over one team's reps — the office TOTAL's own
+    # function, scoped — so no column is re-implemented for a team.
+    #
+    # Built here, where extra_rows is final: the band indexes are indexes into
+    # the drawn table, and an extra office that came back with no rows is
+    # skipped above, so counting extra_totals instead would shift every band.
+    rep_i = _out.index(COL_REP)
+    display, bands, band_knockers, band_counts = _team_blocks(
+        sub, _out, teams, offset=len(extra_rows) + 1)
+
     hrs_pos = _out.index(COL_HRS_KNOCKING)
     tg_pos = _out.index(COL_TOTAL_GAPS)
     for r in sub:
         r[tg_pos] = _fmt_hm(r[tg_pos])
         r[hrs_pos] = _fmt_hm(r[hrs_pos])
-    for t in extra_rows + [totals]:
+    # The bands are totals rows and carry raw minutes like the others do.
+    for t in extra_rows + [totals] + [r for r in display if is_team_band(r,
+                                                                        rep_i)]:
         t[tg_pos] = _fmt_hm(t[tg_pos])
         t[hrs_pos] = _fmt_hm(t[hrs_pos])
     # Office rows at the TOP, right under the header (Raf 2026-08-22). An
     # extra office's line draws teal so it can't be misread as ours
     # (Megan 2026-08-23).
-    table = extra_rows + [totals] + sub
+    table = extra_rows + [totals] + display
     _colors = ([THEME_TEAL["title_bg"]] * len(extra_rows)
                + [THEME_AMBER["total_bg"]])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
@@ -1042,14 +1203,15 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         _insert_apps_column(cols, disp, table, apps,
                             n_extra=len(extra_rows), extra_apps=extra_apps,
                             n_knockers=n_knockers,
-                            extra_knockers=extra_knockers)
+                            extra_knockers=extra_knockers,
+                            bands=bands, band_knockers=band_knockers)
     _cell_bgs: dict = {}
     if rate_columns:
         # After the hide and apps passes, by NAME on what survived, same as
         # the apps column — so it lands correctly on a board that hid others.
         _insert_rate_columns(cols, disp, table, n_extra=len(extra_rows),
                              extra_listed=extra_listed,
-                             extra_rates=extra_rates)
+                             extra_rates=extra_rates, bands=bands)
     # Raf 2026-08-29 ("turn the total doors knocked bright green once the rep
     # hits 140"), widened 2026-08-30 to the other two targets he states in the
     # same breath. REP ROWS ONLY throughout — a green office total would be a
@@ -1076,7 +1238,10 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
             continue
         _ci = cols.index(_col)
         for _ri, _row in enumerate(table):
-            if _ri <= len(extra_rows):      # comparison rows + our TOTAL
+            if _ri <= len(extra_rows) or _ri in bands:
+                # comparison rows, our TOTAL, and the team bands. A green
+                # team total is a different claim from a rep hitting his
+                # number, which is who the targets are for.
                 continue
             _v = str(_row[_ci]).strip()
             if _v and _hit(_v):
@@ -1094,7 +1259,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     number_rows(cols, disp, table, first=_n_summary,
                 summary_values=[_reps_cell(k, n) for k, n in
                                 zip(extra_knockers, extra_listed)]
-                + [_reps_cell(n_knockers, len(sub))])
+                + [_reps_cell(n_knockers, len(sub))],
+                bands=band_counts or None)
     if _cell_bgs:
         # number_rows inserted a "#" column at 0, so every recorded column
         # index shifts one right. Done here rather than at record time so the
@@ -1116,7 +1282,16 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                  name_col=1, wrap_headers=True,
                  highlight_first_row=_n_summary,
                  top_row_colors=_colors, cell_bgs=_cell_bgs or None,
-                 col_min_w=_min_w or None)
+                 col_min_w=_min_w or None,
+                 # ONE COLOUR PER TEAM (Megan 2026-09-13). The office's own
+                 # TOTAL keeps the board's amber and the guest office keeps
+                 # teal, so the two summary rows still read as themselves; it
+                 # is the team bands below them that are colour-coded.
+                 # [1] is the Rep column: number_rows put "#" at 0, which
+                 # is also why _draw is told name_col=1 just above.
+                 section_rows={i: band_color(table[i][1])
+                               for i in bands} or None,
+                 header_before=set(bands) or None)
 
 
 # The "#" column's header. It numbers the rep rows AND carries each summary
@@ -1130,7 +1305,8 @@ COL_NUM_HEADER = "# Reps (TeleMapper)"
 
 def number_rows(cols: list, disp: list, table: list, *,
                 first: int = 0, count: "int | None" = None,
-                summary_values: "list | None" = None) -> None:
+                summary_values: "list | None" = None,
+                bands: "dict | None" = None) -> None:
     """Put a "#" column in front of the board IN PLACE, numbering the LISTED
     rows 1..N in the order they are drawn (Eve, 2026-08-28).
 
@@ -1148,14 +1324,27 @@ def number_rows(cols: list, disp: list, table: list, *,
     out of its own column and over to the left). Those rows used to stay blank,
     on the reasoning that a number there reads as a row index; a count on a
     reversed-bold totals row does not, and the header now names what it is.
-    Omit it and they stay blank, exactly as before."""
+    Omit it and they stay blank, exactly as before.
+
+    `bands` ({row index: cell}) marks TEAM band rows on a board broken up by
+    team (Raf 2026-09-13). A band takes its own cell — the reps-knocking count
+    for that team — and RESTARTS the numbering under it, so the number beside
+    a rep is their place in their own team, which is the number a team lead is
+    reading for. Numbering straight through the teams would give every rep a
+    figure that means nothing to anybody. None = unchanged."""
     stop = len(table) if count is None else first + count
     cols.insert(0, COL_NUM_HEADER)
     disp.insert(0, COL_NUM_HEADER)
     pending = list(summary_values or [])
+    bands = bands or {}
+    n = 0
     for i, row in enumerate(table):
-        if first <= i < stop:
-            row.insert(0, str(i - first + 1))
+        if i in bands:
+            row.insert(0, str(bands[i]))
+            n = 0
+        elif first <= i < stop:
+            n += 1
+            row.insert(0, str(n))
         else:
             row.insert(0, str(pending.pop(0)) if pending else "")
 
@@ -1194,7 +1383,8 @@ def _mean_rate(sub: list) -> str:
 
 def _insert_rate_columns(cols: list, disp: list, table: list, *,
                          n_extra: int, extra_listed: "list | None" = None,
-                         extra_rates: "list | None" = None) -> None:
+                         extra_rates: "list | None" = None,
+                         bands: "dict | None" = None) -> None:
     """Put "Avg Knocks / Hr" and "Avg Doors / Rep" in IN PLACE, after Total
     Knocks — the column both divide, so the board reads knocks → how fast →
     how many each.
@@ -1215,7 +1405,16 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
 
     Blank, never 0.0, wherever the span or the divisor is missing: a rep with
     one knock has no rate and did not earn a zero.
+
+    `bands` ({band row index: [its rep row indexes]}) is a board broken up by
+    team. A band is this office's TOTAL scoped to one team, so it follows the
+    TOTAL's rules exactly: Doors/Rep over the reps LISTED in that team, and
+    Knocks/Hr the mean of that team's rep rates — never total ÷ span, for the
+    same reason the office row doesn't (an averaged first/last knock makes the
+    span meaningless). Bands are excluded from the office's own divisor and
+    mean, or every rep would be counted twice. None = unchanged.
     """
+    bands = bands or {}
     at = (cols.index(COL_TOTAL_KNOCKS) + 1 if COL_TOTAL_KNOCKS in cols
           else len(cols))
     tk_at = cols.index(COL_TOTAL_KNOCKS) if COL_TOTAL_KNOCKS in cols else None
@@ -1239,9 +1438,19 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
         knocks = _n(row[tk_at])
         return f"{knocks / hours:.1f}" if hours and knocks else ""
 
-    n_listed = max(0, len(table) - n_extra - 1)
+    # The reps LISTED under this office: everything after its TOTAL that is
+    # not a team band. A band counted here would inflate the divisor by one
+    # per team.
+    rep_idx = [i for i in range(n_extra + 1, len(table)) if i not in bands]
+    n_listed = len(rep_idx)
     per_hr, per_rep = [], []
     for i, row in enumerate(table):
+        if i in bands:
+            per_hr.append(None)         # filled from its own reps, below
+            _n_band = len(bands[i])
+            per_rep.append(f"{_n(row[tk_at]) / _n_band:.1f}"
+                           if _n_band else "")
+            continue
         if i < n_extra:
             # A comparison office's own average rep rate, computed by the
             # caller while its rep rows still existed (Raf 2026-08-29: "can we
@@ -1273,8 +1482,12 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
             per_rep.append("")          # a rep row IS one rep
     # The office TOTAL's rate = the mean of its reps' rates, over the reps that
     # HAVE one. Comparison rows stay blank: their reps never reach this table.
-    _rates = [float(v) for v in per_hr[n_extra + 1:] if v]
+    _rates = [float(per_hr[i]) for i in rep_idx if per_hr[i]]
     per_hr[n_extra] = ("%.1f" % (sum(_rates) / len(_rates))) if _rates else ""
+    # Each team band the same way, over its OWN reps.
+    for _bi, _reps in bands.items():
+        _br = [float(per_hr[i]) for i in _reps if per_hr[i]]
+        per_hr[_bi] = ("%.1f" % (sum(_br) / len(_br))) if _br else ""
     # (comparison rows above were filled from extra_rates and are left alone)
     per_hr = ["" if v is None else v for v in per_hr]
 
@@ -1289,7 +1502,9 @@ def _insert_rate_columns(cols: list, disp: list, table: list, *,
 def _insert_apps_column(cols: list, disp: list, table: list,
                         apps: dict, *, n_extra: int, extra_apps: list,
                         n_knockers: int = 0,
-                        extra_knockers: "list | None" = None) -> None:
+                        extra_knockers: "list | None" = None,
+                        bands: "dict | None" = None,
+                        band_knockers: "dict | None" = None) -> None:
     """Put "Total Apps" — and the "Average App per Rep" that divides it — into
     `cols`/`disp`/`table` IN PLACE, right after Talk To's per Rep (or after
     Total Talk to when that column was hidden).
@@ -1307,7 +1522,15 @@ def _insert_apps_column(cols: list, disp: list, table: list,
     order as `extra_apps`. They come from the caller because the rep rows of
     an extra office never reach this table — only its TOTAL line does. A row
     whose apps cell is blank, or whose divisor is 0, gets a BLANK average and
-    never a 0: the office didn't earn that zero, we just couldn't divide."""
+    never a 0: the office didn't earn that zero, we just couldn't divide.
+
+    `bands` ({band row index: [its rep row indexes]}) and `band_knockers`
+    ({band row index: reps knocking in that team}) are a board broken up by
+    team. A band sums THE COLUMN over its own reps and divides by its own
+    knockers — the same two rules the office TOTAL follows — and is left out
+    of the office's own sum, which is taken over the rep rows only."""
+    bands = bands or {}
+    band_knockers = band_knockers or {}
     if COL_TALK_TO_PER_REP in cols:
         at = cols.index(COL_TALK_TO_PER_REP) + 1
     elif COL_TOTAL_TALK_TO in cols:
@@ -1318,27 +1541,36 @@ def _insert_apps_column(cols: list, disp: list, table: list,
     by_key = {_apps_key(k): v for k, v in apps.items()}
     values: list = []
     for i, row in enumerate(table):
-        if i < n_extra:
+        if i in bands:
+            values.append(None)             # a team band — filled below
+        elif i < n_extra:
             x = extra_apps[i] if i < len(extra_apps) else None
             values.append("" if x is None else str(x))
         elif i == n_extra:
             values.append(None)             # this office's TOTAL — filled below
         else:
             values.append(str(by_key.get(_apps_key(row[rep_at]), 0)))
+    rep_idx = [i for i in range(n_extra + 1, len(table)) if i not in bands]
     if n_extra < len(values):
-        reps = values[n_extra + 1:]
-        values[n_extra] = str(sum(int(v) for v in reps if str(v).isdigit()))
+        values[n_extra] = str(sum(int(values[i]) for i in rep_idx
+                                  if str(values[i]).isdigit()))
+    for _bi, _reps in bands.items():
+        values[_bi] = str(sum(int(values[i]) for i in _reps
+                              if str(values[i]).isdigit()))
     # Per-rep averages, computed off the column AS DRAWN (same rule as the
     # total above): whatever the reader sees in Total Apps is what this
     # divides. Rep rows stay blank — a rep row is already one rep.
     divisors = list(extra_knockers or [])
     avgs: list = []
     for i, v in enumerate(values):
-        if i > n_extra:
+        if i in bands:
+            n = band_knockers.get(i, 0)
+        elif i > n_extra:
             avgs.append("")                 # a rep row
             continue
-        n = n_knockers if i == n_extra else (divisors[i] if i < len(divisors)
-                                             else 0)
+        else:
+            n = n_knockers if i == n_extra else (divisors[i]
+                                                 if i < len(divisors) else 0)
         avgs.append(f"{int(v) / n:.1f}" if str(v).isdigit() and n else "")
     # Talk-tos per app, from the Total Talk to already on the row and the apps
     # column as drawn — so it can never disagree with the two numbers beside it.
@@ -1784,7 +2016,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          knocks_green_at: "int | None" = None,
                          first_knock_green_at: "int | None" = None,
                          sort_by: str = "knocks",
-                         apps: "dict | None" = None
+                         apps: "dict | None" = None,
+                         teams=None
                          ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
@@ -1805,6 +2038,12 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
     and filename — `rows` must already be folded by total_knocks.aggregate —
     and it reaches BOTH boards of an NDS pair, so a gaps-only office's Time
     Gaps image carries the same span as the one above it.
+
+    `teams` (optional): break the rep list up by team (Raf 2026-09-13). It
+    reaches the shapes that go through render_total_knocks, which is every
+    shape an office with a sales board to read can be. None — every office but
+    Raf's, since his is the only board in teams.SALES_BOARDS — draws exactly
+    the board it drew before.
     """
     shape = knocks_shape(rows)
     if shape == SHAPE_GAPS_ONLY:
@@ -1826,7 +2065,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             title_suffix=title_suffix, end=end, date_text=date_text,
             extra_totals=extra_totals,
             base_cols=ENERGYWELL_KNOCKS_COLUMNS,
-            out_cols=ENERGYWELL_KNOCKS_HEADERS)], shape)
+            out_cols=ENERGYWELL_KNOCKS_HEADERS, teams=teams)], shape)
     elif shape in (SHAPE_B2B_ATT, SHAPE_B2B_BOX):
         # Through the SAME renderer as every other shape, for the reason the
         # Energy Wells and wireless shapes were moved here: the shape decides
@@ -1847,7 +2086,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             knocks_green_at=knocks_green_at,
             first_knock_green_at=first_knock_green_at, sort_by=sort_by,
             title_suffix=title_suffix, end=end, date_text=date_text,
-            base_cols=base, out_cols=out)], shape)
+            base_cols=base, out_cols=out, teams=teams)], shape)
     elif shape == SHAPE_WIRELESS:
         # THROUGH THE SAME RENDERER as the house and Energy Wells boards, for
         # the reason the Energy Wells shape was moved here on 2026-08-30
@@ -1869,7 +2108,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             title_suffix=title_suffix, end=end, date_text=date_text,
             extra_totals=extra_totals,
             base_cols=WIRELESS_KNOCKS_COLUMNS,
-            out_cols=WIRELESS_KNOCKS_HEADERS)], shape)
+            out_cols=WIRELESS_KNOCKS_HEADERS, teams=teams)], shape)
     else:
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      rate_columns=rate_columns,
@@ -1878,7 +2117,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                                      sort_by=sort_by, apps=apps,
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,
-                                     extra_totals=extra_totals)], shape)
+                                     extra_totals=extra_totals,
+                                     teams=teams)], shape)
     if not needs_time_gaps(shape):
         return ([first], shape)
     gaps = render_time_gaps(target, rows=rows, out_dir=out_dir,

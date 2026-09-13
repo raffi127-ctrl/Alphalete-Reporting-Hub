@@ -43,6 +43,7 @@ from automations.total_knocks.pull import central_today
 from automations.weekly_knock_dispositions import apps as A
 from automations.weekly_knock_dispositions import board as B
 from automations.weekly_knock_dispositions import pull as P
+from automations.weekly_knock_dispositions import teams as TEAMS
 from automations.weekly_knock_dispositions.offices import enabled
 
 REPORT_ID = "weekly_knock_dispositions"
@@ -280,7 +281,7 @@ def fix_headers(only: list[str] | None = None) -> int:
 
 def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
         dry_run: bool = True, preview_dm: str | None = None,
-        fresh: bool = False) -> int:
+        fresh: bool = False, no_teams: bool = False) -> int:
     started_at = dt.datetime.now()
     offices = enabled(only)
     all_names = [o["name"] for o in enabled(None)]
@@ -439,6 +440,17 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     # --- 2b. Compute + render, with cross-office comparison rows -----------
     # (compare_targets / all_offices imported with the cache sweep above.)
     apps_cache: dict[str, dict | None] = {}
+    # One sales-board read per office, and only for an office that HAS one
+    # (teams.SALES_BOARDS) — everybody else keeps the ungrouped board with no
+    # extra Sheets call at all.
+    teams_cache: dict[str, object] = {}
+
+    def _office_teams(name: str):
+        if no_teams:
+            return None
+        if name not in teams_cache:
+            teams_cache[name] = TEAMS.load(name, saturday)
+        return teams_cache[name]
 
     def _office_apps(cfg: dict):
         name = cfg["name"]
@@ -469,7 +481,14 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                 # Visible absence, never a blank board (standing rule).
                 boards.append((cfg, None, extra))
                 continue
-            rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
+            # Broken up by team when the office's sales board can say who
+            # is on what (Raf 2026-09-13); the flat board otherwise — the
+            # team split is an improvement to the board, never a reason an
+            # office doesn't get its Sunday post.
+            book = _office_teams(name)
+            rows = (B.compute_rows_by_team(ov_rows, office_apps, dispo_cols,
+                                           book) if book
+                    else B.compute_rows(ov_rows, office_apps, dispo_cols))
             # TEMPORARY comparison rows (offices.COMPARE_TOTALS — delete
             # the entry there to remove): the other office's totals, summed
             # against THIS board's columns. They sit at the TOP of the board
@@ -669,6 +688,9 @@ def main(argv=None) -> int:
     ap.add_argument("--fix-headers", action="store_true",
                     help="tag today's thread headers only — no pulls, no "
                          "board posts (safe after boards already went out)")
+    ap.add_argument("--no-teams", action="store_true",
+                    help="draw the flat board — skip the sales-board read "
+                         "that breaks the reps up by team")
     ap.add_argument("--fresh", action="store_true",
                     help="ignore the shared week cache and re-pull every "
                          "office from ownerville (the cache is still WRITTEN, "
@@ -688,7 +710,7 @@ def main(argv=None) -> int:
     return run(anchor, only=args.office,
                dry_run=(args.dry_run or args.preview or not args.live),
                preview_dm=(MEGAN if args.preview else None),
-               fresh=args.fresh)
+               fresh=args.fresh, no_teams=args.no_teams)
 
 
 if __name__ == "__main__":

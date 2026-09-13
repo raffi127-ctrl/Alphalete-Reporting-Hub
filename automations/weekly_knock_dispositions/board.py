@@ -37,6 +37,7 @@ from automations.total_knocks.pull import (
 from automations.weekly_knock_dispositions.pull import (
     K_DAILY_GAP_MIN, K_DAILY_KNOCKS, K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST,
     K_TALK_TO, K_TOTAL_KNOCKS, K_TOTAL_LEADS, K_TT_DAYS)
+from automations.weekly_knock_dispositions.teams import UNASSIGNED
 
 DAYS = 6                     # Mon–Sat
 WEEKDAYS = 5                 # Mon–Fri, the span the knock-time columns average
@@ -213,6 +214,28 @@ THEME_PLUM = {               # distinct from the amber daily knocks board
 COMPARE_ROW_BG = (13, 110, 139)
 
 TOTALS_LABEL = "OFFICE TOTALS"
+
+# A TEAM band (Raf 2026-09-13, "break it up by team"). It is a totals row —
+# the same arithmetic totals_row does for the office, over that team's reps —
+# so it reads down the same columns the office row above it does, and a team
+# lead can compare the two without doing anything in their head.
+#
+# Drawn on the theme's MID plum, between the near-black OFFICE TOTALS above
+# and the striped rep rows below, so the three levels of the board are three
+# shades of one colour instead of three colours. The prefix is what render()
+# finds the bands by — the rows travel to it as ordinary rows, which means a
+# caller can insert comparison rows above them (Chan's row still lands at the
+# top) without anything having to recount indexes.
+# The band prefix and the per-team colours both come from the DAILY board's
+# renderer, so a team is the same word and the same colour on both boards
+# (Megan 2026-09-13: "each team is it's own color"). One definition, two
+# boards — they cannot drift.
+TEAM_ROW_PREFIX = knocks_render.TEAM_BAND_PREFIX
+
+
+def is_team_row(row: list) -> bool:
+    """Is this one of the team bands? (Name column, by its prefix.)"""
+    return len(row) > 1 and str(row[1]).startswith(TEAM_ROW_PREFIX)
 
 
 def _norm_name(s: str) -> str:
@@ -634,6 +657,104 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
     ])
 
 
+def number_rows(rows: list[list[str]], n_top: int) -> dict:
+    """Number the rep rows IN PLACE and return {row index: fill} for the team
+    bands. Split out of render() so it can be read and tested on its own —
+    render rebuilds `rows` when it drops an empty optional column, and a
+    numbering bug inside that rebuild is invisible from the outside.
+
+    Rep rows are 1..N, restarting under each band, so the count beside a
+    rep's name is their place in their OWN team — the number a team lead is
+    looking for. The band's own cell keeps the "K of N" totals_row put there,
+    and the summary block above n_top is never touched."""
+    section_rows: dict[int, tuple] = {}
+    n = 0
+    for i, row in enumerate(rows[n_top:], start=n_top):
+        if not row:
+            continue
+        if is_team_row(row):
+            section_rows[i] = knocks_render.band_color(row[1])
+            n = 0
+            continue
+        n += 1
+        row[0] = str(n)
+    return section_rows
+
+
+def team_buckets(ov_rows: list[dict], apps: dict[str, int] | None,
+                 book) -> list[tuple]:
+    """[(team, that team's ov_rows, that team's apps)] in draw order.
+
+    The apps are split the SAME way the ungrouped board joins them — one
+    match_apps pass over the whole office, then each matched rep's apps
+    follow the rep into their team's bucket. Splitting first and matching
+    per team would let a name that is unique in the office become ambiguous
+    inside a five-rep team, and a rep would lose their apps for no reason
+    the board could explain.
+
+    A rep the sales board can't place lands in UNASSIGNED, which draws last —
+    visible, one cell on the sales board away from being fixed, and never
+    silently dropped."""
+    matched, consumed = (match_apps([r.get(COL_REP, "") for r in ov_rows],
+                                    apps)
+                         if apps else ({}, set()))
+    buckets: dict[str, tuple[list, dict]] = {}
+
+    def _bucket(team: str):
+        return buckets.setdefault(team or UNASSIGNED, ([], {}))
+
+    for r in ov_rows:
+        rep = str(r.get(COL_REP, "")).strip()
+        rows_, apps_ = _bucket(book.team_for(rep))
+        rows_.append(r)
+        if rep in matched:
+            # Keyed by the OWNERVILLE name, which is what compute_rows will
+            # match against inside the bucket — an exact hit, so the join
+            # cannot come out differently there than it did here.
+            apps_[rep] = matched[rep]
+
+    # Sales with no knock row. They are carried on the ungrouped board too
+    # (a rep with apps and no doors is a thing to see, not to hide), and they
+    # get placed by their own name off the sales board.
+    for rep, n in sorted((apps or {}).items()):
+        if _norm_name(rep) in consumed or not n:
+            continue
+        _bucket(book.team_for(rep))[1][rep] = n
+
+    from automations.weekly_knock_dispositions.teams import team_order
+    return [(t, buckets[t][0], buckets[t][1] if apps is not None else None)
+            for t in team_order(buckets) if buckets[t][0] or buckets[t][1]]
+
+
+def compute_rows_by_team(ov_rows: list[dict], apps: dict[str, int] | None,
+                         dispo_cols: list[str] | None,
+                         book) -> list[list[str]]:
+    """The board's rows, broken up by team (Raf 2026-09-13).
+
+    OFFICE TOTALS first — unchanged, over the whole office, so the headline
+    number is the same one he has been reading since August — then one block
+    per team: the team's own totals band, then that team's reps.
+
+    Each block is built by compute_rows over that team's reps ALONE, so every
+    Avg on a team band is a per-rep average of that team, computed by exactly
+    the code that computes the office's. Nothing here re-implements a column;
+    the only edit to a block is its totals row's LABEL."""
+    gaps = is_gaps_only(ov_rows)
+    out = [totals_row(ov_rows, apps, dispo_cols or [])]
+    for team, t_rows, t_apps in team_buckets(ov_rows, apps, book):
+        # A gaps-only office draws a NARROWER table, and is_gaps_only reads
+        # False for an empty list — so a bucket holding nothing but a
+        # sales-only rep would come back full width and knock every column
+        # out of line. Those reps have no knock row to show on a knocks-and-
+        # gaps board anyway.
+        if gaps and not t_rows:
+            continue
+        block = compute_rows(t_rows, t_apps, dispo_cols)
+        block[0][1] = TEAM_ROW_PREFIX + team.upper()
+        out.extend(block)
+    return out
+
+
 def render(office: str, monday: dt.date, saturday: dt.date,
            rows: list[list[str]], out_dir: Path,
            dispo_cols: list[str] | None = None,
@@ -693,17 +814,35 @@ def render(office: str, monday: dt.date, saturday: dt.date,
     # any comparison office under it — so the rep rows are simply everything
     # after that block, numbered 1..N. They carry their own counts from
     # totals_row and must not be renumbered.
+    #
+    # On a board broken up by team (Raf 2026-09-13) the numbering RESTARTS
+    # under each team band, so the count beside a rep's name is their place in
+    # their OWN team — which is the number a team lead is looking for — and
+    # the band's own cell keeps the "K of N" that totals_row put there.
+    # Counting 1..77 straight through the teams instead would give every rep a
+    # number that means nothing to anybody.
     n_top = n_totals + n_compare_top
-    for i, row in enumerate(rows[n_top:]):
-        if row:
-            row[0] = str(i + 1)
+    section_rows = number_rows(rows, n_top)
+    # "Add in what the headers are on each team" (Raf 2026-09-13, Megan's
+    # marked-up screenshot the same day — the header block circled, an arrow
+    # to every team band): the column header band repeats above EVERY team,
+    # so a team's numbers carry their own labels and nobody scrolls back to
+    # the top of a 90-row screenshot to find out which column they are
+    # reading.
+    #
+    # Every team, the first one included. It sits two rows under the real
+    # header there, which is the one place it is arguably redundant — but it
+    # is also what closes the office summary block and opens the team
+    # sections, and a board where one team is laid out unlike the other six
+    # is worse than one repeated band.
+    header_before = set(section_rows)
     cell_bgs = {}
     for _h, _hit in _green.items():
         if _h not in hdr:
             continue
         _ci = hdr.index(_h)
         for _ri, _row in enumerate(rows):
-            if _ri < n_top or _ci >= len(_row):
+            if _ri < n_top or _ri in section_rows or _ci >= len(_row):
                 continue                     # summary block: never greened
             _v = str(_row[_ci]).strip()
             if _v and _hit(_v):
@@ -728,4 +867,8 @@ def render(office: str, monday: dt.date, saturday: dt.date,
                                # readable without scrolling back up).
                                highlight_last_row=0,
                                repeat_header_before=0,
-                               cell_bgs=cell_bgs or None)
+                               cell_bgs=cell_bgs or None,
+                               # The team bands, mid-plum between the office
+                               # totals above and the rep rows below.
+                               section_rows=section_rows or None,
+                               header_before=header_before or None)
