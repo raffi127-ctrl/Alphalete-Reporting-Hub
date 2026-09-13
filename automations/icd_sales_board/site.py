@@ -1749,6 +1749,98 @@ def _this_sunday_site() -> dt.date:
     return _week_end(dt.date.today())
 
 
+_SB_CSS = """
+<style>
+/* BLACK GRIDLINES on the whole thing (Megan 2026-09-13) — it is a board, and
+   a board has lines. border-collapse so shared edges stay one line thick. */
+.sb-wrap{overflow-x:auto;margin:.2rem 0 .6rem}
+.sb{border-collapse:collapse;font-size:.82rem;width:100%;
+    border:2px solid #000}
+.sb th,.sb td{padding:5px 8px;text-align:center;white-space:nowrap;
+              border:1px solid #000}
+.sb thead th{position:sticky;top:0;background:#FAFAF8;z-index:3;
+             font-weight:600}
+.sb .grp{border-left:2px solid #000;
+         font-size:.74rem;letter-spacing:.04em;text-transform:uppercase;
+         opacity:.75;padding-top:7px;padding-bottom:7px}
+.sb .sub{font-size:.72rem;opacity:.6;font-weight:600}
+.sb .edge{border-left:2px solid #000}
+.sb td.name{position:sticky;left:0;z-index:2;text-align:left;
+            font-weight:500;min-width:150px}
+.sb th.name{position:sticky;left:0;z-index:4;text-align:left}
+.sb tbody tr:hover td{filter:brightness(.97)}
+.sb .tot td{font-weight:700;border-top:2px solid #000}
+/* APPS is the number the board is read for, so it carries the weight and the
+   colour; the products beside it are the breakdown and step back. */
+.sb td.apps{font-weight:700}
+.sb td.part{opacity:.72;font-size:.78rem}
+.sb th.sub.apps{opacity:.9}
+</style>
+"""
+
+
+def _grouped_board(grid: list, week_days: list, reported: set,
+                   measures: list, has_units: bool) -> str:
+    """The board as a real table, with each day SPANNING its breakdown.
+
+    Raf's sheet puts MON above its own Apps / Int / Int Up / DTV / NL block,
+    and a Streamlit grid cannot merge a header — so a flat run of repeating
+    'Int, DTV, NL' was the best it could do, and it read as one long row of
+    numbers (Megan 2026-09-13). This is two header rows: the day on top, its
+    measures underneath, with a rule down the left of every block so the eye
+    lands on the day first.
+
+    Read-only by design. 'Rep details' still opens the editable grid, which is
+    where Team, Leadership and Status are changed."""
+    week_cols = ["Apps"] + measures + (["Total units"] if has_units else [])
+    day_cols = ["Apps"] + measures
+
+    head1 = ['<th class="name" rowspan="2">Rep</th>',
+             '<th rowspan="2">Tenure</th>',
+             f'<th class="grp" colspan="{len(week_cols)}">Week</th>']
+    def _sub(i, c):
+        return (f'<th class="sub{" edge" if i == 0 else ""}'
+                f'{" apps" if c == "Apps" else ""}">{c}</th>')
+
+    head2 = [_sub(i, c) for i, c in enumerate(week_cols)]
+    for d in week_days:
+        head1.append(f'<th class="grp" colspan="{len(day_cols)}">'
+                     f'{d:%a} {d.day}</th>')
+        head2 += [_sub(i, c) for i, c in enumerate(day_cols)]
+
+    body = []
+    for row in grid:
+        is_tot = str(row.get("Rep", "")).strip() == TOTALS_LABEL
+        tint = "" if is_tot else tenure_style(row.get("Tenure"))
+        base = _TOTAL_TINT + ";" if is_tot else tint
+        cells = [f'<td class="name" style="{base}">{row.get("Rep", "")}</td>',
+                 f'<td style="{base}">{"" if is_tot else row.get("Tenure", "")}'
+                 f'</td>']
+        for i, c in enumerate(week_cols):
+            v = row.get(c, "")
+            # The running-week total gets Raf's week colours; its parts do not
+            # — colouring every product would turn the block into a wall.
+            css = _week_scale(v) if c == "Apps" else ""
+            cells.append(f'<td class="{"edge" if i == 0 else ""}'
+                         f'{" apps" if c == "Apps" else " part"}" '
+                         f'style="{css or base}">{v}</td>')
+        for d in week_days:
+            lab = d.strftime("%a")
+            for i, c in enumerate(day_cols):
+                v = row.get(f"{lab} {c}", "")
+                css = (_scale(v, d in reported) if c == "Apps" else "")
+                cells.append(f'<td class="{"edge" if i == 0 else ""}'
+                             f'{" apps" if c == "Apps" else " part"}" '
+                             f'style="{css or base}">{v}</td>')
+        body.append(f'<tr class="{"tot" if is_tot else ""}">'
+                    + "".join(cells) + "</tr>")
+
+    return (_SB_CSS + '<div class="sb-wrap"><table class="sb"><thead><tr>'
+            + "".join(head1) + "</tr><tr>" + "".join(head2)
+            + "</tr></thead><tbody>" + "".join(body)
+            + "</tbody></table></div>")
+
+
 def _colour_key() -> str:
     """A one-line legend. The colours carry real meaning — tenure on the name,
     production on the day — and a board full of colour nobody can read is just
@@ -2153,6 +2245,22 @@ def relay_board(icd: str, office_key: str) -> None:
     c_b.toggle("Rep details", key=exp_key,
                help="Team, Leadership and Status — and where they are "
                     "edited.")
+
+    # THE DAY SPANS ITS BREAKDOWN (Megan 2026-09-13). A Streamlit grid cannot
+    # merge a header, so it could only ever show a flat run of repeating
+    # Int / DTV / NL — one long row of numbers with nothing marking where a
+    # day starts. This is a real table with the day on top and its measures
+    # underneath. The editable grid is still one toggle away, which is where
+    # Team, Leadership and Status are changed.
+    if not expand:
+        st.markdown(
+            _grouped_board(grid, week_days, reported_days,
+                           [m for m in RELAY_MEASURES
+                            if m != "Int Up" or has_upgrades],
+                           has_upgrades),
+            unsafe_allow_html=True)
+        relay_wow(office_key)
+        return
 
     frame = pd.DataFrame(grid).astype("string").fillna("")
 
