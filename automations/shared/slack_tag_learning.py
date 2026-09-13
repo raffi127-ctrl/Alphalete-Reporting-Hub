@@ -241,6 +241,19 @@ def learn_from_replies(client, replies: List[dict], candidates: Iterable[str],
     for msg in replies or []:
         if after_ts and float(msg.get("ts", 0)) <= float(after_ts):
             continue
+        # A MENTION BY THE BOT IS NOT A HAND-TAG. This module's whole premise is
+        # that a HUMAN pointed at somebody; the bot's own posts @-mention people
+        # constantly, including its "🚨 @Raf — N new starts need a leader"
+        # alert. Reading those back enrolled Raf himself as a leader and got him
+        # tagged in the roll call for a new start the screenshot had marked
+        # Declined (2026-09-13). It is the same self-sustaining loop the roll
+        # call caused on 2026-08-08 — the rule was in this module's docstring
+        # from day one and simply wasn't implemented here.
+        #
+        # bot_id, not a user id, so it holds on any machine: Lucy's posts carry
+        # one whichever token authored them.
+        if msg.get("bot_id") or msg.get("subtype"):
+            continue
         for uid in MENTION_RE.findall(msg.get("text", "") or ""):
             if uid not in ids:
                 ids.append(uid)

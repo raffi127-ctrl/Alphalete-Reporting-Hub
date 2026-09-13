@@ -131,6 +131,20 @@ def is_dropped(row: dict) -> bool:
     return False
 
 
+def all_interviewers(rows):
+    """Every interviewer the screenshot NAMES, including on dropped rows.
+
+    Distinct from owed_counts' keys on purpose. Somebody whose only new start
+    declined is not "missing from the screenshot" — the screenshot lists them
+    and says don't chase. The sheet cross-read needs that distinction or it
+    reads them as a sheet-only row and hands them back (2026-09-13: Raf's only
+    new start was Declined, the sheet had the same row with a blank status, and
+    he ended up tagged in his own roll call).
+    """
+    return set((r.get("interviewer") or "").strip()
+               for r in rows or [] if (r.get("interviewer") or "").strip())
+
+
 def owed_counts(rows):
     """-> (interviewer -> count, [dropped row description, ...]).
 

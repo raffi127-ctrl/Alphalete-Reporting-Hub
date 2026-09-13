@@ -224,7 +224,9 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
             for line in dropped_rows:
                 print("           " + line)
         if funnel["key"] == "main":
-            sheet_only = _sheet_only_untaggable(monday, owed, ros)
+            sheet_only = _sheet_only_untaggable(
+                monday, owed, ros,
+                on_screenshot=screenshot_roster.all_interviewers(rows))
     except Exception as exc:  # noqa: BLE001
         # The OBCL sheet is NOT a safe stand-in for the screenshot: it holds
         # not-moving-forward + duplicate rows, so building a TAG list from it
@@ -556,7 +558,7 @@ def _snapshot_for(monday: dt.date, path: Path = SNAPSHOT_PATH) -> Dict[str, int]
 
 
 def _sheet_only_untaggable(monday: dt.date, owed: Dict[str, int],
-                           ros) -> Dict[str, int]:
+                           ros, on_screenshot=None) -> Dict[str, int]:
     """OBCL-sheet interviewers who are missing from the screenshot AND can't be
     @-mentioned -> name -> new-start count.
 
@@ -567,7 +569,11 @@ def _sheet_only_untaggable(monday: dt.date, owed: Dict[str, int],
     Sunday roll-up, and that new start goes untexted with nobody told.
 
     Deliberately narrow, so Raf's 2026-08-03 call still holds:
-      - anyone the screenshot already lists is skipped (it owns the counts)
+      - anyone the screenshot already lists is skipped (it owns the counts) —
+        LISTED, not merely owed: a person whose every row the screenshot marked
+        Declined or Failed Background is listed there and excluded on purpose,
+        so handing them back from the sheet re-chases exactly who Aisha ruled
+        out (`on_screenshot`)
       - anyone who DOES resolve to a roster leader is skipped, so a sheet row the
         screenshot dropped can never turn back into an @-mention
     What's left is only ever a name in the manual-reach-out list.
@@ -580,6 +586,7 @@ def _sheet_only_untaggable(monday: dt.date, owed: Dict[str, int],
         return {}
 
     seen = set(roster_mod._norm(n) for n in owed)
+    seen |= set(roster_mod._norm(n) for n in (on_screenshot or []))
     out = {}  # type: Dict[str, int]
     for name, count in obcl.counts_by_interviewer(starts).items():
         key = roster_mod._norm(name)
