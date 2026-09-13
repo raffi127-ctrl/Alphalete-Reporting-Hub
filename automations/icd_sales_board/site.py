@@ -1824,20 +1824,9 @@ def relay_board(icd: str, office_key: str) -> None:
     by_rep = _relay_week(office_key, week_ending)
     days = sorted({d for r in by_rep.values() for d in r["days"]})
 
-    # CLICK A DAY TO SEE WHAT IT WAS MADE OF (Megan 2026-09-13). Streamlit's
-    # grid has no per-cell tooltip — help= is per COLUMN — so hovering a day
-    # cannot show its split. Picking the day instead re-scopes the whole board
-    # to it, which is the same control Raf's sheet board already uses, and it
-    # answers the same question: that 5 was 1 INT and 1 DTV and 3 NL.
-    week_days_all = [week_ending - dt.timedelta(days=i)
-                     for i in range(6, -1, -1)
-                     if week_ending - dt.timedelta(days=i) <= dt.date.today()]
-    day_pick = st.radio(
-        "Show", ["Week"] + [d.strftime("%a") for d in week_days_all],
-        horizontal=True, key=f"relayday_{office_key}")
-    picked_day = next((d for d in week_days_all
-                       if d.strftime("%a") == day_pick), None)
-
+    # No day picker: every day is a column now, so choosing one only hid the
+    # other six (Megan 2026-09-13).
+    picked_day = None
 
     # SAY WHICH DAYS THIS IS (Megan 2026-09-13). A board with no dates on it
     # reads as "how the office is doing"; it is one Mon-Sun week, and often a
@@ -1934,8 +1923,19 @@ def relay_board(icd: str, office_key: str) -> None:
 
     # Only days that have happened — a column of zeros for Thursday when it
     # is Tuesday reads as a bad day rather than a day that has not come.
-    # One day picked: that day's PRODUCTS replace the seven day columns.
-    week_days = [] if picked_day else week_days_all
+    # ONLY DAYS THAT HAVE BEEN REPORTED. Up to today, and only if SOMEBODY
+    # has a reading for it — on Sunday morning nothing is in yet, and a column
+    # of zeros there paints every rep dark red for a day nobody has counted.
+    week_days_all = [week_ending - dt.timedelta(days=i)
+                     for i in range(6, -1, -1)
+                     if week_ending - dt.timedelta(days=i) <= dt.date.today()]
+
+    def _has_data(d):
+        if any((r.get(d) or {}) for r in settled_reps.values()):
+            return True
+        return any((r["days"].get(d) or {}) for r in by_rep.values())
+
+    week_days = [d for d in week_days_all if _has_data(d)]
 
     rows = []
     splits: dict = collections.defaultdict(dict)
