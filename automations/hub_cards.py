@@ -540,6 +540,16 @@ def _tableau_box_card() -> dict:
 _ICD_SCHED_CACHE = Path("output") / ".icd_relay_schedule.json"
 
 
+# The abbreviation, not the city: an owner in Tyler does not live in Chicago.
+# Short rather than "Central Standard Time" because this sits in a table.
+_ICD_TZ_SHORT = {"America/Chicago": "CST", "America/New_York": "EST",
+                 "America/Denver": "MST", "America/Los_Angeles": "PST"}
+
+
+def _icd_tz_short(zone: str) -> str:
+    return _ICD_TZ_SHORT.get(zone) or str(zone).split("/")[-1].replace("_", " ")
+
+
 def _icd_hm12(text: str) -> str:
     """'13:30' -> '1:30 PM'. Built by hand, not strftime: %-I is glibc-only and
     every report here has to run on Windows too."""
@@ -617,7 +627,7 @@ def _icd_relay_roster() -> str:
                if o.saturday else "no Saturday")
         out.append("   ◦ Only posts M–F %s–%s · %s · %s"
                    % (_icd_hm12(o.day_start), _icd_hm12(o.day_end), sat,
-                      o.timezone.split("/")[-1].replace("_", " ")))
+                      _icd_tz_short(o.timezone)))
     return "\n".join(out)
 
 

@@ -55,6 +55,15 @@ st.markdown(
     "**Your passwords stay on your computer.** They are typed into the "
     "installer on that machine and never leave it. We never see them, and "
     "this form will never ask for one.")
+st.warning(
+    "**Nothing posts while that computer is off.** Lucy reads your numbers "
+    "from the machine in your office, so it has to be **on, awake and on "
+    "wifi** during your selling hours. A laptop that is shut or asleep means "
+    "your channel goes quiet until it wakes up.\n\n"
+    "Nothing is lost when that happens — SaraPlus and OwnerVille keep "
+    "counting, and the first check-in after it wakes hands over the whole "
+    "day. It arrives late, not missing.")
+
 st.divider()
 
 with st.form("icd_signup"):
@@ -84,8 +93,9 @@ with st.form("icd_signup"):
     st.subheader("Your selling hours")
     st.caption("Nothing posts outside these — this is how Lucy knows your reps "
                "are actually out.")
-    tz = st.selectbox("Your timezone", options=list(S.TIMEZONES),
-                      format_func=lambda t: t.split("/")[-1].replace("_", " "))
+    tz = st.selectbox("Your timezone",
+                      options=[z for z, _label in S.TIMEZONES],
+                      format_func=S.tz_label)
     c1, c2 = st.columns(2)
     day_start = c1.text_input("Monday–Friday, start", value="13:30")
     day_end = c2.text_input("Monday–Friday, end", value="20:30")
@@ -100,6 +110,11 @@ with st.form("icd_signup"):
     st.caption("A channel **ID** is safest — in Slack, click the channel name "
                "at the top, scroll to the bottom of the About tab, and copy "
                "the ID (it looks like C09AVM17PAR). A #name works too.")
+    st.info(
+        "**Add Megan and Eve to any channel you name here.** Lucy cannot post "
+        "into a room she has not been invited to, so a channel without them "
+        "in it cannot be switched on — this is the most common reason a "
+        "sign-up stalls.")
     alert_channels = []
     for i in range(MAX_CHANNELS):
         label = ("Channel for alerts" if i == 0
@@ -188,6 +203,12 @@ if submitted:
                 "numbers straight away. They begin appearing in your Slack "
                 "channel as soon as the reporting team approves where they "
                 "should go.")
+            st.markdown("**Two things to do now:**")
+            st.markdown(
+                "1. **Add Megan and Eve** to every channel you named. Lucy "
+                "cannot post into a room she has not been invited to.\n"
+                "2. **Leave that computer on** during selling hours — on "
+                "power, lid open, on wifi. Nothing posts while it is asleep.")
         else:
             st.markdown(
                 "The reporting team has been told and will send you a "

@@ -29,10 +29,28 @@ KNOCKS_CHOICES = (
     (-1, "No knocks board, thanks"),
 )
 
+# HOW OFFICES SAY IT, not how a computer does (Megan 2026-09-13). "Chicago"
+# is the zone's name, not the thing anybody calls their own timezone -- an
+# owner in Tyler, Texas does not live in Chicago and has to stop and work out
+# which line is theirs.
+#
+# The stored VALUE is still the IANA zone, which is what handles daylight
+# saving, so the label being the everyday "standard time" wording costs
+# nothing: America/Chicago is CST in January and CDT in July either way.
 TIMEZONES = (
-    "America/Chicago", "America/New_York",
-    "America/Denver", "America/Los_Angeles",
+    ("America/Chicago", "Central Standard Time (CST)"),
+    ("America/New_York", "Eastern Standard Time (EST)"),
+    ("America/Denver", "Mountain Standard Time (MST)"),
+    ("America/Los_Angeles", "Pacific Standard Time (PST)"),
 )
+
+TZ_LABEL = dict(TIMEZONES)
+
+
+def tz_label(zone: str) -> str:
+    """The everyday name, falling back to the city if we ever add a zone here
+    without a label -- an unlabelled option is better than a missing one."""
+    return TZ_LABEL.get(zone) or str(zone).split("/")[-1].replace("_", " ")
 
 _TIME = re.compile(r"^\d{1,2}:\d{2}$")
 

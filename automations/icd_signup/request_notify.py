@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from automations.icd_signup.schema import IcdSignup
+from automations.icd_signup.schema import IcdSignup, tz_label
 
 CADENCE_WORDS = {15: "every 15 minutes", 30: "every 30 minutes",
                  60: "once an hour", 0: "at 2:00, 5:15 and 9:00",
@@ -31,7 +31,7 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
     detail = [
         "*%s* — `%s`" % (rec.owner, rec.office_key),
         "• Selling hours: M–F %s–%s · %s · %s"
-        % (rec.day_start, rec.day_end, sat, rec.timezone.split("/")[-1]),
+        % (rec.day_start, rec.day_end, sat, tz_label(rec.timezone)),
         "• Computer: %s" % ("Mac" if rec.platform == "mac" else "Windows PC"),
         "• Reach them at: %s" % (rec.contact or "_not given_"),
     ]
