@@ -50,29 +50,15 @@ ui.inject_slack_token()
 # a link by somebody and has no idea what they are being offered -- the page
 # used to open on "get your sales in Slack", which reads like a product they
 # have to evaluate rather than the reporting they already half know about.
-st.markdown(
-    "**Lucy Eco is how Alphalete offices get their numbers reported.** Lucy "
-    "watches what your reps are doing and posts it to your team through the "
-    "day — nobody builds a report, and nobody asks you for one.\n\n"
-    "**What your office gets**")
+st.markdown("**What your office gets**")
 c1, c2, c3 = st.columns(3)
-c1.markdown("🔍 **Credit checks**\n\nEach one called out within a few "
-            "minutes of your rep running it.")
-c2.markdown("💰 **Sales**\n\nThe same board the Alphalete office runs on, "
-            "for your reps.")
-c3.markdown("🚪 **Knocks & dispositions**\n\nWho is out, who is knocking, "
-            "and who has gone quiet.")
+c1.markdown("🔍 **Credit checks**")
+c2.markdown("💰 **Sales**")
+c3.markdown("🚪 **Knocks & dispositions**")
 st.write("")
 
-st.markdown(
-    "**How it works.** A small program runs on one Mac or PC in your office "
-    "and reads *your* SaraPlus and OwnerVille with *your* logins. It hands "
-    "the numbers to Alphalete, and Lucy posts them in your channel.\n\n"
-    "**Your passwords stay on your computer.** They are typed into the "
-    "installer on that machine and never leave it. We never see them, and "
-    "this form will never ask for one.")
 st.warning(
-    "**Nothing posts while that computer is off.** Lucy reads your numbers "
+    "**NOTHING POSTS while your computer is off.** Lucy reads your numbers "
     "from the machine in your office, so it has to be **on, awake and on "
     "wifi** during your selling hours. A laptop that is shut or asleep means "
     "your channel goes quiet until it wakes up.\n\n"
