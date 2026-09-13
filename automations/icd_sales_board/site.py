@@ -1605,18 +1605,24 @@ def relay_board(icd: str, office_key: str) -> None:
     # gap is stated above the numbers, in the words "N of M days".
     expected = [started + dt.timedelta(days=i) for i in range(7)
                 if started + dt.timedelta(days=i) <= dt.date.today()]
-    missing = [d for d in expected if d not in days]
+    # COUNT EVERY SOURCE, not just the relay. This used to count relayed days
+    # alone and shouted "1 of 7 days — NOT a full week's total" across a board
+    # Tableau had filled for six of them.
+    covered = set(days) | {d for r in _settled_reps(icd, week_ending).values()
+                           for d in r} | set(_settled_days(icd, week_ending))
+    missing = [d for d in expected if d not in covered]
     if missing:
+        # Count what the BOARD has, from every source — not what the relay
+        # sent. Saying "1 of 7" while listing only Sunday as missing is a
+        # contradiction the reader has to resolve, and they should not have to.
+        have = [d for d in expected if d in covered]
         st.warning(
-            f"**{len(days)} of {len(expected)} days** so far this week — this "
-            "is NOT a full week's total. "
-            + ("Read: " + ", ".join(f"{d.strftime('%a')}" for d in days) + ". "
-               if days else "")
+            f"**{len(have)} of {len(expected)} days** so far this week. "
             + "Missing: "
             + ", ".join(f"{d.strftime('%a')} {d.strftime('%b')} {_ord(d.day)}"
                         for d in missing)
-            + ". A day is missing because the office's machine did not run "
-              "that day, not because nobody sold.", icon="📅")
+            + ". A missing day is one neither Tableau nor the office's own "
+              "machine has reported — not a day nobody sold.", icon="📅")
 
     expand = st.toggle(
         "Expand your board", value=False, key=f"relayexp_{office_key}",
@@ -1681,7 +1687,6 @@ def relay_board(icd: str, office_key: str) -> None:
         rows.append(row)
     rows.sort(key=lambda r: (-r["Apps"], -r["Total units"], r["Rep"]))
 
-    live_tot = {m: sum(r[m] for r in rows) for m in RELAY_MEASURES}
     sold = sum(1 for r in rows if any(r[m] for m in RELAY_MEASURES))
 
     # CLOSED DAYS COME FROM TABLEAU, TODAY FROM THE RELAY (Megan 2026-09-13).
@@ -1706,7 +1711,7 @@ def relay_board(icd: str, office_key: str) -> None:
 
     cols = st.columns(6, gap="small")
     _vital(cols[0], "Total units", str(_units(tot)), None)
-    _vital(cols[1], "On the board", f"{sold} of {len(rows)}", None)
+    _vital(cols[1], "Sold / reps", f"{sold}/{len(rows)}", None)
     for col, m in zip(cols[2:], RELAY_MEASURES):
         _vital(col, m, str(tot[m]), None)
 
@@ -1716,11 +1721,8 @@ def relay_board(icd: str, office_key: str) -> None:
             f"Office totals above are SETTLED from Tableau for "
             f"{len(settled_days)} day(s) — {min(settled_days):%b %d} to "
             f"{max(settled_days):%b %d} — with today live from SaraPlus. "
-            "The rep table below only covers days the office's own machine "
-            "relayed, because Tableau's weekly view counts the office, not "
-            "each rep."
-            + (f" Live relay for the same span reads "
-               f"{_units(live_tot)} units." if live_tot != tot else ""))
+            "Reps come from the same settled pull, so the rows below add up "
+            "to the boxes above.")
     else:
         st.caption("No settled Tableau day for this week yet — everything "
                    "here is the live SaraPlus reading.")
