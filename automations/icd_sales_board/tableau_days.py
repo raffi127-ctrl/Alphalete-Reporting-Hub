@@ -433,3 +433,56 @@ def stored_rep_days(owner: str, sheet_id: str = SHEET_ID) -> dict:
         if rep:
             out[rep][day] = {m: _int(rec.get(m)) for m in MEASURES}
     return dict(out)
+
+
+def backfill(week_ending: dt.date, out_dir=Path("output"), log=print) -> int:
+    """Pull and store ONE past week, office totals and per-rep days.
+
+    The board's LAST WEEK block had nothing to show because the pulls only
+    began this week — every office's history starts where the scraping
+    started, not where the selling did. Both crosstabs are week-pinned, so a
+    past week is the same job with a different date."""
+    rows = 0
+    try:
+        path = pull(week_ending=week_ending, out_dir=out_dir, log=log)
+        rows += log_days(path, week_ending=week_ending, log=log)
+    except Exception as e:   # noqa: BLE001 — one half is not the run
+        log(f"  office days: FAILED ({type(e).__name__}: {e})")
+    try:
+        rpath = pull_reps(week_ending=week_ending, out_dir=out_dir, log=log)
+        rows += log_rep_days(rpath, week_ending=week_ending, log=log)
+    except Exception as e:   # noqa: BLE001
+        log(f"  rep days: FAILED ({type(e).__name__}: {e})")
+    return rows
+
+
+def main(argv=None) -> int:
+    """Backfill settled board days for past weeks.
+
+        lucy rerun icd_board_backfill                  # last week
+        lucy rerun icd_board_backfill --weeks 4        # the last four
+
+    Runs a HEADED browser through the ownerville SSO hop, so it belongs on a
+    machine that holds a Tableau session — never in a page render."""
+    import argparse
+
+    ap = argparse.ArgumentParser(prog="icd_board_backfill")
+    ap.add_argument("--week-ending", default="",
+                    help="Sunday to pull, YYYY-MM-DD. Default: last week.")
+    ap.add_argument("--weeks", type=int, default=1,
+                    help="How many weeks back from there, inclusive.")
+    a = ap.parse_args(argv)
+
+    end = (dt.date.fromisoformat(a.week_ending) if a.week_ending
+           else _this_sunday() - dt.timedelta(days=7))
+    total = 0
+    for i in range(max(1, a.weeks)):
+        wk = end - dt.timedelta(days=7 * i)
+        print(f"[week ending {wk}]", flush=True)
+        total += backfill(wk)
+    print(f"done — {total} row(s) stored")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
