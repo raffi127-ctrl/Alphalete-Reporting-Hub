@@ -1095,8 +1095,7 @@ def test_it_says_how_many_people_it_still_cannot_find(page, tmp_path):
     page.goto(p1.as_uri())
     page.evaluate(js)
     out = page.locator("#ansout").inner_text()
-    assert "1 of 2 still not found" in out
-    assert "each one" in out                      # tells you to keep clicking
+    assert "1 of 2" in out, "it says how many are still unplaced"
 
     page.goto(p2.as_uri())                        # same origin: ids accumulate
     page.evaluate(js)
@@ -1188,7 +1187,7 @@ def test_it_looks_everyone_up_itself(page, tmp_path):
     people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
               {"name": "Cristian Amaya Vega", "find": "Amaya Vega", "pages": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
-    page.locator("#ansfind").click()          # the run does this itself
+    # it starts itself on the list now
     page.wait_for_function(
         "() => document.getElementById('ansout').innerText.includes('found')"
         " && !document.getElementById('ansout').innerText.includes('not found')",
@@ -1201,10 +1200,10 @@ def test_it_looks_everyone_up_itself(page, tmp_path):
     assert page.locator("#lf").input_value() == "", "the filter is put back"
 
 
-def test_the_lookup_waits_until_the_run_starts(page, tmp_path):
-    """It used to start the moment the panel opened, which meant watching it
-    grind through 23 surnames before you could do anything. The form comes
-    first; finding people is the first step of the RUN (Megan, 2026-09-10)."""
+def test_the_lookup_starts_itself_on_the_list(page, tmp_path):
+    """Megan, 2026-09-13: "when I click the bookmark shouldn't it just start
+    searching". Printing a link and waiting to be clicked asks somebody to
+    notice a job and then ask for it. On the list, it just looks."""
     f = tmp_path / "roster.html"
     f.write_text(ROSTER_WITH_FILTER)
     page.goto(f.as_uri())
@@ -1215,14 +1214,27 @@ def test_the_lookup_waits_until_the_run_starts(page, tmp_path):
               {"name": "Cristian Amaya Vega", "find": "Amaya Vega", "pages": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
 
-    page.wait_for_timeout(1500)
-    assert "still not found" in page.locator("#ansout").inner_text()
-    # reading rows already on screen is instant and still happens; what must
-    # NOT have happened is the per-person surname search
-    stored = page.evaluate(
-        "() => JSON.parse(localStorage.getItem('apexNewStarts.WE 9.13.ids')||'{}')")
-    assert "aundre browder" not in stored
-    assert "cristian amaya vega" not in stored
+    page.wait_for_function(
+        "() => /Looking up|found|Pending tab/.test("
+        "document.getElementById('ansout').innerText)", timeout=20000)
+    assert page.locator("#ansfind").count() == 0, \
+        "no link to notice and click"
+
+
+def test_off_the_list_it_says_where_to_go(page, tmp_path):
+    """"...or alert me that I'm not on the roster page to look (or both)."
+    There is nothing to look them up ON from a person's record."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>Employee Profile</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(filler.build_js(
+        [{"name": "Aundre Browder", "find": "Browder", "pages": {}}],
+        "WE 9.13")[len("javascript:"):])
+
+    out = page.locator("#ansout").inner_text()
+    assert "Pending" in out and "Roster" in out
+    assert "not placed yet" in out
 
 
 ROSTER_NO_LINKS = """
@@ -1321,7 +1333,7 @@ def test_it_names_who_it_could_not_find_and_offers_a_retry(page, tmp_path):
               {"name": "Nobody Here", "find": "Here", "pages": {}},
               {"name": "Also Missing", "find": "Missing", "pages": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
-    page.locator("#ansfind").click()
+    # the lookup starts itself on the list
     page.wait_for_function(
         "() => document.getElementById('ansout').innerText.includes('Pending tab')",
         timeout=25000)
@@ -1363,9 +1375,12 @@ def test_the_header_says_where_you_are(page, tmp_path):
     roster = tmp_path / "roster.html"; roster.write_text(ROSTER_NO_LINKS)
     page.goto(roster.as_uri())
     page.evaluate(js)
-    head = page.locator("#anspanel").inner_text()
-    assert "Ready to run" in head and "2 new starts" in head
-    assert "Aundre Browder" not in head, "no single name on the roster"
+    # the HEADER, not the whole panel: the progress line underneath names
+    # whoever is being looked up, which is the point of it
+    assert "Ready to run" in page.locator("#anshd").inner_text()
+    assert "Aundre Browder" not in page.locator("#anshd").inner_text(), \
+        "no single name in the header on the roster"
+    assert "2 new starts" in page.locator("#ansub").inner_text()
 
     person = tmp_path / "user-profile.html"; person.write_text("<h1>profile</h1>")
     page.goto(person.as_uri())
@@ -1473,7 +1488,7 @@ def test_a_late_repaint_does_not_lose_somebody(page, tmp_path):
 
     people = [{"name": "Rosa Capel", "find": "Capel", "pages": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
-    page.locator("#ansfind").click()
+    # the lookup starts itself on the list
     page.wait_for_function(
         "() => /found|Pending tab/.test(document.getElementById('ansout').innerText)",
         timeout=25000)
@@ -1509,12 +1524,21 @@ def _roster(page, tmp_path, names):
     page.evaluate("() => localStorage.clear()")
 
 
+def _already_placed(page, week, names):
+    """Seed the ids so the panel has nobody to look up -- otherwise its own
+    lookup races whatever the test is driving by hand."""
+    page.evaluate("""([key, names]) => localStorage.setItem(key,
+        JSON.stringify(Object.fromEntries(names.map(n => [n, '1']))))""",
+                  [f"apexNewStarts.{week}.ids", names])
+
+
 def test_it_types_the_first_name_too(page, tmp_path):
     """Megan, 2026-09-10: "you should be typing in first and last to get
     exact". Filtering on the surname alone hands back everyone who shares
     it and leaves the right row to be guessed at."""
     _roster(page, tmp_path, [["Xzavier", "Russell", "7001"],
                              ["Dana", "Russell", "7002"]])
+    _already_placed(page, "WE 9.13", ["xzavier russell"])
     people = [{"name": "Xzavier Russell", "find": "Russell", "pages": {}}]
     page.evaluate(filler.build_js(people, "WE 9.13")[len("javascript:"):])
     page.evaluate("""async () => await window.__ansOpen(
@@ -1539,7 +1563,7 @@ def test_a_different_name_in_apex_is_reported_not_guessed(page, tmp_path):
     assert page.evaluate("() => window.__clicked") is None, \
         "it did not open somebody else's record"
 
-    page.locator("#ansfind").click()
+    # the lookup starts itself on the list
     page.wait_for_function(
         "() => document.getElementById('ansout').innerText.includes('Pending tab')",
         timeout=25000)

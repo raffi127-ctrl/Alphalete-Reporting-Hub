@@ -1503,19 +1503,29 @@ _JS = r"""
  var lack=0, li;
  for(li=0;li<D.length;li++){ if(!idFor(D[li])) lack++; }
  if(found||lack){
-   document.getElementById('ansout').innerHTML=
-     (found?'Learned '+found+' more. ':'')+
-     (lack? '<b style="color:#b00">'+lack+' of '+D.length+' still not found.</b> '+
-            '<a href="#" id="ansfind">Find them all for me</a> '+
-            '(it looks each one up by surname on this list).'
-          : '<b>All '+D.length+' found.</b> Ready to run the week.');
    var tell=function(m){ document.getElementById('ansout').innerHTML=m; };
-   var fb=document.getElementById('ansfind');
-   if(fb) fb.onclick=function(e){ e.preventDefault(); findEveryone(tell); };
-   /* The lookup used to start the moment the panel opened, which meant
-      watching it grind through 23 surnames before you could do anything.
-      It is the first step of the RUN now: fill the form, then it goes
-      (Megan, 2026-09-10). The link is still here to do it early on purpose. */
+   if(!lack){
+     tell('<b>All '+D.length+' found.</b> Ready to run the week.');
+   } else if(filterBoxes()){
+     /* On the list, with people still to place: just look. Printing a link
+        and waiting to be clicked is asking somebody to notice a job and then
+        ask for it (Megan, 2026-09-13: "shouldn't it just start searching").
+        It only looks up the ones it has no id for, so this is seconds once
+        the week is mostly placed, not the 23-surname grind that made it a
+        link in the first place. */
+     tell((found?'Learned '+found+' more. ':'')+'Looking up '+lack+' of '+
+          D.length+'\u2026');
+     findEveryone(tell);
+   } else {
+     /* Not on the list, so there is nothing to look them up ON. Say where to
+        go rather than offering a button that cannot work from here. */
+     tell('<b style="color:#b00">'+lack+' of '+D.length+' not placed yet.</b><br>'+
+          'Open <b>Roster \u2192 Employees</b> and click the <b>Pending</b> tab, '+
+          'then click this button again \u2014 it will look them up there. '+
+          '<a href="#" id="ansfind">look anyway</a>');
+     var fb=document.getElementById('ansfind');
+     if(fb) fb.onclick=function(e){ e.preventDefault(); findEveryone(tell); };
+   }
  }
  document.getElementById('ansrun').onclick=async function(){
    /* One form for the whole week, then one pass. The alternative -- filling
