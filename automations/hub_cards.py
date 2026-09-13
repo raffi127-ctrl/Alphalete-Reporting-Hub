@@ -6057,7 +6057,14 @@ AUTOMATED_REPORTS = [
         },
         # No checklist. Two ticks in front of a two-click job is a third
         # thing to read (Megan, 2026-09-13).
+        # Nothing to photograph: its whole output is a clipboard.
+        "screenshot": False,
+        # Not tracked to a schedule -- it runs when somebody wants it.
+        "completable": False,
         "post_run": {
+            # Nothing to run again after a clean fetch, and the next click is
+            # not in the Hub at all.
+            "again": False,
             # Written for a Preview button that no longer exists -- it told
             # people to look at a list that was never on the page
             # (Megan, 2026-09-13: "what list above?").

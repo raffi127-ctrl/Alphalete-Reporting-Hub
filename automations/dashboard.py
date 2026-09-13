@@ -3864,8 +3864,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         )
         # Last-run tag — its own line, directly under the name.
         if last_run_text:
+            # Grey, not red. Red is the colour of a problem, and this sat at
+            # the top of cards that had just succeeded (Megan, 2026-09-13).
             st.markdown(
-                "<div style='color:#C92020; font-size:1rem; font-weight:700; "
+                "<div style='color:#6B7280; font-size:1rem; font-weight:600; "
                 "white-space:nowrap; margin:0 0 0.35rem'>"
                 f"· {last_run_text}</div>",
                 unsafe_allow_html=True,
@@ -4443,6 +4445,12 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 # Only show the retry button when there's something to retry,
                 # OR for reports without a state file (legacy fallback).
                 show_again = bool(missing_items) or not state_file_exists
+                # ...unless the card says there is nothing to run again:
+                # post_run {"again": False}. For a report whose next step is
+                # somewhere else entirely, "When you're ready, click below"
+                # points at the wrong thing (Megan, 2026-09-13).
+                if post_run_cfg.get("again") is False and not missing_items:
+                    show_again = False
                 # A card with no actions at all has nothing to fire — no
                 # manifest, no again_action, no primary. Don't offer the button.
                 if again_action is None:
@@ -4463,7 +4471,11 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                 st.success(again_empty_msg)
                             else:
                                 _execute_action(report, again_action, None, chrome_ok)
-                if st.button("✅ Mark as Completed", key=f"dismiss_{report['id']}"):
+                # Means something for a report somebody is tracking to a
+                # schedule. For a self-scheduled one that is run when it is
+                # wanted, it is one more button to wonder about.
+                if report.get("completable", True) and st.button(
+                        "✅ Mark as Completed", key=f"dismiss_{report['id']}"):
                     # Record on this user's "Completed Today" list
                     _mark_run_completed(
                         user=st.session_state.get("user", "unknown"),
@@ -8239,7 +8251,12 @@ elif st.session_state.view == "library":
             with _run_col:
                 _render_report_card(report, today, chrome_ok)
             with _shot_col:
-                _render_report_screenshot(report)
+                # A card can say it has nothing to show a picture of:
+                # "screenshot": False. The panel is half the width of the
+                # page, and an upload box for a report whose whole output is
+                # a clipboard is furniture (Megan, 2026-09-13).
+                if report.get("screenshot", True):
+                    _render_report_screenshot(report)
             # Breathing room between the run/screenshot row and the
             # full-width how-it-works breakdown below it.
             st.markdown("<div style='height:1.6rem'></div>",
