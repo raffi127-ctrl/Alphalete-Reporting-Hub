@@ -179,3 +179,59 @@ def labels_for(owner: str, on: dt.date | None = None,
     """{rep lowered: tenure label} for one office, ready for the board."""
     return {rep: tenure_label(day, on)
             for rep, day in stored(owner, sheet_id).items()}
+
+
+# --------------------------------------------------------------------- cli
+def _offices() -> dict:
+    """{office_id: owner} — AppStream's own ids, from the tracker's list."""
+    from automations.applicant_tracker import config as C
+    return dict(C.OFFICE_NAMES)
+
+
+def main(argv=None) -> int:
+    """Runs on LUCY 1, which holds the warm AppStream session. Megan's laptop
+    has no AppStream credential and should not get one — every machine mints
+    its own, and the sessions are not shared.
+
+        lucy rerun icd_start_dates                  # every mapped office
+        lucy rerun icd_start_dates --office 11280   # one
+        lucy rerun icd_start_dates --weeks 8        # reach further back
+    """
+    import argparse
+
+    ap = argparse.ArgumentParser(prog="icd_start_dates")
+    ap.add_argument("--office", action="append", default=[],
+                    help="AppStream office id; repeatable. Default: all.")
+    ap.add_argument("--weeks", type=int, default=5,
+                    help="How far back to look. 5 is enough — a rep who is "
+                         "not in that window is a veteran, not an unknown.")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Read AppStream, write nothing.")
+    a = ap.parse_args(argv)
+
+    offices = _offices()
+    wanted = [(o, offices.get(o, o)) for o in a.office] if a.office \
+        else sorted(offices.items())
+    end = dt.date.today()
+    start = end - dt.timedelta(days=a.weeks * 7 - 1)
+
+    total = 0
+    for office_id, owner in wanted:
+        print(f"[{office_id}] {owner}", flush=True)
+        try:
+            dates = harvest(office_id, owner, start, end)
+        except Exception as e:   # noqa: BLE001 — one office is not the run
+            print(f"  FAILED ({type(e).__name__}: {e})", flush=True)
+            continue
+        if a.dry_run:
+            for rep, day in sorted(dates.items(), key=lambda kv: kv[1]):
+                print(f"    {rep:<28} {day}  {tenure_label(day, end)}")
+            print(f"  dry run — {len(dates)} found, nothing written")
+            continue
+        total += store(owner, dates)
+    print(f"done — {total} start date(s) written")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

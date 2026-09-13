@@ -300,7 +300,15 @@
         "3"
       ],
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5, 6]
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P3",
       "freshness_target": null,
@@ -2532,7 +2540,7 @@
       },
       "_note": "Raf 2026-08-30: 'I want to be able to talk to LUCY in this thread, is their a way to make that happen by tagging her?' Answers replies in the week's new-start thread that @-mention Lucy (U0BCG8F9B5Z). ARMED 2026-08-30. A QUESTION is answered only from the report's own Reconciliation (facts built in code; the model picks and phrases, never supplies). A REQUEST to stop or resume chasing a named person is executed and confirmed in code's own words. Lucy can change NOTHING else - any other change request is flagged for Megan, never claimed as done. The person in a stop/resume request must already appear in this week's report, so an arbitrary name can never reach the do-not-ping list. Runtime writes go to the GITIGNORED overlays in output/shared/, never the committed stores, because a dirty tracked file breaks `lucy update`. Cadence is com.alphalete.new-start-thread-replies (every 30 min, 8am-8pm, all week), which only enqueues a rerun; weekdays [] keeps the 4am orchestrator out of it. Idempotent per mention ts.",
       "close_on": "exit_zero",
-      "_close_on_note": "Most runs answer nobody \u2014 the normal result is 'No unanswered questions for Lucy in the thread', which posts nothing and writes no manifest, so there is no artifact for delivery_check to confirm and its ticket stayed open forever (2026-09-11). Exit 0 IS its delivery. When it DOES answer, the reply is a chat.postMessage whose failure raises, so a silent non-delivery is not a case this can hide.",
+      "_close_on_note": "Most runs answer nobody — the normal result is 'No unanswered questions for Lucy in the thread', which posts nothing and writes no manifest, so there is no artifact for delivery_check to confirm and its ticket stayed open forever (2026-09-11). Exit 0 IS its delivery. When it DOES answer, the reply is a chat.postMessage whose failure raises, so a silent non-delivery is not a case this can hide.",
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
@@ -2982,7 +2990,7 @@
       "order": 11.5,
       "on_scheduler": true,
       "_not_armed_note": "Suppresses BOTH failure alerts (hub_publish._alert_failure and the machine_digest standalone watcher) while this is still being built. The _on_scheduler_note above already said NOT ARMED in prose; this is the machine-readable half. It failed 17:33-17:37 on 2026-09-03 and opened failure-rc_contact_sync, whose thread told whoever picked it up to read a launchd log for a report waiting on two credentials. DELETE THIS LINE as part of arming the report -- a flag left on a live report is a report that has gone quiet.",
-      "_on_scheduler_note": "ARMED 2026-09-09 (Megan: \"let's set it in the morning run\"), after a full live run: 8 orders off SaraPlus, 7 contacts created in Taylor's address book, 1 correctly skipped as already there, and the 5 un-messaged customers posted to #a-players-b2b. Credentials on Lucy 2: saraplus-creds-b2b.json (CARLOS's SaraPlus login \u2014 the sales board's alphaletemarketing@ account is a different dealer), gmail-app-password (how the login reads its emailed SaraPlus passcode) and ringcentral-b2b-creds.json (a JWT minted on TAYLOR's login; the app in rc_autoread belongs to the OTHER RingCentral account, where Taylor has no extension). ringcentral.assert_identity() refuses to write unless the token's owner_id is Taylor's extension \u2014 a wrong-but-valid token would write the wrong address book, read the wrong inbox and still exit 0.",
+      "_on_scheduler_note": "ARMED 2026-09-09 (Megan: \"let's set it in the morning run\"), after a full live run: 8 orders off SaraPlus, 7 contacts created in Taylor's address book, 1 correctly skipped as already there, and the 5 un-messaged customers posted to #a-players-b2b. Credentials on Lucy 2: saraplus-creds-b2b.json (CARLOS's SaraPlus login — the sales board's alphaletemarketing@ account is a different dealer), gmail-app-password (how the login reads its emailed SaraPlus passcode) and ringcentral-b2b-creds.json (a JWT minted on TAYLOR's login; the app in rc_autoread belongs to the OTHER RingCentral account, where Taylor has no extension). ringcentral.assert_identity() refuses to write unless the token's owner_id is Taylor's extension — a wrong-but-valid token would write the wrong address book, read the wrong inbox and still exit 0.",
       "_timing_open_question": "4am is OUR choice, not Carlos's: the Loom says only 'every morning, at whatever time it would make sense for Lucy'. It matters because the message check runs from the sale day up to NOW, so at 4am a rep who sends the wrap-up at 9am the next morning is still named in the post. A later slot (~10-11am) would give the morning to catch up. Ask Carlos.",
       "display_name": "B2B Customer Contacts (RingCentral)",
       "machine": "Lucy 2",
@@ -5184,9 +5192,15 @@
       "on_scheduler": true,
       "display_name": "Install: Terminated ICD Notice LaunchAgent",
       "_note": "Instala com.alphalete.terminated-notice (cada 10 min, 24/7) en ESTA maquina. LUCY 1 Y NADA MAS: la checklist tiene que salir como Lucy, y terminated_notice.run se niega a postear desde una maquina cuya identidad de Slack es una persona — instalarlo en una laptop no rompe nada, simplemente no postea nunca. Megan 2026-09-10: \"make it fire right away instead of the next morning\"; la entrada del batch de las 4am (order 61) queda igual, como red. Correr las dos cosas es seguro: es un post por nombre y nunca mas, con el estado en output/terminated_notice/announced.json. Para bajarlo: disable_terminated_notice_agent. base_args propios porque los args extra caen DESPUES de base_args, asi que pedir prestada otra entrada install_* instala el agente equivocado. cadence.weekdays [] = el orquestador de las 4am no lo corre nunca; on_scheduler:true SOLO para que registry.load_config lo conserve y `lucy rerun` lo encuentre.",
-      "command": ["automations.day_orchestrator.install_agent"],
-      "base_args": ["terminated-notice"],
-      "cadence": {"weekdays": []},
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "terminated-notice"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
       "data_sources": [],
       "depends_on": [],
       "freshness_target": null,
@@ -5199,9 +5213,15 @@
       "on_scheduler": true,
       "display_name": "Disable: Terminated ICD Notice LaunchAgent",
       "_note": "Descarga com.alphalete.terminated-notice y deja su plist como .plist.disabled — el inverso documentado de install_terminated_notice_agent. Bajarlo NO apaga el aviso: la entrada terminated_notice del batch de las 4am sigue corriendo, solo que la checklist pasa a llegar a la manana siguiente en vez de dentro de los 10 minutos. Para apagarlo del todo hay que ademas poner cadence.weekdays [] y on_scheduler:false en esa entrada.",
-      "command": ["automations.day_orchestrator.disable_agent"],
-      "base_args": ["terminated-notice"],
-      "cadence": {"weekdays": []},
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "terminated-notice"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
       "data_sources": [],
       "depends_on": [],
       "freshness_target": null,
@@ -5484,9 +5504,23 @@
       "on_scheduler": true,
       "display_name": "Terminated ICD — removal checklist",
       "_note": "AVISO, NO ES UN REPORTE (Megan, 2026-09-10: \"if someone is added to the termination list a list like that automatically gets sent to the slack channel so Eve and I know where to go / what to do\"). Lee la pestana 'Terminated ICDs' del AUTOMATION MASTER y, cuando aparece un NOMBRE que todavia no anuncio, sale a buscar donde sigue cableada esa persona — workbooks + rosters del repo, tabla declarativa en automations/terminated_notice/surfaces.py — y postea la checklist en #claudecorrections-and-requests. NO BORRA NADA: la lista de terminados marca, nunca saca (la POLICY de terminated_icds), asi que cada linea es para una persona, y el post dice ademas que se deja adentro a proposito (cancels/disconnects siguen listandolo para que sus filas viejas sigan tirando al total de su capitan). UN POST POR NOMBRE Y NUNCA MAS: el estado vive en output/terminated_notice/announced.json, porque la segunda copia de una checklist es como el canal deja de leerse; `--again <nombre>` la repostea a proposito. La PRIMERA corrida no postea: anota como ya anunciados los que estaban en la lista (8 el 2026-09-10, todos limpiados hace rato) y avisa desde el siguiente. Callado cuando no hay nada nuevo, que es casi siempre — una sola lectura de Sheet; el barrido caro de workbooks solo corre si hay nombre nuevo. Postea solo si la identidad de Slack de la maquina es Lucy: desde una laptop imprime la checklist y se niega, mismo guard que knocks_access_watch.",
-      "command": ["automations.terminated_notice.run"],
-      "base_args": ["--post"],
-      "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6]},
+      "command": [
+        "automations.terminated_notice.run"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
       "data_sources": [],
       "depends_on": [],
       "after": [],
@@ -7428,11 +7462,17 @@
       "machine": "Lucy 2",
       "display_name": "B2B Captainship Activations tab (weekly grid)",
       "source_type": "tableau",
-      "command": ["automations.b2b_captainship_activations.run"],
-      "base_args": ["--sheet"],
+      "command": [
+        "automations.b2b_captainship_activations.run"
+      ],
+      "base_args": [
+        "--sheet"
+      ],
       "timeout_minutes": 60,
       "_note": "Carlos 2026-09-07: 'Captainship Activations' tab on the Vantura Master Sales Board — per-owner ACTIVATIONS (posted & not canceled/disconnected, by POSTED week, the morning activation-report rule but Mon-Sun weeks) + TOTAL SALES (tracker apps by ORDER week), last 8 completed weeks, Carlos's captainship vs Atef's. Membership is DATED in the module (realignment 2026-08-17: Atef/Sabrina/Eckhart/Kabbes/Driggs count for Carlos thru WE 8/16; Jackie/Jeff/Vincent/Murphy from WE 8/23; Dhyey only under Atef; McKendree excluded; Nic Lujan all history) — edit CARLOS_TEAM/ATEF_TEAM in run.py when someone moves. Pulls ~13 weeks of ATTTRACKER-B2B ORDERLOG via the direct .csv in 31-day chunks over the shared CDP Chrome (each ~120MB; chunks cached per as-of date under output/b2b_captainship_activations). base_args --sheet so a plain rerun WRITES; add --dry-run for a preview (it overrides --sheet). Writes ONLY its own tab. First run 2026-09-07 was from the MINI (Carlos's own session — national export verified); reruns work from either machine with a Carlos Tableau session.",
-      "cadence": {"weekdays": []},
+      "cadence": {
+        "weekdays": []
+      },
       "priority": "P3"
     },
     "carlos_bonus_projection": {
@@ -7440,10 +7480,26 @@
       "machine": "Lucy 2",
       "display_name": "Carlos captainship bonus daily projection (DM)",
       "source_type": "tableau",
-      "command": ["automations.carlos_captainship_bonus.daily_projection"],
-      "base_args": ["--dm", "--sheet"],
+      "command": [
+        "automations.carlos_captainship_bonus.daily_projection"
+      ],
+      "base_args": [
+        "--dm",
+        "--sheet"
+      ],
       "timeout_minutes": 45,
-      "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6], "not_before": "09:30"},
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "09:30"
+      },
       "priority": "P2",
       "order": 30,
       "_note": "Carlos 2026-09-07: daily DM projecting his B2B captainship bonus for the RUNNING DD week (Sun-Sat) as activations post. Volumes live from the ORDERLOG (45-day window, 31-day chunks, shared CDP Chrome, cached per as-of date); tier ladder/adders/decel thresholds + churn seeds in carlos_captainship_bonus/sc_program.json, decoded from SC's weekly 'B2B ATT Captains Bonus Breakdown' email (DD WE 08/29 reproduces the paid $794 exactly: payout x weighted per-product decel, worse of team/personal churn). REFRESH sc_program.json when each Wednesday's SC email lands — tier thresholds recalibrate and churn seeds go stale (the DM warns past 9 days). not_before 09:30 so the extract has the morning's postings. Manual: lucy rerun carlos_bonus_projection (add --dry-run to preview without DM)."
@@ -10538,6 +10594,26 @@
       "timeout_minutes": 15,
       "verify": null,
       "_order_note": "44.5 = straight after the LAST settle pass (44, 14:00) so it audits a finished day. Before that a held board may still be coming and flagging it would be a false alarm every morning."
+    },
+    "icd_start_dates": {
+      "on_scheduler": false,
+      "_note": "Rep START DATES from AppStream, for the ICD sales board's tenure colours (Raf's Loom 2026-09-13: 'days worked based off the start date ... can be pulled off of AppStream'). One page load per day per office, so ~5 weeks back is the whole job: a rep outside that window is a veteran, not an unknown. Run it manually first with --dry-run.",
+      "label": "ICD start dates (AppStream)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.icd_sales_board.start_dates"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 45,
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {
