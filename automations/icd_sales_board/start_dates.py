@@ -157,6 +157,12 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
             r"""([idx, want]) => {
                 const box = [...document.querySelectorAll('input')][idx];
                 const form = box.form;
+                // The form's action is a bare "index.cfm" — posting it as-is
+                // drops p=701, rqst and newOfficeId and lands on the home
+                // page, which is exactly what the last run recorded. Point it
+                // at the URL we are already on so the query string survives
+                // and weekStart rides in the body.
+                if (form) form.action = location.href;
                 box.removeAttribute('readonly');
                 box.value = want;
                 box.dispatchEvent(new Event('change', {bubbles: true}));
