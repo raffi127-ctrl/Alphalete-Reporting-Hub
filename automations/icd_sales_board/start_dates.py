@@ -242,7 +242,11 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     # which is how "0/5 opened" arrived with no reason attached.
     # The queue's status view shows only the TAIL of stdout, so anything that
     # matters has to be ON the summary line.
-    why = f" · box: {_LAST_DIAG}" if (opened < len(weeks) and _LAST_DIAG) else ""
+    # Only the LANDING goes on the line — the status view truncates it at a
+    # fixed width, and the box is already known.
+    landed = _LAST_DIAG.get("landed")
+    why = f" · {_LAST_DIAG.get('raised', '')} landed: {landed}" if (
+        opened < len(weeks) and landed) else ""
     log(f"  {owner}: {len(found)} start date(s) between {start} and {end} "
         f"— {opened}/{len(weeks)} week(s) opened{why}")
     return {v[0]: v[1] for v in found.values()}
