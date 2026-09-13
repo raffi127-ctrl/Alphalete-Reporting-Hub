@@ -294,6 +294,12 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
     // Keep the day a STRING on the way in too, so the next sweep's lookup is
     // comparing like with like even if the column format is ever reset.
     sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);
+    // THE FIRST RELAY OF A DAY COMES THROUGH HERE, and it was the one machine
+    // that never got recorded: the row was created without it, and the next
+    // machine to relay merged into an empty cell and looked like the only one.
+    // Caught live 2026-09-13 -- two machines relayed and only the second
+    // appeared.
+    _mergeMachine(sh, sh.getLastRow(), machine, machineName);
   } finally {
     lock.releaseLock();
   }
