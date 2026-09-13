@@ -416,14 +416,39 @@ ROTATION = ["11580", "23467", "11901", "23965"]
 # `.machine-profile`, so hub_identity.machine_name() falls back to its hostname,
 # and a default-to-something here would let a laptop start sending real
 # applicants. Nothing scheduled means nothing runs.
-# PARKED 2026-09-13, SAME DAY: the split is built and tested but NOT in effect.
-# Lucy 3's supervised dry-run could not get an AppStream session at all —
-# "no AppStream session after 3 attempts (console never rendered #searchMC)" —
-# so it cannot sign in as `lucyresume` yet. Until it can, assigning offices to
-# Lucy 3 means those offices are worked by NOBODY: Lucy 2's wrapper skips them
-# because they are not its rotation, and Lucy 3 never runs. That is the silent
-# drop this repo keeps getting bitten by, so the assignment goes back to Lucy 2
-# and the split flips on in ONE line once a Lucy 3 dry-run comes back clean.
+# PARKED 2026-09-13 (Megan: "just leave all 4 on lucy 2 for now"). The split is
+# built and tested; it is simply not switched on. Everything below is what the
+# attempt actually established, so nobody has to rediscover it.
+#
+# HOW FAR IT GOT ON LUCY 3, in order:
+#   1. `lucyresume` was not on the box at all. All three Lucys auto-login, but
+#      that is the PRIMARY account ("Lucy Reports"); the scoped resume login is a
+#      SECOND credential, and it lives in ~/.config/recruiting-report/
+#      appstream-accounts.json — outside the repo, because the repo is public.
+#      So `lucy update` has never carried it and never will.
+#   2. Megan installed it (set_appstream_account). The account now RESOLVES on
+#      Lucy 3 — the "No AppStream account named 'lucyresume'" error is gone.
+#   3. The login itself still does not complete: "console never rendered
+#      #searchMC (Cloudflare re-challenge?)", on the real-Chrome/CDP path that
+#      the report actually uses. Two candidates remain and the log does not yet
+#      separate them: a Cloudflare state on Lucy 3 needing one human clear, or
+#      the credential. NOT a code problem — Lucy 2 runs this same code fine.
+#   4. Separately: Lucy 3's Chrome profile has NO Resume Helper extension
+#      ("plugin present: False"). It is installed by hand, not by `lucy update`,
+#      so Lucy 3 could never run the BATCH stage even once login works. The
+#      scheduled push is --oat-only and does not need it, but do not assume the
+#      two boxes are interchangeable.
+#
+# STILL UNANSWERED: whether two machines can hold the `lucyresume` session at
+# once. Lucy 2 kept walking (13:52) straight through Lucy 3's login attempts —
+# but those attempts never got a console, so nothing was ever competing. Do not
+# read that as a green light; it is simply untested.
+#
+# Assigning an office to a machine that cannot run it means that office is worked
+# by NOBODY — Lucy 2 skips it as not-its-rotation and Lucy 3 never runs. That
+# happened for ~30 minutes today. The orphan check in test_offices is what caught
+# it and is the guard to keep. Flip the split in ONE line once a Lucy 3 dry-run
+# comes back clean.
 #
 #   "Lucy 2": ["11580", "23467"],
 #   "Lucy 3": ["23965", "11901"],
