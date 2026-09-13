@@ -63,6 +63,10 @@ import datetime as dt
 import socket
 from typing import Dict, List, Optional
 
+# window.py imports nothing but the stdlib on purpose, so this stays cheap and
+# cannot drag a browser stack into the watchdog.
+from automations.applicant_push.window import quiet_window as _push_quiet_window
+
 SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"   # same book as Hub Activity
 TAB = "Job Heartbeats"
 HEADERS = ["Job ID", "Last Seen", "Machine", "Status", "Note"]
@@ -119,12 +123,17 @@ JOBS: Dict[str, dict] = {
         "fix": "lucy rerun install_blueink_sweep_agent --machine \"Lucy 2\"",
     },
     # The push fires every 5 minutes, 07:00-22:00, rotating one ApplicantStream
-    # office per tick. It publishes a Hub row ONCE a day per office, so a card
-    # that went green at 07:08 keeps reading green for the rest of the day no
-    # matter what — and on 2026-09-11 the agent stopped ticking at 12:56 and
-    # nothing said so until someone read the walk-diag tab two days later. Lucy 2
-    # was up the whole time; every other job on the box beat normally. A missing
-    # pass here is applicants sitting uncalled, which is the entire product.
+    # office per tick, and is HELD Fri 1pm -> Sun 1pm (see `quiet` below). It
+    # publishes a Hub row ONCE a day per office, so a card that went green at
+    # 07:08 keeps reading green for the rest of the day no matter what. A missing
+    # pass here is applicants sitting uncalled, which is the entire product, and
+    # nothing else in the stack can see it: a stopped agent publishes nothing,
+    # which is indistinguishable from a healthy morning.
+    #
+    # WHY THE QUIET HOOK IS NOT OPTIONAL HERE: on 2026-09-13 the diag tab showed
+    # no walks since Friday 12:52 and it read exactly like a dead agent — it was
+    # the weekend hold, working. An alert that cannot tell those two apart is
+    # worse than no alert, because it trains you to ignore the real one.
     "applicant_push_lucy_2": {
         "name": "Applicant Push (all offices)",
         "machine": "Lucy 2",
@@ -134,7 +143,13 @@ JOBS: Dict[str, dict] = {
         # a stopped agent inside an hour instead of two days.
         "max_gap_min": 45,
         "active_until": "22:00",
-        "weekdays": None,          # runs every day
+        "weekdays": None,          # every day — the hold is a WINDOW, not a day
+        # The push's own gate, imported rather than restated: one definition of
+        # "held", pinned by automations/applicant_push/test_quiet_window.py.
+        "quiet": _push_quiet_window,          # every day — the hold is a WINDOW, not a day
+        # The push's own gate, imported rather than restated: one definition of
+        # "held", pinned by automations/applicant_push/test_quiet_window.py.
+        "quiet": _push_quiet_window,          # runs every day
         # Grace: the beat ships in deploy/applicant_push.sh, which Lucy 2 has to
         # pull. Armed the day after so the agent gets one clean day to prove it.
         "watch_from": "2026-09-14",
@@ -309,6 +324,25 @@ def overdue(now: Optional[dt.datetime] = None,
         wd = spec.get("weekdays")
         if wd is not None and now.weekday() not in wd:
             continue
+        # A job may decline to run on purpose for part of the week — the
+        # applicant push is held Fri 1pm -> Sun 1pm (Carlos 2026-09-04) and exits
+        # 75 HELD on every tick in between. `weekdays` cannot say that: the
+        # window starts and ends mid-day. Without this hook the heartbeat would
+        # page every single weekend for a job doing exactly what it was told.
+        #
+        # The GRACE is the other half. The moment the window lifts, the job has
+        # not beaten today and `first_by` has long passed, so a bare quiet check
+        # would fire one alert at 1pm Sunday every week. Probing the window
+        # `quiet_grace_min` ago keeps the job unwatched until it has had that
+        # long to take its first pass — twelve ticks, for a 5-minute job.
+        quiet = spec.get("quiet")
+        if quiet is not None:
+            grace = dt.timedelta(minutes=int(spec.get("quiet_grace_min", 60)))
+            try:
+                if quiet(now) or quiet(now - grace):
+                    continue
+            except Exception:  # noqa: BLE001 — a broken hook must not mute the job
+                pass
         try:
             if today < dt.date.fromisoformat(spec["watch_from"]):
                 continue                      # not armed yet — deployment grace

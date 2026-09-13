@@ -140,6 +140,49 @@ class DeploymentAndRecovery(unittest.TestCase):
         self.assertNotIn(BOX, sjw.healthy(now, _beats(**{BOX: None, SWEEP: None})))
 
 
+class AJobThatIsHeldOnPurpose(unittest.TestCase):
+    """The applicant push is HELD Fri 1pm -> Sun 1pm (Carlos 2026-09-04) and exits
+    75 on every tick in between. From the outside that is indistinguishable from a
+    dead agent — on 2026-09-13 the walk-diag tab showed nothing since Friday 12:52
+    and read exactly like an outage. An alert that cannot tell those apart fires
+    every weekend and trains you to ignore the one that matters."""
+
+    JID = "applicant_push_lucy_2"
+    MON = dt.date(2026, 9, 14)          # a Monday
+
+    def _at(self, wd, h, m=0):
+        return dt.datetime.combine(self.MON + dt.timedelta(days=wd), dt.time(h, m))
+
+    def _late(self, now, seen):
+        beats = {self.JID: {"last_seen": seen}} if seen else {}
+        return self.JID in {j["job_id"] for j in sjw.overdue(now, beats)}
+
+    def test_a_normal_weekday_gap_still_alerts(self):
+        self.assertTrue(self._late(self._at(2, 16), self._at(2, 14, 30)))
+
+    def test_friday_afternoon_is_held_not_broken(self):
+        # Last pass 12:52, the window shuts at 13:00. Silence after that is the
+        # job obeying its own gate.
+        self.assertFalse(self._late(self._at(4, 14), self._at(4, 12, 52)))
+
+    def test_saturday_is_silent_all_day_and_that_is_correct(self):
+        self.assertFalse(self._late(self._at(5, 10), self._at(4, 12, 52)))
+        self.assertFalse(self._late(self._at(6, 12), self._at(4, 12, 52)))
+
+    def test_the_grace_covers_the_moment_the_window_lifts(self):
+        # 13:00 Sunday: the window is open but the push has not taken a pass yet,
+        # and first_by (07:30) is hours gone. Without the grace this fires one
+        # false alert at 1pm every single Sunday.
+        self.assertFalse(self._late(self._at(6, 13, 30), self._at(4, 12, 52)))
+
+    def test_but_a_push_that_never_comes_back_does_alert(self):
+        # Grace over, still nothing since Friday — now it is a real outage.
+        self.assertTrue(self._late(self._at(6, 14, 30), self._at(4, 12, 52)))
+
+    def test_a_push_that_resumed_after_the_hold_is_quiet(self):
+        self.assertFalse(self._late(self._at(6, 14, 30), self._at(6, 14, 10)))
+
+
 class TheRegistryStaysHonest(unittest.TestCase):
 
     def test_every_job_declares_what_silence_means(self):

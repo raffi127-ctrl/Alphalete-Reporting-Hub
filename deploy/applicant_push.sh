@@ -46,10 +46,14 @@ set -u
 # does not just lose its own tick — it swallows every tick after it, silently,
 # for as long as it hangs. The walk itself has had a cap since 8/18 (MAX_RUN_S
 # below), but the git pull and the three best-effort post-run steps did not, and
-# each of them is a network call. The push went quiet from 2026-09-11 12:56 to
-# 2026-09-13 with Lucy 2 up the whole time and every other job on the box
-# beating normally, which is exactly what a hang OUTSIDE the guarded section
-# looks like from the outside.
+# each of them is a network call.
+#
+# PRECAUTIONARY, not from an incident (2026-09-13). A two-day gap in the walk-diag
+# tab looked exactly like this failure and turned out to be the Fri-1pm-to-Sun-1pm
+# weekend hold doing its job. The caps are still worth having — an unbounded
+# network call inside a single-instance launchd job can take the whole day out and
+# leave no trace but absence — but do not go looking for a hang that has not
+# happened yet.
 #
 # `timeout` is not on stock macOS, so cap it the same way MAX_RUN_S does.
 # Best-effort by design: a capped step that times out logs and moves on.
