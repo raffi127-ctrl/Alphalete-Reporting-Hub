@@ -230,6 +230,19 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
     pairs = KD.owner_cfgs(list(due.icds), aliases_raw)
 
     with ownerville_session(verbose=True, profile_dir=PROFILE_DIR) as page:
+        # CHAN PARK'S LINE, like every other knocks board (Raf, after the first
+        # sample 2026-09-12: "Chan's numbers at the top to compare, like the
+        # other knocking reports"). Pulled FIRST and in this same session, the
+        # way the captainship report's daily section does it — a comparison is
+        # a nicety and must never cost its own login. A failed pull costs the
+        # teal line and nothing else.
+        chan_rows = None
+        try:
+            chan_rows = KD._chan_daily_rows(page, [], aliases_raw,
+                                            due.local_date, logfn=logfn)
+        except Exception as exc:  # noqa: BLE001 — a nicety, never the wave
+            logfn("[night-knocks]   ! Chan comparison unavailable (%s)"
+                  % type(exc).__name__)
         for display, cfg in pairs:
             try:
                 rows = KD._daily_rows_for_owner(page, cfg, aliases_raw,
@@ -254,6 +267,7 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
                 due.local_date, rows=board_rows,
                 out_dir=root / KD._slug(display),
                 title_suffix=display, title_prefix="DAILY ",
+                extra_totals=KD.compare_totals_for(display, chan_rows),
                 apps=apps_by_rep)
             boards.append((display, png))
             captured.append((display, cfg, rows, apps_n))
@@ -264,6 +278,7 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
         try:
             summary = KD.render_daily_summary(
                 captured, due.local_date, root / "summary",
+                chan_rows=chan_rows,
                 roster_n=len(due.icds), n_covered=len(captured))
             boards.insert(0, ("Daily Summary — %s %d"
                               % (due.local_date.strftime("%b"),
@@ -616,11 +631,9 @@ def notice(now_utc: dt.datetime, *, send: bool, sample: bool,
     # report — it is the answer to "did it go out?", and those two are who
     # asked the question (Eve, 2026-09-11).
     to_addrs = mail.assert_allowed(mail.SAMPLE_RECIPIENTS, sample=True)
-    subject = ("%sDaily Knocks — nothing to send for %s"
-               % (mail.SUBJECT_TAG if sample else "",
-                  night.strftime("%a %m/%d"))) if not sent else (
-        "%sDaily Knocks — partial for %s"
-        % (mail.SUBJECT_TAG if sample else "", night.strftime("%a %m/%d")))
+    day = "%s %d/%d" % (night.strftime("%a"), night.month, night.day)
+    subject = "%s - Daily Knocks - %s" % (
+        day, "not sent" if not sent else "partly sent")
     html = notice_html(night, data, rosters, sample=sample)
     if not send:
         logfn("[night-knocks] DRY-RUN notice: %r -> %s"

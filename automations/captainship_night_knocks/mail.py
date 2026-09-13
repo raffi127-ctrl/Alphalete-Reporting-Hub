@@ -109,15 +109,23 @@ class Thread:
 
 
 def subject_for(captain_display: str, local_date: dt.date, *,
-                sample: bool) -> str:
-    """'Daily Knocks - Raf's Captainship - Sat 9/12'. The DATE IS THE ICDs'
-    OWN and it never changes between waves: all three messages in a thread
-    close the same knocking day, even though the 11 PM one is sent after
-    midnight Central."""
+                sample: bool = False) -> str:
+    """'Sat 9/12 - Daily Knocks - Raf's Captainship' — DATE FIRST.
+
+    Raf, after the first sample (2026-09-12): "edit the title of the email to
+    Date/Date first". A captain's inbox holds one of these a night, and the
+    date is what tells them apart at a glance.
+
+    No [SAMPLE] tag: Raf's example had none, and the sample is already marked
+    in the footer of every message. `sample` stays in the signature so callers
+    do not have to change.
+
+    The DATE IS THE ICDs' OWN and never changes between waves: all messages in
+    a thread close the same knocking day, even one sent after midnight Central.
+    """
     day = "%s %d/%d" % (local_date.strftime("%a"), local_date.month,
                         local_date.day)
-    base = "Daily Knocks — %s — %s" % (captain_display, day)
-    return (SUBJECT_TAG + base) if sample else base
+    return "%s - Daily Knocks - %s" % (day, captain_display)
 
 
 def _clock(when: dt.datetime) -> str:

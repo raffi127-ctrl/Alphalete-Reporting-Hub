@@ -69,7 +69,12 @@ class Threading(unittest.TestCase):
         t = mail.Thread(subject=subj)
         t.remember("<one@x>")
         self.assertEqual(t.subject_for_next(), "Re: " + subj)
-        self.assertTrue(subj.startswith(mail.SUBJECT_TAG))
+
+    def test_subject_is_date_first_exactly_as_raf_wrote_it(self):
+        self.assertEqual(
+            mail.subject_for("Raf's Captainship", dt.date(2026, 9, 12),
+                             sample=True),
+            "Sat 9/12 - Daily Knocks - Raf's Captainship")
 
     def test_thread_survives_a_round_trip_through_state(self):
         t = mail.Thread(subject="S")
