@@ -41,17 +41,33 @@ MAX_KNOCKS = 3
 
 st.set_page_config(page_title="Join Lucy Eco", page_icon="🛰️")
 ui.render_header(
-    "Get your office's sales and credit checks in Slack",
-    "Lucy watches your own SaraPlus and OwnerVille and posts to your team's "
-    "channel. It runs on one computer in your office.")
+    "Join Lucy Eco",
+    "Your office's numbers, in your team's Slack channel, all day long.")
 
 ui.inject_slack_token()
 
+# WHAT LUCY ECO IS, before what it does. An owner arriving here has been sent
+# a link by somebody and has no idea what they are being offered -- the page
+# used to open on "get your sales in Slack", which reads like a product they
+# have to evaluate rather than the reporting they already half know about.
 st.markdown(
-    "**What you are signing up for.** A small program runs on one Mac or PC in "
-    "your office. It reads *your* SaraPlus and OwnerVille with *your* logins "
-    "and sends us the numbers — credit checks, sales and knocks — so they can "
-    "be posted in your team's Slack channel through the day.\n\n"
+    "**Lucy Eco is how Alphalete offices get their numbers reported.** Lucy "
+    "watches what your reps are doing and posts it to your team through the "
+    "day — nobody builds a report, and nobody asks you for one.\n\n"
+    "**What your office gets**")
+c1, c2, c3 = st.columns(3)
+c1.markdown("🔍 **Credit checks**\n\nEach one called out within a few "
+            "minutes of your rep running it.")
+c2.markdown("💰 **Sales**\n\nThe same board the Alphalete office runs on, "
+            "for your reps.")
+c3.markdown("🚪 **Knocks & dispositions**\n\nWho is out, who is knocking, "
+            "and who has gone quiet.")
+st.write("")
+
+st.markdown(
+    "**How it works.** A small program runs on one Mac or PC in your office "
+    "and reads *your* SaraPlus and OwnerVille with *your* logins. It hands "
+    "the numbers to Alphalete, and Lucy posts them in your channel.\n\n"
     "**Your passwords stay on your computer.** They are typed into the "
     "installer on that machine and never leave it. We never see them, and "
     "this form will never ask for one.")
