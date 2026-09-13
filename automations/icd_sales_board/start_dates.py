@@ -294,6 +294,9 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
         why = f" · headers: {_LAST_DIAG['headers']}"
     elif opened < len(weeks) and landed:
         why = f" · {_LAST_DIAG.get('raised', '')} landed: {landed}"
+    log(f"  {owner}: {len(found)} start date(s) between {start} and {end} "
+        f"— {opened}/{len(weeks)} week(s) opened{why}")
+    return {v[0]: v[1] for v in found.values()}
 
 
 def store(owner: str, dates: dict, sheet_id: str = SHEET_ID, log=print) -> int:
