@@ -112,11 +112,15 @@ with st.form("icd_signup"):
     st.caption("A channel **ID** is safest — in Slack, click the channel name "
                "at the top, scroll to the bottom of the About tab, and copy "
                "the ID (it looks like C09AVM17PAR). A #name works too.")
+    # ONLY THEIR JOB, not ours (Megan 2026-09-13: "this reads like they need
+    # to add lucy which isn't the case"). Lucy does have to be in the room
+    # before anything posts -- approve.py refuses otherwise -- but getting her
+    # there is OUR half. An office reading that it must invite a bot has been
+    # handed a task it cannot do and a reason to wait.
     st.info(
-        "**Add Megan and Eve to any channel you name here.** Lucy cannot post "
-        "into a room she has not been invited to, so a channel without them "
-        "in it cannot be switched on — this is the most common reason a "
-        "sign-up stalls.")
+        "**Add Megan and Eve to any channel you name here.** They cannot "
+        "switch your alerts on for a channel they are not in — this is the "
+        "most common reason a sign-up stalls.")
     alert_channels = []
     for i in range(MAX_CHANNELS):
         label = ("Channel for alerts" if i == 0
@@ -207,8 +211,8 @@ if submitted:
                 "should go.")
             st.markdown("**Two things to do now:**")
             st.markdown(
-                "1. **Add Megan and Eve** to every channel you named. Lucy "
-                "cannot post into a room she has not been invited to.\n"
+                "1. **Add Megan and Eve** to every channel you named — "
+                "they cannot switch it on for a room they are not in.\n"
                 "2. **Leave that computer on** during selling hours — on "
                 "power, lid open, on wifi. Nothing posts while it is asleep.")
         else:
