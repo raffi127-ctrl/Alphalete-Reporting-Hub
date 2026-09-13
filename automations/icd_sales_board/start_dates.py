@@ -332,7 +332,8 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
                                     const c = tr.querySelector('td,th');
                                     return c ? c.innerText.replace(/\s+/g,' ').trim() : '';
                                 })
-                                .filter(t => t && t.length < 46)
+                                .filter(t => t && t.length < 46 &&
+                                        /bob|book|show|train|first day/i.test(t))
                                 .join(' | ')""")[:400]
                 except Exception:   # noqa: BLE001
                     _LAST_DIAG["headers"] = "unreadable"
