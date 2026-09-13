@@ -66,19 +66,26 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
 
 
 def notify(rec: IcdSignup, *, send: bool = False, link: str = "",
-           log=print) -> bool:
+           log=print) -> "Tuple[bool, str]":
+    """(posted, why_not). The reason is RETURNED, not just logged.
+
+    On Streamlit Cloud a log line goes nowhere anybody will read, so a failed
+    ping used to be pure silence: the sign-up sat on the tab and nobody was
+    told it existed. Megan's own test on 2026-09-13 landed perfectly and
+    pinged nothing, and the only way to find out why was to go looking.
+    """
     head, detail = lines(rec, link)
     log(head)
     for d in detail:
         log("   %s" % d)
     if not send:
-        return False
+        return False, "not sending"
     try:
         from automations.icd_alerts import offices as O, post as P
         ts = P._slack(O.OPS_CHANNEL, head)
         P._slack(O.OPS_CHANNEL, "\n".join(detail), thread_ts=ts)
-        return True
+        return True, ""
     except Exception as e:  # noqa: BLE001 — the sign-up is already saved
-        log("could not post the sign-up alert: %s: %s"
-            % (type(e).__name__, str(e)[:120]))
-        return False
+        why = "%s: %s" % (type(e).__name__, str(e)[:160])
+        log("could not post the sign-up alert: %s" % why)
+        return False, why

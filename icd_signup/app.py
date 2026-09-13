@@ -230,12 +230,27 @@ if submitted:
 
         try:
             from automations.icd_signup import request_notify
-            request_notify.notify(saved, send=True, link=link,
-                                  log=lambda *a, **k: None)
-        except Exception:  # noqa: BLE001 — their sign-up is already saved
-            pass
+            pinged, why = request_notify.notify(saved, send=True, link=link,
+                                                log=lambda *a, **k: None)
+        except Exception as e:  # noqa: BLE001 — their sign-up is already saved
+            pinged, why = False, "%s: %s" % (type(e).__name__, str(e)[:160])
+        if not pinged and why:
+            # WRITE IT WHERE SOMEBODY WILL SEE IT. A log line on Streamlit
+            # Cloud goes nowhere; the row is the thing Megan actually looks
+            # at, so the row carries the reason nobody was told.
+            try:
+                store.set_status(saved.office_key, saved.status,
+                                 note="no Slack ping — %s" % why)
+            except Exception:  # noqa: BLE001
+                pass
+
+        # NOT "that is in" (Megan 2026-09-13: "it shouldn't say 'thanks -
+        # that's it' when there is another step"). Their sign-up is saved, but
+        # the computer is not set up and that is the half that matters -- a
+        # green tick reads as finished and is how somebody closes the tab.
         st.success(
-            "Thanks %s — that is in." % (owner.split()[0] if owner else "you"))
+            "Got it, %s — now there is one more step."
+            % (owner.split()[0] if owner else "thanks"))
 
         if link:
             # THEY SET UP NOW, NOT AFTER WE GET ROUND TO THEM. The key is

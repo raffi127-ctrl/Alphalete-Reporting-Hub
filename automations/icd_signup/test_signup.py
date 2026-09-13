@@ -127,8 +127,19 @@ class TheAlert(unittest.TestCase):
     def test_a_failed_post_is_not_a_failed_signup(self):
         with mock.patch("automations.icd_alerts.post._slack",
                         side_effect=RuntimeError("slack down")):
-            self.assertFalse(N.notify(_rec(), send=True,
-                                      log=lambda *a, **k: None))
+            posted, why = N.notify(_rec(), send=True, log=lambda *a, **k: None)
+        self.assertFalse(posted)
+        # AND IT SAYS WHY. On Streamlit Cloud a log line goes nowhere anybody
+        # reads, so a failed ping was pure silence -- the sign-up sat on the
+        # tab and nobody was told it existed (2026-09-13).
+        self.assertIn("slack down", why)
+
+    def test_a_good_post_reports_no_reason(self):
+        with mock.patch("automations.icd_alerts.post._slack",
+                        return_value="ts1"):
+            posted, why = N.notify(_rec(), send=True, log=lambda *a, **k: None)
+        self.assertTrue(posted)
+        self.assertEqual(why, "")
 
 
 if __name__ == "__main__":
