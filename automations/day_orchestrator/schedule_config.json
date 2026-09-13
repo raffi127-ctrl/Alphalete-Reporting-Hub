@@ -5884,7 +5884,7 @@
       "on_scheduler": true,
       "machine": "Lucy 1",
       "order": 58,
-      "_note": "Eve 2026-09-13: the DAILY run of the 'Org Active Headcount' tab (gid 1529537631, renamed from '... Test 2' that day; the old 'Org Active Headcount Board' is hidden). Every day it (1) rolls the tab when its week is behind the reporting week — first true on TUESDAY, same as the ORG / Country / All Campaigns boards — and (2) fills every completed day still empty: Fiber/NDS/B2B/BOX off the Country Tracker PNGs of the NEXT day's #alphalete-sales thread (a post shows the day before), Retail NL off SARA (focus-report count), JE off Productive Rep Count (yesterday only). A day that could not be collected is '-'; a source not posted yet leaves the cell empty for the next run. Waits on slack:owner_tracker_pngs so it never reads a half-posted thread. Runs on Lucy 1: its Slack token is the one that can download the PNGs. Built dry (no --apply) until Eve checks the first plan.",
+      "_note": "Eve 2026-09-13: the DAILY run of the 'Org Active Headcount' tab (gid 1529537631, renamed from '... Test 2' that day; the old 'Org Active Headcount Board' is hidden). Every day it (1) rolls the tab when its week is behind the reporting week — first true on TUESDAY, same as the ORG / Country / All Campaigns boards — and (2) fills every completed day still empty: Fiber/NDS/B2B/BOX off the Country Tracker PNGs of the NEXT day's #alphalete-sales thread (a post shows the day before), Retail NL off SARA (focus-report count), JE off Productive Rep Count (yesterday only). A day that could not be collected is '-'; a source not posted yet leaves the cell empty for the next run. Waits on slack:owner_tracker_pngs so it never reads a half-posted thread. Runs on Lucy 1: its Slack token is the one that can download the PNGs. LIVE (--apply) since 2026-09-13 — Eve: 'si, carga el headcount del sabado! Esto tiene que correr ahora todos los dias'.",
       "display_name": "Org Active Headcount - Daily",
       "source_type": "tableau",
       "data_sources": [
@@ -5893,7 +5893,9 @@
       "command": [
         "automations.org_active_headcount.daily"
       ],
-      "base_args": [],
+      "base_args": [
+        "--apply"
+      ],
       "cadence": {
         "weekdays": [
           0,
