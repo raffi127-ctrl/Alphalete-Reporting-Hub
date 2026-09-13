@@ -2168,7 +2168,8 @@
       "verify": null
     },
     "org_active_headcount": {
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "_off_scheduler_note": "TURNED OFF 2026-09-13 (Eve: 'apaga el reporte viejo de los lunes'). It wrote the old weekly tab 'Org Active Headcount Board', now hidden; the production tab is 'Org Active Headcount', filled every day by org_active_headcount_daily. Kept for a manual rerun only.",
       "order": 39.5,
       "machine": "Lucy 3",
       "_note": "Weekly ACTIVE HEADCOUNT for the six campaigns on the 'Active Headcout Alphalete Org Board' tab. Runs MONDAY right after alphalete_org_focus (order 39) on the SAME machine, and that ordering is the whole point: every number it writes is one the focus reports have just pulled, so it re-reads their crosstabs off disk instead of opening its own Tableau session. Sources per campaign: ATT Fiber + B2B = 'Rep Count' off the two one-pagers (on a MONDAY that is the plain/(TW) sheet, NOT (LW) - the (LW) twin is two weeks back on a Monday and reading it fills every cell with a week-old number that looks perfectly plausible); ATT NDS = 'Rep Count' off TT-LineN/P Detail; BOX = 'Total Rep Count' off BoxDailyTracker / 'Daily Tracker Metrics' with the week pinned under that view's OWN caption 'Sale Date Weekending' (the usual '(mon-sun)' wording is ignored in silence); Retail NL/Internet = distinct reps with a sale off the SARA scrape; Retail JE = 'Productive Rep Count' off JustEnergyRTL / 'Weekly Metrics by ICD'. The run rolls the week first, then fills, then sorts each box high->low. A campaign whose source is down is left UNTOUCHED, never zeroed, and the run still exits 0 so one dead view does not cost the other five their week. NDS and B2B cannot be asked about a PAST week at all (no date control), so a missed Monday is backfilled from the tracker screenshots via output/hc_fill_from_trackers.py - not by re-running this.",
