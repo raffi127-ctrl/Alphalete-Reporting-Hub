@@ -80,12 +80,12 @@ def build(lines, today: Optional[dt.date] = None) -> Dict:
             continue
         if _sp_date(ln.get(POSTED_COL)) is not None:
             continue                      # activated -> not pending
-        # Carlos 2026-09-13: "for the screenshots specifically, let's only
-        # have the ones that are delivered. The rest of them can stay on the
-        # order log, the ones that are shipped and whatnot." Delivered gear
-        # waiting on activation is the chase list; in-transit resolves on
-        # its own and lives in the workbook.
-        if "delivered" not in status.lower():
+        # Carlos 2026-09-13: the screenshot is the chase list — "Port issue
+        # and port approved: I want to see those. Delivered: I want to see
+        # it. Pending and shipped: good to not be on the screenshot." The
+        # rest stays on the Order Log workbook.
+        s_low = status.lower()
+        if not ("delivered" in s_low or "port" in s_low):
             continue
         row = dict(ln)
         hit = attrs.get(norm_tn(str(row.get("spe.TN") or "")))
@@ -116,14 +116,14 @@ def build(lines, today: Optional[dt.date] = None) -> Dict:
             for cells, status, rep, sale, business in raw_rows]
 
     n = len(rows)
-    subtitle = ("AT&T lines DELIVERED but not activated yet (last 31 days of "
-                "sales), by sales rep — {} as of {}. Everything still in "
-                "transit or processing stays on the Order Log workbook."
+    subtitle = ("AT&T lines DELIVERED or in PORTING, not activated yet (last "
+                "31 days of sales), by sales rep — {} as of {}. Pending / "
+                "shipped lines stay on the Order Log workbook."
                 .format("{} line{}".format(n, bp.plural(n)) if n
                         else "none right now",
                         today.strftime("%B %d, %Y").replace(" 0", " ")))
     return {"today": today, "count": n, "subtitle": subtitle,
-            "title": "Pending orders — delivered, not yet activated",
+            "title": "Pending orders — delivered / porting, not yet activated",
             "columns": cols, "color_fn": _color_fn,
             "sections": [{"key": "pending", "title": None, "rows": rows,
                           "reps": bp.by_rep(rows),
