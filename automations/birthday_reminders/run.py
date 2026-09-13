@@ -134,10 +134,15 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
         _publish("problem", str(e)[:200])
         return 1
 
-    logfn("%s %s to %r (%d participants)"
+    # %s, not %d: find_groups returns `participants` as a STRING on Lucy 1
+    # (AppleScript hands back text), and a %d there raised TypeError AFTER the
+    # send had already gone out -- the send succeeds and the run reads failed.
+    # The unit test passed because it used an int. Caught only by running on the
+    # real machine (2026-09-13).
+    logfn("%s %s to %r (%s participants)"
           % ("✅ Texted" if not dry_run else "(dry run) would text",
              ", ".join(v.name for v in p["send"]),
-             res.get("resolved_name"), res.get("participants", 0)))
+             res.get("resolved_name"), res.get("participants", "?")))
     if not dry_run:
         _publish("success", "texted %d birthday(s)" % len(p["send"]))
     return 0

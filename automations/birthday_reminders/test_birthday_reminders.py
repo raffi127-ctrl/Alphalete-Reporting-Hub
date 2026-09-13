@@ -387,6 +387,22 @@ class Sending(unittest.TestCase):
         """Megan is still getting the chat name. Until then: no send, exit 1."""
         self.assertEqual(self._run(""), 1)
 
+    def test_participants_may_come_back_as_a_STRING(self):
+        """find_groups returns it as text on Lucy 1. A '%d' there raised
+        TypeError AFTER the send had gone out -- message delivered, run marked
+        failed. The original test used an int and sailed past it."""
+        from automations.b2b_dispositions import text_post
+        with mock.patch.object(text_post, "send_text_to_group",
+                               return_value={"resolved_name": "Admin Staff",
+                                             "participants": "9"}):
+            self.assertEqual(self._run("Admin Staff", dry_run=True), 0)
+
+    def test_a_missing_participants_count_is_not_fatal_either(self):
+        from automations.b2b_dispositions import text_post
+        with mock.patch.object(text_post, "send_text_to_group",
+                               return_value={"resolved_name": "Admin Staff"}):
+            self.assertEqual(self._run("Admin Staff", dry_run=True), 0)
+
     def test_a_configured_chat_goes_through_text_post(self):
         from automations.b2b_dispositions import text_post
         with mock.patch.object(text_post, "send_text_to_group",

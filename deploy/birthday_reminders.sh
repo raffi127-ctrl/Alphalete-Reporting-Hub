@@ -52,4 +52,9 @@ echo "[$(date)] birthday-reminders finished exit=$ST" >> "$LOG_FILE"
 # No-show marker: the agent FIRED. A missing marker past the slot means launchd
 # never ran it, which is the only silent-no-fire signal there is.
 [ "$ST" = "0" ] && touch "output/logs/.birthday-reminders-ran-$(date +%Y-%m-%d)" 2>/dev/null || true
-exit 0
+
+# PROPAGATE the real status. Several wrappers here end `exit 0` so launchd never
+# marks them failed; that is wrong for this one. A run that couldn't reach the
+# chat is a real miss somebody has to see, and `exit 0` is exactly how a failure
+# reads green. [[exit-0 alone is not green]]
+exit "$ST"
