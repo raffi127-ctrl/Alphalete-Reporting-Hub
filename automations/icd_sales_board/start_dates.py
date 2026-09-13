@@ -198,9 +198,22 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
         for _ in range(20):
             page.wait_for_timeout(750)
             try:
-                if page_week(page) == wk_start and page.evaluate(
-                        "(w) => document.body.innerText.includes(w)",
-                        want_header):
+                if page_week(page) == wk_start:
+                    # The box is the server's own answer, so this is the test.
+                    # The header string is NOT a test — it is my formatting
+                    # guess, and requiring it was rejecting weeks that had in
+                    # fact opened. Record the real headers instead: the same
+                    # guess is what detail_href matches day columns on, so it
+                    # is also why every opened week yielded nothing.
+                    if "headers" not in _LAST_DIAG:
+                        try:
+                            _LAST_DIAG["headers"] = page.evaluate(
+                                r"""() => [...document.querySelectorAll('table tr')]
+                                        .map(r => r.innerText.replace(/\s+/g,' ').trim())
+                                        .filter(t => /\d{4}|Mon|Sat|Sun/.test(t))[0]
+                                        || '(no dated row)'""")[:200]
+                        except Exception:   # noqa: BLE001
+                            _LAST_DIAG["headers"] = "unreadable"
                     return True
             except Exception:   # noqa: BLE001 — navigation destroyed the context
                 continue
@@ -276,11 +289,11 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     # Only the LANDING goes on the line — the status view truncates it at a
     # fixed width, and the box is already known.
     landed = _LAST_DIAG.get("landed")
-    why = f" · {_LAST_DIAG.get('raised', '')} landed: {landed}" if (
-        opened < len(weeks) and landed) else ""
-    log(f"  {owner}: {len(found)} start date(s) between {start} and {end} "
-        f"— {opened}/{len(weeks)} week(s) opened{why}")
-    return {v[0]: v[1] for v in found.values()}
+    why = ""
+    if _LAST_DIAG.get("headers"):
+        why = f" · headers: {_LAST_DIAG['headers']}"
+    elif opened < len(weeks) and landed:
+        why = f" · {_LAST_DIAG.get('raised', '')} landed: {landed}"
 
 
 def store(owner: str, dates: dict, sheet_id: str = SHEET_ID, log=print) -> int:
