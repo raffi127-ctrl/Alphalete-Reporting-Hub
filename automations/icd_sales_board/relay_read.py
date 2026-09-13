@@ -121,6 +121,30 @@ def read_all() -> dict:
     return dict(out)
 
 
+def worked_names(office_key: str, start=None, end=None) -> set:
+    """Reps who were WORKING but may have sold nothing.
+
+    The relay carries a second list beside the sales: who ran a credit check.
+    A credit check is a rep in front of a customer, so a name there with no
+    sale is somebody who worked and blanked — which is exactly the row an
+    owner opens a board to find. Without this they are simply absent, and an
+    absent rep reads as a rep who was not there."""
+    out = set()
+    for row in _rows():
+        if str(row.get(COL_OFFICE) or "").strip().lower() != (
+                office_key or "").strip().lower():
+            continue
+        day = _day(row.get(COL_DAY))
+        if day is None:
+            continue
+        if (start is not None and day < start) or (end is not None
+                                                   and day > end):
+            continue
+        out.update(str(n).strip() for n in _loads(row.get(COL_RECORDS))
+                   if str(n).strip())
+    return out
+
+
 def for_office(office_key: str, start=None, end=None) -> dict:
     """{date: {REP: metrics}} for one office, optionally bounded."""
     days = read_all().get((office_key or "").strip().lower(), {})

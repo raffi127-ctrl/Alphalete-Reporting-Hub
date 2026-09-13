@@ -56,6 +56,32 @@ RAF_ICD = "Rafael Hidalgo"
 RELAY_MEASURES = ["Int", "Int Up", "DTV", "NL"]
 
 
+# Totals read as a different KIND of number from the cells around them — a
+# column that sums a row, and a row that sums the board. Tinting both says so
+# without a legend. Grey-blue at low alpha rather than a theme colour: it has
+# to sit under black text on white AND on dark, and it must not look like the
+# green/red that means pass/fail everywhere else on this site.
+_TOTAL_TINT = "background-color:rgba(70,110,160,.13)"
+_TOTAL_TINT_STRONG = "background-color:rgba(70,110,160,.22)"
+
+
+def _style_totals(df, total_col: str = "Total units", total_row: str = ""):
+    """Tint the totals column and the totals row, with their intersection
+    darker so the grand total reads as the corner it is."""
+    # Resolved INSIDE the function: a default argument is evaluated when the
+    # module is imported, and this sits above where TOTALS_LABEL is defined.
+    total_row = total_row or TOTALS_LABEL
+    out = pd.DataFrame("", index=df.index, columns=df.columns)
+    if total_col in df.columns:
+        out[total_col] = _TOTAL_TINT
+    is_total = df.iloc[:, 0].astype(str).str.strip() == total_row
+    for i in df.index[is_total]:
+        out.loc[i, :] = _TOTAL_TINT
+        if total_col in df.columns:
+            out.loc[i, total_col] = _TOTAL_TINT_STRONG
+    return out
+
+
 def _apps(m: dict) -> int:
     """The board's own Apps: Int + DTV + NL, upgrades deliberately LEFT OUT.
 
@@ -1564,6 +1590,13 @@ def relay_board(icd: str, office_key: str) -> None:
     # cannot use, because the blanks are the thing they are looking for.
     roster = {r.name.strip().lower(): r for r in R.load(office_key)}
     names = {n.strip().lower(): n for n in by_rep}
+    # Plus anyone who ran a CREDIT CHECK this week: that is a rep in front of
+    # a customer, so a name there with no sale worked and blanked. On Cyrus's
+    # first relayed day three reps did exactly that and none of them appeared.
+    from automations.icd_sales_board import relay_read as RL
+    for n in RL.worked_names(office_key, week_ending - dt.timedelta(days=6),
+                             week_ending):
+        names.setdefault(n.strip().lower(), n)
     for low, rep in roster.items():
         names.setdefault(low, rep.name)
 
@@ -1614,8 +1647,12 @@ def relay_board(icd: str, office_key: str) -> None:
         for c in grid[0]:
             cfg[c] = dict(cfg.get(c) or {}, disabled=True)
 
+    # Streamlit paints Styler output onto NON-editable columns only, which is
+    # why the tint survives: the measures are always locked and only the three
+    # owner columns ever unlock.
+    frame = pd.DataFrame(grid).astype("string").fillna("")
     edited = st.data_editor(
-        pd.DataFrame(grid).astype("string").fillna(""),
+        frame.style.apply(_style_totals, axis=None),
         use_container_width=True, hide_index=True, num_rows="fixed",
         column_config=cfg, height=_grid_height(len(grid)),
         key=f"relaygrid_{office_key}_{week_ending}")
