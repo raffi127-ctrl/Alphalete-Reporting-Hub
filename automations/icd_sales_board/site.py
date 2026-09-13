@@ -408,6 +408,29 @@ def _ord(n: int) -> str:
     return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
 
 
+# The vital cards borrow the board's own palette rather than inventing
+# one: the measure cards take the product colours off Raf's header fills,
+# and the headline takes the totals tint. Low alpha, so the NUMBER still
+# carries — which is the whole reason the card exists.
+def _card_style(label: str) -> str:
+    """The card's tint, from the board's own palette rather than a new one.
+
+    METRIC_COLORS is resolved INSIDE the function: it is defined further
+    down this module, and reading it at import time raised NameError on
+    load — the same trap as _style_totals' default argument."""
+    colour = METRIC_COLORS.get(label) if label in (
+        "Int", "Int Up", "DTV", "NL") else None
+    if colour:
+        return f"background:{colour}14;border-color:{colour}55;"
+    if label in ("Total units", "Apps"):
+        return ("background:rgba(70,110,160,.10);"
+                "border-color:rgba(70,110,160,.35);")
+    if label == "Selling reps":
+        return ("background:rgba(147,196,125,.14);"
+                "border-color:rgba(147,196,125,.5);")
+    return ""
+
+
 def _vital(col, label: str, value: str, hit=None, goal: str = "",
            mine: bool = False, delta=None, is_pct: bool = False,
            inverse: bool = False, note: str = "") -> None:
@@ -456,7 +479,8 @@ def _vital(col, label: str, value: str, hit=None, goal: str = "",
                      f'{"your goal" if mine else "goal"} {goal}</span>')
 
     col.markdown(
-        f'<div title="{note}" style="border:1px solid rgba(128,128,128,.25);'
+        f'<div title="{note}" style="{_card_style(label)}'
+        f'border:1px solid rgba(128,128,128,.25);'
         f'border-radius:10px;padding:.7rem .9rem;height:112px;'
         f'margin-bottom:.6rem;'
         f'box-sizing:border-box;display:flex;flex-direction:column;'
@@ -1861,52 +1885,20 @@ def relay_board(icd: str, office_key: str) -> None:
         f"Sales board · Monday {started.strftime('%b')} "
         f"{_ord(started.day)} – Sunday {week_ending.strftime('%b')} "
         f"{_ord(week_ending.day)}")
-    # A PART WEEK HAS TO SAY SO LOUDLY. Megan read a one-day board as a week
-    # and asked why the numbers were so low (2026-09-13) — they were right,
-    # they were just one day. A caption under the table was not enough, so the
-    # gap is stated above the numbers, in the words "N of M days".
-    expected = [started + dt.timedelta(days=i) for i in range(7)
-                if started + dt.timedelta(days=i) <= dt.date.today()]
-    # COUNT EVERY SOURCE, not just the relay. This used to count relayed days
-    # alone and shouted "1 of 7 days — NOT a full week's total" across a board
-    # Tableau had filled for six of them.
-    covered = set(days) | {d for r in _settled_reps(icd, week_ending).values()
-                           for d in r} | set(_settled_days(icd, week_ending))
-    missing = [d for d in expected if d not in covered]
-    if missing:
-        # Count what the BOARD has, from every source — not what the relay
-        # sent. Saying "1 of 7" while listing only Sunday as missing is a
-        # contradiction the reader has to resolve, and they should not have to.
-        have = [d for d in expected if d in covered]
-        st.warning(
-            f"**{len(have)} of {len(expected)} days** so far this week. "
-            + "Missing: "
-            + ", ".join(f"{d.strftime('%a')} {d.strftime('%b')} {_ord(d.day)}"
-                        for d in missing)
-            + ". A missing day is one neither Tableau nor the office's own "
-              "machine has reported — not a day nobody sold.", icon="📅")
+    # No "N of 7 days / Missing:" banner (Megan 2026-09-13): "they will know
+    # the day isn't complete." The heading carries the dates and an unreported
+    # day is blank, so it only restated what the table already shows.
 
-    # TWO SEPARATE EXPANSIONS (Megan 2026-09-13). One toggle put the per-day
-    # product split AND the owner fields on screen together — 35+ columns,
-    # "hard to see". They answer different questions, so they open separately
-    # and either one alone stays readable.
-    c_a, c_b = st.columns(2)
-    products = c_a.toggle(
-        "Products by day", value=False, key=f"relayprod_{office_key}",
-        help="Int / Int Up / DTV / NL under every day, the way the sheet "
-             "lays it out. Collapsed, hover a day instead.")
-    expand = c_b.toggle(
-        "Rep details", value=False, key=f"relayexp_{office_key}",
-        help="Team, Leadership and Status — and where they are edited.")
-    edit = False
-    if expand:
-        edit = st.toggle("Edit rows", value=False, key=f"relayed_{office_key}",
-                         help="Turn on to change Team, Leadership or Status.")
+    # TWO SEPARATE EXPANSIONS, drawn DOWN BESIDE THE COLOUR KEY (Megan
+    # 2026-09-13) — directly above the table they change, rather than above
+    # the vitals they do not. Their values are needed here to build the rows,
+    # so the value is read from state and the widget is rendered into a slot
+    # further down: on a rerun the click has already landed, which is exactly
+    # how Streamlit behaves anyway.
+    prod_key, exp_key = f"relayprod_{office_key}", f"relayexp_{office_key}"
+    products = bool(st.session_state.get(prod_key, False))
+    expand = bool(st.session_state.get(exp_key, False))
 
-    # EVERY REP THE OWNER KEEPS, not only the ones who sold. SaraPlus lists
-    # what happened, so a rep who blanked is simply absent from it — and a
-    # board that quietly drops whoever sold nothing is the one board an owner
-    # cannot use, because the blanks are the thing they are looking for.
     # REP ROWS COME FROM TABLEAU for closed days (Megan pointed at the
     # ALLICDSALLREPSBD view, 2026-09-13). It carries Owner + Rep + product +
     # day for EVERY office, so a rep-level board no longer waits on that
@@ -2111,20 +2103,9 @@ def relay_board(icd: str, office_key: str) -> None:
     for col, (label, value) in zip(cols, labels):
         _vital(col, label, str(value), None)
 
-    settled_days = [d for d in settled if d <= today]
-    if settled_days:
-        st.caption(
-            f"Office totals above are SETTLED from Tableau for "
-            f"{len(settled_days)} day(s) — {min(settled_days):%b %d} to "
-            f"{max(settled_days):%b %d} — with today live from SaraPlus. "
-            "Reps come from the same settled pull, so the rows below add up "
-            "to the boxes above."
-            + (f" Selling reps leaves out {first_week} rep(s) in their first "
-               "week — new starts are counted in their own section, the way "
-               "the board does it." if first_week else ""))
-    else:
-        st.caption("No settled Tableau day for this week yet — everything "
-                   "here is the live SaraPlus reading.")
+    # No "settled from Tableau" caption (Megan 2026-09-13). Where the
+    # numbers come from is not what an owner is reading the board for,
+    # and the first-week note now lives with the Selling reps card.
 
     # The totals line is the last ROW of the grid, not a table underneath: a
     # separate table scrolls on its own and stops lining up with its columns
@@ -2160,7 +2141,7 @@ def relay_board(icd: str, office_key: str) -> None:
     cfg["Tenure"] = dict(cfg.get("Tenure") or {}, width=90, disabled=True,
                          help="Weeks since their first day — computed from "
                               "the start date, and the colour on the name.")
-    if edit:
+    if expand:
         cfg["Team"] = st.column_config.SelectboxColumn(
             options=[BLANK_OPTION] + sorted({(r.team or "").strip()
                                              for r in roster.values()
@@ -2181,7 +2162,15 @@ def relay_board(icd: str, office_key: str) -> None:
     if not expand and not products:
         # Read-only anyway, so the hover table costs nothing and buys the
         # per-day breakdown on hover.
-        st.markdown(_colour_key(), unsafe_allow_html=True)
+        c_key, c_a, c_b = st.columns([5, 2, 2])
+        with c_key:
+            st.markdown(_colour_key(), unsafe_allow_html=True)
+        c_a.toggle("Products by day", key=prod_key,
+                   help="Int / Int Up / DTV / NL under every day. Collapsed, "
+                        "hover a day instead.")
+        c_b.toggle("Rep details", key=exp_key,
+                   help="Team, Leadership and Status — and where they are "
+                        "edited.")
         st.markdown(_hover_table(grid, splits,
                                  [d.strftime("%a") for d in week_days]),
                     unsafe_allow_html=True)
@@ -2191,6 +2180,16 @@ def relay_board(icd: str, office_key: str) -> None:
             "and Status are edited.")
         relay_wow(office_key)
         return
+
+    c_key, c_a, c_b = st.columns([5, 2, 2])
+    with c_key:
+        st.markdown(_colour_key(), unsafe_allow_html=True)
+    c_a.toggle("Products by day", key=prod_key,
+           help="Int / Int Up / DTV / NL under every day. Collapsed, "
+            "hover a day instead.")
+    c_b.toggle("Rep details", key=exp_key,
+           help="Team, Leadership and Status — and where they are "
+            "edited.")
 
     frame = pd.DataFrame(grid).astype("string").fillna("")
 
@@ -2223,7 +2222,7 @@ def relay_board(icd: str, office_key: str) -> None:
         column_config=cfg, height=_grid_height(len(grid)),
         key=f"relaygrid_{office_key}_{week_ending}")
 
-    if edit:
+    if expand:
         out = [r for r in edited.to_dict("records")
                if r.get("Rep") != TOTALS_LABEL]
         c_save, c_disc, _ = st.columns([1, 1, 2])
