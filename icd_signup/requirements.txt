@@ -1,0 +1,12 @@
+# Streamlit Community Cloud deps for the Lucy Eco sign-up app
+# (entry point: icd_signup/app.py). Without this file the Cloud deploy never
+# installs gspread/google-auth, and store.submit() silently falls back to a
+# LOCAL DRAFT on Streamlit's disposable filesystem -- the office's sign-up
+# would look accepted and reach nobody.
+#
+# Mirrors disposition_signup/requirements.txt (same Sheets-backed pattern).
+streamlit>=1.30
+gspread>=5.10
+google-auth>=2.20
+slack_sdk>=3.21        # the corrections-channel ping when a sign-up lands
+certifi>=2023.7        # SSL bundle for the Slack client

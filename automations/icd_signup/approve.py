@@ -79,6 +79,15 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
 
     store.set_status(rec.office_key, STATUS_APPROVED,
                      note="approved %s" % rec.submitted_at)
+    # BUST THE ROSTER CACHE. offices.sheet_offices() holds its read for ten
+    # minutes so the poster is not doing a Sheets round trip every two, but
+    # the moment somebody approves an office is exactly when that staleness
+    # is felt as "I approved them and nothing happened".
+    try:
+        from automations.icd_alerts import offices as O
+        O.SHEET_CACHE.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001 — it expires on its own anyway
+        pass
     log("")
     log("%s is live. Their numbers start appearing within a few minutes of "
         "their laptop's next check-in." % rec.owner)
