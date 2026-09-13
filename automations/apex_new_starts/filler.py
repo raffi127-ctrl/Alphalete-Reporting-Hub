@@ -2087,6 +2087,11 @@ PAGE = """<!doctype html><meta charset="utf-8">
     then <b>Bookmarks → Open Bookmarks Manager → ⋮ → Add new bookmark</b>,
     and paste into the URL box.
   </div>
+  <div style="margin-top:14px;font-size:13px;color:#888">
+    Clicking it does <b>nothing at all</b>? That is an old copy of the button.
+    A current one is <b>{stublen} characters</b> — check it in Bookmarks →
+    Open Bookmarks Manager, or just drag this one over the top.
+  </div>
 </div>
 
 <ol>
@@ -2164,4 +2169,8 @@ def build_page(people, week: str, stamp: str, notes=None) -> str:
         # and the textarea hands back the wrong characters.
         data=build_js(people, week, build)[len("javascript:"):]
              .replace("&", "&amp;").replace("<", "&lt;"),
-        rows="\n".join(rows), stamp=stamp)
+        rows="\n".join(rows), stamp=stamp,
+        # "Nothing happens when I click it" has cost us two rounds now. A
+        # bookmarklet that will not parse cannot report anything -- no code of
+        # ours runs at all -- so the only check is the text itself.
+        stublen=f"{len(build_stub()):,}")
