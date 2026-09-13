@@ -1056,8 +1056,16 @@ def main(argv=None, *, office_key: str | None = None) -> int:
 
     to_named = (target_chan == o.channel_id)
     _dest = o.channel_name if to_named else f"DM/{target_chan}"
-    print(f"=== {o.label} daily metrics — owner={o.owner!r} → {_dest} "
-          f"({target_chan}) — {mode.upper()} ===")
+    # The banner is how a human confirms WHERE this run is about to send before
+    # it sends. An email office has no channel, so printing the channel fields
+    # left it reading "→  ()" — a destination of nothing, on the one line that
+    # exists to show the destination.
+    if o.emails_only:
+        print(f"=== {o.label} daily metrics — owner={o.owner!r} → "
+              f"{dest_name_email(o)} — {mode.upper()} ===")
+    else:
+        print(f"=== {o.label} daily metrics — owner={o.owner!r} → {_dest} "
+              f"({target_chan}) — {mode.upper()} ===")
     for m in wired:
         print(f"   • {m['label']}  ({m['module']})")
 

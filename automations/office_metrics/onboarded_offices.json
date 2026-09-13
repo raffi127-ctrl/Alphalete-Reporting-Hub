@@ -266,5 +266,48 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "joseph",
+    "report_id": "joseph_metrics",
+    "label": "Joseph's Local Office",
+    "owner": "Joseph Logan",
+    "channel_id": "",
+    "channel_name": "",
+    "sheet_id": "1rDuey-hcHzJP8T7CKgs2iWgBvFX7wtCryHF0OiPc0qw",
+    "knocks_office": "Joseph Logan",
+    "ov_account": "23376",
+    "owner_office": "",
+    "business_name": "Logan Legacy Group",
+    "website": "https://loganlegacygroup.com",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "cancels",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "cancels": 3,
+      "churn_wl": 4,
+      "activations": 5
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "campaign": "nds_d2d",
+    "notes": "",
+    "email_to": [
+      "joseph@loganlegacygroup.com"
+    ],
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

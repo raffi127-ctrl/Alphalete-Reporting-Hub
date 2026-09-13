@@ -173,9 +173,24 @@ def validate(rec: TrackerRecord, *,
             "This office has BOTH a Slack channel and email delivery. Pick one — "
             "two destinations means nobody can say where the day actually went.")
         _mails = []                      # the both-case is already reported
+    # A channel id that CANNOT be a channel id never reaches the registry. The
+    # form's box refuses one at the keystroke, but a request submitted before
+    # that box existed is still sitting on the tab — Joseph Logan's carries
+    # "loganlegacygroup", his company handle, typed into the Slack field because
+    # the form gave an owner with no Slack nowhere else to put it (2026-09-11).
+    # Wired as-is that becomes a channel that cannot exist, failing every morning.
+    # office_onboarding.schema has had this backstop; this is its twin.
+    from automations.shared.onboarding_ui import normalize_channel_id
     seen_ids: set = set()
     for i, (cid, cname) in enumerate([] if rec.emails_only()
                                      else rec.channel_pairs()):
+        if cid.strip() and not normalize_channel_id(cid)[0]:
+            tag = "" if i == 0 else f" (channel {i + 1})"
+            problems.append(
+                f"{cid!r} isn't a Slack channel ID{tag} — that's a name or a "
+                "handle. The ID is a code like C0ABC12DE (channel name in Slack "
+                "→ bottom of the pop-up). If this office has no Slack at all, "
+                "sign it up for email delivery instead.")
         tag = "" if i == 0 else f" (channel {i + 1})"
         if not cid.strip():
             problems.append(f"Slack channel id is empty{tag}.")
