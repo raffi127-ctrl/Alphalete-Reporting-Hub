@@ -5989,31 +5989,33 @@ AUTOMATED_REPORTS = [
             "password, and a login page stops it with a message saying so.\n"
             "**\u2022** Blue Ink is read through its **API key**, so nothing "
             "to open there.\n"
-            "**\u2022** Press **Preflight** first: it checks the day, Blue "
-            "Ink and the Apex login, and opens nothing else.\n\n"
+            "**\u2022** Press **Get this week's setup**. It checks the day "
+            "and Blue Ink, reads the board and everyone's packet, and puts "
+            "the week on your clipboard. It opens nothing and types "
+            "nothing.\n\n"
             "WHAT IT WILL NOT DO\n"
-            "**\u2022** **The Social is typed by you, in a little pop-up.** "
-            "Apex won't save a profile without one, so the run fills "
-            "everything else and then a small window asks for that person's "
-            "number. You type it, it goes straight into the box, and the "
-            "report never holds it \u2014 it isn't read from Blue Ink, and "
-            "it's never logged, printed or saved anywhere.\n"
-            "**\u2022** **It never clicks Save.** You look at the record, add "
-            "the Social, and save it yourself. That is also the duplicate "
-            "check \u2014 you can see whether they are already in Apex before "
-            "anything is committed.\n"
+            "**\u2022** **The Socials are typed by you**, in one table before "
+            "the run starts, with each person's signed W-4 open beside it. "
+            "They are held in that browser tab for that run only \u2014 never "
+            "read from Blue Ink, never logged, never written to this machine "
+            "or anywhere else. Close the tab and they are gone. Two people "
+            "with the same number is caught and named before it will start.\n"
+            "**\u2022** **It does not create anybody.** These people are "
+            "already in Apex on the Pending tab, so their name, user name and "
+            "email are left exactly as they are.\n"
             "**\u2022** **Direct deposit is not touched at all.** Bank "
             "details stay a hand job, on purpose.\n\n"
             "O-NA\n"
             "**O-NA** is off / not available. It is **not** a termination, so "
-            "those people **are** added \u2014 but they are listed separately "
-            "at the end of the preview, because they are the ones most likely "
-            "to be terminated on Monday.\n\n"
+            "those people **are** added \u2014 and they are the ones most "
+            "likely to be terminated on Monday, so they are worth a look.\n\n"
             "WHERE THE FILLING HAPPENS\n"
-            "**Preflight** and **Preview** run anywhere, including from this "
-            "Hub. The actual filling waits for you between records, so it has "
-            "to be run **from Terminal**:\n"
-            "`python -m automations.apex_new_starts.run --assist`\n\n"
+            "**In your own browser**, in the Apex tab you are signed into. "
+            "This card reads the board and the packets and hands you the "
+            "week; the **Fill Apex** bookmark does the typing, page by page, "
+            "and saves each one. Apex has no API and asks for a texted code "
+            "every time, so a person signs in and the filling happens inside "
+            "the tab they are already looking at.\n\n"
             "IF A FIELD DOESN'T MATCH\n"
             "Apex's boxes are found by the **label you read next to them**, "
             "not by position. Anything it can't match with confidence is "
@@ -6061,10 +6063,14 @@ AUTOMATED_REPORTS = [
         "checklist": [
             {"text": "Sign into Apex in this machine's normal Chrome "
                      "(tick remember-this-device on the 2FA prompt)"},
-            {"text": "Run Preflight and check all three lines are green"},
+            {"text": "Press Get this week's setup and wait for the green tick "
+                      "(about a minute)"},
         ],
         "post_run": {
-            "message_success": "\u2705 Read the board and Blue Ink. See the list above for who gets added and who was left out.",
+            # Written for a Preview button that no longer exists -- it told
+            # people to look at a list that was never on the page
+            # (Megan, 2026-09-13: "what list above?").
+            "message_success": "\u2705 This week's setup is on your clipboard. Now open Apex \u2014 Roster \u2192 Employees \u2192 Pending \u2014 and click your Fill Apex bookmark. The run log below says who is in it and who needs something by hand.",
             # Named the Apex login whatever had actually failed -- and two of
             # the three actions never open Apex at all.
             "message_failed": "\u274C Run failed \u2014 the log above says why. Nothing was written to Apex or to the board. If it mentions a login, sign into Apex in this machine's Chrome; if it mentions Blue Ink, the key file is missing.",
