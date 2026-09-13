@@ -699,8 +699,11 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             # different week than the thread it was landing in.
             path = item["capture"](o, out_dir, log, today)
             captured[item["id"]] = path
-            log("  [{}] {}".format(item["id"],
-                                   path.name if path else "no artifact"))
+            log("  [{}] {}".format(
+                item["id"],
+                " + ".join(p.name for p in path)
+                if isinstance(path, (list, tuple))
+                else (path.name if path else "no artifact")))
         except OrderLogNotFresh as nf:
             # Not a failure — the extract just hasn't landed. A later floor pass
             # posts it once it's in. Logged as DEFERRED so it doesn't read as a
