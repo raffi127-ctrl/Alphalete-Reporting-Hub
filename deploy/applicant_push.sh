@@ -232,7 +232,7 @@ case "$OFFICE" in
     export OAT_WALK_DIAG_TAB="OAT Walk Diag 23965"
     export OAT_OFFICE_LABEL="office 23965 · Rafael Hidalgo — 2nd Funnel iMessage Test"
     export OAT_OFFICE_SHORT="office 23965, Raf 2nd funnel"
-    export OAT_REMOVE_NO_PHONE="1"
+    export OAT_REMOVE_NO_PHONE="0"
     # No Slack channel wired yet — flags stay in the diag tab.
     ;;
 esac

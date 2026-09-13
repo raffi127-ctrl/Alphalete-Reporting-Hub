@@ -16,3 +16,10 @@ assert offices.OFFICES["11901"].get("allow_retext") is False
 assert offices.OFFICES["19592"].get("allow_retext") is False
 assert bool({}.get("allow_retext", False)) is False
 print("ok: only 11580 texts; unstated defaults to off")
+
+# 2026-09-13, Carlos: "No one should be getting removed for no contact info."
+# Every office, both flavors, forever — and the run.py branches are dead-coded.
+for _oid, _row in offices.OFFICES.items():
+    assert _row.get("remove_no_phone") is False, _oid
+    assert _row.get("remove_blocked_read") is False, _oid
+print("ok: no-contact removals banned for every office")

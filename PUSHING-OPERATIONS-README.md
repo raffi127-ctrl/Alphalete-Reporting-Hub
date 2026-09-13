@@ -75,10 +75,10 @@ Never "fix" this by merging the offices into one tick.
     OFFICES ONLY: 11580 + 23467), then remove; non-texting offices try the
     override first and only then remove
   - Sent-to-call-list TODAY or future booking → remove as duplicate
-- Resume page won't open: Carlos/Atef offices LEAVE the applicant (our failure
-  never costs a record); audit offices remove as Insufficient Contact Info.
-- No phone anywhere: 11580 leaves them; other offices remove (per-office
-  `remove_no_phone`).
+- Resume page won't open OR no phone found anywhere: **LEAVE the applicant —
+  every office, no exceptions** (Carlos, 9/13: "No one should be getting
+  removed for no contact info"). The run.py branches are dead-coded and the
+  per-office flags are pinned False by test; they flag to a human instead.
 
 ## 5. Guardrails (all fail closed — do not weaken)
 

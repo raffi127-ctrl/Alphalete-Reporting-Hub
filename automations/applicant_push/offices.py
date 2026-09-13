@@ -150,10 +150,10 @@ OFFICES = {
         "post_todo": False,
         # Diagnostic office: never texts anyone. Only Carlos's and Atef's do.
         "allow_retext": False,
-        "remove_blocked_read": True,
+        "remove_blocked_read": False,
         # Matches the policy for every office that is not Carlos's: a resume that
         # opens and carries no number is a confirmed-uncontactable removal.
-        "remove_no_phone": True,
+        "remove_no_phone": False,
     },
     # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit as 19592.
     # Not in ROTATION, posts no to-do list, and never texts an applicant.
@@ -182,8 +182,8 @@ OFFICES = {
         "post_channel": "C09L1S3MQ1E",
         "post_todo": False,
         "allow_retext": False,
-        "remove_blocked_read": True,
-        "remove_no_phone": True,
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
     },
     # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit as 19592.
     # Not in ROTATION, posts no to-do list, and never texts an applicant.
@@ -212,8 +212,8 @@ OFFICES = {
         "post_channel": "C09L1S3MQ1E",
         "post_todo": False,
         "allow_retext": False,
-        "remove_blocked_read": True,
-        "remove_no_phone": True,
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
     },
     # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit as 19592.
     # Not in ROTATION, posts no to-do list, and never texts an applicant.
@@ -242,8 +242,8 @@ OFFICES = {
         "post_channel": "C09L1S3MQ1E",
         "post_todo": False,
         "allow_retext": False,
-        "remove_blocked_read": True,
-        "remove_no_phone": True,
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
     },
     # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit as 19592.
     # Not in ROTATION, posts no to-do list, and never texts an applicant.
@@ -272,8 +272,8 @@ OFFICES = {
         "post_channel": "C09L1S3MQ1E",
         "post_todo": False,
         "allow_retext": False,
-        "remove_blocked_read": True,
-        "remove_no_phone": True,
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
     },
     # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit, run ON
     # LUCY 2 so it can go in parallel with the mini's local runs.
@@ -302,8 +302,8 @@ OFFICES = {
         "post_channel": "C09L1S3MQ1E",
         "post_todo": False,
         "allow_retext": False,
-        "remove_blocked_read": True,
-        "remove_no_phone": True,
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
     },
     # LIVE PUSH OFFICE #3 (Carlos, 2026-09-08: "can we add khalil mansour to
     # list of people we push for"). Safe-default policies until Carlos says
@@ -363,8 +363,8 @@ OFFICES = {
         "post_channel": "",
         "post_todo": False,
         "allow_retext": False,
-        "remove_blocked_read": True,
-        "remove_no_phone": True,
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
     },
 }
 

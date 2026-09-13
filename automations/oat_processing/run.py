@@ -2261,7 +2261,10 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                 # 2026-08-29, on Rashad's office: "if the page isn't opening for
                 # those, can you choose a different removal reason?") Carlos's
                 # and Atef's offices keep the leave-them rule.
-                if getattr(config, "REMOVE_BLOCKED_READ", False):
+                # BANNED 2026-09-13 (Carlos: "No one should be getting removed
+                # for no contact info.") — the flag is ignored for EVERY office;
+                # unreachable applicants stay in the queue and flag to a human.
+                if False and getattr(config, "REMOVE_BLOCKED_READ", False):
                     if _perform_remove(page, NO_CONTACT_REASON):
                         _log(f"    \U0001f5d1 removed (resume page never opened "
                              f"after {n} tries — insufficient contact info): "
@@ -2278,7 +2281,9 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
         elif "no view-resume link" in str(detail):
             # No resume attached to the record at all — nothing to open, so there is
             # no number anywhere: panel blank AND no resume. Uncontactable.
-            if getattr(config, "REMOVE_NO_PHONE", False):
+            # BANNED 2026-09-13 (Carlos): no-contact-info removals are off for
+            # every office, permanently — flag instead.
+            if False and getattr(config, "REMOVE_NO_PHONE", False):
                 if _perform_remove(page, NO_CONTACT_REASON):
                     _log(f"    \U0001f5d1 removed (no resume, no phone — "
                          f"insufficient contact info): {a.first_name} {a.last_name}")
@@ -2292,7 +2297,9 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
             # The resume OPENED and genuinely carries no number. Confirmed
             # uncontactable — distinct from a blocked read, which is OUR failure and
             # must never cost an applicant their record (see _is_blocked_detail).
-            if getattr(config, "REMOVE_NO_PHONE", False):
+            # BANNED 2026-09-13 (Carlos): no-contact-info removals are off for
+            # every office, permanently — flag instead.
+            if False and getattr(config, "REMOVE_NO_PHONE", False):
                 if _perform_remove(page, NO_CONTACT_REASON):
                     _log(f"    \U0001f5d1 removed (no phone on resume — "
                          f"insufficient contact info): {a.first_name} {a.last_name}")
