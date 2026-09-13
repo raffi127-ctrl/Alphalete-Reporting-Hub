@@ -64,6 +64,7 @@ var KEYS_TAB = 'Relay Keys';
 var CHANNELS_TAB = 'Office Channels';
 var KNOCKS_TAB = 'ICD Knocks';
 var FAULTS_TAB = 'ICD Faults';
+var SIGNUP_TAB = 'ICD Signup';
 
 function _book() {
   return SpreadsheetApp.openById(SHEET_ID);
@@ -174,9 +175,50 @@ function doPost(e) {
   }
 }
 
-function doGet() {
-  // Deliberately useless. The relay is write-only for laptops.
-  return _reply({ok: false, error: 'POST only'});
+function doGet(e) {
+  // ONE READ, AND ONLY THE PUBLIC HALF. The relay is otherwise write-only for
+  // laptops. This exists because an office that signs itself up is not in
+  // offices_public.json on GitHub -- that file needs a push, and the sign-up
+  // form runs on Streamlit's servers where there is no repo. The installer
+  // asks here instead.
+  //
+  // WHAT COMES BACK IS ALREADY PUBLIC: owner, label, timezone, selling hours.
+  // The same facts offices_public.json publishes on GitHub for everybody.
+  // NEVER the relay key -- the caller already has to hold theirs to install,
+  // and handing keys out over an unauthenticated GET would undo the whole
+  // point of per-office keys.
+  var office = e && e.parameter ? String(e.parameter.office || '').trim().toLowerCase() : '';
+  if (!office) return _reply({ok: false, error: 'POST only'});
+  var sh = _book().getSheetByName(SIGNUP_TAB);
+  if (!sh) return _reply({ok: false, error: 'no signups'});
+  var rows = sh.getDataRange().getValues();
+  var head = rows[0].map(function (h) { return String(h).trim(); });
+  function col(name) { return head.indexOf(name); }
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][col('office_key')]).trim().toLowerCase() !== office) continue;
+    if (String(rows[i][col('status')]).trim().toLowerCase() === 'declined') {
+      return _reply({ok: false, error: 'not enrolled'});
+    }
+    function v(name, dflt) {
+      var c = col(name);
+      var out = c < 0 ? '' : String(rows[i][c]).trim();
+      return out || dflt;
+    }
+    var owner = v('owner', '');
+    return _reply({ok: true, office: {
+      office_key: office,
+      owner: owner,
+      label: v('office_label', '') || (owner.split(' ')[0] + "'s Local Office"),
+      timezone: v('timezone', 'America/Chicago'),
+      knocks_default_hours: {
+        day_start: v('day_start', '13:30'), day_end: v('day_end', '20:30'),
+        sat_start: v('sat_start', '10:45'), sat_end: v('sat_end', '17:00'),
+        saturday: String(v('saturday', 'TRUE')).toUpperCase().indexOf('T') === 0,
+        tz: v('timezone', 'America/Chicago')
+      }
+    }});
+  }
+  return _reply({ok: false, error: 'unknown office'});
 }
 
 function _keyIsGood(office, key) {

@@ -84,10 +84,29 @@ fetch "automations/icd_alerts/offices_public.json" "offices.json" || fail=1
 # config plus the key from the command line, so the only secret ever in play
 # is the one the reporting team sent to this one office.
 "$PY" - "$OFFICE" "$KEY" <<'PYEOF' || exit 1
-import json, sys
+import json, ssl, sys, urllib.parse, urllib.request
 office_key, relay_key = sys.argv[1], sys.argv[2]
 pub = json.load(open("offices.json"))
 rec = (pub.get("offices") or {}).get(office_key)
+if not rec:
+    # AN OFFICE THAT SIGNED ITSELF UP is not in this file and cannot be: it is
+    # written on GitHub and needs a push, while the sign-up form runs on
+    # Streamlit's servers where there is no repo. So ask the relay, which is
+    # where their sign-up actually landed. Public half only -- no key comes
+    # back, and we already hold ours.
+    try:
+        ctx = ssl.create_default_context()
+        try:
+            import certifi
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            pass
+        url = pub["relay_url"] + "?" + urllib.parse.urlencode({"office": office_key})
+        with urllib.request.urlopen(url, timeout=30, context=ctx) as r:
+            out = json.loads(r.read().decode("utf-8"))
+        rec = out.get("office") if out.get("ok") else None
+    except Exception:
+        rec = None
 if not rec:
     print("\nThat code is for an office I do not recognise (%r)." % office_key)
     print("Check it with the reporting team — nothing has been changed.")

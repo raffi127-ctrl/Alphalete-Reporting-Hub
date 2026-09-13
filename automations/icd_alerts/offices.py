@@ -15,6 +15,7 @@ Adding an office is a row here plus a relay key. Nothing else.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional
 
 
@@ -192,12 +193,127 @@ def office_now(office: "AlertOffice", fallback=None):
         return _dt.datetime.now()
 
 
+
+# ---------------------------------------------------------------------------
+# OFFICES THAT SIGNED THEMSELVES UP.
+#
+# The table above is hand-written and needs a commit and a push. That was the
+# whole four-step enrolment Megan cut down on 2026-09-13 -- and it cannot work
+# at all for the flow she asked for next: the sign-up form runs on Streamlit's
+# servers, not on a machine with this repo, so it can mint a key and write a
+# row but can never write Python. An office that signs up has to become real
+# without anybody pushing anything.
+#
+# So the roster is the code table PLUS the sign-up tab. The CODE ALWAYS WINS
+# on a key that appears in both: kash and cyrus carry hand-checked Slack ids
+# and hours that a form answer must never quietly overwrite.
+#
+# READ THROUGH A FILE CACHE. The poster runs as a fresh process every two
+# minutes, and a Sheets read per tick would spend the quota that the office
+# writes actually need [[reference_sheets_write_quota_429]]. Ten minutes is
+# far quicker than anybody can install.
+# ---------------------------------------------------------------------------
+SHEET_CACHE = (Path.home() / ".config" / "recruiting-report"
+               / "icd_sheet_offices.json")
+SHEET_CACHE_TTL_S = 600
+
+
+def _office_from_signup(row: Dict) -> Optional[AlertOffice]:
+    key = str(row.get("office_key") or "").strip().lower()
+    if not key:
+        return None
+    status = str(row.get("status") or "").strip().lower()
+    def _b(v):
+        return str(v).strip().upper() in ("TRUE", "YES", "Y", "1")
+    saturday = _b(row.get("saturday"))
+    return AlertOffice(
+        key=key,
+        owner=str(row.get("owner") or "").strip(),
+        label=(str(row.get("office_label") or "").strip()
+               or "%s's Local Office" % (str(row.get("owner") or "there")
+                                         .strip().split() or ["there"])[0]),
+        # NEVER ROUTED FROM THE FORM. What they typed is a request on the
+        # 'Office Channels' tab; a human approves it. A sign-up that could
+        # name its own channel would be an office enrolling itself into
+        # somebody else's room.
+        channels=(),
+        timezone=str(row.get("timezone") or "America/Chicago").strip(),
+        # A DECLINED office is switched off; everything else stays on. An
+        # office that has installed but is not approved yet must still be
+        # ACCEPTED by the relay -- its numbers are real and are simply held
+        # until somebody says where they go [[destinations]].
+        active=status != "declined",
+        platform=str(row.get("platform") or "mac").strip().lower(),
+        slack_user_id=str(row.get("slack_user_id") or "").strip(),
+        day_start=str(row.get("day_start") or "13:30").strip(),
+        day_end=str(row.get("day_end") or "20:30").strip(),
+        sat_start=str(row.get("sat_start") or "10:45").strip(),
+        sat_end=str(row.get("sat_end") or "17:00").strip(),
+        saturday=saturday,
+    )
+
+
+def _read_signup_tab() -> List[Dict]:
+    from automations.icd_alerts import post as P
+    from automations.recruiting_report.fill import open_by_key
+    book = open_by_key(P.RELAY_SPREADSHEET_ID)
+    return book.worksheet("ICD Signup").get_all_records()
+
+
+def sheet_offices(force: bool = False) -> Dict[str, AlertOffice]:
+    """Signed-up offices, from the cache unless it is stale.
+
+    NEVER RAISES. This sits under get() and active(), which every posting path
+    calls; an exception here would take out the offices that ARE working in
+    order to report a problem with one that is not.
+    """
+    import json
+    import time
+
+    if not force:
+        try:
+            age = time.time() - SHEET_CACHE.stat().st_mtime
+            if age < SHEET_CACHE_TTL_S:
+                rows = json.loads(SHEET_CACHE.read_text())
+                return {k: o for k, o in
+                        ((r.get("office_key"), _office_from_signup(r))
+                         for r in rows) if k and o}
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        rows = _read_signup_tab()
+    except Exception:  # noqa: BLE001 — fall back to whatever the cache holds
+        try:
+            rows = json.loads(SHEET_CACHE.read_text())
+        except Exception:  # noqa: BLE001
+            return {}
+    else:
+        try:
+            SHEET_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            SHEET_CACHE.write_text(json.dumps(rows, indent=2, default=str))
+        except Exception:  # noqa: BLE001
+            pass
+    out = {}
+    for r in rows:
+        o = _office_from_signup(r)
+        if o:
+            out[o.key] = o
+    return out
+
+
+def all_offices() -> Dict[str, AlertOffice]:
+    """The code table plus the sign-up tab, code winning on a shared key."""
+    merged = dict(sheet_offices())
+    merged.update(OFFICES)
+    return merged
+
+
 def get(key: str) -> Optional[AlertOffice]:
-    return OFFICES.get((key or "").strip().lower())
+    return all_offices().get((key or "").strip().lower())
 
 
 def active() -> List[AlertOffice]:
-    return [o for o in OFFICES.values() if o.active]
+    return [o for o in all_offices().values() if o.active]
 
 
 def destinations(office: "AlertOffice", approved=None):

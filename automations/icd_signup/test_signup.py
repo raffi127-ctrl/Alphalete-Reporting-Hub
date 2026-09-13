@@ -59,56 +59,60 @@ class OfficeNames(unittest.TestCase):
         self.assertTrue(store.office_key_for("!!!"))
 
 
-class NothingExistsBeforeApproval(unittest.TestCase):
+class ApprovalGatesPosting(unittest.TestCase):
+    """What approval means SINCE 2026-09-13, and what it stopped meaning.
 
-    def test_approving_an_unknown_office_enrols_nobody(self):
-        with mock.patch.object(store, "get", return_value=None), \
+    It used to create the office: mint the key, write the roster, push. Megan
+    asked for the office to be installed and waiting before she looks ("their
+    machine is set up so that when I approve it's good to go"), so the key is
+    theirs at sign-up and the roster comes off the sheet.
+
+    That leaves approval as the one gate that matters: WHERE THEIR NUMBERS
+    POST. It is the only one whose failure is visible to somebody else's team.
+    """
+
+    def _approve(self, rec, channel_rc=0, knocks_rc=0):
+        with mock.patch.object(store, "get", return_value=rec), \
              mock.patch.object(store, "pending", return_value=[]), \
-             mock.patch("automations.icd_alerts.enroll.enroll") as enrol:
-            rc = A.approve("nobody", log=lambda *a, **k: None)
-        enrol.assert_not_called()
+             mock.patch.object(store, "set_status") as setst, \
+             mock.patch("automations.icd_alerts.approve.cmd_approve",
+                        return_value=channel_rc) as chan, \
+             mock.patch("automations.icd_alerts.approve.cmd_knocks",
+                        return_value=knocks_rc) as knocks:
+            rc = A.approve(rec.office_key if rec else "nobody",
+                           log=lambda *a, **k: None)
+        return rc, setst, chan, knocks
+
+    def test_an_unknown_office_approves_nothing(self):
+        rc, setst, chan, _k = self._approve(None)
+        chan.assert_not_called()
+        setst.assert_not_called()
         self.assertNotEqual(rc, 0)
 
-    def test_an_already_approved_office_is_not_enrolled_twice(self):
-        # Twice would mint a second key and append a duplicate roster entry.
-        with mock.patch.object(store, "get",
-                               return_value=_rec(status=STATUS_APPROVED)), \
-             mock.patch("automations.icd_alerts.enroll.enroll") as enrol:
-            rc = A.approve("cyrus", log=lambda *a, **k: None)
-        enrol.assert_not_called()
-        self.assertEqual(rc, 1)
-
-    def test_a_failed_enrolment_leaves_the_signup_pending(self):
-        # So it still shows up as waiting, rather than silently disappearing.
-        with mock.patch.object(store, "get", return_value=_rec()), \
-             mock.patch("automations.icd_alerts.enroll.enroll", return_value=1), \
-             mock.patch.object(store, "set_status") as setst:
-            rc = A.approve("cyrus", log=lambda *a, **k: None)
+    def test_an_already_approved_office_is_not_approved_twice(self):
+        rc, setst, chan, _k = self._approve(_rec(status=STATUS_APPROVED))
+        chan.assert_not_called()
         setst.assert_not_called()
         self.assertEqual(rc, 1)
 
+    def test_a_refused_channel_leaves_them_pending(self):
+        # Marking them approved while nothing posts is the worst outcome: it
+        # reads as done and no team ever sees a number.
+        rc, setst, _c, knocks = self._approve(_rec(), channel_rc=1)
+        setst.assert_not_called()
+        knocks.assert_not_called()
+        self.assertNotEqual(rc, 0)
 
-class ApprovalUsesWhatTheyToldUs(unittest.TestCase):
+    def test_a_good_channel_switches_them_on(self):
+        rc, setst, chan, knocks = self._approve(_rec())
+        self.assertEqual(rc, 0)
+        chan.assert_called_once()
+        knocks.assert_called_once()
+        self.assertEqual(setst.call_args[0][1], STATUS_APPROVED)
 
-    def test_their_own_hours_are_used_not_the_org_default(self):
-        with mock.patch.object(store, "get", return_value=_rec()), \
-             mock.patch.object(store, "set_status", return_value=True), \
-             mock.patch("automations.icd_alerts.enroll.enroll",
-                        return_value=0) as enrol:
-            A.approve("cyrus", log=lambda *a, **k: None)
-        kw = enrol.call_args.kwargs
-        self.assertEqual(kw["day"], ("13:30", "20:30"))
-        self.assertEqual(kw["sat"], ("11:15", "16:00"))
-        self.assertTrue(kw["hours_known"], "the roster comment must not claim "
-                                           "these are defaults")
-
-    def test_a_windows_office_is_recorded_as_windows(self):
-        with mock.patch.object(store, "get", return_value=_rec(platform="windows")), \
-             mock.patch.object(store, "set_status", return_value=True), \
-             mock.patch("automations.icd_alerts.enroll.enroll",
-                        return_value=0) as enrol:
-            A.approve("cyrus", log=lambda *a, **k: None)
-        self.assertEqual(enrol.call_args.kwargs["platform"], "windows")
+    def test_an_office_that_declined_a_board_is_not_given_one(self):
+        _rc, _s, _c, knocks = self._approve(_rec(knocks_cadence=-1))
+        knocks.assert_not_called()
 
 
 class TheAlert(unittest.TestCase):

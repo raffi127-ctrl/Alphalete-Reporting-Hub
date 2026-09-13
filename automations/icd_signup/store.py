@@ -75,6 +75,47 @@ def office_key_for(owner: str, taken=()) -> str:
     return "%s%d" % (base, n)
 
 
+# The page that shows them their one line. Same page the invite command hands
+# out, so an office that signs up and an office we enrol by hand end up
+# looking at exactly the same thing.
+SETUP_PAGE = "https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/?code=%s"
+
+
+def setup_link(relay_key: str) -> str:
+    return SETUP_PAGE % relay_key
+
+
+def mint_and_record_key(office_key: str, owner: str, book=None) -> str:
+    """Give this office its relay key, at SIGN-UP time rather than at approval.
+
+    WHY IT IS SAFE TO HAND OUT BEFORE MEGAN APPROVES (Megan 2026-09-13: "their
+    machine is set up so that when I approve it's good to go"). The key does
+    exactly one thing -- it lets that office hand in ITS OWN numbers. It cannot
+    read anything, cannot reach another office's row, and cannot put a single
+    message in a Slack channel: where alerts post is a separate approval on the
+    'Office Channels' tab, and an office with nothing approved is HELD. So the
+    worst an un-approved sign-up can do is relay numbers nobody looks at, and
+    one cell on 'Relay Keys' switches it off.
+
+    Minting here is what lets them install while they are still sitting there,
+    instead of waiting on us -- which was the whole complaint.
+    """
+    from automations.icd_alerts.enroll import mint_key
+
+    key = mint_key(office_key)
+    book = book or _book()
+    tab = book.worksheet("Relay Keys")
+    for row in tab.get_all_values()[1:]:
+        if row and (row[0] or "").strip().lower() == office_key:
+            # Already has one. Hand back what they already have rather than
+            # minting a second: two live keys for one office is a revocation
+            # that does not revoke.
+            return (row[1] or "").strip()
+    tab.append_row([office_key, key, "TRUE",
+                    "self sign-up — %s" % owner])
+    return key
+
+
 def all_signups(book=None) -> List[IcdSignup]:
     try:
         rows = _tab(book).get_all_records()
@@ -116,6 +157,21 @@ def submit(rec: IcdSignup, book=None) -> IcdSignup:
         rows.append(row)
         _save_local(rows)
     return rec
+
+
+def submit_and_key(rec: IcdSignup, book=None) -> tuple:
+    """Save the sign-up AND give them their key. Returns (record, setup_link).
+
+    The link is empty if the key could not be written -- the sign-up is still
+    saved, and the alert tells Megan to send the link by hand. Losing their
+    answers because a key write failed would be the worse trade.
+    """
+    saved = submit(rec, book=book)
+    try:
+        key = mint_and_record_key(saved.office_key, saved.owner, book=book)
+    except Exception:  # noqa: BLE001
+        return saved, ""
+    return saved, setup_link(key) if key else ""
 
 
 def set_status(office_key: str, status: str, note: str = "", book=None) -> bool:

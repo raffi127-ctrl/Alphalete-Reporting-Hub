@@ -21,7 +21,7 @@ CADENCE_WORDS = {15: "every 15 minutes", 30: "every 30 minutes",
                  -1: "not wanted"}
 
 
-def lines(rec: IcdSignup) -> Tuple[str, List[str]]:
+def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
     """(headline, thread detail). Corrections-channel house style: one line in
     the room, the detail in the thread."""
     head = ("*New Lucy Eco sign-up — %s* wants their office on credit-check "
@@ -42,16 +42,23 @@ def lines(rec: IcdSignup) -> Tuple[str, List[str]]:
         detail.append("• Channels they mentioned: %s" % rec.wanted_channels)
     detail += [
         "",
+        ("• _They already have their setup link and can install now — "
+         "approving decides where their numbers POST._" if link else
+         "• _No key was written, so SEND THEM THEIR LINK by hand:_ "
+         "`python -m automations.icd_alerts.invite %s`" % rec.office_key),
+        "",
         "Approve them with:",
         "```python -m automations.icd_signup.approve %s```" % rec.office_key,
-        "_That mints their key, writes the roster and prints the link to send "
-        "them. Nothing exists until you run it._",
+        ("_That is what turns their numbers into posts. Until you run it they "
+         "can install and relay, and nothing reaches a channel._" if link else
+         "_Nothing exists until you run it._"),
     ]
     return head, detail
 
 
-def notify(rec: IcdSignup, *, send: bool = False, log=print) -> bool:
-    head, detail = lines(rec)
+def notify(rec: IcdSignup, *, send: bool = False, link: str = "",
+           log=print) -> bool:
+    head, detail = lines(rec, link)
     log(head)
     for d in detail:
         log("   %s" % d)

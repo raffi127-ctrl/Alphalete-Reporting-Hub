@@ -1,17 +1,21 @@
-"""Turn a sign-up into a real office. The only step Megan has to take.
+"""Turn a sign-up into posts. The only step Megan has to take.
 
     python -m automations.icd_signup.approve            # who is waiting
-    python -m automations.icd_signup.approve cyrus      # enrol them
+    python -m automations.icd_signup.approve cyrus      # switch them on
     python -m automations.icd_signup.approve cyrus --decline --note "..."
 
-NOTHING EXISTS UNTIL THIS RUNS. A sign-up is a request on a tab: no key, no
-roster entry, no push. That is deliberate -- an abandoned form leaves nothing
-to clean up, and an office cannot enrol itself into our reporting.
+WHAT APPROVAL MEANS NOW. It used to mean "create this office" -- mint the key,
+write the roster, push. It no longer does, because Megan asked for the office
+to be installed and waiting before she looks (2026-09-13: "their machine is set
+up so that when I approve it's good to go"). The key is theirs at sign-up and
+the roster comes off the sheet, so by the time you read the alert their laptop
+may already be relaying.
 
-Approving reads what they told us on the form and hands it straight to
-icd_alerts.enroll, which mints the key, writes both roster files, pushes, and
-prints the link to send them. Their answers are used as given: the whole point
-of asking them first is that we stop guessing hours and re-asking for them.
+So approval is now the thing it always should have been: WHERE THEIR NUMBERS
+POST. Until you run this they can install, and relay, and nothing they send
+reaches a Slack channel -- an office with nothing approved is HELD, not
+dropped. That is the gate, and it is the only one that matters, because it is
+the only one whose failure is visible to somebody else's team.
 """
 from __future__ import annotations
 
@@ -47,42 +51,37 @@ def show_waiting(log=print) -> int:
 
 
 def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
-    from automations.icd_alerts import enroll as E
-
     rec = store.get(office_key)
     if not rec:
         log("No sign-up for %r. Waiting ones:" % office_key)
         return show_waiting(log=log) or 1
     if rec.status == STATUS_APPROVED:
-        log("%s was already approved. To re-send their link:" % office_key)
-        log("  python -m automations.icd_alerts.invite %s" % office_key)
+        log("%s is already approved." % office_key)
         return 1
 
-    log("Enrolling %s (%s) from their sign-up." % (rec.owner, rec.office_key))
-    rc = E.enroll(
-        rec.owner,
-        office=rec.office_key,
-        tz=rec.timezone or "America/Chicago",
-        day=(rec.day_start, rec.day_end),
-        sat=(rec.sat_start, rec.sat_end) if rec.saturday else E.DEFAULT_SAT,
-        saturday=rec.saturday,
-        platform=rec.platform or "mac",
-        label=rec.office_label or None,
-        # THEIRS, not a default -- they told us on the form, which is the
-        # entire reason for asking them first.
-        hours_known=True,
-        do_push=do_push,
-        log=log,
-    )
+    from automations.icd_alerts import approve as channels
+
+    log("Switching on %s (%s)." % (rec.owner, rec.office_key))
+    # THE ACTUAL GATE: the channels they asked for. icd_alerts.approve resolves
+    # the room, checks Lucy and Megan are both in it, and writes the sign-off.
+    rc = channels.cmd_approve(rec.office_key, None)
     if rc != 0:
-        log("Enrolment did not finish, so the sign-up is left PENDING.")
+        log("")
+        log("Their channel was not approved, so nothing posts yet and the "
+            "sign-up stays PENDING.")
         return rc
+    if rec.knocks_cadence != -1:
+        log("")
+        log("Now their knocks board:")
+        channels.cmd_knocks(rec.office_key)
+    else:
+        log("  They said they do not want a knocks board.")
+
     store.set_status(rec.office_key, STATUS_APPROVED,
-                     note="enrolled %s" % rec.submitted_at)
-    if rec.contact:
-        log("  Send that link to: %s" % rec.contact)
-    if rec.knocks_cadence == -1:
-        log("  They said they do NOT want a knocks board.")
+                     note="approved %s" % rec.submitted_at)
+    log("")
+    log("%s is live. Their numbers start appearing within a few minutes of "
+        "their laptop's next check-in." % rec.owner)
     log("")
     return 0
 

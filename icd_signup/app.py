@@ -116,17 +116,35 @@ if submitted:
         for p in problems:
             st.error(p)
     else:
-        saved = store.submit(rec)
+        saved, link = store.submit_and_key(rec)
         try:
             from automations.icd_signup import request_notify
-            request_notify.notify(saved, send=True, log=lambda *a, **k: None)
+            request_notify.notify(saved, send=True, link=link,
+                                  log=lambda *a, **k: None)
         except Exception:  # noqa: BLE001 — their sign-up is already saved
             pass
         st.success(
             "Thanks %s — that is in." % (owner.split()[0] if owner else "you"))
-        st.markdown(
-            "The reporting team has been told. They will send you a **setup "
-            "link** for your office — one line you paste into your computer, "
-            "and it asks you the rest.\n\n"
-            "Nothing happens on your side until then, and nothing posts in "
-            "any channel until someone approves it.")
+
+        if link:
+            # THEY SET UP NOW, NOT AFTER WE GET ROUND TO THEM. The key is
+            # theirs the moment they sign up; approval decides where their
+            # numbers POST, not whether they can install.
+            st.markdown("### Set your computer up now")
+            st.markdown(
+                "Do this on the office computer it will run on. It takes "
+                "about five minutes and asks you for your SaraPlus and "
+                "OwnerVille logins **on that machine** — they stay there.")
+            st.link_button("Open my setup page", link, type="primary")
+            st.caption("This link is yours alone — it carries your office's "
+                       "code. Please do not forward it.")
+            st.markdown(
+                "Once it is done, your computer starts handing in your "
+                "numbers straight away. They begin appearing in your Slack "
+                "channel as soon as the reporting team approves where they "
+                "should go.")
+        else:
+            st.markdown(
+                "The reporting team has been told and will send you a "
+                "**setup link** for your office — one line you paste into "
+                "your computer, and it asks you the rest.")
