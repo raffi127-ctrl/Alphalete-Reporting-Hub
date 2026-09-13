@@ -55,6 +55,9 @@ def _weeks_between(start: dt.date, end: dt.date) -> list:
     return out
 
 
+_LAST_DIAG: dict = {}
+
+
 def _show_week(page, monday: dt.date, log=print) -> bool:
     """Put the retention report on `monday`'s week and submit.
 
@@ -103,6 +106,8 @@ def _show_week(page, monday: dt.date, log=print) -> bool:
                         getReport: /get\s*report/i.test(document.body.innerText),
                         rows: document.querySelectorAll('tr').length,
                     })""")
+                _LAST_DIAG.clear()
+                _LAST_DIAG.update(seen)
                 log(f"    week {monday}: picker not usable — {seen}")
             except Exception:  # noqa: BLE001
                 log(f"    week {monday}: picker not found, page unreadable")
@@ -159,8 +164,12 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
                     _show_week(app.page, monday, log=log)
                 except Exception as e:   # noqa: BLE001 — one day is not the run
                     log(f"  {owner} {day}: skipped ({type(e).__name__})")
+    # The diagnosis rides the SUMMARY line, because the queue's status view
+    # shows only the tail of stdout — the per-week lines were being cut off,
+    # which is how "0/5 opened" arrived with no reason attached.
+    why = f" · page: {_LAST_DIAG}" if (not opened and _LAST_DIAG) else ""
     log(f"  {owner}: {len(found)} start date(s) between {start} and {end} "
-        f"— {opened}/{len(weeks)} week(s) opened")
+        f"— {opened}/{len(weeks)} week(s) opened{why}")
     return {v[0]: v[1] for v in found.values()}
 
 

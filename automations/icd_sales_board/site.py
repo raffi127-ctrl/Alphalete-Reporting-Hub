@@ -1745,6 +1745,29 @@ def _hover_table(grid: list, splits: dict, day_labels: list,
             f"</thead><tbody>{''.join(body)}</tbody></table></div>")
 
 
+def _colour_key() -> str:
+    """A one-line legend. The colours carry real meaning — tenure on the name,
+    production on the day — and a board full of colour nobody can read is just
+    decoration (Megan 2026-09-13). Kept to one line on purpose."""
+    def chip(colour, label, ink="inherit"):
+        return (f"<span style='display:inline-block;padding:1px 7px;"
+                f"margin-right:4px;border-radius:4px;font-size:.72rem;"
+                f"background:{colour};color:{ink}'>{label}</span>")
+
+    tenure = "".join(chip(TENURE_COLORS[k], lab) for k, lab in
+                     [("wk 1", "Wk 1"), ("wk 2", "Wk 2"), ("wk 3", "Wk 3")]) \
+        + chip(TENURE_COLORS["wk 4"], "Wk 4", "#FFFFFF") \
+        + chip(TENURE_COLORS["veteran"], "5th wk+")
+    day = (chip(_DAY_ZERO, "0 worked", "#FFFFFF")
+           + chip(_DAY_COLORS[2][1], "1–2")
+           + chip(_DAY_COLORS[1][1], "3–4")
+           + chip(_DAY_COLORS[0][1], "5+"))
+    return (f"<div style='font-size:.75rem;opacity:.85;margin:.2rem 0 .6rem'>"
+            f"<span style='opacity:.6;margin-right:6px'>Name =</span>{tenure}"
+            f"<span style='opacity:.6;margin:0 6px 0 10px'>Day =</span>{day}"
+            f"</div>")
+
+
 def relay_board(icd: str, office_key: str) -> None:
     """An office's board, filled from its OWN SaraPlus via the ICD agent.
 
@@ -2124,6 +2147,7 @@ def relay_board(icd: str, office_key: str) -> None:
     if not expand and not products:
         # Read-only anyway, so the hover table costs nothing and buys the
         # per-day breakdown on hover.
+        st.markdown(_colour_key(), unsafe_allow_html=True)
         st.markdown(_hover_table(grid, splits,
                                  [d.strftime("%a") for d in week_days]),
                     unsafe_allow_html=True)
