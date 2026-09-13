@@ -2151,12 +2151,18 @@ def relay_board(icd: str, office_key: str) -> None:
     # separate table scrolls on its own and stops lining up with its columns
     # the moment the board is scrolled sideways.
     day_totals = {}
-    for d in [x for x in week_days if x in reported_days]:
+    for d in week_days:
         lab = d.strftime("%a")
         cols_for_day = ([f"{lab} Apps"] + [f"{lab} {m}" for m in RELAY_MEASURES]
                         if products else [lab])
+        # An unreported day totals ZERO, not blank (Megan 2026-09-13). The REP
+        # cells stay blank there, because we cannot say whether a given rep
+        # worked — but the office total is a fact either way: nothing has come
+        # in. Blank in the totals row reads as "unknown", and it is not.
+        reported = d in reported_days
         for col in cols_for_day:
-            day_totals[col] = sum(r.get(col, 0) for r in rows)
+            day_totals[col] = (sum(r.get(col, 0) for r in rows)
+                               if reported else 0)
     totals_row = dict({"Rep": TOTALS_LABEL}, **day_totals,
                       **{"Apps": _apps(tot)})
     if has_upgrades:
