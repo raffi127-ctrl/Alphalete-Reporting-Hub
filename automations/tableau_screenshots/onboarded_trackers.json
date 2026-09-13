@@ -106,5 +106,25 @@
       "b2b_att_country_cru",
       "b2b_d2d_consolidated"
     ]
+  },
+  {
+    "key": "logan",
+    "label": "Logan Legacy Group",
+    "owner": "Joseph Logan",
+    "emails": [
+      "joseph@loganlegacygroup.com"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "_note": "delivered BY EMAIL \u2014 Joseph Logan has no Slack account, so this row carries `emails` and NO channel_ids (a row with both is refused). Key is 'logan', not the auto-derived 'joseph': the org has three ICD Josephs (Logan / Delgado / Eckhart) and the id is baked into the Hub card + every capture path. Megan 2026-09-13, 'he can get all trackers for now'."
   }
 ]
