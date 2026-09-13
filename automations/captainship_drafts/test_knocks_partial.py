@@ -151,10 +151,10 @@ class TotalsLabelTellsTheTruth(unittest.TestCase):
         captured = [("Chan Park", {"name": "Chan Park"}, [])]
         table, _bgs = KD.daily_summary_table(captured, chan_rows=None,
                                              roster_n=2, n_covered=2)
-        self.assertEqual(table[-1][0], "CAPTAINSHIP TOTALS")
+        self.assertEqual(table[0][0], "CAPTAINSHIP TOTALS")
         table, _bgs = KD.daily_summary_table(captured, chan_rows=None,
                                              roster_n=2, n_covered=1)
-        self.assertEqual(table[-1][0], "CAPTAINSHIP TOTALS (1 of 2 ICDs)")
+        self.assertEqual(table[0][0], "CAPTAINSHIP TOTALS (1 of 2 ICDs)")
 
 
 class TotalAppsColumn(unittest.TestCase):
@@ -222,7 +222,7 @@ class TotalAppsColumn(unittest.TestCase):
             [("A", {"name": "A"}, self._rows(), 4),
              ("B", {"name": "B"}, self._rows(), 6)], chan_rows=None)
         at = KD.DAILY_SUMMARY_HEADERS.index("Total Apps")
-        self.assertEqual([r[at] for r in table], ["4", "6", "10"])
+        self.assertEqual([r[at] for r in table], ["10", "4", "6"])
 
     def test_an_icd_with_no_apps_pulled_is_blank_never_zero(self):
         table, _bgs = KD.daily_summary_table(
@@ -232,10 +232,11 @@ class TotalAppsColumn(unittest.TestCase):
 
     def test_an_old_capture_reused_from_disk_keeps_working(self):
         """Un sidecar escrito antes de esta columna es una LISTA de filas."""
-        table, _bgs = KD.daily_summary_table(
+        table, bgs = KD.daily_summary_table(
             [("A", {"name": "A"}, self._rows())], chan_rows=None)
-        self.assertEqual(table[0][KD.DAILY_SUMMARY_HEADERS.index("Total Apps")],
-                         "")
+        # table[0] es el bloque de arriba (TOTALS); el ICD viene despues.
+        self.assertEqual(
+            table[len(bgs)][KD.DAILY_SUMMARY_HEADERS.index("Total Apps")], "")
 
     def test_average_app_per_rep_divides_by_the_reps_who_knocked(self):
         """Pedido de Eve (2026-08-27). Mismo divisor que Talk To's per Rep:
@@ -259,7 +260,7 @@ class TotalAppsColumn(unittest.TestCase):
             [("A", {"name": "A"}, self._rows(), 4),
              ("B", {"name": "B"}, self._rows(), 6)], chan_rows=None)
         at = KD.DAILY_SUMMARY_HEADERS.index("Average App per Rep")
-        self.assertEqual([r[at] for r in table], ["2.0", "3.0", "2.5"])
+        self.assertEqual([r[at] for r in table], ["2.5", "2.0", "3.0"])
 
     def _drawn(self, monkey, **kw):
         """Renderiza el board por-owner capturando lo que llega a _draw, sin
@@ -469,16 +470,17 @@ class DailyBoardColumns(unittest.TestCase):
         R.number_rows(cols, disp, table, first=1)
         self.assertEqual([r[0] for r in table], ["", "1", "2"])
 
-    def test_the_summary_numbers_the_icds_but_not_its_trailing_block(self):
-        """Y el resumen las lleva ABAJO: un numero ahi se leeria como un ICD
-        mas de la lista."""
+    def test_the_summary_numbers_the_icds_but_not_its_leading_block(self):
+        """El resumen lleva el bloque ARRIBA igual que el board de una oficina
+        (Megan 2026-09-13), y un numero ahi se leeria como un ICD mas de la
+        lista."""
         from automations.total_knocks import render as R
         cols = ["ICD", "Total Knocks"]
         disp = list(cols)
-        table = [["icd a", "9"], ["icd b", "8"], ["icd c", "7"],
-                 ["CHAN PARK", "9"], ["CAPTAINSHIP TOTALS", "24"]]
-        R.number_rows(cols, disp, table, count=3)
-        self.assertEqual([r[0] for r in table], ["1", "2", "3", "", ""])
+        table = [["CHAN PARK", "9"], ["CAPTAINSHIP TOTALS", "24"],
+                 ["icd a", "9"], ["icd b", "8"], ["icd c", "7"]]
+        R.number_rows(cols, disp, table, first=2)
+        self.assertEqual([r[0] for r in table], ["", "", "1", "2", "3"])
 
     def test_both_per_rep_averages_divide_by_the_reps_knocking(self):
         """Rafael, 2026-08-28: el que golpeo 20 o menos deja de estar en el
@@ -805,3 +807,139 @@ class DroppingAnOwnerOnPurpose(unittest.TestCase):
         self.assertIn('"--drop-owner"', src)
         self.assertIn("drop_owners=args.drop_owner", src)
         self.assertIn("drop_owners=drop_owners", src)
+
+
+class SummaryBoardSaysWhoseCaptainshipItIsAndLeadsWithChan(unittest.TestCase):
+    """Megan's Loom, 2026-09-13, on Saturday's captainship email:
+
+      * "This is the Saturday daily knock summary — can we change it to Raf's
+        captainship daily knock summary? … I always get confused, I just wanna
+        know that it's like the captainship one." Six captains' boards land in
+        six inboxes and get forwarded on their own, so the PNG has to say whose
+        captainship it speaks for. "And then the other ones would say the same
+        thing" — every captain's board, with their own name.
+      * "On this captainship one, can we also add Chan Park's numbers up here
+        to the top? Like the other reports." Raf asked for the same thing the
+        night before, on the first night-knocks sample. The teal line and the
+        TOTALS were already on the board — at the BOTTOM, under every ICD,
+        while every per-owner DAILY TOTAL KNOCKS board right below opens with
+        them. They move up; nothing about the numbers changes.
+    """
+
+    def _rows(self, *specs):
+        from automations.total_knocks import pull as K
+        out = []
+        for rep, knocks in (specs or (("a", 40), ("b", 60))):
+            r = {c: "" for c in K.SHEET_COLUMNS}
+            r.update({K.COL_REP: rep, K.COL_TOTAL_KNOCKS: knocks,
+                      K.COL_TOTAL_TALK_TO: 10,
+                      K.COL_FIRST_KNOCK: "11:00 AM",
+                      K.COL_LAST_KNOCK: "5:00 PM"})
+            out.append(r)
+        return out
+
+    def _drawn(self, **kw):
+        """Render the summary capturing what reaches _draw — no PNG written."""
+        import tempfile
+        from unittest import mock
+        from automations.total_knocks import render as R
+        seen = {}
+
+        def fake_draw(disp, table, title, theme, out, **k):
+            seen.update(disp=list(disp), table=[list(r) for r in table],
+                        title=title, kw=k)
+            return out
+
+        captured = kw.pop("captured", None) or [
+            ("ICD One", {"name": "ICD One"}, self._rows(), 4),
+            ("ICD Two", {"name": "ICD Two"}, self._rows(), 6)]
+        with mock.patch.object(R, "_draw", fake_draw):
+            with tempfile.TemporaryDirectory() as tmp:
+                KD.render_daily_summary(captured, dt.date(2026, 9, 12), tmp,
+                                        **kw)
+        return seen
+
+    # ---- the title ----------------------------------------------------
+    def test_the_title_names_the_captainship(self):
+        from automations.captainship_drafts import config
+        seen = self._drawn(captain=config.BY_KEY["rafael"])
+        self.assertTrue(seen["title"].startswith(
+            "RAF'S CAPTAINSHIP DAILY KNOCKS SUMMARY — "), seen["title"])
+        # The date line is untouched — same one the boards under it carry.
+        self.assertTrue(seen["title"].endswith("Saturday, September 12, 2026"),
+                        seen["title"])
+
+    def test_every_other_captain_gets_their_own_name(self):
+        """"And then the other ones would say the same thing." Not Raf's name
+        on six boards, and not a hardcoded one."""
+        from automations.captainship_drafts import config
+        seen = self._drawn(captain=config.BY_KEY["wayne"])
+        self.assertIn("WAYNE'S CAPTAINSHIP DAILY KNOCKS SUMMARY", seen["title"])
+
+    def test_a_captain_key_works_as_well_as_the_object(self):
+        """captainship_night_knocks has the key, not the dataclass."""
+        self.assertEqual(KD.captain_short("rafael"), "Raf")
+        self.assertEqual(KD.captain_short("wayne"), "Wayne")
+        self.assertIn("CHAN'S CAPTAINSHIP",
+                      self._drawn(captain="chan")["title"])
+
+    def test_no_captain_keeps_the_bare_title_instead_of_crashing(self):
+        """A display name that can't be resolved must cost the NAME, never the
+        board."""
+        self.assertEqual(KD.captain_short(None), "")
+        self.assertTrue(self._drawn()["title"].startswith(
+            "DAILY KNOCKS SUMMARY — "))
+
+    # ---- Chan's line at the top ---------------------------------------
+    def test_chan_and_the_totals_lead_the_board(self):
+        seen = self._drawn(chan_rows=self._rows(("chan rep", 90),),
+                           chan_apps=3)
+        names = [r[1] for r in seen["table"]]      # [0] is the "#" column
+        self.assertEqual(names[:2], ["CHAN PARK", "CAPTAINSHIP TOTALS"])
+        self.assertEqual(names[2:], ["ICD One", "ICD Two"])
+
+    def test_the_block_is_drawn_as_the_top_block_in_its_colours(self):
+        """Teal Chan over amber TOTALS — the same pairing, in the same order,
+        as the per-owner boards' CHAN PARK TOTAL over TOTAL."""
+        from automations.weekly_knock_dispositions.board import COMPARE_ROW_BG
+        from automations.total_knocks.render import THEME_AMBER
+        seen = self._drawn(chan_rows=self._rows(("chan rep", 90),))
+        self.assertEqual(seen["kw"]["highlight_first_row"], 2)
+        self.assertEqual(seen["kw"]["top_row_colors"],
+                         [COMPARE_ROW_BG, THEME_AMBER["total_bg"]])
+        # And nothing is highlighted at the BOTTOM any more.
+        self.assertFalse(seen["kw"].get("highlight_last_row"))
+        self.assertFalse(seen["kw"].get("total_row_bgs"))
+
+    def test_the_icds_are_numbered_from_one_under_the_block(self):
+        """A number on the comparison office or on TOTALS would read as one
+        more ICD in the list."""
+        seen = self._drawn(chan_rows=self._rows(("chan rep", 90),))
+        self.assertEqual([r[0] for r in seen["table"]], ["", "", "1", "2"])
+
+    def test_with_no_chan_data_the_totals_still_lead(self):
+        """No comparison pull = no teal line, never a crash and never the old
+        bottom placement."""
+        seen = self._drawn()
+        self.assertEqual([r[1] for r in seen["table"]][0],
+                         "CAPTAINSHIP TOTALS")
+        self.assertEqual(seen["kw"]["highlight_first_row"], 1)
+        self.assertEqual([r[0] for r in seen["table"]], ["", "1", "2"])
+
+    def test_the_totals_still_sum_only_the_captainships_own_icds(self):
+        """Moving the row must not fold the guest office into it."""
+        at = KD.DAILY_SUMMARY_HEADERS.index("Total Knocks")
+        seen = self._drawn(chan_rows=self._rows(("chan rep", 900),))
+        rows = {r[1]: r[at + 1] for r in seen["table"]}   # +1 for the "#" col
+        self.assertEqual(rows["CHAN PARK"], "900")
+        self.assertEqual(rows["CAPTAINSHIP TOTALS"], "200")   # 100 + 100
+
+    def test_both_call_sites_name_their_captain(self):
+        """The captainship report AND the night-knocks waves — a board that
+        went out unnamed from either one is the confusion Megan asked us to
+        end."""
+        import inspect
+        from automations.captainship_night_knocks import run as NK
+        self.assertIn("captain=captain",
+                      inspect.getsource(KD.capture_sections))
+        self.assertIn("captain=due.captain_key", inspect.getsource(NK.capture))

@@ -178,10 +178,13 @@ def captain_display(key: str) -> str:
     """'Raf's Captainship' — what the subject line calls this captainship."""
     try:
         from automations.captainship_drafts import config
+        from automations.captainship_drafts import knock_dispo_images as KD
         for cap in config.CAPTAINS:
             if cap.key == key:
-                name = getattr(cap, "name", None) or key.title()
-                return "%s's Captainship" % ("Raf" if key == "rafael" else name)
+                # Same helper the daily summary BOARD titles with, so the
+                # subject line and the image inside it can never disagree
+                # about what this captainship is called.
+                return "%s's Captainship" % KD.captain_short(cap)
     except Exception:  # noqa: BLE001 — a display name is not worth a failure
         pass
     return "%s's Captainship" % key.title()
@@ -279,7 +282,8 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
             summary = KD.render_daily_summary(
                 captured, due.local_date, root / "summary",
                 chan_rows=chan_rows,
-                roster_n=len(due.icds), n_covered=len(captured))
+                roster_n=len(due.icds), n_covered=len(captured),
+                captain=due.captain_key)
             boards.insert(0, ("Daily Summary — %s %d"
                               % (due.local_date.strftime("%b"),
                                  due.local_date.day), summary))

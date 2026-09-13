@@ -712,11 +712,21 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
                         n_covered: Optional[int] = None,
                         chan_apps: Optional[int] = None
                         ) -> Tuple[List[List[str]], list]:
-    """The daily summary board's rows: one row per ICD of THIS captainship in
-    roster order, then the trailing highlight block — a teal CHAN PARK
-    comparison row (Raf: "have Chan's comparison in there"; teal =
+    """The daily summary board's rows: the LEADING highlight block — a teal
+    CHAN PARK comparison row (Raf: "have Chan's comparison in there"; teal =
     weekly_knock_dispositions' COMPARE_ROW_BG, so a guest row reads the same
-    everywhere) and the plum CAPTAINSHIP TOTALS row.
+    everywhere) and the amber CAPTAINSHIP TOTALS row — then one row per ICD of
+    THIS captainship in roster order.
+
+    The block LEADS the board (Megan's Loom 2026-09-13, "add Chan Park's
+    numbers up here to the top, like the other reports"; Raf asked for the same
+    thing on the night-knocks sample the night before). Every other knocks
+    board in this family — each per-owner DAILY TOTAL KNOCKS board right below
+    this one — already opens with the teal CHAN PARK TOTAL line and the
+    office's own TOTAL under it, and the summary was the one board that made a
+    reader scroll past forty ICDs to find the same two numbers. The rows they
+    compare are unchanged: TOTALS still sums the captainship's own owners, and
+    the ICDs are still numbered 1..N in roster order under it.
 
     `captured` is [(display, cfg, rows), …] per owner that produced daily
     rows — or [(display, cfg, rows, apps), …], where apps is that ICD's app
@@ -729,9 +739,10 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
     only the captainship's own owners (a data-only Chan is not one of them).
     No Chan data at all = no teal row, never a crash.
 
-    Returns (table_rows, trailing_bgs) — trailing_bgs colors the trailing
-    highlight block for _draw's total_row_bgs, teal row included, so its
-    length is also the highlight_last_row count. Pure — offline-testable."""
+    Returns (table_rows, leading_bgs) — leading_bgs colors the leading
+    highlight block for _draw's top_row_colors, teal row included, so its
+    length is also the highlight_first_row count AND the number of rows the
+    ICD numbering has to skip. Pure — offline-testable."""
     from automations.weekly_knock_dispositions.board import COMPARE_ROW_BG
     from automations.total_knocks.render import THEME_AMBER
     from automations.weekly_knock_dispositions.offices import CHAN as _CHAN
@@ -745,10 +756,10 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
         chan_rows = next((it[2] for it in captured
                           if _norm_name(it[1].get("name", "")) == chan_norm),
                          None)
-    tail: List[List[str]] = []
+    head: List[List[str]] = []
     bgs: list = []
     if chan_rows:
-        tail.append(daily_summary_row("CHAN PARK", chan_rows, chan_apps))
+        head.append(daily_summary_row("CHAN PARK", chan_rows, chan_apps))
         bgs.append(COMPARE_ROW_BG)
     all_rows = [rec for it in captured for rec in it[2]]
     # TOTALS' apps = the sum of the ICD rows above it, so the column always
@@ -761,19 +772,41 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
     # only holds the ones with rows, so defaulting to it would flag a quiet
     # office as unreachable. See totals_label.
     covered = len(captured) if n_covered is None else n_covered
-    tail.append(daily_summary_row(totals_label(covered, roster_n), all_rows,
+    head.append(daily_summary_row(totals_label(covered, roster_n), all_rows,
                                   tot_apps))
     # Burnt orange, the SAME totals colour the per-owner daily boards use —
     # this board is the daily family's summary, not the weekly's.
     bgs.append(THEME_AMBER["total_bg"])
-    return body + tail, bgs
+    return head + body, bgs
+
+
+# The name a captainship is CALLED on its boards and in its subject lines,
+# when that is not simply the captain's first name. Rafael is "Raf" to
+# everyone who reads these (Megan's Loom 2026-09-13 asked for the board to say
+# "Raf's captainship", and captainship_night_knocks has addressed his mail
+# that way since it shipped) — one map, so the board title and the subject
+# line can never drift apart.
+CAPTAIN_SHORT = {"rafael": "Raf"}
+
+
+def captain_short(captain) -> str:
+    """What the boards call this captainship's captain — 'Raf', 'Wayne', ….
+
+    Takes a config.Captain, a captain key, or anything falsy (→ ""), so both
+    callers hand over what they already have. Pure — offline-testable."""
+    if not captain:
+        return ""
+    key = getattr(captain, "key", None) or str(captain)
+    name = getattr(captain, "display_name", None) or str(key).title()
+    return CAPTAIN_SHORT.get(str(key).lower(), name)
 
 
 def render_daily_summary(captured: list, target: dt.date, out_dir,
                          chan_rows: Optional[list] = None,
                          roster_n: Optional[int] = None,
                          n_covered: Optional[int] = None,
-                         chan_apps: Optional[int] = None) -> Path:
+                         chan_apps: Optional[int] = None,
+                         captain=None) -> Path:
     """Draw the daily summary board PNG — AMBER theme, the same one the
     per-owner DAILY TOTAL KNOCKS boards right below it use.
 
@@ -785,10 +818,18 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
     "DAILY " title prefix: two boards that look alike invite reading a day's
     number as the week's.
 
-    The trailing block (teal Chan row + amber TOTALS) highlights via
-    total_row_bgs; note _draw only paints total_row_bgs INSIDE the highlighted
-    trailing block, so highlight_last_row must count the teal row too — not
-    just the last row."""
+    `captain` (a config.Captain or a captain key) names the captainship in the
+    title: "RAF'S CAPTAINSHIP DAILY KNOCKS SUMMARY" instead of the bare "DAILY
+    KNOCKS SUMMARY" (Megan's Loom 2026-09-13 — "I always get confused, I just
+    want to know that it's the captainship one"). Six captains' boards land in
+    six inboxes and get forwarded on their own, so whose captainship a PNG
+    speaks for has to be ON the PNG. None keeps the bare title rather than
+    inventing a name — a missing display name must never cost the board.
+
+    The leading block (teal Chan row + amber TOTALS) highlights via
+    top_row_colors; note _draw only paints top_row_colors INSIDE the
+    highlighted leading block, so highlight_first_row must count the TOTALS
+    row too — not just the teal one."""
     from automations.total_knocks import render as knocks_render
     from automations.total_knocks.render import THEME_AMBER
     table, bgs = daily_summary_table(captured, chan_rows, roster_n,
@@ -796,18 +837,22 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
     # Same date line, weekday and all, as the per-owner boards under it.
     date_s = knocks_render._title_date(target)
     # The ICDs are numbered the way each owner's board numbers its reps (Eve,
-    # 2026-08-28). Only the ICD rows: the trailing block is a comparison office
+    # 2026-08-28). Only the ICD rows: the leading block is a comparison office
     # and the captainship TOTALS, and a number on those would read as one more
-    # ICD in the list. `bgs` is exactly that block, so its length is the count.
+    # ICD in the list. `bgs` is exactly that block, so its length is where the
+    # numbering starts — same `first=` the per-owner boards pass for the same
+    # two rows.
     cols = list(DAILY_SUMMARY_HEADERS)
     disp = list(cols)
-    knocks_render.number_rows(cols, disp, table, count=len(table) - len(bgs))
+    knocks_render.number_rows(cols, disp, table, first=len(bgs))
+    who = captain_short(captain)
+    title = (f"{who.upper()}'S CAPTAINSHIP DAILY KNOCKS SUMMARY — {date_s}"
+             if who else f"DAILY KNOCKS SUMMARY — {date_s}")
     return knocks_render._draw(
-        disp, table,
-        f"DAILY KNOCKS SUMMARY — {date_s}", THEME_AMBER,
+        disp, table, title, THEME_AMBER,
         Path(out_dir) / f"daily_knocks_summary_{target.isoformat()}.png",
         name_col=1, wrap_headers=True,
-        highlight_last_row=len(bgs), total_row_bgs=bgs)
+        highlight_first_row=len(bgs), top_row_colors=bgs)
 
 
 def compare_totals_for(display: str, chan_rows, chan_apps=None) -> list:
@@ -1659,7 +1704,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                                        chan_rows=chan_rows,
                                        roster_n=len(pairs),
                                        n_covered=len(answered_daily),
-                                       chan_apps=chan_apps)
+                                       chan_apps=chan_apps,
+                                       captain=captain)
             out_daily.insert(0, (summary_label + (
                 " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"
                 if daily_partial else ""), png))
