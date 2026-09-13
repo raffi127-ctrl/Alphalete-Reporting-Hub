@@ -285,3 +285,52 @@ class AFailedSaveIsNeverReportedAsSuccess(unittest.TestCase):
             _r, link, landed = store.submit_and_key(_rec())
         self.assertTrue(landed)
         self.assertEqual(link, "")
+
+
+class TheFormUsesStreamlitsCredentials(unittest.TestCase):
+    """The deployed form must read the secrets, not the repo's files.
+
+    THE FIRST LIVE SIGN-UP WAS LOST TO THIS (2026-09-13). _book() went
+    straight to recruiting_report.fill.open_by_key, which authenticates from
+    credential FILES -- fine on a Lucy and on Megan's laptop, nonexistent on
+    Streamlit Cloud, where the credentials are in st.secrets and nowhere else.
+    Every submission threw, fell into the local-draft fallback, and died on a
+    disposable filesystem. The secrets had been right the whole time; nothing
+    ever read them.
+
+    Every other form in this repo already injected a client. This one did not,
+    because it was only ever tested from a laptop where the file path worked
+    -- which is exactly the shape of bug that testing locally cannot find.
+    """
+
+    def tearDown(self):
+        store.set_client(None)
+
+    def test_an_injected_client_is_what_opens_the_workbook(self):
+        opened = {}
+
+        class FakeClient:
+            def open_by_key(self, key):
+                opened["key"] = key
+                return "the-book"
+
+        store.set_client(FakeClient())
+        self.assertEqual(store._book(), "the-book")
+        from automations.icd_alerts import post as P
+        self.assertEqual(opened["key"], P.RELAY_SPREADSHEET_ID)
+
+    def test_without_one_it_still_works_off_the_files(self):
+        # A Lucy, a laptop or a test has no Streamlit secrets and must keep
+        # using the file path.
+        store.set_client(None)
+        with mock.patch("automations.recruiting_report.fill.open_by_key",
+                        return_value="file-book") as f:
+            self.assertEqual(store._book(), "file-book")
+        f.assert_called_once()
+
+    def test_the_app_actually_injects_it(self):
+        import pathlib
+        app = (pathlib.Path(__file__).resolve().parents[2]
+               / "icd_signup" / "app.py").read_text()
+        self.assertIn("build_gs_client", app)
+        self.assertIn("store.set_client", app)

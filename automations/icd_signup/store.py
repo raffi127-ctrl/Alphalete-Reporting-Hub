@@ -38,8 +38,33 @@ except Exception:                        # noqa: BLE001
         pass
 
 
+_CLIENT = None
+
+
+def set_client(gspread_client) -> None:
+    """Hand this module the client the FORM built from Streamlit's secrets.
+
+    THIS IS WHY THE FIRST LIVE SIGN-UP VANISHED (2026-09-13). _book() went
+    straight to recruiting_report.fill.open_by_key, which authenticates from
+    credential FILES in the repo -- fine on a Lucy or on Megan's laptop, and
+    nonexistent on Streamlit Cloud, where the credentials live in st.secrets
+    and nowhere else. So every submission from the deployed form threw, fell
+    into the local-draft fallback, and was lost on a disposable filesystem.
+    The secrets were correct the whole time; nothing ever read them.
+
+    Every other form in this repo already did it this way. This one did not,
+    because it grew up being tested from a laptop where the file path worked.
+    """
+    global _CLIENT
+    _CLIENT = gspread_client
+
+
 def _book():
     from automations.icd_alerts import post as P
+    if _CLIENT is not None:
+        return _CLIENT.open_by_key(P.RELAY_SPREADSHEET_ID)
+    # No injected client: a Lucy, a laptop, or a test. The file path is right
+    # there and is what every non-Streamlit caller uses.
     from automations.recruiting_report.fill import open_by_key
     return open_by_key(P.RELAY_SPREADSHEET_ID)
 

@@ -46,6 +46,19 @@ ui.render_header(
 
 ui.inject_slack_token()
 
+# THE SHEETS CLIENT, BUILT FROM STREAMLIT'S SECRETS. Without this the store
+# falls back to authenticating from credential files in the repo -- which do
+# not exist on Community Cloud, so every submission threw and was silently
+# written to a local draft on a disposable filesystem. Megan's first live
+# sign-up was lost exactly that way (2026-09-13), and the page told her it had
+# worked. Mirrors disposition_signup/app.py, which had it right all along.
+_gc, _diag = ui.build_gs_client("ICD_SIGNUP_LOCAL_ONLY")
+if _gc is not None:
+    store.set_client(_gc)
+if st.query_params.get("debug") == "1":
+    # Keys only, never values -- see onboarding_ui.build_gs_client.
+    st.json(_diag)
+
 # WHAT LUCY ECO IS, before what it does. An owner arriving here has been sent
 # a link by somebody and has no idea what they are being offered -- the page
 # used to open on "get your sales in Slack", which reads like a product they
