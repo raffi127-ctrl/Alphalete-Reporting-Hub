@@ -101,6 +101,50 @@ class Grouping(unittest.TestCase):
     def _rows(self):
         return B.compute_rows_by_team(self.ov, self.apps, [], self.book)
 
+    def _compare(self):
+        """A comparison office's totals row, the shape run.py builds."""
+        return [B.totals_row([_rep("Other Rep", talk=40, knocks=900)], None,
+                             [], label="CHAN PARK TOTALS")]
+
+    def test_comparison_row_repeats_above_every_team_band(self):
+        """Raf 2026-09-13: "can Chans numbers be added above each team name".
+
+        One copy directly above EACH band, not one at the top of the board."""
+        rows = B.compute_rows_by_team(self.ov, self.apps, [], self.book,
+                                      self._compare())
+        bands = [i for i, r in enumerate(rows) if B.is_team_row(r)]
+        self.assertTrue(bands)
+        for i in bands:
+            self.assertEqual(rows[i - 1][1], "CHAN PARK TOTALS",
+                             f"band {rows[i][1]} has no comparison row above")
+        self.assertEqual(
+            sum(1 for r in rows if r[1] == "CHAN PARK TOTALS"), len(bands))
+
+    def test_comparison_rows_are_not_numbered_as_reps(self):
+        """They are neither reps nor bands: numbering them would start every
+        team at 2 and give the comparison office a rep number."""
+        rows = B.compute_rows_by_team(self.ov, self.apps, [], self.book,
+                                      self._compare())
+        # The "#" cell already holds the comparison office's OWN "K of N"
+        # knocking count (Chan's "49 of 51" on the real board) — numbering
+        # must leave it exactly as totals_row wrote it.
+        before = [r[0] for r in rows if r[1] == "CHAN PARK TOTALS"]
+        section = B.number_rows(rows, 1, {"CHAN PARK TOTALS"})
+        after = [r[0] for r in rows if r[1] == "CHAN PARK TOTALS"]
+        self.assertEqual(before, after)
+        for i, r in enumerate(rows):
+            if r[1] == "CHAN PARK TOTALS":
+                self.assertIn(i, section)          # drawn as its own band
+        # every team still starts its rep numbering at 1
+        for i, r in enumerate(rows):
+            if B.is_team_row(r) and i + 1 < len(rows):
+                self.assertEqual(rows[i + 1][0], "1")
+
+    def test_no_comparison_rows_leaves_the_board_unchanged(self):
+        self.assertEqual(
+            B.compute_rows_by_team(self.ov, self.apps, [], self.book, []),
+            B.compute_rows_by_team(self.ov, self.apps, [], self.book))
+
     def test_office_totals_stay_first_and_office_wide(self):
         rows = self._rows()
         self.assertEqual(rows[0][1], B.TOTALS_LABEL)
@@ -132,7 +176,12 @@ class Grouping(unittest.TestCase):
     def test_apps_follow_the_rep_into_their_team(self):
         """Hank's 5 apps are on Se7en Sins' band, not somebody else's."""
         rows = self._rows()
-        apps_col = B.headers_for([]).index("Total Apps")
+        # By the LIVE header name — the apps column was renamed to
+        # "Mon–Sat Total Apps" on 2026-09-13 when every column started
+        # declaring its own span, and a literal here fails the rename
+        # rather than the behaviour it is meant to be testing.
+        apps_col = next(i for i, h in enumerate(B.headers_for([]))
+                        if h.endswith("Total Apps"))
         band = next(r for r in rows
                     if r[1] == f"{B.TEAM_ROW_PREFIX}SE7EN SINS")
         self.assertEqual(band[apps_col], "5")

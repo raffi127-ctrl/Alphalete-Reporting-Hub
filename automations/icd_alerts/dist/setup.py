@@ -756,9 +756,63 @@ def report_fault(stage: str, summary: str, detail: str = "") -> None:
         pass
 
 
+def is_desktop() -> bool:
+    """True when this machine has NO battery -- so it is a desktop.
+
+    WHY A BATTERY AND NOT THE MODEL NAME. hw.model reads "MacBookPro18,1" on
+    an Intel laptop, but Apple Silicon reports generic strings like "Mac14,7"
+    for laptops AND desktops alike, so matching model names would refuse a
+    brand-new iMac and accept a brand-new MacBook. Every Mac either has an
+    internal battery or does not, and that is exactly the question being
+    asked (Megan 2026-09-13).
+
+    Unknown counts as a desktop. Refusing an office because a probe did not
+    answer is worse than letting a laptop through -- the laptop at least gets
+    told what will happen to it.
+    """
+    if IS_WINDOWS:
+        return True                      # Windows is judged by its own rules
+    try:
+        out = subprocess.run(["ioreg", "-rc", "AppleSmartBattery"],
+                             capture_output=True, timeout=20)
+        return b"AppleSmartBattery" not in (out.stdout or b"")
+    except Exception:  # noqa: BLE001 — no ioreg, odd sandbox, slow disk
+        return True
+
+
+def require_desktop() -> bool:
+    """Stop a laptop install before anything is copied onto it.
+
+    THE MACHINE FALLING ASLEEP IS THE FAILURE THIS WHOLE SYSTEM HAS MOST
+    OFTEN. A closed lid means the office's channel goes quiet and the first
+    anybody knows is a nudge two hours later. An iMac or a Mac mini sits on a
+    desk, plugged in, with no lid to close.
+
+    Checked FIRST, before the program is copied or a Python is built, so a
+    refusal leaves nothing behind on their machine.
+    """
+    if is_desktop():
+        return True
+    say("")
+    say("  %s%sThis needs to run on a desktop.%s" % (BOLD, RED, OFF))
+    say("")
+    ask.message(
+        "This computer is a laptop.\n\n"
+        "Lucy has to read your numbers all day, and a laptop stops the "
+        "moment its lid is closed or it goes to sleep — so your channel "
+        "would go quiet without anybody noticing.\n\n"
+        "Please run this on a desktop that stays on in the office: an iMac, "
+        "a Mac mini or a Mac Studio.\n\n"
+        "Nothing has been installed on this computer.",
+        error=True)
+    return False
+
+
 def main() -> int:
     banner()
     seed_install_json()
+    if not require_desktop():
+        return 1
 
     total = 9
     step(1, total, "Copying the program onto this computer")

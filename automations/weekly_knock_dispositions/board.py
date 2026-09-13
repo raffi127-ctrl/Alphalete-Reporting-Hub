@@ -35,7 +35,8 @@ from automations.total_knocks.pull import (
     COL_REP,
 )
 from automations.weekly_knock_dispositions.pull import (
-    K_DAILY_GAP_MIN, K_DAILY_KNOCKS, K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST,
+    K_DAILY_GAP_MIN, K_DAILY_KNOCKS, K_DAILY_LEADS, K_DAILY_TALK_TO,
+    K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST,
     K_TALK_TO, K_TOTAL_KNOCKS, K_TOTAL_LEADS, K_TT_DAYS)
 from automations.weekly_knock_dispositions.teams import UNASSIGNED
 
@@ -111,13 +112,78 @@ COL_SAT_CLOCKED = "Sat Clocked In"
 # 4,511 doors per rep for a week. Both readings are gone now: neither could put
 # a number on a rep row, which is what the column is for.)
 #
-# So: one rep's own Mon–Sat doors over 6, filled on EVERY row. Divisor is 6 to
-# match the board's other "/ Day" column, NOT the days that rep actually
-# knocked — a rep who worked two days reads low here for the same reason they
-# read low in Avg Talk To's / Day, and the two can be read against each other.
-# On a summary row it is the ICD's doors over 6 over its reps, the same per-rep
-# rule every other Avg cell on that row follows.
-COL_DOORS_PER_DAY = "Avg Doors / Day"
+# So: one rep's own doors over the days in the span, filled on EVERY row. The
+# divisor is the SPAN, not the days that rep actually knocked — a rep who
+# worked two days reads low here for the same reason they read low in Avg Talk
+# To's / Day, and the two can be read against each other. On a summary row it
+# is the ICD's doors over the span over its reps, the same per-rep rule every
+# other Avg cell on that row follows.
+#
+# MON–FRI, over 5 (Raf 2026-09-13, Loom "Adjusting Metrics for Weekdays and
+# Saturday"): "can we change this to be Monday through Friday?". Saturday is a
+# short shift on a different schedule, so averaging it into the weekday number
+# drags every rep down by the same ~17% and hides who actually works weekdays.
+# Saturday now answers for itself in COL_SAT_DOORS_PER_DAY instead of being
+# blended away — which is the point of splitting them.
+COL_DOORS_PER_DAY = "Mon\u2013Fri Avg Doors / Day"
+# Saturday's own doors-per-day (Raf 2026-09-13, same Loom at 1:52: "there can
+# be a column here … Saturday average doors knocked per day", cursor parked on
+# Sat First Knock — so it belongs in the SATURDAY block, not beside the weekday
+# one). Saturday is one day, so a rep's "per day" is simply that day's doors;
+# on a summary row it is the office's Saturday doors over its reps, the same
+# per-rep rule the rest of the row follows.
+COL_SAT_DOORS_PER_DAY = "Sat Avg Doors / Day"
+
+# The four counting columns Raf moved to Mon–Fri on 2026-09-13, named as
+# constants because the Mon–Fri/Mon–Sat split is now the thing a reader is
+# meant to notice and the labels have to match the arithmetic exactly.
+COL_MF_LEADS = "Mon\u2013Fri Total Leads Knocked"
+COL_MF_KNOCKS = "Mon\u2013Fri Total Knocks"
+# Talk-to's are MON–SAT — all of them (Raf 2026-09-13, editing his own reply
+# an hour after sending it: "Lets make it Monday - Saturday for total talk
+# too's & AVG Talks / Day also Mon - Saturday"). His first answer had said
+# Mon–Fri; this supersedes it. Only the DOORS columns (leads, knocks,
+# doors/day) are Mon–Fri now.
+COL_TALK_TO = "Mon\u2013Sat Total Talk To's"
+# …and the percentage follows the column it divides, so BOTH halves are
+# Mon–Sat: talk-to's over Mon–Sat knocks. Mon–Sat knocks is not a column any
+# more, so this ratio can't be checked against the row — but the alternative
+# (Mon–Sat talk-to's over the Mon–Fri knocks printed two cells left) is a
+# percentage of nothing, which is worse than one you can't verify.
+COL_PCT = "Mon\u2013Sat % Talk To's per Knocks"
+# Saturday's own talk-to's (Raf 2026-09-13: "add a column of Saturday Talk Tos
+# / day please"), the mirror of COL_SAT_DOORS_PER_DAY and sitting beside it.
+COL_SAT_TALK_PER_DAY = "Sat Avg Talk To's / Day"
+
+
+def _span(rec: dict, key: str, lo: int, hi: int):
+    """Sum days [lo:hi] of a Mon..Sat per-day list, or None when this record
+    doesn't carry one.
+
+    None, never a fallback to the week total: a Mon–Sat number printed under a
+    Mon–Fri header is the exact confusion these columns were relabelled to end.
+    Rows pulled before 2026-09-13 carry no per-day leads or talk-to's, so their
+    Mon–Fri columns drop out of the board entirely (OPTIONAL_COLUMNS) and come
+    back by themselves on the next pull — the same way Sat Clocked In did."""
+    daily = rec.get(key)
+    if not isinstance(daily, (list, tuple)):
+        return None
+    return sum(int(v or 0) for v in daily[lo:hi])
+
+
+def _monfri(rec: dict, key: str):
+    """Mon–Fri total from a per-day list (days 0..4)."""
+    return _span(rec, key, 0, WEEKDAYS)
+
+
+def _saturday(rec: dict, key: str):
+    """Saturday's own number from a per-day list. None when the list is too
+    short to HAVE a Saturday — a partial week is not a zero Saturday."""
+    daily = rec.get(key)
+    if not isinstance(daily, (list, tuple)) or len(daily) <= SATURDAY:
+        return None
+    return int(daily[SATURDAY] or 0)
+
 
 # Raf's mockup 2026-08-23: knock averages are Mon–Fri (Saturday's schedule
 # skews them), the gap columns SAY Mon–Sat, and Saturday's own knock times
@@ -128,14 +194,28 @@ HEADERS = [
     # knocks" (Raf 2026-08-30). These are two of the table's own aggregates,
     # the ones he had taken OFF on 2026-08-22 ("remove what's in red"); they
     # are back by name, and only these two.
-    "Total Leads Knocked", "Total Knocks",
+    #
+    # EVERY column now says its own span out loud (Raf 2026-09-13: "if you want
+    # to write that out, Monday through Saturday"). The board mixes the two on
+    # purpose and a reader cannot be expected to remember which is which — the
+    # whole question that started this ("is this Monday–Saturday or just
+    # Monday–Friday?") was asked about a header that didn't say.
+    COL_MF_LEADS, COL_MF_KNOCKS,
     COL_DOORS_PER_DAY,
     # "% Talk To's per Knocks" sits right after the Total Talk To it divides,
     # the same place and the same spelling the DAILY board gives it — the two
-    # land in one email in front of one reader.
-    "Total Talk To's", "% Talk To's per Knocks",
-    "Avg Talk To's / Day", "Total Apps",
-    "Avg Talk To's per App", "Mon\u2013Fri Avg First Knock",
+    # land in one email in front of one reader. It is Mon–Fri because the
+    # knocks it divides are (Raf, 1:14: "I guess this would also have to be
+    # Monday through Friday") — a Mon–Sat numerator over a Mon–Fri denominator
+    # would print a percentage that is true of no span at all.
+    COL_TALK_TO, COL_PCT,
+    # …and these three stay MON–SAT, by name (Raf, 1:24): "average talk to's
+    # per day can be Monday through Saturday … because then total apps is
+    # obviously Monday through Saturday, and then average talk to's per app is
+    # Monday through Saturday". Apps are counted for the whole week, so the two
+    # columns that divide by apps have to span the whole week too.
+    "Mon\u2013Sat Avg Talk To's / Day", "Mon\u2013Sat Total Apps",
+    "Mon\u2013Sat Avg Talk To's per App", "Mon\u2013Fri Avg First Knock",
     "Mon\u2013Fri Avg Last Knock",
     # LABELLED Mon–Fri, and now actually Mon–Fri. It was a Mon–Fri span minus
     # a Mon–SAT average gap — Raf asked "is that only counting Monday-Friday?"
@@ -144,7 +224,8 @@ HEADERS = [
     "Mon\u2013Sat Avg Gap / Day", "Mon\u2013Sat Total Gap Hours",
     # Saturday's own block, in the order he asked for it: knocking hours in
     # front of the gap hours, and both in front of Sat Last Knock.
-    COL_SAT_CLOCKED, "Sat First Knock", "Sat Avg Hrs Knocking",
+    COL_SAT_CLOCKED, COL_SAT_DOORS_PER_DAY, COL_SAT_TALK_PER_DAY,
+    "Sat First Knock", "Sat Avg Hrs Knocking",
     "Sat Avg Gap Hours", "Sat Last Knock",
 ]
 
@@ -154,7 +235,15 @@ HEADERS = [
 # (2026-08-30, three times in an afternoon). It also covers the honest case: an
 # office whose Time Tracker never answered shouldn't show a clock-in column at
 # all rather than a column of blanks that reads as "nobody worked Saturday".
-OPTIONAL_COLUMNS = {COL_SAT_CLOCKED}
+# COL_MF_LEADS and COL_SAT_TALK_PER_DAY join it 2026-09-13: they need the
+# per-day leads and talk-to lists, which only pulls from that date carry. On a
+# cached pre-2026-09-13 week they vanish rather than print a whole-week number
+# under a one-day or Mon–Fri label, and the first fresh pull switches them back
+# on with no deploy. (COL_DOORS_PER_DAY and COL_SAT_DOORS_PER_DAY are NOT
+# optional — they come off K_DAILY_KNOCKS, which every pull since 2026-08-30
+# already carries; COL_TALK_TO and COL_PCT are Mon–Sat week totals, which every
+# pull has always carried.)
+OPTIONAL_COLUMNS = {COL_SAT_CLOCKED, COL_MF_LEADS, COL_SAT_TALK_PER_DAY}
 
 # After the summary columns comes the full disposition breakdown (Raf
 # 2026-08-22 — his sheet's green columns; the aggregate red ones stay off).
@@ -322,7 +411,16 @@ def is_knocking(rec: dict) -> bool:
     daily = rec.get(K_DAILY_KNOCKS)
     if not isinstance(daily, (list, tuple)) or not daily:
         return False
-    return (int(rec.get(K_TOTAL_KNOCKS) or 0) / DAYS) >= MIN_KNOCKS_PER_DAY
+    # MON–FRI, over 5, following COL_DOORS_PER_DAY (Raf 2026-09-13). The whole
+    # reason this test is an average is that the reader can CHECK it against
+    # the doors column on the very next cell — so when that column moved to
+    # Mon–Fri, this had to move with it or the check stops working. It raises
+    # the counts a little: a rep who was carrying a weak Saturday is no longer
+    # penalised for it here either.
+    mf = _monfri(rec, K_DAILY_KNOCKS)
+    if mf is None:
+        return False
+    return (mf / WEEKDAYS) >= MIN_KNOCKS_PER_DAY
 
 
 def _gaps(rec: dict):
@@ -376,12 +474,31 @@ def _pct(part, whole) -> str:
 
 
 def _doors_per_day(rec: dict) -> str:
-    """One rep's own doors per day — their Mon–Sat total over 6. Blank when the
-    pull carried no door counts for them (a pre-2026-08-30 cached row, or a
-    gaps-only office), never a 0 they didn't earn."""
-    if not isinstance(rec.get(K_DAILY_KNOCKS), (list, tuple)):
+    """One rep's own doors per day — their MON–FRI total over 5 (Raf
+    2026-09-13). Blank when the pull carried no door counts for them (a
+    pre-2026-08-30 cached row, or a gaps-only office), never a 0 they
+    didn't earn."""
+    mf = _monfri(rec, K_DAILY_KNOCKS)
+    return "" if mf is None else _num(mf / WEEKDAYS)
+
+
+def _sat_cell(rec: dict, key: str) -> str:
+    """One rep's Saturday number from a per-day list — doors or talk-to's.
+
+    BLANK, not 0, for a rep who never clocked in on Saturday (Raf 2026-09-13,
+    asked which population the Saturday average should cover: "only the ones
+    that clocked in on Saturday"). Blanking the cell is what makes the column
+    show exactly the reps its average is taken over — a 0 sitting in a column
+    whose office figure skips that rep is a number the reader cannot reconcile.
+    It also matches what the rest of the Saturday block already does for a rep
+    who didn't work: Sat First Knock and the Saturday times are blank, not
+    zero. Who did and didn't work Saturday is still one cell left, in
+    Sat Clocked In. A rep who DID clock in and knocked nothing keeps their 0 —
+    that zero is real and is the column's whole point."""
+    if not _sat_clocked(rec):
         return ""
-    return _num(int(rec.get(K_TOTAL_KNOCKS) or 0) / DAYS)
+    sat = _saturday(rec, key)
+    return "" if sat is None else str(sat)
 
 
 def has_daily_knocks(ov_rows: list[dict]) -> bool:
@@ -531,12 +648,15 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
     rows: list[list[str]] = []
     for r in sorted(ov_rows, key=lambda r: str(r.get(COL_REP, "")).lower()):
         rep = str(r.get(COL_REP, "")).strip()
+        # Mon–Sat, every talk-to column (Raf 2026-09-13, edited reply).
         talk = int(r.get(K_TALK_TO) or 0)
         avg_day = talk / DAYS
         n_apps = matched.get(rep)
         gap_min = r.get(K_GAP_MIN)
-        knocks = r.get(K_TOTAL_KNOCKS)
-        leads = r.get(K_TOTAL_LEADS)
+        # …while the three COUNTING columns are Mon–Fri. None (not 0) on a row
+        # pulled before the per-day lists existed — see _span.
+        knocks = _monfri(r, K_DAILY_KNOCKS)
+        leads = _monfri(r, K_DAILY_LEADS)
         mf_gap = _monfri_gap_per_day(r)
         s_gap = _sat_gap(r)
         rows.append([
@@ -546,7 +666,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             ("" if knocks is None else str(int(knocks))),
             _doors_per_day(r),
             str(talk),
-            _pct(talk, knocks),
+            _pct(talk, r.get(K_TOTAL_KNOCKS)),
             _num(avg_day),
             "" if apps is None else str(n_apps or 0),
             (_num(talk / n_apps) if n_apps else ""),
@@ -560,6 +680,8 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
             (_hm(int(gap_min)) if gap_min is not None else ""),
             ("Yes" if _sat_clocked(r) else ""),
+            _sat_cell(r, K_DAILY_KNOCKS),
+            _sat_cell(r, K_DAILY_TALK_TO),
             str(r.get(K_SAT_FIRST, "")).strip(),
             (_knocking_hm(str(r.get(K_SAT_FIRST, "")),
                           str(r.get(K_SAT_LAST, "")), s_gap)
@@ -574,8 +696,15 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         for rep, n_apps in sorted(apps.items()):
             if _norm_name(rep) in consumed or not n_apps:
                 continue
-            rows.append(["", _display_name(rep)] + [""] * 6 + [str(n_apps)]
-                        + [""] * 11)
+            # Width and the apps slot taken from the LIVE header list, not
+            # counted by hand — a column added to HEADERS (Sat Avg Doors / Day,
+            # 2026-09-13) used to silently shift this row's apps count one cell
+            # left of its column.
+            _hdr = headers_for(dispo_cols)
+            _blank = [""] * len(_hdr)
+            _blank[1] = _display_name(rep)
+            _blank[_hdr.index("Mon\u2013Sat Total Apps")] = str(n_apps)
+            rows.append(_blank)
 
     # The summary block leads the board, and inside it the GUEST office comes
     # first: Chan's totals, then this office's, then the reps (Megan
@@ -605,11 +734,29 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
                 if r.get(K_GAP_MIN) is not None]
     tot_gaps = sum(gap_reps)
     n_reps = len(ov_rows)
+    # Mon–Fri doors, over the reps who HAVE per-day doors (Raf 2026-09-13).
     _door_reps = [r for r in ov_rows
-                  if isinstance(r.get(K_DAILY_KNOCKS), (list, tuple))]
-    _tot_doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in _door_reps)
-    _lead_reps = [r for r in ov_rows if r.get(K_TOTAL_LEADS) is not None]
-    _tot_leads = sum(int(r.get(K_TOTAL_LEADS) or 0) for r in _lead_reps)
+                  if _monfri(r, K_DAILY_KNOCKS) is not None]
+    _tot_doors = sum(_monfri(r, K_DAILY_KNOCKS) for r in _door_reps)
+    # Saturday's own doors and talk-to's, over the reps who CLOCKED IN that
+    # day only (Raf 2026-09-13: "only the ones that clocked in on Saturday").
+    # Averaging in the reps who never showed up reported the office's Saturday
+    # as 60.79 doors when the reps who actually worked it did 92 — two
+    # different questions, and the one he wants is how the reps who came out
+    # performed, not how many stayed home. Sat Clocked In, one cell left,
+    # is where the turnout answer lives.
+    _sat_in = [r for r in ov_rows if _sat_clocked(r)]
+    _sat_doors = [d for d in (_saturday(r, K_DAILY_KNOCKS) for r in _sat_in)
+                  if d is not None]
+    _sat_talk = [t for t in (_saturday(r, K_DAILY_TALK_TO) for r in _sat_in)
+                 if t is not None]
+    # Mon–Sat doors — not a column, but the denominator COL_PCT divides by, so
+    # both halves of that percentage span the same week.
+    _ms_door_reps = [r for r in ov_rows
+                     if isinstance(r.get(K_DAILY_KNOCKS), (list, tuple))]
+    _tot_ms_doors = sum(int(r.get(K_TOTAL_KNOCKS) or 0) for r in _ms_door_reps)
+    _lead_reps = [r for r in ov_rows if _monfri(r, K_DAILY_LEADS) is not None]
+    _tot_leads = sum(_monfri(r, K_DAILY_LEADS) for r in _lead_reps)
     _mf_gaps = [g for g in (_monfri_gap_per_day(r) for r in ov_rows)
                 if g is not None]
     _sat_gaps = [g for g in (_sat_gap(r) for r in ov_rows) if g is not None]
@@ -632,9 +779,11 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
         ("" if not _door_reps else str(_tot_doors)),
         # Per rep, not office-level — the same rule every Avg column on this
         # row follows (Megan 2026-08-22: a sum in an "Avg / Day" cell misreads).
-        (_num(_tot_doors / DAYS / len(_door_reps)) if _door_reps else ""),
+        # Over WEEKDAYS now, matching the header (Raf 2026-09-13).
+        (_num(_tot_doors / WEEKDAYS / len(_door_reps)) if _door_reps else ""),
         str(tot_talk),
-        (_pct(tot_talk, _tot_doors) if _door_reps else ""),
+        # Mon–Sat over Mon–Sat: both halves of the ratio are the same span.
+        (_pct(tot_talk, _tot_ms_doors) if _ms_door_reps else ""),
         (_num(tot_talk / DAYS / n_reps) if n_reps else ""),
         "" if apps is None else str(tot_apps),
         (_num(tot_talk / tot_apps) if tot_apps else ""),
@@ -648,6 +797,8 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
         (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
         _hm(tot_gaps),
         _sat_clocked_cells(ov_rows),
+        (_num(sum(_sat_doors) / len(_sat_doors)) if _sat_doors else ""),
+        (_num(sum(_sat_talk) / len(_sat_talk)) if _sat_talk else ""),
         _avg_knock(ov_rows, K_SAT_FIRST),
         (_knocking_hm(_avg_knock(ov_rows, K_SAT_FIRST),
                       _avg_knock(ov_rows, K_SAT_LAST),
@@ -657,7 +808,8 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
     ])
 
 
-def number_rows(rows: list[list[str]], n_top: int) -> dict:
+def number_rows(rows: list[list[str]], n_top: int,
+                compare_labels: "set[str] | None" = None) -> dict:
     """Number the rep rows IN PLACE and return {row index: fill} for the team
     bands. Split out of render() so it can be read and tested on its own —
     render rebuilds `rows` when it drops an empty optional column, and a
@@ -666,13 +818,23 @@ def number_rows(rows: list[list[str]], n_top: int) -> dict:
     Rep rows are 1..N, restarting under each band, so the count beside a
     rep's name is their place in their OWN team — the number a team lead is
     looking for. The band's own cell keeps the "K of N" totals_row put there,
-    and the summary block above n_top is never touched."""
+    and the summary block above n_top is never touched.
+
+    `compare_labels` — the name-column text of the comparison office's totals
+    rows (Raf 2026-09-13). Those repeat above every team band, and they are
+    neither reps nor team bands: numbering them would start each team at 2 and
+    give the comparison office a rep number. They draw as their own coloured
+    band instead."""
+    labels = compare_labels or set()
     section_rows: dict[int, tuple] = {}
     n = 0
     for i, row in enumerate(rows[n_top:], start=n_top):
         if not row:
             continue
-        if is_team_row(row):
+        if len(row) > 1 and str(row[1]).strip() in labels:
+            section_rows[i] = COMPARE_ROW_BG
+            continue                       # not a rep, and not a team band:
+        if is_team_row(row):               # `n` deliberately survives it, so
             section_rows[i] = knocks_render.band_color(row[1])
             n = 0
             continue
@@ -728,7 +890,9 @@ def team_buckets(ov_rows: list[dict], apps: dict[str, int] | None,
 
 def compute_rows_by_team(ov_rows: list[dict], apps: dict[str, int] | None,
                          dispo_cols: list[str] | None,
-                         book) -> list[list[str]]:
+                         book,
+                         compare_rows: list[list[str]] | None = None
+                         ) -> list[list[str]]:
     """The board's rows, broken up by team (Raf 2026-09-13).
 
     OFFICE TOTALS first — unchanged, over the whole office, so the headline
@@ -738,8 +902,17 @@ def compute_rows_by_team(ov_rows: list[dict], apps: dict[str, int] | None,
     Each block is built by compute_rows over that team's reps ALONE, so every
     Avg on a team band is a per-rep average of that team, computed by exactly
     the code that computes the office's. Nothing here re-implements a column;
-    the only edit to a block is its totals row's LABEL."""
+    the only edit to a block is its totals row's LABEL.
+
+    `compare_rows` (Raf 2026-09-13: "can Chans numbers be added above each team
+    name as well please") — the comparison office's totals, repeated above
+    EVERY team band instead of appearing once at the top of the board. A team
+    lead reading their own band now has the number they are being measured
+    against on the row directly above it, rather than 40 rows up. The caller
+    still puts the same rows at the top of the board; these are copies, so a
+    later edit to one row can't desync the repeats."""
     gaps = is_gaps_only(ov_rows)
+    _compare = [list(r) for r in (compare_rows or [])]
     out = [totals_row(ov_rows, apps, dispo_cols or [])]
     for team, t_rows, t_apps in team_buckets(ov_rows, apps, book):
         # A gaps-only office draws a NARROWER table, and is_gaps_only reads
@@ -751,6 +924,8 @@ def compute_rows_by_team(ov_rows: list[dict], apps: dict[str, int] | None,
             continue
         block = compute_rows(t_rows, t_apps, dispo_cols)
         block[0][1] = TEAM_ROW_PREFIX + team.upper()
+        # Comparison row(s) FIRST, then the team band they belong to.
+        out.extend([list(r) for r in _compare])
         out.extend(block)
     return out
 
@@ -782,14 +957,18 @@ def render(office: str, monday: dt.date, saturday: dt.date,
     # for the same reason the daily board excludes its TOTAL: an office-level
     # green is a different claim from a rep hitting his number.
     #
-    # Avg Doors / Day divides by SIX, so its goal is the blended one —
-    # (5 x 160 weekday + 140 Saturday) / 6 — not the flat weekday 160. A rep
-    # averaging 157 across the week has met what Rafael asks for; holding him
-    # to 160 would fail him for Saturday being a shorter shift.
-    _WEEK_DOORS_GOAL = (knocks_render.DOORS_TARGET_WEEKDAY * 5
-                        + knocks_render.DOORS_TARGET_SATURDAY) / DAYS
+    # Mon–Fri Avg Doors / Day divides by FIVE weekdays, so its goal is the
+    # flat weekday target — no longer the blended (5 x 160 + 140) / 6, which
+    # existed only because Saturday used to be averaged into this column.
+    # Splitting the spans is what lets each be judged against its own number
+    # (Raf 2026-09-13), and Saturday is now held to the Saturday target
+    # instead of quietly pulling the weekday one down.
     _green = {COL_DOORS_PER_DAY:
-              lambda v: _isfloat(v) and float(v) >= _WEEK_DOORS_GOAL,
+              lambda v: (_isfloat(v)
+                         and float(v) >= knocks_render.DOORS_TARGET_WEEKDAY),
+              COL_SAT_DOORS_PER_DAY:
+              lambda v: (_isfloat(v)
+                         and float(v) >= knocks_render.DOORS_TARGET_SATURDAY),
               # EARLIER is better. Saturday's first knock has no stated target
               # (it is a different shift), so only the Mon–Fri one is judged.
               "Mon\u2013Fri Avg First Knock":
@@ -822,7 +1001,14 @@ def render(office: str, monday: dt.date, saturday: dt.date,
     # Counting 1..77 straight through the teams instead would give every rep a
     # number that means nothing to anybody.
     n_top = n_totals + n_compare_top
-    section_rows = number_rows(rows, n_top)
+    # The comparison office's totals repeat above every team band (Raf
+    # 2026-09-13). They are matched by the NAME CELL of the rows the caller
+    # put at the top, so render never has to be told twice which rows those
+    # are and the two can't disagree.
+    _cmp_labels = {str(rows[i][1]).strip()
+                   for i in range(min(n_compare_top, len(rows)))
+                   if len(rows[i]) > 1}
+    section_rows = number_rows(rows, n_top, _cmp_labels)
     # "Add in what the headers are on each team" (Raf 2026-09-13, Megan's
     # marked-up screenshot the same day — the header block circled, an arrow
     # to every team band): the column header band repeats above EVERY team,
@@ -835,7 +1021,21 @@ def render(office: str, monday: dt.date, saturday: dt.date,
     # is also what closes the office summary block and opens the team
     # sections, and a board where one team is laid out unlike the other six
     # is worse than one repeated band.
-    header_before = set(section_rows)
+    # The repeated column-header band opens each TEAM SECTION — above the
+    # comparison row(s) that lead it, not between them and the band, which
+    # would split a pair that has to be read together. Walk up from each team
+    # band over the contiguous comparison rows to find where its section
+    # starts.
+    header_before = set()
+    for _i in section_rows:
+        if not is_team_row(rows[_i]):
+            continue
+        _start = _i
+        while (_start - 1 > n_top - 1
+               and len(rows[_start - 1]) > 1
+               and str(rows[_start - 1][1]).strip() in _cmp_labels):
+            _start -= 1
+        header_before.add(_start)
     cell_bgs = {}
     for _h, _hit in _green.items():
         if _h not in hdr:

@@ -486,8 +486,19 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             # team split is an improvement to the board, never a reason an
             # office doesn't get its Sunday post.
             book = _office_teams(name)
+            # Comparison rows are built BEFORE the board so they can also be
+            # repeated above every team band (Raf 2026-09-13, "can Chans
+            # numbers be added above each team name as well please").
+            compare_rows: list[list[str]] = []
+            _lookup = {**pulled, **compare_pulled}
+            for other in compare_targets(name):
+                if other in _lookup and not gaps_only:
+                    o_cfg, o_rows, _ = _lookup[other]
+                    compare_rows.append(B.totals_row(
+                        o_rows, _office_apps(o_cfg), dispo_cols,
+                        label=f"{other.upper()} TOTALS"))
             rows = (B.compute_rows_by_team(ov_rows, office_apps, dispo_cols,
-                                           book) if book
+                                           book, compare_rows) if book
                     else B.compute_rows(ov_rows, office_apps, dispo_cols))
             # TEMPORARY comparison rows (offices.COMPARE_TOTALS — delete
             # the entry there to remove): the other office's totals, summed
@@ -497,14 +508,6 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             # OFFICE TOTALS. The daily boards have always put them on top;
             # this is the weekly one catching up.
             n_totals = 1
-            compare_rows: list[list[str]] = []
-            _lookup = {**pulled, **compare_pulled}
-            for other in compare_targets(name):
-                if other in _lookup and not gaps_only:
-                    o_cfg, o_rows, _ = _lookup[other]
-                    compare_rows.append(B.totals_row(
-                        o_rows, _office_apps(o_cfg), dispo_cols,
-                        label=f"{other.upper()} TOTALS"))
             # index 0: ABOVE this office's own TOTALS, matching the daily
             # board (Megan 2026-08-30, "under chan's row").
             rows[0:0] = compare_rows

@@ -146,3 +146,41 @@ class TheNameOnScreenIsNotTheNameOnDisk(unittest.TestCase):
     def test_the_uninstaller_still_looks_where_things_actually_are(self):
         self.assertIn('.lucy-reports', XSH)
         self.assertIn('com.alphalete.lucy-reports.plist', XSH)
+
+
+class LaptopsAreRefused(unittest.TestCase):
+    """It has to run on a desktop, and be refused before anything is copied.
+
+    Megan 2026-09-13. A closed lid is the failure this system has hit most
+    often: the office's channel goes quiet and the first anybody knows is a
+    nudge two hours later. An iMac or a Mac mini sits on a desk, plugged in,
+    with no lid to close.
+    """
+
+    SETUP = (HERE / "dist" / "setup.py").read_text()
+
+    def test_it_asks_about_a_battery_not_a_model_name(self):
+        """hw.model reads "MacBookPro18,1" on an Intel laptop, but Apple
+        Silicon reports generic strings like "Mac14,7" for laptops AND
+        desktops -- matching model names would refuse a new iMac and accept a
+        new MacBook."""
+        self.assertIn("AppleSmartBattery", self.SETUP)
+        # Not that the words never appear -- the comment explains why we do
+        # not use them -- but that nothing actually PROBES for a model name.
+        self.assertNotIn("sysctl", self.SETUP)
+        self.assertNotIn('"hw.model"', self.SETUP)
+
+    def test_the_refusal_happens_before_anything_is_copied(self):
+        body = self.SETUP[self.SETUP.index("def main() -> int:"):]
+        body = body[:body.index("\n\ndef ") if "\n\ndef " in body else len(body)]
+        self.assertIn("require_desktop()", body)
+        self.assertLess(body.index("require_desktop()"), body.index("copy_app()"),
+                        "a refused laptop would be left with files on it")
+
+    def test_an_unanswerable_probe_lets_them_through(self):
+        # Refusing an office because ioreg did not answer is worse than
+        # letting a laptop through -- the laptop at least gets told what will
+        # happen to it.
+        fn = self.SETUP[self.SETUP.index("def is_desktop()"):]
+        fn = fn[:fn.index("\ndef ")]
+        self.assertIn("return True", fn.split("except")[-1])

@@ -166,6 +166,10 @@ with st.container(border=True):
              "ask than guess.")
 
     st.subheader("The computer it will run on")
+    st.caption("It has to be a **desktop that stays on in the office** — an "
+               "iMac, a Mac mini or a Mac Studio. The installer will not run "
+               "on a laptop: a closed lid means your channel goes quiet, and "
+               "that is the problem this has hit most often.")
     platform = st.radio("Is it a Mac or a Windows PC?",
                         options=["mac", "windows"],
                         format_func=lambda p: "Mac" if p == "mac" else "Windows PC",

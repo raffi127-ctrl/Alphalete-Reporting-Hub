@@ -66,6 +66,21 @@ K_TOTAL_LEADS = "Week Total Leads Knocked"
 # or "what is the Mon–Fri average", and 2026-08-30 the board needed both:
 # Avg Hrs Knocking / Day was subtracting a Mon–SAT average gap from a Mon–FRI
 # span, and Raf asked for Saturday's own gap and knocking hours as columns.
+# Leads and talk-to's kept PER DAY, Mon..Sat in order — same treatment
+# K_DAILY_KNOCKS already got, and for the same reason (Raf 2026-09-13, Loom
+# "Adjusting Metrics for Weekdays and Saturday"): he asked for the leads,
+# knocks, doors-per-day, talk-to's and %-talk-to's columns to read MON–FRI,
+# because Saturday is a short shift on a different schedule and it drags every
+# weekday average down. A week total cannot be split after the fact, so the
+# per-day numbers are carried from the scrape.
+#
+# BOTH are additions, not replacements: K_TOTAL_LEADS / K_TALK_TO stay exactly
+# as they were, because the columns Raf kept at Mon–Sat (Avg Talk To's / Day,
+# Total Apps, Avg Talk To's per App) still read off the week total. A row
+# pulled before 2026-09-13 has neither key, and board.py falls back to the
+# week total rather than printing a Mon–Sat number under a Mon–Fri label.
+K_DAILY_LEADS = "Daily Leads Knocked"
+K_DAILY_TALK_TO = "Daily Talk To's"
 K_DAILY_GAP_MIN = "Daily Gap Minutes"
 # Which days the rep had a Time Tracker record AT ALL, Mon..Sat — 1 = clocked
 # into TeleMapper that day. Raf 2026-08-30 (Loom, 12:59): "I should get a
@@ -403,6 +418,18 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                 if _DAY_LEADS in rec:
                     a[K_TOTAL_LEADS] = (int(a.get(K_TOTAL_LEADS) or 0)
                                         + int(rec.get(_DAY_LEADS) or 0))
+                    # …and positionally, so the Mon–Fri columns can be taken
+                    # without a second scrape. Same slotting rule as the doors
+                    # below: a missed Wednesday is a 0 in Wednesday's slot.
+                    a.setdefault(K_DAILY_LEADS, [0] * n_days)
+                    _i = (day - monday).days
+                    if 0 <= _i < n_days:
+                        a[K_DAILY_LEADS][_i] = int(rec.get(_DAY_LEADS) or 0)
+                if K_TALK_TO in rec:
+                    a.setdefault(K_DAILY_TALK_TO, [0] * n_days)
+                    _i = (day - monday).days
+                    if 0 <= _i < n_days:
+                        a[K_DAILY_TALK_TO][_i] = int(rec.get(K_TALK_TO) or 0)
                 if _DAY_KNOCKS in rec:
                     # Slot the day's doors into its own Mon..Sat position, so
                     # a rep who missed Wednesday reads as a 0 there and not as
