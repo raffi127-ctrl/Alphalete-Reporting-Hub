@@ -344,54 +344,27 @@ def read_current_applicant(page, today: dt.date = None) -> Applicant:
 
 
 # --- pager settle ----------------------------------------------------------- #
-# After clicking Next the walk used to sleep a flat 1800ms, chosen as "long
-# enough for the slowest re-render". It is paid on EVERY page-turn, and a walk
-# page-turns once per applicant — roughly 4,000 times a day across the office
-# rotation, which is over an hour of the push's day spent waiting on renders that
-# had already finished. The pager is usually back in ~200-400ms.
+# BACKED OUT 2026-09-13, same day it shipped. The idea was sound — the flat
+# 1800ms after every Next click is paid ~4,000 times a day and the pager is
+# usually back in ~300ms — but the early-return condition was wrong.
 #
-# So POLL for the panel to actually change instead of assuming the worst case.
-# The cap is unchanged, so a genuinely slow re-render waits exactly as long as it
-# always did; we only return early once the new applicant is provably on screen.
-# When we cannot read a signature at all (evaluate unavailable), we fall back to
-# the old flat wait rather than guessing the page turned.
+# It returned as soon as the PANEL signature changed: pager position plus the
+# name/email fields. Those are in the top document and settle first. The applicant's
+# RESUME renders in a nested frame that loads later, and the walk's very next move
+# is to look for the "View resume" link in that frame. Returning early meant
+# looking before it existed, and a missing link is not retried — it is read as
+# "no resume attached at all", which is a verdict about the APPLICANT.
+#
+# Cost, measured in Carlos's office the afternoon it shipped: 219 applicants
+# marked "no resume on file" in one afternoon, against 1 per walk on 9/10 under
+# the old wait. Megan spotted it from the outside — "62 is SUPER high" — and a
+# screenshot of one flagged record showed the View resume link plainly present.
+#
+# The flat wait is restored. If this is retried, the condition has to be the
+# thing the walk actually needs next — the resume link being reachable — not the
+# first sign of any change at all. A faster walk that mislabels people is not
+# faster, it is wrong.
 _ADVANCE_SETTLE_CAP_MS = 1800
-_ADVANCE_SETTLE_POLL_MS = 150
-
-_PANEL_SIG_JS = r"""() => {
-  const v = n => { const e = document.querySelector(`[name='${n}']`);
-                   return e ? (e.value || '') : ''; };
-  const m = (document.body.innerText || '').match(/(\d+)\s+of\s+\d+\s+emails/i);
-  return (m ? m[1] : '') + '|' + v('fname') + '|' + v('lname') + '|' + v('email');
-}"""
-
-
-def _panel_signature(page) -> str:
-    """A cheap fingerprint of who is on the panel right now — pager position plus
-    the name/email fields. Empty string means we could not read one."""
-    try:
-        return str(page.evaluate(_PANEL_SIG_JS) or "")
-    except Exception:  # noqa: BLE001
-        return ""
-
-
-def _settle_after_advance(page, before: str) -> int:
-    """Wait for the pager click to land. Returns the ms waited.
-
-    Two applicants in a row with the same name AND email (real duplicates do
-    occur in this queue) read as an unchanged signature, so that case waits the
-    full cap — the same wall-clock as before this existed, never less safe."""
-    if not before:
-        page.wait_for_timeout(_ADVANCE_SETTLE_CAP_MS)
-        return _ADVANCE_SETTLE_CAP_MS
-    waited = 0
-    while waited < _ADVANCE_SETTLE_CAP_MS:
-        page.wait_for_timeout(_ADVANCE_SETTLE_POLL_MS)
-        waited += _ADVANCE_SETTLE_POLL_MS
-        now = _panel_signature(page)
-        if now and now != before:
-            return waited
-    return waited
 
 
 def advance_to_next(page) -> bool:
@@ -423,7 +396,6 @@ def advance_to_next(page) -> bool:
     import time as _t
     _deadline = _t.monotonic() + 6.0
     _polls = 0
-    _before = _panel_signature(page)
     while True:
         for xp in candidates:
             try:
@@ -431,7 +403,10 @@ def advance_to_next(page) -> bool:
                 if loc.count() == 0:
                     continue
                 loc.click(timeout=5000, no_wait_after=True)
-                _settle_after_advance(page, _before)
+                # FLAT WAIT, DELIBERATELY. See _settle_after_advance below: the
+                # adaptive version returned as soon as the NAME fields changed,
+                # which is earlier than the resume frame finishes loading.
+                page.wait_for_timeout(_ADVANCE_SETTLE_CAP_MS)
                 if _polls:
                     _log(f"[oat] next-pager appeared after {_polls} extra poll(s) "
                          f"— a single look would have ended this walk early")

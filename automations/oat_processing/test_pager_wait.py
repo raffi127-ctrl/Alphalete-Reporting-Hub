@@ -99,48 +99,24 @@ class _BoomPage(_Page):
 p = _BoomPage(appears_after=1, boom_until=6)
 check("recovered after throwing looks", oat.advance_to_next(p), True)
 
-print("the post-click settle stops as soon as the new applicant is on screen:")
-
-
-class _SigPage(_Page):
-    """A pager that works, plus a readable panel signature that flips shortly
-    after the click — the ordinary case, which used to cost a flat 1800ms."""
-
-    def __init__(self, flips_after_ms=300, changes=True):
-        _Page.__init__(self, appears_after=1)
-        self.flips_after_ms = flips_after_ms
-        self.changes = changes
-        self.settled = 0
-
-    def wait_for_timeout(self, ms):
-        self.waited += ms
-        if self.clicked:
-            self.settled += ms
-
-    def evaluate(self, _js):
-        if self.changes and self.clicked and self.settled >= self.flips_after_ms:
-            return "2|Jane|Doe|jane@example.com"
-        return "1|John|Smith|john@example.com"
-
-
-p = _SigPage(flips_after_ms=300)
-check("advanced", oat.advance_to_next(p), True)
-check("settled early instead of sleeping the full cap",
-      p.settled < oat._ADVANCE_SETTLE_CAP_MS, True)
-check("but it did wait for the panel to turn", p.settled >= 300, True)
-
-print("a panel that never changes still waits the FULL old cap:")
-# Back-to-back duplicate records read as an unchanged signature. This must never
-# be faster than the flat wait was — the early return is proof-driven, not a
-# guess that the click landed.
-p = _SigPage(changes=False)
-check("advanced", oat.advance_to_next(p), True)
-check("waited the whole cap", p.settled, oat._ADVANCE_SETTLE_CAP_MS)
-
-print("no readable signature (evaluate unavailable) → the old flat wait:")
+print("the post-click wait is the FULL flat cap — backed out 2026-09-13:")
+# The adaptive settle returned as soon as the panel's NAME fields changed. Those
+# are in the top document; the applicant's RESUME renders in a nested frame that
+# loads later, and looking for the "View resume" link before it exists is read as
+# "no resume attached" — a verdict about the APPLICANT, not a retry. 219 people
+# in Carlos's office were labelled that way in one afternoon; Brionna Thomas,
+# one of them, has a resume carrying (630) 997-4931.
+#
+# Pinned so the optimisation cannot come back in this form. If it is retried, the
+# condition must be that the RESUME LINK is reachable, not the first sign of any
+# change at all.
 p = _Page(appears_after=1)
 check("advanced", oat.advance_to_next(p), True)
-check("waited the whole cap", p.waited >= oat._ADVANCE_SETTLE_CAP_MS, True)
+check("waited the full cap, not an early exit",
+      p.waited >= oat._ADVANCE_SETTLE_CAP_MS, True)
+check("the cap is unchanged at 1800ms", oat._ADVANCE_SETTLE_CAP_MS, 1800)
+check("no adaptive settle helper is wired in",
+      hasattr(oat, "_settle_after_advance"), False)
 
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)
