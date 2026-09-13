@@ -191,6 +191,11 @@ def payload(records: Dict[str, int], day: dt.date,
         # installed BEFORE that rule existed are otherwise invisible, and a
         # laptop is the single most likely reason a channel goes quiet.
         "desktop": is_desktop(),
+        # Mac or Windows, answered by the machine rather than by an owner
+        # ticking a box about their own office. Windows has never been
+        # exercised for real, so the first office that is actually on one is
+        # something we want to know WITHOUT having asked.
+        "os": platform.system() or "",
         # The laptop's own clock, so a machine that has been asleep is visible
         # as a stale reading rather than looking like a quiet office.
         "local_time": dt.datetime.now().isoformat(timespec="seconds"),

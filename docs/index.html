@@ -41,6 +41,9 @@
     cursor:pointer;width:100%}
   button:hover{filter:brightness(1.08)}
   button.done{background:var(--ok)}
+  .stop{margin:26px 0 6px;border:2px solid var(--red);border-radius:10px;
+    padding:14px 18px;color:var(--ink);background:var(--panel);font-size:17px}
+  .stop b{color:var(--red)}
   .note{margin-top:34px;border-left:3px solid var(--gold);padding:12px 18px;
     background:var(--panel);border-radius:0 8px 8px 0;color:var(--muted);
     font-size:16px}
@@ -92,6 +95,18 @@
   <div class="brand">Alphalete Marketing</div>
   <h1>Set up Lucy ECOsystem</h1>
   <p class="who" id="who">Takes about five minutes. You will not need to do anything afterwards.</p>
+
+  <div class="stop">
+    <b>This only works on a stationary computer</b> &mdash; an iMac, a Mac mini
+    or a Mac Studio. A laptop stops the moment its lid closes, which would take
+    your channel quiet without anybody noticing.
+    <div style="margin-top:12px">
+      Not sure? Run this first &mdash; it checks this computer and
+      <b>installs nothing</b>.
+    </div>
+    <div class="cmd" id="chk">loading&#8230;</div>
+    <button id="copychk">Copy the check</button>
+  </div>
 
   <div id="main">
     <div class="step">
@@ -177,16 +192,11 @@
       <div class="num">4</div>
       <div style="min-width:0;flex:1">
         <h2>Answer the boxes that pop up</h2>
-        <p>Your SaraPlus login, your OwnerVille login, and where you would like
-           things posted in Slack. That is everything it asks.</p>
+        <p>Your SaraPlus login, your OwnerVille login, and a check that this
+           is the right office. That is everything &mdash; you already answered
+           the rest on the sign-up form.</p>
       </div>
     </div>
-  </div>
-
-  <div class="note">
-    <b>This has to be a desktop.</b> An iMac, a Mac mini or a Mac Studio &mdash;
-    something that sits on a desk and stays on. It will refuse to install on a
-    laptop, because a closed lid means your channel goes quiet.
   </div>
 
   <div class="note">
@@ -243,10 +253,15 @@
   var WIN = "$env:LUCY_KEY='" + code + "'; irm " + RAW + "/install.ps1 | iex";
   var cmd = "";
 
+  var CHK_MAC = "curl -fsSL " + RAW + "/check.sh | bash";
+  var CHK_WIN = "irm " + RAW + "/check.ps1 | iex";
+
   function paint() {
     cmd = os === "win" ? WIN : MAC;
     document.getElementById("cmd").textContent = cmd;
     document.getElementById("termcmd").textContent = cmd;
+    document.getElementById("chk").textContent =
+      os === "win" ? CHK_WIN : CHK_MAC;
     var t = document.querySelectorAll("[data-os]");
     for (var i = 0; i < t.length; i++) {
       t[i].style.display = t[i].getAttribute("data-os") === os ? "" : "none";
@@ -255,6 +270,22 @@
     btn.className = "";
   }
   var btn = document.getElementById("copy");
+  var chkBtn = document.getElementById("copychk");
+  chkBtn.addEventListener("click", function () {
+    var text = document.getElementById("chk").textContent;
+    function ok() {
+      chkBtn.textContent = "Copied — paste it into " +
+        (os === "win" ? "PowerShell" : "Terminal");
+      chkBtn.className = "done";
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok, function () {
+        chkBtn.textContent = "Select the line above and copy it";
+      });
+    } else {
+      chkBtn.textContent = "Select the line above and copy it";
+    }
+  });
   paint();
   btn.addEventListener("click", function () {
     function ok() {

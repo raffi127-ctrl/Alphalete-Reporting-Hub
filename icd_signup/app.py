@@ -166,14 +166,19 @@ with st.container(border=True):
              "ask than guess.")
 
     st.subheader("The computer it will run on")
-    st.caption("It has to be a **desktop that stays on in the office** — an "
-               "iMac, a Mac mini or a Mac Studio. The installer will not run "
-               "on a laptop: a closed lid means your channel goes quiet, and "
-               "that is the problem this has hit most often.")
-    platform = st.radio("Is it a Mac or a Windows PC?",
-                        options=["mac", "windows"],
-                        format_func=lambda p: "Mac" if p == "mac" else "Windows PC",
-                        horizontal=True)
+    # NOT ASKED ANY MORE. Mac-or-PC is something the machine itself answers
+    # the moment it relays, and the installer already works it out on its own
+    # -- so asking was one more box for an owner to get wrong about their own
+    # office. What they DO need to be told is which machine to use, and that
+    # is a statement, not a question (Megan 2026-09-13).
+    st.error(
+        "**This only works on a stationary computer.** An iMac, a Mac mini or "
+        "a Mac Studio — something that sits on a desk and stays on.\n\n"
+        "**The installer will refuse to run on a laptop.** A closed lid means "
+        "your channel goes quiet, and that is the problem this has hit more "
+        "than any other.")
+    # Corrected from what the machine reports on its first relay.
+    platform = "mac"
 
     st.subheader("Your selling hours")
     st.caption("Nothing posts outside these — this is how Lucy knows your reps "
@@ -321,12 +326,14 @@ if submitted:
             # numbers POST, not whether they can install.
             st.markdown("### Set your computer up now")
             st.markdown(
-                "Do this on the office computer it will run on. It takes "
-                "about five minutes and asks you for your SaraPlus and "
-                "OwnerVille logins **on that machine** — they stay there.")
+                "Do this on the **desktop in your office** — the iMac, "
+                "Mac mini or Mac Studio it will live on. It takes about five "
+                "minutes and asks you for your SaraPlus and OwnerVille "
+                "logins **on that machine** — they stay there.")
             st.link_button("Open my setup page", link, type="primary")
             st.caption("This link is yours alone — it carries your office's "
-                       "code. Please do not forward it.")
+                       "code. Please do not forward it. It will not install "
+                       "on a laptop.")
             st.warning(
                 "**Save this link before you close the page.** Email it to "
                 "yourself, or open it on the office computer now. If you lose "
@@ -340,8 +347,9 @@ if submitted:
             st.markdown(
                 "1. **Add Megan and Eve** to every channel you named — "
                 "they cannot switch it on for a room they are not in.\n"
-                "2. **Leave that computer on** during selling hours — on "
-                "power, lid open, on wifi. Nothing posts while it is asleep.")
+                "2. **Leave that desktop on and awake** during selling "
+                "hours — plugged in and on wifi. Nothing posts while it is "
+                "asleep.")
         else:
             # THE FALLBACK, shown when no key could be written -- Sheets was
             # unreachable, or the relay refused. Their answers are saved

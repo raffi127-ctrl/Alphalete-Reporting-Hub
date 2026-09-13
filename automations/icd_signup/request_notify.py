@@ -27,70 +27,29 @@ CADENCE_WORDS = {15: "every 15 minutes", 30: "every 30 minutes",
 
 
 def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
-    """(headline, thread detail). Corrections-channel house style: one line in
-    the room, the detail in the thread."""
-    head = ("*New Lucy ECOsystem sign-up — %s* wants their office on credit-check "
-            "alerts." % rec.owner)
-    sat = ("Sat %s–%s" % (rec.sat_start, rec.sat_end) if rec.saturday
-           else "no Saturday")
-    detail = [
-        "*%s* — `%s`" % (rec.owner, rec.office_key),
-        "• Selling hours: M–F %s–%s · %s · %s"
-        % (rec.day_start, rec.day_end, sat, tz_label(rec.timezone)),
-        "• Computer: %s" % ("Mac" if rec.platform == "mac" else "Windows PC"),
-        "• Reach them at: %s" % (rec.contact or "_not given_"),
-    ]
-    if rec.ov_name:
-        detail.append("• Their name in OwnerVille: %s" % rec.ov_name)
-    alerts = rec.alert_channels
-    detail.append("• Alerts → %s"
-                  % (", ".join(alerts) if alerts else "_not sure yet_"))
-    dests = rec.knocks_destinations
-    if dests:
-        detail.append("• Knocks board → %s"
-                      % " · ".join("%s %s" % (d.get("channel"),
-                                              d.get("label") or "")
-                                   for d in dests))
-    else:
-        detail.append("• Knocks board → _they did not ask for one_")
-    # EVERY ROOM LUCY HAS TO BE IN, listed, before the approve command.
-    # Approving a channel she was never invited to writes a sign-off for a
-    # room she cannot post in -- the office then sits silent with everything
-    # looking correct on our side. It is the most common reason a sign-up
-    # stalls after everything else went right (Megan 2026-09-13).
-    rooms = []
-    for c in alerts:
-        if c and c not in rooms:
-            rooms.append(c)
-    for d in dests:
-        c = d.get("channel")
-        if c and c not in rooms:
-            rooms.append(c)
-    detail += [
-        "",
-        ":lock: *Before you approve — add Lucy to these channels:*",
-    ] + (["   • %s" % c for c in rooms] if rooms
-         else ["   _they did not name one yet_"]) + [
-        "_She cannot post into a room she has not been invited to, and "
-        "approving one she is not in signs off a channel that will stay "
-        "silent._",
-    ]
+    """(headline, thread detail). SHORT.
 
-    detail += [
-        "",
-        (("• _They already have their setup link and can install now — "
-          "approving decides where their numbers POST._\n"
-          "• Their link, if they lose it: %s" % link) if link else
-         "• _No key was written, so SEND THEM THEIR LINK by hand:_ "
-         "`python -m automations.icd_alerts.invite %s`" % rec.office_key),
-        "",
-        "*Approve them:*  %s" % (APPROVE_URL % rec.office_key),
-        "_or from a terminal:_  "
-        "`python -m automations.icd_signup.approve %s`" % rec.office_key,
-        ("_That is what turns their numbers into posts. Until you run it they "
-         "can install and relay, and nothing reaches a channel._" if link else
-         "_Nothing exists until you run it._"),
-    ]
+    It used to carry everything the form collected -- hours, timezone,
+    computer, contact, their OwnerVille name, their setup link, the terminal
+    fallback and three italic paragraphs of explanation. Megan, looking at the
+    first real one: "this is way too much info."
+
+    It is a notification, not a record. The record is the sheet. What somebody
+    reading this actually has to do is exactly two things: put Lucy in the
+    rooms, and click approve. Everything else was pushing those two off the
+    screen.
+    """
+    head = "*New sign-up — %s* (`%s`)" % (rec.owner, rec.office_key)
+
+    rooms = []
+    for c in list(rec.alert_channels) + [d.get("channel") for d
+                                         in rec.knocks_destinations]:
+        if c and c not in rooms:
+            rooms.append(c)
+
+    detail = ["*Add Lucy to:*"]
+    detail += ["   • %s" % c for c in rooms] or ["   _no channel named yet_"]
+    detail += ["", "*Approve:*  %s" % (APPROVE_URL % rec.office_key)]
     return head, detail
 
 

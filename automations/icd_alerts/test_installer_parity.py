@@ -21,6 +21,8 @@ PS = (HERE / "install.ps1").read_text()
 USH = (HERE / "update.sh").read_text()
 UPS = (HERE / "update.ps1").read_text()
 XSH = (HERE / "uninstall.sh").read_text()
+CSH = (HERE / "check.sh").read_text()
+CPS = (HERE / "check.ps1").read_text()
 XPS = (HERE / "uninstall.ps1").read_text()
 
 
@@ -113,6 +115,50 @@ class UninstallersDoTheSameThings(unittest.TestCase):
         # finished with the program is the worst of both.
         for text, name in ((XSH, "uninstall.sh"), (XPS, "uninstall.ps1")):
             self.assertIn("lucy-reports", text, name)
+
+
+class TheCheckInstallsNothing(unittest.TestCase):
+    """A way to ask "is this the right computer?" before committing to it.
+
+    setup.py refuses a laptop before copying anything, which is correct -- but
+    by then somebody has pasted a line, watched it download and been turned
+    away. Megan 2026-09-13: "there should be a 'run check' button where you
+    can then confirm it's a stationary machine before any install happens."
+    """
+
+    @staticmethod
+    def _code(text: str) -> str:
+        """Just the lines that RUN. The header comments mention install.sh by
+        name, and a test that matched those would pass on a script that
+        actually did install something."""
+        out = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            out.append(line)
+        return "\n".join(out)
+
+    def test_neither_check_writes_or_downloads_anything(self):
+        for text, name in ((CSH, "check.sh"), (CPS, "check.ps1")):
+            body = self._code(text)
+            for forbidden in ("mkdir", "Invoke-WebRequest", "install.sh",
+                              "install.ps1", "setup.py", "rm -rf",
+                              "Remove-Item"):
+                self.assertNotIn(forbidden, body,
+                                 "%s does more than check: %r" % (name, forbidden))
+
+    def test_both_ask_the_same_question_as_the_installer(self):
+        self.assertIn("AppleSmartBattery", CSH)
+        self.assertIn("Win32_Battery", CPS)
+
+    def test_a_laptop_gets_a_non_zero_exit(self):
+        # So a person watching, or anything wrapping it, can tell.
+        self.assertIn("exit 1", CSH)
+
+    def test_both_say_nothing_was_installed(self):
+        for text, name in ((CSH, "check.sh"), (CPS, "check.ps1")):
+            self.assertIn("nothing has been installed", text.lower(), name)
 
 
 if __name__ == "__main__":

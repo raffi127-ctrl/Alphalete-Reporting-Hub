@@ -118,12 +118,22 @@ class ApprovalGatesPosting(unittest.TestCase):
 
 class TheAlert(unittest.TestCase):
 
-    def test_it_carries_the_one_command_that_acts_on_it(self):
+    def test_it_says_who_and_how_to_approve_and_little_else(self):
+        """A notification, not a record. The record is the sheet.
+
+        It used to carry hours, timezone, computer, contact, their OwnerVille
+        name, their setup link and three paragraphs of explanation, which
+        pushed the two things somebody must actually DO off the screen
+        (Megan 2026-09-13: "this is way too much info").
+        """
         head, detail = N.lines(_rec())
         self.assertIn("Cyrus Wade", head)
         body = "\n".join(detail)
-        self.assertIn("icd_signup.approve cyrus", body)
-        self.assertIn("11:15", body)
+        self.assertIn("?approve=cyrus", body)
+        self.assertLess(len(detail), 10, "the ping is growing again")
+        for gone in ("Selling hours", "Computer:", "Reach them at",
+                     "OwnerVille"):
+            self.assertNotIn(gone, body, "%r is back in the ping" % gone)
 
     def test_a_failed_post_is_not_a_failed_signup(self):
         with mock.patch("automations.icd_alerts.post._slack",
@@ -181,16 +191,14 @@ class MultipleChannelsSurvive(unittest.TestCase):
         self.assertEqual(r.alert_channels, [])
         self.assertEqual(r.owner, "Cyrus Wade")
 
-    def test_the_alert_names_both_lists(self):
+    def test_every_room_lucy_needs_is_still_listed(self):
+        # The one detail that survived the trim, because it is the thing that
+        # stops a sign-up dead.
         r = self._rec(["C1"], [{"channel": "#reps", "cadence_min": 15,
                                 "label": "Every 15 minutes"}])
         body = "\n".join(N.lines(r, link="x")[1])
-        self.assertIn("Alerts → C1", body)
-        self.assertIn("#reps Every 15 minutes", body)
-
-    def test_no_board_requested_is_said_plainly(self):
-        body = "\n".join(N.lines(self._rec(["C1"], []), link="x")[1])
-        self.assertIn("did not ask for one", body)
+        self.assertIn("C1", body)
+        self.assertIn("#reps", body)
 
 
 class TheTabGrowsItsOwnColumns(unittest.TestCase):
@@ -370,8 +378,6 @@ class OneClickApproval(unittest.TestCase):
     def test_the_ping_carries_a_clickable_link(self):
         body = "\n".join(N.lines(_rec(), link="x")[1])
         self.assertIn("?approve=cyrus", body)
-        # and still offers the terminal, for whoever prefers it
-        self.assertIn("icd_signup.approve cyrus", body)
 
     def test_the_ping_lists_every_room_lucy_needs(self):
         import json as _json
@@ -381,14 +387,13 @@ class OneClickApproval(unittest.TestCase):
                                           {"channel": "#b",
                                            "cadence_min": 60}]))
         body = "\n".join(N.lines(r, link="x")[1])
-        self.assertIn("add Lucy to these channels", body)
+        self.assertIn("Add Lucy to", body)
         for room in ("#a", "#b", "#shared"):
             self.assertIn(room, body)
         # deduped -- one line per room, however many ways it was asked for
         self.assertEqual(body.count("   • #shared"), 1)
 
     def test_an_office_with_no_rooms_says_so_rather_than_nothing(self):
-        import json as _json
         r = _rec(alert_channels_json="[]", knocks_json="[]")
         body = "\n".join(N.lines(r, link="x")[1])
-        self.assertIn("did not name one yet", body)
+        self.assertIn("no channel named yet", body)

@@ -1239,7 +1239,11 @@ def _slack(channel_id: str, text: str,
     parent instead of as another top-level post [[warn_quiet]].
     """
     from automations.shared import slack_metrics_post as smp
-    kw = {"channel": channel_id, "text": text}
+    # NO UNFURLING. These messages carry links on purpose, and Slack pasting a
+    # screenshot of the sign-up form under every one of them buried the two
+    # lines somebody actually has to act on (Megan 2026-09-13).
+    kw = {"channel": channel_id, "text": text,
+          "unfurl_links": False, "unfurl_media": False}
     if thread_ts:
         kw["thread_ts"] = thread_ts
     return (smp._client().chat_postMessage(**kw) or {}).get("ts")
