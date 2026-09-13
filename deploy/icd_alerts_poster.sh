@@ -23,10 +23,17 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-DOW=$(date +%u)     # 1=Mon .. 7=Sun
 HOUR=$(date +%H)
 HOUR=${HOUR#0}
-[ "$DOW" = "7" ] && exit 0                  # no office relays on Sunday
+# NO SUNDAY EXIT. It used to bail here, and that was right when this job only
+# posted numbers -- but it now also announces new sign-ups, waiting approvals
+# and faults, and none of those keep office hours. An office that signed up on
+# a Sunday went unmentioned until Monday morning (caught 2026-09-13, on the
+# first sign-up that was meant to prove the announcement worked).
+#
+# Nothing posts numbers today regardless: in_field_hours is False on Sunday
+# for every office, and warn_quiet skips Sunday itself. The gate was belt on
+# top of braces, and the belt was catching the wrong things.
 [ "$HOUR" -lt 8 ] && exit 0
 [ "$HOUR" -gt 23 ] && exit 0
 
