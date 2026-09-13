@@ -59,34 +59,66 @@ def probe() -> None:
     # through the Crosstab dialog. Asking for a sheet that does not exist makes
     # the dialog error LIST every worksheet ("saw N thumb(s): [...]") — that is
     # the sheet census; then download each one that is not 'Last Update'.
-    import ast
+    #
+    # 2nd probe (same day): that dialog never opened — the viz toolbar's
+    # Download button did not render in 120s on Lucy 1, so there was no
+    # thumbnail list to read. So this 3rd probe does not depend on the toolbar:
+    #   a) the vizportal API (getWorkbooks / getViews, the calls the Tableau UI
+    #      itself makes — see recruiting_report/probe_b2b_views) lists every
+    #      published view of the workbook;
+    #   b) the view page is opened once to record which toolbar buttons exist
+    #      and the text the dashboard renders;
+    #   c) AFTER the browser closes (tableau_http cannot run inside a live
+    #      session), the .csv endpoint is tried on every view found in (a).
     import re
-    from automations.shared.tableau_patchright import download_crosstab_patchright
-    from automations.org_active_headcount.pull import _read_crosstab
-    rows_out = []
-    names = []
-    try:
-        download_crosstab_patchright(VIEW_URL, "__no_such_sheet__",
-                                     OUT / "_census.csv", verbose=False)
-    except Exception as e:                                         # noqa: BLE001
-        m = re.search(r"saw [0-9]+ thumb\(s\):\s*(\[.*?\])", str(e), re.S)
-        names = ast.literal_eval(m.group(1)) if m else []
-        rows_out.append(["== sheet census", str(names) if m else f"no list: {str(e)[:300]}"])
-    print(f"worksheets: {names}", flush=True)
-    for sheet in names:
-        if "last update" in sheet.lower():
-            continue
-        safe = re.sub(r"[^A-Za-z0-9]+", "_", sheet)
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.recruiting_report.probe_b2b_views import BASE, _call, _views, _seg
+    from automations.alphalete_org_report.tableau_http import (
+        download_view_csv, parse_csv)
+    rows_out, segs = [], []
+    with tableau_session(verbose=False) as page:
+        page.goto(BASE + "/#/site/sci/workbooks", wait_until="domcontentloaded")
+        page.wait_for_timeout(12_000)
+        st, data = _call(page, "getWorkbooks", {
+            "filter": {"operator": "and", "clauses": []},
+            "order": [{"field": "name", "ascending": True}],
+            "page": {"startIndex": 0, "maxItems": 500}})
+        wbs = (data.get("result") or {}).get("workbooks") or []
+        wb = next((w for w in wbs if WORKBOOK.split("_")[0].casefold()
+                   in (w.get("repositoryUrl") or "").casefold()), None)
+        rows_out.append(["== workbook", f"HTTP {st}", f"{len(wbs)} on site",
+                         str(wb and {k: wb.get(k) for k in
+                                     ("name", "id", "repositoryUrl", "sheetCount")})])
+        if wb:
+            st, views = _views(page, wb["id"])
+            rows_out.append(["== views", f"HTTP {st}", f"{len(views)} view(s)"])
+            for v in views:
+                segs.append(_seg(v).split("/")[-1])
+                rows_out.append(["VIEW", str(v.get("name")), _seg(v),
+                                 str(v.get("sheetType") or v.get("type") or "")])
         try:
-            path = download_crosstab_patchright(VIEW_URL, sheet, OUT / f"je_{safe}.csv",
-                                                verbose=False)
-            rows = _read_crosstab(path)
-            print(f"{sheet}: {len(rows)} row(s)", flush=True)
-            rows_out.append([f"== {sheet}", f"{len(rows)} rows"])
-            rows_out.extend(rows[:300])
+            page.goto(VIEW_URL, wait_until="domcontentloaded")
+            page.wait_for_timeout(45_000)
+            frame = page.frame_locator('iframe[title="Data Visualization"]')
+            ids = frame.locator("[data-tb-test-id^='viz-viewer-toolbar-button']")
+            rows_out.append(["== toolbar buttons",
+                             str([ids.nth(i).get_attribute("data-tb-test-id")
+                                  for i in range(ids.count())])])
+            text = frame.locator("body").inner_text(timeout=20_000)
+            rows_out.append(["== rendered text (first 3000 chars)"])
+            rows_out.extend([[ln] for ln in text.splitlines()[:200] if ln.strip()])
         except Exception as e:                                     # noqa: BLE001
-            print(f"{sheet}: FAILED {type(e).__name__}: {e}", flush=True)
-            rows_out.append([f"== {sheet}", "FAILED", f"{type(e).__name__}: {e}"[:300]])
+            rows_out.append(["== view page", "FAILED", f"{type(e).__name__}: {e}"[:300]])
+    repo = (wb or {}).get("repositoryUrl") or WORKBOOK
+    for seg in segs:
+        safe = re.sub(r"[^A-Za-z0-9]+", "_", seg)
+        try:
+            rows = parse_csv(download_view_csv(repo, seg, OUT / f"je_view_{safe}.csv"))
+            rows_out.append([f"== csv {seg}", f"{len(rows)} rows"])
+            rows_out.extend(rows[:120])
+        except Exception as e:                                     # noqa: BLE001
+            rows_out.append([f"== csv {seg}", "FAILED", f"{type(e).__name__}: {e}"[:300]])
+    print(f"views: {segs}", flush=True)
     _to_sheet(PROBE_TAB, rows_out or [["probe produced nothing"]])
 
 
