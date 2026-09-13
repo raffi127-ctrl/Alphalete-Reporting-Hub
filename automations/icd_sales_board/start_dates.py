@@ -45,23 +45,38 @@ def _header(day: dt.date) -> str:
     return f"{day.strftime('%b')} {day.day}, {day.year}"
 
 
-def _week_start(d: dt.date) -> dt.date:
-    """The SATURDAY that opens d's retention week.
+def page_week(page) -> "dt.date | None":
+    """The week the retention report is ALREADY showing, read off the box.
 
-    AppStream's retention report runs Saturday -> Friday, not Monday -> Sunday
-    (screenshot 2026-09-13: Week 09-12-2026 renders Sep 12 Saturday … Sep 18
-    Friday). Feeding it a Monday is part of why the first runs opened nothing.
-    Python's weekday() is Mon=0 … Sat=5."""
-    return d - dt.timedelta(days=(d.weekday() - 5) % 7)
+    Every failure so far came from guessing this. A Monday anchor was wrong;
+    a Saturday anchor was wrong too — the page's own default came back
+    09-06-2026, a Sunday. So the anchor is not assumed any more, it is read,
+    and the weeks are stepped back from it. That also makes this correct for
+    any office whose report is set up differently."""
+    try:
+        v = page.evaluate(
+            """() => {
+                const b = [...document.querySelectorAll('input')]
+                            .find(x => x.name === 'weekStart');
+                return b ? (b.value || '').trim() : '';
+            }""")
+        return dt.datetime.strptime(v, "%m-%d-%Y").date() if v else None
+    except Exception:   # noqa: BLE001 — caller falls back
+        return None
 
 
-def _weeks_between(start: dt.date, end: dt.date) -> list:
-    """The opening SATURDAY of every retention week the range touches."""
-    out, cur = [], _week_start(start)
-    while cur <= end:
-        out.append(cur)
-        cur += dt.timedelta(days=7)
-    return out
+def _weeks_back_from(anchor: dt.date, start: dt.date, end: dt.date) -> list:
+    """Every week opening from `anchor` back far enough to cover `start`.
+
+    Anchor comes from the page, so the weekday is whatever AppStream uses."""
+    out, cur = [], anchor
+    while cur + dt.timedelta(days=6) >= start:
+        if cur <= end:
+            out.append(cur)
+        cur -= dt.timedelta(days=7)
+        if len(out) > 60:           # a guard, not a limit anyone should hit
+            break
+    return sorted(out)
 
 
 _LAST_DIAG: dict = {}
@@ -176,12 +191,16 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
                 HTMLFormElement.prototype.submit.call(form);
             }""", [found["idx"], want_value])
 
-        # CONFIRM THE PAGE ACTUALLY CHANGED. Submitting is not arriving.
+        # CONFIRM THE PAGE ACTUALLY CHANGED — and confirm it against the BOX,
+        # not against a header string I formatted myself. The box is what the
+        # server echoes back, so it says what the server actually honoured;
+        # a header guess can only ever tell me my guess was wrong.
         for _ in range(20):
             page.wait_for_timeout(750)
             try:
-                if page.evaluate("(w) => document.body.innerText.includes(w)",
-                                 want_header):
+                if page_week(page) == wk_start and page.evaluate(
+                        "(w) => document.body.innerText.includes(w)",
+                        want_header):
                     return True
             except Exception:   # noqa: BLE001 — navigation destroyed the context
                 continue
@@ -212,7 +231,13 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
         # week at a time — the first run walked 35 days against a page that
         # only ever showed the current week's seven columns and found nothing,
         # exit 0. Set the week, submit, then read its days.
-        weeks = _weeks_between(start, end)
+        app.open_retention_details()
+        anchor = page_week(app.page)
+        if anchor is None:
+            log(f"  {owner}: no week box on the retention report — skipped")
+            return {}
+        log(f"  {owner}: report opens on the week of {anchor}")
+        weeks = _weeks_back_from(anchor, start, end)
         opened = 0
         for wk_start in weeks:
             app.open_retention_details()
