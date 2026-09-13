@@ -482,7 +482,7 @@ def production_panel(week, scope: str, overrides: dict, team: str,
             prev_sums[k] = tot
 
     label = scope if day_view else "week to date"
-    st.markdown(f"**Production · {label}"
+    st.markdown(f"**Sales board · {label}"
                 + (f" · {slice_name}" if filtered else "") + "**")
     cols = st.columns(len(measure_keys))
     for col, k in zip(cols, measure_keys):
@@ -2056,13 +2056,22 @@ def main() -> None:
     prof = profs[icd]
     key = (prof.office_key or icd.lower().replace(" ", "_"))
 
-    # Production and Recruiting are separate PAGES, not two halves of one long
-    # scroll (Megan 2026-08-17). They answer different questions and get read by
-    # different people at different times; stacking them buries whichever is
-    # second.
-    page = st.sidebar.radio(
-        "Page", ["Summary", "Production", "Recruiting", "Knocks", "Goals"],
-        key="page", disabled=locked)
+    # THE SALES BOARD IS THE LANDING PAGE (Megan 2026-09-13). It is the thing
+    # an ICD opens this site to look at, so it is first in the list and the
+    # default selection — everything else is something they go looking for.
+    # Sales board and Recruiting stay separate PAGES, not two halves of one
+    # long scroll (Megan 2026-08-17): they answer different questions, get read
+    # by different people at different times, and stacking them buries
+    # whichever is second.
+    pages = ["Sales board", "Knock & Dispo Report", "Summary", "Recruiting",
+             "Goals"]
+    # A session that was open when this list changed still holds the old label
+    # ("Production"), and Streamlit raises rather than falling back when a
+    # remembered value is not in the options. Clear it instead of crashing the
+    # page on somebody who simply had the tab open.
+    if st.session_state.get("page") not in pages:
+        st.session_state.pop("page", None)
+    page = st.sidebar.radio("Page", pages, key="page", disabled=locked)
 
     # The BUSINESS name headlines — this is the office's board, and the branded
     # name is what an owner recognises as theirs. The owner's own name sits
@@ -2077,7 +2086,7 @@ def main() -> None:
     if page == "Recruiting":
         recruiting(prof, icd, key)
         return
-    if page == "Knocks":
+    if page == "Knock & Dispo Report":
         knocks_page(icd)
         return
     if page == "Goals":
