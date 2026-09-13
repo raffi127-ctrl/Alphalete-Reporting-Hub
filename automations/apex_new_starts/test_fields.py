@@ -382,3 +382,65 @@ def test_a_clean_run_prints_the_marker_the_hub_reads(monkeypatch, tmp_path):
     with contextlib.redirect_stdout(out):
         assert RUN.make_button(dt.date(2026, 9, 13)) == 0
     assert "=== done ===" in out.getvalue()
+
+
+def test_preflight_goes_on_to_fetch_the_week(monkeypatch):
+    """Megan, 2026-09-13: "Getting the list for this week should be in the
+    preflight". Checking and then making somebody find a second button is two
+    steps where there is one job."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt, io, contextlib
+
+    calls = []
+    monkeypatch.setattr(RUN, "check_day", lambda *a, **k: True)
+    monkeypatch.setattr(RUN, "check_blueink", lambda *a, **k: True)
+    monkeypatch.setattr(RUN, "check_apex", lambda *a, **k: True)
+    monkeypatch.setattr(RUN, "make_button",
+                        lambda *a, **k: calls.append(k) or 0)
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert RUN.preflight(dt.date(2026, 9, 13), any_day=True) == 0
+    assert calls, "it fetched the week straight after the checks"
+
+
+def test_preflight_stops_when_a_check_fails(monkeypatch):
+    """Nothing is worth carrying over to Apex until the fault is sorted, and
+    building the list anyway would read as though everything were fine."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt, io, contextlib
+
+    calls = []
+    monkeypatch.setattr(RUN, "check_day", lambda *a, **k: True)
+    monkeypatch.setattr(RUN, "check_blueink", lambda *a, **k: False)
+    monkeypatch.setattr(RUN, "check_apex", lambda *a, **k: True)
+    monkeypatch.setattr(RUN, "make_button",
+                        lambda *a, **k: calls.append(k) or 0)
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert RUN.preflight(dt.date(2026, 9, 13), any_day=True) == 1
+    assert not calls, "it did not go and fetch anything"
+    assert "=== done ===" not in out.getvalue(), "and never reads as a clean run"
+
+
+def test_an_unsigned_apex_does_not_withhold_the_list(monkeypatch):
+    """Reading the board and the packets needs nothing from Apex. Refusing to
+    fetch because a browser is sitting on a password prompt leaves somebody
+    with nothing to show for the click -- and Megan has said more than once
+    that the password is not being changed."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt, io, contextlib
+
+    calls = []
+    monkeypatch.setattr(RUN, "check_day", lambda *a, **k: True)
+    monkeypatch.setattr(RUN, "check_blueink", lambda *a, **k: True)
+    monkeypatch.setattr(RUN, "check_apex", lambda *a, **k: False)
+    monkeypatch.setattr(RUN, "make_button",
+                        lambda *a, **k: calls.append(k) or 0)
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert RUN.preflight(dt.date(2026, 9, 13), any_day=True) == 0
+    assert calls, "the list was still fetched"
+    assert "Apex is not signed in" in out.getvalue(), "and it says so plainly"

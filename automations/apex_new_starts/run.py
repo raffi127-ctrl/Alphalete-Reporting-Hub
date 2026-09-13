@@ -127,17 +127,46 @@ def check_apex() -> bool:
     return True
 
 
-def preflight(today: dt.date, *, any_day: bool, skip_apex: bool = False) -> int:
+def preflight(today: dt.date, *, any_day: bool, skip_apex: bool = False,
+              tab=None, include_ona=True) -> int:
+    """Check, then fetch — one button (Megan, 2026-09-13).
+
+    Checking and then making somebody find a second button to actually get the
+    week is two steps where there is one job. If the checks pass this goes
+    straight on to read the board and the packets and put the setup on the
+    clipboard. If they do not, it stops and says what to fix: there is nothing
+    worth carrying over to Apex until that is sorted.
+    """
     _log("PREFLIGHT")
-    ok = check_day(today, any_day)
-    ok = check_blueink() and ok
+    # Block on what actually stops the list being built. The Apex session does
+    # not: reading the board and the packets needs nothing from Apex, and
+    # refusing to fetch because a browser is sitting on a password prompt
+    # leaves somebody with nothing to show for the click. It is said plainly
+    # and the list still comes.
+    can_build = check_day(today, any_day)
+    can_build = check_blueink() and can_build
+    apex_ready = True
     if skip_apex:
-        _log("  ⏭  Apex check skipped (--no-apex-check).")
+        # Not a corner cut. The check opens a real browser and can sit there
+        # for minutes, to tell you what the next click tells you instantly --
+        # you are looking at Apex when you press the bookmark. Off by default
+        # from the Hub; --preflight without --no-apex-check still runs it.
+        _log("  •  Apex: you'll see for yourself when you click the bookmark.")
     else:
-        ok = check_apex() and ok
+        apex_ready = check_apex()
     _log()
-    _log("Ready." if ok else "Not ready — fix the ❌ above and run it again.")
-    return 0 if ok else 1
+    if not can_build:
+        _log("Not ready — fix the ❌ above and run it again.")
+        return 1
+    _log("Getting this week's list…")
+    _log()
+    code = make_button(today, tab=tab, include_ona=include_ona)
+    if code == 0 and not apex_ready:
+        _log()
+        _log("⚠️  The list is ready, but Apex is not signed in on this "
+             "machine yet — sort that out above before you click the "
+             "bookmark.")
+    return code
 
 
 # -------------------------------------------------------------------- preview
@@ -713,7 +742,8 @@ def main(argv=None) -> int:
 
     if args.preflight:
         return preflight(today, any_day=args.any_day,
-                         skip_apex=args.no_apex_check)
+                         skip_apex=args.no_apex_check,
+                         tab=args.tab, include_ona=include_ona)
     if args.button:
         return make_button(today, tab=args.tab, include_ona=include_ona)
     if args.explore:

@@ -6069,37 +6069,23 @@ AUTOMATED_REPORTS = [
             # the three actions never open Apex at all.
             "message_failed": "\u274C Run failed \u2014 the log above says why. Nothing was written to Apex or to the board. If it mentions a login, sign into Apex in this machine's Chrome; if it mentions Blue Ink, the key file is missing.",
         },
+        # ONE action. Preflight checks the day, Blue Ink and the Apex login
+        # and then goes straight on to fetch the week -- checking and then
+        # making somebody find a second button is two steps where there is one
+        # job, and a "More actions" drawer for the rest was redundant
+        # (Megan, 2026-09-13). Preview and the field-matcher are still there
+        # from a Terminal: --preview and --dry-run.
         "actions": [
-            {
-                "label": "Preflight",
-                "icon": "\U0001FA7A",
-                "help": "Checks the day, Blue Ink, and whether Apex is signed in on this machine. Opens nothing and types nothing.",
-                "module": "automations.apex_new_starts.run",
-                "args_fn": lambda: ["--preflight"],
-            },
-            {
-                "label": "Preview",
-                "icon": "\U0001F441",
-                "help": "Shows who would be added, who was left out and why, and how complete each person's Blue Ink packet is. Doesn't open Apex.",
-                "module": "automations.apex_new_starts.run",
-                "args_fn": lambda: ["--preview"],
-            },
             {
                 "label": "Get this week's setup",
                 "icon": "\U0001F4CB",
-                # THE button. It was under "More actions", so the one thing
-                # anybody needs weekly had to be dug for (Megan, 2026-09-13).
                 "primary": True,
-                "help": "Reads the New Starts box and everyone's Blue Ink packet, then puts this week's setup on your clipboard. Then open Apex and click your Fill Apex bookmark \u2014 nothing to copy, nothing to paste.",
+                "help": "Checks the day and Blue Ink, then reads the New Starts box and everyone's Blue Ink packet and puts this week's setup on your clipboard. About half a minute. Then open Apex and click your Fill Apex bookmark \u2014 nothing to copy, nothing to paste.",
                 "module": "automations.apex_new_starts.run",
-                "args_fn": lambda: ["--button", "--any-day"],
-            },
-            {
-                "label": "Match Apex Fields",
-                "icon": "\U0001F50D",
-                "help": "Opens Apex and works out which box on the new-employee screen each answer goes in. Types nothing.",
-                "module": "automations.apex_new_starts.run",
-                "args_fn": lambda: ["--dry-run"],
+                # No Apex check here: it opens a real browser and can sit
+                # for minutes to say what the next click says instantly.
+                "args_fn": lambda: ["--preflight", "--any-day",
+                                    "--no-apex-check"],
             },
         ],
     },
