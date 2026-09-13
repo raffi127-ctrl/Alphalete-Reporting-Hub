@@ -209,6 +209,28 @@ def _busy() -> Optional[str]:
     return None
 
 
+def _owner_key(name: str) -> str:
+    return " ".join((name or "").lower().split())
+
+
+def office_hours_by_owner(*, logfn=print) -> Dict[str, object]:
+    """{normalised owner name: icd_alerts office record} — whatever carries a
+    `day_start` / `sat_start` for `first_knock_target`.
+
+    Read ONCE per wave, and best-effort: an office with no record, or a read
+    that fails, gets the flat org target it always had, so no board changes
+    for an office whose hours nobody has given us.
+    """
+    try:
+        from automations.icd_alerts import offices as O
+        return {_owner_key(o.owner): o for o in O.all_offices().values()
+                if getattr(o, "owner", "")}
+    except Exception as exc:  # noqa: BLE001 — a colour target ≠ the board
+        logfn("[night-knocks]   ! office start hours unavailable (%s) — "
+              "first knock uses the flat target" % type(exc).__name__)
+        return {}
+
+
 def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]],
                                                  List[str]]:
     """(boards, notes) for one wave — summary board first, then one per ICD.
@@ -231,6 +253,7 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
 
     aliases_raw = load_aliases()
     pairs = KD.owner_cfgs(list(due.icds), aliases_raw)
+    hours = office_hours_by_owner(logfn=logfn)
 
     with ownerville_session(verbose=True, profile_dir=PROFILE_DIR) as page:
         # CHAN PARK'S LINE, like every other knocks board (Raf, after the first
@@ -266,12 +289,34 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
             # crosstab the morning build downloads, and a night send is not
             # worth waking that pipeline. The knock columns are the ask.
             board_rows, apps_by_rep, apps_n = KD.daily_apps_for_board(rows, None)
+            # BROKEN UP BY TEAM, like every other daily knocks board of his
+            # (Raf 2026-09-13; wired into knocks_intraday by 18e9e6e1, missed
+            # here). Keyed on the alias-canonical owner name, which is what
+            # teams.SALES_BOARDS holds — so only Raf's own board changes and
+            # every other ICD returns None without a Sheets call. A read that
+            # fails costs the team bands and nothing else.
+            _teams = None
+            try:
+                from automations.weekly_knock_dispositions import teams as TEAMS
+                _teams = TEAMS.for_office(cfg.get("name") or display,
+                                          due.local_date)
+            except Exception as exc:  # noqa: BLE001 — bands ≠ the board
+                logfn("[night-knocks]   ! %s: team split unavailable (%s)"
+                      % (display, type(exc).__name__))
             png = knocks_render.render_total_knocks(
                 due.local_date, rows=board_rows,
                 out_dir=root / KD._slug(display),
                 title_suffix=display, title_prefix="DAILY ",
                 extra_totals=KD.compare_totals_for(display, chan_rows),
-                apps=apps_by_rep)
+                apps=apps_by_rep, teams=_teams,
+                # FIRST KNOCK greens against THIS office's start on THIS day
+                # (Megan 2026-09-12, cddb3ef1) — the same target the office's
+                # own channel board uses, so the two never disagree about
+                # whether a rep was on time. No hours on file = the flat
+                # target, exactly as before.
+                first_knock_green_at=knocks_render.first_knock_target(
+                    hours.get(_owner_key(cfg.get("name") or display))
+                    or hours.get(_owner_key(display)), due.local_date))
             boards.append((display, png))
             captured.append((display, cfg, rows, apps_n))
             logfn("[night-knocks]   ✓ %s: %d rep(s) → %s"
