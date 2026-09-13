@@ -32,6 +32,15 @@ FIRST_NAME_HEADER = "Name"
 LAST_NAME_HEADER = "Last Name"
 PHONE_HEADER = "Phone"
 STATUS_HEADER = "Final Status"
+# The columns that ACTUALLY carry a decline. "Final Status" is the one this
+# module read for months and it is empty on every row — the live signal is
+# "Friday Confirmation" (red "Declined" / "Failed Background") with
+# "BG Status : Last Checked" beside it. Aisha's weekly screenshot is a picture
+# of THIS tab, so the sheet has always held it; we were reading the wrong
+# column (Megan 2026-09-13: "the OBCL is what she's taking a screenshot of so
+# it's def on there"). Both are optional — an older tab may not have them.
+CONFIRMATION_HEADER = "Friday Confirmation"
+BG_STATUS_HEADER = "BG Status : Last Checked"
 
 # Statuses that mean "this person is not actually starting Monday", so their
 # interviewer shouldn't be counted as owing them a text.
@@ -42,12 +51,15 @@ DROPPED_STATUSES = {"declined", "cancelled", "canceled", "no show", "rescheduled
 class NewStart:
     """One scheduled new start."""
 
-    def __init__(self, interviewer: str, name: str, phone: str, status: str, row: int):
+    def __init__(self, interviewer: str, name: str, phone: str, status: str,
+                 row: int, confirmation: str = "", bg_status: str = ""):
         self.interviewer = interviewer
         self.name = name
         self.phone = phone
         self.status = status
         self.row = row
+        self.confirmation = confirmation
+        self.bg_status = bg_status
 
     @property
     def self_assigned(self) -> bool:
@@ -76,10 +88,16 @@ class NewStart:
         and the two sources disagreeing about who counts is worse than either
         rule on its own.
         """
-        value = " ".join(self.status.lower().split())
-        if value in DROPPED_STATUSES:
-            return True
-        return any(m in value for m in ("declin", "failed background", "failed bgc"))
+        from automations.new_start_followup import screenshot_roster
+        for raw in (self.status, self.confirmation, self.bg_status):
+            value = " ".join((raw or "").lower().split())
+            if not value:
+                continue
+            if value in DROPPED_STATUSES:
+                return True
+            if any(m in value for m in screenshot_roster.DROPPED_MARKERS):
+                return True
+        return False
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return "NewStart({!r}, {!r}, {!r})".format(self.interviewer, self.name, self.status)
@@ -159,6 +177,18 @@ def read_new_starts(monday: Optional[dt.date] = None, sheet_id: str = SHEET_ID):
     i_phone = _col(header, PHONE_HEADER)
     i_status = _col(header, STATUS_HEADER)
 
+    def _optional_col(label):
+        """Newer columns — absent on an older tab, and their absence must not
+        take the read down."""
+        try:
+            return _col(header, label)
+        except RuntimeError:
+            print("[obcl] no {!r} column on this tab.".format(label))
+            return -1
+
+    i_conf = _optional_col(CONFIRMATION_HEADER)
+    i_bg = _optional_col(BG_STATUS_HEADER)
+
     def cell(row: List[str], idx: int) -> str:
         return (row[idx] if idx < len(row) else "").strip()
 
@@ -191,6 +221,8 @@ def read_new_starts(monday: Optional[dt.date] = None, sheet_id: str = SHEET_ID):
                 phone=cell(row, i_phone),
                 status=cell(row, i_status),
                 row=n,
+                confirmation=cell(row, i_conf) if i_conf >= 0 else "",
+                bg_status=cell(row, i_bg) if i_bg >= 0 else "",
             )
         )
     return monday, ws.title, starts
