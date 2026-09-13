@@ -315,6 +315,19 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
                 log(f"  {owner}: could not open week of {wk_start} — skipped")
                 continue
             opened += 1
+            if "headers" not in _LAST_DIAG:
+                # The one week that opens still yields nothing, because
+                # detail_href matches day columns on a header string I made
+                # up. Record the report's real dated row so the format stops
+                # being a guess.
+                try:
+                    _LAST_DIAG["headers"] = app.page.evaluate(
+                        r"""() => [...document.querySelectorAll('table tr')]
+                                .map(r => r.innerText.replace(/\s+/g,' ').trim())
+                                .filter(t => /\d{1,2}[\/-]\d{1,2}|20\d\d|Mon|Sat/.test(t))
+                                .slice(0, 2).join(' || ')""")[:230]
+                except Exception:   # noqa: BLE001
+                    _LAST_DIAG["headers"] = "unreadable"
             for i in range(7):
                 day = wk_start + dt.timedelta(days=i)
                 if day < start or day > end:
@@ -347,10 +360,10 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     # fixed width, and the box is already known.
     landed = _LAST_DIAG.get("landed")
     why = ""
-    if _LAST_DIAG.get("fields") and opened < len(weeks):
-        why = f" · fields: {_LAST_DIAG['fields']}"
-    elif _LAST_DIAG.get("headers"):
+    if _LAST_DIAG.get("headers"):
         why = f" · headers: {_LAST_DIAG['headers']}"
+    elif _LAST_DIAG.get("fields") and opened < len(weeks):
+        why = f" · fields: {_LAST_DIAG['fields']}"
     elif opened < len(weeks) and landed:
         why = f" · {_LAST_DIAG.get('raised', '')} landed: {landed}"
     log(f"  {owner}: {len(found)} start date(s) between {start} and {end} "
