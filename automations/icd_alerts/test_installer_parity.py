@@ -20,6 +20,8 @@ SH = (HERE / "install.sh").read_text()
 PS = (HERE / "install.ps1").read_text()
 USH = (HERE / "update.sh").read_text()
 UPS = (HERE / "update.ps1").read_text()
+XSH = (HERE / "uninstall.sh").read_text()
+XPS = (HERE / "uninstall.ps1").read_text()
 
 
 class InstallersDoTheSameThings(unittest.TestCase):
@@ -68,6 +70,39 @@ class UpdatersDoTheSameThings(unittest.TestCase):
         for text, name in ((USH, "update.sh"), (UPS, "update.ps1")):
             self.assertIn("import automations.icd_alerts.run", text,
                           "%s does not check the agent still starts" % name)
+
+
+class UninstallersDoTheSameThings(unittest.TestCase):
+    """There has to be a way OFF, and it has to be the same way on both.
+
+    Revoking an office used to switch its key off on our side while its
+    computer kept waking up, opening a browser and talking to a relay that
+    refused it -- forever, on a machine we do not own.
+    """
+
+    # (file, how it stops the schedule, how it deletes)
+    PAIRS = ((XSH, "uninstall.sh", "launchctl unload", "rm -rf"),
+             (XPS, "uninstall.ps1", "schtasks /Delete", "Remove-Item -Recurse"))
+
+    def test_both_stop_the_schedule_before_deleting_the_program(self):
+        # Deleting the program out from under a running tick leaves a
+        # half-finished browser and a job that keeps retrying it.
+        for text, name, stop, delete in self.PAIRS:
+            self.assertIn(stop, text, "%s never stops the schedule" % name)
+            self.assertIn(delete, text, "%s never deletes anything" % name)
+            self.assertLess(text.index(stop), text.index(delete),
+                            "%s deletes the program before stopping it" % name)
+
+    def test_both_ask_before_deleting_anything(self):
+        for text, name in ((XSH, "uninstall.sh"), (XPS, "uninstall.ps1")):
+            self.assertIn("REMOVE", text,
+                          "%s deletes a login without asking" % name)
+
+    def test_both_remove_the_saved_logins(self):
+        # They live ONLY on that machine. Leaving them on a computer that is
+        # finished with the program is the worst of both.
+        for text, name in ((XSH, "uninstall.sh"), (XPS, "uninstall.ps1")):
+            self.assertIn("lucy-reports", text, name)
 
 
 if __name__ == "__main__":
