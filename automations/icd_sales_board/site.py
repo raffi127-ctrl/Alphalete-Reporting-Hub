@@ -1623,6 +1623,20 @@ def _relay_week(office_key: str, week_ending: dt.date) -> dict:
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
+def _appstream_tenure(icd: str, on) -> dict:
+    """{lowered rep: tenure label} from the AppStream start dates.
+
+    Read-only and cached: the harvest that fills the tab runs on Lucy 1, which
+    is the machine holding the AppStream session. A page never scrapes."""
+    try:
+        from automations.icd_sales_board import start_dates as SD
+
+        return SD.labels_for(icd, on)
+    except Exception:   # noqa: BLE001 — a missing tab is not a broken page
+        return {}
+
+
 def _sheet_tenure(icd: str) -> dict:
     """{lowered rep name: tenure label} from an office's own board sheet.
 
@@ -1916,6 +1930,11 @@ def relay_board(icd: str, office_key: str) -> None:
     # thing it replaces — and would keep inheriting its stale rows.
     settled_reps = _settled_reps(icd, week_ending)
     sheet_tenure = {}
+    # Tenure from APPSTREAM, which is a source of truth and is not the board
+    # being replaced. The BOB detail pages say when each rep first arrived, so
+    # the week-1..week-5 colours come off a start date rather than off a field
+    # status somebody has to advance every Monday.
+    start_tenure = _appstream_tenure(icd, week_ending)
     roster = {r.name.strip().lower(): r for r in R.load(office_key)}
     names = {n.strip().lower(): n for n in by_rep}
     for n in settled_reps:
@@ -1994,6 +2013,7 @@ def relay_board(icd: str, office_key: str) -> None:
         # wording, or the colour key stops matching the column.
         row["Tenure"] = _board_tenure(
             sheet_tenure.get(low)
+            or start_tenure.get(low)
             or (rep.tenure_label(week_ending) if rep else ""))
         if expand:
             row["Team"] = (rep.team if rep else "") or BLANK_OPTION
