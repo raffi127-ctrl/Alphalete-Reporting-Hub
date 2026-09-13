@@ -1754,19 +1754,23 @@ _SB_CSS = """
 /* BLACK GRIDLINES on the whole thing (Megan 2026-09-13) — it is a board, and
    a board has lines. border-collapse so shared edges stay one line thick. */
 .sb-wrap{overflow-x:auto;margin:.2rem 0 .6rem}
-.sb{border-collapse:collapse;font-size:.82rem;width:100%;
+/* EVERY COLUMN AS WIDE AS ITS CONTENT (Raf, via Megan 2026-09-13). width:100%
+   stretched the columns to fill the page, which put a lot of air around
+   single digits; auto lets the table shrink to fit and the numbers sit close
+   enough to read across a row. */
+.sb{border-collapse:collapse;font-size:.82rem;width:auto;
     border:2px solid #000}
-.sb th,.sb td{padding:5px 8px;text-align:center;white-space:nowrap;
+.sb th,.sb td{padding:2px 6px;text-align:center;white-space:nowrap;
               border:1px solid #000}
 .sb thead th{position:sticky;top:0;background:#FAFAF8;z-index:3;
              font-weight:600}
 .sb .grp{border-left:2px solid #000;
          font-size:.74rem;letter-spacing:.04em;text-transform:uppercase;
-         opacity:.75;padding-top:7px;padding-bottom:7px}
+         opacity:.75;padding-top:5px;padding-bottom:5px}
 .sb .sub{font-size:.72rem;opacity:.6;font-weight:600}
 .sb .edge{border-left:2px solid #000}
 .sb td.name{position:sticky;left:0;z-index:2;text-align:left;
-            font-weight:500;min-width:150px}
+            font-weight:500}
 .sb th.name{position:sticky;left:0;z-index:4;text-align:left}
 .sb tbody tr:hover td{filter:brightness(.97)}
 .sb .tot td{font-weight:700;border-top:2px solid #000}
