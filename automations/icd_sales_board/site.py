@@ -2011,10 +2011,19 @@ def relay_board(icd: str, office_key: str) -> None:
         # Spelled the way the board spells it: roster.tenure_label says
         # "Veteran" and "Wk 3", Raf's board says "5th wk+" and "3rd Wk". One
         # wording, or the colour key stops matching the column.
+        # NOT IN THE HARVEST = VETERAN. The start-date pull covers the last
+        # six weeks, so a rep on the board who is absent from it did not start
+        # recently — they started before the window. Raf's own board says
+        # '5th wk+' for exactly those people, and leaving them blank drops the
+        # colour off most of the roster (Raf: 322 harvested, none of his top
+        # sellers among them). Only applied where the office WAS harvested;
+        # an office with no start dates on file stays blank rather than
+        # calling everybody a veteran on no evidence.
         row["Tenure"] = _board_tenure(
             sheet_tenure.get(low)
             or start_tenure.get(low)
-            or (rep.tenure_label(week_ending) if rep else ""))
+            or (rep.tenure_label(week_ending) if rep else "")
+            or ("5th wk+" if start_tenure else ""))
         if expand:
             row["Team"] = (rep.team if rep else "") or BLANK_OPTION
             row["Leadership"] = (rep.level if rep else "") or BLANK_OPTION
