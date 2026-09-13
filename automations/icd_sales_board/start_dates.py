@@ -224,6 +224,26 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
             prev.click()
             page.wait_for_timeout(250)
 
+        # THEN ASK FOR THE REPORT. The picker only fills the field — replacing
+        # the POST block with the calendar took the submit out with it, so the
+        # last run set the week and never requested it.
+        #
+        # A real click this time, not a synthetic submit: the value arrived
+        # through the picker the way the page expects, so its own handler has
+        # nothing to undo. The action is still pinned first, because the form
+        # posts to a bare index.cfm and lands on the home page otherwise.
+        page.evaluate(
+            """() => {
+                const b = [...document.querySelectorAll('input')]
+                            .find(x => x.name === 'weekStart');
+                if (b && b.form) b.form.action = location.href;
+            }""")
+        try:
+            page.locator("input[value='Get Report'], button:has-text('Get Report')"
+                         ).first.click(timeout=8_000)
+        except Exception:   # noqa: BLE001 — verification below is the judge
+            pass
+
         # CONFIRM THE PAGE ACTUALLY CHANGED — and confirm it against the BOX,
         # not against a header string I formatted myself. The box is what the
         # server echoes back, so it says what the server actually honoured;
