@@ -97,6 +97,27 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
                 btn.click();
                 return true;
             }""", wk_start.strftime("%m-%d-%Y"))
+        if ok:
+            # CONFIRM THE PAGE ACTUALLY CHANGED. Clicking Get Report is not
+            # the same as the week having loaded: the first working run
+            # reported 6/6 weeks "opened" and returned 41 dates that were all
+            # from ONE week — the default the report lands on — because every
+            # set silently failed and the header lookup then matched nothing.
+            # So wait for the week we asked for to appear in the grid, and
+            # call it opened only then.
+            want = _header(wk_start)
+            for _ in range(20):
+                page.wait_for_timeout(750)
+                try:
+                    if page.evaluate(
+                            "(w) => document.body.innerText.includes(w)",
+                            want):
+                        return True
+                except Exception:  # noqa: BLE001
+                    pass
+            log(f"    week {wk_start}: submitted but {want!r} never appeared")
+            return False
+
         if not ok:
             # SAY WHAT WAS ON THE PAGE. Two runs returned "0 found, exit 0"
             # and there was no way to tell a missing week picker from an empty
@@ -119,8 +140,6 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
             except Exception:  # noqa: BLE001
                 log(f"    week {wk_start}: picker not found, page unreadable")
             return False
-        page.wait_for_timeout(2500)
-        return True
     except Exception as e:   # noqa: BLE001
         log(f"    week {wk_start}: {type(e).__name__}")
         return False

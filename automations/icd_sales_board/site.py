@@ -431,9 +431,15 @@ def _card_style(label: str) -> str:
     return ""
 
 
+# The headline three (four where upgrades exist). Raf reads Apps, who got
+# on the board, and Int first; DTV and NL are the breakdown behind them, so
+# they get a smaller card rather than equal billing (Megan 2026-09-13).
+BIG_VITALS = ("Total units", "Apps", "Selling reps", "Int")
+
+
 def _vital(col, label: str, value: str, hit=None, goal: str = "",
            mine: bool = False, delta=None, is_pct: bool = False,
-           inverse: bool = False, note: str = "") -> None:
+           inverse: bool = False, note: str = "", big: bool = False) -> None:
     """One vital as its own card, so a row of them tiles into a grid.
 
     Drawn by hand because st.metric cannot colour its own value, and as ONE
@@ -487,7 +493,8 @@ def _vital(col, label: str, value: str, hit=None, goal: str = "",
         f'justify-content:center;align-items:center;gap:.28rem;'
         f'text-align:center;line-height:1.2">'
         f'<div style="font-size:.8rem;opacity:.6">{label}</div>'
-        f'<div style="font-size:2rem;font-weight:600;'
+        f'<div style="font-size:{"2.5rem" if big else "1.7rem"};'
+        f'font-weight:600;'
         f'color:{tone[0] if tone else "inherit"}">{value}</div>'
         f'<div style="display:flex;gap:.3rem;flex-wrap:wrap;'
         f'justify-content:center">{"".join(pills) or "&nbsp;"}</div></div>',
@@ -2099,9 +2106,13 @@ def relay_board(icd: str, office_key: str) -> None:
     labels = ([("Total units", _units(tot))] if has_upgrades else []) \
         + [("Apps", _apps(tot)), ("Selling reps", selling)] \
         + [(m, tot[m]) for m in shown_measures]
-    cols = st.columns(len(labels), gap="small")
+    # Wider columns for the headline ones, so the size difference is the
+    # card and not just the number inside it.
+    weights = [3 if lab in BIG_VITALS else 2 for lab, _ in labels]
+    cols = st.columns(weights, gap="small")
     for col, (label, value) in zip(cols, labels):
-        _vital(col, label, str(value), None)
+        _vital(col, label, str(value), None,
+               big=label in BIG_VITALS)
 
     # No "settled from Tableau" caption (Megan 2026-09-13). Where the
     # numbers come from is not what an owner is reading the board for,
@@ -2174,10 +2185,6 @@ def relay_board(icd: str, office_key: str) -> None:
         st.markdown(_hover_table(grid, splits,
                                  [d.strftime("%a") for d in week_days]),
                     unsafe_allow_html=True)
-        st.caption(
-            "Hover a day to see what it was made of. **Products by day** lays "
-            "the split out in full; **Rep details** is where Team, Leadership "
-            "and Status are edited.")
         relay_wow(office_key)
         return
 
