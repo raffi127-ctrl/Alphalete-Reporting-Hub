@@ -3346,8 +3346,12 @@ def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool,
         os.makedirs("output", exist_ok=True)
         with open(path, "w") as fh:
             _json.dump(snap, fh)
-        _log(f"[oat] flagged snapshot ({'complete' if complete else 'PARTIAL, '
-             f'covered {covered} of {queue_total}'}): "
+        # Built BEFORE the f-string on purpose: Lucy 2 runs Python 3.9, where a
+        # replacement field cannot span lines (PEP 701 is 3.12+). Inline it and
+        # the module raises SyntaxError on import and every walk exits 1.
+        _how = ("complete" if complete
+                else "PARTIAL, covered %s of %s" % (covered, queue_total))
+        _log(f"[oat] flagged snapshot ({_how}): "
              f"{len(snap['nophone'])} need a number, "
              f"{len(snap['retext'])} need a manual text (queue={queue_total})")
     except Exception as e:  # noqa: BLE001

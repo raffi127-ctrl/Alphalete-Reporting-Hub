@@ -595,9 +595,11 @@ def main(argv=None) -> int:
         # _entries_of in the report tolerates both.
         t_snap = {"nophone": snap.get("nophone", []),
                   "retext": snap.get("retext", [])}
-        print(f"[report] snapshot {date} @ {snap.get('at','?')} "
-              f"({'complete' if snap.get('complete', True) else 'PARTIAL, covered '
-                 + str(snap.get('covered'))}) — "
+        # Same 3.9 constraint as _write_flagged_snapshot: no multi-line
+        # replacement field inside an f-string.
+        _how = ("complete" if snap.get("complete", True)
+                else "PARTIAL, covered %s" % (snap.get("covered"),))
+        print(f"[report] snapshot {date} @ {snap.get('at','?')} ({_how}) — "
               f"queue={snap.get('queue_total','?')} · "
               f"{len(t_snap['nophone'])} need a number, "
               f"{len(t_snap['retext'])} need a manual text", flush=True)
