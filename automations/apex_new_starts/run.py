@@ -390,6 +390,7 @@ def preview(today: dt.date, *, tab=None, include_ona=True,
             + "\n".join(f"{c.name} — {why}" for c, why in skipped) + "\n")
         _log()
         _log(f"saved → {out.relative_to(REPO_ROOT)}")
+    _log("=== done ===")
     return 0
 
 
@@ -545,6 +546,7 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
                    "then press Enter for the next person. ")
     _log()
     _log("Done." if assist else "Dry run finished — nothing was typed.")
+    _log("=== done ===")
     return 0
 
 
@@ -622,6 +624,10 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     else:
         _log("Open this and click 'Copy this week's setup':")
         _log(f"  {out}")
+    # The Hub reads success off this marker, not off the exit code. Without it
+    # every clean run was recorded "unknown" and the card printed "Run failed"
+    # over a log that plainly said it had worked (Megan, 2026-09-13).
+    _log("=== done ===")
     return 0
 
 
@@ -666,6 +672,7 @@ def explore(today: dt.date) -> int:
         _log(f"  {semantic:9} {got or '— NOT FOUND'}")
     _log(f"\nsaved → {AX.SCREEN_PATH.relative_to(REPO_ROOT)}  (send this back "
          "and the label list can be made exact)")
+    _log("=== done ===")
     return 0
 
 

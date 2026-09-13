@@ -359,3 +359,26 @@ def test_the_page_says_when_a_filing_status_was_assumed(monkeypatch, tmp_path):
     page = next(tmp_path.glob("fill-apex-*.html")).read_text()
     assert "Step 1(c) blank" in page
     assert "Single" in page
+
+
+def test_a_clean_run_prints_the_marker_the_hub_reads(monkeypatch, tmp_path):
+    """The Hub decides success by finding "=== done ===" in the log, not by
+    the exit code. Without it every clean run was recorded "unknown" and the
+    card printed "Run failed" over a log that plainly said it had worked
+    (Megan, 2026-09-13)."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt, io, contextlib
+
+    cand = _cand()
+    hires = {cand.name: BID.NewHire(name=cand.name, values={
+        "first": "Ann", "last": "Lee", "dob": "01/02/1999"})}
+    monkeypatch.setattr(RUN, "gather",
+                        lambda *a, **k: ("Sales Board WE 9.13", [cand], [], hires))
+    monkeypatch.setattr(RUN.BID, "signed_pdf_url", lambda *a, **k: "")
+    monkeypatch.setattr(RUN, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(RUN, "_to_clipboard", lambda text: True)
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert RUN.make_button(dt.date(2026, 9, 13)) == 0
+    assert "=== done ===" in out.getvalue()
