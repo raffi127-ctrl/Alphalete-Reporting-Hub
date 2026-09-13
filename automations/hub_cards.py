@@ -4380,6 +4380,12 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "run_machine": "Lucy 1",
         "run_rerun_id": "birthday_reminders",
+        # \u23F0 TIME SET REPORTS, not the 4am batch: it has its own LaunchAgent
+        # and a fixed clock time. Needs BOTH self_scheduled AND a category
+        # outside {\U0001F4F2 Ops, \U0001F3E2 Other Offices} -- an Ops-category
+        # card is routed to the Ops strip no matter what this says.
+        # [[hub card rendering rules]]
+        "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
             "weekdays": [0, 1, 2, 3, 4, 5, 6],   # every day \u2014 birthdays don't skip weekends

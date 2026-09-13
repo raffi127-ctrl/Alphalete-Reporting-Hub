@@ -42,6 +42,10 @@ _HUB_CARD = {
     # card keyed on its report_id, its pill greens THERE, and the hand-built
     # card stays white forever. [[reference_hub_card_rendering_rules]]
     "rc_contact_sync": "rc-contact-sync",
+    # Same trap, underscore vs hyphen: run.py publishes 'birthday_reminders',
+    # the hand-built card is 'birthday-reminders'. Without this line the pill
+    # greens on an auto-registered dupe and the real card sits white.
+    "birthday_reminders": "birthday-reminders",
     # Raf's local office — folded onto the shared card with the other offices
     # (Megan 2026-07-16); it just still runs its own older module.
     "daily_metrics": "office-metrics",

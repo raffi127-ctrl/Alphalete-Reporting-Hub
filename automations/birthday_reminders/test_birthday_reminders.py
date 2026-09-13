@@ -394,6 +394,39 @@ class Sending(unittest.TestCase):
              mock.patch.object(R, "_publish", lambda *a, **k: None):
             return R.run(today=dt.date(2026, 9, 13), logfn=lambda *a: None, **kw)
 
+    def test_a_dry_run_NEVER_paints_the_hub_pill(self):
+        """The Hub's "Preview (texts nobody)" button runs this. Publishing there
+        would green the card for a day nothing was sent on, and a real 10am
+        failure afterwards would be reading over a success."""
+        patch, _ws = fake_store([["Ann Lee", "09/14", "", "", "", ""]])
+        calls = []
+        with patch, \
+             mock.patch.object(L, "read", lambda *a, **k: live(active={"ann lee"})), \
+             mock.patch.object(C, "GROUP_ADMIN_STAFF", "Admin Staff"), \
+             mock.patch.object(R, "_publish", lambda *a, **k: calls.append(a)):
+            from automations.b2b_dispositions import text_post
+            with mock.patch.object(text_post, "send_text_to_group",
+                                   return_value={"resolved_name": "Admin Staff",
+                                                 "participants": "9"}):
+                R.run(today=dt.date(2026, 9, 13), dry_run=True, logfn=lambda *a: None)
+        self.assertEqual(calls, [])
+
+    def test_a_quiet_day_on_a_dry_run_publishes_nothing_either(self):
+        patch, _ws = fake_store([["Ann Lee", "01/01", "", "", "", ""]])
+        calls = []
+        with patch, mock.patch.object(R, "_publish", lambda *a, **k: calls.append(a)):
+            R.run(today=dt.date(2026, 9, 13), dry_run=True, logfn=lambda *a: None)
+        self.assertEqual(calls, [])
+
+    def test_a_real_quiet_day_DOES_publish_success(self):
+        """Ran and had nothing to do is a success — the pill must go green or
+        the card reads as a miss every quiet day."""
+        patch, _ws = fake_store([["Ann Lee", "01/01", "", "", "", ""]])
+        calls = []
+        with patch, mock.patch.object(R, "_publish", lambda *a, **k: calls.append(a)):
+            R.run(today=dt.date(2026, 9, 13), dry_run=False, logfn=lambda *a: None)
+        self.assertEqual([c[0] for c in calls], ["success"])
+
     def test_no_configured_chat_refuses_rather_than_guessing(self):
         """Megan is still getting the chat name. Until then: no send, exit 1."""
         self.assertEqual(self._run(""), 1)

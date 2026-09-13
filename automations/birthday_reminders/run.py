@@ -114,8 +114,17 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
     if not p["send"]:
         # NOT an error and NOT a failed run: most days nobody has a birthday.
         # [[findings are not failures]]
-        _publish("success", "no birthdays tomorrow" if not p["skip"]
-                 else "%d skipped, none to send" % len(p["skip"]))
+        #
+        # A DRY RUN NEVER PUBLISHES. The Hub's "Preview (texts nobody)" button
+        # runs this path, and publishing there would green the pill for a day on
+        # which nothing was sent and the 10am agent had not even fired yet --
+        # the card would then look done while the real run was still pending,
+        # and a genuine 10am failure afterwards would be reading over a success.
+        # The pill answers "did the scheduled run happen", so only the scheduled
+        # run may paint it.
+        _publish_if_real(dry_run, "success",
+                         "no birthdays tomorrow" if not p["skip"]
+                         else "%d skipped, none to send" % len(p["skip"]))
         return 0
 
     if not C.GROUP_ADMIN_STAFF:
@@ -125,7 +134,7 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
               "a GUID), or export BIRTHDAY_GROUP to test.\n"
               "  Find it with: lucy find_group <part of the name> --machine \"Lucy 1\"")
         logfn("\n--- the text ---\n%s\n----------------" % p["text"])
-        _publish("problem", "admin-staff chat not configured")
+        _publish_if_real(dry_run, "problem", "admin-staff chat not configured")
         return 1
 
     from automations.b2b_dispositions import text_post
@@ -137,7 +146,7 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
         # Resolution failing means Lucy isn't in that chat any more -- which is
         # exactly what it should mean. Loud, not silent.
         logfn("⚠ couldn't reach the admin-staff chat: %s" % e)
-        _publish("problem", str(e)[:200])
+        _publish_if_real(dry_run, "problem", str(e)[:200])
         return 1
 
     # %s, not %d: find_groups returns `participants` as a STRING on Lucy 1
@@ -149,9 +158,14 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
           % ("✅ Texted" if not dry_run else "(dry run) would text",
              ", ".join(v.name for v in p["send"]),
              res.get("resolved_name"), res.get("participants", "?")))
-    if not dry_run:
-        _publish("success", "texted %d birthday(s)" % len(p["send"]))
+    _publish_if_real(dry_run, "success", "texted %d birthday(s)" % len(p["send"]))
     return 0
+
+
+def _publish_if_real(dry_run: bool, status: str, note: str) -> None:
+    """Publish only on a real run. A preview must never paint the pill."""
+    if not dry_run:
+        _publish(status, note)
 
 
 def _publish(status: str, note: str) -> None:
