@@ -4633,9 +4633,17 @@ def _sheets_access_message(e: Exception) -> str | None:
     return None
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=600, show_spinner=False)
 def _read_intake() -> list[dict]:
-    """All intake records, newest first. Cached 30s to avoid per-rerun API hits.
+    """All intake records, newest first. Cached 10 min.
+
+    The SIDEBAR calls this on every page render, for the backlog count beside
+    "New Automation Request" — so at 30s the Hub blocked on a Google round trip
+    roughly every half minute of use, spinner and all (Megan, 2026-09-13: "the
+    hub is taking forever to load"). A request queue moves a few times a week;
+    it does not need re-reading twice a minute. Cost: a request just submitted
+    can take up to 10 minutes to show in that count. The Requests page itself
+    still reads the same cache, so if that matters, clear it there.
 
     Intentionally NOT catching exceptions here — the call sites wrap this in
     try/except and render the real error (e.g. corrupted OAuth JSON). A silent
