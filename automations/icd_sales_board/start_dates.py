@@ -238,11 +238,37 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
                             .find(x => x.name === 'weekStart');
                 if (b && b.form) b.form.action = location.href;
             }""")
+        # TRACE THE WHOLE SEQUENCE IN ONE RUN. One hypothesis per run has cost
+        # far too many of these: record what the box holds after the pick, then
+        # what the URL and the box hold after the submit. Those three facts
+        # separate "the pick did not take" from "the pick took and the submit
+        # threw it away" without another round trip.
+        picked = page.evaluate(
+            """() => {
+                const b = [...document.querySelectorAll('input')]
+                            .find(x => x.name === 'weekStart');
+                return b ? b.value : '(gone)';
+            }""")
         try:
             page.locator("input[value='Get Report'], button:has-text('Get Report')"
                          ).first.click(timeout=8_000)
-        except Exception:   # noqa: BLE001 — verification below is the judge
-            pass
+            clicked = "yes"
+        except Exception as ce:   # noqa: BLE001 — verification below is the judge
+            clicked = type(ce).__name__
+        page.wait_for_timeout(2500)
+        if "trace" not in _LAST_DIAG:
+            try:
+                after = page.evaluate(
+                    """() => {
+                        const b = [...document.querySelectorAll('input')]
+                                    .find(x => x.name === 'weekStart');
+                        return (b ? b.value : '(gone)') + ' @ ' +
+                               location.href.slice(-46);
+                    }""")
+            except Exception:   # noqa: BLE001
+                after = "unreadable"
+            _LAST_DIAG["trace"] = (f"want={want_value} picked={picked} "
+                                   f"click={clicked} after={after}")
 
         # CONFIRM THE PAGE ACTUALLY CHANGED — and confirm it against the BOX,
         # not against a header string I formatted myself. The box is what the
@@ -381,8 +407,8 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     # fixed width, and the box is already known.
     landed = _LAST_DIAG.get("landed")
     why = ""
-    if _LAST_DIAG.get("picker") and opened < len(weeks):
-        why = f" · picker: {_LAST_DIAG['picker']}"
+    if _LAST_DIAG.get("trace") and opened < len(weeks):
+        why = f" · {_LAST_DIAG['trace']}"
     elif _LAST_DIAG.get("rows"):
         why = f" · rows: {_LAST_DIAG['rows']}"
     elif _LAST_DIAG.get("headers"):
