@@ -31,12 +31,14 @@ HOLDING_DM = "U04G5HJBGFN"
 # set up"). Either of them runs the approval; the check reports on ALL of
 # them, so it does not matter which.
 #
-# Eve's id is not here yet -- searching Slack for "Eve" returned twenty people
-# and none was obviously her, and a guess here is a channel approved on a
-# membership nobody actually has. Add her line when somebody can confirm it;
-# until then the check simply says less, rather than saying something wrong.
+# Eve is Evelyn Sobrino, and the id was RESOLVED rather than guessed: a search
+# for "Eve" returned twenty-odd people, while her full name matched exactly
+# one. That difference matters -- everything here is used to decide whether a
+# room is ready, and a wrong id says a person is missing who is standing right
+# there, or present when they are not.
 APPROVERS = {
     "U04G5HJBGFN": "Megan",
+    "U088E2KJEV8": "Eve",        # Evelyn Sobrino, @Evelyn Sobrino
 }          # Megan
 HOLDING_LABEL = "Megan (no channel set yet)"
 

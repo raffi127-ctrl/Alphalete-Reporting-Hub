@@ -96,8 +96,22 @@ class EitherOfThemCanFinishTheSetUp(unittest.TestCase):
         self.assertEqual(A._missing_people(["U04G5HJBGFN", "UEVE"], "UEVE"), [])
 
     def test_a_missing_approver_is_named(self):
-        from automations.icd_alerts import approve as A
-        self.assertEqual(A._missing_people(["UEVE"], "UEVE"), ["Megan"])
+        from automations.icd_alerts import approve as A, offices as O
+        both = list(O.APPROVERS)
+        # Megan in the room, Eve not: Eve is the one named.
+        self.assertEqual(A._missing_people([both[0]], both[0]), ["Eve"])
+        # and the other way round
+        self.assertEqual(A._missing_people([both[1]], both[1]), ["Megan"])
+
+    def test_both_approvers_are_on_the_list(self):
+        from automations.icd_alerts import offices as O
+        self.assertEqual(sorted(O.APPROVERS.values()), ["Eve", "Megan"])
+        for uid in O.APPROVERS:
+            # A DM conversation id (D...) is not a user id, and the membership
+            # check compares against user ids -- a D here would report somebody
+            # missing forever.
+            self.assertTrue(uid.startswith("U"),
+                            "%s is not a user id" % uid)
 
     def test_a_missing_person_never_blocks_an_approval(self):
         """Lucy missing is fatal; a person missing is a ten-second fix in Slack.
