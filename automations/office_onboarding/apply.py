@@ -110,6 +110,10 @@ def _office_row(rec: OnboardingRecord) -> dict:
         "campaign": rec.campaign,       # fiber_d2d | nds_d2d | b2b_att | b2b_box
         "notes": rec.notes,
     }
+    # Delivery by email (no Slack). Written only when the office actually has
+    # addresses, so every existing row stays byte-identical.
+    if rec.emails_only():
+        row["email_to"] = [a.strip() for a in rec.email_to if (a or "").strip()]
     # Per-channel fan-out plans (channel + its metric subset). The runner only
     # fans out when EVERY plan carries a resolved channel_id (set on finalize);
     # otherwise it posts everything to the primary channel. Carry them through so
@@ -132,6 +136,16 @@ def _office_row(rec: OnboardingRecord) -> dict:
     return row
 
 
+def _destination(rec: OnboardingRecord) -> str:
+    """Where this office's day lands, for anything that DISPLAYS it (the Hub card
+    name, the schedule note). A channel for almost everyone; an inbox for an
+    office whose owner has no Slack — and the label has to say so, or the card
+    reads as an office with no destination at all."""
+    if rec.emails_only():
+        return "email: " + ", ".join(a.strip() for a in rec.email_to if a.strip())
+    return rec.channel_name
+
+
 def _schedule_entry(rec: OnboardingRecord, order_hint: float) -> dict:
     """A schedule_config.json report entry mirroring cyrus_metrics: runs the
     family runner for this office, machine-assigned, P1 daily, manifest-verified."""
@@ -140,7 +154,7 @@ def _schedule_entry(rec: OnboardingRecord, order_hint: float) -> dict:
         "on_scheduler": True,
         "display_name": f"{rec.display_label().split(chr(39))[0]}'s "
                         f"{'B2B' if rec.family == 'b2b' else 'Daily'} Metrics "
-                        f"({rec.channel_name})",
+                        f"({_destination(rec)})",
         "source_type": "tableau",
         "data_sources": ["tableau:order_log"],
         "command": [rec.runner_module()],
@@ -155,7 +169,7 @@ def _schedule_entry(rec: OnboardingRecord, order_hint: float) -> dict:
         "depends_on": [],
         "timeout_minutes": 60,
         "verify": {"type": "manifest", "report_id": rec.report_id()},
-        "_note": (f"Office metrics for {rec.key} -> {rec.channel_name}. "
+        "_note": (f"Office metrics for {rec.key} -> {_destination(rec)}. "
                   f"Onboarded via office_onboarding on {rec.submitted_at or '?'}. "
                   f"Machine {rec.machine()} (view owners)."),
         "_onboarded": True,
@@ -350,7 +364,7 @@ def main(argv=None) -> int:
     print(f"=== office_onboarding.apply — {mode} — {len(plans)} office(s) ===\n")
     for p in plans:
         rec = p["rec"]
-        print(f"  • {rec.key}: {rec.display_label()} -> {rec.channel_name} "
+        print(f"  • {rec.key}: {rec.display_label()} -> {_destination(rec)} "
               f"[{rec.family.upper()} / {rec.machine()}]")
         vs = rec.enrolled_views()
         if vs:

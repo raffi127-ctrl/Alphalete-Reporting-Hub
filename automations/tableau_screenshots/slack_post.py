@@ -115,6 +115,18 @@ from pathlib import Path as _Path                 # noqa: E402
 _ONBOARDED_TRACKERS = _Path(__file__).with_name("onboarded_trackers.json")
 
 
+# --- Orgs that get the trackers BY EMAIL -------------------------------------
+# An office whose owner has no Slack account (Joseph Logan / Logan Legacy Group,
+# Megan 2026-09-13). Its onboarded row carries `emails` instead of `channel_ids`,
+# and post_all mails the day's boards as ONE message from
+# alphaletereporting@gmail.com rather than posting them into a thread.
+#
+# ONE message, not one per board: the Slack thread is what makes eleven images
+# read as a single morning post, and an inbox has no equivalent — eleven mails
+# would be eleven interruptions.
+ORG_EMAILS: dict[str, list[str]] = {}
+
+
 def _merge_onboarded_trackers() -> None:
     if not _ONBOARDED_TRACKERS.exists():
         return
@@ -125,9 +137,20 @@ def _merge_onboarded_trackers() -> None:
     for r in rows:
         key = (r.get("key") or "").strip()
         cids = [c for c in (r.get("channel_ids") or []) if c]
-        if not key or key in ORG_CHANNELS or not cids:
+        mails = [a.strip() for a in (r.get("emails") or []) if (a or "").strip()]
+        if not key or key in ORG_CHANNELS or key in ORG_EMAILS:
             continue                 # never clobber a hardcoded org
-        ORG_CHANNELS[key] = cids
+        if not cids and not mails:
+            continue                 # a row with nowhere to deliver isn't an org
+        if mails and cids:
+            # Both would mean the same boards land twice, in two places, with no
+            # single answer to "did today go out?". Refuse the row rather than
+            # pick one for whoever filled it in.
+            continue
+        if mails:
+            ORG_EMAILS[key] = mails
+        else:
+            ORG_CHANNELS[key] = cids
         ORG_LABEL[key] = r.get("label") or key
         trk = [t for t in (r.get("trackers") or []) if t]
         if trk:
@@ -159,10 +182,12 @@ PAUSED_ORGS: dict[str, str] = {
 }
 for _paused_key in PAUSED_ORGS:
     ORG_CHANNELS.pop(_paused_key, None)
+    ORG_EMAILS.pop(_paused_key, None)
 
 # Recompute after the merge so a newly onboarded org is in ORGS (the run loops it
 # and the Hub card lists it). No-op vs the line above when nothing was merged.
-ORGS = list(ORG_CHANNELS)
+ORGS = list(ORG_CHANNELS) + [k for k in ORG_EMAILS
+                             if k not in ORG_CHANNELS]
 
 
 def tracker_ids_for(org: str, pages: list) -> list:
@@ -207,10 +232,31 @@ def _ordered(items: list, id_of, order_ids: list[str] | None) -> list:
     return sorted(items, key=lambda it: rank.get(id_of(it), len(order_ids)))
 
 
+def is_email_org(org: str) -> bool:
+    """True when this org is DELIVERED BY EMAIL and has no Slack channel at all."""
+    return org in ORG_EMAILS
+
+
+def emails_for(org: str) -> list:
+    """Who receives this org's trackers. Set TABLEAU_TRACKERS_EMAIL_TO to a test
+    address while building — the same safety valve TABLEAU_TRACKERS_CHANNEL_ID is
+    for channels, so a build run can never reach a real owner's inbox."""
+    override = os.environ.get("TABLEAU_TRACKERS_EMAIL_TO")
+    if override:
+        return [a.strip() for a in override.split(",") if a.strip()]
+    return list(ORG_EMAILS.get(org, []))
+
+
 def channels_for(org: str) -> list:
     """The channel id(s) this org posts into. Set TABLEAU_TRACKERS_CHANNEL_ID to a
     single scratch channel while building to keep every real channel safe (it
-    overrides the whole list, for every org)."""
+    overrides the whole list, for every org).
+
+    [] for an EMAIL org — it has no channel, and the scratch-channel override must
+    not turn it into one (a build run would then post an owner's boards into a
+    Slack channel he isn't even in)."""
+    if is_email_org(org):
+        return []
     override = os.environ.get("TABLEAU_TRACKERS_CHANNEL_ID")
     if override:
         return [override]
@@ -983,6 +1029,75 @@ def annotate_today(pages: list, today: dt.date | None = None,
     return {"org": org, "note": note, "results": out}
 
 
+def _email_all(captures: list, pages: list, today: dt.date, *, org: str,
+               pending_late=(), note: str = "", updated: bool = False) -> dict:
+    """Mail this org's captured trackers as ONE message.
+
+    Returns post_all's channel-result shape with the recipient list standing in
+    for the channel, so every caller (run.py's summary, the manifest, the Hub
+    card) reads it without knowing email exists.
+
+    A LATE board still owed is named in the intro exactly as it is in the thread
+    header — the catch-up run sends its own mail when the extract lands, and
+    without the line the first mail looks like the complete day.
+
+    ONE ATTACHMENT PER BOARD (Megan 2026-09-13). These are the country trackers:
+    3400px wide and denser than any other board we send. Inline they are painted
+    into a ~1200px mail column, which is the same crush the Slack thread avoids by
+    letting you click an image open. An attachment IS that click — the file opens
+    at full size in whatever the reader already uses to look at pictures. The mail
+    body becomes the index of what arrived.
+    """
+    from automations.shared import report_email as _mail
+    to = emails_for(org)
+    label = ORG_LABEL.get(org, org)
+    if not to:
+        return {"ok": False, "org": org,
+                "channels": [{"channel": label, "ok": False, "soft": True,
+                              "error": f"{org} has no recipients — nothing sent"}]}
+
+    blocks, ids = [], []
+    for spec, path in captures:
+        # reply_caption is the thread's wording; reused so the mail and the Slack
+        # channels never describe the same board two different ways. The bold
+        # asterisks are Slack markup, not text.
+        blocks.append((reply_caption(spec, today).replace("*", ""), path))
+        ids.append(spec["id"])
+    for pid in pending_late:
+        spec = _by_id_safe(pid, pages)
+        blocks.append((f"{spec.get('title', pid)} — data lands later this "
+                       f"morning; it comes in a follow-up email.", None, 0, "note"))
+
+    intro = ""
+    if note:
+        intro += f'<div style="padding:0 0 10px">{note}</div>'
+    if updated:
+        intro += ('<div style="padding:0 0 10px;color:#8a0000">Updated — this '
+                  'replaces the set sent earlier today.</div>')
+    try:
+        res = _mail.send_boards(
+            subject=f"{header_title(today)} — {label}",
+            to=to, title=TITLE_PREFIX.upper(), blocks=blocks, intro_html=intro,
+            attach=True)
+    except Exception as e:                            # noqa: BLE001
+        return {"ok": False, "org": org,
+                "channels": [{"channel": "email: " + ", ".join(to), "ok": False,
+                              "error": f"{type(e).__name__}: {str(e)[:160]}"}]}
+    ok = bool(res.get("ok"))
+    return {"ok": ok, "org": org, "emailed": True,
+            "channels": [{"channel": "email: " + ", ".join(to), "ok": ok,
+                          "posted": ids if ok else [],
+                          "present_ids": ids if ok else None,
+                          "thread_ts": "", "error": "" if ok
+                          else res.get("reason", "send failed")}]}
+
+
+def _by_id_safe(page_id: str, pages: list) -> dict:
+    from automations.tableau_screenshots import pages as _pm
+    return _pm.by_id(page_id) or next(
+        (p for p in pages if p.get("id") == page_id), {"id": page_id})
+
+
 def post_all(captures: list, pages: list, today: dt.date | None = None,
              *, dry_run: bool = False, replace: bool = False,
              org: str = DEFAULT_ORG, new_thread: bool = False,
@@ -1034,7 +1149,11 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
             "replace": replace,
             "new_thread": new_thread,
             "org": org,
-            "channels": list(channels),
+            # An email org has no channels; naming the recipients here means a
+            # preview always answers "where would this go?" the same way,
+            # whichever kind of org it is.
+            "channels": ([f"email: {a}" for a in emails_for(org)]
+                         if is_email_org(org) else list(channels)),
             "pending_late": pending_late,
             "header": header_text(pages, today, pending_late, note, updated),
             "replies": [
@@ -1067,6 +1186,17 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
         return {"ok": True, "skipped": True, "no_op": True, "org": org,
                 "channels": [],
                 "reason": "no board in this run belongs to this org's selection"}
+
+    # ---- EMAIL ORG. No channel, no thread, no Slack client. One mail carrying
+    # the same boards in the same order the thread would have had. It sits AFTER
+    # the dry-run return and the nothing-owed no-op above so an email org gets
+    # exactly the same previews and the same clean skips as a channel org —
+    # the only thing that differs is the last step.
+    if is_email_org(org):
+        with _lock:
+            return _email_all(captures, pages, today, org=org,
+                              pending_late=pending_late, note=note,
+                              updated=updated)
 
     client = smp._client()
     channel_results = []

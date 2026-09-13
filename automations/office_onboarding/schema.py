@@ -307,6 +307,16 @@ class OnboardingRecord:
                                   # for those views returns NO rows (they need the
                                   # full string). Must match Tableau character-for-char.
     owner_email: str = ""         # where the Pay Structure invite is sent.
+    email_to: List[str] = field(default_factory=list)
+                                  # DELIVERY BY EMAIL. Empty = this office posts
+                                  # to Slack (every office to date). Non-empty and
+                                  # channel_id/channel_name left blank = the owner
+                                  # has no Slack, so the daily boards are mailed
+                                  # instead, as ONE message from
+                                  # alphaletereporting@gmail.com (Joseph Logan /
+                                  # Logan Legacy Group, Megan 2026-09-13).
+                                  # Never both: two destinations means two
+                                  # half-answers to "did today go out?".
     pay_code: str = ""            # the office's Pay Structure access code.
     reports: List[EnrolledReport] = field(default_factory=list)
     label: str = ""               # "Cyrus's Local Office"; derived if blank.
@@ -325,6 +335,11 @@ class OnboardingRecord:
         first = self.owner.split()[0] if self.owner.strip() else self.key.title()
         kind = "B2B Office" if self.family == "b2b" else "Local Office"
         return f"{first}'s {kind}"
+
+    def emails_only(self) -> bool:
+        """True when this office is DELIVERED BY EMAIL and has no Slack channel."""
+        return bool([a for a in self.email_to if (a or "").strip()]) and not (
+            self.channel_id or "").strip()
 
     def report_id(self) -> str:
         return f"{self.key}_metrics"
@@ -411,11 +426,26 @@ def validate(rec: OnboardingRecord, *,
         problems.append(f"Office key {rec.key!r} is already in the registry — "
                         "pick a unique handle.")
 
-    for fname, val in (("owner", rec.owner), ("knocks_office", rec.knocks_office),
-                       ("business_name", rec.business_name),
-                       ("channel_id", rec.channel_id),
-                       ("channel_name", rec.channel_name),
-                       ("sheet_id", rec.sheet_id)):
+    _required = [("owner", rec.owner), ("knocks_office", rec.knocks_office),
+                 ("business_name", rec.business_name), ("sheet_id", rec.sheet_id)]
+    # An EMAIL office has no channel by design — its addresses are what must be
+    # present instead. Mirrors office_metrics.offices.validate, so the form
+    # refuses exactly what the registry would refuse.
+    _mails = [a.strip() for a in (rec.email_to or []) if (a or "").strip()]
+    if _mails and (rec.channel_id or "").strip():
+        problems.append(
+            "This office has BOTH a Slack channel and email delivery. Pick one: "
+            "clear the channel to deliver by email, or clear the addresses to "
+            "post in Slack. Two destinations means nobody can say where the day "
+            "actually went.")
+    elif _mails:
+        for a in _mails:
+            if "@" not in a or a.startswith("@") or a.endswith("@"):
+                problems.append(f"{a!r} isn't an email address.")
+    else:
+        _required += [("channel_id", rec.channel_id),
+                      ("channel_name", rec.channel_name)]
+    for fname, val in _required:
         if not (val or "").strip():
             problems.append(f"{fname} is empty.")
 
@@ -440,7 +470,8 @@ def validate(rec: OnboardingRecord, *,
 
     # Channel collision: two offices may share a channel ONLY if both set a
     # header_label (distinct threads), exactly like office_metrics.validate.
-    if rec.channel_id in existing_channels and not rec.header_label.strip():
+    if (rec.channel_id.strip() and rec.channel_id in existing_channels
+            and not rec.header_label.strip()):
         problems.append(
             f"Channel {rec.channel_id} ({rec.channel_name}) is already used by "
             f"{existing_channels[rec.channel_id]!r}. Two offices sharing a channel "

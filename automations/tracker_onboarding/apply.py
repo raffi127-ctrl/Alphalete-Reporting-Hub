@@ -38,6 +38,12 @@ def _rows(rec: TrackerRecord) -> "List[dict]":
     key2, key3 … — stable, [a-z0-9_] safe), each with only that channel's
     boards, ordered by the union order in rec.trackers. The poster loops org
     rows and captures each board once, so this costs nothing extra."""
+    # An EMAIL office is always ONE row: the per-channel split exists so different
+    # channels can carry different board subsets, and an inbox is a single place.
+    if rec.emails_only():
+        return [{"key": rec.key, "label": rec.label(), "owner": rec.owner,
+                 "emails": [a.strip() for a in rec.emails if (a or "").strip()],
+                 "trackers": rec.trackers}]
     plans = [p for p in (rec.channel_plans or []) if p.get("channel_id")]
     order = {tid: i for i, tid in enumerate(rec.trackers)}
 

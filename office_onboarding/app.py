@@ -449,62 +449,101 @@ def form_view() -> None:
             st.caption(f"Internal id: `{key}` — auto-set from the owner's name "
                        "(used in commands + filenames).")
 
-    # ---- 3. Slack channel -------------------------------------------------
+    # ---- 3. Where the daily boards go -------------------------------------
+    # Almost every office reads its metrics in a Slack channel. A few owners have
+    # no Slack account at all (Joseph Logan / Logan Legacy Group, Megan
+    # 2026-09-13), and for them the destination is an inbox: the same boards, in
+    # the same order, as ONE email a day from alphaletereporting@gmail.com.
+    #
+    # ONE question, two answers, no third state — the record refuses an office
+    # that has both, because two destinations means nobody can say where the day
+    # actually went.
     st.divider()
-    st.markdown("### 3. Slack channel")
-    c5, c6 = st.columns(2)
-    with c5:
-        # Validating box: the owner's request may carry a name or a handle here
-        # (the sign-up forms used to accept one), so flag it where it's fixed.
-        channel_id = _ui.channel_id_input("Channel ID *", key="on_channel_id")
-    with c6:
-        channel_name = st.text_input("Channel name *", placeholder="#elevate-sales",
-                                     key="on_channel_name")
-    _plans = st.session_state.get("_req_channel_plans") or []
-    _plan_ids: list = []
-    if len(_plans) > 1:
-        st.info("📣 **The owner asked for a per-channel fan-out.** Give each channel "
-                "its Slack **Channel ID** below — the morning run posts each channel "
-                "only its metrics. (Leave any ID blank and the office posts "
-                "everything to the primary channel above until all IDs are set.)")
-        for i, spec in enumerate(_plans):
-            st.markdown("**{}** → {}".format(
-                spec["channel_name"],
-                ", ".join(spec["labels"]) if spec["labels"] else "(no metrics)"))
-            _plan_ids.append(_ui.channel_id_input(
-                f"Channel ID for {spec['channel_name']}", key=f"chanid_{i}"))
-    # Live "is Lucy in the channel" check — the same helper the tracker
-    # confirm view uses. A stale id / missing invite is the #1 wiring
-    # firefight (drew), so surface it BEFORE Megan submits.
-    if st.button("🔄 Check Lucy's membership"):
-        from automations.tracker_onboarding import slack_check
-        _pairs = [(channel_id, channel_name.strip())]
-        for i, spec in enumerate(_plans):
-            _pairs.append((
-                _plan_ids[i] if i < len(_plan_ids) else "",
-                spec.get("channel_name", "")))
-        seen = set()
-        st.session_state["_lucy_checks"] = [
-            slack_check.check_channel(c, n) for c, n in _pairs
-            if (c or n) and not ((c, n) in seen or seen.add((c, n)))]
-    for _r in (st.session_state.get("_lucy_checks") or []):
-        from automations.tracker_onboarding import slack_check as _sc
-        (st.success if _r.get("status") == "member" else st.warning)(
-            _sc.human_line(_r))
+    st.markdown("### 3. Where does this office read its metrics?")
+    _DELIVERY = ["💬 A Slack channel", "✉️ Email (this owner has no Slack)"]
+    delivery = st.radio("Delivery", _DELIVERY, key="on_delivery",
+                        horizontal=True, label_visibility="collapsed",
+                        help="Slack is the normal answer. Pick email only when "
+                             "the owner genuinely has no Slack account — the "
+                             "boards are identical either way.")
+    by_email = delivery == _DELIVERY[1]
 
-    header_label = st.text_input(
-        "Thread name — only if another office shares this channel", key="on_header",
-        help="Leave blank if this office has the channel to itself. If two "
-             "offices post to the SAME channel (like Hammad + Salik → "
-             "#elite-prime-sales), give this office a name here — it's added to "
-             "the Metrics header so this office gets its OWN thread instead of "
-             "merging into the other office's. Both offices sharing the channel "
-             "must set one.")
-    if header_label.strip():
-        st.caption(f"→ This office's thread header will read "
-                   f"**Metrics for: <date> — {header_label.strip()}** — the "
-                   f"“— {header_label.strip()}” is what keeps it separate from "
-                   f"the other office's thread in this channel.")
+    email_to: list = []
+    if by_email:
+        st.caption("The daily boards go out as **one email a day**, sent from "
+                   "**alphaletereporting@gmail.com** — same boards, same order "
+                   "as the Slack thread. No channel is needed, and none is "
+                   "created.")
+        _raw = st.text_input(
+            "Who gets the email? *", key="on_email_to",
+            placeholder="joseph@loganlegacygroup.com",
+            help="The owner's address. More than one person? separate them with "
+                 "commas — everyone on the line gets the same single email.")
+        email_to = [a.strip() for a in _raw.replace(";", ",").split(",")
+                    if a.strip()]
+        _bad = [a for a in email_to if "@" not in a]
+        if _bad:
+            st.error("⚠️ Not an email address: " + ", ".join(f"`{a}`" for a in _bad))
+        elif len(email_to) > 1:
+            st.caption(f"→ {len(email_to)} recipients on one email: "
+                       + ", ".join(f"`{a}`" for a in email_to))
+        channel_id, channel_name, header_label = "", "", ""
+        _plans, _plan_ids = [], []
+
+    if not by_email:
+        c5, c6 = st.columns(2)
+        with c5:
+            # Validating box: the owner's request may carry a name or a handle here
+            # (the sign-up forms used to accept one), so flag it where it's fixed.
+            channel_id = _ui.channel_id_input("Channel ID *", key="on_channel_id")
+        with c6:
+            channel_name = st.text_input("Channel name *", placeholder="#elevate-sales",
+                                         key="on_channel_name")
+        _plans = st.session_state.get("_req_channel_plans") or []
+        _plan_ids: list = []
+        if len(_plans) > 1:
+            st.info("📣 **The owner asked for a per-channel fan-out.** Give each channel "
+                    "its Slack **Channel ID** below — the morning run posts each channel "
+                    "only its metrics. (Leave any ID blank and the office posts "
+                    "everything to the primary channel above until all IDs are set.)")
+            for i, spec in enumerate(_plans):
+                st.markdown("**{}** → {}".format(
+                    spec["channel_name"],
+                    ", ".join(spec["labels"]) if spec["labels"] else "(no metrics)"))
+                _plan_ids.append(_ui.channel_id_input(
+                    f"Channel ID for {spec['channel_name']}", key=f"chanid_{i}"))
+        # Live "is Lucy in the channel" check — the same helper the tracker
+        # confirm view uses. A stale id / missing invite is the #1 wiring
+        # firefight (drew), so surface it BEFORE Megan submits.
+        if st.button("🔄 Check Lucy's membership"):
+            from automations.tracker_onboarding import slack_check
+            _pairs = [(channel_id, channel_name.strip())]
+            for i, spec in enumerate(_plans):
+                _pairs.append((
+                    _plan_ids[i] if i < len(_plan_ids) else "",
+                    spec.get("channel_name", "")))
+            seen = set()
+            st.session_state["_lucy_checks"] = [
+                slack_check.check_channel(c, n) for c, n in _pairs
+                if (c or n) and not ((c, n) in seen or seen.add((c, n)))]
+        for _r in (st.session_state.get("_lucy_checks") or []):
+            from automations.tracker_onboarding import slack_check as _sc
+            (st.success if _r.get("status") == "member" else st.warning)(
+                _sc.human_line(_r))
+
+        header_label = st.text_input(
+            "Thread name — only if another office shares this channel", key="on_header",
+            help="Leave blank if this office has the channel to itself. If two "
+                 "offices post to the SAME channel (like Hammad + Salik → "
+                 "#elite-prime-sales), give this office a name here — it's added to "
+                 "the Metrics header so this office gets its OWN thread instead of "
+                 "merging into the other office's. Both offices sharing the channel "
+                 "must set one.")
+        if header_label.strip():
+            st.caption(f"→ This office's thread header will read "
+                       f"**Metrics for: <date> — {header_label.strip()}** — the "
+                       f"“— {header_label.strip()}” is what keeps it separate from "
+                       f"the other office's thread in this channel.")
 
     # ---- 4. Google Sheet --------------------------------------------------
     st.divider()
@@ -604,8 +643,11 @@ def form_view() -> None:
     # Rebuild the per-channel plans with the channel_ids Megan entered above, so the
     # fan-out can resolve. Falls back to the primary channel_id for the plan whose
     # name matches the primary channel (she already typed that id in section 3).
+    # An email office has no channels to fan out across, so there are no plans to
+    # rebuild — the whole day goes to one inbox.
     built_plans = []
-    for i, spec in enumerate(st.session_state.get("_req_channel_plans") or []):
+    for i, spec in enumerate([] if by_email else
+                             (st.session_state.get("_req_channel_plans") or [])):
         cid = _plan_ids[i] if i < len(_plan_ids) else ""
         if not cid and spec["channel_name"] == channel_name.strip():
             cid = channel_id
@@ -617,6 +659,7 @@ def form_view() -> None:
         knocks_office=knocks.strip() or owner.strip(),
         business_name=business.strip(), website=website.strip(),
         channel_id=channel_id, channel_name=channel_name.strip(),
+        email_to=email_to,
         sheet_id=sheet_id, family=family, campaign=campaign,
         channel_plans=built_plans,
         ov_account=ov_account.strip(), owner_office=owner_office.strip(),
@@ -624,9 +667,15 @@ def form_view() -> None:
         reports=enrolled, header_label=header_label.strip())
 
     # ---- submit -----------------------------------------------------------
-    st.info("🔔 **Before you submit:** make sure the **Lucy user** AND the "
-            "**Lucy bot** are both members of every Slack channel above — a "
-            "private channel needs BOTH invited or the posts/uploads fail.")
+    if by_email:
+        st.info("🔔 **Before you submit:** check the address above character for "
+                "character. A channel that's wrong fails loudly (Lucy can't post); "
+                "an address that's wrong fails SILENTLY — the send succeeds and "
+                "the boards go to nobody.")
+    else:
+        st.info("🔔 **Before you submit:** make sure the **Lucy user** AND the "
+                "**Lucy bot** are both members of every Slack channel above — a "
+                "private channel needs BOTH invited or the posts/uploads fail.")
     if st.button("💾 Submit office", type="primary"):
         reg = store.existing_registry(exclude_key=rec.key)
         problems = S.validate(

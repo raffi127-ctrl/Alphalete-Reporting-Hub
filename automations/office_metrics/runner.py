@@ -108,10 +108,21 @@ def record_status(label: str, channel_name: str, *, ok: bool,
         pass
 
 
+def dest_name_email(o) -> str:
+    """How an email office is NAMED in the run summary. A channel name is where
+    the boards went; for this office that is a list of addresses."""
+    return "email: " + ", ".join(getattr(o, "email_to", ()) or ())
+
+
 def _office_channels_label(o: Office) -> str:
     """Every channel this office posts into, for its Hub checklist row — a
     fan-out office reads 'Office — #main + #leaders', not just the primary
-    (Megan 2026-08-20: the card must list the added channels)."""
+    (Megan 2026-08-20: the card must list the added channels).
+
+    An email-only office has no channel; the Hub row names the inbox instead, so
+    the card says where the day actually went rather than showing a blank."""
+    if getattr(o, "emails_only", False):
+        return dest_name_email(o)
     plans = getattr(o, "channel_plans", ()) or ()
     names = [(p.get("channel_name") or p.get("channel_id") or "").strip()
              for p in plans]
@@ -841,6 +852,11 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                     help="pull + render, DO NOT post. Real Tableau pulls — run "
                          "on the mini.")
     ap.add_argument("--only", default=None, help="run a single metric by slug.")
+    ap.add_argument("--resend-email", action="store_true",
+                    help="EMAIL-ONLY OFFICES: re-send today's already-rendered "
+                         "boards and do nothing else. For when the metrics were "
+                         "fine and only the send failed — no Tableau pull, no "
+                         "Sheet write, seconds instead of minutes.")
     ap.add_argument("--channel", default=None,
                     help="override the destination (channel/DM id, or a comma-"
                          "separated list of user ids for a review group-DM).")
@@ -970,6 +986,23 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             pass
 
     o = _off.get(args.office)
+
+    # Re-send only. Deliberately BEFORE any metric planning: this path must not
+    # be able to pull, fill or render anything — its whole promise is that it
+    # touches nothing but the mail.
+    if args.resend_email:
+        if not o.emails_only:
+            print(f"--resend-email is for email-only offices; {o.key} posts to "
+                  f"{o.channel_name}. Nothing to re-send.")
+            return 2
+        from automations.office_metrics import email_digest as _digest
+        res = _digest.send_for_office(o, dry_run=not args.live)
+        if res.get("ok"):
+            print("=== done ===")
+            return 0
+        print(f"✗ {res.get('reason', 'send failed')}")
+        return 1
+
     _full = metrics_for(o)          # every board this office CAN post (pre-override)
     # Per-office section control. A committed SECTION_OVERRIDES entry pins exactly
     # which boards this office posts and WINS over enrollment; an EMPTY entry means
@@ -1061,12 +1094,39 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     else:
         os.environ.pop("SLACK_USER_TOKEN", None)
 
+    # EMAIL-ONLY OFFICE. Its owner has no Slack (Joseph Logan / Logan Legacy
+    # Group, Megan 2026-09-13), so there is no channel, no token and no thread.
+    # Every metric still runs its FULL live path — Tableau pull, Sheet fill,
+    # render — and METRICS_EMAIL_DIR makes the post helpers hand each finished
+    # board to shared.metrics_email_capture instead of Slack. The whole set then
+    # goes out as ONE email at the end of the run. This is NOT --dry-run:
+    # --dry-run means don't do the work; this means do all of it and deliver it
+    # somewhere else. Set before base_env is snapshotted — the metrics are
+    # subprocesses, and the env is what crosses that boundary.
+    email_dir = None
+    if o.emails_only and mode == "live":
+        from automations.office_metrics import email_digest as _digest
+        email_dir = _digest.capture_dir(o.key)
+        # Start the day's capture CLEAN on a full run. Otherwise a re-run mails
+        # today's boards alongside the earlier attempt's copies of the same
+        # boards and the owner has to work out which set is current. An --only
+        # re-run is a top-up by definition, so it keeps what is already there.
+        if not args.only and email_dir.exists():
+            import shutil as _sh
+            _sh.rmtree(email_dir, ignore_errors=True)
+        email_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["METRICS_EMAIL_DIR"] = str(email_dir)
+        print(f"  delivery: EMAIL → {', '.join(o.email_to)} "
+              f"(no Slack channel; capture in {email_dir})")
+    else:
+        os.environ.pop("METRICS_EMAIL_DIR", None)
+
     base_env = dict(os.environ)
     if not args.fresh:
         base_env["METRICS_XTAB_CACHE"] = str(
             REPO_ROOT / "output" / "metrics_xtab_cache")
 
-    if mode == "live":
+    if mode == "live" and not o.emails_only:
         from automations.shared import slack_metrics_post as smp
         try:
             tok = smp._load_token()
@@ -1101,8 +1161,15 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     # only that plan's metric slugs (e.g. cancels-only to a leaders channel).
     # Skipped when --channel forces a manual override (a review DM wants the whole
     # thread in one place). Empty channel_plans = exact prior single-channel path.
-    destinations, skipped = build_destinations(
-        o, wired, target_chan, to_named, manual_channel=bool(args.channel))
+    if o.emails_only:
+        # ONE destination, no fan-out: a fan-out splits metrics across CHANNELS,
+        # and this office has an inbox, which is a single place by definition.
+        destinations, skipped = [{
+            "channel_id": "", "channel_name": "email: " + ", ".join(o.email_to),
+            "header_label": o.header_label, "metrics": wired}], []
+    else:
+        destinations, skipped = build_destinations(
+            o, wired, target_chan, to_named, manual_channel=bool(args.channel))
     for cname, slugs in skipped:
         print(f"  (channel {cname}: no wired metrics match {slugs} — skipped)")
     if not destinations:
@@ -1143,7 +1210,7 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         # next channel — instead of pulling Tableau once per metric only to die at
         # the post. Other destinations are untouched, the run still exits 0 (soft
         # INCOMPLETE + alert, unchanged), and the note names the fix.
-        if mode == "live":
+        if mode == "live" and not o.emails_only:
             blocked = _channel_block_reason(client, chan)
             if blocked:
                 print(f"\n⚠ [{dest['channel_name']} ({chan})] SKIPPED — {blocked}\n"
@@ -1157,7 +1224,18 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                                     f"{CHANNEL_UNREACHABLE_PREFIX}{blocked}"))
                 continue
 
-        if mode == "live":
+        if mode == "live" and o.emails_only:
+            # No thread to ensure — but the header is still built and CAPTURED,
+            # because it is the day's promise of which boards are coming and the
+            # email prints it as its intro. ensure_metrics_thread routes itself
+            # into the capture when METRICS_EMAIL_DIR is set.
+            from automations.shared import slack_metrics_post as _smp_e
+            try:
+                _smp_e.ensure_metrics_thread(
+                    sections=[m["label"] for m in dest["metrics"]])
+            except Exception as e:              # noqa: BLE001
+                print(f"  ⚠ could not record the board list for the email: {e}")
+        elif mode == "live":
             # slack_metrics_post read CHANNEL_ID + HEADER_LABEL at import — rebind
             # both so the header thread + replies land in THIS destination's channel
             # (and under its labelled thread when a channel is shared).
@@ -1209,6 +1287,38 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             results.append((dest["channel_name"], m["slug"], m["label"], ok, note))
 
     total = time.monotonic() - overall_start
+    # ---- DELIVER. Everything above rendered boards; for an email office
+    # nothing has reached the owner yet, so this is the step that makes the day
+    # real. It runs even when some metrics missed: an owner is better served by
+    # the eight boards that worked plus a visible line for the two that didn't
+    # than by silence [[feedback_fill_but_flag]]. It does NOT run when nothing
+    # rendered at all — send_for_office refuses a blank day
+    # [[feedback_never_post_blank]].
+    email_note = ""
+    if o.emails_only and mode == "live":
+        from automations.office_metrics import email_digest as _digest
+        try:
+            _res = _digest.send_for_office(o)
+        except Exception as e:                  # noqa: BLE001
+            _res = {"ok": False, "reason": f"{type(e).__name__}: {e}"}
+        if _res.get("ok"):
+            email_note = (f"emailed to {', '.join(o.email_to)} "
+                          f"({_res.get('boards', 0)} board(s))")
+            print(f"\n  ✉️  {email_note}")
+        else:
+            # The boards exist on disk; only the send failed. Say that, because
+            # "re-run the whole office" and "re-send what already rendered" are
+            # very different amounts of work — the second is the command below.
+            email_note = ("EMAIL NOT SENT — " + str(_res.get("reason", "unknown"))
+                          + f"; re-send with: python -m "
+                            f"automations.office_metrics.email_digest "
+                            f"--office {o.key} --live")
+            print(f"\n  ❌ {email_note}")
+            # Nothing reached the owner, so the run is NOT green, whatever the
+            # metrics did [[feedback_green_means_delivered]].
+            results.append((dest_name_email(o), "email_digest",
+                            "✉️ Email delivery", False, email_note))
+
     n_ok = sum(1 for *_x, ok, _ in results if ok)
     print(f"\n{'='*70}\n=== {o.label} metrics summary "
           f"({n_ok}/{len(results)} ok, {total/60:.0f}m, {mode}) ===")
@@ -1225,8 +1335,9 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         label for _c, _s, label, ok, _ in results
         if ok and label not in set(l for _c2, _s2, l, o2, _n2 in results if not o2)))
 
-    _dest_desc = (f"{len(destinations)} channels" if len(destinations) > 1
-                  else o.channel_name)
+    _dest_desc = (("email: " + ", ".join(o.email_to)) if o.emails_only else
+                  (f"{len(destinations)} channels" if len(destinations) > 1
+                   else o.channel_name))
     # A blocked channel is THE headline: without it the note reads "0/4
     # metrics posted; failed: churn, rep_activations, order_log, cancels",
     # which sends whoever reads the alert hunting four Tableau views for a
@@ -1259,8 +1370,16 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         # normally lives), so omitting it here made the retry run with no office
         # and die on "--office is required" (Megan 2026-07-16).
         retry = ["--office", o.key, "--live"]
-        if failed_slugs:
-            retry += ["--only", ",".join(failed_slugs)]
+        # 'email_digest' is a DELIVERY step, not a metric — `--only email_digest`
+        # would match no metric and the retry would pull nothing and send
+        # nothing. When the boards rendered and only the send failed, the retry
+        # is the re-send (seconds, no Tableau); when metrics failed too, the
+        # metrics re-run mails the whole set again at the end of it anyway.
+        _retry_slugs = [sl for sl in failed_slugs if sl != "email_digest"]
+        if _retry_slugs:
+            retry += ["--only", ",".join(_retry_slugs)]
+        elif "email_digest" in failed_slugs:
+            retry = ["--office", o.key, "--live", "--resend-email"]
         # …and the same rule applies to the FAILED LIST, which is what the
         # section-drop alert actually prints. One line per blocked channel, not
         # one per metric that never got the chance to run.

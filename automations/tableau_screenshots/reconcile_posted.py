@@ -175,6 +175,18 @@ def reconcile(day: Optional[dt.date] = None, *, client=None,
     for org in (orgs if orgs is not None else list(sp.ORG_CHANNELS)):
         want = expected_for(org, day, now=now)
         res = OrgResult(org=org, expected=want)
+        # An EMAIL org has no thread to read back, so this check cannot speak for
+        # it either way. `unreadable` is exactly that verdict — "we could not
+        # look, NOT a miss" — and using it keeps the org visible in the report
+        # instead of it quietly dropping out. Without this an explicit
+        # `--orgs <email org>` would find zero channels and conclude "no tracker
+        # thread at all today", which is a false alarm about a mail that went out
+        # fine. Its real delivery check is the send's own result in the run log.
+        if sp.is_email_org(org):
+            res.unreadable = ("delivered by email — no Slack thread to verify "
+                              "against")
+            rep.orgs.append(res)
+            continue
         present: set = set()
         seen_any = False
         thread_missing_everywhere = True

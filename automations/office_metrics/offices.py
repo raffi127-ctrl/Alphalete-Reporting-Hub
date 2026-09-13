@@ -152,6 +152,25 @@ class Office:
     # loads it and posts THIS office's metrics with that token instead. See
     # [[project_trang_fresh_success]].
     slack_token_file: str = ""
+    # EMAIL-ONLY OFFICES. Empty = this office posts to Slack, exactly as every
+    # existing row does. Set to the owner's address(es) and the office has no
+    # Slack channel at all: the runner captures the boards the metrics render and
+    # mails them as ONE message from alphaletereporting@gmail.com instead
+    # (office_metrics.email_digest). Joseph Logan / Logan Legacy Group is the
+    # first — he has no Slack account, so "his channel" is an inbox (Megan
+    # 2026-09-13).
+    #
+    # An email office leaves channel_id/channel_name EMPTY, and validate() knows
+    # that: every other office must have a channel, this one must have addresses,
+    # and neither may have both. One delivery per office, so there is never a
+    # question of which one carried the day.
+    email_to: tuple = ()
+
+    @property
+    def emails_only(self) -> bool:
+        """True when this office's boards are DELIVERED BY EMAIL. Read this, not
+        `channel_id == ""`, so the reason is visible at every call site."""
+        return bool(self.email_to) and not (self.channel_id or "").strip()
 
     @property
     def views(self) -> dict:
@@ -402,6 +421,10 @@ def _merge_onboarded() -> None:
             abp_tab=r.get("abp_tab", ""),
             slack_token_file=CROSS_WS_TOKEN_FILES.get(
                 key, r.get("slack_token_file", "")),
+            # Owner has no Slack: deliver by email. Tuple because Office is
+            # frozen, and a list would make the row unhashable.
+            email_to=tuple(a.strip() for a in (r.get("email_to") or [])
+                           if (a or "").strip()),
             # NDS either by the committed set (isaiah/drew, pre-campaign) or by
             # the office's own campaign from the onboarding form.
             nds=(key in NDS_OFFICES or r.get("campaign") == "nds_d2d"))
@@ -490,10 +513,15 @@ def validate() -> list[str]:
     UNIQUE across the table, every field present, every view a real Tableau URL.
     The runner calls this at startup and aborts before any pull or post."""
     problems: list[str] = []
-    required = ("report_id", "label", "owner", "channel_id", "channel_name",
-                "sheet_id", "knocks_office")   # view_* are legacy/optional now
+    # An EMAIL-ONLY office has no channel by design, so the channel fields are
+    # required of everyone else and its addresses are required of it. The same
+    # anti-crosspost logic either way: the one thing that must never happen is an
+    # office whose destination is blank or is somebody else's.
+    required = ("report_id", "label", "owner", "sheet_id", "knocks_office")
+    required_slack = ("channel_id", "channel_name")
 
     seen_channel: dict[str, str] = {}
+    seen_email: dict[str, str] = {}
     seen_view: dict[str, str] = {}
     seen_report: dict[str, str] = {}
     for key, o in OFFICES.items():
@@ -502,11 +530,37 @@ def validate() -> list[str]:
         for f in required:
             if not (getattr(o, f) or "").strip():
                 problems.append(f"{key}: empty {f}")
+        if o.email_to and (o.channel_id or "").strip():
+            problems.append(
+                f"{key}: has BOTH a Slack channel ({o.channel_name}) and "
+                f"email_to ({', '.join(o.email_to)}) — pick one. Two "
+                f"destinations means two half-answers to 'did today go out?'")
+        elif o.email_to:
+            for addr in o.email_to:
+                if "@" not in addr:
+                    problems.append(f"{key}: email_to {addr!r} is not an address")
+                # Two offices mailing the SAME person is the email flavour of the
+                # shared-channel mistake: one inbox, two 'Daily Metrics' mails,
+                # no way to tell whose numbers are whose.
+                elif addr.lower() in seen_email:
+                    problems.append(
+                        f"{key}: {addr} already receives {seen_email[addr.lower()]!r}"
+                        f" — one office per recipient, or the two days of numbers "
+                        f"arrive indistinguishable")
+                else:
+                    seen_email[addr.lower()] = key
+        else:
+            for f in required_slack:
+                if not (getattr(o, f) or "").strip():
+                    problems.append(f"{key}: empty {f}")
         # channel sharing — two offices MAY share a channel, but ONLY if BOTH set
         # a header_label so they post to distinct, distinguishable threads
         # (Salik + Hammad → #elite-prime-sales). Without labels their numbers
-        # would merge into one thread.
-        if o.channel_id in seen_channel:
+        # would merge into one thread. An email office has no channel_id; the
+        # guard must not read every one of them as "sharing the empty channel".
+        if o.emails_only:
+            pass
+        elif o.channel_id in seen_channel:
             other_key, other_labeled = seen_channel[o.channel_id]
             if not (o.header_label and other_labeled):
                 problems.append(

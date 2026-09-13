@@ -154,8 +154,9 @@ def request_view() -> None:
     if st.session_state.get("_req_done"):
         _request_done_view()
         return
-    st.caption("Pick the boards you want and Lucy will post fresh "
-               "screenshots to your Slack channel every morning.")
+    st.caption("Pick the boards you want and Lucy sends you fresh screenshots "
+               "every morning — to your Slack channel, or by email if you "
+               "don't use Slack.")
 
     # ---- 1. You ----------------------------------------------------------
     st.divider()
@@ -170,14 +171,25 @@ def request_view() -> None:
              "your office.")
     # ---- 2. Channels & the boards each one gets ---------------------------
     st.divider()
-    st.markdown("### 2. Your Slack channel(s) & boards")
-    st.caption("Check what each channel gets. Most offices use one channel "
-               "for everything. If you want certain boards going somewhere "
-               "else too — like a leaders-only channel — add a second "
-               "channel and check just those.")
-    st.info("**Important:** **Megan Hidalgo** must be added to **EACH** Slack "
-            "channel you want the Tableau trackers posted in — she'll add "
-            "Lucy (the bot that posts the boards) from there.")
+    st.markdown("### 2. Where should the boards go, and which ones?")
+    _HOW = ["💬 Post them in my Slack channel", "✉️ Email them to me (I don't use Slack)"]
+    how = st.radio("How do you want them?", _HOW, key="trk_how",
+                   help="Slack is the usual answer. Pick email if you don't have "
+                        "a Slack account — you get the same boards, once a day.")
+    by_email = how == _HOW[1]
+    if not by_email:
+        st.caption("Check what each channel gets. Most offices use one channel "
+                   "for everything. If you want certain boards going somewhere "
+                   "else too — like a leaders-only channel — add a second "
+                   "channel and check just those.")
+        st.info("**Important:** **Megan Hidalgo** must be added to **EACH** Slack "
+                "channel you want the Tableau trackers posted in — she'll add "
+                "Lucy (the bot that posts the boards) from there.")
+    else:
+        st.caption("You'll get **one email each morning** with the boards you "
+                   "check below, in the order you set — from "
+                   "**alphaletereporting@gmail.com**. Add that address to your "
+                   "contacts so it doesn't land in spam.")
     # Only UNIVERSAL national boards are offered. Opt-in boards (opt_in_only in
     # tableau_screenshots.pages, e.g. order_tiered_bonus) are OWNER-SCOPED —
     # posting one to a different office's channel shows THAT owner's numbers
@@ -187,27 +199,44 @@ def request_view() -> None:
     if not catalog:
         st.error("Couldn't load the tracker list — please tell Megan the "
                  "sign-up form is down.")
-    n_ch = st.number_input(
+    emails: list = []
+    n_ch = 1 if by_email else st.number_input(
         "How many Slack channels should Lucy post in?", 1, 5, 1,
         help="Most offices use 1. Add more if you want certain boards in "
              "another channel too — each channel gets its own picks.")
+    if by_email:
+        _raw = st.text_input(
+            "Your email address *", key="trk_emails",
+            placeholder="you@yourcompany.com",
+            help="Where the daily boards go. Want a couple of people on it? "
+                 "separate the addresses with commas — everyone gets the same "
+                 "single email.")
+        emails = [a.strip() for a in _raw.replace(";", ",").split(",") if a.strip()]
+        _bad = [a for a in emails if "@" not in a]
+        if _bad:
+            st.error("⚠️ That doesn't look like an email address: "
+                     + ", ".join(f"`{a}`" for a in _bad))
     chan_pairs: list = []
     chan_plans: list = []
     picked: list = []                    # ordered union across every channel
     for i in range(int(n_ch)):
         with st.container(border=True):
-            if int(n_ch) > 1:
-                st.markdown(f"**Channel {i + 1}**")
-            cname = st.text_input(
-                "Slack channel name *", placeholder="#your-office-sales",
-                key=f"ch_name_{i}",
-                help="The channel where you want the boards posted each "
-                     "morning.")
-            # Validating input — see metric_request; same box, same refusal.
-            cid = ui.channel_id_input("Slack Channel ID *", key=f"ch_id_{i}")
-            if i == 0:
-                ui.channel_id_help_expander(SLACK_ID_IMG)
-            st.caption("Boards to post in this channel:")
+            if by_email:
+                cname, cid = "", ""
+                st.caption("Boards to email you each morning:")
+            else:
+                if int(n_ch) > 1:
+                    st.markdown(f"**Channel {i + 1}**")
+                cname = st.text_input(
+                    "Slack channel name *", placeholder="#your-office-sales",
+                    key=f"ch_name_{i}",
+                    help="The channel where you want the boards posted each "
+                         "morning.")
+                # Validating input — see metric_request; same box, same refusal.
+                cid = ui.channel_id_input("Slack Channel ID *", key=f"ch_id_{i}")
+                if i == 0:
+                    ui.channel_id_help_expander(SLACK_ID_IMG)
+                st.caption("Boards to post in this channel:")
             here: list = []
             for t in catalog:
                 on = st.checkbox(f"{t['emoji']} **{t['title']}**", value=False,
@@ -229,7 +258,8 @@ def request_view() -> None:
     picked = [t["id"] for t in catalog if t["id"] in picked]  # catalog order
 
     # Channel already enrolled? Turn this into a CHANGE request, not a dead end.
-    change_of = _org_owning(chan_pairs[0][0], chan_pairs[0][1])
+    change_of = (None if by_email
+                 else _org_owning(chan_pairs[0][0], chan_pairs[0][1]))
     if change_of:
         st.info("ℹ️ **This channel is already getting trackers posted.** Need "
                 "to add more boards or change the lineup? Keep going — check "
@@ -270,17 +300,23 @@ def request_view() -> None:
         channel_id=chan_pairs[0][0], channel_name=chan_pairs[0][1],
         extra_channels=[{"channel_id": c, "channel_name": n}
                         for c, n in chan_pairs[1:]],
-        channel_plans=[{"channel_id": p["channel_id"],
-                        "channel_name": p["channel_name"],
-                        "trackers": [t for t in trackers
-                                     if t in p["trackers"]]}
-                       for p in chan_plans],
+        emails=emails,
+        # An inbox is ONE place, so an email office has no per-channel split.
+        channel_plans=[] if by_email else [
+            {"channel_id": p["channel_id"], "channel_name": p["channel_name"],
+             "trackers": [t for t in trackers if t in p["trackers"]]}
+            for p in chan_plans],
         trackers=trackers, status="pending",
         requested_by=requested_by.strip())
 
-    st.info("🔔 **Reminder:** add **Megan Hidalgo** to each Slack channel you "
-            "listed above **BEFORE HITTING SUBMIT** — we can't start your "
-            "posting without it!")
+    if by_email:
+        st.info("🔔 **Before you submit:** check your address above character "
+                "for character. A wrong one doesn't bounce back to us — the "
+                "boards just quietly go nowhere.")
+    else:
+        st.info("🔔 **Reminder:** add **Megan Hidalgo** to each Slack channel you "
+                "listed above **BEFORE HITTING SUBMIT** — we can't start your "
+                "posting without it!")
     # The button stays OFF until every required field is filled, with a live
     # list of what's still needed — no dead-end "submit then get yelled at".
     missing: list = []
@@ -288,14 +324,20 @@ def request_view() -> None:
         missing.append("your name")
     if not owner.strip():
         missing.append("your OwnerVille name")
-    for i, (cid, cname) in enumerate(chan_pairs):
-        tag = "" if len(chan_pairs) == 1 else f" (channel {i + 1})"
-        if not cname:
-            missing.append(f"Slack channel name{tag}")
-        if not cid:
-            missing.append(f"Slack Channel ID{tag}")
+    if by_email:
+        if not emails:
+            missing.append("your email address")
+        elif any("@" not in a for a in emails):
+            missing.append("a valid email address")
+    else:
+        for i, (cid, cname) in enumerate(chan_pairs):
+            tag = "" if len(chan_pairs) == 1 else f" (channel {i + 1})"
+            if not cname:
+                missing.append(f"Slack channel name{tag}")
+            if not cid:
+                missing.append(f"Slack Channel ID{tag}")
     for i, p in enumerate(chan_plans):
-        tag = "" if len(chan_plans) == 1 else f" (channel {i + 1})"
+        tag = "" if len(chan_plans) == 1 or by_email else f" (channel {i + 1})"
         if not p["trackers"]:
             missing.append(f"at least one board{tag}")
     if missing:
@@ -324,12 +366,16 @@ def request_view() -> None:
                 return
             rec.submitted_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             rec.submitted_by = rec.requested_by
-            lucy_all = [_check_lucy(cid, cname)
-                        for cid, cname in rec.channel_pairs()]
-            if lucy_all[0].get("channel_id") and not rec.channel_id:
+            # The Lucy-membership check asks Slack whether she can post in a
+            # channel. An email request has no channel, so there is nothing to
+            # ask — and asking about ("", "") would return a confusing failure
+            # about a channel nobody named.
+            lucy_all = ([] if rec.emails_only() else
+                        [_check_lucy(cid, cname) for cid, cname in rec.channel_pairs()])
+            if lucy_all and lucy_all[0].get("channel_id") and not rec.channel_id:
                 rec.channel_id = lucy_all[0]["channel_id"]
             for j, c in enumerate(rec.extra_channels, start=1):
-                if lucy_all[j].get("channel_id") and not c.get("channel_id"):
+                if j < len(lucy_all) and lucy_all[j].get("channel_id") and not c.get("channel_id"):
                     c["channel_id"] = lucy_all[j]["channel_id"]
             for j, p in enumerate(rec.channel_plans):
                 if (not p.get("channel_id") and j < len(lucy_all)

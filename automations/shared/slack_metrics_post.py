@@ -355,6 +355,25 @@ def find_metrics_thread_ts(client, today: dt.date,
     )
 
 
+# --- email delivery (offices whose owner has no Slack) -----------------------
+# With METRICS_EMAIL_DIR set, the four post helpers below hand their board to
+# shared.metrics_email_capture instead of Slack, and the runner mails the set as
+# ONE message when the metrics finish. Every metric still runs its full live path
+# (Tableau pull, Sheet fill, render) — only the last step changes, which is why
+# this is NOT --dry-run. See metrics_email_capture for why the switch is an env
+# var: the metrics are separate subprocesses, and that is what crosses the
+# boundary without every call site passing a flag. [[project_email_only_offices]]
+
+
+def _email_capture():
+    """The capture sink when this run delivers by email, else None."""
+    try:
+        from automations.shared import metrics_email_capture as _mec
+    except Exception:                                # noqa: BLE001
+        return None
+    return _mec if _mec.active() is not None else None
+
+
 def ensure_metrics_thread(today: dt.date | None = None,
                           *, dry_run: bool = False,
                           sections: list | None = None) -> dict:
@@ -407,6 +426,14 @@ def ensure_metrics_thread(today: dt.date | None = None,
         return {"dry_run": True, "header_text": header_text,
                 "to_channel": CHANNEL_ID,
                 "mirrors_to": mirror_channels(CHANNEL_ID)}
+    _cap = _email_capture()
+    if _cap is not None:
+        res = _cap.record_header(header_text, sections=(sections or _default))
+        # 'existed' keeps the runner's own log honest — it prints posted/existed
+        # off this, and the header is written once per run however many metrics
+        # call through here.
+        return {"ok": True, "emailed": True, "header_text": header_text,
+                "existed": bool(res.get("existed")), "thread_ts": ""}
     client = _client()
     try:
         ts = find_metrics_thread_ts(client, today)
@@ -546,6 +573,10 @@ def post_reply_text_only(
         return {"dry_run": True, "would_post_text": text,
                 "to_channel": channel_id, "react_emoji": react_emoji,
                 "mirrors_to": mirror_channels(channel_id)}
+    _cap = _email_capture()
+    if _cap is not None:
+        _cap.record_text(text, react_emoji=react_emoji or "")
+        return {"ok": True, "emailed": True, "thread_ts": "", "ts": ""}
     client = _client()
     # thread_ts given => post into THAT thread (e.g. a named thread from
     # ensure_named_thread); omitted => today's 'Metrics for:' thread, unchanged.
@@ -676,6 +707,16 @@ def post_reply_with_image(
             "mirrors_to": mirror_channels(channel_id) if mirror else [],
             "top_level": top_level,
         }
+    _cap = _email_capture()
+    if _cap is not None:
+        res = _cap.record_image(image_path, comment=comment,
+                                react_emoji=react_emoji or "",
+                                file_name=file_name or "")
+        # 'landed' is the key every caller checks to decide a board made it; a
+        # captured board HAS made it (it is in the day's mail), so say True here
+        # rather than leaving it None and having a good run read as unverifiable.
+        return {"ok": bool(res.get("ok")), "emailed": True, "landed": res.get("ok"),
+                "thread_ts": "", "file": res.get("file", "")}
     client = _client()
     # thread_ts given => post into THAT thread (e.g. a named thread from
     # ensure_named_thread); omitted => today's 'Metrics for:' thread, unchanged.
@@ -808,6 +849,13 @@ def post_reply_with_file(
             "react_emoji": react_emoji,
             "mirrors_to": mirror_channels(CHANNEL_ID),
         }
+    _cap = _email_capture()
+    if _cap is not None:
+        res = _cap.record_image(file_path, comment=comment,
+                                react_emoji=react_emoji or "",
+                                file_name=file_name or "")
+        return {"ok": bool(res.get("ok")), "emailed": True, "landed": res.get("ok"),
+                "thread_ts": "", "file": res.get("file", "")}
     client = _client()
     thread_ts = find_metrics_thread_ts(client, today)
     default_name = f"{comment} {today.month}.{today.day}{file_path.suffix}"

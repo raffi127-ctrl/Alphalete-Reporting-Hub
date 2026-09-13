@@ -54,6 +54,17 @@ class TrackerRecord:
     # gets `trackers` (the pre-subset behavior). `trackers` stays the ORDERED
     # UNION and defines posting order for every channel.
     channel_plans: List[Dict] = field(default_factory=list)
+    # DELIVERY BY EMAIL. Empty = this office reads its trackers in Slack (every
+    # office to date). Non-empty, with channel_id/channel_name blank = the owner
+    # has no Slack account, so the day's boards go out as ONE email from
+    # alphaletereporting@gmail.com instead (Joseph Logan / Logan Legacy Group,
+    # Megan 2026-09-13). Never both — two destinations means nobody can say where
+    # the day actually went. [[project_email_only_offices]]
+    emails: List[str] = field(default_factory=list)
+
+    def emails_only(self) -> bool:
+        return bool([a for a in self.emails if (a or "").strip()]) and not (
+            self.channel_id or "").strip()
 
     def channel_pairs(self) -> "List[tuple]":
         """[(channel_id, channel_name), ...] — primary first, extras after."""
@@ -63,6 +74,11 @@ class TrackerRecord:
         return out
 
     def label(self) -> str:
+        if self.emails_only():
+            # ORG_LABEL is what the run log, the alerts and the Hub card call this
+            # org. A blank channel name would leave every one of those saying
+            # nothing, so an email org is labelled by its business/owner name.
+            return self.owner.strip() or self.key
         return self.channel_name.strip() or self.key
 
     def to_json(self) -> dict:
@@ -93,8 +109,18 @@ def validate_request(rec: TrackerRecord, *,
         problems.append("An office under that name already gets the daily "
                         "trackers. If something about it needs to change, "
                         "message Megan Hidalgo instead of re-submitting.")
+    # An owner with no Slack gives an address instead of a channel name. Asking
+    # for both would make the form unanswerable for exactly the person it is for.
+    if rec.emails_only():
+        _mails = [a.strip() for a in rec.emails if (a or "").strip()]
+        if not _mails:
+            problems.append("Please enter the email address the boards go to.")
+        for a in _mails:
+            if "@" not in a or a.startswith("@") or a.endswith("@"):
+                problems.append(f"{a!r} doesn't look like an email address.")
     seen_names = set()
-    for i, (_cid, cname) in enumerate(rec.channel_pairs()):
+    for i, (_cid, cname) in enumerate([] if rec.emails_only()
+                                      else rec.channel_pairs()):
         tag = "" if i == 0 else f" (channel {i + 1})"
         low = cname.strip().lstrip("#").lower()
         if not low:
@@ -141,8 +167,15 @@ def validate(rec: TrackerRecord, *,
     if rec.key in existing_keys:
         problems.append(f"Office key {rec.key!r} already posts trackers — pick a "
                         "unique handle.")
+    _mails = [a.strip() for a in (rec.emails or []) if (a or "").strip()]
+    if _mails and (rec.channel_id or "").strip():
+        problems.append(
+            "This office has BOTH a Slack channel and email delivery. Pick one — "
+            "two destinations means nobody can say where the day actually went.")
+        _mails = []                      # the both-case is already reported
     seen_ids: set = set()
-    for i, (cid, cname) in enumerate(rec.channel_pairs()):
+    for i, (cid, cname) in enumerate([] if rec.emails_only()
+                                     else rec.channel_pairs()):
         tag = "" if i == 0 else f" (channel {i + 1})"
         if not cid.strip():
             problems.append(f"Slack channel id is empty{tag}.")
@@ -156,6 +189,14 @@ def validate(rec: TrackerRecord, *,
         seen_ids.add(cid)
         if not cname.strip():
             problems.append(f"Channel name is empty{tag}.")
+    if rec.emails_only():
+        for a in rec.emails:
+            if "@" not in a or a.startswith("@") or a.endswith("@"):
+                problems.append(f"{a!r} isn't an email address.")
+        if not rec.owner.strip():
+            problems.append("An email office needs the owner's name — it is what "
+                            "labels the org everywhere a channel name normally "
+                            "would.")
     if not rec.trackers:
         problems.append("No trackers selected — check at least one.")
     cat = tracker_catalog()
