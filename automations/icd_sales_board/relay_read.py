@@ -48,16 +48,34 @@ COL_AGENT = "Agent"
 MEASURES = ["Int", "Int Up", "DTV", "NL"]
 
 
-def _rows() -> list:
+# ONE READ PER MINUTE, NOT PER QUESTION. Every public call here used to hit
+# the API: rendering a board asked for the week, the status and then one more
+# week per row of the week-over-week table, which was eight-plus full reads of
+# the same tab to draw one page — slow enough that the board looked broken.
+_CACHE: tuple = (0.0, [])
+_TTL_SECONDS = 60
+
+
+def _rows(force: bool = False) -> list:
+    import time
+
+    global _CACHE
+    age = time.time() - _CACHE[0]
+    if not force and _CACHE[1] and age < _TTL_SECONDS:
+        return _CACHE[1]
+
     from automations.recruiting_report.fill import open_by_key
 
     ws = open_by_key(RELAY_SHEET_ID).worksheet(RELAY_TAB)
     grid = ws.get_all_values()
     if not grid:
         return []
+
     header = [str(h).strip() for h in grid[0]]
-    return [dict(zip(header, r)) for r in grid[1:] if any(str(c).strip()
-                                                          for c in r)]
+    rows = [dict(zip(header, r)) for r in grid[1:]
+            if any(str(c).strip() for c in r)]
+    _CACHE = (time.time(), rows)
+    return rows
 
 
 def _day(value):

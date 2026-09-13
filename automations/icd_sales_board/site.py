@@ -45,6 +45,7 @@ from automations.icd_sales_board import board_read as B  # noqa: E402
 from automations.icd_sales_board import attendance as A  # noqa: E402
 from automations.icd_sales_board import goals as G  # noqa: E402
 from automations.icd_sales_board import captains as CP  # noqa: E402
+from automations.icd_sales_board import business_names as BN  # noqa: E402
 from automations.icd_sales_board import recruiting_read as RR  # noqa: E402
 
 # Raf's board — the template, and the only office with real data wired so far.
@@ -54,9 +55,31 @@ RAF_ICD = "Rafael Hidalgo"
 # The four the relayed boards keep, in board order.
 RELAY_MEASURES = ["Int", "Int Up", "DTV", "NL"]
 
-# An office's brand, which is not its owner's name. Only Raf's is known today;
-# office_metrics.Office already carries a `business_name` field for onboarded
-# offices, so this map is the stopgap until every ICD has one there.
+
+def _apps(m: dict) -> int:
+    """The board's own Apps: Int + DTV + NL, upgrades deliberately LEFT OUT.
+
+    Straight from alphalete_sales_board/calc.py, which spells out why — an
+    upgrade is already counted inside Internet Sales, so adding Int Up here
+    would count it twice and every week's total would read high."""
+    return int(m.get("Int", 0)) + int(m.get("DTV", 0)) + int(m.get("NL", 0))
+
+
+def _units(m: dict) -> int:
+    """Everything sold, upgrades included. Apps answers "how did we do
+    against the number"; units answers "how much work happened"."""
+    return _apps(m) + int(m.get("Int Up", 0))
+
+
+def _unblank(value) -> str:
+    """The dropdown's placeholder is not a value. Returning it would write the
+    literal '—' into somebody's roster as their team."""
+    v = str(value or "").strip()
+    return "" if v == BLANK_OPTION else v
+
+# An office's brand, which is not its owner's name — read, not hand-listed
+# (Megan 2026-09-13: "you should be able to map the business name from our
+# owner name list or our OV list"). See business_names.py for the two sources.
 BUSINESS_NAMES = {"Rafael Hidalgo": "Alphalete Marketing"}
 
 st.set_page_config(page_title="Sales Boards", page_icon="📊", layout="wide")
@@ -1435,6 +1458,16 @@ def _relay_week(office_key: str, week_ending: dt.date) -> dict:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
+def _relay_weeks(office_key: str) -> list:
+    """Week-endings that actually carry a reading, newest first. Offering a
+    week nobody relayed invites reading its blanks as zeros."""
+    from automations.icd_sales_board import relay_read as RL
+    days = RL.for_office(office_key)
+    return sorted({d + dt.timedelta(days=(6 - d.weekday()) % 7)
+                   for d in days}, reverse=True)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def _relay_status(office_key: str) -> dict:
     from automations.icd_sales_board import relay_read as RL
     return RL.last_reading(office_key)
@@ -1448,10 +1481,15 @@ def relay_board(icd: str, office_key: str) -> None:
     relays the numbers, which is what makes this a service rather than a
     one-office favour (automations/icd_alerts).
 
+    SIMPLE BY DEFAULT, EVERYTHING ON REQUEST (Megan 2026-09-13). The plain
+    view is five columns and a table, which is what she reacted to; Team,
+    Leadership, Tenure and Status live behind "Expand your board" so the
+    owner who wants them has them and the owner who just wants the numbers is
+    not made to scroll past them.
+
     NOTHING IS DRAWN WITHOUT A READING. An office whose agent has not run gets
     told which of the three things is wrong — never a board of zeros, which
     would read as "nobody sold anything" when it means "nobody told us"."""
-    st.subheader("Sales board")
     status = _relay_status(office_key)
 
     if not status["day"]:
@@ -1477,40 +1515,188 @@ def relay_board(icd: str, office_key: str) -> None:
                        f"{status['day']:%b %d}.", icon="🚧")
         return
 
-    weeks = [status["day"] + dt.timedelta(days=(6 - status["day"].weekday()) % 7)]
+    weeks = _relay_weeks(office_key)
     week_ending = st.sidebar.selectbox(
         "Week Ending", weeks, key=f"relaywk_{office_key}",
         format_func=lambda d: f"{d.strftime('%b')} {_ord(d.day)}, {d.year}")
 
     by_rep = _relay_week(office_key, week_ending)
-    if not by_rep:
-        st.info(f"Nothing relayed for the week ending {week_ending}.",
-                icon="🗓️")
-        return
-
     days = sorted({d for r in by_rep.values() for d in r["days"]})
+
+    # SAY WHICH DAYS THIS IS (Megan 2026-09-13). A board with no dates on it
+    # reads as "how the office is doing"; it is one Mon-Sun week, and often a
+    # PART of one — an office three days into the week has a board that is
+    # correct and incomplete at the same time, and only the dates say so.
+    started = week_ending - dt.timedelta(days=6)
+    st.subheader(f"Sales board · Monday {started.strftime('%b')} "
+                 f"{_ord(started.day)} – Sunday {week_ending.strftime('%b')} "
+                 f"{_ord(week_ending.day)}")
+    # A PART WEEK HAS TO SAY SO LOUDLY. Megan read a one-day board as a week
+    # and asked why the numbers were so low (2026-09-13) — they were right,
+    # they were just one day. A caption under the table was not enough, so the
+    # gap is stated above the numbers, in the words "N of M days".
+    expected = [started + dt.timedelta(days=i) for i in range(7)
+                if started + dt.timedelta(days=i) <= dt.date.today()]
+    missing = [d for d in expected if d not in days]
+    if missing:
+        st.warning(
+            f"**{len(days)} of {len(expected)} days** so far this week — this "
+            "is NOT a full week's total. "
+            + ("Read: " + ", ".join(f"{d.strftime('%a')}" for d in days) + ". "
+               if days else "")
+            + "Missing: "
+            + ", ".join(f"{d.strftime('%a')} {d.strftime('%b')} {_ord(d.day)}"
+                        for d in missing)
+            + ". A day is missing because the office's machine did not run "
+              "that day, not because nobody sold.", icon="📅")
+
+    expand = st.toggle(
+        "Expand your board", value=False, key=f"relayexp_{office_key}",
+        help="Show Team, Leadership, Tenure and Status.")
+    edit = False
+    if expand:
+        edit = st.toggle("Edit rows", value=False, key=f"relayed_{office_key}",
+                         help="Turn on to change Team, Leadership or Status.")
+
+    # EVERY REP THE OWNER KEEPS, not only the ones who sold. SaraPlus lists
+    # what happened, so a rep who blanked is simply absent from it — and a
+    # board that quietly drops whoever sold nothing is the one board an owner
+    # cannot use, because the blanks are the thing they are looking for.
+    roster = {r.name.strip().lower(): r for r in R.load(office_key)}
+    names = {n.strip().lower(): n for n in by_rep}
+    for low, rep in roster.items():
+        names.setdefault(low, rep.name)
+
     rows = []
-    for name, rec in sorted(by_rep.items(),
-                            key=lambda kv: -sum(kv[1]["total"].values())):
-        row = {"Rep": name.title()}
-        row.update({m: rec["total"][m] for m in RELAY_MEASURES})
-        row["Apps"] = rec["total"]["Int"] + rec["total"]["NL"]
+    for low, shown in names.items():
+        rec = by_rep.get(shown) or by_rep.get(shown.upper()) or {}
+        tot = rec.get("total") or {m: 0 for m in RELAY_MEASURES}
+        rep = roster.get(low)
+        row = {"Rep": shown.title()}
+        if expand:
+            row["Team"] = (rep.team if rep else "") or BLANK_OPTION
+            row["Leadership"] = (rep.level if rep else "") or BLANK_OPTION
+            row["Status"] = (rep.status if rep else "") or BLANK_OPTION
+        row.update({m: tot[m] for m in RELAY_MEASURES})
+        row["Apps"] = _apps(tot)
+        row["Total units"] = _units(tot)
         rows.append(row)
+    rows.sort(key=lambda r: (-r["Apps"], -r["Total units"], r["Rep"]))
 
     tot = {m: sum(r[m] for r in rows) for m in RELAY_MEASURES}
-    cols = st.columns(5, gap="small")
-    _vital(cols[0], "Reps on the board", str(len(rows)), None)
-    for col, m in zip(cols[1:], RELAY_MEASURES):
+    sold = sum(1 for r in rows if any(r[m] for m in RELAY_MEASURES))
+    cols = st.columns(6, gap="small")
+    _vital(cols[0], "Total units", str(_units(tot)), None)
+    _vital(cols[1], "On the board", f"{sold} of {len(rows)}", None)
+    for col, m in zip(cols[2:], RELAY_MEASURES):
         _vital(col, m, str(tot[m]), None)
 
-    st.dataframe(rows, use_container_width=True, hide_index=True,
-                 column_config=_centered(rows[0]),
-                 height=_grid_height(len(rows)))
+    # The totals line is the last ROW of the grid, not a table underneath: a
+    # separate table scrolls on its own and stops lining up with its columns
+    # the moment the board is scrolled sideways.
+    grid = rows + [dict({"Rep": TOTALS_LABEL},
+                        **{m: tot[m] for m in RELAY_MEASURES},
+                        **{"Apps": _apps(tot), "Total units": _units(tot)})]
+
+    cfg = _centered(grid[0])
+    if edit:
+        cfg["Team"] = st.column_config.SelectboxColumn(
+            options=[BLANK_OPTION] + sorted({(r.team or "").strip()
+                                             for r in roster.values()
+                                             if (r.team or "").strip()}),
+            required=False)
+        cfg["Leadership"] = st.column_config.SelectboxColumn(
+            options=[BLANK_OPTION] + list(R.LEVELS), required=False)
+        cfg["Status"] = st.column_config.SelectboxColumn(
+            options=[BLANK_OPTION] + list(R.STATUSES), required=False,
+            help="Terminate a rep here; set them back to Active to reinstate.")
+    else:
+        for c in grid[0]:
+            cfg[c] = dict(cfg.get(c) or {}, disabled=True)
+
+    edited = st.data_editor(
+        pd.DataFrame(grid).astype("string").fillna(""),
+        use_container_width=True, hide_index=True, num_rows="fixed",
+        column_config=cfg, height=_grid_height(len(grid)),
+        key=f"relaygrid_{office_key}_{week_ending}")
+
+    if edit:
+        out = [r for r in edited.to_dict("records")
+               if r.get("Rep") != TOTALS_LABEL]
+        c_save, c_disc, _ = st.columns([1, 1, 2])
+        with c_disc:
+            if st.button("Discard", key=f"relaydisc_{office_key}"):
+                st.session_state.pop(
+                    f"relaygrid_{office_key}_{week_ending}", None)
+                st.rerun()
+        with c_save:
+            if st.button("Save changes", type="primary",
+                         key=f"relaysave_{office_key}"):
+                R.set_attrs(office_key, {
+                    r["Rep"]: {"team": _unblank(r.get("Team")),
+                               "level": _unblank(r.get("Leadership")),
+                               "status": _unblank(r.get("Status"))}
+                    for r in out})
+                st.session_state.pop(
+                    f"relaygrid_{office_key}_{week_ending}", None)
+                st.success("Saved.")
+                st.rerun()
+
     st.caption(
         f"{len(rows)} reps · {len(days)} day(s) relayed this week · read on "
         f"the office's own machine at {status['local_time'] or 'unknown time'}"
-        f" · agent {status['agent'] or '?'}. Only reps who sold appear — "
-        "SaraPlus lists what happened, not who was rostered.")
+        f" · agent {status['agent'] or '?'}. Reps with no sales show zero "
+        "rather than being dropped — SaraPlus lists what happened, so a blank "
+        "week is an absence from it, not an absence from the office.")
+
+    relay_wow(office_key)
+
+
+def relay_wow(office_key: str) -> None:
+    """Week over week, off the days the relay has already kept.
+
+    NO SNAPSHOT JOB IS NEEDED for this. The Apps Script upserts one row per
+    office per DAY and never deletes — it only overwrites a day it already
+    holds — so every week an office has relayed is still there. History is a
+    side effect of the relay working, not something that has to be remembered
+    on a Sunday.
+
+    Weeks with no reading are simply absent rather than drawn as zero: an
+    office that had its laptop shut all week did not sell nothing."""
+    weeks = _relay_weeks(office_key)
+    if len(weeks) < 2:
+        st.caption("Week over week appears once this office has relayed a "
+                   "second week — every day it sends is kept, so this fills "
+                   "in on its own.")
+        return
+
+    st.markdown("**Week over week**")
+    n = st.slider("Weeks to show", 2, max(2, min(26, len(weeks))),
+                  min(8, len(weeks)), key=f"relaywow_{office_key}")
+
+    rows = []
+    for wk in sorted(weeks, reverse=True)[:n]:
+        by_rep = _relay_week(office_key, wk)
+        tot = {m: sum(r["total"][m] for r in by_rep.values())
+               for m in RELAY_MEASURES}
+        read_days = len({d for r in by_rep.values() for d in r["days"]})
+        rows.append({
+            "Week ending": f"{wk.strftime('%b')} {_ord(wk.day)}",
+            **tot,
+            "Apps": _apps(tot),
+            "Total units": _units(tot),
+            "Reps": len(by_rep),
+            # A part-week total is not comparable to a full one, and the only
+            # honest fix is to say how much of the week it covers.
+            "Days read": read_days,
+        })
+    rows.reverse()
+    st.dataframe(rows, use_container_width=True, hide_index=True,
+                 column_config=_centered(rows[0]),
+                 height=_grid_height(len(rows)))
+    st.caption("Every day the office relays is kept, so this builds itself. "
+               "Check 'Days read' before comparing two weeks — a week read on "
+               "three days is not a slow week.")
 
 
 def summary_page(icd: str, office_key: str) -> None:
@@ -2164,9 +2350,14 @@ def main() -> None:
     # The BUSINESS name headlines — this is the office's board, and the branded
     # name is what an owner recognises as theirs. The owner's own name sits
     # under it as context, not as the title.
-    st.title(BUSINESS_NAMES.get(icd, icd))
-    st.caption(icd + " · "
-               + " · ".join(C.CAMPAIGNS[k].label for k in prof.campaigns))
+    # The BUSINESS name headlines where we know it, with the owner underneath
+    # as context. Where we do NOT know it the title already IS their name, so
+    # the line under it drops the name rather than saying it twice.
+    titled = BUSINESS_NAMES.get(icd) or BN.for_owner(icd, icd)
+    st.title(titled)
+    campaigns = " · ".join(C.CAMPAIGNS[k].label for k in prof.campaigns)
+    st.caption(campaigns if titled == icd
+               else (icd + (" · " + campaigns if campaigns else "")))
 
     if page == "Summary":
         summary_page(icd, key)
