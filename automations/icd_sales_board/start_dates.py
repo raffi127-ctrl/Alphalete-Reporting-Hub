@@ -335,6 +335,22 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
                                 .filter(t => t && t.length < 46 &&
                                         /bob|book|show|train|first day/i.test(t))
                                 .join(' | ')""")[:400]
+                    # HOW DOES THE PAGE ITSELF CHANGE WEEK? Posting the date
+                    # does not work, and a report rendering one week at a time
+                    # almost always has its own prev/next control. If it does,
+                    # clicking it is the mechanism, and no date needs posting.
+                    _LAST_DIAG["nav"] = app.page.evaluate(
+                        r"""() => [...document.querySelectorAll('a,button,img,input')]
+                                .map(e => ({
+                                    t: (e.innerText || e.value || e.alt ||
+                                        e.title || '').replace(/\s+/g,' ').trim(),
+                                    h: e.getAttribute('href') || '',
+                                    o: e.getAttribute('onclick') || '',
+                                }))
+                                .filter(x => /week|prev|next|back|forward|«|»|‹|›/i
+                                             .test(x.t + ' ' + x.h + ' ' + x.o))
+                                .map(x => `${x.t}|${x.h.slice(0,40)}|${x.o.slice(0,40)}`)
+                                .join(' ;; ')""")[:400]
                 except Exception:   # noqa: BLE001
                     _LAST_DIAG["headers"] = "unreadable"
             for i in range(7):
@@ -369,7 +385,9 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     # fixed width, and the box is already known.
     landed = _LAST_DIAG.get("landed")
     why = ""
-    if _LAST_DIAG.get("rows"):
+    if _LAST_DIAG.get("nav"):
+        why = f" · nav: {_LAST_DIAG['nav']}"
+    elif _LAST_DIAG.get("rows"):
         why = f" · rows: {_LAST_DIAG['rows']}"
     elif _LAST_DIAG.get("headers"):
         why = f" · headers: {_LAST_DIAG['headers']}"
