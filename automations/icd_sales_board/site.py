@@ -62,6 +62,49 @@ RELAY_MEASURES = ["Int", "Int Up", "DTV", "NL"]
 # without a legend. Grey-blue at low alpha rather than a theme colour: it has
 # to sit under black text on white AND on dark, and it must not look like the
 # green/red that means pass/fail everywhere else on this site.
+# RAF'S PRODUCTION SCALE (his Loom, 2026-09-13), on the DAY cells: "if they
+# just do one sale it's yellow, two apps yellow, then it turns green at three,
+# green at four, and then blue at five — I think that's the highest colour."
+# Dark red is a worked day with nothing on it: "they worked that day and they
+# rolled a zero." A day nobody worked stays plain — that is not the same thing.
+_DAY_COLORS = [(5, "#6FA8DC"), (3, "#93C47D"), (1, "#FFE599")]
+_DAY_ZERO = "#E06666"          # worked and rolled a zero
+
+# And on the RUNNING WEEK total: "10 and above is green, 20 and above is blue,
+# and three and below is red — three and below should be red, because that's
+# bad." He says the red is what he WANTS; his sheet does not do it yet.
+_WEEK_COLORS = [(20, "#6FA8DC"), (10, "#93C47D")]
+_WEEK_LOW = (3, "#E06666")
+
+
+def _scale(value, worked: bool = True) -> str:
+    """Raf's day colour for an apps figure."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return ""
+    if n <= 0:
+        return f"background-color:{_DAY_ZERO};color:#FFFFFF;" if worked else ""
+    for floor, colour in _DAY_COLORS:
+        if n >= floor:
+            return f"background-color:{colour};"
+    return ""
+
+
+def _week_scale(value) -> str:
+    """Raf's colour for a running-week total."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return ""
+    for floor, colour in _WEEK_COLORS:
+        if n >= floor:
+            return f"background-color:{colour};"
+    if n <= _WEEK_LOW[0]:
+        return f"background-color:{_WEEK_LOW[1]};color:#FFFFFF;"
+    return ""
+
+
 _TOTAL_TINT = "background-color:rgba(70,110,160,.13)"
 _TOTAL_TINT_STRONG = "background-color:rgba(70,110,160,.22)"
 
@@ -1172,6 +1215,13 @@ _KNOWN_TENURES = {"1st wk", "2nd wk", "3rd wk", "4th wk", "5th wk+", "rt",
 _FIRST_WEEK = {"1st wk", "wk 1"}
 
 
+def is_road_trip(label) -> bool:
+    """RT — a road trip. Raf: "we don't count road trip sales." Their units
+    are real and they are paid, but they do not belong to this office's
+    board."""
+    return str(label or "").strip().lower() in {"rt", "road trip"}
+
+
 def is_first_week(label) -> bool:
     return str(label or "").strip().lower() in _FIRST_WEEK
 
@@ -1674,9 +1724,17 @@ def _hover_table(grid: list, splits: dict, day_labels: list,
             title = ""
             if col in day_labels and not is_total:
                 sp = (splits.get(row.get("Rep"), {}) or {}).get(col) or {}
+                # Raf's scale wins over the row's tenure tint on a day cell:
+                # the day colour is production, which is what he reads across.
+                # A rep with NO reading that day is left plain rather than
+                # painted as a worked zero.
+                worked = bool(sp) and any(sp.values())
+                css += _scale(val, worked=worked or bool(sp))
                 if sp:
                     title = " · ".join(f"{v} {m}" for m, v in sp.items() if v)
                     title = title or "nothing sold"
+            elif col in ("Apps", "Total units") and not is_total:
+                css += _week_scale(val)
             tr.append(f"<td style='{css}'"
                       + (f" title='{title}'" if title else "")
                       + f">{val}</td>")
@@ -1848,6 +1906,7 @@ def relay_board(icd: str, office_key: str) -> None:
 
     rows = []
     splits: dict = collections.defaultdict(dict)
+    measures: dict = {}
     for low, shown in names.items():
         rec = by_rep.get(shown) or by_rep.get(shown.upper()) or {}
         live_days = rec.get("days") or {}
@@ -1901,6 +1960,10 @@ def relay_board(icd: str, office_key: str) -> None:
                 row[lab] = _apps(src) if src else 0
                 splits[shown][lab] = {m: int(src.get(m, 0) or 0)
                                       for m in RELAY_MEASURES}
+        # Kept on every row whatever the view, so the office totals can be
+        # summed from the SAME rows the table shows — after road trips are
+        # dropped — instead of from a settled total that still includes them.
+        measures[shown] = dict(tot)
         # On a single day the split IS the answer, so it shows without
         # needing Expand — that is the whole point of clicking the day.
         if picked_day or expand:
@@ -1908,6 +1971,11 @@ def relay_board(icd: str, office_key: str) -> None:
         row["Apps"] = _apps(tot)
         row["Total units"] = _units(tot)
         rows.append(row)
+    # ROAD TRIP SALES ARE NOT COUNTED (Raf, 2026-09-13). They are dropped from
+    # the board rather than shown at zero: the sale happened, it just is not
+    # this office's, and a zero row would read as somebody who blanked.
+    road = [r for r in rows if is_road_trip(r.get("Tenure"))]
+    rows = [r for r in rows if not is_road_trip(r.get("Tenure"))]
     rows.sort(key=lambda r: (-r["Apps"], -r["Total units"], r["Rep"]))
 
     # SELLING reps, not a row count (Megan 2026-09-13). This was "sold of
@@ -1937,7 +2005,11 @@ def relay_board(icd: str, office_key: str) -> None:
     # and only today is left on the live feed.
     settled = _settled_days(icd, week_ending)
     today = dt.date.today()
-    tot = {m: 0 for m in RELAY_MEASURES}
+    # Built from the rows that SURVIVED the road-trip filter, so the boxes and
+    # the table cannot disagree. The office-level settled total still counts
+    # road trips, which is exactly what Raf says not to do.
+    tot = {m: sum(int(measures.get(r["Rep"], {}).get(m, 0) or 0) for r in rows)
+           for m in RELAY_MEASURES}
     for d in ([picked_day] if picked_day else
               [week_ending - dt.timedelta(days=i) for i in range(7)]):
         if d > today:
@@ -2089,6 +2161,9 @@ def relay_board(icd: str, office_key: str) -> None:
                 st.success("Saved.")
                 st.rerun()
 
+    if road:
+        st.caption(f"{len(road)} road-trip rep(s) left off — their sales are "
+                   "not counted on this office's board.")
     st.caption(
         f"{len(rows)} reps · {len(days)} day(s) relayed this week · read on "
         f"the office's own machine at {status['local_time'] or 'unknown time'}"
