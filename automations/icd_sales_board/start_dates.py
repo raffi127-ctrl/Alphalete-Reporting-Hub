@@ -88,6 +88,24 @@ def _show_week(page, monday: dt.date, log=print) -> bool:
                 return true;
             }""", monday.strftime("%m-%d-%Y"))
         if not ok:
+            # SAY WHAT WAS ON THE PAGE. Two runs returned "0 found, exit 0"
+            # and there was no way to tell a missing week picker from an empty
+            # week — the status line only shows stdout, so the diagnosis has
+            # to be IN it.
+            try:
+                seen = page.evaluate(
+                    r"""() => ({
+                        url: location.href.slice(0, 120),
+                        inputs: document.querySelectorAll('input').length,
+                        dateish: [...document.querySelectorAll('input')]
+                            .map(i => (i.value||'').trim())
+                            .filter(v => /\d{2}-\d{2}-\d{4}/.test(v)).length,
+                        getReport: /get\s*report/i.test(document.body.innerText),
+                        rows: document.querySelectorAll('tr').length,
+                    })""")
+                log(f"    week {monday}: picker not usable — {seen}")
+            except Exception:  # noqa: BLE001
+                log(f"    week {monday}: picker not found, page unreadable")
             return False
         page.wait_for_timeout(2500)
         return True
@@ -112,10 +130,13 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
         # week at a time — the first run walked 35 days against a page that
         # only ever showed the current week's seven columns and found nothing,
         # exit 0. Set the week, submit, then read its days.
-        for monday in _weeks_between(start, end):
+        weeks = _weeks_between(start, end)
+        opened = 0
+        for monday in weeks:
             if not _show_week(app.page, monday, log=log):
                 log(f"  {owner}: could not open week of {monday} — skipped")
                 continue
+            opened += 1
             for i in range(7):
                 day = monday + dt.timedelta(days=i)
                 if day < start or day > end:
@@ -138,7 +159,8 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
                     _show_week(app.page, monday, log=log)
                 except Exception as e:   # noqa: BLE001 — one day is not the run
                     log(f"  {owner} {day}: skipped ({type(e).__name__})")
-    log(f"  {owner}: {len(found)} start date(s) between {start} and {end}")
+    log(f"  {owner}: {len(found)} start date(s) between {start} and {end} "
+        f"— {opened}/{len(weeks)} week(s) opened")
     return {v[0]: v[1] for v in found.values()}
 
 
