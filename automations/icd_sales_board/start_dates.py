@@ -67,6 +67,31 @@ def _weeks_between(start: dt.date, end: dt.date) -> list:
 _LAST_DIAG: dict = {}
 
 
+def _capture(page) -> None:
+    """Record where a failed week attempt actually landed.
+
+    Every failure so far has been a wrong guess about what the page did, and
+    the exception path used to skip this entirely — a navigation destroys the
+    polling context, so the run ended with nothing to show for it.
+    """
+    if "landed" in _LAST_DIAG:
+        return
+    try:
+        _LAST_DIAG["landed"] = page.evaluate(
+            r"""() => {
+                const box = [...document.querySelectorAll('input')]
+                              .find(x => x.name === 'weekStart');
+                return {
+                    url: location.href.slice(-90),
+                    box: box ? box.value : '(gone)',
+                    head: (document.body.innerText || '')
+                            .replace(/\s+/g, ' ').trim().slice(0, 220),
+                };
+            }""")
+    except Exception:   # noqa: BLE001 — diagnostics never break a run
+        _LAST_DIAG["landed"] = "unreadable"
+
+
 def _show_week(page, wk_start: dt.date, log=print) -> bool:
     """Put the retention report on `monday`'s week and submit.
 
@@ -148,30 +173,19 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
         # CONFIRM THE PAGE ACTUALLY CHANGED. Submitting is not arriving.
         for _ in range(20):
             page.wait_for_timeout(750)
-            if page.evaluate("(w) => document.body.innerText.includes(w)",
-                             want_header):
-                return True
-
-        # WHERE DID IT LAND? Guessing at this has cost enough runs. Record the
-        # URL, what the box holds now, and the top of the page it produced.
-        if "landed" not in _LAST_DIAG:
             try:
-                _LAST_DIAG["landed"] = page.evaluate(
-                    r"""() => {
-                        const ins = [...document.querySelectorAll('input')];
-                        const box = ins.find(x => x.name === 'weekStart');
-                        return {
-                            url: location.href.slice(-90),
-                            box: box ? box.value : '(gone)',
-                            head: (document.body.innerText || '')
-                                    .replace(/\s+/g, ' ').trim().slice(0, 220),
-                        };
-                    }""")
-            except Exception:   # noqa: BLE001 — diagnostics never break a run
-                _LAST_DIAG["landed"] = "unreadable"
+                if page.evaluate("(w) => document.body.innerText.includes(w)",
+                                 want_header):
+                    return True
+            except Exception:   # noqa: BLE001 — navigation destroyed the context
+                continue
+
+        _capture(page)
         log(f"    week {wk_start}: submitted but {want_header!r} never appeared")
         return False
     except Exception as e:   # noqa: BLE001
+        _LAST_DIAG.setdefault("raised", type(e).__name__)
+        _capture(page)
         log(f"    week {wk_start}: {type(e).__name__}")
         return False
 
