@@ -1878,8 +1878,12 @@ def relay_board(icd: str, office_key: str) -> None:
     # ALLICDSALLREPSBD view, 2026-09-13). It carries Owner + Rep + product +
     # day for EVERY office, so a rep-level board no longer waits on that
     # office having the agent installed. The relay still owns today.
+    # TABLEAU AND KNOCKS, NOTHING ELSE (Megan 2026-09-13): "we should only be
+    # using tableau and knocks for data as we are trying to replace the board
+    # existing." Reading Raf's sheet would make the replacement depend on the
+    # thing it replaces — and would keep inheriting its stale rows.
     settled_reps = _settled_reps(icd, week_ending)
-    sheet_tenure = _sheet_tenure(icd)
+    sheet_tenure = {}
     roster = {r.name.strip().lower(): r for r in R.load(office_key)}
     names = {n.strip().lower(): n for n in by_rep}
     for n in settled_reps:
@@ -1896,8 +1900,14 @@ def relay_board(icd: str, office_key: str) -> None:
     # all week and rolled a zero on the board (Megan 2026-09-13).
     for n in _knock_roster(icd, week_ending):
         names.setdefault(n.strip().lower(), n)
-    for low, rep in roster.items():
-        names.setdefault(low, rep.name)
+
+    # THE SAVED ROSTER DOES NOT ADD NAMES. It decorates the ones a live source
+    # already shows — team, leadership, status. Left as a source of membership
+    # it keeps anybody who was ever seeded into it: Tadana Manyangadze sat on
+    # Raf's board with no sales, no knocks and no row on his sheet, still
+    # marked Active, because she left and nothing here was told (Megan
+    # 2026-09-13). A rep who genuinely worked and blanked still appears — they
+    # are on the sheet, or in the knocks.
 
     # Only days that have happened — a column of zeros for Thursday when it
     # is Tuesday reads as a bad day rather than a day that has not come.
@@ -1969,6 +1979,11 @@ def relay_board(icd: str, office_key: str) -> None:
         if picked_day or expand:
             row.update({m: tot[m] for m in RELAY_MEASURES})
         row["Apps"] = _apps(tot)
+        # Total units only differs from Apps by the upgrades, and upgrades
+        # count as zero — so on an office that sells none the two columns are
+        # the same number twice (Megan 2026-09-13). It is dropped below when
+        # that is the case, and kept where it says something: Cyrus runs 13
+        # Int Up in a week, Raf none.
         row["Total units"] = _units(tot)
         rows.append(row)
     # ROAD TRIP SALES ARE NOT COUNTED (Raf, 2026-09-13). They are dropped from
@@ -1976,7 +1991,16 @@ def relay_board(icd: str, office_key: str) -> None:
     # this office's, and a zero row would read as somebody who blanked.
     road = [r for r in rows if is_road_trip(r.get("Tenure"))]
     rows = [r for r in rows if not is_road_trip(r.get("Tenure"))]
-    rows.sort(key=lambda r: (-r["Apps"], -r["Total units"], r["Rep"]))
+
+    has_upgrades = any(int(measures.get(r["Rep"], {}).get("Int Up", 0) or 0)
+                       for r in rows)
+    if not has_upgrades:
+        for r in rows:
+            r.pop("Total units", None)
+    rows.sort(key=lambda r: (-r.get("Apps", 0),
+                             -int(measures.get(r["Rep"], {}).get("Int Up", 0)
+                                  or 0),
+                             r["Rep"]))
 
     # SELLING reps, not a row count (Megan 2026-09-13). This was "sold of
     # total" and read N/N every time, because a rep only appeared in the sales
@@ -2024,11 +2048,16 @@ def relay_board(icd: str, office_key: str) -> None:
         for m in RELAY_MEASURES:
             tot[m] += src.get(m, 0)
 
-    cols = st.columns(6, gap="small")
-    _vital(cols[0], "Total units", str(_units(tot)), None)
-    _vital(cols[1], "Selling reps", str(selling), None)
-    for col, m in zip(cols[2:], RELAY_MEASURES):
-        _vital(col, m, str(tot[m]), None)
+    # Int Up only earns a card where the office sells them; on Raf's board it
+    # is a permanent 0 sitting next to a Total units that equals Apps.
+    shown_measures = [m for m in RELAY_MEASURES
+                      if m != "Int Up" or has_upgrades]
+    labels = ([("Total units", _units(tot))] if has_upgrades else []) \
+        + [("Apps", _apps(tot)), ("Selling reps", selling)] \
+        + [(m, tot[m]) for m in shown_measures]
+    cols = st.columns(len(labels), gap="small")
+    for col, (label, value) in zip(cols, labels):
+        _vital(col, label, str(value), None)
 
     settled_days = [d for d in settled if d <= today]
     if settled_days:
@@ -2056,7 +2085,9 @@ def relay_board(icd: str, office_key: str) -> None:
         for col in cols_for_day:
             day_totals[col] = sum(r.get(col, 0) for r in rows)
     totals_row = dict({"Rep": TOTALS_LABEL}, **day_totals,
-                      **{"Apps": _apps(tot), "Total units": _units(tot)})
+                      **{"Apps": _apps(tot)})
+    if has_upgrades:
+        totals_row["Total units"] = _units(tot)
     if picked_day or expand:
         totals_row.update({m: tot[m] for m in RELAY_MEASURES})
     # Built from the FIRST row's keys so the totals line carries every column
