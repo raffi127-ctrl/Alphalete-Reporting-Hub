@@ -1,0 +1,44 @@
+#!/bin/bash
+# Refuse a commit whose Python will not PARSE on 3.9 — the version every Lucy runs.
+#
+# 2026-09-13: two f-strings with a replacement field spanning lines (PEP 701,
+# 3.12+) were committed and pushed after a full green test run on a 3.14 laptop.
+# On Lucy 2 both modules raised SyntaxError on import and every applicant-push
+# walk exited 1 for ~45 minutes across all four offices. The tests could not see
+# it — they ran on the interpreter that accepts the syntax.
+#
+# SKIPS ITSELF when no 3.9 is installed, rather than blocking. Most machines in
+# this fleet ARE 3.9 (it is their venv), and a hook that refused to let anyone
+# commit because of a missing dev dependency would be worse than the bug. The
+# notice says what to install.
+#
+# Emergency bypass, as always: git commit --no-verify
+set -u
+ROOT="$(git rev-parse --show-toplevel)"
+
+PY39=""
+for c in python3.9 /opt/homebrew/bin/python3.9 /usr/local/bin/python3.9; do
+  if command -v "$c" >/dev/null 2>&1; then PY39="$c"; break; fi
+done
+# The repo venv counts when it IS 3.9 — that is the case on the Lucys.
+if [ -z "$PY39" ] && [ -x "$ROOT/.venv/bin/python" ]; then
+  if "$ROOT/.venv/bin/python" -c 'import sys; sys.exit(0 if sys.version_info[:2]==(3,9) else 1)' 2>/dev/null; then
+    PY39="$ROOT/.venv/bin/python"
+  fi
+fi
+if [ -z "$PY39" ]; then
+  echo "[py39] no Python 3.9 here — skipping the fleet syntax check."
+  echo "[py39] install it with:  brew install python@3.9"
+  exit 0
+fi
+
+# Only what is being committed, so the hook stays instant.
+FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+[ -z "$FILES" ] && exit 0
+
+# shellcheck disable=SC2086
+"$PY39" "$ROOT/deploy/check_py39.py" $FILES || {
+  echo "[py39] commit refused. Fix the syntax, or --no-verify if you truly mean it."
+  exit 1
+}
+exit 0
