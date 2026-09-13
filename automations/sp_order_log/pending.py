@@ -80,6 +80,13 @@ def build(lines, today: Optional[dt.date] = None) -> Dict:
             continue
         if _sp_date(ln.get(POSTED_COL)) is not None:
             continue                      # activated -> not pending
+        # Carlos 2026-09-13: "for the screenshots specifically, let's only
+        # have the ones that are delivered. The rest of them can stay on the
+        # order log, the ones that are shipped and whatnot." Delivered gear
+        # waiting on activation is the chase list; in-transit resolves on
+        # its own and lives in the workbook.
+        if "delivered" not in status.lower():
+            continue
         row = dict(ln)
         hit = attrs.get(norm_tn(str(row.get("spe.TN") or "")))
         if hit:
@@ -109,14 +116,14 @@ def build(lines, today: Optional[dt.date] = None) -> Dict:
             for cells, status, rep, sale, business in raw_rows]
 
     n = len(rows)
-    subtitle = ("Every AT&T line sold in the last 31 days that has not "
-                "activated yet, by sales rep — {} as of {}. Status colors "
-                "match the Order Log workbook.".format(
-                    "{} line{}".format(n, bp.plural(n)) if n
-                    else "none right now",
-                    today.strftime("%B %d, %Y").replace(" 0", " ")))
+    subtitle = ("AT&T lines DELIVERED but not activated yet (last 31 days of "
+                "sales), by sales rep — {} as of {}. Everything still in "
+                "transit or processing stays on the Order Log workbook."
+                .format("{} line{}".format(n, bp.plural(n)) if n
+                        else "none right now",
+                        today.strftime("%B %d, %Y").replace(" 0", " ")))
     return {"today": today, "count": n, "subtitle": subtitle,
-            "title": "Pending orders — not yet activated",
+            "title": "Pending orders — delivered, not yet activated",
             "columns": cols, "color_fn": _color_fn,
             "sections": [{"key": "pending", "title": None, "rows": rows,
                           "reps": bp.by_rep(rows),
