@@ -1166,6 +1166,15 @@ _KNOWN_TENURES = {"1st wk", "2nd wk", "3rd wk", "4th wk", "5th wk+", "rt",
                   "wk 1", "wk 2", "wk 3", "wk 4", "veteran"}
 
 
+# Both spellings of the same thing: Raf's sheet writes '1st Wk', the computed
+# label writes 'Wk 1'.
+_FIRST_WEEK = {"1st wk", "wk 1"}
+
+
+def is_first_week(label) -> bool:
+    return str(label or "").strip().lower() in _FIRST_WEEK
+
+
 def tenure_style(label: str) -> str:
     """A CSS declaration for a tenure label, or '' when it is not one we know.
 
@@ -1838,7 +1847,15 @@ def relay_board(icd: str, office_key: str) -> None:
     # is how many of the people who went out actually got on the board.
     # Off "Total units", not the product columns — those only exist in the
     # expanded view now, so reading them collapsed raised KeyError: 'Int'.
-    selling = sum(1 for r in rows if r.get("Total units"))
+    #
+    # FIRST-WEEK REPS ARE NOT COUNTED (Madi's Loom, 2026-09-13). That is how
+    # the board Raf reads defines it: new starts are tracked in their own
+    # section, so counting them here counts them twice and drags the number
+    # down with people nobody expected to sell yet. No tenure on file still
+    # counts — unknown is not the same as first week.
+    eligible = [r for r in rows if not is_first_week(r.get("Tenure"))]
+    selling = sum(1 for r in eligible if r.get("Total units"))
+    first_week = len(rows) - len(eligible)
 
     # CLOSED DAYS COME FROM TABLEAU, TODAY FROM THE RELAY (Megan 2026-09-13).
     # An intraday reading of a finished day runs light — Cyrus's Saturday was
@@ -1874,7 +1891,10 @@ def relay_board(icd: str, office_key: str) -> None:
             f"{len(settled_days)} day(s) — {min(settled_days):%b %d} to "
             f"{max(settled_days):%b %d} — with today live from SaraPlus. "
             "Reps come from the same settled pull, so the rows below add up "
-            "to the boxes above.")
+            "to the boxes above."
+            + (f" Selling reps leaves out {first_week} rep(s) in their first "
+               "week — new starts are counted in their own section, the way "
+               "the board does it." if first_week else ""))
     else:
         st.caption("No settled Tableau day for this week yet — everything "
                    "here is the live SaraPlus reading.")
