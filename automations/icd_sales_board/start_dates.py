@@ -45,6 +45,57 @@ def _header(day: dt.date) -> str:
     return f"{day.strftime('%b')} {day.day}, {day.year}"
 
 
+def _weeks_between(start: dt.date, end: dt.date) -> list:
+    """The Monday of every week the range touches."""
+    first = start - dt.timedelta(days=start.weekday())
+    out, cur = [], first
+    while cur <= end:
+        out.append(cur)
+        cur += dt.timedelta(days=7)
+    return out
+
+
+def _show_week(page, monday: dt.date, log=print) -> bool:
+    """Put the retention report on `monday`'s week and submit.
+
+    The Week box and its button are found by what they LOOK like rather than
+    by id: an input holding a MM-DD-YYYY date, and the control whose text is
+    "Get Report". AppStream's ids are generated and this page is not one we
+    control, so a shape match survives a rename where a hardcoded id does not.
+    Returns False rather than raising — a week that will not open is a week to
+    skip, not a failed harvest."""
+    from automations.applicant_tracker.applicantstream import PAGES
+
+    try:
+        page.goto(page.url.split("&p=")[0] + f"&p={PAGES['retention_details']}",
+                  wait_until="domcontentloaded", timeout=60_000)
+    except Exception:   # noqa: BLE001 — fall through to the form below
+        pass
+    try:
+        ok = page.evaluate(
+            r"""(want) => {
+                const looksLikeDate = v => /^\d{2}-\d{2}-\d{4}$/.test((v||'').trim());
+                const box = [...document.querySelectorAll('input')]
+                    .find(i => looksLikeDate(i.value));
+                if (!box) return false;
+                box.value = want;
+                box.dispatchEvent(new Event('input', {bubbles: true}));
+                box.dispatchEvent(new Event('change', {bubbles: true}));
+                const btn = [...document.querySelectorAll('input,button,a')]
+                    .find(b => /get\s*report/i.test(b.value || b.innerText || ''));
+                if (!btn) return false;
+                btn.click();
+                return true;
+            }""", monday.strftime("%m-%d-%Y"))
+        if not ok:
+            return False
+        page.wait_for_timeout(2500)
+        return True
+    except Exception as e:   # noqa: BLE001
+        log(f"    week {monday}: {type(e).__name__}")
+        return False
+
+
 def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
             log=print) -> dict:
     """{rep: earliest date seen} for one office, by walking the BOB detail
@@ -57,12 +108,22 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     found: dict = {}
     with A.session() as app:
         app.select_office(str(office_id))
-        day = start
-        while day <= end:
-            try:
-                app.open_retention_details()
-                href = app.detail_href(BOB_ROW, _header(day))
-                if href:
+        # ONE PASS PER WEEK, not per day. The retention report renders ONE
+        # week at a time — the first run walked 35 days against a page that
+        # only ever showed the current week's seven columns and found nothing,
+        # exit 0. Set the week, submit, then read its days.
+        for monday in _weeks_between(start, end):
+            if not _show_week(app.page, monday, log=log):
+                log(f"  {owner}: could not open week of {monday} — skipped")
+                continue
+            for i in range(7):
+                day = monday + dt.timedelta(days=i)
+                if day < start or day > end:
+                    continue
+                try:
+                    href = app.detail_href(BOB_ROW, _header(day))
+                    if not href:
+                        continue
                     for r in app.scrape_at(href, BOB_COLS):
                         name = " ".join(str(x).strip()
                                         for x in r[:2] if str(x).strip())
@@ -72,9 +133,11 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
                         # EARLIEST wins: a rep who returns did not start again.
                         if key not in found or day < found[key][1]:
                             found[key] = (name, day)
-            except Exception as e:   # noqa: BLE001 — one bad day is not the run
-                log(f"  {owner} {day}: skipped ({type(e).__name__})")
-            day += dt.timedelta(days=1)
+                    # scrape_at navigates AWAY from the report, so the week has
+                    # to be re-shown before the next day is looked up.
+                    _show_week(app.page, monday, log=log)
+                except Exception as e:   # noqa: BLE001 — one day is not the run
+                    log(f"  {owner} {day}: skipped ({type(e).__name__})")
     log(f"  {owner}: {len(found)} start date(s) between {start} and {end}")
     return {v[0]: v[1] for v in found.values()}
 
