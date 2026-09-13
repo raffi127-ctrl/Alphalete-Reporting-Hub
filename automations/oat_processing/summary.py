@@ -429,8 +429,17 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
     _cov = ""
     if coverage and not coverage.get("complete", True):
         _seen = coverage.get("covered") or 0
-        _tot = coverage.get("queue_total") or "?"
-        _cov = f" · partial: walk covered {_seen} of {_tot} in the queue"
+        # The queue we STARTED the walk on. Never queue_total — that is the size
+        # at the END, after this walk sent and removed people out of it, so it is
+        # smaller than what we walked and produced "covered 23 of 10".
+        _tot = coverage.get("queue_start")
+        # Only claim a ratio when it is one. An older snapshot has no
+        # queue_start, and a walk that read more than it started with (records
+        # arriving mid-walk) is not "23 of 10" either — say the honest half.
+        if _tot and _seen and _seen <= int(_tot):
+            _cov = f" · partial: walk covered {_seen} of {_tot} in the queue"
+        else:
+            _cov = f" · partial: walk covered {_seen} applicant(s)"
     header = (f"\U0001F4CB {date_str} — recruiting to-do: "
               f"{n_num} need a number, {n_txt} need a manual text{_cov}")
 
@@ -606,6 +615,7 @@ def main(argv=None) -> int:
         res = post_nophone_report(date, t_snap, dry_run=args.dry_run, edit=args.edit,
                                   coverage={"complete": snap.get("complete", True),
                                             "covered": snap.get("covered"),
+                                            "queue_start": snap.get("queue_start"),
                                             "queue_total": snap.get("queue_total")})
         return 0 if res.get("ok") else 1
 

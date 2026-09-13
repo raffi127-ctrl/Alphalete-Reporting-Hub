@@ -81,5 +81,64 @@ run._write_flagged_snapshot(FLAG, 183, TODAY, complete=False, covered=40)
 check("complete snapshot survived", snap().get("complete"), True)
 check("coverage not downgraded", snap().get("covered"), 183)
 
+print("coverage is measured against the queue we STARTED on:")
+# THE BUG (2026-09-13, live in Carlos's channel): the denominator was the queue
+# size at the END of the walk. That is smaller than what the walk went through,
+# precisely because the walk sent and removed people out of it — so the post read
+# "partial: walk covered 23 of 10 in the queue". Megan: "23 of 10??"
+# A FRESH day: the block above deliberately left a COMPLETE snapshot for TODAY,
+# and the precedence rule would (correctly) refuse to overwrite it.
+OTHER = dt.date(2026, 9, 14)
+run._write_flagged_snapshot(FLAG, 10, OTHER, complete=False, covered=23,
+                            queue_start=48)
+
+
+def snap2():
+    with open(tmp / "output" / f"oat-flagged-{OTHER.isoformat()}.json") as fh:
+        return json.load(fh)
+
+
+s2 = snap2()
+check("denominator is the START queue", s2.get("queue_start"), 48)
+check("the END queue is still recorded separately", s2.get("queue_total"), 10)
+check("covered is what we read", s2.get("covered"), 23)
+
+print("the header renders a sane ratio, and refuses an insane one:")
+from . import summary as _summary
+import datetime as _dt
+_t = {"nophone": [{"name": "Dana Reyes", "account": ""}], "retext": []}
+
+
+def _header(cov):
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _summary.post_nophone_report(_dt.date(2026, 9, 13), _t, dry_run=True,
+                                     coverage=cov)
+    for line in buf.getvalue().splitlines():
+        if "recruiting to-do" in line:
+            return line
+    return ""
+
+
+check("a real ratio is stated",
+      "covered 23 of 48 in the queue" in _header(
+          {"complete": False, "covered": 23, "queue_start": 48, "queue_total": 10}),
+      True)
+# An old snapshot has no queue_start; a walk can also read MORE than it started
+# with when records arrive mid-walk. Neither is a ratio — say the honest half
+# rather than print another "23 of 10".
+check("no queue_start -> no fake ratio",
+      "applicant(s)" in _header(
+          {"complete": False, "covered": 23, "queue_total": 10}),
+      True)
+check("covered > start -> no fake ratio",
+      "applicant(s)" in _header(
+          {"complete": False, "covered": 23, "queue_start": 10}),
+      True)
+check("a complete walk still says nothing about coverage",
+      "partial" not in _header({"complete": True, "covered": 48, "queue_start": 48}),
+      True)
+
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)

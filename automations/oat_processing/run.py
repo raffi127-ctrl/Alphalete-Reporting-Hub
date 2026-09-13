@@ -3265,7 +3265,7 @@ def run_walk(page, live: bool = False, limit: int = None,
              f"queue — keeping the last full snapshot instead of publishing a "
              f"short list")
     _write_flagged_snapshot(flagged_now, _end_total, today, complete=walked_all,
-                            covered=processed)
+                            covered=processed, queue_start=_start_total)
     # Queue-independent proof of the walk (readable from the Sheet directly).
     # The cache column also carries how many applicants are still owed a blocked-read
     # retry, so a Cloudflare day is visible from the Sheet alone (a big "+N blocked"
@@ -3280,7 +3280,7 @@ def run_walk(page, live: bool = False, limit: int = None,
 
 
 def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool,
-                            covered=None) -> None:
+                            covered=None, queue_start=None) -> None:
     """Overwrite output/oat-flagged-<date>.json with THIS walk's still-flagged apps
     (no-phone + needs-manual-text) so the Slack post reflects the CURRENT queue, not
     the day's cumulative log. Deduped, order-preserved.
@@ -3341,6 +3341,15 @@ def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool,
         # What the post needs to label itself honestly.
         "complete": bool(complete),
         "covered": int(covered or 0),
+        # COVERAGE IS MEASURED AGAINST THE QUEUE WE STARTED ON, not the one we
+        # ended with. `queue_total` above is the END size — it is what the post
+        # means by "the queue right now", and it is SMALLER than what we walked
+        # through precisely because the walk sent and removed people out of it.
+        # Using it as the denominator printed "walk covered 23 of 10 in the
+        # queue" into Carlos's channel (2026-09-13). The walk's own PARTIAL log
+        # line has always used the start total ("touched 62 of 183"); the
+        # snapshot now carries the same number.
+        "queue_start": (int(queue_start) if queue_start is not None else None),
     }
     try:
         os.makedirs("output", exist_ok=True)
@@ -3350,7 +3359,7 @@ def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool,
         # replacement field cannot span lines (PEP 701 is 3.12+). Inline it and
         # the module raises SyntaxError on import and every walk exits 1.
         _how = ("complete" if complete
-                else "PARTIAL, covered %s of %s" % (covered, queue_total))
+                else "PARTIAL, covered %s of %s" % (covered, queue_start))
         _log(f"[oat] flagged snapshot ({_how}): "
              f"{len(snap['nophone'])} need a number, "
              f"{len(snap['retext'])} need a manual text (queue={queue_total})")
