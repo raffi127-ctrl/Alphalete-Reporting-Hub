@@ -1985,9 +1985,11 @@ def relay_board(icd: str, office_key: str) -> None:
             lab = d.strftime("%a")
             if products:
                 # Expanded: every measure gets its own column, Raf's layout.
-                row[f"{lab} Apps"] = _apps(src) if src else 0
+                blank = 0 if d in reported_days else ""
+                row[f"{lab} Apps"] = _apps(src) if src else blank
                 for m in RELAY_MEASURES:
-                    row[f"{lab} {m}"] = int(src.get(m, 0) or 0) if src else 0
+                    row[f"{lab} {m}"] = (int(src.get(m, 0) or 0) if src
+                                         else blank)
             else:
                 # Collapsed: one number per day, with the split on HOVER.
                 row[lab] = _apps(src) if src else 0
