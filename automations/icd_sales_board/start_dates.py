@@ -112,6 +112,8 @@ def _show_week(page, wk_start: dt.date, log=print) -> bool:
         if not found:
             log(f"    week {wk_start}: no date box on the page")
             return False
+        if not _LAST_DIAG:
+            _LAST_DIAG.update(found)   # rides the summary line; see harvest()
         log(f"    week {wk_start}: box={found}")
 
         # 1) try it as a URL parameter, which needs no click at all
@@ -205,7 +207,9 @@ def harvest(office_id: str, owner: str, start: dt.date, end: dt.date,
     # The diagnosis rides the SUMMARY line, because the queue's status view
     # shows only the tail of stdout — the per-week lines were being cut off,
     # which is how "0/5 opened" arrived with no reason attached.
-    why = f" · page: {_LAST_DIAG}" if (not opened and _LAST_DIAG) else ""
+    # The queue's status view shows only the TAIL of stdout, so anything that
+    # matters has to be ON the summary line.
+    why = f" · box: {_LAST_DIAG}" if (opened < len(weeks) and _LAST_DIAG) else ""
     log(f"  {owner}: {len(found)} start date(s) between {start} and {end} "
         f"— {opened}/{len(weeks)} week(s) opened{why}")
     return {v[0]: v[1] for v in found.values()}
