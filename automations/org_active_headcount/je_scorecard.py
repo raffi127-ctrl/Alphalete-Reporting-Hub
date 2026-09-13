@@ -196,6 +196,75 @@ def counts() -> None:
     _to_sheet(COUNTS_TAB, table)
 
 
+PRODUCTIVE_TAB = "HC JE Productive"
+
+
+def productive(weeks=None, logfn=print) -> None:
+    """JE headcount from 'Productive Rep Count' — Eve, 2026-09-12, replacing the
+    REP Scorecard count above as the more reliable source:
+
+      "reemplacemos la fuente de rep count de JE ... WeeklyMetricsbyICD ... hay
+       una columna 'Productive rep count', tomar de ahí todos los días el número
+       de cada owner para llenar el desglose diario; para recuperar históricos
+       sólo vamos a poder recuperar el total de la semana, seleccionando la
+       semana desde 'Sales Week ending'"
+
+    Same workbook, custom view and week driver the weekly module already uses
+    (`pull.je_week` / `org_sales_board.je_pull`), with ONE difference that
+    matters for a daily number: the file is named by the time of the reading,
+    never reused. `pull.je_week` keeps one csv per WEEK and skips the download
+    when it exists, so read that way every day it would repeat Monday's number
+    all week and nothing would look wrong.
+
+    `weeks` = week-ending Sundays to read; default = the reporting week, which
+    on a Monday is the week that just closed (its final number) and otherwise
+    the week in progress (through yesterday).
+    """
+    from automations.org_sales_board import je_pull
+    from automations.org_sales_board.week import reporting_sunday
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    from automations.org_active_headcount import pull
+    from automations.org_active_headcount import sources as src
+    weeks = list(weeks or [reporting_sunday(dt.date.today())])
+    if any(w < reporting_sunday(dt.date.today()) for w in weeks):
+        # a past week passes the freshness gate as "stale" and would open a
+        # staleness thread for a read that is supposed to be old
+        os.environ.setdefault("ALPHALETE_SKIP_FRESHNESS", "1")
+    board = {src.norm(src.source_name(o)): o for o in BOARD_OWNERS}
+    table = [["week ending", "board ICD", "Productive Rep Count", "read at"]]
+    every = []
+    for week_end in weeks:
+        stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
+        label = je_pull._week_label(week_end)
+        path = OUT / f"je_productive_WE{week_end:%Y%m%d}_read{stamp}.csv"
+        logfn(f"  JE Weekly Metrics by ICD, Sales Week Ending={label} -> {path.name}")
+        try:
+            download_crosstab_patchright(
+                je_pull.CV_URL, pull.JE_WEEKLY_SHEET, path, verbose=False,
+                pre_export=je_pull._drive_week_selection(label, False))
+            rows = pull._read_crosstab(path)
+            name_i, count_i = pull._cols(rows[0], "ICD Name", pull.JE_HEADCOUNT_COL)
+            if name_i is None or count_i is None:
+                raise ValueError(f"no 'ICD Name' + {pull.JE_HEADCOUNT_COL!r} header: {rows[0]}")
+        except Exception as e:                                     # noqa: BLE001
+            logfn(f"  {week_end}: FAILED {type(e).__name__}: {e}")
+            table.append([week_end.isoformat(), "*", "FAILED", f"{type(e).__name__}: {e}"[:200]])
+            continue
+        found = {}
+        for r in rows[1:]:
+            if len(r) > max(name_i, count_i):
+                every.append([week_end.isoformat(), r[name_i], r[count_i]])
+                if src.norm(r[name_i]) in board:
+                    found[board[src.norm(r[name_i])]] = r[count_i]
+        for owner in BOARD_OWNERS:
+            table.append([week_end.isoformat(), owner, found.get(owner, "NOT IN SOURCE"), stamp])
+        logfn(f"  {week_end}: " + ", ".join(f"{o}={found.get(o, '-')}" for o in BOARD_OWNERS))
+    table.append([])
+    table.append(["week ending", "every ICD Name in the crosstab", "Productive Rep Count"])
+    table.extend(every)
+    _to_sheet(PRODUCTIVE_TAB, table)
+
+
 def _to_sheet(title, rows) -> None:
     from automations.org_active_headcount.tracker_readings import _to_sheet as write
     write(title, rows)
@@ -207,13 +276,19 @@ def main(argv=None) -> int:
                     help="download the export and copy it to the 'HC JE Probe' tab")
     ap.add_argument("--counts", action="store_true",
                     help="count each board owner's reps into the 'HC JE Counts' tab")
+    ap.add_argument("--productive", action="store_true",
+                    help="Productive Rep Count per board owner into 'HC JE Productive'")
+    ap.add_argument("--week", action="append", type=dt.date.fromisoformat,
+                    help="with --productive: a week-ending Sunday (repeatable)")
     a = ap.parse_args(argv)
-    if a.counts:
+    if a.productive:
+        productive(a.week)
+    elif a.counts:
         counts()
     elif a.probe:
         probe()
     else:
-        ap.error("pass --counts or --probe")
+        ap.error("pass --productive, --counts or --probe")
     return 0
 
 
