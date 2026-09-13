@@ -38,7 +38,10 @@ VIEW = "JEREPScorecard"
 VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
             f"{WORKBOOK}/{VIEW}")
 PROBE_TAB = "HC JE Probe"
-REP_SHEET = "WTD Sales per Rep per Day"
+# The dashboard TITLE says 'WTD Sales per Rep per Day'; the worksheet the
+# Crosstab dialog offers is named differently (probe 2026-09-12: only
+# ['Last Update', 'WTD Sales by Rep (2)']).
+REP_SHEET = "WTD Sales by Rep (2)"
 BOARD_OWNERS = ["Aiysha Mariano", "Alex Nicholas", "Brandon Stallkamp"]
 OWNER_FILTER = "ICD Owner"
 
