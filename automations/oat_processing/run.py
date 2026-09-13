@@ -741,7 +741,7 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
         # a dup that WAS visible on load slipped in as SEND_AI — route it.
         return _handle_visible_dup(page, guard, live)
     if not _guard_office_now(page, "Send to AI"):
-        return "office_guard_refused"
+        return _office_guard_outcome()
     if not _click_first(page, ["Send to AI", "Send To AI"]):
         _log("    'Send to AI' button not found — skipped")
         return "no_button"
@@ -2956,20 +2956,55 @@ def office_on_page(page):
     return m.group(1) if m else None
 
 
+# Which condition the guard refused on. Read by the callers to tag the walk's
+# outcome, so the diag tab says WHICH and nobody has to go log-hunting for it.
+_LAST_OFFICE_GUARD = ""
+
+
 def _guard_office_now(page, action: str) -> bool:
     """Re-check the on-page 'Office ID:' banner IMMEDIATELY before any mutating
     click. The walk-start check is not enough: another automation sharing the
     browser can switch offices mid-walk (Carlos, 2026-08-30, after captain-login
     sends appeared in Vincent's office 23318 that nobody could account for —
     "before hitting Send to AI you should be checking at the top to see the
-    office ID"). FAILS CLOSED: mismatch or unreadable header refuses the action."""
+    office ID"). FAILS CLOSED: mismatch or unreadable header refuses the action.
+
+    TWO CONDITIONS, AND THEY MEAN DIFFERENT THINGS (2026-09-13). Khalil's office
+    logged office_guard_refused=14 in one walk while another session was
+    hand-running a live push on the same office, and the single outcome tag could
+    not say which had happened:
+
+      * WRONG OFFICE — the banner names a different office. Something really did
+        switch this session underneath us. That is the irreversible-send hazard.
+      * UNREADABLE — no "Office ID:" in the body at all. The page is not what we
+        think it is (mid-render, an error page, a lost session). Refusing is
+        still right, but it is not evidence of a crossed session.
+
+    Both still refuse. `_LAST_OFFICE_GUARD` records which, so the walk can tag the
+    outcome and the diag tab answers the question on its own."""
+    global _LAST_OFFICE_GUARD
     want = str(getattr(config, "OFFICE_ID", "") or "")
     got = office_on_page(page)
     if want and got == want:
+        _LAST_OFFICE_GUARD = ""
         return True
-    _log(f"    ⛔ OFFICE GUARD: page shows office {got!r}, expected {want!r} — "
-         f"REFUSING {action}. Another automation may have switched this session.")
+    if got is None:
+        _LAST_OFFICE_GUARD = "unreadable"
+        _log(f"    ⛔ OFFICE GUARD: no 'Office ID:' on the page at all (expected "
+             f"{want!r}) — REFUSING {action}. The page is not what we think it "
+             f"is; this is NOT evidence of another automation.")
+    else:
+        _LAST_OFFICE_GUARD = "wrong_office"
+        _log(f"    ⛔ OFFICE GUARD: page shows office {got!r}, expected {want!r} "
+             f"— REFUSING {action}. Another automation switched this session.")
     return False
+
+
+def _office_guard_outcome() -> str:
+    """The outcome tag for the refusal that just happened, e.g.
+    'office_guard_wrong_office'. Falls back to the old flat tag if somehow
+    unset, so a refusal is never recorded as a success."""
+    return "office_guard_" + (_LAST_OFFICE_GUARD or "refused")
 
 
 def assert_on_expected_office(page, tries: int = 3) -> bool:
