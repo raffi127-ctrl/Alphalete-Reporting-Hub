@@ -96,7 +96,7 @@
   <div id="main">
     <div class="step">
       <div class="num">1</div>
-      <div style="min-width:0;flex:1">
+      <div style="min-width:0;flex:1" data-os="mac">
         <h2>Open Terminal</h2>
         <p>Hold down the Command key and tap Space. A search bar appears in the
            middle of the screen.</p>
@@ -115,6 +115,24 @@
         <p class="cap">A black window opens. That is Terminal. It is supposed to
            look like that &mdash; nothing is wrong.</p>
       </div>
+      <div style="min-width:0;flex:1" data-os="win">
+        <h2>Open PowerShell</h2>
+        <p>Tap the Windows key. The Start menu opens with a search box.</p>
+        <div class="keys"><kbd>&#8862;</kbd><span class="plus">then type</span></div>
+        <p>Type <b>powershell</b> and press Enter.</p>
+        <div class="shot">
+          <div class="spotlight">
+            <span class="mag">&#128269;</span>
+            <span class="typed">powershell<span class="caret"></span></span>
+          </div>
+          <div class="hit">
+            <span class="ico">&gt;_</span>
+            <span><b>Windows PowerShell</b> &nbsp;&mdash;&nbsp; App</span>
+          </div>
+        </div>
+        <p class="cap">A dark blue window opens. That is PowerShell. It is
+           supposed to look like that &mdash; nothing is wrong.</p>
+      </div>
     </div>
 
     <div class="step">
@@ -131,11 +149,16 @@
     <div class="step">
       <div class="num">3</div>
       <div style="min-width:0;flex:1">
-        <h2>Paste it into the black window and press Return</h2>
-        <p>Click once anywhere inside the black window first, so it is the
-           window you are typing into. Then:</p>
-        <div class="keys"><kbd>&#8984;</kbd><span class="plus">+</span><kbd>V</kbd>
+        <h2 data-os="mac">Paste it into the black window and press Return</h2>
+        <h2 data-os="win">Paste it into the blue window and press Enter</h2>
+        <p data-os="mac">Click once anywhere inside the black window first, so
+           it is the window you are typing into. Then:</p>
+        <p data-os="win">Click once anywhere inside the blue window first, so
+           it is the window you are typing into. Then:</p>
+        <div class="keys" data-os="mac"><kbd>&#8984;</kbd><span class="plus">+</span><kbd>V</kbd>
           <span class="plus">then</span><kbd>Return</kbd></div>
+        <div class="keys" data-os="win"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>V</kbd>
+          <span class="plus">then</span><kbd>Enter</kbd></div>
         <div class="term">
           <div class="bar">
             <span class="dot" style="background:#FF5F57"></span>
@@ -158,6 +181,9 @@
            things posted in Slack. That is everything it asks.</p>
       </div>
     </div>
+    <div style="text-align:center">
+      <span class="pill" id="swap"></span>
+    </div>
   </div>
 
   <div class="note">
@@ -167,15 +193,15 @@
   </div>
 
   <div class="note">
-    <b>Your passwords never leave your computer.</b> They are saved on your Mac
-    and used to sign in from it. Only the report counts are sent.
+    <b>Your passwords never leave your computer.</b> They are saved on this
+    computer and used to sign in from it. Only the report counts are sent.
   </div>
 </div>
 
 <script>
 (function () {
   var RAW = "https://raw.githubusercontent.com/raffi127-ctrl/" +
-            "Alphalete-Reporting-Hub/main/automations/icd_alerts/install.sh";
+            "Alphalete-Reporting-Hub/main/automations/icd_alerts";
   var code = new URLSearchParams(location.search).get("code") || "";
   code = code.trim().toUpperCase();
 
@@ -201,27 +227,43 @@
   document.getElementById("cmd").textContent = cmd;
   document.getElementById("termcmd").textContent = cmd;
 
-  // THIS LINE IS bash. It does not run on Windows, and handing a PC owner a
-  // command that cannot work would cost them the same hour it cost us to
-  // learn that. Say so instead, and let them tell us.
+  // WHICH COMPUTER THIS IS. The two installers are genuinely different -- one
+  // is bash, one is PowerShell -- so guessing wrong hands somebody a line that
+  // cannot run. Detection picks the likely one; the toggle exists because
+  // detection is a guess and the person looking at the screen is not.
   var plat = (navigator.userAgentData && navigator.userAgentData.platform) ||
              navigator.platform || "";
-  if (/win/i.test(plat)) {
-    document.getElementById("main").innerHTML =
-      '<div class="err"><b>This looks like a Windows PC.</b><br><br>' +
-      'These steps are for a Mac. Windows needs a different set, and we would ' +
-      'rather send you the right one than have you paste something that will ' +
-      'not work.<br><br>Tell the reporting team you are on Windows and they ' +
-      'will send it over.</div>';
-    document.getElementById("who").textContent =
-      "Windows setup \u2014 the reporting team will send you these.";
-    return;
+  var os = /win/i.test(plat) ? "win" : "mac";
+
+  var MAC = "curl -fsSL " + RAW + "/install.sh | bash -s -- " + code;
+  var WIN = "$env:LUCY_KEY='" + code + "'; irm " + RAW + "/install.ps1 | iex";
+  var cmd = "";
+
+  function paint() {
+    cmd = os === "win" ? WIN : MAC;
+    document.getElementById("cmd").textContent = cmd;
+    document.getElementById("termcmd").textContent = cmd;
+    var t = document.querySelectorAll("[data-os]");
+    for (var i = 0; i < t.length; i++) {
+      t[i].style.display = t[i].getAttribute("data-os") === os ? "" : "none";
+    }
+    document.getElementById("swap").textContent =
+      os === "win" ? "Actually, this is a Mac" : "Actually, this is a Windows PC";
+    btn.textContent = "Copy the command";
+    btn.className = "";
   }
+  document.getElementById("swap").addEventListener("click", function () {
+    os = os === "win" ? "mac" : "win";
+    paint();
+  });
 
   var btn = document.getElementById("copy");
+  paint();
   btn.addEventListener("click", function () {
     function ok() {
-      btn.textContent = "Copied — now paste it into Terminal";
+      btn.textContent = os === "win"
+        ? "Copied — now paste it into PowerShell"
+        : "Copied — now paste it into Terminal";
       btn.className = "done";
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {

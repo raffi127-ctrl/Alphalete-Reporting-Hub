@@ -42,8 +42,9 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
         detail.append("• Channels they mentioned: %s" % rec.wanted_channels)
     detail += [
         "",
-        ("• _They already have their setup link and can install now — "
-         "approving decides where their numbers POST._" if link else
+        (("• _They already have their setup link and can install now — "
+          "approving decides where their numbers POST._\n"
+          "• Their link, if they lose it: %s" % link) if link else
          "• _No key was written, so SEND THEM THEIR LINK by hand:_ "
          "`python -m automations.icd_alerts.invite %s`" % rec.office_key),
         "",

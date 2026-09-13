@@ -57,8 +57,10 @@ with st.form("icd_signup"):
     owner = st.text_input("Your full name",
                           placeholder="e.g. Cyrus Wade")
     contact = st.text_input(
-        "Email or phone we can send your setup link to",
-        help="The link is yours alone — it carries your office's code.")
+        "Email or phone, in case we need to reach you",
+        help="Your setup link appears on this page the moment you submit — "
+             "nothing is emailed. This is so the reporting team can reach you "
+             "if something goes wrong.")
     ov_name = st.text_input(
         "How your name is spelled in OwnerVille",
         placeholder="Leave blank if it is the same as above",
@@ -138,6 +140,10 @@ if submitted:
             st.link_button("Open my setup page", link, type="primary")
             st.caption("This link is yours alone — it carries your office's "
                        "code. Please do not forward it.")
+            st.warning(
+                "**Save this link before you close the page.** Email it to "
+                "yourself, or open it on the office computer now. If you lose "
+                "it the reporting team can send it again.")
             st.markdown(
                 "Once it is done, your computer starts handing in your "
                 "numbers straight away. They begin appearing in your Slack "
