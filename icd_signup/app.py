@@ -112,6 +112,15 @@ with st.form("icd_signup"):
     st.caption("A channel **ID** is safest — in Slack, click the channel name "
                "at the top, scroll to the bottom of the About tab, and copy "
                "the ID (it looks like C09AVM17PAR). A #name works too.")
+    # SAID TWICE ON PURPOSE (Megan 2026-09-13: "it needs to be on there twice
+    # so they actually read it"). Here, while they are choosing the room, and
+    # again above Send where it is the thing to go and do. It is the most
+    # common reason a sign-up stalls, and the cost of repeating it is one line
+    # somebody skims -- the cost of missing it is an office sitting silent
+    # waiting on us.
+    st.info(
+        "**Add Megan and Eve to any channel you name here.** They cannot "
+        "switch your alerts on for a channel they are not in.")
     alert_channels = []
     for i in range(MAX_CHANNELS):
         label = ("Channel for alerts" if i == 0
