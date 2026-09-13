@@ -1020,6 +1020,35 @@ def warn_stale_machines(day: Optional[dt.date] = None, *, send: bool = False,
     return fresh
 
 
+def laptop_offices(day: Optional[dt.date] = None, book=None) -> List[Dict]:
+    """Offices relaying from a machine with a battery.
+
+    The installer turns laptops away now, but every office enrolled BEFORE
+    that rule existed is still on whatever they had -- and a laptop is the
+    single most likely reason a channel goes quiet. This makes them visible
+    without asking anybody what is on their desk.
+    """
+    from automations.recruiting_report.fill import open_by_key
+
+    day = day or dt.date.today()
+    book = book or open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(RELAY_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for row in rows[1:]:
+        if not row or not (row[COL_OFFICE] or "").strip():
+            continue
+        for mid, info in (machines_for(row) or {}).items():
+            if isinstance(info, dict) and info.get("desktop") is False:
+                out.append({"office": (row[COL_OFFICE] or "").strip().lower(),
+                            "id": mid,
+                            "name": (info or {}).get("name") or mid,
+                            "day": _day_key(row[COL_DAY])})
+    return out
+
+
 def _warned() -> Dict:
     try:
         return json.loads(WARNED_PATH.read_text())

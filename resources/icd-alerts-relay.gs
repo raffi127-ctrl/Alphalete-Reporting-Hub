@@ -129,7 +129,8 @@ function doPost(e) {
     _upsert(office, day, JSON.stringify(records),
             String(body.local_time || ''), String(body.agent || ''),
             JSON.stringify(body.sales || {}),
-            String(body.machine || ''), String(body.machine_name || ''));
+            String(body.machine || ''), String(body.machine_name || ''),
+            body.desktop === true);
 
     // Optional, and sent on every sweep so a re-run of the installer can
     // change the answer. Only ever touches the columns the owner is allowed
@@ -260,7 +261,7 @@ function _keyIsGood(office, key) {
 }
 
 function _upsert(office, day, recordsJson, localTime, agent, salesJson,
-                 machine, machineName) {
+                 machine, machineName, desktop) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);          // two offices can relay in the same second
   try {
@@ -285,7 +286,7 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
         // writes column 9, which reads as "this office sends no sales yet"
         // rather than as corruption.
         sh.getRange(i + 1, 9).setValue(salesJson || '{}');
-        _mergeMachine(sh, i + 1, machine, machineName);
+        _mergeMachine(sh, i + 1, machine, machineName, desktop);
         return;
       }
     }
@@ -299,7 +300,7 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
     // machine to relay merged into an empty cell and looked like the only one.
     // Caught live 2026-09-13 -- two machines relayed and only the second
     // appeared.
-    _mergeMachine(sh, sh.getLastRow(), machine, machineName);
+    _mergeMachine(sh, sh.getLastRow(), machine, machineName, desktop);
   } finally {
     lock.releaseLock();
   }
@@ -439,7 +440,7 @@ function _upsertFault(office, day, stage, summary, detail, localTime,
   }
 }
 
-function _mergeMachine(sh, rowNum, machine, machineName) {
+function _mergeMachine(sh, rowNum, machine, machineName, desktop) {
   // MERGED, NEVER OVERWRITTEN. The whole point is to see BOTH machines: an
   // office can install on a back-office PC as a backup, and last-writer-wins
   // would hide whichever one wrote second. Column 11, appended, so nothing
@@ -451,7 +452,8 @@ function _mergeMachine(sh, rowNum, machine, machineName) {
     var raw = String(cell.getValue() || '{}');
     if (raw) seen = JSON.parse(raw) || {};
   } catch (err) { seen = {}; }
-  seen[machine] = {name: machineName || '', last: new Date().toISOString()};
+  seen[machine] = {name: machineName || '', last: new Date().toISOString(),
+                   desktop: desktop === true};
   cell.setValue(JSON.stringify(seen));
 }
 

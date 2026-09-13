@@ -130,6 +130,33 @@ def machine_id() -> str:
         return ""
 
 
+def is_desktop() -> bool:
+    """True when this machine has NO battery -- so it is a desktop.
+
+    THE ONE IMPLEMENTATION. The installer refuses a laptop using this same
+    function rather than its own copy: two battery checks that could disagree
+    is exactly how a rule ends up enforced at install and not in the reports,
+    or the other way round.
+
+    A battery and not hw.model, because Apple Silicon reports generic strings
+    like "Mac14,7" for laptops AND desktops -- matching model names would
+    refuse a brand-new iMac and accept a brand-new MacBook.
+
+    Unknown counts as a desktop, matching the installer: refusing an office
+    because a probe did not answer is worse than letting a laptop through.
+    """
+    import platform as _p
+    if _p.system() == "Windows":
+        return True                      # judged by its own rules over there
+    try:
+        import subprocess
+        out = subprocess.run(["ioreg", "-rc", "AppleSmartBattery"],
+                             capture_output=True, timeout=20)
+        return b"AppleSmartBattery" not in (out.stdout or b"")
+    except Exception:  # noqa: BLE001 — no ioreg, odd sandbox, slow disk
+        return True
+
+
 def machine_label() -> str:
     """Something a person can recognise in a list. The computer's own name is
     what an owner would use to tell two of their machines apart, and it is not
@@ -159,6 +186,11 @@ def payload(records: Dict[str, int], day: dt.date,
         # office that has not updated simply stays as one unnamed machine.
         "machine": machine_id(),
         "machine_name": machine_label(),
+        # Desktop or laptop. An office on a laptop is not refused after the
+        # fact -- the installer already turns those away -- but the ones
+        # installed BEFORE that rule existed are otherwise invisible, and a
+        # laptop is the single most likely reason a channel goes quiet.
+        "desktop": is_desktop(),
         # The laptop's own clock, so a machine that has been asleep is visible
         # as a stale reading rather than looking like a quiet office.
         "local_time": dt.datetime.now().isoformat(timespec="seconds"),

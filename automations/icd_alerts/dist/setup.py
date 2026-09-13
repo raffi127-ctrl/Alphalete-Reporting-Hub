@@ -757,26 +757,17 @@ def report_fault(stage: str, summary: str, detail: str = "") -> None:
 
 
 def is_desktop() -> bool:
-    """True when this machine has NO battery -- so it is a desktop.
+    """Ask the agent's own check, so the installer and the reports can never
+    disagree about what a desktop is.
 
-    WHY A BATTERY AND NOT THE MODEL NAME. hw.model reads "MacBookPro18,1" on
-    an Intel laptop, but Apple Silicon reports generic strings like "Mac14,7"
-    for laptops AND desktops alike, so matching model names would refuse a
-    brand-new iMac and accept a brand-new MacBook. Every Mac either has an
-    internal battery or does not, and that is exactly the question being
-    asked (Megan 2026-09-13).
-
-    Unknown counts as a desktop. Refusing an office because a probe did not
-    answer is worse than letting a laptop through -- the laptop at least gets
-    told what will happen to it.
+    Falls back to True if the agent package cannot be imported yet -- at this
+    point in setup nothing has been copied, and refusing an office because an
+    import failed is worse than letting a laptop through.
     """
-    if IS_WINDOWS:
-        return True                      # Windows is judged by its own rules
     try:
-        out = subprocess.run(["ioreg", "-rc", "AppleSmartBattery"],
-                             capture_output=True, timeout=20)
-        return b"AppleSmartBattery" not in (out.stdout or b"")
-    except Exception:  # noqa: BLE001 — no ioreg, odd sandbox, slow disk
+        from automations.icd_alerts.relay import is_desktop as _check
+        return _check()
+    except Exception:  # noqa: BLE001
         return True
 
 

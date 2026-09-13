@@ -706,3 +706,47 @@ class TwoMachinesOnOneOffice(unittest.TestCase):
     def test_an_office_that_never_sent_one_is_fine(self):
         # Offices on the older agent send no machine id at all.
         self.assertEqual(P.machines_for(["kash", "2026-09-13", "{}"]), {})
+
+
+class LaptopsAreVisible(unittest.TestCase):
+    """An office already installed on a laptop must not be invisible.
+
+    The installer turns laptops away now, but Kash and Cyrus enrolled before
+    that rule existed, and a laptop is the single most likely reason a channel
+    goes quiet. Megan should not have to ask each owner what is on their desk.
+    """
+
+    HEAD_LEN = 11
+
+    def _row(self, machines, office="kash", day="2026-09-13"):
+        return [office, day, "{}", "", "", "", "", "", "{}", "{}",
+                json.dumps(machines)]
+
+    def _run(self, rows):
+        tab = mock.MagicMock()
+        tab.get_all_values.return_value = [["Office"] * self.HEAD_LEN] + rows
+        book = mock.MagicMock()
+        book.worksheet.return_value = tab
+        return P.laptop_offices(dt.date(2026, 9, 13), book=book)
+
+    def test_a_laptop_is_named(self):
+        out = self._run([self._row({"aaa": {"name": "Kash MacBook",
+                                            "desktop": False}})])
+        self.assertEqual([o["name"] for o in out], ["Kash MacBook"])
+
+    def test_a_desktop_is_not(self):
+        self.assertEqual(
+            self._run([self._row({"aaa": {"name": "iMac", "desktop": True}})]),
+            [])
+
+    def test_an_office_that_never_said_is_not_accused(self):
+        # Offices on an older agent send no answer at all. Unknown is not the
+        # same as laptop, and guessing would name the wrong offices.
+        self.assertEqual(
+            self._run([self._row({"aaa": {"name": "Unknown"}})]), [])
+
+    def test_one_laptop_among_desktops_is_still_named(self):
+        out = self._run([self._row({
+            "aaa": {"name": "Front iMac", "desktop": True},
+            "bbb": {"name": "Someone's MacBook", "desktop": False}})])
+        self.assertEqual([o["name"] for o in out], ["Someone's MacBook"])

@@ -159,16 +159,25 @@ class LaptopsAreRefused(unittest.TestCase):
 
     SETUP = (HERE / "dist" / "setup.py").read_text()
 
+    RELAY = (HERE / "relay.py").read_text()
+
+    def test_there_is_only_one_definition_of_a_desktop(self):
+        """The installer refuses a laptop and the relay reports one. Two
+        battery checks that could drift apart is how a rule ends up enforced
+        at install and not in the reports, or the other way round."""
+        self.assertIn("AppleSmartBattery", self.RELAY)
+        self.assertNotIn("AppleSmartBattery", self.SETUP)
+        self.assertIn("from automations.icd_alerts.relay import is_desktop",
+                      self.SETUP)
+
     def test_it_asks_about_a_battery_not_a_model_name(self):
         """hw.model reads "MacBookPro18,1" on an Intel laptop, but Apple
         Silicon reports generic strings like "Mac14,7" for laptops AND
         desktops -- matching model names would refuse a new iMac and accept a
         new MacBook."""
-        self.assertIn("AppleSmartBattery", self.SETUP)
-        # Not that the words never appear -- the comment explains why we do
-        # not use them -- but that nothing actually PROBES for a model name.
-        self.assertNotIn("sysctl", self.SETUP)
-        self.assertNotIn('"hw.model"', self.SETUP)
+        for text in (self.SETUP, self.RELAY):
+            self.assertNotIn("sysctl", text)
+            self.assertNotIn('"hw.model"', text)
 
     def test_the_refusal_happens_before_anything_is_copied(self):
         body = self.SETUP[self.SETUP.index("def main() -> int:"):]
