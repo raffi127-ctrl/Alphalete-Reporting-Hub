@@ -496,10 +496,19 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
         parent = c.chat_postMessage(channel=CHANNEL_ID, text=header)
         parent_ts = parent["ts"]
     else:
+        # SAY WHETHER THIS LANDED (2026-09-13). This was `except: pass`, so a
+        # header that failed to refresh looked exactly like one that succeeded —
+        # and the header is the part everyone reads in the channel. Correcting
+        # the "walk covered 23 of 10" header, the run reported exit 0 and there
+        # was no way to tell from the log whether the text had actually changed.
+        # Still best-effort (a stale header must never fail the post), just not
+        # silent about it.
         try:
             c.chat_update(channel=CHANNEL_ID, ts=parent_ts, text=header)
-        except Exception:  # noqa: BLE001 — header refresh is best-effort
-            pass
+            print(f"[report] header updated on {parent_ts}: {header}", flush=True)
+        except Exception as e:  # noqa: BLE001 — best-effort, but now visible
+            print(f"[report] WARN header refresh FAILED on {parent_ts}: "
+                  f"{type(e).__name__}: {e}", flush=True)
 
     if edit:
         # Rewrite the existing list-reply(ies) in today's thread in place (so a name's
