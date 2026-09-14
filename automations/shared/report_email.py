@@ -356,10 +356,16 @@ def send_boards(*, subject: str, to: Sequence[str], title: str,
                            f"across two sends, or drop one from this office's set.")}
     n_img = sum(1 for b in blocks if b[1] and Path(b[1]).exists())
     # A note is not a miss — counting it as one turns every quiet day into an
-    # alarm in the run log.
+    # alarm in the run log. NEITHER IS AN ATTACHMENT: it carries no inline image
+    # by design, and it reached the owner. Joseph's first recovered send read
+    # "5 board(s) inline, 1 MISSING" for a mail that had his Order Log attached
+    # to it — a delivered board announced as a hole is the false alarm that
+    # sends somebody re-running a report that already worked
+    # [[feedback_green_means_delivered]].
+    n_attached = sum(1 for b in blocks if kind_of(b) == "attached")
     n_missing = sum(1 for b in blocks
                     if not (b[1] and Path(b[1]).exists())
-                    and kind_of(b) != "note")
+                    and kind_of(b) not in ("note", "attached"))
 
     out = preview_dir or (REPO_ROOT / "output" / "report_email"
                           / dt.date.today().isoformat())
@@ -372,15 +378,19 @@ def send_boards(*, subject: str, to: Sequence[str], title: str,
         logfn(f"[report_email] DRY RUN — nothing sent.\n"
               f"  to: {', '.join(to)}\n  subject: {subject}\n"
               f"  {n_img} board(s) {_how}"
+              + (f", {n_attached} attached" if n_attached else "")
               + (f", {n_missing} MISSING" if n_missing else "") +
               f"\n  preview: {out / (stem + '.eml')}")
         return {"ok": True, "dry_run": True, "to": to, "subject": subject,
-                "boards": n_img, "missing": n_missing}
+                "boards": n_img, "attached_files": n_attached,
+                "missing": n_missing}
 
     send_message(msg)
     _mb = len(bytes(msg)) / 1024 / 1024
     logfn(f"[report_email] sent to {', '.join(to)} — {n_img} board(s) {_how}"
+          + (f", {n_attached} attached" if n_attached else "")
           + (f", {n_missing} MISSING" if n_missing else "")
           + f" ({_mb:.1f} MB)")
     return {"ok": True, "to": to, "subject": subject, "attached": attach,
-            "boards": n_img, "missing": n_missing, "size_mb": round(_mb, 1)}
+            "boards": n_img, "attached_files": n_attached,
+            "missing": n_missing, "size_mb": round(_mb, 1)}
