@@ -362,8 +362,7 @@ def post_add_summary(ready: int, total: int, failed: List[str], *,
         # faith would otherwise never find out.
         lines.append(
             "\n_Add them in OwnerVille at least *30 minutes before their start "
-            "time* and Lucy sends their bundle automatically — nothing to "
-            "re-run and nobody to tell. Nothing goes out after *4:00pm*._")
+            "time* and Lucy sends their bundle._")
         lines.append(_tags())
     body = "\n".join(l for l in lines if l).rstrip()
     if dry_run:

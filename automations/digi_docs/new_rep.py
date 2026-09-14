@@ -314,7 +314,7 @@ def main(argv=None) -> int:
 
     print(f"{ws.title}: {len(cohort)} person(s) "
           f"({'LIVE' if args.live else 'DRY RUN'})\n")
-    made, exists, refused = [], [], []
+    made, exists, refused, would = [], [], [], []
     with ovn.session(headless=True) as page:
         for c in cohort:
             try:
@@ -327,10 +327,23 @@ def main(argv=None) -> int:
                 print(f"  ⛔ {c.name}: {type(e).__name__}: {str(e)[:120]}")
                 refused.append(f"{c.name}: {type(e).__name__}")
                 continue
-            (exists if out == "exists" else made).append(c.name)
+            if out == "exists":
+                exists.append(c.name)
+            elif out == "dry":
+                would.append(c.name)
+            else:
+                made.append(c.name)
 
-    print(f"\ncreated {len(made)} · already there {len(exists)} · "
-          f"refused {len(refused)}")
+    # A DRY RUN CREATES NOBODY, AND MUST NOT SAY IT DID (2026-09-14). The first
+    # clean dry run reported "created 1" for a pass whose only action was
+    # opening a form and clicking Cancel — the exact shape of false success
+    # this report spent a whole day being bitten by.
+    if would:
+        print(f"\nwould create {len(would)} · already there {len(exists)} · "
+              f"refused {len(refused)}   (DRY RUN — nobody was created)")
+    else:
+        print(f"\ncreated {len(made)} · already there {len(exists)} · "
+              f"refused {len(refused)}")
     return 0
 
 
