@@ -388,6 +388,34 @@ def _select_person(picker, name: str, *, employee_id: str | None = None) -> None
         print(f"  {name}: picked employee id {eid}")
         return
 
+    # AN EXACT NAME IS NOT AN AMBIGUITY (Megan 2026-09-14, holding up the
+    # dropdown: "1 is juliet 1 is julian").
+    #
+    # The rule below matches the surname plus the FIRST FOUR LETTERS of the
+    # first name, and "juli" is the first four letters of BOTH Juliet and
+    # Julian. So 'Juliet Rodriguez' -- which is sitting in the list, spelled
+    # exactly that way -- was reported as two employees matching, and refused
+    # all afternoon while somebody was asked for an employee id that was never
+    # needed. A prefix collision is a weakness of the rule, not a genuine
+    # doubt about who the person is.
+    #
+    # THE REAL AMBIGUITY IS STILL REFUSED, and it looks different: two options
+    # rendering the IDENTICAL string. That is the duplicate Nathan Sanchez
+    # (2026-08-31) -- different people, different emails, one spelling -- and
+    # no amount of matching separates those, which is what --employee-id is
+    # for. One exact match is the strongest signal this page can give us; two
+    # is the case where it can give us nothing.
+    from automations.digi_docs import namematch as _nm
+    exact = [o for o in options if _nm.norm(o) == _nm.norm(name)]
+    if len(exact) == 1:
+        picker.select_option(label=exact[0])
+        return
+    if len(exact) > 1:
+        raise Refused(f"{name}: {len(exact)} employees are spelled EXACTLY "
+                      f"this way — the page cannot tell them apart and nor "
+                      f"can we. Re-run scoped with the employee id from the "
+                      f"OV directory: --only \"{name}\" --employee-id <id>")
+
     parts = [p for p in name.split() if p]
     last = parts[-1].lower() if parts else ""
     first4 = parts[0][:4].lower() if len(parts) > 1 else ""

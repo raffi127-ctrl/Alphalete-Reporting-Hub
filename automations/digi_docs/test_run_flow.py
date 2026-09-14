@@ -773,8 +773,33 @@ class EmployeeIdPickTest(unittest.TestCase):
                          ["9401912", "9447431"])
         with self.assertRaises(ov.Refused) as cm:
             ov._select_person(p, "Nathan Sanchez")
-        self.assertIn("refusing to guess", str(cm.exception))
+        # Asserting the BEHAVIOUR, not the sentence: two options rendering the
+        # identical string is the one case the page can tell us nothing about,
+        # so the refusal has to send the reader to --employee-id. The wording
+        # changed 2026-09-14 when an EXACT single match stopped being treated
+        # as an ambiguity (Juliet vs Julian shared the first four letters);
+        # these twins are the case that still, correctly, refuses.
+        self.assertIn("employee id", str(cm.exception))
         self.assertIsNone(p.picked)
+
+    def test_an_exact_name_beats_a_first_four_letters_collision(self):
+        """Megan 2026-09-14, holding up the dropdown: "1 is juliet 1 is
+        julian". The rule matches the surname plus the first FOUR letters of
+        the first name, and "juli" opens both — so a name spelled exactly right
+        in the list was refused as an ambiguity, and somebody was asked for an
+        employee id that was never needed."""
+        from automations.digi_docs import ownerville as ov
+        p = self._picker(["Julian Rodriguez", "Juliet Rodriguez"],
+                         ["9401912", "9447431"])
+        ov._select_person(p, "Juliet Rodriguez")
+        self.assertEqual({"label": "Juliet Rodriguez"}, p.picked)
+
+    def test_the_exact_match_still_normalises(self):
+        """An accent or an apostrophe is spelling, not a different person."""
+        from automations.digi_docs import ownerville as ov
+        p = self._picker(["Abel Quinones", "Bo Diaz"], ["1", "2"])
+        ov._select_person(p, "Abel Quiñones")
+        self.assertEqual({"label": "Abel Quinones"}, p.picked)
 
     def test_an_id_that_matches_nothing_refuses_rather_than_falls_back(self):
         from automations.digi_docs import ownerville as ov
