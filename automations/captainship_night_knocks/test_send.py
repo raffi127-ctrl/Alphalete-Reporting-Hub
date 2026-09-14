@@ -205,6 +205,18 @@ class QuietTicks(unittest.TestCase):
         self.assertEqual((n, called), (0, []))
 
 
+class LiveRecipients(unittest.TestCase):
+    def test_every_night_captain_gets_email_addresses_not_letters(self):
+        from automations.captainship_night_knocks import run as R
+        keys = R.default_captains()
+        self.assertEqual(keys[0], "rafael")
+        self.assertIn("jess", keys)
+        for k in keys:
+            got = R.recipients_for(k)
+            self.assertTrue(got, k)
+            self.assertTrue(all("@" in a for a in got), (k, got[:3]))
+
+
 class StateFile(unittest.TestCase):
     def test_markers_and_threads_round_trip(self):
         night = dt.date(2026, 9, 12)

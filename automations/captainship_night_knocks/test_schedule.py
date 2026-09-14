@@ -182,17 +182,26 @@ class SeededTable(unittest.TestCase):
     """What the committed table actually says today — the fact that shapes the
     rollout, so it is asserted rather than remembered."""
 
-    def test_no_seeded_icd_is_pacific(self):
-        pac = [i for i, z in Z.ICD_TIMEZONES.items()
-               if z == "America/Los_Angeles"]
-        self.assertEqual(pac, [], "a Pacific office appeared — the 11 PM wave "
-                                  "is now real; re-check the rollout note")
+    def test_the_pacific_offices_are_starrs(self):
+        # 2026-09-14: the fiber harvest found the first Pacific offices, all in
+        # Starr's captainship — the 11 PM Central wave is real for her only.
+        pac = sorted(i for i, z in Z.ICD_TIMEZONES.items()
+                     if z == "America/Los_Angeles")
+        self.assertEqual(pac, ["JC Pascual", "Juan Botero Berrio",
+                               "Milly Villagrana", "Natalia Gwarda",
+                               "Starr Rodenhurst"],
+                         "a new Pacific office appeared — check its wave")
 
-    def test_the_seeded_eastern_offices_are_the_four_measured_ones(self):
+    def test_the_seeded_eastern_offices_are_the_measured_ones(self):
+        # The original four, plus Raf's captainship under the board's
+        # spelling (2026-09-14): same offices, and Joseph Logan + Muhammad
+        # Haque, Michigan.
         east = sorted(i for i in Z.ICD_TIMEZONES
                       if Z.ZONE_LABEL[Z.ICD_TIMEZONES[i]] == "Eastern")
-        self.assertEqual(east, ["Aya Mohamed", "Hammad Ahmed",
-                                "Nii Armah", "Salik Ahmed"])
+        self.assertEqual(east, ["Aya Al-Khafaji", "Aya Mohamed",
+                                "Hammad Ahmed", "Joseph Logan",
+                                "Muhammad Haque", "Nii Armah", "Nii Tagoe",
+                                "Salik Ahmed", "Salik Mallick"])
 
 
 if __name__ == "__main__":

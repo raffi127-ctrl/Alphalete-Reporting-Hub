@@ -60,9 +60,26 @@ from automations.captainship_night_knocks import (
 
 CT = ZoneInfo("America/Chicago")
 
-# The captainship the sample runs for. Raf asked for his own
+# The captainship the sample ran for first. Raf asked for his own
 # ("can we start this process for my captainship?", #l10-alphalete 2026-09-11).
 SAMPLE_CAPTAIN = "rafael"
+
+
+def default_captains() -> List[str]:
+    """Every captainship whose report carries the daily knocks — Raf's and the
+    seven fiber ones (Eve 2026-09-14: "para todas las oficinas de fiber a las
+    que tenemos acceso"). Derived from config.SECTION_KINDS, the same fact
+    knocks_access_watch uses, so a captainship that gains knocks in the morning
+    report gains the night mail the same day. Raf first."""
+    try:
+        from automations.captainship_drafts import config
+        keys = [c.key for c in config.CAPTAINS
+                if "daily_knocks" in (config.SECTION_KINDS.get(c.flavor) or [])]
+    except Exception:  # noqa: BLE001 — never a night with nobody in it
+        keys = []
+    if SAMPLE_CAPTAIN in keys:
+        keys.remove(SAMPLE_CAPTAIN)
+    return [SAMPLE_CAPTAIN] + keys
 
 OUT_DIR = Path("output") / "night_knocks"
 # Our OWN Chrome profile: one browser per profile dir, and this runs in the
@@ -276,6 +293,10 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
             except Exception as exc:  # noqa: BLE001 — one ICD ≠ the wave
                 logfn("[night-knocks]   x %s: %s: %s"
                       % (display, type(exc).__name__, str(exc)[:160]))
+                if KD.is_access_gap(exc):
+                    # No Office Access: left out, log only (Eve's standing
+                    # rule 2026-09-03 — the mail goes with whoever we can reach).
+                    continue
                 boards.append((display, None))
                 notes.append("%s — board unavailable (%s)"
                              % (display, type(exc).__name__))
@@ -573,11 +594,12 @@ def recipients_for(captain_key: str) -> List[str]:
     """A LIVE send's recipients. Deliberately the captainship report's own
     distro (config.Captain.to) rather than a second list nobody maintains —
     and deliberately unused until somebody passes --live."""
+    # config.RECIPIENTS, NOT Captain.to: `to` is the comma-joined To header, and
+    # list() of a string is its LETTERS — 495 one-character "addresses" for
+    # Raf, caught on the first dry look at live mode (2026-09-14).
     from automations.captainship_drafts import config
-    for cap in config.CAPTAINS:
-        if cap.key == captain_key:
-            return list(getattr(cap, "to", []) or [])
-    return []
+    return [a.strip() for a in (config.RECIPIENTS.get(captain_key) or [])
+            if a and a.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -706,7 +728,8 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true",
                     help="real distro (refuses harvested zones)")
     ap.add_argument("--captain", action="append",
-                    help="captain key; repeatable (default: the sample captain)")
+                    help="captain key; repeatable (default: every captainship "
+                         "with daily knocks — Raf + fiber)")
     ap.add_argument("--plan", action="store_true",
                     help="say what is owed and open nothing (safe on Windows)")
     ap.add_argument("--notice", action="store_true",
@@ -719,7 +742,7 @@ def main(argv=None) -> int:
         print("[night-knocks] --live and --sample are mutually exclusive")
         return 2
     sample = not args.live
-    keys = args.captain or [SAMPLE_CAPTAIN]
+    keys = args.captain or default_captains()
 
     now_utc = dt.datetime.now(dt.timezone.utc)
     rc = 0

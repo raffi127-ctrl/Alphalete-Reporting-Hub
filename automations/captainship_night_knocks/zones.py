@@ -56,6 +56,44 @@ ICD_TIMEZONES: Dict[str, str] = {
     "Trang Nguyen":     "America/Chicago",               # San Antonio, TX
     "Isaiah Thomas":    "America/Chicago",               # Dallas, TX
     "Nii Armah":        "America/New_York",              # Wilkes-Barre, PA
+    # RAF'S CAPTAINSHIP, board spelling (2026-09-14). harvest_zones read these
+    # addresses 2026-09-11/12; every city is on addresses.KNOWN_CITIES and the
+    # weekend sample went out on them. Several are the SAME office as a line
+    # above under its old spelling (Kash Patel = Kash Rai, etc.) — the roster
+    # asks by the board's name, so both stay.
+    # Raf's own office: the harvest's parser missed it (the master is not
+    # impersonated), so it sat out of his own sample. Read by hand off the
+    # saved p=767 form 2026-09-14: common_4/5/6 = Irving / TX / 75063.
+    "Rafael Hidalgo":   "America/Chicago",               # Irving, TX
+    "Aya Al-Khafaji":   "America/Indiana/Indianapolis",  # Indianapolis, IN
+    "Cyrus Wade":       "America/Chicago",               # Tyler, TX
+    "Haytham Nagi":     "America/Chicago",               # Austin, TX
+    "Jacob Dover":      "America/Chicago",               # Memphis, TN
+    "Joseph Logan":     "America/Detroit",               # Grandville, MI
+    "Kash Rai":         "America/Chicago",               # Fort Worth, TX
+    "Muhammad Haque":   "America/Detroit",               # Southfield, MI
+    "Nii Tagoe":        "America/New_York",              # PA
+    "Salik Mallick":    "America/Detroit",               # Southfield, MI
+    "Trang Canavan":    "America/Chicago",               # San Antonio, TX
+    # FIBER CAPTAINSHIPS (Eve 2026-09-14: the night mail goes to every fiber
+    # captainship). harvest_zones --only <captain> on Lucy 3 the same day.
+    # chan
+    "Carissa Ng":       "America/New_York",              # Dayton, OH
+    "Chan Park":        "America/Chicago",               # Metairie, LA
+    "Coel Reif":        "America/Chicago",               # Huntsville, AL
+    "Ja Mosley":        "America/Denver",                # El Paso, TX
+    "Marcial Rodriguez": "America/Chicago",              # Wichita, KS (split state; Wichita is Central)
+    "Nicholas Weldon":  "America/Chicago",               # Birmingham, AL
+    "Sam Park":         "America/New_York",              # Morrisville, NC
+    # starr — the first PACIFIC offices anyone has measured: the 11 PM Central
+    # wave is real now.
+    "Blue Mendoza":     "America/New_York",              # Charlotte, NC
+    "JC Pascual":       "America/Los_Angeles",           # San Leandro, CA
+    "Juan Botero Berrio": "America/Los_Angeles",         # Concord, CA
+    "Milly Villagrana": "America/Los_Angeles",           # Gold River, CA
+    "Natalia Gwarda":   "America/Los_Angeles",           # San Leandro, CA
+    "Oren Shezaf":      "America/Chicago",               # Kansas City, MO
+    "Starr Rodenhurst": "America/Los_Angeles",           # CA
 }
 
 # What a wave is CALLED in the email subject and in the log. Keyed by zone so a
