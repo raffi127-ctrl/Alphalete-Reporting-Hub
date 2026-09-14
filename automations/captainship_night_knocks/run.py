@@ -559,8 +559,9 @@ def tick(now_utc: dt.datetime, *, send: bool, sample: bool,
             reason = "%s: %s" % (type(exc).__name__, str(exc)[:400])
             logfn("[night-knocks] ✗ capture failed: " + reason)
             logfn(traceback.format_exc()[-1200:])
-            ST.save(d.local_date, ST.record_failure(
-                data, captain_key=d.captain_key, label=d.label, reason=reason))
+            data = ST.record_failure(data, captain_key=d.captain_key,
+                                     label=d.label, reason=reason)
+            ST.save(d.local_date, alert_now(d, data, 1, send=send, logfn=logfn))
             continue
 
         to_addrs = mail.assert_allowed(
@@ -580,20 +581,68 @@ def tick(now_utc: dt.datetime, *, send: bool, sample: bool,
         except Exception as exc:  # noqa: BLE001
             reason = "%s: %s" % (type(exc).__name__, str(exc)[:400])
             logfn("[night-knocks] ✗ send failed: " + reason)
-            ST.save(d.local_date, ST.record_failure(
-                data, captain_key=d.captain_key, label=d.label, reason=reason))
+            data = ST.record_failure(data, captain_key=d.captain_key,
+                                     label=d.label, reason=reason)
+            ST.save(d.local_date, alert_now(d, data, 1, send=send, logfn=logfn))
             continue
         thread.remember(mid)
         data = ST.record_sent(data, d.marker, mid, d.captain_key,
                               thread.to_json())
         # The wave went, but an office whose board could not be drawn is a
-        # thing somebody has to fix — it goes in the 00:45 notice too.
+        # thing somebody has to fix — Raf and Eve hear about it right away.
         for note in notes:
             data = ST.record_failure(data, captain_key=d.captain_key,
                                      label=d.label, reason=note, kind="office")
-        ST.save(d.local_date, data)
+        ST.save(d.local_date, alert_now(d, data, len(notes), send=send,
+                                        logfn=logfn))
         sent += 1
     return sent
+
+
+def alert_now(d: S.Due, data: dict, n_new: int, *, send: bool,
+              logfn=print) -> dict:
+    """Mail Raf and Eve about THIS wave's problems the moment it finishes.
+
+    Eve 2026-09-14, on the 00:45 notice: "por qué a esa hora? no puede ser
+    antes?" — a board that failed at 8 PM should not wait until after midnight
+    to be heard about. The last `n_new` failures in `data` are this wave's;
+    each is stamped `alerted` once the mail goes, which is what keeps the
+    00:45 notice from repeating it. A failed alert stamps nothing, so the
+    notice still catches it.
+    """
+    new = list((data.get("failures") or [])[-n_new:]) if n_new > 0 else []
+    if not new or not send:
+        return data
+    import html as _html
+    day = "%s %d/%d" % (d.local_date.strftime("%a"), d.local_date.month,
+                        d.local_date.day)
+    whole = any(f.get("kind") != "office" for f in new)
+    what = ("NOT sent" if whole else "%d office board%s missing"
+            % (len(new), "" if len(new) == 1 else "s"))
+    subject = "%s - Daily Knocks - %s - %s wave - %s" % (
+        day, captain_display(d.captain_key), d.label, what)
+    body = ("<p><b>%s — %s wave</b></p><p>%s</p><ul>%s</ul>"
+            "<p style='color:#777;font-size:12px'>Sent the moment the wave "
+            "finished. %s</p>"
+            % (_html.escape(captain_display(d.captain_key)), d.label,
+               ("This captainship's email did NOT go out:" if whole else
+                "The email went out, but these offices were missing from it:"),
+               "".join("<li>%s</li>" % _html.escape(f.get("reason") or "")
+                       for f in new),
+               "State file: output/night_knocks/state_%s.json"
+               % d.local_date.isoformat()))
+    try:
+        mail.send_plain(subject, body,
+                        mail.assert_allowed(mail.SAMPLE_RECIPIENTS, sample=True),
+                        logfn=logfn)
+    except Exception as exc:  # noqa: BLE001 — the 00:45 notice is the backstop
+        logfn("[night-knocks] ! immediate alert failed (%s) — the 00:45 "
+              "notice will carry it" % type(exc).__name__)
+        return data
+    stamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+    for f in new:
+        f["alerted"] = stamp
+    return data
 
 
 def recipients_for(captain_key: str) -> List[str]:
@@ -722,8 +771,12 @@ def notice(now_utc: dt.datetime, *, send: bool, sample: bool,
     sent = data.get("sent") or {}
     fails = ST.failures(data)
     expected = len(captain_keys)
-    if sent and not fails and len(ST.sent_captains(data)) >= expected:
-        logfn("[night-knocks] %s: everything owed went out — no notice" % night)
+    # Problems already mailed the moment their wave finished (alert_now) are
+    # not news at 00:45; only what nobody has been told about yet is.
+    unalerted = [f for f in fails if not f.get("alerted")]
+    if sent and not unalerted and len(ST.sent_captains(data)) >= expected:
+        logfn("[night-knocks] %s: everything owed went out%s — no notice"
+              % (night, " (problems already alerted)" if fails else ""))
         return 0
 
     # The notice ALWAYS goes to Raf and Eve, live or sample. It is not the

@@ -236,6 +236,75 @@ class OfficeFailuresReachTheNotice(unittest.TestCase):
         self.assertIn("Coel Reif", html)
 
 
+class ImmediateAlert(unittest.TestCase):
+    """Eve 2026-09-14: a wave's problem is mailed when the wave finishes, not
+    at 00:45 — and the 00:45 notice does not repeat it."""
+
+    def _due(self):
+        return S.Due(captain_key="chan", label="Central",
+                     zones=("America/Chicago",), icds=("Coel Reif",),
+                     local_date=dt.date(1999, 1, 1),
+                     fire_local=dt.datetime(1999, 1, 1, 21, 0, tzinfo=CT))
+
+    def _data(self):
+        data = ST.load(dt.date(1999, 1, 1))
+        data = ST.record_sent(data, "chan:America/Chicago:1999-01-01", "<m@x>",
+                              "chan", {"subject": "S", "message_id": "<m@x>",
+                                       "references": ["<m@x>"]})
+        return ST.record_failure(data, captain_key="chan", label="Central",
+                                 reason="Coel Reif — board unavailable",
+                                 kind="office")
+
+    def test_alert_goes_to_raf_and_eve_and_stamps_the_failure(self):
+        from automations.captainship_night_knocks import run as R
+        got = []
+        real, mail.send_plain = mail.send_plain, \
+            lambda s, h, to, logfn=None: got.append((s, h, to)) or "<a@x>"
+        try:
+            data = R.alert_now(self._due(), self._data(), 1, send=True,
+                               logfn=lambda *a, **k: None)
+        finally:
+            mail.send_plain = real
+        self.assertEqual(len(got), 1)
+        subject, body, to = got[0]
+        self.assertIn("Central wave - 1 office board missing", subject)
+        self.assertIn("Coel Reif", body)
+        self.assertEqual(to, list(mail.SAMPLE_RECIPIENTS))
+        self.assertTrue(ST.failures(data)[0].get("alerted"))
+
+    def test_a_failed_alert_leaves_it_for_the_notice(self):
+        from automations.captainship_night_knocks import run as R
+
+        def boom(*a, **k):
+            raise OSError("smtp down")
+        real, mail.send_plain = mail.send_plain, boom
+        try:
+            data = R.alert_now(self._due(), self._data(), 1, send=True,
+                               logfn=lambda *a, **k: None)
+        finally:
+            mail.send_plain = real
+        self.assertFalse(ST.failures(data)[0].get("alerted"))
+
+    def test_notice_stays_quiet_when_everything_was_already_alerted(self):
+        from automations.captainship_night_knocks import run as R
+        with tempfile.TemporaryDirectory() as d:
+            saved_dir, ST.DIR = ST.DIR, Path(d)
+            real_r, R.rosters_for = R.rosters_for, lambda *a, **k: {}
+            real_s, mail.send_plain = mail.send_plain, \
+                lambda *a, **k: self.fail("notice should not send")
+            try:
+                data = self._data()
+                data["failures"][0]["alerted"] = "1999-01-02T02:00:00+00:00"
+                ST.save(dt.date(1999, 1, 1), data)
+                n = R.notice(dt.datetime.now(dt.timezone.utc), send=True,
+                             sample=False, captain_keys=["chan"],
+                             force_night=dt.date(1999, 1, 1),
+                             logfn=lambda *a, **k: None)
+            finally:
+                ST.DIR, R.rosters_for, mail.send_plain = saved_dir, real_r, real_s
+        self.assertEqual(n, 0)
+
+
 class LiveRecipients(unittest.TestCase):
     def test_every_night_captain_gets_email_addresses_not_letters(self):
         from automations.captainship_night_knocks import run as R
