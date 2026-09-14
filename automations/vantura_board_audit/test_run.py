@@ -290,6 +290,31 @@ class ExitCodeSemantics(unittest.TestCase):
         self.assertFalse(mc.called)
 
 
+class StationsAllCapsHeadings(unittest.TestCase):
+    """2026-09-14: a 'MONDAY LEADERS MEETING' section landed under the station
+    blocks, and its all-caps titles ('NO ZEROS', 'ATT SALES', 'BOX SALES') were
+    reported as three reps nobody could find. Headings are not people."""
+
+    def _reported(self, *cells):
+        rows = [[""] * 95 for _ in range(6)]
+        for j, c in enumerate(cells):
+            rows[4][j] = c
+        return StationsLegendHeaderRow._names_reported(self, (rows, []))
+
+    def test_all_caps_headings_are_not_reported(self):
+        reported = self._reported("NO ZEROS", "ATT SALES", "BOX SALES")
+        for heading in ("NO ZEROS", "ATT SALES", "BOX SALES"):
+            self.assertNotIn(heading, reported)
+
+    def test_a_title_case_unknown_next_to_them_is_still_reported(self):
+        reported = self._reported("ATT SALES", "Zed Unknownperson")
+        self.assertIn("Zed Unknownperson", reported)
+
+    def test_one_caps_token_in_a_name_is_still_a_name(self):
+        reported = self._reported("JJ Unknownperson")
+        self.assertIn("JJ Unknownperson", reported)
+
+
 class StationsLegendHeaderRow(unittest.TestCase):
     """The STATIONS legend's own header row is not a list of people.
 

@@ -1149,9 +1149,17 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
     # 'need new t'), and every one of them was being reported as a bad name —
     # three junk entries per day crowding the [:8] cap that real typos need.
     # A person name here is >=2 tokens, all alphabetic, all capitalised.
+    # ALL-CAPS text is a heading, not a person: on 2026-09-14 the tab gained a
+    # 'MONDAY LEADERS MEETING' section under the blocks, and its titles
+    # 'NO ZEROS' (r74), 'ATT SALES' / 'BOX SALES' (r79) came back as three
+    # unknown reps. Same losing game as LABELS — the next heading is free.
+    # A name typed in caps that IS on the roll still matches (_n lowercases);
+    # only an all-caps typo goes unflagged.
     def _person_shaped(s):
         toks = s.split()
         if len(toks) < 2:
+            return False
+        if all(t.isupper() for t in toks):
             return False
         return all(t[:1].isupper() and t.replace("-", "").replace("'", "").isalpha()
                    for t in toks)
