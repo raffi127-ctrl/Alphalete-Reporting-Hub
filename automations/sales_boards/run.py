@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import os
 import sys
 import time
@@ -380,6 +381,94 @@ def shown_sunday(shown: str, want_sunday):
     return None
 
 
+def roll_snapshot(want: str, on_sunday, out_dir: Path = OUT_DIR):
+    """The board as week_roll found it right before rolling `want` forward, or
+    None.
+
+    week_roll writes output/sales_boards/week_roll_<from>_to_<to>_<date>.json on
+    the machine that rolls (Lucy 2 — the same one that runs this report): every
+    rep's seven day cells, 'Last Wk', and the campaign totals' 'Last Wk', exactly
+    as displayed. That is the closing week's board, complete — which is what a
+    pass that fires AFTER the roll still has to render.
+    """
+    from automations.sales_boards.zeros import we_label
+    pattern = f"week_roll_{want}_to_{we_label(on_sunday)}_*.json"
+    for path in sorted(out_dir.glob(pattern), reverse=True):
+        try:
+            snap = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if snap.get("from_week") == want and snap.get("reps"):
+            snap["_path"] = str(path)
+            return snap
+    return None
+
+
+def rewind_writes(grid, snap) -> tuple:
+    """(value writes, snapshot reps no longer on the board) that put the
+    closing week back on a COPY of a rolled board.
+
+    Columns are found by the header row's labels and rows by NAME, never by
+    index — and deliberately NOT through week_roll's Board, whose rep block
+    ends at the first blank row: on 2026-09-14 a blank separator between the
+    B2B and BOX reps (row 11) made it see 6 reps of 46, which would have
+    rewound B2B and left every BOX rep on the new week. Scans everything from
+    the header down to TOTAL instead.
+
+    Only rows the snapshot knows are written: a rep added after the roll keeps
+    his INDEX formulas, which read blank for the old week — correct, he wasn't
+    on that board."""
+    from automations.sales_boards.week_roll import (DAYS, HDR_CAMPAIGN,
+                                                    HDR_LAST, HDR_NAME, a1,
+                                                    as_number)
+
+    def cell(r, c):
+        row = grid[r - 1] if len(grid) >= r else []
+        return str(row[c - 1]).strip() if len(row) >= c else ""
+
+    hdr_row = next((r for r in range(1, len(grid) + 1)
+                    if HDR_NAME in [str(v).strip() for v in grid[r - 1]]), 0)
+    if not hdr_row:
+        raise SystemExit(f"no {HDR_NAME!r} header anywhere - is this the board?")
+    hdr = {}
+    for c, v in enumerate(grid[hdr_row - 1], 1):
+        hdr.setdefault(str(v).strip().lower(), c)     # first one wins
+    try:
+        c_name, c_last = hdr[HDR_NAME.lower()], hdr[HDR_LAST.lower()]
+        hdr[HDR_CAMPAIGN.lower()]
+        c_days = [hdr[d.lower()] for d in DAYS]
+    except KeyError as e:
+        raise SystemExit(f"row {hdr_row} has no {e} column - the board's "
+                         "headers changed.")
+
+    by_name = {}
+    for r in range(hdr_row + 1, len(grid) + 1):
+        name = cell(r, c_name)
+        if name.upper() == "TOTAL":
+            break            # the stats block below repeats campaign names
+        if name:
+            by_name.setdefault(name, r)
+
+    first, last, col_last = a1(c_days[0]), a1(c_days[-1]), a1(c_last)
+    writes, missing = [], []
+    for rep in snap.get("reps") or []:
+        row = by_name.get(rep.get("name"))
+        if row is None:
+            missing.append(rep.get("name"))
+            continue
+        days = (list(rep.get("days") or []) + [""] * 7)[:7]
+        writes.append({"range": f"{first}{row}:{last}{row}",
+                       "values": [[as_number(v) for v in days]]})
+        writes.append({"range": f"{col_last}{row}",
+                       "values": [[as_number(rep.get("last_wk", ""))]]})
+    for info in (snap.get("campaigns") or {}).values():
+        row = by_name.get(info.get("name"))
+        if row is not None:
+            writes.append({"range": f"{col_last}{row}",
+                           "values": [[as_number(info.get("last_wk", ""))]]})
+    return writes, missing
+
+
 def _day_already_posted(day, yday, programs, corrected=False) -> bool:
     """Did an EARLIER pass already ship THIS PASS's replies in full?
 
@@ -538,6 +627,7 @@ def main(argv=None) -> int:
     sunday, _ = expected_we(yday)
     print(f"week check: board WE={shown!r}, need {want!r} "
           f"(week ending {sunday:%a %m/%d} — covers {yday:%a %m/%d})")
+    snap = None            # set only when rendering a rolled-forward board
     if not ok:
         # A rolled-forward board is only a problem while the day is unposted —
         # see _day_already_posted. Checked before the hold so a late pass neither
@@ -551,12 +641,26 @@ def main(argv=None) -> int:
                   "moved on to the week the 4:00pm fill needs; that is "
                   "correct, not a failure.")
             return 0
-        print(f"WRONG WEEK — holding. The gold WE cell reads {shown!r} but "
-              f"{yday:%a %m/%d}'s data lives in week {want!r}. Set B2 to {want} "
-              "(or wait for the roll) and re-run; posting now would ship the "
-              "wrong week.")
-        _alert_wrong_week(shown, want, yday, post=args.post and not args.dm)
-        return 75          # EX_TEMPFAIL — the scheduler retries
+        # Rolled FORWARD and this pass's boards are still missing: the Monday
+        # BOX pass. The week roll moved to 08:20 on 2026-09-14, but the BOX
+        # board only renders once the Box Metrics thread and csv exist (08:50 /
+        # 09:40 rungs) — so every Monday it met a rolled board, held, and filed
+        # an incident whose fix was to flip the live gold cell back and forth.
+        # The roll's own snapshot IS the closing week's board: render it on the
+        # temp copy and leave the live board where the 4:00pm fill needs it.
+        on = shown_sunday(shown, sunday)
+        if on and on > sunday and not args.only_zeros:
+            snap = roll_snapshot(want, on)
+        if snap is None:
+            print(f"WRONG WEEK — holding. The gold WE cell reads {shown!r} but "
+                  f"{yday:%a %m/%d}'s data lives in week {want!r}. Set B2 to "
+                  f"{want} (or wait for the roll) and re-run; posting now would "
+                  "ship the wrong week.")
+            _alert_wrong_week(shown, want, yday, post=args.post and not args.dm)
+            return 75      # EX_TEMPFAIL — the scheduler retries
+        print(f"ROLLED FORWARD — the board reads {shown!r}; rendering week "
+              f"{want!r} from the roll snapshot ({snap['_path']}) on the temp "
+              "copy. The live board is not touched.")
 
     # Open a live 'running' pill so the card PULSES while the boards render/post;
     # _publish_hub below closes this same row into green/red. Gate MUST match the
@@ -575,7 +679,9 @@ def main(argv=None) -> int:
             sh.del_worksheet(w)
     # Zeros render on their OWN throwaway tab — they overwrite the day columns with
     # a cross-week window, which would corrupt the boards if the two shared a copy.
-    zrs = {} if args.corrected else \
+    # (Not on a rolled board: zeros read the live gold cell, which has moved on.
+    # The 5:10 pass posts them before the roll anyway.)
+    zrs = {} if (args.corrected or snap) else \
         Z.render_zeros(sh, src, SHEET_ID, _token(), yday, OUT_DIR)
 
     imgs = {p: {} for p in programs}
@@ -583,6 +689,15 @@ def main(argv=None) -> int:
         tmp = sh.duplicate_sheet(src.id, new_sheet_name=TEMP_TAB)
         try:
             sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": tmp.id}}]})
+            if snap:
+                writes, gone = rewind_writes(_retry(tmp.get_all_values), snap)
+                _retry(tmp.batch_update, writes, value_input_option="USER_ENTERED")
+                # RAW, so 9.20 stays "9.20" for the title and the formulas' keys.
+                _retry(tmp.update, values=[[want]], range_name="B2",
+                       value_input_option="RAW")
+                print(f"temp copy rewound to {want}: {len(writes)} range(s)"
+                      + (f"; not on the board any more: {', '.join(gone)}"
+                         if gone else ""))
             imgs = R.render_all(sh, tmp, SHEET_ID, _token(), yday, OUT_DIR, programs)
         finally:
             sh.del_worksheet(tmp)
