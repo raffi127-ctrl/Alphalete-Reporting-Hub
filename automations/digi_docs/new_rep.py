@@ -36,6 +36,8 @@ objecting.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import html
 
 from automations.bg_check_sync import ov_name_sync as ovn
 
@@ -345,6 +347,23 @@ def _cancel(page) -> None:
         pass
 
 
+def _parse_date(s: str):
+    """'9/21', '9/21/26' or an ISO date. Month/day assumes the coming year's
+    chart, which is what somebody typing 9/21 in September means."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%m/%d"):
+        try:
+            d = dt.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+        if fmt == "%m/%d":
+            d = d.replace(year=dt.date.today().year)
+        return d
+    raise SystemExit(f"cannot read a date out of {s!r} — try 9/21 or 2026-09-21")
+
+
 def _dump_form() -> int:
     """Print every input on the New Sales Rep form, and stop.
 
@@ -393,7 +412,6 @@ def main(argv=None) -> int:
     if args.dump_form:
         return _dump_form()
 
-    from automations.digi_docs.preflight import _parse_date
     ws, values = _run._open_tab(None)
     cands = roster.to_send(roster.candidates(values, ws.title))
     want = _parse_date(args.date)

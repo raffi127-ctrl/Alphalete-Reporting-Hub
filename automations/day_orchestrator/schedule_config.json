@@ -9715,23 +9715,7 @@
       },
       "priority": "P3"
     },
-      "digi_docs_preflight": {
-      "on_scheduler": false,
-      "_off_scheduler_note": "PRE-FLIGHT for the Digi Docs cohort (Megan 2026-09-14: 'we need to be able to fully send to everyone on time for next week'). On 2026-09-14 fifteen of forty-eight new starts were not in OwnerVille's employee directory, and nobody knew until the day: the add pass runs at 11:00 and each send goes thirty minutes before that person's own start, so the first anyone heard was a refusal half an hour before somebody walked in. The office then added people by hand against the clock, and the send tick stops at 4:00pm, so late adds got nothing. The chart is written days ahead and the Add Sales Rep picker answers the whole cohort in ONE read, IT NO LONGER POSTS OR RUNS ON A SCHEDULE (Megan 2026-09-14: 'there should be no reporting of who isn't in OV. It should just add who it can that is already there and then do the rest manually'). Kept as a HAND tool for answering 'is this cohort ready' when somebody asks. READ-ONLY: no adds, no sends, no Sheet writes; it cannot mail anybody. Silent when everyone is ready -- a weekly 'all fine' is the blank board that teaches people to stop reading the channel.",
-      "machine": "Lucy 3",
-      "display_name": "Digi Docs — pre-flight (who is not in OwnerVille yet)",
-      "source_type": "browser",
-      "data_sources": [],
-      "command": [
-        "automations.digi_docs.preflight"
-      ],
-      "base_args": [],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P2"
-    },
-  "digi_docs_new_reps": {
+      "digi_docs_new_reps": {
       "on_scheduler": false,
       "_off_scheduler_note": "CREATE the OwnerVille employee record for a new start who has none (Megan 2026-09-14: 'you need to be able to learn how to add the missing people from OV so that you can fully send to everyone on time for next week'). Fifteen of forty-eight were missing that Monday and nothing in this repo could create them: ownerville.add_sales_rep puts an EXISTING employee on a campaign, and its picker only offers people who already exist. TWO PAGES SHARE THE BUTTON NAME -- View Progress (p=201) 'Add Sales Rep' puts someone on a campaign; Sales Reps (p=20) '+ Add Sales Rep' creates the person. This is the second. Looks people up BY EMAIL, never by name: 9/14 was name matching failing all day, and here a wrong match creates a SECOND record for someone who already has one. Refuses anyone with no email or phone rather than creating them incomplete, and reads the form's own validation before submitting. DRY BY DEFAULT; --live writes. Start with --only for one person before any batch. weekdays [] so the batch never runs it.",
       "machine": "Lucy 3",
