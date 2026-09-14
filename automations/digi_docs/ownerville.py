@@ -406,13 +406,31 @@ def _select_person(picker, name: str, *, employee_id: str | None = None) -> None
         # Quinones/Quiñones all miss in silence. A spelling mismatch belongs in
         # the ICD Aliases sheet, not in a per-report patch -- but only if the
         # refusal says enough to recognise one.
+        # THE SURNAME COUNT IS THE ANSWER; the fuzzy list is only colour.
+        #
+        # The first version of this hint asked difflib first and only fell back
+        # to the surname when difflib came back empty. difflib scored 'Alysia
+        # Garcia' against 'Billy Garvin' over its cutoff, so the surname was
+        # never looked at at all -- and the refusal was read as proof that no
+        # Garvin exists in the directory, which it never was. Ask BOTH, always,
+        # and put the count first, because "0 of 584 share this surname" is the
+        # sentence that actually decides whether this person is missing or
+        # merely spelled differently. Normalised on both sides, so an accent or
+        # an apostrophe cannot hide a real match the way it does in the strict
+        # rule above.
         import difflib
+        from automations.digi_docs import namematch as _nm
+        _, last_n = _nm.parts(name)
+        mates = [o for o in options if last_n and last_n in _nm.norm(o)]
         near = difflib.get_close_matches(name, options, n=3, cutoff=0.55)
-        if not near and last:
-            near = [o for o in options if last in o.lower()][:3]
-        hint = (" — closest: " + ", ".join(repr(o) for o in near)) if near else ""
+        bits = [f"saw {len(options)} option(s)"]
+        if last_n:
+            same = (": " + ", ".join(repr(o) for o in mates[:4])) if mates else ""
+            bits.append(f"{len(mates)} share the surname {last_n!r}{same}")
+        if near:
+            bits.append("closest: " + ", ".join(repr(o) for o in near))
         raise Refused(f"{name}: not in the Add Sales Rep employee list "
-                      f"(saw {len(options)} option(s)){hint}")
+                      f"({'; '.join(bits)})")
     if len(hits) > 1:
         raise Refused(f"{name}: {len(hits)} employees match ({hits[:3]}) — "
                       "refusing to guess. Re-run scoped with the employee id "
