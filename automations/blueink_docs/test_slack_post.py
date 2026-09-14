@@ -67,3 +67,92 @@ def test_nothing_held_leaves_the_message_as_it_was():
 def test_singular_plural():
     assert "*1* new start sent" in sp.build_thread(1, [], None, [])
     assert "*2* new starts sent" in sp.build_thread(2, [], None, [])
+
+
+# --- the OTHER road to "already had a packet" (2026-09-14) -------------------
+# Blue Ink's own lookup is only half of it. Someone we sent in an EARLIER week
+# is dropped from the send list before that lookup ever runs, off our own
+# ledger, so nothing downstream saw them: no deeper green, no line here. Their
+# row read exactly like a row nobody had touched -- which is how Le'derius
+# Arnold (sent 9/7) came to look un-sent on the 9/14 tab.
+
+class _Person:
+    """Enough of a NewStart for _handle_held: a name and a row to tint."""
+
+    def __init__(self, name, row, email=""):
+        self.name, self.row, self.email = name, row, email
+        self.blueink_col = 14
+
+
+def test_ledger_held_people_are_tinted_and_named():
+    from automations.blueink_docs import run
+    tinted = {}
+
+    class _WS:
+        title = "D2D OBCL 9.14"
+
+    def _fake_highlight(ws, people, color=None):
+        tinted["people"] = [p.name for p in people]
+        tinted["color"] = color
+        return len(people)
+
+    real = run.mark.highlight
+    run.mark.highlight = _fake_highlight
+    try:
+        carried = [(_Person("Le'derius Arnold", 50), "Sent 9/7/26"),
+                   (_Person("Billy Garvin", 3), "Sent 8/31/26")]
+        pairs, problems = run._handle_held(_WS(), [], {}, carried)
+    finally:
+        run.mark.highlight = real
+
+    assert tinted["people"] == ["Le'derius Arnold", "Billy Garvin"]
+    # The DEEPER green -- a packet from an earlier week usually means a
+    # rescheduled start, and that has to be distinguishable from today's send.
+    assert tinted["color"] == run.mark.CARRIED_GREEN
+    assert problems == []
+    body = sp.build_thread(36, [], None, pairs)
+    assert "*2* not sent — already had a packet:" in body
+    assert "• *Le'derius Arnold* — already sent on 9/7/26" in body
+    assert "*0* failed to send" in body
+
+
+def test_both_kinds_of_hold_appear_together():
+    # One held by Blue Ink's history, one by our ledger: same section, one list.
+    from automations.blueink_docs import run
+
+    class _WS:
+        title = "t"
+
+    real = run.mark.highlight
+    run.mark.highlight = lambda ws, people, color=None: len(people)
+    try:
+        hand_sent = _Person("Bailey Soda", 54, "baileysoda@gmail.com")
+        pairs, problems = run._handle_held(
+            _WS(), [hand_sent], {"baileysoda@gmail.com": "Sent 9/12/26"},
+            [(_Person("Le'derius Arnold", 50), "Sent 9/7/26")])
+    finally:
+        run.mark.highlight = real
+    assert problems == []
+    body = sp.build_thread(36, [], None, pairs)
+    assert "• *Bailey Soda* — already sent on 9/12/26" in body
+    assert "• *Le'derius Arnold* — already sent on 9/7/26" in body
+
+
+def test_an_ambiguous_same_name_hold_is_still_a_problem():
+    # The one hold that IS a problem must not be swept into the quiet list.
+    from automations.blueink_docs import run
+
+    class _WS:
+        title = "t"
+
+    real = run.mark.highlight
+    run.mark.highlight = lambda ws, people, color=None: len(people)
+    try:
+        pp = _Person("Ana Lopez", 7, "ana@x.com")
+        pairs, problems = run._handle_held(
+            _WS(), [pp], {"ana@x.com": "same name, different address"},
+            [(_Person("Billy Garvin", 3), "Sent 8/31/26")])
+    finally:
+        run.mark.highlight = real
+    assert problems == [("Ana Lopez", "same name, different address")]
+    assert [n for n, _ in pairs] == ["Billy Garvin"]

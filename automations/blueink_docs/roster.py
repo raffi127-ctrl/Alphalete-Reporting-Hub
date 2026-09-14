@@ -142,6 +142,8 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
     last_cols: dict = {}
     cols: dict = {}
     pending_chart = False      # a date row opened one; numbered when it has people
+    paused: Optional[List[str]] = None   # chart interrupted by a blank row
+    paused_cols: dict = {}
 
     for i, row in enumerate(values):
         if _looks_like_header(row):
@@ -168,6 +170,7 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
             # Kept so a later chart opened by a DATE row with no header of its
             # own can inherit this layout.
             last_header, last_cols = header, dict(cols)
+            paused = None
             continue
         # A CHART ends at a blank row. Without this a section runs to the
         # bottom of the tab, so anything typed below it -- scratch rows, a
@@ -175,7 +178,17 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
         # That is what happened on 2026-08-24: 25 bare name rows under the
         # chart came back as real people with no email. Megan's rule is that
         # only people IN a chart count, and there may be several charts.
+        #
+        # But a blank row inside a chart is ordinary: delete the person on row
+        # 17 of a 38-row lineup and the gap they leave is exactly this. On
+        # 2026-09-14 that gap hid the 21 people below it -- Le'derius Arnold
+        # and Bailey Soda among them -- and the only sign was a printed
+        # warning. So the chart is PAUSED here, not closed: it resumes at the
+        # next row that carries a real email address under the same columns,
+        # which is the one thing the 8/24 stray rows never had.
         if not any((c or "").strip() for c in row):
+            if header is not None:
+                paused, paused_cols = header, dict(cols)
             header = None
             continue
         # A DATE row opens a chart. Monday's tab carries two, and if whoever
@@ -191,7 +204,13 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
                 pending_chart = True
             continue
         if header is None:
-            continue
+            # A row under the blank gap, still inside the chart: it counts only
+            # if it reads as a real person -- a name AND an email in the
+            # columns the paused chart used.
+            if paused is None or not _EMAIL_RE.match(
+                    _cell(row, paused_cols.get("email"))):
+                continue
+            header, cols = paused, dict(paused_cols)
         first = _cell(row, cols["first"])
         last = _cell(row, cols["last"])
         if not (first and last):

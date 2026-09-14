@@ -107,9 +107,17 @@ def _test_send(email: str, name: str, send: bool,
     return 0
 
 
-def _report(people: List[NewStart], sent_map: dict, tab_title: str) -> List[NewStart]:
-    """Print the full roll -- who's getting docs, who isn't, why -- and return
-    the people to send to."""
+def _report(people: List[NewStart], sent_map: dict, tab_title: str):
+    """Print the full roll -- who's getting docs, who isn't, why.
+
+    Returns (people to send, people we have ALREADY sent in an earlier week).
+    That second list used to be printed here and then dropped on the floor, so
+    somebody carried over from last week's tab left no mark anywhere: no green
+    on their row, no line in Slack. Their row looked exactly like a row nobody
+    had touched, which is what had Megan asking why Le'derius Arnold wasn't
+    marked as sent (2026-09-14) -- the same question Jose Laureano prompted on
+    2026-08-31, from the other half of the same hold.
+    """
     to_send, skipped, dupes = [], [], []
     for p in people:
         if not p.eligible:
@@ -154,7 +162,7 @@ def _report(people: List[NewStart], sent_map: dict, tab_title: str) -> List[NewS
     if no_email:
         print(f"\n⚠️  {len(no_email)} person(s) have no usable email on the "
               "sheet and can't be sent anything until that's filled in.")
-    return to_send
+    return to_send, dupes
 
 
 def _flag_terminated(people: List[NewStart]) -> None:
@@ -336,7 +344,8 @@ def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
     return failures
 
 
-def _handle_held(worksheet, to_send_all: List[NewStart], held: dict):
+def _handle_held(worksheet, to_send_all: List[NewStart], held: dict,
+                 carried: List[tuple] = None):
     """Deal with everyone Blue Ink already shows a packet for.
 
     They split in two, because a reader needs opposite things from them:
@@ -353,10 +362,16 @@ def _handle_held(worksheet, to_send_all: List[NewStart], held: dict):
     differs from the send tint because a packet from an earlier week usually
     means a rescheduled start date.
 
+    `carried` is the same thing reached by the other road: [(person, verdict)]
+    for people OUR OWN ledger already has a send for, from an earlier week.
+    Blue Ink's lookup never sees them -- they are dropped before the screen
+    runs -- so without this they were the one kind of hold that stayed
+    invisible, which is the bug Megan hit on 2026-09-14.
+
     Returns ([(name, verdict)] for the clean ones, [(name, why)] to add to
     problems).
     """
-    ok, problems = [], []
+    ok, problems, verdict = [], [], {}
     for pp in to_send_all:
         why = held.get(pp.email.strip().lower(), "")
         if not why:
@@ -365,17 +380,20 @@ def _handle_held(worksheet, to_send_all: List[NewStart], held: dict):
             problems.append((pp.name, why))
         else:
             ok.append(pp)
+            verdict[id(pp)] = why
+    for pp, why in (carried or []):
+        ok.append(pp)
+        verdict[id(pp)] = why
     if ok:
         try:
-            carried = mark.highlight(worksheet, ok, color=mark.CARRIED_GREEN)
-            if carried:
-                print(f"\nTinted {carried} carried-over packet(s) deeper green "
+            tinted = mark.highlight(worksheet, ok, color=mark.CARRIED_GREEN)
+            if tinted:
+                print(f"\nTinted {tinted} carried-over packet(s) deeper green "
                       f"on {worksheet.title!r}.")
         except Exception as exc:
             # Cosmetic. Never worth failing a run that mailed the right people.
             print(f"\nCouldn't tint the carried-over packets: {exc}")
-    return ([(pp.name, held.get(pp.email.strip().lower(), "")) for pp in ok],
-            problems)
+    return ([(pp.name, verdict.get(id(pp), "")) for pp in ok], problems)
 
 
 def _sync_completed(worksheet, people: List[NewStart],
@@ -603,7 +621,15 @@ def _main(argv=None) -> int:
     # who has already been sent, and which address the canary should ask about.
     ledger_rows = ledger.read(workbook)
     sent_map = ledger.already_sent(workbook, rows=ledger_rows)
-    to_send = _report(people, sent_map, ws.title)
+    to_send, already = _report(people, sent_map, ws.title)
+
+    # Carried over from an earlier week: our ledger already has their packet,
+    # so they are correctly not sent again -- but they still have to SHOW. The
+    # verdict is worded like the screen's ("Sent 9/7/26") so Slack renders both
+    # kinds of hold with one phrase.
+    when_map = ledger.sent_when(ledger_rows)
+    carried = [(pp, "Sent %s" % ledger.when(when_map, pp)) for pp in already
+               if ledger.when(when_map, pp)]
 
     # Blue Ink's OWN history, not just our log: the team hand-sends too, and a
     # person with a live packet must not get a second one whoever sent the
@@ -679,7 +705,7 @@ def _main(argv=None) -> int:
         # one quiet Monday away. Falling straight out here would tint nothing
         # and say nothing in Slack, and a silent channel reads exactly like a
         # job that never fired. So mark them and post anyway.
-        held_pairs, held_problems = _handle_held(ws, to_send_all, held)
+        held_pairs, held_problems = _handle_held(ws, to_send_all, held, carried)
         if held_pairs or held_problems:
             try:
                 _sync_completed(ws, people)
@@ -714,7 +740,7 @@ def _main(argv=None) -> int:
             if pp.eligible or "email" not in pp.skip_reason:
                 continue
             problems.append((pp.name, pp.skip_reason))
-        held_pairs, held_problems = _handle_held(ws, to_send_all, held)
+        held_pairs, held_problems = _handle_held(ws, to_send_all, held, carried)
         problems += held_problems
 
         # The Blue Ink column is where the green tint and the signed checkbox

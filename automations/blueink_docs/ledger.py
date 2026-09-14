@@ -70,6 +70,43 @@ def already_sent(workbook, rows: List[List[str]] = None) -> Dict[str, str]:
     return out
 
 
+def sent_when(rows: List[List[str]]) -> Dict[str, str]:
+    """{person key / email: 'M/D/YY'} for the LAST send we logged for them.
+
+    Same keys as `already_sent`, so the same person is found the same way; the
+    value is the date instead of the bundle, because that is the half a reader
+    needs. A carried-over row on the sheet says nothing on its own -- "sent" and
+    "nobody has touched this" look identical -- so the date is what tells whoever
+    reads Slack whether to chase a signature or leave it alone.
+
+    Rows are appended in time order, so a later send simply overwrites an
+    earlier one and the newest date wins.
+    """
+    out: Dict[str, str] = {}
+    for row in (rows or []):
+        row = (row + [""] * len(HEADER))[:len(HEADER)]
+        if not row[COL_BUNDLE].strip():
+            continue                      # a failure row is not a send
+        when = _sent_on(row[COL_SENT_AT])
+        if not when:
+            continue
+        stamp = "%d/%d/%s" % (when.month, when.day, when.strftime("%y"))
+        name = row[COL_NAME].strip()
+        email = row[COL_EMAIL].strip().lower()
+        parts = name.split()
+        if len(parts) >= 2:
+            out[f"{_norm(parts[-1])}|{_norm(' '.join(parts[:-1]))}"] = stamp
+        if email:
+            out[email] = stamp
+    return out
+
+
+def when(when_map: Dict[str, str], person: NewStart) -> str:
+    """The date we last sent this person, '' if we never did."""
+    return (when_map.get(person.key)
+            or when_map.get(person.email.strip().lower(), ""))
+
+
 def a_recent_send(rows: List[List[str]], within_days: int,
                   today: dt.date = None) -> str:
     """One address this report sent and logged RECENTLY -- the address the

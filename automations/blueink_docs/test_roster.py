@@ -197,10 +197,40 @@ def test_second_monday_chart_without_a_header_still_reads():
     assert [p.section for p in people] == [1, 2]
 
 
-def test_a_date_row_is_still_required_for_headerless_rows():
-    # No date row = not a chart. The 2026-08-24 stray rows must stay excluded.
+def test_a_row_with_an_email_after_the_gap_is_a_person_again():
+    # CHANGED 2026-09-14, and it cost 21 people their docs to learn why.
+    # Deleting the person on row 17 of the 9.14 lineup left one blank row, and
+    # the "a chart ends at a blank row" rule threw away everybody below it --
+    # Le'derius Arnold and Bailey Soda included -- with nothing but a printed
+    # warning to say so. A blank row inside a lineup is ordinary; the chart
+    # resumes at the next row carrying a real EMAIL in the same columns. The
+    # rule this replaces said no date row = not a chart; what it could not see
+    # is that a deleted row and a finished chart look identical from above.
     values = _tab([_row("Ana", "Lopez", "ana@x.com")])
-    values.append(_row("Stray", "Person", "stray@x.com"))
+    values.append(_row("Bea", "Ruiz", "bea@x.com"))
+    assert [p.name for p in parse_tab(values, "t")] == ["Ana Lopez", "Bea Ruiz"]
+
+
+def test_a_deleted_row_mid_chart_does_not_drop_the_rest():
+    # The 2026-09-14 shape exactly: people, the hole a delete left, more people.
+    values = _tab([_row("Ana", "Lopez", "ana@x.com"),
+                   [""] * 13,
+                   _row("Bea", "Ruiz", "bea@x.com"),
+                   _row("Cy", "Nunez", "cy@x.com")])
+    people = parse_tab(values, "t")
+    assert [p.name for p in people] == ["Ana Lopez", "Bea Ruiz", "Cy Nunez"]
+    # Still ONE chart -- a hole in a lineup is not a new section.
+    assert {p.section for p in people} == {1}
+
+
+def test_bare_names_after_the_gap_are_still_not_people():
+    # The other half of the same rule, and the one that must not move: the 25
+    # bare name rows under the 2026-08-24 chart had no email, so they resume
+    # nothing. An email is what tells a real person from something typed below
+    # the lineup.
+    values = _tab([_row("Ana", "Lopez", "ana@x.com")])
+    values.append(["", "", "", "Stray", "Person"] + [""] * 9)
+    values.append(["", "", "", "Other", "Stray"] + [""] * 9)
     assert [p.name for p in parse_tab(values, "t")] == ["Ana Lopez"]
 
 
