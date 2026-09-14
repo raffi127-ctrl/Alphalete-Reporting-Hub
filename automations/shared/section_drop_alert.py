@@ -722,6 +722,14 @@ def alert(*, report_id: str, failed: Sequence[str],
                                            stamp=(_KINDS.get(kind) or {}).get(
                                                "followup_stamp"),
                                            label="*{}*".format(report_id),
+                                           # What THIS run says is broken, so a
+                                           # later run that drops MORE names the
+                                           # new ones instead of disappearing
+                                           # into a run count (2026-09-14:
+                                           # b2b_metrics reported jamis and
+                                           # never atef or sabrina, two days
+                                           # running).
+                                           subjects=failed,
                                            day=day, client=client)
         except Exception as e:  # noqa: BLE001
             print("  ⚠ incident thread unavailable ({}: {}) — posting "

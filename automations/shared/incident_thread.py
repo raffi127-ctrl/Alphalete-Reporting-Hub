@@ -964,20 +964,76 @@ def _roll_over(client, channel: str, inc: dict, key: str, age: int,
           "post. NOT fixed: superseded.".format(key, age))
 
 
-def _bump_today(key: str, day: dt.date, *, sibling: bool, label: str) -> dict:
-    """The running tally for TODAY's thread: how many extra runs failed and which
-    other reports/offices fell with it. Lives in the index because it is what the
-    single status line is rendered from."""
+# How many newly-dropped names the status line spells out before summarising.
+# The line has to stay a LINE — the wall of text this channel was cured of came
+# from alerts that listed everything (2026-08-13).
+_MAX_FRESH_NAMED = 8
+
+
+def _subject_list(subjects: Sequence[str]) -> list:
+    """Clean, de-duplicated, order-preserving subjects."""
+    out = []
+    for s in subjects or ():
+        s = str(s or "").strip()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
+def _names(fresh: Sequence[str]) -> str:
+    """Render newly-dropped subjects, capped so the status line stays one."""
+    fresh = list(fresh)
+    if len(fresh) <= _MAX_FRESH_NAMED:
+        return ", ".join(fresh)
+    shown = ", ".join(fresh[:_MAX_FRESH_NAMED])
+    return "{} and {} more".format(shown, len(fresh) - _MAX_FRESH_NAMED)
+
+
+def _bump_today(key: str, day: dt.date, *, sibling: bool, label: str,
+                subjects: Sequence[str] = ()) -> dict:
+    """The running tally for TODAY's thread: how many extra runs failed, which
+    other reports/offices fell with it, and WHAT ELSE has dropped since the post
+    opened. Lives in the index because it is what the single status line is
+    rendered from.
+
+    `subjects` is what this alert says is broken — for a drop alert, the failed
+    entries ("jamis: activation_by_rep"). Anything not named yet today goes into
+    `fresh` so the status line can say it.
+
+    WHY (2026-09-14). This tallied a repeat as a NUMBER and nothing else, so a
+    later run that dropped MORE than the first one reported back as "*Failed
+    again today* — 5 more runs" and never said what. On 9/13 and 9/14 three
+    offices lost `activation_by_rep`; jamis ran first, so the post named jamis
+    and atef and sabrina were never named anywhere, on either day. Whoever read
+    the channel saw "1 section" while three offices were broken, and the two
+    unnamed ones stayed broken a second day. Counting a repeat is fine; counting
+    a DIFFERENT, bigger failure as if it were the same one is not.
+    """
     import time
     ent = (_load_index() or {}).get(key) or {}
     st = ent.get("today") if isinstance(ent.get("today"), dict) else {}
     if st.get("date") != day.isoformat():
-        st = {"date": day.isoformat(), "repeats": 0, "also": [], "ts": None}
+        st = {"date": day.isoformat(), "repeats": 0, "also": [], "ts": None,
+              "named": [], "fresh": []}
     if sibling:
         if label not in st.get("also", []):
             st.setdefault("also", []).append(label)
     else:
         st["repeats"] = int(st.get("repeats") or 0) + 1
+    # Subjects never named today. `named` is seeded when the post is opened, so
+    # the first repeat doesn't re-list what the parent already said. When this
+    # machine has no record of the opening (the thread was opened elsewhere and
+    # found by channel scan), `named` is empty and they are named again — the
+    # safe direction for a module whose whole rule is that every fallback is
+    # quieter than losing the alert.
+    named = list(st.get("named") or [])
+    fresh = list(st.get("fresh") or [])
+    for s in _subject_list(subjects):
+        if s not in named:
+            named.append(s)
+            if s not in fresh:
+                fresh.append(s)
+    st["named"], st["fresh"] = named, fresh
     st["at"] = time.strftime("%H:%M")
     return st
 
@@ -998,6 +1054,13 @@ def _today_line(st: dict, day: dt.date) -> str:
     if n:
         parts.append("*Failed again today* — {} more {}, last {}.".format(
             n, "run" if n == 1 else "runs", st.get("at") or ""))
+    # What has dropped that the post never named. Kept ABOVE the sibling line
+    # because it is the same report getting worse, which is the thing a reader
+    # is most likely to act on — and the thing this line used to hide behind a
+    # run count (2026-09-14; see _bump_today).
+    fresh = st.get("fresh") or []
+    if fresh:
+        parts.append("*Also dropped since:* {}".format(_names(fresh)))
     also = st.get("also") or []
     if also:
         parts.append("*Also failed today:* {}".format(", ".join(also)))
@@ -1042,6 +1105,7 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
                      details: Optional[Sequence[str]] = None,
                      followup: Optional[Sequence[str]] = None,
                      stamp: Optional[str] = None, label: str = "",
+                     subjects: Sequence[str] = (),
                      channel: str = CHANNEL, day: Optional[dt.date] = None,
                      dry_run: bool = False, client=None,
                      max_age_days: int = MAX_AGE_DAYS,
@@ -1065,6 +1129,11 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
       label     human name of what is failing ("BOX Order Log — Roshan"). Used
                 when this alert JOINS a sibling's thread, so the domino case
                 reads as a list of who fell instead of a list of internal ids.
+      subjects  the specific things this alert says are broken (a drop alert's
+                failed entries, e.g. "jamis: activation_by_rep"). A same-day
+                repeat NAMES any of these the thread hasn't named yet, instead
+                of folding a bigger failure into a run count — see _bump_today.
+                Optional: a caller that passes nothing behaves exactly as before.
 
     Returns {'ts', 'new', 'key', 'text', 'count'} — 'ts' is always the PARENT, so
     a caller can thread more under it and resolve() can find it later. None means
@@ -1152,7 +1221,8 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
         _sib = bool(inc.get("via_family")) and not same_alert(
             key, inc.get("marker_key") or key)
         st = _bump_today(key, day, sibling=_sib,
-                         label=label or "`{}`".format(key))
+                         label=label or "`{}`".format(key),
+                         subjects=subjects)
         ok = _put_status(client, channel, key, inc, st, day)
         if ok and details and inc.get("via_family") and not _spoken_before(key):
             # A sibling witness speaking for the FIRST time carries new material
@@ -1189,8 +1259,13 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
                   f"{str(e)[:80]})", flush=True)
     if reaction:
         _react(client, channel, ts, reaction)
+    # Seed today's named subjects from the post that just named them, so the
+    # first repeat reports what is NEW rather than re-listing the parent.
     _remember(key, ts=ts, channel=channel, opened=day.isoformat(), count=0,
-              text=parent_text, day=day)
+              text=parent_text, day=day,
+              today={"date": day.isoformat(), "repeats": 0, "also": [],
+                     "ts": None, "named": _subject_list(subjects),
+                     "fresh": []})
     _forget_history(channel)
     print(f"[incident] {key}: opened {ts}", flush=True)
     return {"ts": ts, "new": True, "key": key, "text": parent_text, "count": 0}

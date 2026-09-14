@@ -1323,3 +1323,120 @@ class ResolvedWithNoCheckIsSweptBack(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class ABiggerDropIsNamedNotJustCounted(unittest.TestCase):
+    """A later run that drops MORE must say WHAT — 2026-09-14.
+
+    The same-day repeat path folds everything into one status line, which is
+    right for a re-run of the SAME failure and wrong for a bigger one. It
+    rendered only a run count, so on 9/13 and 9/14 `drop-b2b_metrics` opened
+    naming `jamis: activation_by_rep`, and the later runs that also dropped
+    atef's and sabrina's reported back as "*Failed again today* — 5 more runs".
+    Neither office was named anywhere in either day's thread. The channel said
+    "dropped 1 section" while three offices were broken, and the two nobody
+    named stayed broken into a second day.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._real = inc.STATE_PATH
+        inc.STATE_PATH = Path(self.tmp.name) / "incident_threads.json"
+        self.addCleanup(lambda: setattr(inc, "STATE_PATH", self._real))
+        inc._HISTORY_CACHE.clear()
+        self.addCleanup(inc._HISTORY_CACHE.clear)
+        self.c = FakeClient()
+        self.day = dt.date(2026, 9, 14)
+
+    def _alert(self, subjects):
+        inc._HISTORY_CACHE.clear()
+        return inc.open_or_followup(
+            key="drop-b2b_metrics", title="🚨 *b2b_metrics* dropped",
+            body=["*Missing:* " + ", ".join(subjects)],
+            channel_line="*b2b_metrics* — " + ", ".join(subjects),
+            details=["re-run it"], subjects=subjects,
+            channel="C1", day=self.day, client=self.c)
+
+    def _status(self):
+        """The one status line as it currently reads."""
+        if self.c.updates:
+            return self.c.updates[-1][1]
+        return self.c.posts[-1][1]
+
+    def test_the_new_offices_are_named(self):
+        """The exact 9/14 sequence: jamis first, then all three."""
+        self._alert(["jamis: activation_by_rep"])
+        self._alert(["jamis: activation_by_rep", "atef: activation_by_rep",
+                     "sabrina: activation_by_rep"])
+        line = self._status()
+        self.assertIn("atef: activation_by_rep", line)
+        self.assertIn("sabrina: activation_by_rep", line)
+
+    def test_the_parents_own_subject_is_not_re_listed(self):
+        """jamis was named when the post opened — repeating it as news would
+        make every re-run look like a fresh office falling over."""
+        self._alert(["jamis: activation_by_rep"])
+        self._alert(["jamis: activation_by_rep", "atef: activation_by_rep"])
+        self.assertNotIn("Also dropped since: jamis",
+                         self._status().replace("*", ""))
+
+    def test_a_plain_repeat_still_only_counts(self):
+        """Unchanged behaviour for the case the fold was designed for."""
+        self._alert(["jamis: activation_by_rep"])
+        self._alert(["jamis: activation_by_rep"])
+        line = self._status()
+        self.assertIn("Failed again today", line)
+        self.assertNotIn("Also dropped since", line)
+
+    def test_a_name_is_announced_once_not_every_run(self):
+        self._alert(["jamis: activation_by_rep"])
+        self._alert(["jamis: activation_by_rep", "atef: activation_by_rep"])
+        self._alert(["jamis: activation_by_rep", "atef: activation_by_rep"])
+        self.assertEqual(self._status().count("atef: activation_by_rep"), 1)
+
+    def test_it_stays_one_status_line_not_a_pile_of_replies(self):
+        """The whole point of the fold (Eve 2026-08-17) must survive: the line
+        is EDITED, so three more runs add no messages to the thread."""
+        self._alert(["a: one"])
+        before = len(self.c.posts)
+        for extra in (["a: one", "b: two"], ["a: one", "b: two", "c: three"],
+                      ["a: one", "b: two", "c: three", "d: four"]):
+            self._alert(extra)
+        # One status line posted the first time, edited after that.
+        self.assertEqual(len(self.c.posts) - before, 1)
+        self.assertTrue(self.c.updates)
+
+    def test_a_long_list_is_capped_so_the_line_stays_a_line(self):
+        self._alert(["a: x"])
+        self._alert(["a: x"] + [f"office{i}: x" for i in range(12)])
+        line = self._status()
+        self.assertIn("and 4 more", line)
+
+    def test_a_caller_that_passes_nothing_is_unchanged(self):
+        """Every other producer in the repo still calls without `subjects`."""
+        inc._HISTORY_CACHE.clear()
+        inc.open_or_followup(key="failure-x", title="t", body=["b"],
+                             details=["d"], channel="C1", day=self.day,
+                             client=self.c)
+        inc._HISTORY_CACHE.clear()
+        inc.open_or_followup(key="failure-x", title="t", body=["b"],
+                             details=["d"], channel="C1", day=self.day,
+                             client=self.c)
+        line = self._status()
+        self.assertIn("Failed again today", line)
+        self.assertNotIn("Also dropped since", line)
+
+
+class SubjectRendering(unittest.TestCase):
+
+    def test_blanks_and_duplicates_are_dropped(self):
+        self.assertEqual(inc._subject_list(["a", "", "  ", "a", "b", None]),
+                         ["a", "b"])
+
+    def test_under_the_cap_lists_everything(self):
+        self.assertEqual(inc._names(["a", "b"]), "a, b")
+
+    def test_over_the_cap_summarises_the_tail(self):
+        out = inc._names([str(i) for i in range(11)])
+        self.assertTrue(out.endswith("and 3 more"), out)

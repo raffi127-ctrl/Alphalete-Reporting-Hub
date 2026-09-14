@@ -195,6 +195,33 @@ def plan() -> List[dict]:
     return out
 
 
+# Fields whose value must keep Tableau's `NAME [office]` shape across a
+# regeneration. Only the one field the slice actually rides on.
+_TABLEAU_SHAPED_FIELDS = ("owner_office",)
+
+
+def _loses_tableau_shape(field: str, value, prior) -> bool:
+    """True when a regenerated `field` would replace a Tableau-shaped stored
+    value with one that cannot match Tableau at all.
+
+    Only `owner_office` is judged, and only on SHAPE — Tableau's "Owner &
+    Office" values are `NAME [office]`, the same one-line test
+    `b2b_metrics.runner._slice_is_plausible` applies at run time. A value with
+    no bracket is one nothing can ever match, so it is never an improvement on
+    one that has them. Everything else merges exactly as before.
+
+    Deliberately not "is the stored value right" — that needs Tableau. This
+    only refuses to trade a matchable value for an unmatchable one.
+    """
+    if field not in _TABLEAU_SHAPED_FIELDS:
+        return False
+    new, old = str(value or "").strip(), str(prior or "").strip()
+    if not new or not old:
+        return False                      # the empty-value guard owns that case
+    shaped = lambda s: "[" in s and "]" in s      # noqa: E731
+    return shaped(old) and not shaped(new)
+
+
 def _merge_json(path: Path, rows: List[dict], write: bool) -> str:
     """Merge office rows into a family's onboarded_offices.json (keyed by 'key',
     last write wins). Returns a short human summary.
@@ -225,13 +252,27 @@ def _merge_json(path: Path, rows: List[dict], write: bool) -> str:
     `_patch_icd_mappings` "never overwrites an existing alias". This was the
     outlier.
 
-    What it deliberately does NOT solve: a field the form fills with a WRONG
-    non-empty value still overwrites a hand-corrected one (Sabrina's
-    `owner_office` was submitted as "Sabrina Alicea Alisei Inc." and Tableau
-    wants "SABRINA ALICEA [alisei, inc.]"). The durable fix for that is to
-    capture the Tableau spelling on the form; until then it needs re-correcting
-    after a submission, and this at least stops the same commit from eating the
-    view overrides too."""
+    `owner_office` NOW HOLDS ITS SHAPE TOO (2026-09-14). The paragraph that
+    used to sit here said this "deliberately does NOT solve" a WRONG non-empty
+    value overwriting a hand-corrected one, naming Sabrina: the form submitted
+    "Sabrina Alicea Alisei Inc.", Tableau wants "SABRINA ALICEA [alisei, inc.]",
+    and the correction "needs re-correcting after a submission". Nobody
+    re-corrected it. The bad value sat in the committed JSON from 2026-09-04
+    until 2026-09-14 and only surfaced because `test_no_data_yet` started
+    failing on it — ten days in which `_slice_is_plausible` called every one of
+    her Owner & Office sections a misconfiguration, which is exactly right and
+    exactly what no one was reading.
+
+    "It needs a human to redo it every time" is not a fix, so the same rule the
+    empty-value guard uses now covers this one field: Tableau's Owner & Office
+    values are `NAME [office]`, so a regenerated value with NO bracket must
+    never replace a stored one that HAS them. The form still wins whenever it
+    submits something shaped like a real Tableau value — a genuine rename, a
+    new office — because then both carry brackets and the guard doesn't engage.
+    Refusals are RETURNED in the summary rather than swallowed, so the person
+    running `apply` sees that the form disagrees with the file and which value
+    won. The durable fix is still to capture the Tableau spelling on the form
+    itself; this stops the gap from silently costing days in the meantime."""
     existing: Dict[str, dict] = {}
     if path.exists():
         try:
@@ -240,6 +281,7 @@ def _merge_json(path: Path, rows: List[dict], write: bool) -> str:
             existing = {}
     added = [r["key"] for r in rows if r["key"] not in existing]
     updated = [r["key"] for r in rows if r["key"] in existing]
+    kept: List[str] = []
     for r in rows:
         prior = existing.get(r["key"])
         if not prior:
@@ -251,13 +293,24 @@ def _merge_json(path: Path, rows: List[dict], write: bool) -> str:
             # this field, not that the office wants it cleared.
             if not value and prior.get(field):
                 merged[field] = prior[field]
+            elif _loses_tableau_shape(field, value, prior.get(field)):
+                merged[field] = prior[field]
+                kept.append("{}.{}".format(r["key"], field))
         existing[r["key"]] = merged
     if write:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(list(existing.values()), indent=2))
         tmp.replace(path)
-    return f"{path.relative_to(REPO_ROOT)}: +{added or '—'} ~{updated or '—'}"
+    summary = f"{path.relative_to(REPO_ROOT)}: +{added or '—'} ~{updated or '—'}"
+    if kept:
+        # SAY IT. A silent refusal is how the last one cost ten days: the form
+        # and the file disagree, and the person running `apply` is the only one
+        # who can go correct the form.
+        summary += (" · KEPT the stored value over the form's for {} "
+                    "(the form's has no 'NAME [office]' brackets — fix it on "
+                    "the Office Onboarding tab)".format(", ".join(kept)))
+    return summary
 
 
 def _patch_schedule(entries: Dict[str, dict], write: bool) -> str:
