@@ -73,6 +73,56 @@ def find_by_email(page, cols: dict, email: str):
     return None
 
 
+# The New Sales Rep form's text boxes, by the names bg_check_sync proved live
+# on this page (ov_name_sync: "whose name boxes are `fname` and `lname`").
+# Ordered: the first selector that exists wins.
+FIELDS = (
+    ("first name", ("input[name='fname']:visible", "input#fname:visible")),
+    ("last name", ("input[name='lname']:visible", "input#lname:visible")),
+    ("email", ("input[name='email']:visible", "input#email:visible")),
+    ("confirm email", ("input[name='confirmEmail']:visible",
+                       "input#confirmEmail:visible")),
+    ("phone", ("input[name='phone']:visible", "input#phone:visible")),
+)
+
+
+def _field(page, selectors):
+    """The first of these selectors that is actually on the page, or None."""
+    for sel in selectors:
+        loc = page.locator(sel).first
+        try:
+            if loc.count():
+                return loc
+        except Exception:                                   # noqa: BLE001
+            continue
+    return None
+
+
+def _fill(page, selectors, value, label, who):
+    """Type into one box, RE-RESOLVED at the moment we type.
+
+    The first live creation died on `Locator.fill: Timeout 30000ms exceeded`
+    (2026-09-14). The handles came from a scan of every visible input taken
+    when the form opened, and `nth(i)` into that collection stops pointing at
+    the same element the moment the form's own scripts finish wiring
+    themselves up -- the Start Date picker alone re-renders its neighbours.
+    Resolving by name at the point of use is the fix, and a 15s cap turns a
+    wedged box into a named failure instead of half a minute of silence.
+    """
+    box = _field(page, selectors)
+    if box is None:
+        raise Refused(f"{who} could not be created in OwnerVille — the New "
+                      f"Sales Rep form has no {label} box. Add them by hand "
+                      f"under Sales Reps → + Add Sales Rep.")
+    try:
+        box.fill(value, timeout=15000)
+    except Exception as e:                                  # noqa: BLE001
+        raise Refused(f"{who} could not be created in OwnerVille — the form's "
+                      f"{label} box would not accept text "
+                      f"({type(e).__name__}). Add them by hand under Sales "
+                      f"Reps → + Add Sales Rep.")
+
+
 def _find_labelled(page, text: str):
     """The checkbox whose visible label reads `text`, or None. Reads only.
 
@@ -211,8 +261,13 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
     if dry_run:
         # Prove the whole path without writing: every field and box the live
         # run would touch has to be FINDABLE now, or the dry run is worthless.
-        absent = [b for b in ("Over 18", NEW_ROLE, ACCOUNT_TYPE)
-                  if _find_labelled(page, b) is None]
+        # CHECK WHAT THE LIVE RUN WOULD TOUCH -- ALL of it. The first dry
+        # run passed while only looking at the checkboxes, and the live run
+        # that followed died on a text box. A dry run that skips half the
+        # form is worth exactly as much as no dry run.
+        absent = [lbl for lbl, sels in FIELDS if _field(page, sels) is None]
+        absent += [b for b in ("Over 18", NEW_ROLE, ACCOUNT_TYPE)
+                   if _find_labelled(page, b) is None]
         if absent:
             _cancel(page)
             raise Refused(f"{who}: the form has no {absent} box(es) — a live "
@@ -223,14 +278,9 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
         _cancel(page)
         return "dry"
 
-    first_in.fill(first)
-    last_in.fill(last)
-    page.locator("input[name='email']:visible").first.fill(email)
-    confirm = page.locator(
-        "#confirmEmail:visible, input[name='confirmEmail']:visible").first
-    if confirm.count():
-        confirm.fill(email)
-    page.locator("input[name='phone']:visible").first.fill(phone)
+    values = (first, last, email, email, phone)
+    for (label, sels), value in zip(FIELDS, values):
+        _fill(page, sels, value, label, who)
 
     _tick_labelled(page, "Over 18", verbose=verbose)
     _tick_labelled(page, NEW_ROLE, verbose=verbose)
