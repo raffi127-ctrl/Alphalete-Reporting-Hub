@@ -219,19 +219,81 @@ def _entries_total(page):
     return int(m.group(1).replace(",", "")) if m else None
 
 
+def _show_all_entries(page) -> int:
+    """Put DataTables' length menu on its largest option ("All" where OV offers
+    one) and return that option's size, 0 when the table has no such menu.
+
+    WHY THIS EXISTS (2026-09-14). Clicking Next on this table has never once
+    worked. Two earlier attempts guessed at the pagination markup and both came
+    back with the same 49 rows; the third guess, the one below, re-read page ONE
+    sixty times on RES-AT&T -- "read 1440, table says 117", with 24 distinct
+    rows behind the 1440. The length menu is the one control that does not need
+    the pagination markup to be right: put it on All and the whole roster is in
+    the DOM at once, which makes the Next-walk a fallback instead of the plan.
+    """
+    sel = page.locator("div[id$='_length'] select, div.dataTables_length select, "
+                       "select[name$='_length']").first
+    try:
+        if not sel.count():
+            return 0
+        values = [(v or "").strip() for v in
+                  sel.evaluate("el => [...el.options].map(o => o.value)")]
+    except Exception:                       # noqa: BLE001
+        return 0
+    if not values:
+        return 0
+
+    def _size(v: str) -> int:
+        try:
+            n = int(v)
+        except ValueError:
+            return 0
+        # DataTables spells "All" as -1, which IS the biggest option, not the
+        # smallest. Reading it as a number is how "All" loses to "10".
+        return 10 ** 9 if n < 0 else n
+
+    best = max(range(len(values)), key=lambda i: _size(values[i]))
+    if _size(values[best]) <= 0:
+        return 0
+    try:
+        sel.select_option(index=best)
+        page.wait_for_load_state("networkidle", timeout=60000)
+    except Exception:                       # noqa: BLE001
+        return 0
+    page.wait_for_timeout(1200)             # the All table is much bigger
+    return _size(values[best])
+
+
 def _read_pages(page, rows_seen: set) -> int:
-    """Read the visible page, then every following one. Returns rows READ (not
-    unique), so it can be compared against the table's own entry count."""
-    read = 0
+    """Read every row of the campaign now showing. Returns how many DISTINCT
+    rows THIS campaign contributed.
+
+    DISTINCT, not rows-read (2026-09-14). `snapshot` compares this against
+    DataTables' own "of N entries" to decide whether the roster can be trusted,
+    and the old count re-counted the same row on every re-read of the same page.
+    So RES-AT&T read its first 24 rows sixty times, reported 1440, and walked
+    through a 117-entry check with 93 people never looked at -- the precise
+    under-read that guard exists to catch, waved through by the guard itself.
+    An under-read roster names real people as absent, and absent-when-wrong
+    means adding someone twice, which mails them a second welcome.
+
+    A page that contributes NOTHING new is also the signal that Next did not
+    advance: stop on it instead of spending the remaining iterations re-reading
+    the same page.
+    """
+    _show_all_entries(page)
+    mine = set()
     for _ in range(60):                     # backstop, never a real page count
         rows = page.locator("tbody tr")
         n = rows.count()
+        before = len(mine)
         for i in range(n):
             try:
-                rows_seen.add(_norm_row(rows.nth(i).inner_text(timeout=2000)))
-                read += 1
+                mine.add(_norm_row(rows.nth(i).inner_text(timeout=2000)))
             except Exception:               # noqa: BLE001
                 continue
+        if n and len(mine) == before:
+            break                           # Next did not advance
         nxt = page.locator("a:has-text('Next'):visible, "
                            "li.next:visible a, a.paginate_button.next:visible"
                            ).first
@@ -247,7 +309,8 @@ def _read_pages(page, rows_seen: set) -> int:
             page.wait_for_timeout(900)
         except Exception:                   # noqa: BLE001
             break
-    return read
+    rows_seen |= mine
+    return len(mine)
 
 
 def present(rows_seen: set, name: str) -> bool:
