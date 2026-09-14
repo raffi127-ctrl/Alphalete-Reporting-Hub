@@ -234,8 +234,17 @@ def _already_alerted(line: str) -> bool:
     two different problems: the tick re-posted the same missing column all
     afternoon while Megan deleted them. Same sentence, different number, same
     problem.
+
+    KEY ON THE PERSON, NOT THE SENTENCE (2026-09-14). Normalising the numbers
+    was not enough once the refusal started carrying evidence: "(saw 584
+    option(s); 0 share the surname 'garvin'; closest: 'Alysia Garcia')" has a
+    different closest-list on almost every tick, because the directory grows as
+    people are added. Fifteen people produced THIRTY-SIX posts in one thread,
+    each one a paragraph tagging the same three people -- past the point where
+    anybody reads any of them, which is the exact failure this function exists
+    to prevent. A person plus what went wrong IS the problem; the evidence is
+    just how we phrased it that minute.
     """
-    import re as _re
     import json
     import os
     path = _alerted_today_path()
@@ -244,7 +253,8 @@ def _already_alerted(line: str) -> bool:
             seen = set(json.load(fh))
     except Exception:                                       # noqa: BLE001
         seen = set()
-    key = _re.sub(r"\d+", "#", line)
+    who = (line or "").split(":", 1)[0].strip()
+    key = f"{who}|{headline_and_need(line)[0]}" if who else (line or "")
     if key in seen:
         return True
     seen.add(key)      # store the KEY, not the line, or nothing dedupes
