@@ -346,6 +346,45 @@ def _select_campaign(page, want: str, *, verbose: bool = True) -> str:
     return hits[0]
 
 
+def employee_options(page, *, verbose: bool = True):
+    """Every name the Add Sales Rep picker offers on RES-AT&T. Reads, nothing
+    else — it opens the modal and closes it, and clicks no Add.
+
+    The whole cohort's answer is in ONE read (2026-09-14). Fifteen people were
+    each discovered missing thirty minutes before their own start, one at a
+    time, by a pass that had to walk the entire click-path per person to find
+    out. The picker is the same list for everybody: read it once and every
+    name on next week's board can be checked against it days early, while
+    there is still time for somebody to do something about it.
+    """
+    from automations.b2b_dispositions.capture import capture_rqst
+    from automations.headshots.ov_upload import VIEW_PROGRESS_P
+    rqst = capture_rqst(page)
+    page.set_default_navigation_timeout(90000)
+    page.goto(f"https://v2.ownerville.com/index.cfm?p={VIEW_PROGRESS_P}"
+              f"&rqst={rqst}", wait_until="domcontentloaded")
+    try:
+        page.wait_for_load_state("networkidle", timeout=60000)
+    except Exception:                                       # noqa: BLE001
+        pass
+    _select_campaign(page, config.ADD_CAMPAIGN, verbose=verbose)
+    _click_any(page, "Add Sales Rep", page=page)
+    modal = page.locator("div[role='dialog'], .modal:visible").filter(
+        has_text="Add Sales Rep").first
+    modal.wait_for(state="visible", timeout=20000)
+    picker = modal.locator("select:visible").first
+    picker.wait_for(state="visible", timeout=15000)
+    opts = [o.strip() for o in picker.locator("option").all_inner_texts()
+            if o.strip()]
+    try:
+        page.keyboard.press("Escape")       # leave the page as we found it
+    except Exception:                       # noqa: BLE001
+        pass
+    if verbose:
+        print(f"  Add Sales Rep offers {len(opts)} employee(s)")
+    return opts
+
+
 def _select_person(picker, name: str, *, employee_id: str | None = None) -> None:
     """Pick the employee by the closest option label, or by employee id.
 

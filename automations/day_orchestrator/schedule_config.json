@@ -9685,6 +9685,27 @@
       },
       "priority": "P3"
     },
+    "digi_docs_preflight": {
+      "on_scheduler": true,
+      "_note": "PRE-FLIGHT for the Digi Docs cohort (Megan 2026-09-14: 'we need to be able to fully send to everyone on time for next week'). On 2026-09-14 fifteen of forty-eight new starts were not in OwnerVille's employee directory, and nobody knew until the day: the add pass runs at 11:00 and each send goes thirty minutes before that person's own start, so the first anyone heard was a refusal half an hour before somebody walked in. The office then added people by hand against the clock, and the send tick stops at 4:00pm, so late adds got nothing. The chart is written days ahead and the Add Sales Rep picker answers the whole cohort in ONE read, so this asks on FRIDAY what we used to find out on Monday -- and again MONDAY 4am, which still leaves the office four hours before the first 12:30 send instead of thirty minutes. READ-ONLY: no adds, no sends, no Sheet writes; it cannot mail anybody. Silent when everyone is ready -- a weekly 'all fine' is the blank board that teaches people to stop reading the channel.",
+      "machine": "Lucy 3",
+      "display_name": "Digi Docs — pre-flight (who is not in OwnerVille yet)",
+      "source_type": "browser",
+      "data_sources": [],
+      "command": [
+        "automations.digi_docs.preflight"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": [
+          4,
+          0
+        ]
+      },
+      "priority": "P2"
+    },
     "digi_docs_campaign_probe": {
       "on_scheduler": false,
       "_off_scheduler_note": "READ-ONLY proof that the add path can select RES-AT&T on the live page (Megan 2026-08-31: 'people will only get res at&t - no water or primo?'). The campaign fix was unproven and the usual proofs do not reach it: a DRY add returns 'WOULD add' from find_rep and never gets as far as choosing a campaign, and a LIVE add would prove it by adding a real person, which is not a test. 'found X under RES-AT&T' in the logs is find_rep LOCATING people re-added by hand and says nothing about what our add would pick. So this opens View Progress and runs the real _select_campaign against the real dropdown, printing every option and which one it landed on -- the whole risk being that the label carries an ampersand and there are lookalikes. Selects a dropdown value and reads the page: adds nobody, sends nothing, touches no Sheet. weekdays [] so the batch never runs it.",
