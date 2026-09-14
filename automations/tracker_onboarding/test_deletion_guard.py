@@ -211,6 +211,31 @@ class TrackerRegenerationKeepsHandNotes(unittest.TestCase):
         self.assertEqual(after[0]["trackers"], ["nds", "vzftr"])
         self.assertEqual(_changes(before, after)["deleted"], [])
 
+    def test_note_comes_back_from_head_when_the_tree_already_lost_it(self):
+        """The mini's tree had already dropped the note at 03:15; the merge
+        must recover it from the committed file, not only from the tree."""
+        import tempfile
+        import pathlib
+        from types import SimpleNamespace
+        from unittest import mock
+        from automations.tracker_onboarding import apply as TA
+
+        head = {"key": "joseph", "trackers": ["nds"], "_note": "by EMAIL"}
+        tree = [{"key": "joseph", "trackers": ["nds"]}]
+        regenerated = {"key": "joseph", "trackers": ["nds"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp) / "onboarded_trackers.json"
+            p.write_text(json.dumps(tree))
+            with mock.patch.object(TA, "ONBOARDED_JSON", p), \
+                    mock.patch.object(TA, "REPO_ROOT", pathlib.Path(tmp)), \
+                    mock.patch.object(TA, "_committed_rows",
+                                      return_value={"joseph": head}):
+                TA._merge_json([(SimpleNamespace(key="joseph"), [regenerated])],
+                               write=True)
+            after = json.loads(p.read_text())
+        self.assertEqual(after[0]["_note"], "by EMAIL")
+        self.assertEqual(_changes([head], after)["deleted"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

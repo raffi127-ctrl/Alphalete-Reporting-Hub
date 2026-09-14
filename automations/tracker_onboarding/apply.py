@@ -86,11 +86,30 @@ def plan() -> "List[dict]":
     return out
 
 
+def _committed_rows() -> "Dict[str, dict]":
+    """{key: row} from the COMMITTED onboarded_trackers.json (git HEAD), or {}.
+
+    The working-tree copy can already have lost a hand note: on 2026-09-14 the
+    mini's 03:15 run wrote joseph without `_note`, and `lucy update` re-applies
+    that edit from its autostash, so the tree alone can never bring it back."""
+    import subprocess
+    try:
+        rel = ONBOARDED_JSON.relative_to(REPO_ROOT).as_posix()
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), "show", f"HEAD:{rel}"],
+                           capture_output=True, text=True, timeout=30)
+        if p.returncode != 0:
+            return {}
+        return {r["key"]: r for r in json.loads(p.stdout)}
+    except Exception:
+        return {}
+
+
 def _merge_json(recs_rows: "List[tuple]", write: bool) -> str:
     """Merge each office's row set, purging stale per-channel pseudo-rows
     (key2, key3, …) left behind when an office goes back to identical boards
     in every channel (or drops a channel)."""
     import re
+    committed = _committed_rows()
     existing: Dict[str, dict] = {}
     if ONBOARDED_JSON.exists():
         try:
@@ -114,9 +133,12 @@ def _merge_json(recs_rows: "List[tuple]", write: bool) -> str:
             # for them, so a plain overwrite erased joseph._note (hand-wired
             # 2026-09-13) and the auto-commit deletion guard blocked both passes
             # on 2026-09-14. Everything the form DOES own still overwrites.
-            prior = existing.get(r["key"]) or {}
-            kept = {k: v for k, v in prior.items()
-                    if k.startswith("_") and k not in r}
+            # Tree first, then the committed row (see _committed_rows).
+            kept = {}
+            for src in (committed.get(r["key"]) or {},
+                        existing.get(r["key"]) or {}):
+                kept.update({k: v for k, v in src.items()
+                             if k.startswith("_") and k not in r})
             existing[r["key"]] = {**r, **kept}
     if write:
         ONBOARDED_JSON.parent.mkdir(parents=True, exist_ok=True)
