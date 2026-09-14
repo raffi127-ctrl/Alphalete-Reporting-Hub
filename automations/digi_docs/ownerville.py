@@ -394,7 +394,25 @@ def _select_person(picker, name: str, *, employee_id: str | None = None) -> None
     hits = [o for o in options
             if last and last in o.lower() and (not first4 or first4 in o.lower())]
     if not hits:
-        raise Refused(f"{name}: not in the Add Sales Rep employee list")
+        # SAY WHAT THE PAGE ACTUALLY OFFERED (2026-09-14). This line has two
+        # opposite meanings -- already on the campaign, so OV stops offering
+        # them, or not an employee at all -- and for fifteen people in one
+        # morning it could not tell Raf's office which. The option COUNT splits
+        # it on sight: 0 means the picker never loaded and nothing about these
+        # people is known; a few hundred means the directory is there and this
+        # name is not in it. The near-misses split it further, because the
+        # match needs the surname AND the first four letters of the first name,
+        # so Billy/William, Cortney/Courtney, Le'derius/Lederius and
+        # Quinones/Quiñones all miss in silence. A spelling mismatch belongs in
+        # the ICD Aliases sheet, not in a per-report patch -- but only if the
+        # refusal says enough to recognise one.
+        import difflib
+        near = difflib.get_close_matches(name, options, n=3, cutoff=0.55)
+        if not near and last:
+            near = [o for o in options if last in o.lower()][:3]
+        hint = (" — closest: " + ", ".join(repr(o) for o in near)) if near else ""
+        raise Refused(f"{name}: not in the Add Sales Rep employee list "
+                      f"(saw {len(options)} option(s)){hint}")
     if len(hits) > 1:
         raise Refused(f"{name}: {len(hits)} employees match ({hits[:3]}) — "
                       "refusing to guess. Re-run scoped with the employee id "

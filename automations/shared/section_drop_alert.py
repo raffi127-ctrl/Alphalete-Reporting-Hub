@@ -419,6 +419,41 @@ _KINDS = {
         "tail": "Nothing to re-run and nothing is missing: the alert clears on "
                 "the next run once the board is corrected.",
     },
+    # A PERSON the run could not process (kind 'blocked_person' — digi_docs
+    # today). Added 2026-09-14.
+    #
+    # WHAT WENT WRONG. digi_docs filed its per-person refusals as 'finding',
+    # and the SHAPE was right: the run worked, and what it turned up is work
+    # for a human, not a re-run. Every other word of 'finding' is about the
+    # Vantura sales board. So fifteen new starts who were not in OwnerVille
+    # went to #rafs-office-recruiting-11280 as "board data-quality findings",
+    # told the office to go fix "Roll Call status, Stations formula, …" — a
+    # board with nothing to do with new starts — and closed with "nothing is
+    # missing", on a morning when fifteen people were missing and not one of
+    # them had their onboarding documents.
+    #
+    # Same shape as a finding, different subject. A finding says A BOARD
+    # contradicts itself; this says A PERSON did not get what the run exists to
+    # give them. The second sentence has to be true of people, so it gets its
+    # own wording instead of a fourth false sentence in someone else's.
+    #
+    # The note is NOT skipped here (unlike 'finding', whose note re-lists the
+    # same bullets): digi_docs's note carries the one thing a reader must not
+    # get wrong — generating a bundle IS the send, so a blind re-run is not the
+    # harmless retry it looks like.
+    "blocked_person": {
+        "what": "blocked new start",
+        "headline": "🚫 *{report_id}* could not process {n} {what}{s} — {tail}",
+        "tail_headline": "the run finished; these names did not.",
+        "label": "Blocked",
+        "bullets": True,
+        "see_thread": "Named in thread.",
+        "detail_header": "*The {n} {what}{s}, and what stopped each one:*",
+        "fix": "each name carries its own reason — work them by hand. "
+               "Re-running `{report_id}` does not clear them.",
+        "tail": "Nobody on this list was processed, and nothing picks them up "
+                "on its own.",
+    },
     # ONE ICD with no value on a run that filled EVERYTHING ELSE (kind
     # 'unfilled_icd' — captainship_cancel_rate today). Nothing dropped, nothing
     # is broken: every tab filled, every other owner filled, and one owner
@@ -604,7 +639,8 @@ def _incident_key(report_id: str, kind: str) -> str:
     once from each layer. Both nothing-failed kinds belong to the finding
     family."""
     return "{}-{}".format(
-        "finding" if kind in ("finding", "unfilled_icd") else "drop", report_id)
+        "finding" if kind in ("finding", "unfilled_icd", "blocked_person")
+        else "drop", report_id)
 
 
 def resolved(report_id: str, *, dry_run: bool = False) -> bool:

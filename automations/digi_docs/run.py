@@ -606,10 +606,18 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
     # bundle IS the send, there is no unsend, and a re-run to chase one missing
     # name would walk the click-path for everyone again.
     #
-    # `kind='finding'` is the existing shape for exactly this — "it worked and
-    # it found things" — and run_manifest.outcome() resolves it to orange
-    # 'partial', never red, so the card still refuses to read green while a
-    # name is outstanding. [[reference_findings_are_not_failures]]
+    # `kind='blocked_person'` is that shape — "it worked and it found work for
+    # a human" — and run_manifest.outcome() resolves it to orange 'partial',
+    # never red, so the card still refuses to read green while a name is
+    # outstanding. [[reference_findings_are_not_failures]]
+    #
+    # IT USED TO SAY `finding` (until 2026-09-14). The shape was right and the
+    # WORDS were somebody else's: 'finding' is worded for the Vantura board
+    # audit, so fifteen new starts missing from OwnerVille reached Raf's office
+    # as "15 board data-quality findings", with a fix line pointing at "Roll
+    # Call status, Stations formula, …" and a closing "nothing is missing" —
+    # three sentences about a board, on a morning when fifteen people had no
+    # onboarding documents.
     #
     # A `fatal` is untouched: the run really did break, red is right, and
     # re-running it IS the fix.
@@ -617,7 +625,8 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
         try:
             from automations.shared import run_manifest as _rm
             _rm.write_manifest(
-                "digi_docs", failed=list(refused), kind="finding", ok=False,
+                "digi_docs", failed=list(refused), kind="blocked_person",
+                ok=False,
                 succeeded=[n for n, _m, _t in done] + list(added),
                 note="Per-person items needing a human; the run itself was "
                      "fine. Do NOT re-run to chase these — generating a "
