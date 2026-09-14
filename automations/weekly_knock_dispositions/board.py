@@ -112,12 +112,16 @@ COL_SAT_CLOCKED = "Sat Clocked In"
 # 4,511 doors per rep for a week. Both readings are gone now: neither could put
 # a number on a rep row, which is what the column is for.)
 #
-# So: one rep's own doors over the days in the span, filled on EVERY row. The
-# divisor is the SPAN, not the days that rep actually knocked — a rep who
-# worked two days reads low here for the same reason they read low in Avg Talk
-# To's / Day, and the two can be read against each other. On a summary row it
-# is the ICD's doors over the span over its reps, the same per-rep rule every
-# other Avg cell on that row follows.
+# So: one rep's own doors per day, filled on EVERY row.
+#
+# DIVISOR = THE DAYS THE REP ACTUALLY KNOCKED (Raf 2026-09-14, replying to his
+# 9/12 captainship email: "my average knocks per day seem low for Monday
+# through Friday … every day before it showed over 100"). It used to be the
+# fixed span, so a rep who worked two days of five had three days of 0 doors
+# averaged in, and the summary row printed 82.61 for a week whose five dailies
+# all read over 100. A day counts when the rep cleared the daily bar (over 20
+# doors), the same rule the daily boards count heads by, so the summary row is
+# the ICD's Mon–Fri doors over its rep-days knocked.
 #
 # MON–FRI, over 5 (Raf 2026-09-13, Loom "Adjusting Metrics for Weekdays and
 # Saturday"): "can we change this to be Monday through Friday?". Saturday is a
@@ -411,16 +415,12 @@ def is_knocking(rec: dict) -> bool:
     daily = rec.get(K_DAILY_KNOCKS)
     if not isinstance(daily, (list, tuple)) or not daily:
         return False
-    # MON–FRI, over 5, following COL_DOORS_PER_DAY (Raf 2026-09-13). The whole
-    # reason this test is an average is that the reader can CHECK it against
-    # the doors column on the very next cell — so when that column moved to
-    # Mon–Fri, this had to move with it or the check stops working. It raises
-    # the counts a little: a rep who was carrying a weak Saturday is no longer
-    # penalised for it here either.
-    mf = _monfri(rec, K_DAILY_KNOCKS)
-    if mf is None:
-        return False
-    return (mf / WEEKDAYS) >= MIN_KNOCKS_PER_DAY
+    # Follows COL_DOORS_PER_DAY, so the reader can still CHECK it against the
+    # doors cell beside it. Since 2026-09-14 that column divides by the
+    # weekdays the rep actually knocked (each one already 21+ doors), so its
+    # average clears the bar exactly when there is at least one such day.
+    days = _knocked_weekdays(rec)
+    return bool(days)
 
 
 def _gaps(rec: dict):
@@ -473,13 +473,26 @@ def _pct(part, whole) -> str:
     return f"{part / whole * 100:.1f}%" if whole else ""
 
 
+def _knocked_weekdays(rec: dict) -> int | None:
+    """How many Mon–Fri days this rep actually KNOCKED — cleared the daily
+    doors bar (MIN_KNOCKS_PER_DAY, the same "over 20" the daily boards count a
+    rep by). None when the pull carried no per-day doors for them."""
+    daily = rec.get(K_DAILY_KNOCKS)
+    if not isinstance(daily, (list, tuple)):
+        return None
+    return sum(1 for v in daily[:WEEKDAYS]
+               if int(v or 0) >= MIN_KNOCKS_PER_DAY)
+
+
 def _doors_per_day(rec: dict) -> str:
-    """One rep's own doors per day — their MON–FRI total over 5 (Raf
-    2026-09-13). Blank when the pull carried no door counts for them (a
-    pre-2026-08-30 cached row, or a gaps-only office), never a 0 they
-    didn't earn."""
+    """One rep's own doors per day — their MON–FRI doors over the weekdays
+    they actually knocked (Raf 2026-09-14). Blank when the pull carried no
+    door counts for them (a pre-2026-08-30 cached row, or a gaps-only office),
+    or when they never cleared the bar on a weekday — nothing to divide by is
+    not a zero."""
     mf = _monfri(rec, K_DAILY_KNOCKS)
-    return "" if mf is None else _num(mf / WEEKDAYS)
+    days = _knocked_weekdays(rec)
+    return "" if mf is None or not days else _num(mf / days)
 
 
 def _sat_cell(rec: dict, key: str) -> str:
@@ -738,6 +751,7 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
     _door_reps = [r for r in ov_rows
                   if _monfri(r, K_DAILY_KNOCKS) is not None]
     _tot_doors = sum(_monfri(r, K_DAILY_KNOCKS) for r in _door_reps)
+    _knock_days = sum(_knocked_weekdays(r) or 0 for r in _door_reps)
     # Saturday's own doors and talk-to's, over the reps who CLOCKED IN that
     # day only (Raf 2026-09-13: "only the ones that clocked in on Saturday").
     # Averaging in the reps who never showed up reported the office's Saturday
@@ -779,8 +793,12 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
         ("" if not _door_reps else str(_tot_doors)),
         # Per rep, not office-level — the same rule every Avg column on this
         # row follows (Megan 2026-08-22: a sum in an "Avg / Day" cell misreads).
-        # Over WEEKDAYS now, matching the header (Raf 2026-09-13).
-        (_num(_tot_doors / WEEKDAYS / len(_door_reps)) if _door_reps else ""),
+        # Over the rep-DAYS actually knocked (Raf 2026-09-14: the weekly read
+        # lower than every one of his dailies). Each daily board divides its
+        # doors by the reps over 20 that day, so summing both halves across
+        # Mon–Fri makes this cell the same average his five dailies showed —
+        # dividing by 5 x every rep counted a missed day as a day of 0 doors.
+        (_num(_tot_doors / _knock_days) if _knock_days else ""),
         str(tot_talk),
         # Mon–Sat over Mon–Sat: both halves of the ratio are the same span.
         (_pct(tot_talk, _tot_ms_doors) if _ms_door_reps else ""),

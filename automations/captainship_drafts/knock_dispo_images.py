@@ -647,10 +647,9 @@ def daily_summary_row(label: str, rows: list,
         # four cells to the right, and the very count printed two cells to the
         # LEFT. One divisor per row, in plain sight: a third per-rep column on
         # its own denominator is how a reader stops being able to check the
-        # arithmetic. (The weekly's totals row divides by every rep with door
-        # data instead; on a WEEK the bar is a 6-day average and few clear it,
-        # on ONE DAY it is 21 doors and nearly everyone who worked does, so the
-        # two land in the same place without breaking this board's rule.)
+        # arithmetic. (The weekly's Mon–Fri Avg Doors / Day follows this same
+        # rule summed over the week — its doors over the rep-days over 20 — so
+        # it reads as the average of these five dailies, Raf 2026-09-14.)
         # Blank, never 0, when nobody cleared the bar.
         (f"{total_knocks / knocking:.1f}" if knocking else ""),
         str(talk_to),
