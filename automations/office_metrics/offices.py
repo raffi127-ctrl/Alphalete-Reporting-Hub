@@ -342,6 +342,25 @@ NDS_OFFICES: set = {"isaiah", "drew"}
 # the sheet and wouldn't otherwise carry this field). [[project_trang_fresh_success]]
 CROSS_WS_TOKEN_FILES: dict = {"trang": "slack-token-freshsuccess"}
 
+# EXTRA metrics channels an office posts into, ON TOP of whatever its onboarding
+# record says. Office key -> [{"channel_id", "channel_name"}]. Committed here for
+# the same reason CROSS_WS_TOKEN_FILES is: onboard_apply REGENERATES
+# onboarded_offices.json from the onboarding sheet (apply._row), so a channel
+# added after the office was onboarded would be wiped by the next --write.
+#
+# An extra channel gets the SAME sections as the office's primary thread — the
+# ask is "post the metrics somewhere else too", not "post a different report" —
+# so the runner fans out one identical thread per channel.
+#
+# trang (Megan 2026-09-14): Trang wants the daily metrics in #freshsuccess-team
+# (C07QS80KJL8) as well as #freshsuccess-all-leaders. Same FRESH SUCCESS
+# workspace, so the same FS bot token routes both; the bot is already a member.
+# [[project_trang_fresh_success]]
+EXTRA_CHANNEL_PLANS: dict = {
+    "trang": [{"channel_id": "C07QS80KJL8",
+               "channel_name": "#freshsuccess-team"}],
+}
+
 # Each office's OWN timezone, keyed by office key. Committed here (like
 # NDS_OFFICES / CROSS_WS_TOKEN_FILES) so it survives an onboard_apply
 # re-materialize, which regenerates onboarded_offices.json from the sheet and
@@ -459,6 +478,29 @@ def _merge_onboarded() -> None:
                            "channel_name": p.get("channel_name", ""),
                            "slugs": p.get("report_keys") or p.get("slugs") or [],
                            "header_label": p.get("header_label", "")})
+        # EXTRA_CHANNEL_PLANS channels join the fan-out with the SAME sections
+        # the office already posts. Seed the primary plan first when the row has
+        # none, or a one-plan office would come out with fan-out OFF (len == 1)
+        # and the extra channel would silently get nothing.
+        _extra = EXTRA_CHANNEL_PLANS.get(key) or []
+        if _ok and _extra:
+            _base_slugs = (_plans[0]["slugs"] if _plans
+                           else list(r.get("enrolled_reports") or []))
+            if not _plans and (r.get("channel_id") or "").strip():
+                _plans.append({"channel_id": r["channel_id"].strip(),
+                               "channel_name": r.get("channel_name", ""),
+                               "slugs": _base_slugs,
+                               "header_label": r.get("header_label", "")})
+            _have = {p["channel_id"] for p in _plans}
+            for _x in _extra:
+                _xid = (_x.get("channel_id") or "").strip()
+                if _xid and _xid not in _have:
+                    _plans.append({"channel_id": _xid,
+                                   "channel_name": _x.get("channel_name", ""),
+                                   "slugs": list(_x.get("report_keys")
+                                                 or _base_slugs),
+                                   "header_label": _x.get("header_label", "")})
+                    _have.add(_xid)
         if _ok and len(_plans) > 1:
             kw["channel_plans"] = tuple(_plans)
         try:

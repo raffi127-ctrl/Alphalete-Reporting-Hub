@@ -9413,7 +9413,7 @@
     "trang_metrics": {
       "order": 35,
       "on_scheduler": true,
-      "display_name": "trang's Daily Metrics (#freshsuccess-all-leaders)",
+      "display_name": "trang's Daily Metrics (#freshsuccess-all-leaders + #freshsuccess-team)",
       "source_type": "tableau",
       "data_sources": [
         "tableau:order_log"

@@ -159,6 +159,33 @@ def _merge_onboarded_trackers() -> None:
 
 _merge_onboarded_trackers()
 
+# --- Extra channels bolted onto an onboarded org -----------------------------
+# org key -> extra channel id(s) that get the SAME thread as the org's own
+# channel. Lives HERE and not in onboarded_trackers.json for the same reason
+# PAUSED_ORGS does: tracker_onboarding.apply rebuilds every row of that file from
+# the Sheet, so a channel hand-added there is wiped by the next --write.
+#
+# trang (Megan 2026-09-14): Trang wants the country trackers in
+# #freshsuccess-team (C07QS80KJL8) alongside #freshsuccess-all-leaders. Same
+# FRESH SUCCESS workspace, so the same FS bot token reaches both, and post_all
+# already skips a channel that has today's images — so a re-run fills only the
+# channel that is missing them. [[project_trang_fresh_success]]
+EXTRA_ORG_CHANNELS: dict[str, list[str]] = {
+    "trang": ["C07QS80KJL8"],
+}
+EXTRA_CHANNEL_LABELS: dict[str, str] = {
+    "C07QS80KJL8": "#freshsuccess-team",
+}
+for _xorg, _xcids in EXTRA_ORG_CHANNELS.items():
+    if _xorg not in ORG_CHANNELS:
+        continue                      # email org, or not onboarded — nothing to extend
+    for _xcid in _xcids:
+        if _xcid and _xcid not in ORG_CHANNELS[_xorg]:
+            ORG_CHANNELS[_xorg].append(_xcid)
+            _xlabel = EXTRA_CHANNEL_LABELS.get(_xcid, _xcid)
+            if _xlabel not in ORG_LABEL.get(_xorg, ""):
+                ORG_LABEL[_xorg] = f"{ORG_LABEL.get(_xorg, _xorg)} + {_xlabel}"
+
 # --- Paused orgs -------------------------------------------------------------
 # A channel we deliberately do NOT post to right now. This is NOT a failure and
 # must not read like one: while an org is here the run never loops it, so it
