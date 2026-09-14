@@ -291,9 +291,33 @@ _CONTENT_BOX_JS = r"""
   let b = null;
   if (kind === 'todays_activity') {
     // The rep LIST only (Megan wants it tight — start at the first rep, drop the
-    // "Show Active Reps / Search" bar). Find the panel via the search box for
-    // left/right/bottom, then set the top to just below the search input.
-    let inp = document.querySelector(
+    // "Show Active Reps" bar). Anchor on that bar's own text: OwnerVille dropped
+    // the rep search box around 2026-09-12 (the bar now reads "Show Active Reps
+    // Only · Knocked · Name"), and the input anchor below measured some other
+    // element — the crop cut the names off (Carlos 9/14).
+    const sa = tight('Show Active Reps');
+    if (sa) {
+      let el = sa, panel = null;
+      for (let i=0;i<8 && el.parentElement;i++){ el = el.parentElement;
+        const r = el.getBoundingClientRect();
+        if (r.height > 300 && r.width > 180 && r.width < 760) { panel = el; break; } }
+      if (panel) {
+        const pr = panel.getBoundingClientRect();
+        const sr = sa.getBoundingClientRect();
+        const badges = [...panel.querySelectorAll('*')].filter(e => {
+          const t = (e.innerText || '').trim();
+          const r = e.getBoundingClientRect();
+          return /^\d+(\s*\/\s*\d+)?$/.test(t) && r.top > sr.bottom + 2
+                 && r.width < 130 && r.height > 10 && r.height < 56; });
+        const firstTop = badges.length
+          ? Math.min(...badges.map(e => e.getBoundingClientRect().top)) - 10
+          : sr.bottom + 8;
+        b = { left: pr.left, top: firstTop, right: pr.right, bottom: pr.bottom,
+              anchor: 'show-active' };
+      }
+    }
+    // Old anchor (the rep search box), kept only as a fallback.
+    let inp = b ? null : document.querySelector(
       'input[placeholder*="owner" i], input[placeholder*="rep" i], input[type="search"]');
     if (inp) {
       let el = inp, panel = null;
@@ -314,7 +338,8 @@ _CONTENT_BOX_JS = r"""
       const firstTop = badges.length
         ? Math.min(...badges.map(e => e.getBoundingClientRect().top)) - 10
         : ir.bottom + 8;
-      b = { left: pr.left, top: firstTop, right: pr.right, bottom: pr.bottom };
+      b = { left: pr.left, top: firstTop, right: pr.right, bottom: pr.bottom,
+            anchor: 'search' };
     }
   } else if (kind === 'time_tracker') {
     // JUST the "Reps Over 15 Minute Gap" card (Megan's blue box, 7/29) — not the
@@ -350,7 +375,7 @@ _CONTENT_BOX_JS = r"""
   }
   if (!b) return null;
   return { left:b.left, top:b.top, right:b.right, bottom:b.bottom,
-           innerWidth: window.innerWidth };
+           innerWidth: window.innerWidth, anchor: b.anchor || '' };
 }
 """
 
@@ -420,6 +445,12 @@ def _shoot(page, out_path: Path, *, kind: str, fixed=None, pad: int = 14,
     out_path.parent.mkdir(parents=True, exist_ok=True)
     dismiss_overlays(page)             # strip any dimming modal/backdrop first
     box = content_box(page, kind)      # measured BEFORE the shot (scrolls to top)
+    if box:
+        # One line per shot, so a bad crop can be diagnosed from the log alone.
+        print(f"  crop {kind}: anchor={box.get('anchor') or '-'} "
+              f"css=[{box['left']:.0f},{box['top']:.0f} -> "
+              f"{box['right']:.0f},{box['bottom']:.0f}] "
+              f"innerWidth={box.get('innerWidth')}", flush=True)
     full = out_path.with_name(out_path.stem + "_full.png")
     page.screenshot(path=str(full), full_page=True)
     how = "full"
