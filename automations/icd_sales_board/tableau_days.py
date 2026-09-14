@@ -435,13 +435,42 @@ def stored_rep_days(owner: str, sheet_id: str = SHEET_ID) -> dict:
     return dict(out)
 
 
-def backfill(week_ending: dt.date, out_dir=Path("output"), log=print) -> int:
+# HOW FAR BACK THE PIN CAN BE TRUSTED. One week. Pinning two and three weeks
+# back (2026-09-13) returned something that was NOT the requested week, and
+# nothing in the download says otherwise — see backfill()'s warning.
+MAX_BACKFILL_WEEKS = 1
+
+
+def backfill(week_ending: dt.date, out_dir=Path("output"),
+             force: bool = False, log=print) -> int:
     """Pull and store ONE past week, office totals and per-rep days.
 
-    The board's LAST WEEK block had nothing to show because the pulls only
-    began this week — every office's history starts where the scraping
-    started, not where the selling did. Both crosstabs are week-pinned, so a
-    past week is the same job with a different date."""
+    REFUSES TO REACH FURTHER BACK THAN ONE WEEK, and that limit is the whole
+    point of this function having a guard.
+
+    The crosstab has WEEKDAY-NAME columns and no dates in it — parse() assigns
+    dates from the week_ending you pass. So if the download is not actually
+    the week that was pinned, every number is stamped with wrong dates and
+    log_*_days replaces good rows with them. There is nothing in the file to
+    catch it with.
+
+    That is not hypothetical: on 2026-09-14 a backfill pinned to 09-06 and
+    08-30 wrote numbers that inflated Raf's settled week from 343 apps to
+    518 — his own board says 365 — and shifted the office series a day. Both
+    tabs had to be cleared and the single verifiable week re-pulled.
+
+    One week back the pin demonstrably holds: it is what the nightly harvest
+    does. Further back it silently does not. `force` exists for somebody who
+    has re-verified the view, and should be used with a number to check
+    against."""
+    if not force:
+        limit = _this_sunday() - dt.timedelta(days=7 * MAX_BACKFILL_WEEKS)
+        if week_ending < limit:
+            log(f"  refusing {week_ending}: more than {MAX_BACKFILL_WEEKS} "
+                f"week(s) back, where the view has returned the WRONG week "
+                f"and there is no date in the file to catch it. Re-verify the "
+                f"pinned view first, then pass force.")
+            return 0
     rows = 0
     try:
         path = pull(week_ending=week_ending, out_dir=out_dir, log=log)
@@ -471,6 +500,9 @@ def main(argv=None) -> int:
                     help="Sunday to pull, YYYY-MM-DD. Default: last week.")
     ap.add_argument("--weeks", type=int, default=1,
                     help="How many weeks back from there, inclusive.")
+    ap.add_argument("--force", action="store_true",
+                    help="Store a week older than the pin is trusted for. "
+                         "Only after re-verifying the view returns it.")
     a = ap.parse_args(argv)
 
     end = (dt.date.fromisoformat(a.week_ending) if a.week_ending
@@ -479,7 +511,7 @@ def main(argv=None) -> int:
     for i in range(max(1, a.weeks)):
         wk = end - dt.timedelta(days=7 * i)
         print(f"[week ending {wk}]", flush=True)
-        total += backfill(wk)
+        total += backfill(wk, force=a.force)
     print(f"done — {total} row(s) stored")
     return 0
 
