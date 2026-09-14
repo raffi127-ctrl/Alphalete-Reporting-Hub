@@ -680,6 +680,10 @@ RECIPIENTS: dict = {
         # exacta del caso Milan/Marcos en la lista de Colten, y la razon por la
         # que un alta o una baja tienen que estar en los DOS lados.
         "ghoushehbusiness@gmail.com",
+        # IN 2026-09-14 (Eve): Fernando Munoz entra a la capitania de Jairo (salio
+        # de la de Colten el 2026-08-31). Mismo caso que Abdallah arriba: va aca
+        # Y en el grupo vivo "Jairo's Captainship", o seed_groups lo saca.
+        "fernandomunoz710@icloud.com",
         "jairoruizpmg@gmail.com", "ferminjustin71@gmail.com",
         "maudmiller4@gmail.com", "nickopereira98@gmail.com",
         "raffi127@gmail.com",
