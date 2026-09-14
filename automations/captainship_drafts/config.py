@@ -38,7 +38,7 @@ import datetime as dt
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from automations.captainship_churn import fill as _cap
 from automations.owners_metrics_churn import fill as _own
@@ -944,9 +944,26 @@ _UNBLOCKED = tuple(c.key for c in CAPTAINS
 #
 # SE SACA DE ACA en cuanto ownerville muestre su grilla — es lo unico que hay
 # que chequear para revertirlo.
-DROP_KNOCK_OWNERS: tuple = (
-    "Francisco Castillo",
-)
+#
+# 2026-09-14: SACADO. probe_knocks "Francisco Castillo" 2026-09-12 en Lucy 3
+# devolvio la grilla con reps (Katie Dominguez 98 / 25, Mathew Contreras,
+# Monserrat Villa Orozco...). Eve: "tenemos acceso a la oficina de francisco
+# castillo pero no se esta generando su knocks report".
+DROP_KNOCK_OWNERS: tuple = ()
+
+# Owners que SI llevan board de knocks en una capitania aunque NO esten en su
+# bloque del Org Sales Board (el roster normal). Se suman al final de
+# owner_names(), asi entran igual al draft de la manana, al mail nocturno y al
+# knocks_access_watch. Sin Office Access todavia, el pull cae como access gap
+# y el owner queda afuera solo (regla de Eve 2026-09-03) — el dia que lo
+# otorgan aparece sin tocar nada.
+#
+# nuri burgos -> rafael, 2026-09-14 (Eve: "agregues los knocks reports de Nuri
+# burgos en la capitania de rafael aunque estrictamente no sea parte de ella").
+# Oficina ownerville 20593 (22 Select Inc), acceso pedido ese dia.
+EXTRA_KNOCK_OWNERS: Dict[str, Tuple[str, ...]] = {
+    "rafael": ("Nuri Burgos",),
+}
 
 BLOCKS: List[Block] = _BLOCKS + (
     [Block("unassigned", "Unassigned (add them to config.BLOCKS)", _UNBLOCKED)]

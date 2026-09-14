@@ -458,6 +458,14 @@ def owner_names(captain_key: str, grid: Optional[List[List[str]]] = None,
             continue
         seen.add(key)
         names.append(name)
+    # Owners boarded with this captainship without being in its block
+    # (config.EXTRA_KNOCK_OWNERS) — Nuri Burgos under Raf, 2026-09-14.
+    from automations.captainship_drafts import config as _cfg
+    for extra in (getattr(_cfg, "EXTRA_KNOCK_OWNERS", {}) or {}).get(captain_key, ()):
+        key = " ".join(str(extra).lower().split())
+        if key and key not in seen:
+            seen.add(key)
+            names.append(extra)
     return drop_terminated(names, is_terminated)
 
 

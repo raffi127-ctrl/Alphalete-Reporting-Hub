@@ -75,6 +75,17 @@ class RostersSkipTerminatedTests(unittest.TestCase):
             "chan", grid=[], is_terminated=_lookup("Eric Martinez")))
         self.assertEqual(got, ["Chan Park", "Carissa Ng"])
 
+    def test_extra_owner_rides_along_after_the_block(self):
+        # Nuri Burgos under Raf, 2026-09-14: not in the captainship's block,
+        # boarded with it anyway — appended once, after the board's own order.
+        from automations.captainship_drafts import config
+        with mock.patch.object(config, "EXTRA_KNOCK_OWNERS",
+                               {"chan": ("Nuri Burgos", "carissa ng")}):
+            got = self._run(lambda: KD.owner_names(
+                "chan", grid=[], is_terminated=_lookup()))
+        self.assertEqual(got, ["Chan Park", "Eric Martinez", "Carissa Ng",
+                               "Nuri Burgos"])
+
     def test_access_watch_leaves_him_out(self):
         from automations.knocks_access_watch import audit as A
         with mock.patch.object(A, "CAPTAINS", ("chan",)):

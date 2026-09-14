@@ -225,6 +225,10 @@ def main() -> int:
     # this week, leaving every prior week blank forever. Tracked here so the fill
     # loop backfills them instead.
     promoted_tabs: set = set()
+    # Promoted tabs whose backfill may only overwrite blank/0 cells (mapping
+    # `replace_zeros_only`) — a wrong office already wrote zeros there, and the
+    # weeks it got right must survive.
+    zeros_only_tabs: set = set()
 
     try:
 
@@ -249,6 +253,8 @@ def main() -> int:
             # above — that's what makes "access granted today" detectable today.
             for p in fill.promote_visible_sales_only(mapping, dry_run=args.dry_run):
                 promoted_tabs.add(p["sheet_tab"])
+                if p.get("replace_zeros_only"):
+                    zeros_only_tabs.add(p["sheet_tab"])
                 log.info("[promoted] %s — AppStream can now see office %s (%s); "
                          "sales_only → confirmed. Backfilling its recruiting "
                          "history this run.",
@@ -467,6 +473,12 @@ def main() -> int:
                 # week-7 read happened at fetch time), so write straight through —
                 # no forward shift.
                 we_sunday_data = dict(week_data)
+                if tab_name in zeros_only_tabs:
+                    we_sunday_data = fill.keep_blank_or_zero_cells(
+                        values, metric_rows, sunday_to_col, we_sunday_data)
+                    log.info("  [%s] replace_zeros_only: %d week(s) still have "
+                             "blank/0 cells to fill", section_label,
+                             len(we_sunday_data))
                 for line in fill.fill_office_section(
                     ws, metric_rows, sunday_to_col, we_sunday_data, args.dry_run, label=section_label
                 ):

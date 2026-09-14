@@ -388,6 +388,13 @@
       "confidence": 1.0
     },
     {
+      "sheet_tab": "Nuri Burgos",
+      "office_id": "20593",
+      "as_owner": "Nuri Burgos",
+      "as_company": "22 Select Inc",
+      "confidence": 1.0
+    },
+    {
       "sheet_tab": "Calvin Ribera (BOX)",
       "office_id": "22162",
       "as_owner": "Calvin Ribera",
@@ -565,8 +572,10 @@
     {
       "sheet_tab": "Christian Esposito",
       "as_owner": "Christian Esposito",
-      "reason": "tab added by Eve 2026-09-01. No AppStream office \u2014 the knocks access sweep classified him as not in the office directory (output/knocks-ownerville-access-2026-08-24.md) and all-offices.json has no match, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Christian Esposito' (Wayne's captainship, fiber), so the OPT + metrics half fills.",
-      "promote_when_visible": true
+      "reason": "tab added by Eve 2026-09-01. No AppStream office \u2014 the knocks access sweep classified him as not in the office directory (output/knocks-ownerville-access-2026-08-24.md) and all-offices.json has no match, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Christian Esposito' (Wayne's captainship, fiber), so the OPT + metrics half fills. 2026-09-14: AppStream shows office 23783 'Resound, Inc. 2nd' under his name, but it has been EMPTY since AS week 8/16 (Eve checked by hand) — his real office is 23038, access requested that day. Promotion is PINNED to 23038 (promote_office_id) so 23783 is never used again, and replace_zeros_only makes the promotion backfill overwrite only the blank/0 cells that 23783 left (Sheet WE 8/16 → 9/13), never the real July data.",
+      "promote_when_visible": true,
+      "promote_office_id": "23038",
+      "replace_zeros_only": true
     },
     {
       "sheet_tab": "Austin Eldredge",

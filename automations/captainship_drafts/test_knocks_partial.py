@@ -747,14 +747,23 @@ class DroppingAnOwnerOnPurpose(unittest.TestCase):
     def test_the_durable_list_applies_with_no_flag_at_all(self):
         """The 06:15 run passes no --drop-owner. If the config list did not
         apply on its own, Castillo's dead board would hold Pat's mail every
-        morning while the hand-runs looked fine."""
-        self.assertIn("francisco castillo", KD.dropped_owners())
+        morning while the hand-runs looked fine.
+
+        Castillo himself left the list 2026-09-14 (his grid renders now), so
+        the mechanism is pinned with a stand-in owner instead of his name."""
+        from unittest import mock
+        from automations.captainship_drafts import config
+        with mock.patch.object(config, "DROP_KNOCK_OWNERS", ("Durable Owner",)):
+            self.assertIn("durable owner", KD.dropped_owners())
 
     def test_an_explicit_flag_does_not_erase_the_durable_list(self):
         """--drop-owner ADDS. A replace here would mean fixing one run by
         quietly breaking the scheduled one."""
-        got = KD.dropped_owners(["Someone Else"])
-        self.assertIn("francisco castillo", got)
+        from unittest import mock
+        from automations.captainship_drafts import config
+        with mock.patch.object(config, "DROP_KNOCK_OWNERS", ("Durable Owner",)):
+            got = KD.dropped_owners(["Someone Else"])
+        self.assertIn("durable owner", got)
         self.assertIn("someone else", got)
 
     def test_env_var_carries_it_without_a_code_change(self):

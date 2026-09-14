@@ -537,13 +537,22 @@ def promote_visible_sales_only(mapping: dict, dry_run: bool = False) -> List[dic
         # as_owner is the name TABLEAU uses, which is often exactly the spelling
         # AppStream will use too ('Amos White Jr.' vs the tab's 'Amos White Jr').
         office = None
-        for cand in (tab, entry.get("as_owner", "")):
-            if not cand:
-                continue
-            found, status, _ = match_tab_to_office(cand, office_index, aliases_map)
-            if status == "ok":
-                office = found
-                break
+        pinned = str(entry.get("promote_office_id") or "").strip()
+        if pinned:
+            # PINNED TO ONE OFFICE NUMBER (Christian Esposito, 2026-09-14): the
+            # name already matches an office that is the WRONG one (23783, empty
+            # since mid-August), so a name match would promote onto it again
+            # every Monday and rewrite zeros. Wait for exactly this office id.
+            office = next((o for offices in office_index.values() for o in offices
+                           if str(o.get("office_id", "")).strip() == pinned), None)
+        else:
+            for cand in (tab, entry.get("as_owner", "")):
+                if not cand:
+                    continue
+                found, status, _ = match_tab_to_office(cand, office_index, aliases_map)
+                if status == "ok":
+                    office = found
+                    break
         if not office:
             continue
         new_entry = {
@@ -561,6 +570,8 @@ def promote_visible_sales_only(mapping: dict, dry_run: bool = False) -> List[dic
         # quietly hand a B2B tab back to Raf's ATT crosstabs.
         if entry.get("opt_source"):
             new_entry["opt_source"] = entry["opt_source"]
+        if entry.get("replace_zeros_only"):
+            new_entry["replace_zeros_only"] = True
         promoted.append(new_entry)
 
     if not promoted:
@@ -823,6 +834,44 @@ def _format_value(metric: str, value) -> str:
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value)
+
+
+def _is_blank_or_zero(cell) -> bool:
+    s = str(cell if cell is not None else "").strip().replace("%", "")
+    if not s:
+        return True
+    try:
+        return float(s.replace(",", "")) == 0
+    except ValueError:
+        return False
+
+
+def keep_blank_or_zero_cells(values: List[List[str]], metric_rows: Dict[str, int],
+                             sunday_to_col: Dict[dt.date, int],
+                             week_data: Dict[dt.date, Dict[str, Optional[float]]]
+                             ) -> Dict[dt.date, Dict[str, Optional[float]]]:
+    """week_data minus every metric whose cell already holds a real number.
+
+    For a promotion with `replace_zeros_only` (Christian Esposito 2026-09-14):
+    the weeks the wrong office wrote as 0 get the right office's numbers, and a
+    week that already has real data is left exactly as it is. Pure."""
+    out: Dict[dt.date, Dict[str, Optional[float]]] = {}
+    for sunday, metrics in week_data.items():
+        col = sunday_to_col.get(sunday)
+        if col is None:
+            continue
+        kept = {}
+        for key, val in metrics.items():
+            row = metric_rows.get(key)
+            if row is None:
+                continue
+            cur = values[row - 1][col - 1] if (len(values) >= row
+                                               and len(values[row - 1]) >= col) else ""
+            if _is_blank_or_zero(cur):
+                kept[key] = val
+        if kept:
+            out[sunday] = kept
+    return out
 
 
 def fill_office_section(
