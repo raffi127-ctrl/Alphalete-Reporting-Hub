@@ -334,6 +334,36 @@ def _cancel(page) -> None:
         pass
 
 
+def _dump_form() -> int:
+    """Print every input on the New Sales Rep form, and stop.
+
+    Guessing field names is what cost the first two live attempts: `phone`
+    seemed obvious and the form does not have it. The page will say what its
+    boxes are called if we ask it, and asking is free — it opens the form,
+    reads, and clicks Cancel.
+    """
+    rqst_page = ovn.session(headless=True)
+    with rqst_page as page:
+        rqst = ovn.open_rep_list(page)
+        _open_form(page, rqst)
+        rows = page.evaluate("""() => [...document.querySelectorAll(
+            'input, select, textarea')]
+            .filter(e => e.offsetParent !== null)
+            .map(e => ({tag: e.tagName.toLowerCase(), type: e.type || '',
+                        name: e.name || '', id: e.id || '',
+                        ph: e.placeholder || '',
+                        label: (document.querySelector(
+                            'label[for="' + e.id + '"]') || {}).innerText || ''
+                       }))""")
+        print(f"\n{len(rows)} visible field(s) on the New Sales Rep form:\n")
+        for r in rows:
+            print("  %-9s %-10s name=%-18s id=%-18s label=%r" % (
+                r["tag"], r["type"], r["name"] or "-", r["id"] or "-",
+                (r["label"] or r["ph"] or "").strip()[:34]))
+        _cancel(page)
+    return 0
+
+
 def main(argv=None) -> int:
     from automations.digi_docs import roster, run as _run
 
@@ -344,7 +374,13 @@ def main(argv=None) -> int:
                     help="one person by name, for the first live proof.")
     ap.add_argument("--date", default="",
                     help="chart date (default: today's chart).")
+    ap.add_argument("--dump-form", action="store_true",
+                    help="open the New Sales Rep form, print every input it "
+                         "has, and stop. Reads only; creates nobody.")
     args = ap.parse_args(argv)
+
+    if args.dump_form:
+        return _dump_form()
 
     from automations.digi_docs.preflight import _parse_date
     ws, values = _run._open_tab(None)
