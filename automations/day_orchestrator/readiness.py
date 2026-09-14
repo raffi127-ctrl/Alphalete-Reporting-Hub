@@ -540,7 +540,9 @@ class ReadinessCache:
         after = probe.get("send_anyway_after") or "09:00"
         try:
             from automations.owner_chat_texts import slack_fetch
-            present, missing = slack_fetch.thread_status(self.target_date)
+            # probe 'trackers' (spec ids): wait only on those — see thread_status
+            present, missing = slack_fetch.thread_status(self.target_date,
+                                                         only=probe.get("trackers"))
         except Exception as e:  # noqa: BLE001
             # The "no thread yet" case is a legitimate NOT-READY, not an error:
             # the Lucy 3 morning post simply hasn't happened. Everything else

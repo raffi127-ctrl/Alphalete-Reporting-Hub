@@ -359,6 +359,27 @@ def pick_tracker(icd: str, tid: str, reading: Optional[dict], prev) -> object:
     return "-"
 
 
+def pick_dual(pick, srcs, prev) -> list:
+    """One value per source for an ICD on TWO boards (Carlos: B2B + BOX). Pure.
+
+    Yesterday's cell is the SUM, so it cannot break a tie on either board by
+    itself — but yesterday's total minus today's reading of the OTHER board is
+    that board's yesterday, near enough for pick_tracker's window. 9/13: B2B read
+    6 (strips) against its band reading, BOX 14, Saturday 30 -> B2B ~16 -> the 6
+    is thrown out. Before this every such tie was '-' (Carlos Thu 9/10, Sun 9/13)."""
+    first = [pick(s, None) for s in srcs]
+    if not isinstance(prev, int):
+        return first
+    out = []
+    for i, s in enumerate(srcs):
+        others = first[:i] + first[i + 1:]
+        if first[i] == "-" and all(isinstance(x, int) for x in others):
+            out.append(pick(s, prev - sum(others)))
+        else:
+            out.append(first[i])
+    return out
+
+
 def retail_values(day: dt.date, icds: List[str], logfn=print) -> Dict[str, object]:
     from automations.org_active_headcount import retail_daily as rd
     try:
@@ -426,17 +447,16 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
     for r, name, camp in empty:
         prev = _num(_c(V, r, dl["days"][day.weekday() - 1])) if day.weekday() else None
         srcs = DUAL.get(name.lower()) or (CAMPAIGN_SOURCE.get(camp),)
-        parts = []
-        for s in srcs:
+
+        def pick(s, p, name=name):
             if s in ("att_country", "nds", "b2b_att_country", "b2b_box"):
-                parts.append(pick_tracker(name, s, (trackers or {}).get(s),
-                                          None if len(srcs) > 1 else prev))
-            elif s == "retail":
-                parts.append((retail or {}).get(name))
-            elif s == "je":
-                parts.append((je or {}).get(name, "-") if day == today - dt.timedelta(days=1) else "-")
-            else:
-                parts.append(None)
+                return pick_tracker(name, s, (trackers or {}).get(s), p)
+            if s == "retail":
+                return (retail or {}).get(name)
+            if s == "je":
+                return (je or {}).get(name, "-") if day == today - dt.timedelta(days=1) else "-"
+            return None
+        parts = pick_dual(pick, srcs, prev) if len(srcs) > 1 else [pick(srcs[0], prev)]
         if any(p is None for p in parts):
             continue                        # a source not there yet: a later run fills it
         v = "-" if any(p == "-" for p in parts) else sum(int(p) for p in parts)

@@ -115,6 +115,20 @@
         "send_anyway_after": "09:00"
       }
     },
+    "slack:headcount_tracker_pngs": {
+      "label": "The 4 Country tracker PNGs the headcount daily reads (Fiber, NDS, B2B AT&T, BOX) — posted in today's #alphalete-sales thread",
+      "_note": "Eve 2026-09-14. Same probe as slack:owner_tracker_pngs, limited to the 4 trackers org_active_headcount_daily opens. The full gate waits for EVERY routed tracker or 09:00: on 9/14 these 4 were in by 06:57 CT but the run only started 09:15, so Sunday was not on the tab at 7:40. These 4 landed 05:30-07:13 CT on 9/11-9/14. Still opens at 09:00 if one is missing; the daily leaves that board's cells empty and the next day's run fills them.",
+      "probe": {
+        "type": "owner_tracker_thread",
+        "trackers": [
+          "att_country",
+          "nds",
+          "b2b_att_country",
+          "b2b_box"
+        ],
+        "send_anyway_after": "09:00"
+      }
+    },
     "slack:org_board_posted": {
       "label": "Org Sales Board \u2014 already posted in #top-leaders-alphalete-org",
       "_note": "What the org board EMAIL waits for since 2026-08-04 (Eve): the draft for review is a picture of the board the whole org has just been shown, so THAT POST is the event that makes it worth reviewing \u2014 'tiene que armarse el draft y enviarse autom\u00e1ticamente luego de postearse en #top-leaders-alphalete-org'. readiness._probe_org_board_posted reads slack_post's OWN once-a-day state file (~/.config/recruiting-report/org_board_last_posted.txt), written only after a real post: no Slack call, no Sheets read, no second source of truth, and the post and the probe run on the same machine. REPLACES 'sheet:org_board_yesterday' (org_board_filled) for this report, which held the draft to a completeness bar the public post itself does not have to clear \u2014 on 2026-08-04 the board posted at 08:33 and the draft had still not reached #revision-emails at 11:00, and nothing said so, because a report that never becomes ready never runs and writes no Hub Activity row. The old source stays declared: it is still the right gate for anything that must not READ a half-filled board. Fails OPEN at 11:30 (before the 12:00 backstop) so a board that never posts cannot also cost the day's email \u2014 the human checkmark is still the thing that mails it.",
@@ -5919,11 +5933,11 @@
       "on_scheduler": true,
       "machine": "Lucy 1",
       "order": 58,
-      "_note": "Eve 2026-09-13: the DAILY run of the 'Org Active Headcount' tab (gid 1529537631, renamed from '... Test 2' that day; the old 'Org Active Headcount Board' is hidden). Every day it (1) rolls the tab when its week is behind the reporting week \u2014 first true on TUESDAY, same as the ORG / Country / All Campaigns boards \u2014 and (2) fills every completed day still empty: Fiber/NDS/B2B/BOX off the Country Tracker PNGs of the NEXT day's #alphalete-sales thread (a post shows the day before), Retail NL off SARA (focus-report count), JE off Productive Rep Count (yesterday only). A day that could not be collected is '-'; a source not posted yet leaves the cell empty for the next run. Waits on slack:owner_tracker_pngs so it never reads a half-posted thread. Runs on Lucy 1: its Slack token is the one that can download the PNGs. LIVE (--apply) since 2026-09-13 \u2014 Eve: 'si, carga el headcount del sabado! Esto tiene que correr ahora todos los dias'.",
+      "_note": "Eve 2026-09-13: the DAILY run of the 'Org Active Headcount' tab (gid 1529537631, renamed from '... Test 2' that day; the old 'Org Active Headcount Board' is hidden). Every day it (1) rolls the tab when its week is behind the reporting week \u2014 first true on TUESDAY, same as the ORG / Country / All Campaigns boards \u2014 and (2) fills every completed day still empty: Fiber/NDS/B2B/BOX off the Country Tracker PNGs of the NEXT day's #alphalete-sales thread (a post shows the day before), Retail NL off SARA (focus-report count), JE off Productive Rep Count (yesterday only). A day that could not be collected is '-'; a source not posted yet leaves the cell empty for the next run. Waits on slack:headcount_tracker_pngs (only ITS 4 trackers, since 2026-09-14 \u2014 the all-trackers gate held it to 09:00) so it never reads a half-posted thread. Runs on Lucy 1: its Slack token is the one that can download the PNGs. LIVE (--apply) since 2026-09-13 \u2014 Eve: 'si, carga el headcount del sabado! Esto tiene que correr ahora todos los dias'.",
       "display_name": "Org Active Headcount - Daily",
       "source_type": "tableau",
       "data_sources": [
-        "slack:owner_tracker_pngs"
+        "slack:headcount_tracker_pngs"
       ],
       "command": [
         "automations.org_active_headcount.daily"

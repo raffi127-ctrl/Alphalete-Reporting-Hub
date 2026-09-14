@@ -82,8 +82,13 @@ def _match_specs(replies, day: dt.date):
     return out
 
 
-def thread_status(day: dt.date) -> Tuple[List[str], List[str]]:
+def thread_status(day: dt.date, only: Optional[List[str]] = None
+                  ) -> Tuple[List[str], List[str]]:
     """(present, missing) tracker titles — READ ONLY, no downloads.
+
+    `only` = tracker spec ids to count; the rest of the thread is ignored. The
+    headcount daily reads 4 of the routed trackers and must not sit until 09:00
+    behind one it never opens (2026-09-14: its 4 were in by 06:57 CT, it ran 09:15).
 
     What day_orchestrator.readiness._probe_owner_tracker_thread calls, so the
     trackers half can WAIT in readiness (STILL_TRYING, no alert, no burnt
@@ -97,6 +102,8 @@ def thread_status(day: dt.date) -> Tuple[List[str], List[str]]:
     _client, _token, _channel, replies = _resolve_thread(day)
     present, missing = [], []
     for spec, fobj in _match_specs(replies, day):
+        if only and spec.get("id") not in only:
+            continue
         title = spec.get("title") or spec.get("id")
         (present if fobj else missing).append(title)
     return present, missing
