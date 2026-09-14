@@ -111,6 +111,21 @@ def main(argv=None) -> int:
                          "string. Only valid with --only.")
     args = ap.parse_args(argv)
 
+    # AN EXPLICIT PHASE BEATS --both (2026-09-14). The Hub and `lucy rerun
+    # digi_docs` carry base_args `--both --live`, and mini_control APPENDS what
+    # you type rather than replacing it — so `lucy rerun digi_docs --add-only`
+    # arrives as `--both --live --add-only`, and `or args.both` downstream
+    # turned the send phase straight back on. Somebody asking for adds only got
+    # a full send, and for this report a send cannot be taken back: generating
+    # a bundle IS the send. Found by using it — an add-only proof generated a
+    # real bundle for a no-show.
+    #
+    # It is resolved HERE, where the arguments are read, and not beside the
+    # do_add/do_send lines that consume them: anything else calling in with a
+    # namespace would inherit the trap.
+    if args.both and (args.add_only or args.send_only):
+        args.both = False
+        print("  (--add-only/--send-only given, so --both is ignored)")
     if not (args.add_only or args.send_only or args.both):
         return preview(args.tab)
     return _phases(args)

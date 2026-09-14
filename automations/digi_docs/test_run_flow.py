@@ -1444,3 +1444,39 @@ class TheAlertSaysHowToRecover(unittest.TestCase):
     def test_a_clean_pass_does_not_explain_a_recovery_nobody_needs(self):
         t = self._text([])
         self.assertNotIn("30 minutes before their start time", t)
+
+
+class AnExplicitPhaseBeatsBoth(unittest.TestCase):
+    """`lucy rerun digi_docs --add-only` must not send.
+
+    2026-09-14. The Hub and the rerun action carry base_args `--both --live`,
+    and mini_control APPENDS what you type rather than replacing it — so
+    `--add-only` arrived as `--both --live --add-only` and `or args.both`
+    switched the send phase back on. An add-only proof generated a real bundle
+    for a no-show, and for this report that cannot be undone: generating a
+    bundle IS the send.
+    """
+
+    def _phases(self, argv):
+        from automations.digi_docs import run as _run
+        seen = {}
+        with mock.patch.object(_run, "_phases",
+                               lambda ns: seen.setdefault("ns", ns)):
+            _run.main(argv)
+        ns = seen["ns"]
+        return (ns.add_only or ns.both, ns.send_only or ns.both)
+
+    def test_add_only_after_both_does_not_send(self):
+        do_add, do_send = self._phases(["--both", "--add-only"])
+        self.assertTrue(do_add)
+        self.assertFalse(do_send, "--add-only must switch the send phase OFF")
+
+    def test_send_only_after_both_does_not_add(self):
+        do_add, do_send = self._phases(["--both", "--send-only"])
+        self.assertFalse(do_add)
+        self.assertTrue(do_send)
+
+    def test_both_on_its_own_still_does_both(self):
+        do_add, do_send = self._phases(["--both"])
+        self.assertTrue(do_add)
+        self.assertTrue(do_send)
