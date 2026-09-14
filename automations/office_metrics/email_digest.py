@@ -136,6 +136,24 @@ def send_for_office(o, *, day: "dt.date | None" = None, dry_run: bool = False,
         return {"ok": False, "skipped": True, "capture_dir": str(d),
                 "reason": f"{len(blocks)} section(s) captured but no board "
                           "image among them — not mailing a blank day"}
+    # RENDERED IS NOT THE SAME AS HAS CONTENT. The guard above only ever caught
+    # a day with no images at all; on 2026-09-14 Joseph's boards all rendered
+    # and every one of them was empty ("no reps with data this period", "No
+    # data available"), so a mail headed "here are today's boards" went to a
+    # client's owner showing nothing. Megan: "this is all empty and looks
+    # horrible." An office whose every board is empty has a SOURCE problem, and
+    # mailing the evidence to the customer is not how they should find out
+    # [[feedback_never_post_blank]].
+    n_img = sum(1 for r in _mec.board_rows(d) if r.get("kind") == "image")
+    n_empty = sum(1 for r in _mec.board_rows(d)
+                  if r.get("kind") == "image" and r.get("empty"))
+    if n_img and n_empty == n_img:
+        return {"ok": False, "skipped": True, "capture_dir": str(d),
+                "empty_boards": n_empty,
+                "reason": f"all {n_empty} board(s) rendered EMPTY — this "
+                          "office's sources have no rows today, so there is "
+                          "nothing to send. Fix the source, then re-send with "
+                          f"--office {o.key} --live --resend-email"}
     res = _mail.send_boards(
         # Built from the parts, not '%B %-d' — the no-pad flag is glibc-only and
         # every report here has to run on Windows too

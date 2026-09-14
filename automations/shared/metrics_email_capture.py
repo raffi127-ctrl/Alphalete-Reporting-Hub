@@ -139,9 +139,28 @@ def record_image(image_path, *, comment: str = "", react_emoji: str = "",
                     "error": f"{type(e).__name__}: {e}"})
         return {"captured": True, "ok": False, "error": str(e)}
     kind = "image" if is_drawable(dest.name) else "file"
-    _append(d, {"kind": kind, "seq": seq, "label": comment,
-                "file": dest.name, "react": react_emoji})
+    row = {"kind": kind, "seq": seq, "label": comment,
+           "file": dest.name, "react": react_emoji}
+    # A board that rendered with no rows says so via a sidecar beside the image
+    # (new_internet_churn.render._mark_empty). Carried into the manifest so the
+    # digest can tell "five boards" from "five EMPTY boards" — the difference
+    # between a day worth mailing and the blank one that reached Joseph's owner
+    # on 2026-09-14 [[feedback_never_post_blank]].
+    if _is_empty_board(src):
+        row["empty"] = True
+    _append(d, row)
     return {"captured": True, "ok": True, "file": str(dest)}
+
+
+EMPTY_SUFFIX = ".empty"
+
+
+def _is_empty_board(src: Path) -> bool:
+    """Did the renderer leave an 'I have no rows' marker beside this image?"""
+    try:
+        return Path(str(src) + EMPTY_SUFFIX).exists()
+    except Exception:                                # noqa: BLE001
+        return False
 
 
 def record_text(text: str, *, react_emoji: str = "") -> dict:

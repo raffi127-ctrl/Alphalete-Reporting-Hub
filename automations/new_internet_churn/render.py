@@ -327,6 +327,29 @@ def _read_section(ws, section: dict, n_weeks: int) -> dict:
     }
 
 
+def _mark_empty(out_path) -> None:
+    """Leave a sidecar saying this board rendered with NO ROWS.
+
+    A sidecar rather than a return value because this function's path runs
+    through several callers and a signature change would touch every one of
+    them; the marker travels with the image instead, and anything that copies
+    or reads the board can ask. `metrics_email_capture.record_image` picks it
+    up so the digest can refuse to mail a day where every board is empty.
+
+    Best-effort: a board that cannot write its marker is still a board, and an
+    unwritable sidecar must never fail a render.
+    """
+    try:
+        from pathlib import Path as _P
+        _P(str(out_path) + EMPTY_SUFFIX).write_text("no rows", encoding="utf-8")
+    except Exception:                                # noqa: BLE001
+        pass
+
+
+# The sidecar's extension. One definition, imported by the capture layer.
+EMPTY_SUFFIX = ".empty"
+
+
 def render_multi_week(
     ws,
     section: dict,
@@ -432,6 +455,12 @@ def render_multi_week(
         d.text((x + 12, y + 4), "(no reps with data this period)",
                fill=(140, 140, 140), font=f11)
         img.save(out_path)
+        # SAY SO, don't just draw it. This board knows it is empty and used to
+        # throw that away — it returned the same path whether it had 40 reps or
+        # none, so every downstream consumer had to guess from a PNG, and none
+        # of them could. On 2026-09-14 that put four blank churn boards in an
+        # email to a client's owner [[feedback_never_post_blank]].
+        _mark_empty(out_path)
         return out_path
 
     # 5. Rep rows

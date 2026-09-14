@@ -408,5 +408,78 @@ class ANonImageBoardIsAttachedNotDrawn(unittest.TestCase):
         self.assertIn("Order Log", html)
 
 
+class RenderedIsNotTheSameAsHasContent(unittest.TestCase):
+    """2026-09-14. Joseph's five boards all rendered and every one was empty —
+    "(no reps with data this period)", "No data available" — and the mail went
+    to the office owner anyway, because the blank-day guard only ever refused a
+    day with NO IMAGES. Megan, seeing it: "this is all empty and looks
+    horrible."
+
+    An office whose every board is empty has a source problem. The customer is
+    the wrong person to learn that from [[feedback_never_post_blank]]."""
+
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp())
+        os.environ["METRICS_EMAIL_DIR"] = str(self.d)
+        from automations.office_metrics import email_digest as D
+        self.D = D
+        self._saved = D.capture_dir
+        D.capture_dir = lambda key, day=None: self.d
+        self.o = Office(key="joseph", report_id="joseph_metrics",
+                        label="Joseph's Local Office", owner="Joseph Logan",
+                        channel_id="", channel_name="", sheet_id="S",
+                        knocks_office="Joseph Logan",
+                        email_to=("joseph@loganlegacygroup.com",))
+
+    def tearDown(self):
+        self.D.capture_dir = self._saved
+        os.environ.pop("METRICS_EMAIL_DIR", None)
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def _board(self, name, empty=False):
+        from automations.shared import metrics_email_capture as mec
+        p = _png(self.d / "src" / name)
+        if empty:
+            Path(str(p) + mec.EMPTY_SUFFIX).write_text("no rows")
+        return mec.record_image(p, comment=name)
+
+    def test_an_empty_board_is_recorded_as_empty(self):
+        from automations.shared import metrics_email_capture as mec
+        mec.record_header("Daily Metrics", sections=["Churn"])
+        self._board("churn.png", empty=True)
+        (row,) = [r for r in mec.entries(self.d) if r["kind"] == "image"]
+        self.assertTrue(row.get("empty"))
+
+    def test_a_board_with_rows_is_not_marked_empty(self):
+        from automations.shared import metrics_email_capture as mec
+        mec.record_header("Daily Metrics", sections=["Churn"])
+        self._board("churn.png")
+        (row,) = [r for r in mec.entries(self.d) if r["kind"] == "image"]
+        self.assertFalse(row.get("empty"))
+
+    def test_a_day_where_every_board_is_empty_is_not_mailed(self):
+        from automations.shared import metrics_email_capture as mec
+        from automations.office_metrics import email_digest as ed
+        mec.record_header("Daily Metrics", sections=["Churn"])
+        for n in ("wl-0-30.png", "wl-30.png", "wl-60.png", "wl-90.png"):
+            self._board(n, empty=True)
+        res = ed.send_for_office(self.o, dry_run=True)
+        self.assertFalse(res["ok"])
+        self.assertTrue(res["skipped"])
+        self.assertEqual(res["empty_boards"], 4)
+        self.assertIn("rendered EMPTY", res["reason"])
+
+    def test_one_board_with_data_is_still_a_day_worth_sending(self):
+        """The guard is ALL-empty, deliberately. A quiet board beside a real one
+        is a normal day, and suppressing it would hide the real one."""
+        from automations.shared import metrics_email_capture as mec
+        from automations.office_metrics import email_digest as ed
+        mec.record_header("Daily Metrics", sections=["Churn", "Knocks"])
+        self._board("wl-0-30.png", empty=True)
+        self._board("knocks.png")
+        res = ed.send_for_office(self.o, dry_run=True)
+        self.assertTrue(res["ok"], "a day with one real board still goes out")
+
+
 if __name__ == "__main__":
     unittest.main()
