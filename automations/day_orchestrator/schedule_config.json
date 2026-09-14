@@ -6864,6 +6864,24 @@
       "depends_on": [],
       "verify": null
     },
+    "ps_week_backfill": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). Backfills ONE tab's weekly sale rows (NI/UG/DTV/NL/headcount/Personal Production) for OLD weeks from the week-pinned PRODUCT SALES crosstab, downloading it HERE because Tableau's SSO goes through ownerville and Windows must not open it. Dry run by default: lucy rerun ps_week_backfill --tab \"Nuri Burgos\" --week 2026-09-06  then add --write. Never overwrites a filled cell. Added 2026-09-14 for Nuri Burgos's new tab.",
+      "display_name": "Focus — sales backfill for an old week (one tab)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report.ps_week_backfill"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "kick_poller": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). Bootstrap: lucy rerun kick_poller restarts the mini-control poller so it reloads its code \u2014 works even when the running poller predates restart_poller/self-reload, because rerun spawns a fresh subprocess. After the poller has self-reload, lucy update alone suffices; keep this for a forced restart.",
