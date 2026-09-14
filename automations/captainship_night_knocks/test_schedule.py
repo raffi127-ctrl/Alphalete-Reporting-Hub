@@ -182,26 +182,19 @@ class SeededTable(unittest.TestCase):
     """What the committed table actually says today — the fact that shapes the
     rollout, so it is asserted rather than remembered."""
 
-    def test_the_pacific_offices_are_starrs(self):
-        # 2026-09-14: the fiber harvest found the first Pacific offices, all in
-        # Starr's captainship — the 11 PM Central wave is real for her only.
-        pac = sorted(i for i, z in Z.ICD_TIMEZONES.items()
-                     if z == "America/Los_Angeles")
-        self.assertEqual(pac, ["JC Pascual", "Juan Botero Berrio",
-                               "Milly Villagrana", "Natalia Gwarda",
-                               "Starr Rodenhurst"],
-                         "a new Pacific office appeared — check its wave")
+    # The table grew from 11 measured offices to every fiber captainship on
+    # 2026-09-14, so these assert what must stay TRUE as it grows, not a list
+    # of names that goes stale with each harvest.
 
-    def test_the_seeded_eastern_offices_are_the_measured_ones(self):
-        # The original four, plus Raf's captainship under the board's
-        # spelling (2026-09-14): same offices, and Joseph Logan + Muhammad
-        # Haque, Michigan.
-        east = sorted(i for i in Z.ICD_TIMEZONES
-                      if Z.ZONE_LABEL[Z.ICD_TIMEZONES[i]] == "Eastern")
-        self.assertEqual(east, ["Aya Al-Khafaji", "Aya Mohamed",
-                                "Hammad Ahmed", "Joseph Logan",
-                                "Muhammad Haque", "Nii Armah", "Nii Tagoe",
-                                "Salik Ahmed", "Salik Mallick"])
+    def test_every_office_lands_in_a_named_wave(self):
+        for icd, zone in Z.ICD_TIMEZONES.items():
+            self.assertIn(zone, Z.ZONE_LABEL, "%s: %s has no wave" % (icd, zone))
+            self.assertIn(zone, Z.ZONE_ABBR, "%s: %s has no abbr" % (icd, zone))
+
+    def test_rafs_own_office_is_placed(self):
+        # The harvest never read it (the master is not impersonated), and it
+        # sat out of his own weekend sample for that reason.
+        self.assertEqual(Z.zone_for("Rafael Hidalgo"), "America/Chicago")
 
 
 if __name__ == "__main__":

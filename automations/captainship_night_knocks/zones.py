@@ -93,7 +93,22 @@ ICD_TIMEZONES: Dict[str, str] = {
     "Milly Villagrana": "America/Los_Angeles",           # Gold River, CA
     "Natalia Gwarda":   "America/Los_Angeles",           # San Leandro, CA
     "Oren Shezaf":      "America/Chicago",               # Kansas City, MO
-    "Starr Rodenhurst": "America/Los_Angeles",           # CA
+    "Starr Rodenhurst": "America/Los_Angeles",           # Fremont, CA
+    # tony
+    "Chris Williams":   "America/Los_Angeles",           # Monterey, CA
+    "German Lopez":     "America/Los_Angeles",           # Canoga Park, CA
+    "Jay Turnage":      "America/Chicago",               # Chicago, IL
+    "Kobe Cireus":      "America/Chicago",               # Austin, TX
+    "Tony Chavez":      "America/Los_Angeles",           # San Diego, CA
+    # sahil
+    "Andre Burton":     "America/New_York",              # Charlotte, NC
+    "Brian Tran":       "America/New_York",              # Cleveland, OH
+    "Marcellus Butler": "America/New_York",              # Raleigh, NC
+    "Sahil Multani":    "America/New_York",              # Raleigh, NC
+    # jess (3 of 6 — the other three are waiting on Office Access)
+    "Jennifer Figueroa": "America/New_York",             # Louisville, KY (split state; Louisville is Eastern)
+    "Mercy Ohiokhai":   "America/Los_Angeles",           # Fremont, CA
+    "Sebastian Gutierrez": "America/Los_Angeles",        # Fresno, CA
 }
 
 # What a wave is CALLED in the email subject and in the log. Keyed by zone so a
