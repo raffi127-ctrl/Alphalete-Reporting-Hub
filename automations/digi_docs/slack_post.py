@@ -333,6 +333,24 @@ def post_add_summary(ready: int, total: int, failed: List[str], *,
     if failed:
         lines.append(f"\n*Could not add* ({len(failed)}):")
         lines += [f"   • {f}" for f in failed]
+        # THE RECOVERY, SAID ONCE (Megan 2026-09-14: "it also needs to say in
+        # the alert, if these get manually added to the onboarding page before
+        # their start time then Lucy will still send them their bundles").
+        #
+        # It is the most useful sentence in the post and the least obvious:
+        # every name above looks like a dead end, and on 9/14 the office spent
+        # the afternoon assuming each hand-add also needed somebody to come
+        # back and re-run something. It does not. `roster.due_now` counts
+        # anyone whose send moment has ARRIVED, so a person added at noon is
+        # picked up by the next tick and sent, with nothing asked of anybody.
+        #
+        # The 4pm stop is part of the same sentence on purpose. Without it this
+        # reads as "any time is fine", and a 4:15 add would silently get
+        # nothing -- which is the one way this promise could become untrue.
+        lines.append(
+            "\n_Add them in OwnerVille before their start time and Lucy still "
+            "sends their bundle on the next pass — nothing to re-run and "
+            "nobody to tell. Sending stops at *4:00pm*._")
         lines.append(_tags())
     body = "\n".join(l for l in lines if l).rstrip()
     if dry_run:

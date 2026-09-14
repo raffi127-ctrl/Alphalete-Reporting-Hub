@@ -1377,3 +1377,40 @@ class TheSymptomIsNeverTheReport(unittest.TestCase):
         self.assertNotIn("not in the Add Sales Rep employee list", line)
         self.assertIn("Add them by hand", line)
         self.assertIn("No documents have gone out", line)
+
+
+class TheAlertSaysHowToRecover(unittest.TestCase):
+    """Megan 2026-09-14: "it also needs to say in the alert, if these get
+    manually added to the onboarding page before their start time then Lucy
+    will still send them their bundles."
+
+    It is the most useful sentence in the post and the least obvious. Every
+    name above it looks like a dead end, and on 9/14 the office worked through
+    the afternoon assuming each hand-add needed somebody to come back and
+    re-run something. It never did: due_now counts anyone whose send moment has
+    ARRIVED, so a person added at noon is picked up by the next tick.
+    """
+
+    def _text(self, failed):
+        from automations.digi_docs import slack_post
+        posted = {}
+        with mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_text_only",
+                        lambda text, **kw: posted.setdefault("t", text)), \
+             mock.patch.object(slack_post, "_thread_ts", lambda _s: "1.23"), \
+             mock.patch.object(slack_post, "_mark_reported", lambda: None):
+            slack_post.post_add_summary(46, 48, failed, dry_run=False)
+        return posted.get("t", "")
+
+    def test_it_promises_the_send_and_names_the_deadline(self):
+        t = self._text(["Billy Garvin could not be created in OwnerVille."])
+        self.assertIn("before their start time", t)
+        self.assertIn("nothing to re-run", t)
+        # Without the cutoff this reads as "any time is fine", and a 4:15 add
+        # would silently get nothing — the one way the promise goes untrue.
+        self.assertIn("4:00pm", t)
+
+    def test_a_clean_pass_does_not_explain_a_recovery_nobody_needs(self):
+        t = self._text([])
+        self.assertNotIn("before their start time", t)
+        self.assertNotIn("4:00pm", t)
