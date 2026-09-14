@@ -205,6 +205,37 @@ class QuietTicks(unittest.TestCase):
         self.assertEqual((n, called), (0, []))
 
 
+class OfficeFailuresReachTheNotice(unittest.TestCase):
+    """Eve 2026-09-14: one office's board failing must still reach Raf and Eve,
+    even though the captainship's email went out without it."""
+
+    def _night(self):
+        data = ST.load(dt.date(1999, 1, 1))   # no such file: a fresh night
+        data = ST.record_sent(data, "chan:America/Chicago:1999-01-01", "<m@x>",
+                              "chan", {"subject": "S", "message_id": "<m@x>",
+                                       "references": ["<m@x>"]})
+        return ST.record_failure(data, captain_key="chan", label="Central",
+                                 reason="Coel Reif — board unavailable "
+                                        "(KnocksPullFailed)", kind="office")
+
+    def test_an_office_failure_is_not_a_wave_failure(self):
+        data = self._night()
+        self.assertEqual(len(ST.office_failures(data)), 1)
+        self.assertEqual(ST.wave_failures(data), [])
+
+    def test_subject_says_the_email_went_but_a_board_is_missing(self):
+        from automations.captainship_night_knocks import run as R
+        self.assertEqual(R.notice_status(self._night(), expected=1),
+                         "sent, 1 office board missing")
+
+    def test_body_names_the_office_to_fix(self):
+        from automations.captainship_night_knocks import run as R
+        html = R.notice_html(dt.date(1999, 1, 1), self._night(), {},
+                             sample=False)
+        self.assertIn("need fixing", html)
+        self.assertIn("Coel Reif", html)
+
+
 class LiveRecipients(unittest.TestCase):
     def test_every_night_captain_gets_email_addresses_not_letters(self):
         from automations.captainship_night_knocks import run as R

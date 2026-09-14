@@ -65,13 +65,26 @@ def record_sent(data: dict, marker: str, message_id: str,
 
 
 def record_failure(data: dict, *, captain_key: str, label: str,
-                   reason: str) -> dict:
+                   reason: str, kind: str = "wave") -> dict:
     """One line per thing that went wrong tonight. This is what the failure
-    notice reads back: it must say WHY, not just that nothing arrived."""
+    notice reads back: it must say WHY, not just that nothing arrived.
+
+    kind="wave"   the whole email for that captain/wave did not go out.
+    kind="office" the email went, but one office's board was missing from it
+                  (Eve 2026-09-14: "necesitamos ser avisados para poder reparar
+                  esa oficina aunque el resto se envíe")."""
     data.setdefault("failures", []).append(
         {"at": _now(), "captain": captain_key, "wave": label,
-         "reason": reason[:600]})
+         "reason": reason[:600], "kind": kind})
     return data
+
+
+def office_failures(data: dict) -> List[Dict[str, str]]:
+    return [f for f in (data.get("failures") or []) if f.get("kind") == "office"]
+
+
+def wave_failures(data: dict) -> List[Dict[str, str]]:
+    return [f for f in (data.get("failures") or []) if f.get("kind") != "office"]
 
 
 def thread_for(data: dict, captain_key: str) -> Optional[dict]:

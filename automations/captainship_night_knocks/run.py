@@ -584,8 +584,14 @@ def tick(now_utc: dt.datetime, *, send: bool, sample: bool,
                 data, captain_key=d.captain_key, label=d.label, reason=reason))
             continue
         thread.remember(mid)
-        ST.save(d.local_date, ST.record_sent(data, d.marker, mid,
-                                             d.captain_key, thread.to_json()))
+        data = ST.record_sent(data, d.marker, mid, d.captain_key,
+                              thread.to_json())
+        # The wave went, but an office whose board could not be drawn is a
+        # thing somebody has to fix — it goes in the 00:45 notice too.
+        for note in notes:
+            data = ST.record_failure(data, captain_key=d.captain_key,
+                                     label=d.label, reason=note, kind="office")
+        ST.save(d.local_date, data)
         sent += 1
     return sent
 
@@ -655,19 +661,30 @@ def notice_html(night: dt.date, data: dict, rosters: Dict[str, List[str]],
                     "read from the Org Sales Board, so no wave could even be "
                     "scheduled.</p>")
 
-    if fails:
-        bits.append("<p><b>What failed</b></p><ul>")
-        for f in fails:
+    wave_fails = ST.wave_failures(data)
+    office_fails = ST.office_failures(data)
+    if wave_fails:
+        bits.append("<p><b>Emails that did not go out</b></p><ul>")
+        for f in wave_fails:
             bits.append("<li>%s — %s wave: %s</li>"
-                        % (f.get("captain"), f.get("wave"), f.get("reason")))
+                        % (captain_display(f.get("captain") or ""),
+                           f.get("wave"), f.get("reason")))
         bits.append("</ul>")
-    elif not sent:
+    if office_fails:
+        bits.append("<p><b>Offices missing from an email that DID go out — "
+                    "these need fixing</b></p><ul>")
+        for f in office_fails:
+            bits.append("<li>%s — %s wave: %s</li>"
+                        % (captain_display(f.get("captain") or ""),
+                           f.get("wave"), f.get("reason")))
+        bits.append("</ul>")
+    if not fails and not sent:
         bits.append("<p>Nothing raised an error — the schedule simply had "
                     "nothing to send, which means no office in the captainship "
                     "had a confirmed timezone (or the harvest never ran).</p>")
 
     bits.append("<p style='color:#777;font-size:12px'>Sent automatically "
-                "because the sample was expected tonight and %s. Next attempt: "
+                "because the email was expected tonight and %s. Next attempt: "
                 "the next knocking night (Mon–Sat), same hours. State file: "
                 "output/night_knocks/state_%s.json</p>"
                 % ("some of it failed" if sent else "nothing arrived",
@@ -676,6 +693,17 @@ def notice_html(night: dt.date, data: dict, rosters: Dict[str, List[str]],
         bits.append("<p style='color:#999;font-size:12px'>This is the sample "
                     "run — it reaches Raf and Eve only.</p>")
     return "".join(bits)
+
+
+def notice_status(data: dict, expected: int) -> str:
+    """The notice's subject tail — what kind of night it was, in three words."""
+    sent = data.get("sent") or {}
+    if not sent:
+        return "not sent"
+    if ST.wave_failures(data) or len(ST.sent_captains(data)) < expected:
+        return "partly sent"
+    n = len(ST.office_failures(data))
+    return "sent, %d office board%s missing" % (n, "" if n == 1 else "s")
 
 
 def notice(now_utc: dt.datetime, *, send: bool, sample: bool,
@@ -703,8 +731,7 @@ def notice(now_utc: dt.datetime, *, send: bool, sample: bool,
     # asked the question (Eve, 2026-09-11).
     to_addrs = mail.assert_allowed(mail.SAMPLE_RECIPIENTS, sample=True)
     day = "%s %d/%d" % (night.strftime("%a"), night.month, night.day)
-    subject = "%s - Daily Knocks - %s" % (
-        day, "not sent" if not sent else "partly sent")
+    subject = "%s - Daily Knocks - %s" % (day, notice_status(data, expected))
     html = notice_html(night, data, rosters, sample=sample)
     if not send:
         logfn("[night-knocks] DRY-RUN notice: %r -> %s"
