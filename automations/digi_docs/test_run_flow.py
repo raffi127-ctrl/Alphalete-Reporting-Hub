@@ -219,8 +219,17 @@ class LateAddsAreAddedNotRefused(_NoNetwork):
 
     def test_still_refuses_when_ownerville_will_not_offer_them(self):
         """OV does not offer a rep already on the campaign, so the add refuses
-        — which is the duplicate-onboarding-email guard. It must surface as a
-        refusal, not be swallowed."""
+        — the duplicate-onboarding-email guard. It must surface, not be
+        swallowed.
+
+        The send tick can CREATE people now (2026-09-14), which could have
+        turned this guard into a duplicate-human machine. It does not, because
+        new_rep.create looks the person up BY EMAIL first and returns "exists"
+        for anybody already in the directory — so the create is a no-op and the
+        retried add refuses again, exactly as it should. What must never happen
+        is the refusal disappearing.
+        """
+        from automations.digi_docs import run as _run_mod
         ov = _fake_ov()
 
         def _open(page, name, **kw):
@@ -233,9 +242,12 @@ class LateAddsAreAddedNotRefused(_NoNetwork):
         ov.open_set_status = _open
         ov.add_sales_rep = _add
         rec = _Recorder()
-        _run(ov, rec)
-        self.assertTrue(any("Add Sales Rep employee list" in r
-                            for r in rec.calls[0]["refused"]))
+        # create() finds them already there and returns; the add still refuses.
+        with mock.patch.object(_run_mod, "_create_missing",
+                               lambda ov_, page, c: True):
+            _run(ov, rec)
+        self.assertTrue(rec.calls[0]["refused"],
+                        "a rep OwnerVille will not offer must still refuse")
 
 
 class FatalStillAlerts(_NoNetwork):
@@ -1149,6 +1161,10 @@ class PendingIsNeitherDoneNorSendable(_NoNetwork):
         self.assertNotIn("PENDING", config.DOCS_SENDABLE_STATES)
 
 
+def _raise(msg):
+    raise RuntimeError(msg)
+
+
 class TheSecondSweepCreatesMissingPeople(unittest.TestCase):
     """Megan 2026-09-14: "that 11am needs a 2nd sweep to add the missing people
     and then they will get sent on time."
@@ -1162,7 +1178,8 @@ class TheSecondSweepCreatesMissingPeople(unittest.TestCase):
     person exists before their own send comes round.
     """
 
-    def _run_add(self, *, refusal, creates=True, dry=False):
+    def _run_add(self, *, refusal, creates=True, dry=False,
+                 create_raises=None):
         import contextlib
         import automations.digi_docs as _pkg
         from automations.digi_docs import run as _run
@@ -1196,7 +1213,9 @@ class TheSecondSweepCreatesMissingPeople(unittest.TestCase):
              mock.patch.object(_pkg, "slack_post", stub, create=True), \
              mock.patch.object(_run, "_create_missing",
                                lambda ov_, page, c: (
-                                   calls["created"].append(c.name) or creates)):
+                                   calls["created"].append(c.name)
+                                   or (_raise(create_raises) if create_raises
+                                       else creates))):
             _run._work(ov, page_ctx=contextlib.nullcontext(object()),
                        do_add=True, do_send=False, send=[], add_list=people,
                        dry=dry, added=added, done=[], refused=refused)
@@ -1236,7 +1255,9 @@ class TheSecondSweepCreatesMissingPeople(unittest.TestCase):
         """
         calls, added, refused = self._run_add(
             refusal="Billy Garvin: not in the Add Sales Rep employee list",
-            creates=False)
+            create_raises="Billy Garvin could not be created in OwnerVille — "
+                          "the form would not accept them. Add them by hand "
+                          "under Sales Reps → + Add Sales Rep.")
         self.assertEqual([], added)
         self.assertEqual(1, len(refused))
         self.assertNotIn("not in the Add Sales Rep", refused[0])
@@ -1373,7 +1394,10 @@ class TheSymptomIsNeverTheReport(unittest.TestCase):
         self.assertIn("No documents have gone out", line)
 
     def test_a_creation_that_produced_nothing_says_that(self):
-        line = self._refused_line(creates=False)[0]
+        line = self._refused_line(
+            create_raises="Billy Garvin could not be created in OwnerVille — "
+                          "the form returned no saved record. Add them by "
+                          "hand under Sales Reps → + Add Sales Rep.")[0]
         self.assertNotIn("not in the Add Sales Rep employee list", line)
         self.assertIn("Add them by hand", line)
         self.assertIn("No documents have gone out", line)
@@ -1404,13 +1428,18 @@ class TheAlertSaysHowToRecover(unittest.TestCase):
 
     def test_it_promises_the_send_and_names_the_deadline(self):
         t = self._text(["Billy Garvin could not be created in OwnerVille."])
-        self.assertIn("before their start time", t)
-        self.assertIn("nothing to re-run", t)
+        # NOT "before their start time" — that reads as a deadline and is not
+        # one. A 12:00 start whose record appears at 2pm is still due.
+        self.assertIn("30 minutes before their start time", t)
+        self.assertIn("nothing to re-run", t.lower())
+        # The one real cliff stays in: past 4pm nothing goes at all, and
+        # somebody adding a person at 4:15 in good faith would never find out.
+        self.assertIn("4:00pm", t)
         # Without the cutoff this reads as "any time is fine", and a 4:15 add
         # would silently get nothing — the one way the promise goes untrue.
         self.assertIn("4:00pm", t)
 
     def test_a_clean_pass_does_not_explain_a_recovery_nobody_needs(self):
         t = self._text([])
-        self.assertNotIn("before their start time", t)
+        self.assertNotIn("30 minutes before their start time", t)
         self.assertNotIn("4:00pm", t)

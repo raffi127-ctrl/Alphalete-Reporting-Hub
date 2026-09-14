@@ -128,6 +128,17 @@ def _create_missing(ov, page, c) -> bool:
     """
     from automations.digi_docs import new_rep
     out = new_rep.create(page, c.person, dry_run=False)
+    # EVERY FAILURE CARRIES A REASON (Megan 2026-09-14: "and there's no reason
+    # on this one?"). The caller used to have a `if not made` branch whose
+    # message was a bare "could not be created" with nothing after it — a
+    # sentence that tells the reader to go do something by hand without ever
+    # saying what went wrong. Anything other than a made record raises here,
+    # with what happened, so that branch cannot produce a reasonless line.
+    if out not in ("created", "exists"):
+        raise new_rep.Refused(
+            f"{c.name} could not be created in OwnerVille — the form returned "
+            f"{out!r}, which is not a saved record. Add them by hand under "
+            f"Sales Reps → + Add Sales Rep.")
     # Back to where the add flow expects to be.
     from automations.b2b_dispositions.capture import capture_rqst
     rqst = capture_rqst(page)
@@ -475,7 +486,7 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                                 f"would create them here", dry, alert=False)
                         continue
                     try:
-                        made = _create_missing(ov, page, c)
+                        _create_missing(ov, page, c)
                     except Exception as ce:                 # noqa: BLE001
                         # `ce` already names the person and says what to do
                         # about them -- see new_rep's refusals. Prefixing the
@@ -487,13 +498,7 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                                 f"{ce} No documents have gone out to them.",
                                 dry, alert=False)
                         continue
-                    if not made:
-                        _refuse(refused,
-                                f"{c.name} could not be created in OwnerVille. "
-                                f"Add them by hand under Sales Reps → + Add "
-                                f"Sales Rep. No documents have gone out to "
-                                f"them.", dry, alert=False)
-                        continue
+
                     created.append(c.name)
                     try:
                         outcome = ov.add_sales_rep(
@@ -578,9 +583,34 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                         # of sending — which is exactly what SHOULD happen for
                         # someone like Zahra Muhsen, who was in OwnerVille but
                         # unfindable by name.
-                        outcome = ov.add_sales_rep(
-                            page, c.name, dry_run=dry, known_absent=True)
-                        if outcome in ("added", "dry"):
+                        # AND IF THEY DO NOT EXIST AT ALL, CREATE THEM
+                        # (Megan 2026-09-14: "will there be another pass after
+                        # 11 to add them? Or will someone just need to manually
+                        # add them?").
+                        #
+                        # There was not, and that made the alert's own promise
+                        # false: it told the office that fixing the board meant
+                        # Lucy would pick the person up, when only the 10:30
+                        # pass could create anybody and it had already run. An
+                        # email typed in at 11:05 would have sat there all day.
+                        #
+                        # Now every tick can create, so the promise holds for
+                        # anyone fixed before their start — which is exactly
+                        # what the alert says, and what people will act on.
+                        try:
+                            outcome = ov.add_sales_rep(
+                                page, c.name, dry_run=dry, known_absent=True)
+                        except ov.Refused as none_such:
+                            if ("add sales rep" not in str(none_such).lower()
+                                    or dry):
+                                raise
+                            print(f"  ↻ {c.name}: no OwnerVille record at all "
+                                  f"— creating them now")
+                            _create_missing(ov, page, c)
+                            created.append(c.name)
+                            outcome = ov.add_sales_rep(
+                                page, c.name, dry_run=dry, known_absent=False)
+                        if outcome in ("added", "dry", "exists"):
                             added.append(c.name)
                         # ONE retry, never a loop: if they still cannot be
                         # found after being added, that is a real refusal.

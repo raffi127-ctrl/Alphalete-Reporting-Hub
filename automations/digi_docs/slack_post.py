@@ -347,10 +347,23 @@ def post_add_summary(ready: int, total: int, failed: List[str], *,
         # The 4pm stop is part of the same sentence on purpose. Without it this
         # reads as "any time is fine", and a 4:15 add would silently get
         # nothing -- which is the one way this promise could become untrue.
+        # WHAT THE ADMINS ARE TOLD (Megan 2026-09-14: "the admins just need
+        # to be told to get them added 30 min prior to their start time").
+        #
+        # The system is in fact more forgiving — due_now counts anyone whose
+        # send moment has ARRIVED, so a 12:00 start added at 2pm still goes,
+        # which is what rescued most of 9/14. But an instruction and a
+        # tolerance are different things, and the instruction has to produce
+        # the outcome we actually want: the rep holding their documents when
+        # they walk in, not receiving them at 3pm on their first day.
+        #
+        # The 4:00pm line stays because it is the one real cliff. Past it
+        # nothing goes at all, and somebody adding a person at 4:15 in good
+        # faith would otherwise never find out.
         lines.append(
-            "\n_Add them in OwnerVille before their start time and Lucy still "
-            "sends their bundle on the next pass — nothing to re-run and "
-            "nobody to tell. Sending stops at *4:00pm*._")
+            "\n_Add them in OwnerVille at least *30 minutes before their start "
+            "time* and Lucy sends their bundle automatically — nothing to "
+            "re-run and nobody to tell. Nothing goes out after *4:00pm*._")
         lines.append(_tags())
     body = "\n".join(l for l in lines if l).rstrip()
     if dry_run:

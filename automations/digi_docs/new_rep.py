@@ -80,8 +80,15 @@ def _find_labelled(page, text: str):
     very boxes the live run will tick proves nothing about whether the live
     run would work.
     """
+    # THE REQUIRED-FIELD ASTERISK IS PART OF THE LABEL (2026-09-14, found by
+    # the dry run before it could cost a Monday). The form renders "Over 18 *",
+    # and an exact match against "over 18" never hits it — so the first live
+    # pass would have refused every single person with "the form has no
+    # ['Over 18'] box". Strip trailing punctuation on BOTH sides: the asterisk
+    # marks a field as required, it does not name a different box.
     return page.evaluate("""(want) => {
-        const norm = s => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+        const norm = s => (s || '').replace(/\\s+/g, ' ')
+            .replace(/[\\s*:†]+$/, '').trim().toLowerCase();
         const boxes = [...document.querySelectorAll(
             'input[type=checkbox], input[type=radio]')];
         for (const el of boxes) {
@@ -108,6 +115,17 @@ def _tick_labelled(page, text: str, *, verbose: bool = True) -> None:
     Megan pointed at.
     """
     found = _find_labelled(page, text)
+    if not found and text == "Over 18":
+        # bg_check_sync has driven this box by id on the profile form since
+        # 2026-08-26. Worth trying before giving up on a label.
+        try:
+            state = page.evaluate(
+                f"() => {{ const b = document.querySelector('#{ovn.OVER_18_ID}');"
+                f" return b ? {{id: '{ovn.OVER_18_ID}', checked: !!b.checked}}"
+                f" : null; }}")
+        except Exception:                                   # noqa: BLE001
+            state = None
+        found = state
     if not found:
         raise Refused(f"no {text!r} box on the New Sales Rep form — the form "
                       f"changed, and guessing which box it became is how "
