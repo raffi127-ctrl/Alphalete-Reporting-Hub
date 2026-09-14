@@ -27,10 +27,11 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from automations.icd_alerts import offices as O
 from automations.shared.credit_check_line import records_line
+from automations.icd_alerts import rep_names as RN
 
 # The relay workbook: 'Lucy Access App' (Megan supplied it 2026-09-11). The
 # Apps Script in resources/icd-alerts-relay.gs is bound to THIS workbook, and
@@ -104,7 +105,9 @@ class RelayNotConfigured(RuntimeError):
 
 # --- the pure part (unit-tested offline) ------------------------------------
 def decide(records: Dict[str, int],
-           last_posted: Optional[Dict[str, int]]) -> Tuple[List[str], Dict[str, int], bool]:
+           last_posted: Optional[Dict[str, int]],
+           name_for: Optional[Callable[[str], str]] = None
+           ) -> Tuple[List[str], Dict[str, int], bool]:
     """(lines to post, what to record as posted, was this a baseline).
 
     BASELINE = we have never posted for this office/day. Everything the office
@@ -117,6 +120,10 @@ def decide(records: Dict[str, int],
     LOW, and taking that at face value would let the next good pass 'gain' the
     same credit checks again and ping twice about one event.
     """
+    # `name_for` spells the rep the way her office does; the KEYS stay
+    # SaraPlus's, because that is what 'Last Posted' is keyed by and a renamed
+    # key would read as a new rep with a count of zero. See rep_names.
+    show = name_for or (lambda n: n)
     records = {str(k): int(v) for k, v in (records or {}).items()}
     if last_posted is None:
         return [], records, True
@@ -127,7 +134,7 @@ def decide(records: Dict[str, int],
     for rep, n in sorted(records.items()):
         was = prev.get(rep, 0)
         if n > was:
-            lines.append(records_line(rep, n, n - was))
+            lines.append(records_line(show(rep), n, n - was))
             merged[rep] = n
     return lines, merged, False
 
@@ -471,6 +478,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
     day = day or dt.date.today()
     tab = _relay_tab()
     approved = approved_channels(tab.spreadsheet)
+    # ONE read for the whole tick. Per office it would be a read per office per
+    # minute against a workbook the laptops are writing to.
+    name_fixes = RN.load(tab.spreadsheet)
     rows = _rows_for(day, tab)
     if not rows:
         log("no offices have relayed anything for %s yet" % day.isoformat())
@@ -491,7 +501,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
 
         records = _loads(row[COL_RECORDS]) or {}
         last = _loads(row[COL_LAST_POSTED] if len(row) > COL_LAST_POSTED else "")
-        lines, merged, baseline = decide(records, last)
+        show = RN.resolver(name_fixes, key)
+        lines, merged, baseline = decide(records, last, show)
 
         # Sales ride the same row and the same rules. An office still on the
         # older agent sends none, and this stays empty rather than erroring.
@@ -502,7 +513,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         hype_lines = []
         if sold:
             from automations.shared import sale_hype as H
-            hype_lines = [H.hype(rep, sales.get(rep) or {}, day) for rep in sold]
+            hype_lines = [H.hype(show(rep) if show else rep,
+                                 sales.get(rep) or {}, day) for rep in sold]
 
         if baseline:
             log("%-10s first relay of %s -- recording %d rep(s), posting nothing"
