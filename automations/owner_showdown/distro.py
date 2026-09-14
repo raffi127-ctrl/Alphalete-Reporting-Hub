@@ -53,7 +53,8 @@ COMPETITORS: List[Tuple[str, str]] = [   # (email, name)
     ("bill@zenithmgmtinc.com", "Bill Fischer"),
     ("carissang46@gmail.com", "Carissa Ng"),
     ("aeldredge90@gmail.com", "Austin Eldredge"),
-    ("kimberlyatt458@gmail.com", "Kimberly Rodriguez"),
+    # OUT 2026-09-14 (Eve): Kimberly Rodriguez (kimberlyatt458@gmail.com) — shut
+    # down 2026-09-09, sin mails. Sale tambien del grupo vivo; sigue en roster.py.
     ("nataliagwarda@gmail.com", "Natalia Gwarda"),
     ("oren.gspromotions@gmail.com", "Oren Shezaf"),
     ("resoundinc@gmail.com", "Christian Esposito"),

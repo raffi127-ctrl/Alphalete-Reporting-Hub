@@ -120,6 +120,10 @@ REMOVALS: dict = {
     # tarjeta (sin nombre, la misma direccion) no esta en ningun grupo.
     "Aug Owner Showdown": [
         ("Eric Martinez", "ericdmartinez222@gmail.com"),
+        # 2026-09-14 (Eve): Kimberly Rodriguez, mismo caso (shut down 2026-09-09);
+        # en el 9/9 solo habia salido de Chan's. Su tarjeta aca se llama "Kim
+        # Rodriguez"; la segunda (sin nombre) no esta en ningun grupo.
+        ("Kimberly Rodriguez", "kimberlyatt458@gmail.com"),
     ],
     "Tony's Captainship": [
         ("Melik El Jaiez", "melikeljaiez@yahoo.com"),        # no display name on the card
@@ -162,6 +166,8 @@ REMOVALS: dict = {
         # 2026-09-14 (Eve): Eric Martinez, shut down — va tambien en
         # fiber_owners_distro/excludes.json para que el reset semanal no lo reponga.
         ("Eric Martinez", "ericdmartinez222@gmail.com"),
+        # 2026-09-14 (Eve): Kimberly Rodriguez, idem (tarjeta "Kim Rodriguez").
+        ("Kimberly Rodriguez", "kimberlyatt458@gmail.com"),
     ],
     # 2026-08-24 (Eve): Lizette Ruiz comes off Eveliz's captainship only — same
     # shape as Milan Godbolt below. Her address also left
