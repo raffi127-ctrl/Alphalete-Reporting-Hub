@@ -43,12 +43,28 @@ TEMPLATES_URL = "https://secure.blueink.com/dashboard/templates"
 # specific element or URL instead.
 NAV_TIMEOUT = 90_000
 STEP_TIMEOUT = 60_000
+# How long the signer save gets before we stop waiting on it and try anyway.
+SAVE_TIMEOUT = 20_000
+# First go at a wizard click. Short on purpose: a click the app dropped is
+# worth re-clicking long before the full navigation budget is gone.
+CLICK_RETRY_TIMEOUT = 25_000
 
 _BUNDLE_RE = re.compile(r"/dashboard/edit/([A-Za-z0-9]+)/")
 
 
 class UISendError(RuntimeError):
     pass
+
+
+class SendUncertain(UISendError):
+    """Send was CLICKED and we could not confirm what happened.
+
+    Split out from UISendError for one reason: it is the only failure in this
+    file that must never be retried. Everything else here fails with the
+    envelope still a draft, and a draft mails nobody -- so a second attempt
+    costs a stranded draft and nothing else. After the Send click we cannot
+    know, and a retry would be the one thing there is no undo for.
+    """
 
 
 @dataclass
@@ -109,9 +125,36 @@ def send_one(page, *, first: str, last: str, email: str,
     page.click("button[data-tid='nub-pktPerson-saveName']")
 
     # --- prepare --------------------------------------------------------
+    # WAIT FOR THE SAVE TO LAND, not just for the Prepare button. The button
+    # lives in the wizard's own nub and is on screen from the moment we reach
+    # /signers, so waiting for it proves nothing and returns instantly -- which
+    # left us clicking Prepare while the signer POST was still in flight. The
+    # app then refuses to advance (no signer yet), the URL never becomes
+    # /prepare, and the person dies on a 90s navigation timeout with the
+    # envelope still a draft. That is exactly how Brianna Cornelius, Ariana
+    # Hernandez and Erick Pullins failed out of an otherwise clean batch of 40
+    # on 2026-09-14 -- scattered through the run, same step every time.
+    #
+    # The name form is transient: it is gone once the signer is attached. So
+    # its disappearance IS the save receipt. Tolerated, not required -- if a
+    # future version of the form sticks around, this must cost a couple of
+    # seconds, never a send.
+    try:
+        page.wait_for_selector("input[name='given_name']", state="detached",
+                               timeout=SAVE_TIMEOUT)
+    except Exception:                              # noqa: BLE001
+        pass
+
     page.wait_for_selector("button[data-tid='nub-create-prepare']", timeout=STEP_TIMEOUT)
     page.click("button[data-tid='nub-create-prepare']")
-    page.wait_for_url("**/prepare", timeout=NAV_TIMEOUT)
+    try:
+        page.wait_for_url("**/prepare", timeout=CLICK_RETRY_TIMEOUT)
+    except Exception:                              # noqa: BLE001
+        # A click the app swallowed, not a dead app. Clicking Prepare a second
+        # time is free: if the first one had worked we would not be here, and
+        # from /prepare the button is a no-op.
+        page.click("button[data-tid='nub-create-prepare']")
+        page.wait_for_url("**/prepare", timeout=NAV_TIMEOUT - CLICK_RETRY_TIMEOUT)
     page.wait_for_selector("button[data-tid='nub-create-review']", timeout=STEP_TIMEOUT)
 
     # --- review ---------------------------------------------------------
@@ -162,7 +205,7 @@ def send_one(page, *, first: str, last: str, email: str,
     try:
         page.wait_for_url(lambda u: "/review" not in u, timeout=NAV_TIMEOUT)
     except Exception:
-        raise UISendError(
+        raise SendUncertain(
             f"Clicked Send on bundle {bundle} but the page stayed on /review. "
             "Check the Blue Ink dashboard before rerunning -- it may or may not "
             "have gone out.")

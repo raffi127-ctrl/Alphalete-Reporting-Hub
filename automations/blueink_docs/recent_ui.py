@@ -135,8 +135,52 @@ def _search(page, term: str) -> str:
     page.fill(SEARCH_SEL, "")
     page.type(SEARCH_SEL, term, delay=40)
     page.keyboard.press("Enter")
-    page.wait_for_timeout(6000)
+    # WAIT FOR THE COLUMNS TO FINISH, don't just sleep 6s. A column still
+    # fetching renders "Loading envelopes...", and reading through that is a
+    # silent under-block: the Sent column reads as neither a row nor "No
+    # Envelopes", verdict() finds nothing in the way, and somebody gets a
+    # second packet that cannot be recalled. A 2026-09-14 probe caught the
+    # Draft column still loading at the 6s mark, so the window is real.
+    page.wait_for_timeout(3000)
+    for _ in range(12):                # up to 12 more seconds
+        body = " ".join((page.inner_text("body") or "").split())
+        if "Loading envelopes" not in body:
+            return body
+        page.wait_for_timeout(1000)
+    # Still drawing. Hand back what we have -- every column that never settled
+    # reads as unparseable, which blocks, which is the safe direction.
     return " ".join((page.inner_text("body") or "").split())
+
+
+_DRAFT_COL_EMPTY = re.compile(r"Draft\s+No Envelopes")
+
+
+def _only_a_draft(text: str) -> bool:
+    """True when the only thing the search matched is a DRAFT envelope.
+
+    A draft was never delivered -- BLOCKING already says so -- but a draft has
+    no sent date, and _ROW_RE needs a status followed by one. So a draft
+    parses as nothing, and the "Showing, but nothing parsed" safety net below
+    blocks on it instead.
+
+    That is the second half of what went wrong on 2026-09-14: Brianna
+    Cornelius, Ariana Hernandez and Erick Pullins each timed out mid-wizard,
+    each timeout LEFT a draft envelope behind, and the draft then blocked the
+    rerun that would have sent their docs -- reported as "a packet this report
+    couldn't classify", for a packet that had never been sent to anybody.
+
+    Read off the dashboard's three columns. "Draft" is a permanent heading, so
+    presence of the word proves nothing; the test is that the Draft column has
+    CONTENT while Sent and Completed are both explicitly empty. An empty
+    column renders the literal "No Envelopes", and a column still loading
+    renders "Loading envelopes..." -- which matches neither, so a half-drawn
+    page falls through to the block. That is the right way to be wrong.
+    """
+    t = text or ""
+    if _DRAFT_COL_EMPTY.search(t):
+        return False                   # the draft column is empty too
+    return ("Sent Sort:Sent No Envelopes" in t
+            and "Completed Sort:Sent No Envelopes" in t)
 
 
 def _fresh(datestr: str, today: dt.date) -> bool:
@@ -164,6 +208,8 @@ def verdict(text: str, today: dt.date = None) -> str:
     # Nothing parsed. If the page still counted results, something matched that
     # this doesn't understand -- block rather than risk a duplicate.
     if "Showing" in (text or ""):
+        if _only_a_draft(text):
+            return ""                  # a draft mails nobody -- see above
         return "a packet this report couldn't classify"
     return ""
 

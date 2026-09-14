@@ -172,6 +172,40 @@ def _flag_terminated(people: List[NewStart]) -> None:
         pass
 
 
+def _one_line(exc: Exception) -> str:
+    """The sentence a human needs, without Playwright's log dump.
+
+    A browser timeout stringifies as its message plus twenty lines of
+    "=========== logs ===========" internals. That went into the ledger note
+    AND into Slack, so the 2026-09-14 post spent three paragraphs saying
+    "Timeout 90000ms exceeded" three times. The first line carries all of it.
+    """
+    first = str(exc).strip().splitlines()
+    return first[0].strip() if first else exc.__class__.__name__
+
+
+def _send_one_with_retry(page, person, template, really_send):
+    """One person, with a second attempt at anything that failed before Send.
+
+    Every failure short of the Send click leaves the envelope a DRAFT, and a
+    draft mails nobody -- so a retry costs one stranded draft and buys back a
+    person who would otherwise be on the "send these by hand" list. The one
+    exception is SendUncertain: Send was already clicked there, and a retry is
+    the only mistake in this file that cannot be taken back.
+    """
+    try:
+        return ui_send.send_one(page, first=person.first, last=person.last,
+                                email=person.email, template_name=template,
+                                really_send=really_send)
+    except ui_send.SendUncertain:
+        raise
+    except Exception as exc:                       # noqa: BLE001
+        print(f"     (first attempt failed: {_one_line(exc)} -- retrying once)")
+        return ui_send.send_one(page, first=person.first, last=person.last,
+                                email=person.email, template_name=template,
+                                really_send=really_send)
+
+
 def _send_via_ui(workbook, worksheet, people: List[NewStart],
                  really_send: bool, headless: bool = True) -> int:
     """The live path. One browser for the whole batch -- relaunching per person
@@ -185,9 +219,7 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
         try:
             for i, person in enumerate(people, 1):
                 try:
-                    r = ui_send.send_one(page, first=person.first, last=person.last,
-                                         email=person.email, template_name=template,
-                                         really_send=really_send)
+                    r = _send_one_with_retry(page, person, template, really_send)
                     print(f"  [{i}/{len(people)}] {r.status:<26} "
                           f"{person.name:<26} {person.email:<36} {r.bundle_id}")
                     if really_send:
@@ -195,10 +227,11 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
                         sent.append(person)
                 except Exception as exc:          # one bad row can't stop the batch
                     failures += 1
-                    problems.append((person.name, str(exc)[:160]))
-                    print(f"  [{i}/{len(people)}] FAILED  {person.name:<26} {exc}")
+                    why = _one_line(exc)
+                    problems.append((person.name, why[:160]))
+                    print(f"  [{i}/{len(people)}] FAILED  {person.name:<26} {why}")
                     if really_send:
-                        rows.append(ledger.row_for(person, "", "failed", str(exc)[:200]))
+                        rows.append(ledger.row_for(person, "", "failed", why[:200]))
                 finally:
                     # Per-person, before the next one starts: a crash mid-batch
                     # must never leave a sent person looking unsent.
