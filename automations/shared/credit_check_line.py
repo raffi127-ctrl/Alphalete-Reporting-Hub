@@ -8,6 +8,8 @@ that on the first edit.
 """
 from __future__ import annotations
 
+from automations.shared.name_case import titlecase_name
+
 
 def records_line(rep: str, total: int, gained: int) -> str:
     """A credit check moved -- early news, one step before a confirmed sale.
@@ -19,5 +21,8 @@ def records_line(rep: str, total: int, gained: int) -> str:
     the board with an Int the day it went out about him. The notification and
     the count are what people wanted; the clause was the only wrong part.
     """
+    # titlecase_name, not str.title(): the shared caser is what every other
+    # report uses, and it leaves a deliberate mixed case alone -- str.title()
+    # turns McClain into Mcclain. [[feedback_report_formatting_standard]]
     return (":mag: %s just ran %s credit check%s (%d today)."
-            % (rep.title(), gained, "" if gained == 1 else "s", total))
+            % (titlecase_name(rep), gained, "" if gained == 1 else "s", total))

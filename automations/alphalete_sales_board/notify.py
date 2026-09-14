@@ -31,6 +31,7 @@ import zlib
 from typing import Dict, List, Optional, Sequence
 
 from automations.alphalete_sales_board import config as C
+from automations.shared import name_case
 # The wording lives in ONE place -- icd_alerts posts the same sentence.
 from automations.shared.credit_check_line import records_line  # noqa: F401
 
@@ -57,7 +58,10 @@ HYPE_REGULAR = (
 
 
 def _first(name: str) -> str:
-    return str(name or "").split()[0] if name else ""
+    """CASED -- the unmatched reps reach these lines straight off SaraPlus, in
+    caps. [[feedback_report_formatting_standard]]"""
+    first = str(name or "").split()[0] if name else ""
+    return name_case.titlecase_name(first) if first else ""
 
 
 def rep_total(metrics: Dict[str, int]) -> int:
@@ -89,7 +93,8 @@ def short_name(name: str) -> str:
     and status suffixes, keep the whole name. We show full names; the other
     system abbreviates to 'Jaylen W.' and Megan prefers ours (2026-08-26)."""
     import re
-    return " ".join(re.sub(r"\(.*?\)", " ", str(name or "")).split()) or "?"
+    bare = " ".join(re.sub(r"\(.*?\)", " ", str(name or "")).split())
+    return name_case.titlecase_name(bare) if bare else "?"
 
 
 def _line(name: str, m: Dict[str, int]) -> str:

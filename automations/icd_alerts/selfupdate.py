@@ -182,6 +182,16 @@ def run(log=print, today: Optional[dt.date] = None) -> bool:
         _stamp(today)
         log("self-update: updated %d file(s). The next run uses them."
             % replaced)
+        # AND THE SCHEDULE, which is code's blind spot: setup.py wrote the
+        # LaunchAgent once at install time and nothing has revisited it since,
+        # so a cadence change would otherwise reach new offices only. Here and
+        # not in run.py: this is the point at which the new code is proven in
+        # place, and the retime belongs to the code that asked for it.
+        try:
+            from automations.icd_alerts import sweep_cadence
+            sweep_cadence.ensure(log=log)
+        except Exception as e:  # noqa: BLE001 — an update is not worth losing
+            log("self-update: schedule check skipped (%s)" % type(e).__name__)
         return True
     finally:
         shutil.rmtree(staging, ignore_errors=True)

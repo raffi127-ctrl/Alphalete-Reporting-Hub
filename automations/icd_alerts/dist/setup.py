@@ -49,16 +49,21 @@ HERE = Path(__file__).resolve().parent
 IS_WINDOWS = platform.system() == "Windows"
 TASK_NAME = "LucyReports"
 PLIST_LABEL = "com.alphalete.lucy-reports"
-# THREE, because the requirement is an alert within 3-5 minutes of the credit
-# check (Megan 2026-09-12) and the total lag is this plus the poster's tick.
-# At three here and two there, the worst case is five minutes and the typical
-# case is under three.
+# TWO (was three, 2026-09-14: Megan, "we can make it tighter"). The total lag
+# is this plus the poster's tick, now sixty seconds -- so the worst case is
+# three minutes and the typical case is about ninety seconds.
 #
-# The cost is still small: a sweep is ~30-60s against a session the Chrome
-# profile keeps warm, so this is one page-read every three minutes on a
-# plugged-in machine. It is the laptop's own SaraPlus account, so no office
-# is competing with another for a rate limit.
-EVERY_MINUTES = 3
+# NOT ONE. The floor is the sweep itself: three SaraPlus report passes, ~30-60s
+# against a session the Chrome profile keeps warm. At a one-minute tick a slow
+# sweep is still running when the next one is due, and this is an ICD's working
+# laptop -- a browser going back-to-back all day is a cost somebody feels. Two
+# keeps the duty cycle under half. It is the laptop's own SaraPlus account, so
+# no office is competing with another for a rate limit.
+#
+# THE NUMBER IS ALSO IN sweep_cadence.py, which is what retimes the offices
+# that are ALREADY installed -- this one only ever reaches a fresh install.
+# test_sweep_cadence keeps the two honest.
+EVERY_MINUTES = 2
 
 
 # READABLE ON ANY BACKGROUND, which is the only requirement that actually

@@ -44,6 +44,9 @@ AGENT_FILES = [
     # can never receive it automatically, so the one manual update that
     # delivers it is the last one they ever have to run.
     "automations/icd_alerts/selfupdate.py",
+    # Ships with selfupdate, which calls it: an office that does not have this
+    # file keeps the cadence its installer wrote and nothing says so.
+    "automations/icd_alerts/sweep_cadence.py",
     "automations/icd_alerts/sara_read.py",
     "automations/icd_alerts/state.py",
     "automations/icd_alerts/run.py",
@@ -51,6 +54,8 @@ AGENT_FILES = [
     "automations/icd_alerts/ov_read.py",
     "automations/shared/ownerville_knocks.py",
     "automations/shared/saraplus.py",
+    # Both wording modules below case the rep's name through it.
+    "automations/shared/name_case.py",
     "automations/shared/credit_check_line.py",
     "automations/shared/sale_hype.py",
     "automations/shared/browser_banner.py",

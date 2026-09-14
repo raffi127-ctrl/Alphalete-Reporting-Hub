@@ -15,6 +15,9 @@ import re
 import zlib
 from typing import Dict
 
+# Imports nothing itself, which is why it is safe on the ICD laptops' hot path.
+from automations.shared.name_case import titlecase_name
+
 METRICS = ("Int", "Int Up", "DTV", "NL")
 
 # UPGRADES COUNT HERE. The board's Apps formula leaves Int Up out -- an upgrade
@@ -73,13 +76,21 @@ def tier(metrics: Dict[str, int]) -> str:
 
 
 def _first(name: str) -> str:
-    return str(name or "").split()[0] if name else ""
+    """The first name, CASED. SaraPlus hands the grid over in caps, and a raw
+    first name shouted "CALLISA keeps going" into the channel on 2026-09-14
+    while the credit-check line two posts above it read "Callisa Flythe" --
+    one rep, one sweep, two spellings. The casing belongs here, at the display
+    layer: normalising it upstream would rewrite the relay's state keys and
+    re-announce the whole day once. [[feedback_report_formatting_standard]]"""
+    first = str(name or "").split()[0] if name else ""
+    return titlecase_name(first) if first else ""
 
 
 def short_name(name: str) -> str:
-    """'Jaylen (Ash) Walker (Wk 2)' -> 'Jaylen Walker'. Full names, not
+    """'JAYLEN (Ash) WALKER (Wk 2)' -> 'Jaylen Walker'. Full names, not
     initials -- Megan prefers ours to the other system's 'Jaylen W.'"""
-    return " ".join(re.sub(r"\(.*?\)", " ", str(name or "")).split()) or "?"
+    bare = " ".join(re.sub(r"\(.*?\)", " ", str(name or "")).split())
+    return titlecase_name(bare) if bare else "?"
 
 
 def hype(name: str, metrics: Dict[str, int], day: dt.date) -> str:

@@ -51,9 +51,9 @@ mkdir -p "$LOG_DIR"
 # `lucy update --machine "Lucy 3"`. A report nobody has to remember to deploy
 # is the whole point of this thing being on a schedule.
 #
-# ONCE A DAY, NOT EVERY TICK. This wrapper fires every two minutes; pulling
-# that often would be pointless traffic and would keep swapping code under a
-# run that is already going. The first tick of the day is the quiet moment --
+# ONCE A DAY, NOT EVERY TICK. This wrapper fires every minute; pulling that
+# often would be pointless traffic and would keep swapping code under a run
+# that is already going. The first tick of the day is the quiet moment --
 # offices are not selling yet at 08:00.
 #
 # Same flags and same best-effort stance as deploy/day_orchestrator.sh, which
@@ -97,7 +97,7 @@ echo "[$(date)] poster done (exit $rc)" >> "$LOG_FILE"
 # never sees a standalone LaunchAgent, and without this a clean run and a
 # silent miss are indistinguishable.
 #
-# NOT ON EVERY TICK. This fires ~90 times a day and publishing each one would
+# NOT ON EVERY TICK. This fires ~900 times a day and publishing each one would
 # bury Hub Activity in rows saying "nothing happened", which is how the one row
 # that matters stops being visible. Publish when the run actually DID something
 # (posted an alert, or warned that an office went quiet) and whenever it
