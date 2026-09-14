@@ -85,14 +85,26 @@ class _FakePage(object):
 
 
 CANARY_CASES = [
-    # (name, mode, known-sent address, should it stop the run?)
-    ("search working", "healthy", "known@x.com", False),
+    # (name, mode, known-sent address, the day it runs, should it stop the run?)
+    ("search working", "healthy", "known@x.com", TODAY, False),
     # Everyone would read already-sent and nobody would be mailed.
-    ("search stopped filtering", "not_filtering", "known@x.com", True),
+    ("search stopped filtering", "not_filtering", "known@x.com", TODAY, True),
     # Everyone would read clear and the batch would send SECOND packets.
-    ("search finds nothing", "finds_nothing", "known@x.com", True),
+    ("search finds nothing", "finds_nothing", "known@x.com", TODAY, True),
     # First ever run: nothing logged, so there is no positive canary to use.
-    ("nothing logged yet", "finds_nothing", "", False),
+    ("nothing logged yet", "finds_nothing", "", TODAY, False),
+    # THE 2026-09-14 FAILURE. Same healthy search, same packet found and
+    # returned -- only the calendar moved. The canary address's packet is 21
+    # days old, so verdict() rightly reads it as stale, and asking the canary
+    # in verdict()'s words turned that into "the search can't find our own
+    # sends". 40 people got no docs on a morning when nothing was wrong with
+    # Blue Ink. An old canary must still pass.
+    ("known packet is three weeks old", "healthy", "known@x.com",
+     dt.date(2026, 9, 14), False),
+    # And the age must not buy a free pass the other way: a search returning
+    # nothing still has to stop the run, whatever day it is.
+    ("finds nothing, weeks later", "finds_nothing", "known@x.com",
+     dt.date(2026, 9, 14), True),
 ]
 
 
@@ -102,9 +114,9 @@ def canaries() -> int:
     bad = 0
     try:
         R._search = lambda page, term: page.reply(term)
-        for name, mode, known, want_stop in CANARY_CASES:
+        for name, mode, known, day, want_stop in CANARY_CASES:
             try:
-                R._canaries(_FakePage(mode), known, TODAY)
+                R._canaries(_FakePage(mode), known, day)
                 stopped, detail = False, "ran"
             except RuntimeError as exc:
                 stopped, detail = True, str(exc).split(" -- ")[0]

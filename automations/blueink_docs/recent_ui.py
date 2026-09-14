@@ -168,6 +168,29 @@ def verdict(text: str, today: dt.date = None) -> str:
     return ""
 
 
+def found_rows(text: str) -> bool:
+    """Did this search return ANY envelope row for the term it was given?
+
+    The POSITIVE canary asks "does the search still FIND things", which is a
+    different question from verdict()'s "is there something BLOCKING here".
+    verdict() only counts a row that is inside LOOKBACK_DAYS, so a packet we
+    really did send, that the search really did return, reads as clear once it
+    is a fortnight old -- and using verdict() as the canary turned the AGE of
+    the canary address into a hard failure.
+
+    That is what stopped the 2026-09-14 07:30 send: the canary address was
+    Angelica Pedroza (sent 2026-08-24, the first row in the ledger), 21 days
+    old, so the search found her packet, verdict() correctly called it stale,
+    and the canary read that as "the search can't find our own sends". 40
+    people got no docs. Nothing was wrong with Blue Ink.
+
+    A status+date row prefix ("Sent8/24/26") is the proof the list matched
+    something. Deliberately NOT counting the word "Showing" too: on this side a
+    false PASS weakens the duplicate check, so the strict test is the right one.
+    """
+    return bool(_ROW_RE.findall(text or ""))
+
+
 ABSENT = "zzz-nobody-has-this@example.invalid"
 
 
@@ -195,7 +218,10 @@ def _canaries(page, known_sent: str, today: dt.date) -> None:
             "came back with a packet. Everyone would look already-sent. "
             "Rerun `--probe-sent` and remap before trusting this.")
     if known_sent:
-        if not verdict(_search(page, known_sent), today):
+        # found_rows, NOT verdict: "the search returned this address's packet"
+        # is the claim being tested, and verdict() would answer no for a packet
+        # that is merely OLD. See found_rows for the Monday that cost.
+        if not found_rows(_search(page, known_sent)):
             raise RuntimeError(
                 "Blue Ink's search can't find a packet this report sent itself "
                 f"({known_sent}, in the Blue Ink Log) -- so a clear result "

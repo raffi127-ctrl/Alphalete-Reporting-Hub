@@ -350,18 +350,20 @@ def main(argv=None) -> int:
         return 2
 
 
-def _a_logged_send(sent_map: dict) -> str:
+def _a_logged_send(rows: list) -> str:
     """One address this report has already sent and logged -- the positive
     canary for the duplicate check (see recent_ui._canaries).
 
-    already_sent keys on BOTH a normalized name and an email, so pick a key
-    that looks like an address. Empty is fine: on the very first run nothing
-    has been logged yet, and the check says so.
+    Reads the ledger ROWS, newest first, so the canary is a packet Blue Ink is
+    certainly still listing. It used to take the first key containing "@" out
+    of `already_sent`, which is a dict built oldest-row-first: that address was
+    always the first person this report ever sent (Angelica Pedroza, 2026-08-24)
+    and it only got older. See recent_ui.found_rows for the Monday that cost.
+
+    Empty is fine: on the very first run nothing has been logged yet, and the
+    check says so.
     """
-    for key in sent_map:
-        if "@" in key:
-            return key
-    return ""
+    return ledger.a_recent_send(rows, recent_ui.LOOKBACK_DAYS)
 
 
 def _main(argv=None) -> int:
@@ -516,7 +518,10 @@ def _main(argv=None) -> int:
             print(f"     row {rownum}: {email}  |  {label}")
         print()
 
-    sent_map = ledger.already_sent(workbook)
+    # One read of the ledger tab answers both questions asked of it below:
+    # who has already been sent, and which address the canary should ask about.
+    ledger_rows = ledger.read(workbook)
+    sent_map = ledger.already_sent(workbook, rows=ledger_rows)
     to_send = _report(people, sent_map, ws.title)
 
     # Blue Ink's OWN history, not just our log: the team hand-sends too, and a
@@ -531,7 +536,7 @@ def _main(argv=None) -> int:
         try:
             blocked = recent_ui.screen(
                 to_send, headless=not args.headed,
-                known_sent=_a_logged_send(sent_map))
+                known_sent=_a_logged_send(ledger_rows))
         except Exception as exc:
             # Only a REAL send has anything to lose here. A dry run mails
             # nobody, so there is no duplicate to prevent and no reason to
