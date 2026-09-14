@@ -1,5 +1,5 @@
 #!/bin/bash
-# Monday 11:30am CST — roll the Vantura Master Sales Board onto the new week,
+# Monday 08:20am CST — roll the Vantura Master Sales Board onto the new week,
 # on Lucy 2 (Carlos's laptop) via launchd (com.alphalete.vantura-week-roll-mon).
 #
 # The board holds ONE week at a time and nothing else rolls it: the day cells
@@ -11,17 +11,23 @@
 # archive the closing week into WeekData, 'Last Wk' per rep and per campaign,
 # day cells back to the INDEX formula, and only then the flip.
 #
-# WHY 11:30 AND NOT EARLIER. The window is bounded on both sides:
-#   * com.alphalete.sales-boards posts YESTERDAY's production from 05:10 with
-#     retries out to ~08:05, and it HOLDS (exit 75) unless the gold cell still
-#     shows the week that just closed. Rolling inside that ladder is what makes
-#     Monday's post hold — the board has to stay on the old week until it is
-#     done.
-#   * com.alphalete.car-rides-cleanup runs nine passes 08:30-11:15 against the
-#     Stations tab, whose S2 this roll rewrites.
+# WHY 08:20 (moved earlier from 11:30 on 2026-09-14 — Carlos wants the new
+# board up super early Monday). The window is bounded on both sides, and 08:20
+# is the first safe minute of the gap between them:
+#   * NOT BEFORE 08:05 — com.alphalete.sales-boards posts YESTERDAY's production
+#     from 05:10 with retries out to ~08:05, and it HOLDS (exit 75) unless the
+#     gold cell still shows the week that just closed. Rolling inside that ladder
+#     is what makes Monday's post hold — the board has to stay on the old week
+#     until it is done. 08:20 leaves the final 08:05 attempt ~15 min to land.
+#   * BEFORE 08:30 — com.alphalete.car-rides-cleanup runs nine passes 08:30-11:15
+#     against the Stations tab, whose Q2 this roll rewrites.
 #   * com.alphalete.vantura-slack-sales fills MONDAY at 16:00, and that pass
 #     needs the NEW week on the board or it holds all evening.
-# 11:30 clears both jobs above and leaves 4.5 hours of daylight before 16:00.
+# 08:20 clears the 08:05 post, beats car-rides at 08:30, and is still hours
+# ahead of the 16:00 fill. TO GO TRULY EARLIER (e.g. ~05:30) the roll would have
+# to GATE on the production post's success rather than race a fixed clock — a
+# code change, not just a plist time. (The module already aborts if the closing
+# Sunday is all-blank, so a completely missing post is caught either way.)
 #
 # IF IT FAILS, the 16:00 fill holds and says so: sales_boards' WE-cell alert
 # names the week the board is actually showing, in the channel. That is the
@@ -38,7 +44,7 @@
 # (the module is dry-run by default; this wrapper is what passes --apply, so
 # --dry-run here means "run with neither" — see the case below.)
 #
-# CADENCE: the plist fires once, Monday 11:30am, machine LOCAL time (Lucy 2 is
+# CADENCE: the plist fires once, Monday 08:20am, machine LOCAL time (Lucy 2 is
 # Central). TIME KNOB: edit StartCalendarInterval in the plist, not this wrapper.
 set -u
 cd "$(dirname "$0")/.." || exit 1
