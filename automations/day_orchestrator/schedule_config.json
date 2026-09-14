@@ -1257,6 +1257,18 @@
       ],
       "base_args": []
     },
+    "org_campaign_metrics": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_note": "Org Focus Report campaign-metrics stamper (built 8/23; b2b COMPUTED per captainship owner + Carlos since 9/7 — see org_campaign_metrics/pull_b2b.py). Fills the hidden 'Campaign Log' of the Alphalete Recruiting Dashboard: b2b from the ATT ORDERLOG + activation/churn crosstabs, BOX (Ryan/Roshan), NDS (Khalil/Max). DRY-RUN default; the 8:30 AM Report Library card runs --write (after the Box extract lands ~7-8am). REGISTERED 2026-09-14: the card existed since 8/23 but this id was never in the registry, so card_scheduler silently never fired it — every stamp until now was manual from the mini. `lucy rerun org_campaign_metrics` = dry preview.",
+      "display_name": "Org Focus Report Campaign Metrics",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.org_campaign_metrics.run"
+      ],
+      "base_args": []
+    },
     "captainship_boards": {
       "on_scheduler": true,
       "machine": "Lucy 2",
