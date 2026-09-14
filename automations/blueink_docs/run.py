@@ -172,6 +172,46 @@ def _flag_terminated(people: List[NewStart]) -> None:
         pass
 
 
+REPORT_ID = "blueink_docs"          # the schedule_config key, and the incident
+                                    # key (`failure-blueink_docs`). delivery_check
+                                    # also tries the dashed spelling by itself.
+
+
+def _record_run(sent_names, failed_names, *, dry_run: bool) -> None:
+    """Tell the Hub -- and delivery_check -- what this run actually DELIVERED.
+
+    WHY (2026-09-14). This report wrote no manifest and had no `verify` wired,
+    so delivery_check could only ever answer UNKNOWN, and UNKNOWN is explicitly
+    not allowed to close a ticket. Its corrections-channel incident therefore
+    stayed :pending: no matter what happened: a CLEAN rerun at 9:17 posted
+    "ran clean, but nothing can confirm it DELIVERED, so this stays open".
+    Megan saw a pending ticket for a report that had already delivered.
+
+    A manifest is the honest answer, not `close_on: exit_zero` -- this report
+    CAN prove delivery, because it writes a ledger row per person as it goes.
+    So: who went out, who didn't, and the args that retry only the stragglers.
+
+    retry_args is a bare --send on purpose. The ledger already makes a rerun
+    skip everyone who has a bundle id, so "run it again" IS "retry only the
+    failures" here -- and it stays right for any number of them, which
+    `--only <name>` (one person) could not.
+    """
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID,
+            kind="new start",
+            failed=list(failed_names),
+            succeeded=list(sent_names),
+            retry_args=["--send"],
+            note=("%d sent, %d failed" % (len(sent_names), len(failed_names))),
+            dry_run=dry_run)
+    except Exception as exc:                       # noqa: BLE001
+        # Bookkeeping. It must never be the reason a run that mailed the right
+        # people reports itself as broken.
+        print(f"\n(couldn't write the run manifest: {exc})")
+
+
 def _one_line(exc: Exception) -> str:
     """The sentence a human needs, without Playwright's log dump.
 
@@ -212,6 +252,9 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
     would roughly double a run that already takes ~a minute each."""
     rows, failures, sent = [], 0, []
     problems: List[tuple] = []
+    sent_failed: List[str] = []        # send failures ONLY -- `problems` later
+                                       # collects skips and held-backs too, and
+                                       # neither of those is a failed delivery
     template = config.TEMPLATE_NAME
     with bi_session._sync_api()() as p:
         browser, ctx = ui_send.open_browser(p, headless=headless)
@@ -229,6 +272,7 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
                     failures += 1
                     why = _one_line(exc)
                     problems.append((person.name, why[:160]))
+                    sent_failed.append(person.name)
                     print(f"  [{i}/{len(people)}] FAILED  {person.name:<26} {why}")
                     if really_send:
                         rows.append(ledger.row_for(person, "", "failed", why[:200]))
@@ -249,7 +293,11 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
         except Exception as exc:
             print(f"\nSends went out, but the green highlight failed: {exc}\n"
                   "Nothing to re-send -- rerun with --highlight-only to tint.")
-    return failures, len(sent), problems
+    # The NAMES, not just a count: the manifest has to say who delivered and
+    # who didn't, and a count can only be turned back into names by slicing
+    # to_send -- which silently attributes the wrong people, because the ones
+    # that failed are scattered through the batch, not at the end of it.
+    return failures, len(sent), problems, [p.name for p in sent], sent_failed
 
 
 def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
@@ -642,6 +690,10 @@ def _main(argv=None) -> int:
                                 dry_run=not args.slack)
             except Exception as exc:
                 print(f"\nThe Slack summary failed ({exc}).")
+        # A week where everyone already has their packet IS a delivered run --
+        # the same outcome as sending, reached by a shorter road. Saying so
+        # here is what stops the ticket hanging open on a quiet Monday.
+        _record_run([p.name for p in to_send_all], [], dry_run=not args.send)
         return 0
 
     if args.via == "api":
@@ -651,7 +703,7 @@ def _main(argv=None) -> int:
     else:
         print(f"\nSENDING to {len(to_send)} people through the web app "
               f"(~1 min each, so roughly {max(1, len(to_send))} minutes)...")
-        failures, sent_count, problems = _send_via_ui(
+        failures, sent_count, problems, sent_names, failed_names = _send_via_ui(
             workbook, ws, to_send, really_send=True, headless=not args.headed)
 
         # Anyone who SHOULD have docs and doesn't. Deliberate exclusions (quit,
@@ -693,6 +745,8 @@ def _main(argv=None) -> int:
         except Exception as exc:
             print(f"\nThe Slack summary failed ({exc}). The sends themselves "
                   "are fine and logged -- this is only the notification.")
+    if args.via != "api":
+        _record_run(sent_names, failed_names, dry_run=False)
     print(f"\nDone: {len(to_send) - failures} sent, {failures} failed. "
           f"Logged in the {config.LEDGER_TAB!r} tab.")
     return 1 if failures else 0
