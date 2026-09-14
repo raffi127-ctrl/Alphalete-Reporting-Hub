@@ -1235,3 +1235,67 @@ class TheSecondSweepCreatesMissingPeople(unittest.TestCase):
         self.assertEqual([], added)
         self.assertEqual(1, len(refused))
         self.assertIn("not in the Add Sales Rep", refused[0])
+
+
+class TheAddPassSaysItOnce(unittest.TestCase):
+    """Megan 2026-09-14: "it should alert #/# added to OV and will be send digi
+    docs 30min prior to start time or something like that."
+
+    The question anybody has at 10:30 is whether this morning's people are
+    getting their documents. A count answers it in one glance; the names only
+    matter for whoever did not make it. Per-person alerts on the way through
+    would rebuild the flood this replaces — fifteen names, thirty-six posts,
+    the same three people tagged on every one.
+    """
+
+    def test_a_clean_pass_still_posts_its_count(self):
+        """Unlike most of this report, silence is NOT the clean outcome here.
+        The count confirms the morning is handled — and that is what makes its
+        absence meaningful: no post at 10:30 means the pass never ran."""
+        from automations.digi_docs import slack_post
+        posted = {}
+        with mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_text_only",
+                        lambda text, **kw: posted.setdefault("t", text)), \
+             mock.patch.object(slack_post, "_thread_ts", lambda _s: "1.23"), \
+             mock.patch.object(slack_post, "_mark_reported", lambda: None):
+            ok = slack_post.post_add_summary(48, 48, [], dry_run=False)
+        self.assertTrue(ok)
+        self.assertIn("48/48", posted["t"])
+        self.assertIn("30 minutes before", posted["t"])
+
+    def test_nobody_is_tagged_when_nobody_needs_doing(self):
+        from automations.digi_docs import slack_post
+        posted = {}
+        with mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_text_only",
+                        lambda text, **kw: posted.setdefault("t", text)), \
+             mock.patch.object(slack_post, "_thread_ts", lambda _s: "1.23"), \
+             mock.patch.object(slack_post, "_mark_reported", lambda: None):
+            slack_post.post_add_summary(48, 48, [], dry_run=False)
+        self.assertNotIn("<@", posted["t"], "a clean pass pings nobody")
+
+    def test_the_ones_who_failed_are_named_and_tagged(self):
+        from automations.digi_docs import slack_post
+        posted = {}
+        with mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_text_only",
+                        lambda text, **kw: posted.setdefault("t", text)), \
+             mock.patch.object(slack_post, "_thread_ts", lambda _s: "1.23"), \
+             mock.patch.object(slack_post, "_mark_reported", lambda: None):
+            slack_post.post_add_summary(
+                46, 48, ["Billy Garvin: not in the Add Sales Rep employee list"],
+                dry_run=False)
+        self.assertIn("46/48", posted["t"])
+        self.assertIn("Billy Garvin", posted["t"])
+        self.assertIn("<@", posted["t"])
+
+    def test_a_dry_run_posts_nothing(self):
+        from automations.digi_docs import slack_post
+        posted = []
+        with mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_text_only",
+                        lambda *a, **k: posted.append(a)):
+            self.assertFalse(slack_post.post_add_summary(1, 1, [],
+                                                         dry_run=True))
+        self.assertEqual([], posted)

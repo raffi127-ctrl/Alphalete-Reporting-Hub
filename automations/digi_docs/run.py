@@ -240,8 +240,16 @@ def _mark_quiet_day(quiet: bool) -> None:
         pass    # a missing marker only costs the next tick a sheet read
 
 
-def _refuse(refused, line, dry):
-    """Record a failure AND alert on it immediately.
+def _refuse(refused, line, dry, *, alert: bool = True):
+    """Record a failure, and by default alert on it immediately.
+
+    `alert=False` is the ADD phase (Megan 2026-09-14: "it should alert #/#
+    added to OV and will be send digi docs 30min prior to start time"). That
+    phase now ends with ONE post carrying the count and every name that did not
+    make it, so alerting per person on the way through would rebuild the flood
+    it replaces. The SEND phase still alerts immediately — there each failure
+    is its own person, minutes from their own start, and a summary at the end
+    of the pass arrives after the moment it mattered.
 
     Megan 2026-08-26: "if anything fails it needs to alert right away." Holding
     these until the end of the pass was fine when this was one 7:45 batch; it
@@ -250,6 +258,8 @@ def _refuse(refused, line, dry):
     """
     refused.append(line)
     print(f"  ⛔ {line}")
+    if not alert:
+        return
     try:
         from automations.digi_docs import slack_post
         slack_post.alert_failure(line, dry_run=dry)
@@ -448,15 +458,15 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     # why this runs at 11:00, a people-facing hour, and never
                     # in the 4am batch.
                     if "add sales rep" not in str(e).lower() or dry:
-                        _refuse(refused, str(e), dry)
+                        _refuse(refused, str(e), dry, alert=False)
                         continue
                     try:
                         made = _create_missing(ov, page, c)
                     except Exception as ce:                 # noqa: BLE001
-                        _refuse(refused, f"{c.name}: {ce}", dry)
+                        _refuse(refused, f"{c.name}: {ce}", dry, alert=False)
                         continue
                     if not made:
-                        _refuse(refused, str(e), dry)
+                        _refuse(refused, str(e), dry, alert=False)
                         continue
                     created.append(c.name)
                     try:
@@ -473,11 +483,27 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                         _refuse(refused,
                                 f"{c.name}: created in OwnerVille, but the "
                                 f"campaign picker has not caught up yet "
-                                f"({e2}). The send tick will add them.", dry)
+                                f"({e2}). The send tick will add them.",
+                                dry, alert=False)
 
         if created:
             print(f"  created {len(created)} employee record(s) in "
                   f"OwnerVille: {', '.join(created)}")
+
+        if do_add:
+            # ONE post for the whole pass (Megan 2026-09-14). The count is the
+            # thing a reader actually wants at 10:30 -- "are my people going to
+            # get their documents" -- and the names only matter for whoever
+            # did not make it.
+            try:
+                from automations.digi_docs import slack_post
+                ready = len(add_list) - len(refused)
+                slack_post.post_add_summary(
+                    ready, len(add_list),
+                    [r for r in refused], dry_run=dry)
+            except Exception as e:                          # noqa: BLE001
+                print(f"  (add summary not posted: {type(e).__name__}: "
+                      f"{str(e)[:90]})")
 
         if do_send:
             print("\nPHASE: send bundles")

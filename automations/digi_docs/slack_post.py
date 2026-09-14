@@ -305,6 +305,51 @@ def headline_and_need(line: str):
     return head, need
 
 
+def post_add_summary(ready: int, total: int, failed: List[str], *,
+                     dry_run: bool = True) -> bool:
+    """One line at the end of the 10:30 pass: how many are in OwnerVille, and
+    when their documents go.
+
+    Megan 2026-09-14: "it should alert #/# added to OV and will be send digi
+    docs 30min prior to start time or something like that."
+
+    WHY A COUNT AND NOT A LIST. The question anybody has at 10:30 is whether
+    this morning's people are going to get their documents. "46/48" answers it
+    in one glance. The names only matter for the two who did not make it, and
+    those are the only ones that pull an @-mention — which is the whole lesson
+    of 9/14, when fifteen names became thirty-six posts and tagged the same
+    three people on every one.
+
+    IT POSTS EVEN WHEN EVERYTHING WORKED, unlike most of this report. A clean
+    count is not a blank board: it is the confirmation that the morning is
+    handled, and it is what makes its ABSENCE meaningful — no post at 10:30
+    means the pass did not run at all, which is worth noticing.
+    """
+    ready = max(0, int(ready))
+    total = max(0, int(total))
+    head = f"*{HEADER} — {ready}/{total} in OwnerVille*"
+    lines = [head,
+             "Their documents go out 30 minutes before each start time."]
+    if failed:
+        lines.append(f"\n*Could not add* ({len(failed)}):")
+        lines += [f"   • {f}" for f in failed]
+        lines.append(_tags())
+    body = "\n".join(l for l in lines if l).rstrip()
+    if dry_run:
+        print(f"\n--- Slack add summary (dry run, NOT posted) ---\n{body}")
+        return False
+    from automations.shared import slack_metrics_post as smp
+    try:
+        smp.post_reply_text_only(body, thread_ts=_thread_ts(smp),
+                                 channel_id=CHANNEL)
+    except Exception as e:                                  # noqa: BLE001
+        print(f"  (add summary to {CHANNEL} FAILED: "
+              f"{type(e).__name__}: {str(e)[:120]})")
+        return False
+    _mark_reported()
+    return True
+
+
 def alert_failure(line: str, *, fault: bool = False,
                   dry_run: bool = True) -> bool:
     """One failure, posted the MOMENT it happens (Megan 2026-08-26: "if
