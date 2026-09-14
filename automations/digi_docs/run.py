@@ -116,6 +116,30 @@ def main(argv=None) -> int:
     return _phases(args)
 
 
+def _create_missing(ov, page, c) -> bool:
+    """Create this person's OwnerVille employee record. True if it now exists.
+
+    Lives on the Sales Reps page (p=20), which is a DIFFERENT page from the
+    campaign's Add Sales Rep modal despite the identical button name — see
+    digi_docs.new_rep. It navigates the page away, so View Progress has to be
+    re-opened before the campaign add is retried; add_sales_rep's own
+    _select_campaign does that from wherever it lands, but only if the page is
+    back on View Progress first.
+    """
+    from automations.digi_docs import new_rep
+    out = new_rep.create(page, c.person, dry_run=False)
+    # Back to where the add flow expects to be.
+    from automations.b2b_dispositions.capture import capture_rqst
+    rqst = capture_rqst(page)
+    page.goto(f"https://v2.ownerville.com/index.cfm?p={ov.config.VIEW_PROGRESS_P}"
+              f"&rqst={rqst}", wait_until="domcontentloaded")
+    try:
+        page.wait_for_load_state("networkidle", timeout=60000)
+    except Exception:                                       # noqa: BLE001
+        pass
+    return out in ("created", "exists")
+
+
 def _flag_terminated(people) -> None:
     """Advisory only — surface anyone on the shared terminated list BEFORE we
     mail them a contract, and never let the check itself take a run down.
@@ -371,6 +395,7 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
     for the campaign the person lands on (Megan 2026-08-31) -- but adding late
     is worse: somebody starting at 1pm has to exist in OwnerVille before their
     12:30 send comes round."""
+    created = []                # people this run put INTO OwnerVille
     with page_ctx as page:
         if do_add:
             print("PHASE: add reps")
@@ -400,7 +425,59 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     if outcome in ("added", "dry"):
                         added.append(c.name)
                 except ov.Refused as e:
-                    _refuse(refused, str(e), dry)
+                    # SECOND SWEEP: CREATE THE PERSON, THEN ADD THEM (Megan
+                    # 2026-09-14: "that 11am needs a 2nd sweep to add the
+                    # missing people and then they will get sent on time").
+                    #
+                    # "not in the Add Sales Rep employee list" means the picker
+                    # cannot offer them because OwnerVille has no employee
+                    # record for them at all. On 9/14 that was fifteen of
+                    # forty-eight, and it was only discovered thirty minutes
+                    # before each person's own start — far too late for anyone
+                    # to fix by hand before the bundle was due.
+                    #
+                    # IT HAPPENS HERE, INSIDE THE 11:00 PASS, not as a separate
+                    # job afterwards. A second job is a second thing that can
+                    # not run, and the whole point is that the person exists
+                    # before their 12:30 send comes round. Create, then retry
+                    # the add immediately, so by the time this pass ends they
+                    # are on the campaign like everybody else.
+                    #
+                    # CREATING IS A SEND. The form mails them their account,
+                    # exactly as adding mails the onboarding email — which is
+                    # why this runs at 11:00, a people-facing hour, and never
+                    # in the 4am batch.
+                    if "add sales rep" not in str(e).lower() or dry:
+                        _refuse(refused, str(e), dry)
+                        continue
+                    try:
+                        made = _create_missing(ov, page, c)
+                    except Exception as ce:                 # noqa: BLE001
+                        _refuse(refused, f"{c.name}: {ce}", dry)
+                        continue
+                    if not made:
+                        _refuse(refused, str(e), dry)
+                        continue
+                    created.append(c.name)
+                    try:
+                        outcome = ov.add_sales_rep(
+                            page, c.name, dry_run=dry, known_absent=False)
+                        if outcome in ("added", "dry", "exists"):
+                            added.append(c.name)
+                    except ov.Refused as e2:
+                        # Created but not addable yet. Say so plainly: the
+                        # record now exists, so the five-minute send tick will
+                        # pick them up on its own once the directory catches
+                        # up, and a human re-running this would only risk a
+                        # duplicate.
+                        _refuse(refused,
+                                f"{c.name}: created in OwnerVille, but the "
+                                f"campaign picker has not caught up yet "
+                                f"({e2}). The send tick will add them.", dry)
+
+        if created:
+            print(f"  created {len(created)} employee record(s) in "
+                  f"OwnerVille: {', '.join(created)}")
 
         if do_send:
             print("\nPHASE: send bundles")

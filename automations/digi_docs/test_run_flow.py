@@ -1137,3 +1137,91 @@ class PendingIsNeitherDoneNorSendable(_NoNetwork):
         from automations.digi_docs import config
         self.assertNotIn("PENDING", config.DOCS_DONE_STATES)
         self.assertNotIn("PENDING", config.DOCS_SENDABLE_STATES)
+
+
+class TheSecondSweepCreatesMissingPeople(unittest.TestCase):
+    """Megan 2026-09-14: "that 11am needs a 2nd sweep to add the missing people
+    and then they will get sent on time."
+
+    On 9/14 fifteen of forty-eight new starts had no OwnerVille employee record
+    at all, so the campaign picker could not offer them and the add pass simply
+    refused. Nobody found out until each person's bundle came due, thirty
+    minutes before they walked in. Creating the record is the step that was
+    missing, and it belongs INSIDE the 11:00 pass — a separate job afterwards
+    is a second thing that can fail to run, and the whole point is that the
+    person exists before their own send comes round.
+    """
+
+    def _run_add(self, *, refusal, creates=True, dry=False):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import run as _run
+
+        calls = {"add": 0, "created": []}
+
+        class _OV:
+            Refused = RuntimeError
+            config = types.SimpleNamespace(VIEW_PROGRESS_P=201)
+
+            def snapshot(s, page, **kw):
+                return set(), False          # never trusted → per-person path
+
+            def present(s, roster, name):
+                return False
+
+            def add_sales_rep(s, page, name, **kw):
+                calls["add"] += 1
+                if calls["add"] == 1:
+                    raise _OV.Refused(refusal)
+                return "added"
+
+        ov = _OV()
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        people = [type("C", (), {"name": "Billy Garvin",
+                                 "person": object()})()]
+        added, refused = [], []
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True), \
+             mock.patch.object(_run, "_create_missing",
+                               lambda ov_, page, c: (
+                                   calls["created"].append(c.name) or creates)):
+            _run._work(ov, page_ctx=contextlib.nullcontext(object()),
+                       do_add=True, do_send=False, send=[], add_list=people,
+                       dry=dry, added=added, done=[], refused=refused)
+        return calls, added, refused
+
+    def test_a_person_with_no_record_is_created_then_added(self):
+        calls, added, refused = self._run_add(
+            refusal="Billy Garvin: not in the Add Sales Rep employee list "
+                    "(saw 584 option(s); 0 share the surname 'garvin')")
+        self.assertEqual(["Billy Garvin"], calls["created"])
+        self.assertEqual(["Billy Garvin"], added,
+                         "created, then added on the retry — not left refused")
+        self.assertEqual([], refused)
+
+    def test_any_other_refusal_is_not_a_reason_to_create_anybody(self):
+        """Two people sharing a name, a dead session, a timeout — none of those
+        mean the person is absent, and creating on one would make a duplicate
+        human. Only the picker saying it has no such employee does."""
+        calls, added, refused = self._run_add(
+            refusal="Juliet Rodriguez: 2 employees are spelled EXACTLY this way")
+        self.assertEqual([], calls["created"])
+        self.assertEqual([], added)
+        self.assertEqual(1, len(refused))
+
+    def test_a_dry_run_creates_nobody(self):
+        """Creating mails the person their account. --dry-run must never."""
+        calls, added, refused = self._run_add(
+            refusal="Billy Garvin: not in the Add Sales Rep employee list",
+            dry=True)
+        self.assertEqual([], calls["created"])
+
+    def test_a_creation_that_fails_leaves_the_original_refusal(self):
+        calls, added, refused = self._run_add(
+            refusal="Billy Garvin: not in the Add Sales Rep employee list",
+            creates=False)
+        self.assertEqual([], added)
+        self.assertEqual(1, len(refused))
+        self.assertIn("not in the Add Sales Rep", refused[0])
