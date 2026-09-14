@@ -20,10 +20,18 @@ one; Monday's reliably holds two, the second being the late adds.
 
 Three rules, each of them a bug someone actually hit:
 
-1. **A chart ends at a BLANK ROW.** Letting a chart run to the next header (or
-   to the bottom of the tab) means anything typed underneath reads as one of
-   its people. On 2026-08-24 that turned 25 stray name rows below the chart
-   into fake people with no email address.
+1. **A chart ends at a BLANK ROW — but a gap inside one does NOT end it.**
+   Letting a chart run to the next header (or to the bottom of the tab) means
+   anything typed underneath reads as one of its people. On 2026-08-24 that
+   turned 25 stray name rows below the chart into fake people with no email
+   address. The other half of the rule took until 2026-09-14: delete the
+   person on row 17 of a 38-row lineup and the gap they leave looks exactly
+   like the end of the chart, so the 21 people BELOW it went missing — the
+   headshot bot reported "Headshot Photo ✅ ticked" while ticking them on the
+   rolling stack instead of the week's tab. So a blank row PAUSES a chart; it
+   resumes on the next row carrying a real email address in the paused
+   chart's own Email column, which is the one thing the 8/24 stray rows never
+   had. (`blueink_docs.roster` learned this first — same rule, same test.)
 2. **A chart opened by a DATE ROW with no header of its own inherits the
    previous chart's columns.** Monday's second chart is often pasted in without
    one, and its people would otherwise vanish silently.
@@ -37,6 +45,8 @@ import re
 from typing import Dict, List, Optional
 
 _DATE_RE = re.compile(r"^\s*\d{1,2}[./]\d{1,2}([./]\d{2,4})?\s*$")
+# Same shape blueink_docs.roster uses to tell a person from a stray row.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def norm(s: str) -> str:
@@ -57,13 +67,14 @@ def is_header_row(row: List[str], first_label: str, last_label: str) -> bool:
 
 
 def find_charts(values: List[List[str]], *, first_label: str = "Name",
-                last_label: str = "Last Name") -> List[Dict]:
+                last_label: str = "Last Name",
+                email_label: str = "Email") -> List[Dict]:
     """Every chart on the tab, in order.
 
     Each entry: {"header_row", "start_row", "end_row", "cols", "date_text"}
-    with 1-indexed rows; `end_row` is inclusive and stops at the blank row that
-    closes the chart. `cols` maps the normalised header label -> 1-indexed
-    column.
+    with 1-indexed rows; `end_row` is INCLUSIVE and is the chart's last real
+    row — a blank row inside the chart is a gap it spans, not its end (rule 1).
+    `cols` maps the normalised header label -> 1-indexed column.
 
     `date_text` is the date row VERBATIM ("8/24/2026", or "8/24" when the year
     is left off), or "" for a chart no date row opened. It used to be thrown
@@ -77,46 +88,84 @@ def find_charts(values: List[List[str]], *, first_label: str = "Name",
     last_cols: Optional[Dict] = None
     pending_date = False
     pending_date_text = ""
+    # A chart interrupted by a blank row: kept aside, not closed, until we know
+    # whether the rows under the gap are still its people (rule 1).
+    paused: Optional[Dict] = None
+    last_content = 0                  # last row that belongs to `cur`
 
-    def close(at_row: int) -> None:
-        nonlocal cur
-        if cur is not None:
-            cur["end_row"] = at_row
-            charts.append(cur)
-            cur = None
+    def close() -> None:
+        """End the open (or paused) chart at its last REAL row — never at the
+        blank rows trailing it, which is what `end_row` used to swallow.
+
+        Closing has to flush a PAUSED chart too: a tab reads
+        people / blank / date row, and dropping the pause there would lose
+        every chart that happens to end on a gap."""
+        nonlocal cur, paused
+        chart = cur if cur is not None else paused
+        if chart is not None:
+            chart["end_row"] = max(last_content, chart["start_row"] - 1)
+            charts.append(chart)
+        cur = paused = None
+
+    def resume() -> None:
+        """The paused chart goes on: the gap was a deleted row, not the end."""
+        nonlocal cur, paused
+        cur, paused = paused, None
 
     for i, row in enumerate(values):
         rownum = i + 1
         if is_blank_row(row):
-            close(rownum - 1)
+            if cur is not None:
+                paused, cur = cur, None   # pause, don't close: see rule 1
             pending_date = False
             pending_date_text = ""
             continue
         if is_header_row(row, first_label, last_label):
-            close(rownum - 1)
+            close()
             cols = {norm(c): j + 1 for j, c in enumerate(row) if norm(c)}
             cur = {"header_row": rownum, "start_row": rownum + 1, "cols": cols,
                    "date_text": pending_date_text}
             last_cols = cols
+            last_content = rownum         # an empty chart ends at its header
             pending_date = False
             pending_date_text = ""
             continue
         if is_date_row(row):
             # Opens a chart. If a header follows it takes over; if none does,
             # rule 2 lets this chart borrow the last one's columns.
-            close(rownum - 1)
+            close()
             pending_date = True
             pending_date_text = norm(row[0])
             continue
+        if cur is None and paused is not None and not pending_date:
+            # A row under a gap. It rejoins the paused chart only if it reads
+            # as one of its people — a real email in THAT chart's Email column.
+            # The 8/24 stray rows had bare names and no email, so they stay
+            # outside every chart.
+            if _has_email(row, paused, email_label):
+                resume()
+            # else: it belongs to nobody, and the chart stays paused — the
+            # next emailed row under the same columns can still rejoin it.
         if cur is None and pending_date and last_cols:
+            close()
             cur = {"header_row": None, "start_row": rownum,
                    "cols": dict(last_cols), "date_text": pending_date_text}
             pending_date = False
             pending_date_text = ""
+        if cur is not None:
+            last_content = rownum
         # a row with no chart open belongs to nobody -- rule 1
 
-    close(len(values))
+    close()
     return charts
+
+
+def _has_email(row: List[str], chart: Dict, email_label: str) -> bool:
+    """Does `row` carry a real email in `chart`'s Email column?"""
+    col = column(chart, email_label) if email_label else None
+    if not col or len(row) < col:
+        return False
+    return bool(_EMAIL_RE.match(norm(row[col - 1])))
 
 
 def chart_date(chart: Dict, tab_name: str = ""):

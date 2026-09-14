@@ -195,7 +195,10 @@ def find_person(values: list[list[str]], name: str, *, verbose: bool = True):
             cands.append((_name_score(name, full), r + 1, c_head, full))
     if not cands:
         return None, None, "no people found on the tab"
-    cands.sort(reverse=True)
+    # Best score first; among equal scores the TOPMOST row, which on the
+    # rolling stack is the most recent week (a bare reverse sort quietly
+    # preferred the bottom row — the oldest copy of that person).
+    cands.sort(key=lambda c: (-c[0], c[1]))
     best, row, c_head, got = cands[0]
     runner = cands[1][0] if len(cands) > 1 else 0.0
     runner_name = cands[1][3] if len(cands) > 1 else ""

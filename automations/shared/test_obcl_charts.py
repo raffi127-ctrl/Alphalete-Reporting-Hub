@@ -88,3 +88,43 @@ def test_any_number_of_charts_not_just_two():
     for c in charts:
         assert c["start_row"] == c["end_row"]
     assert not any(c["start_row"] <= len(vals) <= c["end_row"] for c in charts)
+
+
+def test_a_gap_inside_a_chart_does_not_end_it():
+    """2026-09-14: someone deleted a person mid-lineup on 'D2D OBCL 9.14'.
+    The blank row they left read as the end of the chart, so the 21 people
+    under it -- Le'derius Arnold and Oluwadolapo Oyedele among them -- fell
+    outside every chart. The headshot bot then couldn't find them on the
+    week's tab, ticked them on the rolling stack instead, and still reported
+    'Headshot Photo ✅ ticked'."""
+    vals = _rows([_p("Ana", "Lopez"), list(BLANK), _p("Ben", "Ruiz")])
+    charts = oc.find_charts(vals)
+    assert len(charts) == 1
+    ben = len(vals) - 1                      # _rows adds a trailing blank
+    assert charts[0]["start_row"] <= ben <= charts[0]["end_row"]
+
+
+def test_a_stray_row_under_a_gap_is_still_nobody():
+    """The gap rule must not undo rule 1: what rejoins a chart is a real
+    EMAIL in its own Email column, which the 8/24 stray rows never had."""
+    vals = _rows([_p("Ana", "Lopez"), list(BLANK),
+                  ["", "", "Stray", "Person", "", ""]])
+    charts = oc.find_charts(vals)
+    stray = len(vals) - 1
+    assert not any(c["start_row"] <= stray <= c["end_row"] for c in charts)
+
+
+def test_a_chart_that_ends_on_a_gap_is_not_dropped():
+    """A chart is PAUSED at a blank row, so closing has to flush the pause --
+    else 'people / blank / date row' loses the whole first chart."""
+    charts = oc.find_charts(_rows([_p("Ana", "Lopez")], [_p("Ben", "Ruiz")]))
+    assert len(charts) == 2
+    assert charts[0]["end_row"] == charts[0]["start_row"]   # trailing blank
+                                                            # is not a person
+
+
+def test_end_row_stops_at_the_last_real_row():
+    vals = _rows([_p("Ana", "Lopez")])
+    vals += [list(BLANK), list(BLANK)]
+    c = oc.find_charts(vals)[0]
+    assert c["end_row"] == c["start_row"]

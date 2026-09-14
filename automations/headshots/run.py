@@ -272,13 +272,21 @@ def _sheet_note(name: str, act: dict) -> str:
         from automations.headshots.sheet_log import log_upload
         res = log_upload(name, verbose=True)
         act["sheet"] = res
-        if res["status"] == "marked":
+        if res["status"] in ("marked", "already_marked"):
+            # WHICH tab it landed on is part of the answer. On 2026-09-14 a
+            # gap row hid 21 people on the week's tab, the mark went to the
+            # rolling stack instead, and this line still said "✅ ticked" —
+            # true, and useless. Say so when it isn't the week's tab.
+            from automations.headshots.sheet_log import tab_date
+            where = ("" if tab_date(res.get("tab", "")) else
+                     f" (on the rolling *{res.get('tab', '')}* tab, not this "
+                     "week's)")
+            if res["status"] == "already_marked":
+                return f"\nOBCL Sheet: already ticked{where}"
             as_who = (f" (as *{res['matched_as']}*)"
                       if res.get("matched_as", "").lower() != name.lower()
                       else "")
-            return f"\nOBCL Sheet: Headshot Photo ✅ ticked{as_who}"
-        if res["status"] == "already_marked":
-            return "\nOBCL Sheet: already ticked"
+            return f"\nOBCL Sheet: Headshot Photo ✅ ticked{as_who}{where}"
         # Not on the tab (or too close to two names to be sure). One plain
         # line, Megan's wording (2026-08-24) — the admin just needs to know
         # to log this one by hand; the reason is in the run log.
