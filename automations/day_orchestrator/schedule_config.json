@@ -1752,6 +1752,26 @@
       "timeout_minutes": 20,
       "verify": null
     },
+    "weekly_knocks_focus": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "PREVIEW (Eve 2026-09-14, Rafael's ask): writes an office's Weekly Knock Dispositions OFFICE TOTALS into the 'WEEKLY KNOCKS DATA' box of its ATT Program - Focus Report tab and pastes the board PNG there through the Focus Report's Apps Script (one image per tab, replaced weekly). No pull: reads the PNG + totals json the Sunday weekly_knock_dispositions run leaves in output/, so it MUST run on the same machine (Lucy 1). DRY-RUN by default; --live only writes to the preview tab until ROLLOUT flips in run.py. `lucy rerun weekly_knocks_focus --office \"Akashdeep Rai\" --tab \"Kash Rai - Test Eve\"` (add --live to write). Off the scheduler until Eve says roll out.",
+      "display_name": "Weekly Knocks → Focus Report (box + board image)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.weekly_knocks_focus.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": null,
+      "machine": "Lucy 1"
+    },
     "org_board_slack": {
       "on_scheduler": false,
       "_off_scheduler_note": "Org Sales Board daily Slack post (VA-replacement Item 1). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.org-board-slack, installed via `lucy rerun install_org_board_slack_agent`) firing 8 passes 9:00-11:55 CST daily incl. weekends. Present here so `lucy rerun org_board_slack` works. Screenshots the 8-section org-wide DAILY board off the LIVE tab (Alphalete ORG Sales Board) as one image matching Jolie's post, and posts to #top-leaders-alphalete-org AS LUCY (mini token). Fill-gate holds (exit 75, retry next pass) until YESTERDAY's column is 100% filled across every rep in every section; once-per-day state file. DRY-RUN by default (`lucy rerun org_board_slack` = no post); the LaunchAgent wrapper passes --post. Runs on the MINI. Registered 2026-07-17.",

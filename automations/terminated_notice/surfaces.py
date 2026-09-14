@@ -147,6 +147,13 @@ SURFACES: List[object] = [
     SheetTab(
         "ATT Program - Focus Report",
         "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE",
+        # Rafael 2026-09-14: "any owners shut down, you can get rid of them
+        # right away". The scan still only HIDES (reversible, automatic); the
+        # delete is a person's step, because this workbook sits at Google's
+        # cell cap and a hidden tab still counts against it.
+        fix=("hidden — shut-down owner: DELETE the tab (Rafael OK'd, no need "
+             "to ask). Back it up to output/ first; its Recruiting + Country "
+             "Stats rows go blank"),
     ),
     SheetTab(
         "Daily Rep Breakdown - ATT Program",

@@ -521,6 +521,26 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                            n_totals=n_totals,
                            n_compare_top=len(compare_rows))
             boards.append((cfg, png, extra))
+            # The same week's OFFICE TOTALS, next to the PNG, for
+            # weekly_knocks_focus — it writes them into the office's Focus
+            # Report tab and pastes this PNG there (Rafael via Eve,
+            # 2026-09-14). Best-effort: a board post never waits on it.
+            try:
+                import json as _json
+                (out_dir / f"weekly_knock_dispositions_{saturday.isoformat()}"
+                           ".json").write_text(_json.dumps({
+                    "office": name, "monday": monday.isoformat(),
+                    "saturday": saturday.isoformat(),
+                    "headers": B.headers_for(dispo_cols, gaps_only),
+                    # By LABEL, not index: comparison rows sit above it and
+                    # team bands (Raf 2026-09-13) below.
+                    "totals": next((r for r in rows if len(r) > 1
+                                    and r[1] == B.TOTALS_LABEL),
+                                   rows[len(compare_rows)]),
+                }, ensure_ascii=False), encoding="utf-8")
+            except Exception as e:  # noqa: BLE001
+                print(f"[wkd]   ⚠ totals json not saved for {name}: "
+                      f"{type(e).__name__}: {str(e)[:120]}", flush=True)
             if (not gaps_only and cfg.get("pss_owner") is not None
                     and pss_path is None and name not in failed):
                 failed.append(name)     # retry posts the full board

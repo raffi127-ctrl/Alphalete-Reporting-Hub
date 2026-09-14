@@ -3926,6 +3926,12 @@ def _creds_cache_bust() -> None:
 
 
 _CRED_FILES = {
+    # URL + key of the ATT Program - Focus Report's own Apps Script web app,
+    # which pastes each office's weekly knock board into its tab without a
+    # public link (automations/weekly_knocks_focus, Eve 2026-09-14). Needed on
+    # the machine that runs weekly_knock_dispositions (its PNGs are local).
+    "weekly-knocks-focus-webapp":
+        lambda: Path.home() / ".config" / "recruiting-report" / "weekly-knocks-focus-webapp.json",
     "gmail-app-password":
         lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password",
     "gmail-app-password-raffi127":

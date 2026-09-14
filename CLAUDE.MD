@@ -98,6 +98,11 @@ fluff. I need clear visuals and concise communications.
 - **Don't touch user data without confirming.** Append or overwrite
   mapped cells only — never delete a tab someone filled in, even to
   "rebuild cleanly". (I lost work once that way. Don't.)
+  **Exception (Rafael, 2026-09-14):** an owner whose office SHUT DOWN
+  gets their Focus Report tab deleted right away — no need to ask again.
+  Back the tab up to `output/` first; their rows in `Recruiting` and
+  `Country Stats` go blank, and the office goes to `skip` in
+  `office-mapping.json`.
 - **Cross-platform.** Every report has to run on macOS AND Windows. No
   hardcoded `.venv/bin/python`, no `%-I` strftime, no Mac-only paths.
 - **Hub ownership.** I (Megan) own `automations/dashboard.py`'s

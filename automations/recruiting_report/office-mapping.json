@@ -1,7 +1,7 @@
 {
-  "confirmed_count": 55,
+  "confirmed_count": 54,
   "needs_review_count": 0,
-  "skip_count": 32,
+  "skip_count": 33,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -301,14 +301,6 @@
       "hardcoded": true
     },
     {
-      "sheet_tab": "Kimberly Rodriguez",
-      "office_id": "23576",
-      "as_owner": "Kimberly Rodriguez",
-      "as_company": "Illumane, Inc.",
-      "confidence": 1.0,
-      "auto_onboarded": true
-    },
-    {
       "sheet_tab": "Eric Zech",
       "office_id": "21599",
       "as_owner": "Eric Zech",
@@ -419,6 +411,12 @@
   ],
   "needs_review": [],
   "skip": [
+    {
+      "sheet_tab": "Kimberly Rodriguez",
+      "office_id": "23576",
+      "reason": "oficina cerrada — Illumane, Inc. shut down 2026-09-09 (Terminated ICDs). Tab BORRADA 2026-09-14 con OK de Rafael (\"any owners shut down, you can get rid of them right away\"); backup en output/focus_report_deleted_tabs_2026-09-14/ (Eve, 2026-09-14)",
+      "retired": "2026-09-14"
+    },
     {
       "sheet_tab": "Eric Martinez",
       "office_id": "20721",
