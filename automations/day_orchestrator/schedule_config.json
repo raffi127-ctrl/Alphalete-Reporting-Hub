@@ -9706,6 +9706,22 @@
       },
       "priority": "P2"
     },
+    "digi_docs_new_reps": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "CREATE the OwnerVille employee record for a new start who has none (Megan 2026-09-14: 'you need to be able to learn how to add the missing people from OV so that you can fully send to everyone on time for next week'). Fifteen of forty-eight were missing that Monday and nothing in this repo could create them: ownerville.add_sales_rep puts an EXISTING employee on a campaign, and its picker only offers people who already exist. TWO PAGES SHARE THE BUTTON NAME -- View Progress (p=201) 'Add Sales Rep' puts someone on a campaign; Sales Reps (p=20) '+ Add Sales Rep' creates the person. This is the second. Looks people up BY EMAIL, never by name: 9/14 was name matching failing all day, and here a wrong match creates a SECOND record for someone who already has one. Refuses anyone with no email or phone rather than creating them incomplete, and reads the form's own validation before submitting. DRY BY DEFAULT; --live writes. Start with --only for one person before any batch. weekdays [] so the batch never runs it.",
+      "machine": "Lucy 3",
+      "display_name": "Digi Docs — create missing OwnerVille reps",
+      "source_type": "browser",
+      "data_sources": [],
+      "command": [
+        "automations.digi_docs.new_rep"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2"
+    },
     "digi_docs_campaign_probe": {
       "on_scheduler": false,
       "_off_scheduler_note": "READ-ONLY proof that the add path can select RES-AT&T on the live page (Megan 2026-08-31: 'people will only get res at&t - no water or primo?'). The campaign fix was unproven and the usual proofs do not reach it: a DRY add returns 'WOULD add' from find_rep and never gets as far as choosing a campaign, and a LIVE add would prove it by adding a real person, which is not a test. 'found X under RES-AT&T' in the logs is find_rep LOCATING people re-added by hand and says nothing about what our add would pick. So this opens View Progress and runs the real _select_campaign against the real dropdown, printing every option and which one it landed on -- the whole risk being that the label carries an ampersand and there are lookalikes. Selects a dropdown value and reads the page: adds nobody, sends nothing, touches no Sheet. weekdays [] so the batch never runs it.",
