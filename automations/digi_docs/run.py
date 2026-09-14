@@ -698,18 +698,25 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
     #
     # A `fatal` is untouched: the run really did break, red is right, and
     # re-running it IS the fix.
-    # NOT IN OWNERVILLE IS NOT REPORTED AT ALL (Megan 2026-09-14: "there
-    # should be no reporting of who isn't in OV... do the rest manually").
-    # Silencing only the Slack alert would leave these names driving the Hub
-    # card's failure callout and the corrections thread behind it, which is the
-    # same report by another route. They stay in the LOG, with their evidence.
-    reportable = [r for r in refused
-                  if "add sales rep" not in (r or "").lower()]
-    if not dry and reportable and not fatal:
+    # WHAT REACHES THE CHANNEL CHANGED TWICE ON 2026-09-14, and the second
+    # change is not a reversal of the first.
+    #
+    # Megan, mid-afternoon: "there should be no reporting of who isn't in OV."
+    # Right at the time — the run could not do anything about those people, so
+    # every name was a chore for the office and fifteen of them buried the
+    # channel.
+    #
+    # Megan, after the second sweep landed: "we still need to alert in slack if
+    # something fails to get added." Also right, and about a different thing:
+    # the pass now CREATES anybody who is missing, so it no longer reports
+    # routine paperwork. A name that gets here has survived being created AND
+    # re-added, which means the automation could not do its job — a fault, not
+    # a to-do.
+    if not dry and refused and not fatal:
         try:
             from automations.shared import run_manifest as _rm
             _rm.write_manifest(
-                "digi_docs", failed=list(reportable), kind="blocked_person",
+                "digi_docs", failed=list(refused), kind="blocked_person",
                 ok=False,
                 succeeded=[n for n, _m, _t in done] + list(added),
                 note="Per-person items needing a human; the run itself was "

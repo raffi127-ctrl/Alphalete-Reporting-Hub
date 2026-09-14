@@ -378,30 +378,40 @@ class FaultsGoToTheFaultChannel(_NoNetwork):
         self.assertEqual(sent["thread_ts"], "1.23")      # threaded, not a flood
         self.assertNotIn("top_level", sent)
 
-    def test_not_in_ownerville_says_nothing_at_all(self):
-        """Megan 2026-09-14: "there should be no reporting of who isn't in OV.
-        It should just add who it can that is already there and then do the
-        rest manually."
+    def test_a_failure_to_add_still_speaks(self):
+        """Megan 2026-09-14, twice, and the second is not a reversal of the
+        first.
 
-        On 9/14 fifteen such names became thirty-six posts, each a paragraph
-        tagging the same three people, in the channel where their real to-do
-        list lands. The office sets its own new starts up; what it needed was
-        for this to stop talking. The run still adds everybody it can and the
-        refusal still lands in the log with its evidence.
+        Mid-afternoon: "there should be no reporting of who isn't in OV" —
+        right at the time, because the run could not do anything about those
+        people, so each name was a chore for the office and fifteen of them
+        buried the channel.
+
+        After the second sweep landed: "we still need to alert in slack if
+        something fails to get added" — also right, about a different thing.
+        The 10:30 pass now CREATES anybody missing, so a name that still
+        reaches here has survived being created AND re-added. That is the
+        automation failing, not paperwork, and it has to be said out loud.
         """
         from automations.digi_docs import slack_post
-        posted = []
+        posted = {}
+
+        def _reply(text, *, thread_ts=None, channel_id=None, **kw):
+            posted["text"] = text
+            return True
+
         with mock.patch("automations.shared.slack_metrics_post"
-                        ".post_reply_text_only",
-                        lambda *a, **k: posted.append(a)), \
+                        ".post_reply_text_only", _reply), \
              mock.patch.object(slack_post, "_already_alerted",
-                               return_value=False):
+                               return_value=False), \
+             mock.patch.object(slack_post, "_mark_reported", lambda: None), \
+             mock.patch.object(slack_post, "_thread_ts", lambda _s: "1.23"):
             ok = slack_post.alert_failure(
-                "Billy Garvin: not in the Add Sales Rep employee list "
-                "(saw 584 option(s); 0 share the surname 'garvin')",
-                dry_run=False)
-        self.assertFalse(ok)
-        self.assertEqual([], posted, "not-in-OwnerVille must post NOTHING")
+                "Billy Garvin: created in OwnerVille, but the campaign picker "
+                "has not caught up yet (not in the Add Sales Rep employee "
+                "list). The send tick will add them.", dry_run=False)
+        self.assertTrue(ok, "a failure to add must not be swallowed")
+        self.assertIn("Billy Garvin", posted.get("text", ""))
 
     def test_a_per_person_refusal_still_tags_but_not_on_the_headline(self):
         """The trio stays pinged (Megan 2026-08-26) — the tags just move off

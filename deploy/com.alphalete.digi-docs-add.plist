@@ -44,16 +44,28 @@
          chart is dated for today, long before it opens a browser. THE ADD PASS
          The document BUNDLE is the separate com.alphalete.digi-docs-send
          job, 30 minutes before each person's own start time. -->
-    <!-- 11:00, moved from 08:00 (Megan 2026-08-31). This hour is when the
-         ONBOARDING EMAIL reaches every new start, so it is a people-facing
-         time, not a housekeeping one. It also has to FINISH before the
-         earliest bundle send, which goes 30 min before that person's start. -->
+    <!-- 10:30, moved from 11:00 (Megan 2026-09-14: "should we move this to
+         10:30 to make sure it's good?"). 08:00 -> 11:00 happened on 2026-08-31
+         because this hour is when the ONBOARDING EMAIL reaches every new
+         start: a people-facing time, not a housekeeping one.
+
+         WHY IT MOVED AGAIN. The pass now CREATES the OwnerVille records for
+         anyone who has none, which is slower and more consequential than a
+         plain campaign add — and it has to FINISH before the earliest bundle,
+         which goes 30 minutes before that person's start. On 2026-09-14 the
+         earliest start was 12:30, so 11:00 left one hour for a pass that took
+         twenty minutes and had fifteen people to create. 10:30 doubles that
+         margin and is still an hour anybody would call working hours.
+
+         IT IS STILL NOT EARLY ENOUGH FOR EVERY COHORT. An 11:00 start needs
+         its bundle at 10:30, the same minute this begins. Re-check against the
+         tab's earliest Start Time whenever the cohort shifts earlier. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>11</integer>
+        <integer>10</integer>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>30</integer>
     </dict>
 
     <key>StandardOutPath</key>
