@@ -97,8 +97,6 @@ def main(argv=None) -> int:
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
 
 
 def _refusals(client, sp, parent):
@@ -187,3 +185,7 @@ def _collapse(client, sp, parent, tags, *, live: bool) -> int:
     if not live:
         print("(dry run — add --live to apply)")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
