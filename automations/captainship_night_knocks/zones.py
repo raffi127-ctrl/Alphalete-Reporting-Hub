@@ -109,6 +109,18 @@ ICD_TIMEZONES: Dict[str, str] = {
     "Jennifer Figueroa": "America/New_York",             # Louisville, KY (split state; Louisville is Eastern)
     "Mercy Ohiokhai":   "America/Los_Angeles",           # Fremont, CA
     "Sebastian Gutierrez": "America/Los_Angeles",        # Fresno, CA
+    # pat (the rest of his roster is not reachable in ownerville yet)
+    "Eric Zech":        "America/Chicago",               # San Antonio, TX
+    "Francisco Castillo": "America/Chicago",             # Houston, TX
+    "Gabe Perez":       "America/Los_Angeles",           # Fremont, CA
+    "Hasani Lynch":     "America/Chicago",               # Austin, TX
+    "John Richard Young": "America/Los_Angeles",         # Canoga Park, CA
+    "Stergios Kasapidis": "America/New_York",            # Sandy Springs, GA
+    "Tre Mitchell":     "America/Chicago",               # TX (harvest: Central)
+    # wayne (2 of 6 — Wayne Rude, Andrew Burris, Steven Sykes, Alex Turzynski
+    # are waiting on Office Access)
+    "Christian Esposito": "America/New_York",            # Orlando, FL (split state; Orlando is Eastern)
+    "Michael Murphy":   "America/New_York",              # Atlanta, GA
 }
 
 # What a wave is CALLED in the email subject and in the log. Keyed by zone so a
