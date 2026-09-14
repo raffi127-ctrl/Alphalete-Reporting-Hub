@@ -208,6 +208,44 @@ def _publish_hub(status: str) -> None:
         pass
 
 
+# The schedule_config key — the first spelling delivery_check.manifest_ids tries.
+REPORT_ID = "sales_boards"
+
+
+def _is_real_target(dm_user: str = "") -> bool:
+    """Only a post to the REAL rooms, off the PROD sheet, delivered anything."""
+    return (not dm_user and SHEET_ID == PROD_SHEET_ID
+            and not os.environ.get("SALES_BOARD_CHANNEL_ID"))
+
+
+def _record_delivery(note: str, programs, *, real: bool,
+                     run_ts: dt.datetime | None = None) -> None:
+    """Write today's run manifest — the PROOF of delivery
+    shared/delivery_check looks for.
+
+    2026-09-14: the BOX pass held at 10:52 on a rolled board, the next pass
+    posted, and the ticket still stayed open — "ran clean, but nothing can
+    confirm it DELIVERED" — because this report has no verify and wrote no
+    manifest. Written BEFORE _publish_hub, since that is where the close is
+    decided.
+
+    Only on a delivered exit 0: a dry run, a DM test, a scratch channel or the
+    sandbox sheet delivered nothing; a hold (75) or crash already alerts, so it
+    writes nothing either. Several passes a day share the one file — a later
+    hold never overwrites an earlier pass's proof. Never raises."""
+    if not real:
+        return
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=[f"{p} Sales Board" for p in programs],
+            note=note, run_ts=run_ts)
+        print(f"  manifest: {note}")
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't write the run manifest ({type(e).__name__}: {e}) "
+              f"— the boards are posted, but a failure ticket won't close itself")
+
+
 def _replies(imgs: dict, zeros: dict, tag: str, want_zeros: bool,
              corrected: bool = False) -> list:
     """The thread's replies in post order: the boards, then (A-Players only) one
@@ -640,6 +678,8 @@ def main(argv=None) -> int:
                   "thread, so there is nothing left to render. The board has "
                   "moved on to the week the 4:00pm fill needs; that is "
                   "correct, not a failure.")
+            _record_delivery(f"{', '.join(programs)} already in today's thread",
+                             programs, real=_is_real_target())
             return 0
         # Rolled FORWARD and this pass's boards are still missing: the Monday
         # BOX pass. The week roll moved to 08:20 on 2026-09-14, but the BOX
@@ -724,6 +764,11 @@ def main(argv=None) -> int:
     for r in results:
         print(f"    {r}")
     held = any(r.get("held") for r in results if isinstance(r, dict))
+    rejected = any(r.get("ok") is False for r in results if isinstance(r, dict))
+    if not held and not rejected:
+        _record_delivery(f"{', '.join(programs)} posted"
+                         + (" (corrected)" if args.corrected else ""),
+                         programs, real=_is_real_target(args.dm or ""))
     if not args.dm:                  # a DM test shouldn't touch the Hub card
         _publish_hub("partial" if held else "success")
     return 75 if held else 0
