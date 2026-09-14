@@ -66,7 +66,13 @@ def find_by_email(page, cols: dict, email: str):
     want = _norm_email(email)
     if not want:
         return None
-    for row in ovn._search_rows(page, want):
+    # _search_rows yields (row, href) PAIRS, not rows — see find_rep_row,
+    # which unpacks them the same way. Passing the pair through as a row threw
+    # AttributeError inside _row_fields, and it only surfaced on the
+    # VERIFICATION read after a save: before that the search matched nothing,
+    # so the loop body never ran and the bug stayed invisible through two live
+    # attempts.
+    for row, _href in ovn._search_rows(page, want):
         fields = ovn._row_fields(page, row, cols)
         if _norm_email(fields.get("email")) == want:
             return fields
