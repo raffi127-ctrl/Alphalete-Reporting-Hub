@@ -108,6 +108,18 @@ REMOVALS: dict = {
     # Queda anotada en la tab 'Terminated ICDs' del AUTOMATION MASTER.
     "Chan's Captainship": [
         ("Kimberly Rodriguez", "kimberlyatt458@gmail.com"),
+        # 2026-09-14 (Eve): Eric Martinez, "shut down" (oficina 20721, Spartan
+        # Capital). Mismo caso que Kimberly: sin mails, pero SIGUE en los
+        # reportes hasta que deje de vender. Su direccion ya habia salido de
+        # config.RECIPIENTS["chan"] el 2026-09-10, pero el grupo vivo nunca se
+        # limpio (lo detecto `run --distro-check`). Sale tambien de
+        # "ATT Fiber Owners" y "Aug Owner Showdown", sus otros dos grupos.
+        ("Eric Martinez", "ericdmartinez222@gmail.com"),
+    ],
+    # 2026-09-14 (Eve): Eric Martinez, ver "Chan's Captainship". Su segunda
+    # tarjeta (sin nombre, la misma direccion) no esta en ningun grupo.
+    "Aug Owner Showdown": [
+        ("Eric Martinez", "ericdmartinez222@gmail.com"),
     ],
     "Tony's Captainship": [
         ("Melik El Jaiez", "melikeljaiez@yahoo.com"),        # no display name on the card
@@ -147,6 +159,9 @@ REMOVALS: dict = {
     # módulo sólo escribe en alphaletereporting.
     "ATT Fiber Owners": [
         ("Jesus Hawthorne", "jesus_hawthorne@yahoo.com"),
+        # 2026-09-14 (Eve): Eric Martinez, shut down — va tambien en
+        # fiber_owners_distro/excludes.json para que el reset semanal no lo reponga.
+        ("Eric Martinez", "ericdmartinez222@gmail.com"),
     ],
     # 2026-08-24 (Eve): Lizette Ruiz comes off Eveliz's captainship only — same
     # shape as Milan Godbolt below. Her address also left

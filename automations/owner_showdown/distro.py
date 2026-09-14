@@ -44,7 +44,8 @@ COMPETITORS: List[Tuple[str, str]] = [   # (email, name)
     ("orbitc2025@gmail.com", "German Lopez"),
     ("alistacquisition@gmail.com", "Michael Murphy"),
     ("adreyb15@gmail.com", "Blue Mendoza"),
-    ("ericdmartinez222@gmail.com", "Eric Martinez"),
+    # OUT 2026-09-14 (Eve): Eric Martinez (ericdmartinez222@gmail.com) — shut
+    # down, sin mails. Sale tambien del grupo vivo; sigue en roster.py (reporte).
     ("salikmallick6@gmail.com", "Salik Mallick"),
     ("npgilbert00@gmail.com", "Nigel Gilbert"),
     ("clearviewc.inc@gmail.com", "Jay Turnage"),
