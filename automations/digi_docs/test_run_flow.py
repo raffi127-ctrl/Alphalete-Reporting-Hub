@@ -1426,20 +1426,21 @@ class TheAlertSaysHowToRecover(unittest.TestCase):
             slack_post.post_add_summary(46, 48, failed, dry_run=False)
         return posted.get("t", "")
 
-    def test_it_promises_the_send_and_names_the_deadline(self):
+    def test_it_gives_the_admins_one_instruction(self):
+        """Megan 2026-09-14, trimming it to the bone: "remove: automatically —
+        nothing to re-run and nobody to tell. Nothing goes out after 4:00pm."
+
+        The recovery is ONE sentence telling the admins what to do. The
+        cutoff, the "nothing to re-run", the "nobody to tell" were all true,
+        and none of them were the instruction — they were me explaining the
+        machinery to people who only needed to know when to add somebody.
+        """
         t = self._text(["Billy Garvin could not be created in OwnerVille."])
-        # NOT "before their start time" — that reads as a deadline and is not
-        # one. A 12:00 start whose record appears at 2pm is still due.
         self.assertIn("30 minutes before their start time", t)
-        self.assertIn("nothing to re-run", t.lower())
-        # The one real cliff stays in: past 4pm nothing goes at all, and
-        # somebody adding a person at 4:15 in good faith would never find out.
-        self.assertIn("4:00pm", t)
-        # Without the cutoff this reads as "any time is fine", and a 4:15 add
-        # would silently get nothing — the one way the promise goes untrue.
-        self.assertIn("4:00pm", t)
+        self.assertIn("Lucy sends their bundle", t)
+        self.assertNotIn("re-run", t.lower())
+        self.assertNotIn("4:00pm", t)
 
     def test_a_clean_pass_does_not_explain_a_recovery_nobody_needs(self):
         t = self._text([])
         self.assertNotIn("30 minutes before their start time", t)
-        self.assertNotIn("4:00pm", t)
