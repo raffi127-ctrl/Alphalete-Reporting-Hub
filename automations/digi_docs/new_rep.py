@@ -82,7 +82,12 @@ FIELDS = (
     ("email", ("input[name='email']:visible", "input#email:visible")),
     ("confirm email", ("input[name='confirmEmail']:visible",
                        "input#confirmEmail:visible")),
-    ("phone", ("input[name='phone']:visible", "input#phone:visible")),
+    # `cellphone`, NOT `phone` (--dump-form, 2026-09-14). Two live attempts
+    # died on the obvious guess. The form's own dump is the only reason this
+    # line is right, and the fallbacks are there for the day OwnerVille
+    # renames it -- not as a substitute for asking.
+    ("phone", ("input[name='cellphone']:visible", "input#cellphone:visible",
+               "input[name='phone']:visible")),
 )
 
 
