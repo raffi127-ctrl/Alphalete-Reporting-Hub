@@ -151,9 +151,47 @@ def _assert_rolloff_has_data(ws, o: B2BOffice) -> None:
 NEW_COMP_CHURN_OFFICES = {"carlos", "atef", "jamis", "sabrina"}
 
 
+def _a1_col(n: int) -> str:
+    """1-based column index -> A1 letters (27 -> 'AA')."""
+    s = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def _rep_list_anchor(ws) -> tuple:
+    """(col, row) of the per-rep list's 'Rep Name' header — found by LABEL.
+
+    WHY (2026-09-14): this block used to be read as a hardcoded AE14:AF{last}.
+    On 2026-09-12 the rolloff list gained 'Lines on Acct' and a real
+    'Disconnect Date' (commits e8e3581 / 5fdb2d7), which pushed the rep list two
+    columns right, AE -> AG. The WRITER survived it — vantura_churn.fill
+    .rep_list_col/.rep_list_row derive their position on purpose — but this
+    reader did not. AE then held only the helper block's six rows, `last` came
+    back <= the header row, and the blank-guard below fired: Jamis, Atef AND
+    Sabrina silently lost #7 from their 4am thread on 9/13 and 9/14 while the
+    numbers sat healthy on the board two columns over.
+
+    So: never a column constant here again. The header label is the anchor
+    (it is unique tab-wide on all four boards), and the row comes with it
+    rather than being assumed to be 15.
+    """
+    grid = ws.get("A1:BZ80")
+    for i, row in enumerate(grid, 1):
+        for j, v in enumerate(row):
+            if str(v).strip().lower() == "rep name":
+                return j + 1, i
+    raise ValueError(
+        "activation_by_rep: no 'Rep Name' header on {!r} — the per-rep list "
+        "is not on this tab (skip rather than screenshot the wrong columns)"
+        .format(ws.title))
+
+
 def churn_tab_image(o: B2BOffice, which: str, out_dir: Path, log=print) -> Path:
     """#6 customer_churn = the tab's main block (0-30 Day Rolloff List); #7
-    activation_by_rep = the rep chart at AE:AF. Both via the Sheets export
+    activation_by_rep = the per-rep list, found by its "Rep Name" header (it
+    MOVES — see _rep_list_anchor). Both via the Sheets export
     endpoint (vantura_churn.shot)."""
     from automations.recruiting_report.fill import open_by_key, worksheet_ci
     from automations.vantura_churn import shot
@@ -179,18 +217,25 @@ def churn_tab_image(o: B2BOffice, which: str, out_dir: Path, log=print) -> Path:
                     " — falling back to sheet screenshot")
         rng = shot.visible_range(ws)
     elif which == "activation_by_rep":
-        col = ws.get("AE1:AE200")
+        hdr_c, hdr_r = _rep_list_anchor(ws)
+        name_col, rate_col = _a1_col(hdr_c), _a1_col(hdr_c + 1)
+        col = ws.get("{c}1:{c}200".format(c=name_col))
         last = max((i for i, r in enumerate(col, 1) if r and r[0].strip()),
                    default=0)
-        # Rep rows sit BELOW the "Rep Name" header (row 15). If there's nothing
-        # there, the churn board hasn't been written yet — DON'T post a 2-row
-        # blank (2026-07-22: that "posted" empty and read as missing). Raise so
-        # the runner skips + flags it for a rerun instead.
-        if last <= 15:
+        # Rep rows sit BELOW the "Rep Name" header. If there's nothing there,
+        # the churn board hasn't been written yet — DON'T post a 2-row blank
+        # (2026-07-22: that "posted" empty and read as missing). Raise so the
+        # runner skips + flags it for a rerun instead. The guard compares
+        # against the header's OWN row, not a hardcoded 15.
+        if last <= hdr_r:
             raise ValueError(
-                "activation_by_rep: no rep rows on {!r} (churn board not "
-                "written yet) — skip rather than post blank".format(o.churn_tab))
-        rng = "AE14:AF{}".format(last)
+                "activation_by_rep: no rep rows under {}{} on {!r} (churn "
+                "board not written yet) — skip rather than post blank"
+                .format(name_col, hdr_r, o.churn_tab))
+        # One row above the header, same as before — it carries the block's
+        # top border into the shot.
+        rng = "{n}{top}:{r}{last}".format(n=name_col, r=rate_col,
+                                          top=max(1, hdr_r - 1), last=last)
         out = out_dir / "activation_by_rep.png"
     else:
         raise ValueError("unknown churn image {!r}".format(which))
