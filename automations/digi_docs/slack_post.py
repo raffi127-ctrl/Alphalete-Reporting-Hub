@@ -292,9 +292,14 @@ def headline_and_need(line: str):
         need = ("*What's needed:* add them in OwnerVille → *Add Sales Rep*, "
                 "campaign *RES-AT&T*. Nothing has been sent to them and "
                 "nothing can be until they exist there. Once they do, the "
-                "5-minute pass picks them up and sends on its own — no re-run "
+                "next pass picks them up and sends on its own — no re-run "
                 "needed. It stops at *4:00pm*; after that nobody is sent "
                 "automatically.")
+        # NOT "the 5-minute pass" (2026-09-14). The tick FIRES every five
+        # minutes, but a pass working a full cohort runs about twenty, and one
+        # cannot start while another holds the browser — so somebody added
+        # mid-pass waits for the next one, not for five minutes. Telling the
+        # office five is how a working system looks broken at minute six.
     else:
         head = "Digi Docs — could not send"
     return head, need
