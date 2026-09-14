@@ -354,6 +354,24 @@ class ANonImageBoardIsAttachedNotDrawn(unittest.TestCase):
         # ...and it rides along as a real attachment.
         self.assertEqual([lbl for lbl, _p in files], ["📋 Order Log"])
 
+    def test_a_capture_written_before_the_fix_still_reads_correctly(self):
+        """The recovery case. This morning's directory was written by the old
+        code, so its manifest calls the .xlsx an "image" — and that directory is
+        exactly what the re-send has to work from. Re-derived on read, so the
+        boards go out today without re-running Tableau."""
+        from automations.shared import metrics_email_capture as mec
+        from automations.office_metrics import email_digest as ed
+        mec.record_header("Daily Metrics", sections=["📋 Order Log"])
+        xlsx = self._xlsx()
+        # exactly what the pre-fix record_image wrote
+        import shutil as _sh
+        _sh.copyfile(xlsx, self.d / "08-Order-Log.xlsx")
+        mec._append(self.d, {"kind": "image", "seq": 8, "label": "📋 Order Log",
+                             "file": "08-Order-Log.xlsx", "react": ""})
+        blocks, files = ed.blocks_from(self.d)
+        self.assertEqual(blocks[0][3], "attached")
+        self.assertEqual([lbl for lbl, _p in files], ["📋 Order Log"])
+
     def test_the_message_builds_with_the_spreadsheet_on_it(self):
         """The end of the chain: this is the call that used to raise."""
         from automations.shared import report_email as re_

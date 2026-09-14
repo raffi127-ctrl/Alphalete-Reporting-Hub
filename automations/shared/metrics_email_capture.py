@@ -105,6 +105,14 @@ def record_header(text: str, *, sections=None) -> dict:
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 
 
+def is_drawable(file_name) -> bool:
+    """Can a mail client draw this, by its name alone? The one definition, used
+    both when a board is captured and when the digest reads a directory back —
+    a capture written before this distinction existed still has to be read
+    correctly, and that older directory is what a recovery re-send works from."""
+    return Path(str(file_name or "")).suffix.lower() in _IMAGE_SUFFIXES
+
+
 def record_image(image_path, *, comment: str = "", react_emoji: str = "",
                  file_name: str = "") -> dict:
     """Copy a board into the capture directory and log its caption.
@@ -130,7 +138,7 @@ def record_image(image_path, *, comment: str = "", react_emoji: str = "",
         _append(d, {"kind": "missing", "seq": seq, "label": comment,
                     "error": f"{type(e).__name__}: {e}"})
         return {"captured": True, "ok": False, "error": str(e)}
-    kind = "image" if dest.suffix.lower() in _IMAGE_SUFFIXES else "file"
+    kind = "image" if is_drawable(dest.name) else "file"
     _append(d, {"kind": kind, "seq": seq, "label": comment,
                 "file": dest.name, "react": react_emoji})
     return {"captured": True, "ok": True, "file": str(dest)}

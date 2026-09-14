@@ -77,6 +77,14 @@ def blocks_from(d: Path) -> tuple:
     out, files = [], []
     for r in _mec.board_rows(d):
         kind = r.get("kind")
+        # Classified on the READ side as well as the write side, on the file's
+        # own suffix. A capture directory written before this distinction
+        # existed calls the Order Log's .xlsx an "image", and that directory is
+        # exactly what a recovery re-send has to work from — re-deriving it here
+        # means today's boards can go out without re-running Tableau, instead of
+        # the spreadsheet being reported as a board that never arrived.
+        if kind == "image" and not _mec.is_drawable(r.get("file", "")):
+            kind = "file"
         if kind == "file":
             f = d / r["file"]
             label = r.get("label") or f.name
