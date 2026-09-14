@@ -1057,7 +1057,8 @@ def annotate_today(pages: list, today: dt.date | None = None,
 
 
 def _email_all(captures: list, pages: list, today: dt.date, *, org: str,
-               pending_late=(), note: str = "", updated: bool = False) -> dict:
+               pending_late=(), note: str = "", updated: bool = False,
+               resend: bool = False) -> dict:
     """Mail this org's captured trackers as ONE message.
 
     Returns post_all's channel-result shape with the recipient list standing in
@@ -1082,6 +1083,22 @@ def _email_all(captures: list, pages: list, today: dt.date, *, org: str,
         return {"ok": False, "org": org,
                 "channels": [{"channel": label, "ok": False, "soft": True,
                               "error": f"{org} has no recipients — nothing sent"}]}
+
+    # ONLY WHAT THIS ORG HAS NOT ALREADY BEEN MAILED TODAY. The catch-up run for
+    # a late board (Box) carries the whole day's captures, not just the late one,
+    # so without this it re-sends every tracker alongside it — see _emailed_path.
+    # `resend` is the deliberate escape hatch: --replace / updated=True means
+    # "this REPLACES what went earlier", which is a re-send on purpose.
+    if not resend:
+        already = _emailed_today(org, today)
+        fresh = [(spec, path) for spec, path in captures
+                 if spec.get("id") not in already]
+        if not fresh:
+            return {"ok": True, "skipped": True, "no_op": True, "org": org,
+                    "channels": [],
+                    "reason": (f"every board in this run was already emailed to "
+                               f"{label} today — not sending a duplicate set")}
+        captures = fresh
 
     blocks, ids = [], []
     for spec, path in captures:
@@ -1111,12 +1128,69 @@ def _email_all(captures: list, pages: list, today: dt.date, *, org: str,
                 "channels": [{"channel": "email: " + ", ".join(to), "ok": False,
                               "error": f"{type(e).__name__}: {str(e)[:160]}"}]}
     ok = bool(res.get("ok"))
+    if ok:
+        # AFTER the send, never before: a recorded id whose mail then failed
+        # would silently cost the owner that board for the rest of the day.
+        _record_emailed(org, today, ids)
     return {"ok": ok, "org": org, "emailed": True,
             "channels": [{"channel": "email: " + ", ".join(to), "ok": ok,
                           "posted": ids if ok else [],
                           "present_ids": ids if ok else None,
                           "thread_ts": "", "error": "" if ok
                           else res.get("reason", "send failed")}]}
+
+
+def _emailed_path():
+    """Which boards this machine has already MAILED, per org per day.
+
+    The channel path has had a "what's already posted today?" read since the
+    beginning — `_post_to_channel` skips boards the thread already carries, and
+    refuses to post at all when it cannot confirm. The EMAIL path had no
+    equivalent, so every run mailed the whole set again.
+
+    That is worse for an inbox than for a thread, and this module's own header
+    says why: a thread is a container, eleven replies under one header still read
+    as one thing, but "an inbox has no container, so eleven mails is eleven
+    interruptions". On 2026-09-14 Joseph Logan got all 8 country trackers twice
+    plus the Box follow-up twice — the Box catch-up run, whose whole job is to
+    deliver the ONE board that lands late, re-sent all eight with it.
+    """
+    from pathlib import Path as _P
+    p = (_P(__file__).resolve().parents[2] / "output" / "tableau_screenshots"
+         / "_emailed.json")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _emailed_today(org: str, today: dt.date) -> set:
+    """Board ids already mailed to this org today. Empty on any read problem —
+    an unreadable state file must never STOP a send, only fail to dedupe one."""
+    import json as _json
+    try:
+        data = _json.loads(_emailed_path().read_text(encoding="utf-8"))
+        return set(data.get(f"{today.isoformat()}|{org}") or [])
+    except Exception:                                 # noqa: BLE001
+        return set()
+
+
+def _record_emailed(org: str, today: dt.date, ids) -> None:
+    """Add these ids to today's sent set. Best-effort, and it PRUNES old days so
+    the file cannot grow forever."""
+    import json as _json
+    try:
+        path = _emailed_path()
+        try:
+            data = _json.loads(path.read_text(encoding="utf-8"))
+        except Exception:                             # noqa: BLE001
+            data = {}
+        keep_from = (today - dt.timedelta(days=7)).isoformat()
+        data = {k: v for k, v in data.items()
+                if str(k).split("|")[0] >= keep_from}
+        key = f"{today.isoformat()}|{org}"
+        data[key] = sorted(set(data.get(key) or []) | set(ids))
+        path.write_text(_json.dumps(data, indent=1), encoding="utf-8")
+    except Exception:                                 # noqa: BLE001
+        pass
 
 
 def _by_id_safe(page_id: str, pages: list) -> dict:
@@ -1223,7 +1297,7 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
         with _lock:
             return _email_all(captures, pages, today, org=org,
                               pending_late=pending_late, note=note,
-                              updated=updated)
+                              updated=updated, resend=bool(replace or updated))
 
     client = smp._client()
     channel_results = []
