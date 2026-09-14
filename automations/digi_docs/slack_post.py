@@ -257,6 +257,39 @@ def _already_alerted(line: str) -> bool:
     return False
 
 
+def headline_and_need(line: str):
+    """(headline, what-is-needed) for ONE failure line.
+
+    Its own function so the same words can be applied to a message that
+    ALREADY went out. Today's thread was posted before these branches
+    existed, and rewording the code without rewording the fifteen posts
+    sitting in front of the office leaves them reading the old sentence.
+    """
+    low = (line or "").lower()
+    need = ""
+    if "bundle sent" in low:
+        head = "Digi Docs — SENT, but the attestation boxes are not ticked"
+    elif "not sent and not finished" in low:
+        head = "Digi Docs — not sent, and nothing will retry it"
+    elif "employees match" in low or "employee id" in low:
+        head = "Digi Docs — two people in OwnerVille share this name"
+        need = ("*What's needed:* find the right person's employee id in the "
+                "OwnerVille directory and reply with it here — we will not "
+                "guess between two people, because the wrong one is somebody "
+                "else's contract. Nothing has been sent to them.")
+    elif "add sales rep" in low:
+        head = "Digi Docs — needs adding to OwnerVille before anything can send"
+        need = ("*What's needed:* add them in OwnerVille → *Add Sales Rep*, "
+                "campaign *RES-AT&T*. Nothing has been sent to them and "
+                "nothing can be until they exist there. Once they do, the "
+                "5-minute pass picks them up and sends on its own — no re-run "
+                "needed. It stops at *4:00pm*; after that nobody is sent "
+                "automatically.")
+    else:
+        head = "Digi Docs — could not send"
+    return head, need
+
+
 def alert_failure(line: str, *, fault: bool = False,
                   dry_run: bool = True) -> bool:
     """One failure, posted the MOMENT it happens (Megan 2026-08-26: "if
@@ -284,13 +317,20 @@ def alert_failure(line: str, *, fault: bool = False,
     # and only the attestation boxes failed — a headline contradicting its own
     # first line is how a day of "nothing went out" got believed. The line
     # knows what happened; read it.
-    low = (line or "").lower()
-    if "bundle sent" in low:
-        head = "Digi Docs — SENT, but the attestation boxes are not ticked"
-    elif "not sent and not finished" in low:
-        head = "Digi Docs — not sent, and nothing will retry it"
-    else:
-        head = "Digi Docs — could not send"
+    #
+    # AND AN ADD FAILURE IS NOT A SEND FAILURE (Megan 2026-09-14, reading the
+    # thread: "why did it post that in the slack already if nothing has been
+    # sent?"). Fifteen people who could not be ADDED to OwnerVille at 11:00 —
+    # ninety minutes before the first bundle was even due — were announced as
+    # "could not send", because an add refusal matched neither branch above and
+    # fell through to the default. The thread read as a cohort whose documents
+    # had failed to go out. Nothing had been attempted yet.
+    #
+    # These also get a WHAT'S NEEDED line. "not in the Add Sales Rep employee
+    # list" describes what the page did; it does not tell the three people
+    # tagged underneath what to do about it, and they are the whole reason the
+    # message is in their channel rather than in corrections.
+    head, need = headline_and_need(line)
     # NAME THE REPORT, but only where it is not already named. In the office
     # channel this hangs under the "🗂️ Digi Docs" header, which says it for us;
     # in corrections it sits among every other report's failures, so there the
@@ -307,7 +347,12 @@ def alert_failure(line: str, *, fault: bool = False,
     if fault:
         body = f"*{head}* {_tags()}\n• {line}"
     else:
-        body = f"*{head}*\n• {line}\n{_tags()}".rstrip()
+        # The ask goes ABOVE the tags, so the last thing read before the names
+        # is what those names are being asked to do.
+        body = f"*{head}*\n• {line}\n"
+        if need:
+            body += f"{need}\n"
+        body = (body + _tags()).rstrip()
     channel = ALERT_CHANNEL if fault else CHANNEL
     if dry_run:
         print(f"\n--- Slack ALERT (dry run, NOT posted) -> {channel} ---")

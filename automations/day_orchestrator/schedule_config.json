@@ -9649,6 +9649,22 @@
       "timeout_minutes": 20,
       "verify": null
     },
+    "digi_docs_reword_thread": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "EDIT-IN-PLACE repair for the Digi Docs office thread (Megan 2026-09-14: \"update/edit the slack post to be correct on what's needed\"). Fifteen people who could not be ADDED to OwnerVille were announced as 'could not send' ninety minutes before the first bundle was due, and none of the posts told the three tagged people what to do about it. slack_post.headline_and_need fixes the wording for the NEXT post; this applies the same words to the ones already sitting in the channel. It MUST run on the machine holding the POSTING identity -- chat.update only works for the identity that wrote the message, so from a laptop it returns cant_update_message. Edits existing messages only: posts nothing, sends nothing, adds nobody. DRY BY DEFAULT; pass --live to apply. weekdays [] so the batch never runs it.",
+      "machine": "Lucy 3",
+      "display_name": "Digi Docs — re-word today's thread (edit in place)",
+      "source_type": "slack",
+      "data_sources": [],
+      "command": [
+        "automations.digi_docs.reword_thread"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3"
+    },
     "digi_docs_campaign_probe": {
       "on_scheduler": false,
       "_off_scheduler_note": "READ-ONLY proof that the add path can select RES-AT&T on the live page (Megan 2026-08-31: 'people will only get res at&t - no water or primo?'). The campaign fix was unproven and the usual proofs do not reach it: a DRY add returns 'WOULD add' from find_rep and never gets as far as choosing a campaign, and a LIVE add would prove it by adding a real person, which is not a test. 'found X under RES-AT&T' in the logs is find_rep LOCATING people re-added by hand and says nothing about what our add would pick. So this opens View Progress and runs the real _select_campaign against the real dropdown, printing every option and which one it landed on -- the whole risk being that the label carries an ampersand and there are lookalikes. Selects a dropdown value and reads the page: adds nobody, sends nothing, touches no Sheet. weekdays [] so the batch never runs it.",
