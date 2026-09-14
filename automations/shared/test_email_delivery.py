@@ -304,5 +304,91 @@ class TrackerEmailOrgs(unittest.TestCase):
         self.assertFalse(res.thread_missing)
 
 
+class ANonImageBoardIsAttachedNotDrawn(unittest.TestCase):
+    """2026-09-14, Joseph's first week on the email path. The Order Log posts an
+    .xlsx, `post_reply_with_file` captured it as kind "image", the digest handed
+    it to PIL and UnidentifiedImageError took the WHOLE send down — five boards
+    that had rendered perfectly reached nobody, and the 4am run read 5/6.
+
+    A spreadsheet is a board the owner OPENS. It attaches; it never draws; and
+    whatever else is in the directory, one file we cannot render must never cost
+    him the ones we can [[feedback_fill_but_flag]]."""
+
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp())
+        os.environ["METRICS_EMAIL_DIR"] = str(self.d)
+
+    def tearDown(self):
+        os.environ.pop("METRICS_EMAIL_DIR", None)
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def _xlsx(self, name="order-log.xlsx"):
+        p = self.d / "src" / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"PK\x03\x04 not an image, a real spreadsheet starts here")
+        return p
+
+    def test_a_spreadsheet_is_captured_as_a_file_not_an_image(self):
+        from automations.shared import metrics_email_capture as mec
+        mec.record_image(self._xlsx(), comment="📋 Order Log")
+        (row,) = [r for r in mec.entries(self.d) if r["kind"] != "header"]
+        self.assertEqual(row["kind"], "file")
+
+    def test_a_png_is_still_an_image(self):
+        from automations.shared import metrics_email_capture as mec
+        mec.record_image(_png(self.d / "src" / "b.png"), comment="🚪 Knocks")
+        (row,) = [r for r in mec.entries(self.d) if r["kind"] != "header"]
+        self.assertEqual(row["kind"], "image")
+
+    def test_the_digest_attaches_it_and_still_sends_the_boards(self):
+        from automations.shared import metrics_email_capture as mec
+        from automations.office_metrics import email_digest as ed
+        mec.record_header("Daily Metrics", sections=["🚪 Knocks", "📋 Order Log"])
+        mec.record_image(_png(self.d / "src" / "b.png"), comment="🚪 Knocks")
+        mec.record_image(self._xlsx(), comment="📋 Order Log")
+        blocks, files = ed.blocks_from(self.d)
+        self.assertEqual([b[0] for b in blocks], ["🚪 Knocks", "📋 Order Log"])
+        # The spreadsheet is a block with no image and an "attached" kind...
+        self.assertIsNone(blocks[1][1])
+        self.assertEqual(blocks[1][3], "attached")
+        # ...and it rides along as a real attachment.
+        self.assertEqual([lbl for lbl, _p in files], ["📋 Order Log"])
+
+    def test_the_message_builds_with_the_spreadsheet_on_it(self):
+        """The end of the chain: this is the call that used to raise."""
+        from automations.shared import report_email as re_
+        xlsx = self._xlsx()
+        msg = re_.build_message(
+            subject="Daily Metrics", to=["joseph@loganlegacygroup.com"],
+            title="DAILY METRICS", blocks=[
+                ("🚪 Knocks", _png(self.d / "src" / "b.png"), 600, ""),
+                ("📋 Order Log", None, 0, "attached")],
+            files=[("📋 Order Log", xlsx)])
+        names = [p.get_filename() for p in msg.iter_attachments()]
+        # Named by _attachment_name, the same helper the tracker attachments
+        # use — the board's own caption, emoji and all, not the capture
+        # directory's "08---Order-Log---Sep-14.xlsx".
+        self.assertIn("📋 Order Log.xlsx", names,
+                      "the owner gets a savable spreadsheet, named for the board")
+        self.assertTrue(
+            any(p.get_content_type() ==
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet" for p in msg.iter_attachments()),
+            "sent as a spreadsheet, so it opens in Excel rather than as bytes")
+
+    def test_an_undrawable_file_in_the_blocks_does_not_kill_the_send(self):
+        """The backstop. Even if something upstream hands the builder a block
+        pointing at a non-image, the mail still goes — one line instead of one
+        picture."""
+        from automations.shared import report_email as re_
+        msg = re_.build_message(
+            subject="Daily Metrics", to=["joseph@loganlegacygroup.com"],
+            title="DAILY METRICS", blocks=[
+                ("🚪 Knocks", _png(self.d / "src" / "b.png"), 600, ""),
+                ("📋 Order Log", self._xlsx(), 0, "")])
+        html = str(msg)
+        self.assertIn("Order Log", html)
+
+
 if __name__ == "__main__":
     unittest.main()

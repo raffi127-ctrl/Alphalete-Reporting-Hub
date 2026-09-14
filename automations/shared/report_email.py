@@ -120,9 +120,36 @@ _MISSING = ('<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
             'color:#8a0000;padding:6px 0">⚠️ {label} — not available today.</div>')
 
 
+_ATTACHED = ('<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
+             'padding:6px 0">📎 {label} — attached to this email.</div>')
+
+
+def _readable_image(path) -> bool:
+    """Can this file actually be decoded as an image?
+
+    A capture directory does not only hold PNGs. The Order Log posts a
+    SPREADSHEET, and for an email-only office that .xlsx is copied in beside the
+    boards. Embedding it raised UnidentifiedImageError out of
+    inline_image_bytes and took the whole send down with it: on 2026-09-14
+    Joseph's five rendered boards reached nobody because the sixth was an .xlsx.
+
+    Non-images are now classified at capture time and attached instead, so this
+    is the BACKSTOP rather than the mechanism — whatever ends up in a blocks
+    list, a file we cannot draw is one block we cannot draw, never a reason to
+    mail nobody anything [[feedback_fill_but_flag]].
+    """
+    try:
+        from PIL import Image
+        with Image.open(path):
+            return True
+    except Exception:                                # noqa: BLE001
+        return False
+
+
 def kind_of(block: Sequence) -> str:
     """A block's 4th element: "" = a board image, "note" = a section that ran and
-    had nothing to show, "missing" = a board that was owed and did not arrive.
+    had nothing to show, "missing" = a board that was owed and did not arrive,
+    "attached" = it came as a file on this email rather than a picture in it.
 
     THE DISTINCTION MATTERS. "Order Log — no new orders today" and "Order Log —
     didn't render" look identical if both are drawn as a bare line, and they are
@@ -139,7 +166,8 @@ def _rows_for(blocks: Sequence, *, title: str, intro_html: str) -> Tuple[list, l
     a note or a miss depending on `kind` — see kind_of — so the mail can never
     quietly be short a board, and never cry wolf over a quiet one.
     """
-    have = [b for b in blocks if b[1] and Path(b[1]).exists()]
+    have = [b for b in blocks
+            if b[1] and Path(b[1]).exists() and _readable_image(b[1])]
     widest = _beh.scale_of(have)
     rows: List[str] = [_beh.banner_row(title)]
     if intro_html:
@@ -147,10 +175,13 @@ def _rows_for(blocks: Sequence, *, title: str, intro_html: str) -> Tuple[list, l
     cids: List[Tuple[str, Path]] = []
     for b in blocks:
         label, path = b[0], b[1]
-        if not path or not Path(path).exists():
-            if kind_of(b) == "note":
+        if not path or not Path(path).exists() or not _readable_image(path):
+            kind = kind_of(b)
+            if kind == "note":
                 rows.append(_beh.text_row(
                     f'<div style="padding:6px 0">{label}</div>'))
+            elif kind == "attached":
+                rows.append(_beh.text_row(_ATTACHED.format(label=label)))
             else:
                 rows.append(_beh.text_row(_MISSING.format(label=label)))
             continue
@@ -211,9 +242,27 @@ def _attach_rows(blocks: Sequence, *, title: str, intro_html: str,
     return rows
 
 
+def _file_attachment(label: str, path: Path) -> Tuple[str, bytes, str, str]:
+    """(filename, bytes, maintype, subtype) for a non-image board.
+
+    The type is guessed from the suffix and falls back to
+    application/octet-stream, which every client will still save — better a
+    generic attachment than no Order Log.
+    """
+    import mimetypes
+    ctype, _enc = mimetypes.guess_type(path.name)
+    maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
+    # _attachment_name already does the "name it for the board, not the working
+    # file" job for image attachments — the owner should see "Order Log.xlsx",
+    # not the capture directory's "08---Order-Log---Sep-14.xlsx".
+    return (_attachment_name(label, path), path.read_bytes(),
+            maintype, (subtype or "octet-stream"))
+
+
 def build_message(*, subject: str, to: Sequence[str], title: str,
                   blocks: Sequence, intro_html: str = "",
-                  reply_to: str = "", attach: bool = False) -> EmailMessage:
+                  reply_to: str = "", attach: bool = False,
+                  files: Sequence = ()) -> EmailMessage:
     """The email, images inline, Evelyn's signature at the bottom (the same block
     every automated mail from this account carries, built from ONE definition in
     scheduled_6_days_out so her title/photo change in one place)."""
@@ -256,6 +305,16 @@ def build_message(*, subject: str, to: Sequence[str], title: str,
     for fname, data in attachments:
         msg.add_attachment(data, maintype="image", subtype="png",
                            filename=fname)
+    # Non-image boards (the Order Log's .xlsx). Best-effort per file: one
+    # unreadable spreadsheet must not cost the owner the boards that DID render
+    # — the exact failure this path was built after.
+    for label, path in (files or ()):
+        try:
+            fname, data, maintype, subtype = _file_attachment(label, Path(path))
+            msg.add_attachment(data, maintype=maintype, subtype=subtype,
+                               filename=fname)
+        except Exception:                            # noqa: BLE001
+            continue
     return msg
 
 
@@ -268,7 +327,8 @@ def send_message(msg: EmailMessage) -> None:
 
 def send_boards(*, subject: str, to: Sequence[str], title: str,
                 blocks: Sequence, intro_html: str = "", reply_to: str = "",
-                attach: bool = False, dry_run: bool = False,
+                attach: bool = False, files: Sequence = (),
+                dry_run: bool = False,
                 preview_dir: "Path | None" = None, logfn=print) -> dict:
     """Build + send (or, with dry_run, build + write the preview and send NOTHING).
 
@@ -279,7 +339,8 @@ def send_boards(*, subject: str, to: Sequence[str], title: str,
     if not to:
         return {"ok": False, "skipped": True, "reason": "no recipients"}
     msg = build_message(subject=subject, to=to, title=title, blocks=blocks,
-                        intro_html=intro_html, reply_to=reply_to, attach=attach)
+                        intro_html=intro_html, reply_to=reply_to, attach=attach,
+                        files=files)
     # HARD BACKSTOP. The ladder in _fit_attachments stops at the legibility floor
     # rather than shrinking a dense board into mush, so a genuinely enormous day
     # can still come out over Gmail's limit. Catch it HERE with a sentence that

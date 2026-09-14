@@ -66,14 +66,26 @@ def _png_width(path: Path) -> int:
         return 0
 
 
-def blocks_from(d: Path) -> list:
-    """(label, image path or None) per board, in post order. A text-only reply
-    carries its text as the label with no image, so 'nothing new today' still
-    reads as a section that ran."""
-    out = []
+def blocks_from(d: Path) -> tuple:
+    """((label, image path or None) per board in post order, [files to attach]).
+
+    A text-only reply carries its text as the label with no image, so 'nothing
+    new today' still reads as a section that ran. A board captured as kind
+    "file" — the Order Log's .xlsx — becomes an ATTACHMENT plus a line saying so:
+    a spreadsheet is a board the owner opens, not one he looks at.
+    """
+    out, files = [], []
     for r in _mec.board_rows(d):
         kind = r.get("kind")
-        if kind == "image":
+        if kind == "file":
+            f = d / r["file"]
+            label = r.get("label") or f.name
+            if f.exists():
+                files.append((label, f))
+                out.append((label, None, 0, "attached"))
+            else:
+                out.append((label, None, 0, "missing"))
+        elif kind == "image":
             f = d / r["file"]
             # The board's own pixel width is its scale reference. These PNGs are
             # rendered at their natural size (unlike the sheet boards, which all
@@ -88,7 +100,7 @@ def blocks_from(d: Path) -> list:
             out.append((r.get("text") or "(no detail)", None, 0, "note"))
         elif kind == "missing":
             out.append((r.get("label") or "Board", None, 0, "missing"))
-    return out
+    return out, files
 
 
 def send_for_office(o, *, day: "dt.date | None" = None, dry_run: bool = False,
@@ -109,8 +121,10 @@ def send_for_office(o, *, day: "dt.date | None" = None, dry_run: bool = False,
                 "reason": "no boards were captured — nothing ran, or the run "
                           "never reached its post step"}
     hdr = _mec.header_row(d)
-    blocks = blocks_from(d)
-    if not any(b[1] for b in blocks):
+    blocks, files = blocks_from(d)
+    # An attached spreadsheet is a board that arrived, so it counts here: a day
+    # whose only output is the Order Log is a thin day, not a blank one.
+    if not any(b[1] for b in blocks) and not files:
         return {"ok": False, "skipped": True, "capture_dir": str(d),
                 "reason": f"{len(blocks)} section(s) captured but no board "
                           "image among them — not mailing a blank day"}
@@ -124,6 +138,7 @@ def send_for_office(o, *, day: "dt.date | None" = None, dry_run: bool = False,
         title=f"DAILY METRICS — {(o.business_name or o.label).upper()}",
         blocks=blocks,
         intro_html=_intro_html(hdr.get("text", ""), hdr.get("sections") or []),
+        files=files,
         dry_run=dry_run, preview_dir=d, logfn=logfn)
     res["capture_dir"] = str(d)
     return res

@@ -95,13 +95,26 @@ def record_header(text: str, *, sections=None) -> dict:
     return {"captured": True, "header": True, "existed": False}
 
 
+# Suffixes a mail client can draw inline. Everything else is a FILE — the
+# Order Log posts an .xlsx, and slack_metrics_post.post_reply_with_file routes
+# through here for exactly those: spreadsheets, CSVs, PDFs. Recording one as
+# kind "image" made the digest embed it, PIL raised UnidentifiedImageError, and
+# the whole send died with five good boards already on disk (Joseph, 2026-09-14
+# — his office's first week on the email path, and the first time a non-image
+# board reached this function).
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
+
 def record_image(image_path, *, comment: str = "", react_emoji: str = "",
                  file_name: str = "") -> dict:
-    """Copy a board's PNG into the capture directory and log its caption.
+    """Copy a board into the capture directory and log its caption.
 
     COPIED, not referenced: the renderers write into shared output/ paths that a
     later office (or tomorrow's run) overwrites, so a path recorded now can point
     at someone else's board by the time the mail is built.
+
+    Records kind "image" for something drawable and kind "file" for anything
+    else, so the digest can attach a spreadsheet instead of trying to draw it.
     """
     d = active()
     if d is None:
@@ -117,7 +130,8 @@ def record_image(image_path, *, comment: str = "", react_emoji: str = "",
         _append(d, {"kind": "missing", "seq": seq, "label": comment,
                     "error": f"{type(e).__name__}: {e}"})
         return {"captured": True, "ok": False, "error": str(e)}
-    _append(d, {"kind": "image", "seq": seq, "label": comment,
+    kind = "image" if dest.suffix.lower() in _IMAGE_SUFFIXES else "file"
+    _append(d, {"kind": kind, "seq": seq, "label": comment,
                 "file": dest.name, "react": react_emoji})
     return {"captured": True, "ok": True, "file": str(dest)}
 
