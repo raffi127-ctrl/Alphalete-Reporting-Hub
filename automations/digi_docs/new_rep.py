@@ -168,13 +168,17 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
     # it, and a rep created without one can never be matched again — so the
     # next run would create them a second time.
     if not (first and last):
-        raise Refused(f"{who or '(blank)'}: needs a first AND last name")
+        raise Refused(f"{who or '(a blank row)'} has no full name on the "
+                      f"chart, so OwnerVille cannot create them. Fix the name "
+                      f"on the board and they will be picked up next pass.")
     if not email:
-        raise Refused(f"{who}: no email on the board. The form requires one, "
-                      f"and it is how we recognise them next time — add it to "
-                      f"the chart rather than creating them without it")
+        raise Refused(f"{who} has no email on the chart, so OwnerVille "
+                      f"cannot create them. Add their email to the board and "
+                      f"they will be picked up on the next pass.")
     if not phone:
-        raise Refused(f"{who}: no phone on the board (the form requires it)")
+        raise Refused(f"{who} has no phone number on the chart, so "
+                      f"OwnerVille cannot create them. Add it to the board and "
+                      f"they will be picked up on the next pass.")
 
     rqst = ovn.open_rep_list(page, verbose=verbose)
     cols = ovn._columns(page)
@@ -220,8 +224,9 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
     bad = ovn._complaints(page)
     if bad:
         _cancel(page)
-        raise Refused(f"{who}: the form is objecting before we even submit "
-                      f"({bad}) — nothing was created")
+        raise Refused(f"{who} could not be created in OwnerVille — the "
+                      f"form would not accept them ({'; '.join(bad)}). Add "
+                      f"them by hand under Sales Reps → + Add Sales Rep.")
 
     add = page.get_by_role("button", name="Add")
     if not add.count():
@@ -241,8 +246,11 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
     made = find_by_email(page, cols, email)
     if not made:
         bad = ovn._complaints(page)
-        raise Refused(f"{who}: clicked Add but no rep with {email} is in the "
-                      f"list{' — form said ' + str(bad) if bad else ''}")
+        raise Refused(f"{who} could not be created in OwnerVille — we "
+                      f"filled the form and saved, but no record for {email} "
+                      f"appeared. Add them by hand under Sales Reps → + Add "
+                      f"Sales Rep."
+                      + (f" (the form said: {'; '.join(bad)})" if bad else ""))
     if verbose:
         print(f"  ✓ {who}: created (id {made.get('id', '?')})")
     return "created"

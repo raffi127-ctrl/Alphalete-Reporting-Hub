@@ -1240,7 +1240,9 @@ class TheSecondSweepCreatesMissingPeople(unittest.TestCase):
         self.assertEqual([], added)
         self.assertEqual(1, len(refused))
         self.assertNotIn("not in the Add Sales Rep", refused[0])
-        self.assertIn("produced no record", refused[0])
+        self.assertIn("could not be created in OwnerVille", refused[0])
+        self.assertIn("Add them by hand", refused[0],
+                      "a failure has to say what the reader should do")
 
 
 class TheAddPassSaysItOnce(unittest.TestCase):
@@ -1359,12 +1361,19 @@ class TheSymptomIsNeverTheReport(unittest.TestCase):
         return refused
 
     def test_a_creation_that_raised_says_what_raised(self):
-        line = self._refused_line(create_raises="no email on the board")[0]
+        line = self._refused_line(
+            create_raises="Billy Garvin has no email on the chart, so "
+                          "OwnerVille cannot create them.")[0]
         self.assertNotIn("not in the Add Sales Rep employee list", line)
-        self.assertIn("could not be created", line)
-        self.assertIn("no email on the board", line)
+        self.assertIn("no email on the chart", line)
+        # The reason already names them; saying it twice is how the first
+        # version read "Billy Garvin: is not in OwnerVille and could not be
+        # created — no email on the board".
+        self.assertEqual(1, line.count("Billy Garvin"))
+        self.assertIn("No documents have gone out", line)
 
     def test_a_creation_that_produced_nothing_says_that(self):
         line = self._refused_line(creates=False)[0]
         self.assertNotIn("not in the Add Sales Rep employee list", line)
-        self.assertIn("produced no record", line)
+        self.assertIn("Add them by hand", line)
+        self.assertIn("No documents have gone out", line)

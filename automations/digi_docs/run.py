@@ -477,15 +477,22 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     try:
                         made = _create_missing(ov, page, c)
                     except Exception as ce:                 # noqa: BLE001
+                        # `ce` already names the person and says what to do
+                        # about them -- see new_rep's refusals. Prefixing the
+                        # name again gave "Billy Garvin: is not in OwnerVille
+                        # and could not be created -- no email on the board",
+                        # which says the same thing twice and still leaves the
+                        # reader to work out what to type where.
                         _refuse(refused,
-                                f"{c.name}: is not in OwnerVille and could "
-                                f"not be created — {ce}", dry, alert=False)
+                                f"{ce} No documents have gone out to them.",
+                                dry, alert=False)
                         continue
                     if not made:
                         _refuse(refused,
-                                f"{c.name}: is not in OwnerVille and the New "
-                                f"Sales Rep form produced no record. Nothing "
-                                f"was sent to them.", dry, alert=False)
+                                f"{c.name} could not be created in OwnerVille. "
+                                f"Add them by hand under Sales Reps → + Add "
+                                f"Sales Rep. No documents have gone out to "
+                                f"them.", dry, alert=False)
                         continue
                     created.append(c.name)
                     try:
