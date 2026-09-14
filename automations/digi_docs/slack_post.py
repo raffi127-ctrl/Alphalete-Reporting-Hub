@@ -324,6 +324,25 @@ def alert_failure(line: str, *, fault: bool = False,
     channel's thread; True is the run itself breaking and belongs in
     corrections. Only the wrapper's last-resort alert passes True.
     """
+    # NOT IN OWNERVILLE IS NOT NEWS (Megan 2026-09-14: "there should be no
+    # reporting of who isn't in OV. It should just add who it can that is
+    # already there and then do the rest manually").
+    #
+    # The office knows its own new starts and sets them up as part of
+    # onboarding. What it does not need is a per-person ping about each one,
+    # which on 9/14 was fifteen names, thirty-six posts and three people tagged
+    # on every one of them -- in the channel where their actual to-do list
+    # lands. The run still adds everybody it CAN, the refusal is still in the
+    # log with its evidence, and the board's Digi Docs column still shows who
+    # got documents. It simply stops being an alert.
+    #
+    # THE TRADE, stated once: nobody is told. A new start who never reaches
+    # OwnerVille now gets no documents and no message about it. That is the
+    # instruction, and the log is where to look when somebody asks why.
+    low_line = (line or "").lower()
+    if "add sales rep" in low_line:
+        print(f"  (not in OwnerVille — logged, not posted: {line[:80]})")
+        return False
     if not dry_run and _already_alerted(line):
         print(f"  (already alerted today, not repeating: {line[:60]})")
         return False

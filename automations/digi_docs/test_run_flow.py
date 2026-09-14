@@ -364,13 +364,44 @@ class FaultsGoToTheFaultChannel(_NoNetwork):
                         ".post_reply_text_only", _reply), \
              mock.patch("automations.shared.slack_metrics_post._client",
                         return_value=_C()):
+            # A REAL per-person fault. It used to be the not-in-OwnerVille
+            # line, until 2026-09-14 made those silent (Megan: "there should
+            # be no reporting of who isn't in OV") — but the ROUTING this test
+            # exists for is unchanged, so it now pins the same rule with a
+            # refusal that still speaks: our own click-path timing out.
             ok = slack_post.alert_failure(
-                "Ly Quan Milligan: not in the Add Sales Rep employee list",
+                "Ly Quan Milligan: TimeoutError: Locator.wait_for: Timeout "
+                "20000ms exceeded.",
                 dry_run=False)
         self.assertTrue(ok)
         self.assertEqual(sent["channel"], slack_post.CHANNEL)
         self.assertEqual(sent["thread_ts"], "1.23")      # threaded, not a flood
         self.assertNotIn("top_level", sent)
+
+    def test_not_in_ownerville_says_nothing_at_all(self):
+        """Megan 2026-09-14: "there should be no reporting of who isn't in OV.
+        It should just add who it can that is already there and then do the
+        rest manually."
+
+        On 9/14 fifteen such names became thirty-six posts, each a paragraph
+        tagging the same three people, in the channel where their real to-do
+        list lands. The office sets its own new starts up; what it needed was
+        for this to stop talking. The run still adds everybody it can and the
+        refusal still lands in the log with its evidence.
+        """
+        from automations.digi_docs import slack_post
+        posted = []
+        with mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_text_only",
+                        lambda *a, **k: posted.append(a)), \
+             mock.patch.object(slack_post, "_already_alerted",
+                               return_value=False):
+            ok = slack_post.alert_failure(
+                "Billy Garvin: not in the Add Sales Rep employee list "
+                "(saw 584 option(s); 0 share the surname 'garvin')",
+                dry_run=False)
+        self.assertFalse(ok)
+        self.assertEqual([], posted, "not-in-OwnerVille must post NOTHING")
 
     def test_a_per_person_refusal_still_tags_but_not_on_the_headline(self):
         """The trio stays pinged (Megan 2026-08-26) — the tags just move off
