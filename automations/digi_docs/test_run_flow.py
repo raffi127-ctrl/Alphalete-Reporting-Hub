@@ -1228,13 +1228,19 @@ class TheSecondSweepCreatesMissingPeople(unittest.TestCase):
             dry=True)
         self.assertEqual([], calls["created"])
 
-    def test_a_creation_that_fails_leaves_the_original_refusal(self):
+    def test_a_creation_that_fails_reports_the_creation_not_the_symptom(self):
+        """Megan: "the not being in the add sales rep employee list shouldn't
+        happen as you should add them." Once we act on that sentence it is the
+        trigger, not the outcome — re-printing it describes a step we have
+        since taken and sends somebody to add a person who may already exist.
+        """
         calls, added, refused = self._run_add(
             refusal="Billy Garvin: not in the Add Sales Rep employee list",
             creates=False)
         self.assertEqual([], added)
         self.assertEqual(1, len(refused))
-        self.assertIn("not in the Add Sales Rep", refused[0])
+        self.assertNotIn("not in the Add Sales Rep", refused[0])
+        self.assertIn("produced no record", refused[0])
 
 
 class TheAddPassSaysItOnce(unittest.TestCase):
@@ -1299,3 +1305,66 @@ class TheAddPassSaysItOnce(unittest.TestCase):
             self.assertFalse(slack_post.post_add_summary(1, 1, [],
                                                          dry_run=True))
         self.assertEqual([], posted)
+
+
+class TheSymptomIsNeverTheReport(unittest.TestCase):
+    """Megan 2026-09-14, reading the summary: "the not being in the add sales
+    rep employee list shouldn't happen as you should add them."
+
+    Exactly so. Once the pass creates missing people, that sentence stops being
+    an outcome and becomes the TRIGGER. If a name still reaches the summary,
+    the reader has to be told what went wrong with CREATING them — re-printing
+    the thing that started it describes a step we have since taken, and sends
+    somebody to add a person by hand who may already exist.
+    """
+
+    def _refused_line(self, *, create_raises=None, creates=True):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import run as _run
+
+        class _OV:
+            Refused = RuntimeError
+            config = types.SimpleNamespace(VIEW_PROGRESS_P=201)
+
+            def snapshot(s, page, **kw):
+                return set(), False
+
+            def present(s, roster, name):
+                return False
+
+            def add_sales_rep(s, page, name, **kw):
+                raise _OV.Refused(
+                    f"{name}: not in the Add Sales Rep employee list "
+                    f"(saw 584 option(s); 0 share the surname 'garvin')")
+
+        def _create(ov_, page, c):
+            if create_raises:
+                raise RuntimeError(create_raises)
+            return creates
+
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        stub.post_add_summary = lambda *a, **k: None
+        people = [type("C", (), {"name": "Billy Garvin",
+                                 "person": object()})()]
+        refused = []
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True), \
+             mock.patch.object(_run, "_create_missing", _create):
+            _run._work(_OV(), page_ctx=contextlib.nullcontext(object()),
+                       do_add=True, do_send=False, send=[], add_list=people,
+                       dry=False, added=[], done=[], refused=refused)
+        return refused
+
+    def test_a_creation_that_raised_says_what_raised(self):
+        line = self._refused_line(create_raises="no email on the board")[0]
+        self.assertNotIn("not in the Add Sales Rep employee list", line)
+        self.assertIn("could not be created", line)
+        self.assertIn("no email on the board", line)
+
+    def test_a_creation_that_produced_nothing_says_that(self):
+        line = self._refused_line(creates=False)[0]
+        self.assertNotIn("not in the Add Sales Rep employee list", line)
+        self.assertIn("produced no record", line)

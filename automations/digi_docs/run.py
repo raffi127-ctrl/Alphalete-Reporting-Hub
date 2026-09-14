@@ -457,16 +457,35 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     # exactly as adding mails the onboarding email — which is
                     # why this runs at 11:00, a people-facing hour, and never
                     # in the 4am batch.
-                    if "add sales rep" not in str(e).lower() or dry:
+                    # NEVER REPORT THE SYMPTOM WE JUST ACTED ON (Megan
+                    # 2026-09-14, reading the summary: "the not being in the
+                    # add sales rep employee list shouldn't happen as you
+                    # should add them"). Exactly so. Once this pass creates
+                    # missing people, "not in the Add Sales Rep employee list"
+                    # is no longer an outcome — it is the trigger. If a name
+                    # still lands in the summary, the reader has to be told
+                    # what failed about CREATING them, not re-told the thing
+                    # that started it.
+                    if "add sales rep" not in str(e).lower():
                         _refuse(refused, str(e), dry, alert=False)
+                        continue
+                    if dry:
+                        _refuse(refused,
+                                f"{c.name}: not in OwnerVille — a live run "
+                                f"would create them here", dry, alert=False)
                         continue
                     try:
                         made = _create_missing(ov, page, c)
                     except Exception as ce:                 # noqa: BLE001
-                        _refuse(refused, f"{c.name}: {ce}", dry, alert=False)
+                        _refuse(refused,
+                                f"{c.name}: is not in OwnerVille and could "
+                                f"not be created — {ce}", dry, alert=False)
                         continue
                     if not made:
-                        _refuse(refused, str(e), dry, alert=False)
+                        _refuse(refused,
+                                f"{c.name}: is not in OwnerVille and the New "
+                                f"Sales Rep form produced no record. Nothing "
+                                f"was sent to them.", dry, alert=False)
                         continue
                     created.append(c.name)
                     try:
