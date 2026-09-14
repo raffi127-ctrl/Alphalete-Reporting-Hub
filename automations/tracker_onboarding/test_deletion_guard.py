@@ -182,5 +182,35 @@ class Helpers(unittest.TestCase):
         self.assertIsNotNone(ac._keyed(json.loads(p.read_text())))
 
 
+class TrackerRegenerationKeepsHandNotes(unittest.TestCase):
+    """2026-09-14: joseph's row was hand-wired with a `_note`; the tracker
+    apply rebuilt the row from the tab (no notes column) and dropped it, so the
+    guard blocked both passes. The merge must keep `_` keys it doesn't own."""
+
+    def test_note_survives_and_form_fields_still_win(self):
+        import tempfile
+        import pathlib
+        from types import SimpleNamespace
+        from unittest import mock
+        from automations.tracker_onboarding import apply as TA
+
+        before = [{"key": "joseph", "label": "Joseph Logan",
+                   "emails": ["joseph@x.com"], "trackers": ["nds"],
+                   "_note": "delivered BY EMAIL"}]
+        regenerated = {"key": "joseph", "label": "Joseph Logan",
+                       "emails": ["joseph@x.com"], "trackers": ["nds", "vzftr"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp) / "onboarded_trackers.json"
+            p.write_text(json.dumps(before))
+            with mock.patch.object(TA, "ONBOARDED_JSON", p), \
+                    mock.patch.object(TA, "REPO_ROOT", pathlib.Path(tmp)):
+                TA._merge_json([(SimpleNamespace(key="joseph"), [regenerated])],
+                               write=True)
+            after = json.loads(p.read_text())
+        self.assertEqual(after[0]["_note"], "delivered BY EMAIL")
+        self.assertEqual(after[0]["trackers"], ["nds", "vzftr"])
+        self.assertEqual(_changes(before, after)["deleted"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

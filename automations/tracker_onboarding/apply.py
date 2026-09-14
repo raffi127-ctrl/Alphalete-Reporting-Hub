@@ -110,7 +110,14 @@ def _merge_json(recs_rows: "List[tuple]", write: bool) -> str:
                     del existing[k]
         for r in rows:
             (updated if r["key"] in existing else added).append(r["key"])
-            existing[r["key"]] = r
+            # Carry over hand-written `_note`-style keys. The form has no column
+            # for them, so a plain overwrite erased joseph._note (hand-wired
+            # 2026-09-13) and the auto-commit deletion guard blocked both passes
+            # on 2026-09-14. Everything the form DOES own still overwrites.
+            prior = existing.get(r["key"]) or {}
+            kept = {k: v for k, v in prior.items()
+                    if k.startswith("_") and k not in r}
+            existing[r["key"]] = {**r, **kept}
     if write:
         ONBOARDED_JSON.parent.mkdir(parents=True, exist_ok=True)
         tmp = ONBOARDED_JSON.with_suffix(".json.tmp")
