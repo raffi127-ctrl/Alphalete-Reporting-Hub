@@ -154,6 +154,22 @@ BUSINESS_NAMES = {"Rafael Hidalgo": "Alphalete Marketing"}
 
 st.set_page_config(page_title="Sales Boards", page_icon="📊", layout="wide")
 
+# RUNNING SOMEWHERE PUBLIC? Community Cloud has no home directory to keep the
+# Google credentials in and no login of its own, so both are handled here:
+# the credentials come from the host's secret store, and the fact that they
+# had to is what tells us this is not a Mac in the office — which is when the
+# board asks for a code before showing anybody's numbers.
+from automations.shared import cloud_creds as _CC      # noqa: E402
+from automations.icd_sales_board import gate as _GATE  # noqa: E402
+
+_CREDS_OK, _HOSTED = _CC.ensure_local_oauth()
+if not _CREDS_OK:
+    st.error("This board cannot reach Google Sheets — its credentials are "
+             "not configured on the host. Nothing is wrong with the data.")
+    st.stop()
+if not _GATE.passed(_HOSTED):
+    st.stop()
+
 
 # --------------------------------------------------------------- data access
 @st.cache_data(ttl=300, show_spinner=False)
@@ -1754,6 +1770,22 @@ def _week_apps_back(icd: str, week_ending: dt.date, weeks: int = 1) -> dict:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
+def _settled_weeks(icd: str) -> list:
+    """Every week this office has settled Tableau days for, newest first.
+
+    Monday morning has no settled day yet, so asking only about THIS week
+    said 'nothing for this office' about an office with three weeks on
+    file — the board went blank the moment the week rolled over. The weeks
+    that exist are a fact about the data, not about today's date."""
+    from automations.icd_sales_board import tableau_days as TD
+    try:
+        got = TD.stored_days(icd).get(icd, {})
+        return sorted({_week_end(d) for d in got}, reverse=True)
+    except Exception:   # noqa: BLE001 — no store is not a broken page
+        return []
+
+
+@st.cache_data(ttl=900, show_spinner=False)
 def _settled_days(icd: str, week_ending: dt.date) -> dict:
     """{date: {Int, Int Up, DTV, NL}} — Tableau's settled office totals.
 
@@ -1941,8 +1973,8 @@ def relay_board(icd: str, office_key: str) -> None:
     # agent at all still has a full week. Raf has no agent and 343 units.
     # Only give up when NEITHER source has anything.
     weeks = _relay_weeks(office_key)
-    settled_any = _settled_days(icd, _this_sunday_site())
-    if not status["day"] and not settled_any:
+    settled_weeks = _settled_weeks(icd)
+    if not status["day"] and not settled_weeks:
         st.info(
             f"Nothing for {icd} yet — no settled Tableau day and no reading "
             "from the office's own machine.", icon="🔌")
@@ -1964,8 +1996,12 @@ def relay_board(icd: str, office_key: str) -> None:
 
     # Weeks come from BOTH sources, newest first — an office with no agent
     # still has every week Tableau has settled.
-    weeks = sorted(set(weeks) | {_week_end(d) for d in settled_any},
-                   reverse=True) or [_this_sunday_site()]
+    # DEFAULT TO A WEEK THAT HAS SOMETHING IN IT. On a Monday morning the
+    # current week is empty for everybody, and opening on it showed a board
+    # with no rows — which reads as "the office did nothing", not as "the
+    # week has not started". The newest week with data leads instead.
+    weeks = sorted(set(weeks) | set(settled_weeks), reverse=True) \
+        or [_this_sunday_site()]
     week_ending = st.sidebar.selectbox(
         "Week Ending", weeks, key=f"relaywk_{office_key}",
         format_func=lambda d: f"{d.strftime('%b')} {_ord(d.day)}, {d.year}")

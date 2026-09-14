@@ -45,6 +45,13 @@ TOOLS = [
     ("icd_signup/app.py", "join-lucy-eco", "Join Lucy ECOsystem",
      ":material/rocket_launch:",
      "ICD owners — get your office's numbers posted in Slack", True),
+    # LINK ONLY, and behind an access code (see icd_sales_board/gate.py). The
+    # board carries every rep's name and daily production for every office, so
+    # it is not something to offer from a front page an ICD can wander onto —
+    # it is a link you send to an owner.
+    ("automations/icd_sales_board/site.py", "sales-board", "Sales board",
+     ":material/leaderboard:",
+     "Owners — your office's board, by code", False),
     ("disposition_signup/app.py", "daily-dispositions", "Daily Dispositions",
      ":material/schedule:",
      "Being replaced by Lucy ECOsystem — reachable by link only", False),
