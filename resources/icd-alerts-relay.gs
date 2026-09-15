@@ -120,6 +120,13 @@ function doPost(e) {
       _upsertKnocks(office, day, JSON.stringify(body.knocks_rows),
                     JSON.stringify(body.knocks_time_tracker || []),
                     body.knocks_rows.length, String(body.local_time || ''));
+      // WHAT THEY ASKED FOR IS RECORDED HERE TOO. This used to live only in
+      // the records path below, and a Box, Energy Wells or NDS office never
+      // reaches it -- they have no SaraPlus, so they never post records at
+      // all. Carlos relayed his board all day on 2026-09-15 and still had no
+      // row on 'Office Channels', which made him impossible to approve and
+      // his board impossible to post.
+      _recordRequests(office, body);
       return _reply({ok: true, knock_rows: body.knocks_rows.length});
     }
 
@@ -132,44 +139,7 @@ function doPost(e) {
             String(body.machine || ''), String(body.machine_name || ''),
             body.desktop === true, String(body.os || ''));
 
-    // Optional, and sent on every sweep so a re-run of the installer can
-    // change the answer. Only ever touches the columns the owner is allowed
-    // to influence.
-    var chans = body.requested_channels;
-    var asked = null;
-    if (chans !== null && chans !== undefined) {
-      asked = {
-        wanted: chans.length ? chans.join(', ') : 'Not sure yet',
-        json: JSON.stringify(chans)
-      };
-    }
-    var ovName = String(body.ov_name || '').trim();
-    if (ovName) {
-      // Column B is the owner as WE spell them; this is how OwnerVille does.
-      // Kept beside it rather than replacing it, because the two disagreeing
-      // is the fact worth seeing.
-      _recordOvName(office, ovName);
-    }
-    // A LIST. Stored as readable text for whoever reviews it AND as JSON for
-    // whatever builds the schedule -- reading a schedule back out of a
-    // sentence is not something anyone should have to do.
-    var dests = body.requested_knocks_destinations;
-    var knocks = null;
-    if (dests !== null && dests !== undefined) {
-      var summary = dests.length
-        ? dests.map(function (d) {
-            return String(d.channel || '?') + ' - ' + String(d.label || '?');
-          }).join('; ')
-        : 'No knocks board';
-      knocks = {
-        wanted: summary,
-        json: JSON.stringify(dests),
-        hours: String(body.requested_knocks_hours_note || '').trim()
-      };
-    }
-    if (asked || knocks) {
-      _recordChannelRequest(office, String(body.owner || ''), asked, knocks);
-    }
+    _recordRequests(office, body);
 
     return _reply({ok: true, reps: Object.keys(records).length});
   } catch (err) {
@@ -308,6 +278,49 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
     lock.releaseLock();
   }
 }
+
+function _recordRequests(office, body) {
+  // Optional, and sent on every sweep so a re-run of the installer can change
+  // the answer. Only ever touches the columns the owner is allowed to
+  // influence. Called from BOTH hand-overs: an office whose only call is the
+  // knocks one still has to be able to say where its board should go.
+  var chans = body.requested_channels;
+  var asked = null;
+  if (chans !== null && chans !== undefined) {
+    asked = {
+      wanted: chans.length ? chans.join(', ') : 'Not sure yet',
+      json: JSON.stringify(chans)
+    };
+  }
+  var ovName = String(body.ov_name || '').trim();
+  if (ovName) {
+    // Column B is the owner as WE spell them; this is how OwnerVille does.
+    // Kept beside it rather than replacing it, because the two disagreeing is
+    // the fact worth seeing.
+    _recordOvName(office, ovName);
+  }
+  // A LIST. Stored as readable text for whoever reviews it AND as JSON for
+  // whatever builds the schedule -- reading a schedule back out of a sentence
+  // is not something anyone should have to do.
+  var dests = body.requested_knocks_destinations;
+  var knocks = null;
+  if (dests !== null && dests !== undefined) {
+    var summary = dests.length
+      ? dests.map(function (d) {
+          return String(d.channel || '?') + ' - ' + String(d.label || '?');
+        }).join('; ')
+      : 'No knocks board';
+    knocks = {
+      wanted: summary,
+      json: JSON.stringify(dests),
+      hours: String(body.requested_knocks_hours_note || '').trim()
+    };
+  }
+  if (asked || knocks) {
+    _recordChannelRequest(office, String(body.owner || ''), asked, knocks);
+  }
+}
+
 
 function _recordOvName(office, ovName) {
   var sh = _book().getSheetByName(CHANNELS_TAB);

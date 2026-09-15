@@ -23,7 +23,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from automations.icd_alerts import knocks_map as M, offices as O, post as P
+from automations.icd_alerts import (campaign_guard, knocks_map as M,
+                                    offices as O, post as P)
 
 KNOCKS_TAB = "ICD Knocks"
 KN_OFFICE, KN_DAY, KN_ROWS, KN_TRACKER, KN_COUNT = 0, 1, 2, 3, 4
