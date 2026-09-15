@@ -36,8 +36,14 @@ if [ -z "$KEY" ]; then
   exit 1
 fi
 
-# KASH-8ABCD-... -> kash
-OFFICE="$(printf '%s' "$KEY" | cut -d- -f1 | tr '[:upper:]' '[:lower:]')"
+# KASH-8ABCD-EFGHJ-KLMNP -> kash, and RYAN-ATT-8ABCD-EFGHJ-KLMNP -> ryan-att.
+#
+# EVERYTHING EXCEPT THE LAST THREE GROUPS. The office is the prefix and the
+# key is always exactly three groups after it -- taking only the FIRST group
+# worked until an office ran two campaigns, and then `ryan-att` installed as
+# `ryan` and overwrote the campaign that was already there. Caught before
+# either of them enrolled (2026-09-15).
+OFFICE="$(printf '%s' "$KEY" | rev | cut -d- -f4- | rev | tr '[:upper:]' '[:lower:]')"
 
 echo ""
 echo "Setting up Lucy ECOsystem for: $OFFICE"

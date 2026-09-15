@@ -239,3 +239,51 @@ class LaptopsAreRefused(unittest.TestCase):
         fn = self.SETUP[self.SETUP.index("def is_desktop()"):]
         fn = fn[:fn.index("\ndef ")]
         self.assertIn("return True", fn.split("except")[-1])
+
+
+class TheOfficeIsReadCorrectlyFromTheKey(unittest.TestCase):
+    """A two-part office key must not install as its first part.
+
+    An office running two campaigns has keys like `ryan` and `ryan-att`, and
+    the code carries the office as its prefix. Taking only the FIRST group
+    worked until exactly that point, and then `RYAN-ATT-...` would have
+    installed as `ryan` and overwritten the campaign already on the machine --
+    the office silently losing a board it had been approved for. Caught before
+    either of the two multi-campaign offices enrolled (2026-09-15).
+    """
+
+    @staticmethod
+    def _sh(key: str) -> str:
+        import subprocess
+        return subprocess.run(
+            ["bash", "-c",
+             "printf '%%s' '%s' | rev | cut -d- -f4- | rev | tr '[:upper:]' '[:lower:]'"
+             % key],
+            capture_output=True, text=True).stdout.strip()
+
+    @staticmethod
+    def _ps(key: str) -> str:
+        parts = key.split("-")
+        if len(parts) > 3:
+            return "-".join(parts[0:len(parts) - 3]).lower()
+        return parts[0].lower()
+
+    CASES = {
+        "KASH-8ABCD-EFGHJ-KLMNP": "kash",
+        "RYAN-ATT-B3S2Z-TJZDG-K8AXB": "ryan-att",
+        "RYAN-B2BBOX-A1B2C-D3E4F-G5H6J": "ryan-b2bbox",
+    }
+
+    def test_the_shell_installer_reads_it(self):
+        for key, want in self.CASES.items():
+            self.assertEqual(self._sh(key), want, key)
+
+    def test_the_powershell_installer_agrees(self):
+        # Same algorithm, checked in Python because PowerShell is not here.
+        for key, want in self.CASES.items():
+            self.assertEqual(self._ps(key), want, key)
+
+    def test_neither_takes_only_the_first_group(self):
+        for text, name in ((SH, "install.sh"), (PS, "install.ps1")):
+            self.assertNotIn("cut -d- -f1 ", text, name)
+            self.assertNotIn("($KEY -split '-')[0]", text, name)

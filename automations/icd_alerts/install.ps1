@@ -43,8 +43,14 @@ if ([string]::IsNullOrWhiteSpace($KEY)) {
   return
 }
 
-# KASH-8ABCD-... -> kash
-$OFFICE = ($KEY -split '-')[0].ToLower()
+# KASH-8ABCD-EFGHJ-KLMNP -> kash, and RYAN-ATT-8ABCD-EFGHJ-KLMNP -> ryan-att.
+# Everything except the last three groups -- see install.sh for why.
+$parts = $KEY -split '-'
+if ($parts.Count -gt 3) {
+  $OFFICE = ($parts[0..($parts.Count - 4)] -join '-').ToLower()
+} else {
+  $OFFICE = $parts[0].ToLower()
+}
 Write-Host ''
 Write-Host "Setting up Lucy Reports for: $OFFICE"
 Write-Host ''
