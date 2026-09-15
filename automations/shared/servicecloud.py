@@ -39,6 +39,84 @@ PASSWORD_RESET_PATH = "/user/index/request-password-reset"
 
 LOGIN_TIMEOUT_MS = 60_000
 
+# WHERE THE SALES ARE, in Ryan McSpadden's words (2026-09-15): "To see sales
+# you go to contracts and anything that says 'TPV Passed, Ready for booking,
+# In Progress, Missing Documents or Submitted to supplier' are the sales that
+# are completed. Anything else is still in process."
+# A SINGLE-PAGE APP. Routes are client-side under /spa/ -- confirmed from
+# Ryan's own screen, not guessed: myservicecloud.net/spa/customers. So a read
+# navigates and waits for the grid to render; there is no server-rendered page
+# to fetch, and no ".aspx" to post to the way SaraPlus has.
+SPA_ROOT = "/spa"
+CONTRACTS_PATH = "/spa/contracts"
+CUSTOMERS_PATH = "/spa/customers"
+
+# THE GRIDS PAGINATE. Customers showed "Showing 1 - 50 of 4261" across 86
+# pages. Whatever a read does, it must not assume page one is the day: a
+# reader that takes the first fifty rows and stops would report a number that
+# is right on a quiet morning and quietly wrong every afternoon.
+#
+# There is a per-column filter and a Filters button on the grid, and a
+# Reports section in the nav. Either may give a day's rows directly, which is
+# worth far more than paging 86 times -- to be established from the Contracts
+# screen before any of this is written.
+ROWS_PER_PAGE_DEFAULT = 50
+
+# A SALE IS A STATUS, NOT A COUNTER. "It's not as easy as Sara plus to just
+# see a number live" -- SaraPlus hands over a total; this hands over a list of
+# contracts and the count is ours to make. So the definition of "sold" lives
+# here, written down, rather than in whoever's head is reading the screen.
+#
+# Kept as a set of exact strings because a near-miss is the dangerous failure:
+# a status we do not recognise is silently NOT counted, and an office's sales
+# number comes out low with nothing to say why. See unknown_statuses().
+COMPLETED_STATUSES = frozenset({
+    "tpv passed",
+    "ready for booking",
+    "in progress",
+    "missing documents",
+    "submitted to supplier",
+})
+
+
+def is_completed(status: str) -> bool:
+    """Does this contract count as a sale?"""
+    return (status or "").strip().lower() in COMPLETED_STATUSES
+
+
+def unknown_statuses(statuses) -> list:
+    """Statuses on the page that this file has never heard of.
+
+    THE POINT IS TO NOTICE A NEW ONE. Box adding a status we do not know
+    would quietly drop those contracts out of every Box office's sales count,
+    and a number that is low for a reason nobody can see is the failure this
+    whole system keeps producing. Reported, not guessed at.
+    """
+    seen, out = set(), []
+    for s in statuses or []:
+        low = (s or "").strip().lower()
+        if not low or low in COMPLETED_STATUSES or low in seen:
+            continue
+        seen.add(low)
+        out.append(s.strip())
+    return sorted(out)
+
+
+# TWO-FACTOR. Ryan, 2026-09-15: "It's still set on an Authenticator I can only
+# have on a device." So there is no unattended first sign-in: a human has to
+# be there with the code once.
+#
+# THE PLAN IS A PERSISTENT SESSION, not a stored secret. The office signs in
+# during the install, with their authenticator in hand, into a browser profile
+# that stays on their machine -- the same shape OwnerVille and AppStream
+# already use here. The agent then reuses it, and only needs a person again if
+# the session is dropped.
+#
+# Ryan has asked Box whether codes can be emailed instead. If they can, that
+# is a second route and not a replacement: an emailed code still has to be
+# read from somewhere, and a session that simply persists needs nothing.
+NEEDS_HUMAN_FIRST_LOGIN = True
+
 
 class AccountProblem(RuntimeError):
     """Something the office can fix, phrased for the office."""
