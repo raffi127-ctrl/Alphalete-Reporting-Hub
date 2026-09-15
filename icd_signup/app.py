@@ -165,6 +165,22 @@ with st.container(border=True):
         help="OwnerVille often spells names differently, and we would rather "
              "ask than guess.")
 
+    st.subheader("Your campaign")
+    campaign = st.radio(
+        "Which campaign does this office run?",
+        options=[k for k, _l, _s in S.CAMPAIGNS],
+        format_func=S.campaign_label)
+    # WHAT THEY GET DEPENDS ON IT, so say so here rather than letting them
+    # find out. AT&T is the only campaign on SaraPlus, and credit checks and
+    # sales come from SaraPlus.
+    if S.uses_saraplus(campaign):
+        st.caption("You will get **credit checks, sales and a knocks board**.")
+    else:
+        st.caption("You will get a **knocks and dispositions board**. Credit "
+                   "checks and sales come from SaraPlus, which only the AT&T "
+                   "campaigns use — so this office will not get those, and "
+                   "will not be asked for a SaraPlus login.")
+
     st.subheader("The computer it will run on")
     # NOT ASKED ANY MORE. Mac-or-PC is something the machine itself answers
     # the moment it relays, and the installer already works it out on its own
@@ -202,28 +218,38 @@ with st.container(border=True):
     sat_end = _time_picker(c4, "Saturday, end", "17:00", "s_end",
                            disabled=not saturday)
 
-    st.subheader("Where your credit checks and sales should post")
-    st.caption("Most offices pick one channel. Add a second if the owners' "
-               "room and the rep channel should both get them.")
-    st.caption("A channel **ID** is safest — in Slack, click the channel name "
-               "at the top, scroll to the bottom of the About tab, and copy "
-               "the ID (it looks like C09AVM17PAR). A #name works too.")
-    # SAID TWICE ON PURPOSE (Megan 2026-09-13: "it needs to be on there twice
-    # so they actually read it"). Here, while they are choosing the room, and
-    # again above Send where it is the thing to go and do. It is the most
-    # common reason a sign-up stalls, and the cost of repeating it is one line
-    # somebody skims -- the cost of missing it is an office sitting silent
-    # waiting on us.
-    st.info(
-        "**Add Megan and Eve to any channel you name here.** They cannot "
-        "switch your alerts on for a channel they are not in.")
+    # NOT ASKED AT ALL for a campaign with no SaraPlus. Box and Energy Wells
+    # offices get a knocks board and nothing else, so asking them where their
+    # credit checks should post is asking about something that will never
+    # arrive (Megan 2026-09-15: "for Box/energywell we need LucyECO to only
+    # ask them to enroll in the knock reports from their machines").
     alert_channels = []
-    for i in range(MAX_CHANNELS):
-        label = ("Channel for alerts" if i == 0
-                 else "Another channel (optional)")
-        val = st.text_input(label, key="alert_ch_%d" % i,
-                            placeholder="C09AVM17PAR  or  #palace-sales")
-        alert_channels.append(val.strip())
+    # NOT ASKED AT ALL for a campaign with no SaraPlus. Box and Energy Wells
+    # offices get a knocks board and nothing else, so asking them where their
+    # credit checks should post is asking about something that will never
+    # arrive (Megan 2026-09-15: "for Box/energywell we need LucyECO to only
+    # ask them to enroll in the knock reports from their machines").
+    alert_channels = []
+    if S.uses_saraplus(campaign):
+        st.subheader("Where your credit checks and sales should post")
+        st.caption("Most offices pick one channel. Add a second if the "
+                   "owners' room and the rep channel should both get them.")
+        st.caption("A channel **ID** is safest — in Slack, click the channel "
+                   "name at the top, scroll to the bottom of the About tab, "
+                   "and copy the ID (it looks like C09AVM17PAR). A #name "
+                   "works too.")
+        # SAID TWICE ON PURPOSE (Megan 2026-09-13: "it needs to be on there
+        # twice so they actually read it"). Here, while they are choosing the
+        # room, and again above Send where it is the thing to go and do.
+        st.info(
+            "**Add Megan and Eve to any channel you name here.** They cannot "
+            "switch your reports on for a channel they are not in.")
+        for i in range(MAX_CHANNELS):
+            label = ("Channel for alerts" if i == 0
+                     else "Another channel (optional)")
+            val = st.text_input(label, key="alert_ch_%d" % i,
+                                placeholder="C09AVM17PAR  or  #palace-sales")
+            alert_channels.append(val.strip())
 
     st.subheader("Your knocks and dispositions board")
     st.caption("This is the board showing who is out, who is knocking and who "
@@ -243,6 +269,12 @@ with st.container(border=True):
         knocks.append((ch.strip(), int(cad)))
     st.caption("Do not want this board at all? Leave every channel above "
                "blank.")
+    if not S.uses_saraplus(campaign):
+        # A knocks-only office never sees the alerts block, where this is
+        # otherwise said first.
+        st.info(
+            "**Add Megan and Eve to any channel you name here.** They cannot "
+            "switch your reports on for a channel they are not in.")
 
     # LAST THING BEFORE THEY SEND, because it is the one action of theirs
     # that has to happen OUTSIDE this page -- sitting up beside the channel
@@ -277,7 +309,8 @@ if submitted:
         day_start=day_start.strip(), day_end=day_end.strip(),
         saturday=bool(saturday),
         sat_start=sat_start.strip(), sat_end=sat_end.strip(),
-        ov_name=ov_name.strip(), knocks_cadence=first_cadence,
+        ov_name=ov_name.strip(), campaign=campaign,
+        knocks_cadence=first_cadence,
         wanted_channels=summary, contact=contact.strip(),
         alert_channels_json=json.dumps(alerts),
         knocks_json=json.dumps(dests))

@@ -830,7 +830,16 @@ def main() -> int:
     confirm_office(rec)
 
     step(6, total, "Your logins")
-    ok = login_until_it_works()
+    # NOT ASKED FOR A LOGIN THEY DO NOT HAVE. AT&T is the only campaign on
+    # SaraPlus; a Box or Energy Wells office has no account, and asking is how
+    # an install dies at step 6 with the owner certain they typed it right.
+    from automations.icd_alerts import config as _C
+    if _C.uses_saraplus():
+        ok = login_until_it_works()
+    else:
+        say("      %s campaign — no SaraPlus needed, skipping that login."
+            % _C.campaign())
+        ok = True
     ov_ok = ownerville_until_it_works() if ok else False
 
     step(7, total, "Where your alerts should go")

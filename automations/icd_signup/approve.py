@@ -60,11 +60,20 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
         return 1
 
     from automations.icd_alerts import approve as channels
+    from automations.icd_signup.schema import uses_saraplus
 
     log("Switching on %s (%s)." % (rec.owner, rec.office_key))
-    # THE ACTUAL GATE: the channels they asked for. icd_alerts.approve resolves
-    # the room, checks Lucy and Megan are both in it, and writes the sign-off.
-    rc = channels.cmd_approve(rec.office_key, None)
+    # A KNOCKS-ONLY OFFICE HAS NO ALERT CHANNEL TO APPROVE. Box, Energy Wells
+    # and NDS are not on SaraPlus, so demanding one would block an approval
+    # over a channel that was never asked for.
+    if not uses_saraplus(rec.campaign):
+        log("  %s campaign — no credit checks or sales, so no alert channel."
+            % rec.campaign)
+        rc = 0
+    else:
+        # THE GATE: the channels they asked for. icd_alerts.approve resolves
+        # the room, checks Lucy is in it, and writes the sign-off.
+        rc = channels.cmd_approve(rec.office_key, None)
     if rc != 0:
         log("")
         log("Their channel was not approved, so nothing posts yet and the "

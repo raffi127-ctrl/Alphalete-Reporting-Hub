@@ -15,6 +15,46 @@ import re
 from typing import Dict, List, NamedTuple, Optional
 
 PLATFORMS = ("mac", "windows")
+
+# WHICH CAMPAIGN AN OFFICE RUNS DECIDES WHAT THE AGENT CAN EVEN READ.
+#
+# AT&T is the only campaign on SaraPlus (Megan 2026-09-15). Credit checks and
+# sales come from SaraPlus, so they exist for AT&T offices and for nobody
+# else -- an Energy or NDS or Box office has no SaraPlus account to sign into,
+# and asking one for a login it does not have is how an install dies at step 6
+# with the owner certain they typed it right.
+#
+# Knocks and dispositions come from OwnerVille, which every campaign uses. So
+# a non-AT&T office gets a knocks board and nothing else, and is never asked
+# for a SaraPlus login at all.
+#
+# The keys and OwnerVille ids match disposition_signup.CAMPAIGNS deliberately:
+# the two intake forms must not disagree about what this company sells.
+CAMPAIGNS = (
+    ("att", "AT&T Fiber — Internet & Phones", True),
+    ("nds", "NDS — Wireless & Phones", False),
+    ("energy", "Energy Wells", False),
+    ("b2b_att", "B2B — AT&T", True),
+    ("b2b_box", "B2B — Box Energy", False),
+)
+CAMPAIGN_LABEL = {k: label for k, label, _sara in CAMPAIGNS}
+_SARAPLUS = {k for k, _label, sara in CAMPAIGNS if sara}
+
+
+def uses_saraplus(campaign_key: str) -> bool:
+    """True when this campaign has a SaraPlus account behind it.
+
+    Unknown campaigns say True. A new campaign nobody has told this module
+    about should ask for the login and be TOLD it does not work, rather than
+    silently never collecting credit checks that were supposed to arrive.
+    """
+    key = (campaign_key or "").strip().lower()
+    return key not in {k for k, _l, sara in CAMPAIGNS if not sara}
+
+
+def campaign_label(campaign_key: str) -> str:
+    return CAMPAIGN_LABEL.get((campaign_key or "").strip().lower(),
+                              campaign_key or "(not said)")
 STATUS_PENDING = "pending"
 STATUS_APPROVED = "approved"
 STATUS_DECLINED = "declined"
@@ -101,6 +141,11 @@ class IcdSignup(NamedTuple):
     # none of that fits in one line of text.
     wanted_channels: str
     contact: str
+    # DEFAULTS TO AT&T, deliberately. Every office enrolled before campaigns
+    # existed was on AT&T, and a record that arrives without one -- an older
+    # row, a caller that has not been updated -- must not lose its credit
+    # checks to a field that was added afterwards.
+    campaign: str = "att"
     # ["C09AVM17PAR", "#palace-sales"] -- ids preferred, names accepted.
     alert_channels_json: str = "[]"
     # [{"channel": "...", "cadence_min": 30, "label": "Every 30 minutes"}]
@@ -163,6 +208,7 @@ class IcdSignup(NamedTuple):
             sat_start=str(row.get("sat_start") or "").strip(),
             sat_end=str(row.get("sat_end") or "").strip(),
             ov_name=str(row.get("ov_name") or "").strip(),
+            campaign=str(row.get("campaign") or "att").strip().lower(),
             knocks_cadence=i(row.get("knocks_cadence")),
             wanted_channels=str(row.get("wanted_channels") or "").strip(),
             contact=str(row.get("contact") or "").strip(),

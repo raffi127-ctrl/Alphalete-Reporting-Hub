@@ -155,6 +155,13 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("self-update skipped: %s" % type(e).__name__)
 
+    # A KNOCKS-ONLY OFFICE HAS NOTHING TO READ HERE. Box, Energy Wells and NDS
+    # are not on SaraPlus, so there is no account to sign into -- skipping is
+    # not a degraded mode, it is the whole of what those offices ever had.
+    if not C.uses_saraplus():
+        _log("%s campaign — no SaraPlus, knocks only" % C.campaign())
+        return 0
+
     try:
         read = sara_read.read_day(day, headless=headless, log=_log)
         current, sales = read["records"], read["sales"]

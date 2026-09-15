@@ -41,6 +41,30 @@ from automations.shared.saraplus import (  # noqa: E402
 )
 
 SERVICE_INTERNET = "AT&T Internet"
+
+
+def campaign() -> str:
+    """This office's campaign, from install.json. Defaults to AT&T.
+
+    An office enrolled before campaigns existed has no campaign recorded and
+    IS on AT&T -- every one of them was. Defaulting the other way would take
+    Kash's and Cyrus's credit checks away the moment they updated.
+    """
+    try:
+        return str(install().get("campaign") or "att").strip().lower()
+    except Exception:  # noqa: BLE001
+        return "att"
+
+
+def uses_saraplus() -> bool:
+    """Does this office have a SaraPlus account at all?
+
+    AT&T is the only campaign on SaraPlus (Megan 2026-09-15). A Box or Energy
+    Wells office has no account to sign into, so the whole credit-check and
+    sales half of the agent does not apply to them -- it is not switched off,
+    it was never theirs.
+    """
+    return campaign() not in ("nds", "energy", "b2b_box")
 LOGIN_URL = "https://ui.saraplus.com"
 
 

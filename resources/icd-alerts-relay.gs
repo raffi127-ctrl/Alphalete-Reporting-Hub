@@ -226,6 +226,9 @@ function doGet(e) {
       requested_channels: jlist('alert_channels_json'),
       requested_knocks_destinations: jlist('knocks_json'),
       ov_name: v('ov_name', ''),
+      // WITHOUT THIS every office installs as AT&T and a Box machine spends
+      // its life trying to sign into a SaraPlus account that does not exist.
+      campaign: v('campaign', 'att'),
       // THEY TYPED THESE HOURS ON THE FORM MINUTES AGO. Without this the
       // installer shows them their own answer and asks them to confirm it,
       // which is the same question twice in one sitting.
