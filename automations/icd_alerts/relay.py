@@ -154,6 +154,24 @@ def is_desktop() -> bool:
     import platform as _p
     if _p.system() == "Windows":
         return True                      # judged by its own rules over there
+
+    # ASK THE MACHINE WHAT IT IS, FIRST. The battery probe can only answer by
+    # ABSENCE, so anything that makes it look like a battery is present turns
+    # a desktop away -- which is what happened to Carlos's Mac mini on
+    # 2026-09-15, with the install refusing him at the very first step.
+    # `system_profiler` prints a name a person would recognise ("Mac mini",
+    # "MacBook Pro"), so a positive identification beats an inference.
+    name = _model_name()
+    if name:
+        low = name.lower()
+        if low.startswith("macbook"):
+            return False                 # laptop, definitively
+        for desktop in ("mac mini", "imac", "mac studio", "mac pro"):
+            if desktop in low:
+                return True              # desktop, definitively
+
+    # Unrecognised model (a Hackintosh, a VM, something newer than this code):
+    # fall back to the battery, which still catches the common case.
     try:
         import subprocess
         out = subprocess.run(["ioreg", "-rc", "AppleSmartBattery"],
@@ -176,6 +194,26 @@ def _never_sleeps() -> Optional[bool]:
         return bool(stay_awake.status().get("never_sleeps"))
     except Exception:  # noqa: BLE001 — older agent, odd machine, slow probe
         return None
+
+
+def _model_name() -> str:
+    """"Mac mini", "MacBook Pro", "iMac" -- or "" if it cannot be read.
+
+    NOT hw.model: Apple Silicon reports "Mac14,7" style identifiers for
+    laptops AND desktops, so matching those would refuse a new iMac and
+    accept a new MacBook. SPHardwareDataType carries the name Apple puts on
+    the box.
+    """
+    try:
+        import re
+        import subprocess
+        out = subprocess.run(["system_profiler", "SPHardwareDataType"],
+                             capture_output=True, timeout=30)
+        text = (out.stdout or b"").decode("utf-8", "replace")
+        m = re.search(r"Model Name:\s*(.+)", text)
+        return m.group(1).strip() if m else ""
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def machine_label() -> str:
