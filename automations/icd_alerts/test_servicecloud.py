@@ -165,3 +165,44 @@ class ABoxOfficeWithoutItIsNotAllSet(unittest.TestCase):
             ["install.json", "ownerville-creds.json", "saraplus-creds.json"],
             sara=True, sc=True)
         self.assertTrue(any("Service Cloud" in b for b in blocking))
+
+
+class WhatTheLiveGridShowedThatTheDescriptionDidNot(unittest.TestCase):
+    """Ryan listed five substatuses that mean sold. The live Contracts grid
+    carries at least three he did not mention -- "Accepted by Supplier",
+    "PDF Generated", "TPV Sent".
+
+    "Accepted by Supplier" reads as MORE complete than "Submitted to
+    supplier". If it is a sale and we do not count it, every Box office's
+    number comes out low with nothing on the board to say why. Guessing it in
+    would inflate a number people are paid on. Neither is ours to decide, so
+    it is flagged and left out until somebody who sells these says.
+    """
+
+    LIVE = ["TPV Passed", "Submitted to Supplier", "PDF Generated",
+            "Cancelled by Supplier", "TPV Sent", "Accepted by Supplier"]
+
+    def test_the_undecided_ones_are_not_silently_counted(self):
+        for s in SC.SEEN_BUT_UNDECIDED:
+            self.assertFalse(SC.is_completed(s),
+                             "%r was guessed into the sales count" % s)
+
+    def test_they_are_reported_rather_than_dropped(self):
+        flagged = SC.unknown_statuses(self.LIVE)
+        for s in SC.SEEN_BUT_UNDECIDED:
+            self.assertIn(s, flagged,
+                          "%r would vanish from the count with nothing said"
+                          % s)
+
+    def test_the_five_we_were_told_still_count(self):
+        for s in ("TPV Passed", "Ready for booking", "In Progress",
+                  "Missing Documents", "Submitted to supplier"):
+            self.assertTrue(SC.is_completed(s))
+
+    def test_a_cancelled_contract_is_never_a_sale(self):
+        self.assertFalse(SC.is_completed("Cancelled by Supplier"))
+
+    def test_what_the_grid_cannot_give_us_is_written_down(self):
+        # Both decide what can be built at all.
+        self.assertIn("rep/agent", SC.KNOWN_MISSING)
+        self.assertIn("sale date", SC.KNOWN_MISSING)

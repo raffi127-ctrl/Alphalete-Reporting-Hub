@@ -62,6 +62,25 @@ CUSTOMERS_PATH = "/spa/customers"
 # screen before any of this is written.
 ROWS_PER_PAGE_DEFAULT = 50
 
+# WHAT THE CONTRACTS GRID DOES NOT CARRY, seen 2026-09-15. Both of these
+# decide what can be built, so they are written here rather than discovered
+# halfway through writing a reader:
+#
+#  * NO REP. The Customers grid has an agent column; Contracts does not. Until
+#    one is found -- the column chooser at the top right, or the Filters panel
+#    -- a Box office can have an OFFICE TOTAL and not a per-rep board. That is
+#    a different product from the AT&T one and worth saying out loud before
+#    anybody expects the same board.
+#
+#  * NO SALE DATE. "Start Date" is when the SERVICE starts (APR 2027, JUN
+#    2028), not when it was sold. So "today's sales" cannot come from it. The
+#    Customers grid carries "Initiated Date" which looks like the right one;
+#    whether Contracts can show it is unestablished.
+#
+# 2622 contracts across 53 pages at the time of writing, so paging the whole
+# grid to find one day is not a read anybody should run every few minutes.
+KNOWN_MISSING = ("rep/agent", "sale date")
+
 # A SALE IS A STATUS, NOT A COUNTER. "It's not as easy as Sara plus to just
 # see a number live" -- SaraPlus hands over a total; this hands over a list of
 # contracts and the count is ours to make. So the definition of "sold" lives
@@ -70,6 +89,23 @@ ROWS_PER_PAGE_DEFAULT = 50
 # Kept as a set of exact strings because a near-miss is the dangerous failure:
 # a status we do not recognise is silently NOT counted, and an office's sales
 # number comes out low with nothing to say why. See unknown_statuses().
+# THE COLUMN IS "Contract Substatus", confirmed on screen 2026-09-15.
+SEL_SUBSTATUS_COLUMN = "Contract Substatus"
+
+# SUBSTATUSES SEEN ON THE LIVE GRID that Ryan's list did not mention. Recorded
+# rather than decided: "Accepted by Supplier" reads as MORE complete than
+# "Submitted to supplier", and if it is a sale and we do not count it then
+# every Box office's number comes out low with nothing to say why.
+#
+# NOT added to COMPLETED_STATUSES until somebody who sells these says so.
+# Guessing in the generous direction inflates a number people are paid on;
+# guessing in the strict direction hides sales. Neither is ours to pick.
+SEEN_BUT_UNDECIDED = (
+    "Accepted by Supplier",
+    "PDF Generated",
+    "TPV Sent",
+)
+
 COMPLETED_STATUSES = frozenset({
     "tpv passed",
     "ready for booking",
