@@ -215,3 +215,39 @@ def sign_in(page, email: str, password: str, *,
             "for the new one." % email)
     log("signed in to My Service Cloud as %s" % email)
     return page.url
+
+
+# --- HOW BOX SALES BECOME SLACK ALERTS --------------------------------------
+#
+# Megan 2026-09-15: "we also want alerts for this like the sara slack alerts".
+#
+# THEY RIDE THE PATH THAT ALREADY EXISTS. The relay carries sales as
+# {REP: {metric: count}} and icd_alerts.post.decide_sales() turns a change in
+# that into one line per rep. Everything hard in there is metric-agnostic and
+# was paid for the hard way:
+#
+#   * BASELINE -- the first sight of a day announces nothing, or an office
+#     enrolling at 3pm declares every sale since lunchtime as if it just
+#     landed.
+#   * ONLY UP -- a short or half-rendered grid reads LOW, and believing it
+#     would let the next good pass re-announce a sale already on the board.
+#   * THE BACKLOG BURST -- several reps moving in one tick is a day being
+#     handed over, not live activity (Cyrus, five sales announced at 14:18,
+#     the oldest three hours stale).
+#
+# So a Box read that relays {REP: {...}} gets all of that free. Building a
+# second alert path would mean rediscovering each of those rules with a real
+# office's board as the test.
+#
+# THE ONE SEAM THAT IS AT&T-SHAPED: relay.SALE_METRICS and
+# shared.sale_hype.METRICS are both hardcoded ("Int", "Int Up", "DTV", "NL"),
+# and the hype wording and tiers are written around them. Box needs its own
+# metric names, and those two need to become campaign-aware rather than
+# constant. That is a small change and NOT one to make blind -- it decides
+# what every AT&T office's sale line says.
+#
+# WHAT A BOX METRIC IS, still open. A contract is one sale; the grid also
+# carries Commodity (Electricity so far) and Adjusted Annual Volume. Whether
+# a Box office wants one number, a split by commodity, or volume alongside
+# the count is a question for an office that sells them, not a guess from
+# here.
