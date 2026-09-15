@@ -277,7 +277,7 @@ with st.container(border=True):
     # a typo here is silence that looks like success on both ends. Hence the
     # insistence on copying it rather than describing it.
     st.subheader("Get the board as a group text too")
-    st.caption("The same board, sent to a group chat as well as Slack.")
+    st.caption("The same board, sent to an iMessage chat as well as Slack.")
     want_texts = st.radio(
         "Do you want it texted?", ["Yes", "No"], index=1, horizontal=True,
         key="want_texts", label_visibility="collapsed")
