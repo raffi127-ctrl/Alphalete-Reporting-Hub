@@ -65,16 +65,25 @@ def _views(page, wb) -> list:
             {"operator": "eq", "field": "workbookId", "value": str(wb["id"])}]},
         "order": [{"field": "name", "ascending": True}],
         "page": {"startIndex": 0, "maxItems": 200}})
+    views = (data.get("result") or {}).get("views") or []
+    print("getViews HTTP {} · {} record(s)".format(st, len(views)))
+    repo = wb.get("repositoryUrl") or ""
     out = []
-    for v in (data.get("result") or {}).get("views") or []:
-        seg = (v.get("viewUrlName") or v.get("urlName") or v.get("contentUrl")
-               or v.get("sheetUrl") or "")
+    for v in views:
+        # vizportal's view record carries its URL in `path` (keys seen
+        # 2026-08-31: id, index, luid, name, path, tags, thumbnailUrl, ...) —
+        # there is no viewUrlName. Reading only viewUrlName dropped every view
+        # and the first run of this probe reported "0 view(s)" (2026-09-14).
+        seg = str(v.get("path") or v.get("viewUrlName") or v.get("urlName")
+                  or "").strip("/")
+        print("  raw path {!r} for {!r}".format(v.get("path"), v.get("name")))
         if not seg:
             continue
-        path = seg.lstrip("/") if "/" in seg else "{}/{}".format(
-            wb.get("repositoryUrl"), seg)
+        seg = seg.replace("/sheets/", "/")
+        if "/" not in seg:
+            seg = "{}/{}".format(repo, seg)
         out.append((v.get("name") or "(unnamed)",
-                    "{}/#/site/sci/views/{}".format(BASE, path)))
+                    "{}/#/site/sci/views/{}".format(BASE, seg)))
     return out
 
 
