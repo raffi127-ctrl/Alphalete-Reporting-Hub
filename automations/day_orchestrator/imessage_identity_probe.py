@@ -28,6 +28,10 @@ it by hand reproduced two things that module already knew and this did not:
     IMAGE_SEND_DELAY_S between them. Sending a line and a picture
     back-to-back would have been a fair test of nothing.
 
+IT ALWAYS EXITS 0. A probe that answers its question has succeeded, even
+when the answer is bad news. Exiting non-zero opened an incident in
+#claudecorrections for a question we asked on purpose.
+
 WHY IT PRINTS RATHER THAN DECIDES. An unconsented send does not raise -- it
 blocks on a dialog nobody is there to click. The only proof is a human
 looking at the chat, so this reports what it attempted and says plainly that
@@ -84,8 +88,31 @@ def main(argv=None) -> int:
     except Exception as e:  # noqa: BLE001 — the answer, not a crash
         # An ambiguous or missing name raises on purpose over there, rather
         # than picking the first match and texting the wrong room.
-        print("[probe] FAILED  %s: %s" % (type(e).__name__, str(e)[:300]))
-        return 1
+        msg = str(e)
+        print("[probe] no send: %s: %s" % (type(e).__name__, msg[:300]))
+        print("")
+        # NAME THE DIAGNOSIS. -1712 is the one an operator would otherwise
+        # read as "flaky" and re-run forever: an ungranted identity does not
+        # refuse, it blocks on a dialog nobody is there to click until the
+        # AppleEvent gives up. Lucy 3, 2026-09-15, four minutes exactly.
+        if "-1712" in msg or "timed out" in msg.lower():
+            print("[probe] VERDICT: this identity has NO control-Messages "
+                  "grant.")
+            print("[probe] It blocked on a permission dialog nobody clicked.")
+            print("[probe] Fix at the machine: run this probe with somebody "
+                  "there")
+            print("[probe] to click Allow, or switch Messages on for it under")
+            print("[probe] System Settings > Privacy & Security > Automation.")
+        else:
+            print("[probe] VERDICT: the group could not be resolved by name.")
+            print("[probe] Permission is not the problem here.")
+        # EXIT 0 ON PURPOSE. This is a diagnostic, and a diagnostic that
+        # diagnoses something has done its job -- exiting 1 opened an
+        # incident in #claudecorrections for a question we asked deliberately
+        # (2026-09-15), which is noise in the channel people use for real
+        # breakage. The answer is the printed verdict, read with
+        # `lucy logtail rerun imessage_identity_probe`.
+        return 0
 
     print("[probe] result  %s" % res)
     if not args.send:
