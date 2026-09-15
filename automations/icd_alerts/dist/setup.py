@@ -820,6 +820,24 @@ def require_desktop() -> bool:
         return True
     say("")
     say("  %s%sThis needs to run on a desktop.%s" % (BOLD, RED, OFF))
+    # SAY WHAT IT SAW. Carlos's Mac mini was refused twice on 2026-09-15 and
+    # the message gave nobody anything to act on -- the office cannot get past
+    # the first step and we cannot tell from here which probe was wrong. These
+    # three lines turn the next attempt into an answer instead of a guess.
+    say("")
+    try:
+        from automations.icd_alerts import relay as _R
+        say("      model reported : %r" % (_R._model_name(),))
+    except Exception as _e:  # noqa: BLE001
+        say("      model reported : could not read (%s)" % type(_e).__name__)
+    try:
+        import subprocess as _sp
+        _b = _sp.run(["ioreg", "-rc", "AppleSmartBattery"],
+                     capture_output=True, timeout=20)
+        say("      battery bytes  : %d" % len(_b.stdout or b""))
+    except Exception as _e:  # noqa: BLE001
+        say("      battery bytes  : could not read (%s)" % type(_e).__name__)
+    say("      Send those two lines to the reporting team.")
     say("")
     ask.message(
         "This computer is a laptop.\n\n"
