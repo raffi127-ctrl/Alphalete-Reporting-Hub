@@ -136,7 +136,8 @@ def _upload(tab: str, week_sunday: dt.date, png_bytes: bytes) -> str:
     return file_id
 
 
-def _place_picture(ws, week_sunday: dt.date, png: Path, live: bool) -> bool:
+def _place_picture(ws, week_sunday: dt.date, week_col: int, png: Path,
+                   live: bool) -> bool:
     import gspread
 
     sh = ws.spreadsheet
@@ -147,7 +148,8 @@ def _place_picture(ws, week_sunday: dt.date, png: Path, live: bool) -> bool:
     sheet = next(s for s in meta["sheets"]
                  if s["properties"]["sheetId"] == ws.id)
     grid = sheet["properties"].get("gridProperties", {})
-    start_col = max(3, int(grid.get("frozenColumnCount", 0)) + 1)
+    frozen = int(grid.get("frozenColumnCount", 0))
+    start_col = PL.start_column(week_col, frozen)
 
     anchor = PL.find_marker(col_a)
     fresh = anchor is None
@@ -162,28 +164,27 @@ def _place_picture(ws, week_sunday: dt.date, png: Path, live: bool) -> bool:
     data = dims["sheets"][0]["data"][0]
     col_px = [c.get("pixelSize") for c in data.get("columnMetadata", [])]
     row_px = [r.get("pixelSize") for r in data.get("rowMetadata", [])]
-    end_col, end_row = PL.block(col_px, row_px, start_col, anchor, img_w, img_h)
+    end_col, end_row = PL.block(col_px, row_px, start_col, anchor, img_w, img_h,
+                                max_col=int(grid.get("columnCount", 0)) or None)
 
     top_left = gspread.utils.rowcol_to_a1(anchor, start_col)
     bottom_right = gspread.utils.rowcol_to_a1(end_row, end_col)
+    old_merges = PL.merges_on_row(sheet.get("merges", []), ws.id, anchor,
+                                  frozen + 1)
     print(f"    picture: {png.name} ({img_w}x{img_h}) -> {top_left}:{bottom_right}"
-          f" ({'new block' if fresh else 'replaces the one at row ' + str(anchor)})",
+          f" ({'new block' if fresh else 'moves the one on row ' + str(anchor)})",
           flush=True)
     if end_row > int(grid.get("rowCount", 0)):
         print(f"[wkf] ❌ picture needs rows to {end_row} but the tab stops at "
               f"{grid.get('rowCount')} — not adding rows (workbook cell cap).",
               flush=True)
         return False
-    old_merges = PL.merges_at(sheet.get("merges", []), ws.id, anchor, start_col)
-    # A NEW block may only land on empty cells. An existing block is ours, but
-    # a taller picture this week can reach below it: that part must be empty.
-    old_end = max((m["endRowIndex"] for m in old_merges), default=anchor)
-    check_from = anchor if fresh else old_end + 1
-    if check_from <= end_row and not PL.area_is_empty(
-            values, check_from, end_row, start_col, end_col):
-        print(f"[wkf] ❌ cells in {gspread.utils.rowcol_to_a1(check_from, start_col)}"
-              f":{bottom_right} are not empty — not placing the picture over data.",
-              flush=True)
+    # The block may only land on empty cells — last week's block is ours and
+    # comes apart first, so its cells don't count.
+    if not PL.area_is_empty(values, anchor, end_row, start_col, end_col,
+                            ignore=old_merges):
+        print(f"[wkf] ❌ cells in {top_left}:{bottom_right} are not empty — "
+              "not placing the picture over data.", flush=True)
         return False
     if not live:
         return True
@@ -197,6 +198,15 @@ def _place_picture(ws, week_sunday: dt.date, png: Path, live: bool) -> bool:
         "sheetId": ws.id, "startRowIndex": anchor - 1, "endRowIndex": end_row,
         "startColumnIndex": start_col - 1, "endColumnIndex": end_col}}})
     sh.batch_update({"requests": requests})
+    # Last week's =IMAGE sits in its block's top-left cell; once unmerged it
+    # would draw as a stray picture, so it is cleared (unless it IS this
+    # week's top-left, which the write below replaces anyway).
+    stale = [gspread.utils.rowcol_to_a1(m["startRowIndex"] + 1,
+                                        m["startColumnIndex"] + 1)
+             for m in old_merges]
+    stale = [a1 for a1 in stale if a1 != top_left]
+    if stale:
+        ws.batch_clear(stale)
     label = f"Weekly Knock Dispositions — WE {week_sunday.month}/{week_sunday.day}/{week_sunday.year % 100}"
     ws.batch_update([
         {"range": f"A{anchor}", "values": [[PL.MARKER]]},
@@ -268,7 +278,7 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
     if not png.exists():
         print(f"[wkf] ❌ {office}: board PNG missing ({png}).", flush=True)
         return False
-    return _place_picture(ws, week_sunday, png, live)
+    return _place_picture(ws, week_sunday, week_col, png, live)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
