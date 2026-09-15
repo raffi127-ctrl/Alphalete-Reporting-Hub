@@ -109,6 +109,29 @@ SEL_SUBSTATUS_COLUMN = "Contract Substatus"
 # asking -- it was absent from the list we were given, it sounded further
 # along than something we did count, and counting it wrongly either way moves
 # a number people are paid on.
+# THE PRESALE STEP — Box's nearest thing to a SaraPlus credit check. Megan
+# asked "is there a 'credit check' like presale logged step like Sara+ has?"
+# and Ryan McSpadden answered: "Awaiting Signature would be the closest thing"
+# (2026-09-15).
+#
+# WHY IT MATTERS MORE THAN THE SALES. On the AT&T side the credit check is the
+# FAST alert: it lands within minutes of a rep working a door, so a channel
+# shows activity all afternoon rather than a handful of closes at the end. A
+# contract awaiting signature is the same moment in Box's shape -- the work is
+# done and the customer has not signed yet.
+#
+# NOT A SALE. It is the step BEFORE one, exactly as a credit check is, so it
+# is counted and announced separately and never added to the sales number.
+PRESALE_STATUSES = frozenset({
+    "awaiting signature",
+})
+
+
+def is_presale(status: str) -> bool:
+    """The credit-check equivalent: logged, not yet sold."""
+    return (status or "").strip().lower() in PRESALE_STATUSES
+
+
 KNOWN_NOT_COUNTED = frozenset({
     "pdf generated",
     "tpv sent",
@@ -147,6 +170,7 @@ def unknown_statuses(statuses) -> list:
     for s in statuses or []:
         low = (s or "").strip().lower()
         if (not low or low in COMPLETED_STATUSES
+                or low in PRESALE_STATUSES
                 or low in KNOWN_NOT_COUNTED or low in seen):
             continue
         seen.add(low)

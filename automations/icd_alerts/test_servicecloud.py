@@ -235,3 +235,38 @@ class WhatTheLiveGridShowedThatTheDescriptionDidNot(unittest.TestCase):
         # It is when the SERVICE starts -- APR 2027, JUN 2028.
         self.assertEqual(SC.COL_NOT_THE_SALE_DATE, "Start Date")
         self.assertNotEqual(SC.COL_INITIATED, SC.COL_NOT_THE_SALE_DATE)
+
+
+class AwaitingSignatureIsTheCreditCheck(unittest.TestCase):
+    """Megan asked "is there a 'credit check' like presale logged step like
+    Sara+ has?" and Ryan answered "Awaiting Signature would be the closest
+    thing" (2026-09-15).
+
+    On the AT&T side the credit check is the FAST alert -- it lands within
+    minutes of a rep working a door, so the channel shows activity all
+    afternoon rather than a handful of closes at the end. A contract awaiting
+    signature is the same moment in Box's shape.
+    """
+
+    def test_it_is_a_presale(self):
+        self.assertTrue(SC.is_presale("Awaiting Signature"))
+        self.assertTrue(SC.is_presale("awaiting signature"))
+
+    def test_it_is_NOT_counted_as_a_sale(self):
+        # It is the step before one, exactly as a credit check is. Counting it
+        # would inflate the sales number with work that has not closed.
+        self.assertFalse(SC.is_completed("Awaiting Signature"))
+
+    def test_a_sale_is_not_a_presale(self):
+        for s in ("TPV Passed", "Accepted by Supplier",
+                  "Submitted to supplier"):
+            self.assertFalse(SC.is_presale(s),
+                             "%r would be announced twice" % s)
+
+    def test_it_is_not_flagged_as_unrecognised(self):
+        self.assertEqual(SC.unknown_statuses(["Awaiting Signature"]), [])
+
+    def test_the_three_buckets_do_not_overlap(self):
+        self.assertFalse(SC.COMPLETED_STATUSES & SC.PRESALE_STATUSES)
+        self.assertFalse(SC.COMPLETED_STATUSES & SC.KNOWN_NOT_COUNTED)
+        self.assertFalse(SC.PRESALE_STATUSES & SC.KNOWN_NOT_COUNTED)
