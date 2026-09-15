@@ -442,7 +442,11 @@ def this_machine() -> str:
 #
 # To put texting on a new box: send once from the identity the agent runs as,
 # with someone at the keyboard to click Allow, then add the machine here.
-# LUCY 3 IS NOT IN HERE YET, and the reason is the whole point of this set.
+# LUCY 3 IS IN, as of 2026-09-15 12:20 — and how it got here is the whole
+# point of this set. A text AND a picture were SEEN landing in the Admin
+# Staff chat, sent by the orchestrator under launchd, not by a terminal.
+# What follows is the history, kept because the distinction cost most of a
+# morning and will cost it again otherwise.
 # A test message from deploy/text_consent_check.sh was seen landing in the
 # Alphalete Partners chat on 2026-09-15 -- but that script runs from a
 # terminal, so the Allow it collected belongs to TERMINAL. This send loop runs
@@ -458,10 +462,14 @@ def this_machine() -> str:
 # it blocks on a dialog nobody is there to click. Terminal on that machine
 # texts fine; the orchestrator has its own grant and does not have it.
 #
-# To finish it: at Lucy 3, run the probe and click Allow when macOS asks, or
-# turn Messages on for that process under System Settings > Privacy &
-# Security > Automation. Then add "Lucy 3" here.
-TEXTING_MACHINES = {"Lucy 1"}
+# Closed by deploy/grant_orchestrator_messages.sh: it queues the probe and
+# kickstarts com.alphalete.mini-control so the POLLER raises the dialog, which
+# is the only way the right identity gets asked. Typing the same send in a
+# terminal grants Terminal and changes nothing here.
+#
+# For the next machine: run that script on it, click Allow, see both the line
+# and the image arrive, and only then add it below.
+TEXTING_MACHINES = {"Lucy 1", "Lucy 3"}
 
 
 def can_text(machine: str = "") -> bool:
