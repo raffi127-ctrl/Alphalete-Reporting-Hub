@@ -1371,11 +1371,19 @@ def main(argv=None) -> int:
                 assert_posting_as_lucy()
             run(day, send=args.send, only=args.office)
             if args.watch:
-                try:
-                    from automations.icd_alerts import morning_recap
-                    morning_recap.run(day, send=args.send)
-                except Exception as e:  # noqa: BLE001 — never cost a sweep
-                    print("morning recap skipped: %s" % type(e).__name__)
+                # NOT WIRED. The metrics thread ALREADY carries yesterday's
+                # knocks board: rashad_metrics.knocks_run defaults to
+                # yesterday and posts into today's thread. Running this too
+                # would put the same board in the same thread twice (Megan
+                # spotted it before it ever fired, 2026-09-15).
+                #
+                # morning_recap is kept because the USEFUL version of this is
+                # the other direction: for an office already relaying its own
+                # knocks, render the metrics board from those rows instead of
+                # impersonating them in ownerville. Same board, minus a scrape
+                # that "intermittently times out and drops BOTH Knocks + Time
+                # Gaps at once with no auto-retry" (runner.py, on 4/7 offices
+                # losing both on 2026-07-21).
                 run_requested_approvals(send=args.send)
                 notify_new_signups(send=args.send)
                 notify_pending(send=args.send)
