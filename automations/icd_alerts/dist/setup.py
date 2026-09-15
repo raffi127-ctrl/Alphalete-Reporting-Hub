@@ -309,9 +309,23 @@ def ask_for_login(replace=False):
 
     sara = _ask_one("saraplus-creds.json", "SaraPlus", "email",
                     "email", "password", required=True, replace=replace)
-    _ask_one("ownerville-creds.json", "OwnerVille", "username",
-             "username", "password", required=False, replace=replace)
+    ask_for_ownerville(replace=replace)
     return sara
+
+
+def ask_for_ownerville(replace=False, required=False):
+    """The OwnerVille login, on its own.
+
+    IT USED TO LIVE INSIDE ask_for_login(), WHICH ONLY RUNS FOR SARAPLUS
+    OFFICES. So when the SaraPlus step learned to skip itself for Box, Energy
+    Wells and NDS, it took the OwnerVille question with it -- and those are
+    exactly the campaigns where the knocks board is the ONLY thing the office
+    gets. Carlos installed on 2026-09-15, was never shown an OwnerVille box,
+    and was told "All set" by an install that could not read a single number.
+    """
+    return _ask_one("ownerville-creds.json", "OwnerVille", "username",
+                    "username", "password", required=required,
+                    replace=replace)
 
 
 def check_ownerville() -> bool:
@@ -329,6 +343,18 @@ def check_ownerville() -> bool:
     believing it is set up and silently having no board.
     """
     if not (CONFIG_DIR / "ownerville-creds.json").exists():
+        # NOTHING TO VERIFY IS NOT THE SAME AS FINE. For a SaraPlus office
+        # this is a skipped extra and the alerts still work. For a Box,
+        # Energy Wells or NDS office it means the machine cannot read one
+        # number, so it must not pass as verified.
+        try:
+            from automations.icd_alerts import config as _C2
+            if not _C2.uses_saraplus():
+                say("      no OwnerVille login saved — this office's board "
+                    "cannot run without one.")
+                return False
+        except Exception:  # noqa: BLE001
+            pass
         return True                      # they skipped it; nothing to verify
     say("      checking the OwnerVille login (this one takes a minute)...")
     proc = subprocess.run(
@@ -936,6 +962,10 @@ def main() -> int:
     else:
         say("      %s campaign — no SaraPlus needed, skipping that login."
             % _C.campaign())
+        # REQUIRED HERE, because it is the only login this office has. With
+        # no SaraPlus there are no credit checks and no sales -- the knocks
+        # board is the whole product, and OwnerVille is what reads it.
+        ask_for_ownerville(required=True)
         ok = True
     ov_ok = ownerville_until_it_works() if ok else False
 
