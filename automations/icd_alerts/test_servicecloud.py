@@ -183,9 +183,7 @@ class WhatTheLiveGridShowedThatTheDescriptionDidNot(unittest.TestCase):
             "Cancelled by Supplier", "TPV Sent", "Accepted by Supplier"]
 
     def test_the_ones_ruled_out_are_not_counted(self):
-        """Megan 2026-09-15: "whatever Ryan said counts as a sale is a sale -
-        the rest we aren't going to count for anything right now"."""
-        for s in ("Accepted by Supplier", "PDF Generated", "TPV Sent"):
+        for s in ("PDF Generated", "TPV Sent", "Cancelled by Supplier"):
             self.assertFalse(SC.is_completed(s),
                              "%r was counted against the decision" % s)
 
@@ -209,12 +207,20 @@ class WhatTheLiveGridShowedThatTheDescriptionDidNot(unittest.TestCase):
     def test_a_cancelled_contract_is_never_a_sale(self):
         self.assertFalse(SC.is_completed("Cancelled by Supplier"))
 
-    def test_accepted_by_supplier_is_a_deliberate_call(self):
-        """It reads as MORE complete than "Submitted to supplier", which DOES
-        count. Worth remembering if a Box number ever looks low -- it is a
-        decision, not an oversight."""
-        self.assertIn("accepted by supplier", SC.KNOWN_NOT_COUNTED)
-        self.assertTrue(SC.is_completed("Submitted to supplier"))
+    def test_accepted_by_supplier_counts(self):
+        """It was absent from the list we were first given, and it reads as
+        further along than "Submitted to supplier" which we already counted.
+        Asked rather than assumed -- Ryan McSpadden, 2026-09-15: "No that
+        should count my bad". Left out it would have made every Box office's
+        sales read low with nothing on the board to say why."""
+        self.assertTrue(SC.is_completed("Accepted by Supplier"))
+        self.assertNotIn("accepted by supplier", SC.KNOWN_NOT_COUNTED)
+
+    def test_all_six_the_office_named_are_sales(self):
+        for s in ("TPV Passed", "Ready for booking", "In Progress",
+                  "Missing Documents", "Submitted to supplier",
+                  "Accepted by Supplier"):
+            self.assertTrue(SC.is_completed(s), "%r stopped counting" % s)
 
     def test_the_columns_a_read_needs_are_named(self):
         """I first recorded the Agent and Initiated Date columns as MISSING.

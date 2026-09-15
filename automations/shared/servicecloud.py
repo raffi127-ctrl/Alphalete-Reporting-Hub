@@ -104,11 +104,12 @@ SEL_SUBSTATUS_COLUMN = "Contract Substatus"
 # on is noise. Reporting these every day is how the report that matters gets
 # skimmed past.
 #
-# "Accepted by Supplier" is the one worth remembering if the number ever looks
-# low -- it reads as MORE complete than "Submitted to supplier", which does
-# count. That is a deliberate call, not an oversight.
+# "Accepted by Supplier" used to sit in here and does NOT any more: asked
+# about on 2026-09-15 and confirmed a sale. Worth remembering as the case for
+# asking -- it was absent from the list we were given, it sounded further
+# along than something we did count, and counting it wrongly either way moves
+# a number people are paid on.
 KNOWN_NOT_COUNTED = frozenset({
-    "accepted by supplier",
     "pdf generated",
     "tpv sent",
     "cancelled by supplier",
@@ -120,6 +121,12 @@ COMPLETED_STATUSES = frozenset({
     "in progress",
     "missing documents",
     "submitted to supplier",
+    # ADDED 2026-09-15 after asking. It was NOT on the list we were first
+    # given, and it reads as further along than "submitted to supplier" --
+    # which is exactly why it was worth asking rather than assuming. Ryan
+    # McSpadden: "No that should count my bad". Left out, it would have made
+    # every Box office's sales read low with nothing on the board to say why.
+    "accepted by supplier",
 })
 
 
