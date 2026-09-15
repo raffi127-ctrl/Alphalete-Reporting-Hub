@@ -79,12 +79,28 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
         log("Their channel was not approved, so nothing posts yet and the "
             "sign-up stays PENDING.")
         return rc
+    knocks_ok = True
     if rec.knocks_cadence != -1:
         log("")
         log("Now their knocks board:")
-        channels.cmd_knocks(rec.office_key)
+        # THE RESULT IS CHECKED. It was not, and Ryan McSpadden was told he
+        # was live on 2026-09-15 seconds after his approval had refused both
+        # his channels for not having Lucy in them. The SaraPlus half above
+        # has always checked its own result; this half never did.
+        knocks_ok = channels.cmd_knocks(rec.office_key) == 0
     else:
         log("  They said they do not want a knocks board.")
+
+    if not knocks_ok and not uses_saraplus(rec.campaign):
+        # FOR A BOX, ENERGY WELLS OR NDS OFFICE THE BOARD IS EVERYTHING. There
+        # are no credit checks and no sales to fall back on, so a refused
+        # board is a refused office -- marking it approved would leave a row
+        # saying live over something that posts nothing.
+        log("")
+        log("Nothing was approved, so %s is NOT live. Their board is the only "
+            "thing this office gets." % rec.owner)
+        log("Fix the channels above and run this again.")
+        return 1
 
     # THE TEXT DESTINATION IS ADDITIONAL, so it is approved separately and a
     # problem with it must not un-approve the Slack half that already worked
@@ -106,8 +122,14 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
     except Exception:  # noqa: BLE001 — it expires on its own anyway
         pass
     log("")
-    log("%s is live. Their numbers start appearing within a few minutes of "
-        "their laptop's next check-in." % rec.owner)
+    if knocks_ok:
+        log("%s is live. Their numbers start appearing within a few minutes "
+            "of their laptop's next check-in." % rec.owner)
+    else:
+        # A SaraPlus office keeps its alerts; say which half is missing
+        # rather than claiming the whole thing works.
+        log("%s's credit checks and sales are live. Their knocks board is "
+            "NOT -- fix the channels above and run this again." % rec.owner)
     log("")
     return 0
 
