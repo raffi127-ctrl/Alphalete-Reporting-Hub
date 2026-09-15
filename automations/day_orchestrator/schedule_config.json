@@ -6882,6 +6882,24 @@
       "depends_on": [],
       "verify": null
     },
+    "production_breakdown": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs; the weekly OPT phase already runs it for every tab). Fills the Production Breakdown chart from the PRODUCT SALES crosstab the last OPT run left on THIS machine. For one new tab: lucy rerun production_breakdown --only \"Nuri Burgos\". Added 2026-09-14.",
+      "display_name": "Focus — Production Breakdown chart (refill)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.production_breakdown.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "kick_poller": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). Bootstrap: lucy rerun kick_poller restarts the mini-control poller so it reloads its code \u2014 works even when the running poller predates restart_poller/self-reload, because rerun spawns a fresh subprocess. After the poller has self-reload, lucy update alone suffices; keep this for a forced restart.",

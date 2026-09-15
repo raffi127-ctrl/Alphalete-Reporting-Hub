@@ -4,7 +4,7 @@ already-downloaded PRODUCT SALES SUMMARY crosstab (no extra download)."""
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from automations.recruiting_report import fill as rfill
 from automations.recruiting_report import opt_phase
@@ -22,10 +22,22 @@ NON_ICD_TAB_TITLES = {
 }
 
 
+def tabs_to_process(titles: List[str], only: Optional[str] = None) -> List[str]:
+    """The ICD tabs a run touches — every one, or just `only`. Pure.
+
+    `only` exists for a NEW tab (Nuri Burgos, 2026-09-14): filling one chart
+    must not rebuild the other ~80 tabs' charts behind it."""
+    tabs = [t for t in titles
+            if t not in NON_ICD_TAB_TITLES and not t.startswith("_")]
+    if only:
+        tabs = [t for t in tabs if t.strip().lower() == only.strip().lower()]
+    return tabs
+
+
 def run_production_breakdown(crosstab_path: Path = opt_phase.PRODUCT_SALES_PATH,
-                              logfn=print) -> dict:
-    """Fill the Production Breakdown chart on every ICD tab. Idempotent —
-    safe to re-run; rep block rebuilds from scratch each run.
+                              logfn=print, only: Optional[str] = None) -> dict:
+    """Fill the Production Breakdown chart on every ICD tab (or just `only`).
+    Idempotent — safe to re-run; rep block rebuilds from scratch each run.
 
     Reads the PRODUCT SALES SUMMARY crosstab (downloaded by the OPT phase's
     download_crosstab call). Uses Hasani Lynch's chart as the formatting
@@ -51,8 +63,10 @@ def run_production_breakdown(crosstab_path: Path = opt_phase.PRODUCT_SALES_PATH,
     src_chart = pbfill.chart_layout(src_grid, *src_anchors[0])
     src_sid = src_ws._properties["sheetId"]
 
-    tabs = [w.title for w in sh.worksheets()
-            if w.title not in NON_ICD_TAB_TITLES and not w.title.startswith("_")]
+    tabs = tabs_to_process([w.title for w in sh.worksheets()], only)
+    if only and not tabs:
+        logfn(f"PB: no ICD tab named {only!r} — nothing to do")
+        return {"filled": 0, "skipped": 0, "errored": 0}
 
     counts = {"OK": 0, "NO_CHART": 0, "NO_DATA": 0,
               "EXPECTED_NO_SECTION": 0, "ERR": 0}
@@ -86,4 +100,16 @@ def run_production_breakdown(crosstab_path: Path = opt_phase.PRODUCT_SALES_PATH,
 
 
 if __name__ == "__main__":
-    run_production_breakdown()
+    import argparse
+    import sys
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001 — Windows console, best effort
+        pass
+    ap = argparse.ArgumentParser(description="Fill the Production Breakdown "
+                                             "chart(s) from the latest PRODUCT "
+                                             "SALES crosstab on this machine.")
+    ap.add_argument("--only", help="just this Sheet tab (e.g. a new ICD)")
+    args = ap.parse_args()
+    res = run_production_breakdown(only=args.only)
+    sys.exit(1 if res.get("errored") else 0)
