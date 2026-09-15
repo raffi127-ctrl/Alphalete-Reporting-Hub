@@ -2296,7 +2296,7 @@
       "cadence": {
         "weekdays": []
       },
-      "timeout_minutes": 40,
+      "timeout_minutes": 90,
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
