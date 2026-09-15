@@ -74,6 +74,12 @@ export NO_PROXY='*'
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
+# WHERE THIS TICK STARTS in the day's log. The publish decision below greps
+# only what THIS tick wrote: grepping the whole file meant that after the
+# day's first alert every later tick matched and published (2026-09-14).
+START_BYTES=0
+[ -f "$LOG_FILE" ] && START_BYTES=$(wc -c < "$LOG_FILE")
+
 echo "[$(date)] poster starting (args: ${*:-none})" >> "$LOG_FILE"
 "$VENV_PY" -m automations.icd_alerts.post "$@" >> "$LOG_FILE" 2>&1
 # GRAB $? FIRST. A $(date) in the same echo runs before $? is expanded and
@@ -103,18 +109,38 @@ echo "[$(date)] poster done (exit $rc)" >> "$LOG_FILE"
 # (posted an alert, or warned that an office went quiet) and whenever it
 # failed. A preview never publishes: marking the card as ran is what a preview
 # must not do.
+#
+# A CLEAN TICK RIGHT AFTER A FAILED ONE ALWAYS PUBLISHES, even if it posted
+# nothing: that tick is the news that it is fixed, and without it the ticket
+# the failure opened waits for the next alert to happen (FAIL_STAMP).
+#
+# THE MANIFEST IS THE DELIVERY PROOF. hub_publish only closes a ticket when
+# delivery_check can see one, and this report has no `verify` -- so a clean
+# tick with no manifest left failure-icd_alerts_poster open all evening
+# (2026-09-14). Written BEFORE publish_done, because that is where the close is
+# decided. alert=False on the failed one: publish_done already alerts.
+FAIL_STAMP="$LOG_DIR/.icd-alerts-poster-failed"
 case " $* " in
   *" --send "*)
     if [ "$rc" -ne 0 ]; then
       _PUB=failed
-    elif grep -q "credit check line(s) ->\|^QUIET:" "$LOG_FILE" 2>/dev/null; then
+    elif tail -c +$((START_BYTES + 1)) "$LOG_FILE" 2>/dev/null | grep -q "credit check line(s) ->\|^QUIET:"; then
+      _PUB=success
+    elif [ -f "$FAIL_STAMP" ]; then
       _PUB=success
     else
       _PUB=""
     fi
+    if [ "$_PUB" = "failed" ]; then
+      touch "$FAIL_STAMP"
+      "$VENV_PY" -c "from automations.shared.run_manifest import write_manifest; write_manifest('icd_alerts_poster', failed=['poster tick exit $rc'], alert=False)" >> "$LOG_FILE" 2>&1 || true
+    elif [ "$_PUB" = "success" ]; then
+      "$VENV_PY" -c "from automations.shared.run_manifest import write_manifest; write_manifest('icd_alerts_poster', note='poster tick exit 0', alert=False)" >> "$LOG_FILE" 2>&1 || true
+    fi
     if [ -n "$_PUB" ]; then
       "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('icd_alerts_poster','ICD Credit-Check Alerts','$_PUB')" >> "$LOG_FILE" 2>&1 || true
     fi
+    [ "$_PUB" = "success" ] && rm -f "$FAIL_STAMP"
     ;;
 esac
 
