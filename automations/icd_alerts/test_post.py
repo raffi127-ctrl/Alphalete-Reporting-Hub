@@ -435,6 +435,7 @@ class QuietNudgeThreading(unittest.TestCase):
         self.quiet = [{"office": "cyrus", "label": "Cyrus's Local Office",
                        "reason": "last checked in 10:56:34",
                        "last": "9/12/2026 10:56:34"}]
+        self.seen = {}           # today's 'Received At' per office
 
     def _run(self, now):
         office = O.AlertOffice(
@@ -445,6 +446,8 @@ class QuietNudgeThreading(unittest.TestCase):
              mock.patch.object(P, "_dm", lambda *a, **k: None), \
              mock.patch.object(P, "quiet_offices",
                                lambda *a, **k: [dict(q) for q in self.quiet]), \
+             mock.patch.object(P, "check_ins",
+                               lambda *a, **k: (dict(self.seen), set(self.seen))), \
              mock.patch.object(P.O, "get", lambda k: office), \
              mock.patch.object(P.O, "office_now", lambda o: now):
             return P.warn_quiet(day=dt.date(2026, 9, 12), send=True, now=now,
@@ -485,6 +488,61 @@ class QuietNudgeThreading(unittest.TestCase):
             {"2026-09-12": {"cyrus": "2026-09-12T09:00:00"}}))
         self._run(dt.datetime(2026, 9, 12, 12, 18))
         self.assertEqual(self.posts[0][1], None)
+
+    def test_the_alert_says_the_gap_not_a_second_clock(self):
+        """Eve 2026-09-14: "last checked in 9/14/2026 17:34:21 (18:19 their
+        time)" read like the check-in converted to their zone. It was the clock
+        NOW. Say how long it has been instead."""
+        self._run(dt.datetime(2026, 9, 12, 12, 18))
+        parent = self.posts[0][0]
+        self.assertIn("last checked in at 10:56, 1 h 21 min ago", parent)
+        self.assertNotIn("their time", parent)
+        self._run(dt.datetime(2026, 9, 12, 12, 50))
+        self.assertIn("10:56, 1 h 53 min ago", self.posts[1][0])
+
+    def _go_quiet_then_come_back(self):
+        self._run(dt.datetime(2026, 9, 12, 12, 18))
+        self.quiet = []
+        self.seen = {"cyrus": "9/12/2026 13:31:05"}
+        self._run(dt.datetime(2026, 9, 12, 13, 35))
+
+    def test_coming_back_is_said_in_the_thread(self):
+        """The parent promises updates "until it is back". A thread that just
+        stops reads the same as a watcher that died."""
+        self._go_quiet_then_come_back()
+        self.assertEqual(len(self.posts), 2)
+        text, thread = self.posts[1]
+        self.assertEqual(thread, "ts1", "the all-clear lands in the thread")
+        self.assertIn("back online", text)
+        self.assertIn("13:31", text)
+        self.assertIn("quiet for 2 h 34 min", text)
+
+    def test_back_online_is_said_once(self):
+        self._go_quiet_then_come_back()
+        self._run(dt.datetime(2026, 9, 12, 13, 37))
+        self._run(dt.datetime(2026, 9, 12, 14, 30))
+        self.assertEqual(len(self.posts), 2)
+
+    def test_a_second_outage_reuses_the_thread_and_gets_its_own_all_clear(self):
+        self._go_quiet_then_come_back()
+        self.quiet = [{"office": "cyrus", "label": "Cyrus's Local Office",
+                       "reason": "last checked in 9/12/2026 14:10:00",
+                       "last": "9/12/2026 14:10:00"}]
+        self._run(dt.datetime(2026, 9, 12, 15, 0))
+        self.assertEqual(self.posts[2][1], "ts1")
+        self.assertIn("quiet again", self.posts[2][0])
+        self.quiet = []
+        self.seen = {"cyrus": "9/12/2026 15:05:00"}
+        self._run(dt.datetime(2026, 9, 12, 15, 7))
+        self.assertEqual(self.posts[3][1], "ts1")
+        self.assertIn("back online", self.posts[3][0])
+        self.assertIn("quiet for 55 min", self.posts[3][0])
+
+    def test_an_office_that_never_had_a_thread_gets_no_all_clear(self):
+        self.quiet = []
+        self.seen = {"cyrus": "9/12/2026 13:31:05"}
+        self._run(dt.datetime(2026, 9, 12, 13, 35))
+        self.assertEqual(self.posts, [])
 
 
 class FaultReporting(unittest.TestCase):

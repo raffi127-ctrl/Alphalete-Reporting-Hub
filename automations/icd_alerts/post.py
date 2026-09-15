@@ -221,15 +221,8 @@ class _Lock:
         return False
 
 
-def quiet_offices(day: Optional[dt.date] = None, minutes: int = STALE_MINUTES,
-                  book=None) -> List[Dict]:
-    """Enrolled offices whose laptop has not checked in lately, or at all.
-
-    THE FAILURE THIS CATCHES IS SILENCE, and silence is the one an alerting
-    system cannot see from the inside: a closed laptop and a quiet sales day
-    produce exactly the same empty channel. Reported to us, never to the
-    office -- they cannot act on it and it is not their job to.
-    """
+def check_ins(day: Optional[dt.date] = None, book=None) -> tuple:
+    """({office: today's 'Received At' cell}, {every office that ever relayed})."""
     day = day or dt.date.today()
     if book is None:
         from automations.recruiting_report.fill import open_by_key
@@ -253,7 +246,19 @@ def quiet_offices(day: Optional[dt.date] = None, minutes: int = STALE_MINUTES,
         ever.add(key)
         if _day_key(row[COL_DAY]) == day.isoformat():
             seen[key] = (row[COL_RECEIVED] or "").strip()
+    return seen, ever
 
+
+def quiet_offices(day: Optional[dt.date] = None, minutes: int = STALE_MINUTES,
+                  book=None) -> List[Dict]:
+    """Enrolled offices whose laptop has not checked in lately, or at all.
+
+    THE FAILURE THIS CATCHES IS SILENCE, and silence is the one an alerting
+    system cannot see from the inside: a closed laptop and a quiet sales day
+    produce exactly the same empty channel. Reported to us, never to the
+    office -- they cannot act on it and it is not their job to.
+    """
+    seen, ever = check_ins(day, book=book)
     out = []
     for office in O.active():
         if office.key not in ever:
@@ -1118,8 +1123,6 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         return []
 
     quiet = quiet_offices(day)
-    if not quiet:
-        return []
 
     data = _warned()
     sent = data.get(day.isoformat()) or {}
@@ -1135,6 +1138,42 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
 
     def _thread_of(v):
         return (v or {}).get("ts") if isinstance(v, dict) else None
+
+    # BACK ONLINE, SAID IN THE THREAD. The parent promises updates "until it is
+    # back", and a thread that simply stops reads exactly like a watcher that
+    # died (Eve 2026-09-14: Cyrus quiet 17:34 -> 19:31, and nothing said so).
+    # Once per outage: the "back" mark is dropped when the office goes quiet
+    # again, so a second outage the same day gets its own all-clear.
+    quiet_keys = {q["office"] for q in quiet}
+    recovered = [k for k, v in sent.items()
+                 if _thread_of(v) and not v.get("back") and k not in quiet_keys]
+    changed = False
+    if recovered:
+        seen, _ever = check_ins(day)
+        for key in recovered:
+            raw = seen.get(key)
+            if not raw:
+                continue
+            went = _parse_received(sent[key].get("last") or "")
+            came = _parse_received(raw)
+            if went and came and came > went:
+                text = (":white_check_mark: back online — checked in at %s "
+                        "(quiet for %s)." % (_clock(raw), _span(came - went)))
+            else:
+                text = (":white_check_mark: back online — checked in at %s."
+                        % _clock(raw))
+            log("BACK: %-10s %s" % (key, text))
+            if not send:
+                continue
+            try:
+                _slack(O.OPS_CHANNEL, text, thread_ts=_thread_of(sent[key]))
+            except Exception as e:  # noqa: BLE001 — one office must not stop the rest
+                log("could not post back-online for %s: %s: %s"
+                    % (key, type(e).__name__, str(e)[:100]))
+                continue
+            sent[key] = dict(sent[key], back=now.isoformat(timespec="seconds"))
+            changed = True
+
     fresh = []
     for q in quiet:
         last = _parse_when(_last_at(sent.get(q["office"])))
@@ -1152,14 +1191,14 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         if not (QUIET_WARN_AFTER_HOUR <= local.hour <= QUIET_WARN_UNTIL_HOUR):
             continue
         q["office_time"] = local.strftime("%H:%M")
+        q["how_long"] = _quiet_phrase(q, now)
         fresh.append(q)
-    if not fresh:
-        return []
 
     for q in fresh:
-        log("QUIET: %-10s %s (%s their time)"
-            % (q["office"], q["reason"], q.get("office_time", "?")))
-    if not send:
+        log("QUIET: %-10s %s" % (q["office"], q["how_long"]))
+    if not send or not fresh:
+        if changed:
+            _save_warned(data, day, sent)
         return fresh
 
     nudged = []
@@ -1192,12 +1231,13 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
             # A REPLY, and deliberately terse: the parent already explains
             # what this is, and a thread of identical paragraphs is the same
             # noise one level down.
-            text = ("still quiet — last check-in %s (%s their time).%s"
-                    % (q.get("last") or "?", q.get("office_time", "?"), tail))
+            was_back = isinstance(sent.get(key), dict) and sent[key].get("back")
+            text = ("%s — %s.%s" % ("quiet again" if was_back else "still quiet",
+                                    q["how_long"], tail))
         else:
             text = ("\n\n".join([
-                ":warning: *%s* — the alerts computer %s (%s their time).%s"
-                % (q["label"], q["reason"], q.get("office_time", "?"), tail),
+                ":warning: *%s* — the alerts computer %s.%s"
+                % (q["label"], q["how_long"], tail),
                 "_Nothing is lost: SaraPlus is cumulative, so whatever it "
                 "missed arrives when the laptop is back online._",
                 "_Updates follow in this thread until it is back._"]))
@@ -1207,15 +1247,54 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
             log("could not post quiet notice for %s: %s: %s"
                 % (key, type(e).__name__, str(e)[:100]))
             continue
-        sent[key] = {"at": stamp, "ts": parent or ts}
+        # "last" is the check-in the outage started after, so the all-clear
+        # can say how long it lasted. No "back" key: this outage is open.
+        sent[key] = {"at": stamp, "ts": parent or ts, "last": q.get("last")}
 
+    _save_warned(data, day, sent)
+    return fresh
+
+
+def _save_warned(data: Dict, day: dt.date, sent: Dict) -> None:
     WARNED_PATH.parent.mkdir(parents=True, exist_ok=True)
     data[day.isoformat()] = sent
     # Keep only the last few days; nothing older is interesting.
     for k in sorted(data)[:-5]:
         data.pop(k, None)
     WARNED_PATH.write_text(json.dumps(data, indent=2, sort_keys=True))
-    return fresh
+
+
+def _clock(raw: str) -> str:
+    """'9/14/2026 17:34:21' -> '17:34'. The date is today's; it is noise."""
+    when = _parse_received(raw)
+    return when.strftime("%H:%M") if when else (raw or "?")
+
+
+def _span(delta: dt.timedelta) -> str:
+    minutes = max(0, int(delta.total_seconds() // 60))
+    if minutes < 60:
+        return "%d min" % minutes
+    hours, rest = divmod(minutes, 60)
+    return "%d h" % hours if not rest else "%d h %d min" % (hours, rest)
+
+
+def _quiet_phrase(q: Dict, now: dt.datetime) -> str:
+    """How long the laptop has been quiet, in words nobody has to decode.
+
+    It used to read "last checked in 9/14/2026 17:34:21 (18:19 their time)",
+    and the bracket looked like the check-in converted to their zone when it
+    was really the clock NOW -- two Central times 45 minutes apart that read
+    like a timezone bug. The gap is the thing worth saying, so say the gap.
+    """
+    when = _parse_received(q.get("last") or "")
+    if when:
+        # Against the machine clock, same as is_stale() -- the Sheet stamps
+        # and the poster share a zone, which is how 'stale' was decided.
+        return "last checked in at %s, %s ago" % (_clock(q["last"]),
+                                                   _span(now - when))
+    if q.get("last"):
+        return "last checked in %s" % q["last"]
+    return "has not checked in today (%s there)" % q.get("office_time", "?")
 
 
 LUCY_REPORTING = "U0BCG8F9B5Z"
