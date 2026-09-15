@@ -119,7 +119,13 @@ function doPost(e) {
     if (body.knocks_rows !== null && body.knocks_rows !== undefined) {
       _upsertKnocks(office, day, JSON.stringify(body.knocks_rows),
                     JSON.stringify(body.knocks_time_tracker || []),
-                    body.knocks_rows.length, String(body.local_time || ''));
+                    body.knocks_rows.length, String(body.local_time || ''),
+                    String(body.agent || ''),
+                    {id: String(body.machine || ''),
+                     name: String(body.machine_name || ''),
+                     desktop: body.desktop,
+                     os: String(body.os || ''),
+                     never_sleeps: body.never_sleeps});
       // WHAT THEY ASKED FOR IS RECORDED HERE TOO. This used to live only in
       // the records path below, and a Box, Energy Wells or NDS office never
       // reaches it -- they have no SaraPlus, so they never post records at
@@ -429,7 +435,28 @@ function _recordChannelRequest(office, owner, asked, knocks) {
   }
 }
 
-function _upsertKnocks(office, day, rowsJson, trackerJson, count, localTime) {
+function _mergeKnockMachine(sh, rowNum, agent, machine) {
+  // Column 9 is the agent version, column 10 a map of machine id -> what it
+  // said about itself. Merged rather than replaced, because an office may run
+  // the agent on more than one computer and the quiet one is the one worth
+  // seeing.
+  if (agent) { sh.getRange(rowNum, 9).setValue(agent); }
+  if (!machine || !machine.id) { return; }
+  var cur = {};
+  try { cur = JSON.parse(String(sh.getRange(rowNum, 10).getValue() || '{}')); }
+  catch (e) { cur = {}; }
+  cur[machine.id] = {
+    name: machine.name || '',
+    desktop: machine.desktop,
+    os: machine.os || '',
+    never_sleeps: machine.never_sleeps
+  };
+  sh.getRange(rowNum, 10).setValue(JSON.stringify(cur));
+}
+
+
+function _upsertKnocks(office, day, rowsJson, trackerJson, count, localTime,
+                       agent, machine) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -437,7 +464,8 @@ function _upsertKnocks(office, day, rowsJson, trackerJson, count, localTime) {
     if (!sh) {
       sh = _book().insertSheet(KNOCKS_TAB);
       sh.appendRow(['Office', 'Day', 'Rows JSON', 'Tracker JSON', 'Rep Count',
-                    'Received At', 'Local Time', 'Last Posted At']);
+                    'Received At', 'Local Time', 'Last Posted At',
+                    'Agent', 'Machines']);
     }
     var rows = sh.getDataRange().getValues();
     var now = new Date();
@@ -448,11 +476,18 @@ function _upsertKnocks(office, day, rowsJson, trackerJson, count, localTime) {
         // same board being posted twice on one cadence tick.
         sh.getRange(i + 1, 3, 1, 5)
           .setValues([[rowsJson, trackerJson, count, now, localTime]]);
+        // WHAT THIS MACHINE IS, on the only call these offices ever make. An
+        // office with no SaraPlus never posts records, so everything we knew
+        // about a computer -- its agent, whether it is a laptop, whether it
+        // can sleep -- was collected on a call it never sends.
+        _mergeKnockMachine(sh, i + 1, agent, machine);
         return;
       }
     }
-    sh.appendRow([office, day, rowsJson, trackerJson, count, now, localTime, '']);
+    sh.appendRow([office, day, rowsJson, trackerJson, count, now, localTime,
+                  '', '', '']);
     sh.getRange(sh.getLastRow(), 2).setNumberFormat('@').setValue(day);
+    _mergeKnockMachine(sh, sh.getLastRow(), agent, machine);
   } finally {
     lock.releaseLock();
   }

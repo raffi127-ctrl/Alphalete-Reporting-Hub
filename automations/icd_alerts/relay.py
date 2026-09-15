@@ -408,6 +408,17 @@ def send_knocks(rows, day: Optional[dt.date] = None, *, time_tracker=None,
     # the only call it ever makes, so leaving them off the knocks hand-over
     # meant its request reached us on no call at all.
     _add_requests(body, rec)
+    # AND WHAT THIS MACHINE IS. Same reason: everything we know about an
+    # office's computer -- which agent it runs, whether it is a laptop,
+    # whether it can sleep -- rode only on the credit-check payload, so for a
+    # Box, Energy Wells or NDS office we knew NOTHING. laptop_offices()
+    # answered "none" while two such offices were entirely unexamined, which
+    # is the same false all-clear that hid Cyrus's outage on 2026-09-15.
+    body["machine"] = machine_id()
+    body["machine_name"] = machine_label()
+    body["desktop"] = is_desktop()
+    body["os"] = platform.system() or ""
+    body["never_sleeps"] = _never_sleeps()
 
     payload_json = json.dumps(body)
     if len(json.dumps(rows)) > MAX_KNOCKS_CHARS:

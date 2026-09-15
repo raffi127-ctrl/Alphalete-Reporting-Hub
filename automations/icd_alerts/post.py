@@ -87,6 +87,11 @@ COL_SALES, COL_LAST_POSTED_SALES = 8, 9
 # because the deployed script writes by POSITION.
 COL_MACHINES = 10
 
+# The knocks tab gained the same two facts, because the offices that only ever
+# post knocks were the ones we knew nothing about.
+KNOCKS_TAB = "ICD Knocks"
+KN_AGENT, KN_MACHINES = 8, 9
+
 # A laptop that has not checked in for this long is asleep, shut, or off wifi.
 # Worth SAYING, never worth alerting the office about -- they cannot act on it
 # and it is not their job to.
@@ -1044,10 +1049,16 @@ def run_requested_approvals(*, send: bool = False, book=None, log=print) -> List
     return done
 
 
-def machines_for(row: List[str]) -> Dict:
-    """{machine_id: {name, last}} off a relay row. Never raises."""
+def machines_for(row: List[str], col: Optional[int] = None) -> Dict:
+    """{machine_id: {name, last}} off a relay OR knocks row. Never raises.
+
+    The column differs between the two tabs, and both carry this now: an
+    office with no SaraPlus never writes to the relay tab, so its machine was
+    only ever described on the knocks hand-over.
+    """
+    col = COL_MACHINES if col is None else col
     try:
-        out = json.loads(row[COL_MACHINES] or "{}") if len(row) > COL_MACHINES else {}
+        out = json.loads(row[col] or "{}") if len(row) > col else {}
     except (TypeError, ValueError):
         return {}
     return out if isinstance(out, dict) else {}
@@ -1201,15 +1212,22 @@ def laptop_offices(day: Optional[dt.date] = None, book=None,
 
     day = day or dt.date.today()
     book = book or open_by_key(RELAY_SPREADSHEET_ID)
-    try:
-        rows = book.worksheet(RELAY_TAB).get_all_values()
-    except Exception:  # noqa: BLE001
-        return []
+    rows = []
+    for tab, col in ((RELAY_TAB, COL_MACHINES), (KNOCKS_TAB, KN_MACHINES)):
+        # BOTH TABS. An office with no SaraPlus never writes to the relay tab
+        # at all, so reading only that one answered "no laptops" while every
+        # Box, Energy Wells and NDS office was simply unexamined.
+        try:
+            got = book.worksheet(tab).get_all_values()
+        except Exception:  # noqa: BLE001
+            continue
+        for r in got[1:]:
+            rows.append((r, col))
     out = []
-    for row in rows[1:]:
+    for row, mcol in rows:
         if not row or not (row[COL_OFFICE] or "").strip():
             continue
-        for mid, info in (machines_for(row) or {}).items():
+        for mid, info in (machines_for(row, mcol) or {}).items():
             if isinstance(info, dict) and info.get("desktop") is False:
                 office = (row[COL_OFFICE] or "").strip().lower()
                 if not include_acknowledged and office in LAPTOP_ACKNOWLEDGED:
