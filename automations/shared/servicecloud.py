@@ -304,3 +304,34 @@ def sign_in(page, email: str, password: str, *,
 # candidates are a single count, a split by commodity, or a count plus
 # volume. That is a decision for an office that sells them, and it is the
 # last thing between here and a working board.
+
+
+# --- WHAT A BOX SALE LINE NEEDS THAT AT&T'S ALREADY HAS ---------------------
+#
+# DECIDED 2026-09-15: the board carries a COUNT and a VOLUME. Ryan McSpadden:
+# "B is better unless @Carlos you want just the clean sale". Two columns means
+# neither of them has to lose the argument -- Carlos reads the count and
+# ignores the volume, Ryan gets both.
+#
+# VOLUME IS A DISPLAY FIGURE, NOT A COUNT. "2 sales - 69,248" is one sale line
+# where the second number describes the first. Anything that sums a rep's
+# metrics -- a total, a ranking, a threshold -- must sum the SALES and never
+# the volume, or one contract reads as fifty-one thousand of something.
+#
+# AND THE HYPE DOES NOT ESCALATE FOR BOX AS IT STANDS. sale_hype.tier() reads
+# "Int" and "NL" by name: an Internet sale with five or more wireless lines is
+# "super", with two or more is "large", everything else is "regular". Box has
+# neither metric, so EVERY Box sale would come out "regular" -- a rep closing
+# six contracts and 142,950 volume gets the same mild line as a rep closing
+# one, and the escalation that makes the AT&T channel worth watching would be
+# missing.
+#
+# I checked this rather than assumed it, having first guessed the opposite --
+# that a volume figure would inflate every sale to the top tier. It would not:
+# the tier is read off the SHAPE of an AT&T sale, not the sum.
+#
+# So Box needs its own tier rule before the alerts are worth switching on, and
+# what makes a Box sale loud -- a big single contract, several in a day, a
+# volume threshold -- is a question for somebody who sells them.
+BOX_METRICS = ("Sales", "Volume")
+BOX_COUNTED = ("Sales",)      # what a total may sum. NOT Volume.

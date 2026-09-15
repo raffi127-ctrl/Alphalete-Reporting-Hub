@@ -270,3 +270,44 @@ class AwaitingSignatureIsTheCreditCheck(unittest.TestCase):
         self.assertFalse(SC.COMPLETED_STATUSES & SC.PRESALE_STATUSES)
         self.assertFalse(SC.COMPLETED_STATUSES & SC.KNOWN_NOT_COUNTED)
         self.assertFalse(SC.PRESALE_STATUSES & SC.KNOWN_NOT_COUNTED)
+
+
+class VolumeIsShownNotCounted(unittest.TestCase):
+    """Decided 2026-09-15: the Box board carries a count AND a volume, so
+    neither office has to lose the argument -- Carlos reads the count, Ryan
+    gets both.
+
+    But "2 sales - 69,248" is ONE sale line where the second number describes
+    the first. Anything that sums a rep's metrics must sum the sales and never
+    the volume, or one contract reads as fifty-one thousand of something.
+    """
+
+    def test_volume_is_a_metric_but_not_a_counted_one(self):
+        self.assertIn("Volume", SC.BOX_METRICS)
+        self.assertNotIn("Volume", SC.BOX_COUNTED)
+
+    def test_sales_is_what_a_total_sums(self):
+        self.assertEqual(SC.BOX_COUNTED, ("Sales",))
+
+
+class TheHypeDoesNotEscalateForBoxYet(unittest.TestCase):
+    """sale_hype.tier() reads "Int" and "NL" by NAME. Box has neither, so
+    every Box sale comes out "regular" -- a rep closing six contracts gets the
+    same mild line as one closing a single contract, and the escalation that
+    makes the AT&T channel worth watching would be missing.
+
+    Pinned so that switching Box alerts on without a tier rule is a failing
+    test rather than a flat channel nobody can explain.
+    """
+
+    def test_a_big_box_day_still_reads_as_regular(self):
+        from automations.shared import sale_hype as H
+        big = {"Sales": 6, "Volume": 142950}
+        self.assertEqual(H.tier(big), "regular",
+                         "if this ever stops being true, Box tiering has "
+                         "been thought about and this test should say how")
+
+    def test_an_att_day_of_the_same_size_does_escalate(self):
+        from automations.shared import sale_hype as H
+        self.assertEqual(H.tier({"Int": 1, "NL": 5}), "super")
+        self.assertEqual(H.tier({"Int": 1, "NL": 2}), "large")
