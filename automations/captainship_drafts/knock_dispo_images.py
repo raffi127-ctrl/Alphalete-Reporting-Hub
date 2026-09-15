@@ -302,6 +302,61 @@ def _pss_crosstab(we_sunday: dt.date, *, logfn=print) -> Optional[Path]:
     return path
 
 
+# The NDS captainships' crosstab (weekly_knock_dispositions.apps.download_nds),
+# with the same per-process economy as _PSS_CACHE: one download serves every
+# NDS captain in the build. Keyed by the download DAY — the view is "this week
+# and last", so what it holds moves with the calendar, not with a week.
+_NDS_PSS_CACHE: Dict[str, Path] = {}
+
+
+def _nds_crosstab(today: dt.date, *, logfn=print) -> Optional[Path]:
+    """The NDS rep-level crosstab, downloaded ONCE per process, with the copy
+    already written TODAY as the safety net (same guard as _pss_crosstab: an
+    older file holds other weeks, and a wrong apps number is worse than a
+    visibly missing one). None = unavailable; the boards say INCOMPLETE."""
+    from automations.weekly_knock_dispositions import apps as A
+
+    day = dt.date.today()
+    key = day.isoformat()
+    hit = _NDS_PSS_CACHE.get(key)
+    if hit is not None and hit.exists():
+        return hit
+    try:
+        path = Path(A.download_nds(day))
+    except Exception as e:  # noqa: BLE001
+        path = A.OUT_DIR / f"nds_pss_rep_{key}.csv"
+        try:
+            fresh = path.stat().st_size > 0
+        except OSError:
+            fresh = False
+        if fresh:
+            logfn(f"  ↺ NDS crosstab pull failed ({type(e).__name__}) — using "
+                  f"today's copy already on disk ({path.name})")
+            _NDS_PSS_CACHE[key] = path
+            return path
+        logfn(f"  ⚠ NDS crosstab failed ({type(e).__name__}: {str(e)[:160]}) "
+              "— NDS apps blank, boards flagged INCOMPLETE")
+        return None
+    _NDS_PSS_CACHE[key] = path
+    return path
+
+
+def merge_apps(*sources) -> Optional[dict]:
+    """{rep: apps} summed across sources (None entries skipped), or None when
+    EVERY source is None — blank, never a 0 nobody measured. A rep spelled
+    with different case in two workbooks is one rep. Pure."""
+    got = [s for s in sources if s is not None]
+    if not got:
+        return None
+    out: dict = {}
+    names: dict = {}
+    for src in got:
+        for rep, n in src.items():
+            name = names.setdefault(" ".join(str(rep).lower().split()), rep)
+            out[name] = out.get(name, 0) + int(n or 0)
+    return out
+
+
 # An owner on the captainship roster who has NO ownerville office at all —
 # not a name-spelling drift an alias could fix (Megan checked Office Access
 # on Raf's login for Michael Murphy, 2026-08-24: absent under his name, his
@@ -521,10 +576,12 @@ def owner_cfgs(names: List[str], aliases_raw: Dict[str, list], *,
     the daily pull already applies to itself, so the week and the day read the
     same campaign for an overridden office.
 
-    `nds=True` (an NDS captainship) leaves pss_owner None: NDS sales live in
-    the NDS workbook, not in the D2D PSS crosstab, so asking it would draw a
-    Total Apps of 0 for offices that sold — the same call
-    weekly_knock_dispositions/offices.py makes for NDS offices. Pure —
+    `nds=True` (an NDS captainship) marks apps_source "nds": NDS sales live in
+    the NDS workbook, not in the D2D PSS crosstab, so capture_sections also
+    reads the NDS crosstab for these owners
+    (weekly_knock_dispositions.apps.nds_rep_apps_for_owner, Eve 2026-09-15) and
+    ADDS it to the D2D count — an NDS captainship can still hold reps whose
+    orders are fiber (Joseph Delgado under Colten, 2026-09-14). Pure —
     offline-testable."""
     from automations.focus_office_att.aliases import alias_to_canonical, _norm_name
     from automations.weekly_knock_dispositions.offices import (
@@ -540,7 +597,8 @@ def owner_cfgs(names: List[str], aliases_raw: Dict[str, list], *,
             "name": canonical,
             "ov": "master" if is_master else "impersonate",
             "campaign_id": _campaign_for(canonical) or CAMPAIGN_ID,
-            "pss_owner": None if nds else canonical,
+            "pss_owner": canonical,
+            "apps_source": "nds" if nds else "d2d",
         }))
     return out
 
@@ -620,8 +678,8 @@ def render_owner_daily_board(target: dt.date, rows: list, board_rows: list,
     (render_knocks_boards), with this report's "DAILY " title prefix kept on
     every shape that has a TOTAL KNOCKS title:
       * house  -> exactly the call this replaced (board_rows, apps, Chan line);
-      * wireless / Energy Wells -> their column set, Chan's line on top, no
-        apps (neither board has a talk-to block for them);
+      * wireless / Energy Wells -> their column set, Chan's line on top, and
+        Total Apps when there are apps (the NDS workbook's, 2026-09-15);
       * B2B    -> their column set, no Chan line (he is fiber: no columns);
       * gaps-only -> the TeleMapper board, which already carries the gaps.
     `rows` are the ownerville rows (what decides the shape); `board_rows` are
@@ -649,9 +707,14 @@ def render_owner_daily_board(target: dt.date, rows: list, board_rows: list,
             title_prefix="DAILY ", extra_totals=extra_totals, apps=apps)
     b2b = shape in (R.SHAPE_B2B_ATT, R.SHAPE_B2B_BOX)
     return R.render_total_knocks(
-        target, rows=rows, out_dir=out_dir, title_suffix=display,
-        title_prefix="DAILY ", extra_totals=None if b2b else extra_totals,
-        base_cols=cols[0], out_cols=cols[1])
+        target, rows=rows if b2b else board_rows, out_dir=out_dir,
+        title_suffix=display, title_prefix="DAILY ",
+        extra_totals=None if b2b else extra_totals,
+        base_cols=cols[0], out_cols=cols[1],
+        # Total Apps on the wireless boards too (Eve 2026-09-15 — the NDS
+        # workbook's count). render_total_knocks puts the apps block at the end
+        # when a board has no talk-to block. B2B stays the board it was.
+        apps=None if b2b else apps)
 
 
 def _avg_hrs(rows: list) -> str:
@@ -1363,6 +1426,11 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # INCOMPLETE in their sub-heading — fill-but-flag, never a dead section.
     from automations.weekly_knock_dispositions import apps as A
     pss_path = _pss_crosstab(we_sunday, logfn=logfn)
+    # NDS captainships read the NDS workbook's apps as well (owner_cfgs). Only
+    # downloaded when this captain actually has such an owner.
+    nds_path = (_nds_crosstab(today, logfn=logfn)
+                if any(c.get("apps_source") == "nds" for _d, c in pairs)
+                else None)
     # The daily board wants ONE weekday column out of that crosstab. Read it
     # once per office below; a crosstab that doesn't carry the day at all
     # (a period-boundary week, a view that stops at Saturday) is logged ONCE
@@ -1430,13 +1498,33 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # captainship SUMMARY loses their line, and it says so rather than showing
     # a total that silently misses an office.
     daily_partial = False
-    def _day_apps(pss_owner: str):
+    def _day_apps(cfg: dict):
+        """(apps, complete) for one owner's DAILY board: the D2D count, plus
+        the NDS workbook's count for an NDS captainship's owner (owner_cfgs).
+        `complete` is False when a source this owner reads was unavailable —
+        that board carries INCOMPLETE; apps is None only when NOTHING came
+        down."""
+        d2d = _d2d_day_apps(cfg["pss_owner"])
+        complete = d2d is not None
+        if cfg.get("apps_source") != "nds":
+            return d2d, complete
+        nds = None
+        if nds_path is not None:
+            try:
+                nds = A.nds_rep_apps_for_owner(
+                    nds_path, cfg["pss_owner"], aliases_map,
+                    week_ending(target), days=[daily_day])
+            except Exception as e:  # noqa: BLE001
+                logfn(f"    ⚠ NDS apps for {cfg['pss_owner']}: "
+                      f"{type(e).__name__}: {str(e)[:160]}")
+        return merge_apps(d2d, nds), complete and nds is not None
+
+    def _d2d_day_apps(pss_owner: str):
         """That office's {rep: apps} for `target`, or None when unavailable.
         A missing weekday column is a crosstab-wide fact, so it turns the
         column off for the whole build after ONE log line; a per-owner failure
         (owner absent from the crosstab is NOT one — that's an empty dict)
-        only costs that owner's column. No pss_owner (an NDS office — see
-        owner_cfgs) is None too: that office's sales aren't in this crosstab."""
+        only costs that owner's column."""
         nonlocal daily_apps_off
         if not pss_owner or pss_path is None or daily_apps_off:
             return None
@@ -1487,7 +1575,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                     from automations.weekly_knock_dispositions.offices import (
                         CHAN as _CHAN)
                     _c_rows, chan_apps_by_rep, chan_apps = daily_apps_for_board(
-                        chan_rows, _day_apps(_CHAN["name"]))
+                        chan_rows, _d2d_day_apps(_CHAN["name"]))
             for display, cfg in pairs:
                 if _nn(display) in dropped:
                     # Skipped BEFORE the pull, not after it fails: the point is
@@ -1549,9 +1637,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             out_daily.append((display, None))
                             answered_daily.add(display)
                         else:
+                            day_apps, apps_complete = _day_apps(cfg)
                             board_rows, apps_by_rep, apps_n = (
-                                daily_apps_for_board(rows,
-                                                     _day_apps(cfg["pss_owner"])))
+                                daily_apps_for_board(rows, day_apps))
                             # Columns follow the rows' shape (house / wireless
                             # / gaps-only) — see render_owner_daily_board.
                             png = render_owner_daily_board(
@@ -1563,11 +1651,10 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             # INCOMPLETE rides the sub-heading label, same as
                             # the weekly board's: the board is real, one
                             # column of it is missing, and the reader has to
-                            # be told which. Not for an office with no
-                            # pss_owner (NDS): nothing is missing there — no
-                            # D2D crosstab ever carries its sales.
+                            # be told which — including when only ONE of an
+                            # NDS owner's two apps sources came down.
                             out_daily.append((display if (apps_by_rep is not None
-                                                          or not cfg["pss_owner"])
+                                                          and apps_complete)
                                               else f"{display} — ⚠ INCOMPLETE: "
                                                    "apps unavailable", png))
                             # captured_daily keeps the OWNERVILLE rows, not the
@@ -1647,8 +1734,25 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         office_apps = (
                             A.rep_apps_for_owner(pss_path, cfg["pss_owner"],
                                                  aliases_map)
-                            if pss_path is not None and cfg["pss_owner"]
-                            else None)
+                            if pss_path is not None else None)
+                        week_apps_complete = pss_path is not None
+                        if cfg.get("apps_source") == "nds":
+                            # NDS captainship: the NDS workbook's count on top
+                            # of the D2D one (owner_cfgs).
+                            nds_week = None
+                            if nds_path is not None:
+                                try:
+                                    nds_week = A.nds_rep_apps_for_owner(
+                                        nds_path, cfg["pss_owner"],
+                                        aliases_map, we_sunday)
+                                except Exception as e:  # noqa: BLE001
+                                    logfn(f"    ⚠ NDS weekly apps for "
+                                          f"{cfg['pss_owner']}: "
+                                          f"{type(e).__name__}: "
+                                          f"{str(e)[:160]}")
+                            office_apps = merge_apps(office_apps, nds_week)
+                            week_apps_complete = (week_apps_complete
+                                                  and nds_week is not None)
                         if not ov_rows and not office_apps:
                             # Visible absence, never a blank board (standing
                             # rule): the email says so under this owner.
@@ -1689,7 +1793,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                                        n_totals=1, n_compare_top=n_top)
                         # INCOMPLETE flag rides the display name so it lands
                         # in the sub-heading next to the board it qualifies.
-                        label = (display if pss_path is not None
+                        label = (display if week_apps_complete
                                  else f"{display} — ⚠ INCOMPLETE: apps "
                                       "unavailable")
                         out_weekly.append((label, png))

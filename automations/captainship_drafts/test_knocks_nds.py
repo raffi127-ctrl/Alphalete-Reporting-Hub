@@ -5,7 +5,8 @@ capitanias de NDS ... podemos agregarlas a sus daily captainship emails?").
 Lo que esto fija: que las dos secciones estan en el flavor, que el board diario
 de cada owner sale con las columnas de SU forma (wireless / gaps-only / house),
 que el resumen no inventa ceros para lo que una oficina wireless no tiene, que
-NDS no pide apps al crosstab D2D, y que el mail nocturno NO se suma solo.
+las apps de NDS salen del workbook NDS (Eve 2026-09-15) sumadas a las D2D, y
+que el mail nocturno NO se suma solo.
 
     python -m unittest automations.captainship_drafts.test_knocks_nds
 """
@@ -72,17 +73,85 @@ class NdsCarriesBothSections(unittest.TestCase):
 
 
 class OwnerCfgs(unittest.TestCase):
-    def test_nds_owners_do_not_ask_the_d2d_crosstab_for_apps(self):
+    def test_nds_owners_read_the_nds_workbook_too(self):
         (_d, cfg), = KD.owner_cfgs(["Khalil Mansour"], {}, nds=True)
-        self.assertIsNone(cfg["pss_owner"])
-        (_d, cfg), = KD.owner_cfgs(["Khalil Mansour"], {})
+        self.assertEqual(cfg["apps_source"], "nds")
         self.assertEqual(cfg["pss_owner"], "Khalil Mansour")
+        (_d, cfg), = KD.owner_cfgs(["Khalil Mansour"], {})
+        self.assertEqual(cfg["apps_source"], "d2d")
 
     def test_the_weekly_pin_is_the_same_one_the_daily_pull_uses(self):
         from automations.rashad_metrics import knocks_pull as KP
         for name in ("Calvin Ribera", "Khalil Mansour"):
             (_d, cfg), = KD.owner_cfgs([name], {}, nds=True)
             self.assertEqual(cfg["campaign_id"], KP.campaign_for_office(name))
+
+
+class NdsApps(unittest.TestCase):
+    """La vista 'Thisweekandlast' del workbook NDS, con la forma medida el
+    2026-09-15: fila 0 = semana por columna, fila 1 = encabezados, la celda
+    del owner solo en la primera fila de su bloque y con salto de linea."""
+
+    def setUp(self):
+        import csv, tempfile
+        rows = [
+            ["", "", "", "9/13/2026", "9/13/2026", "9/13/2026", "9/20/2026",
+             "9/20/2026", "Grand Total"],
+            ["Owner & Office ", "Rep Name", "Product Type (Broken Out)",
+             "Monday", "Saturday", "Total", "Monday", "Total", "Total"],
+            ["Grand Total", "Total", "Total", "1,174", "5", "1,179", "3", "3",
+             "1,182"],
+            ["KHALIL MANSOUR\r[alphalete management group]", "Total", "Total",
+             "9", "2", "11", "4", "4", "15"],
+            ["", "Amet Shemo", "WIRELESS", "5", "2", "7", "4", "4", "11"],
+            ["", "Amet Shemo", "AIR", "1", "", "1", "", "", "1"],
+            ["", "Orlando Keenan", "WIRELESS", "3", "", "3", "", "", "3"],
+            ["ZAID ARABYAT\r[aces acquisitions]", "Total", "Total", "2", "",
+             "2", "", "", "2"],
+            ["", "Rep Z", "WIRELESS", "2", "", "2", "", "", "2"],
+        ]
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self._tmp.name) / "nds.csv"
+        with open(self.path, "w", encoding="utf-16", newline="") as fh:
+            csv.writer(fh, delimiter="\t", quotechar='"').writerows(rows)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_the_week_sums_every_product_type_monday_to_saturday(self):
+        from automations.weekly_knock_dispositions import apps as A
+        got = A.nds_rep_apps_for_owner(self.path, "Khalil Mansour", {},
+                                       dt.date(2026, 9, 13))
+        self.assertEqual(got, {"Amet Shemo": 8, "Orlando Keenan": 3})
+
+    def test_one_day_reads_its_own_weeks_column(self):
+        from automations.weekly_knock_dispositions import apps as A
+        got = A.nds_rep_apps_for_owner(self.path, "Khalil Mansour", {},
+                                       dt.date(2026, 9, 20), days=["Monday"])
+        self.assertEqual(got["Amet Shemo"], 4)
+
+    def test_the_owner_is_matched_through_the_alias_list(self):
+        from automations.weekly_knock_dispositions import apps as A
+        got = A.nds_rep_apps_for_owner(
+            self.path, "Zaid Arabiyat", {"Zaid Arabyat": ["Zaid Arabiyat"]},
+            dt.date(2026, 9, 13))
+        self.assertEqual(got, {"Rep Z": 2})
+
+    def test_a_week_or_day_the_file_lacks_raises_instead_of_a_zero(self):
+        from automations.weekly_knock_dispositions import apps as A
+        with self.assertRaises(RuntimeError):
+            A.nds_rep_apps_for_owner(self.path, "Khalil Mansour", {},
+                                     dt.date(2026, 9, 6))
+        with self.assertRaises(RuntimeError):
+            A.nds_rep_apps_for_owner(self.path, "Khalil Mansour", {},
+                                     dt.date(2026, 9, 20), days=["Friday"])
+
+    def test_the_two_sources_add_up_per_rep(self):
+        self.assertEqual(KD.merge_apps({"Amet Shemo": 1},
+                                       {"amet shemo": 2, "Rep Z": 3}),
+                         {"Amet Shemo": 3, "Rep Z": 3})
+        self.assertEqual(KD.merge_apps(None, {"Rep Z": 1}), {"Rep Z": 1})
+        self.assertIsNone(KD.merge_apps(None, None))
 
 
 class DailySummaryForWireless(unittest.TestCase):
@@ -143,22 +212,31 @@ class DailySummaryForWireless(unittest.TestCase):
 
 
 class PerOwnerDailyBoard(unittest.TestCase):
-    def _drawn(self, rows, board_rows=None):
+    def _drawn(self, rows, board_rows=None, apps=None):
         from automations.total_knocks import render as R
         seen = {}
 
         def fake_draw(cols, table, title, theme, out, **k):
-            seen.update(cols=list(cols), title=title, out=out)
+            seen.update(cols=list(cols), title=title, out=out,
+                        table=[list(r) for r in table])
             return out
         old = R._draw
         R._draw = fake_draw
         try:
             KD.render_owner_daily_board(
                 DAY, rows, board_rows or rows, Path("."), "Zaid Arabiyat",
-                extra_totals=[("Chan Park", [_house("chan", 90, 20)])])
+                extra_totals=[("Chan Park", [_house("chan", 90, 20)])],
+                apps=apps)
         finally:
             R._draw = old
         return seen
+
+    def test_a_wireless_office_shows_its_apps(self):
+        rows = [_wireless("ana", 60), _wireless("bo", 40)]
+        board_rows, apps, _n = KD.daily_apps_for_board(rows,
+                                                       {"ana": 3, "bo": 1})
+        seen = self._drawn(rows, board_rows, apps)
+        self.assertIn("Total Apps", seen["cols"])
 
     def test_a_wireless_office_gets_the_wireless_columns_and_daily_title(self):
         seen = self._drawn([_wireless("ana", 60)])
