@@ -1706,11 +1706,26 @@ def _knock_roster(icd: str, week_ending: dt.date) -> set:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-def _settled_reps(icd: str, week_ending: dt.date) -> dict:
-    """{rep: {date: measures}} — settled per-rep days for the whole office."""
+@st.cache_data(ttl=900, show_spinner=False)
+def _rep_days_all(icd: str) -> dict:
+    """{rep: {date: measures}} — the office's WHOLE history, read ONCE.
+
+    stored_rep_days reads the entire tab every call, and the board now asks
+    for three weeks (this one, last, prior). That was three full reads of a
+    2,000-row tab per render, on top of knocks and start dates — the page
+    stopped rendering at all. One read, sliced in Python."""
     from automations.icd_sales_board import tableau_days as TD
     try:
-        got = TD.stored_rep_days(icd)
+        return TD.stored_rep_days(icd) or {}
+    except Exception:   # noqa: BLE001
+        return {}
+
+
+def _settled_reps(icd: str, week_ending: dt.date) -> dict:
+    """{rep: {date: measures}} — settled per-rep days for one week."""
+    from automations.icd_sales_board import tableau_days as TD
+    try:
+        got = _rep_days_all(icd)
         if got:
             lo = week_ending - dt.timedelta(days=6)
             return {r: {d: v for d, v in days.items() if lo <= d <= week_ending}
@@ -2419,7 +2434,22 @@ def relay_board(icd: str, office_key: str) -> None:
     # Streamlit paints Styler output onto NON-editable columns only, which is
     # why the tint survives: the measures are always locked and only the three
     # owner columns ever unlock.
-    st.markdown(_colour_key(), unsafe_allow_html=True)
+    # A TOGGLE AFTER ALL (Megan 2026-09-15): "go back to what it was - have a
+    # toggle option to make it where we can edit it."
+    #
+    # The board is hand-built HTML so each day can span its own columns, and
+    # Streamlit can only edit its own grid — which draws to a CANVAS and so
+    # cannot be styled to match. Side by side they read as two different
+    # tables, which is exactly what she saw. So the board keeps its look, and
+    # editing is a mode you turn on rather than a second table always sitting
+    # there.
+    c_key, c_edit = st.columns([6, 3])
+    with c_key:
+        st.markdown(_colour_key(), unsafe_allow_html=True)
+    editing = c_edit.toggle(
+        "Edit rep details", key=f"repedit_on_{office_key}",
+        help="Team, Leadership and Status. The board stays as it is; the "
+             "editable copy opens underneath.")
 
     # THE DAY SPANS ITS BREAKDOWN (Megan 2026-09-13). A Streamlit grid cannot
     # merge a header, so it could only ever show a flat run of repeating
@@ -2459,7 +2489,8 @@ def relay_board(icd: str, office_key: str) -> None:
                                ["Team", "Leadership", "Status",
                                 "Start date", "Days worked"]]))
         st.markdown(_grouped_board(grid, groups), unsafe_allow_html=True)
-        _rep_editor(office_key, week_ending, rows, roster)
+        if editing:
+            _rep_editor(office_key, week_ending, rows, roster)
         relay_wow(office_key)
         return
 
