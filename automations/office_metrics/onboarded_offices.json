@@ -309,5 +309,60 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "christian",
+    "report_id": "christian_metrics",
+    "label": "Christian's Local Office",
+    "owner": "Christian Esposito",
+    "channel_id": "",
+    "channel_name": "",
+    "sheet_id": "1yK_0hWmjKWIqUng5Wj7Ahx3gWKxseC8mF50UalL08WQ",
+    "knocks_office": "Christian Esposito",
+    "ov_account": "23038",
+    "owner_office": "",
+    "business_name": "Resound, Inc.",
+    "website": "https://resound-fl.com/",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "campaign": "fiber_d2d",
+    "notes": "",
+    "email_to": [
+      "resoundinc@gmail.com"
+    ],
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]
