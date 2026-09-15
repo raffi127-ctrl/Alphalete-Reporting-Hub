@@ -75,16 +75,14 @@ def default_captains() -> List[str]:
     knocks_access_watch uses, so a captainship that gains knocks in the morning
     report gains the night mail the same day. Raf first.
 
-    EXCEPT NDS. Khalil's, Colten's and Jairo's reports gained the knock
-    sections on 2026-09-15, and what Eve asked for was the MORNING email only.
-    This mail goes to every office owner at 9 PM and its zone harvest only
-    places fiber offices — adding them here is its own decision, not a side
-    effect of the morning one."""
+    NDS INCLUDED since 2026-09-15 evening (Eve: "si, hacelo" — the NDS
+    captainships' offices get the 9 PM local mail like fiber's). It was held
+    out for a few hours because the morning change was all she had asked for;
+    their offices' zones and owner addresses were added in the same change."""
     try:
         from automations.captainship_drafts import config
         keys = [c.key for c in config.CAPTAINS
-                if "daily_knocks" in (config.SECTION_KINDS.get(c.flavor) or [])
-                and c.flavor != "nds"]
+                if "daily_knocks" in (config.SECTION_KINDS.get(c.flavor) or [])]
     except Exception:  # noqa: BLE001 — never a night with nobody in it
         keys = []
     if SAMPLE_CAPTAIN in keys:

@@ -87,6 +87,38 @@ OWNER_EMAILS: Dict[str, str] = {
     # wayne
     "Christian Esposito":  "resoundinc@gmail.com",
     "Michael Murphy":      "alistacquisition@gmail.com",
+    # NDS (Eve 2026-09-15 evening: the 9 PM mail goes to the NDS captainships
+    # too). Read the same way as the rest: People API, read-only, members of
+    # "Khalil's / Colten's / Jairo's Captainship". Every roster owner is here,
+    # not only the ones with Office Access today — an owner whose access is
+    # granted later then needs only a zone line in zones.py.
+    # khalil
+    "Khalil Mansour":      "Khalilmmansour@gmail.com",
+    "Isaiah Revelle":      "isaiah.revelle@gmail.com",
+    "Maxamad Aden":        "maxamed.hersi6292@gmail.com",  # Contacts: "Max Aden"
+    "Juan Lucio":          "n.lucio326@gmail.com",
+    "Zaid Arabiyat":       "zaid.m.arabiyat@gmail.com",
+    # colten
+    "Colten Wright":       "coltenwrightsc@gmail.com",
+    "Jose Velasquez":      "josevelasquezlsm@gmail.com",
+    "Taylor Nickerson":    "legacy.mgmtteam@gmail.com",
+    "Joseph Delgado":      "josephdelgadosc@gmail.com",
+    "Logan Waite":         "logan.waite24@gmail.com",
+    "George Delgado":      "georgedelgadod2d@gmail.com",
+    "Karrington Moody":    "coastalcreativeconcepts@yahoo.com",
+    "Lj Brown":            "lajaviusbrown@yahoo.com",     # Contacts: "Lajavius Brown"
+    "Kyle Campas":         "campas.kyle@gmail.com",
+    "Noah Dubale":         "dubalenoah@gmail.com",
+    # jairo
+    "Jairo Ruiz":          "jairoruizpmg@gmail.com",
+    "Drew Tepper":         "drewtepp2735@gmail.com",
+    "Fernando Munoz":      "fernandomunoz710@icloud.com",
+    # Two "Frank Matos" contacts in the group; the company address is the one
+    # listed twice there. No Office Access yet, so it mails nobody today.
+    "Frank Matos":         "fm.peakmanagementinc@gmail.com",
+    "Justin Fermin":       "ferminjustin71@gmail.com",
+    "Isaac Amissah":       "amissolutions7@gmail.com",
+    "Abdallah Ghousheh":   "Ghoushehbusiness@gmail.com",
 }
 
 

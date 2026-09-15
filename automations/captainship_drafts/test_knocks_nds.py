@@ -64,11 +64,13 @@ class NdsCarriesBothSections(unittest.TestCase):
     def test_b2b_still_has_no_knock_sections(self):
         self.assertNotIn("daily_knocks", config.SECTION_KINDS["b2b"])
 
-    def test_the_night_mail_does_not_pick_nds_up_on_its_own(self):
+    def test_the_night_mail_carries_nds_too(self):
+        """Eve 2026-09-15 evening: the 9 PM local mail goes to the NDS
+        captainships' offices as well."""
         from automations.captainship_night_knocks import run as NK
         keys = NK.default_captains()
         for key in ("khalil", "colten", "jairo"):
-            self.assertNotIn(key, keys)
+            self.assertIn(key, keys)
         self.assertEqual(keys[0], "rafael")
 
 

@@ -127,6 +127,26 @@ ICD_TIMEZONES: Dict[str, str] = {
     # are ZIP 933xx Bakersfield / 93277 Visalia, all California = one zone.
     # harvest_zones --icd "Nuri Burgos" re-checks the office address at 00:05 CT.
     "Nuri Burgos":      "America/Los_Angeles",           # Bakersfield, CA (Order Log ZIPs)
+    # NDS CAPTAINSHIPS (Eve 2026-09-15 evening: the 9 PM mail goes to NDS too).
+    # harvest_zones --only khalil / colten / jairo on Lucy 3 the same evening.
+    # Only offices with Office Access can be read; the rest join the day their
+    # access is granted and their line is added here.
+    # khalil
+    "Isaiah Revelle":   "America/Chicago",               # Dallas, TX
+    "Khalil Mansour":   "America/Chicago",               # Dallas, TX
+    "Maxamad Aden":     "America/Chicago",               # San Antonio, TX
+    # The harvest held McAllen back ("TX is split … not a confirmed city").
+    # Checked by hand: McAllen is Hidalgo County, deep South Texas — Central;
+    # only El Paso and Hudspeth counties are Mountain.
+    "Juan Lucio":       "America/Chicago",               # McAllen, TX
+    # colten. Doral is Miami-Dade — the peninsula, so Eastern; the harvest
+    # holds Florida back on purpose because the western panhandle is Central.
+    "Colten Wright":    "America/New_York",              # Doral, FL
+    "Jose Velasquez":   "America/Los_Angeles",           # Sacramento, CA
+    "Taylor Nickerson": "America/New_York",              # Henrico, VA
+    # jairo — the rest of his roster is waiting on Office Access. Maitland is
+    # Orange County, next to Orlando: peninsula, Eastern (same check as Doral).
+    "Drew Tepper":      "America/New_York",              # Maitland, FL
 }
 
 # What a wave is CALLED in the email subject and in the log. Keyed by zone so a
