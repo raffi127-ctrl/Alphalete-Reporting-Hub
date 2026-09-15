@@ -442,10 +442,19 @@ def this_machine() -> str:
 #
 # To put texting on a new box: send once from the identity the agent runs as,
 # with someone at the keyboard to click Allow, then add the machine here.
-# Lucy 3 added 2026-09-15 after a test message was SEEN in the Alphalete
-# Partners chat -- not after the script exited 0, which it had already done
-# once while delivering nothing.
-TEXTING_MACHINES = {"Lucy 1", "Lucy 3"}
+# LUCY 3 IS NOT IN HERE YET, and the reason is the whole point of this set.
+# A test message from deploy/text_consent_check.sh was seen landing in the
+# Alphalete Partners chat on 2026-09-15 -- but that script runs from a
+# terminal, so the Allow it collected belongs to TERMINAL. This send loop runs
+# under the orchestrator's python, which is a different executable identity
+# and holds no grant of its own (schedule_config's new_start_sat_texts note
+# says the same thing from the other side: on Lucy 1 it is the orchestrator
+# python that holds it, never a bash wrapper).
+#
+# Adding it on the strength of the terminal test would put a route here that
+# blocks five minutes on an invisible dialog every tick. It goes in when a
+# send from the ORCHESTRATOR has been seen arriving.
+TEXTING_MACHINES = {"Lucy 1"}
 
 
 def can_text(machine: str = "") -> bool:

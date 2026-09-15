@@ -194,6 +194,30 @@
     }
   },
   "reports": {
+    "imessage_identity_probe": {
+      "on_scheduler": false,
+      "machine": "Lucy 3",
+      "display_name": "iMessage identity + picture probe (manual)",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.imessage_identity_probe"
+      ],
+      "base_args": [
+        "--chat",
+        "any;+;da1e42ef23df4ff1bb67c6e3b1d10773"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "_note": "MANUAL ONLY (weekdays [] = never scheduled). Answers two questions about THIS machine that a terminal test cannot: (1) does the ORCHESTRATOR identity hold the control-Messages grant \u2014 Lucy 3 passed deploy/text_consent_check.sh on 2026-09-15 from a terminal, which grants Terminal and says nothing about the identity scheduled sends run under; (2) does a PICTURE send, which goes down a different AppleScript path from a string. Default target is the 'Admin Staff' chat, deliberately not Alphalete Partners \u2014 a probe should not land in front of the partners. Exit 0 is NOT delivery: an unconsented send blocks ~5 minutes on a dialog nobody clicks, and a chat id matching nothing returns cleanly having sent nothing. Somebody has to look at the chat.",
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "ao_cleanup": {
       "on_scheduler": true,
       "machine": "Lucy 1",
