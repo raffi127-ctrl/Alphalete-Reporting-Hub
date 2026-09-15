@@ -121,6 +121,12 @@ ICD_TIMEZONES: Dict[str, str] = {
     # are waiting on Office Access)
     "Christian Esposito": "America/New_York",            # Orlando, FL (split state; Orlando is Eastern)
     "Michael Murphy":   "America/New_York",              # Atlanta, GA
+    # raf (EXTRA_KNOCK_OWNERS, not on his board block). Ownerville access
+    # granted 2026-09-14 evening; placed that night WITHOUT the address harvest
+    # (Lucy 3's session was busy with the waves): 1,000+ of her Order Log sales
+    # are ZIP 933xx Bakersfield / 93277 Visalia, all California = one zone.
+    # harvest_zones --icd "Nuri Burgos" re-checks the office address at 00:05 CT.
+    "Nuri Burgos":      "America/Los_Angeles",           # Bakersfield, CA (Order Log ZIPs)
 }
 
 # What a wave is CALLED in the email subject and in the log. Keyed by zone so a
