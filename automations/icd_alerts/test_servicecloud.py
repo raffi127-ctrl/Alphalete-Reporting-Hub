@@ -369,11 +369,15 @@ class ALostSessionAsksTheOfficeNotUs(unittest.TestCase):
         self.P.SIGNIN_WARNED_PATH = self._orig
 
     def test_the_message_tells_them_what_to_do(self):
+        """The authenticator line lives on the page now, where it is actually
+        needed -- repeating it in the DM made the message longer without
+        making the one thing it must convey, WHICH COMPUTER, any clearer."""
         said = []
         self.P.ask_office_to_sign_in("ryan", "4:12 PM", send=False,
                                      log=said.append)
         text = " ".join(said)
-        self.assertIn("authenticator", text)
+        self.assertIn("LucyECO", text)
+        self.assertIn("signin.html", text)
         self.assertIn("Nothing is lost", text,
                       "it reads as data loss rather than a blocked view")
 

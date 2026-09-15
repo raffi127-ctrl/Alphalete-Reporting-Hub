@@ -760,7 +760,7 @@ SIGNIN_ASK = (
     "%s stopped updating at %s. Nothing is lost — the numbers are still "
     "there, we just cannot see them.\n\n"
     "*This has to be done on the office computer running LucyECO* — the same "
-    "one you set up. %s\n\n"
+    "one you set up.%s\n\n"
     "%s")
 
 SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/"
@@ -784,17 +784,17 @@ SYSTEMS = {
     "servicecloud": {
         "name": "My Service Cloud",
         "what": "Sales",
-        # SAY WHAT THEY NEED BEFORE THEY WALK OVER. A message that sends
-        # somebody to the office computer without mentioning the
-        # authenticator sends them there twice.
-        "why": "Have your authenticator to hand. Signing in on your phone or "
-               "your own browser will not reach her.",
+        # The page itself says to have the authenticator ready, and says it
+        # where it is actually needed. Repeating it here made the message
+        # longer without making the ONE thing it has to convey -- which
+        # computer to walk to -- any clearer.
+        "why": "",
         "how": "Open this on that computer and press the button:\n" + SIGNIN_PAGE,
     },
     "saraplus": {
         "name": "SaraPlus",
         "what": "Credit checks and sales",
-        "why": "The saved password is not being accepted — it has probably "
+        "why": " The saved password is not being accepted — it has probably "
                "changed.",
         "how": "Open this on that computer and run it again; it will ask for "
                "the new password:\n" + INSTALL_PAGE,
@@ -802,7 +802,7 @@ SYSTEMS = {
     "ownerville": {
         "name": "OwnerVille",
         "what": "Your knocks board",
-        "why": "The saved password is not being accepted — it has probably "
+        "why": " The saved password is not being accepted — it has probably "
                "changed.",
         "how": "Open this on that computer and run it again; it will ask for "
                "the new password:\n" + INSTALL_PAGE,
