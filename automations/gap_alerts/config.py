@@ -451,9 +451,16 @@ def this_machine() -> str:
 # says the same thing from the other side: on Lucy 1 it is the orchestrator
 # python that holds it, never a bash wrapper).
 #
-# Adding it on the strength of the terminal test would put a route here that
-# blocks five minutes on an invisible dialog every tick. It goes in when a
-# send from the ORCHESTRATOR has been seen arriving.
+# CONFIRMED THE HARD WAY, same day: `lucy rerun imessage_identity_probe` on
+# Lucy 3 ran 12:01:36 -> 12:05:41 and died with
+#     Messages got an error: AppleEvent timed out. (-1712)
+# Four minutes of nothing, which IS what an ungranted identity looks like --
+# it blocks on a dialog nobody is there to click. Terminal on that machine
+# texts fine; the orchestrator has its own grant and does not have it.
+#
+# To finish it: at Lucy 3, run the probe and click Allow when macOS asks, or
+# turn Messages on for that process under System Settings > Privacy &
+# Security > Automation. Then add "Lucy 3" here.
 TEXTING_MACHINES = {"Lucy 1"}
 
 
