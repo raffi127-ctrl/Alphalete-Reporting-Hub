@@ -34,6 +34,7 @@ import datetime as dt
 import json
 import re
 import sys
+import unicodedata
 from typing import Dict, List
 
 from automations.ao_cleanup import names as names_mod
@@ -42,6 +43,7 @@ from automations.ao_cleanup.build_cleanup_tab import (
 from automations.ao_cleanup.channel_members import CACHE_PATH as MEMBERS_PATH
 from automations.ao_cleanup.channel_members import CHANNELS
 from automations.brand_audit.sheets import client
+from automations.terminated_reps import board as sales_board
 
 FIRST_DATA_ROW = 2
 
@@ -73,6 +75,57 @@ def _key(name):
     return re.sub(r"[^a-z ]", "", _norm_name(name).lower()).strip()
 
 
+ACTIVE_PREFIX = "ACTIVE on "      # + the week tab: "ACTIVE on Sales Board WE 9.20"
+
+
+def _fold(name):
+    """Name key for the Sales Board match: the board's '(Wk 2)' and nickname
+    parentheses dropped, accents folded, letters only."""
+    s = unicodedata.normalize("NFKD", sales_board.base_name(name))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return " ".join(re.sub(r"[^a-z ]", " ", s).split())
+
+
+def active_index(names):
+    """Sales Board names -> (full keys, (first, last) pairs).
+
+    The pair catches the middle names one side carries and the other doesn't:
+    'Justin G Carlos Avila' in Slack is 'Justin Avila' on the board.
+    """
+    full, ends = set(), set()
+    for n in names:
+        k = _fold(n)
+        if not k:
+            continue
+        full.add(k)
+        p = k.split()
+        if len(p) >= 2:
+            ends.add((p[0], p[-1]))
+    return full, ends
+
+
+def is_active(name, index):
+    full, ends = index
+    k = _fold(name)
+    if not k:
+        return False
+    p = k.split()
+    return k in full or (len(p) >= 2 and (p[0], p[-1]) in ends)
+
+
+def read_active(logfn=print):
+    """(index, week tab title) of who the CURRENT Sales Board week says is
+    working — no Termination Date, no T mark (terminated_reps.board). A board
+    that can't be read costs the note, never the tab: -> (None, "")."""
+    try:
+        m = sales_board.marked_names(dt.date.today(), logfn=lambda *_: None)
+    except Exception as exc:                      # noqa: BLE001
+        logfn("aviso: sin Sales Board (%s: %s) - no sale la nota ACTIVE"
+              % (type(exc).__name__, str(exc)[:90]))
+        return None, ""
+    return active_index(m.active), m.title
+
+
 def _terminated_index(sh):
     # type: (...) -> Dict[str, dict]
     out = {}
@@ -102,8 +155,9 @@ def _duplicate_names(members, users, channels):
     return {n: ids for n, ids in seen.items() if len(ids) > 1}
 
 
-def build_rows(members, users, terminated, channel_order):
-    # type: (dict, dict, dict, List[str]) -> List[dict]
+def build_rows(members, users, terminated, channel_order, active=None,
+               active_tab=""):
+    # type: (dict, dict, dict, List[str], object, str) -> List[dict]
     dupes = _duplicate_names(members, users, channel_order)
     rows = []
     for chan in channel_order:
@@ -128,6 +182,10 @@ def build_rows(members, users, terminated, channel_order):
         for _, name, uid, u in people:
             term = terminated.get(_key(name)) if name else None
             notes = []
+            # FIRST, so the whole block can be filtered out in one go: someone
+            # still selling this week is not a removal (Eve, 2026-09-15).
+            if active and name and is_active(name, active):
+                notes.append(ACTIVE_PREFIX + active_tab)
             if term:
                 notes.append("Terminated %s (%s)" % (
                     term["term"].strftime("%m/%d/%Y") if term["term"]
@@ -359,7 +417,8 @@ def main(argv=None):
 
     missing = [c for c in order if c not in members.get("channels", {})]
     terminated = _terminated_index(sh)
-    rows = build_rows(members, users, terminated, order)
+    active, active_tab = read_active()
+    rows = build_rows(members, users, terminated, order, active, active_tab)
     if args.channel:
         want = {c.lstrip("#").lower() for c in args.channel}
         rows = [r for r in rows if r["channel"].lower() in want]
@@ -370,6 +429,9 @@ def main(argv=None):
         print("SIN ESCANEAR       : %s  (corre channel_members)" % ", ".join(missing))
     print("filas              : %d" % len(rows))
     print("con baja           : %d" % sum(1 for r in rows if "Terminated" in r["notes"]))
+    print("activos Sales Board: %d  (%s)" % (
+        sum(1 for r in rows if r["notes"].startswith(ACTIVE_PREFIX)),
+        active_tab or "sin leer"))
     for chan in order:
         print("  %-30s %4d" % (chan, sum(1 for r in rows if r["channel"] == chan)))
     if args.dry_run:
