@@ -22,6 +22,10 @@ from typing import Dict, List, Optional
 APP_DIR = Path.home() / ".config" / "lucy-reports"
 CREDS_PATH = APP_DIR / "saraplus-creds.json"
 OV_CREDS_PATH = APP_DIR / "ownerville-creds.json"
+# My Service Cloud: what a Box office uses for sales, as AT&T uses SaraPlus.
+# Same contract as the other two -- written on the office's own machine, never
+# sent anywhere.
+SC_CREDS_PATH = APP_DIR / "servicecloud-creds.json"
 INSTALL_PATH = APP_DIR / "install.json"
 STATE_PATH = APP_DIR / "state.json"
 PROFILE_DIR = APP_DIR / "chrome-profile"
@@ -73,6 +77,46 @@ def campaign_id() -> str:
 
 
 NO_SARAPLUS = ("nds", "energy", "b2b_box")
+
+# WHO USES MY SERVICE CLOUD. Box only, for now -- Megan 2026-09-15, from
+# Ryan's own screenshot. Energy Wells and NDS are still board-only, and
+# guessing them in here would ask two offices for a login they do not have,
+# which is the mistake that cost Carlos his SaraPlus question.
+SERVICECLOUD_CAMPAIGNS = ("b2b_box",)
+
+
+def uses_servicecloud() -> bool:
+    """Does ANY campaign on this machine sign into My Service Cloud?
+
+    Any, not the first: install() returns rows[0], and a machine running two
+    campaigns answered for the wrong one until 2026-09-15.
+    """
+    rows = enrollments()
+    if not rows:
+        return campaign() in SERVICECLOUD_CAMPAIGNS
+    return any(str(r.get("campaign") or "att").strip().lower()
+               in SERVICECLOUD_CAMPAIGNS for r in rows)
+
+
+def sc_creds() -> Dict[str, str]:
+    """This machine's My Service Cloud login, or {} if it has none."""
+    if not SC_CREDS_PATH.exists():
+        return {}
+    try:
+        return json.loads(SC_CREDS_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_sc_creds(email: str, password: str) -> "Path":
+    SC_CREDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SC_CREDS_PATH.write_text(json.dumps({"email": email,
+                                         "password": password}))
+    try:
+        SC_CREDS_PATH.chmod(0o600)   # no-op on Windows, and that is fine
+    except OSError:
+        pass
+    return SC_CREDS_PATH
 
 
 def uses_saraplus() -> bool:

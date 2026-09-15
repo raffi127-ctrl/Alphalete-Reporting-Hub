@@ -58,6 +58,9 @@ AGENT_FILES = [
     "automations/icd_alerts/ov_read.py",
     "automations/shared/ownerville_knocks.py",
     "automations/shared/saraplus.py",
+    # My Service Cloud: where a Box office's sales live. Ships for the same
+    # reason saraplus.py does -- the read happens on the office's machine.
+    "automations/shared/servicecloud.py",
     # Both wording modules below case the rep's name through it.
     "automations/shared/name_case.py",
     "automations/shared/credit_check_line.py",

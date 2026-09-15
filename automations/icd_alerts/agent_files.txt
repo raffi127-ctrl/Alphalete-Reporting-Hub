@@ -13,6 +13,7 @@ automations/icd_alerts/dialogs.py
 automations/icd_alerts/ov_read.py
 automations/shared/ownerville_knocks.py
 automations/shared/saraplus.py
+automations/shared/servicecloud.py
 automations/shared/name_case.py
 automations/shared/credit_check_line.py
 automations/shared/sale_hype.py

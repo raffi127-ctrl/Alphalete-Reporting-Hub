@@ -313,6 +313,21 @@ def ask_for_login(replace=False):
     return sara
 
 
+def ask_for_servicecloud(replace=False, required=True):
+    """The My Service Cloud login — what a Box office sells through.
+
+    Box, Energy Wells and NDS have no SaraPlus, so until now the knocks board
+    was their entire product. This is the other half for Box (Megan
+    2026-09-15: "this is what Box uses for sales like at&t uses Sara+").
+
+    REQUIRED for the campaigns that use it, for the same reason the OwnerVille
+    login is required for a knocks-only office: it is not an extra, it is
+    where their numbers are.
+    """
+    return _ask_one("servicecloud-creds.json", "My Service Cloud", "email",
+                    "email", "password", required=required, replace=replace)
+
+
 def ask_for_ownerville(replace=False, required=False):
     """The OwnerVille login, on its own.
 
@@ -1034,6 +1049,15 @@ def main() -> int:
         # board is the whole product, and OwnerVille is what reads it.
         ask_for_ownerville(required=True)
         ok = True
+
+    # AND THE BOX SALES LOGIN, for the campaigns that have one. Asked about
+    # THIS campaign, not the machine: a Mac running Box and B2B AT&T needs
+    # both this and SaraPlus, and asking the machine would answer for
+    # whichever enrolled first.
+    if this_campaign in getattr(_C, "SERVICECLOUD_CAMPAIGNS", ()):
+        say("      %s sells through My Service Cloud — asking for that login "
+            "too." % this_campaign)
+        ask_for_servicecloud()
     ov_ok = ownerville_until_it_works() if ok else False
 
     step(7, total, "Where your alerts should go")
