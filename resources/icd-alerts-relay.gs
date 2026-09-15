@@ -279,6 +279,44 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
   }
 }
 
+function _sameRooms(aJson, bJson) {
+  // Do these two requests name the same ROOMS? Cadence, labels and whichever
+  // key spelling each side happens to use are all ignored.
+  //
+  // WHY THIS EXISTS. The comparison above is a string match on the whole
+  // request, and ANY difference cleared the approval. Two ways that bit:
+  // Cyrus's cadence was changed from 15 to 30 on our side on 2026-09-15, his
+  // machine put 15 back on its next sweep, and clearing the approval took his
+  // board down for the rest of the day without a word. And an approval
+  // written by our own tooling spells the same rooms differently from the way
+  // a laptop sends them, which would have un-approved every office the moment
+  // it was switched on.
+  //
+  // An approval is for the ROOMS a person checked. Nothing else about the
+  // request is a reason to switch an office off.
+  function rooms(j) {
+    var out = [];
+    try {
+      var v = JSON.parse(j || '[]');
+      if (!v || !v.length) return out;
+      for (var i = 0; i < v.length; i++) {
+        var d = v[i];
+        var id = typeof d === 'string'
+          ? d
+          : String(d.channel || d.channel_id || d.channel_name || '');
+        id = id.trim().toLowerCase().replace(/^#/, '');
+        if (id) out.push(id);
+      }
+    } catch (e) {}
+    return out.sort();
+  }
+  var a = rooms(aJson), b = rooms(bJson);
+  if (a.length !== b.length) return false;
+  for (var i = 0; i < a.length; i++) { if (a[i] !== b[i]) return false; }
+  return true;
+}
+
+
 function _recordRequests(office, body) {
   // Optional, and sent on every sweep so a re-run of the installer can change
   // the answer. Only ever touches the columns the owner is allowed to
@@ -353,23 +391,30 @@ function _recordChannelRequest(office, owner, asked, knocks) {
                      (String(rows[i][7] || '').trim() === knocks.wanted &&
                       String(rows[i][8] || '').trim() === knocks.json &&
                       String(rows[i][9] || '').trim() === knocks.hours);
+        // ...but only a change of ROOMS may un-approve. See _sameRooms.
+        var sameRoomsKn = !knocks ||
+                          _sameRooms(String(rows[i][8] || ''), knocks.json);
+        var sameRoomsCh = !asked ||
+                          _sameRooms(String(rows[i][3] || ''), asked.json);
         if (sameCh && sameKn) return;              // nothing changed
         // Columns 3-4 and 8-9 only. Every *Channel ID*, *Channel Name* and
         // *Approved* column is OURS -- an owner asks, a human decides.
         if (!sameCh) {
           sh.getRange(i + 1, 3, 1, 3)
             .setValues([[asked.wanted, asked.json, now]]);
-          // A changed request un-approves the old one: they are asking for
-          // somewhere different, and the approval was for rooms they no
-          // longer named.
-          sh.getRange(i + 1, 6, 1, 2).setValues([['', '']]);
+          // ONLY A CHANGE OF ROOMS UN-APPROVES. An approval is for the rooms
+          // a person checked; a different cadence, or our own wording of the
+          // same rooms, is not a reason to switch an office off.
+          if (!sameRoomsCh) {
+            sh.getRange(i + 1, 6, 1, 2).setValues([['', '']]);
+          }
         }
         if (!sameKn) {
           sh.getRange(i + 1, 8, 1, 3)
             .setValues([[knocks.wanted, knocks.json, knocks.hours]]);
-          // Both knocks approval columns are ours; clear them, because the
-          // office is asking for somewhere different than was signed off.
-          sh.getRange(i + 1, 11, 1, 2).setValues([['', '']]);
+          if (!sameRoomsKn) {
+            sh.getRange(i + 1, 11, 1, 2).setValues([['', '']]);
+          }
         }
         return;
       }
