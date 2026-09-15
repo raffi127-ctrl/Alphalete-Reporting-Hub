@@ -731,8 +731,16 @@ def notify_pending(*, send: bool = False, book=None, log=print) -> List[Dict]:
     Told ONCE per request. Keyed on what they actually asked for, so a changed
     answer is a new thing worth a second message and an unchanged one is not.
     """
-    pending = pending_requests(book) + [
-        dict(r, knocks=True) for r in pending_knocks(book)]
+    # AN ALERTS REQUEST FROM AN OFFICE WITH NO SARAPLUS IS NOT A REQUEST. Box,
+    # Energy Wells and NDS have no credit checks and no sales, so the form
+    # never asks them where those should post -- yet this told Megan that
+    # "carlos hidalgo (carlos) asked for their credit-check alerts in Not sure
+    # yet" and handed her a command that cannot do anything (2026-09-15).
+    # Chasing an approval that does not exist is how the real ones get skimmed
+    # past.
+    alerts = [r for r in pending_requests(book)
+              if _campaign_has_alerts(r.get("office", ""))]
+    pending = alerts + [dict(r, knocks=True) for r in pending_knocks(book)]
     if not pending:
         return []
 
@@ -911,6 +919,21 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
 
 SIGNUPS_SEEN_PATH = (Path.home() / ".config" / "recruiting-report"
                      / "icd_alerts_signups_seen.json")
+
+
+def _campaign_has_alerts(office_key: str) -> bool:
+    """Does this office's campaign produce credit checks and sales at all?
+
+    Unknown counts as YES: an office we cannot place should still be chased
+    rather than silently dropped off the list.
+    """
+    try:
+        from automations.icd_signup import store as _st
+        from automations.icd_signup.schema import uses_saraplus
+        rec = _st.get((office_key or "").strip().lower())
+        return uses_saraplus(rec.campaign) if rec else True
+    except Exception:  # noqa: BLE001
+        return True
 
 
 def notify_new_signups(*, send: bool = False, book=None, log=print) -> List:

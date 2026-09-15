@@ -236,3 +236,27 @@ class ChangingCadenceMustNotUnapproveAnOffice(unittest.TestCase):
         import inspect
         doc = inspect.getdoc(P.set_knocks_cadence) or ""
         self.assertIn("OUR COLUMN ONLY", doc)
+
+
+class WeDoNotChaseAnApprovalThatCannotExist(unittest.TestCase):
+    """Box, Energy Wells and NDS have no SaraPlus, so the form never asks them
+    where credit checks should post. The pending notice told Megan that
+    "carlos hidalgo (carlos) asked for their credit-check alerts in Not sure
+    yet" and handed her a command that cannot do anything. Chasing approvals
+    that do not exist is how the real ones get skimmed past."""
+
+    def test_a_box_office_is_not_chased_for_alerts(self):
+        self.assertFalse(P._campaign_has_alerts("carlos"))
+        self.assertFalse(P._campaign_has_alerts("ryan"))
+
+    def test_an_att_campaign_still_is(self):
+        self.assertTrue(P._campaign_has_alerts("carlos-b2batt"))
+
+    def test_an_office_we_cannot_place_is_still_chased(self):
+        # Dropping it silently would be the worse failure.
+        self.assertTrue(P._campaign_has_alerts("nobody-we-know"))
+
+    def test_the_filter_is_applied(self):
+        import inspect
+        src = inspect.getsource(P.notify_pending)
+        self.assertIn("_campaign_has_alerts", src)
