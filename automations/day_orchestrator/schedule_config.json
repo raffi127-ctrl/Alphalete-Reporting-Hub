@@ -2282,6 +2282,25 @@
       "depends_on": [],
       "verify": null
     },
+    "probe_quantum_views": {
+      "on_scheduler": true,
+      "_note": "MANUAL, READ-ONLY: `lucy rerun probe_quantum_views --inspect` lists every view of the AT&T Quantum Fiber Sales Tracker workbook (RES-LumenSalesTrackervMZ) via the vizportal API, scrapes each view's Download → Data grid and prints its columns + the rows matching --needle (default padilla / azul = the Angel Padilla tab, ex-Shealey Miller). Question it answers (Eve 2026-09-14): does any Quantum view give the Office Metrics by WEEK, or only 30-day rolling? Writes no Sheet, sends nothing, own browser profile. Read the result with `lucy logtail rerun probe_quantum_views 400`. weekdays [] = manual only.",
+      "display_name": "Probe Quantum Fiber views",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report.probe_quantum_views"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "timeout_minutes": 40,
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "install_leaders_call_agent": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun install_leaders_call_agent` (re)installs the weekly Leader's Call launchd job (com.alphalete.leaders-call-mon, Mon 10:00am CST). The 7/10 reboot dropped it (the schedule-guard only reloads jobs that are ALREADY loaded), so it silently missed Mon 7/13 \u2014 reinstalling reloads it now AND makes it auto-load on future logins. weekdays [] = manual only.",
