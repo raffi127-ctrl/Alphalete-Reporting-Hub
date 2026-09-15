@@ -200,13 +200,18 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         why = campaign_guard.check(getattr(office, "campaign", "") or "", raw)
         if why:
             log("%-10s NOT DRAWN — %s" % (key, why))
-            try:
-                from automations.icd_alerts import post as _P
-                _P._slack(O.OPS_CHANNEL,
-                          ":rotating_light: *%s* — knocks board withheld.\n> %s"
-                          % (office.label, why))
-            except Exception:  # noqa: BLE001
-                pass
+            if not _said_already("withheld", key, day, why):
+                try:
+                    from automations.icd_alerts import post as _P
+                    # THE OFFICE KEY, not just the label. Two campaigns on one
+                    # machine share a label -- "carlos's Local Office" was
+                    # posted for both, and nobody reading it could tell which
+                    # one was withheld.
+                    _P._slack(O.OPS_CHANNEL,
+                              ":rotating_light: *%s* (`%s`) — knocks board "
+                              "withheld.\n> %s" % (office.label, key, why))
+                except Exception:  # noqa: BLE001
+                    pass
             continue
 
         boards, shape = _render(office, rows_for_board, day, now)
@@ -220,7 +225,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         comment = _comment(office, rows_for_board, now)
         for d in due:
             try:
-                if P.is_text_dest(d["channel_id"]):
+                if P.is_text_dest(d["channel_id"]) and not _said_already(
+                        "text", key, day, "%s|%s" % (where, type(e).__name__)):
                     _text(P.text_group_of(d["channel_id"]), boards, comment)
                 else:
                     _upload(d["channel_id"], boards, comment)
@@ -252,6 +258,39 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
     if not send:
         log("\nDRY RUN -- nothing posted and nothing recorded.")
     return {"posted": posted_total}
+
+
+def _said_already(kind: str, key: str, day: dt.date, detail: str) -> bool:
+    """Has this exact complaint already gone to the channel today?
+
+    THE POSTER RUNS EVERY TWO MINUTES. An alert with no memory is not an
+    alert, it is a flood: one withheld board put the same paragraph into
+    #claudecorrections dozens of times on 2026-09-15 and buried everything
+    else in the channel. Keyed on the DETAIL as well as the office, so a
+    second, different problem still gets through.
+
+    Best effort -- failing to remember must never stop the work.
+    """
+    import hashlib
+    try:
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        path = OUT_DIR / ".said.json"
+        try:
+            seen = json.loads(path.read_text())
+        except (OSError, ValueError):
+            seen = {}
+        stamp = "%s|%s|%s|%s" % (
+            kind, key, day.isoformat(),
+            hashlib.sha1(detail.encode("utf-8", "replace")).hexdigest()[:12])
+        if seen.get(stamp):
+            return True
+        # Yesterday's entries are not worth carrying.
+        seen = {k: v for k, v in seen.items() if day.isoformat() in k}
+        seen[stamp] = True
+        path.write_text(json.dumps(seen))
+        return False
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime):

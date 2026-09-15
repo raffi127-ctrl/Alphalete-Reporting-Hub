@@ -106,3 +106,54 @@ class RunSurvivesAnEmptyDay(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnAlertWithNoMemoryIsAFlood(unittest.TestCase):
+    """The poster runs every two minutes. One withheld board put the same
+    paragraph into #claudecorrections dozens of times on 2026-09-15 and buried
+    everything else in the channel."""
+
+    def setUp(self):
+        import tempfile, datetime as dt
+        from automations.icd_alerts import knocks_post as KP
+        self.KP = KP
+        self.day = dt.date(2026, 9, 15)
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self._orig = KP.OUT_DIR
+        KP.OUT_DIR = self.tmp
+
+    def tearDown(self):
+        self.KP.OUT_DIR = self._orig
+
+    def test_the_same_complaint_is_said_once(self):
+        first = self.KP._said_already("withheld", "carlos", self.day, "pin")
+        second = self.KP._said_already("withheld", "carlos", self.day, "pin")
+        third = self.KP._said_already("withheld", "carlos", self.day, "pin")
+        self.assertFalse(first, "the first one must get through")
+        self.assertTrue(second)
+        self.assertTrue(third)
+
+    def test_a_different_problem_still_gets_through(self):
+        self.KP._said_already("withheld", "carlos", self.day, "pin")
+        self.assertFalse(
+            self.KP._said_already("withheld", "carlos", self.day, "something else"),
+            "a second, different problem was swallowed")
+
+    def test_another_office_is_not_silenced(self):
+        self.KP._said_already("withheld", "carlos", self.day, "pin")
+        self.assertFalse(
+            self.KP._said_already("withheld", "ryan", self.day, "pin"))
+
+    def test_tomorrow_says_it_again(self):
+        import datetime as dt
+        self.KP._said_already("withheld", "carlos", self.day, "pin")
+        self.assertFalse(self.KP._said_already(
+            "withheld", "carlos", self.day + dt.timedelta(days=1), "pin"))
+
+    def test_the_office_key_is_in_the_alert(self):
+        import inspect
+        src = inspect.getsource(self.KP.run)
+        i = src.index("knocks board ")
+        self.assertIn("`%s`", src[max(0, i - 400):i + 200],
+                      "two campaigns on one machine share a label, so the "
+                      "alert cannot say which was withheld")
