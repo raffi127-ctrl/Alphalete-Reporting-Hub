@@ -35,8 +35,13 @@ INSTALL = "curl -fsSL %s/install.sh | bash -s -- %%s" % RAW
 # Nobody noticed, because an office that never updates looks exactly like an
 # office that did. A link is meant to be tapped and the page carries a copy
 # button, so no part of the command has to survive being pasted.
+# /update.html, NOT /?update=1. A messaged link is previewed by fetching the
+# page WITHOUT its query string, so the query-string form advertised itself as
+# "Set up Lucy ECOsystem" -- and an office that had already installed read
+# that as another setup command and pasted the URL into Terminal (Cyrus,
+# 2026-09-15). This address previews as "Update Lucy".
 UPDATE_PAGE = ("https://raffi127-ctrl.github.io/"
-               "Alphalete-Reporting-Hub/?update=1")
+               "Alphalete-Reporting-Hub/update.html")
 UPDATE = "curl -fsSL %s/update.sh | bash" % RAW
 
 

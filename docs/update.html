@@ -1,0 +1,26 @@
+<title>Update Lucy</title>
+<meta name="description" content="One line to update Lucy Reports on this computer.">
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         margin: 0; padding: 48px 22px; text-align: center; }
+  .wrap { max-width: 34rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .4rem; }
+  p { opacity: .75; margin: 0 0 1.6rem; }
+  a.go { display: inline-block; padding: 14px 26px; border-radius: 10px;
+         background: #B4975A; color: #fff; text-decoration: none; font-weight: 600; }
+</style>
+<div class="wrap">
+  <h1>Update Lucy</h1>
+  <p>Taking you to the update page&#8230;</p>
+  <a class="go" href="./?update=1">Continue</a>
+</div>
+<script>
+  // ITS OWN ADDRESS, PURELY SO THE LINK PREVIEW IS HONEST. A messaged link is
+  // previewed by fetching the page WITHOUT its query string, so
+  // "/?update=1" advertised itself as "Set up Lucy ECOsystem" -- and an
+  // office that had already installed read that as another setup command and
+  // pasted the URL straight into Terminal (Cyrus, 2026-09-15). The title of
+  // this file is what the preview shows.
+  location.replace("./?update=1");
+</script>
