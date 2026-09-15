@@ -84,3 +84,40 @@ class OnlyARoomChangeUnapproves(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheKnocksHandOverCarriesTheRequestToo(unittest.TestCase):
+    """An office with no SaraPlus never sends a credit-check payload, so the
+    knocks call is the ONLY one it ever makes. The request fields rode only on
+    the credit-check payload, which meant the offices whose entire product is
+    the board were the ones that never told us where to put it.
+
+    Carlos relayed all day on 2026-09-15 into an Office Channels row with no
+    destinations and no OwnerVille name -- and the Apps Script fix that was
+    supposed to record them was inert, because nothing was being sent.
+    """
+
+    REC = {"office_key": "carlos", "relay_key": "k", "owner": "carlos hidalgo",
+           "ov_name": "grand prairie", "requested_channels": [],
+           "requested_knocks_destinations": [
+               {"channel": "C07J46MQNUX", "cadence_min": 60,
+                "label": "Once an hour"}]}
+
+    def test_the_fields_are_added(self):
+        from automations.icd_alerts import relay as R
+        body = {}
+        R._add_requests(body, self.REC)
+        for k in ("requested_knocks_destinations", "ov_name", "owner"):
+            self.assertIn(k, body)
+
+    def test_send_knocks_calls_it(self):
+        import inspect
+        from automations.icd_alerts import relay as R
+        self.assertIn("_add_requests", inspect.getsource(R.send_knocks),
+                      "the knocks hand-over still leaves the office's own "
+                      "answers off the only call it makes")
+
+    def test_the_records_payload_still_does(self):
+        import inspect
+        from automations.icd_alerts import relay as R
+        self.assertIn("_add_requests", inspect.getsource(R.payload))

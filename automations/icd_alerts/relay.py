@@ -290,6 +290,20 @@ def payload(records: Dict[str, int], day: dt.date,
     # channel both; asking for one and making them come back for the second is
     # a worse conversation than asking once. An empty list is a real answer --
     # "I am not sure, ask me" -- and differs from never having been asked.
+    _add_requests(body, rec)
+    return body
+
+
+def _add_requests(body: Dict, rec: Dict) -> Dict:
+    """The office's own answers -- where their board goes, how they are spelled.
+
+    SENT ON EVERY HAND-OVER, INCLUDING THE KNOCKS ONE. It used to ride only on
+    the credit-check payload, and a Box, Energy Wells or NDS office never
+    sends one of those -- it has no SaraPlus. So the offices whose ONLY
+    product is the board were the ones that never told us where to put it.
+    Carlos relayed all day on 2026-09-15 into an Office Channels row that had
+    no destinations and no OwnerVille name.
+    """
     if rec.get("requested_channels") is not None:
         body["requested_channels"] = rec["requested_channels"]
     # What they asked for on the knocks report. Same rule: a request, decided
@@ -390,6 +404,10 @@ def send_knocks(rows, day: Optional[dt.date] = None, *, time_tracker=None,
         "agent": AGENT_VERSION,
         "local_time": dt.datetime.now().isoformat(timespec="seconds"),
     }
+    # THE SAME ANSWERS RIDE HERE TOO. For an office with no SaraPlus this is
+    # the only call it ever makes, so leaving them off the knocks hand-over
+    # meant its request reached us on no call at all.
+    _add_requests(body, rec)
 
     payload_json = json.dumps(body)
     if len(json.dumps(rows)) > MAX_KNOCKS_CHARS:
