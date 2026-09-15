@@ -452,7 +452,7 @@ class TheFixIsDifferentForEachSystem(unittest.TestCase):
 
     def test_every_message_names_the_machine(self):
         for system in ("servicecloud", "saraplus", "ownerville"):
-            self.assertIn("office computer running Lucy", self._msg(system),
+            self.assertIn("office computer running LucyECO", self._msg(system),
                           "%s does not say WHERE, so they would sign in "
                           "somewhere Lucy cannot see" % system)
 

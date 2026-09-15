@@ -759,8 +759,8 @@ SIGNIN_ASK = (
     ":lock: *%s — Lucy cannot sign into %s.*\n"
     "%s stopped updating at %s. Nothing is lost — the numbers are still "
     "there, we just cannot see them.\n\n"
-    "*This has to be done on the office computer running Lucy* — the same one "
-    "you set up. %s\n\n"
+    "*This has to be done on the office computer running LucyECO* — the same "
+    "one you set up. %s\n\n"
     "%s")
 
 SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/"
