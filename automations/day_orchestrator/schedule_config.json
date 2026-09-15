@@ -204,13 +204,14 @@
         "automations.day_orchestrator.imessage_identity_probe"
       ],
       "base_args": [
-        "--chat",
-        "any;+;da1e42ef23df4ff1bb67c6e3b1d10773"
+        "--group",
+        "Admin Staff",
+        "--send"
       ],
       "cadence": {
         "weekdays": []
       },
-      "_note": "MANUAL ONLY (weekdays [] = never scheduled). Answers two questions about THIS machine that a terminal test cannot: (1) does the ORCHESTRATOR identity hold the control-Messages grant \u2014 Lucy 3 passed deploy/text_consent_check.sh on 2026-09-15 from a terminal, which grants Terminal and says nothing about the identity scheduled sends run under; (2) does a PICTURE send, which goes down a different AppleScript path from a string. Default target is the 'Admin Staff' chat, deliberately not Alphalete Partners \u2014 a probe should not land in front of the partners. Exit 0 is NOT delivery: an unconsented send blocks ~5 minutes on a dialog nobody clicks, and a chat id matching nothing returns cleanly having sent nothing. Somebody has to look at the chat.",
+      "_note": "MANUAL ONLY (weekdays [] = never scheduled). Answers two questions about THIS machine that a terminal test cannot: (1) does the ORCHESTRATOR identity hold the control-Messages grant \u2014 Lucy 3 passed deploy/text_consent_check.sh on 2026-09-15 from a terminal, which grants Terminal and says nothing about the identity scheduled sends run under; (2) does a PICTURE send, which goes down a different AppleScript path from a string. Targets the 'Admin Staff' group BY NAME, deliberately not Alphalete Partners \u2014 a probe should not land in front of the partners. By name and never by a stored id: a group's chat id is regenerated when its membership changes and a stale one does not raise, which is how the Texas de Brazil texts went missing for weeks. Sends through b2b_dispositions.text_post, the same path production uses, so a pass here means the real sender works. Exit 0 is NOT delivery: an unconsented send blocks ~5 minutes on a dialog nobody clicks, and a chat id matching nothing returns cleanly having sent nothing. Somebody has to look at the chat.",
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
