@@ -927,6 +927,63 @@ def require_desktop() -> bool:
     return False
 
 
+def _report_setup_incomplete(blocking) -> None:
+    """Tell us an install finished without being able to work.
+
+    Carlos's did, and nobody would have known until somebody asked why his
+    board was empty. Best effort -- it must never turn a bad install into a
+    crash.
+    """
+    try:
+        report_fault("install", "setup finished but cannot report",
+                     "; ".join(blocking))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def install_problems(awake=None):
+    """What would stop this office reporting, in plain words. (blocking, notes)
+
+    ONE PLACE THAT DECIDES WHETHER AN INSTALL WORKED. Three separate failures
+    on 2026-09-15 each ended with "All set" over a machine that could not do
+    its job: a campaign branch that skipped the only login the office had, a
+    missing credentials file that read as "nothing to verify", and a sleep
+    setting nobody had checked. Each was patched where it was found, which is
+    exactly how the next one gets missed as well.
+
+    So the final message is derived from the machine's actual state rather
+    than from whichever failure somebody remembered to handle. Blocking means
+    this office cannot report anything; a note means part of it will not work
+    and the rest will.
+    """
+    blocking, notes = [], []
+    try:
+        from automations.icd_alerts import config as _C
+        sara = _C.uses_saraplus()
+    except Exception:  # noqa: BLE001 — assume the stricter case
+        sara = True
+
+    has_sara = (CONFIG_DIR / "saraplus-creds.json").exists()
+    has_ov = (CONFIG_DIR / "ownerville-creds.json").exists()
+
+    if sara and not has_sara:
+        blocking.append("no SaraPlus login is saved, so nothing can be read")
+    if not has_ov:
+        if sara:
+            notes.append("no OwnerVille login, so the knocks board will not "
+                         "post -- credit checks and sales still will")
+        else:
+            # The whole product for Box, Energy Wells and NDS.
+            blocking.append("no OwnerVille login is saved, and it is the only "
+                            "one this office has -- nothing can be read at all")
+    if not (CONFIG_DIR / "install.json").exists():
+        blocking.append("this office's settings were never written")
+    if awake and not awake.get("never_sleeps"):
+        notes.append("this computer can still go to sleep, and everything "
+                     "stops while it does")
+    return blocking, notes
+
+
 def main() -> int:
     banner()
     seed_install_json()
@@ -1011,21 +1068,31 @@ def main() -> int:
                         "stop while it does. Please set it to never sleep in "
                         "System Settings > Lock Screen, or ask whoever looks "
                         "after your computers.\n\n")
-        done = ("All set — you do not need to do anything else.\n\n"
-                + leave_on +
-                "The reporting team will confirm which Slack channel your "
-                "alerts go to, and they will start appearing there.\n\n"
-                "You can close the window behind this box.")
+        blocking, notes = install_problems(awake)
         if not ov_ok and (CONFIG_DIR / "ownerville-creds.json").exists():
-            # Say which half is short, and say it is not fatal. "All set" over
-            # a broken knocks login is how an office waits a week for a board
-            # that was never coming.
-            done = ("Your credit-check alerts are all set.\n\n"
-                    "The OwnerVille login did not work, so your knocks and "
-                    "dispositions board will not post yet. Everything else is "
-                    "running.\n\nOpen this installer again when you have the "
-                    "right OwnerVille password, or tell the reporting team.")
-        say("  %s%sAll set.%s" % (BOLD, GOLD, OFF))
+            notes.append("the OwnerVille login did not work, so the knocks "
+                         "board will not post yet")
+        if blocking:
+            # NOT "ALL SET". This office cannot report anything, and telling
+            # them otherwise is how one waits a week for a board that was
+            # never coming.
+            done = ("Setup finished, but this office cannot report yet:\n\n"
+                    + "\n".join("  - " + b for b in blocking)
+                    + "\n\nRun the installer again and it will ask for what "
+                      "is missing. The reporting team has been told.")
+            say("  %s%sNot finished — %s%s"
+                % (BOLD, RED, "; ".join(blocking), OFF))
+            _report_setup_incomplete(blocking)
+        else:
+            done = ("All set — you do not need to do anything else.\n\n"
+                    + leave_on +
+                    "The reporting team will confirm which Slack channel your "
+                    "alerts go to, and they will start appearing there.\n\n"
+                    "You can close the window behind this box.")
+            if notes:
+                done += "\n\nWorth knowing:\n" + "\n".join(
+                    "  - " + n for n in notes)
+            say("  %s%sAll set.%s" % (BOLD, GOLD, OFF))
     else:
         done = ("Everything is installed, but signing in to SaraPlus did not "
                 "work.\n\nIf it was a typo, just open this installer again "

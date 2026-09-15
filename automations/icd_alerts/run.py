@@ -226,8 +226,14 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
     campaign is its own reporting unit -- its own relay key, its own channels,
     its own board. So each gets its own pinned read.
 
-    Quiet when no OwnerVille login is saved: the knocks board is optional, and
-    an office that never gave us one has not failed at anything.
+    QUIET ONLY WHERE QUIET IS HONEST. A missing OwnerVille login is a skipped
+    extra for an AT&T office, whose credit checks and sales carry on without
+    it. For a Box, Energy Wells or NDS office the board is the ENTIRE product,
+    so the same missing file means this machine can never report anything --
+    and logging that to a file on their desk is how it stays unnoticed. Carlos
+    was installed without an OwnerVille login on 2026-09-15 and his machine
+    would have ticked every two minutes, said this to nobody, and relayed
+    nothing for as long as it took someone to ask.
 
     ONE CAMPAIGN FAILING DOES NOT COST THE OTHERS. They are separate reads of
     separate grids; a pin that will not take on one says nothing about the
@@ -235,6 +241,15 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
     """
     if not C.OV_CREDS_PATH.exists():
         _log("no OwnerVille login saved — skipping knocks")
+        if not C.uses_saraplus():
+            # Nothing else on this machine reports anything, so this is an
+            # outage, not a skipped extra. report_fault de-duplicates by
+            # (office, stage, summary), so this is one row and one Slack
+            # thread however many ticks run before somebody fixes it.
+            _report("knocks", RuntimeError(
+                "no OwnerVille login is saved on this computer, and this "
+                "office has no SaraPlus — so nothing can be read or reported "
+                "at all. The install needs to be run again."))
         return 0
 
     rows_of = C.enrollments() or [{}]
