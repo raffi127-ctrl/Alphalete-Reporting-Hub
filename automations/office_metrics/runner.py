@@ -924,6 +924,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                          "boards and do nothing else. For when the metrics were "
                          "fine and only the send failed — no Tableau pull, no "
                          "Sheet write, seconds instead of minutes.")
+    ap.add_argument("--email-to", default=None,
+                    help="EMAIL-ONLY OFFICES: send this run's digest to these "
+                         "address(es) INSTEAD of the office's own — a REVIEW "
+                         "copy. The office's owner is not mailed. Use it to see "
+                         "a new office's first email before a customer does; "
+                         "--channel is the Slack equivalent.")
     ap.add_argument("--channel", default=None,
                     help="override the destination (channel/DM id, or a comma-"
                          "separated list of user ids for a review group-DM).")
@@ -1070,6 +1076,23 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         print(f"✗ {res.get('reason', 'send failed')}")
         return 1
 
+    # REVIEW COPY. A live run is the only thing that builds an email — the
+    # capture and the send are both gated on `mode == "live"` — so "let me see it
+    # before the customer does" had no answer except mailing the customer. This
+    # redirects the digest and NOTHING else: every board still pulls, renders and
+    # fills the office's Sheet exactly as a real run does.
+    review_to = [a.strip() for a in (args.email_to or "").replace(";", ",").split(",")
+                 if a.strip()]
+    if review_to:
+        if not o.emails_only:
+            print(f"--email-to is for email-only offices; {o.key} posts to "
+                  f"{o.channel_name}. Use --channel instead.")
+            return 2
+        _bad = [a for a in review_to if "@" not in a]
+        if _bad:
+            print(f"--email-to: not an email address: {', '.join(_bad)}")
+            return 2
+
     _full = metrics_for(o)          # every board this office CAN post (pre-override)
     # Per-office section control. A committed SECTION_OVERRIDES entry pins exactly
     # which boards this office posts and WINS over enrollment; an EMPTY entry means
@@ -1128,8 +1151,11 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     # left it reading "→  ()" — a destination of nothing, on the one line that
     # exists to show the destination.
     if o.emails_only:
+        _dest_banner = ("REVIEW COPY → " + ", ".join(review_to)
+                        + f"  (NOT {', '.join(o.email_to)})"
+                        if review_to else dest_name_email(o))
         print(f"=== {o.label} daily metrics — owner={o.owner!r} → "
-              f"{dest_name_email(o)} — {mode.upper()} ===")
+              f"{_dest_banner} — {mode.upper()} ===")
     else:
         print(f"=== {o.label} daily metrics — owner={o.owner!r} → {_dest} "
               f"({target_chan}) — {mode.upper()} ===")
@@ -1444,12 +1470,19 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     if o.emails_only and mode == "live":
         from automations.office_metrics import email_digest as _digest
         try:
-            _res = _digest.send_for_office(o)
+            _res = _digest.send_for_office(o, to=review_to or None)
         except Exception as e:                  # noqa: BLE001
             _res = {"ok": False, "reason": f"{type(e).__name__}: {e}"}
         if _res.get("ok"):
-            email_note = (f"emailed to {', '.join(o.email_to)} "
-                          f"({_res.get('boards', 0)} board(s))")
+            # A review copy must never read as the office's day being delivered
+            # — the owner got nothing [[feedback_green_means_delivered]].
+            email_note = (
+                (f"REVIEW COPY emailed to {', '.join(review_to)} "
+                 f"({_res.get('boards', 0)} board(s)) — {', '.join(o.email_to)} "
+                 f"was NOT mailed")
+                if review_to else
+                (f"emailed to {', '.join(o.email_to)} "
+                 f"({_res.get('boards', 0)} board(s))"))
             print(f"\n  ✉️  {email_note}")
         else:
             # The boards exist on disk; only the send failed. Say that, because
@@ -1481,7 +1514,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         label for _c, _s, label, ok, _ in results
         if ok and label not in set(l for _c2, _s2, l, o2, _n2 in results if not o2)))
 
-    _dest_desc = (("email: " + ", ".join(o.email_to)) if o.emails_only else
+    # The manifest note is what the Hub row and the alert print. A review copy
+    # has to say so there too, or today reads as delivered to an owner who got
+    # nothing [[feedback_green_means_delivered]].
+    _dest_desc = (("REVIEW COPY to " + ", ".join(review_to)
+                   + f" (NOT {', '.join(o.email_to)})") if review_to else
+                  ("email: " + ", ".join(o.email_to)) if o.emails_only else
                   (f"{len(destinations)} channels" if len(destinations) > 1
                    else _office_channels_label(o)))
     # A blocked channel is THE headline: without it the note reads "0/4
