@@ -479,3 +479,36 @@ class TheFixIsDifferentForEachSystem(unittest.TestCase):
         again = self.P.ask_office_to_sign_in("ryan", system="saraplus",
                                              send=False, log=lambda *_: None)
         self.assertFalse(again)
+
+
+class MissingContractDataIsASale(unittest.TestCase):
+    """Ryan's list said "Missing Documents". No such status exists -- the real
+    one is "Missing Contract Data", and Megan confirmed they are the same
+    thing (2026-09-15).
+
+    It reads like a sale for the same reason "Submitted to supplier" does: the
+    deal is done and the paperwork is outstanding.
+    """
+
+    def test_the_real_status_counts(self):
+        self.assertTrue(SC.is_completed("Missing Contract Data"))
+
+    def test_the_name_he_used_still_counts(self):
+        # Kept so it survives Box renaming it back.
+        self.assertTrue(SC.is_completed("Missing Documents"))
+
+    def test_it_is_not_also_counted_as_dead(self):
+        self.assertTrue(SC.is_logged("Missing Contract Data"))
+
+    def test_nothing_is_left_unruled(self):
+        live = ["Accepted by Supplier", "Submitted to Supplier", "TPV Passed",
+                "Missing Contract Data", "Awaiting Signature", "PDF Generated",
+                "TPV Sent", "Cancelled by Broker", "Rejected By Supplier",
+                "Residential Rejection", "TPV Failed", "Credit Failed",
+                "Document Error", "Drop Finalized", "Dropped-Other"]
+        unruled = [s for s in live
+                   if not SC.is_completed(s) and not SC.is_presale(s)
+                   and s.lower() not in SC.KNOWN_NOT_COUNTED
+                   and s.lower() not in SC.NOT_LOGGED]
+        self.assertEqual(unruled, [],
+                         "a status nobody has ruled on is still in play")

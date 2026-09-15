@@ -127,8 +127,53 @@ PRESALE_STATUSES = frozenset({
 })
 
 
+# A SUBSTATUS IS A POSITION, NOT A LABEL. Megan 2026-09-15: "I think that the
+# statuses move so it would go from awaiting sig to one of the sale counts".
+# That is what the live counts say too -- Awaiting Signature shows up twice in
+# 400 contracts not because it is rare, but because nothing STAYS there.
+# Accepted by Supplier (132) and Cancelled by Broker (165) are where contracts
+# come to rest.
+#
+# SO "CURRENTLY AWAITING SIGNATURE" IS THE WRONG QUESTION. A rep who logs
+# three contracts in the morning and watches all three advance by lunch would
+# read as ZERO on a count of who is sitting at that step -- their whole
+# morning gone from the fast alert. What we want is what they LOGGED, which is
+# every contract that got at least as far as being real.
+#
+# DEFINED BY EXCLUSION ON PURPOSE. Listing the steps that count as "logged"
+# means knowing the pipeline order, and a step Box adds in the middle would
+# silently stop counting. Listing the ENDINGS that do not count is stable: a
+# contract is work-logged unless it failed, cancelled, was rejected or was
+# dropped.
+NOT_LOGGED = frozenset({
+    "cancelled by broker",
+    "cancelled by supplier",
+    "rejected by supplier",
+    "residential rejection",
+    "tpv failed",
+    "credit failed",
+    "document error",
+    "drop finalized",
+    "dropped-other",
+})
+
+
+def is_logged(status: str) -> bool:
+    """Did this contract get far enough to count as work done?
+
+    The credit-check equivalent: a rep put a real contract on the board, and
+    it has not since died. True for a sale as well -- a sale was logged first.
+    """
+    return (status or "").strip().lower() not in NOT_LOGGED
+
+
 def is_presale(status: str) -> bool:
-    """The credit-check equivalent: logged, not yet sold."""
+    """Sitting at the signature step RIGHT NOW.
+
+    Kept because it is a real thing to ask, but it is NOT what the fast alert
+    should count -- see is_logged(). A contract only rests here for as long as
+    a customer takes to sign.
+    """
     return (status or "").strip().lower() in PRESALE_STATUSES
 
 
@@ -150,6 +195,11 @@ COMPLETED_STATUSES = frozenset({
     # McSpadden: "No that should count my bad". Left out, it would have made
     # every Box office's sales read low with nothing on the board to say why.
     "accepted by supplier",
+    # CONFIRMED 2026-09-15. Ryan's list said "Missing Documents", which is not
+    # a status that exists; Megan confirmed it is this one. Both spellings are
+    # kept -- the one he said and the one the system says -- so it still
+    # counts if Box ever renames it back.
+    "missing contract data",
 })
 
 
