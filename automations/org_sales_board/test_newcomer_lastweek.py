@@ -128,23 +128,31 @@ class Plan(unittest.TestCase):
         self.assertNotIn(f"C{at['stack']}", {u["range"] for u in ups})
         self.assertTrue(any("not added to the stack" in n for n in notes))
 
-    def test_a_source_that_disagrees_with_the_frozen_rows_writes_nothing(self):
-        g, _ = _block(REPS)
+    def test_a_source_that_disagrees_with_the_frozen_rows_gives_zeros(self):
+        """Eve 2026-09-15: no readable last week = no sales = 0."""
+        g, at = _block(REPS)
         wrong = {n: {"Monday": k + 7} for n, k in REPS}
+        wrong["New Person"] = {"Monday": 99}
         ups, notes = _plan(g, _days(wrong))
-        self.assertEqual(ups, [])
-        self.assertTrue(any("do not match" in n for n in notes))
+        got = {u["range"]: u["values"][0][0] for u in ups}
+        self.assertEqual(got[f"K{at['totals'] - 1}"], 0)
+        self.assertEqual(set(got.values()), {0})
+        self.assertTrue(any("do not match" in n and "0" in n for n in notes))
 
-    def test_unknown_source_leaves_the_person_blank_and_named(self):
-        g, _ = _block(REPS)
+    def test_unknown_source_writes_zero_and_names_it(self):
+        """Samuel Acay: NDS had no readable last week — "cargale 0"."""
+        g, at = _block(REPS)
 
         def days_of(name):
             if name == "New Person":
-                return None, "its section(s) Retail NL have no last-week view"
-            return _days({n: {"Monday": k} for n, k in REPS})(name)
+                return N._no_sales(), "no last-week view for ATT NDS Team"
+            return _days({})(name)
         ups, notes = _plan(g, days_of)
-        self.assertEqual(ups, [])
-        self.assertTrue(any("Retail NL" in n and "left blank" in n for n in notes))
+        got = {u["range"]: u["values"][0][0] for u in ups}
+        self.assertEqual(got[f"K{at['totals'] - 1}"], 0)
+        self.assertEqual(got[f"G{at['drow']}"], 0)
+        self.assertNotIn(f"K{at['totals']}", got)
+        self.assertTrue(any("ATT NDS Team" in n and "(0)" in n for n in notes))
 
     def test_a_total_that_is_not_a_number_refuses(self):
         g, at = _block(REPS)

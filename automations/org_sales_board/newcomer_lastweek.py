@@ -47,8 +47,15 @@ Absent from a view that DID render = 0: these crosstabs omit zero rows.
 
 IT CHECKS BEFORE IT TRUSTS. Every row that already has last week frozen is a
 known answer; the pull has to agree with them (<= 10% disagreeing, >= 5 rows
-checked) or nothing is written for that section. A totals cell that is not a
-number refuses the board's writes. Idempotent: only empty cells are filled, so a
+checked) or its numbers are not used. A totals cell that is not a number
+refuses the board's writes.
+
+NO READABLE LAST WEEK = NO SALES = 0 (Eve 2026-09-15). The NDS view cannot be
+pinned to an old week and has no '(LW2)' worksheet, so Samuel Acay's last week
+could not be read at all. Eve: "cargale 0, debe ser que no tiene ventas, ponelo
+como regla". So a section with no view, a view that failed, or one that does not
+match the frozen rows gives the newcomer a literal 0 — never a blank — and the
+log says why. A 0 moves no total. Idempotent: only empty cells are filled, so a
 second run finds nothing and opens no browser.
 
     python -m automations.org_sales_board.newcomer_lastweek            # dry-run
@@ -270,6 +277,10 @@ def calibrate(filled, days_of: Callable[[str], Optional[Dict[str, int]]]
     return checked, bad
 
 
+def _no_sales(_name: str = "") -> Dict[str, int]:
+    return {d: 0 for d in WEEKDAYS}
+
+
 def trusted(checked: int, bad: List[str]) -> bool:
     return (checked >= MIN_CALIBRATION_ROWS
             and len(bad) / checked <= MAX_DISAGREE_SHARE)
@@ -373,23 +384,26 @@ def plan_org(grid, fgrid, pulls, failed, aliases, today: dt.date):
             continue
         who = ", ".join(dict.fromkeys(b.name for b in dblank + lblank))
         key = SECTION_SPECS.get(label)
+        reason = None
         if key is None:
-            notes.append(f"{label}: {who} — this section has no last-week view; "
-                         f"left blank")
-            continue
-        if key not in pulls:
-            notes.append(f"{label}: {who} — the {key} view "
-                         f"{'failed' if key in failed else 'was not pulled'}; "
-                         f"left blank")
-            continue
-        metric, parsed = pulls[key]
-        days_of = lambda n, p=parsed, m=metric: person_days(p, m, n, aliases)
-        checked, bad = calibrate(dfilled, days_of)
-        if not trusted(checked, bad):
-            notes.append(f"{label}: {who} — last week's view does not match the "
-                         f"rows already frozen ({len(bad)} of {checked}: "
-                         f"{'; '.join(bad[:3])}); nothing written")
-            continue
+            reason = "this section has no last-week view"
+        elif key not in pulls:
+            reason = (f"the {key} view "
+                      f"{'failed' if key in failed else 'was not pulled'}")
+        else:
+            metric, parsed = pulls[key]
+            days_of = lambda n, p=parsed, m=metric: person_days(p, m, n, aliases)
+            checked, bad = calibrate(dfilled, days_of)
+            if not trusted(checked, bad):
+                reason = (f"last week's view does not match the rows already "
+                          f"frozen ({len(bad)} of {checked}: {'; '.join(bad[:3])})")
+        if reason:
+            # NO SOURCE = NO SALES (Eve 2026-09-15, Samuel Acay: "cargale 0,
+            # debe ser que no tiene ventas, ponelo como regla"). Somebody new
+            # whose last week cannot be read is written as a literal 0 rather
+            # than left blank — and said so, loudly, in the log.
+            days_of = _no_sales
+            notes.append(f"{label}: {who} — {reason}; no sales assumed: 0")
         sec_adds: Dict[Tuple[int, int], float] = defaultdict(float)
         for b in dblank:
             days = days_of(b.name)
@@ -443,20 +457,23 @@ def plan_block(grid, fgrid, *, section: str, leaderboard: Optional[dict],
     if not names:
         return updates, notes
 
-    checked, bad = calibrate(dfilled, lambda n: days_of(n)[0])
+    # Only rows whose number is FULLY sourced can vouch for the source.
+    checked, bad = calibrate(
+        dfilled, lambda n: (lambda d, why: None if why else d)(*days_of(n)))
     if checked >= MIN_CALIBRATION_ROWS and not trusted(checked, bad):
         notes.append(f"{board}: last week's numbers do not match the rows already "
                      f"frozen ({len(bad)} of {checked}: {'; '.join(bad[:3])}); "
-                     f"nothing written for {', '.join(names)}")
-        return updates, notes
+                     f"no sales assumed: 0 for {', '.join(names)}")
+        days_of = lambda n: (_no_sales(), "")
 
     stack = stack_row(grid, anchor.totals_row, today) if anchor else None
     adds: Dict[Tuple[int, int], float] = defaultdict(float)
     for name in names:
         days, why = days_of(name)
         if days is None:
-            notes.append(f"{board} / {name}: {why}; left blank")
-            continue
+            days = _no_sales()
+        if why:
+            notes.append(f"{board} / {name}: {why}; counted as no sales (0)")
         tot = sum(days.values())
         mine = [b for b in dblank if b.name == name]
         for b in mine:
@@ -505,17 +522,19 @@ def plan_allcamp(grid, fgrid, org_grid, pulls, failed, aliases, today: dt.date):
         cands = fs._candidates_for(name, aliases)
         secs = [l for l, forms in members.items() if any(f & cands for f in forms)]
         if not secs:
-            return None, "not on any ORG campaign section"
+            return _no_sales(), "not on any ORG campaign section"
+        # A section with no readable last week counts as no sales there (Eve
+        # 2026-09-15) — the sourced ones still add their real numbers.
         unsourced = [l for l in secs if SECTION_SPECS.get(l) not in pulls]
-        if unsourced:
-            return None, (f"its section(s) {', '.join(unsourced)} have no "
-                          f"last-week view")
         out = {d: 0 for d in WEEKDAYS}
         for l in secs:
+            if l in unsourced:
+                continue
             metric, parsed = pulls[SECTION_SPECS[l]]
             for d, v in person_days(parsed, metric, name, aliases).items():
                 out[d] += v
-        return out, ""
+        return out, (f"no last-week view for {', '.join(unsourced)}"
+                     if unsourced else "")
 
     try:
         lb = rj.find_leaderboard_block(grid)
@@ -684,19 +703,15 @@ def apply_country(ws=None, *, today: Optional[dt.date] = None,
         logfn("  Country: nobody new without last week — nothing to do")
         return []
     aliases = load_aliases()
+    reason = ""
     try:
         parsed = _session(page, lambda pg: cp.pull_icd_days(
             pg, OUT_DIR, last_week=True, today=today, logfn=logfn))
     except Exception as e:                                    # noqa: BLE001
-        logfn(f"  [!] Country: last week's worksheet could not be pulled "
-              f"({type(e).__name__}: {str(e)[:90]}) — left blank")
-        return []
-    ups, notes = [], []
-    try:
-        ups, notes = plan_block(
-            grid, fgrid, section=cf.BLOCK_LABEL, leaderboard=lb,
-            days_of=lambda n: (person_days(parsed, cp.SPEC.metric, n, aliases), ""),
-            today=today, board="Country")
+        parsed = None
+        reason = (f"last week's worksheet could not be pulled "
+                  f"({type(e).__name__}: {str(e)[:90]})")
+    if parsed is not None:
         # The Country view is NOT pinned (week_pin=False): its '(LW2)' sheet is
         # Tableau's previous calendar week. Only trust it when the frozen rows
         # can actually vouch for it — plan_block skips calibration below
@@ -706,8 +721,17 @@ def apply_country(ws=None, *, today: Optional[dt.date] = None,
         checked, bad = calibrate(
             dfilled, lambda n: person_days(parsed, cp.SPEC.metric, n, aliases))
         if not trusted(checked, bad):
-            ups, notes = [], [f"Country: '(LW2)' does not match the rows already "
-                              f"frozen ({len(bad)} of {checked}); nothing written"]
+            reason = (f"'(LW2)' does not match the rows already frozen "
+                      f"({len(bad)} of {checked})")
+    if reason:
+        logfn(f"  [!] Country: {reason} — no sales assumed: 0 (Eve 2026-09-15)")
+        days_of = lambda n: (_no_sales(), "")
+    else:
+        days_of = lambda n: (person_days(parsed, cp.SPEC.metric, n, aliases), "")
+    ups, notes = [], []
+    try:
+        ups, notes = plan_block(grid, fgrid, section=cf.BLOCK_LABEL, leaderboard=lb,
+                                days_of=days_of, today=today, board="Country")
     except Refuse as e:
         ups, notes = [], [f"Country: {e} — nothing written"]
     _write(ws, ups, notes, dry_run, logfn, "Country")
