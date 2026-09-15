@@ -46,21 +46,40 @@ class ASaleIsCountedOncePerContract(unittest.TestCase):
         self.assertEqual(B.tally(rows, DAY)["sales"], {})
 
 
-class AwaitingSignatureIsCountedSeparately(unittest.TestCase):
-    """It is the step BEFORE a sale. Folding it in would inflate a number
-    people are paid on with work that has not closed."""
+class WorkingCountsEveryLiveContract(unittest.TestCase):
+    """Megan 2026-09-15: the statuses MOVE, so a contract passes through the
+    signature step on its way to a sale.
 
-    def test_it_lands_in_records_not_sales(self):
+    "Working" is therefore every contract that has not died, and a sale is a
+    subset of it -- not the other half of it. Counting them as either/or made
+    a rep's working number FALL as their sales rose, and made the fast alert
+    count only whoever happened to be parked at one step this minute.
+    """
+
+    def test_a_live_contract_counts_as_working(self):
         out = B.tally([_row("Sohaib Hafeez", "Awaiting Signature")], DAY)
         self.assertEqual(out["records"], {"Sohaib Hafeez": 1})
         self.assertEqual(out["sales"], {})
 
-    def test_a_rep_can_have_both_in_one_day(self):
+    def test_a_sale_is_working_AND_sold(self):
+        out = B.tally([_row("Sohaib Hafeez", "TPV Passed")], DAY)
+        self.assertEqual(out["records"]["Sohaib Hafeez"], 1,
+                         "a sale stopped counting as work done")
+        self.assertEqual(out["sales"]["Sohaib Hafeez"]["Sales"], 1)
+
+    def test_a_dead_contract_counts_as_neither(self):
+        out = B.tally([_row("Sohaib Hafeez", "Cancelled by Broker")], DAY)
+        self.assertEqual(out["records"], {})
+        self.assertEqual(out["sales"], {})
+
+    def test_a_reps_day_adds_up(self):
         rows = [_row("Sohaib Hafeez", "Awaiting Signature"),
-                _row("Sohaib Hafeez", "Awaiting Signature"),
-                _row("Sohaib Hafeez", "TPV Passed", volume="10,099")]
+                _row("Sohaib Hafeez", "PDF Generated"),
+                _row("Sohaib Hafeez", "TPV Passed", volume="10,099"),
+                _row("Sohaib Hafeez", "Cancelled by Broker")]
         out = B.tally(rows, DAY)
-        self.assertEqual(out["records"]["Sohaib Hafeez"], 2)
+        self.assertEqual(out["records"]["Sohaib Hafeez"], 3,
+                         "three live contracts; the cancelled one is not work")
         self.assertEqual(out["sales"]["Sohaib Hafeez"],
                          {"Sales": 1, "Volume": 10099})
 
@@ -153,19 +172,28 @@ class AContractBecomesASaleAfterTheDayItWasSold(unittest.TestCase):
         self.assertEqual(out[self.TUE]["sales"], {},
                          "a Monday sale landed on Tuesday's board")
 
-    def test_rereading_moves_it_from_presale_to_sold_on_its_own_day(self):
+    def test_rereading_turns_working_into_sold_on_its_own_day(self):
         mon_row = _row("Max Allen", "Awaiting Signature",
                        when="09/14/2026 04:43 PM")
         first = B.tally_window([mon_row], [self.MON, self.TUE])
         self.assertEqual(first[self.MON]["records"]["Max Allen"], 1)
         self.assertEqual(first[self.MON]["sales"], {})
 
-        # Wednesday's read: same contract, status has moved on.
+        # Wednesday's read: same contract, status has moved on. It is still
+        # Monday's work AND now Monday's sale -- the working number must not
+        # drop because a contract advanced.
         mon_row["Contract Substatus"] = "TPV Passed"
         second = B.tally_window([mon_row], [self.MON, self.TUE])
         self.assertEqual(second[self.MON]["sales"]["Max Allen"]["Sales"], 1)
-        self.assertEqual(second[self.MON]["records"], {},
-                         "it is still counted as awaiting signature as well")
+        self.assertEqual(second[self.MON]["records"]["Max Allen"], 1)
+
+    def test_a_contract_that_dies_leaves_both_numbers(self):
+        # It was work on Monday and it is not any more.
+        row = _row("Max Allen", "Awaiting Signature", when="09/14/2026 04:43 PM")
+        row["Contract Substatus"] = "Cancelled by Broker"
+        out = B.tally_window([row], [self.MON, self.TUE])
+        self.assertEqual(out[self.MON]["records"], {})
+        self.assertEqual(out[self.MON]["sales"], {})
 
     def test_each_day_is_its_own_bucket(self):
         rows = [_row("Max Allen", "TPV Passed", when="09/14/2026 01:00 PM"),

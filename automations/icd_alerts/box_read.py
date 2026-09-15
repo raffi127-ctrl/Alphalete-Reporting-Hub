@@ -115,9 +115,13 @@ def tally_window(rows: List[Dict], days: List[dt.date]) -> Dict:
         seen_status.append(status)
         bucket = out[when]
 
-        if SC.is_presale(status):
+        # WORKING AND SOLD ARE NOT EXCLUSIVE. A sale was logged first, so it
+        # belongs in both -- "working" is every real contract, "sales" is the
+        # ones that closed. Counting them as either/or would make a rep's
+        # working number FALL as their sales rose.
+        if SC.is_logged(status):
             bucket["records"][rep] = bucket["records"].get(rep, 0) + 1
-        elif SC.is_completed(status):
+        if SC.is_completed(status):
             got = bucket["sales"].setdefault(rep, {"Sales": 0, "Volume": 0})
             got["Sales"] += 1
             got["Volume"] += _volume(row.get("Adjusted Annual Volume"))
@@ -153,9 +157,8 @@ def tally(rows: List[Dict], day: dt.date) -> Dict:
         status = str(row.get(SC.COL_SUBSTATUS) or "").strip()
         seen_status.append(status)
 
-        if SC.is_presale(status):
+        if SC.is_logged(status):
             records[rep] = records.get(rep, 0) + 1
-            continue
         if SC.is_completed(status):
             got = sales.setdefault(rep, {"Sales": 0, "Volume": 0})
             got["Sales"] += 1
