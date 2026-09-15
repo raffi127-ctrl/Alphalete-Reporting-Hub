@@ -240,7 +240,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         for d in due:
             try:
                 if P.is_text_dest(d["channel_id"]):
-                    _text(P.text_group_of(d["channel_id"]), boards, comment)
+                    _text(P.text_group_of(d["channel_id"]), boards,
+                          _gaps_text(office, rows_for_board, now))
                 else:
                     _upload(d["channel_id"], boards, comment)
                 posted_at[d["channel_id"]] = now
@@ -366,6 +367,65 @@ def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
                                                      _clock(now))
 
 
+def _gaps_text(office, rows: List[Dict], now: dt.datetime) -> str:
+    """The gap list Raf's texts carry, for an ICD's own reps.
+
+    Megan 2026-09-15, looking at Carlos's first text beside Raf's: "we're
+    missing this part on these texts though". A board photo on a phone is a
+    wall of small numbers; the list above it is the part somebody acts on, and
+    it is the whole reason these go out as texts rather than sitting in Slack.
+
+    BUILT FROM THE BOARD'S OWN ROWS, not a second read. Every rep's last knock
+    is already on the row being drawn, so the minutes are arithmetic we
+    already have -- and a separate pull could disagree with the picture
+    directly beneath it.
+
+    Formatted by gap_alerts.gap_text so an ICD's text and Raf's are the same
+    message: longest gap first, "min" not "minutes", the clock on whoever is
+    newly over.
+    """
+    try:
+        from automations.gap_alerts import config as gc
+        from automations.gap_alerts.run import gap_text
+    except Exception:  # noqa: BLE001 — a missing list must not cost the board
+        return ""
+
+    gaps = []
+    for r in rows:
+        name = str(r.get("Rep") or "").strip()
+        last = str(r.get("Last Knock") or "").strip()
+        if not name or not last:
+            continue
+        mins = _minutes_since(last, now)
+        if mins is not None and mins >= gc.GAP_THRESHOLD_MIN:
+            gaps.append({"name": name, "minutesSinceLastKnock": mins})
+    if not gaps:
+        # Nobody over the line is not an empty message -- it is no message.
+        return ""
+    text, _names = gap_text(gaps, previous=set(), first_of_day=True)
+    return text
+
+
+def _minutes_since(last_knock: str, now: dt.datetime):
+    """Minutes between a board's "Last Knock" cell and now, or None.
+
+    The cell is a wall clock in the OFFICE's own day ("2:47 PM"), so it is
+    read against the same `now` the board was drawn with -- which knocks_post
+    has already converted to that office's timezone.
+    """
+    for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M"):
+        try:
+            t = dt.datetime.strptime(last_knock.strip().upper(), fmt)
+        except ValueError:
+            continue
+        when = now.replace(hour=t.hour, minute=t.minute, second=0,
+                           microsecond=0)
+        if when > now:            # a clock that reads ahead is bad data
+            return None
+        return int((now - when).total_seconds() // 60)
+    return None
+
+
 def _can_text() -> bool:
     """Is THIS machine allowed to send iMessage?
 
@@ -381,7 +441,7 @@ def _can_text() -> bool:
         return False
 
 
-def _text(group: str, boards, comment: str) -> None:
+def _text(group: str, boards, caption: str = "") -> None:
     """The board to an iMessage group, through the sender production uses.
 
     NOT our own AppleScript. text_post knows two things this would otherwise
@@ -393,9 +453,21 @@ def _text(group: str, boards, comment: str) -> None:
     It raises on a name that matches nothing or more than one thing, which is
     what we want: texting an office's numbers into the wrong leaders' group is
     worse than not texting at all.
+
+    NOT THE SLACK HEADING (Megan 2026-09-15: "we dont need that intro text on
+    any texts - just the chart photo is fine"). In Slack that line earns its
+    place: it is what the channel preview shows and what dates the post. In a
+    group text the picture arrives whole, with the time already printed across
+    the top of the board, so the sentence above it is only something to scroll
+    past.
+
+    The caption it DOES carry is the gap list -- the part somebody acts on,
+    and the reason these go out as texts at all. send_to_group skips the text
+    message entirely when there is none, so a quiet stretch sends the board
+    alone rather than a header with nothing under it.
     """
     from automations.b2b_dispositions import text_post as tp
-    tp.send_to_group(group, comment, list(boards), dry_run=False)
+    tp.send_to_group(group, caption or "", list(boards), dry_run=False)
 
 
 def _upload(channel_id: str, boards, comment: str) -> None:

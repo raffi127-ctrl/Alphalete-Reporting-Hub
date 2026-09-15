@@ -295,3 +295,94 @@ class ATextFollowsTheBoardItCopies(unittest.TestCase):
         noon = dt.datetime(2026, 9, 15, 12, 0)
         self.assertTrue(KP.is_due({"cadence_min": 30}, None, noon),
                         "a destination that has never posted must be due")
+
+
+class ATextIsTheBoardAndNothingElse(unittest.TestCase):
+    """Megan 2026-09-15: "we dont need that intro text on any texts - just the
+    chart photo is fine".
+
+    In Slack the heading earns its place -- it is what the channel preview
+    shows and what dates the post. In a group text the picture arrives whole,
+    with the time already printed across the top of the board, so the sentence
+    above it is only something to scroll past.
+    """
+
+    def test_the_slack_heading_is_not_sent(self):
+        """Asserted the LITERAL `send_to_group(group, "")` for about ten
+        minutes, which was the implementation at the time and stopped being
+        true the moment the gap list became the caption. The rule is that the
+        Slack heading is not texted -- not that nothing is."""
+        import inspect
+        from automations.icd_alerts import knocks_post as KP
+        src = inspect.getsource(KP.run)
+        i = src.index("_text(P.text_group_of")
+        # THE _text CALL ONLY. A 200-character window ran past the `else:`
+        # into the Slack _upload(..., comment) beside it, so the assertion
+        # failed on the line it is meant to protect.
+        call = src[i:src.index("else:", i)]
+        self.assertNotIn("comment", call,
+                         "the Slack heading is still being texted")
+        self.assertIn("_gaps_text", call)
+
+    def test_slack_still_gets_its_comment(self):
+        import inspect
+        from automations.icd_alerts import knocks_post as KP
+        src = inspect.getsource(KP.run)
+        self.assertIn("_upload(d[\"channel_id\"], boards, comment)", src,
+                      "the Slack post lost its heading too")
+
+
+class TheTextCarriesTheGapList(unittest.TestCase):
+    """Megan 2026-09-15, seeing Carlos's first text beside Raf's: "we're
+    missing this part on these texts though".
+
+    A board photo on a phone is a wall of small numbers. The list above it is
+    the part somebody acts on, and it is the reason these go out as texts at
+    all rather than sitting in Slack.
+    """
+
+    def _now(self):
+        import datetime as dt
+        return dt.datetime(2026, 9, 15, 16, 0)
+
+    def test_reps_over_the_threshold_are_listed_longest_first(self):
+        from automations.icd_alerts import knocks_post as KP
+        rows = [{"Rep": "Short Gap", "Last Knock": "3:50 PM"},
+                {"Rep": "Long Gap", "Last Knock": "2:00 PM"},
+                {"Rep": "Middle Gap", "Last Knock": "3:20 PM"}]
+        txt = KP._gaps_text(None, rows, self._now())
+        self.assertIn("15 min of gaps", txt)
+        self.assertIn("Long Gap - 120 min", txt)
+        self.assertIn("Middle Gap - 40 min", txt)
+        # Under the line, so absent entirely.
+        self.assertNotIn("Short Gap", txt)
+        self.assertLess(txt.index("Long Gap"), txt.index("Middle Gap"))
+
+    def test_nobody_over_the_line_sends_no_text_at_all(self):
+        from automations.icd_alerts import knocks_post as KP
+        rows = [{"Rep": "Busy", "Last Knock": "3:55 PM"}]
+        self.assertEqual(KP._gaps_text(None, rows, self._now()), "",
+                         "a quiet stretch would send a header with nothing "
+                         "under it")
+
+    def test_a_missing_last_knock_is_skipped_not_guessed(self):
+        from automations.icd_alerts import knocks_post as KP
+        rows = [{"Rep": "No Data", "Last Knock": ""},
+                {"Rep": "Real", "Last Knock": "2:00 PM"}]
+        txt = KP._gaps_text(None, rows, self._now())
+        self.assertNotIn("No Data", txt)
+        self.assertIn("Real", txt)
+
+    def test_a_clock_reading_ahead_is_refused(self):
+        # Bad data must not produce a negative or enormous gap.
+        from automations.icd_alerts import knocks_post as KP
+        self.assertIsNone(KP._minutes_since("11:59 PM", self._now()))
+
+    def test_the_board_heading_is_not_the_caption(self):
+        import inspect
+        from automations.icd_alerts import knocks_post as KP
+        src = inspect.getsource(KP.run)
+        i = src.index("_text(P.text_group_of")
+        self.assertIn("_gaps_text", src[i:i + 200],
+                      "the text still carries the Slack heading instead of "
+                      "the gap list")
