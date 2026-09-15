@@ -386,3 +386,43 @@ class TheTextCarriesTheGapList(unittest.TestCase):
         self.assertIn("_gaps_text", src[i:i + 200],
                       "the text still carries the Slack heading instead of "
                       "the gap list")
+
+
+class TheGapListIsAutomaticForEveryTextOffice(unittest.TestCase):
+    """Megan 2026-09-15: "when someone enrolls in the knock texts we should
+    auto include those time gaps".
+
+    It is not a setting, a column, or a question on the form. Every office
+    that enrols for texts gets the gap list, because it is the half of the
+    message that is actionable -- and an office that had to ask for it is an
+    office that would be sent a board photo and nothing to do about it.
+    """
+
+    def test_no_per_office_flag_gates_it(self):
+        import inspect
+        from automations.icd_alerts import knocks_post as KP
+        src = inspect.getsource(KP.run)
+        i = src.index("_text(P.text_group_of")
+        call = src[i:src.index("else:", i)]
+        self.assertIn("_gaps_text", call)
+        # No conditional between the send and the gap list.
+        for gate in ("if ", "gaps_enabled", "wants_gaps", ".get(\"gaps\""):
+            self.assertNotIn(gate, call,
+                             "the gap list is behind a per-office condition")
+
+    def test_a_brand_new_office_gets_it_with_no_configuration(self):
+        import datetime as dt
+        from automations.icd_alerts import knocks_post as KP
+        # An office nobody has set anything up for.
+        rows = [{"Rep": "Someone", "Last Knock": "2:00 PM"}]
+        txt = KP._gaps_text(None, rows, dt.datetime(2026, 9, 15, 16, 0))
+        self.assertIn("15 min of gaps", txt)
+        self.assertIn("Someone - 120 min", txt)
+
+    def test_the_form_does_not_ask_about_it(self):
+        import pathlib
+        form = (pathlib.Path(__file__).resolve().parents[2]
+                / "icd_signup" / "app.py").read_text()
+        self.assertNotIn("gap", form.lower().split("selling hours")[0],
+                         "the form asks about gaps, which makes an automatic "
+                         "thing look optional")
