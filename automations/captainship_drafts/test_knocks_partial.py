@@ -944,11 +944,12 @@ class SummaryBoardSaysWhoseCaptainshipItIsAndLeadsWithChan(unittest.TestCase):
         self.assertEqual(rows["CAPTAINSHIP TOTALS"], "200")   # 100 + 100
 
     def test_both_call_sites_name_their_captain(self):
-        """The captainship report AND the night-knocks waves — a board that
-        went out unnamed from either one is the confusion Megan asked us to
-        end."""
+        """The captainship report names its captain on the summary board — a
+        board that went out unnamed is the confusion Megan asked us to end.
+        (The night-knocks mail stopped drawing a summary on 2026-09-15: each
+        office now gets only its own board, so it has no summary to name.)"""
         import inspect
         from automations.captainship_night_knocks import run as NK
         self.assertIn("captain=captain",
                       inspect.getsource(KD.capture_sections))
-        self.assertIn("captain=due.captain_key", inspect.getsource(NK.capture))
+        self.assertNotIn("render_daily_summary", inspect.getsource(NK.capture))

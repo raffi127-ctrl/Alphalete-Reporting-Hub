@@ -46,6 +46,11 @@ from automations.shared import board_email_html as _beh
 SAMPLE_RECIPIENTS: Tuple[str, ...] = ("raffi127@gmail.com",
                                       "eve@alphaletemarketing.com")
 
+# WHO HEARS ABOUT A FAILURE (a wave that did not go out, an office whose owner
+# got nothing). Eve only — Eve 2026-09-15: "no hace falta que a rafael le llegue
+# el aviso si algo pasa, que me llegue solo a mi".
+ALERT_RECIPIENTS: Tuple[str, ...] = ("eve@alphaletemarketing.com",)
+
 SUBJECT_TAG = "[SAMPLE] "
 
 
@@ -134,11 +139,19 @@ def _clock(when: dt.datetime) -> str:
                            "AM" if when.hour < 12 else "PM")
 
 
+def office_subject(office: str, local_date: dt.date) -> str:
+    """'Tue 9/15 - Daily Knocks - Kash Rai' — one office's own mail. Same date
+    first shape as subject_for, with the office where the captainship was."""
+    day = "%s %d/%d" % (local_date.strftime("%a"), local_date.month,
+                        local_date.day)
+    return "%s - Daily Knocks - %s" % (day, office)
+
+
 def _wave_intro(label: str, icds: Sequence[str], fire_local: dt.datetime,
-                first: bool) -> str:
+                first: bool, lead: Optional[str] = None) -> str:
     who = ", ".join(icds)
-    lead = ("Tonight's knocking, as each office finishes its day."
-            if first else "Next wave — these offices have now finished.")
+    lead = lead or ("Tonight's knocking, as each office finishes its day."
+                    if first else "Next wave — these offices have now finished.")
     return ('<p style="margin:0 0 10px">%s</p>'
             '<p style="margin:0 0 16px;color:#555">'
             '<b>%s</b> · %s local · %s</p>'
@@ -149,7 +162,8 @@ def build(*, subject: str, label: str, icds: Sequence[str],
           fire_local: dt.datetime, boards: Sequence[Tuple[str, Optional[Path]]],
           notes: Sequence[str] = (), footer: Sequence[str] = (),
           first: bool, to_addrs: Sequence[str],
-          extra_headers: Optional[Dict[str, str]] = None) -> EmailMessage:
+          extra_headers: Optional[Dict[str, str]] = None,
+          lead: Optional[str] = None) -> EmailMessage:
     """The wave's message. `boards` is [(title, png or None), …] — a None path
     is printed as a visible absence, never as a blank board (standing rule)."""
     msg = EmailMessage()
@@ -189,7 +203,7 @@ def build(*, subject: str, label: str, icds: Sequence[str],
     msg.set_content("\n".join([subject, ""] + [t for t, _ in boards]))
     msg.add_alternative(
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px">'
-        + _wave_intro(label, icds, fire_local, first)
+        + _wave_intro(label, icds, fire_local, first, lead)
         + "".join(blocks) + note_html + foot_html + "</div>",
         subtype="html")
 

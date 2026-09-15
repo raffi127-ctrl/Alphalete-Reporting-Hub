@@ -255,7 +255,7 @@ class ImmediateAlert(unittest.TestCase):
                                  reason="Coel Reif — board unavailable",
                                  kind="office")
 
-    def test_alert_goes_to_raf_and_eve_and_stamps_the_failure(self):
+    def test_alert_goes_to_eve_only_and_stamps_the_failure(self):
         from automations.captainship_night_knocks import run as R
         got = []
         real, mail.send_plain = mail.send_plain, \
@@ -269,7 +269,8 @@ class ImmediateAlert(unittest.TestCase):
         subject, body, to = got[0]
         self.assertIn("Central wave - 1 office board missing", subject)
         self.assertIn("Coel Reif", body)
-        self.assertEqual(to, list(mail.SAMPLE_RECIPIENTS))
+        # Eve only (Eve 2026-09-15) — Raf no longer gets failure alerts.
+        self.assertEqual(to, ["eve@alphaletemarketing.com"])
         self.assertTrue(ST.failures(data)[0].get("alerted"))
 
     def test_a_failed_alert_leaves_it_for_the_notice(self):
@@ -305,16 +306,146 @@ class ImmediateAlert(unittest.TestCase):
         self.assertEqual(n, 0)
 
 
-class LiveRecipients(unittest.TestCase):
-    def test_every_night_captain_gets_email_addresses_not_letters(self):
+class OfficeRecipients(unittest.TestCase):
+    """Raf 2026-09-15: each office's night mail goes only to that office's
+    owner — plus Eve (Eve, same day). Nobody else, and no captainship distro."""
+
+    # Old spellings kept in zones.py for offices the board now names
+    # differently (Kash Patel = Kash Rai, …) plus Isaiah Thomas — none of them
+    # is a name the roster hands the tick today.
+    LEGACY = {"Aya Mohamed", "Cyrus Ghaznavi", "Hammad Ahmed", "Kash Patel",
+              "Salik Ahmed", "Haytham Ali", "Trang Nguyen", "Isaiah Thomas",
+              "Nii Armah"}
+
+    def test_every_scheduled_office_has_an_owner_address(self):
+        from automations.captainship_night_knocks import owners as O
+        missing = sorted(i for i in Z.ICD_TIMEZONES
+                         if i not in self.LEGACY and not O.owner_email(i))
+        self.assertEqual(missing, [], "an office with a zone but no owner "
+                                      "email is never mailed — add it to "
+                                      "owners.OWNER_EMAILS")
+
+    def test_owner_and_eve_only(self):
         from automations.captainship_night_knocks import run as R
-        keys = R.default_captains()
-        self.assertEqual(keys[0], "rafael")
-        self.assertIn("jess", keys)
-        for k in keys:
-            got = R.recipients_for(k)
-            self.assertTrue(got, k)
-            self.assertTrue(all("@" in a for a in got), (k, got[:3]))
+        self.assertEqual(R.office_recipients("Kash Rai", "Kash Rai",
+                                             sample=False),
+                         ["Palace.kash@gmail.com", "eve@alphaletemarketing.com"])
+
+    def test_canonical_name_is_the_fallback(self):
+        from automations.captainship_night_knocks import owners as O
+        self.assertEqual(O.owner_email("Nobody On File", "kash  rai"),
+                         "Palace.kash@gmail.com")
+
+    def test_no_address_means_nobody_not_a_distro(self):
+        from automations.captainship_night_knocks import run as R
+        self.assertEqual(R.office_recipients("Nobody On File", "Nobody",
+                                             sample=False), [])
+
+    def test_sample_stays_pinned(self):
+        from automations.captainship_night_knocks import run as R
+        self.assertEqual(R.office_recipients("Kash Rai", "Kash Rai",
+                                             sample=True),
+                         list(mail.SAMPLE_RECIPIENTS))
+
+
+class OneMailPerOffice(unittest.TestCase):
+    """A tick at 9:02 PM Central with three Central offices: two owners get
+    their OWN board and nothing else, the one with no address gets nothing and
+    is alerted, and a second tick sends nobody twice."""
+
+    NOW = dt.datetime(2026, 9, 15, 21, 2, tzinfo=CT).astimezone(dt.timezone.utc)
+
+    def _run(self, d, capture, sent, alerts):
+        from automations.captainship_night_knocks import run as R
+        saved = (ST.DIR, R.rosters_for, R.capture, R._busy, mail.send,
+                 mail.send_plain)
+        ST.DIR = Path(d)
+        R.rosters_for = lambda *a, **k: {
+            "rafael": ["Kash Rai", "Cyrus Wade", "Nobody On File"]}
+        R.capture = capture
+        R._busy = lambda: None
+        mail.send = lambda msg, to, logfn=None: (
+            sent.append((msg["Subject"], list(to), msg)) or "<%d@x>" % len(sent))
+        mail.send_plain = lambda s, h, to, logfn=None: (
+            alerts.append((s, h, list(to))) or "<alert@x>")
+        real_zone = Z.zone_for
+        Z.zone_for = lambda n: "America/Chicago"
+        try:
+            return R.tick(self.NOW, send=True, sample=False,
+                          captain_keys=["rafael"], logfn=lambda *a, **k: None)
+        finally:
+            (ST.DIR, R.rosters_for, R.capture, R._busy, mail.send,
+             mail.send_plain) = saved
+            Z.zone_for = real_zone
+
+    def test_each_owner_gets_only_their_own_office(self):
+        calls = []
+
+        def capture(due, logfn=None):
+            calls.append(tuple(due.icds))
+            return [(i, i, None, None) for i in due.icds]
+
+        sent, alerts = [], []
+        with tempfile.TemporaryDirectory() as d:
+            n = self._run(d, capture, sent, alerts)
+            self.assertEqual(n, 2)
+            by_subject = {s: to for s, to, _ in sent}
+            self.assertEqual(by_subject["Tue 9/15 - Daily Knocks - Kash Rai"],
+                             ["Palace.kash@gmail.com",
+                              "eve@alphaletemarketing.com"])
+            self.assertEqual(by_subject["Tue 9/15 - Daily Knocks - Cyrus Wade"],
+                             ["cywadeambient@gmail.com",
+                              "eve@alphaletemarketing.com"])
+            for subject, _to, msg in sent:
+                other = ("Cyrus Wade" if "Kash" in subject else "Kash Rai")
+                html = msg.get_body(("html",)).get_content()
+                self.assertNotIn(other, html)
+                self.assertNotIn("In-Reply-To", msg)
+            # The office with no address: mailed to nobody, alerted now.
+            self.assertEqual(len(alerts), 1)
+            self.assertIn("Nobody On File", alerts[0][1])
+            self.assertEqual(alerts[0][2], ["eve@alphaletemarketing.com"])
+
+            # Second tick in the same window: the wave is done, nobody twice.
+            sent2, alerts2 = [], []
+            self.assertEqual(self._run(d, capture, sent2, alerts2), 0)
+            self.assertEqual((sent2, alerts2), ([], []))
+            self.assertEqual(len(calls), 1)
+
+    def test_a_tick_that_died_halfway_resends_nobody(self):
+        night = dt.date(2026, 9, 15)
+        calls = []
+
+        def capture(due, logfn=None):
+            calls.append(tuple(due.icds))
+            return [(i, i, None, None) for i in due.icds]
+
+        sent, alerts = [], []
+        with tempfile.TemporaryDirectory() as d:
+            saved, ST.DIR = ST.DIR, Path(d)
+            try:
+                data = ST.record_office_sent(ST.load(night), "Kash Rai", night,
+                                             "<k@x>", "rafael", ["x@y"])
+                ST.save(night, data)
+            finally:
+                ST.DIR = saved
+            self._run(d, capture, sent, alerts)
+        self.assertEqual(calls, [("Cyrus Wade", "Nobody On File")])
+        self.assertEqual([s for s, _, _ in sent],
+                         ["Tue 9/15 - Daily Knocks - Cyrus Wade"])
+
+    def test_a_broken_board_goes_to_nobody(self):
+        def capture(due, logfn=None):
+            return [("Kash Rai", "Kash Rai", None,
+                     "Kash Rai — board unavailable (KnocksPullFailed)"),
+                    ("Cyrus Wade", "Cyrus Wade", None, None)]
+
+        sent, alerts = [], []
+        with tempfile.TemporaryDirectory() as d:
+            self._run(d, capture, sent, alerts)
+        self.assertEqual([s for s, _, _ in sent],
+                         ["Tue 9/15 - Daily Knocks - Cyrus Wade"])
+        self.assertIn("board unavailable", alerts[0][1])
 
 
 class StateFile(unittest.TestCase):

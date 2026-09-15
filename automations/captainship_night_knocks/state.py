@@ -64,6 +64,36 @@ def record_sent(data: dict, marker: str, message_id: str,
     return data
 
 
+def office_marker(office: str, local_date: dt.date) -> str:
+    """One office's mail, once per night — whichever captainship lists it."""
+    return "%s:%s" % (" ".join((office or "").lower().split()),
+                      local_date.isoformat())
+
+
+def office_sent(data: dict, office: str, local_date: dt.date) -> bool:
+    return office_marker(office, local_date) in (data.get("offices") or {})
+
+
+def record_office_sent(data: dict, office: str, local_date: dt.date,
+                       message_id: str, captain_key: str,
+                       to_addrs: List[str]) -> dict:
+    """Written right after EACH office's send, so a tick that dies halfway
+    through a wave re-sends nobody who already got theirs."""
+    data.setdefault("offices", {})[office_marker(office, local_date)] = {
+        "at": _now(), "message_id": message_id, "captain": captain_key,
+        "to": list(to_addrs)}
+    return data
+
+
+def record_wave_done(data: dict, marker: str, captain_key: str,
+                     n_sent: int) -> dict:
+    """The wave's marker (what schedule.due skips). Per-office mails have no
+    thread, so `sent` carries the count instead of a Message-ID."""
+    data.setdefault("sent", {})[marker] = {"at": _now(), "offices": n_sent,
+                                           "captain": captain_key}
+    return data
+
+
 def record_failure(data: dict, *, captain_key: str, label: str,
                    reason: str, kind: str = "wave") -> dict:
     """One line per thing that went wrong tonight. This is what the failure

@@ -10,11 +10,13 @@ second. The times are NOT in the plist — they are 9 PM in each office's own
 zone, which is a moment no calendar-based launchd entry can express. Same shape
 as knocks_intraday, and for the same reason.
 
-WHAT IT SENDS. Per wave: the captainship's DAILY KNOCKS SUMMARY board, then one
-DAILY TOTAL KNOCKS board per ICD in that wave — the same boards the captainship
-report's daily section carries, drawn by the same functions
-(`knock_dispo_images`), so the night mail can never disagree with the morning
-one. The first wave of a night opens the thread; later waves reply into it.
+WHAT IT SENDS. One mail per OFFICE, to that office's owner and Eve, carrying
+only its own DAILY TOTAL KNOCKS board (Raf 2026-09-15: "only gets emailed to
+the specific individual of the knocks"; Eve: "el owner de la oficina y eve";
+addresses in owners.py). The board is drawn by the same functions as the
+captainship report's daily section (`knock_dispo_images`), so the night mail
+can never disagree with the morning one. Until 2026-09-15 a wave was ONE mail
+to the whole captainship distro, threaded wave by wave, with a summary board.
 
 WHY IT RUNS ON LUCY 3. It impersonates ICDs in ownerville, which needs a live
 session, and the captainship gate + the intraday boards already live there.
@@ -42,6 +44,7 @@ that safe, and all three are load-bearing:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import sys
 import traceback
@@ -254,9 +257,14 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
 
     Every board is drawn by `knock_dispo_images`, the captainship report's own
     daily section, so this mail and that report can never disagree about a
-    number. An ICD that raises costs its own board and nothing else: the wave
-    still goes out, with the reason in `notes`, because a captain reading four
-    of five offices is better served than one reading none.
+    number. An ICD that raises costs its own board and nothing else.
+
+    Returns [(display, canonical, png or None, failure or None), …] — one entry
+    per office, no summary: each office's mail carries only its own board (Raf
+    2026-09-15), so a board of every office in the wave has nobody to go to.
+    png None + failure None = no knocks recorded (still mailed, as a visible
+    absence). failure set = the board could not be drawn (not mailed; alerted).
+    No Office Access = left out entirely, log only.
     """
     from automations.captainship_drafts import knock_dispo_images as KD
     from automations.focus_office_att.aliases import load_aliases
@@ -264,9 +272,7 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
     from automations.total_knocks import render as knocks_render
 
     root = OUT_DIR / due.local_date.isoformat() / due.captain_key
-    boards: List[Tuple[str, Optional[Path]]] = []
-    notes: List[str] = []
-    captured: List[Tuple[str, dict, list, Optional[int]]] = []
+    offices: List[Tuple[str, str, Optional[Path], Optional[str]]] = []
 
     aliases_raw = load_aliases()
     pairs = KD.owner_cfgs(list(due.icds), aliases_raw)
@@ -297,19 +303,19 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
                     # No Office Access: left out, log only (Eve's standing
                     # rule 2026-09-03 — the mail goes with whoever we can reach).
                     continue
-                boards.append((display, None))
-                notes.append("%s — board unavailable (%s)"
-                             % (display, type(exc).__name__))
+                offices.append((display, cfg.get("name") or display, None,
+                                "%s — board unavailable (%s)"
+                                % (display, type(exc).__name__)))
                 continue
             if not rows:
                 # Visible absence, never a blank board (standing rule).
                 logfn("[night-knocks]   · %s: no knocks recorded" % display)
-                boards.append((display, None))
+                offices.append((display, cfg.get("name") or display, None, None))
                 continue
             # apps=None on purpose: the Total Apps column comes off a Tableau
             # crosstab the morning build downloads, and a night send is not
             # worth waking that pipeline. The knock columns are the ask.
-            board_rows, apps_by_rep, apps_n = KD.daily_apps_for_board(rows, None)
+            board_rows, apps_by_rep, _apps_n = KD.daily_apps_for_board(rows, None)
             # BROKEN UP BY TEAM, like every other daily knocks board of his
             # (Raf 2026-09-13; wired into knocks_intraday by 18e9e6e1, missed
             # here). Keyed on the alias-canonical owner name, which is what
@@ -338,26 +344,10 @@ def capture(due: S.Due, *, logfn=print) -> Tuple[List[Tuple[str, Optional[Path]]
                 first_knock_green_at=knocks_render.first_knock_target(
                     hours.get(_owner_key(cfg.get("name") or display))
                     or hours.get(_owner_key(display)), due.local_date))
-            boards.append((display, png))
-            captured.append((display, cfg, rows, apps_n))
+            offices.append((display, cfg.get("name") or display, png, None))
             logfn("[night-knocks]   ✓ %s: %d rep(s) → %s"
                   % (display, len(rows), png.name))
-
-    if captured:
-        try:
-            summary = KD.render_daily_summary(
-                captured, due.local_date, root / "summary",
-                chan_rows=chan_rows,
-                roster_n=len(due.icds), n_covered=len(captured),
-                captain=due.captain_key)
-            boards.insert(0, ("Daily Summary — %s %d"
-                              % (due.local_date.strftime("%b"),
-                                 due.local_date.day), summary))
-        except Exception as exc:  # noqa: BLE001 — summary ≠ the wave
-            logfn("[night-knocks]   x summary: %s: %s"
-                  % (type(exc).__name__, str(exc)[:160]))
-            notes.append("summary board unavailable (%s)" % type(exc).__name__)
-    return boards, notes
+    return offices
 
 
 def harvest_landed() -> bool:
@@ -455,14 +445,31 @@ def footer_lines(icds: Sequence[str], *, sample: bool) -> List[str]:
         out.append("Timezone read automatically (not yet confirmed by a "
                    "person): " + ", ".join(sorted(harvested)) + ".")
     if sample:
-        out.append("SAMPLE — this went to Raf and Eve only. No captainship "
-                   "and no ICD received it.")
+        out.append("SAMPLE — this went to Raf and Eve only. The office "
+                   "owner did not receive it.")
     return out
+
+
+def office_recipients(display: str, canonical: str, *,
+                      sample: bool) -> List[str]:
+    """Who ONE office's mail goes to: its owner + Eve (Eve 2026-09-15), or []
+    when the owner has no address on file. Sample stays pinned to Raf + Eve."""
+    if sample:
+        return list(mail.SAMPLE_RECIPIENTS)
+    from automations.captainship_night_knocks import owners
+    return owners.recipients(display, canonical)
 
 
 def tick(now_utc: dt.datetime, *, send: bool, sample: bool,
          captain_keys: Sequence[str], plan: bool = False, logfn=print) -> int:
-    """Send whatever is owed at `now_utc`. Returns the number of waves sent.
+    """Send whatever is owed at `now_utc`. Returns the number of office mails
+    sent.
+
+    ONE MAIL PER OFFICE, to its owner and Eve (Raf + Eve 2026-09-15). The wave
+    is still the unit of WORK — one browser session for the offices that close
+    at the same instant — but not of mail: nobody receives another office's
+    close. Each office is recorded the moment it is sent, so a tick that dies
+    halfway re-captures only the offices still owed.
 
     `plan=True` stops before the browser: it says what is owed and to whom and
     opens nothing. That mode exists for EVE'S WINDOWS BOX, where a dry run is
@@ -538,23 +545,27 @@ def tick(now_utc: dt.datetime, *, send: bool, sample: bool,
                   % (d.label, d.local_date, SAMPLE_FIRST_NIGHT))
             continue
         data = ST.load(d.local_date)
-        subject_base = mail.subject_for(captain_display(d.captain_key),
-                                        d.local_date, sample=sample)
-        thread = mail.Thread.from_json(ST.thread_for(data, d.captain_key),
-                                       subject_base)
-        first = thread.message_id is None
-        logfn("[night-knocks] %s / %s wave / %s — %d ICD(s)%s"
-              % (d.captain_key, d.label, d.local_date, len(d.icds),
-                 "" if first else " (reply into tonight's thread)"))
+        # An office already mailed tonight (an earlier tick that died mid-wave,
+        # or the same office listed under two captainships) is not re-sent.
+        todo = tuple(i for i in d.icds
+                     if not ST.office_sent(data, i, d.local_date))
+        logfn("[night-knocks] %s / %s wave / %s — %d office(s), %d still owed"
+              % (d.captain_key, d.label, d.local_date, len(d.icds), len(todo)))
         if plan:
-            logfn("[night-knocks] PLAN — would mail %r to %s; ICDs: %s"
-                  % (thread.subject_for_next(),
-                     ", ".join(mail.SAMPLE_RECIPIENTS if sample
-                               else recipients_for(d.captain_key)),
-                     ", ".join(d.icds)))
+            for icd in d.icds:
+                to = office_recipients(icd, icd, sample=sample)
+                logfn("[night-knocks] PLAN — %r to %s%s"
+                      % (mail.office_subject(icd, d.local_date),
+                         ", ".join(to) or "NOBODY (no owner email on file)",
+                         "" if icd in todo else " (already sent)"))
+            continue
+        if not todo:
+            if send:
+                ST.save(d.local_date, ST.record_wave_done(
+                    data, d.marker, d.captain_key, 0))
             continue
         try:
-            boards, notes = capture(d, logfn=logfn)
+            offices = capture(dataclasses.replace(d, icds=todo), logfn=logfn)
         except Exception as exc:  # noqa: BLE001 — a dead session ≠ a silent night
             reason = "%s: %s" % (type(exc).__name__, str(exc)[:400])
             logfn("[night-knocks] ✗ capture failed: " + reason)
@@ -564,44 +575,61 @@ def tick(now_utc: dt.datetime, *, send: bool, sample: bool,
             ST.save(d.local_date, alert_now(d, data, 1, send=send, logfn=logfn))
             continue
 
-        to_addrs = mail.assert_allowed(
-            mail.SAMPLE_RECIPIENTS if sample else recipients_for(d.captain_key),
-            sample=sample)
-        msg = mail.build(subject=thread.subject_for_next(), label=d.label,
-                         icds=d.icds, fire_local=d.fire_local, boards=boards,
-                         notes=notes, footer=footer_lines(d.icds, sample=sample),
-                         first=first, to_addrs=to_addrs,
-                         extra_headers=thread.headers_for_next())
-        if not send:
-            logfn("[night-knocks] DRY-RUN — would send %r to %s (%d board(s))"
-                  % (msg["Subject"], ", ".join(to_addrs), len(boards)))
-            continue
-        try:
-            mid = mail.send(msg, to_addrs, logfn=logfn)
-        except Exception as exc:  # noqa: BLE001
-            reason = "%s: %s" % (type(exc).__name__, str(exc)[:400])
-            logfn("[night-knocks] ✗ send failed: " + reason)
-            data = ST.record_failure(data, captain_key=d.captain_key,
-                                     label=d.label, reason=reason)
-            ST.save(d.local_date, alert_now(d, data, 1, send=send, logfn=logfn))
-            continue
-        thread.remember(mid)
-        data = ST.record_sent(data, d.marker, mid, d.captain_key,
-                              thread.to_json())
-        # The wave went, but an office whose board could not be drawn is a
-        # thing somebody has to fix — Raf and Eve hear about it right away.
-        for note in notes:
-            data = ST.record_failure(data, captain_key=d.captain_key,
-                                     label=d.label, reason=note, kind="office")
-        ST.save(d.local_date, alert_now(d, data, len(notes), send=send,
-                                        logfn=logfn))
-        sent += 1
+        n_fail, retry = 0, False
+        for display, canonical, png, failure in offices:
+            if failure is None:
+                to = office_recipients(display, canonical, sample=sample)
+                if not to:
+                    failure = ("%s — no owner email on file "
+                               "(captainship_night_knocks/owners.py)" % display)
+            if failure is not None:
+                # Nobody gets a broken board; Eve hears about it now.
+                logfn("[night-knocks]   ✗ %s" % failure)
+                data = ST.record_failure(data, captain_key=d.captain_key,
+                                         label=d.label, reason=failure,
+                                         kind="office")
+                n_fail += 1
+                continue
+            to_addrs = mail.assert_allowed(to, sample=sample)
+            subject = mail.office_subject(display, d.local_date)
+            msg = mail.build(subject=subject, label=d.label, icds=[display],
+                             fire_local=d.fire_local, boards=[(display, png)],
+                             footer=footer_lines([display], sample=sample),
+                             first=True, to_addrs=to_addrs,
+                             lead="Today's knocking for your office.")
+            if not send:
+                logfn("[night-knocks] DRY-RUN — would send %r to %s"
+                      % (subject, ", ".join(to_addrs)))
+                continue
+            try:
+                mid = mail.send(msg, to_addrs, logfn=logfn)
+            except Exception as exc:  # noqa: BLE001 — one office ≠ the wave
+                reason = "%s — email not sent (%s: %s)" % (
+                    display, type(exc).__name__, str(exc)[:300])
+                logfn("[night-knocks] ✗ " + reason)
+                data = ST.record_failure(data, captain_key=d.captain_key,
+                                         label=d.label, reason=reason,
+                                         kind="office")
+                n_fail += 1
+                retry = True       # SMTP hiccup: the next tick tries this one again
+                continue
+            data = ST.record_office_sent(data, display, d.local_date, mid,
+                                         d.captain_key, to_addrs)
+            ST.save(d.local_date, data)
+            sent += 1
+        if send and not retry:
+            data = ST.record_wave_done(data, d.marker, d.captain_key,
+                                       sum(1 for o in offices if o[3] is None))
+        if send:
+            ST.save(d.local_date, alert_now(d, data, n_fail, send=send,
+                                            logfn=logfn))
     return sent
 
 
 def alert_now(d: S.Due, data: dict, n_new: int, *, send: bool,
               logfn=print) -> dict:
-    """Mail Raf and Eve about THIS wave's problems the moment it finishes.
+    """Mail Eve (mail.ALERT_RECIPIENTS) about THIS wave's problems the moment
+    it finishes.
 
     Eve 2026-09-14, on the 00:45 notice: "por qué a esa hora? no puede ser
     antes?" — a board that failed at 8 PM should not wait until after midnight
@@ -625,16 +653,14 @@ def alert_now(d: S.Due, data: dict, n_new: int, *, send: bool,
             "<p style='color:#777;font-size:12px'>Sent the moment the wave "
             "finished. %s</p>"
             % (_html.escape(captain_display(d.captain_key)), d.label,
-               ("This captainship's email did NOT go out:" if whole else
-                "The email went out, but these offices were missing from it:"),
+               ("Nothing went out for this wave:" if whole else
+                "These offices' owners did NOT get their email tonight:"),
                "".join("<li>%s</li>" % _html.escape(f.get("reason") or "")
                        for f in new),
                "State file: output/night_knocks/state_%s.json"
                % d.local_date.isoformat()))
     try:
-        mail.send_plain(subject, body,
-                        mail.assert_allowed(mail.SAMPLE_RECIPIENTS, sample=True),
-                        logfn=logfn)
+        mail.send_plain(subject, body, list(mail.ALERT_RECIPIENTS), logfn=logfn)
     except Exception as exc:  # noqa: BLE001 — the 00:45 notice is the backstop
         logfn("[night-knocks] ! immediate alert failed (%s) — the 00:45 "
               "notice will carry it" % type(exc).__name__)
@@ -643,18 +669,6 @@ def alert_now(d: S.Due, data: dict, n_new: int, *, send: bool,
     for f in new:
         f["alerted"] = stamp
     return data
-
-
-def recipients_for(captain_key: str) -> List[str]:
-    """A LIVE send's recipients. Deliberately the captainship report's own
-    distro (config.Captain.to) rather than a second list nobody maintains —
-    and deliberately unused until somebody passes --live."""
-    # config.RECIPIENTS, NOT Captain.to: `to` is the comma-joined To header, and
-    # list() of a string is its LETTERS — 495 one-character "addresses" for
-    # Raf, caught on the first dry look at live mode (2026-09-14).
-    from automations.captainship_drafts import config
-    return [a.strip() for a in (config.RECIPIENTS.get(captain_key) or [])
-            if a and a.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -720,8 +734,8 @@ def notice_html(night: dt.date, data: dict, rosters: Dict[str, List[str]],
                            f.get("wave"), f.get("reason")))
         bits.append("</ul>")
     if office_fails:
-        bits.append("<p><b>Offices missing from an email that DID go out — "
-                    "these need fixing</b></p><ul>")
+        bits.append("<p><b>Offices whose owner got no email — these need "
+                    "fixing</b></p><ul>")
         for f in office_fails:
             bits.append("<li>%s — %s wave: %s</li>"
                         % (captain_display(f.get("captain") or ""),
@@ -779,10 +793,10 @@ def notice(now_utc: dt.datetime, *, send: bool, sample: bool,
               % (night, " (problems already alerted)" if fails else ""))
         return 0
 
-    # The notice ALWAYS goes to Raf and Eve, live or sample. It is not the
-    # report — it is the answer to "did it go out?", and those two are who
-    # asked the question (Eve, 2026-09-11).
-    to_addrs = mail.assert_allowed(mail.SAMPLE_RECIPIENTS, sample=True)
+    # The notice goes to mail.ALERT_RECIPIENTS, live or sample. It is not the
+    # report — it is the answer to "did it go out?" (Eve, 2026-09-11). Raf
+    # and Eve until 2026-09-15; Eve only since.
+    to_addrs = list(mail.ALERT_RECIPIENTS)
     day = "%s %d/%d" % (night.strftime("%a"), night.month, night.day)
     subject = "%s - Daily Knocks - %s" % (day, notice_status(data, expected))
     html = notice_html(night, data, rosters, sample=sample)
