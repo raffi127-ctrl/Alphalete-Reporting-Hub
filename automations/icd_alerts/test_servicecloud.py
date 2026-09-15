@@ -202,7 +202,16 @@ class WhatTheLiveGridShowedThatTheDescriptionDidNot(unittest.TestCase):
     def test_a_cancelled_contract_is_never_a_sale(self):
         self.assertFalse(SC.is_completed("Cancelled by Supplier"))
 
-    def test_what_the_grid_cannot_give_us_is_written_down(self):
-        # Both decide what can be built at all.
-        self.assertIn("rep/agent", SC.KNOWN_MISSING)
-        self.assertIn("sale date", SC.KNOWN_MISSING)
+    def test_the_columns_a_read_needs_are_named(self):
+        """I first recorded the Agent and Initiated Date columns as MISSING.
+        They were behind the column chooser, not absent -- and "this office
+        can only have a total, not a per-rep board" would have been a worse
+        thing to build on than a blank."""
+        self.assertEqual(SC.COL_AGENT, "Agent")
+        self.assertEqual(SC.COL_INITIATED, "Initiated Date")
+        self.assertEqual(SC.COL_SUBSTATUS, "Contract Substatus")
+
+    def test_start_date_is_not_mistaken_for_the_sale_date(self):
+        # It is when the SERVICE starts -- APR 2027, JUN 2028.
+        self.assertEqual(SC.COL_NOT_THE_SALE_DATE, "Start Date")
+        self.assertNotEqual(SC.COL_INITIATED, SC.COL_NOT_THE_SALE_DATE)

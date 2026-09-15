@@ -60,26 +60,28 @@ CUSTOMERS_PATH = "/spa/customers"
 # Reports section in the nav. Either may give a day's rows directly, which is
 # worth far more than paging 86 times -- to be established from the Contracts
 # screen before any of this is written.
-ROWS_PER_PAGE_DEFAULT = 50
+# THE COLUMNS A READ NEEDS, all confirmed on the live grid 2026-09-15. Two of
+# them were not on screen at first and I recorded them as missing -- they were
+# behind the column chooser, not absent. Worth the correction: "this office
+# can only have a total, not a per-rep board" was wrong, and would have been a
+# worse thing to build on than a blank.
+COL_CONTRACT_ID = "Contract ID"
+COL_BUSINESS = "Business Name"
+COL_AGENT = "Agent"               # the REP. per-rep boards are possible.
+COL_INITIATED = "Initiated Date"  # when it was SOLD -- "09/15/2026 06:13 PM"
+COL_COMMODITY = "Commodity"       # Electricity, so far
+COL_SUBSTATUS = "Contract Substatus"
 
-# WHAT THE CONTRACTS GRID DOES NOT CARRY, seen 2026-09-15. Both of these
-# decide what can be built, so they are written here rather than discovered
-# halfway through writing a reader:
-#
-#  * NO REP. The Customers grid has an agent column; Contracts does not. Until
-#    one is found -- the column chooser at the top right, or the Filters panel
-#    -- a Box office can have an OFFICE TOTAL and not a per-rep board. That is
-#    a different product from the AT&T one and worth saying out loud before
-#    anybody expects the same board.
-#
-#  * NO SALE DATE. "Start Date" is when the SERVICE starts (APR 2027, JUN
-#    2028), not when it was sold. So "today's sales" cannot come from it. The
-#    Customers grid carries "Initiated Date" which looks like the right one;
-#    whether Contracts can show it is unestablished.
-#
-# 2622 contracts across 53 pages at the time of writing, so paging the whole
-# grid to find one day is not a read anybody should run every few minutes.
-KNOWN_MISSING = ("rep/agent", "sale date")
+# NOT the sale date: "Start Date" is when the SERVICE starts (APR 2027, JUN
+# 2028). Reading a day's sales off it would return almost nothing today and a
+# pile of contracts on some future morning.
+COL_NOT_THE_SALE_DATE = "Start Date"
+
+# 2622 contracts over 53 pages at 50 a page, so a read filters or sorts by
+# Initiated Date rather than paging the grid looking for today. The header
+# carries a sort and a per-column filter; which of those a headless read can
+# drive is still to be established.
+ROWS_PER_PAGE_MAX_SEEN = 50
 
 # A SALE IS A STATUS, NOT A COUNTER. "It's not as easy as Sara plus to just
 # see a number live" -- SaraPlus hands over a total; this hands over a list of
