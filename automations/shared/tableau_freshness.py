@@ -270,6 +270,42 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")[:60]
 
 
+def _already_sent_remediation(reports, report_id: str) -> Optional[dict]:
+    """Re-word a stale-source alert once a report has already PULLED off it.
+
+    The `stale_source` wording is written for the case where the freshness check
+    notices the lag before anything consumes it: "nothing dropped, nothing to
+    re-run" is then exactly right. It is wrong the moment a report has run —
+    that report SENT, and what it sent is as old as the feed.
+
+    2026-09-15 is the whole argument. The Box feed sat at 9/12; box_order_log
+    posted `THIS 9.14-9.20 paid=0` to two channels, the Box tracker went to 13,
+    and the tracker text reached 36 people in two iMessage groups. This alert
+    said "nothing to re-run" and the triage reply under it said "Nothing to do."
+    Carlos found it himself at 9:04am. Waiting fixes the FEED; only a re-send
+    fixes what already went out, and that is a person's call.
+
+    Returns None when nothing has pulled yet, so that case keeps the calm
+    original wording and never goes loud.
+    """
+    named = sorted(str(r) for r in (reports or []) if r)
+    if not named:
+        return None
+    joined = ", ".join("`{}`".format(r) for r in named)
+    return {
+        "tail_headline": ("the report{} that pulled it already ran and SENT, "
+                          "so what went out carries the old numbers.".format(
+                              "s" if len(named) != 1 else "")),
+        "fix": ("open the view in Tableau and see whether the day or week it's "
+                "missing is actually there. Then decide what to RE-SEND: {} "
+                "already delivered off this pull, and the feed catching up does "
+                "NOT repair what already went out. Do not re-run `{}` — that id "
+                "is the SOURCE, not a report.".format(joined, report_id)),
+        "tail": ("Already delivered off this pull: {}. Re-send what matters "
+                 "once the feed is current.".format(joined)),
+    }
+
+
 def _state_path(source_key: str, day: dt.date) -> Path:
     return STATE_DIR / "{}-{}.json".format(_slug(source_key), day.isoformat())
 
@@ -368,8 +404,9 @@ def alert_stale(source_key: str, view_label: str, newest: Optional[dt.date],
         # report_id is the SOURCE, not the report: fifty offices pulling one
         # frozen view is one problem with one thread, and the reports that hit
         # it ride inside the line. A different stale view gets its own thread.
-        sda.alert(report_id="tableau-stale-{}".format(_slug(source_key)),
-                  failed=[line], kind="stale_source", day=today)
+        _rid = "tableau-stale-{}".format(_slug(source_key))
+        sda.alert(report_id=_rid, failed=[line], kind="stale_source", day=today,
+                  remediation=_already_sent_remediation(reports, _rid))
         state.update({"alerted": True, "reports": reports,
                       "newest": newest.isoformat() if newest else None,
                       "view": view_label})
@@ -813,8 +850,9 @@ def alert_frozen(source_key: str, view_label: str, days_same: int,
         if reports:
             line += " · hit by: {}".format(", ".join(sorted(reports)))
         from automations.shared import section_drop_alert as sda
-        sda.alert(report_id="tableau-stale-{}".format(_slug(source_key)),
-                  failed=[line], kind="stale_source", day=today)
+        _rid = "tableau-stale-{}".format(_slug(source_key))
+        sda.alert(report_id=_rid, failed=[line], kind="stale_source", day=today,
+                  remediation=_already_sent_remediation(reports, _rid))
         _save_state(key, today, {"alerted": True, "reports": reports,
                                  "view": view_label, "kind": "frozen"})
         return True

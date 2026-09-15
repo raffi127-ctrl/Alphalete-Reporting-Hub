@@ -562,13 +562,23 @@ def _compose_parts(report_id: str, failed: Sequence[str],
                 or n > _INLINE_ITEMS
                 or sum(len(b) for b in body) > _INLINE_CHARS)
 
-    headline = spec["headline"].format(tail=spec["tail_headline"], **fmt)
+    # A kind's wording is written for its TYPICAL case, and one kind can have
+    # two. `stale_source` is the one that bit us (Megan 2026-09-15): a feed
+    # running behind that nothing has consumed really is "nothing to re-run",
+    # but the same feed AFTER a report pulled off it has already SENT the old
+    # numbers. The caller knows which it is; the static spec cannot. So the
+    # same `remediation` dict that already overrides `fix` now also overrides
+    # the two sentences that make the claim — pre-formatted by the caller,
+    # exactly like `fix`.
+    over = remediation if isinstance(remediation, dict) else {}
+    headline = spec["headline"].format(
+        tail=over.get("tail_headline") or spec["tail_headline"], **fmt)
     if threaded:
         headline += "  " + spec.get("see_thread", "See thread for the list.")
     parent = [headline]
     if not threaded:
         parent += body
-    fix = remediation.get("fix") if isinstance(remediation, dict) else None
+    fix = over.get("fix")
     fix_line = f"*Fix:* {fix or spec['fix'].format(**fmt)}"
     # The fix goes wherever it can actually be read. A one-liner stays in the
     # channel — that's the whole value of the parent. But once an alert is
@@ -583,7 +593,7 @@ def _compose_parts(report_id: str, failed: Sequence[str],
                                  or len(fix_line) > _INLINE_CHARS)
     if not fix_threaded:
         parent.append(fix_line)
-    parent.append(spec["tail"].format(**fmt))
+    parent.append(over.get("tail") or spec["tail"].format(**fmt))
     if not threaded:
         return parent, []
     detail = [spec.get("detail_header",

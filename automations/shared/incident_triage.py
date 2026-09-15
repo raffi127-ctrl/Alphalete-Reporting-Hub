@@ -204,10 +204,35 @@ _WAITING_ON: Sequence[Tuple[str, str]] = (
 # needs a code fix, and sending them to open a thread whose own text says there
 # is nothing to do. That is the precise way a red circle stops being believed, so
 # this check runs BEFORE the age rule rather than after it.
+# SPLIT ON WHETHER ANYTHING ALREADY SHIPPED (Megan 2026-09-15). The rule above
+# was right about the CAUSE and wrong about the CONSEQUENCE. "The report that
+# pulled it ran and sent normally" is true of the process and false of the
+# output: the report did send — it sent STALE NUMBERS. On 2026-09-15 the Box
+# feed sat at 9/12 while box_order_log posted `THIS 9.14-9.20 paid=0` to two of
+# Carlos's channels, the Box tracker went to 13 channels, and the tracker text
+# reached 36 people across two iMessage groups. This thread said "Nothing to
+# do." Carlos caught it himself at 9:04am, which is the one review path that is
+# supposed to be a backstop, not the primary detector.
+#
+# The feed catching up does NOT repair what already went out — only a re-send
+# does, and a re-send is a person's call. So the verdict now turns on one
+# question the state file can already answer: has a report pulled off this
+# source today?
+#   · nobody has yet  -> genuinely nothing to do. WAITING, as before.
+#   · somebody has    -> what they delivered is as old as the data was, and
+#                        someone has to decide whether to re-send it.
+# The 2026-08-26 intent is preserved exactly where it applies: a stale feed
+# nothing has consumed still never goes red and never sits in NEEDS_YOU.
 _NO_ACTION_PREFIXES = ("drop-tableau-stale-",)
 _NO_ACTION_LINE = ("*Nothing to do.* An upstream Tableau feed is serving older "
-                   "data than it should. The report that pulled it ran and sent "
-                   "normally. It clears when the feed catches up.")
+                   "data than it should, and nothing has been built on it yet. "
+                   "It clears when the feed catches up.")
+_STALE_ALREADY_SENT_LINE = (
+    "*Needs one of you.* An upstream Tableau feed served older data than it "
+    "should — and {reports} already ran off it, so what went out carries the "
+    "old numbers. The feed catching up does NOT fix what was already "
+    "delivered; only re-sending does. Check what those reports posted or "
+    "texted today and re-send the ones that matter.")
 
 # INCIDENTS THAT ARE FINDINGS, NOT FAILURES (Megan 2026-09-02). A `finding-` key
 # means the run did its WHOLE job and is reporting what it noticed on the board —
@@ -403,6 +428,34 @@ def reruns_itself(rid: str, *, partial: bool = False) -> bool:
     return partial and (r.get("verify") or {}).get("type") == "manifest"
 
 
+def _stale_hit_reports(key: str, day: dt.date) -> list:
+    """Which reports already PULLED off a stale source today, newest state wins.
+
+    `tableau_freshness` records this as it goes: each report that hits a source
+    running behind appends itself to that day's state file, which is the same
+    list the alert prints as "hit by: …". An empty list means the freshness
+    check noticed the lag before anything consumed it — the one case where the
+    notice really is nothing to do.
+
+    Best-effort on purpose. This decides WORDING, so a missing or unreadable
+    state file must degrade to the quiet verdict, never raise inside triage.
+    """
+    for prefix in _NO_ACTION_PREFIXES:
+        if key.startswith(prefix):
+            slug = key[len(prefix):]
+            break
+    else:
+        return []
+    try:
+        from automations.shared import tableau_freshness as _tf
+        path = _tf.STATE_DIR / "{}-{}.json".format(slug, day.isoformat())
+        state = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001 — triage must never raise on a bad read
+        return []
+    reports = state.get("reports") or []
+    return sorted(str(r) for r in reports if r)
+
+
 def _match(tail: str, table: Sequence[Tuple[str, str]]) -> Optional[str]:
     for pat, reason in table:
         if pat in tail:
@@ -445,6 +498,14 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     # 0) Notices, not work. Must precede the age rule — these stay open for days
     #    by their nature, and nothing on our side can close them.
     if key.startswith(_NO_ACTION_PREFIXES):
+        hits = _stale_hit_reports(key, day)
+        if hits:
+            return Verdict(
+                key, NEEDS_YOU,
+                "A feed ran behind and {} already sent off it.".format(
+                    ", ".join(hits)),
+                line=_STALE_ALREADY_SENT_LINE.format(
+                    reports=", ".join("`{}`".format(h) for h in hits)))
         return Verdict(key, WAITING,
                        "An upstream Tableau feed is running behind.",
                        line=_NO_ACTION_LINE)

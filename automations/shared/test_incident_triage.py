@@ -414,6 +414,76 @@ class NoticesNotWork(unittest.TestCase):
         self.assertEqual(v.bucket, tri.NEEDS_YOU)
 
 
+class StaleFeedThatAlreadyShipped(unittest.TestCase):
+    """The half the 2026-08-26 notice rule got wrong.
+
+    A feed running behind that NOTHING has consumed is a notice. The same feed
+    AFTER a report pulled off it is a delivery that went out with old numbers,
+    and only a person can decide whether to re-send. On 2026-09-15 box_order_log
+    posted `THIS 9.14-9.20 paid=0` off a feed stuck at 9/12 while this thread
+    said "Nothing to do"; Carlos caught it, we didn't.
+    """
+
+    KEY = "drop-tableau-stale-b2bboxenergytracker-boxorderlog-order-log"
+
+    def _with_state(self, reports):
+        """Point the freshness STATE_DIR at a temp dir holding one day's state."""
+        import json as _json
+        import tempfile
+        from pathlib import Path as _Path
+        from automations.shared import tableau_freshness as _tf
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        slug = self.KEY[len("drop-tableau-stale-"):]
+        d = _Path(tmp.name)
+        (d / "{}-{}.json".format(slug, DAY.isoformat())).write_text(
+            _json.dumps({"alerted": True, "reports": reports}))
+        return mock.patch.object(_tf, "STATE_DIR", d)
+
+    def test_nobody_pulled_yet_is_still_just_a_notice(self):
+        with self._with_state([]):
+            v = _classify(key=self.KEY, opened=DAY.isoformat())
+        self.assertEqual(v.bucket, tri.WAITING)
+        self.assertIn("Nothing to do", tri.line_for(v))
+
+    def test_no_state_file_at_all_is_still_just_a_notice(self):
+        """A missing/unreadable state file must degrade quiet, never raise."""
+        v = _classify(key=self.KEY, opened=DAY.isoformat())
+        self.assertEqual(v.bucket, tri.WAITING)
+        self.assertIn("Nothing to do", tri.line_for(v))
+
+    def test_a_report_already_ran_off_it_needs_a_person(self):
+        with self._with_state(["box_order_log"]):
+            v = _classify(key=self.KEY, opened=DAY.isoformat())
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        line = tri.line_for(v)
+        self.assertIn("box_order_log", line)
+        self.assertNotIn("Nothing to do", line)
+
+    def test_the_line_says_catching_up_will_not_fix_it(self):
+        """The whole point: waiting repairs the FEED, never what already went out."""
+        with self._with_state(["box_order_log", "tableau_screenshots_box"]):
+            v = _classify(key=self.KEY, opened=DAY.isoformat())
+        line = tri.line_for(v)
+        self.assertIn("does NOT fix what was already", line)
+        self.assertIn("re-send", line.lower())
+
+    def test_every_hit_report_is_named(self):
+        with self._with_state(["tableau_screenshots_box", "box_order_log"]):
+            v = _classify(key=self.KEY, opened=DAY.isoformat())
+        line = tri.line_for(v)
+        for r in ("box_order_log", "tableau_screenshots_box"):
+            self.assertIn(r, line)
+
+    def test_still_beats_the_age_rule(self):
+        """An old one that already shipped is NEEDS_YOU for the RIGHT reason —
+        the delivery, not the age. The age rule would have said 'code fix'."""
+        with self._with_state(["box_order_log"]):
+            v = _classify(key=self.KEY, opened="2026-08-01", hour=15)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("box_order_log", tri.line_for(v))
+
+
 class FindingsAreNotFailures(unittest.TestCase):
     """A `finding-` key is a run that did its WHOLE job and is reporting what it
     noticed on the board. notify.py posts it correctly — "the run itself was

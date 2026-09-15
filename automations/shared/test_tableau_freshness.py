@@ -439,6 +439,56 @@ class TheAlertSaysWhatActuallyHappened(unittest.TestCase):
                       "box_order_log_roshan"):
             self.assertNotIn(wrong, text)
 
+    # --- and the other half of the same alert (Megan 2026-09-15) -------------
+    # "nothing to re-run" is right until a report has pulled off the stale feed.
+    # After that the report SENT, and what it sent is as old as the data. On
+    # 2026-09-15 box_order_log posted `THIS 9.14-9.20 paid=0` off a feed stuck
+    # at 9/12 while this alert said nothing to re-run; Carlos caught it at 9:04.
+
+    SRC = "tableau-stale-b2bboxenergytracker-boxorderlog-order-log"
+    LINE = ("B2BBOXEnergyTracker/BoxOrderLog - Order Log - newest data is "
+            "2026-09-12 - 3 day(s) behind 2026-09-15")
+
+    def _text_with(self, reports):
+        from automations.shared import section_drop_alert as sda
+        from automations.shared import tableau_freshness as tf
+        rem = tf._already_sent_remediation(reports, self.SRC)
+        return sda._compose(self.SRC, [self.LINE], rem, "", "stale_source")
+
+    def test_nothing_pulled_yet_keeps_the_calm_wording(self):
+        """The 2026-08-26 case, untouched: no consumer, so nothing to re-send."""
+        from automations.shared import tableau_freshness as tf
+        self.assertIsNone(tf._already_sent_remediation([], self.SRC))
+        text = self._text_with([]).lower()
+        self.assertIn("ran and sent normally", text)
+
+    def test_once_a_report_pulled_it_stops_saying_nothing_to_rerun(self):
+        text = self._text_with(["box_order_log"])
+        self.assertNotIn("nothing to re-run", text.lower())
+        self.assertNotIn("ran and sent normally", text.lower())
+        self.assertIn("box_order_log", text)
+
+    def test_it_says_catching_up_will_not_repair_what_went_out(self):
+        text = self._text_with(["box_order_log"])
+        self.assertIn("does NOT repair what already went out", text)
+        self.assertIn("RE-SEND", text)
+
+    def test_it_still_refuses_to_send_you_to_rerun_the_source_id(self):
+        """The 2026-08-19 lesson survives the re-wording: the id is a SOURCE."""
+        text = self._text_with(["box_order_log"])
+        self.assertIn("that id is the SOURCE, not a report", text)
+
+    def test_every_report_that_pulled_is_named(self):
+        text = self._text_with(["tableau_screenshots_box", "box_order_log"])
+        for r in ("box_order_log", "tableau_screenshots_box"):
+            self.assertIn(r, text)
+
+    def test_one_report_reads_singular(self):
+        self.assertIn("the report that pulled it already ran",
+                      self._text_with(["box_order_log"]))
+        self.assertIn("the reports that pulled it already ran",
+                      self._text_with(["box_order_log", "tableau_screenshots_box"]))
+
     def test_it_does_not_tell_you_to_re_run_a_source(self):
         text = self._text()
         self.assertIn("that id is the SOURCE, not a report", text)
