@@ -170,10 +170,9 @@ if not _CREDS_OK:
     # cloud_creds.
     _miss = ", ".join(getattr(_CC.ensure_local_oauth, "missing", [])) or "?"
     _have = ", ".join(_CC.host_key_names()) or "(none)"
-    st.error(f"This board cannot reach Google Sheets. Missing secret(s): "
-             f"**{_miss}**.\n\nSecrets this app does have: {_have}\n\n"
-             f"Add the missing one(s) in Streamlit Cloud → the "
-             f"`streamlit_app.py` app → Settings → Secrets, then save.")
+    st.error(f"This board cannot reach Google Sheets. Missing secret: "
+             f"**{_miss}** — the same one the other tools on this site use.\n\n"
+             f"Secrets this app does have: {_have}")
     st.stop()
 if not _GATE.passed(_HOSTED):
     st.stop()

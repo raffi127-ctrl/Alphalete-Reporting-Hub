@@ -56,29 +56,65 @@ def host_key_names() -> list:
 def ensure_local_oauth(log=None):
     """Write the Google credentials to disk if missing. -> (usable, hosted).
 
-    `hosted` is True when a credential had to be taken from the host's secret
+    PREFERS THE SECRET THIS ORG ALREADY USES. `[gcp_oauth]` is described in
+    onboarding_ui.build_gs_client as "the one true secrets→Sheets wiring", and
+    every tool already deployed authenticates with it — so a board that
+    demanded its own pair of secrets was asking somebody to paste credentials
+    that were already sitting there. It holds the authorized-user JSON, which
+    is exactly what fill._client() loads.
+
+    fill._client() reads only oauth-token.json; it merely CHECKS that
+    oauth-client.json exists. That second file is written from the same
+    client_id / client_secret rather than stubbed, so it says something true.
+
+    `hosted` is True when a credential had to come from the host's secret
     store, which is the honest signal that this is running somewhere public
-    rather than on one of our Macs. A page can use it to decide it needs an
+    rather than on one of our Macs. A page uses it to decide it needs an
     access code — the machines in the office do not.
 
     Returns rather than raises: a page that cannot authenticate should say so
     in its own words, not crash with a traceback a reader cannot act on."""
-    ok, hosted, missing = True, False, []
-    for fname, secret in _WANT:
-        path = _DIR / fname
-        if path.exists():
-            continue
-        raw = _from_host(secret)
-        if not raw.strip():
-            ok = False
-            missing.append(secret)
-            if log:
-                log(f"missing credential: {secret}")
-            continue
-        _DIR.mkdir(parents=True, exist_ok=True)
-        path.write_text(raw)
-        # The token is a live credential; keep it off other users of the host.
-        path.chmod(0o600)
-        hosted = True
-    ensure_local_oauth.missing = missing      # for the page's error message
-    return ok, hosted
+    token_p, client_p = _DIR / "oauth-token.json", _DIR / "oauth-client.json"
+    if token_p.exists() and client_p.exists():
+        ensure_local_oauth.missing = []
+        return True, False                      # a Mac in the office
+
+    tok = _gcp_oauth() or _json_secret("GOOGLE_OAUTH_TOKEN")
+    if not tok:
+        ensure_local_oauth.missing = ["gcp_oauth"]
+        if log:
+            log("missing credential: gcp_oauth")
+        return False, True
+    _DIR.mkdir(parents=True, exist_ok=True)
+    token_p.write_text(json.dumps(tok))
+    token_p.chmod(0o600)
+    if not client_p.exists():
+        client_p.write_text(json.dumps({"installed": {
+            "client_id": tok.get("client_id", ""),
+            "client_secret": tok.get("client_secret", ""),
+            "token_uri": tok.get("token_uri",
+                                 "https://oauth2.googleapis.com/token"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth"}}))
+        client_p.chmod(0o600)
+    ensure_local_oauth.missing = []
+    return True, True
+
+
+def _gcp_oauth():
+    """The org's existing [gcp_oauth] secret, as a plain dict."""
+    try:
+        import streamlit as st
+
+        o = st.secrets.get("gcp_oauth")
+        return dict(o) if o else None
+    except Exception:   # noqa: BLE001 — not every caller is a Streamlit run
+        return None
+
+
+def _json_secret(name: str):
+    """A secret holding raw JSON text, for a host that has it that way."""
+    raw = _from_host(name)
+    try:
+        return json.loads(raw) if raw.strip() else None
+    except ValueError:
+        return None
