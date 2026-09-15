@@ -840,7 +840,10 @@ def ask_office_to_sign_in(office_key: str, when: str = "", *,
     if not send:
         return False
 
-    # The owner first -- they are the one who can fix it -- then us.
+    # DM, NOT THE TEAM'S ROOM (Megan 2026-09-15: "it should DM to the ICD,
+    # Eve, and I NOT the entire team channel"). A signed-out session is not
+    # the sales floor's business, and putting it in their channel is noise in
+    # the one room the boards are meant to own.
     owner = getattr(office, "slack_user_id", "") or ""
     sent_to = []
     for uid in [owner] + list(O.APPROVERS):

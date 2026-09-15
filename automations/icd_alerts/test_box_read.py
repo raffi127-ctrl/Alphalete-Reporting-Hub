@@ -254,3 +254,34 @@ class APartialResponseIsNotAShortDay(unittest.TestCase):
     def test_garbage_does_not_raise(self):
         for junk in (None, {}, {"data": None}, {"data": {"contractsList": None}}):
             self.assertEqual(B.rows_from_response(junk), [])
+
+
+class TheScreenAndTheWireDisagreeAboutDates(unittest.TestCase):
+    """The grid shows "09/15/2026 06:13 PM"; the API returns
+    "2026-09-15 18:13:46" for the same contract.
+
+    Parsing only the screen's format matched NOTHING against Ryan's live
+    data -- no error, no rows, just an office that looked like it had sold
+    nothing. A silent empty is the worst way for this to fail, because it is
+    indistinguishable from a quiet day.
+    """
+
+    def test_the_api_format_reads(self):
+        self.assertEqual(B.initiated_on("2026-09-15 18:13:46"), DAY)
+
+    def test_the_screen_format_still_reads(self):
+        self.assertEqual(B.initiated_on("09/15/2026 06:13 PM"), DAY)
+
+    def test_live_api_rows_actually_tally(self):
+        # The shape that came back empty before the fix.
+        rows = [B.row_from_edge({
+            "agent": {"name": {"first_name": "Max", "last_name": "Allen"}},
+            "created_date": "2026-09-15 16:58:20",
+            "contract_substatus": {"substatus": "TPV Passed"},
+            "adjusted_annual_volume": 51000})]
+        out = B.tally(rows, DAY)
+        self.assertEqual(out["sales"]["Max Allen"],
+                         {"Sales": 1, "Volume": 51000})
+
+    def test_a_service_start_still_does_not_parse(self):
+        self.assertIsNone(B.initiated_on("APR 2027"))

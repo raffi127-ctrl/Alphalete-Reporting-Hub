@@ -348,14 +348,16 @@ class ALostSessionIsNotAQuietDay(unittest.TestCase):
         self.assertTrue(SC.SESSION_LIFETIME_UNKNOWN)
 
 
-class ALostSessionAsksTheOfficeNotUs(unittest.TestCase):
+class ALostSessionAsksTheOfficeNotTheTeam(unittest.TestCase):
     """Ryan McSpadden, asked how often the authenticator is needed: "It saves
     typically, but it feels random when it logs me out" (2026-09-15).
 
     So this WILL happen, unpredictably, and the office will not know: their
-    sales simply stop, which looks exactly like a slow week. It is also the
-    only fault in this module the owner can fix -- posting it to
-    #claudecorrections would tell the people who cannot.
+    sales simply stop, which looks exactly like a slow week.
+
+    It DMs the owner, Megan and Eve. A signed-out session is not the sales
+    floor's business, and putting it in their channel is noise in the one room
+    the boards are meant to own.
     """
 
     def setUp(self):

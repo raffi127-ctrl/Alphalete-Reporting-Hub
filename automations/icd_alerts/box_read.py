@@ -50,9 +50,13 @@ class SignInNeeded(AccountProblem):
     """
 
 
-# "09/15/2026 06:13 PM" -- the Initiated Date cell, which IS the sale date.
-# Start Date is the service start (APR 2027) and must never be read for this.
-_DATE_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
+# TWO FORMATS, BECAUSE THE SCREEN AND THE WIRE DISAGREE. The grid shows
+# "09/15/2026 06:13 PM"; the API returns "2026-09-15 18:13:46" for the same
+# contract. Reading Ryan's live data with only the screen's format matched
+# nothing at all and the day came back EMPTY -- no error, no rows, just an
+# office that looked like it had sold nothing (2026-09-15).
+_DATE_US = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")     # 09/15/2026
+_DATE_ISO = re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b")    # 2026-09-15
 
 
 def initiated_on(value: str) -> Optional[dt.date]:
@@ -61,10 +65,15 @@ def initiated_on(value: str) -> Optional[dt.date]:
     None, not today. A cell we cannot parse is unknown, and counting it as
     today would put somebody else's week into this morning's number.
     """
-    m = _DATE_RE.search(str(value or ""))
-    if not m:
-        return None
-    month, day, year = (int(g) for g in m.groups())
+    text = str(value or "")
+    m = _DATE_ISO.search(text)
+    if m:
+        year, month, day = (int(g) for g in m.groups())
+    else:
+        m = _DATE_US.search(text)
+        if not m:
+            return None
+        month, day, year = (int(g) for g in m.groups())
     try:
         return dt.date(year, month, day)
     except ValueError:
