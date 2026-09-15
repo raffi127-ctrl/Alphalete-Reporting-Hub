@@ -487,6 +487,10 @@ RECIPIENTS: dict = {
         # (apply_adds, aditivo) y despues aca, para que seed_groups no lo
         # marque para SACAR — el caso de Juan Botero el 2026-08-28.
         "parkwchan19@gmail.com",
+        # IN 2026-09-15 (Eve): Nuri Burgos (22 Select Inc, 20593) recibe el
+        # reporte de Raf, donde van sus knocks (EXTRA_KNOCK_OWNERS). Ya estaba
+        # en el grupo VIVO; aca para que seed_groups no la marque para SACAR.
+        "nuri@22select.com",
     ],
     "wayne": [
         "iraffi127@icloud.com",

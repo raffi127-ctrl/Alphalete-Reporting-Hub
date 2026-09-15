@@ -94,6 +94,9 @@ RECIPIENTS: dict[str, List[str]] = {
         # "Raf's Captain Team" group.
         "trang.lecanavan@gmail.com",
         "kesslerzadrian@gmail.com",
+        # IN 2026-09-15 (Eve): Nuri Burgos — same add as
+        # captainship_drafts.config.RECIPIENTS and the live group.
+        "nuri@22select.com",
     ],
     "starr": [
         # OUT 2026-08-19, two-week zero rule: Jason Strid.
