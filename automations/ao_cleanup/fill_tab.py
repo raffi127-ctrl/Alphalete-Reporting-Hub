@@ -56,6 +56,8 @@ COLUMNS = [
     ("Email (Slack)", "email"),
     ("Slack User", "username"),
     ("Slack ID", "uid"),
+    ("Active in Slack", "active"),      # Yes = account not deactivated
+    ("Joined Channel", "joined"),       # from the history replay; blank if unseen
 ]
 CHECKBOX_LABELS = ("Remove from channel", "Remove from AO")
 CHANNEL_LABEL = "Channel"
@@ -206,9 +208,10 @@ def build_rows(members, users, terminated, channel_order, active=None,
             if uid not in spoke:
                 notes.append("Never posted here")
             ts = joined.get(uid)
-            if ts:
-                notes.append("Joined %s"
-                             % dt.datetime.fromtimestamp(float(ts)).strftime("%m/%d/%Y"))
+            joined_on = (dt.datetime.fromtimestamp(float(ts)).strftime("%m/%d/%Y")
+                         if ts else "")
+            if joined_on:
+                notes.append("Joined %s" % joined_on)
             if not name:
                 notes.append("Name unresolved")
             rows.append({
@@ -218,6 +221,9 @@ def build_rows(members, users, terminated, channel_order, active=None,
                 "email": u.get("email", ""),
                 "username": u.get("username", ""),
                 "uid": uid,
+                # blank, not "Yes", when Slack never told us about the account
+                "active": ("No" if u.get("deleted") else "Yes") if u else "",
+                "joined": joined_on,
             })
     return rows
 
