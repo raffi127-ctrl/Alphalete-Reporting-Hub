@@ -978,11 +978,24 @@ def install_problems(awake=None):
     except Exception:  # noqa: BLE001 — assume the stricter case
         sara = True
 
+    try:
+        sc = _C.uses_servicecloud()
+    except Exception:  # noqa: BLE001 — an older agent has no opinion
+        sc = False
+
     has_sara = (CONFIG_DIR / "saraplus-creds.json").exists()
     has_ov = (CONFIG_DIR / "ownerville-creds.json").exists()
+    has_sc = (CONFIG_DIR / "servicecloud-creds.json").exists()
 
     if sara and not has_sara:
         blocking.append("no SaraPlus login is saved, so nothing can be read")
+    if sc and not has_sc:
+        # A BOX OFFICE'S SALES LIVE THERE AND NOWHERE ELSE. Without it they
+        # get a knocks board and no sales at all -- which is the state every
+        # Box office was in before today, and the state that looks exactly
+        # like a quiet week.
+        blocking.append("no My Service Cloud login is saved, so this office's "
+                        "sales cannot be read")
     if not has_ov:
         if sara:
             notes.append("no OwnerVille login, so the knocks board will not "

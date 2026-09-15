@@ -112,3 +112,56 @@ class ALoginThatLandsOnTheResetPageIsNotALogin(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ABoxOfficeWithoutItIsNotAllSet(unittest.TestCase):
+    """The same guard SaraPlus has. Without this login a Box office gets a
+    knocks board and no sales at all -- which is the state every Box office
+    was in before today, and the state that looks exactly like a quiet week.
+    """
+
+    def _problems(self, files, sara, sc):
+        import tempfile
+        src, keep = [], False
+        for line in SETUP.splitlines():
+            if line.startswith("def install_problems("):
+                keep = True
+            elif keep and line.startswith("def ") and "install_problems" not in line:
+                break
+            if keep:
+                src.append(line)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        for f in files:
+            (tmp / f).write_text("{}")
+        ns = {"CONFIG_DIR": tmp}
+        exec("\n".join(src), ns)
+        with mock.patch.object(C, "uses_saraplus", return_value=sara), \
+                mock.patch.object(C, "uses_servicecloud", return_value=sc):
+            return ns["install_problems"](None)
+
+    def test_box_with_no_servicecloud_login_is_blocked(self):
+        blocking, _ = self._problems(
+            ["install.json", "ownerville-creds.json"], sara=False, sc=True)
+        self.assertTrue(any("Service Cloud" in b for b in blocking),
+                        "a Box office was told All set with no way to read "
+                        "its sales")
+
+    def test_box_with_it_is_fine(self):
+        blocking, _ = self._problems(
+            ["install.json", "ownerville-creds.json",
+             "servicecloud-creds.json"], sara=False, sc=True)
+        self.assertEqual(blocking, [])
+
+    def test_an_att_office_is_not_asked_for_it(self):
+        blocking, _ = self._problems(
+            ["install.json", "saraplus-creds.json", "ownerville-creds.json"],
+            sara=True, sc=False)
+        self.assertEqual(blocking, [],
+                         "an AT&T office is blocked on a login it has no "
+                         "account for")
+
+    def test_carlos_needs_both(self):
+        blocking, _ = self._problems(
+            ["install.json", "ownerville-creds.json", "saraplus-creds.json"],
+            sara=True, sc=True)
+        self.assertTrue(any("Service Cloud" in b for b in blocking))
