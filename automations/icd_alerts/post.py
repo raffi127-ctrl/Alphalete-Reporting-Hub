@@ -53,6 +53,26 @@ CH_OFFICE, CH_OWNER, CH_ASKED, CH_ASKED_JSON, CH_ASKED_AT = 0, 1, 2, 3, 4
 CH_APPROVED_JSON, CH_APPROVED = 5, 6
 CH_KN_WANTED, CH_KN_JSON, CH_KN_HOURS = 7, 8, 9
 CH_KN_APPROVED_JSON, CH_KN_APPROVED = 10, 11
+CH_OV_NAME = 12
+# TEXT DESTINATIONS. An office can have the same board sent to an iMessage
+# group AS WELL AS its Slack channels (Megan 2026-09-15), so these sit beside
+# the knocks columns rather than replacing them.
+CH_TX_WANTED, CH_TX_JSON = 13, 14
+CH_TX_APPROVED_JSON, CH_TX_APPROVED = 15, 16
+
+# The prefix that makes a group chat look like a channel to the posting pass.
+# Doing it this way means cadence, "is it due", the per-destination sent
+# markers and the one-failure-must-not-cost-the-others handling are all the
+# code that already exists, rather than a second copy that drifts.
+TEXT_DEST_PREFIX = "imessage:"
+
+
+def is_text_dest(channel_id: str) -> bool:
+    return (channel_id or "").startswith(TEXT_DEST_PREFIX)
+
+
+def text_group_of(channel_id: str) -> str:
+    return (channel_id or "")[len(TEXT_DEST_PREFIX):]
 
 COL_OFFICE, COL_DAY, COL_RECORDS = 0, 1, 2
 COL_RECEIVED, COL_LOCAL_TIME, COL_AGENT = 3, 4, 5
@@ -394,6 +414,78 @@ def approved_knocks(book=None) -> Dict[str, List[Dict]]:
                 if d.get("channel_id") and int(d.get("cadence_min") or 0) >= 0]
         if good:
             out[key] = good
+    return out
+
+
+def approved_texts(book=None) -> Dict[str, List[Dict]]:
+    """{office_key: [{channel_id, channel_name, cadence_min}]}, signed off.
+
+    Shaped exactly like approved_knocks() so the posting pass can concatenate
+    the two and treat them identically -- the channel_id is the group NAME
+    behind TEXT_DEST_PREFIX.
+
+    THE NAME IS THE ADDRESS, AND IT STAYS THE NAME. b2b_dispositions.text_post
+    resolves a group by name on every single send because a chat id is
+    regenerated whenever the membership changes, and a stale id does not raise
+    -- Messages sends into a thread nobody can see. That is how the Texas de
+    Brazil texts went missing for weeks. So nothing here ever stores an id.
+    """
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(CHANNELS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return {}
+    out = {}
+    for row in rows[1:]:
+        if len(row) <= CH_TX_APPROVED:
+            continue
+        key = (row[CH_OFFICE] or "").strip().lower()
+        ok = (row[CH_TX_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
+        if not key or not ok:
+            continue
+        try:
+            groups = json.loads(row[CH_TX_APPROVED_JSON] or "[]")
+        except ValueError:
+            continue
+        good = []
+        for g in groups:
+            name = (g.get("group") or "").strip() if isinstance(g, dict) else str(g).strip()
+            if not name:
+                continue
+            good.append({"channel_id": TEXT_DEST_PREFIX + name,
+                         "channel_name": name,
+                         "cadence_min": int((g or {}).get("cadence_min") or 0)
+                         if isinstance(g, dict) else 0})
+        if good:
+            out[key] = good
+    return out
+
+
+def pending_texts(book=None) -> List[Dict]:
+    """Offices that asked for their board as a text and are not signed off."""
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(CHANNELS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for i, row in enumerate(rows[1:], start=2):
+        row = list(row) + [""] * (CH_TX_APPROVED + 1 - len(row))
+        ok = (row[CH_TX_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
+        if ok:
+            continue
+        try:
+            asked = json.loads(row[CH_TX_JSON] or "[]")
+        except ValueError:
+            asked = []
+        if not asked:
+            continue
+        out.append({"row": i, "office": (row[CH_OFFICE] or "").strip(),
+                    "groups": asked})
     return out
 
 

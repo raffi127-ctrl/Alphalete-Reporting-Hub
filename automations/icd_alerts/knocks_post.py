@@ -119,6 +119,19 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         return {"posted": 0}
 
     approved = P.approved_knocks(book)
+    # THE SAME BOARD, ALSO AS A TEXT (Megan 2026-09-15: "not instead- this is
+    # in addition to"). Merged into the same destination list so cadence, the
+    # due check, the per-destination markers and the one-room-failure-must-
+    # not-cost-the-rest handling are the code that already exists.
+    texts = P.approved_texts(book)
+    can_text = _can_text()
+    if texts and not can_text:
+        # OUT LOUD. A machine that cannot text silently dropping every text
+        # destination is a board somebody is waiting for that never arrives
+        # and never errors.
+        log("this machine cannot send iMessage, so %d office(s) with a text "
+            "destination will get Slack only -- see gap_alerts.config."
+            "TEXTING_MACHINES" % len(texts))
     day = day or dt.date.today()
     values = tab.get_all_values()
     posted_total = 0
@@ -135,7 +148,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             log("%-10s relayed knocks but is not enrolled -- ignored" % key)
             continue
 
-        dests = approved.get(key) or []
+        dests = list(approved.get(key) or [])
+        if can_text:
+            dests += texts.get(key) or []
         if not dests:
             log("%-10s %s rep row(s) relayed, but no knocks destination is "
                 "approved yet" % (key, row[KN_COUNT] or "?"))
@@ -197,13 +212,32 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         comment = _comment(office, rows_for_board, now)
         for d in due:
             try:
-                _upload(d["channel_id"], boards, comment)
+                if P.is_text_dest(d["channel_id"]):
+                    _text(P.text_group_of(d["channel_id"]), boards, comment)
+                else:
+                    _upload(d["channel_id"], boards, comment)
                 posted_at[d["channel_id"]] = now
                 posted_total += 1
             except Exception as e:  # noqa: BLE001 — one room must not cost the rest
+                where = d.get("channel_name") or d["channel_id"]
                 log("%-10s FAILED to post to %s: %s: %s"
-                    % (key, d.get("channel_name") or d["channel_id"],
-                       type(e).__name__, str(e)[:120]))
+                    % (key, where, type(e).__name__, str(e)[:120]))
+                if P.is_text_dest(d["channel_id"]):
+                    # A GROUP NAME IS THE ONE THING NOBODY CAN CHECK FOR THEM.
+                    # It is typed on a form, it cannot be verified from the
+                    # machine that approves it, and a near-miss delivers
+                    # nothing. So this goes where a person will see it rather
+                    # than into a log.
+                    try:
+                        P._slack(O.OPS_CHANNEL,
+                                 ":speech_balloon: *%s* — could not text "
+                                 "their board to \u201c%s\u201d.\n> %s\n"
+                                 "> Their Slack channels are unaffected. "
+                                 "Check the group name is exactly right and "
+                                 "that Lucy is in the chat."
+                                 % (office.label, where, str(e)[:200]))
+                    except Exception:  # noqa: BLE001
+                        pass
         tab.update_cell(i, KN_POSTED + 1, json.dumps(
             {k: v.isoformat(timespec="seconds") for k, v in posted_at.items()}))
 
@@ -268,6 +302,38 @@ def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
         CARD_TITLE = "KNOCKS & DISPOSITIONS"
     return "*%s — %s*  ·  ranked by total knocks" % (CARD_TITLE.title(),
                                                      _clock(now))
+
+
+def _can_text() -> bool:
+    """Is THIS machine allowed to send iMessage?
+
+    Asked of gap_alerts.config, which is the one list, because an unconsented
+    send does not fail -- it blocks on a permission dialog nobody is there to
+    click, for about five minutes, every tick. A machine goes on that list
+    only after a text has been SEEN arriving from the identity that sends.
+    """
+    try:
+        from automations.gap_alerts import config as gc
+        return bool(gc.can_text())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _text(group: str, boards, comment: str) -> None:
+    """The board to an iMessage group, through the sender production uses.
+
+    NOT our own AppleScript. text_post knows two things this would otherwise
+    have to rediscover: resolve the group by NAME every time (a stored chat id
+    goes stale the moment somebody is added, and sends into a thread nobody
+    can see), and leave IMAGE_SEND_DELAY_S between sends because Messages
+    uploads asynchronously and crowding it DROPS IMAGES SILENTLY.
+
+    It raises on a name that matches nothing or more than one thing, which is
+    what we want: texting an office's numbers into the wrong leaders' group is
+    worse than not texting at all.
+    """
+    from automations.b2b_dispositions import text_post as tp
+    tp.send_to_group(group, comment, list(boards), dry_run=False)
 
 
 def _upload(channel_id: str, boards, comment: str) -> None:

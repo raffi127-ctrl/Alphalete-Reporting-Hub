@@ -86,6 +86,14 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
     else:
         log("  They said they do not want a knocks board.")
 
+    # THE TEXT DESTINATION IS ADDITIONAL, so it is approved separately and a
+    # problem with it must not un-approve the Slack half that already worked
+    # (Megan 2026-09-15: "not instead- this is in addition to").
+    if rec.text_groups:
+        log("")
+        log("They also asked to be texted:")
+        channels.cmd_texts(rec.office_key)
+
     store.set_status(rec.office_key, STATUS_APPROVED,
                      note="approved %s" % rec.submitted_at)
     # BUST THE ROSTER CACHE. offices.sheet_offices() holds its read for ten

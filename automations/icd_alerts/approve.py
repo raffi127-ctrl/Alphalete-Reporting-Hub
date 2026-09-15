@@ -228,6 +228,116 @@ def _write_knocks_approval(office_key: str, resolved) -> None:
                      % (office_key, P.CHANNELS_TAB))
 
 
+def ensure_text_columns(tab) -> None:
+    """Put the four text columns on the tab if they are not there yet.
+
+    The same lesson as the sign-up tab: values written past the end of a
+    header land in unnamed columns, and every reader then serves an empty
+    list while the sheet looks full.
+    """
+    head = tab.row_values(1)
+    want = ["Texts: Wanted", "Texts: Groups JSON",
+            "Texts Approved JSON", "Texts Approved"]
+    if len(head) > P.CH_TX_APPROVED and head[P.CH_TX_WANTED]:
+        return
+    head = list(head) + [""] * (P.CH_TX_APPROVED + 1 - len(head))
+    for off, label in zip(range(P.CH_TX_WANTED, P.CH_TX_APPROVED + 1), want):
+        head[off] = label
+    tab.update(values=[head], range_name="A1:%s1" % _col_letter(len(head)))
+
+
+def _col_letter(n: int) -> str:
+    out = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        out = chr(65 + r) + out
+    return out
+
+
+def cmd_texts(office_key: str) -> int:
+    """Sign off an office's iMessage group(s).
+
+    WHAT THIS CAN AND CANNOT CHECK. A Slack room can be resolved from
+    anywhere, so cmd_approve refuses one Lucy is not in. A GROUP CHAT cannot:
+    it exists only in Messages on the machine that will send, so run from
+    Megan's laptop there is nothing here to look up.
+
+    So it checks when it can -- on a texting machine it resolves the name for
+    real -- and when it cannot, it says the name is UNVERIFIED rather than
+    printing something that reads like a check. That matters more here than
+    almost anywhere: a group name matching no chat does not fail, it delivers
+    nothing and reports success.
+    """
+    office_key = office_key.strip().lower()
+    # READ WHAT THEY ASKED FOR FROM THE SIGN-UP, not from a request column the
+    # office's own machine has to relay. A text destination is entirely OUR
+    # side: their laptop hands in counts and we post, so the name of a group
+    # chat never needs to reach that laptop at all. Routing it through there
+    # would have meant an Apps Script change, a redeploy, and an office
+    # waiting on its own machine to tell us something it already told the
+    # form.
+    from automations.icd_signup import store as signup_store
+    rec = signup_store.get(office_key)
+    asked = [g.strip() for g in (rec.text_groups if rec else []) if g.strip()]
+    if not asked:
+        print("%s did not ask to be texted." % office_key)
+        return 1
+    can_check = False
+    try:
+        from automations.gap_alerts import config as gc
+        can_check = bool(gc.can_text())
+    except Exception:  # noqa: BLE001
+        pass
+
+    resolved, problems = [], []
+    for name in asked:
+        if not can_check:
+            print("  %-30s UNVERIFIED (this machine cannot see Messages)"
+                  % name)
+            resolved.append({"group": name, "cadence_min": 0})
+            continue
+        try:
+            from automations.b2b_dispositions import text_post as tp
+            tp.send_to_group(name, "", [], dry_run=True)
+            print("  %-30s found" % name)
+            resolved.append({"group": name, "cadence_min": 0})
+        except Exception as e:  # noqa: BLE001
+            problems.append("%s — %s" % (name, str(e)[:160]))
+
+    if problems:
+        print("\nNOT APPROVED:")
+        for p_ in problems:
+            print("  - %s" % p_)
+        print("\nNothing was written.")
+        return 1
+
+    _write_texts_approval(office_key, resolved)
+    print("\nApproved %d group(s) for %s." % (len(resolved), office_key))
+    if not can_check:
+        print("")
+        print("THE NAMES ARE UNVERIFIED. Nothing here could look them up. If "
+              "one does not match a real chat it will deliver nothing and "
+              "say nothing, so confirm the first board actually arrives.")
+    return 0
+
+
+def _write_texts_approval(office_key: str, resolved) -> None:
+    from automations.recruiting_report.fill import open_by_key
+    tab = open_by_key(P.RELAY_SPREADSHEET_ID).worksheet(P.CHANNELS_TAB)
+    ensure_text_columns(tab)
+    for i, row in enumerate(tab.get_all_values()[1:], start=2):
+        if (row[P.CH_OFFICE] or "").strip().lower() == office_key:
+            tab.update(values=[[", ".join(g["group"] for g in resolved),
+                                json.dumps([g["group"] for g in resolved]),
+                                json.dumps(resolved), "TRUE"]],
+                       range_name="%s%d:%s%d" % (
+                           _col_letter(P.CH_TX_WANTED + 1), i,
+                           _col_letter(P.CH_TX_APPROVED + 1), i))
+            return
+    raise SystemExit("no row for %r on the '%s' tab"
+                     % (office_key, P.CHANNELS_TAB))
+
+
 def cmd_list() -> int:
     pending = P.pending_requests()
     approved = P.approved_channels()
