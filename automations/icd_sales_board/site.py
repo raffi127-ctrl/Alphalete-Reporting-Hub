@@ -1875,6 +1875,61 @@ _SB_CSS = """
 """
 
 
+def _rep_editor(office_key: str, week_ending, rows: list,
+                roster: dict) -> None:
+    """Team / Leadership / Status for every rep, always on, with Save.
+
+    The board above is a hand-built table so each day can SPAN its own
+    columns, and an HTML table cannot be typed into — Streamlit only edits its
+    own grid. So the three columns an owner actually changes sit directly
+    under it.
+
+    No toggle (Megan 2026-09-14): they are columns on Raf's sheet, so they are
+    simply there. Save / Discard, the same as everywhere else on the site —
+    nothing is written on a keystroke."""
+    key = f"repedit_{office_key}_{week_ending}"
+    src = [{"Rep": r["Rep"],
+            "Team": r.get("Team") or BLANK_OPTION,
+            "Leadership": r.get("Leadership") or BLANK_OPTION,
+            "Status": r.get("Status") or BLANK_OPTION} for r in rows]
+    if not src:
+        return
+    teams = sorted({(r.team or "").strip() for r in roster.values()
+                    if (r.team or "").strip()})
+    st.markdown("###### Rep details")
+    edited = st.data_editor(
+        pd.DataFrame(src).astype("string").fillna(""),
+        use_container_width=True, hide_index=True, num_rows="fixed",
+        height=_grid_height(len(src)), key=key,
+        column_config={
+            "Rep": st.column_config.TextColumn("Rep", disabled=True),
+            "Team": st.column_config.SelectboxColumn(
+                options=[BLANK_OPTION] + teams, required=False),
+            "Leadership": st.column_config.SelectboxColumn(
+                options=[BLANK_OPTION] + list(R.LEVELS), required=False),
+            "Status": st.column_config.SelectboxColumn(
+                options=[BLANK_OPTION] + list(R.STATUSES), required=False,
+                help="Terminate a rep here; set them back to Active to "
+                     "reinstate."),
+        })
+    c_save, c_disc, _ = st.columns([1, 1, 4])
+    with c_disc:
+        if st.button("Discard", key=f"repdisc_{office_key}"):
+            st.session_state.pop(key, None)
+            st.rerun()
+    with c_save:
+        if st.button("Save changes", type="primary",
+                     key=f"repsave_{office_key}"):
+            R.set_attrs(office_key, {
+                r["Rep"]: {"team": _unblank(r.get("Team")),
+                           "level": _unblank(r.get("Leadership")),
+                           "status": _unblank(r.get("Status"))}
+                for r in edited.to_dict("records")})
+            st.session_state.pop(key, None)
+            st.success("Saved.")
+            st.rerun()
+
+
 def _grouped_board(grid: list, groups: list) -> str:
     """The board as a real table, with each block SPANNING its columns.
 
@@ -2036,19 +2091,17 @@ def relay_board(icd: str, office_key: str) -> None:
     # the day isn't complete." The heading carries the dates and an unreported
     # day is blank, so it only restated what the table already shows.
 
-    # TWO SEPARATE EXPANSIONS, drawn DOWN BESIDE THE COLOUR KEY (Megan
-    # 2026-09-13) — directly above the table they change, rather than above
-    # the vitals they do not. Their values are needed here to build the rows,
-    # so the value is read from state and the widget is rendered into a slot
-    # further down: on a rerun the click has already landed, which is exactly
-    # how Streamlit behaves anyway.
-    exp_key = f"relayexp_{office_key}"
-    # PRODUCTS SHOW ON THE DAILY COUNTS, always (Megan 2026-09-13). Raf's sheet
-    # gives every day its own Apps / Int / Int Up / DTV / NL block, so a single
+    # PRODUCTS SHOW ON THE DAILY COUNTS, always (Megan 2026-09-13). Raf's
+    # sheet gives every day its own Apps / Int / DTV / NL block, so a single
     # number per day with the split on hover was never the daily breakdown he
     # reads. It stopped being a toggle.
     products = True
-    expand = bool(st.session_state.get(exp_key, False))
+
+    # NO EXPANSION TOGGLE (Megan 2026-09-14): "we should just have it there
+    # and be able to edit and remove the expansion option at the top." The rep
+    # columns are on the board for good, and _rep_editor below it is where
+    # they are changed — so the old editable-grid view is no longer reached.
+    expand = False
 
     # REP ROWS COME FROM TABLEAU for closed days (Megan pointed at the
     # ALLICDSALLREPSBD view, 2026-09-13). It carries Owner + Rep + product +
@@ -2366,12 +2419,7 @@ def relay_board(icd: str, office_key: str) -> None:
     # Streamlit paints Styler output onto NON-editable columns only, which is
     # why the tint survives: the measures are always locked and only the three
     # owner columns ever unlock.
-    c_key, c_b = st.columns([6, 3])
-    with c_key:
-        st.markdown(_colour_key(), unsafe_allow_html=True)
-    c_b.toggle("Rep details", key=exp_key,
-               help="Team, Leadership and Status — and where they are "
-                    "edited.")
+    st.markdown(_colour_key(), unsafe_allow_html=True)
 
     # THE DAY SPANS ITS BREAKDOWN (Megan 2026-09-13). A Streamlit grid cannot
     # merge a header, so it could only ever show a flat run of repeating
@@ -2411,6 +2459,7 @@ def relay_board(icd: str, office_key: str) -> None:
                                ["Team", "Leadership", "Status",
                                 "Start date", "Days worked"]]))
         st.markdown(_grouped_board(grid, groups), unsafe_allow_html=True)
+        _rep_editor(office_key, week_ending, rows, roster)
         relay_wow(office_key)
         return
 
