@@ -76,7 +76,13 @@ the same lesson as `describe_filters`.
 from __future__ import annotations
 
 import datetime as dt
+import json
+from pathlib import Path
 from typing import Optional, Sequence, Tuple
+
+# Where this module's own small state lives (the extract's high-water mark).
+# Repo-relative so it follows the checkout on every machine.
+OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "box_order_log"
 
 # Pull comfortably wider than the report's rolling 6-week (42-day) window so the
 # merge and the payout "last week & this week" always have full data, with room
@@ -623,6 +629,77 @@ def capped_pull_warning(newest: Optional[dt.date],
 BLOCK_SEND_MIN_DAYS_BEHIND = 4
 
 
+def _reach_history_file() -> Path:
+    return OUTPUT_DIR / "box_orderlog_reach.json"
+
+
+def _extract_moved_today(newest: dt.date, today: dt.date) -> Optional[bool]:
+    """Did this pull reach FURTHER than anything seen before today?
+
+    True/False, or None when there is no history to compare against (the first
+    ever run, or an unreadable state file) — the caller must treat None as
+    "can't tell" and fall back to the old calendar rule rather than block.
+
+    A DELIBERATE second copy of `readiness._box_roll_history`'s idea, not a
+    shared helper: that one's state is per-machine by design and lives on the
+    box that runs the probe (Lucy 3), while this runs on Lucy 2. They could not
+    share a file even if they imported each other, so a local copy is the honest
+    shape. Keep the two in step if either changes.
+    """
+    path = _reach_history_file()
+    try:
+        data = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001 — no history yet is the normal first run
+        data = {}
+    prior_s, seen_s = data.get("prior"), data.get("max")
+    if data.get("date") != today.isoformat():
+        prior_s, seen_s = seen_s, None      # first pull of a new day
+    best = newest.isoformat()
+    if seen_s and seen_s > best:
+        best = seen_s
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(
+            {"date": today.isoformat(), "prior": prior_s, "max": best}, indent=2))
+    except Exception:  # noqa: BLE001 — history is an optimisation, never fatal
+        pass
+    if not prior_s:
+        return None
+    return newest.isoformat() > prior_s
+
+
+def _behind_completed_day(newest: dt.date, today: dt.date) -> str:
+    """'' when the feed has reached the newest COMPLETED reporting day (or has
+    demonstrably refreshed past a no-sales day); a loud reason when it hasn't.
+
+    Fails OPEN on anything it can't answer — a missing week module, no history
+    to compare, no completed day yet. This gate can refuse to deliver, so every
+    uncertainty has to resolve toward sending, leaving the calendar backstop to
+    catch the extreme cases.
+    """
+    try:
+        from automations.org_sales_board import week as _wk
+        completed = _wk.completed_days(today)
+    except Exception:  # noqa: BLE001 — never let a gate's import sink a send
+        return ""
+    if not completed:
+        return ""
+    target = max(completed)
+    if newest >= target:
+        return ""
+    moved = _extract_moved_today(newest, today)
+    if moved is not False:
+        # Moved today => refreshed, `target` just has no Box rows. Unknown =>
+        # no history to judge by; say nothing and let the calendar rule decide.
+        return ""
+    return ("STALE FEED: newest sale is {} but {} is a completed day with no "
+            "rows, and the extract has not moved since before today — refusing "
+            "to send numbers that would report the week short. This is what "
+            "posted `paid=0` for a whole week on 2026-09-15. Re-run once the "
+            "feed reaches {} (it usually lands 06:50-08:00); the Sheet merge is "
+            "unaffected either way.".format(newest, target, target))
+
+
 def should_block_send(newest: Optional[dt.date],
                       today: Optional[dt.date] = None,
                       min_days_behind: int = BLOCK_SEND_MIN_DAYS_BEHIND) -> str:
@@ -644,6 +721,28 @@ def should_block_send(newest: Optional[dt.date],
                 "send. Check the Start/End Date and Contract ID / Account Id "
                 "filters (must read '(All)').")
     behind = (today - newest).days
+    # THE CALENDAR COUNT CANNOT SEE A MISSING DAY (Megan 2026-09-15). "4 days
+    # behind today" is a blunt proxy, and on 2026-09-15 the real cap slipped
+    # straight under it: the feed sat at Sat 9/12 on a Tuesday — 3 days, one
+    # short of the threshold — so this returned "" and box_order_log posted
+    # `THIS 9.14-9.20 paid=0` to two of Carlos's channels. The whole current
+    # week was empty and the gate said fine.
+    #
+    # Lowering the constant is NOT the fix and would break more than it mends:
+    # Sunday legitimately has no Box sales, so on a Monday "newest = Saturday"
+    # is already 2 days behind and perfectly healthy. A smaller number blocks
+    # Carlos most Mondays — a false block is an owner with no report at all,
+    # which is worse than the thing we are preventing.
+    #
+    # So ask the question the calendar can't: has the feed reached the latest
+    # COMPLETED reporting day? That is the same test `_probe_box_daily` settled
+    # on, including its tie-break — a quiet Sunday and an unrefreshed Sunday are
+    # identical in one pull, so the discriminator is whether the extract moved
+    # FURTHER today than anything seen before today. Moved => refreshed, the
+    # target day is simply empty, send. Didn't move => genuinely stale, block.
+    stale = _behind_completed_day(newest, today)
+    if stale:
+        return stale
     if behind < min_days_behind:
         return ""
     # The dates can't name the cause (Eve 2026-08-17): a Contract ID include list
