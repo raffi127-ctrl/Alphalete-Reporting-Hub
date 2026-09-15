@@ -883,10 +883,8 @@ def require_desktop() -> bool:
     except Exception as _e:  # noqa: BLE001
         say("      model reported : could not read (%s)" % type(_e).__name__)
     try:
-        import subprocess as _sp
-        _b = _sp.run(["ioreg", "-rc", "AppleSmartBattery"],
-                     capture_output=True, timeout=20)
-        say("      battery bytes  : %d" % len(_b.stdout or b""))
+        from automations.icd_alerts import relay as _R2
+        say("      battery bytes  : %d" % _R2.battery_bytes())
     except Exception as _e:  # noqa: BLE001
         say("      battery bytes  : could not read (%s)" % type(_e).__name__)
     say("      Send those two lines to the reporting team.")

@@ -196,6 +196,23 @@ def _never_sleeps() -> Optional[bool]:
         return None
 
 
+def battery_bytes() -> int:
+    """How much the battery probe saw. For DIAGNOSTICS only.
+
+    Exposed here rather than re-run by the installer: there is exactly one
+    definition of a desktop in this codebase, and a second copy of the probe
+    is how the installer and the reports end up disagreeing about what a
+    laptop is. test_installer_parity pins that.
+    """
+    try:
+        import subprocess
+        out = subprocess.run(["ioreg", "-rc", "AppleSmartBattery"],
+                             capture_output=True, timeout=20)
+        return len(out.stdout or b"")
+    except Exception:  # noqa: BLE001
+        return -1
+
+
 def _model_name() -> str:
     """"Mac mini", "MacBook Pro", "iMac" -- or "" if it cannot be read.
 
