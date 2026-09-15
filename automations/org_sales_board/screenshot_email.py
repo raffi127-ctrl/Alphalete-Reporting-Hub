@@ -90,6 +90,10 @@ RENDER_SCALE = 2.0
 # board is delivered exactly once.
 ALLUNITS_PREFIX = "allunits_"
 
+# How many times capture() shoots the whole set when the tab moves under it
+# (rows inserted/deleted above a section between the read and the export).
+MAX_RENDER_ATTEMPTS = 3
+
 
 def _cell(g, r, c):
     return (g[r - 1][c - 1] if r - 1 < len(g) and c - 1 < len(g[r - 1]) else "").strip()
@@ -382,6 +386,14 @@ def _top_org_range(g, after: int, before: int) -> Optional[Tuple[str, str]]:
     return None
 
 
+def ranges_moved(before: List[Tuple[str, str]],
+                 after: List[Tuple[str, str]]) -> List[str]:
+    """Names of the sections whose range is not the same in `after` — moved,
+    gone, or new. Empty = the layout the images were cut from still holds."""
+    a, b = dict(before), dict(after)
+    return sorted(n for n in set(a) | set(b) if a.get(n) != b.get(n))
+
+
 def section_ranges(g) -> List[Tuple[str, str]]:
     """Return [(name, 'A1:Z9'), …] for the full email, by label:
 
@@ -608,16 +620,39 @@ def capture(out_dir: Path) -> List[Tuple[str, Path, int]]:
               "for the render", flush=True)
     import time
     out = []
-    render = [(n, r) for (n, r) in ranges if not n.endswith("_wehide")]
     try:
-        for i, (name, rng) in enumerate(render):
-            if i:
-                time.sleep(2)      # gentle pacing so the export endpoint doesn't 429
-            p = _export_png(gid, rng, out_dir / f"{name}.png", token)
-            w = _range_width_px(colpx, rng)
-            print(f"    {name:26} {rng:14} {w or '?':>5}px sheet  -> {p.name}",
+        # THE BOARD CAN MOVE UNDER THE RENDER (2026-09-15). The ranges come
+        # from one read of the tab, and the ~20 exports after it take minutes.
+        # That morning 4 rows were deleted higher up the tab mid-render, so
+        # every bottom ORG box was cut 4 rows too low: it started at 'vs 4
+        # WeekAVG' and ended on the NEXT box's title — and the draft went to
+        # review looking like that, with no error. So after rendering, the tab
+        # is read again: if any range moved, the whole set is shot again off
+        # the new layout. A board that will not hold still fails loudly instead
+        # of mailing cut boxes.
+        for attempt in range(1, MAX_RENDER_ATTEMPTS + 1):
+            out = []
+            render = [(n, r) for (n, r) in ranges if not n.endswith("_wehide")]
+            for i, (name, rng) in enumerate(render):
+                if i:
+                    time.sleep(2)  # gentle pacing so the export endpoint doesn't 429
+                p = _export_png(gid, rng, out_dir / f"{name}.png", token)
+                w = _range_width_px(colpx, rng)
+                print(f"    {name:26} {rng:14} {w or '?':>5}px sheet  -> {p.name}",
+                      flush=True)
+                out.append((name, p, w))
+            moved = ranges_moved(ranges,
+                                 section_ranges(_retry(ws.get_all_values)))
+            if not moved:
+                break
+            print(f"[screenshot_email] the board moved during the render "
+                  f"(attempt {attempt}): {', '.join(moved)} — shooting again",
                   flush=True)
-            out.append((name, p, w))
+            if attempt == MAX_RENDER_ATTEMPTS:
+                raise RuntimeError(
+                    "the board kept moving during the render — sections "
+                    f"{', '.join(moved)} would be cut; not using these images")
+            ranges = section_ranges(_retry(ws.get_all_values))
     finally:
         rehide = [(a + 1, b) for (a, b) in spans if b > a]   # keep 1st week visible
         if rehide:
