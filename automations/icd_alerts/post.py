@@ -1037,13 +1037,36 @@ def warn_stale_machines(day: Optional[dt.date] = None, *, send: bool = False,
     return fresh
 
 
-def laptop_offices(day: Optional[dt.date] = None, book=None) -> List[Dict]:
+# OFFICES ALLOWED TO STAY ON A LAPTOP, and who decided.
+#
+# Not a loophole -- the opposite. The point of finding laptops is to catch the
+# NEXT one, and a detector that keeps reporting the laptop everybody already
+# agreed to is one that gets ignored, taking the new laptop down with it. An
+# office in here has been looked at and accepted, gaps and all.
+LAPTOP_ACKNOWLEDGED = {
+    "cyrus": "Megan, 2026-09-15 — the only office on a laptop; accepted "
+             "knowing the lid closing takes his channel quiet.",
+}
+
+
+def laptop_offices(day: Optional[dt.date] = None, book=None,
+                   include_acknowledged: bool = False) -> List[Dict]:
     """Offices relaying from a machine with a battery.
 
     The installer turns laptops away now, but every office enrolled BEFORE
     that rule existed is still on whatever they had -- and a laptop is the
     single most likely reason a channel goes quiet. This makes them visible
     without asking anybody what is on their desk.
+
+    AN EMPTY LIST IS NOT AN ALL-CLEAR. Only agent icd_alerts/3 and later say
+    what machine they are; anything older sends no answer, and an office that
+    never said is not counted here. The offices most likely to be on a laptop
+    are the ones who enrolled earliest, which are exactly the ones whose agent
+    is too old to admit it -- so read a zero as "nobody has told us", and use
+    silent_machines() to see who still cannot answer the question.
+
+    Offices in LAPTOP_ACKNOWLEDGED are left out unless asked for, so what
+    comes back is the list worth acting on.
     """
     from automations.recruiting_report.fill import open_by_key
 
@@ -1059,11 +1082,56 @@ def laptop_offices(day: Optional[dt.date] = None, book=None) -> List[Dict]:
             continue
         for mid, info in (machines_for(row) or {}).items():
             if isinstance(info, dict) and info.get("desktop") is False:
-                out.append({"office": (row[COL_OFFICE] or "").strip().lower(),
+                office = (row[COL_OFFICE] or "").strip().lower()
+                if not include_acknowledged and office in LAPTOP_ACKNOWLEDGED:
+                    continue
+                out.append({"office": office,
                             "id": mid,
                             "name": (info or {}).get("name") or mid,
-                            "day": _day_key(row[COL_DAY])})
+                            "day": _day_key(row[COL_DAY]),
+                            "acknowledged": office in LAPTOP_ACKNOWLEDGED})
     return out
+
+
+def silent_machines(day: Optional[dt.date] = None, book=None) -> List[Dict]:
+    """Offices whose agent is too old to say what machine it runs on.
+
+    The blind spot behind laptop_offices(). An office here has not been
+    cleared -- it simply cannot answer yet, and will start answering the
+    moment it updates.
+    """
+    from automations.recruiting_report.fill import open_by_key
+
+    day = day or dt.date.today()
+    book = book or open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(RELAY_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return []
+    # ONE ANSWER PER OFFICE, FROM ITS NEWEST ROW. The tab keeps a row per
+    # office per day, so an office that has since updated still has old rows
+    # sitting behind it -- reading every row reported Kash as unable to answer
+    # on the strength of a row from agent 1, days after he was on agent 3.
+    latest: Dict[str, Dict] = {}
+    for row in rows[1:]:
+        if not row or not (row[COL_OFFICE] or "").strip():
+            continue
+        office = (row[COL_OFFICE] or "").strip().lower()
+        day_key = _day_key(row[COL_DAY])
+        # Strictly older loses. On the SAME day the later row wins, because
+        # rows are appended in order -- so a re-relay after an update beats
+        # the morning's row instead of losing to it.
+        if office in latest and day_key < latest[office]["day"]:
+            continue
+        machines = machines_for(row) or {}
+        told = [m for m in machines.values()
+                if isinstance(m, dict) and m.get("desktop") is not None]
+        agent = (row[COL_AGENT] or "").strip() if len(row) > COL_AGENT else ""
+        latest[office] = {"office": office,
+                          "agent": agent or "unknown",
+                          "day": day_key,
+                          "told": bool(told)}
+    return [v for v in latest.values() if not v["told"]]
 
 
 def _warned() -> Dict:

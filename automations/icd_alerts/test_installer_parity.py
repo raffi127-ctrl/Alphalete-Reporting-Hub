@@ -161,10 +161,6 @@ class TheCheckInstallsNothing(unittest.TestCase):
             self.assertIn("nothing has been installed", text.lower(), name)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TheNameOnScreenIsNotTheNameOnDisk(unittest.TestCase):
     """Offices see "Lucy Ecosystem"; the disk still says lucy-reports.
 
@@ -287,3 +283,48 @@ class TheOfficeIsReadCorrectlyFromTheKey(unittest.TestCase):
         for text, name in ((SH, "install.sh"), (PS, "install.ps1")):
             self.assertNotIn("cut -d- -f1 ", text, name)
             self.assertNotIn("($KEY -split '-')[0]", text, name)
+
+
+class TheSetupPageCanHandOutAnUpdate(unittest.TestCase):
+    """An installed office must never be sent a raw curl command.
+
+    On 2026-09-15 one was, over iMessage. iMessage turned the URL in the
+    middle of it into a tappable link; the office copied the link and lost
+    both the "curl -fsSL" in front and the "| bash" behind, so the shell was
+    handed a web address and said "no such file or directory". They stayed on
+    the old agent for days, and nothing upstream could tell the difference
+    between an office that had updated and one that had not.
+
+    The page is the fix, because a link survives being sent. These pin that
+    the page can actually serve an update, and that invite.py leads with it.
+    """
+
+    PAGE = (HERE.parent.parent / "docs" / "index.html").read_text()
+
+    def test_update_mode_does_not_demand_an_office_code(self):
+        # An update takes no key, so the missing-code error must not fire.
+        self.assertIn("!UPD &&", self.PAGE,
+                      "the code gate still blocks update mode, so the update "
+                      "link shows 'this link is missing your office code'")
+
+    def test_update_mode_serves_both_platforms(self):
+        for needle in ("update.sh", "update.ps1"):
+            self.assertIn(needle, self.PAGE,
+                          "the page cannot produce %s, so that platform has "
+                          "no way to update but pasting a raw command" % needle)
+
+    def test_invite_leads_with_the_link_not_the_command(self):
+        from automations.icd_alerts import invite
+        lines = []
+        invite.update_block(lines.append)
+        text = "\n".join(lines)
+        self.assertIn(invite.UPDATE_PAGE, text)
+        # The raw command may still appear -- as the phone fallback, BELOW the
+        # link. Leading with it is what put it into a text message.
+        self.assertLess(text.index(invite.UPDATE_PAGE), text.index(invite.UPDATE),
+                        "the raw curl command comes before the link, which is "
+                        "how it ends up pasted into iMessage again")
+
+
+if __name__ == "__main__":
+    unittest.main()

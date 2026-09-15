@@ -28,6 +28,15 @@ RAW = ("https://raw.githubusercontent.com/raffi127-ctrl/"
 # command you can read aloud is the fallback when a link will not open.
 PAGE = "https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/?code=%s"
 INSTALL = "curl -fsSL %s/install.sh | bash -s -- %%s" % RAW
+# THE UPDATE GOES OUT AS A LINK, NOT AS A COMMAND. Sent raw over iMessage on
+# 2026-09-15, the URL in the middle became a tappable link and the office
+# copied THAT -- losing the "curl -fsSL" in front and the "| bash" behind, so
+# they ran a web address as a program and sat on the old version for days.
+# Nobody noticed, because an office that never updates looks exactly like an
+# office that did. A link is meant to be tapped and the page carries a copy
+# button, so no part of the command has to survive being pasted.
+UPDATE_PAGE = ("https://raffi127-ctrl.github.io/"
+               "Alphalete-Reporting-Hub/?update=1")
 UPDATE = "curl -fsSL %s/update.sh | bash" % RAW
 
 
@@ -102,18 +111,42 @@ def show(office_key: str, rows: Dict, log=print) -> bool:
     return True
 
 
+def update_block(log=print) -> None:
+    """The line to send an office that is ALREADY installed.
+
+    Same shape as show(): the link first, the raw command underneath for
+    whoever is on the phone with them.
+    """
+    log("")
+    log("  ALREADY INSTALLED? SEND THEM THIS INSTEAD:")
+    log("")
+    log("  " + UPDATE_PAGE)
+    log("")
+    log("  (no code needed — it is the same link for every office)")
+    log("")
+    log("  If a link will not open, the command it gives them is:")
+    log("")
+    log("  " + UPDATE)
+    log("")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Print an office's install line")
     ap.add_argument("office", nargs="?", help="office key, e.g. kash")
     ap.add_argument("--all", action="store_true", help="every active office")
+    ap.add_argument("--update", action="store_true",
+                    help="print the update line (no office needed)")
     args = ap.parse_args(argv)
+
+    if args.update:
+        update_block()
+        return 0
 
     rows = keys()
     if args.all:
         ok = [show(o.key, rows) for o in O.active()]
         print("=" * 72)
-        print("\nSame for everyone, any time something changes:\n")
-        print("  " + UPDATE + "\n")
+        update_block(print)
         return 0 if all(ok) else 1
     if not args.office:
         ap.print_help()

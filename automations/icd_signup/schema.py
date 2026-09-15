@@ -146,6 +146,10 @@ class IcdSignup(NamedTuple):
     # row, a caller that has not been updated -- must not lose its credit
     # checks to a field that was added afterwards.
     campaign: str = "att"
+    # ["Box Team 🔥"] -- iMessage GROUP CHAT NAMES, exactly as they appear in
+    # Messages. Resolved by name on every send, so a renamed chat stops being
+    # found and a near-miss finds nothing.
+    text_groups_json: str = "[]"
     # ["C09AVM17PAR", "#palace-sales"] -- ids preferred, names accepted.
     alert_channels_json: str = "[]"
     # [{"channel": "...", "cadence_min": 30, "label": "Every 30 minutes"}]
@@ -174,6 +178,10 @@ class IcdSignup(NamedTuple):
                     out.append("The Saturday %s time should look like 10:45."
                                % label)
         return out
+
+    @property
+    def text_groups(self) -> List[str]:
+        return _loads_list(self.text_groups_json)
 
     @property
     def alert_channels(self) -> List[str]:
@@ -216,6 +224,7 @@ class IcdSignup(NamedTuple):
             submitted_at=str(row.get("submitted_at") or "").strip(),
             office_key=str(row.get("office_key") or "").strip().lower(),
             note=str(row.get("note") or "").strip(),
+            text_groups_json=str(row.get("text_groups_json") or "[]"),
             alert_channels_json=str(row.get("alert_channels_json") or "[]"),
             knocks_json=str(row.get("knocks_json") or "[]"),
         )
@@ -235,3 +244,9 @@ def _loads_list(text) -> List:
 
 def stamp() -> str:
     return dt.datetime.now().isoformat(timespec="seconds")
+
+
+# WHO THEY HAVE TO ADD TO THE GROUP CHAT. Lucy sends from the reporting
+# account, so a chat she is not in cannot receive anything -- and unlike a
+# Slack channel, nobody on our side can add her to somebody's group text.
+LUCY_IMESSAGE = "alphaletereporting@gmail.com"

@@ -96,7 +96,7 @@
   <h1>Set up Lucy ECOsystem</h1>
   <p class="who" id="who">Takes about five minutes. You will not need to do anything afterwards.</p>
 
-  <div class="stop">
+  <div class="stop" id="stopbar">
     <b>This only works on a stationary computer</b> &mdash; an iMac, a Mac mini
     or a Mac Studio. A laptop stops the moment its lid closes, which would take
     your channel quiet without anybody noticing.
@@ -188,7 +188,7 @@
       </div>
     </div>
 
-    <div class="step">
+    <div class="step" id="step4">
       <div class="num">4</div>
       <div style="min-width:0;flex:1">
         <h2>Answer the boxes that pop up</h2>
@@ -215,12 +215,22 @@
 (function () {
   var RAW = "https://raw.githubusercontent.com/raffi127-ctrl/" +
             "Alphalete-Reporting-Hub/main/automations/icd_alerts";
-  var code = new URLSearchParams(location.search).get("code") || "";
-  code = code.trim().toUpperCase();
+  var qs = new URLSearchParams(location.search);
+  var code = (qs.get("code") || "").trim().toUpperCase();
+
+  // UPDATE MODE. An office that is already installed needs one line that takes
+  // no key at all. It got sent as a raw command over iMessage on 2026-09-15,
+  // iMessage turned the middle of it into a tappable link, and the office
+  // copied the link WITHOUT the "curl -fsSL" in front or the "| bash" behind
+  // -- so they ran a web address as if it were a program and stayed on the old
+  // version for days without either side noticing. A page is tappable by
+  // design and carries a copy button, so nothing has to survive being pasted.
+  var UPD = qs.get("update") === "1";
 
   // No code means somebody opened the bare page. Say so plainly rather than
-  // handing them a command that cannot work.
-  if (!/^[A-Z0-9]+(-[A-Z0-9]+)+$/.test(code)) {
+  // handing them a command that cannot work. An update needs no code, so this
+  // gate is an install-only gate.
+  if (!UPD && !/^[A-Z0-9]+(-[A-Z0-9]+)+$/.test(code)) {
     document.getElementById("main").innerHTML =
       '<div class="err"><b>This link is missing your office code.</b><br><br>' +
       'Each office gets its own link. Ask the reporting team to send you ' +
@@ -230,11 +240,27 @@
     return;
   }
 
-  var office = code.split("-")[0];
-  office = office.charAt(0) + office.slice(1).toLowerCase();
-  document.getElementById("who").innerHTML =
-    "This link is for <b>" + office + "'s office</b>. Takes about five " +
-    "minutes, and you will not need to do anything afterwards.";
+  var office = code ? code.split("-")[0] : "";
+  office = office ? office.charAt(0) + office.slice(1).toLowerCase() : "";
+
+  if (UPD) {
+    // An update asks nothing and installs nothing new, so every step that
+    // exists to collect something goes away.
+    document.title = "Update Lucy";
+    document.querySelector("h1").textContent = "Update Lucy";
+    document.getElementById("who").innerHTML =
+      "Takes a few seconds. Lucy keeps running the whole time, and you will " +
+      "not be asked for anything.";
+    var gone = [document.getElementById("stopbar"),
+                document.getElementById("step4")];
+    for (var g = 0; g < gone.length; g++) {
+      if (gone[g]) { gone[g].style.display = "none"; }
+    }
+  } else {
+    document.getElementById("who").innerHTML =
+      "This link is for <b>" + office + "'s office</b>. Takes about five " +
+      "minutes, and you will not need to do anything afterwards.";
+  }
 
   var cmd = "curl -fsSL " + RAW + " | bash -s -- " + code;
   document.getElementById("cmd").textContent = cmd;
@@ -249,8 +275,12 @@
              navigator.platform || "";
   var os = /win/i.test(plat) ? "win" : "mac";
 
-  var MAC = "curl -fsSL " + RAW + "/install.sh | bash -s -- " + code;
-  var WIN = "$env:LUCY_KEY='" + code + "'; irm " + RAW + "/install.ps1 | iex";
+  var MAC = UPD
+    ? "curl -fsSL " + RAW + "/update.sh | bash"
+    : "curl -fsSL " + RAW + "/install.sh | bash -s -- " + code;
+  var WIN = UPD
+    ? "irm " + RAW + "/update.ps1 | iex"
+    : "$env:LUCY_KEY='" + code + "'; irm " + RAW + "/install.ps1 | iex";
   var cmd = "";
 
   var CHK_MAC = "curl -fsSL " + RAW + "/check.sh | bash";

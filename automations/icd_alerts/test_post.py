@@ -808,3 +808,102 @@ class LaptopsAreVisible(unittest.TestCase):
             "aaa": {"name": "Front iMac", "desktop": True},
             "bbb": {"name": "Someone's MacBook", "desktop": False}})])
         self.assertEqual([o["name"] for o in out], ["Someone's MacBook"])
+
+
+class AnAcknowledgedLaptopStopsBeingNews(unittest.TestCase):
+    """The laptop list exists to catch the NEXT laptop, not to re-report Cy.
+
+    Cyrus runs on a laptop with Megan's knowledge (2026-09-15). A detector
+    that keeps naming him is one that gets skimmed past, which is how the
+    laptop nobody agreed to would slip through beside him.
+    """
+
+    HEAD_LEN = 11
+
+    def _run(self, rows, **kw):
+        tab = mock.MagicMock()
+        tab.get_all_values.return_value = [["Office"] * self.HEAD_LEN] + rows
+        book = mock.MagicMock()
+        book.worksheet.return_value = tab
+        return P.laptop_offices(dt.date(2026, 9, 13), book=book, **kw)
+
+    def _row(self, machines, office, day="2026-09-13", agent="icd_alerts/3"):
+        return [office, day, "{}", "", "", agent, "", "", "{}", "{}",
+                json.dumps(machines)]
+
+    def test_cyrus_is_known_and_not_reported(self):
+        out = self._run([self._row(
+            {"aaa": {"name": "Cy MacBook", "desktop": False}}, "cyrus")])
+        self.assertEqual(out, [], "an accepted laptop is still being reported")
+
+    def test_but_a_new_laptop_still_is(self):
+        out = self._run([
+            self._row({"aaa": {"name": "Cy MacBook", "desktop": False}},
+                      "cyrus"),
+            self._row({"bbb": {"name": "New MacBook", "desktop": False}},
+                      "someoneelse")])
+        self.assertEqual([o["office"] for o in out], ["someoneelse"])
+
+    def test_the_acknowledged_one_can_still_be_asked_for(self):
+        out = self._run([self._row(
+            {"aaa": {"name": "Cy MacBook", "desktop": False}}, "cyrus")],
+            include_acknowledged=True)
+        self.assertEqual([o["office"] for o in out], ["cyrus"])
+        self.assertTrue(out[0]["acknowledged"])
+
+
+class AZeroLaptopsIsNotAnAllClear(unittest.TestCase):
+    """An office on an old agent cannot answer "what machine are you?".
+
+    laptop_offices() correctly refuses to accuse it -- which means an empty
+    result can mean "no laptops" OR "nobody can tell us yet". Those need to
+    look different, or the blind spot reads as a clean bill of health.
+    """
+
+    HEAD_LEN = 11
+
+    def _run(self, rows):
+        tab = mock.MagicMock()
+        tab.get_all_values.return_value = [["Office"] * self.HEAD_LEN] + rows
+        book = mock.MagicMock()
+        book.worksheet.return_value = tab
+        return P.silent_machines(dt.date(2026, 9, 13), book=book)
+
+    def _row(self, machines, office, agent):
+        return [office, "2026-09-13", "{}", "", "", agent, "", "", "{}",
+                "{}", json.dumps(machines)]
+
+    def test_an_old_agent_is_named_as_silent(self):
+        out = self._run([self._row({}, "cyrus", "icd_alerts/2")])
+        self.assertEqual([o["office"] for o in out], ["cyrus"])
+        self.assertEqual(out[0]["agent"], "icd_alerts/2")
+
+    def test_a_machine_that_answered_is_not_silent(self):
+        out = self._run([self._row({"aaa": {"name": "iMac", "desktop": True}},
+                                   "kash", "icd_alerts/3")])
+        self.assertEqual(out, [])
+
+    def test_a_laptop_that_answered_is_not_silent_either(self):
+        # It answered. It is a laptop problem, not a visibility problem.
+        out = self._run([self._row({"aaa": {"name": "MacBook",
+                                            "desktop": False}},
+                                   "cyrus", "icd_alerts/3")])
+        self.assertEqual(out, [])
+
+    def test_an_office_that_has_since_updated_is_not_still_silent(self):
+        # The tab keeps one row per office per DAY. Kash's row from agent 1
+        # sat behind his agent 3 row and reported him as unable to answer
+        # days after he could.
+        out = self._run([
+            self._row({}, "kash", "icd_alerts/1"),
+            self._row({"aaa": {"name": "iMac", "desktop": True}},
+                      "kash", "icd_alerts/3"),
+        ])
+        self.assertEqual(out, [], "an old row is outvoting the current one")
+
+    def test_the_newest_row_wins_even_when_it_is_the_silent_one(self):
+        rows = [self._row({"aaa": {"name": "iMac", "desktop": True}},
+                          "kash", "icd_alerts/3"),
+                self._row({}, "kash", "icd_alerts/1")]
+        rows[0][1], rows[1][1] = "2026-09-10", "2026-09-13"
+        self.assertEqual([o["office"] for o in self._run(rows)], ["kash"])
