@@ -136,6 +136,19 @@ st.divider()
 # said it does not work (Megan 2026-09-13). A bordered container looks the
 # same and re-runs on every change.
 with st.container(border=True):
+    st.subheader("The computer it will run on")
+    # NOT ASKED ANY MORE. Mac-or-PC is something the machine itself answers
+    # the moment it relays, and the installer already works it out on its own
+    # -- so asking was one more box for an owner to get wrong about their own
+    # office. What they DO need to be told is which machine to use, and that
+    # is a statement, not a question (Megan 2026-09-13).
+    st.error(
+        "**This only works on a stationary computer.** An iMac, a Mac mini or "
+        "a Mac Studio — something that sits on a desk and stays on.\n\n"
+        "**The installer will refuse to run on a laptop.**")
+    # Corrected from what the machine reports on its first relay.
+    platform = "mac"
+
     st.subheader("Who you are")
     owner = st.text_input("Your full name",
                           placeholder="e.g. Cyrus Wade")
@@ -165,19 +178,6 @@ with st.container(border=True):
                    "checks and sales come from SaraPlus, which only the AT&T "
                    "campaigns use — so this office will not get those, and "
                    "will not be asked for a SaraPlus login.")
-
-    st.subheader("The computer it will run on")
-    # NOT ASKED ANY MORE. Mac-or-PC is something the machine itself answers
-    # the moment it relays, and the installer already works it out on its own
-    # -- so asking was one more box for an owner to get wrong about their own
-    # office. What they DO need to be told is which machine to use, and that
-    # is a statement, not a question (Megan 2026-09-13).
-    st.error(
-        "**This only works on a stationary computer.** An iMac, a Mac mini or "
-        "a Mac Studio — something that sits on a desk and stays on.\n\n"
-        "**The installer will refuse to run on a laptop.**")
-    # Corrected from what the machine reports on its first relay.
-    platform = "mac"
 
     st.subheader("Your selling hours")
     st.caption("Nothing posts outside these — this is how Lucy knows your reps "
