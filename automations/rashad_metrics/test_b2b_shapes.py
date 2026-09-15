@@ -387,3 +387,107 @@ def test_it_is_not_the_same_number_as_total_talk_to():
     assert knocks.COL_BOX_CORP_NO_OPP in K._B2B_BOX_TALK_TO_PARTS
     assert knocks.COL_BOX_CORP_NO_OPP in R.BOX_ACTUAL_TALK_TO_SUBTRAHENDS
     assert knocks.COL_NO_ANSWER not in R.B2B_BOX_KNOCKS_COLUMNS
+
+
+# ---------------------------------------------- Ryan's column order ---
+# Ryan McSpadden typed the board out column by column, 2026-09-15. Megan:
+# "you can do whatever you want -- Carlos / Abel / Roshan all get what you do".
+
+def _drawn_box_header():
+    """The header the Box board actually DRAWS, rate columns and all."""
+    import datetime as dt
+    import tempfile
+    from pathlib import Path
+    from automations.icd_alerts import knocks_map as M
+
+    def box(rep, rid):
+        return {"id": rid, "rep": rep, "total leads knocked": "120",
+                "total knocks": "140", "first knock": "9:05 AM",
+                "last knock": "6:40 PM", "talked to": "0",
+                "owner talked to": "6", "not interested": "8",
+                "contract signed": "2", "bill collected - no sale": "1",
+                "come back": "31", "am come back": "4",
+                "corp - no opp": "11", "do not disturb": "3",
+                "inaccessible": "6", "inaccurate lead": "5"}
+
+    rows = M.to_rows([box("A B", "1"), box("C D", "2")])
+    seen = []
+    orig = R._draw
+
+    def spy(header, *a, **kw):
+        seen.extend(header)
+        return orig(header, *a, **kw)
+
+    R._draw = spy
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            R.render_knocks_boards(dt.date(2026, 9, 15), rows=rows,
+                                   out_dir=Path(td))
+    finally:
+        R._draw = orig
+    return seen
+
+
+def test_the_box_board_draws_ryans_order():
+    """Positional, not just 'contains' -- the whole request was the ORDER."""
+    # The "#" column is prepended by number_rows after the reorder, which is
+    # exactly where Ryan asked for it ("# of Reps" first).
+    want = [R.COL_NUM_HEADER] + [R.COMBINED_KNOCKS_DISPLAY.get(c, c)
+                                 for c in R.BOX_BOARD_ORDER]
+    assert _drawn_box_header() == want
+
+
+def test_avg_doors_per_rep_is_gone_from_box_only():
+    """"Average doors per rep we can remove for Box I think?" -- and every
+    other board still has to carry it."""
+    assert R.COL_DOORS_PER_REP not in _drawn_box_header()
+    assert R.COL_DOORS_PER_REP in R.BOX_BOARD_DROP
+    # Still inserted for everyone else: it is added at draw time by
+    # _insert_rate_columns, which no other shape opts out of.
+    assert R.BOX_BOARD_DROP == [R.COL_DOORS_PER_REP]
+
+
+def test_the_order_covers_every_column_the_board_has():
+    """An unlisted column is APPENDED, never dropped -- so if this ever fails,
+    the board grew a column and it is sitting at the far right rather than
+    missing. Fix the order list; do not delete the column."""
+    drawn = _drawn_box_header()
+    listed = {R.COMBINED_KNOCKS_DISPLAY.get(c, c)
+              for c in R.BOX_BOARD_ORDER} | {R.COL_NUM_HEADER}
+    assert [d for d in drawn if d not in listed] == []
+
+
+def test_actual_talk_tos_per_rep_divides_by_the_same_knockers():
+    """Both per-rep columns over one divisor, or the board contradicts
+    itself."""
+    from automations.icd_alerts import knocks_map as M
+
+    def box(rep, rid, tk, corp, inacc, inaccur):
+        return {"id": rid, "rep": rep, "total leads knocked": "100",
+                "total knocks": str(tk), "first knock": "9:05 AM",
+                "last knock": "6:40 PM", "talked to": "0",
+                "owner talked to": "6", "not interested": "8",
+                "contract signed": "2", "bill collected - no sale": "1",
+                "come back": "31", "am come back": "4",
+                "corp - no opp": str(corp), "do not disturb": "3",
+                "inaccessible": str(inacc), "inaccurate lead": str(inaccur)}
+
+    rows = M.to_rows([box("A B", "1", 148, 12, 7, 5),
+                      box("C D", "2", 133, 9, 4, 3)])
+    header, table = R._table_from_rows(rows)
+    sub = R._combined_sub(header, table, base_cols=R.B2B_BOX_KNOCKS_COLUMNS,
+                          out_cols=R.B2B_BOX_KNOCKS_HEADERS)
+    totals = R._combined_totals("OFFICE TOTAL", sub, R.B2B_BOX_KNOCKS_HEADERS)
+    at = R.B2B_BOX_KNOCKS_HEADERS.index(R.COL_BOX_ACTUAL_TALK_TO)
+    per = R.B2B_BOX_KNOCKS_HEADERS.index(R.COL_BOX_ACTUAL_TALK_TO_PER_REP)
+    n = len(R._knockers(sub, R.B2B_BOX_KNOCKS_HEADERS))
+    assert totals[at] == "241"                     # 281 - 21 - 11 - 8
+    assert totals[per] == "%.1f" % (241 / n)
+    # blank on a rep row: a rep row is already one rep
+    assert all(r[per] == "" for r in sub)
+
+
+def test_the_per_rep_twin_is_box_only():
+    for headers in (R.B2B_ATT_KNOCKS_HEADERS, R.COMBINED_KNOCKS_HEADERS,
+                    R.WIRELESS_KNOCKS_HEADERS, R.ENERGYWELL_KNOCKS_HEADERS):
+        assert R.COL_BOX_ACTUAL_TALK_TO_PER_REP not in headers
