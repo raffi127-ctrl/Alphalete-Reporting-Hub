@@ -1371,6 +1371,11 @@ def main(argv=None) -> int:
                 assert_posting_as_lucy()
             run(day, send=args.send, only=args.office)
             if args.watch:
+                try:
+                    from automations.icd_alerts import morning_recap
+                    morning_recap.run(day, send=args.send)
+                except Exception as e:  # noqa: BLE001 — never cost a sweep
+                    print("morning recap skipped: %s" % type(e).__name__)
                 run_requested_approvals(send=args.send)
                 notify_new_signups(send=args.send)
                 notify_pending(send=args.send)
