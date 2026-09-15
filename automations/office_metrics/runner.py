@@ -127,6 +127,14 @@ def _office_channels_label(o: Office) -> str:
     names = [(p.get("channel_name") or p.get("channel_id") or "").strip()
              for p in plans]
     names = [n for n in names if n]
+    if not names:
+        names = [o.channel_name]
+    # A mirrored extra channel is a destination like any other as far as the card
+    # is concerned — the day lands there too, so the row has to say so even
+    # though the run pulled once.
+    for extra in _off.extra_channel_names(o.key):
+        if extra and extra not in names:
+            names.append(extra)
     if len(names) > 1:
         return " + ".join(names)
     return o.channel_name
@@ -516,8 +524,13 @@ def _merge_only_rerun(o: Office, results, full_metrics, blocked_channels, *,
     failed_slugs = list(dict.fromkeys(label_to_slug.get(l, l)
                                       for l in failed_labels))
     retry = ["--office", o.key, "--live"]
-    if failed_slugs:
-        retry += ["--only", ",".join(failed_slugs)]
+    # The "🔁 copy → #channel" row has no metric behind it, so it can never be an
+    # --only target (same rule as email_digest in the full-run path above).
+    _retry_slugs = [sl for sl in failed_slugs if not sl.startswith(MIRROR_LABEL)]
+    if _retry_slugs:
+        retry += ["--only", ",".join(_retry_slugs)]
+    elif failed_slugs:
+        retry = []
     total = len(failed_labels) + len(ok_labels)
     _rm.write_manifest(
         o.report_id, failed=failed_labels, succeeded=ok_labels,
@@ -534,6 +547,60 @@ def _merge_only_rerun(o: Office, results, full_metrics, blocked_channels, *,
           + (f"; still failed: {', '.join(failed_slugs)}" if failed_slugs
              else " — office is CLEAN"), flush=True)
     return True
+
+
+# Slug + label for the "did the copy land?" row. Not a metric: it is never a
+# valid `--only` target, so it is filtered out of retry_args the same way
+# email_digest is (a retry that matches no metric pulls nothing and posts
+# nothing).
+MIRROR_SLUG = "mirror_copy"
+MIRROR_LABEL = "🔁 copy → "
+
+
+def _mirror_env(o: Office, *, manual_channel: bool) -> list:
+    """The extra channel ids this office's posts are COPIED into, and the env the
+    metric subprocesses read to do it (METRICS_MIRROR_CHANNELS).
+
+    Empty for a manual --channel override: that flag means "put this run in one
+    named place" (a backfill of the channel that missed), and a mirror would put
+    it in two."""
+    if manual_channel or getattr(o, "emails_only", False):
+        return []
+    return _off.extra_channel_ids(o.key)
+
+
+def _mirror_gaps(client, primary_chan: str, mirror_ids: list, today: dt.date):
+    """Boards that reached the primary thread but NOT its copy in each mirror
+    channel: [(channel_id, [missing first lines])].
+
+    Read-only, and deliberately after the metrics rather than inside them: each
+    post already mirrors itself and prints loudly when that fails, but the metric
+    subprocess still exits 0, so without this check a channel could quietly miss
+    boards while the run reported green [[feedback_green_means_delivered]].
+    Raises nothing the caller must handle — a check that can't read is reported
+    as unknown, never as a failure."""
+    from automations.shared import slack_metrics_post as smp
+
+    def _keys(channel: str, ts: str) -> list:
+        msgs = client.conversations_replies(
+            channel=channel, ts=ts, limit=200).get("messages") or []
+        return [k for k in (smp._norm_first_line(m.get("text", ""))
+                            for m in msgs[1:]) if k]
+
+    ts = smp.find_metrics_thread_ts(client, today, channel_id=primary_chan)
+    want = _keys(primary_chan, ts)
+    gaps = []
+    for dst in mirror_ids:
+        twin = smp._mirror_thread_ts(client, primary_chan, ts, dst, today,
+                                     create=False)
+        if not twin:
+            gaps.append((dst, ["(no copy of today's thread at all)"]))
+            continue
+        have = set(_keys(dst, twin))
+        missing = [k for k in dict.fromkeys(want) if k not in have]
+        if missing:
+            gaps.append((dst, missing))
+    return gaps
 
 
 def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
@@ -1066,6 +1133,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     else:
         print(f"=== {o.label} daily metrics — owner={o.owner!r} → {_dest} "
               f"({target_chan}) — {mode.upper()} ===")
+        # The banner exists so a human can see WHERE this run sends before it
+        # sends. A mirrored extra channel is part of that answer.
+        _extra_now = _mirror_env(o, manual_channel=bool(args.channel))
+        if _extra_now:
+            print(f"    + copy → {', '.join(_off.extra_channel_names(o.key))} "
+                  f"(mirrored from this same run)")
     for m in wired:
         print(f"   • {m['label']}  ({m['module']})")
 
@@ -1129,6 +1202,17 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     else:
         os.environ.pop("METRICS_EMAIL_DIR", None)
 
+    # EXTRA CHANNELS = a COPY of this one run, not a second run. The ids go in
+    # the env because the metrics are subprocesses, and the env is what crosses
+    # that boundary (same reason METRICS_CHANNEL_ID does); slack_metrics_post
+    # re-uploads each finished board from the file it just rendered. Set before
+    # base_env is snapshotted. [[project_trang_fresh_success]]
+    mirror_ids = _mirror_env(o, manual_channel=bool(args.channel))
+    if mirror_ids:
+        os.environ["METRICS_MIRROR_CHANNELS"] = ",".join(mirror_ids)
+    else:
+        os.environ.pop("METRICS_MIRROR_CHANNELS", None)
+
     base_env = dict(os.environ)
     if not args.fresh:
         base_env["METRICS_XTAB_CACHE"] = str(
@@ -1163,6 +1247,29 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                 print(f"✗ couldn't open group DM for {users}: "
                       f"{type(e).__name__}: {str(e)[:140]}")
                 return 2
+
+    # PREFLIGHT the mirror channels for the same reason the destinations get one:
+    # if the posting account can't reach the copy's channel, say so in seconds
+    # (and stop trying to upload into it once per board), instead of finding out
+    # from the post-run gap check. A blocked mirror drops out of the env — the
+    # office's own thread is unaffected — and is recorded so the run isn't green.
+    blocked_mirrors: list = []
+    if mode == "live" and mirror_ids and not o.emails_only:
+        _reachable = []
+        for _mid, _mname in zip(mirror_ids, _off.extra_channel_names(o.key)):
+            _why = _channel_block_reason(client, _mid)
+            if _why:
+                print(f"\n⚠ copy to {_mname} ({_mid}) SKIPPED — {_why}")
+                blocked_mirrors.append((_mname, _mid, _why))
+            else:
+                _reachable.append(_mid)
+        mirror_ids = _reachable
+        if mirror_ids:
+            base_env["METRICS_MIRROR_CHANNELS"] = ",".join(mirror_ids)
+            os.environ["METRICS_MIRROR_CHANNELS"] = ",".join(mirror_ids)
+        else:
+            base_env.pop("METRICS_MIRROR_CHANNELS", None)
+            os.environ.pop("METRICS_MIRROR_CHANNELS", None)
 
     # ---- Destinations: normally ONE (the office's channel, all wired metrics).
     # An office with channel_plans FANS OUT — each plan is its own channel with
@@ -1294,6 +1401,37 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                     note = f"{note} (recovered on retry {attempt})"
             results.append((dest["channel_name"], m["slug"], m["label"], ok, note))
 
+    # ---- Did the copy land? One read per mirror channel, after every board is
+    # posted. A gap is recorded against the MIRROR channel so the summary, the
+    # Hub row and the alert all say which channel is short and which boards it
+    # is missing — the run cannot be green for a channel that didn't get them.
+    # An unreachable COPY channel is the same story as an unreachable
+    # destination — one line naming the channel plus the invite that fixes it,
+    # not a list of metric names that were never the problem (the Drew lesson in
+    # _collapse_blocked_failures).
+    for _mname, _mid, _why in blocked_mirrors:
+        results.append((_mname, MIRROR_SLUG, f"{MIRROR_LABEL}{_mname}", False,
+                        f"{CHANNEL_UNREACHABLE_PREFIX}{_why}"))
+        blocked_channels.append((_mname, _mid, _why))
+    if mode == "live" and mirror_ids and not o.emails_only:
+        try:
+            for _dst, _missing in _mirror_gaps(client, target_chan, mirror_ids,
+                                               dt.date.today()):
+                _dname = next((n for x, n in zip(_off.extra_channel_ids(o.key),
+                                                 _off.extra_channel_names(o.key))
+                               if x == _dst), _dst)
+                _note = f"copy missing {len(_missing)} post(s): " + \
+                        "; ".join(_missing)[:300]
+                print(f"\n  ⚠ {_dname} is short — {_note}", flush=True)
+                results.append((_dname, MIRROR_SLUG,
+                                f"{MIRROR_LABEL}{_dname}", False, _note))
+        except Exception as e:                  # noqa: BLE001
+            # Unverifiable is not the same as failed — say so and leave the
+            # metrics' own verdicts alone [[feedback_dont_explain_away_a_zero]].
+            print(f"\n  ⚠ couldn't verify the copy in "
+                  f"{', '.join(_off.extra_channel_names(o.key))}: "
+                  f"{type(e).__name__}: {str(e)[:140]}", flush=True)
+
     total = time.monotonic() - overall_start
     # ---- DELIVER. Everything above rendered boards; for an email office
     # nothing has reached the owner yet, so this is the step that makes the day
@@ -1345,7 +1483,7 @@ def main(argv=None, *, office_key: str | None = None) -> int:
 
     _dest_desc = (("email: " + ", ".join(o.email_to)) if o.emails_only else
                   (f"{len(destinations)} channels" if len(destinations) > 1
-                   else o.channel_name))
+                   else _office_channels_label(o)))
     # A blocked channel is THE headline: without it the note reads "0/4
     # metrics posted; failed: churn, rep_activations, order_log, cancels",
     # which sends whoever reads the alert hunting four Tableau views for a
@@ -1383,11 +1521,20 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         # nothing. When the boards rendered and only the send failed, the retry
         # is the re-send (seconds, no Tableau); when metrics failed too, the
         # metrics re-run mails the whole set again at the end of it anyway.
-        _retry_slugs = [sl for sl in failed_slugs if sl != "email_digest"]
+        _retry_slugs = [sl for sl in failed_slugs
+                        if sl not in ("email_digest", MIRROR_SLUG)]
         if _retry_slugs:
             retry += ["--only", ",".join(_retry_slugs)]
         elif "email_digest" in failed_slugs:
             retry = ["--office", o.key, "--live", "--resend-email"]
+        elif MIRROR_SLUG in failed_slugs:
+            # A copy that didn't land is the ONLY failure: every board pulled,
+            # rendered and posted to the primary channel. An unattended whole-
+            # office re-run would post the day's thread there a SECOND time to
+            # fix a channel that just needs the copies. So: no auto-retry (empty
+            # retry_args → run_manifest.retry_spec returns None), but the office
+            # still reads NOT ok, so the Hub row and the alert both show it.
+            retry = []
         # …and the same rule applies to the FAILED LIST, which is what the
         # section-drop alert actually prints. One line per blocked channel, not
         # one per metric that never got the chance to run.

@@ -349,8 +349,16 @@ CROSS_WS_TOKEN_FILES: dict = {"trang": "slack-token-freshsuccess"}
 # added after the office was onboarded would be wiped by the next --write.
 #
 # An extra channel gets the SAME sections as the office's primary thread — the
-# ask is "post the metrics somewhere else too", not "post a different report" —
-# so the runner fans out one identical thread per channel.
+# ask is "post the metrics somewhere else too", not "post a different report".
+#
+# It is therefore a MIRROR, not a fan-out plan (Megan 2026-09-15). Fan-out runs
+# every section once per channel: trang's first two days ran 18 metric
+# subprocesses and pulled every Tableau view twice, ~7 minutes, for two threads
+# of identical numbers. The runner now runs the office ONCE and re-uploads each
+# finished board into the extra channel from the file it already rendered (see
+# runner._mirror_env / slack_metrics_post.mirror_channels). A channel that wants
+# a DIFFERENT set of sections is still a real fan-out — that is what the
+# onboarding row's own `channel_plans` are for.
 #
 # trang (Megan 2026-09-14): Trang wants the daily metrics in #freshsuccess-team
 # (C07QS80KJL8) as well as #freshsuccess-all-leaders. Same FRESH SUCCESS
@@ -360,6 +368,23 @@ EXTRA_CHANNEL_PLANS: dict = {
     "trang": [{"channel_id": "C07QS80KJL8",
                "channel_name": "#freshsuccess-team"}],
 }
+
+
+def extra_channels(key: str) -> list:
+    """The extra channels `key` mirrors its metrics thread into (ids + names)."""
+    return [dict(x) for x in (EXTRA_CHANNEL_PLANS.get(key) or [])
+            if (x.get("channel_id") or "").strip()]
+
+
+def extra_channel_ids(key: str) -> list:
+    return [x["channel_id"].strip() for x in extra_channels(key)]
+
+
+def extra_channel_names(key: str) -> list:
+    """Display names for the extra channels, falling back to the id."""
+    return [(x.get("channel_name") or x["channel_id"]).strip()
+            for x in extra_channels(key)]
+
 
 # Each office's OWN timezone, keyed by office key. Committed here (like
 # NDS_OFFICES / CROSS_WS_TOKEN_FILES) so it survives an onboard_apply
@@ -478,29 +503,9 @@ def _merge_onboarded() -> None:
                            "channel_name": p.get("channel_name", ""),
                            "slugs": p.get("report_keys") or p.get("slugs") or [],
                            "header_label": p.get("header_label", "")})
-        # EXTRA_CHANNEL_PLANS channels join the fan-out with the SAME sections
-        # the office already posts. Seed the primary plan first when the row has
-        # none, or a one-plan office would come out with fan-out OFF (len == 1)
-        # and the extra channel would silently get nothing.
-        _extra = EXTRA_CHANNEL_PLANS.get(key) or []
-        if _ok and _extra:
-            _base_slugs = (_plans[0]["slugs"] if _plans
-                           else list(r.get("enrolled_reports") or []))
-            if not _plans and (r.get("channel_id") or "").strip():
-                _plans.append({"channel_id": r["channel_id"].strip(),
-                               "channel_name": r.get("channel_name", ""),
-                               "slugs": _base_slugs,
-                               "header_label": r.get("header_label", "")})
-            _have = {p["channel_id"] for p in _plans}
-            for _x in _extra:
-                _xid = (_x.get("channel_id") or "").strip()
-                if _xid and _xid not in _have:
-                    _plans.append({"channel_id": _xid,
-                                   "channel_name": _x.get("channel_name", ""),
-                                   "slugs": list(_x.get("report_keys")
-                                                 or _base_slugs),
-                                   "header_label": _x.get("header_label", "")})
-                    _have.add(_xid)
+        # NOTE: EXTRA_CHANNEL_PLANS deliberately does NOT join this list. Those
+        # channels get a mirrored copy of the one run (see the table above), so
+        # adding one here would restore the double pull it exists to remove.
         if _ok and len(_plans) > 1:
             kw["channel_plans"] = tuple(_plans)
         try:

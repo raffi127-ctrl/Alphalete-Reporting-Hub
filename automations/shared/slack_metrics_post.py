@@ -38,11 +38,35 @@ MIRROR_CHANNELS = {
 }
 
 
+# RUN-TIME mirrors, on top of the table above: METRICS_MIRROR_CHANNELS (comma-
+# separated channel ids) is set by office_metrics.runner from
+# offices.EXTRA_CHANNEL_PLANS, and is how an office posts its daily thread into a
+# SECOND channel without pulling Tableau twice. Megan 2026-09-15: trang's two
+# FRESH SUCCESS channels were running as two full fan-out passes — 18 metric
+# subprocesses, ~7 minutes, the same numbers pulled twice — when the second
+# channel only ever wanted a copy of the first. The env list applies ONLY to the
+# run's primary channel (METRICS_CHANNEL_ID), so a module that posts somewhere
+# else on purpose can never mirror by accident. [[project_trang_fresh_success]]
+def _env_mirror_channels(channel_id: str) -> list:
+    ids = [c.strip() for c in
+           os.environ.get("METRICS_MIRROR_CHANNELS", "").split(",") if c.strip()]
+    if not ids:
+        return []
+    primary = (os.environ.get("METRICS_CHANNEL_ID") or CHANNEL_ID or "").strip()
+    if (channel_id or CHANNEL_ID) != primary:
+        return []
+    return [c for c in ids if c != primary]
+
+
 def mirror_channels(channel_id: str) -> list:
     """The channels `channel_id`'s posts must be copied into ([] for most)."""
     if os.environ.get("ALPHALETE_MIRROR_OFF", "") == "1":
         return []
-    return MIRROR_CHANNELS.get(channel_id or "", [])
+    out = list(MIRROR_CHANNELS.get(channel_id or "", []))
+    for cid in _env_mirror_channels(channel_id):
+        if cid not in out:
+            out.append(cid)
+    return out
 TOKEN_PATH = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
 # Token for the automated-reports identity 'Lucy' (alphaletereporting@gmail.com)
 # used to DM finished reports so they come FROM Lucy, not the person running it.
@@ -224,12 +248,17 @@ def _norm_first_line(text: str) -> str:
 
 
 def _mirror_thread_ts(client, src_channel: str, src_ts: str,
-                      dst_channel: str, today: dt.date) -> str:
+                      dst_channel: str, today: dt.date,
+                      *, create: bool = True) -> str:
     """The dst-channel twin of a thread parent: today's dst message whose first
     line matches the src parent's (we post identical parents into every mirror),
     posting a copy of the src parent if it isn't there yet. First-line match, not
     whole-text, so Slack's own text normalization can never make the copy
-    unrecognizable (which would spawn a duplicate parent per reply)."""
+    unrecognizable (which would spawn a duplicate parent per reply).
+
+    `create=False` makes it READ-ONLY: returns "" when the twin isn't there
+    instead of posting one — for the post-run check that asks whether the copy
+    landed, which must never itself become the thing that posts."""
     src = client.conversations_replies(channel=src_channel, ts=src_ts, limit=1)
     text = (src.get("messages") or [{}])[0].get("text") or ""
     key = _norm_first_line(text)
@@ -247,6 +276,8 @@ def _mirror_thread_ts(client, src_channel: str, src_ts: str,
         cursor = (resp.get("response_metadata") or {}).get("next_cursor")
         if not cursor:
             break
+    if not create:
+        return ""
     return client.chat_postMessage(channel=dst_channel, text=text)["ts"]
 
 
