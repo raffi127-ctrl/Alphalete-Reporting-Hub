@@ -171,6 +171,22 @@ def run(*, dry_run: bool = True, today: dt.date = None,
             logfn(f"  ⚠ range repair skipped ({type(e).__name__}: {e}) — repair "
                   f"with `python -m automations.all_campaigns_board.ranges_repair`")
 
+    # A person the roster sync added after Tuesday's freeze has no LAST week
+    # here: leaderboard week, LAST WEEK'S TOTALS, the delta row's seven days
+    # (Eve 2026-09-15: "cuando se agrega a alguien nuevo hay que backfillear
+    # sus ventas en los cuadros principales y en los delta charts"). Numbers =
+    # the sum of the person's ORG campaign sections pinned to last week, or 0.
+    # Free on a normal day; never fatal.
+    try:
+        from automations.org_sales_board import newcomer_lastweek as _nlw
+        _nlw.apply_org_boards(today=today, dry_run=dry_run, org_tab=source_tab,
+                              allcamp_tab=tgt_ws.title, boards=("allcamp",),
+                              logfn=logfn)
+    except Exception as e:  # noqa: BLE001 — the fill is the job
+        logfn(f"  ⚠ newcomer last-week backfill skipped ({type(e).__name__}: "
+              f"{e}) — run `python -m automations.org_sales_board."
+              f"newcomer_lastweek --board allcamp`")
+
     # LAST STEP: re-rank both rep tables high->low (Eve 2026-08-13). The ORG
     # board's own tab has sorted itself since 2026-06-04, so the Org Board Email
     # went out every morning with a ranked first section and an unranked second

@@ -3754,6 +3754,26 @@
       "depends_on": [],
       "machine": "Lucy 1"
     },
+    "newcomer_lastweek_backfill": {
+      "order": 8.16,
+      "on_scheduler": false,
+      "_off_scheduler_note": "MANUAL HANDLE ONLY. The step already runs inside the ORG board, All Campaigns and Country fills. DRY-RUN by default: `lucy rerun newcomer_lastweek_backfill` shows who is new and what would be written; add `--apply` to write, `--board org|allcamp|country` to scope it.",
+      "_note": "Last week for somebody NEW on a sales board, in every place that shows it: leaderboard closed-week column + TOTALS (+ ALL TOTALS), LAST WEEK'S TOTALS + Totals, the history-stack row, and the delta row's seven days on All Campaigns / Country (Eve 2026-09-15, Samuel Acay). Numbers from the section's own Tableau view pinned to last week (All Campaigns = the sum of the person's ORG sections; Country = its '(LW2)' worksheet); absent from a rendered view = 0. Calibrated against the rows already frozen; only EMPTY cells are filled.",
+      "display_name": "Sales boards - newcomer last week backfill",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.org_sales_board.newcomer_lastweek"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "machine": "Lucy 1"
+    },
     "org_sales_board_email": {
       "order": 8.2,
       "on_scheduler": false,

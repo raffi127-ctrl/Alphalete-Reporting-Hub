@@ -345,6 +345,19 @@ def main(argv=None) -> int:
             except Exception as _edb:  # noqa: BLE001
                 print(f"  [!] backfill de 'Last week' por día salteado "
                       f"({type(_edb).__name__}: {str(_edb)[:90]})", flush=True)
+            # The same rule one level up: a NEW person's leaderboard week and
+            # LAST WEEK'S TOTALS (+ the totals and the history row), which the
+            # delta backfill above never touched (Eve 2026-09-15, Samuel Acay:
+            # "tampoco estan sus numeros de la semana pasada en org sales board,
+            # y si no tiene ventas, va 0"). Free on a normal day: no newcomer,
+            # no browser. All Campaigns runs the same step on its own tab.
+            try:
+                from automations.org_sales_board import newcomer_lastweek as _nlw
+                _nlw.apply_org_boards(dry_run=args.dry_run, org_tab=ws.title,
+                                      boards=("org",))
+            except Exception as _enl:  # noqa: BLE001
+                print(f"  [!] semana pasada de altas nuevas salteada "
+                      f"({type(_enl).__name__}: {str(_enl)[:90]})", flush=True)
             # TRIPWIRE — the delta boxes' per-day 'This week' cells must still
             # be =SUMIFs over their captainship's daily table. A value pasted
             # over one keeps showing the number it froze on and every total

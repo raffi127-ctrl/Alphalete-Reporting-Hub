@@ -204,6 +204,17 @@ def main() -> int:
     apply_elapsed_totals(ws, today=today, dry_run=args.dry_run,
                          include_delta=False)
 
+    # Somebody new on this board gets LAST week too — leaderboard week, LAST
+    # WEEK'S TOTALS, delta row — off the view's own '(LW2)' worksheet, or 0
+    # (Eve 2026-09-15: the rule the ORG board had was never applied here).
+    # Free on a normal day; never fatal.
+    try:
+        from automations.org_sales_board import newcomer_lastweek as _nlw
+        _nlw.apply_country(ws, today=today, dry_run=args.dry_run)
+    except Exception as e:  # noqa: BLE001 — the fill is the job
+        print(f"  ⚠ newcomer last-week backfill skipped "
+              f"({type(e).__name__}: {str(e)[:90]})")
+
     # Re-rank both rep tables, highest first: the daily breakdown by its
     # RUNNING WEEK TOTALS (col J) and the week-total leaderboard by the live
     # week (col C). Neither ever re-sorted itself, so the 1..77 rank column
