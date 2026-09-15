@@ -742,6 +742,56 @@ def _once_a_day(path: Path, key: str, day: dt.date) -> bool:
     return False
 
 
+SIGNIN_WARNED_PATH = (Path.home() / ".config" / "recruiting-report"
+                      / "icd_signin_asked.json")
+
+# WHAT THE OFFICE IS TOLD. Not "an exception occurred": the only person who
+# can fix this is the owner, standing at their own Mac with their phone.
+SIGNIN_ASK = (
+    ":lock: *%s — Lucy has been signed out of My Service Cloud.*\n"
+    "Your sales stopped updating at %s. Nothing is lost — the contracts are "
+    "still there, we just cannot see them.\n"
+    "*To fix it:* open My Service Cloud on the office computer and sign in "
+    "with your authenticator code. That is all — it picks up by itself "
+    "within a few minutes.")
+
+
+def ask_office_to_sign_in(office_key: str, when: str = "", *,
+                          send: bool = False, book=None, log=print) -> bool:
+    """Tell the OFFICE their Service Cloud session has gone.
+
+    Ryan McSpadden on how often the authenticator is needed: "It saves
+    typically, but it feels random when it logs me out" (2026-09-15). So this
+    is not an edge case -- it will happen, and the office will not know. Their
+    sales simply stop, which looks exactly like a slow week.
+
+    IT GOES TO THEM, NOT TO US. Every other fault in this module is ours to
+    chase; this is the one only the owner can act on. Posting it to
+    #claudecorrections would tell the people who cannot fix it.
+
+    ONCE A DAY. The sweep runs every couple of minutes and a session stays
+    gone until somebody walks over to the computer.
+    """
+    day = dt.date.today()
+    if _once_a_day(SIGNIN_WARNED_PATH, "signin|%s" % office_key, day):
+        return False
+    office = O.get(office_key)
+    label = getattr(office, "label", None) or office_key
+    text = SIGNIN_ASK % (label, when or "the last check-in")
+    log(text)
+    if not send:
+        return False
+    for chan in (approved_channels(book) or {}).get(office_key, []):
+        cid = getattr(chan, "id", None) or getattr(chan, "channel_id", None)
+        if cid:
+            _slack(cid, text)
+    # And us, so nobody is waiting on an office that cannot report.
+    _slack(O.OPS_CHANNEL,
+           ":lock: *%s* (`%s`) has been signed out of My Service Cloud and "
+           "has been asked to sign in again." % (label, office_key))
+    return True
+
+
 def warn_machine_facts(day: Optional[dt.date] = None, *, send: bool = False,
                        book=None, log=print) -> List[str]:
     """Say what we know about the machines, once a day.

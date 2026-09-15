@@ -426,6 +426,7 @@ def _gaps_text(office, rows: List[Dict], now: dt.datetime) -> str:
         return ""
 
     gaps = []
+    key = getattr(office, "key", "") or "?"
     for r in rows:
         name = str(r.get("Rep") or "").strip()
         last = str(r.get("Last Knock") or "").strip()
@@ -437,8 +438,51 @@ def _gaps_text(office, rows: List[Dict], now: dt.datetime) -> str:
     if not gaps:
         # Nobody over the line is not an empty message -- it is no message.
         return ""
-    text, _names = gap_text(gaps, previous=set(), first_of_day=True)
+    # WHO IS NEWLY OVER, marked with the clock. This passed previous=set() and
+    # first_of_day=True, which makes gap_text's `new = not first_of_day and
+    # ...` false for everybody -- so the ICD texts never carried the marker at
+    # all while Raf's did (Megan 2026-09-15). The clock is the difference
+    # between "here are twelve names" and "these two just went quiet": without
+    # it the list is undifferentiated and reads the same at 2pm and 6pm.
+    before = _previous_gaps(key, now.date())
+    text, names = gap_text(gaps, previous=before,
+                           first_of_day=before is None)
+    _remember_gaps(key, now.date(), names)
     return text
+
+
+def _gaps_path():
+    return OUT_DIR / ".gaps_seen.json"
+
+
+def _previous_gaps(key: str, day: dt.date):
+    """Who was on this office's last list today, or None if there wasn't one.
+
+    None and empty-set are different: None means no list has gone out today,
+    so EVERY name is simply the first list rather than twelve people who all
+    just went quiet. gap_text takes that as first_of_day.
+    """
+    try:
+        seen = json.loads(_gaps_path().read_text())
+    except (OSError, ValueError):
+        return None
+    got = seen.get("%s|%s" % (day.isoformat(), key))
+    return set(got) if got is not None else None
+
+
+def _remember_gaps(key: str, day: dt.date, names) -> None:
+    """Best effort -- failing to remember must never cost the text."""
+    try:
+        try:
+            seen = json.loads(_gaps_path().read_text())
+        except (OSError, ValueError):
+            seen = {}
+        seen = {k: v for k, v in seen.items() if k.startswith(day.isoformat())}
+        seen["%s|%s" % (day.isoformat(), key)] = sorted(names or [])
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        _gaps_path().write_text(json.dumps(seen, indent=2, sort_keys=True))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _minutes_since(last_knock: str, now: dt.datetime):

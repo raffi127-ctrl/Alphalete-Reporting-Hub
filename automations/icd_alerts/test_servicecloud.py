@@ -346,3 +346,63 @@ class ALostSessionIsNotAQuietDay(unittest.TestCase):
 
     def test_the_unknown_is_written_down_rather_than_assumed(self):
         self.assertTrue(SC.SESSION_LIFETIME_UNKNOWN)
+
+
+class ALostSessionAsksTheOfficeNotUs(unittest.TestCase):
+    """Ryan McSpadden, asked how often the authenticator is needed: "It saves
+    typically, but it feels random when it logs me out" (2026-09-15).
+
+    So this WILL happen, unpredictably, and the office will not know: their
+    sales simply stop, which looks exactly like a slow week. It is also the
+    only fault in this module the owner can fix -- posting it to
+    #claudecorrections would tell the people who cannot.
+    """
+
+    def setUp(self):
+        import tempfile, pathlib as _p
+        from automations.icd_alerts import post as P
+        self.P = P
+        self._orig = P.SIGNIN_WARNED_PATH
+        P.SIGNIN_WARNED_PATH = _p.Path(tempfile.mkdtemp()) / "asked.json"
+
+    def tearDown(self):
+        self.P.SIGNIN_WARNED_PATH = self._orig
+
+    def test_the_message_tells_them_what_to_do(self):
+        said = []
+        self.P.ask_office_to_sign_in("ryan", "4:12 PM", send=False,
+                                     log=said.append)
+        text = " ".join(said)
+        self.assertIn("authenticator", text)
+        self.assertIn("Nothing is lost", text,
+                      "it reads as data loss rather than a blocked view")
+
+    def test_it_is_asked_once_a_day_not_every_sweep(self):
+        first = self.P.ask_office_to_sign_in("ryan", send=False,
+                                             log=lambda *_: None)
+        second = self.P.ask_office_to_sign_in("ryan", send=False,
+                                              log=lambda *_: None)
+        self.assertFalse(second,
+                         "a session stays gone until somebody walks to the "
+                         "computer, so this would fire every two minutes")
+
+    def test_another_office_is_not_silenced_by_the_first(self):
+        self.P.ask_office_to_sign_in("ryan", send=False, log=lambda *_: None)
+        said = []
+        self.P.ask_office_to_sign_in("carlos", send=False, log=said.append)
+        self.assertTrue(said)
+
+
+class SignInNeededIsItsOwnKindOfFault(unittest.TestCase):
+
+    def test_it_is_distinguishable_from_any_other_problem(self):
+        from automations.icd_alerts import box_read as B
+        self.assertTrue(issubclass(B.SignInNeeded, B.AccountProblem))
+        # A caller must be able to tell "ask the office" from "tell us".
+        self.assertIsNot(B.SignInNeeded, B.AccountProblem)
+
+    def test_a_missing_login_also_needs_a_person(self):
+        from automations.icd_alerts import box_read as B
+        import inspect
+        src = inspect.getsource(B.read_day)
+        self.assertIn("SignInNeeded", src)

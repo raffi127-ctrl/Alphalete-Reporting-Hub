@@ -38,6 +38,18 @@ class AccountProblem(RuntimeError):
     """Something the office can fix, phrased for the office."""
 
 
+class SignInNeeded(AccountProblem):
+    """The session is gone and only a person with the authenticator can fix it.
+
+    ITS OWN CLASS BECAUSE IT NEEDS ITS OWN ALERT. Ryan McSpadden, asked how
+    often the authenticator is needed: "It saves typically, but it feels
+    random when it logs me out" (2026-09-15). So this is not a rare edge --
+    it will happen, unpredictably, and the office will not know it has
+    happened. Every other fault here is ours to chase; this one is the only
+    thing the OWNER can act on, and until they do their sales read as zero.
+    """
+
+
 # "09/15/2026 06:13 PM" -- the Initiated Date cell, which IS the sale date.
 # Start Date is the service start (APR 2027) and must never be read for this.
 _DATE_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
@@ -159,27 +171,6 @@ def _context(p, headless: bool):
         str(C.SC_PROFILE_DIR), headless=headless, args=["--disable-sync"])
 
 
-# HOW THE ROWS ARE ACTUALLY FETCHED IS NOT SETTLED, and the first look at the
-# live page ruled out the obvious way. Run against Megan's own signed-in
-# browser on 2026-09-15:
-#
-#   * The grid is a DevExtreme DataGrid, split across FOUR tables -- frozen
-#     columns and scrollable columns each have their own header table and
-#     body table, so a row is two <tr>s joined by position. There is no
-#     <thead>; the header lives in a tbody row.
-#   * It is VIRTUALISED. 18 of the page's 50 rows existed in the DOM. A
-#     reader that scraped what was there would have quietly missed most of
-#     every page -- and read LOW, which is the failure shape this whole
-#     module is written against.
-#   * The data comes from a GraphQL endpoint:
-#         https://api.myservicecloud.net/gql/secured/v2
-#     which is where a read should go. It answers the paging problem, the
-#     virtualisation problem and the "one day among many" problem at once,
-#     and it does not move when somebody toggles a column.
-#
-# The query shape is not known yet, so this is deliberately NOT implemented
-# from a guess. A scraper written against the DOM would have to be thrown away
-# the moment the API work lands, and would be wrong in the meantime.
 def row_from_edge(edge: Dict) -> Dict:
     """One contractsList edge -> the row shape tally() reads.
 
@@ -216,18 +207,131 @@ def rows_from_response(payload: Dict) -> List[Dict]:
     return [row_from_edge(e) for e in (data.get("edges") or [])]
 
 
+# HOW THE ROWS ARE FETCHED, and why it is done from inside the page.
+#
+# The grid is a DevExtreme DataGrid split across four tables, with no <thead>
+# and only ~18 of a 50-row page rendered at a time. Scraping it would read LOW
+# and look fine. The data comes from a GraphQL endpoint instead
+# (SC.GRAPHQL_URL), which answers paging, virtualisation and "one day among
+# many" at once.
+#
+# BUT THE AUTH IS THE APP'S. The request carries `authorization` and `api-key`
+# headers the SPA holds. Reproducing them would mean storing somebody's token
+# in this repo, and tokens expire. So this asks the PAGE to make the call: the
+# app's own fetch, with the app's own headers, from a session the office
+# signed into. Nothing here ever sees a token and it keeps working when Box
+# rotates one.
 GRAPHQL_URL = SC.GRAPHQL_URL
+
+# Page one is what the grid asks for. Bigger pages mean fewer round trips for
+# a week's window, and the server decides whether to honour it.
+PER_PAGE = 100
+MAX_PAGES = 40          # 4000 contracts. A stop, not an expectation.
+
+
+_FETCH_JS = """
+async (args) => {
+  const [url, page, perPage] = args;
+  const query = `query ($input: ContractsListQueryInput) {
+    contractsList(input: $input) {
+      edges {
+        contract_id
+        business_name
+        adjusted_annual_volume
+        created_date
+        agent { name { first_name last_name } email }
+        contract_substatus { substatus }
+      }
+      errors { error_message }
+    }
+  }`;
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: window.__lucyHeaders || {'content-type': 'application/json'},
+    body: JSON.stringify({query, variables: {input: {
+      page: page, per_page: perPage, search: '',
+      sorting: [{name: 'id', direction: 'DESCENDING'}]}}}),
+  });
+  return await res.json();
+}
+"""
+
+# The app's own request goes past first, so its headers -- including the ones
+# we must never store -- are borrowed for the calls above and then dropped
+# with the browser context.
+_SNIFF_JS = """
+() => {
+  if (window.__lucySniffing) return true;
+  window.__lucySniffing = true;
+  const orig = window.fetch;
+  window.fetch = function (input, init) {
+    try {
+      const u = typeof input === 'string' ? input : (input && input.url) || '';
+      if (/gql/i.test(u) && init && init.headers) {
+        const h = {};
+        const src = init.headers;
+        if (typeof src.forEach === 'function') src.forEach((v, k) => h[k] = v);
+        else Object.keys(src).forEach(k => h[k] = src[k]);
+        window.__lucyHeaders = h;
+      }
+    } catch (e) {}
+    return orig.apply(this, arguments);
+  };
+  return true;
+}
+"""
+
+
+def _fetch_page(page, n: int) -> List[Dict]:
+    """One page of contracts, through the app's own fetch."""
+    payload = page.evaluate(_FETCH_JS, [GRAPHQL_URL, n, PER_PAGE])
+    return rows_from_response(payload)
+
+
+def fetch_rows(page, days: List[dt.date], log=print) -> List[Dict]:
+    """Every contract initiated on any of `days`, newest first.
+
+    STOPS WHEN IT HAS PASSED THE WINDOW, not when it finds nothing. The grid
+    is sorted newest-first, so once a whole page is older than the oldest day
+    we want, everything after it is older too. Reading to the end would be
+    fifty-three pages to find one morning.
+
+    A page that comes back EMPTY stops it as well -- that is the end of the
+    list, and continuing would spin to MAX_PAGES for no reason.
+    """
+    oldest = min(days)
+    out: List[Dict] = []
+    for n in range(1, MAX_PAGES + 1):
+        rows = _fetch_page(page, n)
+        if not rows:
+            break
+        out.extend(rows)
+        dates = [initiated_on(r.get(SC.COL_INITIATED)) for r in rows]
+        real = [d for d in dates if d]
+        if real and max(real) < oldest:
+            # This whole page predates the window; so does everything after.
+            break
+        log("  page %d: %d row(s)" % (n, len(rows)))
+    return out
 
 
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
-             log=print) -> Dict:
-    """Today's Box work, in the shape every other surface already reads."""
+             log=print, back_days: int = 6) -> Dict:
+    """Today's Box work, in the shape every other surface already reads.
+
+    READS A WINDOW AND RETURNS TODAY. A contract sold on Monday can pass TPV
+    on Wednesday, and it was always Monday's sale -- so the window is
+    re-read every sweep and `days` carries the whole of it for a caller that
+    wants to rewrite past days on the board. See tally_window().
+    """
     from patchright.sync_api import sync_playwright
 
     day = day or C.today()
+    days = [day - dt.timedelta(days=n) for n in range(back_days, -1, -1)]
     cr = C.sc_creds()
     if not cr.get("email"):
-        raise AccountProblem(
+        raise SignInNeeded(
             "No My Service Cloud login is saved on this computer, so this "
             "office's sales cannot be read. Run the installer again and it "
             "will ask for it.")
@@ -236,28 +340,37 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
         ctx = _context(p, headless)
         try:
             page = ctx.new_page()
-            page.goto(SC.LOGIN_URL.rsplit("/", 1)[0] + SC.CONTRACTS_PATH,
+            base = SC.LOGIN_URL.rsplit("/", 1)[0]
+            page.goto(base + SC.CONTRACTS_PATH,
                       timeout=SC.LOGIN_TIMEOUT_MS)
             if SC.session_lost(page):
                 # NOT AN EMPTY DAY. The session has gone and a person has to
                 # sign in with their authenticator -- reporting zero here is
                 # the failure this whole module is written around.
-                raise AccountProblem(
+                raise SignInNeeded(
                     "My Service Cloud has signed this computer out, so no "
                     "sales can be read until somebody signs in again with "
                     "the authenticator code. Nothing is lost -- the contracts "
                     "are still there, we just cannot see them.")
-            raise AccountProblem(
-                "The contracts read is not built yet. The grid is "
-                "virtualised, so only part of a page exists on screen; the "
-                "numbers come from %s and that query is not written."
-                % GRAPHQL_URL)
+            # Let the app make one call of its own, so its headers can be
+            # borrowed for ours. Re-entering the route is enough.
+            page.evaluate(_SNIFF_JS)
+            page.goto(base + SC.CUSTOMERS_PATH, timeout=SC.LOGIN_TIMEOUT_MS)
+            page.goto(base + SC.CONTRACTS_PATH, timeout=SC.LOGIN_TIMEOUT_MS)
+            page.wait_for_timeout(4000)
+            rows = fetch_rows(page, days, log=log)
+            log("contracts fetched: %d row(s) across the window" % len(rows))
         finally:
             ctx.close()
 
-    out = tally(rows, day)
+    window = tally_window(rows, days)
+    out = dict(window[day])
+    # THE WHOLE WINDOW RIDES ALONG. A caller filling a board rewrites the past
+    # days from this; a caller sending alerts uses only today. Neither has to
+    # read twice.
+    out["window"] = window
     log("awaiting signature: %d rep(s), sold: %d rep(s)"
         % (len(out["records"]), len(out["sales"])))
-    if out["unknown"]:
+    if out.get("unknown"):
         log("substatuses nobody has ruled on: %s" % ", ".join(out["unknown"]))
     return out

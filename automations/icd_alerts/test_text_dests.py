@@ -10,6 +10,7 @@ What these pin is the handful of ways that can go quietly wrong.
 from __future__ import annotations
 
 import json
+import pathlib
 import unittest
 from unittest import mock
 
@@ -426,3 +427,66 @@ class TheGapListIsAutomaticForEveryTextOffice(unittest.TestCase):
         self.assertNotIn("gap", form.lower().split("selling hours")[0],
                          "the form asks about gaps, which makes an automatic "
                          "thing look optional")
+
+
+class TheClockMarksWhoJustWentQuiet(unittest.TestCase):
+    """Megan 2026-09-15: "these new time gap texts don't have the clock emoji
+    like Raf's do- they alert to who is new on the list".
+
+    It passed previous=set() and first_of_day=True, and gap_text computes
+    `new = not first_of_day and name not in previous` -- so the marker could
+    never fire. Without it the list is undifferentiated and reads the same at
+    2pm as at 6pm; the clock is what makes it "these two JUST went quiet".
+    """
+
+    def setUp(self):
+        import tempfile, datetime as dt
+        from automations.icd_alerts import knocks_post as KP
+        self.KP, self.dt = KP, dt
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self._orig, KP.OUT_DIR = KP.OUT_DIR, self.tmp
+        self.now = dt.datetime(2026, 9, 15, 16, 0)
+        self.office = mock.MagicMock()
+        self.office.key = "carlos"
+
+    def tearDown(self):
+        self.KP.OUT_DIR = self._orig
+
+    def _rows(self, *reps):
+        # Every rep 120 minutes over, so they all qualify.
+        return [{"Rep": r, "Last Knock": "2:00 PM"} for r in reps]
+
+    def test_the_first_list_of_the_day_marks_nobody(self):
+        txt = self.KP._gaps_text(self.office, self._rows("Ashley Maye"),
+                                 self.now)
+        self.assertIn("Ashley Maye", txt)
+        self.assertNotIn("⏰", txt,
+                         "the first list of the day marked everyone as newly "
+                         "quiet")
+
+    def test_a_name_that_appears_later_gets_the_clock(self):
+        self.KP._gaps_text(self.office, self._rows("Ashley Maye"), self.now)
+        txt = self.KP._gaps_text(
+            self.office, self._rows("Ashley Maye", "Ruby Flores"), self.now)
+        ruby = [l for l in txt.splitlines() if "Ruby" in l][0]
+        ashley = [l for l in txt.splitlines() if "Ashley" in l][0]
+        self.assertIn("⏰", ruby, "the new name has no clock")
+        self.assertNotIn("⏰", ashley,
+                         "a name that was already on the list is marked new")
+
+    def test_each_office_remembers_its_own_list(self):
+        other = mock.MagicMock()
+        other.key = "ryan"
+        self.KP._gaps_text(self.office, self._rows("Ashley Maye"), self.now)
+        # Ryan has sent nothing today, so his first list marks nobody.
+        txt = self.KP._gaps_text(other, self._rows("Ashley Maye"), self.now)
+        self.assertNotIn("⏰", txt,
+                         "one office's list silenced another's first send")
+
+    def test_tomorrow_starts_over(self):
+        self.KP._gaps_text(self.office, self._rows("Ashley Maye"), self.now)
+        tomorrow = self.now + self.dt.timedelta(days=1)
+        txt = self.KP._gaps_text(
+            self.office, self._rows("Ashley Maye", "Ruby Flores"), tomorrow)
+        self.assertNotIn("⏰", txt,
+                         "yesterday's list is being used as today's baseline")
