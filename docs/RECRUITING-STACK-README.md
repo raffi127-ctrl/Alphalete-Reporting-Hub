@@ -73,6 +73,19 @@ matches what you're about to touch.
 - **Sheets "Table" objects block spill formulas and survive value clears** — if a
   spill shows #REF after someone "made it a table", you need `deleteTable`, not a
   bigger clear.
+- **Google Sheets SUMIFS silently ignores array/range criteria** (unlike
+  SUMIF) — no error, just 0/blank. The Manager Matrix OFFICE TOTAL row was
+  empty for 3 weeks because of this. Sum a roster with SUMPRODUCT +
+  ISNUMBER(MATCH(...)), never SUMIFS-with-a-range-criterion.
+- **A LET variable named `n` (or any function name) shadows that function** —
+  `LET(n, ... N(...) ...)` throws "Invalid call to non-function", and LET's
+  lazy evaluation means only the branches that USE the poisoned binding fail
+  (counts worked, percentages blanked). Don't name LET variables after
+  functions you call inside them.
+- **mergeCells across a frozen-column boundary 400s the whole batch** — and on
+  the built tabs that batch runs AFTER the wipe, so the dashboard stays BLANK
+  until the next good run (live outage 2026-09-12). Paint cells and let text
+  overflow instead of merging on any tab with frozen columns.
 - **Filter criteria stick.** Adding criteria to a basic filter hides rows for
   EVERYONE and persists; sorting via filter menu breaks spill formulas (#REF).
   Clear criteria, keep the filter buttons. This has bitten the Ad Plan tab twice.
@@ -209,3 +222,26 @@ matches what you're about to touch.
   live (8 pages, Carlos-only allowlist), Carlos full-month source window live,
   new-comp churn image live for carlos+atef mornings, resume-pusher outage being
   worked by peer sessions (login seed on Lucy 2).
+
+- **2026-09-13 (catch-up entry — the 7pm auto-update task had not fired since
+  creation: scheduled tasks only run while the Claude app on the mini is open;
+  it was closed over 7pm since 9/8):**
+  - Manager Matrix OFFICE/CAPTAINSHIP TOTAL row (21) fixed twice: SUMIFS never
+    expands range criteria (blank since 8/21), then LET's `n` variable
+    shadowed the N() function (percent metrics still blank). Both in the
+    gotcha list now. Totals verified against per-name sums.
+  - Focus Report gained the per-manager Info Box (rows 87–96, RECRUITING /
+    SCHEDULE, violet B answers): data in hidden 'Info Box' tab keyed
+    manager|label; write-back branch added to goal_sync.gs (INFO_Z0=87 —
+    same hardcoded-row coupling as CAMP_Z0). First deploy caused a ~13-min
+    blank-dashboard outage via the frozen-column merge (see gotchas).
+  - Captainship roster: + Alexander Badawi (office 22662, 4-week history
+    backfilled) and + Nicolas Lujan (office not in AppStream yet — discovery
+    will pin + backfill + announce). No sales boards for either, by design.
+    Lujan (only) added to the campaign zone via pull_b2b.EXTRA_MANAGERS
+    ("NICOLAS LUJAN", computed from the order log without a board row).
+  - Dhyey Patel's ad-plan tab wired into the Ad Plan dropdown (AE28) + hidden.
+  - org_campaign_metrics registered as a rerunnable report so its 8:30 card
+    can fire (another session's commit 57658443).
+  - Duplicate 7pm README tasks exist: recruiting-readme-update (this file) and
+    another session's daily-readme-update (repo root README.md) — consolidate.
