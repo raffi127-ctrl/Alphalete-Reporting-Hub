@@ -77,5 +77,10 @@ EXCLUDE = (
     # `--owner` en roster_remove.py.
     "Gary Whitaker II",     # Carlos' captainship — B2B - All Units
     "Roberto Luconi",       # Pat's captainship (both fiber boxes)
+    # --- two-week zero rule, 2026-09-15. Ana Griffin SÍ sale esta vez: cero en
+    # WE 09.13 y WE 09.06 en los DOS cuadros retail de su banner (Internet y NL),
+    # así que la regla del banner del 2026-09-08 ya no la retiene.
+    "Ana Griffin",          # ALPHALETE ORG — Retail Internet + Retail NL
+    "Max Powell",           # Luis' captainship — B2B - All Units
 )
 

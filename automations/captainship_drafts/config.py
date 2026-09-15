@@ -544,10 +544,12 @@ RECIPIENTS: dict = {
         "jamosleybiz@gmail.com",
     ],
     "tony": [
+        # OUT 2026-09-15 (Eve): kcireus@ — Kobe Cireus sale de la capitania de
+        # Tony. Salio del grupo vivo "Tony's Captainship" el mismo dia.
         "kingslegacyconsultants@gmail.com",
         "dmarilongmire7@gmail.com", "dylanjtwaddle@gmail.com",
         "orbitc2025@gmail.com", "clearviewc.inc@gmail.com",
-        "kcireus@gmail.com", "maudmiller4@gmail.com",
+        "maudmiller4@gmail.com",
         "raffi127@gmail.com",
         "tonycv1920@gmail.com",
     ],
@@ -604,10 +606,13 @@ RECIPIENTS: dict = {
         "shalonda@dime-llc.com", "valeriatristan.amg@gmail.com",
     ],
     "luis": [
+        # OUT 2026-09-15 (Eve): maxpowell145@ — Max Powell, two-week zero rule
+        # (B2B - All Units en 0 WE 09.13 / 09.06). Salio del grupo vivo
+        # "Luis' Captainship" el mismo dia; si queda aca seed_groups lo repone.
         "albert.rubio1228@gmail.com", "CarlosHidalgo349@gmail.com",
         "aventus.marketinginc@gmail.com", "dylanjtwaddle@gmail.com",
         "harman100703@gmail.com", "lusalazar619@gmail.com",
-        "maudmiller4@gmail.com", "maxpowell145@gmail.com",
+        "maudmiller4@gmail.com",
         "mihir.vadlamani@gmail.com", "raffi127@gmail.com",
         "rob.diamondbiz@gmail.com",
     ],

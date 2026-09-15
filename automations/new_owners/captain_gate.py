@@ -95,8 +95,12 @@ EXCLUDE: Dict[str, tuple] = {
     # block carries his ten weeks, and Tableau's `Captain's Bonus Teams v2`
     # has him on Pat's Team — so Tony's rows were the recent thing and came
     # off. He is NOT pinned out of Pat's, which is where he belongs.
+    # 2026-09-15 (Eve): "kobe de tonys" — Kobe Cireus sale de la capitania de
+    # Tony (las dos cajas fiber + las dos delta). Revierte la decision del
+    # 2026-08-25 de dejarlo por vender solo wireless.
     "Tony":   ("Melik El Jaiez", "Aden Berhane",         # 2026-08-19
-               "Alex Touati"),                           # 2026-09-03
+               "Alex Touati",                            # 2026-09-03
+               "Kobe Cireus"),                           # 2026-09-15
     "Khalil": ("Jimmy Bonilla", "Ayleen Gonzalez"),      # 2026-08-19
     "Colten": ("Javeon Lara", "Selena Powers"),          # 2026-08-19
     # 2026-09-07 (Eve): "de los captainship reports hay que eliminar Angel
@@ -112,6 +116,10 @@ EXCLUDE: Dict[str, tuple] = {
     "Pat":    ("Jesus Hawthorne",                        # 2026-09-07
                "Roberto Luconi"),                        # 2026-09-08
     "Jess":   ("Angel Arias", "Mary Maya"),              # 2026-09-07
+    # 2026-09-15 (Eve), two-week zero rule: Max Powell cerro WE 09.13 y WE 09.06
+    # en 0 en B2B - All Units de Luis (ultima venta WE 08.30) y no tiene filas
+    # en ningun otro cuadro del board.
+    "Luis":   ("Max Powell",),                           # 2026-09-15
 }
 
 

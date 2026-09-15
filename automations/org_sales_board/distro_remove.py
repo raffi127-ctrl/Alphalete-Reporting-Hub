@@ -62,6 +62,11 @@ REMOVALS: dict = {
         # her distros go, not just the board's. Her second card
         # (rpaola17@icloud.com) is on no group, so it needs no entry.
         ("Paola Rodriguez", "rpaola205@gmail.com"),
+        # 2026-09-15 (Eve), regla de dos semanas: Ana Griffin, 0 en WE 09.13 y
+        # WE 09.06 en los dos retail de ALPHALETE ORG. Este grupo es el correo
+        # del Org Sales Board Y el Override Bulletin — Eve confirmo sacarla igual.
+        # Sale tambien de distro_fallback.json.
+        ("Ana Griffin", "griffinana313@gmail.com"),
     ],
     # Owners Call Reminder's distro — no code fallback, the live group is it.
     "Org. Call Invite": [
@@ -128,6 +133,9 @@ REMOVALS: dict = {
     "Tony's Captainship": [
         ("Melik El Jaiez", "melikeljaiez@yahoo.com"),        # no display name on the card
         ("Aden Berhane", "berhaneaden3@gmail.com"),
+        # 2026-09-15 (Eve): Kobe Cireus sale de la capitania de Tony. Sale
+        # tambien de config.RECIPIENTS["tony"] (seed_groups reconstruye desde ahi).
+        ("Kobe Cireus", "kcireus@gmail.com"),
     ],
     "Carlos' Captain Team": [
         ("Ryan Kabbes", "ryankabbes@gmail.com"),
@@ -203,6 +211,13 @@ REMOVALS: dict = {
         # NO es compartido con el mail del Org Sales Board; sigue siendo ICD
         # NDS del org (oficina 22604) en todo lo demas.
         ("Fernando Munoz", "fernandomunoz710@icloud.com"),
+    ],
+    # 2026-09-15 (Eve), regla de dos semanas: Max Powell sale de la capitania de
+    # Luis (B2B - All Units, cero en WE 09.13 y WE 09.06). Su direccion sale
+    # tambien de config.RECIPIENTS["luis"] — seed_groups reconstruye el grupo
+    # desde ahi. Este grupo NO es compartido con el mail del Org Sales Board.
+    "Luis' Captainship": [
+        ("Max Powell", "maxpowell145@gmail.com"),
     ],
 }
 

@@ -102,6 +102,11 @@ EXCLUDE: set = {
     # vende Retail NL bajo el mismo banner, asi que no sale de ningun cuadro.
     "gary whitaker ii",     # 2026-09-08 (Carlos)
     "roberto luconi",       # 2026-09-08 (Pat)
+    # 2026-09-15 (Eve), two-week zero rule. Ana Griffin ahora esta en 0 en los
+    # dos retail de su banner, asi que queda sin filas en el ORG board y la
+    # cascada llega hasta aca. Max Powell no tenia fila aca; se pinnea igual.
+    "ana griffin",          # 2026-09-15 (ALPHALETE ORG retail)
+    "max powell",           # 2026-09-15 (Luis)
 }
 
 
