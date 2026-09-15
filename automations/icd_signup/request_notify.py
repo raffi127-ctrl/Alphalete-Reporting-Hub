@@ -55,7 +55,8 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
     # a line to CHECK, not to do. It earns its space because a chat name that
     # does not match sends to nobody and reports success, so an unchecked one
     # is silence on both ends.
-    texts = [t for t in rec.text_groups if t]
+    from automations.icd_signup.schema import group_name
+    texts = [group_name(t) for t in rec.text_groups if group_name(t)]
     if texts:
         detail += ["", "*Check Lucy is in their group text:*"]
         detail += ["   • %s" % t for t in texts]

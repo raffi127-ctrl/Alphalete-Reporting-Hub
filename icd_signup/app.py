@@ -292,14 +292,22 @@ with st.container(border=True):
             "**First, add Lucy to the group chat.** She cannot post into a "
             "chat she is not in.\n\n"
             "**Lucy Contact to add:** %s" % S.LUCY_IMESSAGE)
+        st.caption("Each chat can get it on its own schedule.")
         for i in range(MAX_TEXT_GROUPS):
+            c1, c2 = st.columns([3, 2])
             label = ("Name of the group chat" if i == 0
                      else "Another group chat (optional)")
-            val = st.text_input(
+            val = c1.text_input(
                 label, key="text_grp_%d" % i,
                 placeholder="Leave blank if not needed" if i
                 else "B2B Box Dispositions")
-            text_groups.append(val.strip())
+            cad = c2.selectbox(
+                "How often?", key="text_cad_%d" % i,
+                options=[c[0] for c in S.KNOCKS_CHOICES if c[0] != -1],
+                format_func=lambda v: dict(S.KNOCKS_CHOICES)[v],
+                index=1)
+            text_groups.append({"group": val.strip(), "cadence_min": int(cad),
+                                "label": dict(S.KNOCKS_CHOICES)[int(cad)]})
         st.caption("Type the name **exactly** as it appears at the top of the "
                    "chat in Messages — capitals, spaces, emojis and all. A "
                    "name that does not match sends to nobody.")
@@ -328,13 +336,14 @@ if submitted:
     # keeps ONE way of saying that, rather than a checkbox that can disagree
     # with the channels underneath it.
     first_cadence = dests[0]["cadence_min"] if dests else -1
-    texts = [t for t in text_groups if t]
+    texts = [t for t in text_groups if S.group_name(t)]
     summary = ", ".join(alerts) or "(not sure yet)"
     if dests:
         summary += "  ·  board: " + ", ".join(
             "%s %s" % (d["channel"], d["label"]) for d in dests)
     if texts:
-        summary += "  ·  texts: " + ", ".join(texts)
+        summary += "  ·  texts: " + ", ".join(
+            "%s %s" % (S.group_name(t), t.get("label", "")) for t in texts)
 
     rec = S.IcdSignup(
         owner=owner, office_label="", platform=platform, timezone=tz,

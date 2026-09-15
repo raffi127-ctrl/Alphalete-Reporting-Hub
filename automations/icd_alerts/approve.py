@@ -304,8 +304,13 @@ def cmd_texts(office_key: str) -> int:
     # waiting on its own machine to tell us something it already told the
     # form.
     from automations.icd_signup import store as signup_store
+    from automations.icd_signup.schema import group_name, group_cadence
     rec = signup_store.get(office_key)
-    asked = [g.strip() for g in (rec.text_groups if rec else []) if g.strip()]
+    # A NAME AND HOW OFTEN. Offices that enrolled before the form asked stored
+    # only the name; their cadence comes back 0, which the poster reads as
+    # "follow the board this is a copy of".
+    asked = [(group_name(g), group_cadence(g))
+             for g in (rec.text_groups if rec else []) if group_name(g)]
     if not asked:
         print("%s did not ask to be texted." % office_key)
         return 1
@@ -317,17 +322,18 @@ def cmd_texts(office_key: str) -> int:
         pass
 
     resolved, problems = [], []
-    for name in asked:
+    for name, cadence in asked:
+        how = ("every %d min" % cadence) if cadence else "same as their board"
         if not can_check:
-            print("  %-30s UNVERIFIED (this machine cannot see Messages)"
-                  % name)
-            resolved.append({"group": name, "cadence_min": 0})
+            print("  %-30s %-22s UNVERIFIED (this machine cannot see "
+                  "Messages)" % (name, how))
+            resolved.append({"group": name, "cadence_min": cadence})
             continue
         try:
             from automations.b2b_dispositions import text_post as tp
             tp.send_to_group(name, "", [], dry_run=True)
-            print("  %-30s found" % name)
-            resolved.append({"group": name, "cadence_min": 0})
+            print("  %-30s %-22s found" % (name, how))
+            resolved.append({"group": name, "cadence_min": cadence})
         except Exception as e:  # noqa: BLE001
             problems.append("%s — %s" % (name, str(e)[:160]))
 

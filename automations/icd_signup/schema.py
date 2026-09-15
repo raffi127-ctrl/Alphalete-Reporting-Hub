@@ -180,7 +180,9 @@ class IcdSignup(NamedTuple):
         return out
 
     @property
-    def text_groups(self) -> List[str]:
+    def text_groups(self) -> List:
+        """Each entry is {"group", "cadence_min", "label"} -- or a bare string
+        for an office that enrolled before the form asked how often."""
         return _loads_list(self.text_groups_json)
 
     @property
@@ -249,4 +251,26 @@ def stamp() -> str:
 # WHO THEY HAVE TO ADD TO THE GROUP CHAT. Lucy sends from the reporting
 # account, so a chat she is not in cannot receive anything -- and unlike a
 # Slack channel, nobody on our side can add her to somebody's group text.
+def group_name(g) -> str:
+    """The chat name, whether the entry is a dict or a bare string.
+
+    Offices that enrolled before the form asked for a cadence stored just the
+    name, and their rows are still on the tab.
+    """
+    if isinstance(g, dict):
+        return str(g.get("group") or "").strip()
+    return str(g or "").strip()
+
+
+def group_cadence(g) -> int:
+    """Minutes, or 0 meaning "nobody said" -- which the poster reads as
+    "follow the board this is a copy of"."""
+    if isinstance(g, dict):
+        try:
+            return int(g.get("cadence_min") or 0)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
 LUCY_IMESSAGE = "alphaletereporting@gmail.com"

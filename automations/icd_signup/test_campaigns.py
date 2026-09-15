@@ -57,8 +57,18 @@ class TheyAreNeverAskedForWhatTheyCannotHave(unittest.TestCase):
         self.assertIn("if S.uses_saraplus(campaign):", FORM)
 
     def test_the_installer_skips_the_saraplus_login(self):
-        self.assertIn("if _C.uses_saraplus():", SETUP)
+        """The RULE, not the line. This asserted `if _C.uses_saraplus():`,
+        which asks the MACHINE -- and on a two-campaign machine that answers
+        for the FIRST enrollment. Carlos's Box campaign was first, so his B2B
+        AT&T install was told it needed no SaraPlus login and never asked for
+        one (2026-09-15). The decision now comes from the campaign being
+        installed, and pinning the old line would have defended the bug."""
         self.assertIn("no SaraPlus needed", SETUP)
+        # Decided from the record step 5 wrote, not from the machine.
+        i = SETUP.index("no SaraPlus needed")
+        before = SETUP[max(0, i - 900):i]
+        self.assertIn("this_campaign", before)
+        self.assertNotIn("_C.uses_saraplus()", before)
 
     def test_the_sweep_does_not_try_to_read_saraplus(self):
         """A machine with no AT&T campaign never signs in.

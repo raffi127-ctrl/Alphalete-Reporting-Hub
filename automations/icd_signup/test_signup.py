@@ -17,10 +17,15 @@ from automations.icd_signup.schema import (IcdSignup, STATUS_APPROVED,
 
 
 def _rec(**kw):
+    # NAMES A CHANNEL BY DEFAULT. It did not, and that only started to matter
+    # when "named nothing" stopped counting as a refused approval -- an office
+    # that leaves it blank has nothing to approve, not a failure. These cases
+    # are about a channel being good or refused, so they need one named.
     base = dict(owner="Cyrus Wade", office_label="", platform="mac",
                 timezone="America/Chicago", day_start="13:30", day_end="20:30",
                 saturday=True, sat_start="11:15", sat_end="16:00",
                 ov_name="", knocks_cadence=15, wanted_channels="#ambient",
+                alert_channels_json='["#ambient"]',
                 contact="cy@example.com", office_key="cyrus")
     base.update(kw)
     return IcdSignup(**base)
@@ -397,3 +402,29 @@ class OneClickApproval(unittest.TestCase):
         r = _rec(alert_channels_json="[]", knocks_json="[]")
         body = "\n".join(N.lines(r, link="x")[1])
         self.assertIn("no channel named yet", body)
+
+
+class NamingNoChannelIsNotARefusal(unittest.TestCase):
+    """An office that leaves the alert channel blank has nothing to approve
+    there -- "not sure yet" is an answer the form allows. Treating it as a
+    refusal bailed out of the whole approval BEFORE the knocks board, which
+    Carlos had named two channels for (2026-09-15)."""
+
+    def _approve(self, rec):
+        with mock.patch.object(store, "get", return_value=rec), \
+             mock.patch.object(store, "pending", return_value=[]), \
+             mock.patch.object(store, "set_status") as setst, \
+             mock.patch("automations.icd_alerts.approve.cmd_approve",
+                        return_value=1) as chan, \
+             mock.patch("automations.icd_alerts.approve.cmd_knocks",
+                        return_value=0) as knocks:
+            rc = A.approve(rec.office_key, log=lambda *a, **k: None)
+        return rc, setst, chan, knocks
+
+    def test_the_board_is_still_approved(self):
+        rc, setst, chan, knocks = self._approve(
+            _rec(alert_channels_json="[]"))
+        chan.assert_not_called()
+        knocks.assert_called_once()
+        self.assertEqual(rc, 0)
+        setst.assert_called_once()
