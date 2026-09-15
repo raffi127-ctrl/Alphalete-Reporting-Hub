@@ -86,14 +86,21 @@ def _remember(name, oid, backfilled=False):
 
 
 def to_pull(known):
-    """Every office this run should visit, org list first, no duplicates."""
-    todo = list(OFFICES)
-    have = {n for n, _, _ in todo}
-    for name, oid, owner in CAPTAINSHIP:
-        oid = oid or known.get(name)
-        if oid and name not in have:
-            todo.append((name, oid, owner))
-            have.add(name)
+    """Every office this run should visit, org list first, no duplicates.
+
+    Blank office ids are legal in BOTH rosters now (the South Shore adds went
+    into ORG with "" ids, 2026-09-14) — they resolve through the discovery
+    state exactly like captainship pendings, and stay off the pull list until
+    an office exists. Passing a blank id through would break select_office
+    (the Lujan/Badawi WRONG OFFICE lesson, 2026-09-11).
+    """
+    todo, have = [], set()
+    for name, oid, owner in list(OFFICES) + list(CAPTAINSHIP):
+        oid = str(oid or "").strip() or known.get(name)
+        if not oid or name in have:
+            continue
+        todo.append((name, oid, owner))
+        have.add(name)
     return todo
 
 
@@ -502,8 +509,8 @@ def main():
         # just today, so their Trend opens with a shape instead of one column.
         known = _known()
         just_found = {}
-        pending = [(n, own) for n, oid, own in CAPTAINSHIP
-                   if not oid and n not in known]
+        pending = [(n, own) for n, oid, own in list(CAPTAINSHIP) + list(OFFICES)
+                   if not str(oid or "").strip() and n not in known]
         if pending and not a.only:
             just_found = discover(page, pending, log)
             for name, oid in just_found.items():

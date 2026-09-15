@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from automations.funnel_board.auth import session as _auth_session  # noqa: E402
-from automations.funnel_board.roster import (  # noqa: E402
+from automations.funnel_board.roster import (  # noqa: E402, SOUTH_SHORE_NAMES
     CAMPAIGN_ONLY, CAPTAINSHIP_NAMES, ORG_NAMES,
     BOARD_TITLE as CAP_BOARD_TITLE, TREND_TITLE as CAP_TREND_TITLE)
 from automations.org_campaign_metrics.layout import (  # noqa: E402
@@ -599,7 +599,7 @@ MX_DEFS = [
 MX_H = "$A$100:$G$%d" % (99 + len(MX_DEFS))
 MX_M0 = 4                                        # first manager row
 MXN = len(WEEK_ENDS) + 2                         # manager col + weeks + ALL WEEKS
-MX_MAXR = 17                                     # the longer roster
+MX_MAXR = max(len(ORG_NAMES), len(CAPTAINSHIP_NAMES))   # the longer roster
 MX_TOT = MX_M0 + MX_MAXR
 
 
@@ -905,7 +905,8 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
     # the name in column A, so the whole grid follows the picker. Rows are laid
     # out for the longer roster; blank-name rows render empty via guards and
     # contribute nothing to the SUBTOTAL totals.
-    MAXR = max(len(ORG_NAMES), len(CAPTAINSHIP_NAMES))
+    _BOARD_ORG = [n for n in ORG_NAMES if n != "Drew Tepper"]
+    MAXR = max(len(_BOARD_ORG), len(CAPTAINSHIP_NAMES), len(SOUTH_SHORE_NAMES))
     M1 = M0 + MAXR - 1
     TOTR = M1 + 1
     # Hidden ingredient columns for the TOTAL row's ratios. SUMIFS cannot take a
@@ -939,7 +940,9 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
 
     _SPILL = ('=IF($F$1="Captainship",'
               'FILTER($AB$100:$AB$140,$AB$100:$AB$140<>""),'
-              'FILTER($AA$100:$AA$140,$AA$100:$AA$140<>""))')
+              'IF($F$1="South Shore",'
+              'FILTER($AC$100:$AC$140,$AC$100:$AC$140<>""),'
+              'FILTER($AA$100:$AA$140,$AA$100:$AA$140<>"")))')
     for mi in range(MAXR):
         r = M0 + mi
         namecell = _SPILL if mi == 0 else ""
@@ -947,7 +950,8 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
                      + ['=IF($A%d="","",%s)' % (r, cell(k, key, r)[1:])
                         for (_, k, key) in BCOLS])
 
-    trow = ['=IF($F$1="Captainship","CAPTAINSHIP TOTAL","OFFICE TOTAL")'
+    trow = ['=IF($F$1="Captainship","CAPTAINSHIP TOTAL",'
+            'IF($F$1="South Shore","SOUTH SHORE TOTAL","OFFICE TOTAL"))'
             if total_label else total_label]
     for i, (h, kind, key) in enumerate(BCOLS):
         c = a1(B0 + i)
@@ -968,11 +972,15 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
                    "values": [[w.strftime("%m/%d/%Y")] for w in reversed(WEEK_ENDS)]})
     # both rosters, parked in hidden rows far right of the data (AA/AB); the
     # column-A spill FILTERs whichever one F1 names.
+    # Board rosters (Carlos 2026-09-14): AA = Org — WITHOUT Drew Tepper, who
+    # shows under South Shore on this tab only (he stays in ORG for data and
+    # every other view) — AB = Captainship, AC = South Shore.
+    _park_n = max(len(_BOARD_ORG), len(CAPTAINSHIP_NAMES), len(SOUTH_SHORE_NAMES))
     values.append({"range": "'%s'!AA100" % title, "values":
-                   [[o if i < len(ORG_NAMES) else "",
-                     CAPTAINSHIP_NAMES[i] if i < len(CAPTAINSHIP_NAMES) else ""]
-                    for i, o in enumerate(
-                        ORG_NAMES + [""] * max(0, len(CAPTAINSHIP_NAMES) - len(ORG_NAMES)))]})
+                   [[_BOARD_ORG[i] if i < len(_BOARD_ORG) else "",
+                     CAPTAINSHIP_NAMES[i] if i < len(CAPTAINSHIP_NAMES) else "",
+                     SOUTH_SHORE_NAMES[i] if i < len(SOUTH_SHORE_NAMES) else ""]
+                    for i in range(_park_n)]})
     # The GROUP picker is the USER'S cell: a rebuild must never reset it, or
     # the hourly pass flips whoever is looking at Captainship back to Org.
     # Read what is there and write the same thing back (default Org only when
@@ -982,13 +990,14 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
         _grp = (_g[0][0] if _g and _g[0] else "").strip()
     except Exception:  # noqa: BLE001 — an unreadable picker must not kill the build
         _grp = ""
-    if _grp not in ("Org", "Captainship"):
+    if _grp not in ("Org", "Captainship", "South Shore"):
         _grp = "Org"
     values.append({"range": "'%s'!E1" % title, "values": [["GROUP:", _grp]]})
     F.append({"setDataValidation": {"range": gr(sid, 0, 1, 5, 6), "rule": {
         "condition": {"type": "ONE_OF_LIST",
                       "values": [{"userEnteredValue": "Org"},
-                                 {"userEnteredValue": "Captainship"}]},
+                                 {"userEnteredValue": "Captainship"},
+                                 {"userEnteredValue": "South Shore"}]},
         "showCustomUi": True, "strict": True}}})
     F.append(fmt(sid, 0, 1, 4, 6, {"userEnteredFormat": {
         "textFormat": txt(INK, True, 12), "backgroundColor": rgb(WARN_BG)}},

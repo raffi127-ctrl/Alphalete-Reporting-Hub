@@ -45,22 +45,57 @@ ORG = [
     ("Aya Al-Khafaji",    "22992", "Aya Al-Khafaji"),
     ("Carlos Hidalgo",    "11580", "CARLOS HIDALGO"),
     ("Cody Cannon",       "21151", "Cody Cannon"),
+    ("Colten Wright",    "",      "Colten Wright"),          # South Shore (Carlos 2026-09-14)
     ("Cyrus Wade",        "22815", "Cyrus Wade"),
     ("Drew Tepper",       "22583", "Drew Tepper"),
+    ("Eveliz Wright",    "",      "Eveliz Wright"),          # South Shore
+    ("Frank Matos",      "",      "Frank Matos"),            # South Shore
+    ("George Delgado",   "",      "George Delgado"),         # South Shore
     ("Haytham Nagi",      "22524", "Haytham Nagi"),
     ("Isaiah Revelle",    "19717", "Isaiah Revelle"),
     ("Jacob Dover",       "23607", "Jacob Dover"),
+    ("Jairo Ruiz",       "",      "Jairo Ruiz"),             # South Shore
+    ("Jose Velasquez",   "",      "Jose Velasquez"),         # South Shore
+    ("Joseph Delgado",   "",      "Joseph Delgado"),         # South Shore
+    ("Justin Fermin",    "",      "Justin Fermin"),          # South Shore
+    ("Karrington Moody", "",      "Karrington Moody"),       # South Shore
     ("Kash Rai",          "22177", "Akashdeep Rai"),
     ("Khalil Mansour",    "11901", "KHALIL MANSOUR"),
+    ("Lizette Ruiz",     "",      "Lizette Ruiz-Conejo"),    # South Shore — legal name has the -Conejo
+    ("Marcos Barbosa",   "",      "Marcos Barbosa"),         # South Shore
     ("Maxamad-Amin Aden", "23066", "Maxamad Aden"),
     ("Rafael Hidalgo",    "11280", "Rafael Hidalgo"),
     ("Rashad Reed",       "23411", "Rashad Reed"),
     ("Roshan Amin",       "19833", "Roshan Amin Ahmad"),
     ("Ryan McSpadden",    "22820", "Ryan McSpadden"),
     ("Salik Mallick",     "21328", "Muhammad UI Haque"),
+    ("Valeria Tristan",  "",      "Valeria Tristan"),        # South Shore
 ]
 
 ORG_NAMES = [n for n, _, _ in ORG]
+
+# Colten Wright's org — the "South Shore" GROUP on the Recruiting Dashboard
+# (Carlos 2026-09-14). Every one of these is ALSO in ORG above (org views,
+# Goals, Focus, Source Report, Ad Sales Board, Manager Matrix all treat them
+# as org people); the dashboard's group picker is the only place this list
+# shows as its own roster. Drew Tepper is the one exception in the other
+# direction: he stays in ORG for data, but the DASHBOARD shows him under
+# South Shore instead of Org (see build.py _BOARD_ORG).
+SOUTH_SHORE_NAMES = [
+    "Colten Wright",
+    "Jairo Ruiz",
+    "Frank Matos",
+    "Joseph Delgado",
+    "Drew Tepper",
+    "Eveliz Wright",
+    "Karrington Moody",
+    "Justin Fermin",
+    "Jose Velasquez",
+    "George Delgado",
+    "Lizette Ruiz",
+    "Valeria Tristan",
+    "Marcos Barbosa",
+]
 
 CAPTAINSHIP = [
     # Carlos's own office leads it — he sits on the org board too, and asked for
