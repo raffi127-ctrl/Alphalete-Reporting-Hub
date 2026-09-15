@@ -676,6 +676,17 @@ except Exception:  # noqa: BLE001
 if _mgrp not in ("Org", "Captainship"):
     _mgrp = "Org"
 values.append({"range": "'Manager Matrix'!D1", "values": [["GROUP:", _mgrp]]})
+# Hide the unused matrix rows for the preserved group (same fix as the board).
+_mx_used = (len(CAPTAINSHIP_NAMES) if _mgrp == "Captainship" else len(ORG_NAMES))
+F.append({"updateDimensionProperties": {"range": {
+    "sheetId": MATRIX, "dimension": "ROWS",
+    "startIndex": MX_M0 - 1, "endIndex": MX_M0 - 1 + _mx_used},
+    "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}})
+if _mx_used < MX_MAXR:
+    F.append({"updateDimensionProperties": {"range": {
+        "sheetId": MATRIX, "dimension": "ROWS",
+        "startIndex": MX_M0 - 1 + _mx_used, "endIndex": MX_M0 - 1 + MX_MAXR},
+        "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
 MX_GRADE = {"Sent to Call List": ("sent", "count"),
             "Removal %": ("rmvpct", "rate_low"),
             "Retention to Call List": ("ret2cl", "rate"), "1st Show %": ("sh1pct", "rate"),
@@ -994,6 +1005,22 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
     if _grp not in ("Org", "Captainship", "South Shore"):
         _grp = "Org"
     values.append({"range": "'%s'!E1" % title, "values": [["GROUP:", _grp]]})
+    # A shorter group used to show its unused manager rows as an empty band
+    # down to the TOTAL row (Carlos 2026-09-15). Hide the tail for the
+    # preserved group here; goal_sync.gs tidyGroupRows_ does the same the
+    # moment a human flips the picker.
+    _lens = {"Org": len(_BOARD_ORG), "Captainship": len(CAPTAINSHIP_NAMES),
+             "South Shore": len(SOUTH_SHORE_NAMES)}
+    _used = _lens.get(_grp, MAXR)
+    F.append({"updateDimensionProperties": {"range": {
+        "sheetId": sid, "dimension": "ROWS",
+        "startIndex": M0 - 1, "endIndex": M0 - 1 + _used},
+        "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}})
+    if _used < MAXR:
+        F.append({"updateDimensionProperties": {"range": {
+            "sheetId": sid, "dimension": "ROWS",
+            "startIndex": M0 - 1 + _used, "endIndex": M1},
+            "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
     F.append({"setDataValidation": {"range": gr(sid, 0, 1, 5, 6), "rule": {
         "condition": {"type": "ONE_OF_LIST",
                       "values": [{"userEnteredValue": "Org"},
