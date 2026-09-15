@@ -712,6 +712,148 @@ ENROLLED_PATH = (Path.home() / ".config" / "recruiting-report"
                  / "icd_alerts_enrolled.json")
 
 
+MACHINE_FACTS_PATH = (Path.home() / ".config" / "recruiting-report"
+                      / "icd_machine_facts.json")
+APPROVALS_PATH = (Path.home() / ".config" / "recruiting-report"
+                  / "icd_last_approvals.json")
+
+
+def _once_a_day(path: Path, key: str, day: dt.date) -> bool:
+    """True if this exact thing has already been said today.
+
+    Every alert in this module that fires from the poster needs this: the
+    poster runs every two minutes, and a message with no memory is a flood
+    rather than a message [[_said_already]].
+    """
+    stamp = "%s|%s" % (day.isoformat(), key)
+    try:
+        seen = json.loads(path.read_text())
+    except (OSError, ValueError):
+        seen = {}
+    if seen.get(stamp):
+        return True
+    seen = {k: v for k, v in seen.items() if k.startswith(day.isoformat())}
+    seen[stamp] = dt.datetime.now().isoformat(timespec="seconds")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(seen, indent=2, sort_keys=True))
+    except OSError:
+        pass
+    return False
+
+
+def warn_machine_facts(day: Optional[dt.date] = None, *, send: bool = False,
+                       book=None, log=print) -> List[str]:
+    """Say what we know about the machines, once a day.
+
+    THESE CHECKS EXISTED AND NOTHING CALLED THEM. laptop_offices() and
+    silent_machines() were written, tested, and wired to nothing -- so a
+    machine going quiet was something Megan noticed by eye, which is exactly
+    how Cyrus sat dark for a day (2026-09-15).
+
+    A laptop closes and the office's channel stops with nothing said. An agent
+    too old to name its machine cannot be asked whether it is a laptop at all,
+    so its silence looks the same as a healthy desktop's.
+
+    ONCE A DAY, and only when there is something. A standing list of facts
+    that has not changed is noise, and noise is what buried the real alerts
+    this afternoon.
+    """
+    day = day or dt.date.today()
+    lines = []
+
+    laptops = laptop_offices(day, book=book)
+    if laptops:
+        lines.append("*On a laptop* — their channel stops when the lid closes:")
+        for m in laptops:
+            lines.append("   • %s — %s" % (m["office"], m["name"]))
+
+    silent = silent_machines(day, book=book)
+    if silent:
+        lines.append("*Too old to say what machine they are* — we cannot tell "
+                     "whether these are laptops:")
+        for m in silent:
+            lines.append("   • %s — agent %s" % (m["office"], m["agent"]))
+
+    if not lines:
+        return []
+    for l in lines:
+        log(l)
+    if not send:
+        return lines
+    key = "machines|%s" % "|".join(sorted(
+        [m["office"] for m in laptops] + [m["office"] for m in silent]))
+    if _once_a_day(MACHINE_FACTS_PATH, key, day):
+        return lines
+    _slack(O.OPS_CHANNEL,
+           ":computer: *Machines worth knowing about.*\n" + "\n".join(lines)
+           + "\n_Said once a day, and only when it changes._")
+    return lines
+
+
+def warn_lost_approvals(day: Optional[dt.date] = None, *, send: bool = False,
+                        book=None, log=print) -> List[str]:
+    """An office that WAS switched on and now is not.
+
+    "no knocks destination is approved yet" reads identically for an office
+    waiting on Megan and one that was approved and has since been switched
+    off. That ambiguity cost Cyrus his whole board on 2026-09-15: a cadence
+    change re-wrote a column his machine owns, the relay read the
+    disagreement as "they are asking for somewhere different", cleared his
+    approval -- and the message that followed was the same one a brand new
+    office produces.
+
+    A new office is a nudge. An office that LOST an approval is a regression,
+    and it is the difference between "somebody needs to press a button" and
+    "something took this away".
+    """
+    day = day or dt.date.today()
+    now = {}
+    for key, dests in (approved_knocks(book) or {}).items():
+        now.setdefault(key, set()).add("board")
+    for key, chans in (approved_channels(book) or {}).items():
+        now.setdefault(key, set()).add("alerts")
+    for key, groups in (approved_texts(book) or {}).items():
+        now.setdefault(key, set()).add("texts")
+
+    try:
+        before = json.loads(APPROVALS_PATH.read_text())
+    except (OSError, ValueError):
+        before = {}
+
+    lost = []
+    for key, had in sorted(before.items()):
+        gone = set(had) - now.get(key, set())
+        if gone:
+            lost.append((key, sorted(gone)))
+
+    # Remember the CURRENT state either way, so a thing reported once is not
+    # reported forever -- and so a restored approval quietly becomes normal.
+    try:
+        APPROVALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        APPROVALS_PATH.write_text(json.dumps(
+            {k: sorted(v) for k, v in now.items()}, indent=2, sort_keys=True))
+    except OSError:
+        pass
+
+    if not lost:
+        return []
+    lines = ["*%s* — lost: %s" % (key, ", ".join(gone)) for key, gone in lost]
+    for l in lines:
+        log("LOST APPROVAL: " + l)
+    if not send:
+        return lines
+    key = "lost|%s" % "|".join("%s:%s" % (k, ",".join(g)) for k, g in lost)
+    if _once_a_day(APPROVALS_PATH.with_suffix(".warned.json"), key, day):
+        return lines
+    _slack(O.OPS_CHANNEL,
+           ":warning: *An office was switched ON and is now switched OFF.*\n"
+           + "\n".join(lines)
+           + "\n_This is not an office waiting for approval — it had one and "
+             "it is gone. Nothing posts for them until it is put back._")
+    return lines
+
+
 def _seen_requests() -> Dict:
     try:
         return json.loads(ENROLLED_PATH.read_text())
@@ -1628,6 +1770,12 @@ def main(argv=None) -> int:
                 notify_faults(day, send=args.send)
                 warn_quiet(day, send=args.send)
                 warn_stale_machines(day, send=args.send)
+                # BOTH OF THESE EXISTED AND NOTHING CALLED THEM. A machine
+                # going quiet was something Megan noticed by eye, and an
+                # office that lost its approval looked exactly like one that
+                # had never been given it.
+                warn_machine_facts(day, send=args.send)
+                warn_lost_approvals(day, send=args.send)
     except RelayNotConfigured as e:
         print(e)
         return 2
