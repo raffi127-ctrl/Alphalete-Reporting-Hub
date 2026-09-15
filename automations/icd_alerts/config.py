@@ -17,7 +17,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 APP_DIR = Path.home() / ".config" / "lucy-reports"
 CREDS_PATH = APP_DIR / "saraplus-creds.json"
@@ -54,6 +54,22 @@ def campaign() -> str:
         return str(install().get("campaign") or "att").strip().lower()
     except Exception:  # noqa: BLE001
         return "att"
+
+
+# The OwnerVille campaign ids, matching disposition_signup.CAMPAIGNS. These
+# are what `invD2DClientId` takes; the campaign KEY is ours, the id is theirs.
+CAMPAIGN_IDS = {"att": "3", "energy": "40", "nds": "1",
+                "b2b_att": "2", "b2b_box": "16"}
+
+
+def campaign_id() -> str:
+    """The invD2DClientId to pin, or "" when we do not know one.
+
+    Empty means read unpinned, which is what every office did before today and
+    is right for an owner who runs exactly one campaign -- there is nothing
+    for the session to be sticky ABOUT.
+    """
+    return CAMPAIGN_IDS.get(campaign(), "")
 
 
 def uses_saraplus() -> bool:
@@ -152,13 +168,79 @@ def save_ownerville_creds(username: str, password: str) -> Path:
 
 
 def install() -> Dict:
-    """Who this install is. Written once at setup, read on every run."""
+    """THE FIRST enrollment on this machine. Kept for everything that still
+    thinks one computer means one office -- which was true until an ICD ran
+    two campaigns."""
+    rows = enrollments()
+    return rows[0] if rows else {}
+
+
+def _install_raw() -> Dict:
     if not INSTALL_PATH.exists():
         return {}
     try:
         return json.loads(INSTALL_PATH.read_text())
     except (OSError, ValueError):
         return {}
+
+
+def enrollments() -> "List[Dict]":
+    """Every campaign this machine relays, one record each.
+
+    AN OFFICE CAN RUN MORE THAN ONE CAMPAIGN and enrol them independently
+    (Megan 2026-09-15). Each is its own reporting unit: its own relay key, its
+    own channels, its own cadence, its own board -- so each is its own record
+    here, and the sweep walks them.
+
+    TWO SHAPES ON DISK, because Kash and Cyrus already have the old one. A
+    plain object is a single enrollment and reads as a list of one; a list is
+    the multi-campaign shape. Nothing has to be migrated, and an office that
+    never runs a second campaign never grows the second shape.
+    """
+    raw = _install_raw()
+    if isinstance(raw, list):
+        return [r for r in raw if isinstance(r, dict) and r.get("office_key")]
+    if isinstance(raw, dict) and raw.get("office_key"):
+        return [raw]
+    return []
+
+
+def enrollment_for(office_key: str) -> Dict:
+    key = (office_key or "").strip().lower()
+    return next((r for r in enrollments()
+                 if str(r.get("office_key", "")).strip().lower() == key), {})
+
+
+def add_enrollment(rec: Dict) -> Path:
+    """Add or REPLACE one campaign's enrollment, keeping the others.
+
+    Replace-by-office-key on purpose: re-running the installer with the same
+    code is how somebody fixes a bad answer, and it must update that campaign
+    rather than give the machine two of it.
+    """
+    app_dir()
+    key = str(rec.get("office_key", "")).strip().lower()
+    rows = [r for r in enrollments()
+            if str(r.get("office_key", "")).strip().lower() != key]
+    rows.append(rec)
+    INSTALL_PATH.write_text(json.dumps(rows, indent=2))
+    return INSTALL_PATH
+
+
+def drop_enrollment(office_key: str) -> bool:
+    """Stop relaying one campaign, keep the rest.
+
+    Carlos is switching campaigns (Megan 2026-09-15), so an office losing one
+    has to be ordinary rather than a reinstall.
+    """
+    key = (office_key or "").strip().lower()
+    rows = enrollments()
+    keep = [r for r in rows
+            if str(r.get("office_key", "")).strip().lower() != key]
+    if len(keep) == len(rows):
+        return False
+    INSTALL_PATH.write_text(json.dumps(keep, indent=2))
+    return True
 
 
 def save_install(office_key: str, owner: str) -> Path:

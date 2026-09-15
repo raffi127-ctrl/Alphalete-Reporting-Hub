@@ -124,6 +124,36 @@ def capture_rqst(page) -> Optional[str]:
 
 
 # --- the grid ---------------------------------------------------------------
+def pin_campaign(page, rqst: str, campaign_id: str, *, log=print) -> bool:
+    """Put this OwnerVille session on one campaign before reading anything.
+
+    THE CAMPAIGN IS A STICKY SESSION-GLOBAL. An unpinned read returns whatever
+    campaign that login was last on -- which for an owner running one campaign
+    is always the right answer, and for an owner running two is whatever they
+    themselves last clicked. Not a default: a coin flip (Megan 2026-09-15,
+    enrolling two multi-campaign offices).
+
+    PINNING IS NOT PROOF. A pin can fail to take and still serve a grid:
+    Calvin was pinned to Energy Wells on 2026-09-02 and his board came back
+    Box-shaped, published as "TOTAL KNOCKS - ENERGYWELL - CALVIN", and nobody
+    reading it could have told. So this only ASKS; whether the grid that
+    arrives really is that campaign's is checked where the board is drawn, on
+    our side, against the rows themselves.
+    """
+    if not campaign_id:
+        return False
+    try:
+        page.goto("%s?p=88&rqst=%s&invD2DClientId=%s" % (V2_URL, rqst,
+                                                         campaign_id),
+                  wait_until="networkidle", timeout=25_000)
+        page.wait_for_timeout(1000)
+        log("  pinned campaign %s" % campaign_id)
+        return True
+    except Exception as e:  # noqa: BLE001 — an unpinned read is still a read
+        log("  could not pin campaign %s: %s" % (campaign_id, type(e).__name__))
+        return False
+
+
 def navigate(page, rqst: str, mdy: str, *, attempts: int = 3, log=print) -> None:
     """Disposition by Rep for ONE day. The date filters server-side via the
     URL; the on-page picker only sets local JS vars.

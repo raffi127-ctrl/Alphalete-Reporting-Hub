@@ -169,6 +169,23 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             log("%-10s %d rep(s) -- nothing due" % (key, len(rows_for_board)))
             continue
 
+        # THE ROWS MUST BE THE CAMPAIGN THIS OFFICE IS ENROLLED AS. A pin can
+        # fail to take and still serve a grid -- Calvin's board came back
+        # Box-shaped under an ENERGYWELL heading and published, and nobody
+        # reading it could have told (2026-09-02).
+        why = campaign_guard.check(getattr(office, "campaign", "") or "", 
+                                   rows_for_board)
+        if why:
+            log("%-10s NOT DRAWN — %s" % (key, why))
+            try:
+                from automations.icd_alerts import post as _P
+                _P._slack(O.OPS_CHANNEL,
+                          ":rotating_light: *%s* — knocks board withheld.\n> %s"
+                          % (office.label, why))
+            except Exception:  # noqa: BLE001
+                pass
+            continue
+
         boards, shape = _render(office, rows_for_board, day, now)
         log("%-10s %d rep(s), %s board -> %s"
             % (key, len(rows_for_board), shape,

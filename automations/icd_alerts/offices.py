@@ -113,6 +113,9 @@ class AlertOffice(NamedTuple):
     sat_start: str = "10:45"
     sat_end: str = "17:00"
     saturday: bool = True
+    # Which campaign this office's board is. Defaults to AT&T: every office
+    # enrolled before campaigns existed was on it.
+    campaign: str = "att"
 
     def display(self) -> str:
         where = ", ".join(c.name for c in self.channels) or "no channel set yet"
@@ -265,6 +268,7 @@ def _office_from_signup(row: Dict) -> Optional[AlertOffice]:
         sat_start=str(row.get("sat_start") or "10:45").strip(),
         sat_end=str(row.get("sat_end") or "17:00").strip(),
         saturday=saturday,
+        campaign=str(row.get("campaign") or "att").strip().lower(),
     )
 
 

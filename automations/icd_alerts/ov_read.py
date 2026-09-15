@@ -121,6 +121,15 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             rqst = _session(page, log=log)
+            # PIN THE CAMPAIGN FIRST. The campaign is a sticky session-global
+            # in OwnerVille, so an unpinned read on a multi-campaign owner
+            # returns whatever THEY last clicked. Whether the grid that
+            # arrives really is that campaign's is checked on our side,
+            # against the rows -- a pin can fail to take and still serve a
+            # grid (Calvin, 2026-09-02).
+            cid = C.campaign_id()
+            if cid:
+                K.pin_campaign(page, rqst, cid, log=log)
             K.navigate(page, rqst, mdy, log=log)
             try:
                 rows = K.read_rows(page, log=log)
