@@ -48,7 +48,10 @@ from automations.weekly_knocks_focus import placement as PL
 
 REPORT_ID = "weekly_knocks_focus"
 PREVIEW_TABS = {"Kash Rai - Test Eve"}
-ROLLOUT = False                      # flips after Eve's "looks good, roll out"
+# Eve 2026-09-14: "roll out para todas las oficinas de las que tengamos tab en
+# el focus report y hagamos knocks report". --all walks every office the
+# weekly knocks report covers; one without a tab or without the box is skipped.
+ROLLOUT = True
 # The board is drawn at 2x (total_knocks.render.SCALE); no reader needs more
 # than this many source pixels for a picture shown PL.DISPLAY_W wide.
 MAX_UPLOAD_W = 2400
@@ -69,15 +72,24 @@ def _saturday(anchor: Optional[dt.date]) -> dt.date:
     return sunday - dt.timedelta(days=1)
 
 
-def _tab_for(office: str) -> Optional[str]:
-    """Office (ownerville name) -> Focus Report tab, via office-mapping.json:
-    'Akashdeep Rai' is as_owner of the 'Kash Rai' tab."""
+def _tab_for(office: str, pss_owner: Optional[str] = None) -> Optional[str]:
+    """Office -> Focus Report tab, via office-mapping.json (confirmed and
+    sales_only entries). Tried in order: the ownerville office name against
+    as_owner / sheet_tab ('Akashdeep Rai' is as_owner of 'Kash Rai'), then the
+    board's PSS owner, which is the name the Focus Report knows the office by
+    when ownerville's differs ('Muhammad Waqar' sells as 'Salik Mallick';
+    'Next Horizon Group, Inc. Nii Tagoe' as 'Nii Tagoe')."""
     from automations.recruiting_report import fill
-    want = office.strip().lower()
-    for c in fill.load_mapping().get("confirmed", []):
-        if want in (str(c.get("as_owner", "")).strip().lower(),
-                    str(c.get("sheet_tab", "")).strip().lower()):
-            return c["sheet_tab"]
+    mapping = fill.load_mapping()
+    entries = mapping.get("confirmed", []) + mapping.get("sales_only", [])
+    for name in (office, pss_owner):
+        want = str(name or "").strip().lower()
+        if not want:
+            continue
+        for c in entries:
+            if want in (str(c.get("as_owner", "")).strip().lower(),
+                        str(c.get("sheet_tab", "")).strip().lower()):
+                return c["sheet_tab"]
     return None
 
 
@@ -218,9 +230,25 @@ def _place_picture(ws, week_sunday: dt.date, week_col: int, png: Path,
 
 
 def run_office(office: str, saturday: dt.date, tab: Optional[str],
-               live: bool) -> bool:
+               live: bool, pss_owner: Optional[str] = None,
+               skip_missing: bool = False) -> bool:
+    """True when the office's box + picture landed (or would, dry-run).
+
+    `skip_missing` (the --all sweep): an office with no Focus Report tab, or a
+    tab without the box, is skipped with a line and counts as fine — the sweep
+    covers every office the weekly knocks report posts, and not all of them
+    have a Focus Report tab (Isaiah Revelle) or that layout (Raf's master tab).
+    A MISSING BOARD is never skipped: that means Sunday's run didn't render
+    an office it should have."""
     import gspread
     from automations.recruiting_report import fill
+
+    tab = tab or _tab_for(office, pss_owner)
+    if not tab:
+        print(f"[wkf] {'⤳' if skip_missing else '❌'} {office}: no Focus Report "
+              "tab in office-mapping.json" + (" — skipped." if skip_missing else "."),
+              flush=True)
+        return skip_missing
 
     stem = f"weekly_knock_dispositions_{saturday.isoformat()}"
     board_json = BOARD_DIR / _slug(office) / f"{stem}.json"
@@ -231,12 +259,6 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
               "this machine.", flush=True)
         return False
     data = json.loads(board_json.read_text(encoding="utf-8"))
-
-    tab = tab or _tab_for(office)
-    if not tab:
-        print(f"[wkf] ❌ {office}: no Focus Report tab in office-mapping.json.",
-              flush=True)
-        return False
     if live and not ROLLOUT and tab not in PREVIEW_TABS:
         print(f"[wkf] ❌ {office}: '{tab}' is not a preview tab and the "
               f"rollout isn't on — preview tabs: {sorted(PREVIEW_TABS)}.",
@@ -252,8 +274,10 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
         return False
     header, updates, missing = BX.plan(data["headers"], data["totals"], col_b)
     if header is None:
-        print(f"[wkf] ❌ {tab}: no '{BX.BOX_HEADER}' box.", flush=True)
-        return False
+        print(f"[wkf] {'⤳' if skip_missing else '❌'} {office}: tab '{tab}' has "
+              f"no '{BX.BOX_HEADER}' box" + (" — skipped." if skip_missing else "."),
+              flush=True)
+        return skip_missing
 
     col_letter = gspread.utils.rowcol_to_a1(1, week_col)[:-1]
     mode = "LIVE" if live else "DRY-RUN"
@@ -288,11 +312,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("date", nargs="?", default=None,
                     help="any day in the wanted Mon-Sat week (default: last "
                          "completed week)")
-    ap.add_argument("--office", action="append", required=True,
-                    help="ownerville office name, e.g. 'Akashdeep Rai' (repeatable)")
+    ap.add_argument("--office", action="append", default=None,
+                    help="ownerville office name, e.g. 'Akashdeep Rai' "
+                         "(repeatable). Wins over --all, so a rerun of the "
+                         "scheduled step can target one office.")
+    ap.add_argument("--all", action="store_true",
+                    help="every office weekly_knock_dispositions covers; "
+                         "offices without a Focus Report tab or box are skipped")
     ap.add_argument("--tab", default=None,
                     help="write to THIS tab instead of the office's own "
-                         "(the preview tab)")
+                         "(the preview tab); only with --office")
     ap.add_argument("--live", action="store_true", help="write (default: dry-run)")
     ap.add_argument("--dry-run", action="store_true", help="plan only (default)")
     args = ap.parse_args(argv)
@@ -300,8 +329,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     anchor = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
               if args.date else None)
     saturday = _saturday(anchor)
-    ok = all([run_office(o, saturday, args.tab, live) for o in args.office])
-    return 0 if ok else 1
+
+    from automations.weekly_knock_dispositions.offices import enabled
+    if args.office:
+        wanted = [(o, None, args.tab, False) for o in args.office]
+        pss = {c["name"]: c.get("pss_owner") for c in enabled(None)}
+        wanted = [(o, pss.get(o), t, s) for o, _p, t, s in wanted]
+    elif args.all:
+        wanted = [(c["name"], c.get("pss_owner"), None, True) for c in enabled(None)]
+    else:
+        ap.error("pass --office NAME or --all")
+    results = {name: run_office(name, saturday, tab, live, pss_owner=pss_owner,
+                                skip_missing=skip)
+               for name, pss_owner, tab, skip in wanted}
+    failed = [n for n, ok in results.items() if not ok]
+    print(f"[wkf] {'⚠' if failed else '✅'} {'LIVE' if live else 'DRY-RUN'} done — "
+          f"{len(results) - len(failed)}/{len(results)} ok"
+          + (f"; failed: {', '.join(failed)}" if failed else ""), flush=True)
+    return 0 if not failed else 1
 
 
 if __name__ == "__main__":
