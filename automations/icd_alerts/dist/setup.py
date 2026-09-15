@@ -1014,11 +1014,17 @@ def main() -> int:
     # SaraPlus; a Box or Energy Wells office has no account, and asking is how
     # an install dies at step 6 with the owner certain they typed it right.
     from automations.icd_alerts import config as _C
-    if _C.uses_saraplus():
+    # THE CAMPAIGN BEING INSTALLED RIGHT NOW, from the record step 5 just
+    # wrote -- not the machine's first enrollment. Asking the machine returned
+    # Carlos's Box campaign while his B2B AT&T install was running, so he was
+    # never asked for the SaraPlus login that campaign needs.
+    from automations.icd_signup.schema import uses_saraplus as _campaign_sara
+    this_campaign = str(rec.get("campaign") or "att").strip().lower()
+    if _campaign_sara(this_campaign):
         ok = login_until_it_works()
     else:
         say("      %s campaign — no SaraPlus needed, skipping that login."
-            % _C.campaign())
+            % this_campaign)
         # REQUIRED HERE, because it is the only login this office has. With
         # no SaraPlus there are no credit checks and no sales -- the knocks
         # board is the whole product, and OwnerVille is what reads it.

@@ -72,6 +72,9 @@ def campaign_id() -> str:
     return CAMPAIGN_IDS.get(campaign(), "")
 
 
+NO_SARAPLUS = ("nds", "energy", "b2b_box")
+
+
 def uses_saraplus() -> bool:
     """Does this office have a SaraPlus account at all?
 
@@ -80,7 +83,16 @@ def uses_saraplus() -> bool:
     sales half of the agent does not apply to them -- it is not switched off,
     it was never theirs.
     """
-    return campaign() not in ("nds", "energy", "b2b_box")
+    # ANY ENROLLMENT, not the first one. install() returns rows[0], so on a
+    # machine running two campaigns this asked the wrong record: Carlos's Box
+    # campaign was first, so his B2B AT&T install was told this office has no
+    # SaraPlus, never asked for his login, and his credit checks could never
+    # be read (2026-09-15). A machine "uses SaraPlus" if anything on it does.
+    rows = enrollments()
+    if not rows:
+        return campaign() not in NO_SARAPLUS
+    return any(str(r.get("campaign") or "att").strip().lower() not in NO_SARAPLUS
+               for r in rows)
 LOGIN_URL = "https://ui.saraplus.com"
 
 
