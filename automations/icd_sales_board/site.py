@@ -800,6 +800,9 @@ TOTALS_LABEL = "TOTALS"
 # cell shows nothing. set_attrs strips whitespace, so if this ever landed on a
 # real rep it would resolve to "no change" rather than a team called " ".
 BLANK_OPTION = " "
+# Shown in the rep dropdowns where a value is genuinely absent. Named rather
+# than blank, so the list has no empty row to wonder about.
+NONE_LABEL = "— none —"
 
 
 def _grid_height(n_rows: int) -> int:
@@ -1927,14 +1930,15 @@ def _rep_editor(office_key: str, week_ending, rows: list,
 
     Save / Discard, like everywhere else: nothing is written on a keystroke."""
     key = f"repedit_{office_key}_{week_ending}"
-    # EMPTY IS EMPTY. A SelectboxColumn with required=False already offers its
-    # own blank row, so adding BLANK_OPTION on top of it put TWO blank choices
-    # at the top of every dropdown (Megan 2026-09-15). The placeholder belongs
-    # to the read-only board, not here.
+    # NO BLANK ROWS IN THE DROPDOWNS (Megan 2026-09-15). required=False makes
+    # Streamlit add an unlabelled empty option of its own — and "no team" is a
+    # real answer (Ana Griffin has none), so it cannot simply be removed. It
+    # is named instead: every cell carries a value, the list is required, and
+    # NONE_LABEL maps back to empty on save.
     src = [{"Rep": r["Rep"],
-            "Team": r.get("Team") or "",
-            "Leadership": r.get("Leadership") or "",
-            "Status": r.get("Status") or "",
+            "Team": r.get("Team") or NONE_LABEL,
+            "Leadership": r.get("Leadership") or NONE_LABEL,
+            "Status": r.get("Status") or NONE_LABEL,
             "Start date": r.get("Start date") or "",
             "Days worked": str(r.get("Days worked") or "")} for r in rows]
     if not src:
@@ -1959,11 +1963,11 @@ def _rep_editor(office_key: str, week_ending, rows: list,
         column_config={
             "Rep": st.column_config.TextColumn("Rep", disabled=True),
             "Team": st.column_config.SelectboxColumn(
-                options=teams, required=False),
+                options=[NONE_LABEL] + teams, required=True),
             "Leadership": st.column_config.SelectboxColumn(
-                options=list(R.LEVELS), required=False),
+                options=[NONE_LABEL] + list(R.LEVELS), required=True),
             "Status": st.column_config.SelectboxColumn(
-                options=list(R.STATUSES), required=False,
+                options=[NONE_LABEL] + list(R.STATUSES), required=True,
                 help="Terminate a rep here; set them back to Active to "
                      "reinstate."),
             "Start date": st.column_config.TextColumn(
@@ -1996,10 +2000,14 @@ def _rep_editor(office_key: str, week_ending, rows: list,
     with c_save:
         if st.button("Save changes", type="primary",
                      key=f"repsave_{office_key}"):
+            def _val(v):
+                v = _unblank(v)
+                return "" if v == NONE_LABEL else v
+
             R.set_attrs(office_key, {
-                r["Rep"]: {"team": _unblank(r.get("Team")),
-                           "level": _unblank(r.get("Leadership")),
-                           "status": _unblank(r.get("Status"))}
+                r["Rep"]: {"team": _val(r.get("Team")),
+                           "level": _val(r.get("Leadership")),
+                           "status": _val(r.get("Status"))}
                 for r in edited.to_dict("records")})
             st.session_state.pop(key, None)
             st.success("Saved.")
