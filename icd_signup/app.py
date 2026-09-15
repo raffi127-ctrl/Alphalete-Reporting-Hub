@@ -283,15 +283,15 @@ with st.container(border=True):
         key="want_texts", label_visibility="collapsed")
     text_groups = []
     if want_texts == "Yes":
+        # TWO LINES: what to do, then the thing to add. The address was
+        # inline code inside the sentence and rendered as small grey
+        # monospace, which is hard to read on the one string they have to
+        # reproduce exactly (Megan 2026-09-15). Plain body text at full size,
+        # labelled, so it is legible and obvious what it is.
         st.info(
             "**First, add Lucy to the group chat.** She cannot post into a "
-            "chat she is not in.")
-        # ITS OWN BLOCK, NOT INLINE CODE. Set in a sentence it rendered as
-        # small grey monospace and was hard to read (Megan 2026-09-15) -- on
-        # an address they have to reproduce exactly into Messages. st.code
-        # also gives them a copy button, so it need not be retyped at all.
-        st.code(S.LUCY_IMESSAGE, language=None)
-        st.caption("Add that address to the chat like you would add a person.")
+            "chat she is not in.\n\n"
+            "**Lucy Contact to add:** %s" % S.LUCY_IMESSAGE)
         for i in range(MAX_TEXT_GROUPS):
             label = ("Name of the group chat" if i == 0
                      else "Another group chat (optional)")

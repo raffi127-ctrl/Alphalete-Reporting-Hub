@@ -1,8 +1,9 @@
 #!/bin/bash
 # Grant this machine permission to send iMessage, from the identity that will
-# actually be sending. Run it ON the machine, with somebody at the keyboard.
+# actually be sending -- and prove it delivered.
 #
-#   bash deploy/text_consent_check.sh "Some Group Chat Name"
+#   bash deploy/text_consent_check.sh                      # list the chats
+#   bash deploy/text_consent_check.sh "Exact Chat Name"    # send one test
 #
 # WHY A SCRIPT AND NOT "just send one from a terminal". macOS grants "control
 # Messages" per EXECUTABLE IDENTITY. On Lucy 1 the Allow was clicked for
@@ -18,62 +19,120 @@
 # for about five minutes, every tick. That is why gap_alerts asks
 # TEXTING_MACHINES first and skips the route out loud. Do not add a machine to
 # that set until this script has actually delivered.
+#
+# AND A WRONG NAME DID NOT FAIL EITHER. The first version fell back to walking
+# `chats` looking for a matching name; when none matched, the repeat loop
+# simply ended, osascript exited 0 and nothing was sent. Run on Lucy 3 on
+# 2026-09-15 against "Alphalete Partners" it reported success and delivered
+# nothing. So this version refuses to guess: with no argument it prints every
+# chat Messages can actually see, and a send that matches nothing is an error
+# with a non-zero exit, not a quiet no-op.
 
 set -u
 
 CHAT="${1:-}"
+
+# --- what can this machine actually see? ------------------------------------
+# Group chats frequently have NO name at all -- the display name in the window
+# is assembled from the participants. Those can only be addressed by id, which
+# is why the id is printed beside every row.
+list_chats() {
+  osascript <<'APPLESCRIPT'
+tell application "Messages"
+    set out to ""
+    repeat with c in chats
+        set theName to ""
+        try
+            set theName to name of c as string
+        end try
+        set theId to ""
+        try
+            set theId to id of c as string
+        end try
+        if theName is "" then set theName to "(no name -- address it by id)"
+        set out to out & theName & "   |   " & theId & linefeed
+    end repeat
+    return out
+end tell
+APPLESCRIPT
+}
+
 if [ -z "$CHAT" ]; then
   echo ""
-  echo "Usage: bash deploy/text_consent_check.sh \"Exact Group Chat Name\""
+  echo "Chats this machine's Messages can see:"
   echo ""
-  echo "The name has to match what Messages shows, exactly -- the send"
-  echo "resolves it by name and a near-miss finds nothing."
+  list_chats
   echo ""
-  exit 1
+  echo "Run again with one of those names in quotes, exactly as printed."
+  echo "If the chat you want shows \"(no name)\", pass its id instead."
+  echo ""
+  exit 0
 fi
+
+MSG="Lucy test — this machine can now text this chat. Ignore."
 
 echo ""
 echo "Sending one test message to: $CHAT"
 echo ""
-echo "macOS should ask whether Terminal may control Messages."
-echo "Click ALLOW. If no dialog appears and nothing arrives, this machine"
-echo "has already refused it once -- see the note at the end."
+echo "macOS may ask whether Terminal can control Messages. Click ALLOW."
 echo ""
 
-osascript <<APPLESCRIPT
+# Prints SENT on success and nothing on failure, so the shell can tell the
+# difference. The old version could not.
+RESULT="$(osascript <<APPLESCRIPT
 tell application "Messages"
-    set targetChat to a reference to text chat id "$CHAT"
+    -- By id first: it is the only handle a nameless group chat has.
     try
-        send "Lucy test — this machine can now text this chat. Ignore." to chat "$CHAT"
-    on error
-        -- Named group chats resolve differently across macOS versions; fall
-        -- back to matching on the chat's display name.
-        repeat with c in chats
-            if name of c is "$CHAT" then
-                send "Lucy test — this machine can now text this chat. Ignore." to c
-                exit repeat
-            end if
-        end repeat
+        send "$MSG" to chat id "$CHAT"
+        return "SENT by id"
     end try
+    try
+        send "$MSG" to chat "$CHAT"
+        return "SENT by chat name"
+    end try
+    repeat with c in chats
+        set theName to ""
+        try
+            set theName to name of c as string
+        end try
+        if theName is "$CHAT" then
+            send "$MSG" to c
+            return "SENT by matching name"
+        end if
+    end repeat
+    return "NO MATCH"
 end tell
 APPLESCRIPT
+)"
 rc=$?
 
 echo ""
-if [ "$rc" -eq 0 ]; then
-  echo "  osascript exited 0."
-  echo ""
-  echo "  CHECK MESSAGES: did the text actually arrive in that chat?"
-  echo "  Exit 0 is not delivery -- a wrong chat name exits 0 and sends"
-  echo "  nothing, which is how a route looks healthy and is not."
-  echo ""
-  echo "  If it arrived, this machine can text. Tell Claude and it will add"
-  echo "  the machine to TEXTING_MACHINES."
-else
+if [ "$rc" -ne 0 ]; then
   echo "  osascript exited $rc -- it did not send."
   echo ""
   echo "  If you saw no permission dialog, open:"
   echo "    System Settings > Privacy & Security > Automation"
   echo "  find Terminal, and switch Messages ON."
+  echo ""
+  exit "$rc"
 fi
-echo ""
+
+case "$RESULT" in
+  SENT*)
+    echo "  $RESULT"
+    echo ""
+    echo "  CHECK MESSAGES: did the text actually arrive in that chat?"
+    echo "  Even a successful send is worth one look before this machine is"
+    echo "  trusted with a route."
+    echo ""
+    ;;
+  *)
+    echo "  NOTHING WAS SENT — no chat matched \"$CHAT\"."
+    echo ""
+    echo "  This is the failure that used to report success. Run this script"
+    echo "  with no arguments to see the exact names Messages has, and use"
+    echo "  one of those."
+    echo ""
+    exit 2
+    ;;
+esac
