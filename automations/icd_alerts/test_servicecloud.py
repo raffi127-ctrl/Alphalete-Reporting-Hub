@@ -311,3 +311,38 @@ class TheHypeDoesNotEscalateForBoxYet(unittest.TestCase):
         from automations.shared import sale_hype as H
         self.assertEqual(H.tier({"Int": 1, "NL": 5}), "super")
         self.assertEqual(H.tier({"Int": 1, "NL": 2}), "large")
+
+
+class ALostSessionIsNotAQuietDay(unittest.TestCase):
+    """Megan asked whether this works like SaraPlus -- sign in once and it
+    never asks again. It does not: SaraPlus has no second factor, so the agent
+    signs in fresh each sweep. This has an authenticator, so the SESSION has
+    to survive, and how long it survives is unknown.
+
+    What matters is not the lifetime. It is that losing it asks loudly rather
+    than reporting an office that sold nothing.
+    """
+
+    def test_a_login_form_means_the_session_is_gone(self):
+        page = mock.MagicMock()
+        page.url = "https://myservicecloud.net/sign-in"
+        page.query_selector.return_value = object()      # password box back
+        self.assertTrue(SC.session_lost(page))
+
+    def test_the_reset_page_also_counts_as_lost(self):
+        page = mock.MagicMock()
+        page.url = ("https://myservicecloud.net"
+                    "/user/index/request-password-reset")
+        page.query_selector.return_value = None
+        self.assertTrue(SC.session_lost(page),
+                        "a password-reset page would be read as a signed-in "
+                        "office with no sales")
+
+    def test_a_live_session_is_not_lost(self):
+        page = mock.MagicMock()
+        page.url = "https://myservicecloud.net/spa/contracts"
+        page.query_selector.return_value = None
+        self.assertFalse(SC.session_lost(page))
+
+    def test_the_unknown_is_written_down_rather_than_assumed(self):
+        self.assertTrue(SC.SESSION_LIFETIME_UNKNOWN)

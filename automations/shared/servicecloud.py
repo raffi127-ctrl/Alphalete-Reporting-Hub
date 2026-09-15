@@ -193,6 +193,40 @@ def unknown_statuses(statuses) -> list:
 # read from somewhere, and a session that simply persists needs nothing.
 NEEDS_HUMAN_FIRST_LOGIN = True
 
+# IT IS NOT "LIKE SARAPLUS AND THEN IT NEVER ASKS AGAIN". Megan asked exactly
+# that on 2026-09-15 and the honest answer is no, not quite:
+#
+#   SaraPlus has NO second factor. The agent signs in fresh every sweep with
+#   the stored email and password, which is why it works forever untouched.
+#
+#   This has an authenticator. Stored credentials are necessary and NOT
+#   sufficient -- a fresh sign-in asks for a code, and there is nobody at the
+#   keyboard to type one. So the session itself has to survive between
+#   sweeps.
+#
+# HOW LONG IT SURVIVES IS UNKNOWN. It may be indefinite, it may be thirty
+# days, it may end the moment they sign in on their phone. Nobody here has
+# watched it long enough to say, and guessing "it'll be fine" is how an office
+# goes quiet for a week.
+#
+# What IS known from this codebase: sessions die. OwnerVille and AppStream
+# both hold persistent profiles and both lose them, in several documented
+# ways. So the thing that matters is not whether this one lasts forever -- it
+# is that losing it must ASK, loudly, rather than read as an office with no
+# sales. A dead session that parses as zero is the exact failure the
+# password-reset check above exists to prevent, arriving by a second route.
+SESSION_LIFETIME_UNKNOWN = True
+
+
+def session_lost(page) -> bool:
+    """Are we back at a login form when we expected to be signed in?
+
+    The one question a sweep must ask before believing a number. Returns True
+    for the reset page too: both mean "a human has to do something", and
+    neither means "this office sold nothing today".
+    """
+    return not signed_in(page)
+
 
 class AccountProblem(RuntimeError):
     """Something the office can fix, phrased for the office."""
