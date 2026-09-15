@@ -442,7 +442,10 @@ def this_machine() -> str:
 #
 # To put texting on a new box: send once from the identity the agent runs as,
 # with someone at the keyboard to click Allow, then add the machine here.
-TEXTING_MACHINES = {"Lucy 1"}
+# Lucy 3 added 2026-09-15 after a test message was SEEN in the Alphalete
+# Partners chat -- not after the script exited 0, which it had already done
+# once while delivering nothing.
+TEXTING_MACHINES = {"Lucy 1", "Lucy 3"}
 
 
 def can_text(machine: str = "") -> bool:

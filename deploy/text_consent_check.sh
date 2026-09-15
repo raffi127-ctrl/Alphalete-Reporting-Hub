@@ -4,6 +4,7 @@
 #
 #   bash deploy/text_consent_check.sh                      # list the chats
 #   bash deploy/text_consent_check.sh "Exact Chat Name"    # send one test
+#   bash deploy/text_consent_check.sh "Chat" --image       # send a picture
 #
 # WHY A SCRIPT AND NOT "just send one from a terminal". macOS grants "control
 # Messages" per EXECUTABLE IDENTITY. On Lucy 1 the Allow was clicked for
@@ -71,14 +72,64 @@ fi
 
 MSG="Lucy test — this machine can now text this chat. Ignore."
 
+# SENDING A PICTURE IS A SEPARATE QUESTION FROM SENDING TEXT, and the answer
+# is not obvious: Messages takes an attachment through a different AppleScript
+# path, and support for it has moved around across macOS versions. A board
+# that goes out as an image is worth nothing if only the words arrive, so this
+# proves it on the machine rather than assuming it from the text working.
+IMAGE=""
+if [ "${2:-}" = "--image" ]; then
+  IMAGE="${3:-$PWD/resources/alphalete-logo.png}"
+  if [ ! -f "$IMAGE" ]; then
+    echo ""
+    echo "  No such file: $IMAGE"
+    echo ""
+    exit 1
+  fi
+fi
+
 echo ""
-echo "Sending one test message to: $CHAT"
+if [ -n "$IMAGE" ]; then
+  echo "Sending a PICTURE to: $CHAT"
+  echo "  file: $IMAGE"
+else
+  echo "Sending one test message to: $CHAT"
+fi
 echo ""
 echo "macOS may ask whether Terminal can control Messages. Click ALLOW."
 echo ""
 
 # Prints SENT on success and nothing on failure, so the shell can tell the
 # difference. The old version could not.
+if [ -n "$IMAGE" ]; then
+  RESULT="$(osascript <<APPLESCRIPT
+tell application "Messages"
+    set theFile to POSIX file "$IMAGE" as alias
+    try
+        send theFile to chat id "$CHAT"
+        return "SENT image by id"
+    end try
+    try
+        send theFile to chat "$CHAT"
+        return "SENT image by chat name"
+    end try
+    return "NO MATCH"
+end tell
+APPLESCRIPT
+)"
+  rc=$?
+  echo ""
+  case "$RESULT" in
+    SENT*) echo "  $RESULT"
+           echo ""
+           echo "  LOOK AT THE CHAT. A picture that does not arrive fails the"
+           echo "  same quiet way a text does." ;;
+    *)     echo "  NOTHING WAS SENT — no chat matched \"$CHAT\"." ; exit 2 ;;
+  esac
+  echo ""
+  exit 0
+fi
+
 RESULT="$(osascript <<APPLESCRIPT
 tell application "Messages"
     -- By id first: it is the only handle a nameless group chat has.
