@@ -1018,9 +1018,13 @@ def main() -> int:
     # wrote -- not the machine's first enrollment. Asking the machine returned
     # Carlos's Box campaign while his B2B AT&T install was running, so he was
     # never asked for the SaraPlus login that campaign needs.
-    from automations.icd_signup.schema import uses_saraplus as _campaign_sara
+    # FROM config, WHICH IS SHIPPED. The first version of this imported
+    # icd_signup.schema -- which is not in agent_files.txt and is not fetched
+    # by install.sh, so it exists on our laptops and on no ICD's machine. The
+    # import raised on Carlos's Mac before it could ask him anything, and the
+    # login it was added to collect was skipped a second time (2026-09-15).
     this_campaign = str(rec.get("campaign") or "att").strip().lower()
-    if _campaign_sara(this_campaign):
+    if this_campaign not in _C.NO_SARAPLUS:
         ok = login_until_it_works()
     else:
         say("      %s campaign — no SaraPlus needed, skipping that login."

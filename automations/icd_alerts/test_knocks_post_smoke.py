@@ -157,3 +157,66 @@ class AnAlertWithNoMemoryIsAFlood(unittest.TestCase):
         self.assertIn("`%s`", src[max(0, i - 400):i + 200],
                       "two campaigns on one machine share a label, so the "
                       "alert cannot say which was withheld")
+
+
+class TheSendBranchDoesNotTouchTheHandlersVariables(unittest.TestCase):
+    """A dedup edit meant for the failure handler landed in the SEND branch,
+    where it evaluated `where` and `e` before either existed.
+
+    Every text send raised NameError, so no text ever went out -- and the
+    outer handler then reported that failure to #claudecorrections on every
+    two-minute tick, with the dedup itself raising on the same undefined names
+    so nothing suppressed it (2026-09-15).
+    """
+
+    def test_the_send_branch_is_a_plain_prefix_check(self):
+        from automations.icd_alerts import knocks_post as KP
+        src = __import__("inspect").getsource(KP.run)
+        i = src.index("_text(P.text_group_of")
+        branch = src[max(0, i - 200):i]
+        for name in ("where", "type(e)"):
+            self.assertNotIn(name, branch,
+                             "the send branch reads a variable that only "
+                             "exists in the failure handler")
+
+    def test_the_dedup_is_in_the_handler(self):
+        from automations.icd_alerts import knocks_post as KP
+        src = __import__("inspect").getsource(KP.run)
+        i = src.index("FAILED to post to")
+        self.assertIn("_said_already", src[i:i + 500])
+
+    def test_a_text_send_reaches_text_post(self):
+        # End to end through run(): the send must call _text, not raise.
+        import datetime as dt
+        from automations.icd_alerts import knocks_post as KP
+        day = dt.date(2026, 9, 15)
+        row = [""] * (KP.KN_POSTED + 1)
+        row[KP.KN_OFFICE], row[KP.KN_DAY] = "carlos", day.isoformat()
+        row[KP.KN_ROWS] = json.dumps([{"rep": "A"}])
+        tab = mock.MagicMock()
+        tab.get_all_values.return_value = [["h"] * (KP.KN_POSTED + 1), row]
+        book = mock.MagicMock()
+        book.worksheet.return_value = tab
+        office = mock.MagicMock()
+        office.key, office.label, office.campaign = "carlos", "C", "b2b_box"
+        sent = []
+        with mock.patch("automations.recruiting_report.fill.open_by_key",
+                        return_value=book), \
+                mock.patch.object(KP.P, "approved_knocks", return_value={}), \
+                mock.patch.object(KP.P, "approved_texts", return_value={
+                    "carlos": [{"channel_id": "imessage:Box B2B",
+                                "channel_name": "Box B2B",
+                                "cadence_min": 30}]}), \
+                mock.patch.object(KP, "_can_text", return_value=True), \
+                mock.patch.object(KP.O, "get", return_value=office), \
+                mock.patch.object(KP.O, "is_enrolled", return_value=True), \
+                mock.patch.object(KP.campaign_guard, "check", return_value=None), \
+                mock.patch.object(KP.M, "to_rows", return_value=[{"rep": "A"}]), \
+                mock.patch.object(KP, "_render", return_value=([], "box")), \
+                mock.patch.object(KP, "_comment", return_value="x"), \
+                mock.patch.object(KP, "in_field_hours", return_value=True), \
+                mock.patch.object(KP, "_text",
+                                  side_effect=lambda g, b, c: sent.append(g)):
+            KP.run(day, send=True, log=lambda *_: None)
+        self.assertEqual(sent, ["Box B2B"],
+                         "the text destination never reached the sender")

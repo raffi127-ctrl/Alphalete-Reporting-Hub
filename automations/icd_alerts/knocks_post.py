@@ -239,8 +239,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         comment = _comment(office, rows_for_board, now)
         for d in due:
             try:
-                if P.is_text_dest(d["channel_id"]) and not _said_already(
-                        "text", key, day, "%s|%s" % (where, type(e).__name__)):
+                if P.is_text_dest(d["channel_id"]):
                     _text(P.text_group_of(d["channel_id"]), boards, comment)
                 else:
                     _upload(d["channel_id"], boards, comment)
@@ -250,7 +249,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 where = d.get("channel_name") or d["channel_id"]
                 log("%-10s FAILED to post to %s: %s: %s"
                     % (key, where, type(e).__name__, str(e)[:120]))
-                if P.is_text_dest(d["channel_id"]):
+                if P.is_text_dest(d["channel_id"]) and not _said_already(
+                        "text", key, day,
+                        "%s|%s" % (where, type(e).__name__)):
                     # A GROUP NAME IS THE ONE THING NOBODY CAN CHECK FOR THEM.
                     # It is typed on a form, it cannot be verified from the
                     # machine that approves it, and a near-miss delivers
