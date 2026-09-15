@@ -693,6 +693,10 @@ RECIPIENTS: dict = {
         # taylor.4597@gmail.com; the contact in "Colten's Captainship" was fixed
         # the same day.
         "legacy.mgmtteam@gmail.com",
+        # IN 2026-09-15 (Eve): Samuel Acay entra a la capitania de Colten (ATT
+        # NDS, primera venta 9/14). Va aca Y en el grupo vivo "Colten's
+        # Captainship" — seed_groups rehace el grupo desde esta lista.
+        "samuelacay0628@gmail.com",
     ],
     "jairo": [
         "coltenwrightsc@gmail.com", "drewtepp2735@gmail.com",
