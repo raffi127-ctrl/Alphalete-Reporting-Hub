@@ -79,13 +79,34 @@ def in_public_roster(office_key: str) -> bool:
     return office_key in (pub.get("offices") or {})
 
 
+def _signed_up(office_key: str) -> bool:
+    """Did this office sign itself up?
+
+    AN OFFICE THAT USED THE FORM IS NOT IN offices_public.json AND CANNOT BE.
+    That file lives on GitHub and needs a push; the form runs on Streamlit's
+    servers where there is no repo. install.sh already knows this -- when the
+    office is missing from the public file it asks the relay instead, which is
+    where the sign-up actually landed.
+
+    So refusing to print a line for a self-signed-up office was this tool
+    inventing a blocker the installer does not have. It stopped Carlos's
+    second campaign being re-sent on 2026-09-15, after his install had already
+    worked by that very fallback.
+    """
+    try:
+        from automations.icd_signup import store
+        return store.get((office_key or "").strip().lower()) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def show(office_key: str, rows: Dict, log=print) -> bool:
     office = O.get(office_key)
     rec = rows.get(office_key)
     if not office:
         log("%s is not in offices.py — add the row first." % office_key)
         return False
-    if not in_public_roster(office_key):
+    if not in_public_roster(office_key) and not _signed_up(office_key):
         log("%s is in offices.py but NOT in offices_public.json, which is the "
             "file their installer downloads. Add them there and push, or the "
             "install stops with \"an office I do not recognise\"." % office_key)

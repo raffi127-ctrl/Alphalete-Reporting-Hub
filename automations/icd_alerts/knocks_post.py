@@ -151,7 +151,21 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
 
         dests = list(approved.get(key) or [])
         if can_text:
-            dests += texts.get(key) or []
+            # A TEXT FOLLOWS THE BOARD IT IS A COPY OF. The form never asks a
+            # cadence for a group chat -- it is the same board, "as well as"
+            # Slack, not a separate schedule -- so these arrive with none.
+            # Zero is NOT "no cadence" here: it means the fixed 2:00/5:15/9:00
+            # slots, so Carlos's group got one text at 14:05 because that
+            # happened to be just past a slot, and his second campaign,
+            # approved at 14:50, would have sent nothing until 17:15
+            # (2026-09-15).
+            beat = next((int(d.get("cadence_min") or 0) for d in dests
+                         if int(d.get("cadence_min") or 0) > 0), 0)
+            for t in (texts.get(key) or []):
+                t = dict(t)
+                if int(t.get("cadence_min") or 0) <= 0 and beat:
+                    t["cadence_min"] = beat
+                dests.append(t)
         if not dests:
             log("%-10s %s rep row(s) relayed, but no knocks destination is "
                 "approved yet" % (key, row[KN_COUNT] or "?"))

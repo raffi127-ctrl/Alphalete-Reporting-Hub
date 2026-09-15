@@ -260,3 +260,38 @@ class WeDoNotChaseAnApprovalThatCannotExist(unittest.TestCase):
         import inspect
         src = inspect.getsource(P.notify_pending)
         self.assertIn("_campaign_has_alerts", src)
+
+
+class ATextFollowsTheBoardItCopies(unittest.TestCase):
+    """The form never asks a cadence for a group chat -- it is the SAME board,
+    "as well as" Slack, not a separate schedule -- so text destinations arrive
+    with none.
+
+    Zero is not "no cadence" in is_due(): it means the fixed 2:00/5:15/9:00
+    slots. Carlos's group got exactly one text, at 14:05, because that happened
+    to be just past a slot; his second campaign was approved at 14:50 and would
+    have sent nothing at all until 17:15 (2026-09-15).
+    """
+
+    def test_a_text_inherits_the_boards_cadence(self):
+        import inspect
+        from automations.icd_alerts import knocks_post as KP
+        src = inspect.getsource(KP.run)
+        self.assertIn("beat", src)
+        i = src.index("beat = next(")
+        self.assertIn("cadence_min", src[i:i + 400])
+
+    def test_zero_cadence_means_fixed_slots_not_every_tick(self):
+        # Pin the behaviour this works around, so nobody "simplifies" it.
+        import datetime as dt
+        from automations.icd_alerts import knocks_post as KP
+        noon = dt.datetime(2026, 9, 15, 12, 0)
+        self.assertFalse(KP.is_due({"cadence_min": 0}, None, noon),
+                         "zero cadence is being treated as always-due")
+
+    def test_a_real_cadence_is_left_alone(self):
+        import datetime as dt
+        from automations.icd_alerts import knocks_post as KP
+        noon = dt.datetime(2026, 9, 15, 12, 0)
+        self.assertTrue(KP.is_due({"cadence_min": 30}, None, noon),
+                        "a destination that has never posted must be due")
