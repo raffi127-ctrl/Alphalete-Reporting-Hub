@@ -463,6 +463,43 @@ def approved_texts(book=None) -> Dict[str, List[Dict]]:
     return out
 
 
+def set_knocks_cadence(office_key: str, minutes: int, book=None) -> bool:
+    """Change how often an office's board posts. OUR COLUMN ONLY.
+
+    NEVER TOUCH "Knocks: Wanted" OR ITS JSON. Those are the OFFICE's columns:
+    their machine re-sends what it was installed with on every sweep, and the
+    relay treats a disagreement as "they are asking for somewhere different"
+    -- which CLEARS the approval. Cyrus's cadence was changed on 2026-09-15 by
+    editing both columns so the sheet would not contradict itself, and the
+    result was that his machine put its own number back, the relay un-approved
+    him, and his board posted nothing for the rest of the day. Nothing said so.
+
+    The poster only ever reads the approved column, so changing that one is
+    both sufficient and safe. The two columns disagreeing is not a problem to
+    tidy up -- it is the record of what they asked for versus what we granted.
+    """
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    tab = book.worksheet(CHANNELS_TAB)
+    key = office_key.strip().lower()
+    for i, row in enumerate(tab.get_all_values()[1:], start=2):
+        if (row[CH_OFFICE] or "").strip().lower() != key:
+            continue
+        try:
+            dests = json.loads(row[CH_KN_APPROVED_JSON] or "[]")
+        except ValueError:
+            return False
+        if not dests:
+            return False
+        for d in dests:
+            d["cadence_min"] = int(minutes)
+        tab.update(values=[[json.dumps(dests), "TRUE"]],
+                   range_name="K%d:L%d" % (i, i))
+        return True
+    return False
+
+
 def pending_texts(book=None) -> List[Dict]:
     """Offices that asked for their board as a text and are not signed off."""
     if book is None:

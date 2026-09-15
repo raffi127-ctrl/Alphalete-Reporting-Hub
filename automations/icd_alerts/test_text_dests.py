@@ -207,3 +207,32 @@ class TheApprovalReadsTheSignupNotTheRelay(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChangingCadenceMustNotUnapproveAnOffice(unittest.TestCase):
+    """"Knocks: Wanted" belongs to the OFFICE. Their machine re-sends what it
+    was installed with on every sweep, and the relay treats a disagreement as
+    "they are asking for somewhere different" -- which clears the approval.
+
+    Cyrus's cadence was changed on 2026-09-15 by editing both columns so the
+    sheet would not contradict itself. His machine put its own number back,
+    the relay un-approved him, and his board posted nothing for the rest of
+    the day without a word.
+    """
+
+    def test_it_writes_only_our_column(self):
+        import inspect
+        src = inspect.getsource(P.set_knocks_cadence)
+        self.assertIn("K%d:L%d", src, "it does not write the approved column")
+        for theirs in ("CH_KN_WANTED", "CH_KN_JSON"):
+            self.assertNotIn("range_name=\"%s" % theirs, src)
+        # The office's columns must not be written at all.
+        body = src.split('"""')[-1]
+        self.assertNotIn("CH_KN_WANTED", body,
+                         "it writes the office's own column, which is what "
+                         "un-approved Cyrus")
+
+    def test_the_reason_is_written_down(self):
+        import inspect
+        doc = inspect.getdoc(P.set_knocks_cadence) or ""
+        self.assertIn("OUR COLUMN ONLY", doc)
