@@ -106,13 +106,23 @@ def active_index(names):
     return full, ends
 
 
-def is_active(name, index):
+def is_active(name, index, handle=""):
+    """`handle` = the Slack email's local part + username. It catches people
+    who go by a nickname in Slack: 'Eli Rodriguez' is elijah.rodriguez166,
+    'MJ' is amjadmalhas24 (Eve, 2026-09-15). Both halves of the board name
+    must be in it, and short ones don't count, so 'al'/'li' can't match."""
     full, ends = index
     k = _fold(name)
-    if not k:
-        return False
     p = k.split()
-    return k in full or (len(p) >= 2 and (p[0], p[-1]) in ends)
+    if k and (k in full or (len(p) >= 2 and (p[0], p[-1]) in ends)):
+        return True
+    h = re.sub(r"[^a-z]", "", (handle or "").lower())
+    return bool(h) and any(len(f) >= 3 and len(l) >= 3 and f in h and l in h
+                           for f, l in ends)
+
+
+def _handle(u):
+    return "%s %s" % ((u.get("email") or "").split("@")[0], u.get("username") or "")
 
 
 def read_active(logfn=print):
@@ -186,7 +196,7 @@ def build_rows(members, users, terminated, channel_order, active=None,
             notes = []
             # FIRST, so the whole block can be filtered out in one go: someone
             # still selling this week is not a removal (Eve, 2026-09-15).
-            if active and name and is_active(name, active):
+            if active and name and is_active(name, active, _handle(u)):
                 notes.append(ACTIVE_PREFIX + active_tab)
             if term:
                 notes.append("Terminated %s (%s)" % (
