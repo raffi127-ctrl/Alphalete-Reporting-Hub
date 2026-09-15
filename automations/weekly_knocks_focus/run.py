@@ -51,7 +51,9 @@ PREVIEW_TABS = {"Kash Rai - Test Eve"}
 # Eve 2026-09-14: "roll out para todas las oficinas de las que tengamos tab en
 # el focus report y hagamos knocks report". --all walks every office the
 # weekly knocks report covers; one without a tab or without the box is skipped.
-ROLLOUT = True
+# ON HOLD the same night: 'Kash Rai - Test Eve' is where RAFAEL approves before
+# anything reaches the other tabs, and he hasn't yet. Back to True with his OK.
+ROLLOUT = False
 # The board is drawn at 2x (total_knocks.render.SCALE); no reader needs more
 # than this many source pixels for a picture shown PL.DISPLAY_W wide.
 MAX_UPLOAD_W = 2400

@@ -1765,7 +1765,8 @@
       "verify": null
     },
     "weekly_knocks_focus": {
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "_hold_note": "ON HOLD 2026-09-14 ~22:30 CT (Eve): waiting for RAFAEL's approval on the preview tab 'Kash Rai - Test Eve' before any office tab gets numbers or pictures. run.py ROLLOUT is False too, so a manual --live can only write the preview tab. The empty boxes already inserted in the office tabs + Template Fiber stay. To resume: ROLLOUT True + on_scheduler true.",
       "_on_scheduler_note": "ROLLED OUT 2026-09-14 (Eve: 'roll out para todas las oficinas de las que tengamos tab en el focus report y hagamos knocks report'). Mondays, --all --live: every office weekly_knock_dispositions covers that has a Focus Report tab with the box; the rest are skipped with a line, never a failure. An office with a tab but no Sunday board IS a failure (exit 1). Preview history below.",
       "_off_scheduler_note": "PREVIEW (Eve 2026-09-14, Rafael's ask): writes an office's Weekly Knock Dispositions OFFICE TOTALS into the 'WEEKLY KNOCKS DATA' box of its ATT Program - Focus Report tab and shows the board PNG under everything on that tab: uploaded to alphaletereporting's Drive (review_gate's drive.file token), shared anyone-with-link like the Focus Report itself, drawn with =IMAGE() in a merged block found by the 'WEEKLY KNOCKS BOARD' marker in column A (one picture per tab, last week's file trashed). No pull: reads the PNG + totals json the Sunday weekly_knock_dispositions run leaves in output/, so it MUST run on the same machine (Lucy 1). DRY-RUN by default; --live only writes to the preview tab until ROLLOUT flips in run.py. `lucy rerun weekly_knocks_focus --office \"Akashdeep Rai\" --tab \"Kash Rai - Test Eve\"` (add --live to write). Off the scheduler until Eve says roll out.",
       "display_name": "Weekly Knocks \u2192 Focus Report (box + board image)",
