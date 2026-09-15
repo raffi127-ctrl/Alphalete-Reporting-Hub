@@ -120,7 +120,8 @@ class Loc:
 
     # --- the node API window.py touches
     def _one(self):
-        if not self.nodes:
+        if not self.nodes or self.nodes[0].attrs.get("_detached"):
+            # Playwright would sit on its 30s default here, then raise.
             raise RuntimeError("locator resolved to no node")
         return self.nodes[0]
 
@@ -130,7 +131,7 @@ class Loc:
         # of a combo read "Filter Contract ID Inclusive (All)".
         return " ".join(x.text for x in n.walk() if x.text).strip()
 
-    def get_attribute(self, name):
+    def get_attribute(self, name, timeout=None):
         return self._one().get(name)
 
     def wait_for(self, **_kw):
@@ -180,7 +181,11 @@ class Viz:
     """A collapsed quick filter: title + combo, items only once opened."""
 
     def __init__(self, *, field="Contract ID", value="Multiple values",
-                 with_all=True, id_names_field=False, titled=True):
+                 with_all=True, id_names_field=False, titled=True,
+                 slow_value=False):
+        # slow_value: the combo keeps its old text while Tableau re-queries, so
+        # the only proof of the tick is the item itself (2026-09-15).
+        self.slow_value = slow_value
         self.root = Node(cls=["viz"])
         card = Node(cls=["tab-filterCard"], parent=self.root)
         # The live view (probed 2026-08-17): the label sentence lives in its own
@@ -214,11 +219,14 @@ class Viz:
                  **{"role": "checkbox", "aria-checked": "true"})
 
     def close_menu(self):
+        for k in self.menu.kids:
+            k.attrs["_detached"] = True      # the live DOM drops them on close
         self.menu.kids = []
         self.opened = False
 
     def set_value(self, text):
-        self.combo.text = text
+        if not self.slow_value:
+            self.combo.text = text
 
     # the frame_locator API
     def locator(self, sel):
@@ -267,6 +275,15 @@ class DropdownReleaseTest(unittest.TestCase):
         page, viz = build(with_all=False)
         self.assertEqual(window._release_dropdown(page, viz, "Contract ID", True),
                          "stuck")
+
+    def test_tick_is_read_before_the_menu_closes(self):
+        """2026-09-15: the combo still read 'Multiple values' while the view
+        re-queried, and the code asked the (All) item for aria-checked AFTER
+        Escape had detached it — a 30s timeout and an 'error' verdict for a
+        release that had worked."""
+        page, viz = build(slow_value=True)
+        self.assertEqual(window._release_dropdown(page, viz, "Contract ID", True),
+                         "released")
 
     def test_release_pinned_filters_uses_the_dropdown_path(self):
         """End to end: the expanded-list selector finds nothing (there is no

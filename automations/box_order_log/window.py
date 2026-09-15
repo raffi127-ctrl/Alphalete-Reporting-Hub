@@ -287,12 +287,21 @@ def _release_dropdown(page, viz, field: str, verbose: bool,
                     continue
                 # Un-pinning re-queries against every contract; give it room.
                 page.wait_for_timeout(settle_ms)
+                # Read the tick BEFORE Escape. Closing the menu detaches its
+                # items, and Playwright's default get_attribute waits 30s for a
+                # node that will never come back — 2026-09-15's rerun died
+                # exactly there, turning a release into 'error'.
+                checked = None
+                try:
+                    checked = item.get_attribute("aria-checked", timeout=2_000)
+                except Exception:                           # noqa: BLE001
+                    pass
                 try:
                     page.keyboard.press("Escape")           # close the menu
                 except Exception:                           # noqa: BLE001
                     pass
                 now = _text(combo)
-                ok = _is_all(now) or item.get_attribute("aria-checked") == "true"
+                ok = _is_all(now) or checked == "true"
                 if verbose:
                     print("  -> BOX filter {!r} {} — dropdown now reads "
                           "{!r}".format(field,
