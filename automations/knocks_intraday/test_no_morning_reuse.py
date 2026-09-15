@@ -397,10 +397,17 @@ class TheRoster(unittest.TestCase):
         is deliberately not in that table (his local office never migrated off
         the older daily_metrics module, and adding him to OFFICES would enrol him
         in every report built on it). Asserting the table alone is what let him
-        stay invisible here — Megan 2026-08-25: "Raf isn't on that roster?"."""
+        stay invisible here — Megan 2026-08-25: "Raf isn't on that roster?".
+
+        MINUS offices with no Slack channel (2026-09-15): Joseph Logan has no
+        Slack account, so his board had nowhere to land and failed the 9/14
+        run. See roster._has_channel."""
         from automations.office_metrics.offices import OFFICES
+        no_channel = {k for k, o in OFFICES.items()
+                      if not (o.channel_id or "").strip()}
         self.assertEqual({o.key for o in roster.enrolled("eod")},
-                         (set(OFFICES) - set(roster.BLOCKED)) | {"raf"})
+                         (set(OFFICES) - set(roster.BLOCKED) - no_channel)
+                         | {"raf"})
 
     def test_an_unknown_slot_is_quiet_not_fatal(self):
         self.assertEqual(roster.enrolled("brunch"), [])

@@ -222,6 +222,19 @@ def _drop_enrolled(offices: List[Office]) -> List[Office]:
     return [o for o in offices if o.channel_id not in taken]
 
 
+def _has_channel(offices: List[Office]) -> List[Office]:
+    """Offices with a Slack channel to post to.
+
+    NO CHANNEL = NOT OWED A BOARD, not a failure (2026-09-15). Joseph Logan
+    joined OFFICES on 2026-09-13 with no Slack account (his trackers go by
+    email), so the 9 PM slot enrolled him with channel_id "". His board could
+    never land: files.completeUploadExternal raised on 9/14, the run exited 1
+    and opened failure-knocks_intraday over a board nobody can receive.
+    test_every_enrolled_office_has_somewhere_to_post pins this. The day he gets
+    a channel_id he is enrolled again on his own."""
+    return [o for o in offices if (o.channel_id or "").strip()]
+
+
 def enrolled(slot_key: str) -> List[Office]:
     """Offices owed `slot_key`'s board, in registry order.
 
@@ -230,14 +243,14 @@ def enrolled(slot_key: str) -> List[Office]:
     if slot_key == "eod":
         # Raf rides the 9 PM slot only, and is appended rather than merged into
         # OFFICES so nothing else in the codebase inherits him. See RAF_OFFICE.
-        return _drop_enrolled([OFFICES[k] for k in OFFICES if k not in BLOCKED]
-                              + [RAF_OFFICE])
+        return _drop_enrolled(_has_channel(
+            [OFFICES[k] for k in OFFICES if k not in BLOCKED] + [RAF_OFFICE]))
     elif slot_key in ("first", "money"):
         keys = list(INTRADAY_KEYS)
     else:
         return []
-    return _drop_enrolled([OFFICES[k] for k in keys
-                           if k in OFFICES and k not in BLOCKED])
+    return _drop_enrolled(_has_channel([OFFICES[k] for k in keys
+                                        if k in OFFICES and k not in BLOCKED]))
 
 
 def everyone() -> List[Office]:

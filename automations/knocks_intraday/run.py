@@ -400,6 +400,7 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
                 # downs". A thread reply is exactly the burial that defeats it.
                 top_level=True)
             posted += 1
+            rec["posted"] = True
             logfn(f"[knocks] ✓ posted {rec['key']} -> {rec['channel_name']}")
         except Exception as e:  # noqa: BLE001 — one channel ≠ the run
             failed += 1
@@ -448,18 +449,68 @@ def record_marker(marker: str) -> None:
         pass
 
 
+MANIFEST_ID = "knocks_intraday"     # schedule_config key = Hub report_id
+
+
+def record_delivery(slot, results, *, logfn=print) -> None:
+    """Today's delivery manifest: which office boards landed, which didn't.
+
+    WHY (2026-09-14): Joseph's 9 PM board died on files.completeUploadExternal,
+    the ticket opened, and ten minutes later delivery_check refused to close it
+    — "verify is not wired and it wrote no manifest today". Without this file a
+    clean run can never prove it delivered, so every ticket stays open forever.
+
+    MERGED ACROSS THE DAY: the 9 PM slot fires once per timezone, and a later
+    tick (Central, a retry) must not wipe an Eastern office that failed earlier.
+    An office that fails and then posts on a retry moves from failed to
+    succeeded. A verified-empty office (no rows) has its answer, so it counts as
+    delivered. alert=False: a failed tick already exits 1 and the wrapper's
+    'failed' publish opens the ticket — the manifest must not ping twice."""
+    try:
+        from automations.shared import run_manifest as rm
+        good, bad = set(), set()
+        for rec in results:
+            part = f"{rec['key']}:{slot.key}"
+            if rec.get("posted") or (rec.get("png") is None
+                                     and rec.get("error") is None):
+                good.add(part)
+            else:
+                bad.add(part)
+        prior = rm.read_manifest(MANIFEST_ID) or {}
+        if str(prior.get("run_ts") or "").startswith(dt.date.today().isoformat()):
+            ok_all = set(prior.get("succeeded") or [])
+            bad_all = set(prior.get("failed") or [])
+        else:
+            ok_all, bad_all = set(), set()
+        ok_all = (ok_all - bad) | good
+        bad_all = (bad_all - good) | bad
+        rm.write_manifest(
+            MANIFEST_ID, kind="office", failed=sorted(bad_all),
+            succeeded=sorted(ok_all), alert=False,
+            note=(f"{len(ok_all)} board(s) delivered today"
+                  + (f"; MISSING: {', '.join(sorted(bad_all))}" if bad_all else "")))
+    except Exception as e:  # noqa: BLE001 — a manifest must never fail the run
+        logfn(f"[knocks] ⚠ delivery manifest not written: {type(e).__name__}: {e}")
+
+
 def run_slot(slot, jobs_in, *, dry_run: bool, logfn=print) -> int:
     """One slot, the offices due for it. Markers are recorded per office, so a
     single office failing is retried next tick without re-posting the ten that
-    already landed."""
+    already landed.
+
+    A marker means THE BOARD LANDED, not "it rendered". Until 2026-09-15 this
+    marked every rendered office, so a post that raised (Joseph, 9/14,
+    files.completeUploadExternal) was marked done and never retried inside
+    GRACE_MIN — the retry this docstring promised never happened."""
     if not jobs_in:
         return 0
     results = build(slot, jobs_in, logfn=logfn)
     rc = post(results, slot, dry_run=dry_run, logfn=logfn)
     if not dry_run:
         for rec in results:
-            if rec.get("png") is not None and rec.get("error") is None:
+            if rec.get("posted"):
                 record_marker(f"{rec['key']}:{slot.key}:{rec['day'].isoformat()}")
+        record_delivery(slot, results, logfn=logfn)
     return rc
 
 

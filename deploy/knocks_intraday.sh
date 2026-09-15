@@ -27,6 +27,9 @@ LOG="output/logs/knocks_intraday_$(date +%Y%m%d).log"
 PUBLISH=0
 case " $* " in *" --send "*) PUBLISH=1 ;; esac
 
+# Where THIS pass starts in the day's log — everything below reads only from here.
+START=0; [ -f "$LOG" ] && START=$(wc -l < "$LOG")
+START=$((START + 0))
 echo "[$(date)] knocks-intraday START $*" >> "$LOG"
 "$VENV_PY" -m automations.knocks_intraday.run "$@" >> "$LOG" 2>&1
 rc=$?; echo "[$(date)] knocks-intraday END rc=$rc" >> "$LOG"
@@ -37,8 +40,14 @@ WORKED=0
 SLOT=""
 # The run prints "[knocks] <slot>: posted=N skipped=N failed=N" once per slot
 # that fired, and nothing of the sort on a quiet tick. Take the LAST such line
-# in this pass's tail: that is the slot this tick actually worked.
-SLOT_LINE=$(tail -40 "$LOG" 2>/dev/null | grep -oE '\[knocks\] (first|money|eod): (DRY-RUN )?posted=' | tail -1)
+# in THIS PASS's lines: that is the slot this tick actually worked.
+#
+# ONLY this pass, never `tail -40` (2026-09-14): a quiet tick prints fewer than
+# 40 lines, so the tail still held the PREVIOUS tick's "eod: posted=6 failed=1"
+# line. The quiet tick exited 0, read that line as its own work, and published
+# SUCCESS ten minutes after the failure — "ran clean" over Joseph's board that
+# never landed and was never retried.
+SLOT_LINE=$(tail -n +"$((START + 1))" "$LOG" 2>/dev/null | grep -oE '\[knocks\] (first|money|eod): (DRY-RUN )?posted=' | tail -1)
 if [ -n "$SLOT_LINE" ]; then
     WORKED=1
     SLOT=$(printf '%s' "$SLOT_LINE" | sed -E 's/^\[knocks\] ([a-z]+):.*$/\1/')
