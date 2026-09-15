@@ -166,6 +166,39 @@ class Plan(unittest.TestCase):
         self.assertEqual(_plan(g, _days({}))[0], [])
 
 
+class PullFallback(unittest.TestCase):
+    """NDS 2026-09-15: the pinned view cannot reach last week, so the view's
+    own '(LW2)' worksheet is pulled unpinned instead."""
+
+    def test_pinned_failure_falls_back_to_the_lw2_sheet(self):
+        from unittest import mock
+        from automations.org_sales_board import section_pull as sp
+        seen = []
+
+        def pull(spec, out_dir, page, logfn=None, today=None):
+            seen.append((spec.crosstab_sheet, spec.week_pin))
+            if spec.week_pin:
+                raise RuntimeError("Couldn't find the sheet — saw 1 thumb(s)")
+            return "lw2.csv"
+        parsed = {"samuel acay": {"Wireless": {MON: 2}}}
+        with mock.patch.object(sp, "pull_section_byday", side_effect=pull), \
+             mock.patch.object(sp, "parse_byday", return_value=parsed):
+            pulls, failed = N.pull_sections(["nds"], TODAY, page=None,
+                                            logfn=lambda *a: None)
+        self.assertEqual(failed, [])
+        self.assertEqual(pulls["nds"], ("Wireless", parsed))
+        self.assertEqual(seen[1], (sp.SPECS["nds"].crosstab_sheet + " (LW2)", False))
+
+    def test_both_failing_marks_the_section_failed(self):
+        from unittest import mock
+        from automations.org_sales_board import section_pull as sp
+        with mock.patch.object(sp, "pull_section_byday",
+                               side_effect=RuntimeError("no")):
+            pulls, failed = N.pull_sections(["nds"], TODAY, page=None,
+                                            logfn=lambda *a: None)
+        self.assertEqual((pulls, failed), ({}, ["nds"]))
+
+
 class Calibrate(unittest.TestCase):
     def test_trusted_needs_enough_rows_and_agreement(self):
         self.assertFalse(N.trusted(4, []))

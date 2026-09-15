@@ -87,6 +87,9 @@ MIN_FILLED = 3                  # frozen rows a table needs before a blank reads
 MIN_CALIBRATION_ROWS = 5
 MAX_DISAGREE_SHARE = 0.10
 OUT_DIR = Path("output") / "_newcomer_lastweek"
+# The worksheet a relative-week view keeps LAST week on, under its this-week one
+# ('Sales By ICD (Weekly View)' -> 'Sales By ICD (Weekly View) (LW2)').
+LAST_WEEK_SUFFIX = " (LW2)"
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
             "Saturday", "Sunday")
 _WE_RE = re.compile(r"^\s*WE\s+(\d{1,2})\.(\d{1,2})\s*$", re.I)
@@ -287,10 +290,33 @@ def pull_sections(keys, today: dt.date, page, logfn=print):
                                          today=ref)
             parsed = sp.parse_byday(spec, path, ref)
         except Exception as e:                                # noqa: BLE001
-            logfn(f"  [!] {key}: last week's view could not be pulled "
-                  f"({type(e).__name__}: {str(e)[:90]})")
-            failed.append(key)
-            continue
+            # THE PIN DOES NOT REACH AN OLD WEEK ON EVERY VIEW (2026-09-15, NDS:
+            # "Couldn't find 'Sales By ICD (Weekly View)' … saw 1 thumb"). These
+            # views are pinned to RELATIVE weeks: a filter for another week
+            # renders the worksheet empty and Tableau drops it from the Crosstab
+            # dialog. The view carries last week as its own worksheet, named
+            # with ' (LW2)' — the same way out delta_lastweek_backfill found on
+            # 2026-09-07. Calibration below still decides whether it is used.
+            logfn(f"  [!] {key}: pinned view failed ({type(e).__name__}: "
+                  f"{str(e)[:90]}) — trying its last-week worksheet")
+            parsed = None
+            if spec.crosstab_sheet:
+                lw2 = dataclasses.replace(
+                    spec, week_pin=False,
+                    crosstab_sheet=spec.crosstab_sheet + LAST_WEEK_SUFFIX,
+                    out_name=f"newcomer_lastweek_{key}_lw2.csv")
+                try:
+                    path = sp.pull_section_byday(lw2, OUT_DIR, page,
+                                                 logfn=logfn, today=ref)
+                    parsed = sp.parse_byday(lw2, path, ref)
+                    logfn(f"  {key}: using {lw2.crosstab_sheet!r} "
+                          f"({len(parsed)} owners)")
+                except Exception as e2:                       # noqa: BLE001
+                    logfn(f"  [!] {key}: {lw2.crosstab_sheet!r} could not be "
+                          f"pulled either ({type(e2).__name__}: {str(e2)[:90]})")
+            if parsed is None:
+                failed.append(key)
+                continue
         got = {d for m in parsed.values() for v in m.values() for d in v}
         if got and not got <= want:
             logfn(f"  [!] {key}: the view came back on {min(got)}..{max(got)}, "
