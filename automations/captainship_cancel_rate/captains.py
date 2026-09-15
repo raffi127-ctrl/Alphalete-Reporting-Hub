@@ -127,6 +127,15 @@ INACTIVE_ICDS: dict[str, str] = {
     # nothing left to sell into the window.
     "kimberly rodriguez": "office 23576 closed 2026-09-09, in Terminated ICDs "
                           "(Eve)",
+    # Tony's Team. Sells wireless only, so his New Internet rates ran out on
+    # their own: 0-30 "No Data" 2026-09-11, then out of the Metrics view from
+    # 9/12. He was kept OFF this list on purpose while he was still Tony's
+    # ("no sacar a kobe", Eve 9/8) — that changed 2026-09-15, Eve: "kobe de
+    # tonys", out of the captainship (captain_gate.EXCLUDE["Tony"], Tony's
+    # distro). Still ICD 23238 with a Focus Report tab — off the captainship,
+    # not the org. Rows stay for the history.
+    "kobe cireus": "off Tony's captainship 2026-09-15 (Eve); out of the "
+                   "Metrics view since 2026-09-12",
 }
 
 

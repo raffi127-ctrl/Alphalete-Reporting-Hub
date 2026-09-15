@@ -324,16 +324,16 @@ class InactiveIcdsAreExpectedBlanks(unittest.TestCase):
         self.assertTrue(C.is_inactive("William Sassenberg"))
         # 2026-09-11: office 23576 closed 2026-09-09 (Terminated ICDs).
         self.assertTrue(C.is_inactive("Kimberly Rodriguez"))
+        # 2026-09-15: Kobe Cireus off Tony's captainship (Eve). Until that
+        # decision he was the "still on the team" case below — the list only
+        # grows by a decision, never because a blank looks odd.
+        self.assertTrue(C.is_inactive("Kobe Cireus"))
 
     def test_an_owner_still_on_the_team_is_not_a_winddown(self):
         """The list is per-name and only ever grows by a decision. An owner
         who is still on his captain's Tableau team stays OUT of it, so a
         genuine drop (a broken filter, a rename past the alias) is still the
-        finding this guard exists for. Kobe Cireus is the case that proves it:
-        he sells wireless only, so his New Internet numbers look odd — but he
-        is on the team and filling, and silencing him would hide a real drop
-        the day it happens."""
-        self.assertFalse(C.is_inactive("Kobe Cireus"))
+        finding this guard exists for."""
         self.assertFalse(C.is_inactive("Tony Chavez"))
         self.assertFalse(C.is_inactive(""))
 
