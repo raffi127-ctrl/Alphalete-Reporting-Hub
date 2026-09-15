@@ -194,11 +194,75 @@ def report(p: Plan) -> str:
 #: anyone having to copy terminal output around.
 EXPLORE_TAB = "Apex Form Map"
 
+#: Any URL under here is only reachable once authenticated.
+_SIGNED_IN_PATHS = ("/identity/account/manage", "/payroll", "/dashboard")
+#: Only these mean "sign in from scratch".
+_LOGIN_PATHS = ("/identity/account/login", "/account/login")
+
+
+def _logged_out(page) -> bool:
+    """Whether Apex wants a sign-in.
+
+    apex_payroll's version answers this by looking for a password field, which
+    is wrong on at least one real page: /Identity/Account/Manage/ChangePassword
+    is reachable ONLY when signed in, and is full of password inputs. Probing
+    Megan's profile on 2026-09-05 landed exactly there and was reported as
+    logged out. Checking the path first, and only then falling back to form
+    shape, avoids telling someone to burn a one-time code they do not need.
+
+    apex_payroll is left alone deliberately — Carlos's Lucy 2 report rides it."""
+    url = (page.url or "").lower()
+    if any(p in url for p in _LOGIN_PATHS):
+        return True
+    if any(p in url for p in _SIGNED_IN_PATHS):
+        return False
+    try:
+        if page.locator('input[placeholder="Username" i]').count() > 0:
+            return True
+        if page.locator('input[type="password"]').count() > 0:
+            return True
+        body = (page.inner_text("body", timeout=8000) or "").lower()
+        return "please login" in body or "hire smarter and faster" in body
+    except Exception:                                      # noqa: BLE001
+        return False
+
 
 def probe() -> int:
-    """Is JD's Apex session reachable? Read-only, always safe to run."""
-    from automations.apex_payroll.run import probe as _probe
-    return _probe()
+    """Is the Apex session reachable? Read-only, always safe.
+
+    Navigates to the app root rather than trusting whatever page the copied
+    profile happens to restore."""
+    import time
+
+    from patchright.sync_api import sync_playwright
+
+    from automations.apex_payroll.run import (APEX_URL, _attach,
+                                              _copy_default_profile, _kill_ours,
+                                              _launch, _log)
+    prof = _copy_default_profile()
+    proc = _launch(APEX_URL, prof)
+    time.sleep(8)
+    try:
+        with sync_playwright() as pw:
+            _browser, page = _attach(pw)
+            page.wait_for_load_state("domcontentloaded", timeout=30000)
+            time.sleep(2)
+            try:
+                page.goto(APEX_URL, wait_until="domcontentloaded", timeout=30000)
+                time.sleep(3)
+            except Exception:                              # noqa: BLE001
+                pass
+            _log(f"url   : {page.url}")
+            _log(f"title : {page.title()}")
+            out = _logged_out(page)
+            _log("STATE : " + ("LOGIN NEEDED — sign in to Apex in your normal "
+                               "Chrome (tick remember-this-device), quit "
+                               "Chrome, then re-run."
+                               if out else "SIGNED IN — the session rode along."))
+            return 3 if out else 0
+    finally:
+        proc.terminate()
+        _kill_ours()
 
 
 def explore(workbook_id: str = C.WORKBOOK_ID) -> int:
@@ -215,9 +279,9 @@ def explore(workbook_id: str = C.WORKBOOK_ID) -> int:
 
     from patchright.sync_api import sync_playwright
 
-    from automations.apex_payroll.run import (APEX_URL, _attach, _copy_default_profile,
-                                              _kill_ours, _launch, _log,
-                                              _looks_logged_out)
+    from automations.apex_payroll.run import (APEX_URL, _attach,
+                                              _copy_default_profile, _kill_ours,
+                                              _launch, _log)
     from automations.recruiting_report.fill import open_by_key
 
     lines: List[str] = []
@@ -235,7 +299,7 @@ def explore(workbook_id: str = C.WORKBOOK_ID) -> int:
             _browser, page = _attach(pw)
             page.wait_for_load_state("domcontentloaded", timeout=30000)
             time.sleep(3)
-            if _looks_logged_out(page):
+            if _logged_out(page):
                 say("STOP: Apex is showing a login page — the session did not "
                     "ride along. Log in to Apex in your NORMAL Chrome, quit "
                     "Chrome, then run this again.")

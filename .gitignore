@@ -192,3 +192,14 @@ automations/shared/.ownerville_session.wanted
 # in at the keyboard — same reason .blueink_profile is ignored. Never commit a
 # browser profile that can reach a payroll system.
 .apex_profile*
+
+# The ownerville AUTORENEW and LAPTOP-SEED profiles + their launchlocks. Same
+# story as .ov_login_test above and found the same way: they sat untracked in
+# `git status` for weeks and a "commit everything" would have published them
+# (2026-09-15). .ov_laptop_seed alone is a 108MB REAL Chrome profile --
+# Cookies, certificates, session state -- driven against OwnerVille, in a
+# PUBLIC repo.
+automations/uploaded/.ov_autorenew/
+automations/uploaded/.ov_autorenew.launchlock
+automations/uploaded/.ov_laptop_seed/
+automations/uploaded/.ov_laptop_seed.launchlock
