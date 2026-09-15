@@ -1706,7 +1706,6 @@ def _knock_roster(icd: str, week_ending: dt.date) -> set:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-@st.cache_data(ttl=900, show_spinner=False)
 def _rep_days_all(icd: str) -> dict:
     """{rep: {date: measures}} — the office's WHOLE history, read ONCE.
 
@@ -1721,6 +1720,7 @@ def _rep_days_all(icd: str) -> dict:
         return {}
 
 
+@st.cache_data(ttl=900, show_spinner=False)
 def _settled_reps(icd: str, week_ending: dt.date) -> dict:
     """{rep: {date: measures}} — settled per-rep days for one week."""
     from automations.icd_sales_board import tableau_days as TD
@@ -1739,6 +1739,22 @@ def _settled_reps(icd: str, week_ending: dt.date) -> dict:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
+def _knocks_raw() -> list:
+    """The Knocks Daily tab, ONCE per session, for every office.
+
+    Profiling one page pass: activity_for was 5.6 seconds of a 9.6 second
+    render — a full read of a 2,000-row tab, per office, to answer a question
+    that for Raf is "this office logs no knocks at all". The tab is small and
+    shared, so it is read once and sliced per office in Python.
+    """
+    from automations.recruiting_report.fill import open_by_key, _retry
+    from automations.icd_sales_board import knocks_log as K
+    try:
+        return _retry(open_by_key(K.SHEET_ID).worksheet(K.TAB).get_all_values)
+    except Exception:   # noqa: BLE001 — knocks decorate the board, not make it
+        return []
+
+
 def _knocks(icd: str, week_ending: dt.date) -> dict:
     """{rep lowered: {date: {TK, TT}}} — the knocks half of Raf's board.
 
@@ -1747,7 +1763,8 @@ def _knocks(icd: str, week_ending: dt.date) -> dict:
     run the knocks scraper has none, and those columns stay BLANK rather than
     showing zeros nobody measured — Raf's own office is one of them today."""
     from automations.icd_sales_board import knocks_log as K
-    return K.activity_for(icd, week_ending - dt.timedelta(days=6), week_ending)
+    return K.activity_from(_knocks_raw(), icd,
+                           week_ending - dt.timedelta(days=6), week_ending)
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -1910,10 +1927,14 @@ def _rep_editor(office_key: str, week_ending, rows: list,
 
     Save / Discard, like everywhere else: nothing is written on a keystroke."""
     key = f"repedit_{office_key}_{week_ending}"
+    # EMPTY IS EMPTY. A SelectboxColumn with required=False already offers its
+    # own blank row, so adding BLANK_OPTION on top of it put TWO blank choices
+    # at the top of every dropdown (Megan 2026-09-15). The placeholder belongs
+    # to the read-only board, not here.
     src = [{"Rep": r["Rep"],
-            "Team": r.get("Team") or BLANK_OPTION,
-            "Leadership": r.get("Leadership") or BLANK_OPTION,
-            "Status": r.get("Status") or BLANK_OPTION,
+            "Team": r.get("Team") or "",
+            "Leadership": r.get("Leadership") or "",
+            "Status": r.get("Status") or "",
             "Start date": r.get("Start date") or "",
             "Days worked": str(r.get("Days worked") or "")} for r in rows]
     if not src:
@@ -1938,11 +1959,11 @@ def _rep_editor(office_key: str, week_ending, rows: list,
         column_config={
             "Rep": st.column_config.TextColumn("Rep", disabled=True),
             "Team": st.column_config.SelectboxColumn(
-                options=[BLANK_OPTION] + teams, required=False),
+                options=teams, required=False),
             "Leadership": st.column_config.SelectboxColumn(
-                options=[BLANK_OPTION] + list(R.LEVELS), required=False),
+                options=list(R.LEVELS), required=False),
             "Status": st.column_config.SelectboxColumn(
-                options=[BLANK_OPTION] + list(R.STATUSES), required=False,
+                options=list(R.STATUSES), required=False,
                 help="Terminate a rep here; set them back to Active to "
                      "reinstate."),
             "Start date": st.column_config.TextColumn(

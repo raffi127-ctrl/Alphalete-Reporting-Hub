@@ -285,13 +285,62 @@ def _client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
+# Opened workbooks, by key. Each open costs a fetch_sheet_metadata round trip,
+# and pages open the same few workbooks over and over: profiling one sales
+# board render caught 21 of them, 229 seconds of a 267 second page, because
+# Google's metadata endpoint was answering in ~11s. The handle is reusable —
+# every actual READ still goes to the network — so the only thing cached is
+# "which tabs does this workbook have", and a short TTL keeps a tab added
+# mid-session from staying invisible for long.
+_BOOK_TTL = 300
+_BOOKS: dict = {}
+
+
 def open_by_key(key, client=None):
-    """Open a spreadsheet by key WITH 429/5xx retry. The initial open fetches
-    sheet metadata — a Sheets call that ISN'T otherwise wrapped in _retry, so
-    a transient quota/rate-limit (429) at open time would crash the whole run
-    (all Hubs share one Google account, so simultaneous runs can hit the
-    per-minute read quota). Route every report's sheet-open through this."""
-    return _retry((client or _client()).open_by_key, key)
+    """Open a spreadsheet by key WITH 429/5xx retry, reusing a recent handle.
+
+    The initial open fetches sheet metadata — a Sheets call that ISN'T
+    otherwise wrapped in _retry, so a transient quota/rate-limit (429) at open
+    time would crash the whole run (all Hubs share one Google account, so
+    simultaneous runs can hit the per-minute read quota). Route every report's
+    sheet-open through this."""
+    import time
+
+    if client is None:
+        hit = _BOOKS.get(key)
+        if hit and time.time() - hit[0] < _BOOK_TTL:
+            return hit[1]
+    sh = _retry((client or _client()).open_by_key, key)
+    _memo_worksheets(sh)
+    if client is None:
+        _BOOKS[key] = (time.time(), sh)
+    return sh
+
+
+def _memo_worksheets(sh):
+    """Resolve each tab title ONCE per workbook handle.
+
+    gspread's Spreadsheet.worksheet(title) fetches the workbook's metadata
+    every call to look the title up, so a page that touches six tabs pays six
+    round trips just to name them. Only the LOOKUP is cached — the Worksheet
+    object it returns still goes to the network for every read — and only
+    successful lookups, so a tab created later can still be found.
+    """
+    if getattr(sh, "_memo_ws", None) is not None:
+        return sh
+    cache: dict = {}
+    original = sh.worksheet
+
+    def worksheet(title, *a, **k):
+        if a or k:
+            return original(title, *a, **k)
+        if title not in cache:
+            cache[title] = original(title)
+        return cache[title]
+
+    sh.worksheet = worksheet
+    sh._memo_ws = cache
+    return sh
 
 
 def open_sheet():

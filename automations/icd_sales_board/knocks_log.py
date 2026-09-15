@@ -152,9 +152,21 @@ def activity_for(office: str, start=None, end=None,
     owners its own way. Never raises — no knocks logged is an empty dict, and
     the board leaves those columns blank rather than printing zeros nobody
     measured."""
+    from automations.recruiting_report.fill import open_by_key, _retry
     try:
-        from automations.recruiting_report.fill import open_by_key, _retry
+        grid = _retry(open_by_key(sheet_id).worksheet(TAB).get_all_values)
+    except Exception:   # noqa: BLE001
+        return {}
+    return activity_from(grid, office, start, end)
 
+
+def activity_from(grid: list, office: str, start=None, end=None) -> dict:
+    """activity_for, but over a grid somebody ALREADY read.
+
+    The page shows several offices in a session and the tab is one shared
+    sheet, so re-reading it per office was most of a render's cost. The read
+    moves to the caller; the matching stays here."""
+    try:
         wanted = {(office or "").strip().lower()}
         try:
             from automations.focus_office_att import aliases as _al
@@ -164,7 +176,6 @@ def activity_for(office: str, start=None, end=None,
         except Exception:  # noqa: BLE001 — aliases are a nicety here
             pass
 
-        grid = _retry(open_by_key(sheet_id).worksheet(TAB).get_all_values)
         if not grid:
             return {}
         header = [str(h).strip() for h in grid[0]]
