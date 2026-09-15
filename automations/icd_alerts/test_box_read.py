@@ -188,3 +188,69 @@ class AContractBecomesASaleAfterTheDayItWasSold(unittest.TestCase):
         self.assertEqual(sorted(out), [self.MON, self.TUE])
         self.assertEqual(out[self.MON], {"records": {}, "sales": {},
                                          "unknown": []})
+
+
+class TheApiNamesAreNotTheScreenNames(unittest.TestCase):
+    """Captured from the live page 2026-09-15. The grid heading is "Initiated
+    Date" and the field on the wire is created_date; the agent is a nested
+    object, not a string. A reader written off the column headings would have
+    found neither."""
+
+    EDGE = {
+        "contract_id": 289270,
+        "business_name": "KELLEY'S DAYCARE LLC",
+        "adjusted_annual_volume": 51000,
+        "created_date": "09/15/2026 04:58 PM",
+        "agent": {"name": {"first_name": "Max", "last_name": "Allen"},
+                  "email": "max@example.com"},
+        "contract_substatus": {"substatus": "TPV Passed",
+                               "substatus_alias": "tpv_passed"},
+    }
+
+    def test_an_edge_becomes_a_row_tally_can_read(self):
+        row = B.row_from_edge(self.EDGE)
+        self.assertEqual(row["Agent"], "Max Allen")
+        self.assertEqual(row["Initiated Date"], "09/15/2026 04:58 PM")
+        self.assertEqual(row["Contract Substatus"], "TPV Passed")
+        self.assertEqual(row["Adjusted Annual Volume"], 51000)
+
+    def test_it_feeds_straight_into_tally(self):
+        out = B.tally([B.row_from_edge(self.EDGE)], DAY)
+        self.assertEqual(out["sales"]["Max Allen"],
+                         {"Sales": 1, "Volume": 51000})
+
+    def test_a_missing_agent_does_not_invent_a_rep(self):
+        edge = dict(self.EDGE, agent=None)
+        self.assertEqual(B.row_from_edge(edge)["Agent"], "")
+        self.assertEqual(B.tally([B.row_from_edge(edge)], DAY)["sales"], {})
+
+    def test_a_half_named_agent_still_reads(self):
+        edge = dict(self.EDGE,
+                    agent={"name": {"first_name": "Cher", "last_name": None}})
+        self.assertEqual(B.row_from_edge(edge)["Agent"], "Cher")
+
+
+class APartialResponseIsNotAShortDay(unittest.TestCase):
+    """An envelope carrying errors returns NOTHING rather than the edges that
+    did arrive. A partial page read as a whole one is how an office's number
+    comes out low with nothing to say why."""
+
+    OK = {"data": {"contractsList": {"edges": [
+        TheApiNamesAreNotTheScreenNames.EDGE]}}}
+
+    def test_a_good_response_yields_rows(self):
+        self.assertEqual(len(B.rows_from_response(self.OK)), 1)
+
+    def test_top_level_errors_yield_nothing(self):
+        bad = dict(self.OK, errors=[{"message": "boom"}])
+        self.assertEqual(B.rows_from_response(bad), [])
+
+    def test_envelope_errors_yield_nothing(self):
+        bad = {"data": {"contractsList": {
+            "edges": [TheApiNamesAreNotTheScreenNames.EDGE],
+            "errors": [{"error_message": "partial"}]}}}
+        self.assertEqual(B.rows_from_response(bad), [])
+
+    def test_garbage_does_not_raise(self):
+        for junk in (None, {}, {"data": None}, {"data": {"contractsList": None}}):
+            self.assertEqual(B.rows_from_response(junk), [])

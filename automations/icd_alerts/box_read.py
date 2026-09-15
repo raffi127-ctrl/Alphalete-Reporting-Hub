@@ -180,7 +180,43 @@ def _context(p, headless: bool):
 # The query shape is not known yet, so this is deliberately NOT implemented
 # from a guess. A scraper written against the DOM would have to be thrown away
 # the moment the API work lands, and would be wrong in the meantime.
-GRAPHQL_URL = "https://api.myservicecloud.net/gql/secured/v2"
+def row_from_edge(edge: Dict) -> Dict:
+    """One contractsList edge -> the row shape tally() reads.
+
+    THE API'S NAMES ARE NOT THE SCREEN'S. "Initiated Date" on the grid is
+    created_date on the wire, and the agent is a nested object rather than a
+    string. A reader written off the column headings would never have found
+    either -- which is why the query was captured from the page rather than
+    guessed.
+    """
+    agent = edge.get(SC.FIELD_AGENT) or {}
+    name = (agent or {}).get("name") or {}
+    rep = " ".join(x for x in (name.get("first_name"), name.get("last_name"))
+                   if x).strip()
+    sub = edge.get(SC.FIELD_SUBSTATUS) or {}
+    return {
+        SC.COL_AGENT: rep,
+        SC.COL_INITIATED: edge.get(SC.FIELD_INITIATED) or "",
+        SC.COL_SUBSTATUS: (sub or {}).get("substatus") or "",
+        "Adjusted Annual Volume": edge.get(SC.FIELD_VOLUME) or 0,
+        SC.COL_BUSINESS: edge.get(SC.FIELD_BUSINESS) or "",
+    }
+
+
+def rows_from_response(payload: Dict) -> List[Dict]:
+    """Every edge in a contractsList response, as rows. Never raises.
+
+    An envelope that carries errors returns NOTHING rather than a short list:
+    a partial page read as a whole one is how an office's number comes out low
+    with nothing to say why.
+    """
+    data = ((payload or {}).get("data") or {}).get("contractsList") or {}
+    if (payload or {}).get("errors") or (data.get("errors") or []):
+        return []
+    return [row_from_edge(e) for e in (data.get("edges") or [])]
+
+
+GRAPHQL_URL = SC.GRAPHQL_URL
 
 
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,

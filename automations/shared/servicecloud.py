@@ -369,3 +369,37 @@ def sign_in(page, email: str, password: str, *,
 # volume threshold -- is a question for somebody who sells them.
 BOX_METRICS = ("Sales", "Volume")
 BOX_COUNTED = ("Sales",)      # what a total may sum. NOT Volume.
+
+
+# --- THE API BEHIND THE GRID ------------------------------------------------
+#
+# Captured from Megan's own signed-in browser, 2026-09-15, by watching what the
+# page itself sends. Not guessed and not reverse-engineered from the DOM.
+#
+GRAPHQL_URL = "https://api.myservicecloud.net/gql/secured/v2"
+GRAPHQL_OPERATION = "contractsList"          # input: ContractsListQueryInput
+#
+# The variables the grid sends for page one:
+#   {"input": {"page": 1, "per_page": 50, "search": "",
+#              "sorting": [{"name": "id", "direction": "DESCENDING"}]}}
+#
+# THE FIELD NAMES ARE NOT THE COLUMN HEADINGS. This is the mapping that
+# matters, and getting it from the API rather than the screen is the whole
+# point -- the UI says "Initiated Date" and the field is created_date, which a
+# reader written off the headings would never have found.
+FIELD_AGENT = "agent"                 # {name: {first_name, last_name}, email}
+FIELD_INITIATED = "created_date"      # the UI's "Initiated Date" -- the SALE date
+FIELD_SUBSTATUS = "contract_substatus"   # {substatus, substatus_alias, ...}
+FIELD_VOLUME = "adjusted_annual_volume"
+FIELD_CONTRACT_ID = "contract_id"
+FIELD_BUSINESS = "business_name"
+#
+# AUTHENTICATION IS THE APP'S, NOT OURS. The request carries `authorization`
+# and `api-key` headers the SPA holds, so a read must NOT try to reproduce
+# them: tokens expire, and a copy of somebody's key in this repo is the thing
+# the whole design exists to avoid.
+#
+# So the read runs INSIDE the signed-in page and lets the app make its own
+# request -- patch fetch, trigger the grid, keep the response. Nothing here
+# ever sees a token, and it keeps working when they rotate one.
+AUTH_IS_THE_APPS = True
