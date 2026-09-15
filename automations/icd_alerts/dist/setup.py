@@ -400,6 +400,58 @@ def login_until_it_works(attempts=3):
     return False
 
 
+def _install_records():
+    """install.json, ALWAYS as a list.
+
+    THE SHAPE CHANGED AND THESE READERS DID NOT. An office running two
+    campaigns installs twice on one computer, so the file became a LIST of
+    records -- and ask_for_ov_name(), ask_for_channel() and ask_about_knocks()
+    all still called .get() on it. Carlos was the first multi-campaign office
+    to install, on 2026-09-15, and his setup died at step 7 with "'list'
+    object has no attribute 'get'".
+
+    Worse than the crash: each of those three then wrote its dict straight
+    back over the file. Had the read survived, the write would have thrown
+    away every OTHER campaign on that machine without a word.
+    """
+    try:
+        data = json.loads((CONFIG_DIR / "install.json").read_text())
+    except (OSError, ValueError):
+        return []
+    return data if isinstance(data, list) else [data]
+
+
+def _current_key() -> str:
+    """The office_key being installed right now, from the fetched record."""
+    try:
+        src = json.loads((HERE / "install.json").read_text())
+        return str(src.get("office_key", "")).strip().lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _load_current() -> dict:
+    """This campaign's record. Never another campaign's."""
+    key = _current_key()
+    recs = _install_records()
+    for r in recs:
+        if isinstance(r, dict) and str(
+                r.get("office_key", "")).strip().lower() == key:
+            return r
+    # A single-campaign machine written before the list shape existed.
+    return recs[0] if recs and isinstance(recs[0], dict) else {}
+
+
+def _save_current(rec: dict) -> None:
+    """Put this campaign's record back WITHOUT touching the others."""
+    key = str(rec.get("office_key", "")).strip().lower() or _current_key()
+    keep = [r for r in _install_records()
+            if isinstance(r, dict)
+            and str(r.get("office_key", "")).strip().lower() != key]
+    keep.append(rec)
+    (CONFIG_DIR / "install.json").write_text(json.dumps(keep, indent=2))
+
+
 def ask_for_ov_name():
     """Their name EXACTLY as OwnerVille spells it.
 
@@ -412,7 +464,7 @@ def ask_for_ov_name():
     Asked once, here, rather than worked out later from a name that did not
     match anything.
     """
-    rec = json.loads((CONFIG_DIR / "install.json").read_text())
+    rec = _load_current()
     if rec.get("ov_name"):
         say("      already have your OwnerVille name: %s" % rec["ov_name"])
         return
@@ -426,7 +478,7 @@ def ask_for_ov_name():
         return
     if name:
         rec["ov_name"] = name
-        (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
+        _save_current(rec)
         say("      noted: %s" % name)
 
 
@@ -444,7 +496,7 @@ def ask_for_channel():
     posted anywhere until somebody on the reporting team approves the answer,
     so a typo costs a conversation and not a misdirected alert.
     """
-    rec = json.loads((CONFIG_DIR / "install.json").read_text())
+    rec = _load_current()
     if rec.get("requested_channels") is not None:
         say("      already asked -- %d channel(s)" % len(rec["requested_channels"]))
         return rec["requested_channels"]
@@ -484,7 +536,7 @@ def ask_for_channel():
         say("      left blank -- the reporting team will check with you.")
 
     rec["requested_channels"] = channels
-    (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
+    _save_current(rec)
     return channels
 
 
@@ -522,7 +574,7 @@ def ask_about_knocks():
     Asked one destination at a time, because "how many channels?" is a question
     nobody can answer before they have been shown what a channel costs them.
     """
-    rec = json.loads((CONFIG_DIR / "install.json").read_text())
+    rec = _load_current()
     if rec.get("requested_knocks_destinations") is not None:
         say("      already asked -- %d destination(s)"
             % len(rec["requested_knocks_destinations"]))
@@ -574,7 +626,7 @@ def ask_about_knocks():
 
     rec["requested_knocks_destinations"] = destinations
     rec["requested_knocks_hours_note"] = note
-    (CONFIG_DIR / "install.json").write_text(json.dumps(rec, indent=2))
+    _save_current(rec)
     if destinations:
         say("      noted: %s" % "; ".join(
             "%s %s" % (d["channel"], d["label"]) for d in destinations))
