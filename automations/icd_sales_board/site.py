@@ -164,8 +164,16 @@ from automations.icd_sales_board import gate as _GATE  # noqa: E402
 
 _CREDS_OK, _HOSTED = _CC.ensure_local_oauth()
 if not _CREDS_OK:
-    st.error("This board cannot reach Google Sheets — its credentials are "
-             "not configured on the host. Nothing is wrong with the data.")
+    # SAY WHICH ONE. "Credentials are not configured" cannot be acted on by
+    # the one person who can fix it; a missing secret and a misspelt secret
+    # look identical from outside. Names only — no value ever leaves
+    # cloud_creds.
+    _miss = ", ".join(getattr(_CC.ensure_local_oauth, "missing", [])) or "?"
+    _have = ", ".join(_CC.host_key_names()) or "(none)"
+    st.error(f"This board cannot reach Google Sheets. Missing secret(s): "
+             f"**{_miss}**.\n\nSecrets this app does have: {_have}\n\n"
+             f"Add the missing one(s) in Streamlit Cloud → the "
+             f"`streamlit_app.py` app → Settings → Secrets, then save.")
     st.stop()
 if not _GATE.passed(_HOSTED):
     st.stop()

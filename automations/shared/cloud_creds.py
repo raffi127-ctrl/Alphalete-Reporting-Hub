@@ -39,6 +39,20 @@ def _from_host(name: str) -> str:
     return os.environ.get(name, "")
 
 
+def host_key_names() -> list:
+    """The NAMES of the secrets the host has set. Never their values.
+
+    A missing credential is otherwise indistinguishable from a misspelt one,
+    and the person who can fix it cannot see inside the process. Names are not
+    secret; values never leave this module."""
+    try:
+        import streamlit as st
+
+        return sorted(str(k) for k in st.secrets.keys())
+    except Exception:   # noqa: BLE001
+        return []
+
+
 def ensure_local_oauth(log=None):
     """Write the Google credentials to disk if missing. -> (usable, hosted).
 
@@ -49,7 +63,7 @@ def ensure_local_oauth(log=None):
 
     Returns rather than raises: a page that cannot authenticate should say so
     in its own words, not crash with a traceback a reader cannot act on."""
-    ok, hosted = True, False
+    ok, hosted, missing = True, False, []
     for fname, secret in _WANT:
         path = _DIR / fname
         if path.exists():
@@ -57,6 +71,7 @@ def ensure_local_oauth(log=None):
         raw = _from_host(secret)
         if not raw.strip():
             ok = False
+            missing.append(secret)
             if log:
                 log(f"missing credential: {secret}")
             continue
@@ -65,4 +80,5 @@ def ensure_local_oauth(log=None):
         # The token is a live credential; keep it off other users of the host.
         path.chmod(0o600)
         hosted = True
+    ensure_local_oauth.missing = missing      # for the page's error message
     return ok, hosted
