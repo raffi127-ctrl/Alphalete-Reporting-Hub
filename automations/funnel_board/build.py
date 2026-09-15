@@ -16,9 +16,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from automations.funnel_board.auth import session as _auth_session  # noqa: E402
-from automations.funnel_board.roster import (  # noqa: E402, SOUTH_SHORE_NAMES
+from automations.funnel_board.roster import (  # noqa: E402
     CAMPAIGN_ONLY, CAPTAINSHIP_NAMES, ORG_NAMES,
-    BOARD_TITLE as CAP_BOARD_TITLE, TREND_TITLE as CAP_TREND_TITLE)
+    BOARD_TITLE as CAP_BOARD_TITLE, TREND_TITLE as CAP_TREND_TITLE, SOUTH_SHORE_NAMES,
+)
 from automations.org_campaign_metrics.layout import (  # noqa: E402
     N_SLOTS as CAMP_SLOTS, ZONE_START as CAMP_ZONE_START)
 
