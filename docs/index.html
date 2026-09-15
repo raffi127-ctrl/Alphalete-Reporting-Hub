@@ -183,8 +183,9 @@
           <div class="body"><span class="prompt">$</span>
             <span id="termcmd">curl -fsSL &#8230;</span></div>
         </div>
-        <p class="cap">A lot of text will scroll past for a few minutes. Leave
-           it alone and let it finish &mdash; do not close the window.</p>
+        <p class="cap" id="scrollcap">A lot of text will scroll past for a
+           few minutes. Leave it alone and let it finish &mdash; do not close
+           the window.</p>
       </div>
     </div>
 
@@ -199,7 +200,7 @@
     </div>
   </div>
 
-  <div class="note">
+  <div class="note" id="rednote">
     <b>A browser window may open by itself with a big red bar.</b> That is Lucy
     signing in. Leave it completely alone — do not type your password and do not
     touch the security box. It closes by itself.
@@ -252,9 +253,20 @@
       "Takes a few seconds. Lucy keeps running the whole time, and you will " +
       "not be asked for anything.";
     var gone = [document.getElementById("stopbar"),
-                document.getElementById("step4")];
+                document.getElementById("step4"),
+                // An update signs nothing in, so the red-bar warning would be
+                // describing something that is not going to happen.
+                document.getElementById("rednote")];
     for (var g = 0; g < gone.length; g++) {
       if (gone[g]) { gone[g].style.display = "none"; }
+    }
+    // "A few minutes" is the INSTALL. An update is over in seconds, and a
+    // page that promises minutes teaches them to walk away from a window
+    // that has already finished -- or to think a fast one failed.
+    var cap = document.getElementById("scrollcap");
+    if (cap) {
+      cap.textContent = "Some text scrolls past and it is done, usually in " +
+        "under a minute. Leave it alone until it stops.";
     }
   } else {
     document.getElementById("who").innerHTML =

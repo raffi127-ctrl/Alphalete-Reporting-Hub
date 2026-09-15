@@ -38,6 +38,7 @@ from automations.shared import onboarding_ui as ui             # noqa: E402
 
 MAX_CHANNELS = 3      # the installer allows 4; three is plenty to type
 MAX_KNOCKS = 3
+MAX_TEXT_GROUPS = 2   # more than two group chats is a channel, not a text
 
 st.set_page_config(page_title="Join Lucy ECOsystem", page_icon="🛰️")
 ui.render_header(
@@ -276,6 +277,35 @@ with st.container(border=True):
             "**Add Megan and Eve to any channel you name here.** They cannot "
             "switch your reports on for a channel they are not in.")
 
+    # TEXTING. Some owners want the board in a group text rather than in
+    # Slack -- Carlos asked for exactly that (2026-09-15). WE send it, from
+    # our own Mac, so nothing about texting is installed on their machine and
+    # they are never asked for a phone number.
+    #
+    # THE CHAT NAME HAS TO BE EXACT. A name that does not match a chat does
+    # not fail -- macOS reports the send as fine and delivers it nowhere, so
+    # a typo here is silence that looks like success on both ends. Hence the
+    # insistence on copying it rather than describing it.
+    st.subheader("Want the board as a text instead?")
+    st.caption("Optional — most offices skip this. Leave it blank and "
+               "everything stays in Slack.")
+    st.info(
+        "**First, add `%s` to the group chat.** That is Lucy. She cannot "
+        "post into a chat she is not in, and this is the step that gets "
+        "missed." % S.LUCY_IMESSAGE)
+    text_groups = []
+    for i in range(MAX_TEXT_GROUPS):
+        label = ("Name of the group chat" if i == 0
+                 else "Another group chat (optional)")
+        val = st.text_input(
+            label, key="text_grp_%d" % i,
+            placeholder="Leave blank if not needed" if i
+            else "B2B Box Dispositions")
+        text_groups.append(val.strip())
+    st.caption("Type the name **exactly** as it appears at the top of the "
+               "chat in Messages — capitals, spaces and all. A name that "
+               "does not match sends to nobody, and nothing will tell you.")
+
     # LAST THING BEFORE THEY SEND, because it is the one action of theirs
     # that has to happen OUTSIDE this page -- sitting up beside the channel
     # boxes, it read as advice about typing rather than a thing to go and do.
@@ -299,10 +329,13 @@ if submitted:
     # keeps ONE way of saying that, rather than a checkbox that can disagree
     # with the channels underneath it.
     first_cadence = dests[0]["cadence_min"] if dests else -1
+    texts = [t for t in text_groups if t]
     summary = ", ".join(alerts) or "(not sure yet)"
     if dests:
         summary += "  ·  board: " + ", ".join(
             "%s %s" % (d["channel"], d["label"]) for d in dests)
+    if texts:
+        summary += "  ·  texts: " + ", ".join(texts)
 
     rec = S.IcdSignup(
         owner=owner, office_label="", platform=platform, timezone=tz,
@@ -313,7 +346,8 @@ if submitted:
         knocks_cadence=first_cadence,
         wanted_channels=summary, contact=contact.strip(),
         alert_channels_json=json.dumps(alerts),
-        knocks_json=json.dumps(dests))
+        knocks_json=json.dumps(dests),
+        text_groups_json=json.dumps(texts))
     problems = rec.problems()
     if problems:
         for p in problems:

@@ -49,6 +49,17 @@ def lines(rec: IcdSignup, link: str = "") -> Tuple[str, List[str]]:
 
     detail = ["*Add Lucy to:*"]
     detail += ["   • %s" % c for c in rooms] or ["   _no channel named yet_"]
+
+    # A GROUP TEXT IS THEIRS TO ADD LUCY TO, not ours -- we cannot put
+    # ourselves into somebody else's chat. The form asks them to, so this is
+    # a line to CHECK, not to do. It earns its space because a chat name that
+    # does not match sends to nobody and reports success, so an unchecked one
+    # is silence on both ends.
+    texts = [t for t in rec.text_groups if t]
+    if texts:
+        detail += ["", "*Check Lucy is in their group text:*"]
+        detail += ["   • %s" % t for t in texts]
+
     detail += ["", "*Approve:*  %s" % (APPROVE_URL % rec.office_key)]
     return head, detail
 
