@@ -279,13 +279,18 @@ class CaptainsAreDerivedTests(unittest.TestCase):
         self.assertEqual(set(A.CAPTAINS), want)
 
     def test_captains_without_knock_sections_are_not_audited(self):
-        """b2b and nds offices knock nothing — auditing them would report
+        """b2b reports carry no knock sections — auditing them would report
         permanent gaps for offices no report ever pulls."""
         from automations.captainship_drafts import config as C
-        for key in ("carlos", "eveliz", "luis", "atef",
-                    "khalil", "colten", "jairo"):
+        for key in ("carlos", "eveliz", "luis", "atef"):
             self.assertNotIn(key, A.CAPTAINS)
         self.assertTrue(set(A.CAPTAINS) <= {c.key for c in C.CAPTAINS})
+
+    def test_nds_captainships_are_audited_since_they_carry_knocks(self):
+        """NDS gained the knock sections 2026-09-15, so an NDS owner without
+        Office Access is a gap the watch has to name."""
+        for key in ("khalil", "colten", "jairo"):
+            self.assertIn(key, A.CAPTAINS)
 
     def test_rafael_is_the_control_and_goes_first(self):
         self.assertEqual(A.CAPTAINS[0], "rafael")

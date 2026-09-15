@@ -128,9 +128,14 @@ class TheDailyBoardSaysDaily(unittest.TestCase):
         self.assertIn(R.COL_TALK_TO_PER_REP, R.DERIVED_COLUMNS)
 
     def test_the_captainship_board_passes_it(self):
+        # Since NDS (2026-09-15) the capture draws through
+        # render_owner_daily_board, which picks columns by row shape — and
+        # every TOTAL KNOCKS shape it draws still carries the prefix.
         import inspect
-        src = inspect.getsource(KD.capture_sections)
-        self.assertIn('title_prefix="DAILY "', src)
+        self.assertIn("render_owner_daily_board(",
+                      inspect.getsource(KD.capture_sections))
+        src = inspect.getsource(KD.render_owner_daily_board)
+        self.assertEqual(src.count('title_prefix="DAILY "'), 2)
 
 
 class TotalsLabelTellsTheTruth(unittest.TestCase):

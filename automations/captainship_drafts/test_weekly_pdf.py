@@ -207,11 +207,12 @@ class TheHookInRunPy(unittest.TestCase):
         self.assertIn("knock_dispo", {k for _h, k in cap.sections})
 
     def test_only_the_flavors_with_weekly_boards_get_an_attachment(self):
-        """B2B y NDS no tienen board semanal: no les puede colgar un adjunto."""
+        """B2B no tiene board semanal: no le puede colgar un adjunto. NDS si,
+        desde el 2026-09-15."""
         from automations.captainship_drafts import config
         with_weekly = {c.flavor for c in config.CAPTAINS
                        if "knock_dispo" in {k for _h, k in c.sections}}
-        self.assertEqual(with_weekly, {"rafael", "fiber"})
+        self.assertEqual(with_weekly, {"rafael", "fiber", "nds"})
 
 
 class ThePreviewHeaders(unittest.TestCase):

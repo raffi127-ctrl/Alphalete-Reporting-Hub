@@ -77,10 +77,11 @@ PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
                / ".browser_profile_captainship_wkd")
 
 # TeleMapper campaign pin for the pulls (sticky-campaign guard): "3" = RES
-# AT&T, right for every captain wired today (rafael + the five fiber captains
-# all knock RES AT&T). If a b2b/nds flavor ever joins SECTION_KINDS, its
-# owners need "" here (no fiber campaign), same distinction
-# weekly_knock_dispositions/offices.py draws.
+# AT&T, the default. owner_cfgs no longer hands every owner this literal: since
+# NDS joined (2026-09-15) each owner's pin comes from
+# knocks_pull.campaign_for_office — the ONE place that decides it, the same
+# answer the daily pull and the Sunday weekly_knock_dispositions run already
+# use — and this stays only as the fallback when that module can't import.
 CAMPAIGN_ID = "3"
 
 # The daily summary board's columns, left→right (Raf's Slack + Megan
@@ -146,7 +147,7 @@ DAILY_SUMMARY_DISPO_DISPLAY = {
     "Presentation – Not Interested": "Pres - Not Int",
 }
 
-DAILY_SUMMARY_HEADERS = [
+_SUMMARY_BASE_HEADERS = [
     "ICD", "Total # of Reps Knocking", "Total Leads Knocked", "Total Knocks",
     # "AVG knocks / HR" (Rafael 2026-09-03, on the mockup he had just approved:
     # "I think this is missing"). The per-owner DAILY boards right below this
@@ -182,7 +183,39 @@ DAILY_SUMMARY_HEADERS = [
     # the per-owner boards below, so an ICD's line here equals the OFFICE TOTAL
     # line on its own board.
     "Avg. Hrs Knocking",
-] + [DAILY_SUMMARY_DISPO_DISPLAY.get(c, c) for c in DAILY_SUMMARY_DISPO]
+]
+DAILY_SUMMARY_HEADERS = _SUMMARY_BASE_HEADERS + [
+    DAILY_SUMMARY_DISPO_DISPLAY.get(c, c) for c in DAILY_SUMMARY_DISPO]
+
+# WIRELESS (NDS) offices answer with a different disposition vocabulary: ONE
+# "Not Interested" bucket where the house table splits Talk To / Presentation,
+# and no Sale (knocks_pull._WIRELESS_COLUMNS). NDS captainships joined these
+# sections 2026-09-15, and one of them mixes the two (Isaiah Revelle knocks RES
+# AT&T under Khalil). A summary that only knew the house seven would print
+# zeros down the split columns for every wireless ICD and never show the bucket
+# they actually use. So the column set follows the rows: the house seven,
+# exactly as before, unless some ICD carries the wireless bucket — then every
+# column any ICD carries, in this order. Spelled from DAILY_SUMMARY_DISPO so
+# the en dash can't drift; test_knocks_nds pins the new name against the pull.
+_WIRELESS_DISPO = "Not Interested"
+_SUMMARY_DISPO_ORDER = (DAILY_SUMMARY_DISPO[:3] + [_WIRELESS_DISPO]
+                        + DAILY_SUMMARY_DISPO[3:])
+
+
+def summary_dispo(captured: list) -> List[str]:
+    """The disposition columns the daily summary draws for `captured`
+    ([(display, cfg, rows, …), …]). House-only captainships get
+    DAILY_SUMMARY_DISPO untouched. Pure."""
+    rows = [rec for it in captured for rec in it[2]]
+    if not any(_WIRELESS_DISPO in r for r in rows):
+        return list(DAILY_SUMMARY_DISPO)
+    return [c for c in _SUMMARY_DISPO_ORDER if any(c in r for r in rows)]
+
+
+def summary_headers(dispo: List[str]) -> List[str]:
+    """The summary board's header row for a given disposition set. Pure."""
+    return _SUMMARY_BASE_HEADERS + [DAILY_SUMMARY_DISPO_DISPLAY.get(c, c)
+                                    for c in dispo]
 # NOT carried over from the weekly, on purpose: "Avg Talk To's / Day" and
 # "Mon–Sat Avg Gap / Day" divide by the week's six days — on a ONE-DAY board
 # they would just reprint the totals sitting next to them (and Talk To's per
@@ -469,8 +502,8 @@ def owner_names(captain_key: str, grid: Optional[List[List[str]]] = None,
     return drop_terminated(names, is_terminated)
 
 
-def owner_cfgs(names: List[str], aliases_raw: Dict[str, list]
-               ) -> List[Tuple[str, dict]]:
+def owner_cfgs(names: List[str], aliases_raw: Dict[str, list], *,
+               nds: bool = False) -> List[Tuple[str, dict]]:
     """[(display_name, pull cfg), …] — the cfg rows pull_office_week takes.
 
     display_name keeps the BOARD's spelling (that's what the email sub-heading
@@ -481,9 +514,21 @@ def owner_cfgs(names: List[str], aliases_raw: Dict[str, list]
     Raf is the one MASTER row (the login session IS his office — no
     impersonation); everyone else impersonates. Detected by canonical name
     against the wkd RAF row so the two reports can never disagree on who the
-    master is. Pure — offline-testable."""
+    master is.
+
+    campaign_id comes from knocks_pull.campaign_for_office (through the wkd
+    helper, which falls back to "3" if that stack can't import) — the same pin
+    the daily pull already applies to itself, so the week and the day read the
+    same campaign for an overridden office.
+
+    `nds=True` (an NDS captainship) leaves pss_owner None: NDS sales live in
+    the NDS workbook, not in the D2D PSS crosstab, so asking it would draw a
+    Total Apps of 0 for offices that sold — the same call
+    weekly_knock_dispositions/offices.py makes for NDS offices. Pure —
+    offline-testable."""
     from automations.focus_office_att.aliases import alias_to_canonical, _norm_name
-    from automations.weekly_knock_dispositions.offices import RAF as _RAF
+    from automations.weekly_knock_dispositions.offices import (
+        RAF as _RAF, _campaign_for)
     out: List[Tuple[str, dict]] = []
     for display in names:
         try:
@@ -494,8 +539,8 @@ def owner_cfgs(names: List[str], aliases_raw: Dict[str, list]
         out.append((display, {
             "name": canonical,
             "ov": "master" if is_master else "impersonate",
-            "campaign_id": CAMPAIGN_ID,
-            "pss_owner": canonical,
+            "campaign_id": _campaign_for(canonical) or CAMPAIGN_ID,
+            "pss_owner": None if nds else canonical,
         }))
     return out
 
@@ -558,6 +603,57 @@ def daily_apps_for_board(rows: list, office_apps: "dict | None"):
     return out_rows, matched, sum(matched.values())
 
 
+def render_owner_daily_board(target: dt.date, rows: list, board_rows: list,
+                             out_dir, display: str, extra_totals=None,
+                             apps: "dict | None" = None) -> Path:
+    """One owner's DAILY board, drawn in the columns their rows actually have.
+
+    Until NDS joined (2026-09-15) every captainship owner was a house (fiber)
+    office and this was one render_total_knocks call. NDS offices come back in
+    two other shapes — wireless (one Not Interested bucket, no Talk-To split)
+    and gaps-only (no Disposition page, Time Tracker only) — and the house
+    columns would draw them as a board of blanks. The shape is read off the
+    ROWS (total_knocks.render.knocks_shape), never off the captain, so a
+    house office inside an NDS captainship keeps its house board.
+
+    Same boards /knocks and the metrics threads draw for these shapes
+    (render_knocks_boards), with this report's "DAILY " title prefix kept on
+    every shape that has a TOTAL KNOCKS title:
+      * house  -> exactly the call this replaced (board_rows, apps, Chan line);
+      * wireless / Energy Wells -> their column set, Chan's line on top, no
+        apps (neither board has a talk-to block for them);
+      * B2B    -> their column set, no Chan line (he is fiber: no columns);
+      * gaps-only -> the TeleMapper board, which already carries the gaps.
+    `rows` are the ownerville rows (what decides the shape); `board_rows` are
+    the house board's rows with sales-only reps appended."""
+    from automations.total_knocks import render as R
+    shape = R.knocks_shape(rows)
+    if shape == R.SHAPE_GAPS_ONLY:
+        return R.render_telemapper_knocks(target, rows=rows,
+                                          out_dir=Path(out_dir),
+                                          title_suffix=display)
+    cols = {
+        R.SHAPE_WIRELESS: (R.WIRELESS_KNOCKS_COLUMNS,
+                           R.WIRELESS_KNOCKS_HEADERS),
+        R.SHAPE_ENERGYWELL: (R.ENERGYWELL_KNOCKS_COLUMNS,
+                             R.ENERGYWELL_KNOCKS_HEADERS),
+        R.SHAPE_B2B_ATT: (R.B2B_ATT_KNOCKS_COLUMNS, R.B2B_ATT_KNOCKS_HEADERS),
+        R.SHAPE_B2B_BOX: (R.B2B_BOX_KNOCKS_COLUMNS, R.B2B_BOX_KNOCKS_HEADERS),
+    }.get(shape)
+    if cols is None:
+        return R.render_total_knocks(
+            target, rows=board_rows, out_dir=out_dir, title_suffix=display,
+            # "DAILY TOTAL KNOCKS — …" (Eve 2026-08-25). Sun+Mon the weekly
+            # board sits right under this one, and two boards headed the same
+            # way is how someone reads a day's number as the week's.
+            title_prefix="DAILY ", extra_totals=extra_totals, apps=apps)
+    b2b = shape in (R.SHAPE_B2B_ATT, R.SHAPE_B2B_BOX)
+    return R.render_total_knocks(
+        target, rows=rows, out_dir=out_dir, title_suffix=display,
+        title_prefix="DAILY ", extra_totals=None if b2b else extra_totals,
+        base_cols=cols[0], out_cols=cols[1])
+
+
 def _avg_hrs(rows: list) -> str:
     """The ICD's 'Avg. Hrs Knocking' cell: each rep's (last − first) − gaps
     (total_knocks.aggregate.day_hours — the per-owner boards' formula, so an
@@ -609,7 +705,8 @@ def _avg_knocks_per_hr(rows: list) -> str:
 
 
 def daily_summary_row(label: str, rows: list,
-                      apps: Optional[int] = None) -> List[str]:
+                      apps: Optional[int] = None,
+                      dispo: Optional[List[str]] = None) -> List[str]:
     """One daily-summary board row aggregating `rows` (one owner's reps,
     records keyed by total_knocks.pull SHEET_COLUMNS): the count columns SUM;
     Talk To's per Rep and Average App per Rep divide by the row's reps
@@ -619,10 +716,25 @@ def daily_summary_row(label: str, rows: list,
     Total Gaps sums the minutes and formats 'Xh Ym' like the daily board
     (total_knocks.render._fmt_hm); `apps` is that row's app count, passed in
     because it comes from Tableau, not from these ownerville rows — None
-    leaves the cell blank. Pure — offline-testable."""
+    leaves the cell blank. `dispo` is the disposition column set
+    (summary_dispo); None = the house seven.
+
+    BLANK, NEVER 0, FOR WHAT THE ROWS DON'T CARRY (NDS, 2026-09-15). A
+    gaps-only office has no Total Knocks key at all, so its knock columns are
+    blank, not zero. A wireless office has no Total Talk to, so the talk-to
+    block is blank — and on a TOTALS row that mixes the two shapes it is blank
+    too, because a talk-to sum over only the house ICDs divided by everyone's
+    knocks would read as a real rate. A disposition column no row carries is
+    blank. House rows carry every key, so their rows are unchanged. Pure —
+    offline-testable."""
     from automations.weekly_knock_dispositions.board import _avg_knock
     from automations.total_knocks import pull as knocks
     from automations.total_knocks.render import _fmt_hm
+    dispo = DAILY_SUMMARY_DISPO if dispo is None else dispo
+    knock_rows = [r for r in rows if knocks.COL_TOTAL_KNOCKS in r]
+    has_knocks = bool(knock_rows)
+    has_talk = has_knocks and all(knocks.COL_TOTAL_TALK_TO in r
+                                  for r in knock_rows)
 
     def _i(rec: dict, col: str) -> int:
         v = rec.get(col)
@@ -644,9 +756,10 @@ def daily_summary_row(label: str, rows: list,
                    if _i(r, knocks.COL_TOTAL_KNOCKS) >= KNOCKING_MIN_KNOCKS)
     return [
         label,
-        str(knocking),
-        str(sum(_i(r, knocks.COL_TOTAL_LEADS_KNOCKED) for r in rows)),
-        str(total_knocks),
+        (str(knocking) if has_knocks else ""),
+        (str(sum(_i(r, knocks.COL_TOTAL_LEADS_KNOCKED) for r in rows))
+         if has_knocks else ""),
+        (str(total_knocks) if has_knocks else ""),
         # Avg Knocks / Hr — the mean of the reps' own rates, so this cell
         # equals the OFFICE TOTAL line on this ICD's own board below.
         _avg_knocks_per_hr(rows),
@@ -660,14 +773,14 @@ def daily_summary_row(label: str, rows: list,
         # it reads as the average of these five dailies, Raf 2026-09-14.)
         # Blank, never 0, when nobody cleared the bar.
         (f"{total_knocks / knocking:.1f}" if knocking else ""),
-        str(talk_to),
+        (str(talk_to) if has_talk else ""),
         # The rate the ICD turned doors into conversations — summed talk-tos
         # over summed knocks, never an average of the reps' rates.
-        _pct(talk_to, total_knocks),
+        (_pct(talk_to, total_knocks) if has_talk else ""),
         # BLANK, never "0", when nobody cleared the bar: on a washed-out day
         # the ICD still has talk-to's, and a 0.0 beside them says its reps had
         # none. Nothing to divide by is not a zero.
-        (f"{talk_to / knocking:.1f}" if knocking else ""),
+        (f"{talk_to / knocking:.1f}" if has_talk and knocking else ""),
         # None = the PSS crosstab never came down for this ICD; blank says so.
         ("" if apps is None else str(apps)),
         # Apps per rep — blank when there is nothing to divide (no apps
@@ -677,7 +790,7 @@ def daily_summary_row(label: str, rows: list,
         # one. Blank — never 0 — when there is nothing to divide by (apps
         # never came down, or the ICD wrote none): an ICD with talk-to's and
         # no apps did not average 0 conversations per app.
-        ("" if not apps else f"{talk_to / apps:.1f}"),
+        ("" if not apps or not has_talk else f"{talk_to / apps:.1f}"),
         _avg_knock(rows, knocks.COL_FIRST_KNOCK),
         _avg_knock(rows, knocks.COL_LAST_KNOCK),
         str(sum(_i(r, knocks.COL_GAPS) for r in rows)),
@@ -687,7 +800,8 @@ def daily_summary_row(label: str, rows: list,
         # reps who started late, and differencing them would hand every ICD a
         # longer day than anyone worked.
         _avg_hrs(rows),
-    ] + [str(sum(_i(r, c) for r in rows)) for c in DAILY_SUMMARY_DISPO]
+    ] + [(str(sum(_i(r, c) for r in rows)) if any(c in r for r in rows)
+          else "") for c in dispo]
 
 
 def totals_label(n_covered: int, roster_n: Optional[int]) -> str:
@@ -717,7 +831,8 @@ def totals_label(n_covered: int, roster_n: Optional[int]) -> str:
 def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
                         roster_n: Optional[int] = None,
                         n_covered: Optional[int] = None,
-                        chan_apps: Optional[int] = None
+                        chan_apps: Optional[int] = None,
+                        dispo: Optional[List[str]] = None
                         ) -> Tuple[List[List[str]], list]:
     """The daily summary board's rows: the LEADING highlight block — a teal
     CHAN PARK comparison row (Raf: "have Chan's comparison in there"; teal =
@@ -757,7 +872,11 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
     def _apps_of(item) -> Optional[int]:
         return item[3] if len(item) > 3 else None
 
-    body = [daily_summary_row(it[0], it[2], _apps_of(it)) for it in captured]
+    # One disposition set for every row of the board, Chan's teal row included
+    # — decided by the captainship's ICDs, never by the comparison office.
+    dispo = summary_dispo(captured) if dispo is None else dispo
+    body = [daily_summary_row(it[0], it[2], _apps_of(it), dispo)
+            for it in captured]
     if chan_rows is None:
         chan_norm = _norm_name(_CHAN["name"])
         chan_rows = next((it[2] for it in captured
@@ -766,7 +885,8 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
     head: List[List[str]] = []
     bgs: list = []
     if chan_rows:
-        head.append(daily_summary_row("CHAN PARK", chan_rows, chan_apps))
+        head.append(daily_summary_row("CHAN PARK", chan_rows, chan_apps,
+                                      dispo))
         bgs.append(COMPARE_ROW_BG)
     all_rows = [rec for it in captured for rec in it[2]]
     # TOTALS' apps = the sum of the ICD rows above it, so the column always
@@ -780,7 +900,7 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
     # office as unreachable. See totals_label.
     covered = len(captured) if n_covered is None else n_covered
     head.append(daily_summary_row(totals_label(covered, roster_n), all_rows,
-                                  tot_apps))
+                                  tot_apps, dispo))
     # Burnt orange, the SAME totals colour the per-owner daily boards use —
     # this board is the daily family's summary, not the weekly's.
     bgs.append(THEME_AMBER["total_bg"])
@@ -839,8 +959,9 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
     row too — not just the teal one."""
     from automations.total_knocks import render as knocks_render
     from automations.total_knocks.render import THEME_AMBER
+    dispo = summary_dispo(captured)
     table, bgs = daily_summary_table(captured, chan_rows, roster_n,
-                                     n_covered, chan_apps)
+                                     n_covered, chan_apps, dispo=dispo)
     # Same date line, weekday and all, as the per-owner boards under it.
     date_s = knocks_render._title_date(target)
     # The ICDs are numbered the way each owner's board numbers its reps (Eve,
@@ -849,7 +970,7 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
     # ICD in the list. `bgs` is exactly that block, so its length is where the
     # numbering starts — same `first=` the per-owner boards pass for the same
     # two rows.
-    cols = list(DAILY_SUMMARY_HEADERS)
+    cols = summary_headers(dispo)
     disp = list(cols)
     knocks_render.number_rows(cols, disp, table, first=len(bgs))
     who = captain_short(captain)
@@ -1210,7 +1331,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
         aliases_map = dict(aliases_raw)
     except Exception:  # noqa: BLE001
         aliases_map = {}
-    pairs = owner_cfgs(names, aliases_raw)
+    pairs = owner_cfgs(names, aliases_raw,
+                       nds=getattr(captain, "flavor", "") == "nds")
 
     # §1's login-free Sales Board renderer holds a LIVE sync playwright in this
     # thread, and a second sync start in the same thread dies with "you are
@@ -1313,9 +1435,10 @@ def capture_sections(captain, today: dt.date, render_dir, *,
         A missing weekday column is a crosstab-wide fact, so it turns the
         column off for the whole build after ONE log line; a per-owner failure
         (owner absent from the crosstab is NOT one — that's an empty dict)
-        only costs that owner's column."""
+        only costs that owner's column. No pss_owner (an NDS office — see
+        owner_cfgs) is None too: that office's sales aren't in this crosstab."""
         nonlocal daily_apps_off
-        if pss_path is None or daily_apps_off:
+        if not pss_owner or pss_path is None or daily_apps_off:
             return None
         try:
             return A.rep_apps_for_owner(pss_path, pss_owner, aliases_map,
@@ -1429,24 +1552,22 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             board_rows, apps_by_rep, apps_n = (
                                 daily_apps_for_board(rows,
                                                      _day_apps(cfg["pss_owner"])))
-                            png = knocks_render.render_total_knocks(
-                                target, rows=board_rows,
-                                out_dir=daily_root / _slug(display),
-                                title_suffix=display,
-                                # "DAILY TOTAL KNOCKS — …" (Eve 2026-08-25).
-                                # Sun+Mon the weekly board sits right under
-                                # this one, and two boards headed the same way
-                                # is how someone reads a day's number as the
-                                # week's.
-                                title_prefix="DAILY ",
+                            # Columns follow the rows' shape (house / wireless
+                            # / gaps-only) — see render_owner_daily_board.
+                            png = render_owner_daily_board(
+                                target, rows, board_rows,
+                                daily_root / _slug(display), display,
                                 extra_totals=compare_totals_for(
                                     display, chan_rows, chan_apps_by_rep),
                                 apps=apps_by_rep)
                             # INCOMPLETE rides the sub-heading label, same as
                             # the weekly board's: the board is real, one
                             # column of it is missing, and the reader has to
-                            # be told which.
-                            out_daily.append((display if apps_by_rep is not None
+                            # be told which. Not for an office with no
+                            # pss_owner (NDS): nothing is missing there — no
+                            # D2D crosstab ever carries its sales.
+                            out_daily.append((display if (apps_by_rep is not None
+                                                          or not cfg["pss_owner"])
                                               else f"{display} — ⚠ INCOMPLETE: "
                                                    "apps unavailable", png))
                             # captured_daily keeps the OWNERVILLE rows, not the
@@ -1526,7 +1647,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         office_apps = (
                             A.rep_apps_for_owner(pss_path, cfg["pss_owner"],
                                                  aliases_map)
-                            if pss_path is not None else None)
+                            if pss_path is not None and cfg["pss_owner"]
+                            else None)
                         if not ov_rows and not office_apps:
                             # Visible absence, never a blank board (standing
                             # rule): the email says so under this owner.

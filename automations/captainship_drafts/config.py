@@ -141,6 +141,15 @@ _INTRO = {
         "Product Summary Of Sales",
         "⚠️Captain Team Stats Breakout ⚠️",
         "💰New Internet Ongoing Churn Metrics 💰",
+        # Los dos bloques de knocks entran a NDS el 2026-09-15 (Eve: "megan
+        # dice que creo el knocks report (daily y weekly) para las capitanias
+        # de NDS ... podemos agregarlas a sus daily captainship emails?"). Mismo
+        # texto que en fiber: es la misma seccion y el mismo lector la busca
+        # con el mismo nombre. Indice-alineados con SECTION_KINDS["nds"].
+        "Daily Knocks (per owner) 🚪",
+        # SUN+MON ONLY (SECTION_DAYS) y solo como PDF adjunto
+        # (ATTACHMENT_ONLY_KINDS), igual que en los otros flavors.
+        "Weekly Knock Dispositions (per owner) 🚪",
     ]),
 }
 
@@ -197,7 +206,15 @@ SECTION_KINDS = {
     # fell back to the "could not be captured" note in all four B2B drafts
     # while the images sat rendered on disk (Eve 2026-08-19).
     "b2b":    ["product_summary", "teamstats_tableau", "churn_wireless"],
-    "nds":    ["product_summary", "teamstats_tableau", "churn_ni"],
+    # daily_knocks + knock_dispo joined nds 2026-09-15. What kept them out
+    # ("wireless-shaped disposition tables") is handled now: the per-owner
+    # daily board picks its columns by the row shape
+    # (knock_dispo_images.render_owner_daily_board — wireless, gaps-only and
+    # house offices all live under these three captains), the summary drops
+    # the Talk-To split it can't read, and owner_cfgs leaves the D2D apps off
+    # (NDS sales are not in the PSS crosstab). B2B stays out.
+    "nds":    ["product_summary", "teamstats_tableau", "churn_ni",
+               "daily_knocks", "knock_dispo"],
 }
 
 
