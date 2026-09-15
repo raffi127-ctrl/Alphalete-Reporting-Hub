@@ -465,27 +465,35 @@ for _t in (TREND,):
         "gridProperties": {"columnCount": max(60, 2 + 8 * len(WEEK_ENDS) + 4)}},
         "fields": "gridProperties.columnCount"}}])
 
-# wipe the illustrative data
-batch([{"updateCells": {"range": {"sheetId": s}, "fields": "*"} }
-       for s in (BOARD, TREND, LOG, GOALS, MATRIX)]
-      + [{"deleteConditionalFormatRule": {"sheetId": s, "index": 0}}
-         for s in (BOARD, TREND) for _ in range(0)])
-# drop every existing CF rule + column group
-info = S.get(API, params={"fields": "sheets(properties.sheetId,conditionalFormats,columnGroups,bandedRanges)"}).json()
-clear = []
+# The wipe is DEFERRED (2026-09-15). It used to run right here — before any
+# value was computed — and two same-day build crashes (NameErrors in the
+# South Shore change) each died after the wipe with nothing flushed, leaving
+# every owned tab EMPTY. The next run then read an empty Daily Log, saw no
+# history to preserve, and rebuilt it with only the 4-week backfill window:
+# Daily Log wipe #3. Deferring the wipe to just before the value flush
+# shrinks the crash window from "the whole build" to two adjacent API calls,
+# and it also lets the preserve reads (F1 group, goals) see the LIVE sheet
+# instead of a freshly wiped one. Definition only — called at flush time.
+def _wipe_owned():
+    batch([{"updateCells": {"range": {"sheetId": s}, "fields": "*"} }
+           for s in (BOARD, TREND, LOG, GOALS, MATRIX)])
+    info = S.get(API, params={"fields": "sheets(properties.sheetId,conditionalFormats,columnGroups,bandedRanges)"}).json()
+    clear = []
+    for s in info["sheets"]:
+        sid = s["properties"]["sheetId"]
+        if sid not in OURS:
+            continue                 # never touch tabs we do not own
+        for i in range(len(s.get("conditionalFormats", [])) - 1, -1, -1):
+            clear.append({"deleteConditionalFormatRule": {"sheetId": sid, "index": i}})
+        for g in s.get("columnGroups", []):
+            clear.append({"deleteDimensionGroup": {"range": dict(g["range"], sheetId=sid)}})
+        for b in s.get("bandedRanges", []):
+            clear.append({"deleteBanding": {"bandedRangeId": b["bandedRangeId"]}})
+    if clear:
+        batch(clear)
+
+
 OURS = {BOARD, TREND, MATRIX, LOG, GOALS}
-for s in info["sheets"]:
-    sid = s["properties"]["sheetId"]
-    if sid not in OURS:
-        continue                     # never touch tabs we do not own
-    for i in range(len(s.get("conditionalFormats", [])) - 1, -1, -1):
-        clear.append({"deleteConditionalFormatRule": {"sheetId": sid, "index": i}})
-    for g in s.get("columnGroups", []):
-        clear.append({"deleteDimensionGroup": {"range": dict(g["range"], sheetId=sid)}})
-    for b in s.get("bandedRanges", []):
-        clear.append({"deleteBanding": {"bandedRangeId": b["bandedRangeId"]}})
-if clear:
-    batch(clear)
 
 # ------------------------------------------------------------------ values
 values = [
@@ -1596,6 +1604,7 @@ build_board(BOARD, "Recruiting Dashboard", "Recruiting Dashboard", ORG_ROSTER, "
 build_trend(TREND, "Focus Report", "Focus Report", ORG_ROSTER)
 
 
+_wipe_owned()      # deferred wipe — see its definition for why it lives here
 call("/values:batchUpdate", {"valueInputOption": "USER_ENTERED", "data": values})
 print("values written")
 
