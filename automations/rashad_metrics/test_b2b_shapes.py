@@ -308,3 +308,82 @@ def test_res_att_stays_out_of_the_table():
     assert "3" not in K.CAMPAIGN_EXPECTED_SHAPE
     wireless = {K.knocks._norm(c): i for i, c in enumerate(K._WIRELESS_COLUMNS)}
     K.assert_campaign_grid(wireless, "3")     # must not raise
+
+
+# ---------------------------------------------------- Actual Talk To's ---
+# Ryan McSpadden, 2026-09-15: Total Knocks minus the three buckets where
+# nobody was actually spoken to. Box only.
+
+def test_actual_talk_tos_is_on_the_box_board():
+    assert R.COL_BOX_ACTUAL_TALK_TO in R.B2B_BOX_KNOCKS_HEADERS
+
+
+def test_actual_talk_tos_reaches_no_other_board():
+    """THE CONSTRAINT THAT MATTERS. Carlos runs B2B AT&T and B2B Box off the
+    one Mac mini through this shared renderer, so a column that leaks out of
+    the Box shape lands on his AT&T board -- where two of the three buckets do
+    not even exist."""
+    for headers in (R.B2B_ATT_KNOCKS_HEADERS, R.COMBINED_KNOCKS_HEADERS,
+                    R.WIRELESS_KNOCKS_HEADERS, R.ENERGYWELL_KNOCKS_HEADERS,
+                    R.TIME_GAPS_COLUMNS, R.TELEMAPPER_KNOCKS_COLUMNS):
+        assert R.COL_BOX_ACTUAL_TALK_TO not in headers
+
+
+def test_it_is_computed_not_scraped():
+    """In the HEADERS, never in the COLUMNS: that second list is what the
+    scrape is read by, and a derived name in it would be looked up in the grid
+    and come back blank for every rep."""
+    assert R.COL_BOX_ACTUAL_TALK_TO not in R.B2B_BOX_KNOCKS_COLUMNS
+    assert R.COL_BOX_ACTUAL_TALK_TO in R.DERIVED_COLUMNS
+
+
+def test_it_subtracts_exactly_the_three_ryan_named():
+    assert R.BOX_ACTUAL_TALK_TO_SUBTRAHENDS == [
+        knocks.COL_BOX_CORP_NO_OPP, knocks.COL_INACCESSIBLE,
+        knocks.COL_B2B_INACCURATE_LEAD]
+    # All three are really on the Box board, so the totals row can sum them.
+    for col in R.BOX_ACTUAL_TALK_TO_SUBTRAHENDS:
+        assert col in R.B2B_BOX_KNOCKS_COLUMNS
+
+
+def test_the_arithmetic_per_rep_and_for_the_office():
+    """Two reps through the real renderer path, checked against hand-math."""
+    from automations.icd_alerts import knocks_map as M
+
+    def box(rep, rid, **kw):
+        d = {"id": rid, "rep": rep, "total leads knocked": "120",
+             "total knocks": "140", "first knock": "9:05 AM",
+             "last knock": "6:40 PM", "talked to": "18",
+             "owner talked to": "7", "not interested": "9",
+             "contract signed": "2", "bill collected - no sale": "1",
+             "come back": "4", "am come back": "3", "corp - no opp": "11",
+             "do not disturb": "2", "inaccessible": "6",
+             "inaccurate lead": "5"}
+        d.update(kw)
+        return d
+
+    rows = M.to_rows([
+        box("Jane Doe", "101"),
+        box("John Roe", "102", **{"total knocks": "95", "corp - no opp": "3",
+                                  "inaccessible": "1", "inaccurate lead": "0"}),
+    ])
+    assert M.shape_of(rows) == R.SHAPE_B2B_BOX
+    header, table = R._table_from_rows(rows)
+    sub = R._combined_sub(header, table, base_cols=R.B2B_BOX_KNOCKS_COLUMNS,
+                          out_cols=R.B2B_BOX_KNOCKS_HEADERS)
+    at = R.B2B_BOX_KNOCKS_HEADERS.index(R.COL_BOX_ACTUAL_TALK_TO)
+    rep_at = R.B2B_BOX_KNOCKS_HEADERS.index(knocks.COL_REP)
+    got = {r[rep_at]: r[at] for r in sub}
+    assert got["Jane Doe"] == "118"        # 140 - 11 - 6 - 5
+    assert got["John Roe"] == "91"         # 95 - 3 - 1 - 0
+    totals = R._combined_totals("OFFICE TOTAL", sub, R.B2B_BOX_KNOCKS_HEADERS)
+    assert totals[at] == "209"             # 235 - 14 - 7 - 5
+
+
+def test_it_is_not_the_same_number_as_total_talk_to():
+    """They disagree on Corp - No Opp, and the Box grid has no 'No answer'
+    bucket -- so every knock with no disposition sits inside one and outside
+    the other. Two different questions; a test so nobody 'tidies' one away."""
+    assert knocks.COL_BOX_CORP_NO_OPP in K._B2B_BOX_TALK_TO_PARTS
+    assert knocks.COL_BOX_CORP_NO_OPP in R.BOX_ACTUAL_TALK_TO_SUBTRAHENDS
+    assert knocks.COL_NO_ANSWER not in R.B2B_BOX_KNOCKS_COLUMNS

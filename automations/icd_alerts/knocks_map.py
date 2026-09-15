@@ -68,6 +68,42 @@ def gaps_by_id(tracker: List[Dict]) -> Dict[str, Dict]:
     return out
 
 
+# Which disposition buckets add up to Total Talk To, per campaign.
+#
+# WHY THIS EXISTS (2026-09-15). This used to be a single `if COL_TALK_TO_NI in
+# rec` test, which is fiber's signature -- so on the relay path EVERY OTHER
+# campaign whose board draws the column got it blank. Ryan's B2B Box board
+# showed an empty "Total Talk to" per rep and an OFFICE TOTAL line reading
+# 0 / 0.0% / 0.0, which is the believable-wrong number the comment below warns
+# about. The central AppStream path (rashad_metrics.knocks_pull) had always
+# summed the right parts per campaign; only the ICD relay path had not.
+#
+# THE LISTS ARE IMPORTED, NOT RETYPED. knocks_pull owns them, they were read
+# off the live grids, and test_b2b_shapes.py pins them -- a second copy here
+# would drift the first time a bucket is added.
+def _parts_by_shape() -> "Dict[str, list]":
+    from automations.rashad_metrics import knocks_pull as KP
+    from automations.total_knocks import render as R
+    return {
+        R.SHAPE_HOUSE:      list(TP.TALK_TO_PARTS),
+        R.SHAPE_ENERGYWELL: list(KP._ENERGYWELL_TALK_TO_PARTS),
+        R.SHAPE_B2B_ATT:    list(KP._B2B_ATT_TALK_TO_PARTS),
+        R.SHAPE_B2B_BOX:    list(KP._B2B_BOX_TALK_TO_PARTS),
+        # SHAPE_WIRELESS and SHAPE_GAPS_ONLY are deliberately absent: neither
+        # board draws Total Talk to, and neither grid carries the parts.
+    }
+
+
+def talk_to_parts(rec: Dict) -> "list | None":
+    """The buckets this row's campaign sums into Total Talk To, or None.
+
+    None means "this shape has no talk-to number", which is a real answer for
+    a wireless or gaps-only grid -- not a failure to recognise it.
+    """
+    from automations.total_knocks.render import knocks_shape
+    return _parts_by_shape().get(knocks_shape([rec]))
+
+
 def to_rows(raw: List[Dict[str, str]],
             tracker: "List[Dict] | None" = None) -> List[Dict]:
     """Relayed rows -> rows the board renderer can draw.
@@ -94,17 +130,19 @@ def to_rows(raw: List[Dict[str, str]],
                         else (value or "").strip())
 
         rec[TP.COL_REP] = rep
-        # Calculated, exactly as the pull does it: Talk To - Not Interested +
-        # Presentation - Not Interested + Come Back + Sale + Do Not Knock.
+        # Calculated, exactly as the pull does it -- and for EVERY campaign
+        # whose board draws the column, not just fiber's.
         #
-        # ONLY FOR AN OFFICE THAT HAS THE TALK-TO SPLIT. A wireless grid has
-        # Come Back but none of the rest, so summing "the parts that happen to
-        # be here" would publish a Total Talk To that is simply wrong -- and
-        # wrong in the believable direction, which is the kind nobody catches
-        # from the board.
-        if TP.COL_TALK_TO_NI in rec:
+        # ONLY FOR AN OFFICE WHOSE GRID CARRIES THAT CAMPAIGN'S PARTS. A
+        # wireless grid has Come Back but none of the rest, so summing "the
+        # parts that happen to be here" would publish a Total Talk To that is
+        # simply wrong -- and wrong in the believable direction, which is the
+        # kind nobody catches from the board. `talk_to_parts` returns None for
+        # that shape, and the key stays absent.
+        parts = talk_to_parts(rec)
+        if parts:
             rec[TP.COL_TOTAL_TALK_TO] = sum(
-                _int(rec.get(p, 0)) for p in TP.TALK_TO_PARTS)
+                _int(rec.get(p, 0)) for p in parts)
 
         # Gaps ride in from the Time Tracker, matched on badge id. A rep with
         # no tracker row keeps them BLANK rather than 0 -- "did not clock in"

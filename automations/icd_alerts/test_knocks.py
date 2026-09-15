@@ -230,6 +230,65 @@ class MapTests(unittest.TestCase):
         self.assertEqual(self.M._gaps_count(""), 0)
 
 
+class TalkToEveryCampaignTests(unittest.TestCase):
+    """Total Talk To must be computed for EVERY shape whose board draws the
+    column -- not just fiber's.
+
+    THE BUG THIS PINS (2026-09-15). to_rows() tested for fiber's
+    'Talk To - Not Interested' and nothing else, so on the relay path a B2B
+    Box / B2B AT&T / Energy Wells office drew a blank 'Total Talk to', a blank
+    "Talk To's per Rep", and an OFFICE TOTAL line reading 0 and 0.0% -- the
+    believable-wrong number, on Ryan's board, whose knocks board is his
+    office's entire product.
+    """
+
+    BOX = {"id": "101", "rep": "Jane Doe", "total leads knocked": "120",
+           "total knocks": "140", "first knock": "9:05 AM",
+           "last knock": "6:40 PM", "talked to": "18",
+           "owner talked to": "7", "not interested": "9",
+           "contract signed": "2", "bill collected - no sale": "1",
+           "come back": "4", "am come back": "3", "corp - no opp": "11",
+           "do not disturb": "2", "inaccessible": "6", "inaccurate lead": "5"}
+
+    def setUp(self):
+        from automations.icd_alerts import knocks_map as M
+        from automations.total_knocks import pull as TP
+        from automations.total_knocks import render as R
+        self.M, self.TP, self.R = M, TP, R
+
+    def test_box_totals_its_own_nine_buckets(self):
+        row = self.M.to_rows([self.BOX])[0]
+        self.assertEqual(self.M.shape_of([row]), self.R.SHAPE_B2B_BOX)
+        # 18 + 7 + 9 + 2 + 1 + 4 + 3 + 11 + 2. Inaccessible and Inaccurate
+        # Lead are NOT in it -- nobody was talked to at either.
+        self.assertEqual(row[self.TP.COL_TOTAL_TALK_TO], 57)
+
+    def test_talk_to_excludes_the_no_contact_buckets(self):
+        """The three Ryan asked to subtract are the ones already left out."""
+        parts = self.M.talk_to_parts(self.M.to_rows([self.BOX])[0])
+        for absent in (self.TP.COL_INACCESSIBLE,
+                       self.TP.COL_B2B_INACCURATE_LEAD):
+            self.assertNotIn(absent, parts)
+        # Corp - No Opp IS counted today: someone answered the door.
+        self.assertIn(self.TP.COL_BOX_CORP_NO_OPP, parts)
+
+    def test_every_board_that_draws_the_column_can_fill_it(self):
+        """The invariant. A shape whose HEADERS carry 'Total Talk to' and
+        whose rows cannot produce it is a blank column waiting to happen."""
+        draws = {
+            self.R.SHAPE_HOUSE:      self.R.COMBINED_KNOCKS_HEADERS,
+            self.R.SHAPE_ENERGYWELL: self.R.ENERGYWELL_KNOCKS_HEADERS,
+            self.R.SHAPE_B2B_ATT:    self.R.B2B_ATT_KNOCKS_HEADERS,
+            self.R.SHAPE_B2B_BOX:    self.R.B2B_BOX_KNOCKS_HEADERS,
+            self.R.SHAPE_WIRELESS:   self.R.WIRELESS_KNOCKS_HEADERS,
+        }
+        parts = self.M._parts_by_shape()
+        for shape, headers in draws.items():
+            with self.subTest(shape=shape):
+                self.assertEqual(self.TP.COL_TOTAL_TALK_TO in headers,
+                                 shape in parts)
+
+
 class EmptyGridTests(unittest.TestCase):
     """DataTables' empty state is ONE cell spanning the table, carrying real
     text. An all-cells-blank test misses it and it arrives looking exactly

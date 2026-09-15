@@ -216,6 +216,11 @@ COL_TALK_TO_PCT = "% Talk To's per Knocks"
 # knocked at least KNOCKING_MIN_KNOCKS doors. Filled on the SUMMARY rows only
 # (this office's TOTAL and any comparison office's line), like Talk To's per
 # Rep: a rep row is one rep, where the count is always 1.
+# "Actual Talk To's" (Ryan McSpadden, 2026-09-15) — Total Knocks minus the
+# three buckets where nobody was actually spoken to. Defined here with the
+# other COMPUTED column names; the buckets it subtracts and the Box-only
+# header insertion are down with that shape's column set.
+COL_BOX_ACTUAL_TALK_TO = "Actual Talk To's"
 COL_REPS_KNOCKING = "Total # of Reps Knocking"
 # A rep with 20 knocks or fewer did not work a day of doors (Eve, 2026-08-28) —
 # they're a walk-on, a half-hour, or a rep who logged in and left. They still
@@ -400,7 +405,7 @@ COMBINED_KNOCKS_HEADERS = _with_derived(COMBINED_KNOCKS_COLUMNS)
 # The cells this board computes rather than reads — blank on a rep row unless
 # stated otherwise, so `_combined_sub` never looks for them in the scrape.
 DERIVED_COLUMNS = (COL_TALK_TO_PER_REP, COL_TALK_TO_PCT, COL_REPS_KNOCKING,
-                   COL_HRS_KNOCKING)
+                   COL_HRS_KNOCKING, COL_BOX_ACTUAL_TALK_TO)
 # Time Gaps shows just these, in this order.
 TIME_GAPS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
                      COL_GAPS, COL_TOTAL_GAPS]
@@ -495,7 +500,36 @@ B2B_BOX_KNOCKS_COLUMNS = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
                           COL_BOX_AM_COME_BACK, COL_BOX_CORP_NO_OPP,
                           COL_BOX_DO_NOT_DISTURB, COL_INACCESSIBLE,
                           COL_B2B_INACCURATE_LEAD]
+# "Actual Talk To's" (Ryan McSpadden, 2026-09-15): Total Knocks minus the
+# three buckets where nobody was actually spoken to. BOX ONLY -- it is inserted
+# into this shape's headers and nowhere else, which is what keeps it off
+# Carlos's B2B AT&T board; he runs both campaigns off the one Mac mini and they
+# share this renderer.
+#
+# WHY A NEW COLUMN RATHER THAN CHANGING TOTAL KNOCKS. He offered both. Total
+# Knocks and Total Leads Knocked are already read by other people, and a
+# redefinition moves a number under them with nothing on the board to say it
+# moved (Megan, 2026-09-15).
+#
+# IT IS NOT THE SAME NUMBER AS 'Total Talk to', which sums the nine buckets
+# where someone WAS spoken to. The Box grid has no 'No answer' column, so every
+# knock with no disposition recorded sits inside this figure and outside that
+# one -- the two are far apart and both are correct. Ryan's reps log nearly
+# everything as a Come Back ("we just don't use the Talk To disposition in
+# telemapper, everything for us is a comeback"), which is why he wanted a
+# knocks-side number rather than a dispositions-side one.
+# Subtracted from Total Knocks. Corp - No Opp IS in here at Ryan's request even
+# though 'Total Talk to' counts it as contact -- the two columns answer
+# different questions and disagree on this bucket on purpose.
+BOX_ACTUAL_TALK_TO_SUBTRAHENDS = [COL_BOX_CORP_NO_OPP, COL_INACCESSIBLE,
+                                  COL_B2B_INACCURATE_LEAD]
+
 B2B_BOX_KNOCKS_HEADERS = _with_derived(B2B_BOX_KNOCKS_COLUMNS)
+# Straight after Total Knocks, so the subtraction reads left to right. Inserted
+# into the HEADERS and never into B2B_BOX_KNOCKS_COLUMNS: that list is what the
+# scrape is read by, and this cell is computed, not read.
+B2B_BOX_KNOCKS_HEADERS.insert(
+    B2B_BOX_KNOCKS_HEADERS.index(COL_TOTAL_KNOCKS) + 1, COL_BOX_ACTUAL_TALK_TO)
 
 # ---- layout ----
 # EVERY BOARD IS DRAWN AT 2x DENSITY (Megan's standing rule, 2026-08-30:
@@ -1658,6 +1692,29 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
                  out_dir / f"time_gaps_{_file_span(target, end)}.png")
 
 
+def _actual_talk_to(base: list, src: dict) -> str:
+    """Ryan's column for ONE rep row: Total Knocks minus Corp - No Opp,
+    Inaccessible and Inaccurate Lead. "" when this row's shape lacks any of
+    them.
+
+    NOT clamped at zero. Each knock carries at most one disposition, so the
+    three can never really outrun Total Knocks -- if this ever prints a
+    negative, the grid disagrees with itself and the board should say so
+    rather than round it away to a plausible 0.
+    """
+    need = [COL_TOTAL_KNOCKS] + BOX_ACTUAL_TALK_TO_SUBTRAHENDS
+    if any(c not in src for c in need):
+        return ""
+    def _n(c) -> int:
+        v = str(base[src[c]]).strip().replace(",", "")
+        try:
+            return int(float(v)) if v else 0
+        except ValueError:
+            return 0
+    return str(_n(COL_TOTAL_KNOCKS)
+               - sum(_n(c) for c in BOX_ACTUAL_TALK_TO_SUBTRAHENDS))
+
+
 def _combined_sub(header: list[str], rows: list[list[str]],
                   sort_by: str = "rep",
                   where: str = "",
@@ -1724,7 +1781,11 @@ def _combined_sub(header: list[str], rows: list[list[str]],
                    COL_TALK_TO_PCT: (
                        _pct(base[src[COL_TOTAL_TALK_TO]],
                             base[src[COL_TOTAL_KNOCKS]])
-                       if COL_TOTAL_TALK_TO in src else "")}
+                       if COL_TOTAL_TALK_TO in src else ""),
+                   # Box only. Guarded on the subtrahends being present rather
+                   # than on the shape, so a Box board carried in as a
+                   # comparison office blanks the cell instead of raising.
+                   COL_BOX_ACTUAL_TALK_TO: _actual_talk_to(base, src)}
         # Built whole, BEFORE the sort — assembling by header name keeps every
         # derived cell tied to its own rep no matter how the table is ordered.
         sub.append([derived[c] if c in derived
@@ -1828,6 +1889,18 @@ def _combined_totals(label: str, sub: list[list[str]],
             # rates, which would weigh a 30-knock day like a 300-knock one.
             totals.append(_pct(sum(_int0(r[tt_at]) for r in sub),
                                sum(_int0(r[tk_at]) for r in sub)))
+        elif c == COL_BOX_ACTUAL_TALK_TO:
+            # Summed on BOTH sides off the same rows, like Talk To % above,
+            # rather than re-adding the per-rep strings: that keeps the office
+            # figure right even if a rep cell came through blank or negative.
+            sums = {k: sum(_int0(r[out_cols.index(k)]) for r in sub)
+                    for k in [COL_TOTAL_KNOCKS] + BOX_ACTUAL_TALK_TO_SUBTRAHENDS
+                    if k in out_cols}
+            totals.append(
+                str(sums.get(COL_TOTAL_KNOCKS, 0)
+                    - sum(sums.get(k, 0)
+                          for k in BOX_ACTUAL_TALK_TO_SUBTRAHENDS))
+                if COL_TOTAL_KNOCKS in sums else "")
         elif c == COL_REPS_KNOCKING:
             totals.append(str(len(_knockers(sub, out_cols))))
         else:
