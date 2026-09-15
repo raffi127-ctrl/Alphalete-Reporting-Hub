@@ -18,10 +18,14 @@ THE THREE PEOPLE BLOCKS (found by label, never by row number):
        A =A{above}+1 · B name · C =SUMIF(daily B, B{r}, daily J) · D.. frozen
   2. daily section        col-A 'All Units' + 'RUNNING WEEK TOTALS'  rows 61-98
        A =A{above}+1 · B name · C..I day values · J =SUM(C:I) · K/L frozen
-  3. bottom ranking       col-B 'All Units - All Campaigns'          rows 111-148
-       B name · C/D/K formulas · every day column a SUMIF that hardcodes the
-       name AS A STRING — which is why this block is copied from a neighbour
-       row and then has that literal swapped, rather than rebuilt by hand.
+  3. bottom ranking       col-A/B 'All Units - All Campaigns'        rows 108-140
+       A =IF($B="","",ROW()-ROW($B$107)) · B name · C/D/K formulas · every
+       day column a SUMIF that hardcodes the name AS A STRING — which is why
+       this block is copied from a neighbour row and then has that literal
+       swapped, rather than rebuilt by hand.
+       The header used to sit in col B; since 2026-09 it is a merged A:B cell,
+       so its text lives in col A. Both are accepted (2026-09-15: the col-B-only
+       lookup killed the fill the first morning someone had to be added).
 
 All three blocks are RANKED BY PRODUCTION (sort_board re-ranks them at the end
 of the same fill), so a new person goes in at the BOTTOM of each — which is
@@ -109,15 +113,17 @@ def _cell(grid, r0: int, c0: int) -> str:
 
 
 def find_ranking_block(grid: List[List[str]]) -> dict:
-    """Block 3 by its col-B header. Data rows are the col-B non-empty rows
+    """Block 3 by its header in col A or B (a merged A:B cell keeps its text in
+    A — see the module docstring). Data rows are the col-B non-empty rows
     below the header's sub-header row, stopping at the first gap."""
     hr = None
     for i in range(len(grid)):
-        if _cell(grid, i, 1).lower() == RANKING_LABEL.lower():
+        if RANKING_LABEL.lower() in (_cell(grid, i, 0).lower(),
+                                     _cell(grid, i, 1).lower()):
             hr = i + 1
             break
     if hr is None:
-        raise ValueError(f"Ranking block {RANKING_LABEL!r} (col-B header) not found.")
+        raise ValueError(f"Ranking block {RANKING_LABEL!r} (col-A/B header) not found.")
     rows: List[int] = []
     started = False
     for i in range(hr, len(grid)):
@@ -220,7 +226,7 @@ def plan(copy_grid, tgt_grid, today, *, raw_aliases=None, logfn=print) -> Roster
     for n in names:
         p.weekly_at[n] = _insert_position(wk["data_rows"])
         p.daily_at[n] = _insert_position(daily_rows)
-        p.ranking_at[n] = rank["data_rows"][-1] + 1     # 0 sales -> bottom
+        p.ranking_at[n] = _insert_position(rank["data_rows"])   # what add_one does
     return p
 
 
@@ -292,7 +298,9 @@ def add_one(ws, name: str, *, logfn=print) -> dict:
     # (It was rows[-1] while the insert landed past the end of the block.)
     src = at + 1
     time.sleep(1)
-    _copy_row_formulas(ws, src, at, 1, 40)      # B.. across the whole block
+    # From col A: the rank formula lives there now, and a new row without it
+    # shows no position. Its refs are relative/anchored above, so copying is safe.
+    _copy_row_formulas(ws, src, at, 0, 40)      # A.. across the whole block
     time.sleep(1)
     formulas = ws.get_all_values(value_render_option="FORMULA")
     old_name = _cell(ws.get_all_values(), src - 1, 1) or ""
