@@ -52,11 +52,22 @@ def _sent_marker(tracker_id: str, day: dt.date) -> Path:
 
 
 def send_tracker(tracker_id: str, *, day: Optional[dt.date] = None,
-                 dry_run: bool = True, headless: bool = False) -> dict:
+                 dry_run: bool = True, headless: bool = False,
+                 force: bool = False) -> dict:
     """Capture one tracker board and text it to every group it's routed to.
 
     Returns a result dict; never raises for a routing/idempotency skip (those are
     normal outcomes), only for a genuine capture or send failure.
+
+    `force` re-captures and re-texts a tracker that already has today's .sent
+    marker. The marker exists to stop the control queue's RETRIES from double-
+    texting ~20 leaders, and that stays the default. But a board whose Tableau
+    extract had not refreshed when we photographed it goes out WRONG, and the
+    only fix is to send the corrected board the same day (Carlos, 2026-09-15:
+    Box's extract landed after the 08:00 fail-open floor, so the morning text
+    carried the previous week). Without this flag a corrected re-send was
+    impossible: the marker swallowed it and the run still exited 0, so the fix
+    looked like it had worked.
     """
     day = day or _today()
     spec = pages_mod.by_id(tracker_id)
@@ -75,7 +86,7 @@ def send_tracker(tracker_id: str, *, day: Optional[dt.date] = None,
         return result
 
     marker = _sent_marker(tracker_id, day)
-    if marker.exists() and not dry_run:
+    if marker.exists() and not dry_run and not force:
         result["ok"] = True
         result["skipped"] = "already texted %s" % marker.read_text().strip()[:40]
         return result
@@ -150,15 +161,23 @@ def main(argv=None) -> int:
     ap.add_argument("--headless", action="store_true",
                     help="run the capture browser headless")
     ap.add_argument("--day", default=None, help="YYYY-MM-DD (default: today Central)")
+    ap.add_argument("--force", action="store_true",
+                    help="re-text even though today's .sent marker says this "
+                         "tracker already went out. For the day the board was "
+                         "photographed off a stale Tableau extract and the "
+                         "groups need the corrected one. Texts the group AGAIN "
+                         "— only use it when the first text was WRONG.")
     args = ap.parse_args(argv)
 
     day = dt.date.fromisoformat(args.day) if args.day else _today()
     dry = not args.send
-    print("Tracker texts — %s — tracker=%s day=%s" % (
-        "DRY-RUN (no texts)" if dry else "SEND", args.tracker, day.isoformat()),
+    print("Tracker texts — %s — tracker=%s day=%s%s" % (
+        "DRY-RUN (no texts)" if dry else "SEND", args.tracker, day.isoformat(),
+        "  [FORCED re-send — today's marker overridden]" if args.force else ""),
         flush=True)
     try:
-        res = send_tracker(args.tracker, day=day, dry_run=dry, headless=args.headless)
+        res = send_tracker(args.tracker, day=day, dry_run=dry,
+                           headless=args.headless, force=args.force)
     except Exception as e:  # noqa: BLE001
         print("  FAILED: %s: %s" % (type(e).__name__, str(e)[:240]), flush=True)
         return 1
