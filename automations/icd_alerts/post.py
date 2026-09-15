@@ -746,18 +746,14 @@ def warn_machine_facts(day: Optional[dt.date] = None, *, send: bool = False,
                        book=None, log=print) -> List[str]:
     """Say what we know about the machines, once a day.
 
-    THESE CHECKS EXISTED AND NOTHING CALLED THEM. laptop_offices() and
-    silent_machines() were written, tested, and wired to nothing -- so a
-    machine going quiet was something Megan noticed by eye, which is exactly
-    how Cyrus sat dark for a day (2026-09-15).
+    A NEW LAPTOP, AND NOTHING ELSE. laptop_offices() was written, tested and
+    wired to nothing, so an office on a laptop was something Megan noticed by
+    eye -- and a laptop closes and takes its channel quiet with nothing said.
+    Offices already accepted on one (LAPTOP_ACKNOWLEDGED) are left out, so
+    this fires for the one she has not seen.
 
-    A laptop closes and the office's channel stops with nothing said. An agent
-    too old to name its machine cannot be asked whether it is a laptop at all,
-    so its silence looks the same as a healthy desktop's.
-
-    ONCE A DAY, and only when there is something. A standing list of facts
-    that has not changed is noise, and noise is what buried the real alerts
-    this afternoon.
+    ONCE A DAY, and only when there is something. A standing list that has not
+    changed is noise, and noise is what buried the real alerts this afternoon.
     """
     day = day or dt.date.today()
     lines = []
@@ -768,21 +764,19 @@ def warn_machine_facts(day: Optional[dt.date] = None, *, send: bool = False,
         for m in laptops:
             lines.append("   • %s — %s" % (m["office"], m["name"]))
 
-    silent = silent_machines(day, book=book)
-    if silent:
-        lines.append("*Too old to say what machine they are* — we cannot tell "
-                     "whether these are laptops:")
-        for m in silent:
-            lines.append("   • %s — agent %s" % (m["office"], m["agent"]))
-
+    # NOT THE "too old to say what machine" LIST (Megan 2026-09-15: "We don't
+    # need this"). It is true and it is not actionable: she knows which
+    # offices are behind, and it fixes itself the moment they update. An alert
+    # nobody can act on is the thing that teaches people to skim the channel,
+    # which is how the ones that matter get missed. silent_machines() stays --
+    # it is worth asking on purpose, just not worth saying every day.
     if not lines:
         return []
     for l in lines:
         log(l)
     if not send:
         return lines
-    key = "machines|%s" % "|".join(sorted(
-        [m["office"] for m in laptops] + [m["office"] for m in silent]))
+    key = "machines|%s" % "|".join(sorted(m["office"] for m in laptops))
     if _once_a_day(MACHINE_FACTS_PATH, key, day):
         return lines
     _slack(O.OPS_CHANNEL,

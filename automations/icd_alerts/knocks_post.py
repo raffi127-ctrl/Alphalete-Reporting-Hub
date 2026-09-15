@@ -309,6 +309,41 @@ def _said_already(kind: str, key: str, day: dt.date, detail: str) -> bool:
         return False
 
 
+# WHAT A CAMPAIGN IS CALLED ON A BOARD. Named here rather than derived from
+# the sign-up form's wording: splitting "AT&T Fiber — Internet & Phones" on
+# the dash gives "Internet & Phones", which tells a reader nothing and is not
+# what anybody calls it. The form's labels are written for an owner choosing
+# from a list; a header beside a date needs the name people say out loud.
+BOARD_CAMPAIGN_NAME = {
+    "att": "AT&T Fiber",
+    "nds": "NDS",
+    "energy": "Energy Wells",
+    "b2b_att": "B2B AT&T",
+    "b2b_box": "B2B Box",
+}
+
+
+def _board_title(office) -> str:
+    """The office, and WHICH CAMPAIGN this board is (Megan 2026-09-15: "we
+    also need the campaign listed in the header box in case an ICD is getting
+    multiples").
+
+    Carlos runs two campaigns off one Mac mini and both boards land in
+    #a-players-b2b. Titled by office alone they are two pictures with the same
+    heading and different numbers, and the only way to tell them apart is to
+    know his rep lists by heart.
+
+    ALWAYS, not only when an office has two. A board that names its campaign
+    only sometimes is one you have to check the absence of -- and the office
+    that gains a second campaign tomorrow is the one whose old boards are
+    already in the scrollback, unlabelled.
+    """
+    label = getattr(office, "label", "") or getattr(office, "key", "")
+    campaign = (getattr(office, "campaign", "") or "").strip().lower()
+    short = BOARD_CAMPAIGN_NAME.get(campaign, "")
+    return "%s (%s)" % (label, short) if short else label
+
+
 def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime):
     """The office's board(s), through the SAME renderer every other office
     uses -- ([paths], shape).
@@ -331,7 +366,7 @@ def _render(office, rows: List[Dict], day: dt.date, now: dt.datetime):
     compare = chan.comparison_for(day, log=lambda *_: None)
     return knocks_render.render_knocks_boards(
         day, rows=rows, out_dir=out_dir,
-        title_suffix=office.label,
+        title_suffix=_board_title(office),
         extra_totals=[compare] if compare else None,
         # First knock goes green against THIS office's start time on THIS day.
         # The flat 1:30 PM target greened every Saturday first-knock on every

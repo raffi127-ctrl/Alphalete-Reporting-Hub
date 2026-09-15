@@ -101,16 +101,22 @@ class TheMachineFactsAreSaidWhenThereIsSomethingToSay(unittest.TestCase):
             out = P.warn_machine_facts(send=False, log=lambda *_: None)
         self.assertTrue(any("MacBook Air" in l for l in out))
 
-    def test_an_agent_too_old_to_answer_is_named_separately(self):
+    def test_an_agent_too_old_to_answer_is_not_announced(self):
+        """Megan 2026-09-15: "We don't need this". True, and not actionable --
+        she knows which offices are behind, and it fixes itself when they
+        update. An alert nobody can act on teaches people to skim the
+        channel, which is how the ones that matter get missed."""
         with mock.patch.object(P, "laptop_offices", return_value=[]), \
                 mock.patch.object(P, "silent_machines", return_value=[
                     {"office": "cyrus", "agent": "icd_alerts/2"}]):
             out = P.warn_machine_facts(send=False, log=lambda *_: None)
-        joined = " ".join(out)
-        self.assertIn("cyrus", joined)
-        self.assertIn("icd_alerts/2", joined)
-        self.assertNotIn("On a laptop", joined,
-                         "an office we cannot ask is being called a laptop")
+        self.assertEqual(out, [],
+                         "it still announces offices nobody can do anything "
+                         "about")
+
+    def test_silent_machines_still_answers_when_asked(self):
+        # Removed from the daily post, not from the toolbox.
+        self.assertTrue(callable(P.silent_machines))
 
     def test_it_is_wired_into_the_poster(self):
         import inspect
