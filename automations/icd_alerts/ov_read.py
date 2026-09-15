@@ -96,6 +96,7 @@ def _has_session(p, log=print) -> bool:
 
 
 def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
+                campaign: str = "",
                 log=print) -> Dict[str, List[Dict]]:
     """Today's grid AND time tracker for this office, both raw.
 
@@ -127,7 +128,8 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
             # arrives really is that campaign's is checked on our side,
             # against the rows -- a pin can fail to take and still serve a
             # grid (Calvin, 2026-09-02).
-            cid = C.campaign_id()
+            cid = C.CAMPAIGN_IDS.get((campaign or "").strip().lower()) \
+                if campaign else C.campaign_id()
             if cid:
                 K.pin_campaign(page, rqst, cid, log=log)
             K.navigate(page, rqst, mdy, log=log)

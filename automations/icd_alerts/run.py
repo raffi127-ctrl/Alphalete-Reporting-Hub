@@ -155,12 +155,17 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("self-update skipped: %s" % type(e).__name__)
 
-    # A KNOCKS-ONLY OFFICE HAS NOTHING TO READ HERE. Box, Energy Wells and NDS
-    # are not on SaraPlus, so there is no account to sign into -- skipping is
-    # not a degraded mode, it is the whole of what those offices ever had.
-    if not C.uses_saraplus():
-        _log("%s campaign — no SaraPlus, knocks only" % C.campaign())
+    # SARAPLUS IS ONE ACCOUNT PER MACHINE, not one per campaign: AT&T is the
+    # only campaign on it, so a machine has at most ONE enrollment that reads
+    # it. Find that one and relay under its key; if there is none, this half
+    # of the agent is not this office's at all.
+    att = next((r for r in C.enrollments()
+                if str(r.get("campaign") or "att").lower()
+                not in ("nds", "energy", "b2b_box")), None)
+    if att is None and C.enrollments():
+        _log("no AT&T campaign on this machine — knocks only")
         return 0
+    att_key = str((att or {}).get("office_key") or "")
 
     try:
         read = sara_read.read_day(day, headless=headless, log=_log)
@@ -198,7 +203,8 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
 
     # The real work. Totals go over; what gets SAID is decided on our side.
     try:
-        R.send(current, day, sales=sales, dry_run=dry_run, log=_log)
+        R.send(current, day, sales=sales, dry_run=dry_run,
+               office_key=att_key, log=_log)
     except R.RelayError as e:
         # Not fatal and not the owner's problem to solve: SaraPlus is
         # cumulative, so the next run hands over the whole day again.
@@ -214,40 +220,63 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
 
 
 def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
-    """Hand over today's disposition rows. Quiet when no OwnerVille login is
-    saved: the knocks board is optional, and an office that never gave us one
-    has not failed at anything."""
+    """Hand over today's disposition rows, ONE READ PER ENROLLED CAMPAIGN.
+
+    An office that runs two campaigns enrolled twice on this machine, and each
+    campaign is its own reporting unit -- its own relay key, its own channels,
+    its own board. So each gets its own pinned read.
+
+    Quiet when no OwnerVille login is saved: the knocks board is optional, and
+    an office that never gave us one has not failed at anything.
+
+    ONE CAMPAIGN FAILING DOES NOT COST THE OTHERS. They are separate reads of
+    separate grids; a pin that will not take on one says nothing about the
+    other, and losing both would turn a half-outage into a whole one.
+    """
     if not C.OV_CREDS_PATH.exists():
         _log("no OwnerVille login saved — skipping knocks")
         return 0
-    try:
-        payload = ov_read.read_knocks(day, headless=headless, log=_log)
-        rows, tracker = payload["rows"], payload["time_tracker"]
-    except ov_read.KnocksProblem as e:
-        print("\n%s" % e)
-        _report("knocks", e)
-        return 1
-    except RuntimeError as e:
-        print("\n%s" % e)
-        _report("knocks", e)
-        return 1
-    except Exception as e:  # noqa: BLE001 — see cmd_once
-        _log("unexpected failure: %s" % traceback.format_exc())
-        _report("knocks", e)
-        return 1
 
-    if not rows:
-        # A real answer. Nobody has knocked yet today, and an empty grid is
-        # what that looks like -- it is not a failed read, and reporting it as
-        # one would cry wolf every morning.
-        _log("no knocks logged yet today")
+    rows_of = C.enrollments() or [{}]
+    worst = 0
+    for rec in rows_of:
+        key = str(rec.get("office_key") or "")
+        campaign = str(rec.get("campaign") or "att")
+        if len(rows_of) > 1:
+            _log("--- %s (%s) ---" % (key or "this office", campaign))
+        try:
+            payload = ov_read.read_knocks(day, headless=headless,
+                                          campaign=campaign, log=_log)
+            rows, tracker = payload["rows"], payload["time_tracker"]
+        except ov_read.KnocksProblem as e:
+            print("\n%s" % e)
+            _report("knocks", e)
+            worst = 1
+            continue
+        except RuntimeError as e:
+            print("\n%s" % e)
+            _report("knocks", e)
+            worst = 1
+            continue
+        except Exception as e:  # noqa: BLE001 — see cmd_once
+            _log("unexpected failure: %s" % traceback.format_exc())
+            _report("knocks", e)
+            worst = 1
+            continue
 
-    try:
-        R.send_knocks(rows, day, time_tracker=tracker, dry_run=dry_run, log=_log)
-    except R.RelayError as e:
-        _log("could not send the knocks this time: %s" % e)
-        return 1
-    return 0
+        if not rows:
+            # A real answer. Nobody has knocked yet today, and an empty grid
+            # is what that looks like -- not a failed read, and reporting it
+            # as one would cry wolf every morning.
+            _log("no knocks logged yet today")
+
+        try:
+            R.send_knocks(rows, day, time_tracker=tracker, dry_run=dry_run,
+                          office_key=key, log=_log)
+        except R.RelayError as e:
+            _log("could not send the knocks this time: %s" % e)
+            worst = 1
+    return worst
 
 
 def main(argv=None) -> int:

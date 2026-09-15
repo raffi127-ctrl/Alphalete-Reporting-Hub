@@ -61,10 +61,20 @@ class TheyAreNeverAskedForWhatTheyCannotHave(unittest.TestCase):
         self.assertIn("no SaraPlus needed", SETUP)
 
     def test_the_sweep_does_not_try_to_read_saraplus(self):
-        self.assertIn("if not C.uses_saraplus():", RUN)
-        # and it returns clean, not as a failure -- nothing is wrong
-        after = RUN[RUN.index("if not C.uses_saraplus():"):]
-        self.assertIn("return 0", after[:400])
+        """A machine with no AT&T campaign never signs in.
+
+        Asserted on behaviour rather than on one line: the check moved from
+        "is this office AT&T" to "does this MACHINE hold an AT&T enrollment"
+        when an office could run two campaigns, and the old assertion pinned
+        the implementation rather than the rule.
+        """
+        self.assertIn("knocks only", RUN)
+        # It must find an AT&T enrollment before reading anything...
+        self.assertLess(RUN.index('not in ("nds", "energy", "b2b_box")'),
+                        RUN.index("sara_read.read_day"))
+        # ...and returning clean, not as a failure: nothing is wrong.
+        after = RUN[RUN.index("knocks only"):]
+        self.assertIn("return 0", after[:200])
 
     def test_the_campaign_reaches_the_installer(self):
         # Without this every office installs as AT&T and a Box machine spends
@@ -74,3 +84,47 @@ class TheyAreNeverAskedForWhatTheyCannotHave(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MoreThanOneCampaignOnOneMachine(unittest.TestCase):
+    """An office enrols each campaign independently, on the same computer.
+
+    Megan 2026-09-15: "if an ICD has multi campaigns, they can enroll them or
+    not independently and we always are able to grab the correct one."
+
+    A campaign IS a reporting unit here -- its own relay key, channels,
+    cadence and board -- so each is its own enrollment, and the machine holds
+    them side by side.
+    """
+
+    def test_each_campaign_gets_its_own_readable_key(self):
+        from automations.icd_signup import store
+        first = store.office_key_for("Ryan McSpadden", set(), "b2b_box")
+        second = store.office_key_for("Ryan McSpadden", {first}, "att")
+        self.assertEqual(first, "ryan")
+        self.assertEqual(second, "ryan-att")
+        # A number would tell nobody which campaign it is, and this key shows
+        # up in the approve command, the relay row and their setup code.
+        self.assertNotIn("ryan2", (first, second))
+
+    def test_a_second_install_adds_rather_than_replaces(self):
+        src = (ROOT / "automations/icd_alerts/dist/setup.py").read_text()
+        self.assertIn("ADDING A CAMPAIGN, NOT REPLACING THE MACHINE", src)
+        self.assertNotIn("existing.update(rec)", src,
+                         "the installer still overwrites the whole record")
+
+    def test_the_sweep_walks_every_campaign(self):
+        src = (ROOT / "automations/icd_alerts/run.py").read_text()
+        self.assertIn("for rec in rows_of:", src)
+        # One failing campaign must not cost the others.
+        self.assertIn("worst = 1", src)
+        self.assertIn("continue", src)
+
+    def test_each_campaign_relays_under_its_own_key(self):
+        import inspect
+        from automations.icd_alerts import relay as R
+        self.assertIn("office_key", inspect.signature(R.send_knocks).parameters)
+        self.assertIn("office_key", inspect.signature(R.send).parameters)
+
+    def test_the_form_tells_them_a_second_is_possible(self):
+        self.assertIn("Run more than one campaign?", FORM)

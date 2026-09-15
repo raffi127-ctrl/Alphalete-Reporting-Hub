@@ -132,13 +132,26 @@ def _save_local(rows: List[Dict]) -> None:
     _LOCAL_FALLBACK.write_text(json.dumps(rows, indent=2))
 
 
-def office_key_for(owner: str, taken=()) -> str:
-    """First name, lowercased, with a number only if it has to disambiguate."""
+def office_key_for(owner: str, taken=(), campaign: str = "") -> str:
+    """This enrollment's key: first name, then the campaign if that is taken.
+
+    ONE KEY PER CAMPAIGN, because a campaign IS a reporting unit here -- its
+    own channels, its own cadence, its own board, its own relay key. An owner
+    running two enrols twice and gets `ryan` and `ryan-box`, which is also
+    what somebody reading the sheet needs to see.
+
+    The campaign suffix rather than a number, because "ryan2" tells nobody
+    which campaign it is, and this key appears in the approve command, the
+    relay row and the office's own setup code.
+    """
     import re
     first = (owner or "").strip().split()[0] if (owner or "").strip() else ""
     base = re.sub(r"[^a-z]", "", first.lower()) or "office"
     if base not in taken:
         return base
+    camp = re.sub(r"[^a-z0-9]", "", (campaign or "").lower())
+    if camp and "%s-%s" % (base, camp) not in taken:
+        return "%s-%s" % (base, camp)
     n = 2
     while "%s%d" % (base, n) in taken:
         n += 1
@@ -213,7 +226,8 @@ def submit(rec: IcdSignup, book=None) -> IcdSignup:
     existing = all_signups(book)
     taken = {s.office_key for s in existing if s.office_key}
     rec = rec._replace(
-        office_key=rec.office_key or office_key_for(rec.owner, taken),
+        office_key=rec.office_key or office_key_for(rec.owner, taken,
+                                                    rec.campaign),
         status=STATUS_PENDING,
         submitted_at=rec.submitted_at or stamp(),
     )

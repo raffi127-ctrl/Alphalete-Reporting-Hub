@@ -85,8 +85,14 @@ class RelayError(RuntimeError):
     """Phrased for whoever is reading it on an ICD's laptop."""
 
 
-def _endpoint() -> Dict[str, str]:
-    rec = C.install()
+def _endpoint(office_key: str = "") -> Dict[str, str]:
+    """This machine's relay record -- for ONE campaign when named.
+
+    A machine can now hold several enrollments, one per campaign, each with
+    its own relay key. Naming none keeps the old behaviour (the first), which
+    is what every single-campaign office is.
+    """
+    rec = C.enrollment_for(office_key) if office_key else C.install()
     missing = [k for k in ("office_key", "relay_url", "relay_key") if not rec.get(k)]
     if missing:
         raise RelayError(
@@ -288,7 +294,8 @@ MAX_KNOCKS_CHARS = 45_000
 
 
 def send_knocks(rows, day: Optional[dt.date] = None, *, time_tracker=None,
-                dry_run: bool = False, log=print) -> Dict:
+                dry_run: bool = False, office_key: str = "",
+                log=print) -> Dict:
     """Hand over one day of disposition rows, raw.
 
     Separate call, separate failure. A SaraPlus sweep that works must not be
@@ -297,7 +304,7 @@ def send_knocks(rows, day: Optional[dt.date] = None, *, time_tracker=None,
     sources with different outages.
     """
     day = day or C.today()
-    rec = _endpoint()
+    rec = _endpoint(office_key)
     body = {
         "office_key": rec["office_key"],
         "key": rec["relay_key"],
@@ -433,11 +440,11 @@ def report_fault(stage: str, summary: str, detail: str = "",
 
 def send(records: Dict[str, int], day: Optional[dt.date] = None, *,
          sales: Optional[Dict] = None, dry_run: bool = False,
-         log=print) -> Dict:
+         office_key: str = "", log=print) -> Dict:
     """POST one sweep's totals. Returns the decoded reply, or raises RelayError
     with something an owner can act on."""
     day = day or C.today()
-    rec = _endpoint()
+    rec = _endpoint(office_key)
     body = payload(records, day, rec, sales=sales)
 
     if dry_run:

@@ -376,6 +376,11 @@ if submitted:
                 "numbers straight away. They begin appearing in your Slack "
                 "channel as soon as the reporting team approves where they "
                 "should go.")
+            st.info(
+                "**Run more than one campaign?** Come back to this page and "
+                "sign up again for the other one. Use the **same computer** — "
+                "it gets added alongside this one, each with its own channels "
+                "and its own board.")
             st.markdown("**Two things to do now:**")
             st.markdown(
                 "1. **Add Megan and Eve** to every channel you named — "

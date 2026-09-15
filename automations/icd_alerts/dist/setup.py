@@ -169,15 +169,44 @@ def write_install_json():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     rec = json.loads(src.read_text())
     target = CONFIG_DIR / "install.json"
-    if target.exists():                       # keep anything already there
+
+    # ADDING A CAMPAIGN, NOT REPLACING THE MACHINE. An office that runs two
+    # campaigns enrols twice and pastes two lines on the SAME computer
+    # (Megan 2026-09-15). Overwriting here -- which is what this used to do --
+    # would have left the second install running and the first one's key
+    # stranded, with an office quietly losing a board it had already been
+    # approved for.
+    #
+    # Keyed on office_key, so re-running the SAME code updates that campaign
+    # instead of giving the machine two of it. Re-running is how somebody
+    # fixes a wrong answer, and it has to be safe.
+    existing = []
+    if target.exists():
         try:
-            existing = json.loads(target.read_text())
-            existing.update(rec)
-            rec = existing
+            prior = json.loads(target.read_text())
+            existing = prior if isinstance(prior, list) else [prior]
         except ValueError:
-            pass
-    target.write_text(json.dumps(rec, indent=2))
-    return rec
+            existing = []
+    key = str(rec.get("office_key", "")).strip().lower()
+    merged = [r for r in existing
+              if isinstance(r, dict)
+              and str(r.get("office_key", "")).strip().lower() != key]
+    # Carry forward anything the earlier record had for THIS campaign -- the
+    # channels they asked for, their OwnerVille name -- so a re-run does not
+    # lose answers the relay is no longer sending.
+    prior_same = next((r for r in existing
+                       if isinstance(r, dict)
+                       and str(r.get("office_key", "")).strip().lower() == key),
+                      {})
+    combined = dict(prior_same)
+    combined.update(rec)
+    merged.append(combined)
+    target.write_text(json.dumps(merged, indent=2))
+    if len(merged) > 1:
+        say("      this computer now runs %d campaigns: %s"
+            % (len(merged), ", ".join(str(r.get("campaign") or "att")
+                                      for r in merged)))
+    return combined
 
 
 def _ask_one(filename, title, user_label, user_field, pass_field, required,
